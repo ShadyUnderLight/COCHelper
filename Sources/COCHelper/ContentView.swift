@@ -7,66 +7,68 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                Section("村庄") {
-                    ForEach(model.villages) { village in
-                        Button {
-                            model.selectVillage(id: village.id)
-                            selection = .villageTracker(village.id)
-                        } label: {
-                            VillageSidebarRow(
-                                village: village,
-                                isSelected: village.id == model.selectedVillageID,
-                                activeCount: model.activeUpgradeCount(for: village)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            if model.canDeleteCurrentVillage {
-                                Button("删除此村庄", role: .destructive) {
-                                    model.deleteVillage(id: village.id)
-                                    if selection == .villageTracker(village.id) {
-                                        selection = .tracker
+            TimelineView(.periodic(from: Date(), by: 60)) { context in
+                List(selection: $selection) {
+                    Section("村庄") {
+                        ForEach(model.villages) { village in
+                            Button {
+                                model.selectVillage(id: village.id)
+                                selection = .villageTracker(village.id)
+                            } label: {
+                                VillageSidebarRow(
+                                    village: village,
+                                    isSelected: village.id == model.selectedVillageID,
+                                    activeCount: model.activeUpgradeCount(for: village, at: context.date)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                if model.canDeleteCurrentVillage {
+                                    Button("删除此村庄", role: .destructive) {
+                                        model.deleteVillage(id: village.id)
+                                        if selection == .villageTracker(village.id) {
+                                            selection = .tracker
+                                        }
                                     }
                                 }
                             }
                         }
+
+                        Button {
+                            model.addVillageForImport()
+                            selection = .accountData
+                        } label: {
+                            Label("导入新村庄", systemImage: "plus.circle")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.cocAccent)
                     }
 
-                    Button {
-                        model.addVillageForImport()
-                        selection = .accountData
-                    } label: {
-                        Label("导入新村庄", systemImage: "plus.circle")
+                    Section("升级追踪") {
+                        Label("升级总览", systemImage: "chart.bar.xaxis")
+                            .tag(AppSection.tracker)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.cocAccent)
-                }
 
-                Section("升级追踪") {
-                    Label("升级总览", systemImage: "chart.bar.xaxis")
-                        .tag(AppSection.tracker)
+                    Section("当前村庄") {
+                        Label("账号数据", systemImage: "doc.text.magnifyingglass")
+                            .tag(AppSection.accountData)
+                        Label("数据说明", systemImage: "info.circle")
+                            .tag(AppSection.info)
+                    }
                 }
-
-                Section("当前村庄") {
-                    Label("账号数据", systemImage: "doc.text.magnifyingglass")
-                        .tag(AppSection.accountData)
-                    Label("数据说明", systemImage: "info.circle")
-                        .tag(AppSection.info)
+                .listStyle(.sidebar)
+                .navigationTitle("COC 助手")
+                .safeAreaInset(edge: .bottom) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("本地升级追踪")
+                            .font(.caption.weight(.semibold))
+                        Text("每个村庄独立保存原始快照")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
                 }
-            }
-            .listStyle(.sidebar)
-            .navigationTitle("COC 助手")
-            .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("本地升级追踪")
-                        .font(.caption.weight(.semibold))
-                    Text("每个村庄独立保存原始快照")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
             }
         } detail: {
             switch selection ?? .tracker {
@@ -788,13 +790,18 @@ private struct AccountSnapshotSummaryView: View {
                 }
 
                 if isPending {
+                    if let destination = model.pendingAccountSnapshotDestinationDescription {
+                        Text(destination)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.cocAccent)
+                    }
                     HStack {
                         Spacer()
                         Button("放弃") {
                             model.discardPendingAccountSnapshot()
                         }
                         .buttonStyle(.bordered)
-                        Button("应用到当前村庄") {
+                        Button(model.pendingAccountSnapshotActionTitle ?? "应用快照") {
                             model.applyPendingAccountSnapshot()
                         }
                         .buttonStyle(.borderedProminent)

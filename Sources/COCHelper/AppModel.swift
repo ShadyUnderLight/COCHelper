@@ -125,18 +125,42 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var pendingAccountSnapshotActionTitle: String? {
+        guard let snapshot = pendingAccountSnapshot else { return nil }
+
+        if let targetIndex = targetVillageIndex(for: snapshot) {
+            let targetName = villages[targetIndex].name
+            let action = isReimportingExistingVillage(snapshot, at: targetIndex) ? "更新" : "应用到"
+            return action + "「" + targetName + "」"
+        }
+
+        let newName = normalizedTag(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
+        return "创建「" + newName + "」"
+    }
+
+    var pendingAccountSnapshotDestinationDescription: String? {
+        guard let snapshot = pendingAccountSnapshot else { return nil }
+
+        if let targetIndex = targetVillageIndex(for: snapshot) {
+            let targetName = villages[targetIndex].name
+            if isReimportingExistingVillage(snapshot, at: targetIndex) {
+                return "导入目标：按账号 tag 更新「" + targetName + "」"
+            }
+            return "导入目标：应用到「" + targetName + "」"
+        }
+
+        let newName = normalizedTag(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
+        return "导入目标：没有同 tag 档案，将创建「" + newName + "」"
+    }
+
     func applyPendingAccountSnapshot() {
         guard let snapshot = pendingAccountSnapshot else { return }
         persistVillages()
 
         let targetIndex: Int
-        if let tag = normalizedTag(snapshot.tag),
-           let existingIndex = villages.firstIndex(where: { normalizedTag($0.tag) == tag }) {
+        if let existingIndex = targetVillageIndex(for: snapshot) {
             // Re-importing the same account refreshes only its raw snapshot.
             targetIndex = existingIndex
-        } else if let currentIndex = villages.firstIndex(where: { $0.id == selectedVillageID }),
-                  importIntoCurrentVillage || (villages.count == 1 && !villages[currentIndex].hasImportedData) {
-            targetIndex = currentIndex
         } else {
             let name = normalizedTag(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
             villages.append(VillageProfile(name: name))
@@ -195,6 +219,23 @@ final class AppModel: ObservableObject {
         guard let tag else { return nil }
         let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func targetVillageIndex(for snapshot: AccountSnapshot) -> Int? {
+        if let tag = normalizedTag(snapshot.tag),
+           let existingIndex = villages.firstIndex(where: { normalizedTag($0.tag) == tag }) {
+            return existingIndex
+        }
+
+        guard let currentIndex = villages.firstIndex(where: { $0.id == selectedVillageID }),
+              importIntoCurrentVillage || (villages.count == 1 && !villages[currentIndex].hasImportedData)
+        else { return nil }
+        return currentIndex
+    }
+
+    private func isReimportingExistingVillage(_ snapshot: AccountSnapshot, at index: Int) -> Bool {
+        guard let tag = normalizedTag(snapshot.tag) else { return false }
+        return normalizedTag(villages[index].tag) == tag
     }
 
     private static func loadVillages(from defaults: UserDefaults) -> [VillageProfile] {

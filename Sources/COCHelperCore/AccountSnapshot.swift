@@ -43,7 +43,9 @@ public struct AccountItem: Identifiable, Codable, Hashable, Sendable {
     public let remainingSeconds: Int64?
     public let helperTimerSeconds: Int64?
     public let remainingHelperSeconds: Int64?
+    /// The raw value copied from the game export.
     public let helperCooldownSeconds: Int64?
+    public let remainingHelperCooldownSeconds: Int64?
     public let helperRecurrent: Bool
     public let gearUp: Int?
     public let weapon: Int?
@@ -61,6 +63,7 @@ public struct AccountItem: Identifiable, Codable, Hashable, Sendable {
         helperTimerSeconds: Int64? = nil,
         remainingHelperSeconds: Int64? = nil,
         helperCooldownSeconds: Int64? = nil,
+        remainingHelperCooldownSeconds: Int64? = nil,
         helperRecurrent: Bool = false,
         gearUp: Int? = nil,
         weapon: Int? = nil,
@@ -77,6 +80,7 @@ public struct AccountItem: Identifiable, Codable, Hashable, Sendable {
         self.helperTimerSeconds = helperTimerSeconds
         self.remainingHelperSeconds = remainingHelperSeconds
         self.helperCooldownSeconds = helperCooldownSeconds
+        self.remainingHelperCooldownSeconds = remainingHelperCooldownSeconds
         self.helperRecurrent = helperRecurrent
         self.gearUp = gearUp
         self.weapon = weapon
@@ -120,6 +124,7 @@ public struct AccountSnapshot: Codable, Hashable, Sendable {
     public let originalText: String
     public let objectSections: [String: [AccountItem]]
     public let numericSections: [String: [Int64]]
+    /// Values normalized to the import time; the raw export remains in `originalText`.
     public let boosts: [String: Int64]
     public let unknownTopLevelKeys: [String]
     public let diagnostics: [AccountDataDiagnostic]
@@ -304,7 +309,11 @@ public enum AccountSnapshotImporter {
             originalText: originalText,
             objectSections: Dictionary(uniqueKeysWithValues: normalizedSections),
             numericSections: raw.numericSections,
-            boosts: raw.boosts,
+            boosts: normalizedBoosts(
+                raw.boosts,
+                ageSeconds: ageSeconds,
+                diagnostics: &diagnostics
+            ),
             unknownTopLevelKeys: raw.unknownTopLevelKeys.sorted(),
             diagnostics: diagnostics
         )
@@ -327,6 +336,12 @@ public enum AccountSnapshotImporter {
             item.helperTimerSeconds,
             ageSeconds: ageSeconds,
             path: section + "[" + path + "].helper_timer",
+            diagnostics: &diagnostics
+        )
+        let helperCooldown = adjustedDuration(
+            item.helperCooldownSeconds,
+            ageSeconds: ageSeconds,
+            path: section + "[" + path + "].helper_cooldown",
             diagnostics: &diagnostics
         )
         let types = item.types.enumerated().map { index, child in
@@ -359,6 +374,7 @@ public enum AccountSnapshotImporter {
             helperTimerSeconds: helperTimer.raw,
             remainingHelperSeconds: helperTimer.remaining,
             helperCooldownSeconds: item.helperCooldownSeconds,
+            remainingHelperCooldownSeconds: helperCooldown,
             helperRecurrent: item.helperRecurrent,
             gearUp: item.gearUp,
             weapon: item.weapon,
@@ -384,6 +400,42 @@ public enum AccountSnapshotImporter {
         }
         guard let ageSeconds else { return (raw, raw) }
         return (raw, max(0, raw - ageSeconds))
+    }
+
+    private static func normalizedBoosts(
+        _ boosts: [String: Int64],
+        ageSeconds: Int64?,
+        diagnostics: inout [AccountDataDiagnostic]
+    ) -> [String: Int64] {
+        var normalized: [String: Int64] = [:]
+        for key in boosts.keys.sorted() {
+            normalized[key] = adjustedDuration(
+                boosts[key],
+                ageSeconds: ageSeconds,
+                path: "boosts." + key,
+                diagnostics: &diagnostics
+            ) ?? 0
+        }
+        return normalized
+    }
+
+    private static func adjustedDuration(
+        _ raw: Int64?,
+        ageSeconds: Int64?,
+        path: String,
+        diagnostics: inout [AccountDataDiagnostic]
+    ) -> Int64? {
+        guard let raw else { return nil }
+        guard raw >= 0 else {
+            diagnostics.append(AccountDataDiagnostic(
+                severity: .warning,
+                path: path,
+                message: "时长为负数，已按 0 秒处理。"
+            ))
+            return 0
+        }
+        guard let ageSeconds else { return raw }
+        return max(0, raw - ageSeconds)
     }
 
     private static func prepare(_ text: String) -> (text: String, removedCodeFence: Bool) {
@@ -481,8 +533,11 @@ private struct RawAccountDocument: Decodable {
     ) throws -> Int64? {
         guard container.contains(key) else { return nil }
         if let value = try? container.decode(Int64.self, forKey: key) { return value }
-        if let value = try? container.decode(Double.self, forKey: key), value.isFinite, value.rounded() == value {
-            return Int64(value)
+        if let value = try? container.decode(Double.self, forKey: key),
+           value.isFinite,
+           value.rounded() == value,
+           let parsed = Int64(exactly: value) {
+            return parsed
         }
         if let value = try? container.decode(String.self, forKey: key), let parsed = Int64(value) {
             return parsed

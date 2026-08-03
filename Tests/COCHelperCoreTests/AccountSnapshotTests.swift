@@ -10,8 +10,9 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.objectSections["buildings"]?.count, 2)
         XCTAssertEqual(snapshot.objectSections["buildings2"]?.count, 1)
         XCTAssertEqual(snapshot.numericSections["house_parts"], [82_000_000, 82_000_001])
-        XCTAssertEqual(snapshot.boosts["clocktower_cooldown"], 25_274)
+        XCTAssertEqual(snapshot.boosts["clocktower_cooldown"], 24_674)
         XCTAssertEqual(snapshot.objectSections["helpers"]?.first?.helperCooldownSeconds, 2_312)
+        XCTAssertEqual(snapshot.objectSections["helpers"]?.first?.remainingHelperCooldownSeconds, 1_712)
         XCTAssertEqual(snapshot.activeItemCount, 3)
 
         let building = try XCTUnwrap(snapshot.objectSections["buildings"]?.first)
@@ -76,6 +77,47 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertThrowsError(try AccountSnapshotImporter.parse("   ")) { error in
             XCTAssertEqual(error as? AccountSnapshotImportError, .emptyInput)
         }
+    }
+
+    func testOutOfRangeScientificTimestampFailsWithoutTrap() {
+        XCTAssertThrowsError(
+            try AccountSnapshotImporter.parse("{\"timestamp\":1e30,\"buildings\":[]}")
+        ) { error in
+            guard case .invalidJSON = error as? AccountSnapshotImportError else {
+                return XCTFail("expected invalid JSON error")
+            }
+        }
+    }
+
+    func testAnonymizedCopiedAccountFixtureMatchesReportedShape() throws {
+        let capturedAt: Int64 = 1_785_736_333
+        let snapshot = try AccountSnapshotImporter.parse(
+            try fixtureText(),
+            now: Date(timeIntervalSince1970: TimeInterval(capturedAt + 600))
+        )
+
+        XCTAssertEqual(snapshot.tag, "#ANONYMIZED")
+        XCTAssertEqual(snapshot.ageSeconds, 600)
+        XCTAssertEqual(snapshot.sectionNames.count, 23)
+        XCTAssertEqual(snapshot.objectItemCount, 347)
+        XCTAssertEqual(snapshot.numericItemCount, 99)
+        XCTAssertEqual(snapshot.activeItemCount, 10)
+        XCTAssertEqual(snapshot.warningCount, 0)
+        XCTAssertEqual(snapshot.objectSections["buildings"]?.count, 49)
+        XCTAssertEqual(snapshot.objectSections["buildings2"]?.count, 34)
+        XCTAssertEqual(snapshot.objectSections["helpers"]?.first?.helperCooldownSeconds, 2_312)
+        XCTAssertEqual(snapshot.objectSections["helpers"]?.first?.remainingHelperCooldownSeconds, 1_712)
+        XCTAssertEqual(snapshot.boosts["clocktower_cooldown"], 24_674)
+    }
+
+    private func fixtureText() throws -> String {
+        let url = try XCTUnwrap(
+            Bundle.module.url(
+                forResource: "anonymized_account_snapshot",
+                withExtension: "json"
+            )
+        )
+        return try String(contentsOf: url, encoding: .utf8)
     }
 
     private let sampleJSON = """

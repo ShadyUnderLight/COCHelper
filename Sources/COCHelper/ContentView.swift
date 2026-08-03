@@ -312,7 +312,7 @@ struct AccountSnapshotSummaryView: View {
                                 Text(item.section + " · " + item.rawIDLabel + " · helper_cooldown")
                                     .font(.caption.monospaced())
                                 Spacer()
-                                Text(durationLabel(item.helperCooldownSeconds ?? 0))
+                                Text(durationLabel(item.remainingHelperCooldownSeconds ?? 0))
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                             }
@@ -374,7 +374,7 @@ struct AccountSnapshotSummaryView: View {
     }
 
     private var helperCooldownItems: [AccountItem] {
-        snapshot.allObjectItems.filter { $0.helperCooldownSeconds != nil }
+        snapshot.allObjectItems.filter { $0.remainingHelperCooldownSeconds != nil }
     }
 
     private func durationLabel(_ seconds: Int64) -> String {

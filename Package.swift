@@ -24,7 +24,10 @@ let package = Package(
         .testTarget(
             name: "COCHelperCoreTests",
             dependencies: ["COCHelperCore"],
-            path: "Tests/COCHelperCoreTests"
+            path: "Tests/COCHelperCoreTests",
+            resources: [
+                .process("Fixtures")
+            ]
         )
     ]
 )

@@ -44,8 +44,11 @@ public struct CoAPIClient: Sendable {
 
     public func request(path: String) async throws -> Data {
         let url = CoAPIURLBuilder.endpoint(config: config, path: path)
+        // Guard against a misconfigured negative retry count: a `0...(-1)`
+        // closed range would trap at runtime.
+        let maxRetries = max(0, config.maxRetryCount)
 
-        for attempt in 0...config.maxRetryCount {
+        for attempt in 0...maxRetries {
             guard let token = tokenProvider() else {
                 throw CoAPIError.missingCredentials
             }
@@ -67,7 +70,7 @@ public struct CoAPIClient: Sendable {
                     throw CoAPIError.notFound
                 case 429:
                     let retryAfter = retryAfterSeconds(from: response, body: data)
-                    if attempt < config.maxRetryCount {
+                    if attempt < maxRetries {
                         try await sleepForRetry(attempt: attempt)
                         continue
                     }
@@ -77,10 +80,21 @@ public struct CoAPIClient: Sendable {
                 default:
                     throw CoAPIError.network(underlying: "unexpected status \(statusCode(of: response))")
                 }
+            } catch let error as CancellationError {
+                // Task cancellation must propagate as-is (e.g. from Task.sleep
+                // or a cancelled URLSession data task), never be misreported
+                // as a network failure.
+                throw error
             } catch let error as CoAPIError {
                 throw error
             } catch let error as URLError {
-                if isRetryable(error), attempt < config.maxRetryCount {
+                if error.code == .cancelled {
+                    // URLSession surfaces task cancellation as URLError(.cancelled);
+                    // pass it through unchanged so callers can distinguish
+                    // cancellation from network failure.
+                    throw error
+                }
+                if isRetryable(error), attempt < maxRetries {
                     try await sleepForRetry(attempt: attempt)
                     continue
                 }

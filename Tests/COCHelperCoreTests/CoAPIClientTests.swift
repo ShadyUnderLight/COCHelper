@@ -157,6 +157,42 @@ final class CoAPIClientTests: XCTestCase {
         await expectError(try await client.request(path: "/locations"), .timeout)
     }
 
+    func testCancellationPropagates() async {
+        let client = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        MockURLProtocol.handler = { _ in
+            throw URLError(.cancelled)
+        }
+
+        do {
+            _ = try await client.request(path: "/locations")
+            XCTFail("expected cancellation error")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .cancelled, "取消应原样透传，而不是映射成网络错误")
+        } catch {
+            XCTFail("unexpected error type: \(error)")
+        }
+    }
+
+    func testNegativeMaxRetryCountDoesNotTrap() async {
+        let counter = CallCounter()
+        let client = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: -1, baseRetryDelay: 0.001),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        MockURLProtocol.handler = { request in
+            counter.increment()
+            return (mockResponse(500, url: request.url!), Data())
+        }
+
+        await expectError(try await client.request(path: "/locations"), .serverError(statusCode: 500))
+        XCTAssertEqual(counter.count, 1, "负数 maxRetryCount 应退化为单次尝试")
+    }
+
     // MARK: - Retry behavior
 
     func testRateLimitRetriesThenSucceeds() async throws {

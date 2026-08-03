@@ -402,6 +402,32 @@ public struct PlannerInput: Codable, Hashable, Sendable {
             ResearchTask(name: "备用兵种", durationDays: 6, resource: .elixir, priority: 65, dataKey: "backup-research")
         ]
     )
+
+    /// A safe starting point for a newly imported village. Values that are not
+    /// present in the account JSON stay empty/zero rather than inheriting the
+    /// demo account's inventory, workers, heroes, or task list.
+    public static let empty = PlannerInput(
+        townHallLevel: 1,
+        builderCount: 1,
+        researchRemainingDays: 0,
+        horizon: .days30,
+        checkInFrequency: .once,
+        warMode: .relaxed,
+        reserveHeroesDuringLeague: false,
+        avoidResourceOverflow: true,
+        magicItemsAvailable: false,
+        nextTownHallReadiness: .nearlyReady,
+        builderStates: (1...6).map { BuilderState(id: $0) },
+        resourceInventory: ResourceInventory(
+            gold: ResourceStock(current: 0, capacity: 1, dailyIncome: 0),
+            elixir: ResourceStock(current: 0, capacity: 1, dailyIncome: 0),
+            darkElixir: ResourceStock(current: 0, capacity: 1, dailyIncome: 0)
+        ),
+        heroStatuses: [],
+        gameDataCatalog: .demo,
+        tasks: [],
+        researchTasks: []
+    )
 }
 
 public struct PlannedTask: Identifiable, Hashable, Sendable {

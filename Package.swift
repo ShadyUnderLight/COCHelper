@@ -14,7 +14,10 @@ let package = Package(
     targets: [
         .target(
             name: "COCHelperCore",
-            path: "Sources/COCHelperCore"
+            path: "Sources/COCHelperCore",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .executableTarget(
             name: "COCHelper",

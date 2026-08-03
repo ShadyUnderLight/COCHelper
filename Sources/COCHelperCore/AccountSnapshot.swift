@@ -117,6 +117,14 @@ public struct AccountItem: Identifiable, Codable, Hashable, Sendable {
         "#" + String(dataID)
     }
 
+    public var displayName: String? {
+        AccountNameCatalog.bundled.name(for: section, dataID: dataID)
+    }
+
+    public var nameLabel: String {
+        displayName ?? rawIDLabel
+    }
+
     public var remainingTimeLabel: String? {
         guard let remainingSeconds else { return nil }
         return AccountDurationFormatter.label(remainingSeconds)
@@ -190,8 +198,40 @@ public struct AccountSnapshot: Codable, Hashable, Sendable {
         diagnostics.filter { $0.severity == .warning }.count
     }
 
+    /// Top-level records belonging to the main village. The copied payload
+    /// uses the `2` suffix for builder-base sections.
+    public var mainVillageObjectItemCount: Int {
+        objectSections
+            .filter { !Self.isBuilderBaseSection($0.key) }
+            .reduce(0) { $0 + $1.value.count }
+    }
+
+    public var builderBaseObjectItemCount: Int {
+        objectSections
+            .filter { Self.isBuilderBaseSection($0.key) }
+            .reduce(0) { $0 + $1.value.count }
+    }
+
+    public var mainVillageActiveItemCount: Int {
+        activeItems(inBuilderBase: false).count
+    }
+
+    public var builderBaseActiveItemCount: Int {
+        activeItems(inBuilderBase: true).count
+    }
+
+    public func activeItems(inBuilderBase: Bool) -> [AccountItem] {
+        allObjectItems.filter { item in
+            item.hasTimer && Self.isBuilderBaseSection(item.section) == inBuilderBase
+        }
+    }
+
     private func flatten(_ item: AccountItem) -> [AccountItem] {
         [item] + item.nestedItems.flatMap(flatten)
+    }
+
+    private static func isBuilderBaseSection(_ section: String) -> Bool {
+        section.hasSuffix("2")
     }
 }
 

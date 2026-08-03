@@ -180,4 +180,33 @@ final class RoadmapPlannerTests: XCTestCase {
         XCTAssertEqual(decoded.gameDataCatalog.catalogVersion, "demo-0.1")
         XCTAssertEqual(decoded.resourceInventory.gold.current, ResourceInventory.demo.gold.current)
     }
+
+    func testEmptyPlannerInputDoesNotReuseDemoAccountState() {
+        let input = PlannerInput.empty
+
+        XCTAssertTrue(input.tasks.isEmpty)
+        XCTAssertTrue(input.researchTasks.isEmpty)
+        XCTAssertTrue(input.heroStatuses.isEmpty)
+        XCTAssertEqual(input.resourceInventory.gold.current, 0)
+        XCTAssertEqual(input.resourceInventory.elixir.current, 0)
+        XCTAssertEqual(input.resourceInventory.darkElixir.current, 0)
+        XCTAssertTrue(input.builderStates.allSatisfy(\.isAvailable))
+    }
+
+    func testVillageProfileRoundTripsItsOwnPlannerInputAndSnapshot() throws {
+        let snapshot = try AccountSnapshotImporter.parse(
+            "{\"tag\":\"#VILLAGE1\",\"buildings\":[]}",
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        var input = PlannerInput.empty
+        input.horizon = .days180
+        let profile = VillageProfile(name: "主村", input: input, accountSnapshot: snapshot)
+
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(VillageProfile.self, from: data)
+
+        XCTAssertEqual(decoded.name, "主村")
+        XCTAssertEqual(decoded.input.horizon, .days180)
+        XCTAssertEqual(decoded.accountSnapshot?.tag, "#VILLAGE1")
+    }
 }

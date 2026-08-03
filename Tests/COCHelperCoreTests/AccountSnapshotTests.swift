@@ -110,6 +110,53 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.boosts["clocktower_cooldown"], 24_674)
     }
 
+    func testBundledCatalogMapsFixtureIDsToChineseNames() throws {
+        let snapshot = try AccountSnapshotImporter.parse(
+            try fixtureText(),
+            now: Date(timeIntervalSince1970: 1_785_736_933)
+        )
+
+        XCTAssertGreaterThan(AccountNameCatalog.bundled.count, 3_000)
+        XCTAssertEqual(
+            snapshot.objectSections["buildings"]?.first(where: { $0.dataID == 1_000_001 })?.displayName,
+            "大本营"
+        )
+        XCTAssertEqual(
+            snapshot.objectSections["heroes"]?.first?.displayName,
+            "野蛮人之王"
+        )
+        XCTAssertEqual(
+            snapshot.objectSections["equipment"]?.first?.displayName,
+            "野蛮人木偶"
+        )
+        XCTAssertEqual(
+            snapshot.objectSections["obstacles"]?.first?.displayName,
+            "7周岁生日惊喜"
+        )
+        XCTAssertEqual(
+            snapshot.allObjectItems.first(where: { $0.dataID == 102_000_033 })?.displayName,
+            "火热蜡烛生命值模组"
+        )
+
+        let unmapped = snapshot.allObjectItems.filter { $0.displayName == nil }
+        XCTAssertTrue(
+            unmapped.isEmpty,
+            "fixture contains unmapped object IDs: " + unmapped.map { $0.rawIDLabel }.joined(separator: ", ")
+        )
+        XCTAssertEqual(
+            AccountNameCatalog.bundled.name(forNumericSection: "house_parts", dataID: 82_000_000),
+            "部落营房地面"
+        )
+        XCTAssertEqual(
+            AccountNameCatalog.bundled.name(forNumericSection: "skins", dataID: 52_000_012),
+            "海上蛮王"
+        )
+        XCTAssertEqual(
+            AccountNameCatalog.bundled.name(forNumericSection: "sceneries", dataID: 60_000_005),
+            "海上基地"
+        )
+    }
+
     func testExpiredCooldownsNormalizeToZeroAndUseTerminalLabels() throws {
         let snapshot = try AccountSnapshotImporter.parse(
             """
@@ -128,6 +175,27 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertEqual(AccountDurationFormatter.label(0, zeroLabel: "已就绪"), "已就绪")
         XCTAssertEqual(AccountDurationFormatter.label(59), "不足1分钟")
         XCTAssertEqual(AccountDurationFormatter.label(60), "1分钟")
+    }
+
+    func testSnapshotSeparatesMainVillageAndBuilderBaseRecords() throws {
+        let snapshot = try AccountSnapshotImporter.parse(
+            sampleJSON,
+            now: Date(timeIntervalSince1970: 1_700_000_600)
+        )
+
+        XCTAssertEqual(snapshot.mainVillageObjectItemCount, 4)
+        XCTAssertEqual(snapshot.builderBaseObjectItemCount, 1)
+        XCTAssertEqual(snapshot.mainVillageActiveItemCount, 2)
+        XCTAssertEqual(snapshot.builderBaseActiveItemCount, 1)
+    }
+
+    func testBundledAccountNameCatalogLabelsKnownIDsAndKeepsUnknownIDsAuditable() {
+        XCTAssertEqual(AccountNameCatalog.bundled.name(for: "buildings", dataID: 1_000_001), "大本营")
+        XCTAssertEqual(AccountNameCatalog.bundled.name(for: "heroes", dataID: 28_000_001), "弓箭女皇")
+        XCTAssertNil(AccountNameCatalog.bundled.name(for: "buildings", dataID: 9_999_999))
+
+        let unknown = AccountItem(id: "buildings:0", section: "buildings", dataID: 9_999_999)
+        XCTAssertEqual(unknown.nameLabel, "#9999999")
     }
 
     private func fixtureText() throws -> String {

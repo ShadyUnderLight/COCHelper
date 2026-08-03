@@ -3,8 +3,7 @@ import COCHelperCore
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var selection: AppSection? = .roadmap
-    @State private var isPresentingTaskEditor = false
+    @State private var selection: AppSection? = .tracker
 
     var body: some View {
         NavigationSplitView {
@@ -13,11 +12,12 @@ struct ContentView: View {
                     ForEach(model.villages) { village in
                         Button {
                             model.selectVillage(id: village.id)
-                            selection = .roadmap
+                            selection = .tracker
                         } label: {
                             VillageSidebarRow(
                                 village: village,
-                                isSelected: village.id == model.selectedVillageID
+                                isSelected: village.id == model.selectedVillageID,
+                                activeCount: model.activeUpgradeCount(for: village)
                             )
                         }
                         .buttonStyle(.plain)
@@ -40,30 +40,25 @@ struct ContentView: View {
                     .foregroundStyle(Color.cocAccent)
                 }
 
-                Section("规划") {
-                    Label("Builder Roadmap", systemImage: "calendar.badge.clock")
-                        .tag(AppSection.roadmap)
+                Section("升级追踪") {
+                    Label("升级总览", systemImage: "chart.bar.xaxis")
+                        .tag(AppSection.tracker)
                 }
 
                 Section("当前村庄") {
                     Label("账号数据", systemImage: "doc.text.magnifyingglass")
                         .tag(AppSection.accountData)
-                }
-
-                Section("工作台") {
-                    Label("待升级项", systemImage: "list.bullet.rectangle")
-                        .tag(AppSection.tasks)
-                    Label("规则说明", systemImage: "slider.horizontal.3")
-                        .tag(AppSection.rules)
+                    Label("数据说明", systemImage: "info.circle")
+                        .tag(AppSection.info)
                 }
             }
             .listStyle(.sidebar)
             .navigationTitle("COC 助手")
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("本地多村庄规划")
+                    Text("本地升级追踪")
                         .font(.caption.weight(.semibold))
-                    Text("每个账号独立保存快照与规划")
+                    Text("每个村庄独立保存原始快照")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -71,39 +66,30 @@ struct ContentView: View {
                 .padding(14)
             }
         } detail: {
-            switch selection ?? .roadmap {
-            case .roadmap:
-                RoadmapDashboardView(isPresentingTaskEditor: $isPresentingTaskEditor)
+            switch selection ?? .tracker {
+            case .tracker:
+                UpgradeTrackerView {
+                    selection = .accountData
+                }
             case .accountData:
                 AccountDataView()
-            case .tasks:
-                TaskLibraryView(isPresentingTaskEditor: $isPresentingTaskEditor)
-            case .rules:
-                RulesView()
+            case .info:
+                TrackerInfoView()
             }
-        }
-        .sheet(isPresented: $isPresentingTaskEditor) {
-            TaskEditorView { task in
-                model.addTask(task)
-                isPresentingTaskEditor = false
-            }
-        }
-        .onChange(of: model.input) { _, _ in
-            model.rebuild()
         }
     }
 }
 
 private enum AppSection: Hashable {
-    case roadmap
+    case tracker
     case accountData
-    case tasks
-    case rules
+    case info
 }
 
 private struct VillageSidebarRow: View {
     let village: VillageProfile
     let isSelected: Bool
+    let activeCount: Int
 
     var body: some View {
         HStack(spacing: 9) {
@@ -123,11 +109,11 @@ private struct VillageSidebarRow: View {
 
             Spacer(minLength: 4)
 
-            if let snapshot = village.accountSnapshot {
-                Text(String(snapshot.activeItemCount))
+            if village.hasImportedData {
+                Text(String(activeCount))
                     .font(.caption2.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(snapshot.activeItemCount > 0 ? .orange : .secondary)
-                    .help("当前快照中的计时器数量")
+                    .foregroundStyle(activeCount > 0 ? .orange : .secondary)
+                    .help("当前快照中的正在升级记录")
             }
         }
         .padding(.horizontal, 8)
@@ -140,39 +126,462 @@ private struct VillageSidebarRow: View {
     }
 }
 
-struct RoadmapDashboardView: View {
+struct UpgradeTrackerView: View {
     @EnvironmentObject private var model: AppModel
-    @Binding var isPresentingTaskEditor: Bool
+    let openImport: () -> Void
+
+    @State private var selectedBase: TrackerBase = .home
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                DashboardHeaderView()
+            VStack(alignment: .leading, spacing: 20) {
+                TrackerHeaderView(selectedBase: $selectedBase, openImport: openImport)
+
                 if let snapshot = model.accountSnapshot {
-                    VillageSnapshotOverviewPanel(snapshot: snapshot)
+                    TimelineView(.periodic(from: Date(), by: 60)) { context in
+                        TrackerSnapshotContent(
+                            snapshot: snapshot,
+                            base: selectedBase,
+                            now: context.date
+                        )
+                    }
+                } else {
+                    EmptyTrackerView(openImport: openImport)
                 }
-                PlanningControlsView()
-                AccountStateView()
-                MetricsGrid(metrics: model.plan.metrics)
-                InsightsGrid(insights: model.plan.insights)
-                BuilderTimelineView(plan: model.plan)
-                ResearchQueueView(plan: model.plan)
-                TaskLibraryPreview(isPresentingTaskEditor: $isPresentingTaskEditor)
-                PrototypeBoundaryView()
             }
             .padding(28)
         }
         .background(Color.cocBackground)
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    model.resetToDemo()
-                } label: {
-                    Label("恢复示例", systemImage: "arrow.counterclockwise")
+    }
+}
+
+private struct TrackerHeaderView: View {
+    @EnvironmentObject private var model: AppModel
+    @Binding var selectedBase: TrackerBase
+    let openImport: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("升级追踪")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                    Text(model.currentVillageName)
+                        .font(.title3.weight(.semibold))
+                    Text(model.currentVillageTag ?? "尚未导入账号 JSON")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
                 }
-                .help("恢复一组可演示 Builder Roadmap 的本地示例数据")
+
+                Spacer()
+
+                HStack(spacing: 10) {
+                    Picker("基地", selection: $selectedBase) {
+                        ForEach(TrackerBase.allCases) { base in
+                            Text(base.title).tag(base)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 220)
+
+                    Button(action: openImport) {
+                        Label("更新快照", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Color.cocAccent)
+                }
+            }
+
+            Text("记录当前正在升级的项目、剩余时间和所有已读取的等级，不生成未来规划。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct TrackerSnapshotContent: View {
+    let snapshot: AccountSnapshot
+    let base: TrackerBase
+    let now: Date
+
+    var body: some View {
+        let records = UpgradeTracker.records(from: snapshot, base: base, at: now)
+        let activeRecords = records.filter(\.isUpgrading)
+
+        VStack(alignment: .leading, spacing: 18) {
+            TrackerMetricsView(
+                snapshot: snapshot,
+                base: base,
+                records: records,
+                activeRecords: activeRecords
+            )
+            ActiveUpgradesPanel(records: activeRecords)
+            UpgradeCatalogPanel(records: records)
+            SnapshotFreshnessNote(snapshot: snapshot)
+        }
+    }
+}
+
+private struct TrackerMetricsView: View {
+    let snapshot: AccountSnapshot
+    let base: TrackerBase
+    let records: [UpgradeLevelRecord]
+    let activeRecords: [UpgradeLevelRecord]
+
+    private var categoryCount: Int {
+        Set(records.map(\.category)).count
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            TrackerMetricCard(
+                title: "正在升级",
+                value: String(activeRecords.count),
+                detail: base.title,
+                systemImage: "hammer.fill",
+                tint: .orange
+            )
+            TrackerMetricCard(
+                title: "等级记录",
+                value: String(records.count),
+                detail: "可追踪项目",
+                systemImage: "list.number",
+                tint: Color.cocAccent
+            )
+            TrackerMetricCard(
+                title: "分类",
+                value: String(categoryCount),
+                detail: "已识别类别",
+                systemImage: "square.grid.2x2.fill",
+                tint: .green
+            )
+            TrackerMetricCard(
+                title: "快照计时",
+                value: String(snapshot.activeItemCount),
+                detail: "原始计时字段",
+                systemImage: "clock.fill",
+                tint: .blue
+            )
+        }
+    }
+}
+
+private struct TrackerMetricCard: View {
+    let title: String
+    let value: String
+    let detail: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Image(systemName: systemImage)
+                    .foregroundStyle(tint)
+                Spacer()
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Text(value)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .monospacedDigit()
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(15)
+        .background(Color.cocPanel, in: RoundedRectangle(cornerRadius: 15))
+        .overlay {
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+        }
+    }
+}
+
+private struct ActiveUpgradesPanel: View {
+    let records: [UpgradeLevelRecord]
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("正在升级", systemImage: "hammer.fill")
+                        .font(.headline)
+                    Spacer()
+                    Text(records.isEmpty ? "当前没有进行中的记录" : "按剩余时间排序")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if records.isEmpty {
+                    TrackerEmptyRow(
+                        systemImage: "checkmark.circle",
+                        title: "当前快照没有正在升级的项目",
+                        detail: "重新导入游戏内 JSON 后，这里会按剩余时间显示工人、实验室和其他队列记录。"
+                    )
+                } else {
+                    TrackerTableHeader()
+                    VStack(spacing: 0) {
+                        ForEach(records) { record in
+                            UpgradeRecordRow(record: record, prominent: true)
+                            if record.id != records.last?.id {
+                                Divider().padding(.leading, 46)
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+private struct UpgradeCatalogPanel: View {
+    let records: [UpgradeLevelRecord]
+
+    private var categories: [TrackerCategory] {
+        TrackerCategory.allCases.filter { category in
+            records.contains { $0.category == category }
+        }
+    }
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("所有可升级选项", systemImage: "list.bullet.rectangle.portrait")
+                            .font(.headline)
+                        Text("按类别记录当前等级；重复建筑会保留数量和独立记录。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(String(records.count) + " 条")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Color.cocAccent)
+                }
+
+                if records.isEmpty {
+                    TrackerEmptyRow(
+                        systemImage: "tray",
+                        title: "没有可显示的等级记录",
+                        detail: "当前基地的 JSON 中还没有识别到建筑、兵种、英雄、法术、战宠或装备记录。"
+                    )
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(categories) { category in
+                            UpgradeCategorySection(
+                                category: category,
+                                records: records.filter { $0.category == category }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct UpgradeCategorySection: View {
+    let category: TrackerCategory
+    let records: [UpgradeLevelRecord]
+    @State private var isExpanded = true
+
+    private var activeCount: Int {
+        records.filter(\.isUpgrading).count
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(spacing: 0) {
+                TrackerTableHeader()
+                ForEach(records) { record in
+                    UpgradeRecordRow(record: record, prominent: false)
+                    if record.id != records.last?.id {
+                        Divider().padding(.leading, 46)
+                    }
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: category.systemImage)
+                    .foregroundStyle(category.tint)
+                    .frame(width: 22)
+                Text(category.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(String(records.count))
+                    .font(.caption2.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                if activeCount > 0 {
+                    Text(String(activeCount) + " 升级中")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.orange)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 5)
+        }
+        .tint(.primary)
+    }
+}
+
+private struct TrackerTableHeader: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("项目")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("等级")
+                .frame(width: 100, alignment: .trailing)
+            Text("状态")
+                .frame(width: 150, alignment: .trailing)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.leading, 46)
+        .padding(.trailing, 4)
+    }
+}
+
+private struct UpgradeRecordRow: View {
+    let record: UpgradeLevelRecord
+    let prominent: Bool
+
+    private var rowFont: Font {
+        prominent ? .subheadline : .caption
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: record.category.systemImage)
+                .font(prominent ? .body : .caption)
+                .foregroundStyle(record.category.tint)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 7) {
+                    Text(record.name)
+                        .font(rowFont.weight(.semibold))
+                        .lineLimit(1)
+                    if let countLabel = record.countLabel {
+                        Text(countLabel)
+                            .font(.caption2.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.white.opacity(0.07), in: Capsule())
+                    }
+                    if record.isNested {
+                        Text("嵌套")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text(record.sourceSection + " · " + record.dataIDLabel)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: 10)
+
+            Text(record.levelLabel)
+                .font(rowFont.weight(.bold).monospacedDigit())
+                .foregroundStyle(record.isUpgrading ? .orange : .primary)
+                .frame(width: 100, alignment: .trailing)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                if record.isUpgrading, let remainingSeconds = record.remainingSeconds {
+                    Text(AccountDurationFormatter.label(remainingSeconds, zeroLabel: "已完成"))
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.orange)
+                    if let progress = record.progress {
+                        ProgressView(value: progress)
+                            .progressViewStyle(.linear)
+                            .tint(.orange)
+                            .frame(width: 112)
+                    }
+                } else {
+                    Text(record.statusLabel)
+                        .font(.caption)
+                        .foregroundStyle(record.hasTimer ? Color.secondary : Color.green)
+                }
+            }
+            .frame(width: 150, alignment: .trailing)
+        }
+        .padding(.vertical, prominent ? 10 : 8)
+    }
+}
+
+private struct SnapshotFreshnessNote: View {
+    let snapshot: AccountSnapshot
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(Color.cocAccent)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("快照状态")
+                    .font(.caption.weight(.semibold))
+                Text("导入于 " + snapshot.importedAt.formatted(date: .abbreviated, time: .shortened) + "。进行中的倒计时会在本地继续显示；完成后请重新导入一次 JSON 刷新等级。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+private struct EmptyTrackerView: View {
+    let openImport: () -> Void
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 14) {
+                Image(systemName: "arrow.down.doc.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(Color.cocAccent)
+                Text("先导入一个村庄快照")
+                    .font(.title3.weight(.bold))
+                Text("把游戏内复制的账号 JSON 粘贴到“账号数据”，确认后这里会展示正在升级记录和所有可升级选项的等级。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: openImport) {
+                    Label("打开账号数据", systemImage: "doc.text.magnifyingglass")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.cocAccent)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+        }
+    }
+}
+
+private struct TrackerEmptyRow: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(Color.cocAccent)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 8)
     }
 }
 
@@ -183,90 +592,15 @@ struct AccountDataView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("当前村庄 · " + model.currentVillageName)
+                    Text("账号数据")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                    Text("在游戏内复制原始 JSON，粘贴后解析；导入结果只会写入当前选中的村庄档案。")
+                    Text("粘贴游戏内复制的 JSON，解析后保存为当前村庄的本地快照。")
+                        .font(.title3)
                         .foregroundStyle(.secondary)
                 }
 
                 VillageNameEditor()
-
-                Panel {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Label("粘贴原始 JSON", systemImage: "doc.on.clipboard")
-                                .font(.headline)
-                            Spacer()
-                            Text("支持直接 ⌘V")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Picker("导入目标", selection: $model.importIntoCurrentVillage) {
-                            Text("按账号标签自动归档（推荐）").tag(false)
-                            Text("覆盖当前村庄").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 420)
-
-                        Text(model.importIntoCurrentVillage
-                            ? "解析后会更新当前村庄；适合 JSON 没有 tag 或你明确要覆盖当前档案。"
-                            : "解析后按 JSON 的 tag 自动找到已有村庄并更新，否则新建一个村庄档案。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        ZStack(alignment: .topLeading) {
-                            TextEditor(text: $model.importText)
-                                .font(.system(.body, design: .monospaced))
-                                .scrollContentBackground(.hidden)
-                                .padding(8)
-                                .frame(minHeight: 300)
-                                .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
-
-                            if model.importText.isEmpty {
-                                Text("把游戏复制出来的 JSON 粘贴到这里…")
-                                    .font(.body.monospaced())
-                                    .foregroundStyle(.secondary)
-                                    .padding(17)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-
-                        HStack(spacing: 10) {
-                            Button {
-                                model.pasteFromClipboard()
-                            } label: {
-                                Label("从剪贴板粘贴", systemImage: "doc.on.clipboard")
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("清空") {
-                                model.importText = ""
-                                model.discardPendingAccountSnapshot()
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(model.importText.isEmpty)
-
-                            Spacer()
-
-                            Button {
-                                model.parseAccountText()
-                            } label: {
-                                Label("解析并预览", systemImage: "checkmark.seal")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Color.cocAccent)
-                            .disabled(model.importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-
-                        if let error = model.accountImportError {
-                            Label(error, systemImage: "xmark.octagon.fill")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
+                AccountImportPanel()
 
                 if let pending = model.pendingAccountSnapshot {
                     AccountSnapshotSummaryView(snapshot: pending, isPending: true)
@@ -276,8 +610,11 @@ struct AccountDataView: View {
                     AccountSnapshotSummaryView(snapshot: snapshot, isPending: false)
                 } else if model.pendingAccountSnapshot == nil {
                     Panel {
-                        Label("还没有已应用的账号快照", systemImage: "tray")
-                            .foregroundStyle(.secondary)
+                        TrackerEmptyRow(
+                            systemImage: "tray",
+                            title: "当前村庄还没有已应用快照",
+                            detail: "解析成功后需要点击“应用到当前村庄”，数据才会进入升级追踪。"
+                        )
                     }
                 }
             }
@@ -287,7 +624,67 @@ struct AccountDataView: View {
     }
 }
 
-struct VillageNameEditor: View {
+private struct AccountImportPanel: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("导入快照", systemImage: "arrow.down.doc")
+                        .font(.headline)
+                    Spacer()
+                    Text("不会联网")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+
+                TextEditor(text: $model.importText)
+                    .font(.system(.body, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .frame(minHeight: 230)
+                    .background(Color.cocElevated, in: RoundedRectangle(cornerRadius: 12))
+
+                HStack {
+                    Button {
+                        model.pasteFromClipboard()
+                    } label: {
+                        Label("从剪贴板粘贴", systemImage: "doc.on.clipboard")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        model.parseAccountText()
+                    } label: {
+                        Label("解析文本", systemImage: "checkmark.magnifyingglass")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.cocAccent)
+                    .disabled(model.importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    Spacer()
+
+                    if model.pendingAccountSnapshot != nil {
+                        Button("清除待确认") {
+                            model.discardPendingAccountSnapshot()
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+
+                if let error = model.accountImportError {
+                    Label(error, systemImage: "exclamationmark.octagon.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+private struct VillageNameEditor: View {
     @EnvironmentObject private var model: AppModel
     @State private var draftName = ""
 
@@ -314,13 +711,17 @@ struct VillageNameEditor: View {
     }
 }
 
-struct AccountSnapshotSummaryView: View {
+private struct AccountSnapshotSummaryView: View {
     @EnvironmentObject private var model: AppModel
     let snapshot: AccountSnapshot
     let isPending: Bool
 
     private var snapshotTitle: String {
         isPending ? "待确认的账号快照" : "当前账号快照"
+    }
+
+    private var activeItems: [AccountItem] {
+        snapshot.activeItems.filter { ($0.remainingSeconds ?? 0) > 0 }
     }
 
     var body: some View {
@@ -331,9 +732,7 @@ struct AccountSnapshotSummaryView: View {
                         Label(snapshotTitle, systemImage: isPending ? "questionmark.circle" : "checkmark.circle.fill")
                             .font(.headline)
                         Text(snapshot.tag ?? "未提供账号标签")
-                            .font(.title3.weight(.semibold).monospaced())
-                        Text(capturedAtLabel)
-                            .font(.caption)
+                            .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -342,109 +741,69 @@ struct AccountSnapshotSummaryView: View {
                         .foregroundStyle(isPending ? .orange : .green)
                 }
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    SnapshotMetric(title: "对象记录", value: String(snapshot.objectItemCount))
-                    SnapshotMetric(title: "数字记录", value: String(snapshot.numericItemCount))
-                    SnapshotMetric(title: "计时器", value: String(snapshot.activeItemCount))
+                HStack(spacing: 10) {
+                    SnapshotMetric(title: "主村记录", value: String(snapshot.mainVillageObjectItemCount))
+                    SnapshotMetric(title: "建筑基地", value: String(snapshot.builderBaseObjectItemCount))
+                    SnapshotMetric(title: "计时字段", value: String(snapshot.activeItemCount))
                     SnapshotMetric(title: "警告", value: String(snapshot.warningCount))
                 }
 
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("快照时间")
+                            .font(.caption.weight(.semibold))
+                        Text(snapshot.capturedAt?.formatted(date: .abbreviated, time: .shortened) ?? "未提供")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("解析器")
+                            .font(.caption.weight(.semibold))
+                        Text(AccountSnapshotImporter.parserVersion)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+
                 if !snapshot.sectionNames.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("已读取的字段")
-                            .font(.subheadline.weight(.semibold))
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)], alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("已读取分区")
+                            .font(.caption.weight(.semibold))
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), spacing: 8)], alignment: .leading, spacing: 8) {
                             ForEach(snapshot.sectionNames, id: \.self) { section in
-                                HStack {
-                                    Text(section)
-                                        .font(.caption.monospaced())
-                                    Spacer()
-                                    Text(String(itemCount(for: section)))
-                                        .font(.caption.weight(.semibold).monospacedDigit())
-                                        .foregroundStyle(.secondary)
-                                }
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 7)
-                                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                                Text(section)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
+                                    .background(Color.white.opacity(0.06), in: Capsule())
                             }
                         }
                     }
                 }
 
-                if !snapshot.activeItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("发现的计时器")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text("不会猜测工人或队列归属")
-                                .font(.caption)
+                if !activeItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("导入时检测到的进行中记录")
+                            .font(.caption.weight(.semibold))
+                        ForEach(Array(activeItems.prefix(10))) { item in
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 7, height: 7)
+                                Text(item.nameLabel)
+                                    .font(.caption)
+                                Spacer()
+                                Text(item.remainingTimeLabel ?? "进行中")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        if activeItems.count > 10 {
+                            Text("还有 " + String(activeItems.count - 10) + " 条，升级总览会全部列出。")
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
-                        }
-                        ForEach(Array(snapshot.activeItems.prefix(12))) { item in
-                            HStack(spacing: 10) {
-                                Image(systemName: item.isActive ? "clock.fill" : "clock.badge.xmark")
-                                    .foregroundStyle(item.isActive ? .orange : .secondary)
-                                    .frame(width: 20)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.section + " · " + item.nameLabel)
-                                        .font(.caption)
-                                    if item.displayName != nil {
-                                        Text(item.rawIDLabel)
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                if let level = item.level {
-                                    Text("等级 " + String(level))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(item.remainingTimeLabel ?? "无剩余时间")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(item.isActive ? .orange : .secondary)
-                            }
-                            .padding(.vertical, 3)
-                        }
-                        if snapshot.activeItems.count > 12 {
-                            Text("还有 " + String(snapshot.activeItems.count - 12) + " 个计时器未展开。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                if !snapshot.boosts.isEmpty || !helperCooldownItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("加速与冷却")
-                            .font(.subheadline.weight(.semibold))
-                        ForEach(snapshot.boosts.keys.sorted(), id: \.self) { key in
-                            HStack {
-                                Text(key)
-                                    .font(.caption.monospaced())
-                                Spacer()
-                                Text(AccountDurationFormatter.label(snapshot.boosts[key] ?? 0, zeroLabel: "已就绪"))
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        ForEach(helperCooldownItems) { item in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.section + " · " + item.nameLabel + " · helper_cooldown")
-                                        .font(.caption)
-                                    if item.displayName != nil {
-                                        Text(item.rawIDLabel)
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                Spacer()
-                                Text(AccountDurationFormatter.label(item.remainingHelperCooldownSeconds ?? 0, zeroLabel: "已就绪"))
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
                         }
                     }
                 }
@@ -452,9 +811,9 @@ struct AccountSnapshotSummaryView: View {
                 if !snapshot.diagnostics.isEmpty {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("解析诊断")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.caption.weight(.semibold))
                         ForEach(snapshot.diagnostics) { diagnostic in
-                            HStack(alignment: .top, spacing: 7) {
+                            HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: diagnostic.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
                                     .foregroundStyle(diagnostic.severity == .warning ? .orange : .blue)
                                 Text(diagnostic.path + "：" + diagnostic.message)
@@ -466,19 +825,24 @@ struct AccountSnapshotSummaryView: View {
                     }
                 }
 
-                HStack {
-                    if isPending {
-                        Button("取消预览") {
+                if isPending {
+                    HStack {
+                        Spacer()
+                        Button("放弃") {
                             model.discardPendingAccountSnapshot()
                         }
-                        .buttonStyle(.borderless)
-                        Spacer()
-                        Button("应用此快照") {
+                        .buttonStyle(.bordered)
+                        Button("应用到当前村庄") {
                             model.applyPendingAccountSnapshot()
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.cocAccent)
-                    } else {
+                    }
+                } else {
+                    HStack {
+                        Text("原始 JSON 会随快照保存在本机，未知字段不会被静默丢弃。")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                         Spacer()
                         Button("清除当前快照", role: .destructive) {
                             model.clearAccountSnapshot()
@@ -489,1126 +853,56 @@ struct AccountSnapshotSummaryView: View {
             }
         }
     }
-
-    private var capturedAtLabel: String {
-        let captured = snapshot.capturedAt?.formatted(date: .abbreviated, time: .shortened) ?? "未提供快照时间"
-        if let age = snapshot.ageSeconds, age > 0 {
-            return "快照时间：" + captured + " · 导入时已扣除 " + AccountDurationFormatter.label(age)
-        }
-        return "快照时间：" + captured
-    }
-
-    private func itemCount(for section: String) -> Int {
-        snapshot.objectSections[section]?.count ?? snapshot.numericSections[section]?.count ?? 0
-    }
-
-    private var helperCooldownItems: [AccountItem] {
-        snapshot.allObjectItems.filter { $0.remainingHelperCooldownSeconds != nil }
-    }
-
 }
 
-struct SnapshotMetric: View {
+private struct SnapshotMetric: View {
     let title: String
     let value: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
             Text(value)
-                .font(.title3.weight(.bold).monospacedDigit())
+                .font(.headline.monospacedDigit())
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
-struct VillageSnapshotOverviewPanel: View {
-    let snapshot: AccountSnapshot
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 13) {
-                HStack(alignment: .top) {
-                    Label("已导入的村庄数据", systemImage: "checkmark.circle.fill")
-                        .font(.headline)
-                        .foregroundStyle(.green)
-                    Spacer()
-                    Text(snapshot.tag ?? "无账号标签")
-                        .font(.caption.weight(.semibold).monospaced())
-                        .foregroundStyle(.secondary)
-                }
-
-                LazyVGrid(
-                    columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
-                    spacing: 10
-                ) {
-                    SnapshotMetric(title: "主村记录", value: String(snapshot.mainVillageObjectItemCount))
-                    SnapshotMetric(title: "建筑工人基地", value: String(snapshot.builderBaseObjectItemCount))
-                    SnapshotMetric(title: "主村计时器", value: String(snapshot.mainVillageActiveItemCount))
-                    SnapshotMetric(title: "建筑基地计时器", value: String(snapshot.builderBaseActiveItemCount))
-                }
-
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundStyle(Color.cocAccent)
-                    Text("JSON 已自动读取账号标识、两套村庄记录、等级/数量、计时器、加速和冷却。资源库存、工人编号与队列归属不在这份 JSON 中，只有需要精排时才补充。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if !snapshot.activeItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("当前进行中的记录（只读）")
-                            .font(.subheadline.weight(.semibold))
-                        ForEach(Array(snapshot.activeItems.prefix(5))) { item in
-                            HStack(spacing: 8) {
-                                Image(systemName: item.section.hasSuffix("2") ? "hammer.circle" : "hammer.circle.fill")
-                                    .foregroundStyle(item.section.hasSuffix("2") ? .orange : Color.cocAccent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.section + " · " + item.nameLabel)
-                                        .font(.caption)
-                                    if item.displayName != nil {
-                                        Text(item.rawIDLabel)
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                if let level = item.level {
-                                    Text("等级 " + String(level))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(item.remainingTimeLabel ?? "无剩余时间")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.orange)
-                            }
-                        }
-                        if snapshot.activeItems.count > 5 {
-                            Text("还有 " + String(snapshot.activeItems.count - 5) + " 条进行中记录，详情见“账号数据”。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct DashboardHeaderView: View {
-    @EnvironmentObject private var model: AppModel
-
-    private var accountSummary: String {
-        let townHall = String(model.input.townHallLevel)
-        let builders = String(model.input.builderCount)
-        let horizon = String(model.input.horizon.rawValue)
-        let imported = model.accountSnapshot == nil ? "未导入账号 JSON" : "已导入账号 JSON"
-        return "大本营 " + townHall + " · " + builders + " 个工人 · 未来 " + horizon + " 天 · " + imported
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    Text(model.currentVillageName)
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text("Builder Roadmap")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.cocAccent)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(Color.cocAccent.opacity(0.12), in: Capsule())
-                }
-                Text("按当前村庄独立展示数据与规划，不让不同账号的状态互相串线。")
-                    .font(.title3)
-                    .foregroundStyle(.primary)
-                Text(accountSummary)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                if let tag = model.currentVillageTag {
-                    Text(tag)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 7) {
-                Text("当前策略")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(model.input.warMode.title)
-                    .font(.headline)
-                Text(model.input.warMode.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
-            .padding(16)
-            .frame(width: 190, alignment: .trailing)
-            .background(Color.cocElevated, in: RoundedRectangle(cornerRadius: 16))
-        }
-    }
-}
-
-struct PlanningControlsView: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Label("规划参数", systemImage: "slider.horizontal.3")
-                        .font(.headline)
-                    Spacer()
-                    Text(model.accountSnapshot == nil ? "调整后会自动重新计算" : "JSON 数据已归档；这里只补充策略")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Grid(alignment: .leading, horizontalSpacing: 22, verticalSpacing: 14) {
-                    GridRow {
-                        ParameterLabel(title: "规划窗口", subtitle: "看多远")
-                        Picker("规划窗口", selection: $model.input.horizon) {
-                            ForEach(PlanningHorizon.allCases) { horizon in
-                                Text(horizon.title).tag(horizon)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 260)
-
-                        ParameterLabel(title: "每日上线", subtitle: "影响错峰精度")
-                        Picker("每日上线", selection: $model.input.checkInFrequency) {
-                            ForEach(DailyCheckInFrequency.allCases) { frequency in
-                                Text(frequency.title).tag(frequency)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 180)
-                    }
-
-                    GridRow {
-                        ParameterLabel(title: "部落战模式", subtitle: "影响英雄安排")
-                        Picker("部落战模式", selection: $model.input.warMode) {
-                            ForEach(WarMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 260)
-
-                        ParameterLabel(title: "大本营准备度", subtitle: "防止升级过早")
-                        Picker("大本营准备度", selection: $model.input.nextTownHallReadiness) {
-                            ForEach(TownHallReadiness.allCases) { readiness in
-                                Text(readiness.title).tag(readiness)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 180)
-                    }
-
-                    GridRow {
-                        ParameterLabel(title: "工人与等级", subtitle: "当前账号状态")
-                        HStack(spacing: 10) {
-                            Stepper("大本营 " + String(model.input.townHallLevel), value: $model.input.townHallLevel, in: 1...18)
-                            Stepper("工人 " + String(model.input.builderCount), value: $model.input.builderCount, in: 1...6)
-                        }
-                        .frame(width: 260, alignment: .leading)
-
-                        ParameterLabel(title: "约束开关", subtitle: "长期体验")
-                        HStack(spacing: 16) {
-                            Toggle("联赛保留英雄", isOn: $model.input.reserveHeroesDuringLeague)
-                            Toggle("资源错峰", isOn: $model.input.avoidResourceOverflow)
-                            Toggle("有魔法物品", isOn: $model.input.magicItemsAvailable)
-                        }
-                        .toggleStyle(.checkbox)
-                        .frame(width: 420, alignment: .leading)
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct ParameterLabel: View {
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(width: 112, alignment: .leading)
-    }
-}
-
-struct AccountStateView: View {
-    @EnvironmentObject private var model: AppModel
-    @State private var isSupplementExpanded = false
-
-    var body: some View {
-        Group {
-            if model.accountSnapshot == nil {
-                supplementalPanels
-            } else {
-                Panel {
-                    DisclosureGroup(isExpanded: $isSupplementExpanded) {
-                        supplementalPanels
-                            .padding(.top, 12)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Label("补充规划数据（可选）", systemImage: "slider.horizontal.3")
-                                .font(.headline)
-                            Text("JSON 没有资源库存、工人编号和英雄保护窗口；只有需要更精确排程时再展开填写。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-            }
-        }
-        .onChange(of: model.accountSnapshot != nil) { _, hasSnapshot in
-            isSupplementExpanded = !hasSnapshot
-        }
-    }
-
-    @ViewBuilder
-    private var supplementalPanels: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-            BuilderStatusPanel()
-            ResourceInventoryPanel()
-            HeroStatusPanel()
-            GameDataPanel()
-        }
-    }
-}
-
-struct BuilderStatusPanel: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("工人当前状态", systemImage: "hammer.fill")
-                        .font(.headline)
-                    Spacer()
-                    Text("剩余时间会成为下一段排程的起点")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 9) {
-                    ForEach(0..<model.input.builderCount, id: \.self) { index in
-                        VStack(alignment: .leading, spacing: 7) {
-                            HStack {
-                                Text(model.input.builderStates[index].title)
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text(model.input.builderStates[index].isAvailable ? "空闲" : "进行中")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(model.input.builderStates[index].isAvailable ? .green : .orange)
-                            }
-                            TextField("当前任务", text: builderNameBinding(index))
-                                .textFieldStyle(.roundedBorder)
-                            HStack(spacing: 6) {
-                                TextField("剩余天数", value: builderRemainingBinding(index), format: .number.precision(.fractionLength(1)))
-                                    .textFieldStyle(.roundedBorder)
-                                Text("天")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(10)
-                        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
-                    }
-                }
-            }
-        }
-    }
-
-    private func builderNameBinding(_ index: Int) -> Binding<String> {
-        Binding(
-            get: { model.input.builderStates[index].currentTaskName },
-            set: { model.input.builderStates[index].currentTaskName = $0 }
-        )
-    }
-
-    private func builderRemainingBinding(_ index: Int) -> Binding<Double> {
-        Binding(
-            get: { model.input.builderStates[index].remainingDays },
-            set: { model.input.builderStates[index].remainingDays = max(0, $0) }
-        )
-    }
-}
-
-struct ResourceInventoryPanel: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("资源库存", systemImage: "shippingbox.fill")
-                        .font(.headline)
-                    Spacer()
-                    Text("当前 / 上限 / 日收入")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                ResourceStockRow(title: "金币", tint: .yellow, stock: $model.input.resourceInventory.gold)
-                ResourceStockRow(title: "圣水", tint: .cyan, stock: $model.input.resourceInventory.elixir)
-                ResourceStockRow(title: "黑油", tint: .purple, stock: $model.input.resourceInventory.darkElixir)
-            }
-        }
-    }
-}
-
-struct ResourceStockRow: View {
-    let title: String
-    let tint: Color
-    @Binding var stock: ResourceStock
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(tint)
-                .frame(width: 42, alignment: .leading)
-            ResourceNumberField(label: "当前", value: $stock.current)
-            ResourceNumberField(label: "上限", value: $stock.capacity)
-            ResourceNumberField(label: "日收入", value: $stock.dailyIncome)
-        }
-    }
-}
-
-struct ResourceNumberField: View {
-    let label: String
-    @Binding var value: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            TextField(label, value: $value, format: .number)
-                .textFieldStyle(.roundedBorder)
-        }
-    }
-}
-
-struct HeroStatusPanel: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("英雄可用窗口", systemImage: "person.crop.circle.badge.clock")
-                        .font(.headline)
-                    Spacer()
-                    Text("升级剩余 / 出战保护至")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                ForEach(Array(model.input.heroStatuses.indices), id: \.self) { index in
-                    HStack(spacing: 7) {
-                        TextField("英雄", text: heroNameBinding(index))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(minWidth: 72)
-                        TextField("等级", value: heroLevelBinding(index), format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 58)
-                        TextField("升级剩余", value: heroRemainingBinding(index), format: .number.precision(.fractionLength(1)))
-                            .textFieldStyle(.roundedBorder)
-                        TextField("保护至", value: heroProtectedBinding(index), format: .number.precision(.fractionLength(1)))
-                            .textFieldStyle(.roundedBorder)
-                        Text("天")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Text("保护至 0 表示没有额外的部落战保护窗口；英雄当前升级剩余时间会自动阻止下一次升级过早开始。")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func heroNameBinding(_ index: Int) -> Binding<String> {
-        Binding(
-            get: { model.input.heroStatuses[index].name },
-            set: { model.input.heroStatuses[index].name = $0 }
-        )
-    }
-
-    private func heroLevelBinding(_ index: Int) -> Binding<Int> {
-        Binding(
-            get: { model.input.heroStatuses[index].level },
-            set: { model.input.heroStatuses[index].level = max(1, $0) }
-        )
-    }
-
-    private func heroRemainingBinding(_ index: Int) -> Binding<Double> {
-        Binding(
-            get: { model.input.heroStatuses[index].upgradeRemainingDays },
-            set: { model.input.heroStatuses[index].upgradeRemainingDays = max(0, $0) }
-        )
-    }
-
-    private func heroProtectedBinding(_ index: Int) -> Binding<Double> {
-        Binding(
-            get: { model.input.heroStatuses[index].warProtectedUntilDay },
-            set: { model.input.heroStatuses[index].warProtectedUntilDay = max(0, $0) }
-        )
-    }
-}
-
-struct GameDataPanel: View {
-    @EnvironmentObject private var model: AppModel
-
-    private var summary: String {
-        let status = model.input.gameDataCatalog.status
-        return status.versionLabel + " · " + status.source.title + " · " + String(status.entryCount) + " 条记录"
-    }
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("版本化游戏数据", systemImage: "checkmark.seal")
-                        .font(.headline)
-                    Spacer()
-                    Text(model.input.gameDataCatalog.source.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(model.input.gameDataCatalog.source == .demo ? .orange : .green)
-                }
-                Text(summary)
-                    .font(.subheadline.weight(.semibold).monospaced())
-                Text("游戏版本：" + model.input.gameDataCatalog.gameVersion)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("当前工期仍以账号填写的剩余时间为准；数据层只提供成本、资源类型、分类和默认工期元数据。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Image(systemName: model.input.gameDataCatalog.status.isStructurallyValid ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                        .foregroundStyle(model.input.gameDataCatalog.status.isStructurallyValid ? .green : .red)
-                    Text(model.input.gameDataCatalog.status.isStructurallyValid ? "合同结构有效" : "合同结构需要修复")
-                        .font(.caption.weight(.semibold))
-                    Spacer()
-                    Button("恢复演示数据层") {
-                        model.input.gameDataCatalog = .demo
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        }
-    }
-}
-
-struct MetricsGrid: View {
-    let metrics: PlanMetrics
-
-    private var cards: [(String, String, String, Color, Double)] {
-        [
-            ("规划评分", String(metrics.overallScore), "不是速度分，是体验平衡分", .cocAccent, Double(metrics.overallScore) / 100),
-            ("部落战友好度", String(metrics.warFriendlyScore), "英雄可用性与战期策略", .green, Double(metrics.warFriendlyScore) / 100),
-            ("建筑 / 科技同步", String(metrics.syncScore), "核心建筑与科技队列的衔接", .blue, Double(metrics.syncScore) / 100),
-            ("资源压力", String(metrics.resourcePressure), "越低越平滑 · 卡住 " + String(metrics.resourceBlockedCount) + " 项", .orange, Double(metrics.resourcePressure) / 100)
-        ]
-    }
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-            ForEach(cards, id: \.0) { card in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(card.0)
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Image(systemName: card.0 == "资源压力" ? "waveform.path.ecg" : "chart.line.uptrend.xyaxis")
-                            .foregroundStyle(card.3)
-                    }
-                    Text(card.1)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(card.3)
-                    Text(card.2)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    ProgressView(value: card.4)
-                        .tint(card.3)
-                }
-                .padding(16)
-                .background(Color.cocPanel, in: RoundedRectangle(cornerRadius: 16))
-            }
-        }
-    }
-}
-
-struct InsightsGrid: View {
-    let insights: [PlannerInsight]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("规划器的判断", systemImage: "sparkles")
-                    .font(.headline)
-                Spacer()
-                Text("每条建议都对应一个可调整的输入")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                ForEach(insights) { insight in
-                    InsightCard(insight: insight)
-                }
-            }
-        }
-    }
-}
-
-struct InsightCard: View {
-    let insight: PlannerInsight
-
-    private var tint: Color {
-        switch insight.tone {
-        case .positive: .green
-        case .warning: .orange
-        case .information: .blue
-        case .neutral: .secondary
-        }
-    }
-
-    private var icon: String {
-        switch insight.tone {
-        case .positive: "checkmark.seal.fill"
-        case .warning: "exclamationmark.triangle.fill"
-        case .information: "info.circle.fill"
-        case .neutral: "circle.dashed"
-        }
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(tint)
-                .font(.title3)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(insight.title)
-                    .font(.subheadline.weight(.semibold))
-                Text(insight.message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(tint)
-                .frame(width: 3)
-                .padding(.vertical, 12)
-        }
-    }
-}
-
-struct BuilderTimelineView: View {
-    let plan: RoadmapPlan
-
-    private var timelineWidth: CGFloat {
-        max(820, CGFloat(plan.horizonDays) * 9)
-    }
-
-    private var markers: [Int] {
-        [0, 7, 30, 60, 90, 120, 150, 180].filter { $0 <= plan.horizonDays }
-    }
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("工人时间线", systemImage: "chart.bar.xaxis")
-                            .font(.headline)
-                        Text("同一条线上的任务会顺序执行；留白代表有意保留的资源或部落战缓冲。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text("未来 " + String(plan.horizonDays) + " 天")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-
-                ScrollView(.horizontal, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 12) {
-                            Text("工人")
-                                .font(.caption.weight(.semibold))
-                                .frame(width: 136, alignment: .leading)
-                            RulerView(markers: markers, horizonDays: plan.horizonDays, width: timelineWidth)
-                        }
-
-                        ForEach(plan.builders) { builder in
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(builder.title)
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(builder.role)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(width: 136, height: 58, alignment: .leading)
-
-                                TimelineLaneView(builder: builder, horizonDays: plan.horizonDays, width: timelineWidth)
-                            }
-                        }
-                    }
-                    .frame(width: 148 + timelineWidth, alignment: .leading)
-                }
-            }
-        }
-    }
-}
-
-struct RulerView: View {
-    let markers: [Int]
-    let horizonDays: Int
-    let width: CGFloat
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            Rectangle()
-                .fill(Color.white.opacity(0.12))
-                .frame(height: 1)
-            ForEach(markers, id: \.self) { marker in
-                VStack(spacing: 4) {
-                    Text(marker == 0 ? "今天" : "D" + String(marker))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Rectangle()
-                        .fill(Color.white.opacity(0.16))
-                        .frame(width: 1, height: 8)
-                }
-                .offset(x: xPosition(for: marker))
-            }
-        }
-        .frame(width: width, height: 24, alignment: .leading)
-    }
-
-    private func xPosition(for day: Int) -> CGFloat {
-        guard horizonDays > 0 else { return 0 }
-        return CGFloat(day) / CGFloat(horizonDays) * width
-    }
-}
-
-struct TimelineLaneView: View {
-    let builder: BuilderPlan
-    let horizonDays: Int
-    let width: CGFloat
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.045))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.09), lineWidth: 1)
-                }
-
-            ForEach(builder.tasks) { task in
-                if task.startDay < Double(horizonDays) {
-                    TimelineBlock(task: task, horizonDays: horizonDays, width: width)
-                }
-            }
-        }
-        .frame(width: width, height: 58, alignment: .leading)
-    }
-}
-
-struct TimelineBlock: View {
-    let task: PlannedTask
-    let horizonDays: Int
-    let width: CGFloat
-
-    private var visibleStart: Double { max(0, task.startDay) }
-    private var visibleEnd: Double { min(Double(horizonDays), task.endDay) }
-    private var blockWidth: CGFloat {
-        max(54, CGFloat(max(0.25, visibleEnd - visibleStart) / Double(horizonDays)) * width)
-    }
-    private var xOffset: CGFloat {
-        CGFloat(visibleStart / Double(horizonDays)) * width
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(task.name)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-            Text("D" + String(Int(task.startDay.rounded())) + "–" + String(Int(task.endDay.rounded())))
-                .font(.caption2)
-                .opacity(0.8)
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .frame(width: blockWidth, height: 42, alignment: .leading)
-        .background(task.category.tint, in: RoundedRectangle(cornerRadius: 10))
-        .shadow(color: task.category.tint.opacity(0.15), radius: 4, y: 2)
-        .offset(x: xOffset, y: 0)
-        .help(task.note ?? "无额外说明")
-    }
-}
-
-struct ResearchQueueView: View {
-    let plan: RoadmapPlan
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("科技队列", systemImage: "flask")
-                        .font(.headline)
-                    Spacer()
-                    Text("不占建筑工人，但必须和建筑节奏同步")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if plan.research.isEmpty {
-                    Text("暂无科技目标")
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(plan.research) { task in
-                            HStack(spacing: 12) {
-                                Image(systemName: "atom")
-                                    .foregroundStyle(Color.blue)
-                                    .frame(width: 24)
-                                Text(task.name)
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text("第 " + String(Int(task.startDay.rounded())) + " 天")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Image(systemName: "arrow.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                Text("第 " + String(Int(task.endDay.rounded())) + " 天")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.blue)
-                            }
-                            .padding(.vertical, 4)
-                            Divider()
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct TaskLibraryPreview: View {
-    @EnvironmentObject private var model: AppModel
-    @Binding var isPresentingTaskEditor: Bool
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("待升级项", systemImage: "list.bullet.rectangle")
-                        .font(.headline)
-                    Spacer()
-                    Button {
-                        isPresentingTaskEditor = true
-                    } label: {
-                        Label("添加", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.cocAccent)
-                }
-
-                Text("这些是规划器的输入，不是官方数据库；可以按你的账号实际剩余工期修改。完整编辑在左侧“待升级项”。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if model.input.tasks.isEmpty {
-                    HStack(alignment: .top, spacing: 9) {
-                        Image(systemName: model.accountSnapshot == nil ? "list.bullet.rectangle" : "arrow.down.doc")
-                            .foregroundStyle(Color.cocAccent)
-                        Text(model.accountSnapshot == nil
-                            ? "还没有待升级项。"
-                            : "JSON 已读取当前记录，但没有提供未来升级目标、成本和默认工期；把目标加入这里后，规划器才会生成未来时间线。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                } else {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(model.input.tasks.prefix(9)) { task in
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(task.category.tint)
-                                    .frame(width: 8, height: 8)
-                                Text(task.name)
-                                    .font(.caption.weight(.medium))
-                                    .lineLimit(1)
-                                Spacer()
-                                Text(String(format: "%.1f", task.durationDays) + "d")
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct PrototypeBoundaryView: View {
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "lock.shield")
-                .foregroundStyle(Color.cocAccent)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("首版边界")
-                    .font(.subheadline.weight(.semibold))
-                Text("当前是可解释的本地启发式排程：每个村庄单独保存规划输入；账号 JSON 只在本机解析，不联网，也不承诺实时官方数值。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(15)
-        .background(Color.cocAccent.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-    }
-}
-
-struct TaskLibraryView: View {
-    @EnvironmentObject private var model: AppModel
-    @Binding var isPresentingTaskEditor: Bool
-
+struct TrackerInfoView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("待升级项")
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                        Text("把当前账号真实的剩余工期填进来，Roadmap 才会有意义。")
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button {
-                        isPresentingTaskEditor = true
-                    } label: {
-                        Label("添加升级项", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.cocAccent)
-                }
-
-                Panel {
-                    VStack(spacing: 0) {
-                        ForEach(model.input.tasks) { task in
-                            TaskRow(task: task) {
-                                model.removeTask(id: task.id)
-                            }
-                            if task.id != model.input.tasks.last?.id {
-                                Divider()
-                            }
-                        }
-                    }
-                }
-
-                Panel {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("科技目标", systemImage: "flask")
-                            .font(.headline)
-                        ForEach(model.input.researchTasks) { task in
-                            HStack {
-                                Text(task.name)
-                                Spacer()
-                                Text(String(format: "%.1f", task.durationDays) + " 天")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .font(.subheadline)
-                        }
-                    }
-                }
-            }
-            .padding(28)
-        }
-        .background(Color.cocBackground)
-    }
-}
-
-struct TaskRow: View {
-    let task: UpgradeTask
-    let onDelete: () -> Void
-
-    private var detail: String {
-        let cost = task.estimatedCost > 0 ? " · 估算 " + String(task.estimatedCost) : " · 成本未知"
-        return String(format: "%.1f", task.durationDays) + " 天 · " + task.resource.title + cost + " · " + task.track.title
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: task.category.systemImage)
-                .foregroundStyle(task.category.tint)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) {
-                    Text(task.name)
-                        .font(.subheadline.weight(.semibold))
-                    Text(task.category.title)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(task.category.tint)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(task.category.tint.opacity(0.1), in: Capsule())
-                }
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if task.isRepeatable {
-                Text("可重复")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.orange)
-            }
-            Button(role: .destructive, action: onDelete) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.borderless)
-            .help("删除此输入项")
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-struct TaskEditorView: View {
-    @Environment(\.dismiss) private var dismiss
-    let onSave: (UpgradeTask) -> Void
-
-    @State private var name = ""
-    @State private var category: UpgradeCategory = .building
-    @State private var durationText = "3"
-    @State private var estimatedCostText = "0"
-    @State private var resource: ResourceClass = .gold
-    @State private var priority = 70
-    @State private var track: BuilderTrack = .automatic
-    @State private var isRepeatable = false
-    @State private var highWarImpact = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("添加升级项")
-                        .font(.title2.weight(.bold))
-                    Text("输入你的账号实际剩余工期")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("取消") { dismiss() }
-            }
-
-            Form {
-                TextField("名称", text: $name)
-                Picker("类别", selection: $category) {
-                    ForEach(UpgradeCategory.allCases.filter { $0 != .research }) { category in
-                        Text(category.title).tag(category)
-                    }
-                }
-                TextField("剩余工期（天）", text: $durationText)
-                TextField("估算花费（0 = 未知）", text: $estimatedCostText)
-                Picker("主要资源", selection: $resource) {
-                    ForEach(ResourceClass.allCases) { resource in
-                        Text(resource.title).tag(resource)
-                    }
-                }
-                Picker("工人轨道", selection: $track) {
-                    ForEach(BuilderTrack.allCases) { track in
-                        Text(track.title).tag(track)
-                    }
-                }
-                Stepper("优先级 (priority)", value: $priority, in: 1...100)
-                Toggle("允许在规划窗口内重复", isOn: $isRepeatable)
-                Toggle("部落战敏感项", isOn: $highWarImpact)
-            }
-            .formStyle(.grouped)
-
-            HStack {
-                Spacer()
-                Button("加入规划") {
-                    let duration = Double(durationText.replacingOccurrences(of: ",", with: ".")) ?? 1
-                    let estimatedCost = Int(estimatedCostText.replacingOccurrences(of: ",", with: "")) ?? 0
-                    onSave(UpgradeTask(
-                        name: name.isEmpty ? "未命名升级" : name,
-                        category: category,
-                        durationDays: duration,
-                        resource: resource,
-                        priority: priority,
-                        warImpact: highWarImpact ? .high : .medium,
-                        track: track,
-                        isRepeatable: isRepeatable,
-                        estimatedCost: estimatedCost
-                    ))
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.cocAccent)
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24)
-        .frame(width: 520, height: 560)
-    }
-}
-
-struct RulesView: View {
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("规划规则")
+                Text("数据说明")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                Text("Builder Roadmap 的价值不在于给出一个看似精确的天数，而在于把长期选择公开成可检查的取舍。")
+                Text("这是一个本地升级 tracker：它读取游戏内复制的账号 JSON，整理当前快照中的计时和等级记录。")
                     .font(.title3)
                     .foregroundStyle(.secondary)
 
-                RuleCard(number: "01", title: "先保护部落战体验", text: "联赛模式下，开启“保留英雄”会把英雄任务推迟到保护窗口之后；部落战优先模式则提醒你手动处理关键战期。")
-                RuleCard(number: "02", title: "建筑与科技同时看", text: "建筑工人和实验室是两条独立队列。规划器会把两者放到同一条时间轴，暴露“建筑升级了但进攻科技没跟上”的错位。")
-                RuleCard(number: "03", title: "库存决定任务能否启动", text: "规划器会读取当前资源、容量和日收入；如果成本暂时不够，会把任务后移并标记库存原因。")
-                RuleCard(number: "04", title: "大本营要有准备度", text: "大本营不是永远的最高优先级。你可以标记还没准备好，规划器会留出缓冲，并在判断区解释原因。")
-                RuleCard(number: "05", title: "版本数据和账号状态分离", text: "游戏数据目录负责版本、成本和默认工期；账号填写的当前剩余时间优先，不会被数据层静默覆盖。")
+                InfoCard(
+                    number: "01",
+                    title: "正在升级",
+                    text: "带有计时字段且剩余时间大于 0 的项目会进入正在升级列表，并按剩余时间排序。倒计时只在本地基于导入时间继续显示。"
+                )
+                InfoCard(
+                    number: "02",
+                    title: "等级记录",
+                    text: "建筑、陷阱、兵种、法术、攻城器械、英雄、装备、战宠和守护者会按主村/建筑工人基地分组展示。重复记录和数量不会合并丢失。"
+                )
+                InfoCard(
+                    number: "03",
+                    title: "目标等级边界",
+                    text: "原始 JSON 没有单独的目标等级字段；正在升级行里的“当前 → 下一等级”是根据当前等级加 1 的界面推断，完成后应重新导入确认。"
+                )
+                InfoCard(
+                    number: "04",
+                    title: "本地与可审计",
+                    text: "应用不联网、不调用账号接口，也不填充缺失的资源、工人归属或未来目标。原始文本、未知字段和解析诊断会保留在当前村庄快照中。"
+                )
             }
             .padding(28)
         }
@@ -1616,7 +910,7 @@ struct RulesView: View {
     }
 }
 
-struct RuleCard: View {
+private struct InfoCard: View {
     let number: String
     let title: String
     let text: String
@@ -1642,7 +936,7 @@ struct RuleCard: View {
     }
 }
 
-struct Panel<Content: View>: View {
+private struct Panel<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -1656,30 +950,18 @@ struct Panel<Content: View>: View {
     }
 }
 
-private extension UpgradeCategory {
-    var systemImage: String {
-        switch self {
-        case .townHall: "building.2.fill"
-        case .building: "building.fill"
-        case .defense: "shield.lefthalf.filled"
-        case .hero: "person.crop.circle.badge.star"
-        case .wall: "rectangle.split.3x1"
-        case .trap: "exclamationmark.octagon"
-        case .resource: "shippingbox.fill"
-        case .research: "flask.fill"
-        }
-    }
-
+private extension TrackerCategory {
     var tint: Color {
         switch self {
-        case .townHall: .purple
-        case .building: .blue
-        case .defense: .red
-        case .hero: .orange
-        case .wall: .brown
-        case .trap: .green
-        case .resource: .cyan
-        case .research: .indigo
+        case .buildings: .blue
+        case .traps: .green
+        case .troops: .orange
+        case .spells: .purple
+        case .siegeMachines: .brown
+        case .heroes: .red
+        case .equipment: .cyan
+        case .pets: .pink
+        case .guardians: .indigo
         }
     }
 }

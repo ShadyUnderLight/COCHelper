@@ -130,20 +130,14 @@ struct UpgradeTrackerView: View {
     @EnvironmentObject private var model: AppModel
     let openImport: () -> Void
 
-    @State private var selectedBase: TrackerBase = .home
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                TrackerHeaderView(selectedBase: $selectedBase, openImport: openImport)
+                TrackerHeaderView(openImport: openImport)
 
-                if let snapshot = model.accountSnapshot {
+                if model.villages.contains(where: \.hasImportedData) {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
-                        TrackerSnapshotContent(
-                            snapshot: snapshot,
-                            base: selectedBase,
-                            now: context.date
-                        )
+                        TrackerOverviewContent(villages: model.villages, now: context.date)
                     }
                 } else {
                     EmptyTrackerView(openImport: openImport)
@@ -157,108 +151,99 @@ struct UpgradeTrackerView: View {
 
 private struct TrackerHeaderView: View {
     @EnvironmentObject private var model: AppModel
-    @Binding var selectedBase: TrackerBase
     let openImport: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("升级追踪")
+                    Text("升级总览")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text(model.currentVillageName)
+                    Text("全部村庄")
                         .font(.title3.weight(.semibold))
-                    Text(model.currentVillageTag ?? "尚未导入账号 JSON")
+                    Text("已导入 " + String(model.villages.filter(\.hasImportedData).count) + " 个村庄")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                HStack(spacing: 10) {
-                    Picker("基地", selection: $selectedBase) {
-                        ForEach(TrackerBase.allCases) { base in
-                            Text(base.title).tag(base)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 220)
-
-                    Button(action: openImport) {
-                        Label("更新快照", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(Color.cocAccent)
+                Button(action: openImport) {
+                    Label("更新快照", systemImage: "arrow.triangle.2.circlepath")
                 }
+                .buttonStyle(.bordered)
+                .tint(Color.cocAccent)
             }
 
-            Text("记录当前正在升级的项目、剩余时间和所有已读取的等级，不生成未来规划。")
+            Text("汇总所有村庄当前正在升级的事项，按预计完成时间从近到远排列。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
     }
 }
 
-private struct TrackerSnapshotContent: View {
-    let snapshot: AccountSnapshot
-    let base: TrackerBase
+private struct TrackerOverviewContent: View {
+    let villages: [VillageProfile]
     let now: Date
 
     var body: some View {
-        let records = UpgradeTracker.records(from: snapshot, base: base, at: now)
-        let activeRecords = records.filter(\.isUpgrading)
+        let activeRecords = UpgradeTracker.activeRecords(from: villages, at: now)
 
         VStack(alignment: .leading, spacing: 18) {
             TrackerMetricsView(
-                snapshot: snapshot,
-                base: base,
-                records: records,
-                activeRecords: activeRecords
+                villages: villages,
+                records: activeRecords
             )
-            ActiveUpgradesPanel(records: activeRecords)
-            UpgradeCatalogPanel(records: records)
-            SnapshotFreshnessNote(snapshot: snapshot)
+            ActiveUpgradesPanel(records: activeRecords, now: now)
+            TrackerOverviewFreshnessNote(villages: villages)
         }
     }
 }
 
 private struct TrackerMetricsView: View {
-    let snapshot: AccountSnapshot
-    let base: TrackerBase
-    let records: [UpgradeLevelRecord]
-    let activeRecords: [UpgradeLevelRecord]
+    let villages: [VillageProfile]
+    let records: [VillageUpgradeRecord]
 
-    private var categoryCount: Int {
-        Set(records.map(\.category)).count
+    private var importedVillageCount: Int {
+        villages.filter(\.hasImportedData).count
+    }
+
+    private var affectedVillageCount: Int {
+        Set(records.map(\.villageID)).count
+    }
+
+    private var nearestCompletion: String {
+        guard let remainingSeconds = records.first?.remainingSeconds else { return "--" }
+        return AccountDurationFormatter.label(remainingSeconds, zeroLabel: "已完成")
     }
 
     var body: some View {
         HStack(spacing: 12) {
             TrackerMetricCard(
                 title: "正在升级",
-                value: String(activeRecords.count),
-                detail: base.title,
+                value: String(records.count),
+                detail: "全部村庄",
                 systemImage: "hammer.fill",
                 tint: .orange
             )
             TrackerMetricCard(
-                title: "等级记录",
-                value: String(records.count),
-                detail: "可追踪项目",
-                systemImage: "list.number",
+                title: "涉及村庄",
+                value: String(affectedVillageCount),
+                detail: "存在进行中项目",
+                systemImage: "house.2.fill",
                 tint: Color.cocAccent
             )
             TrackerMetricCard(
-                title: "分类",
-                value: String(categoryCount),
-                detail: "已识别类别",
-                systemImage: "square.grid.2x2.fill",
+                title: "最近完成",
+                value: nearestCompletion,
+                detail: "按剩余时间",
+                systemImage: "clock.badge.checkmark.fill",
                 tint: .green
             )
             TrackerMetricCard(
-                title: "快照计时",
-                value: String(snapshot.activeItemCount),
-                detail: "原始计时字段",
+                title: "已导入村庄",
+                value: String(importedVillageCount),
+                detail: "本地快照",
                 systemImage: "clock.fill",
                 tint: .blue
             )
@@ -301,16 +286,17 @@ private struct TrackerMetricCard: View {
 }
 
 private struct ActiveUpgradesPanel: View {
-    let records: [UpgradeLevelRecord]
+    let records: [VillageUpgradeRecord]
+    let now: Date
 
     var body: some View {
         Panel {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline) {
-                    Label("正在升级", systemImage: "hammer.fill")
+                    Label("全部村庄 · 正在升级", systemImage: "hammer.fill")
                         .font(.headline)
                     Spacer()
-                    Text(records.isEmpty ? "当前没有进行中的记录" : "按剩余时间排序")
+                    Text(records.isEmpty ? "当前没有进行中的记录" : "预计完成时间从近到远")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -318,14 +304,14 @@ private struct ActiveUpgradesPanel: View {
                 if records.isEmpty {
                     TrackerEmptyRow(
                         systemImage: "checkmark.circle",
-                        title: "当前快照没有正在升级的项目",
-                        detail: "重新导入游戏内 JSON 后，这里会按剩余时间显示工人、实验室和其他队列记录。"
+                        title: "所有村庄当前没有正在升级的项目",
+                        detail: "请在账号数据页导入或更新村庄 JSON，这里只显示已经存在且带有进行中倒计时的升级事项。"
                     )
                 } else {
                     TrackerTableHeader()
                     VStack(spacing: 0) {
                         ForEach(records) { record in
-                            UpgradeRecordRow(record: record, prominent: true)
+                            VillageUpgradeRecordRow(record: record, now: now)
                             if record.id != records.last?.id {
                                 Divider().padding(.leading, 46)
                             }
@@ -337,106 +323,17 @@ private struct ActiveUpgradesPanel: View {
     }
 }
 
-private struct UpgradeCatalogPanel: View {
-    let records: [UpgradeLevelRecord]
-
-    private var categories: [TrackerCategory] {
-        TrackerCategory.allCases.filter { category in
-            records.contains { $0.category == category }
-        }
-    }
-
-    var body: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("所有可升级选项", systemImage: "list.bullet.rectangle.portrait")
-                            .font(.headline)
-                        Text("按类别记录当前等级；重复建筑会保留数量和独立记录。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(String(records.count) + " 条")
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(Color.cocAccent)
-                }
-
-                if records.isEmpty {
-                    TrackerEmptyRow(
-                        systemImage: "tray",
-                        title: "没有可显示的等级记录",
-                        detail: "当前基地的 JSON 中还没有识别到建筑、兵种、英雄、法术、战宠或装备记录。"
-                    )
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(categories) { category in
-                            UpgradeCategorySection(
-                                category: category,
-                                records: records.filter { $0.category == category }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct UpgradeCategorySection: View {
-    let category: TrackerCategory
-    let records: [UpgradeLevelRecord]
-    @State private var isExpanded = true
-
-    private var activeCount: Int {
-        records.filter(\.isUpgrading).count
-    }
-
-    var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(spacing: 0) {
-                TrackerTableHeader()
-                ForEach(records) { record in
-                    UpgradeRecordRow(record: record, prominent: false)
-                    if record.id != records.last?.id {
-                        Divider().padding(.leading, 46)
-                    }
-                }
-            }
-            .padding(.top, 8)
-        } label: {
-            HStack(spacing: 9) {
-                Image(systemName: category.systemImage)
-                    .foregroundStyle(category.tint)
-                    .frame(width: 22)
-                Text(category.title)
-                    .font(.subheadline.weight(.semibold))
-                Text(String(records.count))
-                    .font(.caption2.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                if activeCount > 0 {
-                    Text(String(activeCount) + " 升级中")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.orange)
-                }
-                Spacer()
-            }
-            .padding(.vertical, 5)
-        }
-        .tint(.primary)
-    }
-}
-
 private struct TrackerTableHeader: View {
     var body: some View {
         HStack(spacing: 12) {
-            Text("项目")
+            Text("升级项目")
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Text("村庄与基地")
+                .frame(width: 170, alignment: .leading)
             Text("等级")
                 .frame(width: 100, alignment: .trailing)
-            Text("状态")
-                .frame(width: 150, alignment: .trailing)
+            Text("预计完成")
+                .frame(width: 160, alignment: .trailing)
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(.secondary)
@@ -445,27 +342,23 @@ private struct TrackerTableHeader: View {
     }
 }
 
-private struct UpgradeRecordRow: View {
-    let record: UpgradeLevelRecord
-    let prominent: Bool
-
-    private var rowFont: Font {
-        prominent ? .subheadline : .caption
-    }
+private struct VillageUpgradeRecordRow: View {
+    let record: VillageUpgradeRecord
+    let now: Date
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: record.category.systemImage)
-                .font(prominent ? .body : .caption)
-                .foregroundStyle(record.category.tint)
+            Image(systemName: record.upgrade.category.systemImage)
+                .font(.body)
+                .foregroundStyle(record.upgrade.category.tint)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
-                    Text(record.name)
-                        .font(rowFont.weight(.semibold))
+                    Text(record.upgrade.name)
+                        .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
-                    if let countLabel = record.countLabel {
+                    if let countLabel = record.upgrade.countLabel {
                         Text(countLabel)
                             .font(.caption2.weight(.semibold).monospacedDigit())
                             .foregroundStyle(.secondary)
@@ -473,49 +366,77 @@ private struct UpgradeRecordRow: View {
                             .padding(.vertical, 2)
                             .background(Color.white.opacity(0.07), in: Capsule())
                     }
-                    if record.isNested {
+                    if record.upgrade.isNested {
                         Text("嵌套")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
-                Text(record.sourceSection + " · " + record.dataIDLabel)
+                Text(record.upgrade.sourceSection + " · " + record.upgrade.dataIDLabel)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
             }
 
             Spacer(minLength: 10)
 
-            Text(record.levelLabel)
-                .font(rowFont.weight(.bold).monospacedDigit())
-                .foregroundStyle(record.isUpgrading ? .orange : .primary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(record.villageName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.cocAccent)
+                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(record.base.title)
+                    if let villageTag = record.villageTag {
+                        Text(villageTag)
+                            .monospaced()
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            .frame(width: 170, alignment: .leading)
+
+            Text(record.upgrade.levelLabel)
+                .font(.subheadline.weight(.bold).monospacedDigit())
+                .foregroundStyle(.orange)
                 .frame(width: 100, alignment: .trailing)
 
             VStack(alignment: .trailing, spacing: 4) {
-                if record.isUpgrading, let remainingSeconds = record.remainingSeconds {
+                if let remainingSeconds = record.remainingSeconds {
                     Text(AccountDurationFormatter.label(remainingSeconds, zeroLabel: "已完成"))
                         .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(.orange)
-                    if let progress = record.progress {
+                    if let completionDate = record.completionDate(from: now) {
+                        Text("完成 " + completionDate.formatted(date: .omitted, time: .shortened))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let progress = record.upgrade.progress {
                         ProgressView(value: progress)
                             .progressViewStyle(.linear)
                             .tint(.orange)
                             .frame(width: 112)
                     }
                 } else {
-                    Text(record.statusLabel)
+                    Text(record.upgrade.statusLabel)
                         .font(.caption)
-                        .foregroundStyle(record.hasTimer ? Color.secondary : Color.green)
+                        .foregroundStyle(record.upgrade.hasTimer ? Color.secondary : Color.green)
                 }
             }
-            .frame(width: 150, alignment: .trailing)
+            .frame(width: 160, alignment: .trailing)
         }
-        .padding(.vertical, prominent ? 10 : 8)
+        .padding(.vertical, 10)
     }
 }
 
-private struct SnapshotFreshnessNote: View {
-    let snapshot: AccountSnapshot
+private struct TrackerOverviewFreshnessNote: View {
+    let villages: [VillageProfile]
+
+    private var importedVillages: [VillageProfile] {
+        villages.filter(\.hasImportedData)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -524,7 +445,7 @@ private struct SnapshotFreshnessNote: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("快照状态")
                     .font(.caption.weight(.semibold))
-                Text("导入于 " + snapshot.importedAt.formatted(date: .abbreviated, time: .shortened) + "。进行中的倒计时会在本地继续显示；完成后请重新导入一次 JSON 刷新等级。")
+                Text("已汇总 " + String(importedVillages.count) + " 个村庄快照。倒计时会在本地基于各自导入时间继续显示；完成后请重新导入一次 JSON 刷新等级。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -547,7 +468,7 @@ private struct EmptyTrackerView: View {
                     .foregroundStyle(Color.cocAccent)
                 Text("先导入一个村庄快照")
                     .font(.title3.weight(.bold))
-                Text("把游戏内复制的账号 JSON 粘贴到“账号数据”，确认后这里会展示正在升级记录和所有可升级选项的等级。")
+                Text("把游戏内复制的账号 JSON 粘贴到“账号数据”，确认后这里会汇总所有村庄当前已经存在的正在升级事项。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -890,8 +811,8 @@ struct TrackerInfoView: View {
                 )
                 InfoCard(
                     number: "02",
-                    title: "等级记录",
-                    text: "建筑、陷阱、兵种、法术、攻城器械、英雄、装备、战宠和守护者会按主村/建筑工人基地分组展示。重复记录和数量不会合并丢失。"
+                    title: "项目身份",
+                    text: "每条进行中的记录都会标出项目名称、所属村庄、主村或建筑工人基地、账号 tag 和数据 ID；重复记录和数量不会合并丢失。"
                 )
                 InfoCard(
                     number: "03",

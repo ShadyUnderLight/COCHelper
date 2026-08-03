@@ -72,6 +72,44 @@ final class UpgradeTrackerTests: XCTestCase {
         XCTAssertEqual(active.first?.levelLabel, "11 → 12")
     }
 
+    func testActiveRecordsAggregateAllVillagesByRemainingTime() throws {
+        let importedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let firstSnapshot = try AccountSnapshotImporter.parse(
+            """
+            {
+              "tag": "#FIRST",
+              "timestamp": 1700000000,
+              "buildings": [{"data": 1000008, "lvl": 10, "timer": 300}]
+            }
+            """,
+            now: importedAt
+        )
+        let secondSnapshot = try AccountSnapshotImporter.parse(
+            """
+            {
+              "tag": "#SECOND",
+              "timestamp": 1700000000,
+              "buildings": [{"data": 1000008, "lvl": 11, "timer": 100}]
+            }
+            """,
+            now: importedAt
+        )
+
+        let villages = [
+            VillageProfile(name: "第一村", accountSnapshot: firstSnapshot),
+            VillageProfile(name: "第二村", accountSnapshot: secondSnapshot)
+        ]
+
+        let active = UpgradeTracker.activeRecords(from: villages, at: importedAt)
+
+        XCTAssertEqual(active.count, 2)
+        XCTAssertEqual(active.map(\.villageName), ["第二村", "第一村"])
+        XCTAssertEqual(active.map(\.remainingSeconds), [100, 300])
+        XCTAssertEqual(active.map(\.upgrade.levelLabel), ["11 → 12", "10 → 11"])
+        XCTAssertEqual(active.map(\.base), [.home, .home])
+        XCTAssertEqual(active.map(\.villageTag), ["#SECOND", "#FIRST"])
+    }
+
     func testOldVillageStorageDecodesWithoutPlannerInput() throws {
         let data = Data(
             """

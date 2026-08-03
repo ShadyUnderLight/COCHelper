@@ -174,6 +174,29 @@ public struct UpgradeLevelRecord: Identifiable, Hashable, Sendable {
     }
 }
 
+public struct VillageUpgradeRecord: Identifiable, Hashable, Sendable {
+    public let id: String
+    public let villageID: UUID
+    public let villageName: String
+    public let villageTag: String?
+    public let upgrade: UpgradeLevelRecord
+
+    public init(village: VillageProfile, upgrade: UpgradeLevelRecord) {
+        self.id = village.id.uuidString + ":" + upgrade.id
+        self.villageID = village.id
+        self.villageName = village.name
+        self.villageTag = village.tag
+        self.upgrade = upgrade
+    }
+
+    public var base: TrackerBase { upgrade.base }
+    public var remainingSeconds: Int64? { upgrade.remainingSeconds }
+    public func completionDate(from now: Date) -> Date? {
+        guard let remainingSeconds, remainingSeconds > 0 else { return nil }
+        return now.addingTimeInterval(TimeInterval(remainingSeconds))
+    }
+}
+
 public enum UpgradeTracker {
     private static let supportedSections: Set<String> = [
         "buildings", "traps", "units", "spells", "siege_machines", "heroes",
@@ -238,6 +261,29 @@ public enum UpgradeTracker {
                 if left != right { return left < right }
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
+    }
+
+    public static func activeRecords(
+        from villages: [VillageProfile],
+        at now: Date = Date()
+    ) -> [VillageUpgradeRecord] {
+        villages.flatMap { village in
+            guard let snapshot = village.accountSnapshot else { return [VillageUpgradeRecord]() }
+            return TrackerBase.allCases.flatMap { base in
+                activeRecords(from: snapshot, base: base, at: now).map {
+                    VillageUpgradeRecord(village: village, upgrade: $0)
+                }
+            }
+        }
+        .sorted { lhs, rhs in
+            let leftRemaining = lhs.remainingSeconds ?? .max
+            let rightRemaining = rhs.remainingSeconds ?? .max
+            if leftRemaining != rightRemaining { return leftRemaining < rightRemaining }
+            let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
+            if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
+            if lhs.base != rhs.base { return lhs.base.rawValue < rhs.base.rawValue }
+            return lhs.id < rhs.id
+        }
     }
 
     private static func isItemInBase(_ item: AccountItem, base: TrackerBase) -> Bool {

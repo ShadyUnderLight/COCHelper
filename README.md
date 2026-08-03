@@ -75,7 +75,7 @@ swift run smoke-api
 
 | 结果 | 含义 | 退出码 |
 |---|---|---|
-| `SUCCESS: 连通性验证通过, locations=N` | API 可达且授权通过 | 0 |
+| `SUCCESS: 连通性验证通过，locations=N` | API 可达且授权通过 | 0 |
 | `FAILED: 未配置凭证` | 未设置 COC_TOKEN 且 Keychain 无 token | 2 |
 | `FAILED: 授权失败 reason=...` | 401/403：token 无效或 IP 不在白名单（reason 含 `invalidIp` 时检查 Allowed IP） | 1 |
 | `FAILED: 请求被限流（429）` | 超过官方速率限制 | 1 |

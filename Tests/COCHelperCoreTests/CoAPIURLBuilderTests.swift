@@ -4,9 +4,11 @@ import XCTest
 
 final class CoAPIURLBuilderTests: XCTestCase {
     func testTagHashEncodedInPath() {
-        let url = CoAPIURLBuilder.endpoint(config: CoAPIConfig(), path: "/players/%23ABC")
-        XCTAssertFalse(url.path.contains("#"), "path 不应含裸 #：\(url.path)")
-        XCTAssertTrue(url.path.contains("%23ABC"), "path 应含 %23ABC：\(url.path)")
+        let url = CoAPIURLBuilder.endpoint(config: CoAPIConfig(), path: "/players/#ABC")
+        XCTAssertEqual(url.path(percentEncoded: true), "/v1/players/%23ABC", "原始 # 应被单层编码为 %23")
+        XCTAssertNil(url.fragment, "# 不应被解析成 fragment 分隔符")
+        XCTAssertFalse(url.absoluteString.contains("#"), "URL 字符串不应含裸 #：\(url.absoluteString)")
+        XCTAssertEqual(url.path, "/v1/players/#ABC", "解码后应还原原始 tag")
     }
 
     func testEncodePathComponentConvertsHash() {
@@ -23,9 +25,9 @@ final class CoAPIURLBuilderTests: XCTestCase {
     }
 
     func testURLHostAndVersion() {
-        let url = CoAPIURLBuilder.endpoint(config: CoAPIConfig(), path: "/players/%23ABC")
+        let url = CoAPIURLBuilder.endpoint(config: CoAPIConfig(), path: "/players/#ABC")
         XCTAssertEqual(url.host, "api.clashofclans.com")
-        XCTAssertTrue(url.path.hasPrefix("/v1/"), "path 应以 /v1/ 开头：\(url.path)")
+        XCTAssertTrue(url.path(percentEncoded: true).hasPrefix("/v1/"), "path 应以 /v1/ 开头：\(url.path(percentEncoded: true))")
     }
 
     func testPathWithoutHashUnaffected() {

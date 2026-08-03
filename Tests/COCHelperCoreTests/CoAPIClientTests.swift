@@ -405,6 +405,37 @@ final class CoAPIClientTests: XCTestCase {
         let timeoutResult = await timeoutClient.smoke()
         XCTAssertEqual(timeoutResult, .networkFailure(detail: "timeout"))
     }
+
+    func testAccessDeniedReasonIsTruncated() async {
+        // 服务器回显的 reason 被截断到 200 字符，防止超长内容进入日志/UI。
+        let longReason = String(repeating: "x", count: 300)
+        let client = makeClient(config: CoAPIConfig(maxRetryCount: 0)) { request in
+            (mockResponse(403, url: request.url!), Data(#"{"reason":"\#(longReason)"}"#.utf8))
+        }
+
+        await expectError(
+            try await client.request(path: "/locations"),
+            .accessDenied(reason: String(repeating: "x", count: 200))
+        )
+    }
+
+    func testSmokeUnauthorizedAndNetworkBranches() async {
+        // 401 → authorizationFailed("unauthorized")；非 timeout 的 URLError → networkFailure("network")
+        let unauthorizedClient = makeClient(config: CoAPIConfig(maxRetryCount: 0)) { request in
+            (mockResponse(401, url: request.url!), Data())
+        }
+        let unauthorizedResult = await unauthorizedClient.smoke()
+        XCTAssertEqual(unauthorizedResult, .authorizationFailed(reason: "unauthorized"))
+
+        let networkClient = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        MockURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
+        let networkResult = await networkClient.smoke()
+        XCTAssertEqual(networkResult, .networkFailure(detail: "network"))
+    }
 }
 
 /// Thread-safe sequential token source for asserting token re-read between retries.

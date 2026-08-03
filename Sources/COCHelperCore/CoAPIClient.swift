@@ -175,7 +175,9 @@ public struct CoAPIClient: Sendable {
         let delay = serverHint > 0
             ? min(max(exponential, serverHint), max(cap, serverHint))
             : min(max(0, exponential), cap)
-        let seconds = min(delay, 3600)
+        // NaN 配置（如 Double.nan 的 baseRetryDelay）一律退化为立即重试，
+        // 避免 UInt64 转换 trap 或无限 sleep；任何路径不超过 1 小时。
+        let seconds = delay.isFinite ? min(delay, 3600) : 0
         try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 

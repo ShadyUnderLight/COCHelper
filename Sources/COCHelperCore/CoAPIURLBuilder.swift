@@ -11,6 +11,11 @@ public enum CoAPIURLBuilder {
     /// result is `scheme://host/<apiVersion>/<segments>` and its encoded path
     /// never contains a bare `#` (which would otherwise be parsed as a fragment
     /// delimiter).
+    ///
+    /// Limitation: `.` and `..` segments are preserved as-is (no normalization).
+    /// Current callers only pass fixed internal paths or COC tags (alphabet
+    /// `[A-Z0-9#]`, which cannot contain `.`), so there is no injection surface.
+    /// If external path input is ever accepted, normalize `..` first.
     public static func endpoint(config: CoAPIConfig, path: String) -> URL {
         var components = URLComponents()
         components.scheme = config.scheme

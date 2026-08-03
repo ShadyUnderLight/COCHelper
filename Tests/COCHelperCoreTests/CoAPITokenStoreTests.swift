@@ -40,6 +40,13 @@ final class CoAPITokenStoreTests: XCTestCase {
         XCTAssertNil(try store.readToken())
     }
 
+    func testProtocolSaveTwiceUpdatesValue() throws {
+        let store = InMemoryTokenStore()
+        try store.saveToken("tok-v1")
+        try store.saveToken("tok-v2")
+        XCTAssertEqual(try store.readToken(), "tok-v2")
+    }
+
     // MARK: - 真实 Keychain 往返
 
     func testKeychainRoundTrip() throws {
@@ -47,6 +54,12 @@ final class CoAPITokenStoreTests: XCTestCase {
         XCTAssertEqual(try keychain.readToken(), "tok-abc")
         try keychain.deleteToken()
         XCTAssertNil(try keychain.readToken())
+    }
+
+    func testKeychainSaveTwiceUpdatesValue() throws {
+        try keychain.saveToken("tok-v1")
+        try keychain.saveToken("tok-v2")  // 第二次触发 errSecDuplicateItem → SecItemUpdate 分支
+        XCTAssertEqual(try keychain.readToken(), "tok-v2")
     }
 
     func testKeychainReadEmptyInitially() throws {

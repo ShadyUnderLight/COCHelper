@@ -12,5 +12,6 @@ rm -rf "$app_dir"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$bin_dir/COCHelper" "$app_dir/Contents/MacOS/COCHelper"
 cp "$project_dir/Resources/Info.plist" "$app_dir/Contents/Info.plist"
+cp "$project_dir/Resources/COCHelperAppIcon.icns" "$app_dir/Contents/Resources/COCHelperAppIcon.icns"
 
 echo "Built $app_dir"

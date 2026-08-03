@@ -14,4 +14,11 @@ cp "$bin_dir/COCHelper" "$app_dir/Contents/MacOS/COCHelper"
 cp "$project_dir/Resources/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$project_dir/Resources/COCHelperAppIcon.icns" "$app_dir/Contents/Resources/COCHelperAppIcon.icns"
 
+resource_bundle="$bin_dir/COCHelper_COCHelperCore.bundle"
+if [[ ! -d "$resource_bundle" ]]; then
+    echo "Missing SwiftPM resource bundle: $resource_bundle" >&2
+    exit 1
+fi
+cp -R "$resource_bundle" "$app_dir/"
+
 echo "Built $app_dir"

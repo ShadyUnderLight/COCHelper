@@ -47,3 +47,40 @@ open .build/COCHelper.app
 2. 在用户确认后把账号快照投影到英雄状态、工人剩余时间和实验室队列，不猜测缺失的工人编号。
 3. 增加实验室当前科技、剩余时间和科技资源消耗的账号状态录入。
 4. 引入资源收入、每日登录和部落战日历的事件模拟，输出多个可比较方案。
+
+## API 连接（阶段一：连通性 smoke）
+
+本地版本支持可选接入 Clash of Clans 官方 API，用于验证凭证、IP 白名单与网络连通性。当前只提供 `/v1/locations` 探测，不解析玩家数据，不投影到 UI。
+
+### 凭证准备
+
+1. 打开官方开发者门户 https://developer.clashofclans.com/ 注册并登录。
+2. "My Account" 页面创建 API key，绑定运行本应用的机器的 **Allowed IP addresses**（家庭宽带为公网出口 IP；VPN/代理会改变出口 IP，需同步更新）。
+3. 复制生成的 JWT 字符串作为 token。
+
+### token 存储（二选一）
+
+- **环境变量（临时验证）**：`COC_TOKEN=<你的token> swift run smoke-api`
+- **Keychain（推荐）**：token 存入 macOS Keychain（service `com.coc-helper.coapi`，account `developer-token`）。可通过运行 `swift run smoke-api` 配合工具写入，或使用 `security add-generic-password -s com.coc-helper.coapi -a developer-token -w`。
+
+**安全边界**：token 绝不写入源码、UserDefaults、村庄 JSON、日志或测试 fixture；本仓库任何文件都不应出现真实凭证。
+
+### 连通性验证
+
+```bash
+swift run smoke-api
+```
+
+输出与退出码：
+
+| 结果 | 含义 | 退出码 |
+|---|---|---|
+| `SUCCESS: 连通性验证通过, locations=N` | API 可达且授权通过 | 0 |
+| `FAILED: 未配置凭证` | 未设置 COC_TOKEN 且 Keychain 无 token | 2 |
+| `FAILED: 授权失败 reason=...` | 401/403：token 无效或 IP 不在白名单（reason 含 `invalidIp` 时检查 Allowed IP） | 1 |
+| `FAILED: 请求被限流（429）` | 超过官方速率限制 | 1 |
+| `FAILED: 端点不存在（404）` | 路径/版本错误 | 1 |
+| `FAILED: 服务器错误（5xx）` | 官方服务异常 | 1 |
+| `FAILED: 网络失败 ...` | 超时/断网/响应解析失败 | 1 |
+
+错误映射（HTTP → 本地错误）：401 → unauthorized；403 → accessDenied(reason)；404 → notFound；429 → rateLimited（自动限次退避重试）；5xx → serverError；超时/断网 → timeout/network；2xx 但 JSON 解析失败 → malformedResponse。

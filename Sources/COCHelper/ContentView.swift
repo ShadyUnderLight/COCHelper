@@ -12,7 +12,7 @@ struct ContentView: View {
                     ForEach(model.villages) { village in
                         Button {
                             model.selectVillage(id: village.id)
-                            selection = .tracker
+                            selection = .villageTracker(village.id)
                         } label: {
                             VillageSidebarRow(
                                 village: village,
@@ -25,6 +25,9 @@ struct ContentView: View {
                             if model.canDeleteCurrentVillage {
                                 Button("删除此村庄", role: .destructive) {
                                     model.deleteVillage(id: village.id)
+                                    if selection == .villageTracker(village.id) {
+                                        selection = .tracker
+                                    }
                                 }
                             }
                         }
@@ -71,6 +74,10 @@ struct ContentView: View {
                 UpgradeTrackerView {
                     selection = .accountData
                 }
+            case .villageTracker(let villageID):
+                UpgradeTrackerView(villageID: villageID) {
+                    selection = .accountData
+                }
             case .accountData:
                 AccountDataView()
             case .info:
@@ -82,6 +89,7 @@ struct ContentView: View {
 
 private enum AppSection: Hashable {
     case tracker
+    case villageTracker(UUID)
     case accountData
     case info
 }
@@ -128,16 +136,41 @@ private struct VillageSidebarRow: View {
 
 struct UpgradeTrackerView: View {
     @EnvironmentObject private var model: AppModel
+    let villageID: UUID?
     let openImport: () -> Void
+
+    init(villageID: UUID? = nil, openImport: @escaping () -> Void) {
+        self.villageID = villageID
+        self.openImport = openImport
+    }
+
+    private var village: VillageProfile? {
+        guard let villageID else { return nil }
+        return model.villages.first(where: { $0.id == villageID })
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                TrackerHeaderView(openImport: openImport)
+                TrackerHeaderView(village: village, openImport: openImport)
 
-                if model.villages.contains(where: \.hasImportedData) {
+                if let village {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
-                        TrackerOverviewContent(villages: model.villages, now: context.date)
+                        TrackerOverviewContent(
+                            villages: [village],
+                            scopeLabel: "当前村庄",
+                            panelTitle: village.name + " · 正在升级",
+                            now: context.date
+                        )
+                    }
+                } else if villageID == nil && model.villages.contains(where: \.hasImportedData) {
+                    TimelineView(.periodic(from: Date(), by: 60)) { context in
+                        TrackerOverviewContent(
+                            villages: model.villages,
+                            scopeLabel: "全部村庄",
+                            panelTitle: "全部村庄 · 正在升级",
+                            now: context.date
+                        )
                     }
                 } else {
                     EmptyTrackerView(openImport: openImport)
@@ -151,17 +184,18 @@ struct UpgradeTrackerView: View {
 
 private struct TrackerHeaderView: View {
     @EnvironmentObject private var model: AppModel
+    let village: VillageProfile?
     let openImport: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("升级总览")
+                    Text(village == nil ? "升级总览" : "升级追踪")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text("全部村庄")
+                    Text(village?.name ?? "全部村庄")
                         .font(.title3.weight(.semibold))
-                    Text("已导入 " + String(model.villages.filter(\.hasImportedData).count) + " 个村庄")
+                    Text(village.map { $0.tag ?? "尚未导入账号 JSON" } ?? "已导入 " + String(model.villages.filter(\.hasImportedData).count) + " 个村庄")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
@@ -175,7 +209,9 @@ private struct TrackerHeaderView: View {
                 .tint(Color.cocAccent)
             }
 
-            Text("汇总所有村庄当前正在升级的事项，按预计完成时间从近到远排列。")
+            Text(village == nil
+                ? "汇总所有村庄当前正在升级的事项，按预计完成时间从近到远排列。"
+                : "显示这个村庄已经存在的正在升级事项，按预计完成时间从近到远排列。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -184,6 +220,8 @@ private struct TrackerHeaderView: View {
 
 private struct TrackerOverviewContent: View {
     let villages: [VillageProfile]
+    let scopeLabel: String
+    let panelTitle: String
     let now: Date
 
     var body: some View {
@@ -192,9 +230,10 @@ private struct TrackerOverviewContent: View {
         VStack(alignment: .leading, spacing: 18) {
             TrackerMetricsView(
                 villages: villages,
-                records: activeRecords
+                records: activeRecords,
+                scopeLabel: scopeLabel
             )
-            ActiveUpgradesPanel(records: activeRecords, now: now)
+            ActiveUpgradesPanel(records: activeRecords, now: now, title: panelTitle)
             TrackerOverviewFreshnessNote(villages: villages)
         }
     }
@@ -203,6 +242,7 @@ private struct TrackerOverviewContent: View {
 private struct TrackerMetricsView: View {
     let villages: [VillageProfile]
     let records: [VillageUpgradeRecord]
+    let scopeLabel: String
 
     private var importedVillageCount: Int {
         villages.filter(\.hasImportedData).count
@@ -222,7 +262,7 @@ private struct TrackerMetricsView: View {
             TrackerMetricCard(
                 title: "正在升级",
                 value: String(records.count),
-                detail: "全部村庄",
+                detail: scopeLabel,
                 systemImage: "hammer.fill",
                 tint: .orange
             )
@@ -288,12 +328,13 @@ private struct TrackerMetricCard: View {
 private struct ActiveUpgradesPanel: View {
     let records: [VillageUpgradeRecord]
     let now: Date
+    let title: String
 
     var body: some View {
         Panel {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline) {
-                    Label("全部村庄 · 正在升级", systemImage: "hammer.fill")
+                    Label(title, systemImage: "hammer.fill")
                         .font(.headline)
                     Spacer()
                     Text(records.isEmpty ? "当前没有进行中的记录" : "预计完成时间从近到远")

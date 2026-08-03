@@ -110,6 +110,26 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.boosts["clocktower_cooldown"], 24_674)
     }
 
+    func testExpiredCooldownsNormalizeToZeroAndUseTerminalLabels() throws {
+        let snapshot = try AccountSnapshotImporter.parse(
+            """
+            {
+              "timestamp": 1700000000,
+              "helpers": [{"data": 93000000, "helper_cooldown": 60}],
+              "boosts": {"clocktower_cooldown": 60}
+            }
+            """,
+            now: Date(timeIntervalSince1970: 1_700_000_060)
+        )
+
+        XCTAssertEqual(snapshot.objectSections["helpers"]?.first?.remainingHelperCooldownSeconds, 0)
+        XCTAssertEqual(snapshot.boosts["clocktower_cooldown"], 0)
+        XCTAssertEqual(AccountDurationFormatter.label(0), "已结束")
+        XCTAssertEqual(AccountDurationFormatter.label(0, zeroLabel: "已就绪"), "已就绪")
+        XCTAssertEqual(AccountDurationFormatter.label(59), "不足1分钟")
+        XCTAssertEqual(AccountDurationFormatter.label(60), "1分钟")
+    }
+
     private func fixtureText() throws -> String {
         let url = try XCTUnwrap(
             Bundle.module.url(

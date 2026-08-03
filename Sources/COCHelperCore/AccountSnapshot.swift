@@ -33,6 +33,21 @@ public struct AccountDataDiagnostic: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+public enum AccountDurationFormatter {
+    public static func label(_ seconds: Int64, zeroLabel: String = "已结束") -> String {
+        guard seconds > 0 else { return zeroLabel }
+
+        let days = seconds / 86_400
+        let hours = (seconds % 86_400) / 3_600
+        let minutes = (seconds % 3_600) / 60
+
+        if days > 0 { return String(days) + "天 " + String(hours) + "小时" }
+        if hours > 0 { return String(hours) + "小时 " + String(minutes) + "分钟" }
+        if minutes > 0 { return String(minutes) + "分钟" }
+        return "不足1分钟"
+    }
+}
+
 public struct AccountItem: Identifiable, Codable, Hashable, Sendable {
     public let id: String
     public let section: String
@@ -104,15 +119,7 @@ public struct AccountItem: Identifiable, Codable, Hashable, Sendable {
 
     public var remainingTimeLabel: String? {
         guard let remainingSeconds else { return nil }
-        if remainingSeconds <= 0 { return "已结束" }
-
-        let days = remainingSeconds / 86_400
-        let hours = (remainingSeconds % 86_400) / 3_600
-        let minutes = (remainingSeconds % 3_600) / 60
-
-        if days > 0 { return String(days) + "天 " + String(hours) + "小时" }
-        if hours > 0 { return String(hours) + "小时 " + String(minutes) + "分钟" }
-        return String(max(1, minutes)) + "分钟"
+        return AccountDurationFormatter.label(remainingSeconds)
     }
 }
 

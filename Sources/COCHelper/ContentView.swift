@@ -302,7 +302,7 @@ struct AccountSnapshotSummaryView: View {
                                 Text(key)
                                     .font(.caption.monospaced())
                                 Spacer()
-                                Text(durationLabel(snapshot.boosts[key] ?? 0))
+                                Text(AccountDurationFormatter.label(snapshot.boosts[key] ?? 0, zeroLabel: "已就绪"))
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                             }
@@ -312,7 +312,7 @@ struct AccountSnapshotSummaryView: View {
                                 Text(item.section + " · " + item.rawIDLabel + " · helper_cooldown")
                                     .font(.caption.monospaced())
                                 Spacer()
-                                Text(durationLabel(item.remainingHelperCooldownSeconds ?? 0))
+                                Text(AccountDurationFormatter.label(item.remainingHelperCooldownSeconds ?? 0, zeroLabel: "已就绪"))
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                             }
@@ -364,7 +364,7 @@ struct AccountSnapshotSummaryView: View {
     private var capturedAtLabel: String {
         let captured = snapshot.capturedAt?.formatted(date: .abbreviated, time: .shortened) ?? "未提供快照时间"
         if let age = snapshot.ageSeconds, age > 0 {
-            return "快照时间：" + captured + " · 导入时已扣除 " + durationLabel(age)
+            return "快照时间：" + captured + " · 导入时已扣除 " + AccountDurationFormatter.label(age)
         }
         return "快照时间：" + captured
     }
@@ -377,14 +377,6 @@ struct AccountSnapshotSummaryView: View {
         snapshot.allObjectItems.filter { $0.remainingHelperCooldownSeconds != nil }
     }
 
-    private func durationLabel(_ seconds: Int64) -> String {
-        let days = seconds / 86_400
-        let hours = (seconds % 86_400) / 3_600
-        let minutes = (seconds % 3_600) / 60
-        if days > 0 { return String(days) + "天" + String(hours) + "小时" }
-        if hours > 0 { return String(hours) + "小时" + String(minutes) + "分钟" }
-        return String(max(1, minutes)) + "分钟"
-    }
 }
 
 struct SnapshotMetric: View {

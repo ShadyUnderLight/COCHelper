@@ -14,6 +14,11 @@ struct ContentView: View {
                         .tag(AppSection.roadmap)
                 }
 
+                Section("账号") {
+                    Label("账号数据", systemImage: "doc.text.magnifyingglass")
+                        .tag(AppSection.accountData)
+                }
+
                 Section("工作台") {
                     Label("待升级项", systemImage: "list.bullet.rectangle")
                         .tag(AppSection.tasks)
@@ -38,6 +43,8 @@ struct ContentView: View {
             switch selection ?? .roadmap {
             case .roadmap:
                 RoadmapDashboardView(isPresentingTaskEditor: $isPresentingTaskEditor)
+            case .accountData:
+                AccountDataView()
             case .tasks:
                 TaskLibraryView(isPresentingTaskEditor: $isPresentingTaskEditor)
             case .rules:
@@ -58,6 +65,7 @@ struct ContentView: View {
 
 private enum AppSection: Hashable {
     case roadmap
+    case accountData
     case tasks
     case rules
 }
@@ -92,6 +100,308 @@ struct RoadmapDashboardView: View {
                 .help("恢复一组可演示 Builder Roadmap 的本地示例数据")
             }
         }
+    }
+}
+
+struct AccountDataView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("账号数据")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                    Text("在游戏内复制原始 JSON，粘贴到这里后解析。文本不会联网，也不会在解析前自动保存。")
+                        .foregroundStyle(.secondary)
+                }
+
+                Panel {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Label("粘贴原始 JSON", systemImage: "doc.on.clipboard")
+                                .font(.headline)
+                            Spacer()
+                            Text("支持直接 ⌘V")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $model.importText)
+                                .font(.system(.body, design: .monospaced))
+                                .scrollContentBackground(.hidden)
+                                .padding(8)
+                                .frame(minHeight: 300)
+                                .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+
+                            if model.importText.isEmpty {
+                                Text("把游戏复制出来的 JSON 粘贴到这里…")
+                                    .font(.body.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .padding(17)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            Button {
+                                model.pasteFromClipboard()
+                            } label: {
+                                Label("从剪贴板粘贴", systemImage: "doc.on.clipboard")
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("清空") {
+                                model.importText = ""
+                                model.discardPendingAccountSnapshot()
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(model.importText.isEmpty)
+
+                            Spacer()
+
+                            Button {
+                                model.parseAccountText()
+                            } label: {
+                                Label("解析文本", systemImage: "checkmark.seal")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.cocAccent)
+                            .disabled(model.importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+
+                        if let error = model.accountImportError {
+                            Label(error, systemImage: "xmark.octagon.fill")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
+                if let pending = model.pendingAccountSnapshot {
+                    AccountSnapshotSummaryView(snapshot: pending, isPending: true)
+                }
+
+                if let snapshot = model.accountSnapshot {
+                    AccountSnapshotSummaryView(snapshot: snapshot, isPending: false)
+                } else if model.pendingAccountSnapshot == nil {
+                    Panel {
+                        Label("还没有已应用的账号快照", systemImage: "tray")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(28)
+        }
+        .background(Color.cocBackground)
+    }
+}
+
+struct AccountSnapshotSummaryView: View {
+    @EnvironmentObject private var model: AppModel
+    let snapshot: AccountSnapshot
+    let isPending: Bool
+
+    private var snapshotTitle: String {
+        isPending ? "待确认的账号快照" : "当前账号快照"
+    }
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(snapshotTitle, systemImage: isPending ? "questionmark.circle" : "checkmark.circle.fill")
+                            .font(.headline)
+                        Text(snapshot.tag ?? "未提供账号标签")
+                            .font(.title3.weight(.semibold).monospaced())
+                        Text(capturedAtLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(isPending ? "解析成功，尚未应用" : "已保存到本机")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(isPending ? .orange : .green)
+                }
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    SnapshotMetric(title: "对象记录", value: String(snapshot.objectItemCount))
+                    SnapshotMetric(title: "数字记录", value: String(snapshot.numericItemCount))
+                    SnapshotMetric(title: "计时器", value: String(snapshot.activeItemCount))
+                    SnapshotMetric(title: "警告", value: String(snapshot.warningCount))
+                }
+
+                if !snapshot.sectionNames.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("已读取的字段")
+                            .font(.subheadline.weight(.semibold))
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)], alignment: .leading, spacing: 8) {
+                            ForEach(snapshot.sectionNames, id: \.self) { section in
+                                HStack {
+                                    Text(section)
+                                        .font(.caption.monospaced())
+                                    Spacer()
+                                    Text(String(itemCount(for: section)))
+                                        .font(.caption.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 7)
+                                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+                }
+
+                if !snapshot.activeItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("发现的计时器")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text("不会猜测工人或队列归属")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach(Array(snapshot.activeItems.prefix(12))) { item in
+                            HStack(spacing: 10) {
+                                Image(systemName: item.isActive ? "clock.fill" : "clock.badge.xmark")
+                                    .foregroundStyle(item.isActive ? .orange : .secondary)
+                                    .frame(width: 20)
+                                Text(item.section + " · " + item.rawIDLabel)
+                                    .font(.caption.monospaced())
+                                if let level = item.level {
+                                    Text("等级 " + String(level))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(item.remainingTimeLabel ?? "无剩余时间")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(item.isActive ? .orange : .secondary)
+                            }
+                            .padding(.vertical, 3)
+                        }
+                        if snapshot.activeItems.count > 12 {
+                            Text("还有 " + String(snapshot.activeItems.count - 12) + " 个计时器未展开。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if !snapshot.boosts.isEmpty || !helperCooldownItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("加速与冷却")
+                            .font(.subheadline.weight(.semibold))
+                        ForEach(snapshot.boosts.keys.sorted(), id: \.self) { key in
+                            HStack {
+                                Text(key)
+                                    .font(.caption.monospaced())
+                                Spacer()
+                                Text(durationLabel(snapshot.boosts[key] ?? 0))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        ForEach(helperCooldownItems) { item in
+                            HStack {
+                                Text(item.section + " · " + item.rawIDLabel + " · helper_cooldown")
+                                    .font(.caption.monospaced())
+                                Spacer()
+                                Text(durationLabel(item.helperCooldownSeconds ?? 0))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                if !snapshot.diagnostics.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("解析诊断")
+                            .font(.subheadline.weight(.semibold))
+                        ForEach(snapshot.diagnostics) { diagnostic in
+                            HStack(alignment: .top, spacing: 7) {
+                                Image(systemName: diagnostic.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
+                                    .foregroundStyle(diagnostic.severity == .warning ? .orange : .blue)
+                                Text(diagnostic.path + "：" + diagnostic.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                }
+
+                HStack {
+                    if isPending {
+                        Button("取消预览") {
+                            model.discardPendingAccountSnapshot()
+                        }
+                        .buttonStyle(.borderless)
+                        Spacer()
+                        Button("应用此快照") {
+                            model.applyPendingAccountSnapshot()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.cocAccent)
+                    } else {
+                        Spacer()
+                        Button("清除当前快照", role: .destructive) {
+                            model.clearAccountSnapshot()
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+        }
+    }
+
+    private var capturedAtLabel: String {
+        let captured = snapshot.capturedAt?.formatted(date: .abbreviated, time: .shortened) ?? "未提供快照时间"
+        if let age = snapshot.ageSeconds, age > 0 {
+            return "快照时间：" + captured + " · 导入时已扣除 " + durationLabel(age)
+        }
+        return "快照时间：" + captured
+    }
+
+    private func itemCount(for section: String) -> Int {
+        snapshot.objectSections[section]?.count ?? snapshot.numericSections[section]?.count ?? 0
+    }
+
+    private var helperCooldownItems: [AccountItem] {
+        snapshot.allObjectItems.filter { $0.helperCooldownSeconds != nil }
+    }
+
+    private func durationLabel(_ seconds: Int64) -> String {
+        let days = seconds / 86_400
+        let hours = (seconds % 86_400) / 3_600
+        let minutes = (seconds % 3_600) / 60
+        if days > 0 { return String(days) + "天" + String(hours) + "小时" }
+        if hours > 0 { return String(hours) + "小时" + String(minutes) + "分钟" }
+        return String(max(1, minutes)) + "分钟"
+    }
+}
+
+struct SnapshotMetric: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.bold).monospacedDigit())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 

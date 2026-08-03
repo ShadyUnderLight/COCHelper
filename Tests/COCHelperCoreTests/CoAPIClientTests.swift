@@ -279,4 +279,149 @@ final class CoAPIClientTests: XCTestCase {
 
         XCTAssertEqual(result, .authorizationFailed(reason: "accessDenied.invalidIp"))
     }
+
+    // MARK: - Review-fix coverage
+
+    func testRateLimitRetryHonorsRetryAfterHeader() async throws {
+        // 服务器 Retry-After 为 1 秒：即使本地退避基数是 0.001s，重试前也必须
+        // 尊重服务器指示（sleep ≈ 1s，而不是 0.001s 连打）。
+        let counter = CallCounter()
+        let client = CoAPIClient(
+            config: CoAPIConfig(baseRetryDelay: 0.001, maxRetryDelay: 0.1),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        let startedAt = Date()
+        MockURLProtocol.handler = { request in
+            counter.increment()
+            if counter.count == 1 {
+                return (mockResponse(429, headers: ["Retry-After": "1"], url: request.url!), Data())
+            }
+            return (mockResponse(200, url: request.url!), Data(#"{"items":[{"id":1}]}"#.utf8))
+        }
+
+        let result = try await client.fetchLocations()
+
+        XCTAssertEqual(result.items?.count, 1)
+        XCTAssertEqual(counter.count, 2)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(startedAt), 0.8,
+                                    "重试间隔应尊重 Retry-After（≥0.8s）而不是本地 0.001s 基数的指数退避")
+    }
+
+    func testRateLimitRetryAfterFromBody() async {
+        // Retry-After 来自响应 body（无 header）时也能提取。
+        let client = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        MockURLProtocol.handler = { request in
+            (mockResponse(429, url: request.url!), Data(#"{"reason":"rateLimitExceeded","retryAfter":30}"#.utf8))
+        }
+
+        await expectError(try await client.request(path: "/locations"), .rateLimited(retryAfterSeconds: 30))
+    }
+
+    func testRetryableURLErrorRetriesThenSucceeds() async throws {
+        let counter = CallCounter()
+        let client = CoAPIClient(
+            config: CoAPIConfig(baseRetryDelay: 0.001),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        MockURLProtocol.handler = { request in
+            counter.increment()
+            if counter.count == 1 {
+                throw URLError(.networkConnectionLost)
+            }
+            return (mockResponse(200, url: request.url!), Data(#"{"items":[{"id":1}]}"#.utf8))
+        }
+
+        let result = try await client.fetchLocations()
+
+        XCTAssertEqual(result.items?.count, 1)
+        XCTAssertEqual(counter.count, 2, "可重试网络错误后应重试一次")
+    }
+
+    func testTokenRereadBetweenRetries() async {
+        // token 在每次 attempt 重新读取：第一次有效、第二次变为 nil 时，
+        // 第二次 attempt 不发请求，直接报 missingCredentials。
+        let counter = CallCounter()
+        let tokenSource = TokenSequence(["tok-1", nil])
+        let client = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 2, baseRetryDelay: 0.001),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { tokenSource.next() }
+        )
+        MockURLProtocol.handler = { request in
+            counter.increment()
+            return (mockResponse(429, url: request.url!), Data())
+        }
+
+        await expectError(try await client.request(path: "/locations"), .missingCredentials)
+        XCTAssertEqual(counter.count, 1, "token 变为 nil 后不应再发请求")
+    }
+
+    func testNegativeRetryDelayDoesNotTrap() async {
+        // 负数 baseRetryDelay/maxRetryDelay 不得触发 UInt64 转换 trap。
+        let counter = CallCounter()
+        let client = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 1, baseRetryDelay: -1, maxRetryDelay: -1),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        MockURLProtocol.handler = { request in
+            counter.increment()
+            return (mockResponse(429, url: request.url!), Data())
+        }
+
+        await expectError(try await client.request(path: "/locations"), .rateLimited(retryAfterSeconds: nil))
+        XCTAssertEqual(counter.count, 2, "负数退避配置应退化为立即重试")
+    }
+
+    func testSmokeMapsErrorKinds() async {
+        // smoke 六类失败映射：每种错误类别 → 对应 smoke 结果。
+        let cases: [(status: Int, body: String?, expected: CoAPISmokeResult)] = [
+            (404, nil, .notFound),
+            (429, nil, .rateLimited),
+            (500, nil, .serverError),
+            (200, "not json", .networkFailure(detail: "malformed response")),
+        ]
+        for c in cases {
+            let client = makeClient(config: CoAPIConfig(maxRetryCount: 0)) { request in
+                (mockResponse(c.status, url: request.url!), Data((c.body ?? "").utf8))
+            }
+            let result = await client.smoke()
+            XCTAssertEqual(result, c.expected, "smoke 对 status \(c.status) 的映射错误")
+        }
+
+        // 超时 → networkFailure("timeout")
+        let timeoutClient = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        MockURLProtocol.handler = { _ in throw URLError(.timedOut) }
+        XCTAssertEqual(await timeoutClient.smoke(), .networkFailure(detail: "timeout"))
+    }
+}
+
+/// Thread-safe sequential token source for asserting token re-read between retries.
+private final class TokenSequence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String?]
+    private var index = 0
+
+    init(_ values: [String?]) {
+        self.values = values
+    }
+
+    func next() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard index < values.count else { return nil }
+        let value = values[index]
+        index += 1
+        return value
+    }
 }

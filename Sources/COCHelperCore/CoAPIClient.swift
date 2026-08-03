@@ -59,7 +59,8 @@ public struct CoAPIClient: Sendable {
 
             do {
                 let (data, response) = try await session.data(for: urlRequest)
-                switch statusCode(of: response) {
+                let code = statusCode(of: response)
+                switch code {
                 case 200..<300:
                     return data
                 case 401:
@@ -71,14 +72,14 @@ public struct CoAPIClient: Sendable {
                 case 429:
                     let retryAfter = retryAfterSeconds(from: response, body: data)
                     if attempt < maxRetries {
-                        try await sleepForRetry(attempt: attempt)
+                        try await sleepForRetry(attempt: attempt, retryAfterSeconds: retryAfter)
                         continue
                     }
                     throw CoAPIError.rateLimited(retryAfterSeconds: retryAfter)
                 case 500..<600:
-                    throw CoAPIError.serverError(statusCode: statusCode(of: response))
+                    throw CoAPIError.serverError(statusCode: code)
                 default:
-                    throw CoAPIError.network(underlying: "unexpected status \(statusCode(of: response))")
+                    throw CoAPIError.network(underlying: "unexpected status \(code)")
                 }
             } catch let error as CancellationError {
                 // Task cancellation must propagate as-is (e.g. from Task.sleep
@@ -164,18 +165,28 @@ public struct CoAPIClient: Sendable {
         }
     }
 
-    private func sleepForRetry(attempt: Int) async throws {
+    private func sleepForRetry(attempt: Int, retryAfterSeconds: Int? = nil) async throws {
         let exponential = config.baseRetryDelay * pow(2.0, Double(attempt))
-        let delay = min(exponential, config.maxRetryDelay)
-        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        let serverHint = retryAfterSeconds.map { Double(max(0, $0)) } ?? 0
+        let cap = max(0, config.maxRetryDelay)
+        // 429 时若服务器给出 Retry-After，尊重它（可超过本地 maxRetryDelay，
+        // 避免以过短间隔连打烧光重试次数）；其他情况用本地指数退避。
+        // 任何路径都不超过 1 小时绝对上限，且负数配置不会触发 UInt64 转换 trap。
+        let delay = serverHint > 0
+            ? min(max(exponential, serverHint), max(cap, serverHint))
+            : min(max(0, exponential), cap)
+        let seconds = min(delay, 3600)
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
     private func forbiddenReason(from data: Data) -> String {
+        // 服务器回显内容：截断到固定长度，避免超长 reason 进入日志/UI。
+        let maxReasonLength = 200
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let reason = object["reason"] as? String, !reason.isEmpty else {
             return "forbidden"
         }
-        return reason
+        return String(reason.prefix(maxReasonLength))
     }
 
     private func retryAfterSeconds(from response: URLResponse, body: Data) -> Int? {

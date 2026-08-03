@@ -60,7 +60,7 @@ open .build/COCHelper.app
 
 ### token 存储（二选一）
 
-- **环境变量（临时验证）**：`COC_TOKEN=<你的token> swift run smoke-api`
+- **环境变量（临时验证）**：`COC_TOKEN=<你的token> swift run smoke-api`。注意：token 会留在 shell history 与进程环境中，临时验证后建议清理；长期使用推荐下面的 Keychain 方式。
 - **Keychain（推荐）**：token 存入 macOS Keychain（service `com.coc-helper.coapi`，account `developer-token`）。可通过运行 `swift run smoke-api` 配合工具写入，或使用 `security add-generic-password -s com.coc-helper.coapi -a developer-token -w`。
 
 **安全边界**：token 绝不写入源码、UserDefaults、村庄 JSON、日志或测试 fixture；本仓库任何文件都不应出现真实凭证。

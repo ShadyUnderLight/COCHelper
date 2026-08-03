@@ -402,7 +402,8 @@ final class CoAPIClientTests: XCTestCase {
             tokenProvider: { "fake-token" }
         )
         MockURLProtocol.handler = { _ in throw URLError(.timedOut) }
-        XCTAssertEqual(await timeoutClient.smoke(), .networkFailure(detail: "timeout"))
+        let timeoutResult = await timeoutClient.smoke()
+        XCTAssertEqual(timeoutResult, .networkFailure(detail: "timeout"))
     }
 }
 

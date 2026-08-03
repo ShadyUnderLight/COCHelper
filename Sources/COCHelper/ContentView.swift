@@ -577,7 +577,7 @@ struct AccountDataView: View {
                         TrackerEmptyRow(
                             systemImage: "tray",
                             title: "当前村庄还没有已应用快照",
-                            detail: "解析成功后需要点击“应用到当前村庄”，数据才会进入升级追踪。"
+                            detail: "解析成功后点击“确认导入”，数据才会进入升级追踪。"
                         )
                     }
                 }

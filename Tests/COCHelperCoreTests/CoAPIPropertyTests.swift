@@ -176,17 +176,15 @@ final class CoAPIPropertyTests: XCTestCase {
             do {
                 let decoded = try decoder.decode(LocationsResponse.self, from: Data(json.utf8))
                 assertOrFail(
-                    decoded.items?.count == itemCount,
-                    "items.count 应为 \(itemCount)（实际 \(decoded.items?.count ?? -1)）",
+                    decoded.items.count == itemCount,
+                    "items.count 应为 \(itemCount)（实际 \(decoded.items.count)）",
                     context: context
                 )
-                if let decodedItems = decoded.items {
-                    assertOrFail(
-                        zip(decodedItems, items).allSatisfy { $0.id == $1.id },
-                        "每个 item 的 id 应等于生成值",
-                        context: context
-                    )
-                }
+                assertOrFail(
+                    zip(decoded.items, items).allSatisfy { $0.id == $1.id },
+                    "每个 item 的 id 应等于生成值",
+                    context: context
+                )
             } catch {
                 print(context)
                 XCTFail("含未知字段的 JSON 应解码成功，但抛错: \(error) | \(context)")

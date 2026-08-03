@@ -99,11 +99,14 @@ public struct CoAPIClient: Sendable {
                     try await sleepForRetry(attempt: attempt)
                     continue
                 }
+                // Sanitized: `localizedDescription` may embed request URLs/paths
+                // (e.g. via FailingURLString userInfo); only the numeric code is
+                // kept so diagnostics stay stable and never leak the target path.
                 throw error.code == .timedOut
                     ? CoAPIError.timeout
-                    : CoAPIError.network(underlying: error.localizedDescription)
+                    : CoAPIError.network(underlying: "transport error (URLError code \(error.code.rawValue))")
             } catch {
-                throw CoAPIError.network(underlying: error.localizedDescription)
+                throw CoAPIError.network(underlying: "unknown transport error: \(type(of: error))")
             }
         }
 
@@ -123,7 +126,7 @@ public struct CoAPIClient: Sendable {
     public func smoke() async -> CoAPISmokeResult {
         do {
             let locations = try await fetchLocations()
-            return .success(locationCount: locations.items?.count ?? 0)
+            return .success(locationCount: locations.items.count)
         } catch let error as CoAPIError {
             switch error {
             case .missingCredentials:

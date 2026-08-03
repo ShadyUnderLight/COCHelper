@@ -65,10 +65,10 @@ final class CoAPIClientTests: XCTestCase {
 
         let result = try await client.fetchLocations()
 
-        XCTAssertEqual(result.items?.count, 2)
-        XCTAssertEqual(result.items?[0].id, 32_000_000)
-        XCTAssertEqual(result.items?[0].name, "International")
-        XCTAssertEqual(result.items?[1].isCountry, true)
+        XCTAssertEqual(result.items.count, 2)
+        XCTAssertEqual(result.items[0].id, 32_000_000)
+        XCTAssertEqual(result.items[0].name, "International")
+        XCTAssertEqual(result.items[1].isCountry, true)
 
         let lastRequest = MockURLProtocol.lastRequest()
         XCTAssertEqual(lastRequest?.url?.path, "/v1/locations")
@@ -83,8 +83,8 @@ final class CoAPIClientTests: XCTestCase {
 
         let result = try await client.fetchLocations()
 
-        XCTAssertEqual(result.items?.count, 1)
-        XCTAssertEqual(result.items?[0].id, 1)
+        XCTAssertEqual(result.items.count, 1)
+        XCTAssertEqual(result.items[0].id, 1)
     }
 
     func testMalformedJSON() async {
@@ -210,7 +210,7 @@ final class CoAPIClientTests: XCTestCase {
 
         let result = try await client.fetchLocations()
 
-        XCTAssertEqual(result.items?.count, 1)
+        XCTAssertEqual(result.items.count, 1)
         XCTAssertEqual(counter.count, 2, "429 后应重试一次")
     }
 
@@ -302,7 +302,7 @@ final class CoAPIClientTests: XCTestCase {
 
         let result = try await client.fetchLocations()
 
-        XCTAssertEqual(result.items?.count, 1)
+        XCTAssertEqual(result.items.count, 1)
         XCTAssertEqual(counter.count, 2)
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(startedAt), 0.8,
                                     "重试间隔应尊重 Retry-After（≥0.8s）而不是本地 0.001s 基数的指数退避")
@@ -339,7 +339,7 @@ final class CoAPIClientTests: XCTestCase {
 
         let result = try await client.fetchLocations()
 
-        XCTAssertEqual(result.items?.count, 1)
+        XCTAssertEqual(result.items.count, 1)
         XCTAssertEqual(counter.count, 2, "可重试网络错误后应重试一次")
     }
 
@@ -435,6 +435,69 @@ final class CoAPIClientTests: XCTestCase {
         MockURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
         let networkResult = await networkClient.smoke()
         XCTAssertEqual(networkResult, .networkFailure(detail: "network"))
+    }
+
+    // MARK: - External review fixes (P1/P2)
+
+    func testEmptyObjectResponseIsMalformed() async {
+        // 结构异常的 2xx（空对象）必须判为 malformed，不能报连通成功。
+        let client = makeClient { request in
+            (mockResponse(200, url: request.url!), Data("{}".utf8))
+        }
+
+        await expectError(try await client.fetchLocations(), .malformedResponse(detail: "locations decode failed"))
+    }
+
+    func testNullItemsResponseIsMalformed() async {
+        // `items: null` 同样违反 locations schema。
+        let client = makeClient { request in
+            (mockResponse(200, url: request.url!), Data(#"{"items":null}"#.utf8))
+        }
+
+        await expectError(try await client.fetchLocations(), .malformedResponse(detail: "locations decode failed"))
+    }
+
+    func testEmptyObjectSmokeReportsNetworkFailure() async {
+        // smoke 对结构异常响应必须退出为非成功，而不是 success(locationCount: 0)。
+        let client = makeClient { request in
+            (mockResponse(200, url: request.url!), Data("{}".utf8))
+        }
+
+        let result = await client.smoke()
+
+        XCTAssertEqual(result, .networkFailure(detail: "malformed response"))
+    }
+
+    func testNetworkErrorDetailIsSanitized() async {
+        // 底层错误即使携带敏感 URL/path（FailingURLString），映射后的
+        // CoAPIError.network 也不能包含它。
+        let sensitivePath = "/players/%23SECRETTAG123"
+        let client = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession(),
+            tokenProvider: { "fake-token" }
+        )
+        MockURLProtocol.handler = { _ in
+            throw URLError(.cannotFindHost, userInfo: [
+                NSURLErrorFailingURLErrorKey: URL(string: "https://api.clashofclans.com" + sensitivePath)!,
+                NSURLErrorFailingURLStringErrorKey: "https://api.clashofclans.com" + sensitivePath,
+            ])
+        }
+
+        do {
+            _ = try await client.request(path: "/locations")
+            XCTFail("expected network error")
+        } catch let error as CoAPIError {
+            guard case .network(let underlying) = error else {
+                XCTFail("expected .network, got \(error)")
+                return
+            }
+            XCTAssertFalse(underlying.contains(sensitivePath), "network detail 不得包含敏感 path")
+            XCTAssertFalse(underlying.contains("clashofclans"), "network detail 不得包含 host")
+            XCTAssertTrue(underlying.contains("URLError code"), "应保留可诊断的错误码分类")
+        } catch {
+            XCTFail("unexpected error type: \(error)")
+        }
     }
 }
 

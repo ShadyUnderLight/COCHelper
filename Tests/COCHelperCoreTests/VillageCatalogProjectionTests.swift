@@ -476,6 +476,65 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(item.status, .complete)
     }
 
+    func testMixedGroupFinishedTimerWithMalformedKeepsReimportSignal() throws {
+        // 回归（P2-1 覆盖缺口，场景 d）：同键组内既有合法计时结束记录
+        // （timer=3600、remaining=0）又有 malformed 记录（有 timer 无 remaining）时，
+        // 聚合项必须保留「计时已结束」信号——组内确实存在计时结束实例，
+        // 不得因 malformed 记录参与聚合而把 needsReimport 一起吞掉。
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 3600, remainingSeconds: 0, path: "0"),
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 600, remainingSeconds: nil, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.count, 2)
+        XCTAssertNotNil(item.timerSeconds,
+                        "组内合法计时结束实例的信号不能因 malformed 记录而丢失")
+        XCTAssertEqual(item.remainingSeconds, 0)
+        XCTAssertTrue(item.needsReimport,
+                      "组内存在计时结束实例时聚合项必须报「待重新导入」")
+        XCTAssertEqual(item.status, .complete)
+        XCTAssertFalse(item.isUpgrading)
+    }
+
+    func testMixedGroupUpgradingWithMalformedStaysSeparated() throws {
+        // 回归（P2-1 覆盖缺口，场景 e）：同键组内升级记录与 malformed 记录并存时，
+        // 升级记录必须单独保留（不聚合、count 独立），malformed 记录进「|idle」组
+        // 聚合成普通完成项（无 timer、无 remaining、不报「待重新导入」）——
+        // 不得混入升级组、不得伪造升级/计时结束状态。
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2, count: 1,
+                         timerSeconds: 3600, remainingSeconds: 300, path: "0"),
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 600, remainingSeconds: nil, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 2,
+                       "升级记录与 |idle 聚合项必须各自保留")
+        let upgrading = try XCTUnwrap(home.items.first(where: \.isUpgrading))
+        XCTAssertEqual(upgrading.count, 1)
+        XCTAssertTrue(upgrading.isUpgrading)
+        XCTAssertEqual(upgrading.status, .upgrading)
+        XCTAssertEqual(upgrading.remainingSeconds, 300)
+        XCTAssertEqual(upgrading.timerSeconds, 3600)
+        XCTAssertFalse(upgrading.needsReimport)
+
+        let idle = try XCTUnwrap(home.items.first { !$0.isUpgrading })
+        XCTAssertEqual(idle.status, .complete, "malformed 记录不得混入升级组")
+        XCTAssertEqual(idle.count, 1)
+        XCTAssertNil(idle.timerSeconds, "malformed 记录不得伪造计时结束信号")
+        XCTAssertNil(idle.remainingSeconds)
+        XCTAssertFalse(idle.needsReimport, "malformed 记录不得误报「待重新导入」")
+        XCTAssertNil(idle.nextLevel)
+    }
+
     // MARK: - Property-based tests
 
     private func makeRandomSnapshot(

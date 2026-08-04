@@ -18,7 +18,7 @@ final class VillageDetailProjectionTests: XCTestCase {
         return VillageItemState(
             id: id,
             section: "buildings",
-            dataID: Int64(id.hashValue) & 0xFFFF,
+            dataID: 1,
             base: .home,
             name: "item-" + id,
             category: category,
@@ -95,32 +95,46 @@ final class VillageDetailProjectionTests: XCTestCase {
                           isUpgrading: status == .upgrading,
                           nextLevel: status == .upgrading ? level + 1 : nil)
             let total = VillageDetailProjection.totalCompletion(from: [it])
-            XCTAssertTrue(stat(total) == expected, "status=\(status)")
+            XCTAssertTrue(stat(total) == expected, "status=\(status), got \(stat(total))")
         }
     }
 
     func testMaxedWithoutMaxLevelCountsUnknown() {
         let it = item(status: .maxed, level: 10, maxLevel: nil)
         let total = VillageDetailProjection.totalCompletion(from: [it])
-        XCTAssertTrue(stat(total) == (0, 0, 1))
+        XCTAssertTrue(stat(total) == (0, 0, 1), "got \(stat(total))")
     }
 
     func testUpgradingBeyondMaxIsVersionMismatchUnknown() {
         let it = item(status: .upgrading, level: 10, maxLevel: 10, isUpgrading: true, nextLevel: 11)
         let total = VillageDetailProjection.totalCompletion(from: [it])
-        XCTAssertTrue(stat(total) == (0, 0, 1))
+        XCTAssertTrue(stat(total) == (0, 0, 1), "got \(stat(total))")
     }
 
     func testUpgradingAtMaxBoundaryIsKnown() {
         let it = item(status: .upgrading, level: 9, maxLevel: 10, isUpgrading: true, nextLevel: 10)
         let total = VillageDetailProjection.totalCompletion(from: [it])
-        XCTAssertTrue(stat(total) == (1, 0, 0))
+        XCTAssertTrue(stat(total) == (1, 0, 0), "got \(stat(total))")
     }
 
     func testNilLevelCountsUnknown() {
         let it = item(status: .complete, level: nil, maxLevel: 10)
         let total = VillageDetailProjection.totalCompletion(from: [it])
-        XCTAssertTrue(stat(total) == (0, 0, 1))
+        XCTAssertTrue(stat(total) == (0, 0, 1), "got \(stat(total))")
+    }
+
+    func testUpgradingWithoutMaxLevelCountsUnknown() {
+        // 目录未命中但计时中（上游可达：upgrading 分支独立于目录）
+        let it = item(status: .upgrading, level: 3, maxLevel: nil, isUpgrading: true, nextLevel: 4)
+        let total = VillageDetailProjection.totalCompletion(from: [it])
+        XCTAssertTrue(stat(total) == (0, 0, 1), "got \(stat(total))")
+    }
+
+    func testUpgradingWithoutLevelCountsUnknown() {
+        // malformed 记录：计时中但等级未知（上游可达）
+        let it = item(status: .upgrading, level: nil, maxLevel: 10, isUpgrading: true, nextLevel: nil)
+        let total = VillageDetailProjection.totalCompletion(from: [it])
+        XCTAssertTrue(stat(total) == (0, 0, 1), "got \(stat(total))")
     }
 
     func testTotalEqualsSumOfCategoryStats() {
@@ -198,7 +212,7 @@ final class VillageDetailProjectionTests: XCTestCase {
             // 命中或类别不支持 → maxLevel 必 nil；其余状态目录命中 → level/maxLevel 非 nil
             // （available 由投影不产出，此处仅防御性构造 level/maxLevel 齐全）。
             let isCatalogHit = status != .unknown && status != .unavailable
-            let level: Int? = isCatalogHit ? Int(rng.next() % 20) : Int(rng.next() % 20)
+            let level: Int? = Int(rng.next() % 20)
             let maxLevel: Int? = isCatalogHit ? Int(rng.next() % 20) : nil
             let isUpgrading = status == .upgrading
             let nextLevel: Int? = isUpgrading ? level.map { l in
@@ -215,7 +229,7 @@ final class VillageDetailProjectionTests: XCTestCase {
 }
 
 /// 可复现 PRNG（SplitMix64），替代 SwiftCheck 的 property-based 测试。
-struct SplitMix64: RandomNumberGenerator {
+fileprivate struct SplitMix64: RandomNumberGenerator {
     private var state: UInt64
     init(seed: UInt64) { state = seed }
     mutating func next() -> UInt64 {

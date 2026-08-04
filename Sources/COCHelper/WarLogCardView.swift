@@ -76,7 +76,9 @@ struct WarLogCardView: View {
             }
             // 总是显示刷新按钮：failed（重试）与 stale（重新拉取）都需入口，
             // 避免"有 lastGood 但状态非 success"时卡片死锁（对齐 3b 模式）。
-            refreshButton("刷新战争日志")
+            // 档案已知"不公开"时用户点刷新意图明确 → force 绕过预判
+            //（否则被 AppModel 预判静默拦截，按钮无任何效果）。
+            refreshButton("刷新战争日志", force: model.isCurrentWarLogKnownNotPublic)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Label("尚未获取战争日志", systemImage: "circle.dashed")
@@ -87,10 +89,14 @@ struct WarLogCardView: View {
         }
     }
 
-    private func refreshButton(_ title: String) -> some View {
+    private func refreshButton(_ title: String, force: Bool = false) -> some View {
         HStack {
             Button {
-                model.refreshCurrentWarLog()
+                if force {
+                    model.refreshCurrentWarLog(force: true)
+                } else {
+                    model.refreshCurrentWarLog()
+                }
             } label: {
                 if model.isRefreshingWarLogData {
                     ProgressView().controlSize(.small)

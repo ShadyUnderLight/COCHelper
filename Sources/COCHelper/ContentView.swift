@@ -95,7 +95,7 @@ struct ContentView: View {
                     selection = .accountData
                 }
             case .villageTracker(let villageID):
-                UpgradeTrackerView(villageID: villageID) {
+                VillageDetailView(villageID: villageID) {
                     selection = .accountData
                 }
             case .accountData:

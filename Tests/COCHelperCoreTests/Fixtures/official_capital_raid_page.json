@@ -1,0 +1,32 @@
+{
+  "items": [
+    {
+      "state": "ended",
+      "startTime": "20260701T080000.000Z",
+      "endTime": "20260703T080000.000Z",
+      "totalLooted": 123456,
+      "offensiveReward": 5000,
+      "defensiveReward": 2500,
+      "clan": {
+        "attackCount": 60,
+        "destroyedDistricts": 120
+      },
+      "attackLog": [],
+      "defenseLog": []
+    },
+    {
+      "state": "ended",
+      "startTime": "20260624T080000.000Z",
+      "endTime": "20260626T080000.000Z",
+      "totalLooted": 98000,
+      "offensiveReward": 4500,
+      "defensiveReward": 2000,
+      "clan": {
+        "attackCount": 58,
+        "destroyedDistricts": 110
+      }
+    }
+  ],
+  "before": "RAIDCURSORBEFORE1",
+  "after": "RAIDCURSORAFTER1"
+}

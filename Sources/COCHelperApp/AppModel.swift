@@ -26,21 +26,34 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var clanWarStates: [String: ClanWarAPIState] = [:]
     /// 战争刷新进行中（防重入 + UI 禁用）。
     @Published public private(set) var isRefreshingClanWarData = false
+    /// 战争日志共享数据层（分页：lastGood = 累计页 + 最新游标）。
+    @Published public private(set) var clanWarLogStates: [String: ClanWarLogAPIState] = [:]
+    /// 战争日志刷新进行中。
+    @Published public private(set) var isRefreshingWarLogData = false
+    /// 部落资本赛季共享数据层（分页）。
+    @Published public private(set) var clanCapitalStates: [String: ClanCapitalAPIState] = [:]
+    /// 资本赛季刷新进行中。
+    @Published public private(set) var isRefreshingCapitalData = false
 
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"
     private let villagesStorageKey = "coc-helper.villages.v1"
     private static let clanStatesStorageKey = "coc-helper.clans.v1"
     private static let clanWarStatesStorageKey = "coc-helper.clan-wars.v1"
+    private static let clanWarLogStatesStorageKey = "coc-helper.clan-war-logs.v1"
+    private static let clanCapitalStatesStorageKey = "coc-helper.clan-capitals.v1"
     private let refresher: OfficialPlayerRefresher
     private let clanRefresher: ClanRefresher
     private let clanWarRefresher: ClanWarRefresher
+    /// 分页端点（warlog / capitalraidseasons）共用的客户端。
+    private let clanLogClient: CoAPIClient
 
     public init(
         defaults: UserDefaults = .standard,
         refresher: OfficialPlayerRefresher? = nil,
         clanRefresher: ClanRefresher? = nil,
-        clanWarRefresher: ClanWarRefresher? = nil
+        clanWarRefresher: ClanWarRefresher? = nil,
+        clanLogClient: CoAPIClient? = nil
     ) {
         self.defaults = defaults
         let loadedVillages = Self.loadVillages(from: defaults)
@@ -83,8 +96,17 @@ public final class AppModel: ObservableObject {
             self.clanWarRefresher = ClanWarRefresher(client: CoAPIClient { try? store.readToken() })
         }
 
+        if let clanLogClient {
+            self.clanLogClient = clanLogClient
+        } else {
+            let store = KeychainTokenStore()
+            self.clanLogClient = CoAPIClient { try? store.readToken() }
+        }
+
         clanStates = Self.loadClanStates(from: defaults)
         clanWarStates = Self.loadClanWarStates(from: defaults)
+        clanWarLogStates = Self.loadClanWarLogStates(from: defaults)
+        clanCapitalStates = Self.loadClanCapitalStates(from: defaults)
         villages = initialVillages
         selectedVillageID = initialVillages[0].id
         accountSnapshot = initialVillages[0].accountSnapshot
@@ -477,6 +499,184 @@ public final class AppModel: ObservableObject {
     private static func loadClanWarStates(from defaults: UserDefaults) -> [String: ClanWarAPIState] {
         guard let data = defaults.data(forKey: Self.clanWarStatesStorageKey),
               let store = try? JSONDecoder().decode(ClanWarStateStore.self, from: data) else {
+            return [:]
+        }
+        return store.states
+    }
+
+    // MARK: - 战争日志（分页，按需）
+
+    /// 当前村庄所属部落的战争日志状态（nil = 无部落 / 从未请求）。
+    public var currentWarLogState: ClanWarLogAPIState? {
+        guard let tag = currentVillageClanTag else { return nil }
+        return clanWarLogStates[tag]
+    }
+
+    /// 部落档案已知战争日志不公开（UI 预判：不发起请求，显示显式状态）。
+    /// 403 兜底：即使档案过期，请求失败也会显示失败原因。
+    public var isCurrentWarLogKnownNotPublic: Bool {
+        currentClanState?.lastGood?.isWarLogPublic == false
+    }
+
+    /// 当前战争日志是否还有更多页（分页按钮可用性）。
+    public var currentWarLogHasMore: Bool {
+        guard let state = currentWarLogState, state.status == .success,
+              let cursor = state.lastGood?.after else { return false }
+        return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
+    }
+
+    /// 战争日志首屏/刷新：重新拉第一页（**替换**累计列表，避免陈旧混合）。
+    public func refreshCurrentWarLog() {
+        guard !isRefreshingWarLogData else { return }
+        guard let tag = currentVillageClanTag else { return }
+        guard !isCurrentWarLogKnownNotPublic else { return }
+        isRefreshingWarLogData = true
+        let client = clanLogClient
+        let parserVersion = ClanWarLogAPIState.currentParserVersion
+
+        Task { [weak self] in
+            guard let self else { return }
+            let state = await EndpointRefresher.fetchSingle(
+                tag: tag,
+                previous: nil,
+                parserVersion: parserVersion
+            ) { tag in
+                try await client.fetchWarLog(tag: tag)
+            }
+            self.clanWarLogStates[tag] = state
+            self.persistClanWarLogStates()
+            self.isRefreshingWarLogData = false
+        }
+    }
+
+    /// 战争日志加载更多：用现有游标向后翻页，**合并**（去重）到累计列表。
+    public func loadMoreCurrentWarLog() {
+        guard !isRefreshingWarLogData else { return }
+        guard let tag = currentVillageClanTag else { return }
+        guard let current = clanWarLogStates[tag],
+              current.status == .success,
+              let cursor = current.lastGood?.after else { return }
+        isRefreshingWarLogData = true
+        let client = clanLogClient
+        let parserVersion = ClanWarLogAPIState.currentParserVersion
+
+        Task { [weak self] in
+            guard let self else { return }
+            let state = await EndpointRefresher.fetchSingle(
+                tag: tag,
+                previous: current,
+                parserVersion: parserVersion
+            ) { tag in
+                try await client.fetchWarLog(tag: tag, after: cursor)
+            }
+            if state.status == .success,
+               let fetched = state.lastGood,
+               let existing = current.lastGood {
+                var merged = state
+                merged.lastGood = PaginationMerge.mergedPage(existing: existing, fetched: fetched)
+                self.clanWarLogStates[tag] = merged
+            } else {
+                // 失败：state 已保留 previous 的 last-good（累计页）
+                self.clanWarLogStates[tag] = state
+            }
+            self.persistClanWarLogStates()
+            self.isRefreshingWarLogData = false
+        }
+    }
+
+    private func persistClanWarLogStates() {
+        guard let data = try? JSONEncoder().encode(ClanWarLogStateStore(states: clanWarLogStates)) else { return }
+        defaults.set(data, forKey: Self.clanWarLogStatesStorageKey)
+    }
+
+    private static func loadClanWarLogStates(from defaults: UserDefaults) -> [String: ClanWarLogAPIState] {
+        guard let data = defaults.data(forKey: Self.clanWarLogStatesStorageKey),
+              let store = try? JSONDecoder().decode(ClanWarLogStateStore.self, from: data) else {
+            return [:]
+        }
+        return store.states
+    }
+
+    // MARK: - 部落资本赛季（分页，按需）
+
+    /// 当前村庄所属部落的资本赛季状态。
+    public var currentCapitalState: ClanCapitalAPIState? {
+        guard let tag = currentVillageClanTag else { return nil }
+        return clanCapitalStates[tag]
+    }
+
+    /// 当前资本赛季是否还有更多页。
+    public var currentCapitalHasMore: Bool {
+        guard let state = currentCapitalState, state.status == .success,
+              let cursor = state.lastGood?.after else { return false }
+        return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
+    }
+
+    /// 资本赛季首屏/刷新（替换累计列表）。
+    public func refreshCurrentCapitalRaid() {
+        guard !isRefreshingCapitalData else { return }
+        guard let tag = currentVillageClanTag else { return }
+        isRefreshingCapitalData = true
+        let client = clanLogClient
+        let parserVersion = ClanCapitalAPIState.currentParserVersion
+
+        Task { [weak self] in
+            guard let self else { return }
+            let state = await EndpointRefresher.fetchSingle(
+                tag: tag,
+                previous: nil,
+                parserVersion: parserVersion
+            ) { tag in
+                try await client.fetchCapitalRaidSeasons(tag: tag)
+            }
+            self.clanCapitalStates[tag] = state
+            self.persistClanCapitalStates()
+            self.isRefreshingCapitalData = false
+        }
+    }
+
+    /// 资本赛季加载更多（合并去重）。
+    public func loadMoreCurrentCapitalRaid() {
+        guard !isRefreshingCapitalData else { return }
+        guard let tag = currentVillageClanTag else { return }
+        guard let current = clanCapitalStates[tag],
+              current.status == .success,
+              let cursor = current.lastGood?.after else { return }
+        isRefreshingCapitalData = true
+        let client = clanLogClient
+        let parserVersion = ClanCapitalAPIState.currentParserVersion
+
+        Task { [weak self] in
+            guard let self else { return }
+            let state = await EndpointRefresher.fetchSingle(
+                tag: tag,
+                previous: current,
+                parserVersion: parserVersion
+            ) { tag in
+                try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor)
+            }
+            if state.status == .success,
+               let fetched = state.lastGood,
+               let existing = current.lastGood {
+                var merged = state
+                merged.lastGood = PaginationMerge.mergedPage(existing: existing, fetched: fetched)
+                self.clanCapitalStates[tag] = merged
+            } else {
+                self.clanCapitalStates[tag] = state
+            }
+            self.persistClanCapitalStates()
+            self.isRefreshingCapitalData = false
+        }
+    }
+
+    private func persistClanCapitalStates() {
+        guard let data = try? JSONEncoder().encode(ClanCapitalStateStore(states: clanCapitalStates)) else { return }
+        defaults.set(data, forKey: Self.clanCapitalStatesStorageKey)
+    }
+
+    private static func loadClanCapitalStates(from defaults: UserDefaults) -> [String: ClanCapitalAPIState] {
+        guard let data = defaults.data(forKey: Self.clanCapitalStatesStorageKey),
+              let store = try? JSONDecoder().decode(ClanCapitalStateStore.self, from: data) else {
             return [:]
         }
         return store.states

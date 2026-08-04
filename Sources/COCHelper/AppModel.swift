@@ -16,13 +16,20 @@ final class AppModel: ObservableObject {
     @Published private(set) var isRefreshingOfficialData = false
     /// 最近一次批量刷新结果摘要（用于 UI 提示）。
     @Published private(set) var officialRefreshSummary: String?
+    /// 部落共享数据层：clan tag → 状态。部落数据不写入村庄档案，
+    /// 同部落多个村庄共享同一份（Issue #7 验收：不产生重复存储矛盾）。
+    @Published private(set) var clanStates: [String: ClanAPIState] = [:]
+    /// 部落刷新进行中（防重入 + UI 禁用）。
+    @Published private(set) var isRefreshingClanData = false
 
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"
     private let villagesStorageKey = "coc-helper.villages.v1"
+    private let clanStatesStorageKey = "coc-helper.clans.v1"
     private let refresher: OfficialPlayerRefresher
+    private let clanRefresher: ClanRefresher
 
-    init(defaults: UserDefaults = .standard, refresher: OfficialPlayerRefresher? = nil) {
+    init(defaults: UserDefaults = .standard, refresher: OfficialPlayerRefresher? = nil, clanRefresher: ClanRefresher? = nil) {
         self.defaults = defaults
         let loadedVillages = Self.loadVillages(from: defaults)
         let initialVillages: [VillageProfile]
@@ -47,6 +54,17 @@ final class AppModel: ObservableObject {
             self.refresher = OfficialPlayerRefresher(client: CoAPIClient { try? store.readToken() })
         }
 
+        if let clanRefresher {
+            self.clanRefresher = clanRefresher
+        } else {
+            // 生产路径：与玩家 refresher 共用同一 Keychain token 来源。
+            // 初始化未完成时不能引用 self.tokenStore，KeychainTokenStore 是
+            // 同一 keychain 记录的薄封装，多实例读取结果一致。
+            let store = KeychainTokenStore()
+            self.clanRefresher = ClanRefresher(client: CoAPIClient { try? store.readToken() })
+        }
+
+        clanStates = Self.loadClanStates(from: defaults)
         villages = initialVillages
         selectedVillageID = initialVillages[0].id
         accountSnapshot = initialVillages[0].accountSnapshot
@@ -75,6 +93,24 @@ final class AppModel: ObservableObject {
 
     var currentVillageOfficialState: OfficialAPIState? {
         villages.first(where: { $0.id == selectedVillageID })?.officialAPIState
+    }
+
+    /// 当前村庄的部落归属：派生自最近成功玩家快照的 `clan.tag`。
+    /// 玩家换部落/离开部落后，新快照刷新即更新此值；旧部落数据保留在
+    /// `clanStates` 中但不会显示为当前归属。
+    var currentVillageClanTag: String? {
+        guard let tag = currentVillageOfficialState?.lastGood?.clan?.tag,
+              let normalized = OfficialPlayerTagValidator.normalized(tag),
+              OfficialPlayerTagValidator.isValid(normalized) else {
+            return nil
+        }
+        return normalized
+    }
+
+    /// 当前村庄所属部落的共享状态（nil = 无部落 / 从未请求）。
+    var currentClanState: ClanAPIState? {
+        guard let tag = currentVillageClanTag else { return nil }
+        return clanStates[tag]
     }
 
     // MARK: - API Token（仅 Keychain）
@@ -287,6 +323,9 @@ final class AppModel: ObservableObject {
             // 批量刷新只写一次 UserDefaults，避免 N+1 次全量 JSON 编码。
             self.persistVillages()
             self.isRefreshingOfficialData = false
+            // 玩家快照更新后部落归属可能变化，联动刷新部落共享数据
+            // （refreshAllClans 内部按 clan tag 去重）。
+            self.refreshAllClans()
         }
     }
 
@@ -302,6 +341,67 @@ final class AppModel: ObservableObject {
             officialRefreshSummary = nil
         }
         return true
+    }
+
+    // MARK: - 部落数据刷新（共享数据层）
+
+    /// 刷新当前村庄所属部落的档案（按 clan tag 去重，单 tag 单请求）。
+    func refreshCurrentClan() {
+        guard !isRefreshingClanData else { return }
+        guard let tag = currentVillageClanTag else { return }
+        isRefreshingClanData = true
+        let previous = clanStates
+
+        Task { [weak self] in
+            guard let self else { return }
+            let refreshed = await self.clanRefresher.refreshClans(
+                villageClanTags: [tag],
+                previous: previous
+            )
+            self.mergeClanStates(refreshed)
+            self.isRefreshingClanData = false
+        }
+    }
+
+    /// 批量刷新所有已导入村庄所属部落（同 clan tag 只请求一次，顺序执行）。
+    /// 玩家批量刷新完成后由 `refreshAllOfficialPlayers` 联动调用。
+    func refreshAllClans() {
+        guard !isRefreshingClanData else { return }
+        isRefreshingClanData = true
+        let clanTags = villages.map { $0.officialAPIState?.lastGood?.clan?.tag }
+        let previous = clanStates
+
+        Task { [weak self] in
+            guard let self else { return }
+            let refreshed = await self.clanRefresher.refreshClans(
+                villageClanTags: clanTags,
+                previous: previous
+            )
+            self.mergeClanStates(refreshed)
+            self.isRefreshingClanData = false
+        }
+    }
+
+    /// 合并刷新结果到共享存储：只覆盖本次请求过的 tag，其余保留
+    /// （旧部落快照不因换部落而丢失）。
+    private func mergeClanStates(_ refreshed: [String: ClanAPIState]) {
+        for (tag, state) in refreshed {
+            clanStates[tag] = state
+        }
+        persistClanStates()
+    }
+
+    private func persistClanStates() {
+        guard let data = try? JSONEncoder().encode(clanStates) else { return }
+        defaults.set(data, forKey: clanStatesStorageKey)
+    }
+
+    private static func loadClanStates(from defaults: UserDefaults) -> [String: ClanAPIState] {
+        guard let data = defaults.data(forKey: "coc-helper.clans.v1"),
+              let decoded = try? JSONDecoder().decode([String: ClanAPIState].self, from: data) else {
+            return [:]
+        }
+        return decoded
     }
 
     private func load(_ village: VillageProfile, importText: String? = nil) {

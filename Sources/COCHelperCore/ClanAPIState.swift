@@ -1,48 +1,18 @@
 import Foundation
 
-/// 官方 API 请求的存储基础状态（玩家与部落共享）。
+/// 部落维度的官方 API 抓取状态（**共享数据层**：一个 clan tag 一份，不随村庄复制）。
 ///
-/// 注意：`stale` 不是存储状态——它是 `fetchedAt` 与当前时间的派生结果，
-/// 避免持久化一个必然过期的判定（见 `displayStatus`）。
-public enum OfficialAPIRequestStatus: String, Codable, Hashable, Sendable {
-    /// 从未发起过请求
-    case never
-    /// 请求进行中
-    case loading
-    /// 最近一次请求成功
-    case success
-    /// 最近一次请求失败（`lastErrorReason` 含脱敏原因）
-    case failed
-    /// 未发起请求（缺 tag / tag 无效 / 批量刷新跳过）
-    case skipped
-}
-
-/// 玩家端兼容别名：`OfficialAPIRequestStatus` 改名前的旧类型名。
-public typealias OfficialPlayerRequestStatus = OfficialAPIRequestStatus
-
-/// 展示给用户的状态：在存储状态之上叠加 `stale` 派生（玩家与部落共享）。
-public enum OfficialAPIDisplayStatus: Equatable, Hashable, Sendable {
-    case never
-    case loading
-    case success
-    case stale
-    case failed
-    case skipped
-}
-
-/// 玩家端兼容别名：`OfficialAPIDisplayStatus` 改名前的旧类型名。
-public typealias OfficialPlayerDisplayStatus = OfficialAPIDisplayStatus
-
-/// 村庄的官方玩家信息抓取状态，独立于本地导入快照存储。
-///
-/// 契约：
+/// 与 `OfficialAPIState`（玩家维度）同构，契约一致：
 /// - `lastGood` 在任何失败后保留（首期失败时为 nil，后续失败保留上次成功值）。
 /// - `lastErrorReason` 只含脱敏原因（来自 `CoAPIError`，不含 URL/token/正文）。
 /// - `unrecognizedKeys` 为最近一次成功解码时官方新增的顶层字段（审计用途）。
-public struct OfficialAPIState: Codable, Hashable, Sendable {
+///
+/// 存储位置：独立于 `VillageProfile` 的共享字典 `[String: ClanAPIState]`
+/// （clan tag → 状态），避免同部落多村庄产生重复且互相矛盾的副本。
+public struct ClanAPIState: Codable, Hashable, Sendable {
     public var status: OfficialAPIRequestStatus
-    /// 请求使用的规范化 tag（可能与该村庄导入 tag 不同，例如去空白）。
-    public var playerTag: String?
+    /// 请求使用的规范化 clan tag。
+    public var clanTag: String?
     /// 上次成功抓取时间。
     public var fetchedAt: Date?
     /// 上次尝试时间（含失败）。
@@ -54,29 +24,29 @@ public struct OfficialAPIState: Codable, Hashable, Sendable {
     /// 解码器版本，用于将来 schema 变更审计。
     public var parserVersion: String
     /// 最近一次成功解码的快照（失败后保留）。
-    public var lastGood: OfficialPlayerSnapshot?
+    public var lastGood: OfficialClanSnapshot?
     /// 最近一次解码发现的未知顶层字段。
     public var unrecognizedKeys: [String]
 
     /// 当前实现版本；schema 变更时递增。
-    public static let currentParserVersion = "player-snapshot-0.1"
+    public static let currentParserVersion = "clan-snapshot-0.1"
 
     /// 超过该时长视为 stale（不自动刷新，仅展示提示）。
     public static let staleThreshold: TimeInterval = 24 * 3600
 
     public init(
         status: OfficialAPIRequestStatus,
-        playerTag: String? = nil,
+        clanTag: String? = nil,
         fetchedAt: Date? = nil,
         lastAttemptAt: Date? = nil,
         lastErrorReason: String? = nil,
         lastHTTPStatus: Int? = nil,
-        parserVersion: String = OfficialAPIState.currentParserVersion,
-        lastGood: OfficialPlayerSnapshot? = nil,
+        parserVersion: String = ClanAPIState.currentParserVersion,
+        lastGood: OfficialClanSnapshot? = nil,
         unrecognizedKeys: [String] = []
     ) {
         self.status = status
-        self.playerTag = playerTag
+        self.clanTag = clanTag
         self.fetchedAt = fetchedAt
         self.lastAttemptAt = lastAttemptAt
         self.lastErrorReason = lastErrorReason

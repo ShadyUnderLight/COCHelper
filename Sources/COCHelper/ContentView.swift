@@ -583,6 +583,7 @@ struct AccountDataView: View {
                 VillageNameEditor()
                 AccountImportPanel()
                 OfficialPlayerCardView()
+                ClanCardView()
 
                 if let pending = model.pendingAccountSnapshot {
                     AccountSnapshotSummaryView(snapshot: pending, isPending: true)

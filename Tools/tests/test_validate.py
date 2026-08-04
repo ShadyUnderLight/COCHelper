@@ -495,3 +495,63 @@ def test_validate_generated_files_sha256_correct_passes(tmp_path):
     ]
     _write(d, manifest=m)
     assert validate_catalog(d) == []
+
+
+def test_validate_generated_files_size_missing_rejected(tmp_path):
+    """P1 回归：删除 generatedFiles[].size → 必须拒绝（size 必填）。"""
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest()},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("size 缺失或非法" in e for e in errors)
+
+
+def test_validate_generated_files_size_non_int_rejected(tmp_path):
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+         "size": "123"},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("size 缺失或非法" in e for e in errors)
+
+
+def test_validate_generated_files_size_negative_rejected(tmp_path):
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+         "size": -1},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("size 缺失或非法" in e for e in errors)
+
+
+def test_validate_generated_files_size_wrong_rejected(tmp_path):
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+         "size": len(data) + 1},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("大小不一致" in e for e in errors)

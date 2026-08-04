@@ -91,7 +91,9 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
             if declared != actual:
                 errors.append(f"generatedFiles {path} 哈希不一致: manifest={declared} 实际={actual}")
             size = entry.get("size")
-            if isinstance(size, int) and size != target.stat().st_size:
+            if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                errors.append(f"generatedFiles {path} size 缺失或非法: {size!r}")
+            elif size != target.stat().st_size:
                 errors.append(f"generatedFiles {path} 大小不一致: manifest={size} 实际={target.stat().st_size}")
 
     # ---- 主键唯一性 + level 升序 + null/reason 配对 + reason 域校验 ----

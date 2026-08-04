@@ -50,9 +50,16 @@ def rows_from_text(text: str) -> list[dict[str, str]]:
 
 def read_build_tag(archive: zipfile.ZipFile) -> str:
     try:
-        return archive.read("assets/build.tag").decode("utf-8").strip()
+        raw = archive.read("assets/build.tag")
     except KeyError as exc:
         raise CatalogError("APK 缺少 assets/build.tag") from exc
+    try:
+        tag = raw.decode("utf-8").strip()
+    except UnicodeDecodeError as exc:
+        raise CatalogError("assets/build.tag 不是有效 UTF-8") from exc
+    if not tag:
+        raise CatalogError("assets/build.tag 为空")
+    return tag
 
 
 def clean_localized(value: str) -> str:

@@ -145,7 +145,8 @@ def test_build_items_error_paths():
 def test_duplicate_level_rows_deduplicated():
     """真实数据 Defensive Tribal Tag Team：块内 VisualLevel 重复（1-15 后又一个 13）。
 
-    保留首个等级行，输出严格升序，保证 validate 契约（levels 严格升序）可满足。
+    to_next 语义下：去重后 maxLevel = 行数，levels 覆盖 1..maxLevel（level 1 无数据），
+    重复行（属于不存在的下一级）的升级属性被丢弃。这里用 1,2,3,3 模拟"最高级重复"。
     """
     rows = [
         {"Name": "String", "GlobalID": "int", "VisualLevel": "int", "TID": "String",
@@ -159,14 +160,98 @@ def test_duplicate_level_rows_deduplicated():
         {"Name": "", "GlobalID": "", "VisualLevel": "2", "TID": "", "IconSWF": "",
          "IconExportName": "", "ProductionBuilding": "", "UpgradeTimeH": "", "UpgradeTimeM": "",
          "LaboratoryLevel": "", "UpgradeResource": "", "UpgradeCost": "", "VillageType": ""},
-        {"Name": "", "GlobalID": "", "VisualLevel": "13", "TID": "", "IconSWF": "",
+        {"Name": "", "GlobalID": "", "VisualLevel": "3", "TID": "", "IconSWF": "",
          "IconExportName": "", "ProductionBuilding": "", "UpgradeTimeH": "", "UpgradeTimeM": "",
          "LaboratoryLevel": "", "UpgradeResource": "", "UpgradeCost": "", "VillageType": ""},
-        {"Name": "", "GlobalID": "", "VisualLevel": "13", "TID": "", "IconSWF": "",
+        {"Name": "", "GlobalID": "", "VisualLevel": "3", "TID": "", "IconSWF": "",
          "IconExportName": "", "ProductionBuilding": "", "UpgradeTimeH": "", "UpgradeTimeM": "",
          "LaboratoryLevel": "", "UpgradeResource": "", "UpgradeCost": "", "VillageType": ""},
     ]
     items = build_items(rows, spec_for_table("characters.csv"), {})
     item = items[0]
-    assert [lv.level for lv in item.levels] == [1, 2, 13]
-    assert item.maxLevel == 13
+    assert [lv.level for lv in item.levels] == [1, 2, 3]  # 重复 3 级行只保留一个
+    assert item.maxLevel == 3
+    # to_next：level 1 = 初始；level 2 ← 行1（0h0m）；level 3 ← 行2（时间空 → missing）
+    assert item.levels[0].durationSeconds is None
+    assert item.levels[0].missingReason == "level_1_initial_no_upgrade"
+    assert item.levels[1].durationSeconds == 0
+    assert item.levels[1].upgradeCost == 10
+    assert item.levels[2].durationSeconds is None
+    assert item.levels[2].missingReason == "time_missing"
+
+
+def test_characters_to_next_level_mapping():
+    """to_next 语义核心：行 N 的升级属性属于 level N+1，level 1 = 初始无升级。"""
+    rows = [
+        {"Name": "String", "GlobalID": "int", "VisualLevel": "int", "TID": "String",
+         "IconSWF": "String", "IconExportName": "String", "ProductionBuilding": "String",
+         "UpgradeTimeH": "int", "UpgradeTimeM": "int", "LaboratoryLevel": "int",
+         "UpgradeResource": "String", "UpgradeCost": "int", "VillageType": "String"},
+        {"Name": "Archer", "GlobalID": "4000001", "VisualLevel": "1", "TID": "TID_A",
+         "IconSWF": "sc/ui.sc", "IconExportName": "icon_a1", "ProductionBuilding": "",
+         "UpgradeTimeH": "5", "UpgradeTimeM": "30", "LaboratoryLevel": "2",
+         "UpgradeResource": "Elixir", "UpgradeCost": "60000", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "2", "TID": "", "IconSWF": "",
+         "IconExportName": "icon_a2", "ProductionBuilding": "", "UpgradeTimeH": "8",
+         "UpgradeTimeM": "", "LaboratoryLevel": "3", "UpgradeResource": "",
+         "UpgradeCost": "120000", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "3", "TID": "", "IconSWF": "",
+         "IconExportName": "icon_a3", "ProductionBuilding": "", "UpgradeTimeH": "",
+         "UpgradeTimeM": "", "LaboratoryLevel": "", "UpgradeResource": "",
+         "UpgradeCost": "", "VillageType": ""},
+    ]
+    items = build_items(rows, spec_for_table("characters.csv"), {})
+    item = items[0]
+    assert item.maxLevel == 3
+    assert [lv.level for lv in item.levels] == [1, 2, 3]
+
+    lv1, lv2, lv3 = item.levels
+    # level 1 = 初始等级：无升级属性，保留自身图标
+    assert lv1.durationSeconds is None
+    assert lv1.missingReason == "level_1_initial_no_upgrade"
+    assert lv1.upgradeResource is None and lv1.upgradeCost is None
+    assert lv1.requiredLaboratoryLevel is None
+    assert lv1.icon is not None and lv1.icon.exportName == "icon_a1"
+    # level 2 ← 行1：5h30m = 19800s
+    assert lv2.durationSeconds == 5 * 3600 + 30 * 60
+    assert lv2.upgradeResource == "Elixir" and lv2.upgradeCost == 60000
+    assert lv2.requiredLaboratoryLevel == 2
+    # level 3 ← 行2：8h = 28800s（UpTimeM='' 不继承行1的 30m）
+    assert lv3.durationSeconds == 8 * 3600
+    assert lv3.upgradeCost == 120000
+    assert lv3.requiredLaboratoryLevel == 3
+    # 外观跟随自己的行：lv2 用行2的 icon_a2，lv3 用行3的 icon_a3
+    assert lv2.icon.exportName == "icon_a2"
+    assert lv3.icon.exportName == "icon_a3"
+    # 行3（maxLevel 行）的升级属性属于不存在的 level 4 → 丢弃（此处行3无时间，无直接可断言值）
+
+
+def test_time_columns_not_inherited_to_next():
+    """时间列空 cell = 0（不 forward-fill）：行2 UpH=1 UpM='' = 1h = 3600s（不是 1h30m），
+    该值属于 level 3（行2 = "2→3" 升级）。"""
+    rows = [
+        {"Name": "String", "GlobalID": "int", "VisualLevel": "int", "TID": "String",
+         "IconSWF": "String", "IconExportName": "String", "ProductionBuilding": "String",
+         "UpgradeTimeH": "int", "UpgradeTimeM": "int", "LaboratoryLevel": "int",
+         "UpgradeResource": "String", "UpgradeCost": "int", "VillageType": "String"},
+        {"Name": "Barbarian", "GlobalID": "4000000", "VisualLevel": "1", "TID": "TID_B",
+         "IconSWF": "sc/ui.sc", "IconExportName": "icon_b1", "ProductionBuilding": "",
+         "UpgradeTimeH": "0", "UpgradeTimeM": "30", "LaboratoryLevel": "1",
+         "UpgradeResource": "Elixir", "UpgradeCost": "10000", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "2", "TID": "", "IconSWF": "",
+         "IconExportName": "", "ProductionBuilding": "", "UpgradeTimeH": "1",
+         "UpgradeTimeM": "", "LaboratoryLevel": "", "UpgradeResource": "",
+         "UpgradeCost": "", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "3", "TID": "", "IconSWF": "",
+         "IconExportName": "", "ProductionBuilding": "", "UpgradeTimeH": "2",
+         "UpgradeTimeM": "", "LaboratoryLevel": "", "UpgradeResource": "",
+         "UpgradeCost": "", "VillageType": ""},
+    ]
+    items = build_items(rows, spec_for_table("characters.csv"), {})
+    item = items[0]
+    assert [lv.level for lv in item.levels] == [1, 2, 3]  # 行3 是 maxLevel 行，无 level 4
+    # level 2 ← 行1：0h30m = 1800s（真实值，非继承）
+    assert item.levels[1].durationSeconds == 1800
+    # level 3 ← 行2：1h = 3600s，UpM='' 按 0 —— 若继承行1的 30m 会是 5400s
+    assert item.levels[2].durationSeconds == 3600
+    # 行3 的 2h 属于不存在的 level 4 → 丢弃（levels 只到 3）

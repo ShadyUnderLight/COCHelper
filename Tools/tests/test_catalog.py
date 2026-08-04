@@ -23,9 +23,9 @@ def _minimal_apk(tmp_path) -> str:
         z.writestr("assets/localization/cn.csv", _packed("TID,CN\nTID_A,测试\n"))
         z.writestr("assets/localization/texts_patch.csv", _packed("TID,CN\n"))
         z.writestr("assets/logic/buildings.csv", _packed(
-            "Name,GlobalID,BuildingLevel,TID,SWF,ExportName,BuildTimeD,BuildTimeH,BuildTimeM,BuildTimeS,BuildResource,BuildCost,TownHallLevel,VillageType\n"
-            "String,int,int,String,String,String,int,int,int,int,String,int,int,String\n"
-            "Town Hall,1000001,1,TID_A,sc/buildings.sc,town_hall_lvl1,0,0,0,0,Gold,0,0,\n"))
+            "Name,GlobalID,BuildingLevel,TID,SWF,ExportName,Icon,BuildTimeD,BuildTimeH,BuildTimeM,BuildTimeS,BuildResource,BuildCost,TownHallLevel,VillageType\n"
+            "String,int,int,String,String,String,String,int,int,int,int,String,int,int,String\n"
+            "Town Hall,1000001,1,TID_A,sc/buildings.sc,town_hall_lvl1,,0,0,0,0,Gold,0,0,\n"))
     return str(apk)
 
 
@@ -70,4 +70,23 @@ def test_generate_nonempty_output_rejected(tmp_path):
     (out / "x.txt").write_text("x")
     with pytest.raises(CatalogError):
         generate(apk, None, out)
+    assert _leftover_tmp_dirs(tmp_path) == []
+
+
+def test_generate_missing_time_column_fails_loud(tmp_path):
+    """I8 回归：表头缺必需时间列（如 BuildTimeH 拼错/缺失）→ CatalogError，不静默 time_missing。"""
+    apk = tmp_path / "fake.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/build.tag", "18_400_7")
+        z.writestr("assets/localization/cn.csv", _packed("TID,CN\nTID_A,测试\n"))
+        z.writestr("assets/localization/texts_patch.csv", _packed("TID,CN\n"))
+        # 头里只有 BuildTimeD/M/S，缺 BuildTimeH
+        z.writestr("assets/logic/buildings.csv", _packed(
+            "Name,GlobalID,BuildingLevel,TID,SWF,ExportName,Icon,BuildTimeD,BuildTimeM,BuildTimeS,BuildResource,BuildCost,TownHallLevel,VillageType\n"
+            "String,int,int,String,String,String,String,int,int,int,String,int,int,String\n"
+            "Town Hall,1000001,1,TID_A,sc/buildings.sc,town_hall_lvl1,,1,0,0,Gold,0,0,\n"))
+    out = tmp_path / "out"
+    with pytest.raises(CatalogError, match="缺少必需列"):
+        generate(str(apk), None, out)
+    assert not out.exists()
     assert _leftover_tmp_dirs(tmp_path) == []

@@ -25,9 +25,9 @@ def _minimal_apk(tmp_path: Path) -> Path:
         z.writestr("assets/localization/cn.csv", _packed("TID,CN\nTID_A,测试\n"))
         z.writestr("assets/localization/texts_patch.csv", _packed("TID,CN\n"))
         z.writestr("assets/logic/buildings.csv", _packed(
-            "Name,GlobalID,BuildingLevel,TID,SWF,ExportName,BuildTimeD,BuildTimeH,BuildTimeM,BuildTimeS,BuildResource,BuildCost,TownHallLevel,VillageType\n"
-            "String,int,int,String,String,String,int,int,int,int,String,int,int,String\n"
-            "Town Hall,1000001,1,TID_A,sc/buildings.sc,town_hall_lvl1,0,0,0,0,Gold,0,0,\n"))
+            "Name,GlobalID,BuildingLevel,TID,SWF,ExportName,Icon,BuildTimeD,BuildTimeH,BuildTimeM,BuildTimeS,BuildResource,BuildCost,TownHallLevel,VillageType\n"
+            "String,int,int,String,String,String,String,int,int,int,int,String,int,int,String\n"
+            "Town Hall,1000001,1,TID_A,sc/buildings.sc,town_hall_lvl1,,0,0,0,0,Gold,0,0,\n"))
     return apk
 
 

@@ -115,8 +115,23 @@ def test_spec_for_table():
         spec_for_table("nope.csv")
 
 
-def test_every_table_fill_includes_its_time_columns():
-    # I4 不变式：时间列自动并入 fill_columns，防止未来维护漂移
+def test_every_table_fill_excludes_time_columns():
+    # I4 不变式（修正后）：时间列绝不进 fill_columns——空时间 cell 语义是 0，
+    # 不做 forward-fill 继承（行 2 UpM='' = 0 分钟，不是继承行 1 的 30 分钟）。
     for spec in TABLES:
-        if spec.time_columns:
-            assert set(spec.time_columns) <= set(spec.fill_columns), spec.table
+        for col in spec.time_columns:
+            assert col not in spec.fill_columns, spec.table
+
+
+def test_to_next_level_tables_declared():
+    # I4 不变式：单位/法术/英雄/宠物/首都单位法术/守卫 = 行 N = "N→N+1" 升级
+    to_next = {s.table for s in TABLES if s.upgrade_semantics == "to_next_level"}
+    assert to_next == {
+        "characters.csv", "spells.csv", "heroes.csv", "pets.csv",
+        "guardians.csv", "capital_characters.csv", "capital_spells.csv",
+    }
+    to_level = {s.table for s in TABLES if s.upgrade_semantics == "to_level"}
+    assert to_level == {
+        "buildings.csv", "traps.csv", "character_items.csv",
+        "capital_buildings.csv", "capital_traps.csv",
+    }

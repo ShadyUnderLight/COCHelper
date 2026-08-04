@@ -100,6 +100,45 @@ def test_validate_catalog_malformed_level_type(tmp_path):
     assert len(errors) == 1 and "内容非法" in errors[0]
 
 
+def test_validate_catalog_icon_wrong_type(tmp_path):
+    """I7 回归：icon: 5（非 dict）→ 返回 error 列表而非裸 AttributeError/TypeError。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = 5
+    _write(d, catalog=c)
+    errors = validate_catalog(d)
+    assert errors and "解析失败" in errors[0]
+    assert not any("Traceback" in e for e in errors)
+
+
+def test_validate_catalog_levelvisual_wrong_type(tmp_path):
+    """I7 回归：levelVisual: "x"（非 dict）→ error 列表而非崩溃。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levelVisual"] = "x"
+    _write(d, catalog=c)
+    errors = validate_catalog(d)
+    assert errors and "解析失败" in errors[0]
+
+
+def test_validate_catalog_icon_list_type(tmp_path):
+    """I7 回归：icon: [1,2]（list）→ error 列表而非崩溃。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = [1, 2]
+    _write(d, catalog=c)
+    errors = validate_catalog(d)
+    assert errors and "解析失败" in errors[0]
+
+
+def test_validate_manifest_top_level_list(tmp_path):
+    """I7 回归：manifest 顶层为 list → error 列表而非裸 AttributeError。"""
+    d = _valid_dir(tmp_path)
+    (d / "manifest.json").write_text(json.dumps([1, 2, 3]))
+    errors = validate_catalog(d)
+    assert errors and ("解析失败" in errors[0] or "顶层" in errors[0])
+
+
 # ---- 版本一致性 ----
 
 def test_validate_game_version_mismatch(tmp_path):

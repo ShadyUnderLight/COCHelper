@@ -1,6 +1,7 @@
 import pytest
 
 from game_catalog.durations import parse_duration, parse_optional_int
+from game_catalog.errors import CatalogError
 
 
 def test_parse_duration_full_dhms():
@@ -37,8 +38,15 @@ def test_parse_duration_garbage_is_invalid():
 
 
 def test_parse_duration_negative_raises():
-    with pytest.raises(Exception):
+    with pytest.raises(CatalogError):
         parse_duration({"H": "-1", "M": ""}, ("H", "M"))
+
+
+def test_parse_duration_typo_columns_all_missing_raises():
+    # 列名拼错导致整组时间列在输入中不存在 → 配置错误，而不是静默 time_missing
+    with pytest.raises(CatalogError) as excinfo:
+        parse_duration({"BuildTimeX": "1"}, ("BuildTimeD", "BuildTimeH"))
+    assert "BuildTimeD" in str(excinfo.value) and "BuildTimeH" in str(excinfo.value)
 
 
 def test_parse_duration_real_column_names():

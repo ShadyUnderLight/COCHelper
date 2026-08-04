@@ -8,6 +8,7 @@ from game_catalog.tables import (
     group_blocks,
     ffill_columns,
     section_for,
+    spec_for_table,
 )
 
 
@@ -35,6 +36,29 @@ def test_group_blocks_splits_by_name_and_skips_doc():
     blocks = group_blocks(rows)
     assert [b.name for b in blocks] == ["A", "B"]
     assert [len(b.rows) for b in blocks] == [2, 2]
+
+
+def test_group_blocks_orphan_row_before_any_block_raises():
+    # doc 行之后、第一个块之前的数据行 → 孤儿行，fail loud
+    rows = make_rows(
+        ("String", "int", "int", "int"),
+        ("", "2", "10", ""),
+    )
+    with pytest.raises(CatalogError):
+        group_blocks(rows)
+
+
+def test_ffill_columns_does_not_mutate_input():
+    block_rows = [
+        {"Name": "A", "Time": "10", "Cost": ""},
+        {"Name": "", "Time": "", "Cost": "5"},
+    ]
+    snapshot = [dict(r) for r in block_rows]
+    ffill_columns(block_rows, ("Time", "Cost"))
+    assert block_rows == snapshot
+    # 传同一列表两次：第二次输入仍是原始状态（纯函数）
+    ffill_columns(block_rows, ("Time", "Cost"))
+    assert block_rows == snapshot
 
 
 def test_ffill_columns_forward_fills_within_block_only():
@@ -83,3 +107,16 @@ def test_tables_registry_has_expected_sections():
         "equipment", "guardians", "capital_buildings", "capital_traps",
         "capital_characters", "capital_spells",
     }
+
+
+def test_spec_for_table():
+    assert spec_for_table("buildings.csv").table == "buildings.csv"
+    with pytest.raises(CatalogError):
+        spec_for_table("nope.csv")
+
+
+def test_every_table_fill_includes_its_time_columns():
+    # I4 不变式：时间列自动并入 fill_columns，防止未来维护漂移
+    for spec in TABLES:
+        if spec.time_columns:
+            assert set(spec.time_columns) <= set(spec.fill_columns), spec.table

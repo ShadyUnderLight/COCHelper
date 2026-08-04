@@ -31,8 +31,20 @@ def test_decode_asset_missing_member_raises():
         pass
     buf.seek(0)
     with zipfile.ZipFile(buf) as z:
-        with pytest.raises(KeyError):
+        with pytest.raises(CatalogError) as excinfo:
             decode_asset(z, "assets/logic/nope.csv")
+    assert "nope.csv" in str(excinfo.value)
+
+
+def test_decode_asset_corrupt_lzma_raises():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("assets/logic/buildings.csv", b"not-lzma-data")
+    buf.seek(0)
+    with zipfile.ZipFile(buf) as z:
+        with pytest.raises(CatalogError) as excinfo:
+            decode_asset(z, "assets/logic/buildings.csv")
+    assert "buildings.csv" in str(excinfo.value)
 
 
 def test_rows_from_text_skips_nothing_returns_dicts():
@@ -52,6 +64,17 @@ def test_read_build_tag():
     buf.seek(0)
     with zipfile.ZipFile(buf) as z:
         assert read_build_tag(z) == "18_400_7"
+
+
+def test_read_build_tag_missing_raises():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w"):
+        pass  # 不含 assets/build.tag 的假 zip
+    buf.seek(0)
+    with zipfile.ZipFile(buf) as z:
+        with pytest.raises(CatalogError) as excinfo:
+            read_build_tag(z)
+    assert "build.tag" in str(excinfo.value)
 
 
 def test_localization_cn_then_patch_overrides():

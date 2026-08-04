@@ -4,14 +4,14 @@
     "items": 683,
     "levels": 5479,
     "missingIcons": 3445,
-    "missingTime": 3183
+    "missingTime": 3308
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [
     {
       "path": "catalog.json",
-      "sha256": "sha256:1a9d2d196f16c948be5ab1432960e3573896c640de65320915f6aab8ae3d943b",
-      "size": 2931290
+      "sha256": "sha256:67a5857c5b4fdd4997194daa60a018b13c323d21bcf868c041ac0ad5385cfe2d",
+      "size": 2937373
     },
     {
       "entries": 0,

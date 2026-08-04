@@ -37,12 +37,12 @@ public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
 /// `VillageCatalogProjection.project` 输出的 `[VillageItemState]`。
 ///
 /// 完成度语义（issue #16「完成度规则」）：
-/// - 分母（known）：状态非 unknown/unavailable，且已观测并关联目录
+/// - 分母（known）：状态非 unknown/unavailable/available，且已观测并关联目录
 ///   （maxLevel != nil、currentLevel != nil）且非版本不匹配
 ///   （upgrading 且 nextLevel > maxLevel）的项目；
 /// - 完成（completed）：`status == .maxed` 且计入 known（投影层保证 maxed 时
 ///   currentLevel >= maxLevel；缺失目录的 maxed 不计完成，防御不可达组合）；
-/// - 未知（unknown）：其余全部（unknown/unavailable/缺失上限/缺失等级/版本不匹配）；
+/// - 未知（unknown）：其余全部（unknown/unavailable/available/缺失上限/缺失等级/版本不匹配）；
 /// - 快照缺失项目由投影层不产出，天然不计为 0 级。
 public enum VillageDetailProjection {
     public static func groups(from items: [VillageItemState]) -> [VillageDetailGroup] {
@@ -100,9 +100,10 @@ public enum VillageDetailProjection {
 
     /// 计入完成度分母的条件（见类型 doc comment）。
     private static func isKnown(_ item: VillageItemState) -> Bool {
-        // unknown/unavailable：目录未命中/类别不支持，投影层必无 maxLevel；
-        // 显式排除使不可达组合（如测试构造的 unknown + maxLevel）也归入 unknown。
-        guard item.status != .unknown, item.status != .unavailable else { return false }
+        // unknown/unavailable：目录未命中/类别不支持；available：目录存在但快照
+        // 无记录（投影层不产出）。三者均不计入可确认完成度，显式排除使
+        // 不可达组合（如测试构造的 unknown + maxLevel）也归入 unknown。
+        guard item.status != .unknown, item.status != .unavailable, item.status != .available else { return false }
         guard item.maxLevel != nil, item.currentLevel != nil else { return false }
         if item.isUpgrading,
            let nextLevel = item.nextLevel,

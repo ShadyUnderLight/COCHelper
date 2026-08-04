@@ -137,6 +137,13 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertTrue(stat(total) == (0, 0, 1), "got \(stat(total))")
     }
 
+    func testAvailableCountsUnknown() {
+        // available：目录存在但快照无记录（投影层不产出，防御未来目录遍历接入）
+        let it = item(status: .available, level: 3, maxLevel: 10)
+        let total = VillageDetailProjection.totalCompletion(from: [it])
+        XCTAssertTrue(stat(total) == (0, 0, 1), "got \(stat(total))")
+    }
+
     func testTotalEqualsSumOfCategoryStats() {
         let items = [
             item(id: "a", category: .buildings, status: .maxed),
@@ -183,8 +190,10 @@ final class VillageDetailProjectionTests: XCTestCase {
             XCTAssertLessThanOrEqual(completed, known)
             let maxedItems = items.filter { $0.status == .maxed }
             XCTAssertEqual(completed, maxedItems.count)
-            let unknownStatusItems = items.filter { $0.status == .unknown || $0.status == .unavailable }
-            // 版本不匹配（upgrading 且 next > max）计入 unknown，与 unknown/unavailable 同属 unknown
+            let unknownStatusItems = items.filter {
+                $0.status == .unknown || $0.status == .unavailable || $0.status == .available
+            }
+            // 版本不匹配（upgrading 且 next > max）计入 unknown，与 unknown/unavailable/available 同属 unknown
             let versionMismatchItems = items.filter {
                 $0.isUpgrading && ($0.nextLevel ?? 0) > ($0.maxLevel ?? Int.max)
             }

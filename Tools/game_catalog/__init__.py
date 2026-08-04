@@ -6,7 +6,7 @@ SCHEMA_VERSION = 1
 # 校验时用分域词表拒绝跨域污染（如 level 上写 "capital_has_no_base"）。
 LEVEL_MISSING_REASONS = frozenset({
     "time_missing", "time_invalid", "upgrade_data_missing", "no_time_source",
-    "level_1_initial_no_upgrade",  # to_next 表 level 1 = 初始等级，无升级
+    "min_level_initial_no_upgrade",  # to_next 表最低等级 = 初始等级（非 1 起始如超级兵 5、直升机 15），无升级
 })
 BASE_MISSING_REASONS = frozenset({"capital_has_no_base"})
 ITEM_MISSING_REASONS = frozenset({"deprecated_in_source"})

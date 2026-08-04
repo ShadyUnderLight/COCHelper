@@ -173,7 +173,7 @@ def test_duplicate_level_rows_deduplicated():
     assert item.maxLevel == 3
     # to_next：level 1 = 初始；level 2 ← 行1（0h0m）；level 3 ← 行2（时间空 → missing）
     assert item.levels[0].durationSeconds is None
-    assert item.levels[0].missingReason == "level_1_initial_no_upgrade"
+    assert item.levels[0].missingReason == "min_level_initial_no_upgrade"
     assert item.levels[1].durationSeconds == 0
     assert item.levels[1].upgradeCost == 10
     assert item.levels[2].durationSeconds is None
@@ -208,7 +208,7 @@ def test_characters_to_next_level_mapping():
     lv1, lv2, lv3 = item.levels
     # level 1 = 初始等级：无升级属性，保留自身图标
     assert lv1.durationSeconds is None
-    assert lv1.missingReason == "level_1_initial_no_upgrade"
+    assert lv1.missingReason == "min_level_initial_no_upgrade"
     assert lv1.upgradeResource is None and lv1.upgradeCost is None
     assert lv1.requiredLaboratoryLevel is None
     assert lv1.icon is not None and lv1.icon.exportName == "icon_a1"
@@ -288,7 +288,7 @@ def test_offset_levels_preserved_to_next():
     lv5, lv6, lv7 = item.levels
     # level 5 = 初始等级：无升级属性，外观取自身行
     assert lv5.durationSeconds is None
-    assert lv5.missingReason == "level_1_initial_no_upgrade"
+    assert lv5.missingReason == "min_level_initial_no_upgrade"
     assert lv5.upgradeResource is None and lv5.upgradeCost is None
     assert lv5.icon is not None and lv5.icon.exportName == "icon_sb5"
     # level 6 ← 行5：2h = 7200s

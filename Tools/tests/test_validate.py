@@ -8,6 +8,8 @@ from game_catalog.validate import validate_catalog
 
 
 def _valid_dir(tmp_path: Path) -> Path:
+    import hashlib
+
     item = CatalogItem(
         section="units", dataID=4_000_000, category="troops", base="home",
         baseMissingReason=None, name="野蛮人", maxLevel=1,
@@ -23,11 +25,17 @@ def _valid_dir(tmp_path: Path) -> Path:
                       items=[item])
     d = tmp_path / "cat"
     d.mkdir()
-    (d / "catalog.json").write_text(json.dumps(catalog_to_dict(catalog), ensure_ascii=False))
+    catalog_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False).encode("utf-8")
+    (d / "catalog.json").write_bytes(catalog_bytes)
+    (d / "icons").mkdir()
     (d / "manifest.json").write_text(json.dumps({
         "schemaVersion": 1, "gameVersion": "18.400.13", "buildTag": "18_400_7",
         "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
-        "generatedFiles": [{"path": "catalog.json", "sha256": "", "size": 0}],
+        "generatedFiles": [
+            {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
+             "size": len(catalog_bytes)},
+            {"path": "icons/", "kind": "directory"},
+        ],
         "counts": {"items": 1, "levels": 1, "missingTime": 0, "missingIcons": 0},
     }))
     return d
@@ -46,6 +54,22 @@ def _load_catalog(d: Path) -> dict:
 
 def _load_manifest(d: Path) -> dict:
     return json.loads((d / "manifest.json").read_text())
+
+def _write_with_hash(d: Path, *, catalog: dict | None = None, manifest: dict | None = None) -> None:
+    """写文件后同步更新 manifest 的 generatedFiles 哈希（篡改 catalog 的测试用）。"""
+    import hashlib
+    if catalog is not None:
+        (d / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False))
+    if manifest is not None:
+        (d / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False))
+    m = json.loads((d / "manifest.json").read_text())
+    data = (d / "catalog.json").read_bytes()
+    for entry in m.get("generatedFiles", []):
+        if entry.get("path") == "catalog.json":
+            entry["sha256"] = "sha256:" + hashlib.sha256(data).hexdigest()
+            entry["size"] = len(data)
+    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False))
+
 
 
 # ---- 结构存在性 / 可解析性 ----
@@ -95,7 +119,7 @@ def test_validate_catalog_malformed_level_type(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["levels"][0]["level"] = "1"
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert len(errors) == 1 and "内容非法" in errors[0]
 
@@ -105,7 +129,7 @@ def test_validate_catalog_icon_wrong_type(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["icon"] = 5
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert errors and "解析失败" in errors[0]
     assert not any("Traceback" in e for e in errors)
@@ -116,7 +140,7 @@ def test_validate_catalog_levelvisual_wrong_type(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["levelVisual"] = "x"
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert errors and "解析失败" in errors[0]
 
@@ -126,7 +150,7 @@ def test_validate_catalog_icon_list_type(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["levels"][0]["icon"] = [1, 2]
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert errors and "解析失败" in errors[0]
 
@@ -172,7 +196,7 @@ def test_validate_schema_version_mismatch_catalog(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["schemaVersion"] = 2
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("schemaVersion" in e for e in errors)
 
@@ -212,7 +236,7 @@ def test_validate_duplicate_dataid(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"].append(dict(c["items"][0]))
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("dataID" in e for e in errors)
 
@@ -224,7 +248,7 @@ def test_validate_duplicate_section_key(tmp_path):
     dup = json.loads(json.dumps(c["items"][0]))
     dup["section"] = "buildings"
     c["items"].append(dup)
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     m = _load_manifest(d)
     m["counts"] = {"items": 2, "levels": 2, "missingTime": 0, "missingIcons": 0}
     _write(d, manifest=m)
@@ -238,7 +262,7 @@ def test_validate_levels_not_strictly_ascending(tmp_path):
     lv = item["levels"][0]
     item["levels"] = [dict(lv, level=3), dict(lv, level=3)]
     item["maxLevel"] = 3
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("升序" in e for e in errors)
 
@@ -247,7 +271,7 @@ def test_validate_maxlevel_mismatch(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["maxLevel"] = 5
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("maxLevel" in e for e in errors)
 
@@ -263,7 +287,7 @@ def test_validate_duration_null_requires_reason(tmp_path):
         "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
         "icon": None, "levelVisual": None,
     }]
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("missingReason" in e for e in errors)
 
@@ -272,7 +296,7 @@ def test_validate_duration_set_with_reason_rejected(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["levels"][0]["missingReason"] = "time_missing"
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("missingReason" in e for e in errors)
 
@@ -282,7 +306,7 @@ def test_validate_unknown_missing_reason(tmp_path):
     c = _load_catalog(d)
     c["items"][0]["levels"][0]["missingReason"] = "some_future_reason"
     c["items"][0]["levels"][0]["durationSeconds"] = None
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("未知 missingReason" in e for e in errors)
 
@@ -296,7 +320,7 @@ def test_validate_level_reason_cross_domain_rejected(tmp_path):
     lv = c["items"][0]["levels"][0]
     lv["durationSeconds"] = None
     lv["missingReason"] = "capital_has_no_base"
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("未知 missingReason" in e for e in errors)
 
@@ -306,7 +330,7 @@ def test_validate_item_reason_cross_domain_rejected(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["missingReason"] = "time_missing"
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("item.missingReason" in e for e in errors)
 
@@ -319,7 +343,7 @@ def test_validate_asset_reason_cross_domain_rejected(tmp_path):
         "container": "sc/ui.sc", "exportName": "icon_x",
         "renderedPath": None, "missingReason": "time_missing",
     }
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("icon.missingReason" in e for e in errors)
 
@@ -332,7 +356,7 @@ def test_validate_asset_reason_asset_domain_ok(tmp_path):
         "container": "sc/ui.sc", "exportName": "icon_x",
         "renderedPath": None, "missingReason": "icons_not_rendered",
     }
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     assert validate_catalog(d) == []
 
 
@@ -340,7 +364,7 @@ def test_validate_negative_duration(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["levels"][0]["durationSeconds"] = -1
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("负" in e for e in errors)
 
@@ -353,7 +377,7 @@ def test_validate_base_null_requires_reason(tmp_path):
     item = c["items"][0]
     item["base"] = None
     item["baseMissingReason"] = None
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("baseMissingReason" in e for e in errors)
 
@@ -362,7 +386,7 @@ def test_validate_base_set_with_reason_rejected(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["baseMissingReason"] = "capital_has_no_base"
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("baseMissingReason" in e for e in errors)
 
@@ -375,7 +399,7 @@ def test_validate_capital_item_ok(tmp_path):
     item["category"] = "capitalBuildings"
     item["base"] = None
     item["baseMissingReason"] = "capital_has_no_base"
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     assert validate_catalog(d) == []
 
 
@@ -385,7 +409,7 @@ def test_validate_unknown_base_missing_reason(tmp_path):
     item = c["items"][0]
     item["base"] = None
     item["baseMissingReason"] = "no_such_reason"
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("baseMissingReason" in e for e in errors)
 
@@ -410,7 +434,7 @@ def test_validate_counts_missingtime_mismatch(tmp_path):
         "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
         "icon": None, "levelVisual": None,
     }]
-    _write(d, catalog=c)
+    _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("counts.missingTime" in e for e in errors)
 
@@ -427,3 +451,47 @@ def test_validate_counts_missing_entirely(tmp_path):
 def test_catalog_invariants_alias(tmp_path):
     from game_catalog.validate import catalog_invariants
     assert catalog_invariants(_valid_dir(tmp_path)) == []
+
+
+def test_validate_generated_files_hash_mismatch_detected(tmp_path):
+    """P1-1 回归：篡改 catalog.json 后 generatedFiles 哈希不一致必须报错。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"] = [{
+        "level": 1, "durationSeconds": 999999, "missingReason": None,
+        "upgradeResource": None, "upgradeCost": None,
+        "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
+        "icon": None, "levelVisual": None,
+    }]
+    _write(d, catalog=c)  # 篡改后不更新 manifest 的 generatedFiles sha256
+    errors = validate_catalog(d)
+    assert any("哈希不一致" in e for e in errors)
+
+
+def test_validate_generated_files_missing_file_detected(tmp_path):
+    d = _valid_dir(tmp_path)
+    (d / "catalog.json").unlink()
+    errors = validate_catalog(d)
+    assert any("catalog.json 不存在" in e for e in errors)
+
+
+def test_validate_generated_files_missing_icons_dir_detected(tmp_path):
+    d = _valid_dir(tmp_path)
+    import shutil
+    shutil.rmtree(d / "icons")
+    errors = validate_catalog(d)
+    assert any("icons" in e and "目录不存在" in e for e in errors)
+
+
+def test_validate_generated_files_sha256_correct_passes(tmp_path):
+    """未篡改时 generatedFiles 校验通过（用真实哈希写 manifest）。"""
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(), "size": len(data)},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    assert validate_catalog(d) == []

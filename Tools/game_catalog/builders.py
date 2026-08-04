@@ -10,7 +10,7 @@ from .tables import TABLES, TableSpec, group_blocks, ffill_columns, section_for
 
 SIEGE_PRODUCTION = "Siege Workshop"
 
-INITIAL_LEVEL_REASON = "level_1_initial_no_upgrade"
+INITIAL_LEVEL_REASON = "min_level_initial_no_upgrade"
 
 
 @dataclass

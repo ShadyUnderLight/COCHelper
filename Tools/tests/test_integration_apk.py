@@ -11,10 +11,13 @@ from pathlib import Path
 
 import pytest
 
-APK = Path("/Users/lmz/Downloads/base.apk.1")
+APK = Path(__import__("os").environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
 TOOLS = Path(__file__).resolve().parents[2] / "Tools"
 
-pytestmark = pytest.mark.skipif(not APK.is_file(), reason="真实 APK 不存在")
+pytestmark = pytest.mark.skipif(
+    not APK.is_file(),
+    reason="真实 APK 不存在（设置 COC_APK_PATH 指向 base.apk.1 可启用集成测试）",
+)
 
 # (section, dataID) → 期望 maxLevel；level → 期望秒数
 SAMPLES = {
@@ -80,7 +83,7 @@ def test_acceptance_barbarian_to_next_semantics(catalog):
     assert item["maxLevel"] == 13
     assert sorted(by_lvl) == list(range(1, 14))  # levels 覆盖 1..13 共 13 项
     assert by_lvl[1]["durationSeconds"] is None
-    assert by_lvl[1]["missingReason"] == "level_1_initial_no_upgrade"
+    assert by_lvl[1]["missingReason"] == "min_level_initial_no_upgrade"
     assert by_lvl[2]["durationSeconds"] == 1800       # 行 1 = 0h30m
     assert by_lvl[3]["durationSeconds"] == 3600       # 行 2 = 1h（不继承 30m）
     assert by_lvl[13]["durationSeconds"] == 1080000   # 行 12 = 300h
@@ -103,7 +106,7 @@ def test_acceptance_town_hall_18_is_12_days(catalog):
 
 def test_acceptance_to_next_min_level_is_initial(catalog):
     """所有 to_next_level 表（单位/法术/英雄/宠物/首都单位/首都法术/守卫）的
-    最低等级 = null + level_1_initial_no_upgrade（初始等级无升级）。
+    最低等级 = null + min_level_initial_no_upgrade（初始等级无升级）。
 
     最低等级保留源表原始编号（战斗直升机 15、Super Barbarian 5），不一定是 1。
     """
@@ -115,7 +118,7 @@ def test_acceptance_to_next_min_level_is_initial(catalog):
     for i in items:
         lv_min = min(i["levels"], key=lambda lv: lv["level"])
         assert lv_min["durationSeconds"] is None, f"{i['name']} 最低等级不应有时长"
-        assert lv_min["missingReason"] == "level_1_initial_no_upgrade", f"{i['name']}"
+        assert lv_min["missingReason"] == "min_level_initial_no_upgrade", f"{i['name']}"
 
 
 def test_acceptance_distinct_asset_references(catalog):
@@ -154,7 +157,7 @@ def test_acceptance_capital_missing_reason(catalog):
         for lv in i["levels"]:
             if i["section"] in ("capital_characters", "capital_spells"):
                 # to_next：level 1 = 初始；其余无时间数据 → time_missing
-                expected = ("level_1_initial_no_upgrade" if lv["level"] == 1
+                expected = ("min_level_initial_no_upgrade" if lv["level"] == 1
                             else "time_missing")
             else:
                 expected = "time_missing"  # capital 建筑/陷阱 to_level
@@ -181,7 +184,7 @@ def test_acceptance_guardians_join_and_out_of_range(catalog):
     assert ia is not None
     by_lvl = {lv["level"]: lv for lv in ia["levels"]}
     assert by_lvl[1]["durationSeconds"] is None
-    assert by_lvl[1]["missingReason"] == "level_1_initial_no_upgrade"
+    assert by_lvl[1]["missingReason"] == "min_level_initial_no_upgrade"
     assert by_lvl[2]["durationSeconds"] == 7 * 86400        # L1
     assert by_lvl[3]["durationSeconds"] == 9 * 86400        # L2
     assert by_lvl[4]["durationSeconds"] == 11 * 86400       # L3
@@ -192,7 +195,7 @@ def test_acceptance_guardians_join_and_out_of_range(catalog):
         lvl_nums = [lv["level"] for lv in i["levels"]]
         for lv in i["levels"]:
             if lv["level"] == 1:
-                assert lv["missingReason"] == "level_1_initial_no_upgrade"
+                assert lv["missingReason"] == "min_level_initial_no_upgrade"
             elif lv["level"] <= 5 and lvl_nums == [1, 2, 3, 4, 5]:
                 assert lv["durationSeconds"] is not None, f"{i['name']} lvl{lv['level']}"
             else:

@@ -49,17 +49,25 @@ def _spec_required_columns(spec) -> list[str]:
     return cols
 
 
-def _build_catalog_items(archive: zipfile.ZipFile, localized: dict[str, str]) -> list:
+def _build_catalog_items(
+    archive: zipfile.ZipFile,
+    localized: dict[str, str],
+    require_all_tables: bool = True,
+) -> list:
     items = []
     names = set(archive.namelist())
     for spec in TABLES:
         table_path = "assets/logic/" + spec.table
         if table_path not in names:
-            continue  # 缺表容忍：测试用最小 APK 只含部分表；真实 APK 全表在场
+            if require_all_tables:
+                raise CatalogError(f"APK 缺少逻辑表: {spec.table}")
+            continue
         table_rows = rows(archive, spec.table)
         _check_columns(spec.table, table_rows, _spec_required_columns(spec))
         if spec.join_upgrade_data:
             if "assets/logic/upgrade_data.csv" not in names:
+                if require_all_tables:
+                    raise CatalogError("APK 缺少逻辑表: upgrade_data.csv")
                 continue
             upgrade_rows = rows(archive, "upgrade_data.csv")
             _check_columns("upgrade_data.csv", upgrade_rows, [
@@ -72,10 +80,18 @@ def _build_catalog_items(archive: zipfile.ZipFile, localized: dict[str, str]) ->
     return items
 
 
-def generate(apk: Path, game_version: str | None, output_dir: Path, locale: str = "zh-CN") -> Path:
+def generate(
+    apk: Path,
+    game_version: str | None,
+    output_dir: Path,
+    locale: str = "zh-CN",
+    require_all_tables: bool = True,
+) -> Path:
     """从 APK 生成 catalog.json + manifest.json + icons/ 到 output_dir（原子写）。
 
     game_version 为 None 时从 build.tag 推断。输出目录已存在且非空 → CatalogError。
+    require_all_tables=True 时缺任何注册表/upgrade_data.csv → CatalogError（fail loud，
+    不产出部分/空目录）；测试用最小合成 APK 可传 False。
     """
     if not Path(apk).is_file():
         raise CatalogError(f"APK 不存在: {apk}")
@@ -88,7 +104,7 @@ def generate(apk: Path, game_version: str | None, output_dir: Path, locale: str 
             build_tag = read_build_tag(archive)
             effective_version = game_version or _infer_game_version(build_tag)
             localized = localization(archive)
-            items = _build_catalog_items(archive, localized)
+            items = _build_catalog_items(archive, localized, require_all_tables=require_all_tables)
     except zipfile.BadZipFile as exc:
         raise CatalogError(f"APK 不是有效 zip: {apk}") from exc
 

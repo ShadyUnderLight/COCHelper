@@ -40,7 +40,7 @@ def test_guardian_join_hit_and_miss():
     assert [lv.level for lv in item.levels] == [1, 2, 5]
     # level 1 = 初始等级：无升级数据
     assert item.levels[0].durationSeconds is None
-    assert item.levels[0].missingReason == "level_1_initial_no_upgrade"
+    assert item.levels[0].missingReason == "min_level_initial_no_upgrade"
     assert item.levels[0].upgradeCost is None
     # level 2 ← GuardianGeneral L1 = 7 天
     assert item.levels[1].durationSeconds == 7 * 86400
@@ -82,7 +82,7 @@ def test_guardian_join_out_of_order_upgrade_levels():
     items = build_guardians(rows, _upgrade_rows_order_132(), {})
     item = items[0]
     assert [lv.level for lv in item.levels] == [1, 2, 3]
-    assert item.levels[0].missingReason == "level_1_initial_no_upgrade"
+    assert item.levels[0].missingReason == "min_level_initial_no_upgrade"
     assert item.levels[1].durationSeconds == 7 * 86400
     assert item.levels[1].upgradeCost == 18000000
     assert item.levels[2].durationSeconds == 9 * 86400
@@ -127,7 +127,7 @@ def test_guardian_uses_character_levels_when_level_missing():
     assert [lv.level for lv in item.levels] == [1, 2, 3, 4, 5]
     # level 1 = 初始；level 2/3 ← GG L1/L2；level 4/5 ← L3/L4 不存在
     assert item.levels[0].durationSeconds is None
-    assert item.levels[0].missingReason == "level_1_initial_no_upgrade"
+    assert item.levels[0].missingReason == "min_level_initial_no_upgrade"
     assert item.levels[1].durationSeconds == 7 * 86400
     assert item.levels[2].durationSeconds == 9 * 86400
     assert item.levels[3].missingReason == "upgrade_data_missing"

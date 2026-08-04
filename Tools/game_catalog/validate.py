@@ -3,6 +3,7 @@
 只校验目录内容自洽（catalog.json/manifest.json），不依赖真实 APK。
 """
 
+import hashlib
 import json
 import string
 from pathlib import Path
@@ -58,6 +59,40 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
     if not (isinstance(fp, str) and fp.startswith("sha256:")
             and len(fp) == 7 + 64 and all(c in _HEX for c in fp[7:])):
         errors.append(f"sourceFingerprint 格式非法: {fp!r}")
+
+    # ---- generatedFiles 完整性：hash/size 重算比对 + icons/ 目录存在 ----
+    gen = manifest.get("generatedFiles")
+    if not isinstance(gen, list):
+        errors.append("manifest 缺少 generatedFiles")
+    else:
+        seen_files = set()
+        for entry in gen:
+            path = entry.get("path") if isinstance(entry, dict) else None
+            if not isinstance(path, str) or not path:
+                errors.append(f"generatedFiles 条目缺少 path: {entry!r}")
+                continue
+            if path in seen_files:
+                errors.append(f"generatedFiles 重复条目: {path}")
+            seen_files.add(path)
+            if entry.get("kind") == "directory":
+                if not (d := catalog_path.parent / path).is_dir():
+                    errors.append(f"generatedFiles 目录不存在: {path}")
+                continue
+            target = catalog_path.parent / path
+            if not target.is_file():
+                errors.append(f"generatedFiles 文件不存在: {path}")
+                continue
+            try:
+                actual = "sha256:" + hashlib.sha256(target.read_bytes()).hexdigest()
+            except OSError as exc:
+                errors.append(f"generatedFiles 读取失败 {path}: {exc}")
+                continue
+            declared = entry.get("sha256", "")
+            if declared != actual:
+                errors.append(f"generatedFiles {path} 哈希不一致: manifest={declared} 实际={actual}")
+            size = entry.get("size")
+            if isinstance(size, int) and size != target.stat().st_size:
+                errors.append(f"generatedFiles {path} 大小不一致: manifest={size} 实际={target.stat().st_size}")
 
     # ---- 主键唯一性 + level 升序 + null/reason 配对 + reason 域校验 ----
     # 畸形但可解析的 catalog（如 "level": "1" 字符串）会在不变量比较中抛 TypeError，

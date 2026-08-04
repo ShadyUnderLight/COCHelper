@@ -46,10 +46,11 @@ struct WarLogCardView: View {
             Label("不在部落中，没有战争日志", systemImage: "person.crop.circle.badge.questionmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if model.isCurrentWarLogKnownNotPublic {
+        } else if model.isCurrentWarLogKnownNotPublic,
+                  !(model.currentWarLogState?.status == .success || model.currentWarLogState?.status == .failed) {
             // 显式状态：不伪造"没有历史战争"。
-            // 预判基于可能过期的部落档案，提供"仍要检查"入口绕过
-            //（真实 403 会显示失败原因）。
+            // 仅当从未请求过时显示预判（force 请求后 success/failed 由
+            // 状态分支呈现，避免 force 结果被预判 shadowing）。
             VStack(alignment: .leading, spacing: 8) {
                 Label("该部落的战争日志不公开", systemImage: "eye.slash.fill")
                     .font(.callout)

@@ -104,7 +104,7 @@ final class PaginationMergeTests: XCTestCase {
             var idx = 0
             for end in existingEnds {
                 let found = mergedEnds[idx...].firstIndex(of: end)
-                XCTAssertNotNil(found, "已有条目必须保留: \(end)")
+                XCTAssertNotNil(found, "已有条目必须保留: \(end ?? "nil")")
                 idx = found ?? idx
                 idx += 1
             }

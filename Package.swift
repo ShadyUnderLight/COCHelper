@@ -17,7 +17,10 @@ let package = Package(
             name: "COCHelperCore",
             path: "Sources/COCHelperCore",
             resources: [
-                .process("Resources")
+                .process("Resources"),
+                // .copy 保留目录结构：GameCatalog/<gameVersion>/catalog.json，
+                // 支持多版本目录共存（.process 会扁平化子目录）。
+                .copy("GameCatalog")
             ]
         ),
         .target(

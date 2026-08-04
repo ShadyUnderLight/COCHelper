@@ -120,6 +120,13 @@ def _make_item(
         ))
 
     levels.sort(key=lambda lv: lv.level)
+    # 真实数据偶发重复等级行（如 characters Defensive Tribal Tag Team lvl13），
+    # sort 后相邻去重、保留首个，保证 levels 严格升序契约。
+    unique: list[CatalogLevel] = []
+    for lv in levels:
+        if not unique or unique[-1].level != lv.level:
+            unique.append(lv)
+    levels = unique
     return CatalogItem(
         section=section,
         dataID=data_id,

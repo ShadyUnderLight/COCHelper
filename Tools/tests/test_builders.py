@@ -140,3 +140,33 @@ def test_build_items_error_paths():
     rows[2]["BuildingLevel"] = ""
     with pytest.raises(CatalogError, match="缺少等级列"):
         build_items(rows, spec_for_table("buildings.csv"), {})
+
+
+def test_duplicate_level_rows_deduplicated():
+    """真实数据 Defensive Tribal Tag Team：块内 VisualLevel 重复（1-15 后又一个 13）。
+
+    保留首个等级行，输出严格升序，保证 validate 契约（levels 严格升序）可满足。
+    """
+    rows = [
+        {"Name": "String", "GlobalID": "int", "VisualLevel": "int", "TID": "String",
+         "IconSWF": "String", "IconExportName": "String", "ProductionBuilding": "String",
+         "UpgradeTimeH": "int", "UpgradeTimeM": "int", "LaboratoryLevel": "int",
+         "UpgradeResource": "String", "UpgradeCost": "int", "VillageType": "String"},
+        {"Name": "Tribal Tag Team", "GlobalID": "4000166", "VisualLevel": "1", "TID": "TID_T",
+         "IconSWF": "sc/ui.sc", "IconExportName": "icon_t", "ProductionBuilding": "",
+         "UpgradeTimeH": "0", "UpgradeTimeM": "0", "LaboratoryLevel": "1",
+         "UpgradeResource": "Elixir", "UpgradeCost": "10", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "2", "TID": "", "IconSWF": "",
+         "IconExportName": "", "ProductionBuilding": "", "UpgradeTimeH": "", "UpgradeTimeM": "",
+         "LaboratoryLevel": "", "UpgradeResource": "", "UpgradeCost": "", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "13", "TID": "", "IconSWF": "",
+         "IconExportName": "", "ProductionBuilding": "", "UpgradeTimeH": "", "UpgradeTimeM": "",
+         "LaboratoryLevel": "", "UpgradeResource": "", "UpgradeCost": "", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "13", "TID": "", "IconSWF": "",
+         "IconExportName": "", "ProductionBuilding": "", "UpgradeTimeH": "", "UpgradeTimeM": "",
+         "LaboratoryLevel": "", "UpgradeResource": "", "UpgradeCost": "", "VillageType": ""},
+    ]
+    items = build_items(rows, spec_for_table("characters.csv"), {})
+    item = items[0]
+    assert [lv.level for lv in item.levels] == [1, 2, 13]
+    assert item.maxLevel == 13

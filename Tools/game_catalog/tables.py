@@ -191,7 +191,8 @@ TABLES: tuple[TableSpec, ...] = (
     ),
     TableSpec(
         table="guardians.csv", section="guardians", category="guardians",
-        level_column="Level", time_columns=(),  # 时长来自 upgrade_data join
+        # 权威等级列是 CharacterLevels：真实数据 Level 列未逐行填写（Logger 块仅首行有值）
+        level_column="CharacterLevels", time_columns=(),  # 时长来自 upgrade_data join
         icon_columns=("IconSWF", "IconExportName"),
         fill_columns=_with_time_fill(("TID", "IconSWF", "IconExportName", "UpgradeData",
                                       "Deprecated"), ()),
@@ -209,6 +210,8 @@ TABLES: tuple[TableSpec, ...] = (
             ("TID", "SWF", "ExportName", "BuildResource", "BuildCost"),
             ("BuildTimeD", "BuildTimeH", "BuildTimeM", "BuildTimeS")),
         base_default=None,
+        # capital 表无 GlobalID 列，用独立段位（110M-113M，位于 guardians 107M 之后）
+        id_base=110_000_000,
     ),
     TableSpec(
         table="capital_traps.csv", section="capital_traps",
@@ -219,6 +222,7 @@ TABLES: tuple[TableSpec, ...] = (
             ("TID", "BuildResource", "BuildCost"),
             ("BuildTimeD", "BuildTimeH", "BuildTimeM")),
         base_default=None,
+        id_base=111_000_000,
     ),
     TableSpec(
         table="capital_characters.csv", section="capital_characters",
@@ -229,6 +233,7 @@ TABLES: tuple[TableSpec, ...] = (
             ("TID", "IconSWF", "IconExportName"),
             ("UpgradeTimeH", "UpgradeTimeM")),
         base_default=None,
+        id_base=112_000_000,
     ),
     TableSpec(
         table="capital_spells.csv", section="capital_spells",
@@ -237,6 +242,7 @@ TABLES: tuple[TableSpec, ...] = (
         icon_columns=("IconSWF", "IconExportName"),
         fill_columns=_with_time_fill(("TID", "IconSWF", "IconExportName"), ("UpgradeTimeH",)),
         base_default=None,
+        id_base=113_000_000,
     ),
 )
 

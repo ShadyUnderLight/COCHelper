@@ -55,6 +55,23 @@ struct ContentView: View {
                         Label("数据说明", systemImage: "info.circle")
                             .tag(AppSection.info)
                     }
+
+                    Section("官方 API") {
+                        Button {
+                            model.refreshAllOfficialPlayers()
+                        } label: {
+                            Label("刷新全部官方数据", systemImage: "arrow.clockwise.circle")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.isRefreshingOfficialData)
+
+                        if let summary = model.officialRefreshSummary {
+                            Text(summary)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
                 }
                 .listStyle(.sidebar)
                 .navigationTitle("COC 助手")
@@ -565,6 +582,7 @@ struct AccountDataView: View {
 
                 VillageNameEditor()
                 AccountImportPanel()
+                OfficialPlayerCardView()
 
                 if let pending = model.pendingAccountSnapshot {
                     AccountSnapshotSummaryView(snapshot: pending, isPending: true)
@@ -598,7 +616,7 @@ private struct AccountImportPanel: View {
                     Label("导入快照", systemImage: "arrow.down.doc")
                         .font(.headline)
                     Spacer()
-                    Text("不会联网")
+                    Text("本地解析，不联网")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.green)
                 }
@@ -870,7 +888,7 @@ struct TrackerInfoView: View {
                 InfoCard(
                     number: "04",
                     title: "本地与可审计",
-                    text: "应用不联网、不调用账号接口，也不填充缺失的资源、工人归属或未来目标。原始文本、未知字段和解析诊断会保留在当前村庄快照中。"
+                    text: "导入解析全部在本地完成；只有主动点击“刷新官方数据”时才会访问 Clash of Clans 官方 API，且官方数据作为独立来源展示，不填充缺失的资源、工人归属或未来目标。原始文本、未知字段和解析诊断会保留在当前村庄快照中。"
                 )
             }
             .padding(28)
@@ -905,7 +923,7 @@ private struct InfoCard: View {
     }
 }
 
-private struct Panel<Content: View>: View {
+struct Panel<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -935,7 +953,7 @@ private extension TrackerCategory {
     }
 }
 
-private extension Color {
+extension Color {
     static let cocAccent = Color(red: 0.47, green: 0.54, blue: 1.0)
     static let cocBackground = Color(red: 0.055, green: 0.063, blue: 0.09)
     static let cocPanel = Color(red: 0.105, green: 0.12, blue: 0.17)

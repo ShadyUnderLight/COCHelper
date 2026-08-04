@@ -12,12 +12,18 @@ final class AppModel: ObservableObject {
     @Published private(set) var accountSnapshot: AccountSnapshot?
     @Published private(set) var pendingAccountSnapshot: AccountSnapshot?
     @Published private(set) var accountImportError: String?
+    /// 官方数据刷新进行中（防重入 + UI 禁用）。
+    @Published private(set) var isRefreshingOfficialData = false
+    /// 最近一次批量刷新结果摘要（用于 UI 提示）。
+    @Published private(set) var officialRefreshSummary: String?
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"
     private let villagesStorageKey = "coc-helper.villages.v1"
+    private let refresher: OfficialPlayerRefresher
 
-    init() {
+    init(defaults: UserDefaults = .standard, refresher: OfficialPlayerRefresher? = nil) {
+        self.defaults = defaults
         let loadedVillages = Self.loadVillages(from: defaults)
         let initialVillages: [VillageProfile]
         if loadedVillages.isEmpty {
@@ -31,12 +37,24 @@ final class AppModel: ObservableObject {
             initialVillages = loadedVillages
         }
 
+        if let refresher {
+            self.refresher = refresher
+            self.tokenStore = KeychainTokenStore()
+        } else {
+            // 生产路径：token 只经 Keychain 进出，绝不进入 UserDefaults / JSON。
+            let store = KeychainTokenStore()
+            self.tokenStore = store
+            self.refresher = OfficialPlayerRefresher(client: CoAPIClient { try? store.readToken() })
+        }
+
         villages = initialVillages
         selectedVillageID = initialVillages[0].id
         accountSnapshot = initialVillages[0].accountSnapshot
         pendingAccountSnapshot = nil
         accountImportError = nil
         importText = initialVillages[0].accountSnapshot?.originalText ?? ""
+        isRefreshingOfficialData = false
+        officialRefreshSummary = nil
 
         // This upgrades the previous single-account storage and also drops
         // the old planner-only fields on the next write.
@@ -49,6 +67,30 @@ final class AppModel: ObservableObject {
 
     var currentVillageTag: String? {
         villages.first(where: { $0.id == selectedVillageID })?.tag
+    }
+
+    var currentVillageOfficialTag: String? {
+        villages.first(where: { $0.id == selectedVillageID })?.officialTag
+    }
+
+    var currentVillageOfficialState: OfficialAPIState? {
+        villages.first(where: { $0.id == selectedVillageID })?.officialAPIState
+    }
+
+    // MARK: - API Token（仅 Keychain）
+
+    private let tokenStore: KeychainTokenStore
+
+    var hasAPIToken: Bool {
+        (try? tokenStore.readToken()) != nil
+    }
+
+    func saveAPIToken(_ token: String) throws {
+        try tokenStore.saveToken(token)
+    }
+
+    func deleteAPIToken() throws {
+        try tokenStore.deleteToken()
     }
 
     var canDeleteCurrentVillage: Bool {
@@ -167,7 +209,8 @@ final class AppModel: ObservableObject {
             targetIndex = villages.count - 1
         }
 
-        villages[targetIndex].accountSnapshot = snapshot
+        // tag 变化时自动重置官方数据（applyImportedSnapshot 内部处理）。
+        villages[targetIndex].applyImportedSnapshot(snapshot)
         if villages[targetIndex].name.hasPrefix("村庄 ") || villages[targetIndex].name == "未命名村庄" {
             villages[targetIndex].name = normalizedTag(snapshot.tag) ?? villages[targetIndex].name
         }
@@ -191,7 +234,74 @@ final class AppModel: ObservableObject {
         pendingAccountSnapshot = nil
         accountImportError = nil
         importText = ""
+        // 清除本地快照后官方数据（原账号）不再适用于本村庄，一并重置。
+        if let index = villages.firstIndex(where: { $0.id == selectedVillageID }) {
+            villages[index].officialAPIState = nil
+        }
         persistVillages()
+    }
+
+    // MARK: - 官方数据刷新
+
+    /// 刷新当前村庄的官方玩家信息。
+    func refreshOfficialPlayer() {
+        guard !isRefreshingOfficialData else { return }
+        guard let index = villages.firstIndex(where: { $0.id == selectedVillageID }) else { return }
+        isRefreshingOfficialData = true
+        officialRefreshSummary = nil
+
+        let village = villages[index]
+        let expectedTag = village.officialTag
+        Task { [weak self] in
+            guard let self else { return }
+            let state = await self.refresher.refresh(village: village)
+            // 竞态防护：刷新期间账号若已变化（重导入/清除），丢弃过期结果。
+            _ = self.applyOfficialState(state, to: village.id, expectedTag: expectedTag)
+            self.persistVillages()
+            self.isRefreshingOfficialData = false
+        }
+    }
+
+    /// 刷新所有已导入村庄的官方玩家信息（同 tag 只请求一次，顺序执行）。
+    func refreshAllOfficialPlayers() {
+        guard !isRefreshingOfficialData else { return }
+        isRefreshingOfficialData = true
+        officialRefreshSummary = nil
+
+        let villages = self.villages
+        // 记录发起请求时各村庄的 tag，用于写回竞态校验。
+        var tagByID: [UUID: String] = [:]
+        for village in villages {
+            tagByID[village.id] = village.officialTag
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let states = await self.refresher.refreshAll(villages: villages)
+            for (id, state) in states {
+                self.applyOfficialState(state, to: id, expectedTag: tagByID[id])
+            }
+            let successCount = states.values.filter { $0.status == .success }.count
+            let skippedCount = states.values.filter { $0.status == .skipped }.count
+            let failedCount = states.values.filter { $0.status == .failed }.count
+            self.officialRefreshSummary = "刷新完成：成功 \(successCount)，失败 \(failedCount)，跳过 \(skippedCount)"
+            // 批量刷新只写一次 UserDefaults，避免 N+1 次全量 JSON 编码。
+            self.persistVillages()
+            self.isRefreshingOfficialData = false
+        }
+    }
+
+    /// 纯内存状态更新；调用方负责在合适的时机持久化。
+    /// 若村庄当前 tag 与发起请求时不一致（账号已变化），丢弃过期结果并返回 false。
+    @discardableResult
+    private func applyOfficialState(_ state: OfficialAPIState, to villageID: UUID, expectedTag: String?) -> Bool {
+        guard let index = villages.firstIndex(where: { $0.id == villageID }) else { return false }
+        guard villages[index].officialStateMatchesTag(at: expectedTag) else { return false }
+        villages[index].officialAPIState = state
+        villages[index].updatedAt = Date()
+        if selectedVillageID == villageID {
+            officialRefreshSummary = nil
+        }
+        return true
     }
 
     private func load(_ village: VillageProfile, importText: String? = nil) {

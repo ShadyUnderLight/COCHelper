@@ -26,17 +26,19 @@ final class AppModelTests: XCTestCase {
     }
 
     private var defaults: UserDefaults!
+    private var suiteName: String!
 
     override func setUp() {
         super.setUp()
-        defaults = UserDefaults(suiteName: "AppModelTests-\(UUID().uuidString)")!
+        suiteName = "AppModelTests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)!
     }
 
     override func tearDown() {
         MockURLProtocol.handler = nil
-        if let suite = defaults.dictionaryRepresentation().keys.first(where: { $0.hasPrefix("AppModelTests-") }) {
-            defaults.removePersistentDomain(forName: suite)
-        }
+        // 按 suite 名清理测试域（UserDefaults 无公开 suiteName getter，
+        // 由 setUp 记录；避免每次运行泄漏一个 plist）。
+        defaults.removePersistentDomain(forName: suiteName)
         super.tearDown()
     }
 

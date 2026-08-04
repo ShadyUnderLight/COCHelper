@@ -1,5 +1,6 @@
 import SwiftUI
 import COCHelperCore
+import COCHelperApp
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel

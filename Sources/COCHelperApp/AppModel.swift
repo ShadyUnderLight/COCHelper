@@ -4,23 +4,23 @@ import Foundation
 import COCHelperCore
 
 @MainActor
-final class AppModel: ObservableObject {
-    @Published private(set) var villages: [VillageProfile]
-    @Published private(set) var selectedVillageID: UUID
-    @Published var importText = ""
-    @Published var importIntoCurrentVillage = false
-    @Published private(set) var accountSnapshot: AccountSnapshot?
-    @Published private(set) var pendingAccountSnapshot: AccountSnapshot?
-    @Published private(set) var accountImportError: String?
+public final class AppModel: ObservableObject {
+    @Published public private(set) var villages: [VillageProfile]
+    @Published public private(set) var selectedVillageID: UUID
+    @Published public var importText = ""
+    @Published public var importIntoCurrentVillage = false
+    @Published public private(set) var accountSnapshot: AccountSnapshot?
+    @Published public private(set) var pendingAccountSnapshot: AccountSnapshot?
+    @Published public private(set) var accountImportError: String?
     /// 官方数据刷新进行中（防重入 + UI 禁用）。
-    @Published private(set) var isRefreshingOfficialData = false
+    @Published public private(set) var isRefreshingOfficialData = false
     /// 最近一次批量刷新结果摘要（用于 UI 提示）。
-    @Published private(set) var officialRefreshSummary: String?
+    @Published public private(set) var officialRefreshSummary: String?
     /// 部落共享数据层：clan tag → 状态。部落数据不写入村庄档案，
     /// 同部落多个村庄共享同一份（Issue #7 验收：不产生重复存储矛盾）。
-    @Published private(set) var clanStates: [String: ClanAPIState] = [:]
+    @Published public private(set) var clanStates: [String: ClanAPIState] = [:]
     /// 部落刷新进行中（防重入 + UI 禁用）。
-    @Published private(set) var isRefreshingClanData = false
+    @Published public private(set) var isRefreshingClanData = false
 
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"
@@ -29,7 +29,7 @@ final class AppModel: ObservableObject {
     private let refresher: OfficialPlayerRefresher
     private let clanRefresher: ClanRefresher
 
-    init(defaults: UserDefaults = .standard, refresher: OfficialPlayerRefresher? = nil, clanRefresher: ClanRefresher? = nil) {
+    public init(defaults: UserDefaults = .standard, refresher: OfficialPlayerRefresher? = nil, clanRefresher: ClanRefresher? = nil) {
         self.defaults = defaults
         let loadedVillages = Self.loadVillages(from: defaults)
         let initialVillages: [VillageProfile]
@@ -79,36 +79,36 @@ final class AppModel: ObservableObject {
         persistVillages()
     }
 
-    var currentVillageName: String {
+    public var currentVillageName: String {
         villages.first(where: { $0.id == selectedVillageID })?.name ?? "未命名村庄"
     }
 
-    var currentVillageTag: String? {
+    public var currentVillageTag: String? {
         villages.first(where: { $0.id == selectedVillageID })?.tag
     }
 
-    var currentVillageOfficialTag: String? {
+    public var currentVillageOfficialTag: String? {
         villages.first(where: { $0.id == selectedVillageID })?.officialTag
     }
 
-    var currentVillageOfficialState: OfficialAPIState? {
+    public var currentVillageOfficialState: OfficialAPIState? {
         villages.first(where: { $0.id == selectedVillageID })?.officialAPIState
     }
 
     /// 当前村庄的部落归属：派生自最近成功玩家快照的 `clan.tag`。
     /// 玩家换部落/离开部落后，新快照刷新即更新此值；旧部落数据保留在
     /// `clanStates` 中但不会显示为当前归属。
-    var currentVillageClanTag: String? {
+    public var currentVillageClanTag: String? {
         currentVillageOfficialState?.currentClanTag
     }
 
     /// 玩家官方数据是否从未成功抓取过（用于区分"未知归属"与"确认无部落"）。
-    var currentVillageClanStatusUnknown: Bool {
+    public var currentVillageClanStatusUnknown: Bool {
         currentVillageOfficialState?.lastGood == nil
     }
 
     /// 当前村庄所属部落的共享状态（nil = 无部落 / 从未请求）。
-    var currentClanState: ClanAPIState? {
+    public var currentClanState: ClanAPIState? {
         guard let tag = currentVillageClanTag else { return nil }
         return clanStates[tag]
     }
@@ -117,30 +117,30 @@ final class AppModel: ObservableObject {
 
     private let tokenStore: KeychainTokenStore
 
-    var hasAPIToken: Bool {
+    public var hasAPIToken: Bool {
         (try? tokenStore.readToken()) != nil
     }
 
-    func saveAPIToken(_ token: String) throws {
+    public func saveAPIToken(_ token: String) throws {
         try tokenStore.saveToken(token)
     }
 
-    func deleteAPIToken() throws {
+    public func deleteAPIToken() throws {
         try tokenStore.deleteToken()
     }
 
-    var canDeleteCurrentVillage: Bool {
+    public var canDeleteCurrentVillage: Bool {
         villages.count > 1
     }
 
-    func activeUpgradeCount(for village: VillageProfile, at now: Date = Date()) -> Int {
+    public func activeUpgradeCount(for village: VillageProfile, at now: Date = Date()) -> Int {
         guard let snapshot = village.accountSnapshot else { return 0 }
         return TrackerBase.allCases.reduce(0) { total, base in
             total + UpgradeTracker.activeRecords(from: snapshot, base: base, at: now).count
         }
     }
 
-    func selectVillage(id: UUID) {
+    public func selectVillage(id: UUID) {
         guard id != selectedVillageID,
               let village = villages.first(where: { $0.id == id }) else { return }
 
@@ -148,7 +148,7 @@ final class AppModel: ObservableObject {
         load(village)
     }
 
-    func addVillageForImport() {
+    public func addVillageForImport() {
         persistVillages()
 
         let name = "村庄 " + String(villages.count + 1)
@@ -159,7 +159,7 @@ final class AppModel: ObservableObject {
         persistVillages()
     }
 
-    func renameSelectedVillage(_ name: String) {
+    public func renameSelectedVillage(_ name: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty,
               let index = villages.firstIndex(where: { $0.id == selectedVillageID }) else { return }
@@ -169,7 +169,7 @@ final class AppModel: ObservableObject {
         persistVillages()
     }
 
-    func deleteVillage(id: UUID) {
+    public func deleteVillage(id: UUID) {
         guard villages.count > 1,
               let index = villages.firstIndex(where: { $0.id == id }) else { return }
 
@@ -183,7 +183,7 @@ final class AppModel: ObservableObject {
         persistVillages()
     }
 
-    func pasteFromClipboard() {
+    public func pasteFromClipboard() {
         guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
             accountImportError = "系统剪贴板中没有可用的文本。"
             return
@@ -192,7 +192,7 @@ final class AppModel: ObservableObject {
         accountImportError = nil
     }
 
-    func parseAccountText() {
+    public func parseAccountText() {
         accountImportError = nil
         pendingAccountSnapshot = nil
 
@@ -203,7 +203,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var pendingAccountSnapshotActionTitle: String? {
+    public var pendingAccountSnapshotActionTitle: String? {
         guard let snapshot = pendingAccountSnapshot else { return nil }
 
         if let targetIndex = targetVillageIndex(for: snapshot) {
@@ -216,7 +216,7 @@ final class AppModel: ObservableObject {
         return "创建「" + newName + "」"
     }
 
-    var pendingAccountSnapshotDestinationDescription: String? {
+    public var pendingAccountSnapshotDestinationDescription: String? {
         guard let snapshot = pendingAccountSnapshot else { return nil }
 
         if let targetIndex = targetVillageIndex(for: snapshot) {
@@ -231,7 +231,7 @@ final class AppModel: ObservableObject {
         return "导入目标：没有同 tag 档案，将创建「" + newName + "」"
     }
 
-    func applyPendingAccountSnapshot() {
+    public func applyPendingAccountSnapshot() {
         guard let snapshot = pendingAccountSnapshot else { return }
         persistVillages()
 
@@ -260,12 +260,12 @@ final class AppModel: ObservableObject {
         persistVillages()
     }
 
-    func discardPendingAccountSnapshot() {
+    public func discardPendingAccountSnapshot() {
         pendingAccountSnapshot = nil
         accountImportError = nil
     }
 
-    func clearAccountSnapshot() {
+    public func clearAccountSnapshot() {
         accountSnapshot = nil
         pendingAccountSnapshot = nil
         accountImportError = nil
@@ -280,7 +280,7 @@ final class AppModel: ObservableObject {
     // MARK: - 官方数据刷新
 
     /// 刷新当前村庄的官方玩家信息。
-    func refreshOfficialPlayer() {
+    public func refreshOfficialPlayer() {
         guard !isRefreshingOfficialData else { return }
         guard let index = villages.firstIndex(where: { $0.id == selectedVillageID }) else { return }
         isRefreshingOfficialData = true
@@ -295,16 +295,17 @@ final class AppModel: ObservableObject {
             let applied = self.applyOfficialState(state, to: village.id, expectedTag: expectedTag)
             self.persistVillages()
             self.isRefreshingOfficialData = false
-            // 玩家快照更新后部落归属可能变化，联动刷新当前部落
-            // （与批量刷新行为对称；被占用时排队补跑）。
+            // 玩家快照更新后部落归属可能变化，联动刷新**发起村庄**的部落
+            // （传 village.id 而非读取当前选中村庄：刷新期间用户可能已切换
+            // 村庄，读 selectedVillageID 会误刷当前村庄、漏刷发起村庄）。
             if applied, state.status == .success {
-                self.refreshCurrentClan()
+                self.refreshClan(villageID: village.id)
             }
         }
     }
 
     /// 刷新所有已导入村庄的官方玩家信息（同 tag 只请求一次，顺序执行）。
-    func refreshAllOfficialPlayers() {
+    public func refreshAllOfficialPlayers() {
         guard !isRefreshingOfficialData else { return }
         isRefreshingOfficialData = true
         officialRefreshSummary = nil
@@ -357,11 +358,19 @@ final class AppModel: ObservableObject {
     /// 部落刷新进行中被再次触发时排队补跑，避免联动刷新被静默丢弃。
     private var pendingClanRefreshAll = false
 
-    /// 刷新当前村庄所属部落的档案（按 clan tag 去重，单 tag 单请求）。
-    func refreshCurrentClan() {
-        guard let tag = currentVillageClanTag else { return }
+    /// 刷新当前选中村庄所属部落的档案（UI 按钮入口）。
+    public func refreshCurrentClan() {
+        refreshClan(villageID: selectedVillageID)
+    }
+
+    /// 刷新**指定村庄**所属部落的档案（按 clan tag 去重，单 tag 单请求）。
+    /// 联动场景必须传发起村庄 id：刷新期间用户可能已切换村庄，
+    /// 读取当前选中村庄会导致误刷新（P1 竞态）。
+    func refreshClan(villageID: UUID) {
+        guard let tag = villages.first(where: { $0.id == villageID })?
+            .officialAPIState?.currentClanTag else { return }
         if isRefreshingClanData {
-            // 被占用时排队为一次全量补跑（覆盖当前村庄，语义更广且确定性）。
+            // 被占用时排队为一次全量补跑（覆盖所有村庄，语义更广且确定性）。
             pendingClanRefreshAll = true
             return
         }
@@ -370,7 +379,7 @@ final class AppModel: ObservableObject {
 
     /// 批量刷新所有已导入村庄所属部落（同 clan tag 只请求一次，顺序执行）。
     /// 玩家批量刷新完成后由 `refreshAllOfficialPlayers` 联动调用。
-    func refreshAllClans() {
+    public func refreshAllClans() {
         if isRefreshingClanData {
             // 排队补跑：联动/手动请求不会因当前批次占用而被静默丢弃。
             pendingClanRefreshAll = true

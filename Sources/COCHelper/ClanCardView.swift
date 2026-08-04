@@ -1,5 +1,6 @@
 import SwiftUI
 import COCHelperCore
+import COCHelperApp
 
 /// 村庄详情页的部落摘要卡片。
 ///
@@ -28,15 +29,14 @@ struct ClanCardView: View {
         }
     }
 
-    /// 来源标签：issue 要求区分 official-api / cached-official-api。
-    /// 从未成功抓取玩家数据（归属未知）时不展示来源标签，避免误导
-    /// （条件渲染而非 opacity，保证 VoiceOver 不读到误导性文本）。
+    /// 来源标签：基于**部落状态本身**（`sourceLabel`），而非玩家状态。
+    /// - success / stale → official-api
+    /// - failed 且保留 last-good → cached-official-api
+    /// - 部落数据从未获取 / no-clan / 首次失败无 last-good → 隐藏
     @ViewBuilder
     private var sourceBadge: some View {
-        if !model.currentVillageClanStatusUnknown {
-            let state = model.currentClanState
-            let isCached = state?.status == .failed && state?.lastGood != nil
-            Text(isCached ? "cached-official-api" : "official-api")
+        if let label = model.currentClanState?.sourceLabel {
+            Text(label)
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)

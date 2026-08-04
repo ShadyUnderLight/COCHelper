@@ -1,5 +1,6 @@
 import SwiftUI
 import COCHelperCore
+import COCHelperApp
 
 /// 村庄详情的官方玩家数据卡片（独立来源，来源标签 official-api）。
 struct OfficialPlayerCardView: View {

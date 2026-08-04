@@ -76,6 +76,21 @@ public struct ClanAPIState: Codable, Hashable, Sendable {
         guard let fetchedAt else { return false }
         return now.timeIntervalSince(fetchedAt) > Self.staleThreshold
     }
+
+    /// 部落卡片来源标签（基于部落状态本身，不依赖玩家状态）：
+    /// - `success`（含 stale 时间派生）→ "official-api"
+    /// - `failed` 且保留 last-good → "cached-official-api"
+    /// - 其余（failed 无 last-good / never / loading / skipped）→ nil，UI 隐藏
+    public var sourceLabel: String? {
+        switch status {
+        case .success:
+            return "official-api"
+        case .failed:
+            return lastGood != nil ? "cached-official-api" : nil
+        case .never, .loading, .skipped:
+            return nil
+        }
+    }
 }
 
 /// 部落共享数据层的持久化容器。

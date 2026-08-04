@@ -62,7 +62,7 @@ public enum TrackerCategory: String, CaseIterable, Codable, Hashable, Identifiab
         }
     }
 
-    fileprivate var sortOrder: Int {
+    var sortOrder: Int {
         switch self {
         case .buildings: 0
         case .traps: 1

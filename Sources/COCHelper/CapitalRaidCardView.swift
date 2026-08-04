@@ -173,6 +173,11 @@ struct CapitalRaidCardView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    if let defensive = season.defensiveReward {
+                        Text("防守奖励 \(Self.formatted(defensive))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let raids = season.raidsCompleted {
                         Text("\(raids) 次突袭")
                             .font(.caption)

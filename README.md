@@ -154,3 +154,12 @@ swift run smoke-api
 ### 架构（stage 3c 泛化）
 
 - 状态/存储/刷新逻辑泛化为 `OfficialEndpointState<T>` / `OfficialStateStore<T>` / `EndpointRefresher`，部落档案、当前战争、战争日志、资本赛季四个端点共用；旧类型保留 typealias（持久化格式与旧版本完全兼容）。
+
+## 非官方声明与合规边界
+
+本应用是**非官方**的《部落冲突》（Clash of Clans）社区工具，与 Supercell 无关。
+
+- 数据来源：仅通过 Supercell 官方 API（developer.clashofclans.com）读取公开数据；不执行任何自动化游戏操作（不自动攻击、不自动升级、不模拟点击）。
+- 禁止自动化与公开分发：本应用仅用于个人本地使用，不提供任何自动化游戏行为的接口；不得将本应用或其数据用于公共托管、批量数据抓取、转售或任何形式的公开分发。
+- 所有游戏内容与素材版权归 Supercell Oy 所有；按 [Supercell Fan Content Policy](https://supercell.com/en/fan-content-policy/) 使用。
+- 官方 API 限流与条款：应用遵守官方 API 的使用条款与速率限制（客户端内置 429 退避），不绕过认证、不伪造请求。

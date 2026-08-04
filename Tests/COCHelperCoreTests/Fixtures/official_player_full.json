@@ -1,0 +1,108 @@
+{
+  "tag": "#ANONYMIZED",
+  "name": "anonymized-player",
+  "townHallLevel": 14,
+  "townHallWeaponLevel": 5,
+  "builderHallLevel": 9,
+  "expLevel": 198,
+  "trophies": 4521,
+  "bestTrophies": 5102,
+  "warStars": 1200,
+  "attackWins": 1900,
+  "defenseWins": 450,
+  "builderBaseTrophies": 3100,
+  "versusBattleWins": 600,
+  "legendStatistics": {
+    "legendTrophies": 0,
+    "bestSeason": { "id": "2024-06", "rank": 9000, "trophies": 5021 },
+    "previousSeason": { "id": "2024-05", "rank": 12000, "trophies": 4890 },
+    "bestVersusSeason": { "id": "2024-06", "rank": 6000, "trophies": 3100 },
+    "currentSeason": { "id": "2024-07", "rank": 0, "trophies": 4200 }
+  },
+  "clan": {
+    "tag": "#CLANANON",
+    "name": "anonymized clan",
+    "clanLevel": 15,
+    "badgeUrls": {
+      "small": "https://api-assets.clashofclans.com/badges/200/anon.png",
+      "large": "https://api-assets.clashofclans.com/badges/512/anon.png",
+      "medium": "https://api-assets.clashofclans.com/badges/288/anon.png"
+    }
+  },
+  "role": "member",
+  "warPreference": "out",
+  "donations": 500,
+  "donationsReceived": 300,
+  "clanCapitalContributions": 2000,
+  "league": {
+    "id": 29000022,
+    "name": "Champion League II",
+    "iconUrls": {
+      "small": "https://api-assets.clashofclans.com/leagues/72/anon.png",
+      "tiny": "https://api-assets.clashofclans.com/leagues/36/anon.png",
+      "medium": "https://api-assets.clashofclans.com/leagues/288/anon.png"
+    }
+  },
+  "builderBaseLeague": {
+    "id": 44000013,
+    "name": "Legend League",
+    "iconUrls": {
+      "small": "https://api-assets.clashofclans.com/leagues/72/anon.png",
+      "tiny": "https://api-assets.clashofclans.com/leagues/36/anon.png",
+      "medium": "https://api-assets.clashofclans.com/leagues/288/anon.png"
+    }
+  },
+  "achievements": [
+    {
+      "name": "Nice and Tidy",
+      "stars": 3,
+      "value": 100,
+      "target": 100,
+      "info": "Clear all obstacles",
+      "completionInfo": "Completed",
+      "village": "home"
+    },
+    {
+      "name": "War Hero",
+      "stars": 2,
+      "value": 1000,
+      "target": 1000,
+      "info": "Win war battles",
+      "village": "home"
+    }
+  ],
+  "labels": [
+    {
+      "id": 57000023,
+      "name": "Friendly Wars",
+      "iconUrls": {
+        "small": "https://api-assets.clashofclans.com/labels/64/anon.png",
+        "medium": "https://api-assets.clashofclans.com/labels/128/anon.png"
+      }
+    }
+  ],
+  "playerHouse": {
+    "elements": [
+      { "id": 59000000, "type": "ground", "level": 1 },
+      { "id": 59000001, "type": "ground", "level": 2 }
+    ]
+  },
+  "troops": [
+    { "name": "Barbarian", "level": 10, "maxLevel": 11, "village": "home" },
+    { "name": "Archer", "level": 11, "maxLevel": 12, "village": "home" },
+    { "name": "Super Barbarian", "level": 1, "maxLevel": 1, "village": "home", "superTroopIsActive": true }
+  ],
+  "heroes": [
+    { "name": "Barbarian King", "level": 75, "maxLevel": 80, "village": "home" },
+    { "name": "Battle Machine", "level": 30, "maxLevel": 30, "village": "builderBase" }
+  ],
+  "spells": [
+    { "name": "Lightning Spell", "level": 9, "maxLevel": 10, "village": "home" }
+  ],
+  "heroEquipment": [
+    { "name": "Eternal Tome", "level": 18, "maxLevel": 27, "village": "home" }
+  ],
+  "versusTrophies": 3200,
+  "bestVersusTrophies": 3400,
+  "futureUnknownField": { "nested": true }
+}

@@ -55,6 +55,23 @@ struct ContentView: View {
                         Label("数据说明", systemImage: "info.circle")
                             .tag(AppSection.info)
                     }
+
+                    Section("官方 API") {
+                        Button {
+                            model.refreshAllOfficialPlayers()
+                        } label: {
+                            Label("刷新全部官方数据", systemImage: "arrow.clockwise.circle")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.isRefreshingOfficialData)
+
+                        if let summary = model.officialRefreshSummary {
+                            Text(summary)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
                 }
                 .listStyle(.sidebar)
                 .navigationTitle("COC 助手")
@@ -565,6 +582,7 @@ struct AccountDataView: View {
 
                 VillageNameEditor()
                 AccountImportPanel()
+                OfficialPlayerCardView()
 
                 if let pending = model.pendingAccountSnapshot {
                     AccountSnapshotSummaryView(snapshot: pending, isPending: true)
@@ -905,7 +923,7 @@ private struct InfoCard: View {
     }
 }
 
-private struct Panel<Content: View>: View {
+struct Panel<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -935,7 +953,7 @@ private extension TrackerCategory {
     }
 }
 
-private extension Color {
+extension Color {
     static let cocAccent = Color(red: 0.47, green: 0.54, blue: 1.0)
     static let cocBackground = Color(red: 0.055, green: 0.063, blue: 0.09)
     static let cocPanel = Color(red: 0.105, green: 0.12, blue: 0.17)

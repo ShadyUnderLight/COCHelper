@@ -9,6 +9,9 @@ public struct VillageProfile: Identifiable, Codable, Hashable, Sendable {
     public let id: UUID
     public var name: String
     public var accountSnapshot: AccountSnapshot?
+    /// 官方 API 玩家快照（独立来源，与本地导入 JSON 并存，互不覆盖）。
+    /// Optional 保证旧版持久化数据（无此键）仍可解码为 nil。
+    public var officialAPIState: OfficialAPIState?
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -16,6 +19,7 @@ public struct VillageProfile: Identifiable, Codable, Hashable, Sendable {
         id: UUID = UUID(),
         name: String,
         accountSnapshot: AccountSnapshot? = nil,
+        officialAPIState: OfficialAPIState? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -23,12 +27,22 @@ public struct VillageProfile: Identifiable, Codable, Hashable, Sendable {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.name = trimmedName.isEmpty ? "未命名村庄" : trimmedName
         self.accountSnapshot = accountSnapshot
+        self.officialAPIState = officialAPIState
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
 
     public var tag: String? {
         accountSnapshot?.tag
+    }
+
+    /// 规范化且格式有效的官方 tag；缺 tag 或格式无效返回 nil（UI 显示为 skipped）。
+    public var officialTag: String? {
+        guard let normalized = OfficialPlayerTagValidator.normalized(tag),
+              OfficialPlayerTagValidator.isValid(normalized) else {
+            return nil
+        }
+        return normalized
     }
 
     public var identityLabel: String {

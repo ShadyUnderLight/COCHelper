@@ -7,7 +7,13 @@ import json
 import string
 from pathlib import Path
 
-from . import SCHEMA_VERSION, MISSING_REASONS
+from . import (
+    SCHEMA_VERSION,
+    ASSET_MISSING_REASONS,
+    BASE_MISSING_REASONS,
+    ITEM_MISSING_REASONS,
+    LEVEL_MISSING_REASONS,
+)
 from .model import catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
@@ -27,7 +33,7 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
 
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
         return [f"manifest.json 解析失败: {exc}"]
 
     try:
@@ -51,34 +57,47 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
             and len(fp) == 7 + 64 and all(c in _HEX for c in fp[7:])):
         errors.append(f"sourceFingerprint 格式非法: {fp!r}")
 
-    # ---- 主键唯一性 + level 升序 + null/reason 配对 ----
-    seen: set[tuple[str, int]] = set()
-    for item in catalog.items:
-        key = (item.section, item.dataID)
-        if key in seen:
-            errors.append(f"重复主键 (section={item.section}, dataID={item.dataID})")
-        seen.add(key)
-        if item.maxLevel != (item.levels[-1].level if item.levels else 0):
-            errors.append(f"{key}: maxLevel={item.maxLevel} 与最后等级不符")
-        prev = 0
-        for lv in item.levels:
-            if lv.level <= prev:
-                errors.append(f"{key}: level {lv.level} 未严格升序")
-            prev = lv.level
-            if lv.durationSeconds is None and lv.missingReason is None:
-                errors.append(f"{key} level {lv.level}: durationSeconds=null 但 missingReason 为空")
-            if lv.durationSeconds is not None and lv.missingReason is not None:
-                errors.append(f"{key} level {lv.level}: durationSeconds 有值但 missingReason={lv.missingReason}")
-            if lv.missingReason and lv.missingReason not in MISSING_REASONS:
-                errors.append(f"{key} level {lv.level}: 未知 missingReason {lv.missingReason!r}")
-            if lv.durationSeconds is not None and lv.durationSeconds < 0:
-                errors.append(f"{key} level {lv.level}: durationSeconds 为负")
-        if item.base is None and item.baseMissingReason is None:
-            errors.append(f"{key}: base=null 但 baseMissingReason 为空")
-        if item.base is not None and item.baseMissingReason is not None:
-            errors.append(f"{key}: base={item.base} 却有 baseMissingReason")
-        if item.baseMissingReason and item.baseMissingReason not in MISSING_REASONS:
-            errors.append(f"{key}: 未知 baseMissingReason {item.baseMissingReason!r}")
+    # ---- 主键唯一性 + level 升序 + null/reason 配对 + reason 域校验 ----
+    # 畸形但可解析的 catalog（如 "level": "1" 字符串）会在不变量比较中抛 TypeError，
+    # 统一包一层：内容非法直接短路返回，不裸抛。
+    try:
+        seen: set[tuple[str, int]] = set()
+        for item in catalog.items:
+            key = (item.section, item.dataID)
+            if key in seen:
+                errors.append(f"重复主键 (section={item.section}, dataID={item.dataID})")
+            seen.add(key)
+            if item.maxLevel != (item.levels[-1].level if item.levels else 0):
+                errors.append(f"{key}: maxLevel={item.maxLevel} 与最后等级不符")
+            prev = 0
+            for lv in item.levels:
+                if lv.level <= prev:
+                    errors.append(f"{key}: level {lv.level} 未严格升序")
+                prev = lv.level
+                if lv.durationSeconds is None and lv.missingReason is None:
+                    errors.append(f"{key} level {lv.level}: durationSeconds=null 但 missingReason 为空")
+                if lv.durationSeconds is not None and lv.missingReason is not None:
+                    errors.append(f"{key} level {lv.level}: durationSeconds 有值但 missingReason={lv.missingReason}")
+                if lv.missingReason and lv.missingReason not in LEVEL_MISSING_REASONS:
+                    errors.append(f"{key} level {lv.level}: 未知 missingReason {lv.missingReason!r}")
+                if lv.durationSeconds is not None and lv.durationSeconds < 0:
+                    errors.append(f"{key} level {lv.level}: durationSeconds 为负")
+                for ref, ref_name in ((lv.icon, "icon"), (lv.levelVisual, "levelVisual")):
+                    if ref and ref.missingReason and ref.missingReason not in ASSET_MISSING_REASONS:
+                        errors.append(f"{key} level {lv.level}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
+            if item.missingReason and item.missingReason not in ITEM_MISSING_REASONS:
+                errors.append(f"{key}: 未知 item.missingReason {item.missingReason!r}")
+            if item.base is None and item.baseMissingReason is None:
+                errors.append(f"{key}: base=null 但 baseMissingReason 为空")
+            if item.base is not None and item.baseMissingReason is not None:
+                errors.append(f"{key}: base={item.base} 却有 baseMissingReason")
+            if item.baseMissingReason and item.baseMissingReason not in BASE_MISSING_REASONS:
+                errors.append(f"{key}: 未知 baseMissingReason {item.baseMissingReason!r}")
+            for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
+                if ref and ref.missingReason and ref.missingReason not in ASSET_MISSING_REASONS:
+                    errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
+    except (TypeError, ValueError) as exc:
+        return [f"catalog 内容非法: {exc}"]
 
     # ---- counts 与目录内容重算一致 ----
     counts = {

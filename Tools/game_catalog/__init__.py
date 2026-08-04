@@ -2,8 +2,17 @@
 
 SCHEMA_VERSION = 1
 
-MISSING_REASONS = frozenset({
+# 按字段域拆分的 missingReason 词表：level / base / item / asset 各域互不混用，
+# 校验时用分域词表拒绝跨域污染（如 level 上写 "capital_has_no_base"）。
+LEVEL_MISSING_REASONS = frozenset({
     "time_missing", "time_invalid", "upgrade_data_missing", "no_time_source",
-    "capital_has_no_base", "deprecated_in_source", "icons_not_rendered",
-    "no_icon_columns", "no_visual_columns",
 })
+BASE_MISSING_REASONS = frozenset({"capital_has_no_base"})
+ITEM_MISSING_REASONS = frozenset({"deprecated_in_source"})
+ASSET_MISSING_REASONS = frozenset({
+    "icons_not_rendered", "no_icon_columns", "no_visual_columns",
+})
+
+# 兼容别名：全量并集（既有引用可用；新代码请用分域词表）
+MISSING_REASONS = (LEVEL_MISSING_REASONS | BASE_MISSING_REASONS
+                   | ITEM_MISSING_REASONS | ASSET_MISSING_REASONS)

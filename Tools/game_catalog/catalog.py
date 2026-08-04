@@ -54,11 +54,14 @@ def generate(apk: Path, game_version: str | None, output_dir: Path, locale: str 
     if out.exists() and any(out.iterdir()):
         raise CatalogError(f"输出目录已存在且非空（先清空或换目录）: {out}")
 
-    with zipfile.ZipFile(apk) as archive:
-        build_tag = read_build_tag(archive)
-        effective_version = game_version or _infer_game_version(build_tag)
-        localized = localization(archive)
-        items = _build_catalog_items(archive, localized)
+    try:
+        with zipfile.ZipFile(apk) as archive:
+            build_tag = read_build_tag(archive)
+            effective_version = game_version or _infer_game_version(build_tag)
+            localized = localization(archive)
+            items = _build_catalog_items(archive, localized)
+    except zipfile.BadZipFile as exc:
+        raise CatalogError(f"APK 不是有效 zip: {apk}") from exc
 
     catalog = Catalog(schemaVersion=SCHEMA_VERSION, gameVersion=effective_version,
                       locale=locale, items=items)
@@ -87,17 +90,19 @@ def generate(apk: Path, game_version: str | None, output_dir: Path, locale: str 
     manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2,
                                 sort_keys=True).encode("utf-8") + b"\n"
 
-    # 原子写：tmp 目录（out.parent 下，同文件系统）+ os.replace
+    # 原子写：tmp 目录（out.parent 下，同文件系统）+ 整目录单次 os.replace。
+    # 整目录替换保证失败不留部分输出（逐文件 replace 的旧方案在两个 replace
+    # 之间失败会留下不完整目录）。前置条件已保证 out 不存在或为空目录：
+    # out 存在且为空时先 rmdir（空目录可删）再 replace（目标必须不存在或为空）。
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=".coc-catalog-", dir=str(out.parent)))
     try:
         (tmp / "catalog.json").write_bytes(catalog_bytes)
         (tmp / "manifest.json").write_bytes(manifest_bytes)
         (tmp / "icons").mkdir()
-        out.mkdir(parents=True, exist_ok=True)
-        os.replace(tmp / "catalog.json", out / "catalog.json")
-        os.replace(tmp / "manifest.json", out / "manifest.json")
-        (out / "icons").mkdir(exist_ok=True)
+        if out.exists() and out.is_dir() and not any(out.iterdir()):
+            os.rmdir(out)
+        os.replace(tmp, out)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out

@@ -99,7 +99,7 @@ public struct OfficialWarLogPage: Codable, Hashable, Sendable, EndpointParserVer
         self.page = page
     }
 
-    public static var currentParserVersion: String { "clan-war-log-0.1" }
+    public static var currentParserVersion: String { "clan-war-log-0.2" }
 
     public var items: [OfficialWarLogEntry] { page.items }
     public var after: String? { page.after }
@@ -122,7 +122,7 @@ public struct OfficialCapitalRaidPage: Codable, Hashable, Sendable, EndpointPars
         self.page = page
     }
 
-    public static var currentParserVersion: String { "clan-capital-0.1" }
+    public static var currentParserVersion: String { "clan-capital-0.2" }
 
     public var items: [OfficialCapitalRaidSeason] { page.items }
     public var after: String? { page.after }

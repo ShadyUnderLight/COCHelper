@@ -596,3 +596,42 @@ extension AppModelTests {
         XCTAssertEqual(model.currentCapitalState?.lastHTTPStatus, 500)
     }
 }
+
+// MARK: - P1-3 端到端（外部复核补充）
+
+extension AppModelTests {
+    /// malformed 响应（items 缺失）走完 refresher 链路：failed + 保留 last-good，
+    /// 不得当作成功空页覆盖持久化数据。
+    @MainActor
+    func testRefreshWarLogMalformedResponseKeepsLastGood() async throws {
+        let failFlag = FailFlag()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            if failFlag.shouldFail {
+                // 200 但 items 缺失（损坏响应）
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                        Data("{}".utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2)
+
+        failFlag.shouldFail = true
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        XCTAssertEqual(model.currentWarLogState?.status, .failed)
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2,
+                       "malformed 响应不得清空已累计的 last-good")
+        XCTAssertTrue(model.currentWarLogState?.lastErrorReason?.contains("响应解析失败") == true,
+                      "malformed 应显示解析失败原因")
+    }
+}

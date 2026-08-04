@@ -121,20 +121,8 @@ public typealias ClanWarLogAPIState = OfficialEndpointState<OfficialWarLogPage>
 /// 部落资本赛季状态（3c）：parserVersion "clan-capital-0.1"。
 public typealias ClanCapitalAPIState = OfficialEndpointState<OfficialCapitalRaidPage>
 
-// MARK: - typealias 的 currentParserVersion 兼容（约束扩展转发）
+// MARK: - typealias 的 currentParserVersion 兼容（无约束转发：未来端点零样板）
 
-public extension OfficialEndpointState where Snapshot == OfficialClanSnapshot {
-    static var currentParserVersion: String { Snapshot.currentParserVersion }
-}
-
-public extension OfficialEndpointState where Snapshot == OfficialClanWarSnapshot {
-    static var currentParserVersion: String { Snapshot.currentParserVersion }
-}
-
-public extension OfficialEndpointState where Snapshot == OfficialWarLogPage {
-    static var currentParserVersion: String { Snapshot.currentParserVersion }
-}
-
-public extension OfficialEndpointState where Snapshot == OfficialCapitalRaidPage {
+public extension OfficialEndpointState {
     static var currentParserVersion: String { Snapshot.currentParserVersion }
 }

@@ -17,6 +17,11 @@ public struct CatalogGeneratedFile: Codable, Hashable, Sendable {
     public let entries: Int?
 }
 
+/// 版本化静态目录 manifest 模型。
+///
+/// 当前 `loadBundled()` 不读取 manifest（只解码 catalog.json）；此类型作为
+/// 契约保留，供后续运行时版本审计（如 UI 展示 gameVersion/buildTag/locale、
+/// 校验 generatedFiles 哈希）使用。
 public struct CatalogManifest: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let gameVersion: String

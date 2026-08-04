@@ -128,13 +128,29 @@ final class GameCatalogTests: XCTestCase {
     }
 
     /// 非连续等级：等级号保留源表原值（#13 约定），按 level 值查找而非下标。
+    /// 战斗直升机（heroes2 28000005）等级 15..35：下标式实现（levels[nextLevel-1]）
+    /// 会返回错误值，此用例可鉴别。
     func testDurationHandlesNonContiguousLevels() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
-        // 超级飞龙 units 4000081：levels 从 3 开始（3..8），无 level 1/2 记录。
-        let dragon = try XCTUnwrap(catalog.item(section: "units", dataID: 4_000_081))
-        XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 2, for: dragon),
-                     "无 level 2 记录应返回 nil 而非越界/错位")
-        let expectedL3 = dragon.levels.first(where: { $0.level == 3 })?.durationSeconds
-        XCTAssertEqual(catalog.durationToUpgradeLevel(nextLevel: 3, for: dragon), expectedL3)
+        let copter = try XCTUnwrap(catalog.item(section: "heroes2", dataID: 28_000_005))
+        XCTAssertEqual(copter.levels.first?.level, 15, "等级号从 15 开始，无 1..14 记录")
+        XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 1, for: copter))
+        XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 14, for: copter))
+        XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 15, for: copter),
+                     "15 级是初始等级（min_level_initial）")
+        XCTAssertEqual(catalog.durationToUpgradeLevel(nextLevel: 16, for: copter), 432_000)
+        XCTAssertEqual(catalog.durationToUpgradeLevel(nextLevel: 26, for: copter), 518_400)
+        XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 36, for: copter),
+                     "超出 maxLevel 35")
+    }
+
+    /// 部落都城（capital_*，base=nil）：所有等级无直接升级时长，必须保持 nil（issue 数据边界）。
+    func testCapitalDurationsStayNil() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let hq = try XCTUnwrap(catalog.item(section: "capital_buildings", dataID: 110_000_000))
+        XCTAssertTrue(hq.levels.allSatisfy { $0.durationSeconds == nil },
+                      "都城大本营时长应为 nil")
+        XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 2, for: hq))
+        XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 10, for: hq))
     }
 }

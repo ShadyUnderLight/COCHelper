@@ -355,7 +355,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
             base: .home
         )
         XCTAssertTrue(projection.diagnostics.contains {
-            $0.severity == .warning && $0.message.contains("99.0.0")
+            $0.severity == .warning
+                && $0.message.contains("99.0.0")
+                && $0.path == "GameCatalog/home"
         })
         XCTAssertEqual(projection.catalogVersion, "18.400.13")
     }

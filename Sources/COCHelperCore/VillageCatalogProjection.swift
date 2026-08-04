@@ -310,8 +310,9 @@ public struct VillageCatalogProjection: Sendable {
                 category: first.category,
                 currentLevel: first.currentLevel,
                 count: aggregatedCount,
-                // 聚合项不携带 timer：组内实例的计时各不相同，聚合无意义；
-                // 升级实例（含计时刚结束的）永远单独保留，不进入聚合。
+                // 聚合项不携带 timer：组内实例的计时各不相同，聚合无意义。
+                // 进行中实例（remaining > 0）各自保留；计时已结束的记录
+                // （live == 0）作为普通记录参与聚合。
                 timerSeconds: nil,
                 remainingSeconds: nil,
                 nextLevel: nil,

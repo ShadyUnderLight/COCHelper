@@ -38,7 +38,7 @@ struct VillageDetailView: View {
         }
         .background(Color.cocBackground)
         .sheet(item: $selectedItem) { item in
-            LevelDetailSheet(item: item, catalog: catalog, now: Date())
+            LevelDetailSheet(item: item, catalog: catalog)
         }
     }
 
@@ -51,6 +51,10 @@ struct VillageDetailView: View {
         )
         let groups = VillageDetailProjection.groups(from: projection.items)
         let total = VillageDetailProjection.totalCompletion(from: projection.items)
+        let statsByKey = Dictionary(
+            uniqueKeysWithValues: VillageDetailProjection.completionStats(from: projection.items)
+                .map { ($0.id, $0) }
+        )
         let displayGroups = filtered(groups)
 
         return ScrollView {
@@ -72,7 +76,7 @@ struct VillageDetailView: View {
                     }
                 } else {
                     ForEach(displayGroups) { group in
-                        sectionCard(group: group)
+                        sectionCard(group: group, now: now, stats: statsByKey[group.id], village: village)
                     }
                 }
             }
@@ -234,7 +238,12 @@ struct VillageDetailView: View {
 
     // MARK: - 列表
 
-    private func sectionCard(group: VillageDetailGroup) -> some View {
+    private func sectionCard(
+        group: VillageDetailGroup,
+        now: Date,
+        stats: VillageCategoryCompletion?,
+        village: VillageProfile
+    ) -> some View {
         Panel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
@@ -244,12 +253,12 @@ struct VillageDetailView: View {
                     )
                     .font(.headline)
                     Spacer()
-                    sectionCompletionLabel(group: group)
+                    sectionCompletionLabel(stats: stats)
                 }
 
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(group.items) { item in
-                        itemRow(item, group: group)
+                        itemRow(item, group: group, now: now, village: village)
                         if item.id != group.items.last?.id {
                             Divider().padding(.leading, 46)
                         }
@@ -260,15 +269,21 @@ struct VillageDetailView: View {
     }
 
     /// 单行：`UpgradeDisplayRecord` 在按钮外层构造，避免 label 闭包内长表达式
-    /// 触发 Swift 编译器类型检查超时。`village` 为 Optional 计算属性，取值用
-    /// 可选链（直接 `.name`/`.tag` 会与 SwiftUI `Optional.tag(_:)` modifier 歧义）。
-    private func itemRow(_ item: VillageItemState, group: VillageDetailGroup) -> some View {
+    /// 触发 Swift 编译器类型检查超时。`village` 已由 detailContent 解包后传入，
+    /// 直接取 `.name`/`.tag`（不经 Optional 计算属性，避免与 SwiftUI
+    /// `Optional.tag(_:)` modifier 歧义）。
+    private func itemRow(
+        _ item: VillageItemState,
+        group: VillageDetailGroup,
+        now: Date,
+        village: VillageProfile
+    ) -> some View {
         let rowID = villageID.uuidString + ":" + selectedBase.rawValue + ":" + item.id
         let record = UpgradeDisplayRecord(
             id: rowID,
             villageID: villageID,
-            villageName: village?.name ?? "未命名村庄",
-            villageTag: village?.tag,
+            villageName: village.name,
+            villageTag: village.tag,
             base: selectedBase,
             item: item,
             catalogVersion: catalog?.gameVersion
@@ -278,7 +293,7 @@ struct VillageDetailView: View {
         } label: {
             UpgradeDisplayRow(
                 record: record,
-                now: Date(),
+                now: now,
                 showsVillageColumn: false
             )
         }
@@ -286,8 +301,7 @@ struct VillageDetailView: View {
         .contentShape(Rectangle())
     }
 
-    private func sectionCompletionLabel(group: VillageDetailGroup) -> some View {
-        let stats = VillageDetailProjection.completionStats(from: group.items).first
+    private func sectionCompletionLabel(stats: VillageCategoryCompletion?) -> some View {
         guard let stats, let ratio = stats.completionRatio else {
             return Text("无可确认完成度").font(.caption2).foregroundStyle(.tertiary)
         }

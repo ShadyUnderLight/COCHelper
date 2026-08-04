@@ -9,7 +9,6 @@ import COCHelperCore
 struct LevelDetailSheet: View {
     let item: VillageItemState
     let catalog: GameCatalog?
-    let now: Date
 
     @Environment(\.dismiss) private var dismiss
 

@@ -98,6 +98,7 @@ struct ContentView: View {
                 VillageDetailView(villageID: villageID) {
                     selection = .accountData
                 }
+                .id(villageID)
             case .accountData:
                 AccountDataView()
             case .info:

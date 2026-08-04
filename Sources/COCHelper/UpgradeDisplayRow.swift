@@ -58,12 +58,19 @@ struct UpgradeDisplayRow: View {
     // MARK: - 完整时长
 
     private var durationLabel: String {
-        guard let duration = item.nextLevelDurationSeconds else { return "暂无目录数据" }
-        if duration > 0 {
-            return "完整时长：" + AccountDurationFormatter.label(duration)
+        if let duration = item.nextLevelDurationSeconds {
+            if duration > 0 {
+                return "完整时长：" + AccountDurationFormatter.label(duration)
+            }
+            // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
+            return "完整时长：即时"
         }
-        // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
-        return "完整时长：即时"
+        // 非升级未满级（目录已命中、maxLevel 已知）：下一级 = currentLevel + 1，
+        // 是目录允许的下一级编号而非升级计划（issue 数据边界：不生成队列计划）。
+        if let currentLevel = item.currentLevel, let maxLevel = item.maxLevel, currentLevel < maxLevel {
+            return "下一级 Lv " + String(currentLevel + 1)
+        }
+        return "暂无目录数据"
     }
 
     // MARK: - 副标题
@@ -216,6 +223,14 @@ struct UpgradeDisplayRow: View {
                     }
                 } else if needsReimport {
                     Text("计时已结束")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                } else if item.status == .unavailable {
+                    Text("不参与追踪")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if item.status == .unknown {
+                    Text("目录未收录")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
                 } else {

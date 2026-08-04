@@ -49,10 +49,13 @@ struct VillageDetailView: View {
             base: selectedBase,
             now: now
         )
-        let groups = VillageDetailProjection.groups(from: projection.items)
-        let total = VillageDetailProjection.totalCompletion(from: projection.items)
+        // 与升级总览（UpgradeOverviewProjection.allRecords）口径一致：
+        // decos/helpers/obstacles 等不参与升级追踪的类别不展示、不计入完成度。
+        let trackedItems = projection.items.filter { $0.status != .unavailable }
+        let groups = VillageDetailProjection.groups(from: trackedItems)
+        let total = VillageDetailProjection.totalCompletion(from: trackedItems)
         let statsByKey = Dictionary(
-            uniqueKeysWithValues: VillageDetailProjection.completionStats(from: projection.items)
+            uniqueKeysWithValues: VillageDetailProjection.completionStats(from: trackedItems)
                 .map { ($0.id, $0) }
         )
         let displayGroups = filtered(groups)

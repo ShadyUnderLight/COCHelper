@@ -151,6 +151,15 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         UpgradeOverviewProjection.activeRecords(from: villages, catalog: catalog, at: now)
     }
 
+    /// `pendingReimportRecords` 便捷包装；now 默认 == importedAt。
+    private func pendingReimportRecords(
+        _ villages: [VillageProfile],
+        catalog: GameCatalog?,
+        at now: Date = Date(timeIntervalSince1970: 1_700_000_000)
+    ) -> [UpgradeDisplayRecord] {
+        UpgradeOverviewProjection.pendingReimportRecords(from: villages, catalog: catalog, at: now)
+    }
+
     // MARK: - Filtering
 
     func testFiltersOutNonUpgradingItems() throws {
@@ -368,6 +377,162 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             makeRecord(remainingSeconds: 500).completionDate(from: now),
             now.addingTimeInterval(500)
         )
+    }
+
+    // MARK: - pendingReimportRecords
+
+    func testPendingReimportOnlyFinishedTimerItems() throws {
+        // 过滤语义（Issue #15 验收：「计时结束的项目显示重新导入提示」）：
+        // 只含 timerSeconds != nil && remainingSeconds == 0 的项。
+        // - upgrading 项（remaining > 0）：不含
+        // - 普通完成项（无计时）：不含
+        // - 目录未收录且仍在升级的项（remaining > 0）：不含
+        //   （重新导入信号与目录收录无关：只要计时结束就该提示；目录未收录
+        //   只影响名称/等级展示，不影响过滤条件本身。）
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                // 升级中：不含
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
+                // 计时已结束：含
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2,
+                         timerSeconds: 600, remainingSeconds: 0, path: "1"),
+                // 普通完成（无计时）：不含
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "2"),
+            ],
+            "units": [
+                // 目录未收录（dataID 不在合成目录）且仍在升级：不含
+                makeItem(section: "units", dataID: 12_000_010, level: 3,
+                         timerSeconds: 600, remainingSeconds: 120, path: "3"),
+                // 目录未收录且计时已结束：含（计时信号与目录无关）
+                makeItem(section: "units", dataID: 12_000_010, level: 3,
+                         timerSeconds: 600, remainingSeconds: 0, path: "4"),
+            ],
+        ])
+        let records = pendingReimportRecords([village], catalog: syntheticCatalog)
+        XCTAssertEqual(records.count, 2, "只保留计时结束的两条，其余全部排除")
+        XCTAssertTrue(records.allSatisfy {
+            $0.item.timerSeconds != nil && $0.item.remainingSeconds == 0
+        })
+        // 聚合层会把非升级记录 id 重写为 agg: 前缀（见 VillageCatalogProjection.aggregate）。
+        XCTAssertEqual(Set(records.map(\.item.id)), ["agg:buildings:1", "agg:units:4"])
+        XCTAssertFalse(records.contains { $0.item.id == "agg:buildings:0" }, "升级中项不得出现")
+        XCTAssertFalse(records.contains { $0.item.id == "agg:buildings:2" }, "普通完成项不得出现")
+        XCTAssertFalse(records.contains { $0.item.id == "agg:units:3" }, "目录未收录且未结束的项不得出现")
+    }
+
+    func testPendingReimportAggregatesAcrossVillagesAndBases() throws {
+        // 跨村庄 × 跨 base 聚合正确；同键多条计时结束记录聚合为一条并保留 count。
+        let villageA = makeVillage(name: "A村", tag: "#AAAA", objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 0, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 0, path: "1"),
+            ],
+            "buildings2": [makeItem(section: "buildings2", dataID: 1_000_033, level: 1,
+                                    timerSeconds: 600, remainingSeconds: 0, path: "0")],
+        ])
+        let villageB = makeVillage(name: "B村", tag: "#BBBB", objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 3600, remainingSeconds: 0, path: "0")],
+        ])
+        let records = pendingReimportRecords([villageA, villageB], catalog: syntheticCatalog)
+        XCTAssertEqual(records.count, 3, "A村 home 聚合 1 条 + A村 builder 1 条 + B村 home 1 条")
+
+        let aHome = try XCTUnwrap(records.first { $0.villageID == villageA.id && $0.base == .home })
+        XCTAssertEqual(aHome.villageName, "A村")
+        XCTAssertEqual(aHome.villageTag, "#AAAA")
+        XCTAssertEqual(aHome.item.count, 2, "同键两条计时结束记录应聚合 count")
+        XCTAssertEqual(aHome.item.timerSeconds, 600, "聚合不得丢失计时结束信号")
+        XCTAssertEqual(aHome.item.remainingSeconds, 0)
+
+        let aBuilder = try XCTUnwrap(records.first { $0.villageID == villageA.id && $0.base == .builder })
+        XCTAssertEqual(aBuilder.item.section, "buildings2")
+
+        let bHome = try XCTUnwrap(records.first { $0.villageID == villageB.id && $0.base == .home })
+        XCTAssertEqual(bHome.item.dataID, 4_000_000)
+        XCTAssertEqual(bHome.item.timerSeconds, 3600)
+    }
+
+    func testPendingReimportSortsByVillageThenBaseThenName() throws {
+        // 排序：villageName（localizedStandardCompare）→ base.rawValue → item.name。
+        // 村庄名用中文名（拼音序，与现有 activeRecords 测试同一 idiom）：
+        // 二村(er) < 一村(yi)；base："builder" < "home"；名称：加农炮(jia) < 野蛮人(ye)。
+        let villageEr = makeVillage(name: "二村", objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                                   timerSeconds: 600, remainingSeconds: 0, path: "0")],
+            "buildings2": [makeItem(section: "buildings2", dataID: 1_000_033, level: 1,
+                                    timerSeconds: 600, remainingSeconds: 0, path: "0")],
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 600, remainingSeconds: 0, path: "1")],
+        ])
+        let villageYi = makeVillage(name: "一村", objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 600, remainingSeconds: 0, path: "0")],
+        ])
+        // 故意乱序传入，验证排序稳定。
+        let records = pendingReimportRecords([villageYi, villageEr], catalog: syntheticCatalog)
+
+        let expected: [(String, TrackerBase, String)] = [
+            // 二村 builder（"builder" < "home"）
+            ("二村", .builder, "建筑工人小屋"),
+            // 二村 home：加农炮（"加农炮" < "野蛮人"，拼音序 jia < ye）
+            ("二村", .home, "加农炮"),
+            ("二村", .home, "野蛮人"),
+            // 一村 home（拼音序 er < yi）
+            ("一村", .home, "野蛮人"),
+        ]
+        XCTAssertEqual(records.count, expected.count)
+        for (record, want) in zip(records, expected) {
+            XCTAssertEqual(record.villageName, want.0, "villageName 排序不符")
+            XCTAssertEqual(record.base, want.1, "base 排序不符")
+            XCTAssertEqual(record.item.name, want.2, "item.name 排序不符")
+        }
+    }
+
+    func testPendingReimportDisjointFromActiveRecords() throws {
+        // 同一快照下：升级中项进 activeRecords，计时结束项进 pendingReimportRecords，
+        // 两个列表按 id 无重叠（同一 item 不可能同时满足两种状态）。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2,
+                         timerSeconds: 600, remainingSeconds: 0, path: "1"),
+            ],
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 3600, remainingSeconds: 0, path: "0")],
+        ])
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let active = activeRecords([village], catalog: syntheticCatalog, at: now)
+        let pending = pendingReimportRecords([village], catalog: syntheticCatalog, at: now)
+        XCTAssertEqual(active.count, 1)
+        XCTAssertEqual(pending.count, 2)
+
+        let activeIDs = Set(active.map(\.id))
+        let pendingIDs = Set(pending.map(\.id))
+        XCTAssertTrue(activeIDs.isDisjoint(with: pendingIDs),
+                      "升级中项与计时结束项不得出现在同一列表")
+    }
+
+    func testPendingReimportCarriesCatalogVersionAndLevelFallback() throws {
+        // 目录版本透传 + 计时结束项无 nextLevel（聚合层语义：不自动 +1）。
+        let village = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 3600, remainingSeconds: 0, path: "0")],
+        ])
+
+        let withCatalog = pendingReimportRecords([village], catalog: syntheticCatalog)
+        XCTAssertFalse(withCatalog.isEmpty)
+        XCTAssertTrue(withCatalog.allSatisfy { $0.catalogVersion == "18.400.13" })
+        let record = try XCTUnwrap(withCatalog.first)
+        XCTAssertEqual(record.item.currentLevel, 2)
+        XCTAssertNil(record.item.nextLevel, "计时结束项不得自动推断下一等级（等重新导入确认）")
+
+        let withoutCatalog = pendingReimportRecords([village], catalog: nil)
+        XCTAssertEqual(withoutCatalog.count, 1, "目录缺失不影响计时结束信号")
+        XCTAssertNil(withoutCatalog.first?.catalogVersion)
     }
 
     // MARK: - Property-based tests

@@ -45,7 +45,54 @@ public enum UpgradeOverviewProjection {
         catalog: GameCatalog?,
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
-        let records = villages.flatMap { village in
+        allRecords(from: villages, catalog: catalog, at: now)
+            .filter(\.item.isUpgrading)
+            .sorted { lhs, rhs in
+                let lhsRemaining = lhs.item.remainingSeconds ?? .max
+                let rhsRemaining = rhs.item.remainingSeconds ?? .max
+                if lhsRemaining != rhsRemaining { return lhsRemaining < rhsRemaining }
+                let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
+                if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
+                if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
+                return lhs.id < rhs.id
+            }
+    }
+
+    /// 全部村庄 × 全部 base 中「计时已结束」的项目（待重新导入确认等级）。
+    ///
+    /// 过滤条件与投影聚合层的「需重新导入」信号一致：
+    /// `timerSeconds != nil && remainingSeconds == 0`（见 VillageCatalogProjection
+    /// 聚合注释）。与 `activeRecords` 语义互斥：升级中项（remaining > 0）进
+    /// active，计时结束项进本列表；普通完成项（timerSeconds == nil）两者都不进。
+    /// 该信号与目录收录无关——即使目录未命中，计时结束也仍需重新导入确认。
+    ///
+    /// 排序：villageName（localizedStandardCompare）→ base.rawValue → item.name
+    /// （localizedStandardCompare），id 兜底保证稳定。
+    public static func pendingReimportRecords(
+        from villages: [VillageProfile],
+        catalog: GameCatalog?,
+        at now: Date = Date()
+    ) -> [UpgradeDisplayRecord] {
+        allRecords(from: villages, catalog: catalog, at: now)
+            .filter { $0.item.timerSeconds != nil && $0.item.remainingSeconds == 0 }
+            .sorted { lhs, rhs in
+                let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
+                if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
+                if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
+                let nameOrder = lhs.item.name.localizedStandardCompare(rhs.item.name)
+                if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+                return lhs.id < rhs.id
+            }
+    }
+
+    /// 全部村庄 × 全部 base 的未过滤投影记录（activeRecords / pendingReimportRecords
+    /// 共用同一投影循环与 id 构造，避免两处漂移）。
+    private static func allRecords(
+        from villages: [VillageProfile],
+        catalog: GameCatalog?,
+        at now: Date
+    ) -> [UpgradeDisplayRecord] {
+        villages.flatMap { village in
             TrackerBase.allCases.flatMap { base in
                 let projection = VillageCatalogProjection.project(
                     village: village,
@@ -53,29 +100,18 @@ public enum UpgradeOverviewProjection {
                     base: base,
                     now: now
                 )
-                return projection.items
-                    .filter(\.isUpgrading)
-                    .map { item in
-                        UpgradeDisplayRecord(
-                            id: village.id.uuidString + ":" + base.rawValue + ":" + item.id,
-                            villageID: village.id,
-                            villageName: village.name,
-                            villageTag: village.tag,
-                            base: base,
-                            item: item,
-                            catalogVersion: projection.catalogVersion
-                        )
-                    }
+                return projection.items.map { item in
+                    UpgradeDisplayRecord(
+                        id: village.id.uuidString + ":" + base.rawValue + ":" + item.id,
+                        villageID: village.id,
+                        villageName: village.name,
+                        villageTag: village.tag,
+                        base: base,
+                        item: item,
+                        catalogVersion: projection.catalogVersion
+                    )
+                }
             }
-        }
-        return records.sorted { lhs, rhs in
-            let lhsRemaining = lhs.item.remainingSeconds ?? .max
-            let rhsRemaining = rhs.item.remainingSeconds ?? .max
-            if lhsRemaining != rhsRemaining { return lhsRemaining < rhsRemaining }
-            let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
-            if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
-            if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
-            return lhs.id < rhs.id
         }
     }
 }

@@ -43,8 +43,13 @@ struct UpgradeDisplayRow: View {
     }
 
     /// 计时已结束（timer 存在、remaining 归零）：需要重新导入确认实际等级。
-    /// 不做自动等级 +1——nextLevel 只来自投影显式推断。
-    private var needsReimport: Bool { item.remainingSeconds == 0 }
+    /// 条件与投影层 `pendingReimportRecords` 完全一致（`timerSeconds != nil &&
+    /// remainingSeconds == 0`）——聚合数据流下两者等价，但本组件会被村庄详情页
+    /// 复用、届时可能直接展示非聚合 item，普通完成项（remaining == 0 且
+    /// timer == nil）不得误标。不做自动等级 +1——nextLevel 只来自投影显式推断。
+    private var needsReimport: Bool {
+        item.timerSeconds != nil && item.remainingSeconds == 0
+    }
 
     private var isMaxed: Bool { item.status == .maxed }
 

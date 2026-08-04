@@ -47,10 +47,24 @@ struct WarLogCardView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else if model.isCurrentWarLogKnownNotPublic {
-            // 显式状态：不伪造"没有历史战争"
-            Label("该部落的战争日志不公开", systemImage: "eye.slash.fill")
-                .font(.callout)
-                .foregroundStyle(.orange)
+            // 显式状态：不伪造"没有历史战争"。
+            // 预判基于可能过期的部落档案，提供"仍要检查"入口绕过
+            //（真实 403 会显示失败原因）。
+            VStack(alignment: .leading, spacing: 8) {
+                Label("该部落的战争日志不公开", systemImage: "eye.slash.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                HStack {
+                    Button {
+                        model.refreshCurrentWarLog(force: true)
+                    } label: {
+                        Label("仍要检查", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isRefreshingWarLogData)
+                    Spacer()
+                }
+            }
         } else if let state = model.currentWarLogState {
             statusLine(state)
             if let page = state.lastGood {
@@ -58,9 +72,10 @@ struct WarLogCardView: View {
                 if model.currentWarLogHasMore {
                     loadMoreButton("加载更多战争")
                 }
-            } else {
-                refreshButton("查看战争日志")
             }
+            // 总是显示刷新按钮：failed（重试）与 stale（重新拉取）都需入口，
+            // 避免"有 lastGood 但状态非 success"时卡片死锁（对齐 3b 模式）。
+            refreshButton("刷新战争日志")
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Label("尚未获取战争日志", systemImage: "circle.dashed")
@@ -130,6 +145,13 @@ struct WarLogCardView: View {
                     Text(reason)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if state.lastHTTPStatus == 403 {
+                    // 403 可能是"战争日志不公开"（档案预判过期时兜底），
+                    // 也可能是 invalidIp 等凭证问题（reason 原样透传可区分）。
+                    Text("战争日志可能不公开（403）")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
                 if let fetchedAt = state.fetchedAt {
                     Text("保留上次成功数据（\(fetchedAt.formatted(date: .abbreviated, time: .shortened))）")

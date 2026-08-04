@@ -34,6 +34,9 @@ public struct OfficialEndpointState<Snapshot: Codable & Hashable & Sendable>: Co
     /// computed（泛型类型不支持 static stored property）。
     public static var staleThreshold: TimeInterval { 24 * 3600 }
 
+    /// 注意：`parserVersion` **必须显式传端点版本**（生产路径由 refresher/
+    /// AppModel 传 `ClanXxxAPIState.currentParserVersion`）；默认值
+    /// "endpoint-state" 仅用于测试/临时构造，持久化的版本号应能被审计识别。
     public init(
         status: OfficialAPIRequestStatus,
         clanTag: String? = nil,

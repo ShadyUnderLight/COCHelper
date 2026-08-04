@@ -427,3 +427,80 @@ extension AppModelTests {
         XCTAssertTrue(recorder.snapshot().isEmpty, "已知不公开时不得发起 warlog 请求")
     }
 }
+
+// MARK: - stage 3c 复审修复回归
+
+/// 可变的 Sendable 失败开关（@Sendable handler 捕获用）。
+private final class FailFlag: @unchecked Sendable {
+    var shouldFail = false
+}
+
+extension AppModelTests {
+    /// 刷新失败保留已累计的 last-good（复审 B1/B2：传 previous 保持契约）。
+    @MainActor
+    func testRefreshWarLogFailureKeepsAccumulatedLastGood() async throws {
+        let failFlag = FailFlag()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            if failFlag.shouldFail {
+                return (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        // 首次成功（累计 2 条）
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2)
+
+        // 刷新失败 → last-good 保留（累计页不清空）
+        failFlag.shouldFail = true
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        XCTAssertEqual(model.currentWarLogState?.status, .failed)
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2,
+                       "刷新失败不得清空已累计的 last-good")
+        XCTAssertNotNil(model.currentWarLogState?.lastErrorReason)
+    }
+
+    /// 预判"不公开"时 force 请求仍可发起（档案过期误判的绕过路径）。
+    @MainActor
+    func testRefreshWarLogForceBypassesNotPublicPrecheck() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record("requested")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let privateClan = Data(##"{"tag":"#CLANANONYMIZED","name":"c","clanLevel":1,"members":1,"isWarLogPublic":false}"##.utf8)
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { request in
+                (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, privateClan)
+            },
+            clanLogHandler: logHandler
+        )
+
+        // 先获取档案（isWarLogPublic=false）
+        model.refreshCurrentClan()
+        await waitUntil { !model.isRefreshingClanData }
+        XCTAssertTrue(model.isCurrentWarLogKnownNotPublic)
+
+        // 普通刷新被预判拦截
+        model.refreshCurrentWarLog()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(recorder.snapshot().isEmpty, "预判拦截时不得发起请求")
+
+        // force 绕过预判
+        model.refreshCurrentWarLog(force: true)
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertEqual(recorder.snapshot().count, 1, "force 必须发起请求")
+        XCTAssertEqual(model.currentWarLogState?.status, .success)
+    }
+}

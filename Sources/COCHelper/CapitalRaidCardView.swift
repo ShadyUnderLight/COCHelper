@@ -51,9 +51,9 @@ struct CapitalRaidCardView: View {
                 if model.currentCapitalHasMore {
                     loadMoreButton("加载更多赛季")
                 }
-            } else {
-                refreshButton("查看资本赛季")
             }
+            // 总是显示刷新按钮（对齐 3b 模式，防 failed/stale 死锁）。
+            refreshButton("刷新资本赛季")
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Label("尚未获取资本赛季", systemImage: "circle.dashed")

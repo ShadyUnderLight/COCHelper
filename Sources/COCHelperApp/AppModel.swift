@@ -526,19 +526,23 @@ public final class AppModel: ObservableObject {
     }
 
     /// 战争日志首屏/刷新：重新拉第一页（**替换**累计列表，避免陈旧混合）。
-    public func refreshCurrentWarLog() {
+    /// 刷新失败时保留既有 last-good（传 previous 保持共享层契约）。
+    /// `force` 为 true 时跳过"已知不公开"预判（用户主动要求检查，
+    /// 应对部落档案过期导致的误判；真实 403 仍会显示失败原因）。
+    public func refreshCurrentWarLog(force: Bool = false) {
         guard !isRefreshingWarLogData else { return }
         guard let tag = currentVillageClanTag else { return }
-        guard !isCurrentWarLogKnownNotPublic else { return }
+        if !force, isCurrentWarLogKnownNotPublic { return }
         isRefreshingWarLogData = true
         let client = clanLogClient
         let parserVersion = ClanWarLogAPIState.currentParserVersion
+        let previous = clanWarLogStates[tag]
 
         Task { [weak self] in
             guard let self else { return }
             let state = await EndpointRefresher.fetchSingle(
                 tag: tag,
-                previous: nil,
+                previous: previous,
                 parserVersion: parserVersion
             ) { tag in
                 try await client.fetchWarLog(tag: tag)
@@ -612,19 +616,20 @@ public final class AppModel: ObservableObject {
         return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
     }
 
-    /// 资本赛季首屏/刷新（替换累计列表）。
+    /// 资本赛季首屏/刷新（替换累计列表；失败保留既有 last-good）。
     public func refreshCurrentCapitalRaid() {
         guard !isRefreshingCapitalData else { return }
         guard let tag = currentVillageClanTag else { return }
         isRefreshingCapitalData = true
         let client = clanLogClient
         let parserVersion = ClanCapitalAPIState.currentParserVersion
+        let previous = clanCapitalStates[tag]
 
         Task { [weak self] in
             guard let self else { return }
             let state = await EndpointRefresher.fetchSingle(
                 tag: tag,
-                previous: nil,
+                previous: previous,
                 parserVersion: parserVersion
             ) { tag in
                 try await client.fetchCapitalRaidSeasons(tag: tag)

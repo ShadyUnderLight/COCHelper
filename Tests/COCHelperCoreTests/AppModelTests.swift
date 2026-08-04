@@ -69,7 +69,8 @@ final class AppModelTests: XCTestCase {
     @MainActor
     private func makeModel(
         playerHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data),
-        clanHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+        clanHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data),
+        clanWarHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? = nil
     ) throws -> AppModel {
         // 两个村庄：A 在 #CLANA，B 在 #CLANB（带导入快照使 officialTag 有效，
         // 否则玩家刷新会走 skipped 分支，无法触发网络请求与联动）。
@@ -87,9 +88,15 @@ final class AppModelTests: XCTestCase {
         let data = try JSONEncoder().encode(villages)
         defaults.set(data, forKey: "coc-helper.villages.v1")
 
+        let defaultWarHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
         MockURLProtocol.handler = { request in
             if request.url?.path.hasPrefix("/v1/players/") == true {
                 return try playerHandler(request)
+            }
+            if request.url?.path.contains("/currentwar") == true {
+                return try (clanWarHandler ?? defaultWarHandler)(request)
             }
             return try clanHandler(request)
         }
@@ -101,7 +108,16 @@ final class AppModelTests: XCTestCase {
             config: CoAPIConfig(maxRetryCount: 0),
             session: MockURLProtocol.makeSession()
         ) { "fake-token" })
-        return AppModel(defaults: defaults, refresher: playerRefresher, clanRefresher: clanRefresher)
+        let clanWarRefresher = ClanWarRefresher(client: CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession()
+        ) { "fake-token" })
+        return AppModel(
+            defaults: defaults,
+            refresher: playerRefresher,
+            clanRefresher: clanRefresher,
+            clanWarRefresher: clanWarRefresher
+        )
     }
 
     private func response(_ status: Int, url: URL, body: Data) -> (HTTPURLResponse, Data) {
@@ -182,5 +198,83 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertEqual(clanRecorder.snapshot().count, 0, "玩家刷新失败不得触发部落联动（避免限流边界放大请求面）")
         XCTAssertEqual(model.currentVillageOfficialState?.status, .failed)
+    }
+
+    // MARK: - 当前战争（按需刷新，stage 3b）
+
+    /// 点"查看当前战争"→ 请求当前村庄所属部落的 currentwar；
+    /// notInWar 是成功响应（空状态快照存入 lastGood）。
+    @MainActor
+    func testRefreshCurrentClanWarFetchesCurrentVillageClanWar() async throws {
+        let warRecorder = TagRecorder()
+        let clanWarHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            warRecorder.record(request.url?.path(percentEncoded: true) ?? "")
+            let body = Data(#"{"state":"notInWar"}"#.utf8)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        // 玩家/部落 handler 不会被调用（按需语义：战争刷新不联动其他端点）
+        let playerHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            XCTFail("战争刷新不应触发玩家请求")
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let clanHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            XCTFail("战争刷新不应触发部落 profile 请求")
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let model = try makeModel(
+            playerHandler: playerHandler,
+            clanHandler: clanHandler,
+            clanWarHandler: clanWarHandler
+        )
+
+        // 当前选中村庄 A（部落 #CLANA）
+        model.refreshCurrentClanWar()
+        await waitUntil { !model.isRefreshingClanWarData }
+
+        XCTAssertEqual(warRecorder.snapshot(), ["/v1/clans/%23CLANA/currentwar"],
+                       "战争刷新必须请求当前村庄所属部落的 currentwar")
+        XCTAssertEqual(model.currentClanWarState?.status, .success)
+        XCTAssertEqual(model.currentClanWarState?.lastGood?.state, "notInWar",
+                       "notInWar 是成功空状态，不是失败")
+    }
+
+    /// 战争刷新失败保留 last-good；部落/玩家数据不受影响（独立共享层）。
+    @MainActor
+    func testRefreshCurrentClanWarFailureKeepsLastGood() async throws {
+        let clanWarHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let playerHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let clanHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let model = try makeModel(playerHandler: playerHandler, clanHandler: clanHandler, clanWarHandler: clanWarHandler)
+
+        // 第一次成功（notInWar）
+        let warRecorder = TagRecorder()
+        MockURLProtocol.handler = { request in
+            warRecorder.record("war")
+            let body = Data(#"{"state":"notInWar"}"#.utf8)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        model.refreshCurrentClanWar()
+        await waitUntil { !model.isRefreshingClanWarData }
+        XCTAssertEqual(model.currentClanWarState?.lastGood?.state, "notInWar")
+
+        // 第二次失败（429）→ 保留上次成功
+        MockURLProtocol.handler = clanWarHandler
+        model.refreshCurrentClanWar()
+        await waitUntil { !model.isRefreshingClanWarData }
+
+        XCTAssertEqual(model.currentClanWarState?.status, .failed)
+        XCTAssertEqual(model.currentClanWarState?.lastGood?.state, "notInWar", "失败必须保留 last-good")
+        XCTAssertNotNil(model.currentClanWarState?.lastErrorReason)
+        // 独立共享层：部落/玩家数据未被触碰
+        XCTAssertTrue(model.clanStates.isEmpty)
+        XCTAssertEqual(model.currentVillageOfficialState?.lastGood?.clan?.tag, "#CLANA")
     }
 }

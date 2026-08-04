@@ -29,18 +29,20 @@ struct ClanCardView: View {
     }
 
     /// 来源标签：issue 要求区分 official-api / cached-official-api。
-    /// 从未成功抓取玩家数据（归属未知）时不展示来源标签，避免误导。
+    /// 从未成功抓取玩家数据（归属未知）时不展示来源标签，避免误导
+    /// （条件渲染而非 opacity，保证 VoiceOver 不读到误导性文本）。
     @ViewBuilder
     private var sourceBadge: some View {
-        let state = model.currentClanState
-        let isCached = state?.status == .failed && state?.lastGood != nil
-        Text(isCached ? "cached-official-api" : "official-api")
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Color.cocAccent.opacity(0.18), in: Capsule())
-            .foregroundStyle(Color.cocAccent)
-            .opacity(model.currentVillageClanStatusUnknown ? 0 : 1)
+        if !model.currentVillageClanStatusUnknown {
+            let state = model.currentClanState
+            let isCached = state?.status == .failed && state?.lastGood != nil
+            Text(isCached ? "cached-official-api" : "official-api")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.cocAccent.opacity(0.18), in: Capsule())
+                .foregroundStyle(Color.cocAccent)
+        }
     }
 
     @ViewBuilder

@@ -112,9 +112,12 @@ public struct ClanStateStore: Codable, Hashable, Sendable {
         let maxEntries = 10_000
         while !container.isAtEnd && guardCounter < maxEntries {
             guardCounter += 1
-            if let entry = try? container.decode([String: ClanAPIState].self),
-               let (tag, state) = entry.first {
-                decoded[tag] = state
+            if let entry = try? container.decode([String: ClanAPIState].self) {
+                // decode 成功（游标已推进）：空字典条目 `{}` 是合法 JSON 但
+                // 无有效键，直接丢弃自身；不得执行 skip（会吞掉下一个好条目）。
+                if let (tag, state) = entry.first {
+                    decoded[tag] = state
+                }
             } else {
                 // 坏条目：JSONDecoder 在元素解码失败时不推进游标，
                 // 用 JSONSkipper（任意 JSON 值都解码成功）强制消费该元素。

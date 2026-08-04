@@ -57,6 +57,26 @@ final class ClanStateStoreTests: XCTestCase {
         XCTAssertTrue(store.states.isEmpty)
     }
 
+    /// 空字典条目 `{}` 是 decode 成功但 first == nil 的合法 JSON 形态：
+    /// 必须丢弃自身且不得吞掉相邻好条目（修复轮回归测试）。
+    func testDecodeEmptyDictionaryEntryDoesNotSwallowNeighbor() throws {
+        let json = """
+        [
+            { "#A": {"status": "success", "clanTag": "#A", "parserVersion": "clan-snapshot-0.1", "unrecognizedKeys": []} },
+            {},
+            { "#C": {"status": "success", "clanTag": "#C", "parserVersion": "clan-snapshot-0.1", "unrecognizedKeys": []} },
+            { "#D": {"status": "success", "clanTag": "#D", "parserVersion": "clan-snapshot-0.1", "unrecognizedKeys": []} }
+        ]
+        """.data(using: .utf8)!
+
+        let store = try JSONDecoder().decode(ClanStateStore.self, from: json)
+
+        XCTAssertEqual(store.states.count, 3, "{} 条目被丢弃，且不得吞掉 #C/#D")
+        XCTAssertNotNil(store.states["#A"])
+        XCTAssertNotNil(store.states["#C"], "#C 不得被 {} 吞掉")
+        XCTAssertNotNil(store.states["#D"], "#D 不得被 {} 吞掉")
+    }
+
     // MARK: - Round-trip
 
     func testRoundTripPreservesAllStates() throws {

@@ -88,6 +88,20 @@ public struct ClanRefresher: Sendable {
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []
             )
+        } catch let error as URLError where error.code == .cancelled {
+            // CoAPIClient 特意保留 URLError(.cancelled) 供调用方区分取消；
+            // 部落刷新没有用户可见的取消语义，映射为与 CancellationError 一致。
+            return ClanAPIState(
+                status: .failed,
+                clanTag: tag,
+                fetchedAt: previous?.fetchedAt,
+                lastAttemptAt: now,
+                lastErrorReason: "已取消",
+                lastHTTPStatus: nil,
+                parserVersion: ClanAPIState.currentParserVersion,
+                lastGood: previous?.lastGood,
+                unrecognizedKeys: previous?.unrecognizedKeys ?? []
+            )
         } catch {
             return ClanAPIState(
                 status: .failed,

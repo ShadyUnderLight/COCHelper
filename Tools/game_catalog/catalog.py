@@ -24,6 +24,31 @@ def _infer_game_version(build_tag: str) -> str:
     return build_tag.replace("_", ".")
 
 
+def _check_columns(table: str, rows: list[dict], required: list[str]) -> None:
+    """表头对照必需列，缺失即 CatalogError（fail loud，不静默降级）。
+
+    rows[0] 的 keys 即 CSV 表头（DictReader 以首行为键）；空表跳过（无数据可查）。
+    """
+    if not rows:
+        return
+    header = set(rows[0].keys())
+    missing = [c for c in required if c not in header]
+    if missing:
+        raise CatalogError(f"{table} 缺少必需列: {missing}")
+
+
+def _spec_required_columns(spec) -> list[str]:
+    """spec 声明的必需列：等级列 + 时间列 + 资源/成本/门槛 + 图标/外观列。"""
+    cols = [spec.level_column]
+    cols += list(spec.time_columns)
+    for c in (spec.resource_column, spec.cost_column,
+              spec.town_hall_column, spec.laboratory_column):
+        if c:
+            cols.append(c)
+    cols += list(spec.icon_columns) + list(spec.visual_columns)
+    return cols
+
+
 def _build_catalog_items(archive: zipfile.ZipFile, localized: dict[str, str]) -> list:
     items = []
     names = set(archive.namelist())
@@ -32,10 +57,14 @@ def _build_catalog_items(archive: zipfile.ZipFile, localized: dict[str, str]) ->
         if table_path not in names:
             continue  # 缺表容忍：测试用最小 APK 只含部分表；真实 APK 全表在场
         table_rows = rows(archive, spec.table)
+        _check_columns(spec.table, table_rows, _spec_required_columns(spec))
         if spec.join_upgrade_data:
             if "assets/logic/upgrade_data.csv" not in names:
                 continue
             upgrade_rows = rows(archive, "upgrade_data.csv")
+            _check_columns("upgrade_data.csv", upgrade_rows, [
+                "UpgradeLevel", "UpgradeTimeDays", "UpgradeTimeHours",
+                "UpgradeTimeMinutes", "UpgradeTimeSeconds"])
             items.extend(build_guardians(table_rows, upgrade_rows, localized))
         else:
             items.extend(build_items(table_rows, spec, localized))

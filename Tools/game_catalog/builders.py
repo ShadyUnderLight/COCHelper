@@ -1,5 +1,7 @@
 """表 → CatalogItem 构建器（纯函数，输入已解码行 + 本地化表）。"""
 
+from dataclasses import dataclass
+
 from .durations import parse_duration, parse_optional_int
 from .errors import CatalogError
 from .model import AssetRef, CatalogLevel, CatalogItem
@@ -7,6 +9,22 @@ from .names import display_name
 from .tables import TABLES, TableSpec, group_blocks, ffill_columns, section_for
 
 SIEGE_PRODUCTION = "Siege Workshop"
+
+INITIAL_LEVEL_REASON = "level_1_initial_no_upgrade"
+
+
+@dataclass
+class _ParsedRow:
+    """单行解析结果：level/自身属性 + 该行的升级属性（语义由 TableSpec 决定）。"""
+    level: int
+    icon: AssetRef | None
+    level_visual: AssetRef | None
+    duration: int | None
+    missing: str | None
+    resource: str | None
+    cost: int | None
+    town_hall: int | None
+    laboratory: int | None
 
 
 def _asset_ref(container: str | None, export_name: str | None,
@@ -41,6 +59,117 @@ def _visual_ref(row: dict[str, str], spec: TableSpec) -> AssetRef | None:
     if not c and not e:
         return None
     return _asset_ref(c, e, "icons_not_rendered")
+
+
+def _parse_row(row: dict[str, str], spec: TableSpec) -> _ParsedRow:
+    level_value = row.get(spec.level_column, "")
+    if not level_value:
+        raise CatalogError(f"{spec.table}: 缺少等级列 {spec.level_column}")
+    if not level_value.isdigit():
+        raise CatalogError(f"{spec.table}: 等级非数字: {level_value!r}")
+    level = int(level_value)
+
+    if spec.join_upgrade_data:
+        duration, missing = None, None  # 由 guardians join 填充
+    elif not spec.time_columns:
+        duration, missing = None, "no_time_source"  # 表无时间列（如 equipment）
+    else:
+        duration, missing = parse_duration(row, spec.time_columns)
+
+    resource = row.get(spec.resource_column, "") if spec.resource_column else ""
+    cost = parse_optional_int(row.get(spec.cost_column, "")) if spec.cost_column else None
+    th = parse_optional_int(row.get(spec.town_hall_column, "")) if spec.town_hall_column else None
+    lab = parse_optional_int(row.get(spec.laboratory_column, "")) if spec.laboratory_column else None
+
+    return _ParsedRow(
+        level=level,
+        icon=_icon_ref(row, spec),
+        level_visual=_visual_ref(row, spec),
+        duration=duration,
+        missing=missing,
+        resource=resource or None,
+        cost=cost,
+        town_hall=th,
+        laboratory=lab,
+    )
+
+
+def _dedup_by_level(rows: list[_ParsedRow]) -> list[_ParsedRow]:
+    """按等级升序去重，保留首个（真实数据偶发重复等级行，如 characters 的
+    Defensive Tribal Tag Team lvl13），保证 levels 严格升序契约。"""
+    out = sorted(rows, key=lambda r: r.level)
+    uniq: list[_ParsedRow] = []
+    for rec in out:
+        if not uniq or uniq[-1].level != rec.level:
+            uniq.append(rec)
+    return uniq
+
+
+def _level_from_row(rec: _ParsedRow) -> CatalogLevel:
+    return CatalogLevel(
+        level=rec.level,
+        durationSeconds=rec.duration,
+        missingReason=rec.missing,
+        upgradeResource=rec.resource,
+        upgradeCost=rec.cost,
+        requiredTownHallLevel=rec.town_hall,
+        requiredLaboratoryLevel=rec.laboratory,
+        icon=rec.icon,
+        levelVisual=rec.level_visual,
+    )
+
+
+def _level_initial(level: int, own: _ParsedRow | None) -> CatalogLevel:
+    """to_next 表 level 1 = 初始等级：无升级属性，只有自身外观。"""
+    return CatalogLevel(
+        level=level,
+        durationSeconds=None,
+        missingReason=INITIAL_LEVEL_REASON,
+        upgradeResource=None,
+        upgradeCost=None,
+        requiredTownHallLevel=None,
+        requiredLaboratoryLevel=None,
+        icon=own.icon if own else None,
+        levelVisual=own.level_visual if own else None,
+    )
+
+
+def _build_levels(records: list[_ParsedRow], spec: TableSpec) -> list[CatalogLevel]:
+    """按 upgrade_semantics 把行的升级属性映射到等级。
+
+    - to_level（建筑/陷阱）：行 N 的升级属性 → level N（原样）。
+    - to_next_level（单位/法术/英雄/宠物/首都单位法术）：行 k-1 的升级属性 → level k
+      （k≥2）；level 1 = 初始等级（无升级）；行 maxLevel 的升级属性属于不存在的
+      level maxLevel+1 → 丢弃。level 值本身与 icon/visual 始终跟随自己的行。
+    """
+    uniq = _dedup_by_level(records)
+    if spec.join_upgrade_data:
+        # guardians：等级行值即角色真实等级（1..5），join（level-1）在 build_guardians 完成
+        return [_level_from_row(rec) for rec in uniq]
+    if spec.upgrade_semantics == "to_next_level":
+        # 按位置重排：第 i 行的升级属性 → level i+1（i 从 1 起）；最后一行属于不存在的
+        # maxLevel+1 → 丢弃。对连续等级（1..n）与"按等级值查上一行"完全等价；
+        # 对偏移等级（如战斗直升机 VisualLevel 15..35）仍保留全部升级且无空洞。
+        levels: list[CatalogLevel] = []
+        for idx, own in enumerate(uniq):  # 输出 level = idx+1
+            k = idx + 1
+            if k == 1:
+                levels.append(_level_initial(1, own))
+                continue
+            src = uniq[idx - 1]
+            levels.append(CatalogLevel(
+                level=k,
+                durationSeconds=src.duration,
+                missingReason=src.missing,
+                upgradeResource=src.resource,
+                upgradeCost=src.cost,
+                requiredTownHallLevel=src.town_hall,
+                requiredLaboratoryLevel=src.laboratory,
+                icon=own.icon if own else None,
+                levelVisual=own.level_visual if own else None,
+            ))
+        return levels
+    return [_level_from_row(rec) for rec in uniq]
 
 
 def _make_item(
@@ -86,47 +215,7 @@ def _make_item(
     deprecated = spec.has_deprecated and filled[0].get("Deprecated", "").upper() == "TRUE"
     item_missing = "deprecated_in_source" if deprecated else None
 
-    levels = []
-    for row in filled:
-        level_value = row.get(spec.level_column, "")
-        if not level_value:
-            raise CatalogError(f"{spec.table}: {block_name} 缺少等级列 {spec.level_column}")
-        if not level_value.isdigit():
-            raise CatalogError(f"{spec.table}: {block_name} 等级非数字: {level_value!r}")
-        level = int(level_value)
-
-        if spec.join_upgrade_data:
-            duration, missing = None, None  # 由 guardians join 填充
-        elif not spec.time_columns:
-            duration, missing = None, "no_time_source"  # 表无时间列（如 equipment）
-        else:
-            duration, missing = parse_duration(row, spec.time_columns)
-
-        resource = row.get(spec.resource_column, "") if spec.resource_column else ""
-        cost = parse_optional_int(row.get(spec.cost_column, "")) if spec.cost_column else None
-        th = parse_optional_int(row.get(spec.town_hall_column, "")) if spec.town_hall_column else None
-        lab = parse_optional_int(row.get(spec.laboratory_column, "")) if spec.laboratory_column else None
-
-        levels.append(CatalogLevel(
-            level=level,
-            durationSeconds=duration,
-            missingReason=missing,
-            upgradeResource=resource or None,
-            upgradeCost=cost,
-            requiredTownHallLevel=th,
-            requiredLaboratoryLevel=lab,
-            icon=_icon_ref(row, spec),
-            levelVisual=_visual_ref(row, spec),
-        ))
-
-    levels.sort(key=lambda lv: lv.level)
-    # 真实数据偶发重复等级行（如 characters Defensive Tribal Tag Team lvl13），
-    # sort 后相邻去重、保留首个，保证 levels 严格升序契约。
-    unique: list[CatalogLevel] = []
-    for lv in levels:
-        if not unique or unique[-1].level != lv.level:
-            unique.append(lv)
-    levels = unique
+    levels = _build_levels([_parse_row(row, spec) for row in filled], spec)
     return CatalogItem(
         section=section,
         dataID=data_id,
@@ -186,17 +275,27 @@ def build_guardians(
                 raise CatalogError(f"upgrade_data: 重复键 {key}")
             index[key] = row
 
-    # 与 build_items 同序分组，逐块取 UpgradeData 做 join（避免硬编码 id_base）
+    # 与 build_items 同序分组，逐块取 UpgradeData 做 join（避免硬编码 id_base）。
+    # to_next 语义：升级到 level N 使用 upgrade_data 的 N-1 条（L1→level 2，L4→level 5）；
+    # level 1 = 初始等级无升级；join 未命中 → upgrade_data_missing。
     blocks = group_blocks(rows)
     for item, block in zip(items, blocks):
         join_key = ffill_columns(block.rows, ("UpgradeData",))[0].get("UpgradeData", "")
         if not join_key:
             raise CatalogError(f"guardians: {item.name} 缺少 UpgradeData")
         for level in item.levels:
-            hit = index.get((join_key, level.level))
+            if level.level == 1:
+                level.durationSeconds = None
+                level.missingReason = INITIAL_LEVEL_REASON
+                level.upgradeResource = None
+                level.upgradeCost = None
+                continue
+            hit = index.get((join_key, level.level - 1))
             if hit is None:
                 level.durationSeconds = None
                 level.missingReason = "upgrade_data_missing"
+                level.upgradeResource = None
+                level.upgradeCost = None
                 continue
             duration, missing = parse_duration(hit, ("UpgradeTimeDays", "UpgradeTimeHours",
                                                       "UpgradeTimeMinutes", "UpgradeTimeSeconds"))

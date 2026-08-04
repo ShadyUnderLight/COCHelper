@@ -135,7 +135,7 @@ struct CapitalRaidCardView: View {
         }
     }
 
-    private func seasonList(_ page: OfficialPaginatedPage<OfficialCapitalRaidSeason>) -> some View {
+    private func seasonList(_ page: OfficialCapitalRaidPage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if page.items.isEmpty {
                 Text("没有资本赛季记录")
@@ -164,8 +164,8 @@ struct CapitalRaidCardView: View {
                         .foregroundStyle(.tertiary)
                 }
                 HStack(spacing: 10) {
-                    if let totalLooted = season.totalLooted {
-                        Text("战利品 " + Self.formatted(totalLooted))
+                    if let loot = season.capitalTotalLoot {
+                        Text("战利品 " + Self.formatted(loot))
                             .font(.subheadline.weight(.semibold))
                     }
                     if let offensive = season.offensiveReward {
@@ -173,17 +173,20 @@ struct CapitalRaidCardView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    if let clan = season.clan {
-                        if let attacks = clan.attackCount {
-                            Text("\(attacks) 次攻击")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if let districts = clan.destroyedDistricts {
-                            Text("\(districts) 个区域")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                    if let raids = season.raidsCompleted {
+                        Text("\(raids) 次突袭")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let attacks = season.totalAttacks {
+                        Text("\(attacks) 次攻击")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let districts = season.enemyDistrictsDestroyed {
+                        Text("摧毁 \(districts) 区域")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

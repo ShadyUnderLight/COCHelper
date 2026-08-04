@@ -65,21 +65,38 @@ final class GenericEndpointStateTests: XCTestCase {
 
     /// 泛型跨 Snapshot 类型 round-trip（warlog/capital 页作为 lastGood）。
     func testGenericStateRoundTripWithPaginatedLastGood() throws {
-        let page = OfficialPaginatedPage<OfficialWarLogEntry>(
-            items: [], before: "B", after: "A"
+        let page = OfficialWarLogPage(
+            page: OfficialPaginatedPage<OfficialWarLogEntry>(items: [], before: "B", after: "A")
         )
-        let state = OfficialEndpointState<OfficialPaginatedPage<OfficialWarLogEntry>>(
+        let state = OfficialEndpointState<OfficialWarLogPage>(
             status: .success,
             clanTag: "#CLAN",
             lastGood: page
         )
 
         let decoded = try JSONDecoder().decode(
-            OfficialEndpointState<OfficialPaginatedPage<OfficialWarLogEntry>>.self,
+            OfficialEndpointState<OfficialWarLogPage>.self,
             from: try JSONEncoder().encode(state)
         )
         XCTAssertEqual(decoded, state)
         XCTAssertEqual(decoded.lastGood?.after, "A")
+    }
+
+    /// P2 回归：默认构造的 parserVersion 必须恢复端点版本
+    /// （旧语义：`ClanAPIState(...)` 默认 "clan-snapshot-0.1"，
+    /// 不得产生无法审计的 "endpoint-state"）。
+    func testDefaultParserVersionRestoredPerEndpoint() {
+        let clan = ClanAPIState(status: .never, clanTag: "#A")
+        XCTAssertEqual(clan.parserVersion, "clan-snapshot-0.1")
+
+        let war = ClanWarAPIState(status: .never, clanTag: "#A")
+        XCTAssertEqual(war.parserVersion, "clan-war-0.1")
+
+        let warLog = ClanWarLogAPIState(status: .never, clanTag: "#A")
+        XCTAssertEqual(warLog.parserVersion, "clan-war-log-0.1")
+
+        let capital = ClanCapitalAPIState(status: .never, clanTag: "#A")
+        XCTAssertEqual(capital.parserVersion, "clan-capital-0.1")
     }
 
     // MARK: - 分页游标逻辑（防无限循环）

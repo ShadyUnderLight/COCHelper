@@ -52,6 +52,10 @@
       }
     }
   ],
-  "before": "CURSORBEFORE1",
-  "after": "CURSORAFTER1"
+  "paging": {
+    "cursors": {
+      "before": "CURSORBEFORE1",
+      "after": "CURSORAFTER1"
+    }
+  }
 }

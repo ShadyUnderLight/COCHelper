@@ -84,7 +84,7 @@ final class CoAPIFetchPaginatedTests: XCTestCase {
         let page = try await client.fetchCapitalRaidSeasons(tag: "#CLAN")
 
         XCTAssertEqual(page.items.count, 2)
-        XCTAssertEqual(page.items[0].totalLooted, 123456)
+        XCTAssertEqual(page.items[0].capitalTotalLoot, 123456)
         let lastRequest = MockURLProtocol.lastRequest()
         XCTAssertEqual(lastRequest?.url?.path(percentEncoded: true), "/v1/clans/%23CLAN/capitalraidseasons")
     }

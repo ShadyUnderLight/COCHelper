@@ -171,7 +171,7 @@ struct WarLogCardView: View {
         }
     }
 
-    private func warLogList(_ page: OfficialPaginatedPage<OfficialWarLogEntry>) -> some View {
+    private func warLogList(_ page: OfficialWarLogPage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if page.items.isEmpty {
                 Text("没有历史战争记录")

@@ -20,7 +20,7 @@ public enum EndpointRefresher {
         now: Date = Date(),
         fetch: @Sendable (String) async throws -> Snapshot
     ) async -> [String: OfficialEndpointState<Snapshot>]
-    where Snapshot: Codable & Hashable & Sendable & UnrecognizedKeysProviding {
+    where Snapshot: Codable & Hashable & Sendable & UnrecognizedKeysProviding & EndpointParserVersioning {
         var uniqueTags = Set<String>()
         for rawTag in tags {
             guard let normalized = OfficialPlayerTagValidator.normalized(rawTag),
@@ -55,7 +55,7 @@ public enum EndpointRefresher {
         now: Date = Date(),
         fetch: @Sendable (String) async throws -> Snapshot
     ) async -> OfficialEndpointState<Snapshot>
-    where Snapshot: Codable & Hashable & Sendable & UnrecognizedKeysProviding {
+    where Snapshot: Codable & Hashable & Sendable & UnrecognizedKeysProviding & EndpointParserVersioning {
         await refreshState(
             for: tag,
             previous: previous,
@@ -72,7 +72,7 @@ public enum EndpointRefresher {
         now: Date,
         fetch: @Sendable (String) async throws -> Snapshot
     ) async -> OfficialEndpointState<Snapshot>
-    where Snapshot: Codable & Hashable & Sendable & UnrecognizedKeysProviding {
+    where Snapshot: Codable & Hashable & Sendable & UnrecognizedKeysProviding & EndpointParserVersioning {
         do {
             let snapshot = try await fetch(tag)
             return OfficialEndpointState(

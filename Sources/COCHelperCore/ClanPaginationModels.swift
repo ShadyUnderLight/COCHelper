@@ -7,22 +7,26 @@ public protocol UnrecognizedKeysProviding {
 
 extension OfficialClanSnapshot: UnrecognizedKeysProviding {}
 extension OfficialClanWarSnapshot: UnrecognizedKeysProviding {}
-
-extension OfficialPaginatedPage: UnrecognizedKeysProviding {
-    /// 分页包装层不持有审计字段（条目级审计留待条目模型扩展）。
+extension OfficialWarLogPage: UnrecognizedKeysProviding {
+    public var unrecognizedKeys: [String] { [] }
+}
+extension OfficialCapitalRaidPage: UnrecognizedKeysProviding {
     public var unrecognizedKeys: [String] { [] }
 }
 
-/// 官方分页响应包装（warlog / capitalraidseasons 共用）。
+/// 官方分页响应的**泛型包装**（warlog / capitalraidseasons 共用）。
 ///
-/// - `items` 缺省为 []（传输层损坏容错：官方总是返回数组，但缓存损坏时
-///   不应让整个页面解码失败）。
-/// - `before` / `after` 是分页游标：向更早翻页用 `after=<after 值>`；
-///   末页或官方省略时二者为 nil。
+/// 官方结构（APIClanWarLogList / APICapitalRaidSeasons）：
+/// `{ "items": [...], "paging": { "cursors": { "after": "...", "before": "..." } } }`
+/// - `items` **必填**（缺失或 null 是损坏响应，必须解码失败 → 保留 last-good，
+///   不得静默当作成功空页）
+/// - `paging` / `cursors` / 游标均可选（末页或官方省略时为 nil）
 public struct OfficialPaginatedPage<Item: Codable & Hashable & Sendable>: Codable, Hashable, Sendable {
     public let items: [Item]
-    public let before: String?
+    /// `paging.cursors.after`（向后翻页游标；末页为 nil）。
     public let after: String?
+    /// `paging.cursors.before`（向前翻页游标；未使用，保留供未来）。
+    public let before: String?
 
     public init(items: [Item], before: String?, after: String?) {
         self.items = items
@@ -31,21 +35,105 @@ public struct OfficialPaginatedPage<Item: Codable & Hashable & Sendable>: Codabl
     }
 
     private enum CodingKeys: String, CodingKey {
-        case items, before, after
+        case items, paging
+    }
+
+    private enum PagingKeys: String, CodingKey {
+        case cursors
+    }
+
+    private enum CursorKeys: String, CodingKey {
+        case after, before
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        items = try container.decodeIfPresent([Item].self, forKey: .items) ?? []
-        before = try container.decodeIfPresent(String.self, forKey: .before)
-        after = try container.decodeIfPresent(String.self, forKey: .after)
+        // items 必填：缺失/null → 解码失败（malformed），保留既有 last-good
+        items = try container.decode([Item].self, forKey: .items)
+        if let paging = try container.decodeIfPresent(PagingContainer.self, forKey: .paging) {
+            after = paging.after
+            before = paging.before
+        } else {
+            after = nil
+            before = nil
+        }
+    }
+
+    /// paging 容器：`{ "cursors": { "after": ..., "before": ... } }`。
+    private struct PagingContainer: Decodable {
+        let after: String?
+        let before: String?
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: PagingKeys.self)
+            let cursors = try container.decodeIfPresent(CursorsContainer.self, forKey: .cursors)
+            after = cursors?.after
+            before = cursors?.before
+        }
+
+        private struct CursorsContainer: Decodable {
+            let after: String?
+            let before: String?
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(items, forKey: .items)
-        try container.encodeIfPresent(before, forKey: .before)
-        try container.encodeIfPresent(after, forKey: .after)
+        if after != nil || before != nil {
+            var paging = container.nestedContainer(keyedBy: PagingKeys.self, forKey: .paging)
+            var cursors = paging.nestedContainer(keyedBy: CursorKeys.self, forKey: .cursors)
+            try cursors.encodeIfPresent(after, forKey: .after)
+            try cursors.encodeIfPresent(before, forKey: .before)
+        }
+    }
+}
+
+// MARK: - 端点具体包装（遵守 EndpointParserVersioning，避免泛型多条件遵守冲突）
+
+/// warlog 分页快照（具体类型）：转发 `OfficialPaginatedPage<OfficialWarLogEntry>`。
+public struct OfficialWarLogPage: Codable, Hashable, Sendable, EndpointParserVersioning {
+    public let page: OfficialPaginatedPage<OfficialWarLogEntry>
+
+    public init(page: OfficialPaginatedPage<OfficialWarLogEntry>) {
+        self.page = page
+    }
+
+    public static var currentParserVersion: String { "clan-war-log-0.1" }
+
+    public var items: [OfficialWarLogEntry] { page.items }
+    public var after: String? { page.after }
+    public var before: String? { page.before }
+
+    public init(from decoder: Decoder) throws {
+        page = try OfficialPaginatedPage<OfficialWarLogEntry>(from: decoder)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try page.encode(to: encoder)
+    }
+}
+
+/// capitalraidseasons 分页快照（具体类型）。
+public struct OfficialCapitalRaidPage: Codable, Hashable, Sendable, EndpointParserVersioning {
+    public let page: OfficialPaginatedPage<OfficialCapitalRaidSeason>
+
+    public init(page: OfficialPaginatedPage<OfficialCapitalRaidSeason>) {
+        self.page = page
+    }
+
+    public static var currentParserVersion: String { "clan-capital-0.1" }
+
+    public var items: [OfficialCapitalRaidSeason] { page.items }
+    public var after: String? { page.after }
+    public var before: String? { page.before }
+
+    public init(from decoder: Decoder) throws {
+        page = try OfficialPaginatedPage<OfficialCapitalRaidSeason>(from: decoder)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try page.encode(to: encoder)
     }
 }
 
@@ -79,41 +167,40 @@ public struct OfficialWarLogEntry: Codable, Hashable, Sendable {
 
 // MARK: - 部落资本赛季条目
 
-/// capitalraidseasons 中的一个赛季。
+/// capitalraidseasons 中的一个赛季（字段与官方 APICapitalRaidSeason 对齐：
+/// 统计字段为**顶层**，无嵌套 clan 对象）。
 ///
-/// 成员攻击/防守明细（`attackLog`/`defenseLog`）deferred：嵌套容忍。
+/// 成员/攻击/防守明细（`members`/`attackLog`/`defenseLog`）deferred：嵌套容忍。
 public struct OfficialCapitalRaidSeason: Codable, Hashable, Sendable {
     /// ended / ongoing（官方字符串）。
     public let state: String?
     public let startTime: String?
     public let endTime: String?
-    public let totalLooted: Int?
+    /// 赛季总战利品（官方字段名 capitalTotalLoot）。
+    public let capitalTotalLoot: Int?
+    /// 完成突袭数。
+    public let raidsCompleted: Int?
+    /// 总攻击数。
+    public let totalAttacks: Int?
+    /// 摧毁敌方区域数。
+    public let enemyDistrictsDestroyed: Int?
     public let offensiveReward: Int?
     public let defensiveReward: Int?
-    public let clan: CapitalRaidClanSummary?
 
     public init(
         state: String?, startTime: String?, endTime: String?,
-        totalLooted: Int?, offensiveReward: Int?, defensiveReward: Int?,
-        clan: CapitalRaidClanSummary?
+        capitalTotalLoot: Int?, raidsCompleted: Int?, totalAttacks: Int?,
+        enemyDistrictsDestroyed: Int?, offensiveReward: Int?, defensiveReward: Int?
     ) {
         self.state = state
         self.startTime = startTime
         self.endTime = endTime
-        self.totalLooted = totalLooted
+        self.capitalTotalLoot = capitalTotalLoot
+        self.raidsCompleted = raidsCompleted
+        self.totalAttacks = totalAttacks
+        self.enemyDistrictsDestroyed = enemyDistrictsDestroyed
         self.offensiveReward = offensiveReward
         self.defensiveReward = defensiveReward
-        self.clan = clan
-    }
-}
-
-public struct CapitalRaidClanSummary: Codable, Hashable, Sendable {
-    public let attackCount: Int?
-    public let destroyedDistricts: Int?
-
-    public init(attackCount: Int?, destroyedDistricts: Int?) {
-        self.attackCount = attackCount
-        self.destroyedDistricts = destroyedDistricts
     }
 }
 

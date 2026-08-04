@@ -545,7 +545,7 @@ public final class AppModel: ObservableObject {
                 previous: previous,
                 parserVersion: parserVersion
             ) { tag in
-                try await client.fetchWarLog(tag: tag)
+                OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag))
             }
             self.clanWarLogStates[tag] = state
             self.persistClanWarLogStates()
@@ -571,13 +571,15 @@ public final class AppModel: ObservableObject {
                 previous: current,
                 parserVersion: parserVersion
             ) { tag in
-                try await client.fetchWarLog(tag: tag, after: cursor)
+                OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag, after: cursor))
             }
             if state.status == .success,
                let fetched = state.lastGood,
                let existing = current.lastGood {
                 var merged = state
-                merged.lastGood = PaginationMerge.mergedPage(existing: existing, fetched: fetched)
+                merged.lastGood = OfficialWarLogPage(
+                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                )
                 self.clanWarLogStates[tag] = merged
             } else {
                 // 失败：state 已保留 previous 的 last-good（累计页）
@@ -632,7 +634,7 @@ public final class AppModel: ObservableObject {
                 previous: previous,
                 parserVersion: parserVersion
             ) { tag in
-                try await client.fetchCapitalRaidSeasons(tag: tag)
+                OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
             }
             self.clanCapitalStates[tag] = state
             self.persistClanCapitalStates()
@@ -658,13 +660,15 @@ public final class AppModel: ObservableObject {
                 previous: current,
                 parserVersion: parserVersion
             ) { tag in
-                try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor)
+                OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor))
             }
             if state.status == .success,
                let fetched = state.lastGood,
                let existing = current.lastGood {
                 var merged = state
-                merged.lastGood = PaginationMerge.mergedPage(existing: existing, fetched: fetched)
+                merged.lastGood = OfficialCapitalRaidPage(
+                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                )
                 self.clanCapitalStates[tag] = merged
             } else {
                 self.clanCapitalStates[tag] = state

@@ -339,7 +339,7 @@ extension AppModelTests {
                   {"result":"win","endTime":"20260730T100000.000Z","teamSize":30,"attacksPerMember":2,
                    "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0},
                    "opponent":{"tag":"#OPPONENTANONYMIZED","name":"anonymized-opponent","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":11,"attacks":58,"stars":80,"destructionPercentage":85.0}}
-                ],"before":"B2","after":"CURSORAFTER2"}
+                ],"paging":{"cursors":{"before":"B2","after":"CURSORAFTER2"}}}
                 """.utf8)
             }
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
@@ -375,7 +375,7 @@ extension AppModelTests {
             if recorder.snapshot().count == 1 {
                 body = fullWarLogPageData()
             } else {
-                body = Data("{\"items\":[],\"before\":\"B2\"}".utf8)  // 末页无 after
+                body = Data("{\"items\":[],\"paging\":{\"cursors\":{\"before\":\"B2\"}}}".utf8)  // 末页无 after
             }
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
         }
@@ -502,5 +502,97 @@ extension AppModelTests {
         await waitUntil { !model.isRefreshingWarLogData }
         XCTAssertEqual(recorder.snapshot().count, 1, "force 必须发起请求")
         XCTAssertEqual(model.currentWarLogState?.status, .success)
+    }
+}
+
+// MARK: - capital raid 分页（stage 3c 外部复核补充）
+
+extension AppModelTests {
+    /// 资本赛季首屏：请求 capitalraidseasons → 状态 success + 条目 + 游标。
+    @MainActor
+    func testRefreshCapitalFirstPage() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(recorder.snapshot().first, "/v1/clans/%23CLANA/capitalraidseasons")
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items[0].capitalTotalLoot, 123456)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1")
+        XCTAssertTrue(model.currentCapitalHasMore)
+    }
+
+    /// 资本赛季加载更多：游标参数 + 合并去重。
+    @MainActor
+    func testLoadMoreCapitalMerges() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            let body: Data
+            if recorder.snapshot().count == 1 {
+                body = fullCapitalRaidPageData()
+            } else {
+                body = Data(#"{"items":[{"state":"ended","startTime":"20260617T080000.000Z","endTime":"20260619T080000.000Z","capitalTotalLoot":50000,"raidsCompleted":4,"totalAttacks":40,"enemyDistrictsDestroyed":80,"offensiveReward":3000,"defensiveReward":1000}],"paging":{"cursors":{"before":"B2","after":"RAIDCURSORAFTER2"}}}"#.utf8)
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 2)
+        XCTAssertTrue(queries[1].contains("after=RAIDCURSORAFTER1"), "加载更多必须带游标: \(queries[1])")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 3, "合并去重后 3 条")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER2")
+    }
+
+    /// 资本赛季刷新失败保留 last-good。
+    @MainActor
+    func testRefreshCapitalFailureKeepsLastGood() async throws {
+        let failFlag = FailFlag()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            if failFlag.shouldFail {
+                return (HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2)
+
+        failFlag.shouldFail = true
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2, "失败不得清空累计页")
+        XCTAssertEqual(model.currentCapitalState?.lastHTTPStatus, 500)
     }
 }

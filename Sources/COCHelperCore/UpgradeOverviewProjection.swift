@@ -21,6 +21,9 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
     public var remainingSeconds: Int64? { item.remainingSeconds }
 
     /// 预计完成时间；remainingSeconds 不存在或非正时返回 nil。
+    ///
+    /// 必须传入 `UpgradeOverviewProjection.activeRecords` 调用时的同一个 `now`：
+    /// 传入更晚的时间会系统性高估完成时间（now + remaining 随 now 右移）。
     public func completionDate(from now: Date) -> Date? {
         guard let remainingSeconds, remainingSeconds > 0 else { return nil }
         return now.addingTimeInterval(TimeInterval(remainingSeconds))
@@ -33,6 +36,10 @@ public enum UpgradeOverviewProjection {
     ///
     /// 每条记录由 `VillageCatalogProjection.project` 产出并过滤 `isUpgrading`；
     /// 按剩余时间升序（nil 视为最大排最后），再按 villageName、base、id 稳定排序。
+    /// villageName 用 `localizedStandardCompare`（与旧层 UpgradeTracker 排序语义一致）。
+    ///
+    /// `now` 用于计算实时剩余时间；`completionDate(from:)` 必须回传同一个 `now`，
+    /// 否则完成时间会与实际不一致（详见该方法 doc comment）。
     public static func activeRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
@@ -65,7 +72,8 @@ public enum UpgradeOverviewProjection {
             let lhsRemaining = lhs.item.remainingSeconds ?? .max
             let rhsRemaining = rhs.item.remainingSeconds ?? .max
             if lhsRemaining != rhsRemaining { return lhsRemaining < rhsRemaining }
-            if lhs.villageName != rhs.villageName { return lhs.villageName < rhs.villageName }
+            let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
+            if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
             if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
             return lhs.id < rhs.id
         }

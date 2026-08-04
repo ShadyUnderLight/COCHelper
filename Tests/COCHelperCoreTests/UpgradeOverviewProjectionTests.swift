@@ -248,6 +248,26 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         }
     }
 
+    func testSortsChineseVillageNamesByLocalizedStandardCompare() throws {
+        // 回归（review fix）：村庄名排序必须与旧层 UpgradeTracker.activeRecords(from:)
+        // 一致——localizedStandardCompare（中文拼音序），而非码点序。
+        // 拼音 er < yi →「二村」在前；码点序「一」(U+4E00) <「二」(U+4E8C) →「一村」在前。
+        // 断言「二村」在前即证明实现走拼音序，与旧层一致。
+        let villageYi = makeVillage(name: "一村", objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                                   timerSeconds: 1000, remainingSeconds: 500, path: "0")],
+        ])
+        let villageEr = makeVillage(name: "二村", objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                                   timerSeconds: 1000, remainingSeconds: 500, path: "0")],
+        ])
+        let records = activeRecords([villageYi, villageEr], catalog: syntheticCatalog)
+        XCTAssertEqual(records.count, 2)
+        XCTAssertEqual(records[0].villageName, "二村",
+                       "拼音序 er < yi：「二村」应排在「一村」前（与旧层一致）")
+        XCTAssertEqual(records[1].villageName, "一村")
+    }
+
     func testNilOrZeroRemainingNeverAppearsInOutput() throws {
         // isUpgrading 过滤（remaining ?? 0 > 0）保证输出恒为「非 nil 且 > 0」，
         // 因此排序键 `?? .max` 的「nil 排最后」在公开 API 上不可直接观测，

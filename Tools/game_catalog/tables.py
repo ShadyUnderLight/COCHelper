@@ -133,7 +133,8 @@ TABLES: tuple[TableSpec, ...] = (
         village_type_column="VillageType",
         fill_columns=_with_time_fill(
             ("TID", "GlobalID", "VillageType", "IconSWF", "IconExportName",
-             "UpgradeResource", "UpgradeCost", "LaboratoryLevel", "ProductionBuilding"),
+             "UpgradeResource", "UpgradeCost", "LaboratoryLevel", "ProductionBuilding",
+             "Deprecated"),
             ("UpgradeTimeH", "UpgradeTimeM")),
         has_deprecated=True,
     ),
@@ -172,9 +173,10 @@ TABLES: tuple[TableSpec, ...] = (
         village_type_column="VillageType",
         fill_columns=_with_time_fill(
             ("TID", "VillageType", "IconSWF", "IconExportName",
-             "UpgradeResource", "UpgradeCost", "LaboratoryLevel"),
+             "UpgradeResource", "UpgradeCost", "LaboratoryLevel", "Deprecated"),
             ("UpgradeTimeH", "UpgradeTimeM")),
         id_base=73_000_000,
+        has_deprecated=True,
     ),
     TableSpec(
         table="character_items.csv", section="equipment", category="equipment",
@@ -182,14 +184,17 @@ TABLES: tuple[TableSpec, ...] = (
         resource_column="UpgradeResources", cost_column="UpgradeCosts",
         icon_columns=("IconSWF", "IconExportName"),
         fill_columns=_with_time_fill(
-            ("TID", "IconSWF", "IconExportName", "UpgradeResources", "UpgradeCosts"), ()),
+            ("TID", "IconSWF", "IconExportName", "UpgradeResources", "UpgradeCosts",
+             "Deprecated"), ()),
         id_base=90_000_000,
+        has_deprecated=True,
     ),
     TableSpec(
         table="guardians.csv", section="guardians", category="guardians",
         level_column="Level", time_columns=(),  # 时长来自 upgrade_data join
         icon_columns=("IconSWF", "IconExportName"),
-        fill_columns=_with_time_fill(("TID", "IconSWF", "IconExportName", "UpgradeData"), ()),
+        fill_columns=_with_time_fill(("TID", "IconSWF", "IconExportName", "UpgradeData",
+                                      "Deprecated"), ()),
         id_base=107_000_000,
         has_deprecated=True,
         join_upgrade_data=True,

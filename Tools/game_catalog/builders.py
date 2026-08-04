@@ -62,6 +62,8 @@ def _make_item(
         gid = filled[0].get("GlobalID", "")
         if not gid:
             raise CatalogError(f"{spec.table}: {block_name} 缺少 GlobalID")
+        if not gid.isdigit():
+            raise CatalogError(f"{spec.table}: {block_name} GlobalID 非数字: {gid!r}")
         data_id = int(gid)
 
     # base

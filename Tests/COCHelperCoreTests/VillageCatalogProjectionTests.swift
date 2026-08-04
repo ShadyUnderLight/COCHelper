@@ -129,7 +129,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
         catalog: GameCatalog?,
         expectedGameVersion: String? = GameCatalog.defaultBundledVersion,
         base: TrackerBase,
-        now: Date = Date(timeIntervalSince1970: 1_700_000_100)
+        // 默认 now == importedAt（elapsed = 0）：计时记录保持原样，不被快照年龄消耗。
+        now: Date = Date(timeIntervalSince1970: 1_700_000_000)
     ) -> VillageCatalogProjection {
         VillageCatalogProjection.project(
             village: village,
@@ -466,26 +467,38 @@ final class VillageCatalogProjectionTests: XCTestCase {
         var rng = SeededRNG(seed: 99)
         let sections = ["units", "buildings", "helpers", "traps2", "equipment"]
         let pool: [Int64] = [4_000_000, 1_000_001, 93_000_000, 12_000_010, 90_000_000]
+        // 合成目录收录键（section, dataID, base）：oracle 独立于输出状态计算。
+        // 合成目录仅有 4 项：units 4000000(home)、buildings 1000001(home)、
+        // buildings2 1000033(builder)、equipment 90000000(home)。
+        let catalogHits: Set<String> = [
+            "units:4000000:home", "buildings:1000001:home",
+            "buildings2:1000033:builder", "equipment:90000000:home",
+        ]
         for _ in 0..<20 {
             let snapshot = makeRandomSnapshot(
                 rng: &rng, count: 40, dataIDPool: pool, sections: sections
             )
             let village = makeVillage(objectSections: snapshot)
             for base in TrackerBase.allCases {
-                let home = project(village: village, catalog: syntheticCatalog, base: base)
-                XCTAssertFalse(home.items.isEmpty)
-                for item in home.items {
+                let projection = project(village: village, catalog: syntheticCatalog, base: base)
+                XCTAssertFalse(projection.items.isEmpty)
+                for item in projection.items {
                     let expected: VillageItemStatus
+                    let isBuilderSection = item.section.hasSuffix("2")
                     if item.category == nil {
+                        // helpers 等不支持类别（投影保留为 unavailable）。
                         expected = .unavailable
-                    } else if item.section.hasSuffix("2") != (base == .builder) {
-                        expected = .unavailable
+                    } else if isBuilderSection != (base == .builder) {
+                        // map 的 guard 会丢弃跨基地记录；此分支不应出现。
+                        XCTFail("跨基地记录不应出现在投影中: \(item.section):\(item.dataID)")
+                        continue
                     } else if item.isUpgrading {
+                        // 升级状态独立于目录。
                         expected = .upgrading
-                    } else if item.maxLevel != nil, item.currentLevel ?? -1 >= item.maxLevel ?? .max {
-                        expected = .maxed
-                    } else if item.status == .unknown {
+                    } else if !catalogHits.contains("\(item.section):\(item.dataID):\(base.rawValue)") {
                         expected = .unknown
+                    } else if item.currentLevel ?? -1 >= (item.maxLevel ?? .max) {
+                        expected = .maxed
                     } else {
                         expected = .complete
                     }
@@ -506,8 +519,22 @@ final class VillageCatalogProjectionTests: XCTestCase {
             )
             let village = makeVillage(objectSections: snapshot)
             let home = project(village: village, catalog: syntheticCatalog, base: .home)
-            for item in home.items where !item.isUpgrading {
-                XCTAssertGreaterThanOrEqual(item.count ?? 1, 1)
+            // 输入：同 (section,dataID,level) 的非升级记录，每条按 (count ?? 1) 计。
+            var expectedByKey: [String: Int] = [:]
+            for record in snapshot["units"] ?? [] where (record.remainingSeconds ?? 0) <= 0 {
+                let key = "\(record.section):\(record.dataID):\(record.level.map(String.init) ?? "nil")"
+                expectedByKey[key, default: 0] += record.count ?? 1
+            }
+            // 输出：聚合项 count 必须等于输入之和（非升级组），且逐组一一对应。
+            let outputByKey = Dictionary(grouping: home.items.filter { !$0.isUpgrading }) {
+                "\($0.section):\($0.dataID):\($0.currentLevel.map(String.init) ?? "nil")"
+            }
+            XCTAssertEqual(Set(outputByKey.keys), Set(expectedByKey.keys),
+                           "聚合分组应与输入非升级记录一致")
+            for (key, group) in outputByKey {
+                XCTAssertEqual(group.count, 1, "非升级同键记录应合并为一条")
+                XCTAssertEqual(group.first?.count, expectedByKey[key],
+                               "key \(key) 聚合 count 应等于输入 (count ?? 1) 之和")
             }
         }
     }
@@ -527,14 +554,19 @@ final class VillageCatalogProjectionTests: XCTestCase {
             let upgradingInput = snapshot.values
                 .flatMap { $0 }
                 .filter { ($0.remainingSeconds ?? 0) > 0 }
+            // 按 key 计数对比：同 (section,dataID,level) 多条升级记录一条都不能丢。
+            var expectedCounts: [String: Int] = [:]
             for record in upgradingInput {
-                XCTAssertTrue(home.items.contains {
-                    $0.section == record.section
-                        && $0.dataID == record.dataID
-                        && $0.currentLevel == record.level
-                        && $0.isUpgrading
-                }, "升级记录 \(record.section):\(record.dataID)@\(record.level ?? -1) 在投影中丢失")
+                let key = "\(record.section):\(record.dataID):\(record.level.map(String.init) ?? "nil")"
+                expectedCounts[key, default: 0] += 1
             }
+            var actualCounts: [String: Int] = [:]
+            for item in home.items where item.isUpgrading {
+                let key = "\(item.section):\(item.dataID):\(item.currentLevel.map(String.init) ?? "nil")"
+                actualCounts[key, default: 0] += 1
+            }
+            XCTAssertEqual(actualCounts, expectedCounts,
+                           "升级记录在投影中必须逐条保留（同键计数一致）")
         }
     }
 }

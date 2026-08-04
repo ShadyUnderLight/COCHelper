@@ -77,8 +77,10 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
 /// 版本化静态目录。`Sendable`，不可变，可安全跨线程共享。
 ///
 /// 时长语义（#13 已统一）：`levels[N].durationSeconds` 表示「升级到 N 级」的完整时长。
-/// 单位/法术/英雄等 UpgradeTime 表在目录生成时已把行 N 映射到 level N+1，
-/// 因此 `levels[1]` 恒为初始等级（nil），与建筑表 BuildTime 语义等价。
+/// - BuildTime 系（buildings/traps 及 `2` 后缀）：`levels[1]` 是 0→1 的初始建造时长，非 nil；
+/// - UpgradeTime 系（units/spells/heroes/pets/equipment/guardians 及 `2` 后缀）：
+///   生成时已把行 N 映射到 level N+1，`levels[1]` 恒为初始等级（nil）。
+/// 两种表在 catalog 中语义一致，无需表类型分派。
 public struct GameCatalog: Sendable {
     public static let defaultBundledVersion = "18.400.13"
 
@@ -126,9 +128,10 @@ public struct GameCatalog: Sendable {
 
     /// 「升级到 nextLevel 级的完整时长」；目录无该等级记录时返回 nil。
     /// 所有表的 `levels[N].durationSeconds` 语义统一（见类型 doc comment）。
+    /// 目录不存在 level <= 0 的记录，`nextLevel <= 0` 仅作非法输入防御；
+    /// `nextLevel == 1` 时建筑系返回 0→1 建造时长、单位系返回 nil（初始等级）。
     public func durationToUpgradeLevel(nextLevel: Int, for item: CatalogItem) -> Int64? {
-        // 升到 1 级不存在（1 级是初始等级）；nextLevel <= 0 防御非法输入。
-        guard nextLevel > 1 else { return nil }
+        guard nextLevel > 0 else { return nil }
         return item.levels.first(where: { $0.level == nextLevel })?.durationSeconds
     }
 

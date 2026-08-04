@@ -104,13 +104,13 @@ public struct VillageCatalogProjection: Sendable {
         if catalog == nil {
             diagnostics.append(AccountDataDiagnostic(
                 severity: .warning,
-                path: "GameCatalog",
+                path: "GameCatalog/" + base.rawValue,
                 message: "静态升级目录不可用，等级上限与完整时长信息将缺失。"
             ))
         } else if let expectedGameVersion, catalog?.gameVersion != expectedGameVersion {
             diagnostics.append(AccountDataDiagnostic(
                 severity: .warning,
-                path: "GameCatalog",
+                path: "GameCatalog/" + base.rawValue,
                 message: "静态目录版本 \(catalog?.gameVersion ?? "?") 与期望版本 \(expectedGameVersion) 不匹配，完整时长与上限信息可能过时。"
             ))
         }
@@ -310,6 +310,8 @@ public struct VillageCatalogProjection: Sendable {
                 category: first.category,
                 currentLevel: first.currentLevel,
                 count: aggregatedCount,
+                // 聚合项不携带 timer：组内实例的计时各不相同，聚合无意义；
+                // 升级实例（含计时刚结束的）永远单独保留，不进入聚合。
                 timerSeconds: nil,
                 remainingSeconds: nil,
                 nextLevel: nil,

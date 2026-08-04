@@ -139,34 +139,34 @@ def _build_levels(records: list[_ParsedRow], spec: TableSpec) -> list[CatalogLev
 
     - to_level（建筑/陷阱）：行 N 的升级属性 → level N（原样）。
     - to_next_level（单位/法术/英雄/宠物/首都单位法术）：行 k-1 的升级属性 → level k
-      （k≥2）；level 1 = 初始等级（无升级）；行 maxLevel 的升级属性属于不存在的
-      level maxLevel+1 → 丢弃。level 值本身与 icon/visual 始终跟随自己的行。
+      （k≥2）；最低等级行 = 初始等级（无升级）；行 maxLevel 的升级属性属于不存在的
+      level maxLevel+1 → 丢弃。level 值 = 行自身等级（保留原始编号，如战斗直升机
+      15..35），icon/visual 跟随自己的行。
     """
     uniq = _dedup_by_level(records)
     if spec.join_upgrade_data:
         # guardians：等级行值即角色真实等级（1..5），join（level-1）在 build_guardians 完成
         return [_level_from_row(rec) for rec in uniq]
     if spec.upgrade_semantics == "to_next_level":
-        # 按位置重排：第 i 行的升级属性 → level i+1（i 从 1 起）；最后一行属于不存在的
-        # maxLevel+1 → 丢弃。对连续等级（1..n）与"按等级值查上一行"完全等价；
-        # 对偏移等级（如战斗直升机 VisualLevel 15..35）仍保留全部升级且无空洞。
+        # level 值 = 行自身等级（保留原始编号，如战斗直升机 15..35）；升级属性来自
+        # 上一行：第 idx=0 行（最低等级）= 初始等级无升级；第 i 行的升级属性属于
+        # level i+1；最后一行自身的升级属性属于不存在的 maxLevel+1 → 丢弃。
         levels: list[CatalogLevel] = []
-        for idx, own in enumerate(uniq):  # 输出 level = idx+1
-            k = idx + 1
-            if k == 1:
-                levels.append(_level_initial(1, own))
+        for idx, own in enumerate(uniq):
+            if idx == 0:
+                levels.append(_level_initial(own.level, own))
                 continue
             src = uniq[idx - 1]
             levels.append(CatalogLevel(
-                level=k,
+                level=own.level,
                 durationSeconds=src.duration,
                 missingReason=src.missing,
                 upgradeResource=src.resource,
                 upgradeCost=src.cost,
                 requiredTownHallLevel=src.town_hall,
                 requiredLaboratoryLevel=src.laboratory,
-                icon=own.icon if own else None,
-                levelVisual=own.level_visual if own else None,
+                icon=own.icon,
+                levelVisual=own.level_visual,
             ))
         return levels
     return [_level_from_row(rec) for rec in uniq]

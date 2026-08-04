@@ -255,3 +255,48 @@ def test_time_columns_not_inherited_to_next():
     # level 3 ← 行2：1h = 3600s，UpM='' 按 0 —— 若继承行1的 30m 会是 5400s
     assert item.levels[2].durationSeconds == 3600
     # 行3 的 2h 属于不存在的 level 4 → 丢弃（levels 只到 3）
+
+
+def test_offset_levels_preserved_to_next():
+    """to_next 表保留原始等级号（Super Barbarian 样式：VisualLevel 5..7，解锁即 5 级）。
+
+    level 值 = 行自身等级；升级属性来自上一行（level 5=初始、6←行5、7←行6）；
+    行7 的升级属性属于不存在的 level 8 → 丢弃。
+    """
+    rows = [
+        {"Name": "String", "GlobalID": "int", "VisualLevel": "int", "TID": "String",
+         "IconSWF": "String", "IconExportName": "String", "ProductionBuilding": "String",
+         "UpgradeTimeH": "int", "UpgradeTimeM": "int", "LaboratoryLevel": "int",
+         "UpgradeResource": "String", "UpgradeCost": "int", "VillageType": "String"},
+        {"Name": "Super Barbarian", "GlobalID": "4000200", "VisualLevel": "5", "TID": "TID_SB",
+         "IconSWF": "sc/ui.sc", "IconExportName": "icon_sb5", "ProductionBuilding": "",
+         "UpgradeTimeH": "2", "UpgradeTimeM": "0", "LaboratoryLevel": "11",
+         "UpgradeResource": "Elixir", "UpgradeCost": "100000", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "6", "TID": "", "IconSWF": "",
+         "IconExportName": "icon_sb6", "ProductionBuilding": "", "UpgradeTimeH": "3",
+         "UpgradeTimeM": "", "LaboratoryLevel": "", "UpgradeResource": "",
+         "UpgradeCost": "200000", "VillageType": ""},
+        {"Name": "", "GlobalID": "", "VisualLevel": "7", "TID": "", "IconSWF": "",
+         "IconExportName": "icon_sb7", "ProductionBuilding": "", "UpgradeTimeH": "4",
+         "UpgradeTimeM": "", "LaboratoryLevel": "", "UpgradeResource": "",
+         "UpgradeCost": "300000", "VillageType": ""},
+    ]
+    items = build_items(rows, spec_for_table("characters.csv"), {})
+    item = items[0]
+    assert [lv.level for lv in item.levels] == [5, 6, 7]  # 保留原始编号，不压成 1..3
+    assert item.maxLevel == 7
+    lv5, lv6, lv7 = item.levels
+    # level 5 = 初始等级：无升级属性，外观取自身行
+    assert lv5.durationSeconds is None
+    assert lv5.missingReason == "level_1_initial_no_upgrade"
+    assert lv5.upgradeResource is None and lv5.upgradeCost is None
+    assert lv5.icon is not None and lv5.icon.exportName == "icon_sb5"
+    # level 6 ← 行5：2h = 7200s
+    assert lv6.durationSeconds == 2 * 3600
+    assert lv6.upgradeResource == "Elixir" and lv6.upgradeCost == 100000
+    assert lv6.requiredLaboratoryLevel == 11
+    assert lv6.icon.exportName == "icon_sb6"          # 外观跟随自己的行
+    # level 7 ← 行6：3h = 10800s；行7 的 4h 属于不存在的 level 8 → 丢弃
+    assert lv7.durationSeconds == 3 * 3600
+    assert lv7.upgradeCost == 200000
+    assert lv7.icon.exportName == "icon_sb7"

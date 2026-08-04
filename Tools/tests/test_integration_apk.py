@@ -101,19 +101,21 @@ def test_acceptance_town_hall_18_is_12_days(catalog):
     assert lv18["durationSeconds"] == 1036800
 
 
-def test_acceptance_to_next_level_1_is_initial(catalog):
+def test_acceptance_to_next_min_level_is_initial(catalog):
     """所有 to_next_level 表（单位/法术/英雄/宠物/首都单位/首都法术/守卫）的
-    level 1 = null + level_1_initial_no_upgrade（初始等级无升级）。"""
+    最低等级 = null + level_1_initial_no_upgrade（初始等级无升级）。
+
+    最低等级保留源表原始编号（战斗直升机 15、Super Barbarian 5），不一定是 1。
+    """
     data, _, _ = catalog
     to_next_sections = {"units", "units2", "spells", "heroes", "heroes2",
                         "pets", "guardians", "capital_characters", "capital_spells"}
     items = [i for i in data["items"] if i["section"] in to_next_sections]
     assert items
     for i in items:
-        lv1 = next((lv for lv in i["levels"] if lv["level"] == 1), None)
-        assert lv1 is not None, f"{i['section']}:{i['dataID']} 缺少 level 1"
-        assert lv1["durationSeconds"] is None, f"{i['name']} level 1 不应有时长"
-        assert lv1["missingReason"] == "level_1_initial_no_upgrade", f"{i['name']}"
+        lv_min = min(i["levels"], key=lambda lv: lv["level"])
+        assert lv_min["durationSeconds"] is None, f"{i['name']} 最低等级不应有时长"
+        assert lv_min["missingReason"] == "level_1_initial_no_upgrade", f"{i['name']}"
 
 
 def test_acceptance_distinct_asset_references(catalog):

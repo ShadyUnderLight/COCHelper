@@ -118,8 +118,9 @@ struct UpgradeDisplayRow: View {
                 .foregroundStyle(item.category?.tint ?? Color.secondary)
                 .frame(width: 24)
                 .help(iconHelp)
-                // 图标缺失的可见状态（P2-2 验收「图标缺失有明确状态」）：
-                // 目录 icon ref 带 missingReason（如 icons_not_rendered）时叠加橙色警示角标，
+                // 视觉资产缺失的可见状态（P2-2 验收「图标缺失有明确状态」）：
+                // 目录 icon 或 levelVisual 引用带 missingReason（如 icons_not_rendered，
+                // 325 项 icon + 188 项仅 levelVisual）时叠加橙色警示角标，
                 // 不只在 hover 提示。SF Symbol 兜底保留，角标只是状态标记。
                 .overlay(alignment: .bottomTrailing) {
                     if iconMissingReason != nil {

@@ -22,6 +22,8 @@ class AssetRef:
 
     @classmethod
     def from_dict(cls, d: dict) -> "AssetRef":
+        if not isinstance(d, dict):
+            raise ValueError(f"AssetRef 需要 dict，实际 {type(d).__name__}: {d!r}")
         return cls(d.get("container"), d.get("exportName"),
                    d.get("renderedPath"), d.get("missingReason"))
 
@@ -53,6 +55,8 @@ class CatalogLevel:
 
     @classmethod
     def from_dict(cls, d: dict) -> "CatalogLevel":
+        if not isinstance(d, dict):
+            raise ValueError(f"CatalogLevel 需要 dict，实际 {type(d).__name__}: {d!r}")
         return cls(
             level=d["level"], durationSeconds=d.get("durationSeconds"),
             missingReason=d.get("missingReason"),
@@ -95,6 +99,8 @@ class CatalogItem:
 
     @classmethod
     def from_dict(cls, d: dict) -> "CatalogItem":
+        if not isinstance(d, dict):
+            raise ValueError(f"CatalogItem 需要 dict，实际 {type(d).__name__}: {d!r}")
         return cls(
             section=d["section"], dataID=d["dataID"], category=d["category"],
             base=d.get("base"), baseMissingReason=d.get("baseMissingReason"),
@@ -128,6 +134,10 @@ def catalog_to_dict(catalog: Catalog) -> dict:
 
 
 def catalog_from_dict(d: dict) -> Catalog:
+    if not isinstance(d, dict):
+        raise ValueError(f"catalog 根节点需要 dict，实际 {type(d).__name__}")
+    if not isinstance(d.get("items"), list):
+        raise ValueError("catalog.items 需要 list")
     return Catalog(
         schemaVersion=d["schemaVersion"],
         gameVersion=d["gameVersion"],

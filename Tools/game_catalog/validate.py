@@ -33,12 +33,14 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
 
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, ValueError) as exc:
+    except (json.JSONDecodeError, OSError, ValueError, AttributeError) as exc:
         return [f"manifest.json 解析失败: {exc}"]
+    if not isinstance(manifest, dict):
+        return ["manifest.json 顶层必须是对象"]
 
     try:
         catalog = catalog_from_dict(json.loads(catalog_path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, OSError, KeyError, ValueError, TypeError) as exc:
+    except (json.JSONDecodeError, OSError, KeyError, ValueError, TypeError, AttributeError) as exc:
         return [f"catalog.json 解析失败: {exc}"]
 
     # ---- 版本/语言一致性 ----
@@ -96,7 +98,7 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
             for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
                 if ref and ref.missingReason and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, AttributeError) as exc:
         return [f"catalog 内容非法: {exc}"]
 
     # ---- counts 与目录内容重算一致 ----

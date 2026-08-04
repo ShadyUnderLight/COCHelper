@@ -34,6 +34,9 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var clanCapitalStates: [String: ClanCapitalAPIState] = [:]
     /// 资本赛季刷新进行中。
     @Published public private(set) var isRefreshingCapitalData = false
+    /// 静态升级目录（Issue #15 升级总览展示用：完整时长 / 等级上限 / 版本）。
+    /// `loadBundled` 失败返回 nil 是合法路径——UI 显示「目录不可用」，不允许崩溃。
+    public private(set) var gameCatalog: GameCatalog? = GameCatalog.loadBundled()
 
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"

@@ -178,6 +178,7 @@ struct UpgradeTrackerView: View {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
                         TrackerOverviewContent(
                             villages: [village],
+                            catalog: model.gameCatalog,
                             scopeLabel: "当前村庄",
                             panelTitle: village.name + " · 正在升级",
                             now: context.date
@@ -187,6 +188,7 @@ struct UpgradeTrackerView: View {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
                         TrackerOverviewContent(
                             villages: model.villages,
+                            catalog: model.gameCatalog,
                             scopeLabel: "全部村庄",
                             panelTitle: "全部村庄 · 正在升级",
                             now: context.date
@@ -240,12 +242,14 @@ private struct TrackerHeaderView: View {
 
 private struct TrackerOverviewContent: View {
     let villages: [VillageProfile]
+    let catalog: GameCatalog?
     let scopeLabel: String
     let panelTitle: String
     let now: Date
 
     var body: some View {
-        let activeRecords = UpgradeTracker.activeRecords(from: villages, at: now)
+        let activeRecords = UpgradeOverviewProjection.activeRecords(from: villages, catalog: catalog, at: now)
+        let pendingReimport = UpgradeOverviewProjection.pendingReimportRecords(from: villages, catalog: catalog, at: now)
 
         VStack(alignment: .leading, spacing: 18) {
             TrackerMetricsView(
@@ -253,7 +257,12 @@ private struct TrackerOverviewContent: View {
                 records: activeRecords,
                 scopeLabel: scopeLabel
             )
-            ActiveUpgradesPanel(records: activeRecords, now: now, title: panelTitle)
+            ActiveUpgradesPanel(
+                records: activeRecords,
+                pendingReimport: pendingReimport,
+                now: now,
+                title: panelTitle
+            )
             TrackerOverviewFreshnessNote(villages: villages)
         }
     }
@@ -261,7 +270,7 @@ private struct TrackerOverviewContent: View {
 
 private struct TrackerMetricsView: View {
     let villages: [VillageProfile]
-    let records: [VillageUpgradeRecord]
+    let records: [UpgradeDisplayRecord]
     let scopeLabel: String
 
     private var importedVillageCount: Int {
@@ -346,7 +355,8 @@ private struct TrackerMetricCard: View {
 }
 
 private struct ActiveUpgradesPanel: View {
-    let records: [VillageUpgradeRecord]
+    let records: [UpgradeDisplayRecord]
+    let pendingReimport: [UpgradeDisplayRecord]
     let now: Date
     let title: String
 
@@ -372,15 +382,47 @@ private struct ActiveUpgradesPanel: View {
                     TrackerTableHeader()
                     VStack(spacing: 0) {
                         ForEach(records) { record in
-                            VillageUpgradeRecordRow(record: record, now: now)
+                            UpgradeDisplayRow(record: record, now: now)
                             if record.id != records.last?.id {
                                 Divider().padding(.leading, 46)
                             }
                         }
                     }
                 }
+
+                if !pendingReimport.isEmpty {
+                    PendingReimportBlock(records: pendingReimport, now: now)
+                }
             }
         }
+    }
+}
+
+/// 「待重新导入确认」次级提示块：计时已结束的项目（验收标准：计时结束的项目
+/// 显示重新导入提示）。复用同一行组件，精简样式（橙色淡底）。
+private struct PendingReimportBlock: View {
+    let records: [UpgradeDisplayRecord]
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("待重新导入确认", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+            Text("有 " + String(records.count) + " 个项目已计时结束，重新导入 JSON 确认实际等级。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                ForEach(records) { record in
+                    UpgradeDisplayRow(record: record, now: now)
+                    if record.id != records.last?.id {
+                        Divider().padding(.leading, 46)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -391,8 +433,8 @@ private struct TrackerTableHeader: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text("村庄与基地")
                 .frame(width: 170, alignment: .leading)
-            Text("等级")
-                .frame(width: 100, alignment: .trailing)
+            Text("等级/时长")
+                .frame(width: 130, alignment: .trailing)
             Text("预计完成")
                 .frame(width: 160, alignment: .trailing)
         }
@@ -400,95 +442,6 @@ private struct TrackerTableHeader: View {
         .foregroundStyle(.secondary)
         .padding(.leading, 46)
         .padding(.trailing, 4)
-    }
-}
-
-private struct VillageUpgradeRecordRow: View {
-    let record: VillageUpgradeRecord
-    let now: Date
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: record.upgrade.category.systemImage)
-                .font(.body)
-                .foregroundStyle(record.upgrade.category.tint)
-                .frame(width: 24)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    Text(record.upgrade.name)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    if let countLabel = record.upgrade.countLabel {
-                        Text(countLabel)
-                            .font(.caption2.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.white.opacity(0.07), in: Capsule())
-                    }
-                    if record.upgrade.isNested {
-                        Text("嵌套")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Text(record.upgrade.sourceSection + " · " + record.upgrade.dataIDLabel)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
-            }
-
-            Spacer(minLength: 10)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(record.villageName)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.cocAccent)
-                    .lineLimit(1)
-                HStack(spacing: 5) {
-                    Text(record.base.title)
-                    if let villageTag = record.villageTag {
-                        Text(villageTag)
-                            .monospaced()
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            }
-            .frame(width: 170, alignment: .leading)
-
-            Text(record.upgrade.levelLabel)
-                .font(.subheadline.weight(.bold).monospacedDigit())
-                .foregroundStyle(.orange)
-                .frame(width: 100, alignment: .trailing)
-
-            VStack(alignment: .trailing, spacing: 4) {
-                if let remainingSeconds = record.remainingSeconds {
-                    Text(AccountDurationFormatter.label(remainingSeconds, zeroLabel: "已完成"))
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.orange)
-                    if let completionDate = record.completionDate(from: now) {
-                        Text("完成 " + completionDate.formatted(date: .omitted, time: .shortened))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let progress = record.upgrade.progress {
-                        ProgressView(value: progress)
-                            .progressViewStyle(.linear)
-                            .tint(.orange)
-                            .frame(width: 112)
-                    }
-                } else {
-                    Text(record.upgrade.statusLabel)
-                        .font(.caption)
-                        .foregroundStyle(record.upgrade.hasTimer ? Color.secondary : Color.green)
-                }
-            }
-            .frame(width: 160, alignment: .trailing)
-        }
-        .padding(.vertical, 10)
     }
 }
 
@@ -939,22 +892,6 @@ struct Panel<Content: View>: View {
                 RoundedRectangle(cornerRadius: 18)
                     .stroke(Color.white.opacity(0.08), lineWidth: 1)
             }
-    }
-}
-
-private extension TrackerCategory {
-    var tint: Color {
-        switch self {
-        case .buildings: .blue
-        case .traps: .green
-        case .troops: .orange
-        case .spells: .purple
-        case .siegeMachines: .brown
-        case .heroes: .red
-        case .equipment: .cyan
-        case .pets: .pink
-        case .guardians: .indigo
-        }
     }
 }
 

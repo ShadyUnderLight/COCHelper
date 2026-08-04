@@ -3,6 +3,17 @@
 from .errors import CatalogError
 
 _FACTORS = {"D": 86400, "H": 3600, "M": 60, "S": 1}
+_DAY_KEY_SUFFIXES = {"Days": "D", "Hours": "H", "Minutes": "M", "Seconds": "S"}
+
+
+def _normalize_key(col: str) -> str:
+    """BuildTimeD/UpgradeTimeH/UpgradeTimeDays/... → D/H/M/S 单字母。"""
+    for long_name, short in _DAY_KEY_SUFFIXES.items():
+        if col.endswith(long_name):
+            return short
+    if col and col[-1] in "DHMS":
+        return col[-1]
+    raise CatalogError(f"无法识别的时长列: {col!r}")
 
 
 def parse_optional_int(value: str) -> int | None:
@@ -41,11 +52,5 @@ def parse_duration(cells: dict[str, str], columns: tuple[str, ...]) -> tuple[int
             continue
         if not v.isdigit():
             return None, "time_invalid"
-        key = col
-        # 兼容 UpgradeTimeDays/Hours/Minutes/Seconds 命名
-        for day_key, factor in (("Days", 86400), ("Hours", 3600), ("Minutes", 60), ("Seconds", 1)):
-            if key.endswith(day_key):
-                key = {"Days": "D", "Hours": "H", "Minutes": "M", "Seconds": "S"}[day_key]
-                break
-        seconds += int(v) * _FACTORS[key]
+        seconds += int(v) * _FACTORS[_normalize_key(col)]
     return seconds, None

@@ -41,6 +41,25 @@ def test_parse_duration_negative_raises():
         parse_duration({"H": "-1", "M": ""}, ("H", "M"))
 
 
+def test_parse_duration_real_column_names():
+    # 真实表列名：BuildTimeD/H/M/S、UpgradeTimeH/M、UpgradeTimeDays/Hours/...
+    sec, reason = parse_duration(
+        {"BuildTimeD": "1", "BuildTimeH": "2", "BuildTimeM": "3", "BuildTimeS": "4"},
+        ("BuildTimeD", "BuildTimeH", "BuildTimeM", "BuildTimeS"))
+    assert sec == 93784
+    assert reason is None
+    sec, reason = parse_duration(
+        {"UpgradeTimeDays": "7", "UpgradeTimeHours": "0",
+         "UpgradeTimeMinutes": "0", "UpgradeTimeSeconds": "0"},
+        ("UpgradeTimeDays", "UpgradeTimeHours", "UpgradeTimeMinutes", "UpgradeTimeSeconds"))
+    assert sec == 7 * 86400
+    assert reason is None
+    sec, reason = parse_duration({"UpgradeTimeH": "0", "UpgradeTimeM": "30"},
+                                 ("UpgradeTimeH", "UpgradeTimeM"))
+    assert sec == 1800
+    assert reason is None
+
+
 def test_parse_optional_int():
     assert parse_optional_int("") is None
     assert parse_optional_int("0") == 0

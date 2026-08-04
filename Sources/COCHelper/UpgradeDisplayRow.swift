@@ -58,19 +58,27 @@ struct UpgradeDisplayRow: View {
     // MARK: - 完整时长
 
     private var durationLabel: String {
-        if let duration = item.nextLevelDurationSeconds {
-            if duration > 0 {
-                return "完整时长：" + AccountDurationFormatter.label(duration)
-            }
-            // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
-            return "完整时长：即时"
+        if item.status == .maxed {
+            // 已满级：目录无下一级，显示上限（避免误导的「暂无目录数据」）。
+            return "已达目录上限 Lv " + String(item.maxLevel ?? 0)
         }
-        // 非升级未满级（目录已命中、maxLevel 已知）：下一级 = currentLevel + 1，
-        // 是目录允许的下一级编号而非升级计划（issue 数据边界：不生成队列计划）。
-        if let currentLevel = item.currentLevel, let maxLevel = item.maxLevel, currentLevel < maxLevel {
-            return "下一级 Lv " + String(currentLevel + 1)
+        guard let duration = item.nextLevelDurationSeconds else { return "暂无目录数据" }
+        let prefix: String
+        if item.isUpgrading {
+            // 升级行：levelLabel 已显示「当前 → 目标」，时长不加前缀。
+            prefix = "完整时长："
+        } else if let currentLevel = item.currentLevel, let maxLevel = item.maxLevel, currentLevel < maxLevel {
+            // 非升级未满级（投影层已推下一级时长）：issue 列表规则要求显示下一等级。
+            // 编号由当前 + 1 推导（与投影层 nextLevel 推断同规则），时长来自目录。
+            prefix = "下一级 Lv " + String(currentLevel + 1) + " · 完整时长："
+        } else {
+            prefix = "完整时长："
         }
-        return "暂无目录数据"
+        if duration > 0 {
+            return prefix + AccountDurationFormatter.label(duration)
+        }
+        // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
+        return prefix + "即时"
     }
 
     // MARK: - 副标题
@@ -225,6 +233,11 @@ struct UpgradeDisplayRow: View {
                     Text("计时已结束")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
+                } else if item.status == .available {
+                    // 目录存在但快照无记录（投影层当前不产出；#12 目录遍历接入前的防御）。
+                    Text("目录中可用")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 } else if item.status == .unavailable {
                     Text("不参与追踪")
                         .font(.caption)

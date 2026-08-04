@@ -338,8 +338,11 @@ public struct VillageCatalogProjection: Sendable {
         return result
     }
 
+    /// 聚合键 = (section, dataID, currentLevel, isNested)。
+    /// isNested 必须参与分组：父项与嵌套项可能同 section/dataID/level，
+    /// 不区分会导致嵌套项被并入父项组而消失（且状态/图标按父项保留）。
     private static func aggregateKey(_ record: VillageItemState) -> String {
-        "\(record.section):\(record.dataID):\(record.currentLevel.map(String.init) ?? "nil")"
+        "\(record.section):\(record.dataID):\(record.currentLevel.map(String.init) ?? "nil"):\(record.isNested ? "nested" : "flat")"
     }
 
     // MARK: - Live timers

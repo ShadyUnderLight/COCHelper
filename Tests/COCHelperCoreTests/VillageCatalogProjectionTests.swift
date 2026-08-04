@@ -408,6 +408,30 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertNotNil(nested.missingReason)
     }
 
+    func testAggregationKeySeparatesNestedFromParentAtSameLevel() throws {
+        // 回归（P2）：父项与嵌套项同 (section, dataID, level) 时不得合并——
+        // 聚合键若不区分 isNested，嵌套项会被并入父项组而消失。
+        let module = makeItem(section: "units", dataID: 4_000_000, level: 2, path: "1.modules.0")
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0"),
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         modules: [module], path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        // 两条父项聚合为一条（count 2），嵌套项独立保留：共 2 条。
+        XCTAssertEqual(home.items.count, 2,
+                       "父项与嵌套项同键时嵌套项不得消失")
+        let flat = try XCTUnwrap(home.items.first { !$0.isNested })
+        let nested = try XCTUnwrap(home.items.first(where: \.isNested))
+        XCTAssertEqual(flat.count, 2)
+        XCTAssertEqual(flat.isNested, false)
+        XCTAssertEqual(nested.status, .unknown)
+        XCTAssertTrue(nested.id.contains(".modules."))
+        XCTAssertEqual(nested.currentLevel, 2)
+    }
+
     func testFinishedTimerSurvivesAggregationAsNeedsReimport() throws {
         // 回归（P1）：计时已结束（timer 存在、remaining 归零）的记录聚合后必须保留
         // 「需重新导入」信号（timerSeconds 非 nil、remainingSeconds == 0），

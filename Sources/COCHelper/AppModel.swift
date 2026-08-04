@@ -25,7 +25,7 @@ final class AppModel: ObservableObject {
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"
     private let villagesStorageKey = "coc-helper.villages.v1"
-    private let clanStatesStorageKey = "coc-helper.clans.v1"
+    private static let clanStatesStorageKey = "coc-helper.clans.v1"
     private let refresher: OfficialPlayerRefresher
     private let clanRefresher: ClanRefresher
 
@@ -99,12 +99,12 @@ final class AppModel: ObservableObject {
     /// 玩家换部落/离开部落后，新快照刷新即更新此值；旧部落数据保留在
     /// `clanStates` 中但不会显示为当前归属。
     var currentVillageClanTag: String? {
-        guard let tag = currentVillageOfficialState?.lastGood?.clan?.tag,
-              let normalized = OfficialPlayerTagValidator.normalized(tag),
-              OfficialPlayerTagValidator.isValid(normalized) else {
-            return nil
-        }
-        return normalized
+        currentVillageOfficialState?.currentClanTag
+    }
+
+    /// 玩家官方数据是否从未成功抓取过（用于区分"未知归属"与"确认无部落"）。
+    var currentVillageClanStatusUnknown: Bool {
+        currentVillageOfficialState?.lastGood == nil
     }
 
     /// 当前村庄所属部落的共享状态（nil = 无部落 / 从未请求）。
@@ -292,9 +292,14 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             let state = await self.refresher.refresh(village: village)
             // 竞态防护：刷新期间账号若已变化（重导入/清除），丢弃过期结果。
-            _ = self.applyOfficialState(state, to: village.id, expectedTag: expectedTag)
+            let applied = self.applyOfficialState(state, to: village.id, expectedTag: expectedTag)
             self.persistVillages()
             self.isRefreshingOfficialData = false
+            // 玩家快照更新后部落归属可能变化，联动刷新当前部落
+            // （与批量刷新行为对称；被占用时排队补跑）。
+            if applied, state.status == .success {
+                self.refreshCurrentClan()
+            }
         }
     }
 
@@ -324,8 +329,12 @@ final class AppModel: ObservableObject {
             self.persistVillages()
             self.isRefreshingOfficialData = false
             // 玩家快照更新后部落归属可能变化，联动刷新部落共享数据
-            // （refreshAllClans 内部按 clan tag 去重）。
-            self.refreshAllClans()
+            // （refreshAllClans 内部按 clan tag 去重，被占用时排队补跑）。
+            // 仅在本次存在成功时联动：玩家请求全挂（如断网/429）时不追加
+            // 部落请求，避免在限流边界上放大请求面。
+            if successCount > 0 {
+                self.refreshAllClans()
+            }
         }
     }
 
@@ -345,63 +354,68 @@ final class AppModel: ObservableObject {
 
     // MARK: - 部落数据刷新（共享数据层）
 
+    /// 部落刷新进行中被再次触发时排队补跑，避免联动刷新被静默丢弃。
+    private var pendingClanRefreshAll = false
+
     /// 刷新当前村庄所属部落的档案（按 clan tag 去重，单 tag 单请求）。
     func refreshCurrentClan() {
-        guard !isRefreshingClanData else { return }
         guard let tag = currentVillageClanTag else { return }
-        isRefreshingClanData = true
-        let previous = clanStates
-
-        Task { [weak self] in
-            guard let self else { return }
-            let refreshed = await self.clanRefresher.refreshClans(
-                villageClanTags: [tag],
-                previous: previous
-            )
-            self.mergeClanStates(refreshed)
-            self.isRefreshingClanData = false
+        if isRefreshingClanData {
+            // 被占用时排队为一次全量补跑（覆盖当前村庄，语义更广且确定性）。
+            pendingClanRefreshAll = true
+            return
         }
+        performClanRefresh(villageClanTags: [tag])
     }
 
     /// 批量刷新所有已导入村庄所属部落（同 clan tag 只请求一次，顺序执行）。
     /// 玩家批量刷新完成后由 `refreshAllOfficialPlayers` 联动调用。
     func refreshAllClans() {
-        guard !isRefreshingClanData else { return }
+        if isRefreshingClanData {
+            // 排队补跑：联动/手动请求不会因当前批次占用而被静默丢弃。
+            pendingClanRefreshAll = true
+            return
+        }
+        performClanRefresh(villageClanTags: villages.compactMap { $0.officialAPIState?.currentClanTag })
+    }
+
+    private func performClanRefresh(villageClanTags: [String?]) {
         isRefreshingClanData = true
-        let clanTags = villages.map { $0.officialAPIState?.lastGood?.clan?.tag }
         let previous = clanStates
 
         Task { [weak self] in
             guard let self else { return }
             let refreshed = await self.clanRefresher.refreshClans(
-                villageClanTags: clanTags,
+                villageClanTags: villageClanTags,
                 previous: previous
             )
             self.mergeClanStates(refreshed)
             self.isRefreshingClanData = false
+            if self.pendingClanRefreshAll {
+                self.pendingClanRefreshAll = false
+                self.refreshAllClans()
+            }
         }
     }
 
     /// 合并刷新结果到共享存储：只覆盖本次请求过的 tag，其余保留
     /// （旧部落快照不因换部落而丢失）。
     private func mergeClanStates(_ refreshed: [String: ClanAPIState]) {
-        for (tag, state) in refreshed {
-            clanStates[tag] = state
-        }
+        clanStates = ClanStateStore(states: clanStates).merging(refreshed).states
         persistClanStates()
     }
 
     private func persistClanStates() {
-        guard let data = try? JSONEncoder().encode(clanStates) else { return }
-        defaults.set(data, forKey: clanStatesStorageKey)
+        guard let data = try? JSONEncoder().encode(ClanStateStore(states: clanStates)) else { return }
+        defaults.set(data, forKey: Self.clanStatesStorageKey)
     }
 
     private static func loadClanStates(from defaults: UserDefaults) -> [String: ClanAPIState] {
-        guard let data = defaults.data(forKey: "coc-helper.clans.v1"),
-              let decoded = try? JSONDecoder().decode([String: ClanAPIState].self, from: data) else {
+        guard let data = defaults.data(forKey: Self.clanStatesStorageKey),
+              let store = try? JSONDecoder().decode(ClanStateStore.self, from: data) else {
             return [:]
         }
-        return decoded
+        return store.states
     }
 
     private func load(_ village: VillageProfile, importText: String? = nil) {

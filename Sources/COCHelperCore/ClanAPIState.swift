@@ -77,3 +77,75 @@ public struct ClanAPIState: Codable, Hashable, Sendable {
         return now.timeIntervalSince(fetchedAt) > Self.staleThreshold
     }
 }
+
+/// 部落共享数据层的持久化容器。
+///
+/// 存储格式为单元素字典数组（`[ [tag: state], ... ]`），解码时**逐条容错**：
+/// 一条记录损坏只丢弃该条，不株连整库（部落数据是全量共享层，单条 schema
+/// 漂移不应造成所有部落数据一次性丢失）。
+///
+/// `merging` 语义：只覆盖本次请求过的 tag，未请求的旧部落数据保留
+/// （玩家换部落后旧快照不丢失、不冒充当前归属）。
+public struct ClanStateStore: Codable, Hashable, Sendable {
+    public private(set) var states: [String: ClanAPIState]
+
+    public init(states: [String: ClanAPIState] = [:]) {
+        self.states = states
+    }
+
+    /// 覆盖 `refreshed` 中的 tag，其余保留。
+    public func merging(_ refreshed: [String: ClanAPIState]) -> ClanStateStore {
+        var merged = states
+        for (tag, state) in refreshed {
+            merged[tag] = state
+        }
+        return ClanStateStore(states: merged)
+    }
+
+    // MARK: - Codable（逐条容错）
+
+    public init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var decoded: [String: ClanAPIState] = [:]
+        // 防御兜底：坏数据可能让游标无法推进，限制循环次数避免无限循环。
+        var guardCounter = 0
+        let maxEntries = 10_000
+        while !container.isAtEnd && guardCounter < maxEntries {
+            guardCounter += 1
+            if let entry = try? container.decode([String: ClanAPIState].self),
+               let (tag, state) = entry.first {
+                decoded[tag] = state
+            } else {
+                // 坏条目：JSONDecoder 在元素解码失败时不推进游标，
+                // 用 JSONSkipper（任意 JSON 值都解码成功）强制消费该元素。
+                _ = try? container.decode(JSONSkipper.self)
+            }
+        }
+        states = decoded
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        for tag in states.keys.sorted() {
+            try container.encode([tag: states[tag]!])
+        }
+    }
+}
+
+/// 任意 JSON 值（bool/string/number/array/object/null）都能解码成功的哨兵类型，
+/// 用于跳过损坏条目时保证解码游标推进。
+private struct JSONSkipper: Decodable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { return }
+        if (try? container.decode(Bool.self)) != nil { return }
+        if (try? container.decode(String.self)) != nil { return }
+        if (try? container.decode(Double.self)) != nil { return }
+        if (try? container.decode([String: JSONSkipper].self)) != nil { return }
+        if (try? container.decode([JSONSkipper].self)) != nil { return }
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "无法识别的 JSON 值"
+        )
+    }
+}

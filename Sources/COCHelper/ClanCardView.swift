@@ -29,6 +29,7 @@ struct ClanCardView: View {
     }
 
     /// 来源标签：issue 要求区分 official-api / cached-official-api。
+    /// 从未成功抓取玩家数据（归属未知）时不展示来源标签，避免误导。
     @ViewBuilder
     private var sourceBadge: some View {
         let state = model.currentClanState
@@ -39,11 +40,16 @@ struct ClanCardView: View {
             .padding(.vertical, 3)
             .background(Color.cocAccent.opacity(0.18), in: Capsule())
             .foregroundStyle(Color.cocAccent)
+            .opacity(model.currentVillageClanStatusUnknown ? 0 : 1)
     }
 
     @ViewBuilder
     private var statusContent: some View {
-        if model.currentVillageClanTag == nil {
+        if model.currentVillageClanStatusUnknown {
+            // 从未成功抓取玩家数据：归属是"未知"，不是"不在部落中"。
+            unknownClanState
+        } else if model.currentVillageClanTag == nil {
+            // 最近成功玩家快照确认无部落（clan 缺失/无效）。
             noClanState
         } else if let state = model.currentClanState {
             statusLine(state)
@@ -72,7 +78,7 @@ struct ClanCardView: View {
                 Spacer()
             }
         } else {
-            // 有部落 tag 但从未请求过：提示可刷新
+            // 有部落 tag 但从未请求过部落数据：提示可刷新
             VStack(alignment: .leading, spacing: 8) {
                 Label("尚未获取部落数据", systemImage: "circle.dashed")
                     .font(.callout)
@@ -89,6 +95,18 @@ struct ClanCardView: View {
                     Spacer()
                 }
             }
+        }
+    }
+
+    /// 归属未知：玩家数据尚未成功抓取，不能断言"不在部落中"。
+    private var unknownClanState: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("尚未获取玩家数据，无法确认部落归属", systemImage: "questionmark.circle")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text("先刷新官方玩家数据即可显示部落信息。")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -194,11 +212,14 @@ struct ClanCardView: View {
         }
     }
 
-    /// 徽章 URL 安全：仅加载官方 https 地址，防止异常数据注入其他协议。
+    /// 徽章 URL 安全：仅加载官方 https 图片域名，防止异常数据注入其他
+    /// 协议/域名（AsyncImage 会跟随重定向，allowlist 是纵深防御）。
     private func badgeURL(_ snapshot: OfficialClanSnapshot) -> URL? {
         guard let string = snapshot.badgeUrls?["medium"] ?? snapshot.badgeUrls?["small"],
               let url = URL(string: string),
-              url.scheme?.lowercased() == "https" else {
+              url.scheme?.lowercased() == "https",
+              let host = url.host,
+              host == "clashofclans.com" || host.hasSuffix(".clashofclans.com") else {
             return nil
         }
         return url

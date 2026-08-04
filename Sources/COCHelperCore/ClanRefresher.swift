@@ -40,6 +40,7 @@ public struct ClanRefresher: Sendable {
 
         var result: [String: ClanAPIState] = [:]
         for tag in tags.sorted() {
+            if Task.isCancelled { break }
             result[tag] = await refreshState(for: tag, previous: previous[tag], now: now)
         }
         return result
@@ -69,6 +70,20 @@ public struct ClanRefresher: Sendable {
                 lastAttemptAt: now,
                 lastErrorReason: error.userFacingReason,
                 lastHTTPStatus: error.httpStatus,
+                parserVersion: ClanAPIState.currentParserVersion,
+                lastGood: previous?.lastGood,
+                unrecognizedKeys: previous?.unrecognizedKeys ?? []
+            )
+        } catch is CancellationError {
+            // CoAPIClient 原样传播 CancellationError；不得以"未知错误：
+            // CancellationError"呈现给用户。
+            return ClanAPIState(
+                status: .failed,
+                clanTag: tag,
+                fetchedAt: previous?.fetchedAt,
+                lastAttemptAt: now,
+                lastErrorReason: "已取消",
+                lastHTTPStatus: nil,
                 parserVersion: ClanAPIState.currentParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []

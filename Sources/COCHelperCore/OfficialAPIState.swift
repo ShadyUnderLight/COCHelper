@@ -107,3 +107,19 @@ public struct OfficialAPIState: Codable, Hashable, Sendable {
         return now.timeIntervalSince(fetchedAt) > Self.staleThreshold
     }
 }
+
+extension OfficialAPIState {
+    /// 最近成功玩家快照中的部落 tag（规范化 + 校验）。
+    ///
+    /// 部落归属只从**最近成功**快照派生：换部落/离开部落后，新快照落地即
+    /// 更新此值；从未成功抓取（`lastGood == nil`）时返回 nil，调用方应把
+    /// "未知"与"确认不在部落中"（`lastGood?.clan == nil` 且抓取成功）区分开。
+    public var currentClanTag: String? {
+        guard let raw = lastGood?.clan?.tag,
+              let normalized = OfficialPlayerTagValidator.normalized(raw),
+              OfficialPlayerTagValidator.isValid(normalized) else {
+            return nil
+        }
+        return normalized
+    }
+}

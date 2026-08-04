@@ -1,0 +1,557 @@
+"""Task 7: validate_catalog 不变量（结构 + 语义 + counts 重算）。测试是契约。"""
+
+import json
+from pathlib import Path
+
+from game_catalog.model import catalog_to_dict, Catalog, CatalogItem, CatalogLevel
+from game_catalog.validate import validate_catalog
+
+
+def _valid_dir(tmp_path: Path) -> Path:
+    import hashlib
+
+    item = CatalogItem(
+        section="units", dataID=4_000_000, category="troops", base="home",
+        baseMissingReason=None, name="野蛮人", maxLevel=1,
+        icon=None, levelVisual=None, missingReason=None,
+        levels=[CatalogLevel(
+            level=1, durationSeconds=0, missingReason=None,
+            upgradeResource="Elixir", upgradeCost=100,
+            requiredTownHallLevel=None, requiredLaboratoryLevel=None,
+            icon=None, levelVisual=None,
+        )],
+    )
+    catalog = Catalog(schemaVersion=1, gameVersion="18.400.13", locale="zh-CN",
+                      items=[item])
+    d = tmp_path / "cat"
+    d.mkdir()
+    catalog_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False).encode("utf-8")
+    (d / "catalog.json").write_bytes(catalog_bytes)
+    (d / "icons").mkdir()
+    (d / "manifest.json").write_text(json.dumps({
+        "schemaVersion": 1, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
+        "generatedFiles": [
+            {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
+             "size": len(catalog_bytes)},
+            {"path": "icons/", "kind": "directory"},
+        ],
+        "counts": {"items": 1, "levels": 1, "missingTime": 0, "missingIcons": 0},
+    }))
+    return d
+
+
+def _write(d: Path, *, catalog: dict | None = None, manifest: dict | None = None) -> None:
+    if catalog is not None:
+        (d / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False))
+    if manifest is not None:
+        (d / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False))
+
+
+def _load_catalog(d: Path) -> dict:
+    return json.loads((d / "catalog.json").read_text())
+
+
+def _load_manifest(d: Path) -> dict:
+    return json.loads((d / "manifest.json").read_text())
+
+def _write_with_hash(d: Path, *, catalog: dict | None = None, manifest: dict | None = None) -> None:
+    """写文件后同步更新 manifest 的 generatedFiles 哈希（篡改 catalog 的测试用）。"""
+    import hashlib
+    if catalog is not None:
+        (d / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False))
+    if manifest is not None:
+        (d / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False))
+    m = json.loads((d / "manifest.json").read_text())
+    data = (d / "catalog.json").read_bytes()
+    for entry in m.get("generatedFiles", []):
+        if entry.get("path") == "catalog.json":
+            entry["sha256"] = "sha256:" + hashlib.sha256(data).hexdigest()
+            entry["size"] = len(data)
+    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False))
+
+
+
+# ---- 结构存在性 / 可解析性 ----
+
+def test_validate_ok(tmp_path):
+    assert validate_catalog(_valid_dir(tmp_path)) == []
+
+
+def test_validate_missing_manifest(tmp_path):
+    d = _valid_dir(tmp_path)
+    (d / "manifest.json").unlink()
+    errors = validate_catalog(d)
+    assert any("manifest" in e for e in errors)
+
+
+def test_validate_missing_catalog(tmp_path):
+    d = _valid_dir(tmp_path)
+    (d / "catalog.json").unlink()
+    errors = validate_catalog(d)
+    assert any("catalog" in e for e in errors)
+
+
+def test_validate_unparseable_manifest(tmp_path):
+    d = _valid_dir(tmp_path)
+    (d / "manifest.json").write_text("{not json")
+    errors = validate_catalog(d)
+    assert any("解析失败" in e for e in errors)
+
+
+def test_validate_unparseable_catalog(tmp_path):
+    d = _valid_dir(tmp_path)
+    (d / "catalog.json").write_text("[1,2")
+    errors = validate_catalog(d)
+    assert any("解析失败" in e for e in errors)
+
+
+def test_validate_manifest_invalid_utf8(tmp_path):
+    """I1 回归：manifest 为非法 UTF-8 时返回错误而非裸抛 UnicodeDecodeError。"""
+    d = _valid_dir(tmp_path)
+    (d / "manifest.json").write_bytes(b"\xff\xfe\x00{not valid utf-8}")
+    errors = validate_catalog(d)
+    assert any("解析失败" in e for e in errors)
+
+
+def test_validate_catalog_malformed_level_type(tmp_path):
+    """I2 回归：畸形但可解析（"level": "1" 字符串）→ 返回 '内容非法' 而非抛 TypeError。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["level"] = "1"
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert len(errors) == 1 and "内容非法" in errors[0]
+
+
+def test_validate_catalog_icon_wrong_type(tmp_path):
+    """I7 回归：icon: 5（非 dict）→ 返回 error 列表而非裸 AttributeError/TypeError。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = 5
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert errors and "解析失败" in errors[0]
+    assert not any("Traceback" in e for e in errors)
+
+
+def test_validate_catalog_levelvisual_wrong_type(tmp_path):
+    """I7 回归：levelVisual: "x"（非 dict）→ error 列表而非崩溃。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levelVisual"] = "x"
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert errors and "解析失败" in errors[0]
+
+
+def test_validate_catalog_icon_list_type(tmp_path):
+    """I7 回归：icon: [1,2]（list）→ error 列表而非崩溃。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = [1, 2]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert errors and "解析失败" in errors[0]
+
+
+def test_validate_manifest_top_level_list(tmp_path):
+    """I7 回归：manifest 顶层为 list → error 列表而非裸 AttributeError。"""
+    d = _valid_dir(tmp_path)
+    (d / "manifest.json").write_text(json.dumps([1, 2, 3]))
+    errors = validate_catalog(d)
+    assert errors and ("解析失败" in errors[0] or "顶层" in errors[0])
+
+
+# ---- 版本一致性 ----
+
+def test_validate_game_version_mismatch(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["gameVersion"] = "18.400.12"
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("gameVersion" in e for e in errors)
+
+
+def test_validate_locale_mismatch(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["locale"] = "en-US"
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("locale" in e for e in errors)
+
+
+def test_validate_schema_version_mismatch_manifest(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["schemaVersion"] = 2
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("schemaVersion" in e for e in errors)
+
+
+def test_validate_schema_version_mismatch_catalog(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["schemaVersion"] = 2
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("schemaVersion" in e for e in errors)
+
+
+# ---- sourceFingerprint ----
+
+def test_validate_fingerprint_wrong_prefix(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["sourceFingerprint"] = "md5:" + "a" * 64
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("sourceFingerprint" in e for e in errors)
+
+
+def test_validate_fingerprint_non_hex(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["sourceFingerprint"] = "sha256:" + "z" * 64
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("sourceFingerprint" in e for e in errors)
+
+
+def test_validate_fingerprint_short(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["sourceFingerprint"] = "sha256:" + "a" * 63
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("sourceFingerprint" in e for e in errors)
+
+
+# ---- 主键唯一性 / 等级 ----
+
+def test_validate_duplicate_dataid(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"].append(dict(c["items"][0]))
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("dataID" in e for e in errors)
+
+
+def test_validate_duplicate_section_key(tmp_path):
+    """同 dataID 不同 section 不算重复主键（(section, dataID) 复合键）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    dup = json.loads(json.dumps(c["items"][0]))
+    dup["section"] = "buildings"
+    c["items"].append(dup)
+    _write_with_hash(d, catalog=c)
+    m = _load_manifest(d)
+    m["counts"] = {"items": 2, "levels": 2, "missingTime": 0, "missingIcons": 0}
+    _write(d, manifest=m)
+    assert validate_catalog(d) == []
+
+
+def test_validate_levels_not_strictly_ascending(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    item = c["items"][0]
+    lv = item["levels"][0]
+    item["levels"] = [dict(lv, level=3), dict(lv, level=3)]
+    item["maxLevel"] = 3
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("升序" in e for e in errors)
+
+
+def test_validate_maxlevel_mismatch(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["maxLevel"] = 5
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("maxLevel" in e for e in errors)
+
+
+# ---- durationSeconds ⟺ missingReason ----
+
+def test_validate_duration_null_requires_reason(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"] = [{
+        "level": 1, "durationSeconds": None, "missingReason": None,
+        "upgradeResource": None, "upgradeCost": None,
+        "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
+        "icon": None, "levelVisual": None,
+    }]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("missingReason" in e for e in errors)
+
+
+def test_validate_duration_set_with_reason_rejected(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["missingReason"] = "time_missing"
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("missingReason" in e for e in errors)
+
+
+def test_validate_unknown_missing_reason(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["missingReason"] = "some_future_reason"
+    c["items"][0]["levels"][0]["durationSeconds"] = None
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("未知 missingReason" in e for e in errors)
+
+
+# ---- missingReason 跨域污染（I3 回归）：level/base/item/asset 词表互不混用 ----
+
+def test_validate_level_reason_cross_domain_rejected(tmp_path):
+    """level 上写 base 域 reason（capital_has_no_base）→ 拒绝。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    lv = c["items"][0]["levels"][0]
+    lv["durationSeconds"] = None
+    lv["missingReason"] = "capital_has_no_base"
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("未知 missingReason" in e for e in errors)
+
+
+def test_validate_item_reason_cross_domain_rejected(tmp_path):
+    """item 上写 level 域 reason（time_missing）→ 拒绝。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["missingReason"] = "time_missing"
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("item.missingReason" in e for e in errors)
+
+
+def test_validate_asset_reason_cross_domain_rejected(tmp_path):
+    """AssetRef.icon 上写 level 域 reason（time_missing）→ 拒绝。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = {
+        "container": "sc/ui.sc", "exportName": "icon_x",
+        "renderedPath": None, "missingReason": "time_missing",
+    }
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("icon.missingReason" in e for e in errors)
+
+
+def test_validate_asset_reason_asset_domain_ok(tmp_path):
+    """AssetRef 用 asset 域 reason（icons_not_rendered）→ 通过。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = {
+        "container": "sc/ui.sc", "exportName": "icon_x",
+        "renderedPath": None, "missingReason": "icons_not_rendered",
+    }
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []
+
+
+def test_validate_negative_duration(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["durationSeconds"] = -1
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("负" in e for e in errors)
+
+
+# ---- base ⟺ baseMissingReason（capital 表）----
+
+def test_validate_base_null_requires_reason(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    item = c["items"][0]
+    item["base"] = None
+    item["baseMissingReason"] = None
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("baseMissingReason" in e for e in errors)
+
+
+def test_validate_base_set_with_reason_rejected(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["baseMissingReason"] = "capital_has_no_base"
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("baseMissingReason" in e for e in errors)
+
+
+def test_validate_capital_item_ok(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    item = c["items"][0]
+    item["section"] = "capital_buildings"
+    item["category"] = "capitalBuildings"
+    item["base"] = None
+    item["baseMissingReason"] = "capital_has_no_base"
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []
+
+
+def test_validate_unknown_base_missing_reason(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    item = c["items"][0]
+    item["base"] = None
+    item["baseMissingReason"] = "no_such_reason"
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("baseMissingReason" in e for e in errors)
+
+
+# ---- counts 与内容重算一致 ----
+
+def test_validate_counts_items_mismatch(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"]["items"] = 2
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.items" in e for e in errors)
+
+
+def test_validate_counts_missingtime_mismatch(tmp_path):
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"] = [{
+        "level": 1, "durationSeconds": None, "missingReason": "time_missing",
+        "upgradeResource": None, "upgradeCost": None,
+        "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
+        "icon": None, "levelVisual": None,
+    }]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("counts.missingTime" in e for e in errors)
+
+
+def test_validate_counts_missing_entirely(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    del m["counts"]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts" in e for e in errors)
+
+
+def test_catalog_invariants_alias(tmp_path):
+    from game_catalog.validate import catalog_invariants
+    assert catalog_invariants(_valid_dir(tmp_path)) == []
+
+
+def test_validate_generated_files_hash_mismatch_detected(tmp_path):
+    """P1-1 回归：篡改 catalog.json 后 generatedFiles 哈希不一致必须报错。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"] = [{
+        "level": 1, "durationSeconds": 999999, "missingReason": None,
+        "upgradeResource": None, "upgradeCost": None,
+        "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
+        "icon": None, "levelVisual": None,
+    }]
+    _write(d, catalog=c)  # 篡改后不更新 manifest 的 generatedFiles sha256
+    errors = validate_catalog(d)
+    assert any("哈希不一致" in e for e in errors)
+
+
+def test_validate_generated_files_missing_file_detected(tmp_path):
+    d = _valid_dir(tmp_path)
+    (d / "catalog.json").unlink()
+    errors = validate_catalog(d)
+    assert any("catalog.json 不存在" in e for e in errors)
+
+
+def test_validate_generated_files_missing_icons_dir_detected(tmp_path):
+    d = _valid_dir(tmp_path)
+    import shutil
+    shutil.rmtree(d / "icons")
+    errors = validate_catalog(d)
+    assert any("icons" in e and "目录不存在" in e for e in errors)
+
+
+def test_validate_generated_files_sha256_correct_passes(tmp_path):
+    """未篡改时 generatedFiles 校验通过（用真实哈希写 manifest）。"""
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(), "size": len(data)},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    assert validate_catalog(d) == []
+
+
+def test_validate_generated_files_size_missing_rejected(tmp_path):
+    """P1 回归：删除 generatedFiles[].size → 必须拒绝（size 必填）。"""
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest()},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("size 缺失或非法" in e for e in errors)
+
+
+def test_validate_generated_files_size_non_int_rejected(tmp_path):
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+         "size": "123"},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("size 缺失或非法" in e for e in errors)
+
+
+def test_validate_generated_files_size_negative_rejected(tmp_path):
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+         "size": -1},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("size 缺失或非法" in e for e in errors)
+
+
+def test_validate_generated_files_size_wrong_rejected(tmp_path):
+    import hashlib
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    data = (d / "catalog.json").read_bytes()
+    m["generatedFiles"] = [
+        {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+         "size": len(data) + 1},
+        {"path": "icons/", "kind": "directory"},
+    ]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("大小不一致" in e for e in errors)

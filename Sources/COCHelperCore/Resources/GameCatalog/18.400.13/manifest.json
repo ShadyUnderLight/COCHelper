@@ -1,0 +1,25 @@
+{
+  "buildTag": "18_400_7",
+  "counts": {
+    "items": 683,
+    "levels": 5479,
+    "missingIcons": 3445,
+    "missingTime": 3308
+  },
+  "gameVersion": "18.400.13",
+  "generatedFiles": [
+    {
+      "path": "catalog.json",
+      "sha256": "sha256:ca4fbf1a164115c7208a592395a601f0db124efdd2b6b9c501d4a9343e32052f",
+      "size": 2938231
+    },
+    {
+      "entries": 0,
+      "kind": "directory",
+      "path": "icons/"
+    }
+  ],
+  "locale": "zh-CN",
+  "schemaVersion": 1,
+  "sourceFingerprint": "sha256:30be1e6b9ee7456e35262c04249b2d5ef20021b5eb795e40d1a1dcfee7300c6f"
+}

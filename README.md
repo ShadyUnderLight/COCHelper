@@ -41,6 +41,58 @@ open .build/COCHelper.app
 2. 如果后续 JSON 提供明确的目标等级或队列字段，再补充原始字段映射，不从数组顺序猜测。
 3. 为 tracker 增加导入历史和按类别筛选，但继续保持快照来源边界。
 
+## Tools：APK 静态升级目录（issue #13）
+
+`Tools/game_catalog/` 从 APK 生成版本化的静态升级目录（`catalog.json` + `manifest.json` + 空 `icons/`），
+落库于 `Sources/COCHelperCore/Resources/GameCatalog/<版本>/`。生成与校验均零第三方运行时依赖
+（Python stdlib），测试用 pytest + hypothesis。
+
+生成（输出目录必须为空，非空报错不自动清理）：
+
+```bash
+python3 Tools/generate_game_catalog.py \
+  --apk /Users/lmz/Downloads/base.apk.1 \
+  --game-version 18.400.13 \
+  --output Sources/COCHelperCore/Resources/GameCatalog/18.400.13
+```
+
+校验与全量测试：
+
+```bash
+python3 Tools/validate_game_catalog.py --catalog Sources/COCHelperCore/Resources/GameCatalog/18.400.13
+python3 -m pytest Tools/tests -q
+```
+
+- **`--game-version` 语义**：APK 内不含版本字符串，必须显式传入（如 `18.400.13`）；不传时默认从
+  `assets/build.tag` 推断（`18_400_7` → `18.400.7`）。生成器写盘前自检，失败不落盘；输出确定性
+  （无时间戳，重复生成字节一致）。
+- **缺表 fail loud**：APK 缺任何注册表或 `upgrade_data.csv` 时生成直接失败（不产出部分/空目录）；
+  输出目录非空也拒绝（不自动清理）。
+- **行语义**：建筑/陷阱表行 N = "升级到 N 级"；单位/法术/英雄/宠物/守护者表行 N = "从 N 升到
+  N+1"，升级属性映射到下一等级（最低等级 = 初始，`durationSeconds` null +
+  `min_level_initial_no_upgrade`）。等级号保留源表原始值（战斗直升机 15..35、超级野蛮人 5..13）。
+  时间列空值 = 0，不做 forward-fill（只有标识列继承）。
+- **边界**：不渲染图标（`renderedPath` 恒为 null + `icons_not_rendered`）；不编造缺失时长
+  （用 `missingReason` 枚举标记：`time_missing`/`time_invalid`/`upgrade_data_missing`/`no_time_source`，
+  `'0'` 是真实值不是缺失）；**不改** `Tools/generate_account_name_catalog.py`；dataID 段与名称目录
+  对齐（heroes/pets/equipment/guardians 集成测试对拍，heroes 按 VillageType 分流 heroes/heroes2，
+  legacy 把全部英雄冗余写入两段）。
+- **capital 与 Swift 合同**：部落都城条目使用 `capital_buildings`/`capital_traps`/`capital_characters`/
+  `capital_spells` section 和 `capitalBuildings`/`capitalTraps`/`capitalTroops`/`capitalSpells`
+  category，`base` 为 null + `capital_has_no_base`。**当前 Swift `TrackerCategory` 尚无这些
+  rawValue**（`from(section:)` 对 `capital_*` 返回 nil）——这是 #14 消费端的扩展点，本 Issue
+  不改 Swift。
+- **校验器**：`validate_game_catalog.py` 除结构/语义不变量外，还重算 `generatedFiles` 中
+  catalog.json 的 sha256/size 并检查 `icons/` 目录存在（篡改检出）。
+- **集成测试**：真实 APK 集成测试默认用 `/Users/lmz/Downloads/base.apk.1`；其他机器可通过环境变量
+  `COC_APK_PATH` 指定，未设置且路径不存在时自动 skip。
+- **已知问题（SwiftPM 资源）**：SPM `.process("Resources")` 会把资源目录**拍平**到 bundle 根部
+  （`GameCatalog/18.400.13/catalog.json` → bundle 根 `catalog.json`），且多个版本目录存在同名文件
+  时构建报 `multiple resources named 'catalog.json'`。当前仅一个版本目录可正常打包；将来落第二个
+  版本时需先解决（如按版本重命名文件名），消费端 #14 按文件名经 `Bundle.module` 读取。
+  `icons/` 以 `.gitkeep` 占位跟踪。
+
+
 ## API 连接（阶段一：连通性 smoke）
 
 本地版本支持可选接入 Clash of Clans 官方 API，用于验证凭证、IP 白名单与网络连通性。当前只提供 `/v1/locations` 探测，不解析玩家数据，不投影到 UI。

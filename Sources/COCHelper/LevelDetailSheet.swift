@@ -121,7 +121,10 @@ struct LevelDetailSheet: View {
 
     private func levelRow(_ level: CatalogLevel) -> some View {
         let isCurrent = item.currentLevel == level.level
-        let isNext = item.nextLevel == level.level
+        // 升级中：item.nextLevel（投影显式推断）；非升级未满级：currentLevel + 1
+        // （与 UpgradeDisplayRow.durationLabel 的「下一级 Lv N」推导同规则）。
+        let effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })
+        let isNext = effectiveNext == level.level
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {

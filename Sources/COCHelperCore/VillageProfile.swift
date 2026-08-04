@@ -52,4 +52,21 @@ public struct VillageProfile: Identifiable, Codable, Hashable, Sendable {
     public var hasImportedData: Bool {
         accountSnapshot != nil
     }
+
+    /// 应用一个新的导入快照；若账号 tag 变化（含变为缺失），官方数据不再适用于
+    /// 本村庄，必须重置，避免在详情中展示旧账号的官方资料。
+    public mutating func applyImportedSnapshot(_ snapshot: AccountSnapshot) {
+        let tagChanged = OfficialPlayerTagValidator.normalized(tag)
+            != OfficialPlayerTagValidator.normalized(snapshot.tag)
+        accountSnapshot = snapshot
+        if tagChanged {
+            officialAPIState = nil
+        }
+    }
+
+    /// 异步刷新结果写回前的竞态校验：发起请求时的 tag 必须仍与当前村庄匹配。
+    /// tag 变化（重导入/清除快照）后，过期请求的结果必须丢弃。
+    public func officialStateMatchesTag(at requestTimeTag: String?) -> Bool {
+        officialTag == requestTimeTag
+    }
 }

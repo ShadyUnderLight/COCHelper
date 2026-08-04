@@ -297,9 +297,10 @@ public struct PlayerLabel: Codable, Hashable, Sendable {
 }
 
 public struct PlayerHouse: Codable, Hashable, Sendable {
-    public let elements: [PlayerHouseElement]
+    /// optional：官方可能返回空对象（`{"playerHouse":{}}`），此时视为部分字段缺失而非 malformed。
+    public let elements: [PlayerHouseElement]?
 
-    public init(elements: [PlayerHouseElement]) {
+    public init(elements: [PlayerHouseElement]?) {
         self.elements = elements
     }
 }

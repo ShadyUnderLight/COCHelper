@@ -209,7 +209,8 @@ final class AppModel: ObservableObject {
             targetIndex = villages.count - 1
         }
 
-        villages[targetIndex].accountSnapshot = snapshot
+        // tag 变化时自动重置官方数据（applyImportedSnapshot 内部处理）。
+        villages[targetIndex].applyImportedSnapshot(snapshot)
         if villages[targetIndex].name.hasPrefix("村庄 ") || villages[targetIndex].name == "未命名村庄" {
             villages[targetIndex].name = normalizedTag(snapshot.tag) ?? villages[targetIndex].name
         }
@@ -233,6 +234,10 @@ final class AppModel: ObservableObject {
         pendingAccountSnapshot = nil
         accountImportError = nil
         importText = ""
+        // 清除本地快照后官方数据（原账号）不再适用于本村庄，一并重置。
+        if let index = villages.firstIndex(where: { $0.id == selectedVillageID }) {
+            villages[index].officialAPIState = nil
+        }
         persistVillages()
     }
 
@@ -246,10 +251,12 @@ final class AppModel: ObservableObject {
         officialRefreshSummary = nil
 
         let village = villages[index]
+        let expectedTag = village.officialTag
         Task { [weak self] in
             guard let self else { return }
             let state = await self.refresher.refresh(village: village)
-            self.applyOfficialState(state, to: village.id)
+            // 竞态防护：刷新期间账号若已变化（重导入/清除），丢弃过期结果。
+            _ = self.applyOfficialState(state, to: village.id, expectedTag: expectedTag)
             self.persistVillages()
             self.isRefreshingOfficialData = false
         }
@@ -262,11 +269,16 @@ final class AppModel: ObservableObject {
         officialRefreshSummary = nil
 
         let villages = self.villages
+        // 记录发起请求时各村庄的 tag，用于写回竞态校验。
+        var tagByID: [UUID: String] = [:]
+        for village in villages {
+            tagByID[village.id] = village.officialTag
+        }
         Task { [weak self] in
             guard let self else { return }
             let states = await self.refresher.refreshAll(villages: villages)
             for (id, state) in states {
-                self.applyOfficialState(state, to: id)
+                self.applyOfficialState(state, to: id, expectedTag: tagByID[id])
             }
             let successCount = states.values.filter { $0.status == .success }.count
             let skippedCount = states.values.filter { $0.status == .skipped }.count
@@ -279,13 +291,17 @@ final class AppModel: ObservableObject {
     }
 
     /// 纯内存状态更新；调用方负责在合适的时机持久化。
-    private func applyOfficialState(_ state: OfficialAPIState, to villageID: UUID) {
-        guard let index = villages.firstIndex(where: { $0.id == villageID }) else { return }
+    /// 若村庄当前 tag 与发起请求时不一致（账号已变化），丢弃过期结果并返回 false。
+    @discardableResult
+    private func applyOfficialState(_ state: OfficialAPIState, to villageID: UUID, expectedTag: String?) -> Bool {
+        guard let index = villages.firstIndex(where: { $0.id == villageID }) else { return false }
+        guard villages[index].officialStateMatchesTag(at: expectedTag) else { return false }
         villages[index].officialAPIState = state
         villages[index].updatedAt = Date()
         if selectedVillageID == villageID {
             officialRefreshSummary = nil
         }
+        return true
     }
 
     private func load(_ village: VillageProfile, importText: String? = nil) {

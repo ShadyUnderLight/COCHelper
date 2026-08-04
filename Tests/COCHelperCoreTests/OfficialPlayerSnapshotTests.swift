@@ -67,8 +67,8 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.labels?.first?.id, 57000023)
 
         // 玩家小屋
-        XCTAssertEqual(snapshot.playerHouse?.elements.count, 2)
-        XCTAssertEqual(snapshot.playerHouse?.elements.first?.type, "ground")
+        XCTAssertEqual(snapshot.playerHouse?.elements?.count, 2)
+        XCTAssertEqual(snapshot.playerHouse?.elements?.first?.type, "ground")
 
         // 单位与装备
         XCTAssertEqual(snapshot.troops?.count, 3)
@@ -145,6 +145,35 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
         let snapshot = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: json)
         XCTAssertEqual(snapshot.tag, "#UNKNOWN")
         XCTAssertEqual(snapshot.unrecognizedKeys.sorted(), ["anotherUnknown", "weirdFutureField"])
+    }
+
+    // MARK: - 部分响应容忍（P2 修复）
+
+    func testDecodesPlayerHouseWithMissingElements() throws {
+        // elements 缺失/为空对象时仍应解码成功（与"部分字段缺失不破坏解码"契约一致）。
+        let json = """
+        {
+          "tag": "#HOUSE",
+          "playerHouse": {}
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: json)
+        XCTAssertEqual(snapshot.tag, "#HOUSE")
+        XCTAssertEqual(snapshot.playerHouse?.elements, nil)
+    }
+
+    func testDecodesPlayerHouseWithElements() throws {
+        let json = """
+        {
+          "tag": "#HOUSE",
+          "playerHouse": { "elements": [ { "id": 59000000, "type": "ground", "level": 1 } ] }
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: json)
+        XCTAssertEqual(snapshot.playerHouse?.elements?.count, 1)
+        XCTAssertEqual(snapshot.playerHouse?.elements?.first?.type, "ground")
     }
 
     // MARK: - Codable round-trip（持久化可编码）

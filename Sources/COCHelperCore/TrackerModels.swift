@@ -76,7 +76,8 @@ public enum TrackerCategory: String, CaseIterable, Codable, Hashable, Identifiab
         }
     }
 
-    fileprivate static func from(section: String) -> TrackerCategory? {
+    /// 快照 section 名 → 追踪类别；未知类别返回 nil。
+    public static func from(section: String) -> TrackerCategory? {
         switch section.hasSuffix("2") ? String(section.dropLast()) : section {
         case "buildings": .buildings
         case "traps": .traps

@@ -42,8 +42,8 @@ public struct CoAPIClient: Sendable {
         self.tokenProvider = tokenProvider
     }
 
-    public func request(path: String) async throws -> Data {
-        let url = CoAPIURLBuilder.endpoint(config: config, path: path)
+    public func request(path: String, queryItems: [URLQueryItem]? = nil) async throws -> Data {
+        let url = CoAPIURLBuilder.endpoint(config: config, path: path, queryItems: queryItems)
         // Guard against a misconfigured negative retry count: a `0...(-1)`
         // closed range would trap at runtime.
         let maxRetries = max(0, config.maxRetryCount)
@@ -172,6 +172,72 @@ public struct CoAPIClient: Sendable {
             throw CoAPIError.malformedResponse(detail: "clan war decode failed")
         } catch {
             throw CoAPIError.malformedResponse(detail: "clan war decode failed")
+        }
+    }
+
+    /// 拉取官方部落战争日志（分页）。`after`/`before` 为官方游标
+    /// （来自上一页响应的同名字段）；`limit` 可选（不传用官方默认，
+    /// 不写死官方上限数值）。游标值由 URLBuilder percent-encode。
+    /// 战争日志不公开的部落会返回 403（调用方需显式呈现"不公开"状态）。
+    public func fetchWarLog(
+        tag: String,
+        after: String? = nil,
+        before: String? = nil,
+        limit: Int? = nil
+    ) async throws -> OfficialPaginatedPage<OfficialWarLogEntry> {
+        try await fetchPaginated(
+            path: "/clans/\(tag)/warlog",
+            after: after, before: before, limit: limit,
+            failurePrefix: "war log decode failed"
+        )
+    }
+
+    /// 拉取官方部落资本赛季（分页）。语义与 `fetchWarLog` 一致。
+    public func fetchCapitalRaidSeasons(
+        tag: String,
+        after: String? = nil,
+        before: String? = nil,
+        limit: Int? = nil
+    ) async throws -> OfficialPaginatedPage<OfficialCapitalRaidSeason> {
+        try await fetchPaginated(
+            path: "/clans/\(tag)/capitalraidseasons",
+            after: after, before: before, limit: limit,
+            failurePrefix: "capital raid decode failed"
+        )
+    }
+
+    /// 分页端点通用请求：组装 query（空游标/limit 不加参数）→ 请求 → 解码。
+    ///
+    /// 游标值**不做预编码**：`URLComponents` 会按 RFC 3986 生成合法 query
+    /// （值内 `=` 编码防破坏 key=value 结构；`/` `+` 等 sub-delim 保留，
+    /// 服务端按字面解析——与 path 段的 `%23` 编码同理，传原始值）。
+    private func fetchPaginated<Item: Codable>(
+        path: String,
+        after: String?,
+        before: String?,
+        limit: Int?,
+        failurePrefix: String
+    ) async throws -> OfficialPaginatedPage<Item> {
+        var queryItems: [URLQueryItem] = []
+        if let after {
+            queryItems.append(URLQueryItem(name: "after", value: after))
+        }
+        if let before {
+            queryItems.append(URLQueryItem(name: "before", value: before))
+        }
+        if let limit {
+            queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        let data = try await request(path: path, queryItems: queryItems)
+        do {
+            return try JSONDecoder().decode(OfficialPaginatedPage<Item>.self, from: data)
+        } catch let error as DecodingError {
+            if let path = decodingPath(of: error) {
+                throw CoAPIError.malformedResponse(detail: "\(failurePrefix): \(path)")
+            }
+            throw CoAPIError.malformedResponse(detail: failurePrefix)
+        } catch {
+            throw CoAPIError.malformedResponse(detail: failurePrefix)
         }
     }
 

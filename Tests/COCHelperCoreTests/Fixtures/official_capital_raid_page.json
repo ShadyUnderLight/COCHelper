@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "state": "ended",
+      "startTime": "20260701T080000.000Z",
+      "endTime": "20260703T080000.000Z",
+      "capitalTotalLoot": 123456,
+      "raidsCompleted": 6,
+      "totalAttacks": 60,
+      "enemyDistrictsDestroyed": 120,
+      "offensiveReward": 5000,
+      "defensiveReward": 2500,
+      "attackLog": [],
+      "defenseLog": []
+    },
+    {
+      "state": "ended",
+      "startTime": "20260624T080000.000Z",
+      "endTime": "20260626T080000.000Z",
+      "capitalTotalLoot": 98000,
+      "raidsCompleted": 5,
+      "totalAttacks": 58,
+      "enemyDistrictsDestroyed": 110,
+      "offensiveReward": 4500,
+      "defensiveReward": 2000
+    }
+  ],
+  "paging": {
+    "cursors": {
+      "before": "RAIDCURSORBEFORE1",
+      "after": "RAIDCURSORAFTER1"
+    }
+  }
+}

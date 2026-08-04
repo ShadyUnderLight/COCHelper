@@ -12,11 +12,19 @@ public enum CoAPIURLBuilder {
     /// never contains a bare `#` (which would otherwise be parsed as a fragment
     /// delimiter).
     ///
+    /// `queryItems`（可选，分页端点使用）由 `URLComponents` 自动做
+    /// percent-encoding（游标值可能含 `/+=` 等字符）。`#` 在 query 值中也会
+    /// 被编码，不会截断 query。
+    ///
     /// Limitation: `.` and `..` segments are preserved as-is (no normalization).
     /// Current callers only pass fixed internal paths or COC tags (alphabet
     /// `[A-Z0-9#]`, which cannot contain `.`), so there is no injection surface.
     /// If external path input is ever accepted, normalize `..` first.
-    public static func endpoint(config: CoAPIConfig, path: String) -> URL {
+    public static func endpoint(
+        config: CoAPIConfig,
+        path: String,
+        queryItems: [URLQueryItem]? = nil
+    ) -> URL {
         var components = URLComponents()
         components.scheme = config.scheme
         components.host = config.host
@@ -29,6 +37,10 @@ public enum CoAPIURLBuilder {
         let versionedPath = "/" + config.apiVersion
             + (encodedSegments.isEmpty ? "" : "/" + encodedSegments.joined(separator: "/"))
         components.percentEncodedPath = versionedPath
+
+        if let queryItems, !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
 
         guard let url = components.url else {
             preconditionFailure("CoAPIURLBuilder could not build a URL for path: \(path)")

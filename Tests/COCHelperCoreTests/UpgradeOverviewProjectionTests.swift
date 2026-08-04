@@ -537,34 +537,9 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
 
     // MARK: - overviewRecords（单趟投影）
 
-    func testOverviewRecordsMatchesIndividualMethods() throws {
-        // 单趟投影 API：一次 allRecords 后 split，输出必须与两个独立方法完全一致
-        // （元素逐一相等），供 UI 60s tick 复用同一份投影结果。
-        let village = makeVillage(objectSections: [
-            "buildings": [
-                // 升级中：进 active
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
-                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
-                // 计时已结束：进 pending
-                makeItem(section: "buildings", dataID: 1_000_001, level: 2,
-                         timerSeconds: 600, remainingSeconds: 0, path: "1"),
-                // 普通完成（无计时）：两者都不进
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "2"),
-            ],
-            "units": [
-                makeItem(section: "units", dataID: 4_000_000, level: 2,
-                         timerSeconds: 3600, remainingSeconds: 0, path: "3"),
-            ],
-        ])
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let combined = UpgradeOverviewProjection.overviewRecords(
-            from: [village], catalog: syntheticCatalog, at: now
-        )
-        XCTAssertEqual(combined.active, activeRecords([village], catalog: syntheticCatalog, at: now),
-                       "overviewRecords.active 必须与 activeRecords 输出逐一相等")
-        XCTAssertEqual(combined.pending, pendingReimportRecords([village], catalog: syntheticCatalog, at: now),
-                       "overviewRecords.pending 必须与 pendingReimportRecords 输出逐一相等")
-    }
+    // 注意：不再断言 overviewRecords 与 activeRecords/pendingReimportRecords 的等价性——
+    // 后两者实现上就是委托 overviewRecords 取字段（同义反复，零验证力）。
+    // active/pending 各自的行为与互斥已由上方专门测试及 property 测试覆盖。
 
     func testOverviewRecordsActiveAndPendingAreDisjoint() throws {
         let village = makeVillage(objectSections: [

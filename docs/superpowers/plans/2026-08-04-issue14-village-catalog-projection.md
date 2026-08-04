@@ -4,7 +4,7 @@
 
 **Goal:** 新增版本化静态目录读取器 `GameCatalog` 与村庄投影层 `VillageCatalogProjection`，把账号快照与 APK 静态目录 join，产出含名称/完整时长/上限/图标/状态的项目视图。
 
-**Architecture:** 两个纯数据层文件，不触碰现有解码/排序/UI。`GameCatalog` 解码仓库内 `Sources/COCHelperCore/GameCatalog/18.400.13/catalog.json`（683 items / 5479 levels），建 `(section, dataID)` 索引并封装时长查询。`VillageCatalogProjection` 把 `AccountSnapshot` 与目录 join，按 `(section, dataID, level)` 聚合非升级记录（升级记录各自保留），输出状态枚举与诊断。
+**Architecture:** 两个纯数据层文件，不触碰现有解码/排序/UI。`GameCatalog` 解码仓库内 `Sources/COCHelperCore/GameCatalog/18.400.13/catalog.json`（683 items / 5479 levels），建 `(section, dataID)` 索引并封装时长查询。`VillageCatalogProjection` 把 `AccountSnapshot` 与目录 join，按 `(section, dataID, level, isNested)` 聚合非升级记录（升级记录各自保留），输出状态枚举与诊断。
 
 **Tech Stack:** Swift 6, swift-tools 6.0, swift-testing-free XCTest（沿用现有 XCTest 风格），无外部依赖。
 
@@ -187,7 +187,7 @@ public struct VillageCatalogProjection: Sendable {
     /// - 投影规则：
     ///   1. 只处理快照中出现的记录（含嵌套 types/modules）；
     ///   2. join 键 `(section, dataID)`，命中后校验 `catalog.base` 与投影 base 一致；
-    ///   3. 同 `(section, dataID, currentLevel)` 的非升级记录合并为一条并聚合 count；
+    ///   3. 同 `(section, dataID, currentLevel, isNested)` 的非升级记录合并为一条并聚合 count；
     ///      升级记录永远各自保留（每个计时实例独立）；
     ///   4. 目录不可用/版本不匹配 → 诊断 warning；join 未命中 → status `.unknown` + missingReason；
     ///      类别不支持 → `.unavailable`；

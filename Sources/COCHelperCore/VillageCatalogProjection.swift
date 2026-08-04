@@ -284,9 +284,9 @@ public struct VillageCatalogProjection: Sendable {
 
     // MARK: - Aggregation
 
-    /// 同 `(section, dataID, currentLevel)` 的非升级记录合并为一条并聚合 count；
+    /// 同 `(section, dataID, currentLevel, isNested)` 的非升级记录合并为一条并聚合 count；
     /// 升级记录各自保留（每个计时实例独立）。count 聚合规则：nil 计 1
-    /// （一条快照记录 = 至少一个实例）。
+    /// （一条快照记录 = 至少一个实例）。isNested 参与分组，父项与嵌套项不合并。
     private static func aggregate(_ records: [VillageItemState]) -> [VillageItemState] {
         var result: [VillageItemState] = []
         var upgradingKeys = Set<String>()

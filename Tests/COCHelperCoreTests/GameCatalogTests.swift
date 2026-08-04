@@ -84,6 +84,30 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertEqual(barbarian.maxLevel, 13)
     }
 
+    // MARK: - AssetRef
+
+    func testAssetRefIsRenderableTruthTable() throws {
+        // P2-2：isRenderable 真值表——renderedPath 存在且无 missingReason 才可渲染。
+        // 当前 bundled 目录（18.400.13）所有 icon ref 均为 icons_not_rendered
+        // （renderedPath nil）→ 全部 false；#13 图标管线产出真实渲染图后为 true。
+        func ref(renderedPath: String?, missingReason: String?) -> CatalogAssetRef {
+            CatalogAssetRef(
+                container: nil,
+                exportName: nil,
+                renderedPath: renderedPath,
+                missingReason: missingReason
+            )
+        }
+        XCTAssertTrue(ref(renderedPath: "icons/barbarian.png", missingReason: nil).isRenderable,
+                      "renderedPath 存在且无缺失原因 → 可渲染")
+        XCTAssertFalse(ref(renderedPath: nil, missingReason: nil).isRenderable,
+                       "renderedPath 缺失 → 不可渲染")
+        XCTAssertFalse(ref(renderedPath: "icons/barbarian.png", missingReason: "icons_not_rendered").isRenderable,
+                       "有缺失原因（即使 renderedPath 存在）→ 不可渲染")
+        XCTAssertFalse(ref(renderedPath: nil, missingReason: "icons_not_rendered").isRenderable,
+                       "renderedPath 缺失且有缺失原因 → 不可渲染")
+    }
+
     // MARK: - Property-based
 
     /// 随机物品 × 随机目标等级的查表一致性（不承担语义锚点，见下两个测试）。

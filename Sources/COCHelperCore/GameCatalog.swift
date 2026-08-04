@@ -40,6 +40,13 @@ public struct CatalogAssetRef: Codable, Hashable, Sendable {
     public let exportName: String?
     public let renderedPath: String?
     public let missingReason: String?
+
+    /// 是否有可渲染的静态资源：renderedPath 存在且无缺失原因。
+    /// 当前 bundled 目录（18.400.13）所有 icon ref 均为 icons_not_rendered（renderedPath nil），
+    /// 该属性为 false；#13 图标资源管线产出真实渲染图后为 true。
+    public var isRenderable: Bool {
+        renderedPath != nil && missingReason == nil
+    }
 }
 
 // MARK: - Items

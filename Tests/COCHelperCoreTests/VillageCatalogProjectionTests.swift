@@ -454,6 +454,87 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertNil(item.nextLevel)
     }
 
+    func testMalformedTimerWithoutRemainingDoesNotBecomeNeedsReimport() throws {
+        // 回归（P2-1）：malformed 快照记录（有 timer 无 remaining：timerSeconds=600、
+        // remainingSeconds=nil）不得在聚合时被当作「计时已结束」——旧实现只检查
+        // timer 存在就把聚合项强制写成 remainingSeconds = 0，导致 UI 误报
+        // 「待重新导入确认」。聚合后必须回到普通完成状态：无 timer、无 remaining。
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 600, remainingSeconds: nil, path: "0"),
+                makeItem(section: "units", dataID: 4_000_000, level: 2, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.count, 2)
+        XCTAssertNil(item.timerSeconds, "malformed 记录不得伪造计时结束信号")
+        XCTAssertNil(item.remainingSeconds, "malformed 记录不得强制写入 remainingSeconds = 0")
+        XCTAssertFalse(item.needsReimport, "malformed 记录不得误报「待重新导入」")
+        XCTAssertEqual(item.status, .complete)
+    }
+
+    func testMixedGroupFinishedTimerWithMalformedKeepsReimportSignal() throws {
+        // 回归（P2-1 覆盖缺口，场景 d）：同键组内既有合法计时结束记录
+        // （timer=3600、remaining=0）又有 malformed 记录（有 timer 无 remaining）时，
+        // 聚合项必须保留「计时已结束」信号——组内确实存在计时结束实例，
+        // 不得因 malformed 记录参与聚合而把 needsReimport 一起吞掉。
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 3600, remainingSeconds: 0, path: "0"),
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 600, remainingSeconds: nil, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.count, 2)
+        XCTAssertNotNil(item.timerSeconds,
+                        "组内合法计时结束实例的信号不能因 malformed 记录而丢失")
+        XCTAssertEqual(item.remainingSeconds, 0)
+        XCTAssertTrue(item.needsReimport,
+                      "组内存在计时结束实例时聚合项必须报「待重新导入」")
+        XCTAssertEqual(item.status, .complete)
+        XCTAssertFalse(item.isUpgrading)
+    }
+
+    func testMixedGroupUpgradingWithMalformedStaysSeparated() throws {
+        // 回归（P2-1 覆盖缺口，场景 e）：同键组内升级记录与 malformed 记录并存时，
+        // 升级记录必须单独保留（不聚合、count 独立），malformed 记录进「|idle」组
+        // 聚合成普通完成项（无 timer、无 remaining、不报「待重新导入」）——
+        // 不得混入升级组、不得伪造升级/计时结束状态。
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2, count: 1,
+                         timerSeconds: 3600, remainingSeconds: 300, path: "0"),
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 600, remainingSeconds: nil, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 2,
+                       "升级记录与 |idle 聚合项必须各自保留")
+        let upgrading = try XCTUnwrap(home.items.first(where: \.isUpgrading))
+        XCTAssertEqual(upgrading.count, 1)
+        XCTAssertTrue(upgrading.isUpgrading)
+        XCTAssertEqual(upgrading.status, .upgrading)
+        XCTAssertEqual(upgrading.remainingSeconds, 300)
+        XCTAssertEqual(upgrading.timerSeconds, 3600)
+        XCTAssertFalse(upgrading.needsReimport)
+
+        let idle = try XCTUnwrap(home.items.first { !$0.isUpgrading })
+        XCTAssertEqual(idle.status, .complete, "malformed 记录不得混入升级组")
+        XCTAssertEqual(idle.count, 1)
+        XCTAssertNil(idle.timerSeconds, "malformed 记录不得伪造计时结束信号")
+        XCTAssertNil(idle.remainingSeconds)
+        XCTAssertFalse(idle.needsReimport, "malformed 记录不得误报「待重新导入」")
+        XCTAssertNil(idle.nextLevel)
+    }
+
     // MARK: - Property-based tests
 
     private func makeRandomSnapshot(
@@ -611,6 +692,71 @@ final class VillageCatalogProjectionTests: XCTestCase {
                                "key \(key) 聚合 count 应等于输入 (count ?? 1) 之和")
             }
         }
+    }
+
+    // MARK: - VillageItemState.assetMissingReason 谓词
+
+    /// 直接构造状态（成员初始化器，@testable 可访问），用于验证 assetMissingReason 真值表。
+    private func makeAssetState(icon: CatalogAssetRef?, levelVisual: CatalogAssetRef?) -> VillageItemState {
+        VillageItemState(
+            id: "units:0",
+            section: "units",
+            dataID: 4_000_000,
+            base: .home,
+            name: "野蛮人",
+            category: .troops,
+            currentLevel: 2,
+            count: nil,
+            timerSeconds: nil,
+            remainingSeconds: nil,
+            nextLevel: 3,
+            nextLevelDurationSeconds: 3600,
+            maxLevel: 3,
+            status: .complete,
+            missingReason: nil,
+            icon: icon,
+            levelVisual: levelVisual,
+            isNested: false
+        )
+    }
+
+    func testAssetMissingReasonTruthTable() throws {
+        // 公共谓词真值表：icon 缺失原因优先，levelVisual 兜底；两者均可用才返回 nil。
+        // 用不同的原因串区分返回值来源，验证优先级而非只看非 nil。
+        let iconMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "icon_missing_reason"
+        )
+        let levelVisualMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "level_visual_missing_reason"
+        )
+        let iconRenderable = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: "icons/barracks.png", missingReason: nil
+        )
+
+        XCTAssertEqual(
+            makeAssetState(icon: iconMissing, levelVisual: levelVisualMissing).assetMissingReason,
+            "icon_missing_reason",
+            "icon 缺失 + levelVisual 缺失 → 返回 icon 的原因（icon 优先）"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: iconMissing, levelVisual: nil).assetMissingReason,
+            "icon_missing_reason",
+            "icon 缺失 + levelVisual nil → 返回 icon 的原因"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: nil, levelVisual: levelVisualMissing).assetMissingReason,
+            "level_visual_missing_reason",
+            "icon nil + levelVisual 缺失 → 返回 levelVisual 的原因（修复核心场景）"
+        )
+        XCTAssertNil(
+            makeAssetState(icon: nil, levelVisual: nil).assetMissingReason,
+            "icon nil + levelVisual nil → nil（无缺失，不显示角标）"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: iconRenderable, levelVisual: levelVisualMissing).assetMissingReason,
+            "level_visual_missing_reason",
+            "icon 可渲染 + levelVisual 缺失 → 返回 levelVisual 的原因（icon 可渲染不代表 levelVisual 不缺失）"
+        )
     }
 
     func testPropertyEveryUpgradingRecordSurvivesProjection() throws {

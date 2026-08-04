@@ -21,15 +21,27 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var clanStates: [String: ClanAPIState] = [:]
     /// 部落刷新进行中（防重入 + UI 禁用）。
     @Published public private(set) var isRefreshingClanData = false
+    /// 部落当前战争共享数据层：clan tag → 状态（与 clan profile 独立端点、
+    /// 独立新鲜度、独立存储）。按需刷新：由用户显式触发，不做批量联动。
+    @Published public private(set) var clanWarStates: [String: ClanWarAPIState] = [:]
+    /// 战争刷新进行中（防重入 + UI 禁用）。
+    @Published public private(set) var isRefreshingClanWarData = false
 
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"
     private let villagesStorageKey = "coc-helper.villages.v1"
     private static let clanStatesStorageKey = "coc-helper.clans.v1"
+    private static let clanWarStatesStorageKey = "coc-helper.clan-wars.v1"
     private let refresher: OfficialPlayerRefresher
     private let clanRefresher: ClanRefresher
+    private let clanWarRefresher: ClanWarRefresher
 
-    public init(defaults: UserDefaults = .standard, refresher: OfficialPlayerRefresher? = nil, clanRefresher: ClanRefresher? = nil) {
+    public init(
+        defaults: UserDefaults = .standard,
+        refresher: OfficialPlayerRefresher? = nil,
+        clanRefresher: ClanRefresher? = nil,
+        clanWarRefresher: ClanWarRefresher? = nil
+    ) {
         self.defaults = defaults
         let loadedVillages = Self.loadVillages(from: defaults)
         let initialVillages: [VillageProfile]
@@ -64,7 +76,15 @@ public final class AppModel: ObservableObject {
             self.clanRefresher = ClanRefresher(client: CoAPIClient { try? store.readToken() })
         }
 
+        if let clanWarRefresher {
+            self.clanWarRefresher = clanWarRefresher
+        } else {
+            let store = KeychainTokenStore()
+            self.clanWarRefresher = ClanWarRefresher(client: CoAPIClient { try? store.readToken() })
+        }
+
         clanStates = Self.loadClanStates(from: defaults)
+        clanWarStates = Self.loadClanWarStates(from: defaults)
         villages = initialVillages
         selectedVillageID = initialVillages[0].id
         accountSnapshot = initialVillages[0].accountSnapshot
@@ -111,6 +131,12 @@ public final class AppModel: ObservableObject {
     public var currentClanState: ClanAPIState? {
         guard let tag = currentVillageClanTag else { return nil }
         return clanStates[tag]
+    }
+
+    /// 当前村庄所属部落的当前战争共享状态（nil = 无部落 / 从未请求）。
+    public var currentClanWarState: ClanWarAPIState? {
+        guard let tag = currentVillageClanTag else { return nil }
+        return clanWarStates[tag]
     }
 
     // MARK: - API Token（仅 Keychain）
@@ -417,6 +443,43 @@ public final class AppModel: ObservableObject {
     private func persistClanStates() {
         guard let data = try? JSONEncoder().encode(ClanStateStore(states: clanStates)) else { return }
         defaults.set(data, forKey: Self.clanStatesStorageKey)
+    }
+
+    // MARK: - 当前战争刷新（按需）
+
+    /// 刷新当前村庄所属部落的当前战争（按需：用户打开战争面板时显式触发；
+    /// 不做批量联动，避免启动/批量刷新时全量拉取战争请求）。
+    /// `notInWar` 是成功响应（无战争空状态），失败保留 last-good。
+    public func refreshCurrentClanWar() {
+        guard !isRefreshingClanWarData else { return }
+        guard let tag = currentVillageClanTag else { return }
+        isRefreshingClanWarData = true
+        let previous = clanWarStates
+
+        Task { [weak self] in
+            guard let self else { return }
+            let refreshed = await self.clanWarRefresher.refreshClanWars(
+                villageClanTags: [tag],
+                previous: previous
+            )
+            self.clanWarStates = ClanWarStateStore(states: self.clanWarStates)
+                .merging(refreshed).states
+            self.persistClanWarStates()
+            self.isRefreshingClanWarData = false
+        }
+    }
+
+    private func persistClanWarStates() {
+        guard let data = try? JSONEncoder().encode(ClanWarStateStore(states: clanWarStates)) else { return }
+        defaults.set(data, forKey: Self.clanWarStatesStorageKey)
+    }
+
+    private static func loadClanWarStates(from defaults: UserDefaults) -> [String: ClanWarAPIState] {
+        guard let data = defaults.data(forKey: Self.clanWarStatesStorageKey),
+              let store = try? JSONDecoder().decode(ClanWarStateStore.self, from: data) else {
+            return [:]
+        }
+        return store.states
     }
 
     private static func loadClanStates(from defaults: UserDefaults) -> [String: ClanAPIState] {

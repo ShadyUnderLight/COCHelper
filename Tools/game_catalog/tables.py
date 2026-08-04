@@ -88,6 +88,15 @@ class TableSpec:
     join_upgrade_data: bool = False
 
 
+def _with_time_fill(fill: tuple[str, ...], time: tuple[str, ...]) -> tuple[str, ...]:
+    """fill_columns 的继承列 + 自动并入 time_columns（去重保序）。
+
+    单一事实源：时间列只需在 time_columns 声明一次，
+    避免 fill_columns 双份维护导致漂移（如加列忘改 fill）。
+    """
+    return tuple(dict.fromkeys(fill + time))
+
+
 TABLES: tuple[TableSpec, ...] = (
     TableSpec(
         table="buildings.csv", section="buildings", section2="buildings2",
@@ -97,9 +106,10 @@ TABLES: tuple[TableSpec, ...] = (
         town_hall_column="TownHallLevel",
         icon_columns=("Icon",), visual_columns=("SWF", "ExportName"),
         village_type_column="VillageType",
-        fill_columns=("TID", "GlobalID", "VillageType", "SWF", "ExportName",
-                      "Icon", "BuildResource", "BuildCost", "TownHallLevel",
-                      "BuildTimeD", "BuildTimeH", "BuildTimeM", "BuildTimeS"),
+        fill_columns=_with_time_fill(
+            ("TID", "GlobalID", "VillageType", "SWF", "ExportName",
+             "Icon", "BuildResource", "BuildCost", "TownHallLevel"),
+            ("BuildTimeD", "BuildTimeH", "BuildTimeM", "BuildTimeS")),
     ),
     TableSpec(
         table="traps.csv", section="traps", section2="traps2",
@@ -108,9 +118,10 @@ TABLES: tuple[TableSpec, ...] = (
         resource_column="BuildResource", cost_column="BuildCost",
         icon_columns=("IconSWF", "IconExportName"), visual_columns=("SWF", "ExportName"),
         village_type_column="VillageType",
-        fill_columns=("TID", "GlobalID", "VillageType", "SWF", "ExportName",
-                      "IconSWF", "IconExportName", "BuildResource", "BuildCost",
-                      "BuildTimeD", "BuildTimeH", "BuildTimeM"),
+        fill_columns=_with_time_fill(
+            ("TID", "GlobalID", "VillageType", "SWF", "ExportName",
+             "IconSWF", "IconExportName", "BuildResource", "BuildCost"),
+            ("BuildTimeD", "BuildTimeH", "BuildTimeM")),
     ),
     TableSpec(
         table="characters.csv", section="units", section2="units2",
@@ -120,9 +131,10 @@ TABLES: tuple[TableSpec, ...] = (
         laboratory_column="LaboratoryLevel",
         icon_columns=("IconSWF", "IconExportName"),
         village_type_column="VillageType",
-        fill_columns=("TID", "GlobalID", "VillageType", "IconSWF", "IconExportName",
-                      "UpgradeResource", "UpgradeCost", "LaboratoryLevel",
-                      "UpgradeTimeH", "UpgradeTimeM", "ProductionBuilding"),
+        fill_columns=_with_time_fill(
+            ("TID", "GlobalID", "VillageType", "IconSWF", "IconExportName",
+             "UpgradeResource", "UpgradeCost", "LaboratoryLevel", "ProductionBuilding"),
+            ("UpgradeTimeH", "UpgradeTimeM")),
         has_deprecated=True,
     ),
     TableSpec(
@@ -132,8 +144,10 @@ TABLES: tuple[TableSpec, ...] = (
         laboratory_column="LaboratoryLevel",
         icon_columns=("IconSWF", "IconExportName"),
         village_type_column="VillageType",
-        fill_columns=("TID", "GlobalID", "VillageType", "IconSWF", "IconExportName",
-                      "UpgradeResource", "UpgradeCost", "LaboratoryLevel", "UpgradeTimeH"),
+        fill_columns=_with_time_fill(
+            ("TID", "GlobalID", "VillageType", "IconSWF", "IconExportName",
+             "UpgradeResource", "UpgradeCost", "LaboratoryLevel"),
+            ("UpgradeTimeH",)),
     ),
     TableSpec(
         table="heroes.csv", section="heroes", section2="heroes2",
@@ -143,8 +157,10 @@ TABLES: tuple[TableSpec, ...] = (
         town_hall_column="RequiredTownHallLevel",
         icon_columns=("IconSWF", "IconExportName"),
         village_type_column="VillageType",
-        fill_columns=("TID", "VillageType", "IconSWF", "IconExportName",
-                      "UpgradeResource", "UpgradeCost", "RequiredTownHallLevel", "UpgradeTimeH"),
+        fill_columns=_with_time_fill(
+            ("TID", "VillageType", "IconSWF", "IconExportName",
+             "UpgradeResource", "UpgradeCost", "RequiredTownHallLevel"),
+            ("UpgradeTimeH",)),
         id_base=28_000_000,
     ),
     TableSpec(
@@ -154,9 +170,10 @@ TABLES: tuple[TableSpec, ...] = (
         laboratory_column="LaboratoryLevel",
         icon_columns=("IconSWF", "IconExportName"),
         village_type_column="VillageType",
-        fill_columns=("TID", "VillageType", "IconSWF", "IconExportName",
-                      "UpgradeResource", "UpgradeCost", "LaboratoryLevel",
-                      "UpgradeTimeH", "UpgradeTimeM"),
+        fill_columns=_with_time_fill(
+            ("TID", "VillageType", "IconSWF", "IconExportName",
+             "UpgradeResource", "UpgradeCost", "LaboratoryLevel"),
+            ("UpgradeTimeH", "UpgradeTimeM")),
         id_base=73_000_000,
     ),
     TableSpec(
@@ -164,14 +181,15 @@ TABLES: tuple[TableSpec, ...] = (
         level_column="Level", time_columns=(),  # 无时间列 → no_time_source
         resource_column="UpgradeResources", cost_column="UpgradeCosts",
         icon_columns=("IconSWF", "IconExportName"),
-        fill_columns=("TID", "IconSWF", "IconExportName", "UpgradeResources", "UpgradeCosts"),
+        fill_columns=_with_time_fill(
+            ("TID", "IconSWF", "IconExportName", "UpgradeResources", "UpgradeCosts"), ()),
         id_base=90_000_000,
     ),
     TableSpec(
         table="guardians.csv", section="guardians", category="guardians",
         level_column="Level", time_columns=(),  # 时长来自 upgrade_data join
         icon_columns=("IconSWF", "IconExportName"),
-        fill_columns=("TID", "IconSWF", "IconExportName", "UpgradeData"),
+        fill_columns=_with_time_fill(("TID", "IconSWF", "IconExportName", "UpgradeData"), ()),
         id_base=107_000_000,
         has_deprecated=True,
         join_upgrade_data=True,
@@ -182,8 +200,9 @@ TABLES: tuple[TableSpec, ...] = (
         time_columns=("BuildTimeD", "BuildTimeH", "BuildTimeM", "BuildTimeS"),
         resource_column="BuildResource", cost_column="BuildCost",
         visual_columns=("SWF", "ExportName"),
-        fill_columns=("TID", "SWF", "ExportName", "BuildResource", "BuildCost",
-                      "BuildTimeD", "BuildTimeH", "BuildTimeM", "BuildTimeS"),
+        fill_columns=_with_time_fill(
+            ("TID", "SWF", "ExportName", "BuildResource", "BuildCost"),
+            ("BuildTimeD", "BuildTimeH", "BuildTimeM", "BuildTimeS")),
         base_default=None,
     ),
     TableSpec(
@@ -191,8 +210,9 @@ TABLES: tuple[TableSpec, ...] = (
         category="capitalTraps", level_column="Level",
         time_columns=("BuildTimeD", "BuildTimeH", "BuildTimeM"),
         resource_column="BuildResource", cost_column="BuildCost",
-        fill_columns=("TID", "BuildResource", "BuildCost",
-                      "BuildTimeD", "BuildTimeH", "BuildTimeM"),
+        fill_columns=_with_time_fill(
+            ("TID", "BuildResource", "BuildCost"),
+            ("BuildTimeD", "BuildTimeH", "BuildTimeM")),
         base_default=None,
     ),
     TableSpec(
@@ -200,7 +220,9 @@ TABLES: tuple[TableSpec, ...] = (
         category="capitalTroops", level_column="TroopLevel",
         time_columns=("UpgradeTimeH", "UpgradeTimeM"),
         icon_columns=("IconSWF", "IconExportName"),
-        fill_columns=("TID", "IconSWF", "IconExportName", "UpgradeTimeH", "UpgradeTimeM"),
+        fill_columns=_with_time_fill(
+            ("TID", "IconSWF", "IconExportName"),
+            ("UpgradeTimeH", "UpgradeTimeM")),
         base_default=None,
     ),
     TableSpec(
@@ -208,7 +230,7 @@ TABLES: tuple[TableSpec, ...] = (
         category="capitalSpells", level_column="Level",
         time_columns=("UpgradeTimeH",),
         icon_columns=("IconSWF", "IconExportName"),
-        fill_columns=("TID", "IconSWF", "IconExportName", "UpgradeTimeH"),
+        fill_columns=_with_time_fill(("TID", "IconSWF", "IconExportName"), ("UpgradeTimeH",)),
         base_default=None,
     ),
 )

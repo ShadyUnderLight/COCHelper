@@ -25,22 +25,17 @@ def parse_optional_int(value: str) -> int | None:
     return None
 
 
-def _component_seconds(key: str, value: str) -> int:
-    if value == "":
-        return 0
-    if not value.isdigit():
-        raise CatalogError(f"时间分量非数字: {key}={value!r}")
-    return int(value) * _FACTORS[key]
-
-
 def parse_duration(cells: dict[str, str], columns: tuple[str, ...]) -> tuple[int | None, str | None]:
     """解析时长列组 → (seconds, missing_reason)。
 
+    - 配置错误：整组时间列在输入中都不存在（如列名拼错）→ CatalogError（Tier-1）
     - 全空 → (None, "time_missing")
     - 任一非数字 → (None, "time_invalid")
     - 负数 → CatalogError（Tier-1）
     - 任一非空 → 其余空列按 0 求和；'0' 是真实值
     """
+    if all(c not in cells for c in columns):
+        raise CatalogError(f"时间列全部缺失（配置错误）: {columns}")
     values = {c: cells.get(c, "") for c in columns}
     if all(v == "" for v in values.values()):
         return None, "time_missing"

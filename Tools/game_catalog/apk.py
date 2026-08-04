@@ -9,8 +9,14 @@ from .errors import CatalogError
 
 # 现有 generate_account_name_catalog.py 的解包技巧（独立实现，不 import 旧脚本）
 def decode_asset(archive: zipfile.ZipFile, path: str) -> str:
-    packed = archive.read(path)
-    decoded = lzma.decompress(packed[:8] + b"\0" * 4 + packed[8:])
+    try:
+        packed = archive.read(path)
+    except KeyError as exc:
+        raise CatalogError(f"APK 缺少资源: {path}") from exc
+    try:
+        decoded = lzma.decompress(packed[:8] + b"\0" * 4 + packed[8:])
+    except lzma.LZMAError as exc:
+        raise CatalogError(f"资源解压失败（损坏或格式不符）: {path}") from exc
     return decoded.decode("utf-8-sig")
 
 

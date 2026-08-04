@@ -1,5 +1,6 @@
 {
   "state": "inWar",
+  "battleModifier": "hardMode",
   "teamSize": 30,
   "attacksPerMember": 2,
   "preparationStartTime": "20260804T080000.000Z",

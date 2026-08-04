@@ -51,9 +51,13 @@ public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
     // MARK: - Codable
 
     /// 官方 schema 中已知的顶层键。
+    /// 注意 `battleModifier`：官方字段（Hard Mode 战争时为 "hardMode"，
+    /// 否则 null），已知但首期 deferred——不设属性（首期只做摘要展示），
+    /// 列入 knownKeys 避免有效响应被误报为"未识别字段"。
     private static let knownKeys: Set<String> = [
         "state", "teamSize", "attacksPerMember",
         "preparationStartTime", "startTime", "endTime", "warStartTime",
+        "battleModifier",
         "clan", "opponent",
         "unrecognizedKeys",
     ]

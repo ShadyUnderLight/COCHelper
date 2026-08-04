@@ -38,6 +38,18 @@ final class ClanWarDecodeTests: XCTestCase {
         XCTAssertEqual(war.unrecognizedKeys, ["newOfficialField"])
     }
 
+    /// battleModifier（Hard Mode 战争的官方字段）是已知但 deferred：
+    /// 不得进入 unrecognizedKeys，避免有效 Hard Mode 响应误报"未识别字段"。
+    func testBattleModifierIsKnownButDeferred() throws {
+        let war = try decode(fullClanWarFixtureData())
+        XCTAssertFalse(war.unrecognizedKeys.contains("battleModifier"),
+                       "battleModifier 是官方已知字段（deferred），不应作为未知键上报")
+
+        // 单独验证：battleModifier 单独出现时也不进审计
+        let minimal = try decode(Data(#"{"state":"inWar","battleModifier":"hardMode"}"#.utf8))
+        XCTAssertTrue(minimal.unrecognizedKeys.isEmpty)
+    }
+
     /// notInWar 是合法的成功响应（空状态，不是失败）。
     func testDecodeNotInWarSucceeds() throws {
         let war = try decode(fixture("official_clan_war_notinwar"))

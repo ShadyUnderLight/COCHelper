@@ -1,0 +1,58 @@
+{
+  "state": "inWar",
+  "battleModifier": "hardMode",
+  "teamSize": 30,
+  "attacksPerMember": 2,
+  "preparationStartTime": "20260804T080000.000Z",
+  "startTime": "20260804T100000.000Z",
+  "endTime": "20260806T100000.000Z",
+  "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+      "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png",
+      "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png",
+      "large": "https://api-assets.clashofclans.com/badges/512/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 57,
+    "stars": 88,
+    "destructionPercentage": 91.2,
+    "members": [
+      {
+        "tag": "#PLAYERANONYMIZED",
+        "name": "anonymized-member",
+        "townHallLevel": 13,
+        "mapPosition": 1,
+        "attacks": 2,
+        "stars": 6,
+        "destructionPercentage": 100
+      }
+    ]
+  },
+  "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+      "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png",
+      "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png",
+      "large": "https://api-assets.clashofclans.com/badges/512/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 55,
+    "stars": 82,
+    "destructionPercentage": 87.5,
+    "members": [
+      {
+        "tag": "#OPPONENTPLAYERANONYMIZED",
+        "name": "anonymized-opponent-member",
+        "townHallLevel": 12,
+        "mapPosition": 1,
+        "attacks": 2,
+        "stars": 5,
+        "destructionPercentage": 90
+      }
+    ]
+  },
+  "newOfficialField": "future-proofing"
+}

@@ -1,10 +1,10 @@
 import Foundation
 
-/// 官方 API 请求的存储基础状态。
+/// 官方 API 请求的存储基础状态（玩家与部落共享）。
 ///
 /// 注意：`stale` 不是存储状态——它是 `fetchedAt` 与当前时间的派生结果，
 /// 避免持久化一个必然过期的判定（见 `displayStatus`）。
-public enum OfficialPlayerRequestStatus: String, Codable, Hashable, Sendable {
+public enum OfficialAPIRequestStatus: String, Codable, Hashable, Sendable {
     /// 从未发起过请求
     case never
     /// 请求进行中
@@ -17,8 +17,11 @@ public enum OfficialPlayerRequestStatus: String, Codable, Hashable, Sendable {
     case skipped
 }
 
-/// 展示给用户的状态：在存储状态之上叠加 `stale` 派生。
-public enum OfficialPlayerDisplayStatus: Equatable, Hashable, Sendable {
+/// 玩家端兼容别名：`OfficialAPIRequestStatus` 改名前的旧类型名。
+public typealias OfficialPlayerRequestStatus = OfficialAPIRequestStatus
+
+/// 展示给用户的状态：在存储状态之上叠加 `stale` 派生（玩家与部落共享）。
+public enum OfficialAPIDisplayStatus: Equatable, Hashable, Sendable {
     case never
     case loading
     case success
@@ -27,6 +30,9 @@ public enum OfficialPlayerDisplayStatus: Equatable, Hashable, Sendable {
     case skipped
 }
 
+/// 玩家端兼容别名：`OfficialAPIDisplayStatus` 改名前的旧类型名。
+public typealias OfficialPlayerDisplayStatus = OfficialAPIDisplayStatus
+
 /// 村庄的官方玩家信息抓取状态，独立于本地导入快照存储。
 ///
 /// 契约：
@@ -34,7 +40,7 @@ public enum OfficialPlayerDisplayStatus: Equatable, Hashable, Sendable {
 /// - `lastErrorReason` 只含脱敏原因（来自 `CoAPIError`，不含 URL/token/正文）。
 /// - `unrecognizedKeys` 为最近一次成功解码时官方新增的顶层字段（审计用途）。
 public struct OfficialAPIState: Codable, Hashable, Sendable {
-    public var status: OfficialPlayerRequestStatus
+    public var status: OfficialAPIRequestStatus
     /// 请求使用的规范化 tag（可能与该村庄导入 tag 不同，例如去空白）。
     public var playerTag: String?
     /// 上次成功抓取时间。
@@ -59,7 +65,7 @@ public struct OfficialAPIState: Codable, Hashable, Sendable {
     public static let staleThreshold: TimeInterval = 24 * 3600
 
     public init(
-        status: OfficialPlayerRequestStatus,
+        status: OfficialAPIRequestStatus,
         playerTag: String? = nil,
         fetchedAt: Date? = nil,
         lastAttemptAt: Date? = nil,
@@ -81,7 +87,7 @@ public struct OfficialAPIState: Codable, Hashable, Sendable {
     }
 
     /// 供展示的状态：success 但超过 `staleThreshold` 未刷新时显示 stale。
-    public var displayStatus: OfficialPlayerDisplayStatus {
+    public var displayStatus: OfficialAPIDisplayStatus {
         switch status {
         case .never: return .never
         case .loading: return .loading
@@ -99,5 +105,21 @@ public struct OfficialAPIState: Codable, Hashable, Sendable {
     public func isStale(at now: Date) -> Bool {
         guard let fetchedAt else { return false }
         return now.timeIntervalSince(fetchedAt) > Self.staleThreshold
+    }
+}
+
+extension OfficialAPIState {
+    /// 最近成功玩家快照中的部落 tag（规范化 + 校验）。
+    ///
+    /// 部落归属只从**最近成功**快照派生：换部落/离开部落后，新快照落地即
+    /// 更新此值；从未成功抓取（`lastGood == nil`）时返回 nil，调用方应把
+    /// "未知"与"确认不在部落中"（`lastGood?.clan == nil` 且抓取成功）区分开。
+    public var currentClanTag: String? {
+        guard let raw = lastGood?.clan?.tag,
+              let normalized = OfficialPlayerTagValidator.normalized(raw),
+              OfficialPlayerTagValidator.isValid(normalized) else {
+            return nil
+        }
+        return normalized
     }
 }

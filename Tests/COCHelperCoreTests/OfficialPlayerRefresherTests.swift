@@ -170,7 +170,7 @@ final class OfficialPlayerRefresherTests: XCTestCase {
             (
                 handler: { request in (refresherMockResponse(404, url: request.url!), Data()) },
                 token: "fake-token",
-                expectedReason: "未找到该玩家（404）",
+                expectedReason: "未找到该玩家或该部落（404）",
                 expectedStatus: 404
             ),
             (

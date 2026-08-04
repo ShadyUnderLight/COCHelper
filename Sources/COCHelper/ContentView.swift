@@ -1,5 +1,6 @@
 import SwiftUI
 import COCHelperCore
+import COCHelperApp
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
@@ -583,6 +584,7 @@ struct AccountDataView: View {
                 VillageNameEditor()
                 AccountImportPanel()
                 OfficialPlayerCardView()
+                ClanCardView()
 
                 if let pending = model.pendingAccountSnapshot {
                     AccountSnapshotSummaryView(snapshot: pending, isPending: true)

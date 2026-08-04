@@ -20,9 +20,14 @@ let package = Package(
                 .process("Resources")
             ]
         ),
+        .target(
+            name: "COCHelperApp",
+            dependencies: ["COCHelperCore"],
+            path: "Sources/COCHelperApp"
+        ),
         .executableTarget(
             name: "COCHelper",
-            dependencies: ["COCHelperCore"],
+            dependencies: ["COCHelperCore", "COCHelperApp"],
             path: "Sources/COCHelper"
         ),
         .executableTarget(
@@ -32,7 +37,7 @@ let package = Package(
         ),
         .testTarget(
             name: "COCHelperCoreTests",
-            dependencies: ["COCHelperCore"],
+            dependencies: ["COCHelperCore", "COCHelperApp"],
             path: "Tests/COCHelperCoreTests",
             resources: [
                 .process("Fixtures")

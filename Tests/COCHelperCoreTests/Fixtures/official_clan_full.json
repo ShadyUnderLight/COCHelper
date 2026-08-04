@@ -1,0 +1,43 @@
+{
+  "tag": "#CLANANONYMIZED",
+  "name": "anonymized-clan",
+  "type": "inviteOnly",
+  "description": "An anonymized clan for testing",
+  "clanLevel": 12,
+  "clanPoints": 42000,
+  "clanVersusPoints": 3000,
+  "requiredTrophies": 2000,
+  "requiredTownHallLevel": 8,
+  "warFrequency": "always",
+  "warWinStreak": 4,
+  "warWins": 250,
+  "warTies": 10,
+  "warLosses": 120,
+  "isWarLogPublic": true,
+  "warLeague": { "id": 48000010, "name": "Crystal League III" },
+  "members": 48,
+  "memberList": [
+    {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member",
+      "role": "member",
+      "townHallLevel": 13,
+      "expLevel": 150,
+      "trophies": 3000
+    }
+  ],
+  "labels": [
+    { "id": 57000001, "name": "Clan Wars" }
+  ],
+  "requiredVersusTrophies": 0,
+  "chatLanguage": { "id": 84000005, "name": "English", "languageCode": "EN" },
+  "clanCapital": { "capitalHallLevel": 7 },
+  "badgeUrls": {
+    "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png",
+    "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png",
+    "large": "https://api-assets.clashofclans.com/badges/512/anonymized.png"
+  },
+  "location": { "id": 32000006, "name": "International", "isCountry": false },
+  "isFamilyFriendly": true,
+  "newOfficialField": "future-proofing"
+}

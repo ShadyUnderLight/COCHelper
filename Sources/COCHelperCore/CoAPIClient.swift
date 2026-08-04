@@ -141,6 +141,24 @@ public struct CoAPIClient: Sendable {
         }
     }
 
+    /// 拉取官方部落信息。`tag` 传原始 tag（如 `#ABC`），URL 中的 `#` 由
+    /// `CoAPIURLBuilder` 编码为 `%23`，调用方不要预先编码。
+    public func fetchClan(tag: String) async throws -> OfficialClanSnapshot {
+        let data = try await request(path: "/clans/\(tag)")
+        do {
+            return try JSONDecoder().decode(OfficialClanSnapshot.self, from: data)
+        } catch let error as DecodingError {
+            // 附上字段路径（仅键名，不含 URL/token/正文），便于定位 schema 漂移；
+            // 纯语法错误（路径为空）保持原样。
+            if let path = decodingPath(of: error) {
+                throw CoAPIError.malformedResponse(detail: "clan decode failed: \(path)")
+            }
+            throw CoAPIError.malformedResponse(detail: "clan decode failed")
+        } catch {
+            throw CoAPIError.malformedResponse(detail: "clan decode failed")
+        }
+    }
+
     /// 提取 DecodingError 的 codingPath 键名（脱敏：不含原始值）；空路径返回 nil。
     private func decodingPath(of error: DecodingError) -> String? {
         let path: [CodingKey]

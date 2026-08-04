@@ -1,4 +1,5 @@
 import SwiftUI
+import COCHelperApp
 
 @main
 struct COCHelperApp: App {

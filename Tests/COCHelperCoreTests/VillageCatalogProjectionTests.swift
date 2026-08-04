@@ -454,6 +454,28 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertNil(item.nextLevel)
     }
 
+    func testMalformedTimerWithoutRemainingDoesNotBecomeNeedsReimport() throws {
+        // 回归（P2-1）：malformed 快照记录（有 timer 无 remaining：timerSeconds=600、
+        // remainingSeconds=nil）不得在聚合时被当作「计时已结束」——旧实现只检查
+        // timer 存在就把聚合项强制写成 remainingSeconds = 0，导致 UI 误报
+        // 「待重新导入确认」。聚合后必须回到普通完成状态：无 timer、无 remaining。
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 600, remainingSeconds: nil, path: "0"),
+                makeItem(section: "units", dataID: 4_000_000, level: 2, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.count, 2)
+        XCTAssertNil(item.timerSeconds, "malformed 记录不得伪造计时结束信号")
+        XCTAssertNil(item.remainingSeconds, "malformed 记录不得强制写入 remainingSeconds = 0")
+        XCTAssertFalse(item.needsReimport, "malformed 记录不得误报「待重新导入」")
+        XCTAssertEqual(item.status, .complete)
+    }
+
     // MARK: - Property-based tests
 
     private func makeRandomSnapshot(

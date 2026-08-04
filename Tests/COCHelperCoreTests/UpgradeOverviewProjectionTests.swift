@@ -535,6 +535,24 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         XCTAssertNil(withoutCatalog.first?.catalogVersion)
     }
 
+    func testMalformedTimerWithoutRemainingNeverInPending() throws {
+        // 回归（P2-1）：malformed 记录（有 timer 无 remaining：timerSeconds=600、
+        // remainingSeconds=nil）不得进入 pendingReimportRecords，也不得进入
+        // activeRecords——聚合层曾把它强制写成 remainingSeconds = 0，使其满足
+        // needsReimport 而误报「待重新导入确认」。
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 600, remainingSeconds: nil, path: "0"),
+            ],
+        ])
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let active = activeRecords([village], catalog: syntheticCatalog, at: now)
+        let pending = pendingReimportRecords([village], catalog: syntheticCatalog, at: now)
+        XCTAssertTrue(active.isEmpty, "malformed 记录（remaining nil）不得进入 activeRecords")
+        XCTAssertTrue(pending.isEmpty, "malformed 记录不得误报「待重新导入」")
+    }
+
     // MARK: - overviewRecords（单趟投影）
 
     // 注意：不再断言 overviewRecords 与 activeRecords/pendingReimportRecords 的等价性——

@@ -317,10 +317,12 @@ public struct VillageCatalogProjection: Sendable {
         for (_, group) in grouped.sorted(by: { $0.key < $1.key }) {
             guard let first = group.first else { continue }
             let aggregatedCount = group.reduce(0) { $0 + ($1.count ?? 1) }
-            // 计时已结束的记录（timer 存在且 remaining 归零）进入聚合，但「需重新导入」信号
-            // 必须保留：组内任一记录带 timer 时，聚合项保留 timerSeconds 并将 remainingSeconds
-            // 置 0，UI 可据此推导「计时已结束」而不会与普通完成状态混淆。
-            let groupHasFinishedTimer = group.contains { $0.timerSeconds != nil }
+            // 计时已结束的记录（timer 存在且 remaining 显式归零）进入聚合，但「需重新导入」
+            // 信号必须保留：组内任一记录带已结束计时时，聚合项保留 timerSeconds 并将
+            // remainingSeconds 置 0，UI 可据此推导「计时已结束」而不会与普通完成状态混淆。
+            // remaining == nil（有 timer 无 remaining 的 malformed 记录）不算计时结束：
+            // 不得强制写入 remainingSeconds = 0 而误报「待重新导入」。
+            let groupHasFinishedTimer = group.contains { $0.timerSeconds != nil && $0.remainingSeconds == 0 }
             result.append(VillageItemState(
                 id: "agg:" + first.id,
                 section: first.section,

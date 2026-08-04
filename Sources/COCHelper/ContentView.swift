@@ -248,23 +248,61 @@ private struct TrackerOverviewContent: View {
     let now: Date
 
     var body: some View {
-        let activeRecords = UpgradeOverviewProjection.activeRecords(from: villages, catalog: catalog, at: now)
-        let pendingReimport = UpgradeOverviewProjection.pendingReimportRecords(from: villages, catalog: catalog, at: now)
+        // 单趟投影：active + pending 一次算出，避免 60s tick 双倍投影（review fix）。
+        let combined = UpgradeOverviewProjection.overviewRecords(from: villages, catalog: catalog, at: now)
 
         VStack(alignment: .leading, spacing: 18) {
             TrackerMetricsView(
                 villages: villages,
-                records: activeRecords,
+                records: combined.active,
                 scopeLabel: scopeLabel
             )
+            CatalogStatusNote(catalog: catalog)
             ActiveUpgradesPanel(
-                records: activeRecords,
-                pendingReimport: pendingReimport,
+                records: combined.active,
+                pendingReimport: combined.pending,
                 now: now,
                 title: panelTitle
             )
             TrackerOverviewFreshnessNote(villages: villages)
         }
+    }
+}
+
+/// 目录整体状态提示条（warning 样式）。
+///
+/// 行内徽标（UpgradeDisplayRow.hasVersionMismatch）只覆盖逐项 nextLevel > maxLevel
+/// 的推断；catalog 整体缺失或版本与期望不匹配时，完整时长可能大范围静默错误，
+/// 由本提示条在总览页显式标出。版本匹配时不渲染。
+private struct CatalogStatusNote: View {
+    let catalog: GameCatalog?
+
+    var body: some View {
+        if let catalog {
+            if catalog.gameVersion != GameCatalog.defaultBundledVersion {
+                note(text: "静态目录版本 \(catalog.gameVersion) 与期望版本 \(GameCatalog.defaultBundledVersion) 不匹配，完整时长可能过时。")
+            }
+        } else {
+            note(text: "静态升级目录不可用，完整时长与等级上限信息缺失。")
+        }
+    }
+
+    private func note(text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("目录状态")
+                    .font(.caption.weight(.semibold))
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 

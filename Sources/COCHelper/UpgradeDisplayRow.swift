@@ -8,7 +8,7 @@ import COCHelperCore
 ///   SF Symbol 兜底；`item.missingReason` 存在时用 `.help` 提示原因，不隐藏行。
 ///   渲染管线就绪后在此接入 `renderedPath` 加载，替换兜底图标。
 /// - 名称 × 数量、嵌套标记、副标题（类别 · #dataID · 目录版本）
-/// - 完整时长行（目录缺失时显示「暂无目录数据」，绝不显示 0）
+/// - 完整时长行（目录缺失时显示「暂无目录数据」；duration == 0 的即时升级显示「即时」）
 /// - 当前 → 目标等级；状态徽标（目录版本不匹配 / 待重新导入确认 / 已满级）
 /// - 剩余时间 + 完成时刻 + 进度条（沿用旧行样式：orange）
 ///
@@ -43,12 +43,12 @@ struct UpgradeDisplayRow: View {
     }
 
     /// 计时已结束（timer 存在、remaining 归零）：需要重新导入确认实际等级。
-    /// 条件与投影层 `pendingReimportRecords` 完全一致（`timerSeconds != nil &&
-    /// remainingSeconds == 0`）——聚合数据流下两者等价，但本组件会被村庄详情页
-    /// 复用、届时可能直接展示非聚合 item，普通完成项（remaining == 0 且
+    /// 复用 `VillageItemState.needsReimport` 公共谓词（与投影层
+    /// `pendingReimportRecords` 完全一致，避免两处手写条件漂移）。本组件会被村庄
+    /// 详情页复用、届时可能直接展示非聚合 item，普通完成项（remaining == 0 且
     /// timer == nil）不得误标。不做自动等级 +1——nextLevel 只来自投影显式推断。
     private var needsReimport: Bool {
-        item.timerSeconds != nil && item.remainingSeconds == 0
+        item.needsReimport
     }
 
     private var isMaxed: Bool { item.status == .maxed }
@@ -56,8 +56,12 @@ struct UpgradeDisplayRow: View {
     // MARK: - 完整时长
 
     private var durationLabel: String {
-        guard let duration = item.nextLevelDurationSeconds, duration > 0 else { return "暂无目录数据" }
-        return "完整时长：" + AccountDurationFormatter.label(duration)
+        guard let duration = item.nextLevelDurationSeconds else { return "暂无目录数据" }
+        if duration > 0 {
+            return "完整时长：" + AccountDurationFormatter.label(duration)
+        }
+        // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
+        return "完整时长：即时"
     }
 
     // MARK: - 副标题

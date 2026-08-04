@@ -535,6 +535,126 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         XCTAssertNil(withoutCatalog.first?.catalogVersion)
     }
 
+    // MARK: - overviewRecords（单趟投影）
+
+    func testOverviewRecordsMatchesIndividualMethods() throws {
+        // 单趟投影 API：一次 allRecords 后 split，输出必须与两个独立方法完全一致
+        // （元素逐一相等），供 UI 60s tick 复用同一份投影结果。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                // 升级中：进 active
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
+                // 计时已结束：进 pending
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2,
+                         timerSeconds: 600, remainingSeconds: 0, path: "1"),
+                // 普通完成（无计时）：两者都不进
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "2"),
+            ],
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 3600, remainingSeconds: 0, path: "3"),
+            ],
+        ])
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let combined = UpgradeOverviewProjection.overviewRecords(
+            from: [village], catalog: syntheticCatalog, at: now
+        )
+        XCTAssertEqual(combined.active, activeRecords([village], catalog: syntheticCatalog, at: now),
+                       "overviewRecords.active 必须与 activeRecords 输出逐一相等")
+        XCTAssertEqual(combined.pending, pendingReimportRecords([village], catalog: syntheticCatalog, at: now),
+                       "overviewRecords.pending 必须与 pendingReimportRecords 输出逐一相等")
+    }
+
+    func testOverviewRecordsActiveAndPendingAreDisjoint() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2,
+                         timerSeconds: 600, remainingSeconds: 0, path: "1"),
+            ],
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 3600, remainingSeconds: 500, path: "2")],
+        ])
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let combined = UpgradeOverviewProjection.overviewRecords(
+            from: [village], catalog: syntheticCatalog, at: now
+        )
+        XCTAssertFalse(combined.active.isEmpty)
+        XCTAssertFalse(combined.pending.isEmpty)
+        XCTAssertTrue(Set(combined.active.map(\.id)).isDisjoint(with: Set(combined.pending.map(\.id))),
+                      "active 与 pending 不得重叠（同一项目不可能同时升级中且计时结束）")
+    }
+
+    // MARK: - unavailable 项过滤（等价旧层 supportedSections 白名单）
+
+    func testUnavailableItemsExcludedFromActiveAndPending() throws {
+        // helpers 等不支持类别（category == nil → status == .unavailable）即使带计时
+        // 也不得进入升级总览——等价旧层 UpgradeTracker.supportedSections 白名单行为，
+        // 保证 sidebar 计数（旧层）与总览（新层）一致。
+        let village = makeVillage(objectSections: [
+            "helpers": [
+                // 升级中但类别不支持：不得进 active
+                makeItem(section: "helpers", dataID: 93_000_000, level: 1,
+                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
+                // 计时结束但类别不支持：不得进 pending
+                makeItem(section: "helpers", dataID: 93_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 0, path: "1"),
+            ],
+            // 正常项不受影响
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 3600, remainingSeconds: 300, path: "2")],
+        ])
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let combined = UpgradeOverviewProjection.overviewRecords(
+            from: [village], catalog: syntheticCatalog, at: now
+        )
+        XCTAssertEqual(combined.active.map(\.item.id), ["units:2"],
+                       "unavailable 项（helpers）不得进入 active，正常项保留")
+        XCTAssertTrue(combined.pending.isEmpty,
+                      "unavailable 项即使计时结束也不得进入 pending")
+        XCTAssertEqual(combined.active.first?.item.status, .upgrading)
+    }
+
+    // MARK: - VillageItemState.needsReimport 谓词
+
+    private func makeState(timerSeconds: Int64?, remainingSeconds: Int64?) -> VillageItemState {
+        VillageItemState(
+            id: "units:0",
+            section: "units",
+            dataID: 4_000_000,
+            base: .home,
+            name: "野蛮人",
+            category: .troops,
+            currentLevel: 2,
+            count: nil,
+            timerSeconds: timerSeconds,
+            remainingSeconds: remainingSeconds,
+            nextLevel: 3,
+            nextLevelDurationSeconds: 3600,
+            maxLevel: 3,
+            status: .upgrading,
+            missingReason: nil,
+            icon: nil,
+            levelVisual: nil,
+            isNested: false
+        )
+    }
+
+    func testNeedsReimportTruthTable() throws {
+        // 公共谓词真值表：timer 存在 + remaining 归零才为 true。
+        // remainingSeconds 为 Int64?：`== 0` 覆盖 nil ≠ 0 的情况（nil 直接 false）。
+        XCTAssertTrue(makeState(timerSeconds: 600, remainingSeconds: 0).needsReimport,
+                      "timer 存在 + remaining 0 → true")
+        XCTAssertFalse(makeState(timerSeconds: 600, remainingSeconds: 300).needsReimport,
+                       "timer 存在 + remaining > 0 → false")
+        XCTAssertFalse(makeState(timerSeconds: nil, remainingSeconds: 0).needsReimport,
+                       "timer nil + remaining 0 → false")
+        XCTAssertFalse(makeState(timerSeconds: nil, remainingSeconds: 500).needsReimport,
+                       "timer nil → false")
+    }
+
     // MARK: - Property-based tests
 
     /// 随机生成多个村庄的快照；升级概率约 50%，path 按村庄编号保证全局唯一。

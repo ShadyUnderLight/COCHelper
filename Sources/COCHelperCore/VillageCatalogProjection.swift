@@ -41,6 +41,14 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
 
     public var isUpgrading: Bool { (remainingSeconds ?? 0) > 0 }
 
+    /// 计时已结束、需要重新导入确认实际等级。
+    ///
+    /// 条件：timer 存在且 remaining 归零（`timerSeconds != nil && remainingSeconds == 0`）。
+    /// remainingSeconds 是 Int64?，`== 0` 已覆盖 nil ≠ 0 的情况（无计时直接 false）。
+    /// 投影聚合层（UpgradeOverviewProjection）与 UI 行（UpgradeDisplayRow）共用此谓词，
+    /// 避免两处手写条件漂移。
+    public var needsReimport: Bool { timerSeconds != nil && remainingSeconds == 0 }
+
     init(
         id: String,
         section: String,

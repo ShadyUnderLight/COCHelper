@@ -32,6 +32,27 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
 
 /// 升级总览展示聚合入口。
 public enum UpgradeOverviewProjection {
+    /// 单趟投影：一次 `allRecords` 后 split 成 active（升级中）与 pending（需重新导入）。
+    ///
+    /// UI 每 60s tick 调用一次本方法即可同时拿到两个列表，避免
+    /// `activeRecords` + `pendingReimportRecords` 各自跑一遍完整投影（双倍计算）。
+    /// 输出与两个独立方法完全一致（active 同 `activeRecords` 排序，pending 同
+    /// `pendingReimportRecords` 排序），且两者按 id 互不重叠。
+    ///
+    /// `now` 用于计算实时剩余时间；`completionDate(from:)` 必须回传同一个 `now`，
+    /// 否则完成时间会与实际不一致（详见该方法 doc comment）。
+    public static func overviewRecords(
+        from villages: [VillageProfile],
+        catalog: GameCatalog?,
+        at now: Date = Date()
+    ) -> (active: [UpgradeDisplayRecord], pending: [UpgradeDisplayRecord]) {
+        let records = allRecords(from: villages, catalog: catalog, at: now)
+        return (
+            active: records.filter(\.item.isUpgrading).sorted(by: activeOrder),
+            pending: records.filter(\.item.needsReimport).sorted(by: pendingOrder)
+        )
+    }
+
     /// 全部村庄 × 全部 base 的进行中升级记录。
     ///
     /// 每条记录由 `VillageCatalogProjection.project` 产出并过滤 `isUpgrading`；
@@ -45,26 +66,17 @@ public enum UpgradeOverviewProjection {
         catalog: GameCatalog?,
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
-        allRecords(from: villages, catalog: catalog, at: now)
-            .filter(\.item.isUpgrading)
-            .sorted { lhs, rhs in
-                let lhsRemaining = lhs.item.remainingSeconds ?? .max
-                let rhsRemaining = rhs.item.remainingSeconds ?? .max
-                if lhsRemaining != rhsRemaining { return lhsRemaining < rhsRemaining }
-                let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
-                if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
-                if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
-                return lhs.id < rhs.id
-            }
+        overviewRecords(from: villages, catalog: catalog, at: now).active
     }
 
     /// 全部村庄 × 全部 base 中「计时已结束」的项目（待重新导入确认等级）。
     ///
     /// 过滤条件与投影聚合层的「需重新导入」信号一致：
-    /// `timerSeconds != nil && remainingSeconds == 0`（见 VillageCatalogProjection
-    /// 聚合注释）。与 `activeRecords` 语义互斥：升级中项（remaining > 0）进
-    /// active，计时结束项进本列表；普通完成项（timerSeconds == nil）两者都不进。
-    /// 该信号与目录收录无关——即使目录未命中，计时结束也仍需重新导入确认。
+    /// `VillageItemState.needsReimport`（`timerSeconds != nil && remainingSeconds == 0`，
+    /// 见 VillageCatalogProjection 聚合注释与 VillageItemState doc）。与 `activeRecords`
+    /// 语义互斥：升级中项（remaining > 0）进 active，计时结束项进本列表；
+    /// 普通完成项（timerSeconds == nil）两者都不进。该信号与目录收录无关——
+    /// 即使目录未命中，计时结束也仍需重新导入确认。
     ///
     /// 排序：villageName（localizedStandardCompare）→ base.rawValue → item.name
     /// （localizedStandardCompare），id 兜底保证稳定。
@@ -73,20 +85,36 @@ public enum UpgradeOverviewProjection {
         catalog: GameCatalog?,
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
-        allRecords(from: villages, catalog: catalog, at: now)
-            .filter { $0.item.timerSeconds != nil && $0.item.remainingSeconds == 0 }
-            .sorted { lhs, rhs in
-                let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
-                if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
-                if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
-                let nameOrder = lhs.item.name.localizedStandardCompare(rhs.item.name)
-                if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
-                return lhs.id < rhs.id
-            }
+        overviewRecords(from: villages, catalog: catalog, at: now).pending
     }
 
-    /// 全部村庄 × 全部 base 的未过滤投影记录（activeRecords / pendingReimportRecords
-    /// 共用同一投影循环与 id 构造，避免两处漂移）。
+    /// active 排序键：剩余时间升序（nil 视为最大排最后）→ villageName → base → id。
+    private static func activeOrder(_ lhs: UpgradeDisplayRecord, _ rhs: UpgradeDisplayRecord) -> Bool {
+        let lhsRemaining = lhs.item.remainingSeconds ?? .max
+        let rhsRemaining = rhs.item.remainingSeconds ?? .max
+        if lhsRemaining != rhsRemaining { return lhsRemaining < rhsRemaining }
+        let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
+        if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
+        if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
+        return lhs.id < rhs.id
+    }
+
+    /// pending 排序键：villageName → base → item.name → id。
+    private static func pendingOrder(_ lhs: UpgradeDisplayRecord, _ rhs: UpgradeDisplayRecord) -> Bool {
+        let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
+        if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
+        if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
+        let nameOrder = lhs.item.name.localizedStandardCompare(rhs.item.name)
+        if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+        return lhs.id < rhs.id
+    }
+
+    /// 全部村庄 × 全部 base 的未过滤投影记录（overviewRecords 唯一投影入口，
+    /// 避免多处跑同一投影循环与 id 构造漂移）。
+    ///
+    /// `status == .unavailable` 的项（helpers/decos/obstacles 等 category == nil 的
+    /// 不支持类别）在此过滤：等价旧层 UpgradeTracker.supportedSections 白名单行为，
+    /// 保证 sidebar 计数（旧层）与总览（新层）一致。
     private static func allRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
@@ -100,17 +128,19 @@ public enum UpgradeOverviewProjection {
                     base: base,
                     now: now
                 )
-                return projection.items.map { item in
-                    UpgradeDisplayRecord(
-                        id: village.id.uuidString + ":" + base.rawValue + ":" + item.id,
-                        villageID: village.id,
-                        villageName: village.name,
-                        villageTag: village.tag,
-                        base: base,
-                        item: item,
-                        catalogVersion: projection.catalogVersion
-                    )
-                }
+                return projection.items
+                    .filter { $0.status != .unavailable }
+                    .map { item in
+                        UpgradeDisplayRecord(
+                            id: village.id.uuidString + ":" + base.rawValue + ":" + item.id,
+                            villageID: village.id,
+                            villageName: village.name,
+                            villageTag: village.tag,
+                            base: base,
+                            item: item,
+                            catalogVersion: projection.catalogVersion
+                        )
+                    }
             }
         }
     }

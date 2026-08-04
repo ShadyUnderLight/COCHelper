@@ -48,6 +48,17 @@ def test_generate_cli_missing_apk_fails(tmp_path):
     assert r.returncode == 1
 
 
+def test_generate_cli_bad_zip_fails_cleanly(tmp_path):
+    """I5 回归：非 zip 输入 → exit 1 且 stderr 含 'error:'，无裸 traceback。"""
+    apk = tmp_path / "not_an_apk.txt"
+    apk.write_text("this is not a zip file")
+    r = _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+              "--output", str(tmp_path / "out")])
+    assert r.returncode == 1
+    assert "error:" in r.stderr
+    assert "Traceback" not in r.stderr
+
+
 def test_generate_cli_nonempty_output_fails(tmp_path):
     apk = _minimal_apk(tmp_path)
     out = tmp_path / "out"

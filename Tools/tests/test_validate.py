@@ -82,6 +82,24 @@ def test_validate_unparseable_catalog(tmp_path):
     assert any("解析失败" in e for e in errors)
 
 
+def test_validate_manifest_invalid_utf8(tmp_path):
+    """I1 回归：manifest 为非法 UTF-8 时返回错误而非裸抛 UnicodeDecodeError。"""
+    d = _valid_dir(tmp_path)
+    (d / "manifest.json").write_bytes(b"\xff\xfe\x00{not valid utf-8}")
+    errors = validate_catalog(d)
+    assert any("解析失败" in e for e in errors)
+
+
+def test_validate_catalog_malformed_level_type(tmp_path):
+    """I2 回归：畸形但可解析（"level": "1" 字符串）→ 返回 '内容非法' 而非抛 TypeError。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["level"] = "1"
+    _write(d, catalog=c)
+    errors = validate_catalog(d)
+    assert len(errors) == 1 and "内容非法" in errors[0]
+
+
 # ---- 版本一致性 ----
 
 def test_validate_game_version_mismatch(tmp_path):
@@ -228,6 +246,55 @@ def test_validate_unknown_missing_reason(tmp_path):
     _write(d, catalog=c)
     errors = validate_catalog(d)
     assert any("未知 missingReason" in e for e in errors)
+
+
+# ---- missingReason 跨域污染（I3 回归）：level/base/item/asset 词表互不混用 ----
+
+def test_validate_level_reason_cross_domain_rejected(tmp_path):
+    """level 上写 base 域 reason（capital_has_no_base）→ 拒绝。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    lv = c["items"][0]["levels"][0]
+    lv["durationSeconds"] = None
+    lv["missingReason"] = "capital_has_no_base"
+    _write(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("未知 missingReason" in e for e in errors)
+
+
+def test_validate_item_reason_cross_domain_rejected(tmp_path):
+    """item 上写 level 域 reason（time_missing）→ 拒绝。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["missingReason"] = "time_missing"
+    _write(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("item.missingReason" in e for e in errors)
+
+
+def test_validate_asset_reason_cross_domain_rejected(tmp_path):
+    """AssetRef.icon 上写 level 域 reason（time_missing）→ 拒绝。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = {
+        "container": "sc/ui.sc", "exportName": "icon_x",
+        "renderedPath": None, "missingReason": "time_missing",
+    }
+    _write(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("icon.missingReason" in e for e in errors)
+
+
+def test_validate_asset_reason_asset_domain_ok(tmp_path):
+    """AssetRef 用 asset 域 reason（icons_not_rendered）→ 通过。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = {
+        "container": "sc/ui.sc", "exportName": "icon_x",
+        "renderedPath": None, "missingReason": "icons_not_rendered",
+    }
+    _write(d, catalog=c)
+    assert validate_catalog(d) == []
 
 
 def test_validate_negative_duration(tmp_path):

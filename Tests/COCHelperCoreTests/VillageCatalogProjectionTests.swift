@@ -694,6 +694,71 @@ final class VillageCatalogProjectionTests: XCTestCase {
         }
     }
 
+    // MARK: - VillageItemState.assetMissingReason 谓词
+
+    /// 直接构造状态（成员初始化器，@testable 可访问），用于验证 assetMissingReason 真值表。
+    private func makeAssetState(icon: CatalogAssetRef?, levelVisual: CatalogAssetRef?) -> VillageItemState {
+        VillageItemState(
+            id: "units:0",
+            section: "units",
+            dataID: 4_000_000,
+            base: .home,
+            name: "野蛮人",
+            category: .troops,
+            currentLevel: 2,
+            count: nil,
+            timerSeconds: nil,
+            remainingSeconds: nil,
+            nextLevel: 3,
+            nextLevelDurationSeconds: 3600,
+            maxLevel: 3,
+            status: .complete,
+            missingReason: nil,
+            icon: icon,
+            levelVisual: levelVisual,
+            isNested: false
+        )
+    }
+
+    func testAssetMissingReasonTruthTable() throws {
+        // 公共谓词真值表：icon 缺失原因优先，levelVisual 兜底；两者均可用才返回 nil。
+        // 用不同的原因串区分返回值来源，验证优先级而非只看非 nil。
+        let iconMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "icon_missing_reason"
+        )
+        let levelVisualMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "level_visual_missing_reason"
+        )
+        let iconRenderable = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: "icons/barracks.png", missingReason: nil
+        )
+
+        XCTAssertEqual(
+            makeAssetState(icon: iconMissing, levelVisual: levelVisualMissing).assetMissingReason,
+            "icon_missing_reason",
+            "icon 缺失 + levelVisual 缺失 → 返回 icon 的原因（icon 优先）"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: iconMissing, levelVisual: nil).assetMissingReason,
+            "icon_missing_reason",
+            "icon 缺失 + levelVisual nil → 返回 icon 的原因"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: nil, levelVisual: levelVisualMissing).assetMissingReason,
+            "level_visual_missing_reason",
+            "icon nil + levelVisual 缺失 → 返回 levelVisual 的原因（修复核心场景）"
+        )
+        XCTAssertNil(
+            makeAssetState(icon: nil, levelVisual: nil).assetMissingReason,
+            "icon nil + levelVisual nil → nil（无缺失，不显示角标）"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: iconRenderable, levelVisual: levelVisualMissing).assetMissingReason,
+            "level_visual_missing_reason",
+            "icon 可渲染 + levelVisual 缺失 → 返回 levelVisual 的原因（icon 可渲染不代表 levelVisual 不缺失）"
+        )
+    }
+
     func testPropertyEveryUpgradingRecordSurvivesProjection() throws {
         var rng = SeededRNG(seed: 2024)
         let sections = ["buildings", "units"]

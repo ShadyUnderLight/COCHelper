@@ -5,8 +5,9 @@ import COCHelperCore
 ///
 /// 输入 `UpgradeDisplayRecord`（投影聚合层），展示：
 /// - 图标列：目录图标资产当前全部未渲染（renderedPath == nil），统一走类别
-///   SF Symbol 兜底；`item.icon.missingReason` 存在时叠加橙色警示角标（可见的
-///   缺失状态）+ `.help` 提示原因，不隐藏行。`item.icon?.isRenderable == true`
+///   SF Symbol 兜底；`item.assetMissingReason`（icon 或 levelVisual 的缺失原因）
+///   非 nil 时叠加橙色警示角标（可见的缺失状态）+ `.help` 提示原因，不隐藏行。
+///   `item.icon?.isRenderable == true`
 ///   （#13 渲染管线产出后）应在此接入 `renderedPath` 加载，替换兜底图标。
 /// - 名称 × 数量、嵌套标记、副标题（类别 · #dataID · 目录版本）
 /// - 完整时长行（目录缺失时显示「暂无目录数据」；duration == 0 的即时升级显示「即时」）
@@ -85,20 +86,22 @@ struct UpgradeDisplayRow: View {
 
     // MARK: - 图标
 
-    /// 目录图标资产缺失原因（CatalogAssetRef.missingReason）：
-    /// 当前 bundled 目录（18.400.13）所有 icon ref 均为 "icons_not_rendered"，
+    /// 目录视觉资产缺失原因（icon 优先、levelVisual 兜底，见
+    /// `VillageItemState.assetMissingReason`）：当前 bundled 目录（18.400.13）
+    /// 325 项 icon 缺失 + 188 项仅 levelVisual 缺失（均为 icons_not_rendered），
     /// 非 nil 时 UI 必须给出可见的缺失状态（角标 + help），不能只在 hover 里。
     private var iconMissingReason: String? {
-        item.icon?.missingReason
+        item.assetMissingReason
     }
 
-    /// 图标列 help 文案优先级：目录图标缺失原因 → 目录 join 缺失原因 → 通用兜底。
+    /// 图标列 help 文案优先级：目录视觉资产缺失原因（icon 或 levelVisual）→
+    /// 目录 join 缺失原因 → 通用兜底。
     /// `item.icon?.isRenderable == true` 时（#13 图标资源管线产出真实渲染图后）
     /// 应在此渲染 renderedPath 图标替换 SF Symbol；当前全目录 icons_not_rendered，
     /// 只暴露缺失状态，不写无法验证的加载代码。
     private var iconHelp: String {
         if let iconMissingReason {
-            return "目录图标缺失：" + iconMissingReason
+            return "目录图标或等级外观缺失：" + iconMissingReason
         }
         if let missingReason = item.missingReason { return missingReason }
         return "目录图标未渲染，显示类别图标"

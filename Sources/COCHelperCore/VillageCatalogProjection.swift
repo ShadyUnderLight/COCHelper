@@ -49,6 +49,13 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 避免两处手写条件漂移。
     public var needsReimport: Bool { timerSeconds != nil && remainingSeconds == 0 }
 
+    /// 目录视觉资产（icon 或 levelVisual）的缺失原因；两者均可用时 icon 优先。
+    /// 当前 bundled 目录（18.400.13）：325 项 icon 缺失 + 188 项仅 levelVisual 缺失
+    /// （均为 icons_not_rendered）。UI 依据该值给出可见缺失状态。
+    public var assetMissingReason: String? {
+        icon?.missingReason ?? levelVisual?.missingReason
+    }
+
     init(
         id: String,
         section: String,

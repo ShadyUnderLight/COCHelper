@@ -365,7 +365,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
     // MARK: - Nested items
 
     func testNestedModulesKeepSourcePath() throws {
-        let module = makeItem(section: "modules", dataID: 102_000_001, level: 1, path: "0.modules.0")
+        // 真实解析器行为：嵌套项保留父 section（"heroes"），路径含 ".modules."。
+        let module = makeItem(section: "heroes", dataID: 102_000_001, level: 1, path: "0.modules.0")
         let village = makeVillage(objectSections: [
             "heroes": [
                 makeItem(section: "heroes", dataID: 28_000_000, level: 3,
@@ -378,8 +379,55 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let nested = try XCTUnwrap(home.items.first(where: \.isNested))
         XCTAssertEqual(hero.status, .unknown, "合成目录没有英雄，保留 unknown 而非丢弃")
         XCTAssertTrue(nested.id.contains(".modules."))
-        XCTAssertEqual(nested.section, "modules")
+        XCTAssertEqual(nested.section, "heroes", "嵌套项保留父 section")
         XCTAssertEqual(nested.isNested, true)
+        XCTAssertEqual(nested.status, .unknown)
+        XCTAssertNotNil(nested.missingReason)
+        XCTAssertTrue(nested.missingReason?.contains("不参与") == true,
+                      "嵌套项缺失原因应说明不参与目录 join")
+        XCTAssertEqual(nested.name, "钩索塔攻击力模组", "嵌套模块名应解析自模块名称目录")
+        XCTAssertNil(nested.maxLevel)
+        XCTAssertNil(nested.icon)
+    }
+
+    func testNestedItemNeverJoinsParentCatalogDataID() throws {
+        // 回归（P2-1）：嵌套 dataID 与父类目录物品相同（4_000_000 = 野蛮人）也不得误命中。
+        // 若嵌套项复用父 section join，会错误命中 units:4000000 并显示 complete/maxLevel。
+        let module = makeItem(section: "units", dataID: 4_000_000, level: 1, path: "0.modules.0")
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         modules: [module], path: "0"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        let nested = try XCTUnwrap(home.items.first(where: \.isNested))
+        XCTAssertEqual(nested.status, .unknown)
+        XCTAssertNil(nested.maxLevel)
+        XCTAssertNil(nested.nextLevelDurationSeconds)
+        XCTAssertNotNil(nested.missingReason)
+    }
+
+    func testFinishedTimerSurvivesAggregationAsNeedsReimport() throws {
+        // 回归（P1）：计时已结束（timer 存在、remaining 归零）的记录聚合后必须保留
+        // 「需重新导入」信号（timerSeconds 非 nil、remainingSeconds == 0），
+        // 不能与普通完成状态混淆。
+        let village = makeVillage(objectSections: [
+            "units": [
+                makeItem(section: "units", dataID: 4_000_000, level: 2,
+                         timerSeconds: 3600, remainingSeconds: 0, path: "0"),
+                makeItem(section: "units", dataID: 4_000_000, level: 2, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.count, 2)
+        XCTAssertNotNil(item.timerSeconds, "计时已结束信号不能因聚合丢失")
+        XCTAssertEqual(item.remainingSeconds, 0)
+        XCTAssertFalse(item.isUpgrading)
+        XCTAssertEqual(item.status, .complete)
+        XCTAssertNil(item.nextLevel)
     }
 
     // MARK: - Property-based tests

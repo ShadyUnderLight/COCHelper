@@ -46,7 +46,7 @@ open .build/COCHelper.app
 ## Tools：APK 静态升级目录（issue #13）
 
 `Tools/game_catalog/` 从 APK 生成版本化的静态升级目录（`catalog.json` + `manifest.json` + 空 `icons/`），
-落库于 `Sources/COCHelperCore/Resources/GameCatalog/<版本>/`。生成与校验均零第三方运行时依赖
+落库于 `Sources/COCHelperCore/GameCatalog/<版本>/`（SwiftPM 用 `.copy` 保留版本目录结构）。生成与校验均零第三方运行时依赖
 （Python stdlib），测试用 pytest + hypothesis。
 
 生成（输出目录必须为空，非空报错不自动清理）：
@@ -55,13 +55,13 @@ open .build/COCHelper.app
 python3 Tools/generate_game_catalog.py \
   --apk /Users/lmz/Downloads/base.apk.1 \
   --game-version 18.400.13 \
-  --output Sources/COCHelperCore/Resources/GameCatalog/18.400.13
+  --output Sources/COCHelperCore/GameCatalog/18.400.13
 ```
 
 校验与全量测试：
 
 ```bash
-python3 Tools/validate_game_catalog.py --catalog Sources/COCHelperCore/Resources/GameCatalog/18.400.13
+python3 Tools/validate_game_catalog.py --catalog Sources/COCHelperCore/GameCatalog/18.400.13
 python3 -m pytest Tools/tests -q
 ```
 

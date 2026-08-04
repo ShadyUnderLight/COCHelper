@@ -159,6 +159,7 @@ public struct VillageCatalogProjection: Sendable {
         )
         let isUpgrading = (remainingSeconds ?? 0) > 0
         let category = TrackerCategory.from(section: item.section)
+        let isNested = item.id.contains(".types.") || item.id.contains(".modules.")
 
         // 1. 类别不支持（helpers/decos/obstacles/…）。
         guard let category else {
@@ -180,12 +181,14 @@ public struct VillageCatalogProjection: Sendable {
                 missingReason: "该类别不参与升级追踪（\(item.section)）。",
                 icon: nil,
                 levelVisual: nil,
-                isNested: item.id.contains(".types.") || item.id.contains(".modules.")
+                isNested: isNested
             )
         }
 
         // 2. join 目录：(section, dataID) + base 防御校验。
-        let catalogItem = catalog?.item(section: item.section, dataID: item.dataID)
+        // 嵌套 types/modules 复用父 section（解析器行为），其 dataID 段（102M/103M）不属于
+        // 任何目录 section；为避免未来 dataID 碰撞误命中父类目录物品，嵌套项一律不参与 join。
+        let catalogItem = isNested ? nil : catalog?.item(section: item.section, dataID: item.dataID)
         let baseMatches = catalogItem.map { item in
             switch item.base {
             case "home": return base == .home
@@ -215,7 +218,12 @@ public struct VillageCatalogProjection: Sendable {
             // 升级状态独立于目录：记录在升级就是 upgrading，
             // 目录未命中时通过 missingReason 说明原因。
             status = .upgrading
-            missingReason = missingReasonForStatus(baseMatches: baseMatches, catalogItem: catalogItem, catalogAvailable: catalog != nil, item: item)
+            missingReason = isNested
+                ? "嵌套模块/类型不参与静态目录 join（\(item.section):\(item.dataID)）。"
+                : missingReasonForStatus(baseMatches: baseMatches, catalogItem: catalogItem, catalogAvailable: catalog != nil, item: item)
+        } else if isNested {
+            status = .unknown
+            missingReason = "嵌套模块/类型不参与静态目录 join（\(item.section):\(item.dataID)）。"
         } else if let catalogItem, baseMatches {
             if item.level ?? -1 >= catalogItem.maxLevel {
                 status = .maxed
@@ -252,7 +260,7 @@ public struct VillageCatalogProjection: Sendable {
             missingReason: missingReason,
             icon: baseMatches ? catalogItem?.icon : nil,
             levelVisual: baseMatches ? catalogItem?.levelVisual : nil,
-            isNested: item.id.contains(".types.") || item.id.contains(".modules.")
+            isNested: isNested
         )
     }
 
@@ -301,6 +309,10 @@ public struct VillageCatalogProjection: Sendable {
         for (_, group) in grouped.sorted(by: { $0.key < $1.key }) {
             guard let first = group.first else { continue }
             let aggregatedCount = group.reduce(0) { $0 + ($1.count ?? 1) }
+            // 计时已结束的记录（timer 存在且 remaining 归零）进入聚合，但「需重新导入」信号
+            // 必须保留：组内任一记录带 timer 时，聚合项保留 timerSeconds 并将 remainingSeconds
+            // 置 0，UI 可据此推导「计时已结束」而不会与普通完成状态混淆。
+            let groupHasFinishedTimer = group.contains { $0.timerSeconds != nil }
             result.append(VillageItemState(
                 id: "agg:" + first.id,
                 section: first.section,
@@ -310,11 +322,8 @@ public struct VillageCatalogProjection: Sendable {
                 category: first.category,
                 currentLevel: first.currentLevel,
                 count: aggregatedCount,
-                // 聚合项不携带 timer：组内实例的计时各不相同，聚合无意义。
-                // 进行中实例（remaining > 0）各自保留；计时已结束的记录
-                // （live == 0）作为普通记录参与聚合。
-                timerSeconds: nil,
-                remainingSeconds: nil,
+                timerSeconds: groupHasFinishedTimer ? group.compactMap(\.timerSeconds).first : nil,
+                remainingSeconds: groupHasFinishedTimer ? 0 : nil,
                 nextLevel: nil,
                 nextLevelDurationSeconds: nil,
                 maxLevel: first.maxLevel,

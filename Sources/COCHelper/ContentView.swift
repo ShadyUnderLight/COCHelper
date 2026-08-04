@@ -586,6 +586,8 @@ struct AccountDataView: View {
                 OfficialPlayerCardView()
                 ClanCardView()
                 ClanWarCardView()
+                WarLogCardView()
+                CapitalRaidCardView()
 
                 if let pending = model.pendingAccountSnapshot {
                     AccountSnapshotSummaryView(snapshot: pending, isPending: true)

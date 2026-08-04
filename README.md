@@ -190,3 +190,28 @@ swift run smoke-api
 ### 已知边界
 
 - 战争日志（warlog）与部落资本赛季（capitalraidseasons）在 stage 3c 接入，同样按需刷新。
+
+## 战争日志与部落资本（阶段三 stage 3c：分页，按需）
+
+在“账号数据”页的“战争日志”与“部落资本赛季”卡片中，可以按需查看历史战争（胜负、星数、摧毁百分比）与资本赛季（战利品、奖励、攻击统计），支持“加载更多”分页。
+
+### 分页与状态语义
+
+- **按需刷新**：点击“查看”按钮才请求；分页游标（`after`）向后翻页，末页或无新游标时自动停止（游标停滞视为末页，防无限循环）；重复条目在合并时去重。
+- **战争日志不公开是显式状态**：部落档案 `isWarLogPublic=false` 时直接显示“战争日志不公开”且不发起请求；请求返回 403 时显示失败原因（档案过期兜底）。不伪造“没有历史战争”。
+- 与部落档案/当前战争一样是独立共享层（独立 key `coc-helper.clan-war-logs.v1` / `coc-helper.clan-capitals.v1`），同部落多村庄共享一份。
+- 分页端点共用客户端（`/warlog`、`/capitalraidseasons`），游标与 `limit` 通过 query 参数传输（官方默认分页大小，不写死限流数值）。
+- 失败保留上次成功数据（last-good）；资本赛季成员级攻击/防守明细（`attackLog`/`defenseLog`）与战争日志成员明细 deferred。
+
+### 架构（stage 3c 泛化）
+
+- 状态/存储/刷新逻辑泛化为 `OfficialEndpointState<T>` / `OfficialStateStore<T>` / `EndpointRefresher`，部落档案、当前战争、战争日志、资本赛季四个端点共用；旧类型保留 typealias（持久化格式与旧版本完全兼容）。
+
+## 非官方声明与合规边界
+
+本应用是**非官方**的《部落冲突》（Clash of Clans）社区工具，与 Supercell 无关。
+
+- 数据来源：仅通过 Supercell 官方 API（developer.clashofclans.com）读取公开数据；不执行任何自动化游戏操作（不自动攻击、不自动升级、不模拟点击）。
+- 禁止自动化与公开分发：本应用仅用于个人本地使用，不提供任何自动化游戏行为的接口；不得将本应用或其数据用于公共托管、批量数据抓取、转售或任何形式的公开分发。
+- 所有游戏内容与素材版权归 Supercell Oy 所有；按 [Supercell Fan Content Policy](https://supercell.com/en/fan-content-policy/) 使用。
+- 官方 API 限流与条款：应用遵守官方 API 的使用条款与速率限制（客户端内置 429 退避），不绕过认证、不伪造请求。

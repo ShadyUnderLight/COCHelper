@@ -70,7 +70,8 @@ final class AppModelTests: XCTestCase {
     private func makeModel(
         playerHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data),
         clanHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data),
-        clanWarHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? = nil
+        clanWarHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? = nil,
+        clanLogHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? = nil
     ) throws -> AppModel {
         // 两个村庄：A 在 #CLANA，B 在 #CLANB（带导入快照使 officialTag 有效，
         // 否则玩家刷新会走 skipped 分支，无法触发网络请求与联动）。
@@ -91,12 +92,19 @@ final class AppModelTests: XCTestCase {
         let defaultWarHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
             (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
         }
+        let defaultLogHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
         MockURLProtocol.handler = { request in
             if request.url?.path.hasPrefix("/v1/players/") == true {
                 return try playerHandler(request)
             }
             if request.url?.path.contains("/currentwar") == true {
                 return try (clanWarHandler ?? defaultWarHandler)(request)
+            }
+            if request.url?.path.contains("/warlog") == true
+                || request.url?.path.contains("/capitalraidseasons") == true {
+                return try (clanLogHandler ?? defaultLogHandler)(request)
             }
             return try clanHandler(request)
         }
@@ -112,11 +120,16 @@ final class AppModelTests: XCTestCase {
             config: CoAPIConfig(maxRetryCount: 0),
             session: MockURLProtocol.makeSession()
         ) { "fake-token" })
+        let clanLogClient = CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession()
+        ) { "fake-token" }
         return AppModel(
             defaults: defaults,
             refresher: playerRefresher,
             clanRefresher: clanRefresher,
-            clanWarRefresher: clanWarRefresher
+            clanWarRefresher: clanWarRefresher,
+            clanLogClient: clanLogClient
         )
     }
 
@@ -276,5 +289,349 @@ final class AppModelTests: XCTestCase {
         // 独立共享层：部落/玩家数据未被触碰
         XCTAssertTrue(model.clanStates.isEmpty)
         XCTAssertEqual(model.currentVillageOfficialState?.lastGood?.clan?.tag, "#CLANA")
+    }
+}
+
+// MARK: - 战争日志分页（stage 3c）
+
+extension AppModelTests {
+    /// 首屏：请求 warlog（无游标 query）→ lastGood 为第一页。
+    @MainActor
+    func testRefreshWarLogFirstPage() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        XCTAssertEqual(recorder.snapshot(), ["(no-query)"], "首屏不带游标")
+        XCTAssertEqual(model.currentWarLogState?.status, .success)
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2)
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.after, "CURSORAFTER1")
+        XCTAssertTrue(model.currentWarLogHasMore, "有 after 游标 → 可加载更多")
+    }
+
+    /// 加载更多：带 after 游标请求 → 合并去重 → 游标推进。
+    @MainActor
+    func testLoadMoreWarLogMergesAndAdvancesCursor() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            let body: Data
+            if recorder.snapshot().count == 1 {
+                body = fullWarLogPageData()  // items 2 条 + after CURSORAFTER1
+            } else {
+                // 第二页：1 条新 + 1 条与首页重复（验证去重）
+                body = Data("""
+                {"items":[
+                  {"result":"win","endTime":"20260727T100000.000Z","teamSize":30,"attacksPerMember":2,
+                   "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0},
+                   "opponent":{"tag":"#OPP2","name":"op2","clanLevel":10,"attacks":50,"stars":70,"destructionPercentage":80.0}},
+                  {"result":"win","endTime":"20260730T100000.000Z","teamSize":30,"attacksPerMember":2,
+                   "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0},
+                   "opponent":{"tag":"#OPPONENTANONYMIZED","name":"anonymized-opponent","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":11,"attacks":58,"stars":80,"destructionPercentage":85.0}}
+                ],"paging":{"cursors":{"before":"B2","after":"CURSORAFTER2"}}}
+                """.utf8)
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        model.loadMoreCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        // 第二次请求带 after 游标
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 2)
+        XCTAssertTrue(queries[1].contains("after=CURSORAFTER1"), "加载更多必须带游标: \(queries[1])")
+        // 合并去重：首页 2 条 + 第二页新增 1 条（1 条重复被跳过）
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 3, "重复条目不得重复追加")
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.after, "CURSORAFTER2", "游标推进")
+        XCTAssertTrue(model.currentWarLogHasMore)
+    }
+
+    /// 末页（after nil）后 hasMore = false，加载更多不发起请求。
+    @MainActor
+    func testLoadMoreWarLogStopsAtLastPage() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record("call-\(recorder.snapshot().count)")
+            let body: Data
+            if recorder.snapshot().count == 1 {
+                body = fullWarLogPageData()
+            } else {
+                body = Data("{\"items\":[],\"paging\":{\"cursors\":{\"before\":\"B2\"}}}".utf8)  // 末页无 after
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        model.loadMoreCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertFalse(model.currentWarLogHasMore, "末页后不得再有加载更多")
+
+        // 再点加载更多 → 不发起请求（hasMore 为 false）
+        model.loadMoreCurrentWarLog()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(recorder.snapshot().count, 2, "hasMore=false 时不得发起请求")
+    }
+
+    /// 档案已知日志不公开：预判不发起请求（显式状态由 UI 呈现）。
+    @MainActor
+    func testRefreshWarLogSkipsWhenKnownNotPublic() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record("unexpected-request")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        // clan profile 返回 isWarLogPublic=false（预判依据）
+        let privateClan = Data(##"{"tag":"#CLANANONYMIZED","name":"c","clanLevel":1,"members":1,"isWarLogPublic":false}"##.utf8)
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { request in
+                (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, privateClan)
+            },
+            clanLogHandler: logHandler
+        )
+
+        // 先获取部落档案（isWarLogPublic=false）
+        model.refreshCurrentClan()
+        await waitUntil { !model.isRefreshingClanData }
+
+        XCTAssertTrue(model.isCurrentWarLogKnownNotPublic)
+        model.refreshCurrentWarLog()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertTrue(recorder.snapshot().isEmpty, "已知不公开时不得发起 warlog 请求")
+    }
+}
+
+// MARK: - stage 3c 复审修复回归
+
+/// 可变的 Sendable 失败开关（@Sendable handler 捕获用）。
+private final class FailFlag: @unchecked Sendable {
+    var shouldFail = false
+}
+
+extension AppModelTests {
+    /// 刷新失败保留已累计的 last-good（复审 B1/B2：传 previous 保持契约）。
+    @MainActor
+    func testRefreshWarLogFailureKeepsAccumulatedLastGood() async throws {
+        let failFlag = FailFlag()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            if failFlag.shouldFail {
+                return (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        // 首次成功（累计 2 条）
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2)
+
+        // 刷新失败 → last-good 保留（累计页不清空）
+        failFlag.shouldFail = true
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        XCTAssertEqual(model.currentWarLogState?.status, .failed)
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2,
+                       "刷新失败不得清空已累计的 last-good")
+        XCTAssertNotNil(model.currentWarLogState?.lastErrorReason)
+    }
+
+    /// 预判"不公开"时 force 请求仍可发起（档案过期误判的绕过路径）。
+    @MainActor
+    func testRefreshWarLogForceBypassesNotPublicPrecheck() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record("requested")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let privateClan = Data(##"{"tag":"#CLANANONYMIZED","name":"c","clanLevel":1,"members":1,"isWarLogPublic":false}"##.utf8)
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { request in
+                (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, privateClan)
+            },
+            clanLogHandler: logHandler
+        )
+
+        // 先获取档案（isWarLogPublic=false）
+        model.refreshCurrentClan()
+        await waitUntil { !model.isRefreshingClanData }
+        XCTAssertTrue(model.isCurrentWarLogKnownNotPublic)
+
+        // 普通刷新被预判拦截
+        model.refreshCurrentWarLog()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(recorder.snapshot().isEmpty, "预判拦截时不得发起请求")
+
+        // force 绕过预判
+        model.refreshCurrentWarLog(force: true)
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertEqual(recorder.snapshot().count, 1, "force 必须发起请求")
+        XCTAssertEqual(model.currentWarLogState?.status, .success)
+    }
+}
+
+// MARK: - capital raid 分页（stage 3c 外部复核补充）
+
+extension AppModelTests {
+    /// 资本赛季首屏：请求 capitalraidseasons → 状态 success + 条目 + 游标。
+    @MainActor
+    func testRefreshCapitalFirstPage() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(recorder.snapshot().first, "/v1/clans/%23CLANA/capitalraidseasons")
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items[0].capitalTotalLoot, 123456)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1")
+        XCTAssertTrue(model.currentCapitalHasMore)
+    }
+
+    /// 资本赛季加载更多：游标参数 + 合并去重。
+    @MainActor
+    func testLoadMoreCapitalMerges() async throws {
+        let recorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            let body: Data
+            if recorder.snapshot().count == 1 {
+                body = fullCapitalRaidPageData()
+            } else {
+                body = Data(#"{"items":[{"state":"ended","startTime":"20260617T080000.000Z","endTime":"20260619T080000.000Z","capitalTotalLoot":50000,"raidsCompleted":4,"totalAttacks":40,"enemyDistrictsDestroyed":80,"offensiveReward":3000,"defensiveReward":1000}],"paging":{"cursors":{"before":"B2","after":"RAIDCURSORAFTER2"}}}"#.utf8)
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 2)
+        XCTAssertTrue(queries[1].contains("after=RAIDCURSORAFTER1"), "加载更多必须带游标: \(queries[1])")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 3, "合并去重后 3 条")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER2")
+    }
+
+    /// 资本赛季刷新失败保留 last-good。
+    @MainActor
+    func testRefreshCapitalFailureKeepsLastGood() async throws {
+        let failFlag = FailFlag()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            if failFlag.shouldFail {
+                return (HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2)
+
+        failFlag.shouldFail = true
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2, "失败不得清空累计页")
+        XCTAssertEqual(model.currentCapitalState?.lastHTTPStatus, 500)
+    }
+}
+
+// MARK: - P1-3 端到端（外部复核补充）
+
+extension AppModelTests {
+    /// malformed 响应（items 缺失）走完 refresher 链路：failed + 保留 last-good，
+    /// 不得当作成功空页覆盖持久化数据。
+    @MainActor
+    func testRefreshWarLogMalformedResponseKeepsLastGood() async throws {
+        let failFlag = FailFlag()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            if failFlag.shouldFail {
+                // 200 但 items 缺失（损坏响应）
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                        Data("{}".utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2)
+
+        failFlag.shouldFail = true
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        XCTAssertEqual(model.currentWarLogState?.status, .failed)
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2,
+                       "malformed 响应不得清空已累计的 last-good")
+        XCTAssertTrue(model.currentWarLogState?.lastErrorReason?.contains("响应解析失败") == true,
+                      "malformed 应显示解析失败原因")
     }
 }

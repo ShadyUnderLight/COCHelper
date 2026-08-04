@@ -138,7 +138,7 @@ extension CoAPIError {
         case .accessDenied(let reason):
             return "访问被拒绝：\(reason)"
         case .notFound:
-            return "未找到该玩家或该部落（404）"
+            return "未找到对应的玩家、部落或战争（404）"
         case .rateLimited:
             return "请求被限流（429），请稍后再试"
         case .serverError(let code):

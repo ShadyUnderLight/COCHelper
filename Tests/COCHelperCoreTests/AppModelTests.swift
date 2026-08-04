@@ -5,7 +5,10 @@ import XCTest
 
 /// P1 回归测试：单村庄玩家刷新完成后，部落联动必须作用于**发起村庄**，
 /// 而非当前选中村庄（刷新期间切换村庄不得误刷新）。
-@MainActor
+///
+/// 注意：类级不标 @MainActor——XCTest 的 setUp/tearDown 是 nonisolated
+/// override，访问隔离属性会产生 Swift 6 严格并发 warning；改为在需要
+/// 操作 AppModel（@MainActor）的测试方法与 helper 上单独标注。
 final class AppModelTests: XCTestCase {
     /// 线程安全的请求记录器（同步方法内使用锁，避免 async 上下文锁限制）。
     private final class TagRecorder: @unchecked Sendable {
@@ -63,6 +66,7 @@ final class AppModelTests: XCTestCase {
         )
     }
 
+    @MainActor
     private func makeModel(
         playerHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data),
         clanHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
@@ -104,6 +108,7 @@ final class AppModelTests: XCTestCase {
         (HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!, body)
     }
 
+    @MainActor
     private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
@@ -120,6 +125,7 @@ final class AppModelTests: XCTestCase {
     /// 刷新村庄 A 的玩家数据期间切换到村庄 B：
     /// - A 的玩家快照落地后，必须刷新 **A** 的部落（#CLANA）
     /// - 不得刷新 B 的部落（#CLANB）
+    @MainActor
     func testSingleRefreshCascadesToOriginatingVillageAfterSwitch() async throws {
         let playerHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
             (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
@@ -156,6 +162,7 @@ final class AppModelTests: XCTestCase {
     }
 
     /// 联动刷新失败时不丢弃 A 的 last-good（既有契约在联动路径上保持）。
+    @MainActor
     func testSingleRefreshFailureDoesNotCascadeClanRefresh() async throws {
         let playerHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
             // 玩家请求失败（断网/429 场景）

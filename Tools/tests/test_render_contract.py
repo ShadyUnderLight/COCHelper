@@ -104,6 +104,9 @@ def test_det_valid_path_no_errors():
     "icons/../../secret.png",        # 多级逃逸
     "icons/./secret.png",            # . 段（R2.2：拒绝，P2-1）
     "icons/ui/./secret.png",         # 第二级 . 段
+    "icons/ui/..png",                # export key 为 "."（去 .png 后缀后，P2-1）
+    "icons/ui/...png",               # export key 为 ".."
+    "icons/ui/.png",                 # export key 为空串（正则防御性拒绝）
     "icons/..%2F..%2Fetc/passwd.png",  # URL 编码段逃逸（防未来 URL 解码消费者）
     "icons/%2e%2e/secret.png",       # URL 编码 ..
     "icons/ui/%2e%2e.png",           # export 名含 %

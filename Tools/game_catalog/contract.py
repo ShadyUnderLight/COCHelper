@@ -35,6 +35,12 @@ def rendered_path_format_ok(rendered_path: str) -> bool:
         return False
     if _VERSION_SEGMENT_RE.match(parts[1]):
         return False
+    export_key = parts[2][:-4]  # 去掉 .png 后缀——R2.2 约束的是 sanitize 后的 export key
+    if export_key in ("", ".", ".."):
+        # 空 key（如 ".png" 已被正则拒绝，此处防御）；key 为 "."/".."（如
+        # "..png"/"...png"）是点号段逃逸的变形，`"." in parts` 查不到（带 .png
+        # 后缀不再是独立段），须在此显式拒绝（P2-1）。
+        return False
     return len(parts[2].encode("utf-8")) <= _MAX_FILENAME_BYTES
 
 

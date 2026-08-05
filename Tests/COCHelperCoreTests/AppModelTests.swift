@@ -340,7 +340,7 @@ extension AppModelTests {
                    "opponent":{"tag":"#OPP2","name":"op2","clanLevel":10,"attacks":50,"stars":70,"destructionPercentage":80.0}},
                   {"result":"win","endTime":"20260730T100000.000Z","teamSize":30,"attacksPerMember":2,
                    "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0,
-                   "members":[{"tag":"#PLAYERANONYMIZED","name":"anonymized-member","townHallLevel":14,"mapPosition":1,"attacks":2,"stars":6,"destructionPercentage":100}]},
+                   "members":[{"tag":"#PLAYERANONYMIZED","name":"anonymized-member","townhallLevel":14,"mapPosition":1,"attacks":[{"order":1,"attackerTag":"#PLAYERANONYMIZED","defenderTag":"#OPPONENTPLAYERANONYMIZED","stars":3,"destructionPercentage":100,"duration":180}],"opponentAttacks":1,"bestOpponentAttack":{"order":1,"attackerTag":"#OPPONENTPLAYERANONYMIZED","defenderTag":"#PLAYERANONYMIZED","stars":2,"destructionPercentage":85,"duration":175}}]},
                    "opponent":{"tag":"#OPPONENTANONYMIZED","name":"anonymized-opponent","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":11,"attacks":58,"stars":80,"destructionPercentage":85.0,
                    "members":[]}}
                 ],"paging":{"cursors":{"before":"B2","after":"CURSORAFTER2"}}}
@@ -369,13 +369,14 @@ extension AppModelTests {
         XCTAssertTrue(model.currentWarLogHasMore)
     }
 
-    /// 跨 parserVersion 的加载更多：旧解析器缓存（如 0.2，members 未解析）与
-    /// 新页同条目（0.3，members 有值）Equatable 不等，按全字段去重合并会残留
-    /// 重复条目——必须按刷新语义整页替换。
+    /// 跨 parserVersion 的加载更多：旧缓存条目与新页条目 Equatable 不等，
+    /// 合并会残留重复——重建语义：丢弃累计页，重新拉**第一页**（无游标请求），
+    /// 保持列表完整与游标停滞保护。
     @MainActor
-    func testLoadMoreWarLogWithOlderParserVersionReplacesInsteadOfMerging() async throws {
+    func testLoadMoreWarLogWithOlderParserVersionRebuildsFromFirstPage() async throws {
+        let recorder = TagRecorder()
         // 预置「旧版本」缓存：parserVersion 0.2 + 第一页（游标 CURSORAFTER1，
-        // 同场战争但无 members——旧解析器形态）。
+        // 旧解析器形态条目——无成员明细）。
         let oldEntry = OfficialWarLogEntry(
             result: "win", endTime: "20260730T100000.000Z", teamSize: 30, attacksPerMember: 2,
             clan: ClanWarParticipant(
@@ -402,19 +403,9 @@ extension AppModelTests {
         )
 
         let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
-            // 新解析器形态的页：同场战争带 members + 1 条新战争 + 游标推进。
-            let body = Data("""
-            {"items":[
-              {"result":"win","endTime":"20260730T100000.000Z","teamSize":30,"attacksPerMember":2,
-               "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0,
-               "members":[{"tag":"#PLAYERANONYMIZED","name":"anonymized-member","townHallLevel":14,"mapPosition":1,"attacks":2,"stars":6,"destructionPercentage":100}]},
-               "opponent":{"tag":"#OPPONENTANONYMIZED","name":"anonymized-opponent","clanLevel":11,"attacks":58,"stars":80,"destructionPercentage":85.0}},
-              {"result":"lose","endTime":"20260727T100000.000Z","teamSize":30,"attacksPerMember":2,
-               "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","clanLevel":12,"attacks":55,"stars":70,"destructionPercentage":88.0},
-               "opponent":{"tag":"#OPP2","name":"op2","clanLevel":10,"attacks":50,"stars":70,"destructionPercentage":80.0}}
-            ],"paging":{"cursors":{"before":"B2","after":"CURSORAFTER2"}}}
-            """.utf8)
-            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            // 重建应请求**第一页**（不带 after 游标）：返回新解析器形态的首页。
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, fullWarLogPageData())
         }
         let model = try makeModel(
             playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
@@ -425,11 +416,16 @@ extension AppModelTests {
         model.loadMoreCurrentWarLog()
         await waitUntil { !model.isRefreshingWarLogData }
 
-        // 替换语义：items = 新页 2 条（若合并会因 members 不同残留 3 条重复）
+        // 重建：请求不带 after 游标（第一页）
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 1)
+        XCTAssertFalse(queries[0].contains("after="), "跨版本重建必须请求第一页（无游标）: \(queries[0])")
+        // 结果 = 新首页（fixture 2 条），解析器版本升级，游标为首页 after
         let state = model.currentWarLogState
         XCTAssertEqual(state?.parserVersion, "clan-war-log-0.3", "状态升级到当前解析器版本")
-        XCTAssertEqual(state?.lastGood?.items.count, 2, "跨版本不得合并旧形态条目")
-        XCTAssertEqual(state?.lastGood?.after, "CURSORAFTER2", "游标推进")
+        XCTAssertEqual(state?.lastGood?.items.count, 2, "重建后为完整首页（不残留旧条目）")
+        XCTAssertEqual(state?.lastGood?.after, "CURSORAFTER1", "游标取首页值")
+        XCTAssertTrue(model.currentWarLogHasMore, "首页有 after → 可继续加载更多")
     }
 
     /// 末页（after nil）后 hasMore = false，加载更多不发起请求。

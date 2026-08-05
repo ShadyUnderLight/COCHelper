@@ -26,6 +26,10 @@ def rendered_path_format_ok(rendered_path: str) -> bool:
     parts = rendered_path.split("/")
     if ".." in parts:
         return False
+    if "%" in rendered_path:
+        # 拒绝 URL 编码段（如 %2e%2e / %2F）：pathlib 不解码，但未来若出现
+        # URL 解码消费者会引入真实逃逸；段内 % 对合法文件名也无意义。
+        return False
     return not _VERSION_SEGMENT_RE.match(parts[1])
 
 

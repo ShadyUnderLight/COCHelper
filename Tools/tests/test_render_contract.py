@@ -97,6 +97,9 @@ def test_det_valid_path_no_errors():
     "icons/18.400/icon.png",         # 版本段（18.\d+ 形式）
     "icons/../secret.png",           # .. 段逃逸（正则 [^/]+ 不排除字面 ..，须显式拒绝）
     "icons/../../secret.png",        # 多级逃逸
+    "icons/..%2F..%2Fetc/passwd.png",  # URL 编码段逃逸（防未来 URL 解码消费者）
+    "icons/%2e%2e/secret.png",       # URL 编码 ..
+    "icons/ui/%2e%2e.png",           # export 名含 %
     "icons/a.png",                   # 单级（违反 R2.1 两级结构）
     "icons/ui/a/b.png",              # 三级
     "/icons/ui/a.png",               # 绝对路径

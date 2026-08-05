@@ -66,7 +66,8 @@ python3 -m pytest Tools/tests -q
 ```
 
 **渲染 spike（issue #27，前置调研）**：`Tools/render_spike.py` 验证 SC2 V6 视觉资产
-（`.sc`/`.sctx`）的可解析性与渲染可行性，输出 4 类固定样本的 verdict 报告；需要
+（`.sc`/`.sctx`）的可解析性与渲染可行性，输出 6 类固定样本（单位/法术 icon、建筑
+外观、跨等级复用、失败引用）的 verdict 报告；需要
 `ctypes` + libzstd（`/opt/homebrew/lib/libzstd.dylib`），与生成管线（纯 stdlib）分离：
 
 ```bash

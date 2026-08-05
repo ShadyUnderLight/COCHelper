@@ -283,6 +283,9 @@ def _parse_data_storage(fb: FlatBuffer) -> list[str]:
     if strings_off == 0:
         return []
     count = fb.vector_len(strings_off)
+    if count > _MAX_VECTOR_ENTRIES:
+        raise ValueError(
+            f"SC2 DataStorage strings 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}")
     return [fb.string(fb.vector_elem(strings_off, i, 4))
             for i in range(count)]
 
@@ -587,6 +590,10 @@ def parse_textures(payload: bytes) -> list[TextureData]:
         if vec == 0:
             return []
         count = fb.vector_len(vec)
+        if count > _MAX_VECTOR_ENTRIES:
+            raise CatalogError(
+                f"SC2 Textures 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
+                "（防 512MB body 解压后的 O(n) 放大）")
         out: list[TextureData] = []
         for i in range(count):
             set_tbl = fb.table(fb.vector_elem(vec, i, 4))

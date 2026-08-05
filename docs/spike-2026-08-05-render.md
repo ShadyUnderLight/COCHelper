@@ -75,22 +75,30 @@
 | `sc/ui.sc` / `icon_unit_barbarian` | 单位 icon（真实 ui.sc 导出名） | **blocked** | `no_shape_command` | oid **8397** → MovieClip 索引 **1992** |
 | `sc/buildings.sc` / `fireplace_lvl1` | 建筑等级外观（兵营 dataID 1000000 levelVisual） | **blocked** | `no_shape_command` | oid **1635** → MovieClip 索引 **448** |
 | `sc/buildings.sc` / `blacksmith_lvl1` | 跨等级复用（铁匠铺 1000070 level1-2 共用） | **blocked** | `no_shape_command` | oid **1652** → MovieClip 索引 **456** |
+| `sc/ui.sc` / `icon_spell_rage` | 法术 icon（交叉审核补充，验收 2 闭环） | **blocked** | `no_shape_command` | oid **22584**（MovieClip 命中） |
 | `sc/ui.sc` / `icon_unit_does_not_exist` | 失败引用（catalog/APK 均不存在） | **missing** | `export_not_found` | objectId null，exportFound false |
 | `sc/traps.sc` / `town_hall_lvl1` | container 不存在（APK 无该文件） | **missing** | `container_not_found` | containerFound false |
 
-运行终端输出（verbatim）：
+运行终端输出（verbatim，交叉审核后 6 样本版本）：
 
 ```
 [blocked] sc/ui.sc / icon_unit_barbarian — no_shape_command export 的 object_id 不在 Shapes chunk（真实数据中 export 全部指向 MovieClip，需 MovieClip→frame→shape 解析链路）
 [blocked] sc/buildings.sc / fireplace_lvl1 — no_shape_command …（同上）
 [blocked] sc/buildings.sc / blacksmith_lvl1 — no_shape_command …（同上）
+[blocked] sc/ui.sc / icon_spell_rage — no_shape_command …（同上）
 [missing] sc/ui.sc / icon_unit_does_not_exist — export_not_found
 [missing] sc/traps.sc / town_hall_lvl1 — container_not_found
---- verdict 汇总: {'blocked': 3, 'missing': 2}
+--- verdict 汇总: {'blocked': 4, 'missing': 2}
 写盘: /tmp/coc-spike-report-check/spike-report.json
 ```
 
-退出码 0（verdict 是数据不是错误）。**5 个样本无一产出 PNG**（`success` 缺失）→ 契约 R3/R4 无法实测（见 §7）。
+退出码 0（verdict 是数据不是错误）。**6 个样本无一产出 PNG**（`success` 缺失）→ 契约 R3/R4 无法实测（见 §7）。
+
+> **更新说明（交叉审核后）**：初版 5 样本在交叉审核中补入法术 icon 样本（`icon_spell_rage`，
+> ui.sc 共 60 个 `icon_spell_*` 导出）形成 6 样本；随后修复了 R-D 结构校验
+> （`rendered_path_format_ok`：两级正则 + 拒 `..`/版本段/`%` 编码段）、fail-soft
+> 报告契约、zip/vector 资源上限等防御问题。核心结论（双重阻塞、继续阻塞 #25）在
+> 6 样本下复跑依然成立。
 
 ---
 
@@ -133,7 +141,7 @@
 | `7c7ffe5` | 修复 R-B 互斥检查被 R-D 短路 |
 | `7e346d5` | 契约纯函数与 property-based 测试（`contract.py` + `test_render_contract.py`） |
 
-- **测试**：`python3 -m pytest Tools/tests -q` → **256 passed**（本次运行实测），含 hypothesis property-based（`is_renderable` 一致性 + R5.2 互斥不变量）。
+- **测试**：`python3 -m pytest Tools/tests -q` → **283 passed**（交叉审核后实测），含 hypothesis property-based（`is_renderable` 一致性 + R5.2 互斥不变量）。
 - **契约规则**：R-A 文件存在 / R-B 互斥（独立轴，不被 R-D 短路）/ R-C manifest 登记 / R-D 格式（`icons/` 前缀 + `.png` 后缀），纯函数 `contract.py:check_rendered_path_contract`。
 
 ---
@@ -168,7 +176,7 @@
 | 依赖例外 | spike 渲染模块（`sc2.py` zstd body 解码 + `render_spike.py`）需 **ctypes + libzstd**（brew 本机 `/opt/homebrew/lib/libzstd.dylib` 已确认可加载；候选顺序：`/opt/homebrew/lib` → `/usr/local/lib` → `find_library`；全失败 → `CatalogError` = `zstd_unavailable`）。与纯 stdlib 生成/校验管线**分离**（契约 R9），生成器 `generate_game_catalog.py` 不引入该依赖 |
 | 解压保护 | body 解压上限 512MB（`ZSTD_decompressBound` 超限拒绝，防 zip bomb，契约 R9.4） |
 | 边界 | spike 输出只进 `/tmp`（本次：`/tmp/coc-spike-report-check/`）；`git ls-files` 无 `.apk/.sc/.sctx/.ktx`，无 spike 产出的 PNG 被跟踪（`Resources/COCHelperAppIcon.png` 为既有 App 图标资产，非 spike 产物）。契约 R12.3 遵守 |
-| 可复核性 | 复跑命令：`cd Tools && python3 render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-report-check`；契约测试：`python3 -m pytest Tools/tests -q`（256 passed） |
+| 可复核性 | 复跑命令：`cd Tools && python3 render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-report-check`；契约测试：`python3 -m pytest Tools/tests -q`（283 passed） |
 
 ---
 

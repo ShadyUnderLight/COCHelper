@@ -26,6 +26,7 @@ from game_catalog.sc2 import (
     parse_export_names,
     parse_sc_header,
     parse_shapes,
+    parse_textures,
     read_chunks,
 )
 from test_fbs import FbBuilder
@@ -273,6 +274,27 @@ def build_export_names(object_ids: list[int], name_refs: list[int]) -> bytes:
     refs = b.add_raw_vector(
         len(name_refs), struct.pack("<" + "I" * len(name_refs), *name_refs))
     root = b.add_table({0: ("uoffset", ids), 1: ("uoffset", refs)})
+    return b.finish(root)
+
+
+def build_data_storage_with_prefix(strings: list[str]) -> bytes:
+    """带 4 字节 size 前缀的 DataStorage（真实布局：resources_offset = 4 + size）。"""
+    payload = build_data_storage(strings)
+    return struct.pack("<I", len(payload)) + payload
+
+
+def _build_minimal_textures(count: int) -> bytes:
+    """Textures{textures: [TextureSet{highres}]} 最小构造（每条 highres 为最小 TextureData）。"""
+    b = FbBuilder()
+    tokens = []
+    for _ in range(count):
+        # TextureData{width u16, height u16} 最小表（slot 2/3）
+        td = b.add_table({2: ("u16", 1), 3: ("u16", 1)})
+        # TextureSet{highres: uoffset td}（slot 1）
+        ts = b.add_table({1: ("uoffset", td)})
+        tokens.append(ts)
+    vec = b.add_vector(tokens)
+    root = b.add_table({0: ("uoffset", vec)})
     return b.finish(root)
 
 
@@ -541,6 +563,32 @@ def test_parse_shapes_command_count_limit_raises():
     payload[cmd_vec:cmd_vec + 4] = struct.pack("<I", 2_000_000)
     with pytest.raises(CatalogError, match="上限"):
         parse_shapes(bytes(payload))
+
+
+def test_parse_textures_count_limit_raises():
+    """交叉审核 FIX-B：Textures 条目数超上限 → CatalogError。"""
+    payload = bytearray(_build_minimal_textures(1))
+    root_pos = struct.unpack("<I", payload[:4])[0]
+    vec_field = root_pos + _table_slot_rel(bytes(payload), root_pos, 0)
+    vec_pos = vec_field + struct.unpack(
+        "<I", bytes(payload[vec_field:vec_field + 4]))[0]
+    payload[vec_pos:vec_pos + 4] = struct.pack("<I", 2_000_000)
+    with pytest.raises(CatalogError, match="上限"):
+        parse_textures(bytes(payload))
+
+
+def test_parse_data_storage_strings_limit_raises():
+    """交叉审核 FIX-B：DataStorage strings 条目数超上限 → CatalogError（经双布局包装）。"""
+    body = bytearray(build_data_storage_with_prefix(["a"]))
+    # 注意：FlatBuffer 持有 bytes 副本，须在伪造长度字段后构造
+    root_pos = struct.unpack("<I", bytes(body[4:8]))[0]
+    vec_field = root_pos + _table_slot_rel(bytes(body[4:]), root_pos, 0)
+    vec_pos = vec_field + struct.unpack(
+        "<I", bytes(body[4:][vec_field:vec_field + 4]))[0]
+    body[4 + vec_pos:4 + vec_pos + 4] = struct.pack("<I", 2_000_000)
+    fb = FlatBuffer(bytes(body[4:]))  # 带 4 字节 size 前缀的真实布局
+    with pytest.raises(CatalogError, match="上限"):
+        parse_data_storage(fb, bytes(body))
 
 
 def _build_minimal_shapes(shapes: list[tuple[int, list[int] | None]]) -> bytes:

@@ -13,6 +13,20 @@ public struct VillageDetailGroup: Identifiable, Hashable, Sendable {
     }
 }
 
+// MARK: - 嵌套归父（issue #24）
+
+/// 展示行：根父项（或独立项）+ 其嵌套后代（types/modules，UI 缩进显示）。
+public struct VillageParentedRow: Identifiable, Hashable, Sendable {
+    public let item: VillageItemState
+    public let children: [VillageItemState]
+    public var id: String { item.id }
+
+    public init(item: VillageItemState, children: [VillageItemState]) {
+        self.item = item
+        self.children = children
+    }
+}
+
 // MARK: - 完成度
 
 public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
@@ -122,5 +136,75 @@ public enum VillageDetailProjection {
             return false // 版本不匹配：目录可能过时，不纳入可确认完成度
         }
         return true
+    }
+
+    // MARK: - 嵌套归父（issue #24）
+
+    /// 把嵌套 types/modules 项归入最近的非嵌套祖先（根父）下，供 UI 缩进展示。
+    ///
+    /// 规则（issue #24「父项 id 前缀匹配」）：
+    /// - 平铺项（非嵌套）独立成行；嵌套项挂到根父的 `children`；
+    /// - 嵌套项 id 形如 `section:path`（如 `buildings:5.types.0.modules.2`），从最后
+    ///   一段逐级截断上溯，直到路径段不再含 `types`/`modules`（即根父）；
+    /// - 父项 id 可能带 `agg:` 前缀（聚合后 id = `agg:` + 原始 id），匹配时归一化忽略；
+    /// - 同一归一化父 id 可能对应多个平铺项（升级记录单独保留 + 聚合项并存），
+    ///   children 只挂到输入中最先出现的那个，其余行 children 为空；
+    /// - 根父不在输入中（防御：父项被 UI 过滤）时，嵌套项独立成行，信息不丢失；
+    /// - 行与 children 均保持输入相对顺序。
+    public static func parentedRows(from items: [VillageItemState]) -> [VillageParentedRow] {
+        let flatNormalizedIDs = Set(items.filter { !$0.isNested }.map { Self.normalizedID($0.id) })
+        var childrenByRoot: [String: [VillageItemState]] = [:]
+        for item in items where item.isNested {
+            if let root = Self.rootParentPath(of: item.id), flatNormalizedIDs.contains(root) {
+                childrenByRoot[root, default: []].append(item)
+            }
+        }
+
+        var rows: [VillageParentedRow] = []
+        var seenRoots = Set<String>()
+        for item in items {
+            if item.isNested {
+                // 孤儿（根父不在输入中）：原位成行，保持输入相对顺序（P3）。
+                if let root = Self.rootParentPath(of: item.id), flatNormalizedIDs.contains(root) {
+                    continue // 已挂到根父 children，不占行
+                }
+                rows.append(VillageParentedRow(item: item, children: []))
+            } else {
+                let key = Self.normalizedID(item.id)
+                let children = seenRoots.contains(key) ? [] : (childrenByRoot[key] ?? [])
+                seenRoots.insert(key)
+                rows.append(VillageParentedRow(item: item, children: children))
+            }
+        }
+        return rows
+    }
+
+    /// 归一化聚合前缀：`agg:xxx` → `xxx`。
+    private static func normalizedID(_ id: String) -> String {
+        id.hasPrefix("agg:") ? String(id.dropFirst(4)) : id
+    }
+
+    /// id 是否仍处于嵌套路径：`:` 后的路径段含 `types` 或 `modules` 段。
+    ///
+    /// 注意不能对整个字符串做 `contains(".modules.")`：截断数字段后的中间态
+    /// （如 `heroes:0.modules`）没有尾点，会误判为平铺提前返回。
+    private static func isNestedPath(_ id: String) -> Bool {
+        guard let colon = id.firstIndex(of: ":") else { return false }
+        let path = id[id.index(after: colon)...]
+        return path.split(separator: ".").contains { $0 == "types" || $0 == "modules" }
+    }
+
+    /// 嵌套项 id → 最近的非嵌套祖先（根父）的归一化 id；无法推导时返回 nil。
+    ///
+    /// 从最后一段逐级截断上溯，直到路径段不再含 `types`/`modules` 段。
+    /// 中间态（如 `heroes:0.modules`）不是合法快照 id，仅作为上溯过程
+    /// 经过的状态；最终根父形如 `heroes:0`（与真实快照父项 id 一致）。
+    private static func rootParentPath(of id: String) -> String? {
+        var current = id
+        while Self.isNestedPath(current) {
+            guard let dot = current.lastIndex(of: ".") else { return nil }
+            current = String(current[..<dot])
+        }
+        return Self.normalizedID(current)
     }
 }

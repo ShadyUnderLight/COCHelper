@@ -804,6 +804,29 @@ def test_rendered_path_version_segment_rejected_even_when_file_exists(tmp_path):
     assert any("格式非法" in e for e in errors)
 
 
+def test_rendered_path_backslash_rejected_even_when_file_exists(tmp_path):
+    """P2-1c 回归：含反斜杠的 renderedPath（未 sanitize，R2.2）即使文件真实存在+
+    登记+hash 对也必须拒绝——`\` 是 Windows 路径分隔符，跨平台逃逸风险。"""
+    import hashlib
+    d = _valid_dir(tmp_path)
+    png = b"\x89PNG\r\n\x1a\n" + b"w" * 8
+    (d / "icons" / "ui").mkdir(parents=True)
+    (d / "icons" / "ui" / "a_b.png").write_bytes(png)
+    m = _load_manifest(d)
+    m["generatedFiles"].append({
+        "path": "icons/ui/a_b.png",
+        "sha256": "sha256:" + hashlib.sha256(png).hexdigest(),
+        "size": len(png),
+    })
+    _write(d, manifest=m)
+    c = _load_catalog(d)
+    # renderedPath 含反斜杠（未 sanitize 形态），文件/登记都指向正常路径
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path=r"icons/ui/a\b.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("格式非法" in e for e in errors)
+
+
 def test_rendered_path_dotdot_escape_rejected_without_probe(tmp_path):
     """NB-3 回归：icons/../../secret.png 指向 catalog 目录外的真实文件（且登记、
     hash 对）→ 必须报格式非法，不得因逃逸探测命中而放行。"""

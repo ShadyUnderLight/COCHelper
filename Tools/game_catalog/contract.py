@@ -33,6 +33,11 @@ def rendered_path_format_ok(rendered_path: str) -> bool:
         # 拒绝 URL 编码段（如 %2e%2e / %2F）：pathlib 不解码，但未来若出现
         # URL 解码消费者会引入真实逃逸；段内 % 对合法文件名也无意义。
         return False
+    if "\\" in rendered_path:
+        # 拒绝未 sanitize 的反斜杠（契约 R2.2：生成器 sanitize 将 `\` 替换为
+        # `_`，renderedPath 必须是 sanitize 后形态；Windows 上 `\` 是路径
+        # 分隔符，跨平台逃逸风险，P2-1c）。
+        return False
     if _VERSION_SEGMENT_RE.match(parts[1]):
         return False
     export_key = parts[2][:-4]  # 去掉 .png 后缀——R2.2 约束的是 sanitize 后的 export key

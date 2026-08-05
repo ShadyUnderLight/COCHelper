@@ -110,6 +110,8 @@ def test_det_valid_path_no_errors():
     "icons/..%2F..%2Fetc/passwd.png",  # URL 编码段逃逸（防未来 URL 解码消费者）
     "icons/%2e%2e/secret.png",       # URL 编码 ..
     "icons/ui/%2e%2e.png",           # export 名含 %
+    "icons/ui/a\\b.png",             # 未 sanitize 反斜杠（R2.2，P2-1c）
+    "icons\\ui/a.png",               # container 段反斜杠
     "icons/a.png",                   # 单级（违反 R2.1 两级结构）
     "icons/ui/a/b.png",              # 三级
     "/icons/ui/a.png",               # 绝对路径

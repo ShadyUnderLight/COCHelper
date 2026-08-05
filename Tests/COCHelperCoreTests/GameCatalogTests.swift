@@ -297,4 +297,30 @@ final class GameCatalogTests: XCTestCase {
                        ["icons/buildings/blacksmith_lvl1.png"],
                        "跨等级应共享同一 renderedPath，不复制资源")
     }
+
+    // MARK: - bundledURL resolver（Issue #25）
+
+    /// R1.1/R5.3：isRenderable 的引用必须解析出 Bundle 内 URL，且文件真实存在。
+    func testBundledURLResolvesRenderableRefsToExistingFiles() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let renderable = allAssetRefs(in: catalog).filter { $0.ref.isRenderable }
+        XCTAssertGreaterThan(renderable.count, 0)
+        for entry in renderable {
+            let url = try XCTUnwrap(entry.ref.bundledURL(),
+                                    "\(entry.item.section) \(entry.item.dataID) \(entry.slot) 应解析出 URL")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path),
+                          "\(entry.item.section) \(entry.item.dataID) \(entry.slot) → \(url.path) 不存在")
+        }
+    }
+
+    /// 缺失引用（missingReason != nil）不得解析出 URL（UI 回退 SF Symbol）。
+    func testBundledURLIsNilForMissingRefs() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let missing = allAssetRefs(in: catalog).filter { $0.ref.missingReason != nil }
+        XCTAssertGreaterThan(missing.count, 0)
+        for entry in missing {
+            XCTAssertNil(entry.ref.bundledURL(),
+                         "\(entry.item.section) \(entry.item.dataID) \(entry.slot) 有 missingReason 不应解析出 URL")
+        }
+    }
 }

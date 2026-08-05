@@ -52,6 +52,30 @@ public struct CatalogAssetRef: Codable, Hashable, Sendable {
     }
 }
 
+extension CatalogAssetRef {
+    /// renderedPath 在 Core 资源 Bundle 内的 URL（契约 R1.1/R5.3）。
+    ///
+    /// - 仅当 `isRenderable` 时解析（renderedPath 非空且无缺失原因）；
+    ///   否则返回 nil，UI 回退 SF Symbol。
+    /// - `Bundle.module` 在本模块（COCHelperCore）内编译 → 解析到 Core
+    ///   资源 bundle（与 `loadBundled()` 同一机制）。
+    /// - 文件不存在时 Bundle 解析返回 nil，不抛错。
+    /// - 注意：`Bundle.url(forResource:)` 的 resource 名必须是纯文件名
+    ///   （`lastPathComponent`），目录部分走 `subdirectory` 参数；带路径
+    ///   分隔符会解析失败返回 nil。
+    public func bundledURL(version: String = GameCatalog.defaultBundledVersion) -> URL? {
+        guard isRenderable, let renderedPath else { return nil }
+        let nsPath = renderedPath as NSString
+        let subdirectory = "GameCatalog/" + version + "/" + nsPath.deletingLastPathComponent
+        let last = nsPath.lastPathComponent as NSString
+        return Bundle.module.url(
+            forResource: last.deletingPathExtension,
+            withExtension: last.pathExtension,
+            subdirectory: subdirectory
+        )
+    }
+}
+
 // MARK: - Items
 
 public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {

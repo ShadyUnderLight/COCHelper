@@ -94,10 +94,10 @@ def _mini_catalog() -> dict:
         "items": [
             {
                 "section": "units", "dataID": 4000000, "name": "野蛮人",
-                "maxLevel": 2, "category": "units",
+                "maxLevel": 1, "category": "units",
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_unit_barbarian",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
-                "levelVisual": None, "base": None, "baseMissingReason": None,
+                "levelVisual": None, "base": "home", "baseMissingReason": None,
                 "missingReason": None,
                 "levels": [
                     {"level": 1, "icon": {"container": "sc/ui.sc",
@@ -119,7 +119,7 @@ def _mini_catalog() -> dict:
                                 "exportName": "blacksmith_lvl1",
                                 "renderedPath": None,
                                 "missingReason": "icons_not_rendered"},
-                "base": None, "baseMissingReason": None,
+                "base": "home", "baseMissingReason": None,
                 "missingReason": None,
                 "levels": [
                     {"level": 1, "icon": None,
@@ -138,19 +138,19 @@ def _mini_catalog() -> dict:
             },
             {
                 "section": "spells", "dataID": 26000002, "name": "狂暴法术",
-                "maxLevel": 1, "category": "spells",
+                "maxLevel": 0, "category": "spells",
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_spell_rage",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
-                "levelVisual": None, "base": None, "baseMissingReason": None,
+                "levelVisual": None, "base": "home", "baseMissingReason": None,
                 "missingReason": None,
                 "levels": [],
             },
             {
                 "section": "heroes", "dataID": 999, "name": "无关条目",
-                "maxLevel": 1, "category": "heroes",
+                "maxLevel": 0, "category": "heroes",
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_unit_king",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
-                "levelVisual": None, "base": None, "baseMissingReason": None,
+                "levelVisual": None, "base": "home", "baseMissingReason": None,
                 "missingReason": None,
                 "levels": [],
             },
@@ -185,6 +185,19 @@ def _mini_manifest() -> str:
         ],
         "counts": {"items": 0, "levels": 0, "missingTime": 0, "missingIcons": 0},
     }, ensure_ascii=False) + "\n"
+
+
+def _mini_dir(tmp_path: Path) -> Path:
+    """迷你完整目录：catalog.json（_mini_catalog，引用全部 4 个成功样本）+
+    manifest.json + icons/。"""
+    d = tmp_path / "cat"
+    d.mkdir()
+    (d / "catalog.json").write_text(
+        json.dumps(_mini_catalog(), ensure_ascii=False, indent=2,
+                   sort_keys=True) + "\n", encoding="utf-8")
+    (d / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
+    (d / "icons").mkdir()
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -539,16 +552,9 @@ def test_replace_keyboard_interrupt_not_swallowed(tmp_path, monkeypatch):
 
 def test_outputs_manifest_consistent_after_write(tmp_path):
     """正常路径：PNG/catalog.json/manifest.json 三者一致——manifest 中
-    catalog.json sha256 == 磁盘、PNG 条目与磁盘一致、counts == validate 重算。"""
-    d = _valid_dir(tmp_path)
-    # 让 missingIcons 非平凡：加一个不匹配样本的 level icon 引用（renderedPath null）
-    c = _load_catalog(d)
-    c["items"][0]["levels"][0]["icon"] = {
-        "container": "sc/ui.sc", "exportName": "icon_unit_king",
-        "renderedPath": None, "missingReason": "icons_not_rendered",
-    }
-    _write_with_hash(d, catalog=c)
-
+    catalog.json sha256 == 磁盘、PNG 条目与磁盘一致、counts == validate 重算
+    （含 R6.2 renderedIcons == PNG 条目数 / blockedIcons == 失败样本数）。"""
+    d = _mini_dir(tmp_path)
     stats = write_rendered_outputs(d, _sample_verdicts())
     assert sorted(stats["pngWritten"]) == [
         "icons/buildings/blacksmith_lvl1.png",
@@ -556,6 +562,7 @@ def test_outputs_manifest_consistent_after_write(tmp_path):
         "icons/ui/icon_spell_rage.png",
         "icons/ui/icon_unit_barbarian.png",
     ]
+    assert stats["cleaned"] == []  # 全部 PNG 均被 catalog 引用，无孤儿
 
     manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     entries = {e["path"]: e for e in manifest["generatedFiles"]}
@@ -566,15 +573,16 @@ def test_outputs_manifest_consistent_after_write(tmp_path):
     assert entries["catalog.json"]["size"] == len(cat_bytes)
     # icons/ 目录条目 entries = PNG 数
     assert entries["icons/"]["entries"] == 4
-    # PNG 条目与磁盘一致
+    # PNG 条目与磁盘一致（引用集合 == 本次写入集合，无孤儿）
     for rel in stats["pngWritten"]:
         data = (d / rel).read_bytes()
         assert entries[rel]["sha256"] \
             == "sha256:" + hashlib.sha256(data).hexdigest()
         assert entries[rel]["size"] == len(data)
-    # counts 与 validate 重算语义一致（missingIcons=1：未匹配引用仍 renderedPath null）
-    assert manifest["counts"] == {"items": 1, "levels": 1,
-                                  "missingTime": 0, "missingIcons": 1}
+    # counts：missingIcons=0（4 个成功样本全部回写）；renderedIcons == PNG 条目数
+    assert manifest["counts"] == {"items": 4, "levels": 3,
+                                  "missingTime": 0, "missingIcons": 0,
+                                  "renderedIcons": 4, "blockedIcons": 2}
     assert validate_catalog(d) == []
 
 
@@ -599,7 +607,8 @@ def test_rewrite_idempotent_validate_clean(tmp_path):
 
 def test_refresh_manifest_standalone_recomputes(tmp_path):
     """refresh_manifest 独立可用（/tmp/refresh_manifest.py 逻辑入库）：陈旧
-    counts/hash 全部刷新、PNG 条目原位去重、幂等。"""
+    counts/hash 全部刷新、PNG 条目原位去重、幂等；blockedIcons 未传入时保留
+    manifest 既有值（快照语义），缺失则不写（optional 字段）。"""
     d = _valid_dir(tmp_path)
     png = _PNG_SIG + b"x" * 16
     (d / "icons/ui").mkdir(parents=True)
@@ -614,7 +623,8 @@ def test_refresh_manifest_standalone_recomputes(tmp_path):
 
     new = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"])
     assert new["counts"] == {"items": 1, "levels": 1,
-                             "missingTime": 0, "missingIcons": 0}
+                             "missingTime": 0, "missingIcons": 0,
+                             "renderedIcons": 1}
     entries = {e["path"]: e for e in new["generatedFiles"]}
     assert entries["icons/ui/icon_unit_barbarian.png"] == {
         "path": "icons/ui/icon_unit_barbarian.png",
@@ -629,6 +639,22 @@ def test_refresh_manifest_standalone_recomputes(tmp_path):
     assert validate_catalog(d) == []
 
 
+def test_refresh_manifest_preserves_blocked_icons_snapshot(tmp_path):
+    """独立 refresh_manifest 传入 blocked_count → 写入；未传入 → 保留既有快照值。"""
+    d = _valid_dir(tmp_path)
+    (d / "icons/ui").mkdir(parents=True)
+    (d / "icons/ui/icon_unit_barbarian.png").write_bytes(_PNG_SIG + b"y" * 16)
+    m = _load_manifest(d)
+    m["counts"]["blockedIcons"] = 3
+    _write(d, manifest=m)
+
+    new = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"])
+    assert new["counts"]["blockedIcons"] == 3  # 未传 blocked_count → 保留快照
+    new2 = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"],
+                            blocked_count=7)
+    assert new2["counts"]["blockedIcons"] == 7  # 显式传入 → 覆盖
+
+
 def test_refresh_manifest_missing_icon_key_fails_loud(tmp_path):
     """refresh_manifest：手编 catalog 的 level 缺 icon 键（畸形数据）→
     CatalogError 语义清晰，不泄漏裸 KeyError（fail loud，缺键属畸形而非
@@ -639,6 +665,111 @@ def test_refresh_manifest_missing_icon_key_fails_loud(tmp_path):
     _write(d, catalog=c)
     with pytest.raises(CatalogError, match="icon"):
         refresh_manifest(d, [])
+
+
+# ---------------------------------------------------------------------------
+# R6.2 计数（renderedIcons / blockedIcons）+ 孤儿输出清理（R3 评审项）
+# ---------------------------------------------------------------------------
+
+
+def test_counts_rendered_and_blocked_icons(tmp_path):
+    """R6.2：counts.renderedIcons == generatedFiles PNG 条目数（validate 重算
+    断言生效）；blockedIcons == 失败样本数；validate 零错误。"""
+    d = _mini_dir(tmp_path)
+    stats = write_rendered_outputs(d, _sample_verdicts())
+    assert sorted(stats["pngWritten"]) == [
+        "icons/buildings/blacksmith_lvl1.png",
+        "icons/buildings/fireplace_lvl1.png",
+        "icons/ui/icon_spell_rage.png",
+        "icons/ui/icon_unit_barbarian.png",
+    ]
+    assert stats["cleaned"] == [] and stats["cleanupFailed"] == []
+
+    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    png_entries = [e for e in manifest["generatedFiles"]
+                   if e.get("kind") != "directory"
+                   and e["path"].endswith(".png")]
+    assert len(png_entries) == 4
+    assert manifest["counts"]["renderedIcons"] == 4
+    assert manifest["counts"]["renderedIcons"] == len(png_entries)
+    assert manifest["counts"]["blockedIcons"] == 2
+    assert validate_catalog(d) == []
+
+
+def test_old_success_new_failure_cleans_orphan(tmp_path):
+    """旧成功→本次失败：第一轮 barbarian 成功（PNG + manifest 条目 + catalog
+    引用）；第二轮 verdict 改为 failed → 孤儿 PNG 被删除、generatedFiles 无
+    A 条目、catalog A 引用 renderedPath null + missingReason、validate 零错误。"""
+    d = _mini_dir(tmp_path)
+    write_rendered_outputs(d, _sample_verdicts())
+    assert (d / "icons/ui/icon_unit_barbarian.png").is_file()
+
+    verdicts2 = [_fail_verdict("sc/ui.sc", "icon_unit_barbarian",
+                               "export_not_found"),
+                 *_sample_verdicts()[1:]]
+    stats = write_rendered_outputs(d, verdicts2)
+    assert stats["cleaned"] == ["icons/ui/icon_unit_barbarian.png"]
+    assert not (d / "icons/ui/icon_unit_barbarian.png").exists()
+
+    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    paths = [e["path"] for e in manifest["generatedFiles"]]
+    assert "icons/ui/icon_unit_barbarian.png" not in paths
+    assert manifest["counts"]["renderedIcons"] == 3
+    assert manifest["counts"]["blockedIcons"] == 3  # barbarian + 2 固定失败
+
+    catalog = json.loads((d / "catalog.json").read_text(encoding="utf-8"))
+    item0 = catalog["items"][0]
+    assert item0["icon"]["renderedPath"] is None
+    assert item0["icon"]["missingReason"] == "export_not_found"
+    assert item0["levels"][0]["icon"]["renderedPath"] is None
+    assert item0["levels"][0]["icon"]["missingReason"] == "export_not_found"
+    assert validate_catalog(d) == []
+
+
+def test_rerun_idempotent_no_orphans(tmp_path):
+    """重跑幂等：连续两次相同运行 → 无孤儿、generatedFiles 无重复、counts
+    稳定、磁盘 PNG 集合 == 引用集合、validate 零错误。"""
+    d = _mini_dir(tmp_path)
+    write_rendered_outputs(d, _sample_verdicts())
+    stats = write_rendered_outputs(d, _sample_verdicts())
+    assert stats["cleaned"] == []
+    assert stats["cleanupFailed"] == []
+
+    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    paths = [e["path"] for e in manifest["generatedFiles"]]
+    assert len(paths) == len(set(paths))
+    assert manifest["counts"]["renderedIcons"] == 4
+    assert manifest["counts"]["blockedIcons"] == 2
+    # 磁盘 PNG 集合与引用集合一致（无孤儿也无遗漏）
+    on_disk = sorted(p.relative_to(d).as_posix()
+                     for p in (d / "icons").rglob("*.png"))
+    assert on_disk == sorted(
+        e["path"] for e in manifest["generatedFiles"]
+        if e.get("kind") != "directory" and e["path"].endswith(".png"))
+    assert validate_catalog(d) == []
+
+
+def test_cleanup_failure_does_not_block(tmp_path, monkeypatch):
+    """清理失败不阻断：unlink 抛错 → write_rendered_outputs 不抛、返回信息含
+    cleanupFailed；孤儿 PNG 残留磁盘但目录仍有效（validate 不查孤儿）。"""
+    d = _mini_dir(tmp_path)
+    write_rendered_outputs(d, _sample_verdicts())
+    verdicts2 = [_fail_verdict("sc/ui.sc", "icon_unit_barbarian",
+                               "export_not_found"),
+                 *_sample_verdicts()[1:]]
+
+    import render_generator as rg
+
+    def boom(path, *args, **kwargs):
+        raise OSError("simulated unlink failure")
+
+    monkeypatch.setattr(rg.os, "unlink", boom)
+    stats = write_rendered_outputs(d, verdicts2)  # 不抛异常
+    assert stats["cleaned"] == []
+    assert stats["cleanupFailed"] == ["icons/ui/icon_unit_barbarian.png"]
+    # 孤儿 PNG 删除失败残留磁盘，但 manifest 已无条目、validate 零错误
+    assert (d / "icons/ui/icon_unit_barbarian.png").is_file()
+    assert validate_catalog(d) == []
 
 
 # ---------------------------------------------------------------------------

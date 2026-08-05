@@ -450,6 +450,63 @@ def test_validate_counts_missing_entirely(tmp_path):
     assert any("counts" in e for e in errors)
 
 
+# ---- R6.2：counts.renderedIcons / counts.blockedIcons（optional 字段）----
+
+def test_validate_counts_optional_fields_missing_ok(tmp_path):
+    """旧 manifest 兼容：renderedIcons/blockedIcons 缺失不报错（optional）。"""
+    d = _valid_dir(tmp_path)  # counts 仅含基础 4 字段
+    assert validate_catalog(d) == []
+
+
+def test_validate_rendered_icons_mismatch_detected(tmp_path):
+    """renderedIcons 与 generatedFiles PNG 条目数不符 → 报错（重算断言）。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"\x89PNG\r\n\x1a\n" + b"r" * 16)
+    m = _load_manifest(d)
+    m["counts"]["renderedIcons"] = 0  # 实际 PNG 条目数 = 1
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.renderedIcons" in e and "不一致" in e for e in errors)
+
+
+def test_validate_rendered_icons_ok(tmp_path):
+    """renderedIcons == PNG 条目数、blockedIcons 非负 → 通过。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"\x89PNG\r\n\x1a\n" + b"r" * 16)
+    m = _load_manifest(d)
+    m["counts"]["renderedIcons"] = 1
+    m["counts"]["blockedIcons"] = 2
+    _write(d, manifest=m)
+    assert validate_catalog(d) == []
+
+
+def test_validate_rendered_icons_non_int_rejected(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"]["renderedIcons"] = "4"
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.renderedIcons" in e and "非法" in e for e in errors)
+
+
+def test_validate_blocked_icons_non_int_rejected(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"]["blockedIcons"] = "2"
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.blockedIcons" in e for e in errors)
+
+
+def test_validate_blocked_icons_negative_rejected(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"]["blockedIcons"] = -1
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.blockedIcons" in e for e in errors)
+
+
 def test_catalog_invariants_alias(tmp_path):
     from game_catalog.validate import catalog_invariants
     assert catalog_invariants(_valid_dir(tmp_path)) == []

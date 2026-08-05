@@ -116,6 +116,7 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
     # ---- generatedFiles 完整性：hash/size 重算比对 + icons/ 目录存在 ----
     gen = manifest.get("generatedFiles")
     registered: set[str] | None = None  # 非 directory 条目路径集合（R-C 用）
+    png_count: int | None = 0 if isinstance(gen, list) else None  # R6.2：PNG 条目数
     if not isinstance(gen, list):
         errors.append("manifest 缺少 generatedFiles")
     else:
@@ -133,6 +134,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                 if not (d := catalog_path.parent / path).is_dir():
                     errors.append(f"generatedFiles 目录不存在: {path}")
                 continue
+            if path.endswith(".png"):
+                png_count += 1  # R6.2：renderedIcons 重算断言依据
             registered.add(path)
             target = catalog_path.parent / path
             if not target.is_file():
@@ -216,6 +219,23 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         for field in ("items", "levels", "missingTime", "missingIcons"):
             if manifest_counts.get(field) != counts[field]:
                 errors.append(f"counts.{field} 不一致: manifest={manifest_counts.get(field)} 重算={counts[field]}")
+        # ---- R6.2 optional 字段（旧 manifest 缺失不报错）----
+        # renderedIcons：渲染成功且落盘的 PNG 数，必须 == generatedFiles PNG
+        # 条目数（可重算断言）；generatedFiles 缺失时只校验类型不比对
+        ri = manifest_counts.get("renderedIcons")
+        if ri is not None:
+            if not isinstance(ri, int) or isinstance(ri, bool) or ri < 0:
+                errors.append(f"counts.renderedIcons 非法: {ri!r}")
+            elif png_count is not None and ri != png_count:
+                errors.append(
+                    f"counts.renderedIcons 不一致: manifest={ri} "
+                    f"重算={png_count}（generatedFiles PNG 条目数）")
+        # blockedIcons：失败样本键数，快照语义——只有生成器知道，validate 只
+        # 校验存在性/类型/非负，不重算
+        bi = manifest_counts.get("blockedIcons")
+        if bi is not None and (not isinstance(bi, int)
+                               or isinstance(bi, bool) or bi < 0):
+            errors.append(f"counts.blockedIcons 非法: {bi!r}")
 
     return errors
 

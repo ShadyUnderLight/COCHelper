@@ -15,6 +15,7 @@ from . import (
     ITEM_MISSING_REASONS,
     LEVEL_MISSING_REASONS,
 )
+from .contract import check_rendered_path_contract
 from .model import AssetRef, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
@@ -27,7 +28,11 @@ def _check_rendered_path(
     catalog_dir: Path,
     registered: set[str] | None,
 ) -> None:
-    """renderedPath 负例校验（Issue #27 契约 R1/R2/R5）。
+    """renderedPath 负例校验（Issue #27 契约 R1/R2/R5），复用 contract 模块。
+
+    契约规则/顺序/消息见 game_catalog/contract.py 的 check_rendered_path_contract；
+    file_exists 与 registered 布尔由本处计算（保持契约函数纯、无 IO）。契约返回的
+    消息不含 "(<context>)" 后缀，在此追加以保持既有输出文本逐字不变。
 
     顺序：R-B 互斥（独立轴，先查，不被格式短路）→ R-D 格式 → R-A 文件存在 →
     R-C manifest 登记。renderedPath 为空（null/""）不触发——与 counts.missingIcons
@@ -38,17 +43,12 @@ def _check_rendered_path(
     rp = ref.renderedPath
     if not rp:
         return
-    if ref.missingReason:
-        errors.append(
-            f"renderedPath 与 missingReason 同时存在（成功字段与失败原因互斥）: {rp} "
-            f"missingReason={ref.missingReason!r} ({context})")
-    if not (rp.startswith("icons/") and rp.endswith(".png")):
-        errors.append(f"renderedPath 格式非法: {rp!r}（须相对版本目录 icons/ 且 .png 结尾）({context})")
-        return
-    if not (catalog_dir / rp).is_file():
-        errors.append(f"renderedPath 指向不存在的文件: {rp} ({context})")
-    elif registered is not None and rp not in registered:
-        errors.append(f"renderedPath 文件未在 manifest generatedFiles 登记: {rp} ({context})")
+    violations = check_rendered_path_contract(
+        rp, ref.missingReason,
+        (catalog_dir / rp).is_file(),
+        None if registered is None else rp in registered,
+    )
+    errors.extend(f"{e} ({context})" for e in violations)
 
 
 def validate_catalog(dir_path: str | Path) -> list[str]:

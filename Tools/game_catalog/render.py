@@ -367,10 +367,16 @@ def _blend_src_over(canvas: bytearray, layer: bytes) -> None:
         out_a = sa + da * (255 - sa) // 255
         if out_a == 0:
             continue
+        # 加权平均（分母同乘 255 消除法误差）：da 很小时原式
+        # (src*sa + dst*da*(255-sa)//255)//out_a 分子可超 255（如
+        # sa=da=1 → 509）→ ValueError。同乘 255 后分子分母均为整数、
+        # 结果恒 ∈ [0,255]，且比原式少一次除法取整，数学上更接近
+        # 精确 src-over（R4 确定性不受影响：纯整数运算）。
+        denom = sa * 255 + da * (255 - sa)
         for c in range(3):
-            canvas[i + c] = ((layer[i + c] * sa
-                              + canvas[i + c] * da * (255 - sa) // 255)
-                             // out_a)
+            canvas[i + c] = ((layer[i + c] * sa * 255
+                              + canvas[i + c] * da * (255 - sa))
+                             // denom)
         canvas[i + 3] = out_a
 
 

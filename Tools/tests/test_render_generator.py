@@ -31,11 +31,14 @@ from pathlib import Path
 
 import pytest
 
+from hypothesis import HealthCheck, given, settings, strategies as st
+
 from game_catalog.errors import CatalogError
 from game_catalog.validate import validate_catalog
 from render_generator import (
     SAMPLES,
     apply_rendered_paths,
+    collect_catalog_refs,
     container_key,
     refresh_manifest,
     render_samples,
@@ -1073,17 +1076,20 @@ class TestRealApk:
         assert len(ok1) == 4
 
     def test_writeback_on_catalog_copy(self, tmp_path):
-        """完整回写（真实 catalog.json 副本）：匹配引用全更新、PNG 落盘、
-        失败样本不更新不写文件。"""
+        """完整回写（迷你 catalog 副本，Issue #25 全量模式）：收集引用全更新、
+        PNG 落盘、失败引用写入 missingReason 且不写文件。"""
         from render_generator import main
 
-        src = _BUNDLED / "catalog.json"
-        assert src.is_file(), f"bundled catalog 缺失: {src}"
-        dst = tmp_path / "catalog.json"
-        dst.write_bytes(src.read_bytes())
-        # 默认刷新 manifest.json——复制真实副本（陈旧 hash 由 refresh 重算）
-        dst_manifest = tmp_path / "manifest.json"
-        dst_manifest.write_bytes((_BUNDLED / "manifest.json").read_bytes())
+        catalog = _mini_catalog()
+        # heroes 条目改为已知失败键：验证失败引用也参与全量收集与回写
+        catalog["items"][3]["icon"] = {
+            "container": "sc/ui.sc", "exportName": "icon_unit_does_not_exist",
+            "renderedPath": None, "missingReason": "icons_not_rendered"}
+        (tmp_path / "catalog.json").write_text(
+            json.dumps(catalog, ensure_ascii=False, indent=2,
+                       sort_keys=True) + "\n", encoding="utf-8")
+        (tmp_path / "manifest.json").write_text(_mini_manifest(),
+                                                encoding="utf-8")
 
         rc = main(["--apk", str(APK), "--catalog", str(tmp_path),
                    "--report", str(tmp_path / "report.json")])
@@ -1101,26 +1107,16 @@ class TestRealApk:
                             n += 1
             return n
 
-        sample_keys = {(s["container"], s["exportName"]) for s in SAMPLES}
-        matched_before = 0
-        for item in json.loads(src.read_text(encoding="utf-8"))["items"]:
-            for holder in (item, *item.get("levels", [])):
-                for key in ("icon", "levelVisual"):
-                    r = holder.get(key)
-                    if r and (r.get("container"), r.get("exportName")) \
-                            in sample_keys:
-                        matched_before += 1
-
-        # 所有匹配引用：成功 → 同一路径；失败 → 无匹配引用（不动）
-        assert matched_before == count_refs(
-            lambda r: r.get("renderedPath") is not None
-            and r.get("missingReason") is None)
-        assert matched_before == count_refs(
-            lambda r: (r.get("container"), r.get("exportName"))
-            in sample_keys and r.get("renderedPath") is not None)
-        # 无关引用保持 missingReason
-        assert count_refs(lambda r: r.get("renderedPath") is None
-                          and r.get("missingReason") == "icons_not_rendered") > 0
+        # 全量收集 5 键（4 成功 + 1 失败）→ 7 处成功引用 + 1 处失败引用
+        assert count_refs(lambda r: r.get("renderedPath") is not None) == 7
+        assert count_refs(lambda r: r.get("missingReason") is not None) == 1
+        fail_ref = None
+        for item in new["items"]:
+            r = item.get("icon")
+            if r and r["exportName"] == "icon_unit_does_not_exist":
+                fail_ref = r
+        assert fail_ref["renderedPath"] is None
+        assert fail_ref["missingReason"] == "export_not_found"
 
         # 每个成功样本的 PNG 落盘（R2.1 命名）
         for s in SAMPLES[:4]:
@@ -1136,7 +1132,8 @@ class TestRealApk:
         # 报告 JSON 可解析且含 verdict/sha256
         report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
         assert report["meta"]["successCount"] == 4
-        assert len(report["samples"]) == 6
+        assert report["meta"]["failedCount"] == 1
+        assert len(report["samples"]) == 5
         assert report["samples"][0]["png"]["sha256"]
 
     def test_cli_samples_only_does_not_touch_catalog(self, tmp_path):
@@ -1154,3 +1151,52 @@ class TestRealApk:
         assert dst.read_bytes() == before
         assert (tmp_path / "icons/ui/icon_unit_barbarian.png").is_file()
         assert (tmp_path / "r.json").is_file()
+
+
+# ---------------------------------------------------------------------------
+# Issue #25：全量引用收集（collect_catalog_refs）
+# ---------------------------------------------------------------------------
+
+
+def test_collect_catalog_refs_dedupes_and_skips_empty(tmp_path):
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [
+        {"icon": {"container": "sc/ui.sc", "exportName": "icon_a"}},
+        # 跨 item 重复（R2.4：只保留一份）
+        {"levelVisual": {"container": "sc/ui.sc", "exportName": "icon_a"}},
+        # level 级引用
+        {"levels": [{"icon": {"container": "sc/buildings.sc", "exportName": "lvl1"}}]},
+        # 无引用（container/exportName 为 nil）→ 跳过
+        {"icon": {"container": None, "exportName": None},
+         "levels": [{"levelVisual": {"container": None, "exportName": "x"}}]},
+        # 部分缺失 → 跳过
+        {"icon": {"container": "sc/ui.sc", "exportName": None}},
+    ]}), encoding="utf-8")
+    refs = collect_catalog_refs(cat)
+    keys = {(r["container"], r["exportName"]) for r in refs}
+    assert keys == {("sc/ui.sc", "icon_a"), ("sc/buildings.sc", "lvl1")}
+    # 顺序确定性：输出与输入顺序一致（便于稳定报告）
+    assert refs[0] == {"container": "sc/ui.sc", "exportName": "icon_a"}
+
+
+@given(pairs=st.lists(st.tuples(
+    st.one_of(st.none(), st.text(min_size=1)),
+    st.one_of(st.none(), st.text(min_size=1)),
+), max_size=50))
+@settings(max_examples=100,
+          suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_collect_catalog_refs_deterministic_deduped(pairs, tmp_path):
+    cat = tmp_path / "catalog.json"
+    items = [{"icon": {"container": c, "exportName": e}} for c, e in pairs]
+    cat.write_text(json.dumps({"items": items}), encoding="utf-8")
+    refs = collect_catalog_refs(cat)
+    keys = [(r["container"], r["exportName"]) for r in refs]
+    # 无 None 组件
+    assert all(c and e for c, e in keys)
+    # 去重
+    assert len(keys) == len(set(keys))
+    # 集合与输入有效对一致
+    valid = {(c, e) for c, e in pairs if c and e}
+    assert set(keys) == valid
+    # 两次调用结果一致（确定性）
+    assert refs == collect_catalog_refs(cat)

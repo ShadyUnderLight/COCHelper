@@ -119,6 +119,36 @@ SAMPLES: list[dict] = [
     },
 ]
 
+
+def collect_catalog_refs(catalog_path: Path) -> list[dict]:
+    """收集 catalog.json 全部 icon/levelVisual 引用（item 级 + level 级），
+    按 (container, exportName) 去重（契约 R2.4），返回 render_samples 样本
+    列表格式。container 或 exportName 为 nil 的引用跳过（无资产可渲染）。
+    顺序 = catalog 中出现顺序（确定性报告）。"""
+    data = json.loads(catalog_path.read_text(encoding="utf-8"))
+    seen: set[tuple[str, str]] = set()
+    refs: list[dict] = []
+
+    def add(container: str | None, export: str | None) -> None:
+        if container and export:
+            key = (container, export)
+            if key not in seen:
+                seen.add(key)
+                refs.append({"container": container, "exportName": export})
+
+    for item in data.get("items", []):
+        for ref in (item.get("icon"), item.get("levelVisual")):
+            if isinstance(ref, dict):
+                add(ref.get("container"), ref.get("exportName"))
+        for level in item.get("levels", []):
+            if not isinstance(level, dict):
+                continue
+            for ref in (level.get("icon"), level.get("levelVisual")):
+                if isinstance(ref, dict):
+                    add(ref.get("container"), ref.get("exportName"))
+    return refs
+
+
 _MAX_ENTRY_BYTES = 256 * 1024 * 1024  # 单 zip 条目解压上限（防 deflate 炸弹，对齐 apk.py）
 _MAX_FILENAME_BYTES = 200  # 契约 R2.2：export_key 文件名长度上限
 
@@ -890,7 +920,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        meta, verdicts = render_samples(args.apk)
+        # Issue #25：全量模式收集 catalog 全部引用（R2.4 去重）；--samples-only
+        # 保持固定样本语义（回归基线）。
+        samples = (SAMPLES if args.samples_only
+                   else collect_catalog_refs(args.catalog / "catalog.json"))
+        meta, verdicts = render_samples(args.apk, samples)
         stats = write_rendered_outputs(args.catalog, verdicts,
                                        write_catalog=not args.samples_only,
                                        refresh_manifest=args.refresh_manifest)

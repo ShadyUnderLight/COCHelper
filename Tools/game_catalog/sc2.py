@@ -72,6 +72,9 @@ def _u32_field(fb: FlatBuffer, buf: bytes, table_off: int, slot: int) -> int:
     off = fb.table_field(table_off, slot)
     if off == 0:
         return 0
+    if off < 0 or off + 4 > len(buf):
+        raise CatalogError(
+            f"SC2 u32 字段越界: 偏移 {off} 大小 4，数据长度 {len(buf)}")
     return struct.unpack("<I", buf[off:off + 4])[0]
 
 
@@ -151,7 +154,5 @@ def metadata_entries(data: bytes, header: ScHeader) -> list[AssetMetaEntry]:
                 entry_hash = _ubyte_vector_bytes(fb, descriptor, hash_off)
             entries.append(AssetMetaEntry(name=name, hash=entry_hash))
         return entries
-    except CatalogError:
-        raise
     except ValueError as e:
         raise CatalogError(f"SC2 metadata 解析失败: {e}") from e

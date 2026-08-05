@@ -149,3 +149,52 @@ def test_metadata_entries_descriptor_out_of_bounds_raises():
     h = parse_sc_header(data)
     with pytest.raises(CatalogError, match="越界"):
         metadata_entries(data[:20], h)
+
+
+def _descriptor_root(data: bytes) -> int:
+    """Header root table 绝对偏移（descriptor 起点 12 + root uoffset）。"""
+    return 12 + struct.unpack("<I", data[12:16])[0]
+
+
+def _table_slot_rel(data: bytes, table_off: int, slot: int) -> int:
+    """table 的 vtable 中某 slot 的相对偏移（0 = 缺省）。"""
+    soffset = struct.unpack("<i", data[table_off:table_off + 4])[0]
+    vtable = table_off - soffset
+    return struct.unpack(
+        "<H", data[vtable + 4 + 2 * slot:vtable + 6 + 2 * slot])[0]
+
+
+def test_u32_field_out_of_bounds_raises_catalog_error():
+    """伪造 vtable：table_size=0xFFFF + slot 偏移 0x8000（指向 buffer 末尾之外）。
+
+    _u32_field 必须抛 CatalogError 而非裸 struct.error（struct.error 不是
+    ValueError 子类，会绕过模块的异常包装契约）。
+    """
+    b = FbBuilder()
+    root = b.add_table({2: ("u32", 683)})
+    data = bytearray(build_sc_bytes(b.finish(root)))
+    root_pos = _descriptor_root(bytes(data))
+    soffset = struct.unpack("<i", bytes(data[root_pos:root_pos + 4]))[0]
+    vtable_pos = root_pos - soffset
+    data[vtable_pos + 2:vtable_pos + 4] = b"\xff\xff"  # table_size → 0xFFFF
+    data[vtable_pos + 8:vtable_pos + 10] = b"\x00\x80"  # slot2 偏移 → 0x8000
+    with pytest.raises(CatalogError, match="越界"):
+        parse_sc_header(bytes(data))
+
+
+def test_ubyte_vector_length_out_of_bounds_raises():
+    """伪造 hash vector 长度字段超界 → _ubyte_vector_bytes 抛 CatalogError。"""
+    data = bytearray(build_header_with_metadata())
+    root_pos = _descriptor_root(bytes(data))
+    meta_field = root_pos + _table_slot_rel(bytes(data), root_pos, 10)
+    vec_pos = meta_field + struct.unpack(
+        "<I", bytes(data[meta_field:meta_field + 4]))[0]
+    entry_pos = vec_pos + 4 + struct.unpack(
+        "<I", bytes(data[vec_pos + 4:vec_pos + 8]))[0]
+    hash_field = entry_pos + _table_slot_rel(bytes(data), entry_pos, 1)
+    hash_vec = hash_field + struct.unpack(
+        "<I", bytes(data[hash_field:hash_field + 4]))[0]
+    data[hash_vec:hash_vec + 4] = struct.pack("<I", 0xFFFF)  # 长度 → 越界
+    h = parse_sc_header(bytes(data))
+    with pytest.raises(CatalogError, match="越界"):
+        metadata_entries(bytes(data), h)

@@ -179,4 +179,122 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 2, for: hq))
         XCTAssertNil(catalog.durationToUpgradeLevel(nextLevel: 10, for: hq))
     }
+
+    // MARK: - RenderedPath bundle（Issue #30 Task 9）
+
+    /// 目录 18.400.13 的全部 section（含 capital_*；GameCatalog 未暴露全量遍历 API）。
+    private static let bundledSections = [
+        "buildings", "buildings2", "traps", "traps2", "units", "units2",
+        "spells", "heroes", "heroes2", "pets", "equipment", "guardians",
+        "siege_machines", "capital_buildings", "capital_characters",
+        "capital_spells", "capital_traps",
+    ]
+
+    /// 收集目录中所有 icon/levelVisual 引用（item 级 + level 级，slot 用于失败信息定位）。
+    private func allAssetRefs(in catalog: GameCatalog)
+        -> [(ref: CatalogAssetRef, item: CatalogItem, level: CatalogLevel?, slot: String)] {
+        var refs: [(ref: CatalogAssetRef, item: CatalogItem, level: CatalogLevel?, slot: String)] = []
+        for section in Self.bundledSections {
+            for item in catalog.items(in: section) {
+                if let icon = item.icon { refs.append((icon, item, nil, "icon")) }
+                if let visual = item.levelVisual { refs.append((visual, item, nil, "levelVisual")) }
+                for level in item.levels {
+                    if let icon = level.icon { refs.append((icon, item, level, "level.icon")) }
+                    if let visual = level.levelVisual { refs.append((visual, item, level, "level.levelVisual")) }
+                }
+            }
+        }
+        return refs
+    }
+
+    /// COCHelperCore 资源 bundle 的 URL。测试 target 的 `Bundle.module` 指向
+    /// 测试 bundle（只有 Fixtures），而 GameCatalog 资源在 Core bundle 中；
+    /// 两者同级，按 SwiftPM 固定命名 `<package>_<target>.bundle` 定位。
+    private func coreBundle() -> Bundle? {
+        let dir = Bundle.module.bundleURL.deletingLastPathComponent()
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path),
+              let name = names.first(where: { $0.hasSuffix("_COCHelperCore.bundle") }) else {
+            return nil
+        }
+        return Bundle(url: dir.appendingPathComponent(name))
+    }
+
+    /// bundle 中 renderedPath 对应文件是否存在（.copy 保留目录结构，与 loadBundled 同一解析模式）。
+    /// 注：Bundle.url(forResource: nil, withExtension: nil, subdirectory:) 对 SPM bundle
+    /// 的目录返回 nil，必须用「文件名 + 扩展名」解析文件本身。
+    private func bundledFileExists(renderedPath: String) -> Bool {
+        guard let core = coreBundle() else { return false }
+        let nsPath = renderedPath as NSString
+        let subdirectory = "GameCatalog/" + GameCatalog.defaultBundledVersion
+            + "/" + nsPath.deletingLastPathComponent
+        let last = nsPath.lastPathComponent as NSString
+        return core.url(
+            forResource: last.deletingPathExtension,
+            withExtension: last.pathExtension,
+            subdirectory: subdirectory
+        ) != nil
+    }
+
+    /// 存在断言：bundled 目录必须含真实渲染 PNG 引用（#13 管线产出前全为
+    /// icons_not_rendered，此测试用于锁定「渲染资源已就位」的状态）。
+    func testBundledRenderableRefCountIsNonZero() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let renderable = allAssetRefs(in: catalog).filter { $0.ref.isRenderable }
+        XCTAssertGreaterThan(renderable.count, 0, "bundled 目录应含真实渲染 PNG 引用")
+        // 4 个已知 PNG 路径（与 manifest generatedFiles 一一对应）都必须被引用。
+        let known = [
+            "icons/buildings/blacksmith_lvl1.png",
+            "icons/buildings/fireplace_lvl1.png",
+            "icons/ui/icon_spell_rage.png",
+            "icons/ui/icon_unit_barbarian.png",
+        ]
+        let uniquePaths = Set(renderable.map(\.ref.renderedPath).compactMap { $0 })
+        XCTAssertEqual(uniquePaths, Set(known), "可渲染路径集合应与 4 个真实 PNG 一一对应")
+    }
+
+    /// 文件存在断言：全部 renderable ref 指向的 PNG 都真实存在于 bundle（.copy 打包验证）。
+    func testBundledRenderableRefsPointToExistingFiles() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let renderable = allAssetRefs(in: catalog).filter { $0.ref.isRenderable }
+        XCTAssertGreaterThan(renderable.count, 0)
+        for entry in renderable {
+            let path = try XCTUnwrap(entry.ref.renderedPath)
+            XCTAssertTrue(bundledFileExists(renderedPath: path),
+                          "\(entry.item.section) \(entry.item.dataID) \(entry.slot) → \(path) 在 bundle 中不存在")
+        }
+    }
+
+    /// 缺失语义断言（契约 R2.2/R5.3）：missingReason 非空的引用必须不可渲染且无 renderedPath。
+    func testMissingRefIsNotRenderableAndHasNoPath() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let missing = allAssetRefs(in: catalog).filter { $0.ref.missingReason != nil }
+        XCTAssertGreaterThan(missing.count, 0, "目录应保留大量未渲染引用（icons_not_rendered）")
+        for entry in missing {
+            XCTAssertNil(entry.ref.renderedPath,
+                         "\(entry.item.section) \(entry.item.dataID) \(entry.slot) 有 missingReason 却仍带 renderedPath")
+            XCTAssertFalse(entry.ref.isRenderable)
+        }
+        // 具体锚点：兵营 lv2 levelVisual 未渲染（exportName 为 fireplace_lvl2）。
+        let barracks = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_000))
+        let lv2Visual = try XCTUnwrap(barracks.levels.first(where: { $0.level == 2 })?.levelVisual)
+        XCTAssertEqual(lv2Visual.missingReason, "icons_not_rendered")
+        XCTAssertNil(lv2Visual.renderedPath)
+        XCTAssertFalse(lv2Visual.isRenderable)
+    }
+
+    /// 共享路径断言（契约 R2.4）：铁匠铺 blacksmith_lvl1 被顶层 + lv1 + lv2
+    /// 三处引用，renderedPath 相同——跨等级复用不复制资源。
+    func testSharedRenderedPathAcrossLevels() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let blacksmith = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_070))
+        let top: CatalogAssetRef = try XCTUnwrap(blacksmith.levelVisual)
+        let levelRefs = blacksmith.levels.filter { $0.level == 1 || $0.level == 2 }
+            .compactMap(\.levelVisual)
+        XCTAssertEqual(levelRefs.count, 2, "lv1/lv2 均应有 levelVisual")
+        let renderable = ([top] + levelRefs).filter(\.isRenderable)
+        XCTAssertEqual(renderable.count, 3, "顶层 + lv1 + lv2 均应可渲染")
+        XCTAssertEqual(Set(renderable.map(\.renderedPath)),
+                       ["icons/buildings/blacksmith_lvl1.png"],
+                       "跨等级应共享同一 renderedPath，不复制资源")
+    }
 }

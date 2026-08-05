@@ -450,6 +450,63 @@ def test_validate_counts_missing_entirely(tmp_path):
     assert any("counts" in e for e in errors)
 
 
+# ---- R6.2：counts.renderedIcons / counts.blockedIcons（optional 字段）----
+
+def test_validate_counts_optional_fields_missing_ok(tmp_path):
+    """旧 manifest 兼容：renderedIcons/blockedIcons 缺失不报错（optional）。"""
+    d = _valid_dir(tmp_path)  # counts 仅含基础 4 字段
+    assert validate_catalog(d) == []
+
+
+def test_validate_rendered_icons_mismatch_detected(tmp_path):
+    """renderedIcons 与 generatedFiles PNG 条目数不符 → 报错（重算断言）。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"\x89PNG\r\n\x1a\n" + b"r" * 16)
+    m = _load_manifest(d)
+    m["counts"]["renderedIcons"] = 0  # 实际 PNG 条目数 = 1
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.renderedIcons" in e and "不一致" in e for e in errors)
+
+
+def test_validate_rendered_icons_ok(tmp_path):
+    """renderedIcons == PNG 条目数、blockedIcons 非负 → 通过。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"\x89PNG\r\n\x1a\n" + b"r" * 16)
+    m = _load_manifest(d)
+    m["counts"]["renderedIcons"] = 1
+    m["counts"]["blockedIcons"] = 2
+    _write(d, manifest=m)
+    assert validate_catalog(d) == []
+
+
+def test_validate_rendered_icons_non_int_rejected(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"]["renderedIcons"] = "4"
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.renderedIcons" in e and "非法" in e for e in errors)
+
+
+def test_validate_blocked_icons_non_int_rejected(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"]["blockedIcons"] = "2"
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.blockedIcons" in e for e in errors)
+
+
+def test_validate_blocked_icons_negative_rejected(tmp_path):
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"]["blockedIcons"] = -1
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.blockedIcons" in e for e in errors)
+
+
 def test_catalog_invariants_alias(tmp_path):
     from game_catalog.validate import catalog_invariants
     assert catalog_invariants(_valid_dir(tmp_path)) == []
@@ -624,6 +681,40 @@ def test_rendered_path_file_exists_passes(tmp_path):
     c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/ui/barbarian.png")
     _write_with_hash(d, catalog=c)
     assert validate_catalog(d) == []
+
+
+def test_rendered_path_file_content_not_png_rejected(tmp_path):
+    """R-A 扩展（Issue #30 Task 8）：文件存在但内容非 PNG（前 8 字节非魔数）→ error。
+    垃圾字节也如实登记 hash/size，保证只有 PNG 魔数错误暴露。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"hello world" * 6)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/ui/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("不是合法 PNG" in e and "icons/ui/barbarian.png" in e for e in errors)
+
+
+def test_rendered_path_file_empty_rejected(tmp_path):
+    """R-A 扩展：空文件（0 字节，不足 8 字节魔数）→ error。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"")
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/ui/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("不是合法 PNG" in e for e in errors)
+
+
+def test_rendered_path_file_short_header_rejected(tmp_path):
+    """R-A 扩展：小文件（4 字节，仅部分魔数，不足完整 8 字节）→ error。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"\x89PNG")
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/ui/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("不是合法 PNG" in e for e in errors)
 
 
 def test_rendered_path_shared_between_refs_passes(tmp_path):

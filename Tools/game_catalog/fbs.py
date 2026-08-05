@@ -33,6 +33,11 @@ class FlatBuffer:
             raise ValueError(f"FlatBuffer 数据过短: {len(data)} 字节（需要 >= 4）")
         self._data = data
 
+    @property
+    def data(self) -> bytes:
+        """底层字节缓冲（只读零拷贝，切片 [ubyte]/[ushort] vector 用）。"""
+        return self._data
+
     # -- 内部读取（统一越界检查） ----------------------------------------
 
     def _read(self, off: int, size: int, what: str) -> bytes:

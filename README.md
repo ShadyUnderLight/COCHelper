@@ -66,17 +66,30 @@ python3 -m pytest Tools/tests -q
 ```
 
 **渲染 spike（issue #27，前置调研）**：`Tools/render_spike.py` 验证 SC2 V6 视觉资产
-（`.sc`/`.sctx`）的可解析性与渲染可行性，输出 6 类固定样本（单位/法术 icon、建筑
-外观、跨等级复用、失败引用）的 verdict 报告；需要
+（`.sc`/`.sctx`）的可解析性与渲染可行性，输出 verdict 报告；需要
 `ctypes` + libzstd（`/opt/homebrew/lib/libzstd.dylib`），与生成管线（纯 stdlib）分离：
 
 ```bash
 python3 Tools/render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-out
 ```
 
-结论：export 名与引用链可解析（`ui.sc` exports=3024），但渲染 PNG 存在双重阻塞
-（export 全部指向 MovieClip + 纹理全部 ASTC/KTX 压缩），当前 **verdict = 继续阻塞 #25**；
-`renderedPath` 输出契约见 `docs/rendered-path-contract.md`，spike 报告见
+spike 结论：export 名与引用链可解析（`ui.sc` exports=3024），但渲染 PNG 存在双重阻塞
+（export 全部指向 MovieClip + 纹理全部 ASTC/KTX 压缩）——**渲染路径已解锁
+（Issue #30 / PR #32）**：`Tools/render_generator.py` 渲染固定样本 PNG 并回写
+`catalog.json` 的 `renderedPath`：
+
+```bash
+python3 Tools/render_generator.py --apk /Users/lmz/Downloads/base.apk.1 \
+  --catalog Sources/COCHelperCore/GameCatalog/18.400.13   # 渲染 + 回写 catalog.json
+python3 Tools/render_generator.py --apk <apk> --catalog <dir> --samples-only  # 只渲染不回写
+```
+
+4 个固定样本 PNG（`icons/ui/icon_unit_barbarian.png`、`icons/ui/icon_spell_rage.png`、
+`icons/buildings/fireplace_lvl1.png`、`icons/buildings/blacksmith_lvl1.png`）已随目录入库
+（`manifest.json` `generatedFiles` 登记 sha256/size）；失败样本写 `missingReason` 稳定枚举、
+不产生 PNG。渲染模块依赖例外同 spike：`sc2.py` 的 zstd body 解压需 `ctypes` + libzstd；
+`astc.py`/`ktx.py`/`render.py` 纯 stdlib（契约 R9.2/R9.3）。`renderedPath` 输出契约见
+`docs/rendered-path-contract.md`，路径选型决策见 `docs/render-path-decision.md`，spike 报告见
 `docs/spike-2026-08-05-render.md`。
 
 - **`--game-version` 语义**：APK 内不含版本字符串，必须显式传入（如 `18.400.13`）；不传时默认从
@@ -88,7 +101,8 @@ python3 Tools/render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tm
   N+1"，升级属性映射到下一等级（最低等级 = 初始，`durationSeconds` null +
   `min_level_initial_no_upgrade`）。等级号保留源表原始值（战斗直升机 15..35、超级野蛮人 5..13）。
   时间列空值 = 0，不做 forward-fill（只有标识列继承）。
-- **边界**：不渲染图标（`renderedPath` 恒为 null + `icons_not_rendered`）；不编造缺失时长
+- **边界**：渲染路径已解锁（Issue #30 / PR #32）——4 个固定样本 PNG 已入库并回写
+  `renderedPath`（未全量渲染的引用保持 `renderedPath` null + `icons_not_rendered`）；不编造缺失时长
   （用 `missingReason` 枚举标记：`time_missing`/`time_invalid`/`upgrade_data_missing`/`no_time_source`，
   `'0'` 是真实值不是缺失）；**不改** `Tools/generate_account_name_catalog.py`；dataID 段与名称目录
   对齐（heroes/pets/equipment/guardians 集成测试对拍，heroes 按 VillageType 分流 heroes/heroes2，
@@ -230,4 +244,5 @@ swift run smoke-api
 - 数据来源：仅通过 Supercell 官方 API（developer.clashofclans.com）读取公开数据；不执行任何自动化游戏操作（不自动攻击、不自动升级、不模拟点击）。
 - 禁止自动化与公开分发：本应用仅用于个人本地使用，不提供任何自动化游戏行为的接口；不得将本应用或其数据用于公共托管、批量数据抓取、转售或任何形式的公开分发。
 - 所有游戏内容与素材版权归 Supercell Oy 所有；按 [Supercell Fan Content Policy](https://supercell.com/en/fan-content-policy/) 使用。
+- 仓库内随附的渲染 PNG（`GameCatalog/*/icons/`）仅为应用 Bundle 内部资源（SwiftPM `.copy("GameCatalog")` 打包），随私有分发使用、不单独分发；若仓库转为 public 或对外分发应用，须重新评估（契约 R12.3）。
 - 官方 API 限流与条款：应用遵守官方 API 的使用条款与速率限制（客户端内置 429 退避），不绕过认证、不伪造请求。

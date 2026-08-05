@@ -44,6 +44,17 @@ SC_DESCRIPTOR_OFFSET = 12  # 头部固定字节数
 # （交叉审核 FIX-5；真实数据：metadata ~几千、ExportNames 3024、Shapes 4053）
 _MAX_VECTOR_ENTRIES = 1_000_000
 
+# DataStorage movieclips_frame_elements [ushort] 原始缓冲上限（64MB）。
+# 与 _MAX_VECTOR_ENTRIES 区分：这是字节切片（无逐元素放大——切片本身
+# 只是 O(n) memcpy，量级远小于逐元素物化），真实数据 ui.sc 4.9MB /
+# buildings.sc 15.5MB，64MB 留足余量防伪造长度。
+_MAX_FRAME_ELEMENTS_BYTES = 64 * 1024 * 1024
+
+# DataStorage shapes_bitmap_poins [ubyte] 顶点缓冲上限（64MB，同帧元素池
+# 模式）。真实数据 ui.sc 559572B / buildings.sc 1930932B（均 12 字节/顶点
+# 精确对齐），64MB 留足余量防伪造长度。
+_MAX_POINTS_BYTES = 64 * 1024 * 1024
+
 # Header table 槽位（Header.fbs 字段顺序）
 _SLOT_METADATA = 10
 
@@ -70,6 +81,208 @@ class AssetMetaEntry:
 
     name: str
     hash: bytes | None
+
+
+@dataclass(frozen=True)
+class DataStorageInfo:
+    """DataStorage 全量信息（strings + MovieClip 帧元素池 + shape 顶点缓冲）。
+
+    movieclips_frame_elements 是 `[ushort]` 原始字节（u16 LE 连续排列），
+    即 MovieClipFrameElement 池：MovieClip.frame_elements_offset 是其中的
+    **ushort 索引**（实证 + C++ 参考 `elements_vector->Get(offset++)`）。
+
+    shapes_bitmap_poins 是 `[ubyte]` 原始字节（ShapeDrawBitmapCommandVertex
+    12 字节/个连续排列）：命令的 points_offset 是**顶点索引**，顶点 i 字节
+    偏移 = (points_offset + i) * 12。
+
+    payload 是 DataStorage flatbuffer 原始字节（matrix_banks slot 6 的
+    ScFile 惰性解析输入；带 [u32 size] 前缀时不含前缀）。
+    """
+
+    strings: list[str]
+    movieclips_frame_elements: bytes = b""
+    shapes_bitmap_poins: bytes = b""
+    payload: bytes = b""
+
+
+@dataclass(frozen=True, slots=True)
+class ShapeCommand:
+    """单个 ShapeDrawBitmapCommand（16 字节 struct 连续，实证 ui.sc/buildings.sc）。
+
+    - texture_index: Textures chunk 纹理集索引（slot 4）
+    - points_count: 命令引用的顶点个数
+    - points_offset: shapes_bitmap_poins 缓冲中的**顶点索引**（非字节偏移）
+
+    原 schema 的 unk1（u32@0）两文件 34520 条命令实测恒 0，不保留。
+    """
+
+    texture_index: int
+    points_count: int
+    points_offset: int
+
+    def vertices(self, points: bytes) -> list[Vertex]:
+        """命令引用的顶点列表（points = DataStorage shapes_bitmap_poins）。"""
+        return read_vertices(points, self.points_offset, self.points_count)
+
+
+@dataclass(frozen=True, slots=True)
+class Vertex:
+    """ShapeDrawBitmapCommandVertex（12 字节，实证 + Shape.cpp 参考一致）。
+
+    布局：`x: float LE @0`、`y: float LE @4`、`u: uint16 LE @8`、
+    `v: uint16 LE @10`（对拍 ui.sc/buildings.sc 真实字节：正确切片
+    DataStorage 后两种布局中只有此顺序产生非退化三角形 strip 且 UV 落在
+    合理范围；任务初期「u/v 在前」结论是探测脚本 4 字节切片错位的假象，
+    已修正）。
+
+    u/v 为归一化 UV 坐标（0..1）：raw u16 / 0xFFFF（0xFFFF → 1.0 精确）。
+    """
+
+    x: float
+    y: float
+    u: float
+    v: float
+
+
+@dataclass(frozen=True)
+class Shape:
+    """Shape（Sprite）：id + 绘制命令列表。
+
+    ShapeDrawBitmapCommand 是 16 字节 struct 连续排布的 vector 元素。
+    """
+
+    id: int
+    commands: list[ShapeCommand]
+
+
+@dataclass(frozen=True, slots=True)
+class Matrix2x3:
+    """2x3 仿射矩阵（24 字节 struct 连续，实证对拍 ui.sc/buildings.sc）。
+
+    布局：`a,b,c,d,tx,ty` 各 float32 LE（a=ScaleX, b=SkewX, c=SkewY,
+    d=ScaleY, tx/ty=平移）。真实锚点：ui.sc bank[0] matrix0 原始字节
+    `0000803f 00000000 00000000 0000803f 0000e441 0000d441` =
+    (1.0, 0.0, 0.0, 1.0, 28.5, 26.5)——a≈1、tx 小整数特征确认。
+
+    顶点变换：x' = a*x + c*y + tx；y' = b*x + d*y + ty（c 作用于 x'、
+    b 作用于 y'，SkewX/SkewY 语义与 C++/Scaleform 约定一致）。
+    """
+
+    a: float
+    b: float
+    c: float
+    d: float
+    tx: float
+    ty: float
+
+    def apply(self, x: float, y: float) -> tuple[float, float]:
+        """矩阵作用于顶点 (x, y)，返回 (x', y')。"""
+        return (self.a * x + self.c * y + self.tx,
+                self.b * x + self.d * y + self.ty)
+
+
+@dataclass(frozen=True, slots=True)
+class ColorTransform:
+    """颜色变换（7 字节 struct 连续，实证元素间距=7 非 8）。
+
+    布局：`r_mul,g_mul,b_mul,alpha,r_add,g_add,b_add` 各 ubyte。
+    真实锚点：ui.sc bank[0] color0 = (113,151,31,255,33,90,0)（alpha=255
+    满不透明）。渲染链当前不使用颜色变换，仅解析记录。
+    """
+
+    r_mul: int
+    g_mul: int
+    b_mul: int
+    alpha: int
+    r_add: int
+    g_add: int
+    b_add: int
+
+
+@dataclass(frozen=True)
+class MatrixBank:
+    """变换矩阵库（DataStorage slot 6 matrix_banks 的单个 table）。
+
+    槽位：0=matrices [Matrix2x3]（24B struct 连续）、1=colors
+    [ColorTransform]（7B struct 连续）。**half_matrices（slot 2，12B
+    6×int16）不解析**：schema 声明但实证 ui.sc/buildings.sc 全量恒为空
+    （ui.sc 4 banks 203732 矩阵 / buildings.sc 5 banks 295222 矩阵，
+    half 总数均为 0），渲染不使用；若未来版本使用需补实现。
+    """
+
+    matrices: list[Matrix2x3]
+    colors: list[ColorTransform]
+
+
+@dataclass(frozen=True, slots=True)
+class MovieClipFrame:
+    """单帧元数据（MovieClips chunk `MovieClipFrame` struct，8 字节）。
+
+    used_transform = 本帧显示的 MovieClipFrameElement 个数；元素按帧顺序从
+    frame_elements_offset 起连续消费。label_ref_id 是 strings 索引（短帧无
+    label，固定 0）。
+    """
+
+    used_transform: int
+    label_ref_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class MovieClipFrameElement:
+    """帧元素（6 字节 3×u16，实证对拍 ui.sc/buildings.sc + C++ 参考）。
+
+    - instance_index: **movieclip children 数组索引**（children_ids[i] 才是
+      shape/movieclip/textfield 的全局 id；无独立 type 字段，类型由
+      children_ids[instance_index] 落点决定）
+    - matrix_index: matrix bank 内矩阵索引（0xFFFF = 无）
+    - color_transform_index: color transform 索引（0xFFFF = 无）
+    """
+
+    instance_index: int
+    matrix_index: int
+    color_transform_index: int
+
+
+@dataclass(frozen=True)
+class MovieClip:
+    """MovieClip（时间线/动画对象）：帧 + 帧元素 + children。
+
+    frame_elements_offset 为 movieclips_frame_elements 缓冲中的 ushort 索引
+    （0xFFFFFFFF = 无元素）；frame_elements 已按帧顺序全部物化。
+    children_ids 是子对象 id 数组（slot 5 [ushort]）：帧元素的 instance_index
+    是 children 数组索引，children_ids[instance_index] 才是 shape / movieclip
+    / textfield 的全局 id（实证 ui.sc：7753=textfield、8025=shape）。
+    """
+
+    id: int
+    export_name_ref_id: int
+    frames: list[MovieClipFrame]
+    frame_elements_offset: int
+    matrix_bank_index: int
+    frame_elements: list[MovieClipFrameElement]
+    children_ids: list[int] = field(default_factory=list)
+
+    def element_matrix(self, element: MovieClipFrameElement,
+                       banks: list[MatrixBank]) -> Matrix2x3 | None:
+        """帧元素引用的矩阵（matrix_index 是 bank 内索引）。
+
+        matrix_index=0xFFFF → None（无矩阵的合法状态）；bank 越界（本
+        movieclip 的 matrix_bank_index）或矩阵索引越界 → CatalogError
+        （fail loud：引用损坏）。banks 由 ScFile.matrix_banks 提供。
+        """
+        if element.matrix_index == 0xFFFF:
+            return None
+        if not 0 <= self.matrix_bank_index < len(banks):
+            raise CatalogError(
+                f"SC2 MovieClip[{self.id}] matrix_bank_index "
+                f"{self.matrix_bank_index} 越界（banks 共 {len(banks)} 个）")
+        matrices = banks[self.matrix_bank_index].matrices
+        if element.matrix_index >= len(matrices):
+            raise CatalogError(
+                f"SC2 MovieClip[{self.id}] 帧元素矩阵索引 "
+                f"{element.matrix_index} 越界（bank {self.matrix_bank_index} "
+                f"共 {len(matrices)} 个矩阵）")
+        return matrices[element.matrix_index]
 
 
 def _descriptor(data: bytes, descriptor_size: int) -> bytes:
@@ -276,22 +489,74 @@ def decode_body(compressed: bytes, compressed_size: int | None) -> bytes:
     return dst.raw[:n]
 
 
-def _parse_data_storage(fb: FlatBuffer) -> list[str]:
-    """单布局解析 DataStorage strings（畸形 → ValueError，由调用方包装）。"""
+def _parse_data_storage_info(fb: FlatBuffer) -> DataStorageInfo:
+    """单布局解析 DataStorage（strings slot 0 + 帧元素池 slot 4 + 顶点 slot 5）。
+
+    畸形 → ValueError，由调用方包装。帧元素池是 [ushort] 原始字节切片、顶点
+    缓冲是 [ubyte] 原始字节切片（均无逐元素放大），长度上限 64MB 防伪造长度。
+    """
     root = fb.root()
     strings_off = fb.table_field(root, 0)
-    if strings_off == 0:
-        return []
-    count = fb.vector_len(strings_off)
-    if count > _MAX_VECTOR_ENTRIES:
-        raise ValueError(
-            f"SC2 DataStorage strings 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}")
-    return [fb.string(fb.vector_elem(strings_off, i, 4))
-            for i in range(count)]
+    strings: list[str] = []
+    if strings_off:
+        count = fb.vector_len(strings_off)
+        if count > _MAX_VECTOR_ENTRIES:
+            raise ValueError(
+                f"SC2 DataStorage strings 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}")
+        strings = [fb.string(fb.vector_elem(strings_off, i, 4))
+                   for i in range(count)]
+    fe_bytes = b""
+    fe_off = fb.table_field(root, 4)
+    if fe_off:
+        n = fb.vector_len(fe_off)
+        if n * 2 > _MAX_FRAME_ELEMENTS_BYTES:
+            raise ValueError(
+                f"SC2 DataStorage movieclips_frame_elements 长度 {n * 2} "
+                f"字节超过上限 {_MAX_FRAME_ELEMENTS_BYTES}")
+        if n:
+            # 校验最后一个元素在界内 → 整段连续切片必然合法
+            first = fb.vector_elem(fe_off, n - 1, 2) - (n - 1) * 2
+            fe_bytes = fb.data[first:first + n * 2]
+    points = b""
+    p_off = fb.table_field(root, 5)
+    if p_off:
+        n = fb.vector_len(p_off)
+        if n > _MAX_POINTS_BYTES:
+            raise ValueError(
+                f"SC2 DataStorage shapes_bitmap_poins 长度 {n} 字节超过上限 "
+                f"{_MAX_POINTS_BYTES}")
+        if n:
+            first = fb.vector_elem(p_off, n - 1, 1) - (n - 1)
+            points = fb.data[first:first + n]
+    return DataStorageInfo(strings=strings,
+                           movieclips_frame_elements=fe_bytes,
+                           shapes_bitmap_poins=points,
+                           payload=fb.data)
+
+
+def parse_data_storage_info(fb: FlatBuffer, body: bytes) -> DataStorageInfo:
+    """DataStorage 全量信息（strings + movieclips_frame_elements 缓冲）。
+
+    布局回退与 parse_data_storage 一致：先按 body 偏移 0 解析，畸形则回退
+    偏移 4（真实布局 `[u32 size][flatbuffer]`）。两种布局均失败 → CatalogError
+    保留两个偏移的错误上下文。
+    """
+    try:
+        return _parse_data_storage_info(fb)
+    except ValueError as e0:
+        if len(body) < 8:
+            raise CatalogError(
+                f"SC2 DataStorage 解析失败（偏移0: {e0}；body 仅 "
+                f"{len(body)} 字节，无法回退偏移4）") from e0
+        try:
+            return _parse_data_storage_info(FlatBuffer(body[4:]))
+        except ValueError as e:
+            raise CatalogError(
+                f"SC2 DataStorage 解析失败（偏移0: {e0}；偏移4: {e}）") from e
 
 
 def parse_data_storage(fb: FlatBuffer, body: bytes) -> list[str]:
-    """DataStorage strings 列表。
+    """DataStorage strings 列表（签名与行为兼容既有调用）。
 
     **布局（对拍真实 ui.sc，18.400.13）**：解压后 body 是
     `[u32 data_storage_size][DataStorage flatbuffer]`——带 4 字节 size 前缀，
@@ -307,18 +572,7 @@ def parse_data_storage(fb: FlatBuffer, body: bytes) -> list[str]:
     strings 索引语义（C++ 注释提及 `strings[ref_id - 1]`）不做偏移，原样
     返回；-1 语义是否成立在 ExportNames 对拍时验证。
     """
-    try:
-        return _parse_data_storage(fb)
-    except ValueError as e0:
-        if len(body) < 8:
-            raise CatalogError(
-                f"SC2 DataStorage 解析失败（偏移0: {e0}；body 仅 "
-                f"{len(body)} 字节，无法回退偏移4）") from e0
-        try:
-            return _parse_data_storage(FlatBuffer(body[4:]))
-        except ValueError as e:
-            raise CatalogError(
-                f"SC2 DataStorage 解析失败（偏移0: {e0}；偏移4: {e}）") from e
+    return parse_data_storage_info(fb, body).strings
 
 
 # chunk 固定顺序（参考 C++ `Table::load_chunk` 序列）
@@ -417,16 +671,27 @@ class ScFile:
     strings: list[str]
     export_names: dict[str, int]  # name → object_id
     chunks: dict[str, bytes]
+    frame_elements: bytes = b""  # DataStorage 帧元素池 [ushort] 原始字节
+    points: bytes = b""  # DataStorage shapes_bitmap_poins [ubyte] 顶点缓冲
+    data_storage: bytes = b""  # DataStorage flatbuffer 字节（matrix_banks 用）
     _cache: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def shape(self, object_id: int) -> Shape | None:
+        """object_id → Shape；非 Shape id → None（惰性解析并缓存）。"""
+        if "shapes" not in self._cache:
+            self._cache["shapes"] = parse_shapes(self.chunks.get("Shapes", b""))
+        return self._cache["shapes"].get(object_id)
 
     def shape_textures(self, object_id: int) -> list[int] | None:
         """object_id → Shape 命令的 texture_index 列表；非 Shape id → None。
 
-        Shapes chunk 首次调用时惰性解析并缓存（241KB 量级，成本低）。
+        从 Shape.commands 提取（返回形态与 Task 2 前兼容：list[int] | None，
+        render_spike.py 依赖 commandCount/textureIndexes 证据）。
         """
-        if "shapes" not in self._cache:
-            self._cache["shapes"] = parse_shapes(self.chunks.get("Shapes", b""))
-        return self._cache["shapes"].get(object_id)
+        shp = self.shape(object_id)
+        if shp is None:
+            return None
+        return [c.texture_index for c in shp.commands]
 
     def texture_data(self, index: int) -> TextureData:
         """纹理索引 → TextureData（惰性：仅读取对应 TextureSet，不整块解引用）。
@@ -441,6 +706,58 @@ class ScFile:
             raise CatalogError(
                 f"SC2 纹理索引 {index} 越界（Textures 共 {len(textures)} 个）")
         return textures[index]
+
+    def movieclips(self) -> dict[int, MovieClip]:
+        """MovieClips 惰性解析（按 movieclip 索引）并缓存。
+
+        需要 DataStorage 帧元素池缓冲（load_sc 时已提取进 frame_elements）。
+        """
+        if "movieclips" not in self._cache:
+            self._cache["movieclips"] = parse_movieclips(
+                self.chunks.get("MovieClips", b""), self.frame_elements)
+        return self._cache["movieclips"]
+
+    def movieclip_for_export(self, name: str) -> MovieClip | None:
+        """导出名 → object_id → MovieClip；未知导出或 id 非 movieclip → None。
+
+        惰性：首次调用解析 MovieClips 并建 id → MovieClip 映射缓存。
+        """
+        object_id = self.export_names.get(name)
+        if object_id is None:
+            return None
+        if "movieclip_by_id" not in self._cache:
+            by_id: dict[int, MovieClip] = {}
+            for index, mc in self.movieclips().items():
+                if mc.id in by_id:
+                    raise CatalogError(
+                        f"SC2 MovieClips 数据损坏: movieclip id {mc.id} 重复"
+                        f"（索引 {index} 与既有条目冲突；真实数据无重复，"
+                        "fail loud 防静默 last-wins）")
+                by_id[mc.id] = mc
+            self._cache["movieclip_by_id"] = by_id
+        return self._cache["movieclip_by_id"].get(object_id)
+
+    @property
+    def matrix_banks(self) -> list[MatrixBank]:
+        """DataStorage matrix_banks（slot 6）惰性解析并缓存。"""
+        if "matrix_banks" not in self._cache:
+            self._cache["matrix_banks"] = parse_matrix_banks(self.data_storage)
+        return self._cache["matrix_banks"]
+
+    def bank_for(self, movieclip: MovieClip) -> MatrixBank:
+        """movieclip 引用的 MatrixBank（bank 索引越界 → CatalogError）。
+
+        选 CatalogError 而非 None：bank 索引是 movieclip 的必填引用，越界
+        即数据损坏（C++ 参考 `matrixBanks[bank_index]` 同样越界中止）；
+        与 shape_textures 的 None 语义（查询不存在的对象是合法状态）不同
+        ——引用必须有效，fail loud 防静默用错 bank。
+        """
+        banks = self.matrix_banks
+        if not 0 <= movieclip.matrix_bank_index < len(banks):
+            raise CatalogError(
+                f"SC2 MovieClip[{movieclip.id}] matrix_bank_index "
+                f"{movieclip.matrix_bank_index} 越界（banks 共 {len(banks)} 个）")
+        return banks[movieclip.matrix_bank_index]
 
 
 def shape_textures(sc: ScFile, object_id: int) -> list[int] | None:
@@ -500,8 +817,8 @@ def _u8_scalar(fb: FlatBuffer, buf: bytes, table_off: int, slot: int,
     return buf[off]
 
 
-def parse_shapes(payload: bytes) -> dict[int, list[int]]:
-    """Shapes chunk：{shape_id: [texture_index, ...]}。
+def parse_shapes(payload: bytes) -> dict[int, Shape]:
+    """Shapes chunk：{shape_id: Shape}。
 
     `Shapes{shapes: [Shape]}`（slot 0）；`Shape{id: ushort (slot 0),
     commands: [ShapeDrawBitmapCommand] (slot 1)}`；命令是 **struct**（16 字节：
@@ -509,7 +826,8 @@ def parse_shapes(payload: bytes) -> dict[int, list[int]]:
     连续排布（无 uoffset），元素 i 绝对偏移 = vector 数据区 + i*16。
 
     对拍真实 ui.sc：shapes 4053 个，id 稀疏（0..23358，非索引对齐），
-    按 id 建 dict 正确；shape[0] 的 id 字段缺省（→ 0）。
+    按 id 建 dict 正确；shape[0] 的 id 字段缺省（→ 0）。unk1 两文件 34520
+    条命令实测恒 0 → 不解析进 ShapeCommand。
     畸形数据 → CatalogError。
     """
     if not payload:
@@ -525,29 +843,259 @@ def parse_shapes(payload: bytes) -> dict[int, list[int]]:
             raise CatalogError(
                 f"SC2 Shapes 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
                 "（防 512MB body 解压后的 O(n) 放大）")
-        out: dict[int, list[int]] = {}
+        out: dict[int, Shape] = {}
         for i in range(count):
             shape_tbl = fb.table(fb.vector_elem(shapes_vec, i, 4))
             shape_id = _u16_scalar(fb, payload, shape_tbl, 0, "Shape.id")
             commands_vec = fb.table_field(shape_tbl, 1)
-            if commands_vec == 0:
-                out[shape_id] = []
-                continue
-            ncmd = fb.vector_len(commands_vec)
-            if ncmd > _MAX_VECTOR_ENTRIES:
-                raise CatalogError(
-                    f"SC2 Shape[{i}] 命令数 {ncmd} 超过上限 {_MAX_VECTOR_ENTRIES}"
-                    "（防 512MB body 解压后的 O(n) 放大）")
-            tex = []
-            for c in range(ncmd):
-                elem = fb.vector_elem(commands_vec, c, 16)  # struct 16B 连续
-                tex.append(struct.unpack("<I", payload[elem + 4:elem + 8])[0])
-            out[shape_id] = tex
+            commands: list[ShapeCommand] = []
+            if commands_vec:
+                ncmd = fb.vector_len(commands_vec)
+                if ncmd > _MAX_VECTOR_ENTRIES:
+                    raise CatalogError(
+                        f"SC2 Shape[{i}] 命令数 {ncmd} 超过上限 {_MAX_VECTOR_ENTRIES}"
+                        "（防 512MB body 解压后的 O(n) 放大）")
+                for c in range(ncmd):
+                    elem = fb.vector_elem(commands_vec, c, 16)  # struct 16B 连续
+                    _, tex, cnt, off = struct.unpack(
+                        "<4I", payload[elem:elem + 16])
+                    commands.append(ShapeCommand(texture_index=tex,
+                                                 points_count=cnt,
+                                                 points_offset=off))
+            out[shape_id] = Shape(id=shape_id, commands=commands)
         return out
     except CatalogError:
         raise
     except ValueError as e:
         raise CatalogError(f"SC2 Shapes 解析失败: {e}") from e
+
+
+def read_vertices(points: bytes, offset: int, count: int) -> list[Vertex]:
+    """从 shapes_bitmap_poins 缓冲读 count 个顶点（12 字节/个连续）。
+
+    offset 是**顶点索引**（实证 + Shape.cpp：顶点 i 字节偏移 =
+    (offset + i) * 12）。顶点布局见 Vertex docstring（x/y 在前、u/v 在后，
+    与 sc-workshop 参考一致）。
+
+    越界（起点或终点超出缓冲）→ CatalogError（fail loud，不截断）；
+    count 超上限 → CatalogError（防 O(n) 顶点物化放大，模式同
+    _MAX_VECTOR_ENTRIES）。
+    """
+    if count > _MAX_VECTOR_ENTRIES:
+        raise CatalogError(
+            f"SC2 顶点数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
+            "（防 O(n) 顶点物化放大）")
+    start = offset * 12
+    need = count * 12
+    if start + need > len(points):
+        raise CatalogError(
+            f"SC2 顶点越界: 起点 {start} 需要 {need} 字节，"
+            f"points 缓冲共 {len(points)} 字节")
+    # 单次 iter_unpack 批量消费（同 parse_movieclips 帧元素模式；need 恒为
+    # 12 字节倍数，切片无尾部残块）
+    return [Vertex(x=x, y=y, u=u / 0xFFFF, v=v / 0xFFFF)
+            for x, y, u, v in struct.iter_unpack("<ffHH", points[start:start + need])]
+
+
+def _u32_field_or(fb: FlatBuffer, buf: bytes, table_off: int, slot: int,
+                  default: int) -> int:
+    """table 中 inline uint32 标量；字段缺省返回 default（非 0）。"""
+    off = fb.table_field(table_off, slot)
+    if off == 0:
+        return default
+    if off < 0 or off + 4 > len(buf):
+        raise CatalogError(
+            f"SC2 u32 字段越界: 偏移 {off} 大小 4，数据长度 {len(buf)}")
+    return struct.unpack("<I", buf[off:off + 4])[0]
+
+
+def parse_movieclips(payload: bytes, frame_elements: bytes = b"") -> dict[int, MovieClip]:
+    """MovieClips chunk → {movieclip 索引: MovieClip}。
+
+    `MovieClips{movieclips: [MovieClip]}`（slot 0，元素 table 4B uoffset）。
+    MovieClip 槽位（MovieClips.fbs）：0=id u16、1=export_name_ref_id u32、
+    5=children_ids [ushort]、8=frames [MovieClipFrame]（**8 字节 struct
+    连续**：used_transform u32 + label_ref_id u32）、9=frame_elements_offset
+    u32（缺省 0xFFFFFFFF）、10=matrix_bank_index u32、12=short_frames
+    [MovieClipShortFrame]（2 字节 struct 连续，仅 used_transform u16）。
+    frames 缺省时用 short_frames。
+
+    frame elements 实证（对拍 ui.sc/buildings.sc + SupercellFlash
+    MovieClip.cpp）：`frame_elements_offset` 是 DataStorage
+    movieclips_frame_elements **ushort 索引**（非字节偏移）；元素 = 6 字节
+    3×u16（instance_index=children 数组索引 / matrix_index /
+    color_transform_index，0xFFFF=无）；所有帧 used_transform 之和个元素从
+    该处顺序连续消费（frame 0 先用）。畸形/越界 → CatalogError。
+
+    压缩路径限制（实证 2026-08-05）：C++ 参考在 frame_elements_offset
+    缺失时走 MatrixBank 压缩解码（bank.movieclip_elements +
+    compressed_data_offset，CompressedMovieClips 文件变体）；真实
+    ui.sc/buildings.sc 全量 11743 个 movieclip 中 offset=0xFFFFFFFF 的为
+    **0 个**（含 frames 有元素的情况），4 渲染样本全部走普通路径 → 保持
+    fail-loud（有元素但 offset=0xFFFFFFFF → CatalogError），不实现压缩解码。
+    """
+    if not payload:
+        return {}
+    try:
+        fb = FlatBuffer(payload)
+        root = fb.root()
+        vec = fb.table_field(root, 0)
+        if vec == 0:
+            return {}
+        count = fb.vector_len(vec)
+        if count > _MAX_VECTOR_ENTRIES:
+            raise CatalogError(
+                f"SC2 MovieClips 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
+                "（防 512MB body 解压后的 O(n) 放大）")
+        out: dict[int, MovieClip] = {}
+        for i in range(count):
+            t = fb.table(fb.vector_elem(vec, i, 4))
+            mc_id = _u16_scalar(fb, payload, t, 0, "MovieClip.id")
+            export_ref = _u32_field(fb, payload, t, 1)
+            matrix_bank = _u32_field(fb, payload, t, 10)
+            feo = _u32_field_or(fb, payload, t, 9, 0xFFFFFFFF)
+            children: list[int] = []
+            cvec = fb.table_field(t, 5)
+            if cvec:
+                nc = fb.vector_len(cvec)
+                if nc > _MAX_VECTOR_ENTRIES:
+                    raise CatalogError(
+                        f"SC2 MovieClip[{i}] children 数 {nc} 超过上限 "
+                        f"{_MAX_VECTOR_ENTRIES}（防 O(n) 放大）")
+                children = [struct.unpack("<H", payload[off:off + 2])[0]
+                            for off in (fb.vector_elem(cvec, j, 2)
+                                        for j in range(nc))]
+            frames: list[MovieClipFrame] = []
+            fvec = fb.table_field(t, 8)
+            if fvec:
+                nf = fb.vector_len(fvec)
+                if nf > _MAX_VECTOR_ENTRIES:
+                    raise CatalogError(
+                        f"SC2 MovieClip[{i}] 帧数 {nf} 超过上限 "
+                        f"{_MAX_VECTOR_ENTRIES}（防 O(n) 放大）")
+                for f in range(nf):
+                    pos = fb.vector_elem(fvec, f, 8)
+                    used, label = struct.unpack("<II", payload[pos:pos + 8])
+                    frames.append(MovieClipFrame(used_transform=used,
+                                                 label_ref_id=label))
+            else:
+                svec = fb.table_field(t, 12)
+                if svec:
+                    ns = fb.vector_len(svec)
+                    if ns > _MAX_VECTOR_ENTRIES:
+                        raise CatalogError(
+                            f"SC2 MovieClip[{i}] 短帧数 {ns} 超过上限 "
+                            f"{_MAX_VECTOR_ENTRIES}（防 O(n) 放大）")
+                    for f in range(ns):
+                        pos = fb.vector_elem(svec, f, 2)
+                        frames.append(MovieClipFrame(
+                            used_transform=struct.unpack(
+                                "<H", payload[pos:pos + 2])[0],
+                            label_ref_id=0))  # 短帧无 label
+            total = sum(f.used_transform for f in frames)
+            if total > _MAX_VECTOR_ENTRIES:
+                raise CatalogError(
+                    f"SC2 MovieClip[{i}] 帧元素总数 {total} 超过上限 "
+                    f"{_MAX_VECTOR_ENTRIES}（防 O(n) 放大）")
+            elements: list[MovieClipFrameElement] = []
+            if total > 0:
+                if feo == 0xFFFFFFFF:
+                    raise CatalogError(
+                        f"SC2 MovieClip[{i}] 有 {total} 个帧元素但 "
+                        "frame_elements_offset=0xFFFFFFFF（数据损坏）")
+                start = feo * 2  # ushort 索引 → 字节偏移
+                need = total * 6
+                if start + need > len(frame_elements):
+                    raise CatalogError(
+                        f"SC2 MovieClip[{i}] 帧元素越界: 起点 {start} 需要 "
+                        f"{need} 字节，缓冲共 {len(frame_elements)} 字节")
+                # 单次 iter_unpack 批量消费（实测提速数倍于逐元素 unpack 切片；
+                # need=total*6 恒为 6 字节倍数，切片无尾部残块）
+                elements = [
+                    MovieClipFrameElement(instance_index=inst,
+                                          matrix_index=midx,
+                                          color_transform_index=cidx)
+                    for inst, midx, cidx in struct.iter_unpack(
+                        "<HHH", frame_elements[start:start + need])]
+            out[i] = MovieClip(id=mc_id, export_name_ref_id=export_ref,
+                               frames=frames, frame_elements_offset=feo,
+                               matrix_bank_index=matrix_bank,
+                               frame_elements=elements,
+                               children_ids=children)
+        return out
+    except CatalogError:
+        raise
+    except ValueError as e:
+        raise CatalogError(f"SC2 MovieClips 解析失败: {e}") from e
+
+
+def _struct_vector_bytes(fb: FlatBuffer, table_off: int, slot: int,
+                         stride: int, what: str) -> bytes:
+    """table 中 struct vector 的原始字节切片（元素按 stride 连续排列）。
+
+    flatbuffers struct vector：元素紧邻 u32 len 后按 stride 步长连续（无
+    元素间对齐填充——ColorTransform 7 字节 struct 实证元素间距 = 7 非 8）。
+    返回整段切片；条目数超上限 / 越界 → CatalogError（防 O(n) 放大）。
+    """
+    vf = fb.table_field(table_off, slot)
+    if not vf:
+        return b""
+    n = fb.vector_len(vf)
+    if n > _MAX_VECTOR_ENTRIES:
+        raise CatalogError(
+            f"SC2 {what} 条目数 {n} 超过上限 {_MAX_VECTOR_ENTRIES}"
+            "（防 512MB body 解压后的 O(n) 放大）")
+    if n == 0:
+        return b""
+    # 校验最后一个元素在界内 → 整段连续切片必然合法（同帧元素池模式）
+    first = fb.vector_elem(vf, n - 1, stride) - (n - 1) * stride
+    return fb.data[first:first + n * stride]
+
+
+def parse_matrix_banks(payload: bytes) -> list[MatrixBank]:
+    """DataStorage matrix_banks（slot 6）→ MatrixBank 列表。
+
+    实证结论（对拍真实 ui.sc / buildings.sc，2026-08-05）：
+    - `MatrixBank{matrices (slot 0), colors (slot 1)}` 是 table vector
+      （4B uoffset）；matrices = 24B struct 连续（6×float32 LE：
+      a,b,c,d,tx,ty），colors = **7B struct 连续**（元素间距实证 = 7 非 8）。
+    - half_matrices（slot 2，12B 6×int16）**不解析**：两文件全量恒为空
+      （ui.sc 4 banks 203732 矩阵 / buildings.sc 5 banks 295222 矩阵，
+      half 总数均为 0），schema 声明但未使用；若未来版本使用需补实现。
+    - 真实规模：ui.sc 4 banks（每库矩阵 7530..65437）、buildings.sc 5 banks
+      （每库矩阵 33222..65529）；movieclip.frame element 的 matrix_index
+      是 **bank 内索引**（0xFFFF = 无矩阵），全量 340 万+ 帧元素索引
+      0 越界。
+    畸形数据 → CatalogError（fail loud，不静默降级）。
+    """
+    if not payload:
+        return []
+    try:
+        fb = FlatBuffer(payload)
+        root = fb.root()
+        vec = fb.table_field(root, 6)
+        if vec == 0:
+            return []
+        count = fb.vector_len(vec)
+        if count > _MAX_VECTOR_ENTRIES:
+            raise CatalogError(
+                f"SC2 MatrixBank 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
+                "（防 512MB body 解压后的 O(n) 放大）")
+        out: list[MatrixBank] = []
+        for i in range(count):
+            bank_tbl = fb.table(fb.vector_elem(vec, i, 4))
+            mraw = _struct_vector_bytes(fb, bank_tbl, 0, 24,
+                                        f"MatrixBank[{i}].matrices")
+            craw = _struct_vector_bytes(fb, bank_tbl, 1, 7,
+                                        f"MatrixBank[{i}].colors")
+            out.append(MatrixBank(
+                matrices=[Matrix2x3(*m) for m in struct.iter_unpack("<6f", mraw)],
+                colors=[ColorTransform(*c) for c in struct.iter_unpack("<7B", craw)]))
+        return out
+    except CatalogError:
+        raise
+    except ValueError as e:
+        raise CatalogError(f"SC2 MatrixBank 解析失败: {e}") from e
 
 
 def _parse_texture_data(fb: FlatBuffer, payload: bytes, td_off: int,
@@ -635,7 +1183,8 @@ def load_sc(data: bytes) -> ScFile:
     body = decode_body(data[pos:], header.compressed_size)
     try:
         fb = FlatBuffer(body)
-        strings = parse_data_storage(fb, body)
+        info = parse_data_storage_info(fb, body)
+        strings = info.strings
         chunks = read_chunks(body, header.resources_offset)
         # 重复 name last-wins（真实 ui.sc 导出名唯一；防御语义）
         export_names = dict(
@@ -643,4 +1192,7 @@ def load_sc(data: bytes) -> ScFile:
     except ValueError as e:
         raise CatalogError(f"SC2 body 解析失败: {e}") from e
     return ScFile(header=header, metadata=metadata, strings=strings,
-                  export_names=export_names, chunks=chunks)
+                  export_names=export_names, chunks=chunks,
+                  frame_elements=info.movieclips_frame_elements,
+                  points=info.shapes_bitmap_poins,
+                  data_storage=info.payload)

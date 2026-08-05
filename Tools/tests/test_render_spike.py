@@ -19,6 +19,8 @@ from game_catalog.errors import CatalogError
 from game_catalog.sc2 import (
     ScFile,
     ScHeader,
+    Shape,
+    ShapeCommand,
     parse_shapes,
     parse_textures,
     shape_textures,
@@ -179,14 +181,23 @@ def decode_png(data: bytes) -> tuple[int, int, int, bytes]:
 
 
 def test_parse_shapes_struct_commands():
-    """16 字节 struct vector：元素连续排布，texture_index 位于每元素 +4。"""
+    """16 字节 struct vector：元素连续排布，texture_index 位于每元素 +4。
+
+    Task 2（Issue #30）起返回 dict[int, Shape]（完整命令字段）；texture_index
+    提取由 ScFile.shape_textures 保持旧形态（见 test_shape_vertices.py 兼容断言）。
+    """
     payload = build_shapes_payload([(7, [0, 3, 5]), (9, None), (11, [1])])
-    assert parse_shapes(payload) == {7: [0, 3, 5], 9: [], 11: [1]}
+    shapes = parse_shapes(payload)
+    assert [c.texture_index for c in shapes[7].commands] == [0, 3, 5]
+    assert shapes[9] == Shape(id=9, commands=[])
+    assert shapes[11] == Shape(
+        id=11, commands=[ShapeCommand(texture_index=1, points_count=3,
+                                      points_offset=0)])
 
 
 def test_parse_shapes_empty_commands_field():
     payload = build_shapes_payload([(7, [])])
-    assert parse_shapes(payload) == {7: []}
+    assert parse_shapes(payload) == {7: Shape(id=7, commands=[])}
 
 
 def test_parse_shapes_missing_shapes_vector_empty():

@@ -19,6 +19,8 @@ from .contract import check_rendered_path_contract, rendered_path_format_ok
 from .model import AssetRef, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
+# PNG 文件魔数（前 8 字节）：\x89PNG\r\n\x1a\n（Issue #30 Task 8 内容校验用）
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
 def _check_rendered_path(
@@ -38,11 +40,13 @@ def _check_rendered_path(
     R-C manifest 登记。renderedPath 为 None（无引用）不触发——counts.missingIcons
     的 "renderedPath is None" 语义不变；**空串 "" 不是合法渲染路径**，走 R-D
     报格式非法（交叉审核 P1-2：空路径不得绕过校验，不得被 isRenderable 视为可渲染）。
-    R-D 短路在**文件系统探测之前**：格式非法（版本段/`..` 段/绝对路径/单级/空串等）
-    直接报格式非法，不执行 `(catalog_dir / rp).is_file()`——防 `icons/../../x.png`
-    逃逸探测 catalog 目录之外的文件（交叉审核 NB-3）。
-    文件存在但已登记时 hash/size 一致性由现有 generatedFiles 重算逻辑兜底
-    （PNG 条目走同一路径）。
+     R-D 短路在**文件系统探测之前**：格式非法（版本段/`..` 段/绝对路径/单级/空串等）
+     直接报格式非法，不执行 `(catalog_dir / rp).is_file()`——防 `icons/../../x.png`
+     逃逸探测 catalog 目录之外的文件（交叉审核 NB-3）。
+     文件存在但已登记时 hash/size 一致性由现有 generatedFiles 重算逻辑兜底
+     （PNG 条目走同一路径）。文件存在时另做 PNG 内容校验（Issue #30 Task 8）：
+     前 8 字节必须是 PNG 魔数，否则报"不是合法 PNG"；仅查魔数不解析完整 PNG，
+     小文件（<8 字节）同样报错。读取失败（OSError）报"无法读取"。
     """
     rp = ref.renderedPath
     if rp is None:
@@ -54,6 +58,19 @@ def _check_rendered_path(
         None if registered is None else rp in registered,
     )
     errors.extend(f"{e} ({context})" for e in violations)
+    # ---- PNG 内容校验（Issue #30 Task 8）：文件存在但内容非 PNG → error ----
+    # 仅 file_exists 时读文件：格式非法/逃逸路径已被上面短路，不触碰文件系统
+    # （NB-3 安全不变）。只比对前 8 字节魔数；小文件读出不足魔数长度即报错。
+    if file_exists:
+        png_target = catalog_dir / rp
+        try:
+            with png_target.open("rb") as f:
+                head = f.read(len(_PNG_MAGIC))
+        except OSError as exc:
+            errors.append(f"renderedPath 指向的文件无法读取: {rp}: {exc} ({context})")
+            return
+        if head != _PNG_MAGIC:
+            errors.append(f"renderedPath 指向的文件不是合法 PNG: {rp} ({context})")
 
 
 def validate_catalog(dir_path: str | Path) -> list[str]:
@@ -99,6 +116,7 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
     # ---- generatedFiles 完整性：hash/size 重算比对 + icons/ 目录存在 ----
     gen = manifest.get("generatedFiles")
     registered: set[str] | None = None  # 非 directory 条目路径集合（R-C 用）
+    png_count: int | None = 0 if isinstance(gen, list) else None  # R6.2：PNG 条目数
     if not isinstance(gen, list):
         errors.append("manifest 缺少 generatedFiles")
     else:
@@ -116,6 +134,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                 if not (d := catalog_path.parent / path).is_dir():
                     errors.append(f"generatedFiles 目录不存在: {path}")
                 continue
+            if path.endswith(".png"):
+                png_count += 1  # R6.2：renderedIcons 重算断言依据
             registered.add(path)
             target = catalog_path.parent / path
             if not target.is_file():
@@ -199,6 +219,23 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         for field in ("items", "levels", "missingTime", "missingIcons"):
             if manifest_counts.get(field) != counts[field]:
                 errors.append(f"counts.{field} 不一致: manifest={manifest_counts.get(field)} 重算={counts[field]}")
+        # ---- R6.2 optional 字段（旧 manifest 缺失不报错）----
+        # renderedIcons：渲染成功且落盘的 PNG 数，必须 == generatedFiles PNG
+        # 条目数（可重算断言）；generatedFiles 缺失时只校验类型不比对
+        ri = manifest_counts.get("renderedIcons")
+        if ri is not None:
+            if not isinstance(ri, int) or isinstance(ri, bool) or ri < 0:
+                errors.append(f"counts.renderedIcons 非法: {ri!r}")
+            elif png_count is not None and ri != png_count:
+                errors.append(
+                    f"counts.renderedIcons 不一致: manifest={ri} "
+                    f"重算={png_count}（generatedFiles PNG 条目数）")
+        # blockedIcons：失败样本键数，快照语义——只有生成器知道，validate 只
+        # 校验存在性/类型/非负，不重算
+        bi = manifest_counts.get("blockedIcons")
+        if bi is not None and (not isinstance(bi, int)
+                               or isinstance(bi, bool) or bi < 0):
+            errors.append(f"counts.blockedIcons 非法: {bi!r}")
 
     return errors
 

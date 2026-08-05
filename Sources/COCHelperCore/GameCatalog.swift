@@ -43,9 +43,10 @@ public struct CatalogAssetRef: Codable, Hashable, Sendable {
 
     /// 是否有可渲染的静态资源：renderedPath 存在且无缺失原因。
     /// 空串路径（""）不可渲染（契约 R2.2/R5.3，与 Python contract.is_renderable
-    /// 同一语义）；当前 bundled 目录（18.400.13）所有 icon ref 均为
-    /// icons_not_rendered（renderedPath nil），该属性为 false；#13 图标资源
-    /// 管线产出真实渲染图后为 true。
+    /// 同一语义）；18.400.13 全量渲染后：1246 个唯一路径可渲染（renderedPath
+    /// 非空且无 missingReason）；23 个唯一缺失键（export_not_found /
+    /// render_failed）带 missingReason，该属性为 false。UI 依据该属性选择
+    /// PNG 或 SF Symbol。
     public var isRenderable: Bool {
         guard let renderedPath, !renderedPath.isEmpty else { return false }
         return missingReason == nil

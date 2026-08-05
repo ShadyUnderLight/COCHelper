@@ -205,6 +205,11 @@
   `sc/buildings_cc.sc` playerhouse_dummy）（全部 ∈ ASSET_MISSING_REASONS）
 - `UpgradeDisplayRow` 图标列 / `LevelDetailSheet` 逐级行已接入
   （levelVisual 优先、icon 兜底、SF Symbol 最后；缺失角标语义不变）
+- 图标优先级按组件区分：`LevelDetailSheet` 逐级行 = levelVisual 优先 → icon 兜底；
+  `UpgradeDisplayRow` 行级 = 仅 item.icon（行级不承载逐级外观，plan Task 3 决策）
+- 数据源注：push_trap_lvl1-10_idle（export_not_found）因 APK export 实际为
+  `push_trap_lvlX_idle_0..3` 方向后缀变体、无裸名而失败——失败键全部 fail loud
+  标记，不做静默回退（后续如需修复应核对投影层 export 命名来源，超出 #25 范围）
 
 ---
 

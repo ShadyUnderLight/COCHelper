@@ -102,9 +102,9 @@ struct UpgradeDisplayRow: View {
     // MARK: - 图标
 
     /// 目录视觉资产缺失原因（icon 优先、levelVisual 兜底，见
-    /// `VillageItemState.assetMissingReason`）：bundled 目录（18.400.13）
-    /// 23 个引用带 missingReason，非 nil 时 UI 必须给出可见的缺失状态
-    /// （角标 + help），不能只在 hover 里。
+    /// `VillageItemState.assetMissingReason`）：当前 bundled 目录（18.400.13）
+    /// 27 个引用带缺失原因（23 个唯一键，export_not_found / render_failed），
+    /// 非 nil 时 UI 必须给出可见的缺失状态（角标 + help），不能只在 hover 里。
     private var iconMissingReason: String? {
         item.assetMissingReason
     }

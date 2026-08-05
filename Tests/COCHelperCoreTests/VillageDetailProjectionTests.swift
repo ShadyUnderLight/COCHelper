@@ -12,7 +12,8 @@ final class VillageDetailProjectionTests: XCTestCase {
         level: Int? = 3,
         maxLevel: Int? = 10,
         isUpgrading: Bool = false,
-        nextLevel: Int? = nil
+        nextLevel: Int? = nil,
+        nested: Bool = false
     ) -> VillageItemState {
         let effectiveNext = nextLevel ?? (isUpgrading ? level.map { $0 + 1 } : nil)
         return VillageItemState(
@@ -33,7 +34,7 @@ final class VillageDetailProjectionTests: XCTestCase {
             missingReason: nil,
             icon: nil,
             levelVisual: nil,
-            isNested: false
+            isNested: nested
         )
     }
 
@@ -211,7 +212,207 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertEqual(total.completedCount, 1)
     }
 
+    // MARK: - 嵌套归父（issue #24：嵌套 types/modules 归入根父的「类型/模块」区域）
+
+    func testFlatItemsStandAloneWithNoChildren() {
+        let a = item(id: "buildings:0")
+        let b = item(id: "buildings:1")
+        let rows = VillageDetailProjection.parentedRows(from: [a, b])
+        XCTAssertEqual(rows.map(\.id), ["buildings:0", "buildings:1"])
+        XCTAssertTrue(rows.allSatisfy { $0.children.isEmpty })
+    }
+
+    func testNestedItemAttachesToRootParent() {
+        let parent = item(id: "heroes:0")
+        let child = item(id: "heroes:0.modules.0", nested: true)
+        let rows = VillageDetailProjection.parentedRows(from: [parent, child])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.item.id, "heroes:0")
+        XCTAssertEqual(rows.first?.children.map(\.id), ["heroes:0.modules.0"])
+    }
+
+    func testDeepNestedAttachesToNearestFlatAncestor() {
+        // 真实快照形态：buildings:5.types.0.modules.2 的根父是 buildings:5
+        // （types 层自身也是嵌套项，继续上溯到非嵌套祖先）。
+        let parent = item(id: "buildings:5")
+        let type = item(id: "buildings:5.types.0", nested: true)
+        let module = item(id: "buildings:5.types.0.modules.2", nested: true)
+        let rows = VillageDetailProjection.parentedRows(from: [parent, type, module])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.item.id, "buildings:5")
+        XCTAssertEqual(
+            rows.first?.children.map(\.id).sorted(),
+            ["buildings:5.types.0", "buildings:5.types.0.modules.2"]
+        )
+    }
+
+    func testAggregatedParentPrefixNormalized() {
+        // 聚合后父项 id 带 agg: 前缀，匹配子项父 path 时必须归一化忽略。
+        let parent = item(id: "agg:buildings:5")
+        let child = item(id: "buildings:5.types.0", nested: true)
+        let rows = VillageDetailProjection.parentedRows(from: [parent, child])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.children.map(\.id), ["buildings:5.types.0"])
+    }
+
+    func testNestedWithoutParentFallsBackToStandaloneRow() {
+        // 根父不在输入中（防御性：父项被过滤）→ 子项独立成行，信息不丢失。
+        let orphan = item(id: "heroes:0.modules.0", nested: true)
+        let rows = VillageDetailProjection.parentedRows(from: [orphan])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.id, "heroes:0.modules.0")
+        XCTAssertTrue(rows.first?.children.isEmpty == true)
+    }
+
+    func testNestedItemItselfWithAggPrefix() {
+        // 非升级嵌套项也会被聚合 → id 带 agg: 前缀；归一化后仍应挂到根父。
+        let parent = item(id: "heroes:0")
+        let child = item(id: "agg:heroes:0.modules.0", nested: true)
+        let rows = VillageDetailProjection.parentedRows(from: [parent, child])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.children.map(\.id), ["agg:heroes:0.modules.0"])
+    }
+
+    func testParentedRowsPreserveInputOrderAndConservation() {
+        let items = [
+            item(id: "buildings:0"),
+            item(id: "buildings:0.types.0", nested: true),
+            item(id: "buildings:1"),
+            item(id: "heroes:0.modules.0", nested: true), // 孤儿嵌套项
+            item(id: "buildings:0.types.0.modules.1", nested: true),
+        ]
+        let rows = VillageDetailProjection.parentedRows(from: items)
+        // 信息守恒：每行 item + children 恰好覆盖输入，无丢失无重复。
+        let all = rows.flatMap { [$0.item] + $0.children }
+        XCTAssertEqual(all.count, items.count)
+        XCTAssertEqual(Set(all.map(\.id)), Set(items.map(\.id)))
+        // 行（非嵌套项与孤儿）保持输入相对顺序；children 保持输入相对顺序。
+        XCTAssertEqual(rows.map(\.item.id), ["buildings:0", "buildings:1", "heroes:0.modules.0"])
+        XCTAssertEqual(
+            rows[0].children.map(\.id),
+            ["buildings:0.types.0", "buildings:0.types.0.modules.1"]
+        )
+    }
+
+    // MARK: - Real fixture 集成（issue #24）
+
+    func testRealFixtureNestedItemsGroupUnderRootParent() throws {
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: "anonymized_account_snapshot", withExtension: "json")
+        )
+        let data = try Data(contentsOf: url)
+        let snapshot = try AccountSnapshotImporter.parse(String(data: data, encoding: .utf8) ?? "")
+        let village = VillageProfile(
+            name: "测试村庄",
+            accountSnapshot: AccountSnapshot(
+                tag: "#TEST",
+                capturedAt: nil,
+                importedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                ageSeconds: nil,
+                originalText: "",
+                objectSections: snapshot.objectSections,
+                numericSections: [:],
+                boosts: [:],
+                unknownTopLevelKeys: [],
+                diagnostics: []
+            )
+        )
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: GameCatalog.loadBundled(),
+            base: .home,
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let tracked = projection.items.filter { $0.status != .unavailable }
+        let buildings = try XCTUnwrap(
+            VillageDetailProjection.groups(from: tracked).first { $0.category == .buildings }
+        )
+        let rows = VillageDetailProjection.parentedRows(from: buildings.items)
+        // fixture：buildings:1000097（战宠小屋）3 types × 3 modules = 12 个嵌套后代。
+        // 父项与嵌套项均非升级 → 聚合后 id 带 agg: 前缀，正好覆盖归一化路径。
+        let petHouse = try XCTUnwrap(
+            rows.first { Self.normalizeAggPrefix($0.item.id) == "buildings:6" },
+            "根父行 buildings:6 应存在"
+        )
+        XCTAssertEqual(petHouse.children.count, 12, "全部 12 个嵌套后代应归入根父行")
+        XCTAssertTrue(petHouse.children.allSatisfy(\.isNested))
+        // 所有嵌套项都有归属：buildings 组无孤儿嵌套行。
+        let orphans = rows.filter { $0.item.isNested }
+        XCTAssertTrue(orphans.isEmpty, "真实 fixture 中嵌套项不应独立成行")
+    }
+
     // MARK: - Property-based 不变量（固定 seed SplitMix64，可复现）
+
+    func testPropertyParentedRowsInvariants() {
+        var rng = SplitMix64(seed: 0x24_24)
+        for _ in 0..<500 {
+            let items = randomParentedItems(&rng, count: 1 + Int(rng.next() % 30))
+            let rows = VillageDetailProjection.parentedRows(from: items)
+            // 1. 信息守恒：输入每个 item 恰好出现一次（行 item + children）。
+            let all = rows.flatMap { [$0.item] + $0.children }
+            XCTAssertEqual(all.count, items.count)
+            XCTAssertEqual(Set(all.map(\.id)), Set(items.map(\.id)))
+            // 2. 平铺项（非嵌套）children 必空；子项必为嵌套项。
+            for row in rows {
+                if row.item.isNested {
+                    XCTAssertTrue(row.children.isEmpty, "嵌套孤儿应独立成行且无子项")
+                } else {
+                    XCTAssertTrue(row.children.allSatisfy(\.isNested))
+                }
+            }
+            // 3. 每个子项是父项的后代：规范化（去 agg:）后子 id 以父 id + "." 开头。
+            for row in rows {
+                let parentID = Self.normalizeAggPrefix(row.item.id)
+                for child in row.children {
+                    let childID = Self.normalizeAggPrefix(child.id)
+                    XCTAssertNotEqual(childID, parentID)
+                    XCTAssertTrue(
+                        childID.hasPrefix(parentID + "."),
+                        "child \(childID) 应为 \(parentID) 的后代"
+                    )
+                }
+            }
+            // 4. 输入顺序稳定：行（item 部分）保持输入相对顺序。
+            //    生成器保证根父总在输入中（子项只在 rootIDs 非空时生成）→ 无孤儿行。
+            XCTAssertEqual(rows.map(\.item.id), items.filter { !$0.isNested }.map(\.id))
+        }
+    }
+
+    private static func normalizeAggPrefix(_ id: String) -> String {
+        id.hasPrefix("agg:") ? String(id.dropFirst(4)) : id
+    }
+
+    private func randomParentedItems(_ rng: inout SplitMix64, count: Int) -> [VillageItemState] {
+        var items: [VillageItemState] = []
+        var rootIDs: [String] = []
+        func isDuplicate(_ id: String) -> Bool {
+            items.contains { Self.normalizeAggPrefix($0.id) == Self.normalizeAggPrefix(id) }
+        }
+        while items.count < count {
+            let roll = rng.next() % 10
+            if roll < 6 || rootIDs.isEmpty {
+                // 新的根项（平铺）；约 1/4 带 agg: 前缀（聚合场景）。
+                let agg = (rng.next() % 4 == 0) ? "agg:" : ""
+                let id = agg + "sect:" + String(rng.next() % 12)
+                guard !isDuplicate(id) else { continue }
+                items.append(item(id: id))
+                rootIDs.append(Self.normalizeAggPrefix(id))
+            } else {
+                // 挂嵌套子项到随机根项：types 或 modules 或 types+modules 两层。
+                let root = rootIDs[Int(rng.next() % UInt64(rootIDs.count))]
+                let depth = rng.next() % 3
+                let childID: String
+                switch depth {
+                case 0: childID = root + ".types." + String(rng.next() % 6)
+                case 1: childID = root + ".modules." + String(rng.next() % 6)
+                default: childID = root + ".types." + String(rng.next() % 6) + ".modules." + String(rng.next() % 6)
+                }
+                guard !isDuplicate(childID) else { continue }
+                items.append(item(id: childID, nested: true))
+            }
+        }
+        return items
+    }
 
     func testPropertyInvariantsAcrossRandomCollections() {
         var rng = SplitMix64(seed: 0xC0C_16)

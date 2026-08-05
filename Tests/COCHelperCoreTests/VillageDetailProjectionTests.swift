@@ -321,6 +321,17 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertEqual(rows.first?.children.map(\.id), ["heroes:0.modules.0"])
     }
 
+    func testOrphanKeepsInputPosition() {
+        // P3（外部 review）：孤儿嵌套项必须保持输入顺序原位成行，
+        // 不得统一追加到列表末尾（doc 承诺「行保持输入相对顺序」）。
+        let orphan = item(id: "heroes:0.modules.0", nested: true) // 输入第 1 位
+        let parent = item(id: "buildings:0")
+        let child = item(id: "buildings:0.types.0", nested: true)
+        let rows = VillageDetailProjection.parentedRows(from: [orphan, parent, child])
+        XCTAssertEqual(rows.map(\.item.id), ["heroes:0.modules.0", "buildings:0"], "孤儿应在输入原位，而非末尾")
+        XCTAssertEqual(rows[1].children.map(\.id), ["buildings:0.types.0"])
+    }
+
     func testRealFixtureNestedItemsGroupUnderRootParent() throws {
         let url = try XCTUnwrap(
             Bundle.module.url(forResource: "anonymized_account_snapshot", withExtension: "json")
@@ -398,10 +409,10 @@ final class VillageDetailProjectionTests: XCTestCase {
                     )
                 }
             }
-            // 4. 输入顺序稳定：平铺项行按输入顺序，孤儿行按输入顺序跟在末尾。
-            let flatIDs = items.filter { !$0.isNested }.map(\.id)
-            let orphanIDsInOrder = items.filter { orphanIDs.contains($0.id) }.map(\.id)
-            XCTAssertEqual(rows.map(\.item.id), flatIDs + orphanIDsInOrder)
+            // 4. 输入顺序稳定：行 = 平铺项 + 孤儿，均按输入顺序（孤儿原位成行，
+            //    不得统一追加到末尾——P3 回归防护）。
+            let rowItemsInInputOrder = items.filter { !$0.isNested || orphanIDs.contains($0.id) }.map(\.id)
+            XCTAssertEqual(rows.map(\.item.id), rowItemsInInputOrder)
             // 5. 孤儿 ≠ 任何平铺项的 children（孤儿的根父不在输入中）。
             let allChildrenIDs = rows.flatMap(\.children).map(\.id)
             XCTAssertTrue(orphanIDs.isDisjoint(with: Set(allChildrenIDs)))

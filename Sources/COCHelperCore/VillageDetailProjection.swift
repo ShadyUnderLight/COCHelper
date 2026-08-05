@@ -154,24 +154,28 @@ public enum VillageDetailProjection {
     public static func parentedRows(from items: [VillageItemState]) -> [VillageParentedRow] {
         let flatNormalizedIDs = Set(items.filter { !$0.isNested }.map { Self.normalizedID($0.id) })
         var childrenByRoot: [String: [VillageItemState]] = [:]
-        var orphans: [VillageItemState] = []
         for item in items where item.isNested {
             if let root = Self.rootParentPath(of: item.id), flatNormalizedIDs.contains(root) {
                 childrenByRoot[root, default: []].append(item)
-            } else {
-                orphans.append(item)
             }
         }
 
         var rows: [VillageParentedRow] = []
         var seenRoots = Set<String>()
-        for item in items where !item.isNested {
-            let key = Self.normalizedID(item.id)
-            let children = seenRoots.contains(key) ? [] : (childrenByRoot[key] ?? [])
-            seenRoots.insert(key)
-            rows.append(VillageParentedRow(item: item, children: children))
+        for item in items {
+            if item.isNested {
+                // 孤儿（根父不在输入中）：原位成行，保持输入相对顺序（P3）。
+                if let root = Self.rootParentPath(of: item.id), flatNormalizedIDs.contains(root) {
+                    continue // 已挂到根父 children，不占行
+                }
+                rows.append(VillageParentedRow(item: item, children: []))
+            } else {
+                let key = Self.normalizedID(item.id)
+                let children = seenRoots.contains(key) ? [] : (childrenByRoot[key] ?? [])
+                seenRoots.insert(key)
+                rows.append(VillageParentedRow(item: item, children: children))
+            }
         }
-        rows.append(contentsOf: orphans.map { VillageParentedRow(item: $0, children: []) })
         return rows
     }
 

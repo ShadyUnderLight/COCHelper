@@ -626,6 +626,40 @@ def test_rendered_path_file_exists_passes(tmp_path):
     assert validate_catalog(d) == []
 
 
+def test_rendered_path_file_content_not_png_rejected(tmp_path):
+    """R-A 扩展（Issue #30 Task 8）：文件存在但内容非 PNG（前 8 字节非魔数）→ error。
+    垃圾字节也如实登记 hash/size，保证只有 PNG 魔数错误暴露。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"hello world" * 6)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/ui/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("不是合法 PNG" in e and "icons/ui/barbarian.png" in e for e in errors)
+
+
+def test_rendered_path_file_empty_rejected(tmp_path):
+    """R-A 扩展：空文件（0 字节，不足 8 字节魔数）→ error。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"")
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/ui/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("不是合法 PNG" in e for e in errors)
+
+
+def test_rendered_path_file_short_header_rejected(tmp_path):
+    """R-A 扩展：小文件（4 字节，仅部分魔数，不足完整 8 字节）→ error。"""
+    d = _valid_dir(tmp_path)
+    _register_png(d, "icons/ui/barbarian.png", b"\x89PNG")
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/ui/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("不是合法 PNG" in e for e in errors)
+
+
 def test_rendered_path_shared_between_refs_passes(tmp_path):
     """R2.4 去重：不同 ref 共享同一 renderedPath，manifest 只登记一次 → 通过。"""
     d = _valid_dir(tmp_path)

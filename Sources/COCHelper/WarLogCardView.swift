@@ -188,7 +188,33 @@ struct WarLogCardView: View {
         }
     }
 
+    /// 战争日志条目行：有成员明细时可展开（默认折叠；上限 30 行，超出提示），
+    /// 无成员时仅渲染摘要（与改动前行为一致，无展开箭头）。
+    @ViewBuilder
     private func warLogRow(_ entry: OfficialWarLogEntry) -> some View {
+        if let members = entry.clan?.members, !members.isEmpty {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(members.prefix(30), id: \.self) { member in
+                        memberRow(member)
+                    }
+                    if members.count > 30 {
+                        Text("还有 \(members.count - 30) 名成员…")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            } label: {
+                warLogSummary(entry)
+            }
+            .font(.caption)
+        } else {
+            warLogSummary(entry)
+        }
+    }
+
+    private func warLogSummary(_ entry: OfficialWarLogEntry) -> some View {
         HStack(spacing: 10) {
             resultBadge(entry.result)
             VStack(alignment: .leading, spacing: 2) {
@@ -215,6 +241,39 @@ struct WarLogCardView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private func memberRow(_ member: ClanWarMember) -> some View {
+        HStack(spacing: 8) {
+            if let position = member.mapPosition {
+                Text("\(position)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 22, alignment: .trailing)
+            }
+            Text(member.name ?? "未知成员")
+                .font(.caption)
+                .lineLimit(1)
+            if let th = member.townHallLevel {
+                Text("TH\(th)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text([member.attacks.map { "\($0)攻" },
+                  member.stars.map { "⭐\($0)" },
+                  member.destructionPercentage.map { "\(Self.percent($0))%" }]
+                .compactMap { $0 }
+                .joined(separator: " · "))
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 1)
+    }
+
+    private static func percent(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value)) : String(format: "%.1f", value)
     }
 
     @ViewBuilder

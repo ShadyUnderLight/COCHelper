@@ -23,10 +23,16 @@
    可不同纹理，必须逐命令画）
 7. 输出 PNG（R2.1 命名 `icons/<container_key>/<export_key>.png`）→ catalog 目录
    icons/；更新 catalog.json 匹配引用（成功 → renderedPath + missingReason
-   null；失败 → renderedPath null + 稳定枚举），原子替换
-8. 失败样本不产生 PNG 文件、不写伪造路径（R5）
-9. 报告 JSON（样本/verdict/path/size/sha256/耗时）→ --report（默认
-   /tmp/render-generator-report.json）
+   null；失败 → renderedPath null + 稳定枚举）
+8. **事务性落盘（P2）**：PNG/catalog.json/manifest.json 全部先写
+   `.render-tmp-*`，再统一 os.replace（PNG 先、catalog.json 次、manifest.json
+   最后）；任一阶段失败回滚清理并抛 CatalogError（消息含清理数）。
+   manifest.json 刷新（refresh_manifest：counts 重算 + generatedFiles 的
+   catalog.json sha256/size、icons/ 目录条目 entries、PNG 条目追加/去重），
+   `--no-refresh-manifest` 可关闭
+9. 失败样本不产生 PNG 文件、不写伪造路径（R5）
+10. 报告 JSON（样本/verdict/path/size/sha256/耗时）→ --report（默认
+    /tmp/render-generator-report.json）
 
 **契约对齐**（docs/rendered-path-contract.md）：R2.1 命名、R2.2 sanitize
 （fail loud）、R2.3 键冲突 fail loud、R2.4 同 (container, exportName) 只渲染
@@ -53,6 +59,7 @@ import sys
 import tempfile
 import time
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -460,6 +467,8 @@ def _atomic_write(path: Path, data: bytes) -> None:
     """临时文件 + os.replace 原子替换（与 catalog.generate 同模式）。
 
     mkstemp 默认 0600，显式 chmod 0644（仓库文件惯例，避免 PNG 私有权限）。
+    单文件原子写（refresh_manifest 独立调用用）；批量事务落盘见
+    write_rendered_outputs（两阶段：全 .tmp → 统一替换）。
     """
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".render-tmp-")
     try:
@@ -475,37 +484,209 @@ def _atomic_write(path: Path, data: bytes) -> None:
         raise
 
 
-def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
-                           write_catalog: bool = True) -> dict:
-    """成功样本 PNG 落盘（R2.1 路径）+ 可选 catalog.json 原子回写。
+def _stage(path: Path, data: bytes) -> tuple[Path, Path]:
+    """阶段 1：内容写同目录 `.render-tmp-*`，返回 (tmp 路径, 最终路径)。
 
-    - PNG 逐文件原子写（幂等，重跑覆盖）；失败样本不产生文件（R5）
-    - catalog.json：全部 PNG 写完后临时文件 + replace（半写状态防护）；
-      格式与生成管线一致（indent=2、sort_keys=True、ensure_ascii=False、
-      尾部换行——catalog.py 同参数）
+    写入失败自行清理本次 tmp 后重抛；批量清理由 write_rendered_outputs
+    的回滚兜底（含本函数未覆盖的失败点）。
+    """
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".render-tmp-")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, 0o644)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return (Path(tmp), path)
+
+
+def _sha256_of(path: Path) -> str:
+    """`sha256:` + 64 hex（manifest generatedFiles 条目格式，validate.py 同）。"""
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _refresh_manifest_content(manifest: dict, catalog: dict,
+                              png_relpaths: list[str],
+                              resolve: Callable[[str], Path]) -> dict:
+    """刷新后的 manifest 内容（不写盘）；counts 语义与 validate.py 完全一致。
+
+    - counts：items/levels/missingTime/missingIcons——对齐 validate.py 重算
+      （missingIcons 计 level 引用 renderedPath is None 的个数）
+    - generatedFiles：catalog.json 条目刷新 sha256/size；icons/ 目录条目
+      entries = PNG 数（缺失时补建）；PNG 条目按 sorted(png_relpaths)
+      原位刷新（去重）或追加
+    - resolve(relpath) → 资源实际文件路径：独立调用时即最终路径；事务性
+      落盘时指向 .tmp 阶段文件（内容即最终字节，P2）
+    """
+    counts = {
+        "items": len(catalog["items"]),
+        "levels": sum(len(i["levels"]) for i in catalog["items"]),
+        "missingTime": sum(
+            1 for i in catalog["items"] for lv in i["levels"]
+            if lv["durationSeconds"] is None),
+        "missingIcons": sum(
+            1 for i in catalog["items"] for lv in i["levels"]
+            if lv["icon"] and lv["icon"]["renderedPath"] is None),
+    }
+    new = dict(manifest)
+    new["counts"] = counts
+
+    png_paths = sorted(png_relpaths)
+    png_set = set(png_paths)
+    registered: set[str] = set()
+    icons_seen = False
+    gen: list[dict] = []
+    for entry in manifest.get("generatedFiles", []):
+        path = entry.get("path")
+        if path == "catalog.json":
+            p = resolve(path)
+            gen.append({"path": path, "sha256": _sha256_of(p),
+                        "size": p.stat().st_size})
+        elif path == "icons/":
+            icons_seen = True
+            gen.append({**entry, "entries": len(png_paths)})
+        elif path in png_set:
+            # 既有 PNG 条目原位刷新（去重：不重复追加）
+            p = resolve(path)
+            gen.append({"path": path, "sha256": _sha256_of(p),
+                        "size": p.stat().st_size})
+            registered.add(path)
+        else:
+            gen.append(entry)
+    if not icons_seen:
+        gen.append({"path": "icons/", "kind": "directory",
+                    "entries": len(png_paths)})
+    for path in png_paths:
+        if path in registered:
+            continue
+        p = resolve(path)
+        gen.append({"path": path, "sha256": _sha256_of(p),
+                    "size": p.stat().st_size})
+    new["generatedFiles"] = gen
+    return new
+
+
+def refresh_manifest(catalog_dir: str | Path, png_relpaths: list[str]) -> dict:
+    """独立刷新 manifest.json（/tmp/refresh_manifest.py 逻辑入库）。
+
+    读取 catalog_dir 下已落盘的 catalog.json/manifest.json 与 PNG（最终
+    路径），重算 counts + 刷新 generatedFiles，原子写回 manifest.json，
+    返回新 manifest。格式：indent=2 + sort_keys + ensure_ascii=False +
+    尾部换行（与 catalog.py 同参数）。
+
+    生成器内事务性落盘不直接调用本函数——基于 .tmp 阶段文件内容走
+    _refresh_manifest_content（见 write_rendered_outputs，P2）。
+    """
+    d = Path(catalog_dir)
+    catalog_path = d / "catalog.json"
+    manifest_path = d / "manifest.json"
+    for p in (catalog_path, manifest_path):
+        if not p.is_file():
+            raise CatalogError(f"{p.name} 不存在: {p}")
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    new = _refresh_manifest_content(manifest, catalog, png_relpaths,
+                                    resolve=lambda rel: d / rel)
+    text = (json.dumps(new, ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n")
+    _atomic_write(manifest_path, text.encode("utf-8"))
+    return new
+
+
+def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
+                           write_catalog: bool = True,
+                           refresh_manifest: bool = True) -> dict:
+    """成功样本 PNG 落盘（R2.1 路径）+ catalog.json 原子回写 + manifest 刷新。
+
+    两阶段事务（P2）：
+    - 阶段 0 前置检查：catalog.json（及需刷新时的 manifest.json）缺失 → fail
+      loud，任何文件（含 PNG）都不落盘
+    - 阶段 1：全部目标内容写同目录 `.render-tmp-*`（PNG 逐个、catalog.json、
+      manifest.json）；manifest 的 sha256/size 基于 .tmp 内容计算（内容即最终）
+    - 阶段 2：逐个 os.replace（PNG 先、catalog.json 次、manifest.json 最后）
+    - 任一阶段失败：尽力回滚（删除已替换最终文件与全部 .tmp），抛
+      CatalogError（消息说明回滚清理数）
+    write_catalog=False（--samples-only）或 refresh_manifest=False（逃生阀）
+    时不触碰 manifest.json。注：参数与模块函数 refresh_manifest 同名——事务
+    内基于 .tmp 内容走 _refresh_manifest_content，独立函数在最终路径上使用。
     """
     catalog_dir = Path(catalog_dir)
-    written: list[str] = []
-    for v in verdicts:
-        if v["status"] != "success":
-            continue
-        target = catalog_dir / v["relPath"]
-        target.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(target, v["pngBytes"])
-        written.append(v["relPath"])
+    catalog_path = catalog_dir / "catalog.json"
+    manifest_path = catalog_dir / "manifest.json"
+    do_manifest = write_catalog and refresh_manifest
 
-    updated = 0
+    # 阶段 0：前置检查（fail loud，先于任何写盘——catalog 缺失不落 PNG）
     if write_catalog:
-        catalog_path = catalog_dir / "catalog.json"
         if not catalog_path.is_file():
             raise CatalogError(f"catalog.json 不存在: {catalog_path}")
-        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-        catalog, updated = apply_rendered_paths(catalog, verdicts)
-        text = (json.dumps(catalog, ensure_ascii=False, indent=2,
-                           sort_keys=True) + "\n")
-        _atomic_write(catalog_path, text.encode("utf-8"))
+        if do_manifest and not manifest_path.is_file():
+            raise CatalogError(f"manifest.json 不存在: {manifest_path}")
 
-    return {"pngWritten": written, "updatedRefs": updated}
+    staged: list[tuple[Path, Path]] = []  # (tmp 路径, 最终路径)
+    replaced: list[Path] = []
+    png_relpaths: list[str] = []
+    updated = 0
+    try:
+        # 阶段 1：全部目标内容 → .tmp（内容即最终字节）
+        for v in verdicts:
+            if v["status"] != "success":
+                continue
+            target = catalog_dir / v["relPath"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            staged.append(_stage(target, v["pngBytes"]))
+            png_relpaths.append(v["relPath"])
+
+        if write_catalog:
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            catalog, updated = apply_rendered_paths(catalog, verdicts)
+            catalog_text = (json.dumps(catalog, ensure_ascii=False, indent=2,
+                                       sort_keys=True) + "\n")
+            staged.append(_stage(catalog_path, catalog_text.encode("utf-8")))
+
+        if do_manifest:
+            # manifest 内容依赖最终文件 sha256——从 .tmp 计算（内容已最终）
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            final_to_tmp = {
+                str(final.relative_to(catalog_dir)): tmp
+                for tmp, final in staged
+            }
+            new_manifest = _refresh_manifest_content(
+                manifest, catalog, sorted(png_relpaths),
+                resolve=lambda rel: Path(final_to_tmp[rel]))
+            manifest_text = (json.dumps(new_manifest, ensure_ascii=False,
+                                        indent=2, sort_keys=True) + "\n")
+            staged.append(_stage(manifest_path,
+                                 manifest_text.encode("utf-8")))
+
+        # 阶段 2：统一替换（PNG 先、catalog.json 次、manifest.json 最后）
+        for tmp, final in staged:
+            os.replace(tmp, final)
+            replaced.append(final)
+    except BaseException as exc:
+        # 尽力回滚：删除全部 .tmp + 已替换的最终文件
+        cleaned = 0
+        for tmp, _ in staged:
+            try:
+                os.unlink(tmp)
+                cleaned += 1
+            except OSError:
+                pass
+        for final in replaced:
+            try:
+                os.unlink(final)
+                cleaned += 1
+            except OSError:
+                pass
+        if isinstance(exc, CatalogError):
+            raise
+        raise CatalogError(
+            f"渲染落盘失败（已回滚，清理 {cleaned} 个文件）: {exc}") from exc
+
+    return {"pngWritten": png_relpaths, "updatedRefs": updated}
 
 
 def _report_dict(meta: dict, verdicts: list[dict], stats: dict) -> dict:
@@ -530,6 +711,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="catalog.json 所在目录（PNG 输出到其 icons/）")
     parser.add_argument("--samples-only", action="store_true",
                         help="只渲染样本（PNG + 报告），不回写 catalog.json")
+    parser.add_argument("--no-refresh-manifest", dest="refresh_manifest",
+                        action="store_false", default=True,
+                        help="不刷新 manifest.json（默认：重算 counts 与 "
+                             "generatedFiles 的 catalog/PNG 条目）")
     parser.add_argument("--report", type=Path,
                         default=Path("/tmp/render-generator-report.json"),
                         help="报告 JSON 输出路径（默认 /tmp/render-generator-report.json）")
@@ -545,7 +730,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         meta, verdicts = render_samples(args.apk)
         stats = write_rendered_outputs(args.catalog, verdicts,
-                                       write_catalog=not args.samples_only)
+                                       write_catalog=not args.samples_only,
+                                       refresh_manifest=args.refresh_manifest)
         report = _report_dict(meta, verdicts, stats)
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(

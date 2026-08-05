@@ -244,4 +244,5 @@ swift run smoke-api
 - 数据来源：仅通过 Supercell 官方 API（developer.clashofclans.com）读取公开数据；不执行任何自动化游戏操作（不自动攻击、不自动升级、不模拟点击）。
 - 禁止自动化与公开分发：本应用仅用于个人本地使用，不提供任何自动化游戏行为的接口；不得将本应用或其数据用于公共托管、批量数据抓取、转售或任何形式的公开分发。
 - 所有游戏内容与素材版权归 Supercell Oy 所有；按 [Supercell Fan Content Policy](https://supercell.com/en/fan-content-policy/) 使用。
+- 仓库内随附的渲染 PNG（`GameCatalog/*/icons/`）仅为应用 Bundle 内部资源（SwiftPM `.copy("GameCatalog")` 打包），随私有分发使用、不单独分发；若仓库转为 public 或对外分发应用，须重新评估（契约 R12.3）。
 - 官方 API 限流与条款：应用遵守官方 API 的使用条款与速率限制（客户端内置 429 退避），不绕过认证、不伪造请求。

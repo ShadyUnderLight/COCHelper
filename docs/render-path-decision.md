@@ -56,5 +56,5 @@
 ## 非目标（沿用 issue #30）
 
 - 不修改 `UpgradeDisplayRow`、`LevelDetailSheet` 等 SwiftUI 页面（#25 范围）
-- 不提交 APK / 原始游戏资源包；/tmp 输出不入库
+- 不提交 APK / 原始游戏资源包；/tmp 输出不入库（**渲染产物 PNG 例外**：随 private 仓库入库以满足 SwiftPM Bundle 打包，边界见 `docs/rendered-path-contract.md` R12.3）
 - 不修改账号解码、村庄投影、升级计时、Builder/Lab 语义

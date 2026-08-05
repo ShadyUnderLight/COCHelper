@@ -22,6 +22,7 @@
 - icon_unit_does_not_exist / sc/traps.sc town_hall_lvl1 → 失败
 """
 
+import hashlib
 import json
 import os
 import struct
@@ -31,14 +32,23 @@ from pathlib import Path
 import pytest
 
 from game_catalog.errors import CatalogError
+from game_catalog.validate import validate_catalog
 from render_generator import (
     SAMPLES,
     apply_rendered_paths,
     container_key,
+    refresh_manifest,
     render_samples,
     sample_png_relpath,
     sanitize_export_key,
     write_rendered_outputs,
+)
+from test_validate import (
+    _load_catalog,
+    _load_manifest,
+    _valid_dir,
+    _write,
+    _write_with_hash,
 )
 
 APK = Path(os.environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
@@ -162,6 +172,19 @@ def _sample_verdicts() -> list[dict]:
         _fail_verdict("sc/ui.sc", "icon_unit_does_not_exist", "export_not_found"),
         _fail_verdict("sc/traps.sc", "town_hall_lvl1", "container_not_found"),
     ]
+
+
+def _mini_manifest() -> str:
+    """迷你 manifest.json（陈旧 hash/counts——refresh 会刷新，此处只保证可解析）。"""
+    return json.dumps({
+        "schemaVersion": 1, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
+        "generatedFiles": [
+            {"path": "catalog.json", "sha256": "sha256:" + "b" * 64, "size": 1},
+            {"path": "icons/", "kind": "directory"},
+        ],
+        "counts": {"items": 0, "levels": 0, "missingTime": 0, "missingIcons": 0},
+    }, ensure_ascii=False) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +385,7 @@ def test_write_catalog_atomic_and_format_preserved(tmp_path):
     (tmp_path / "catalog.json").write_text(
         json.dumps(_mini_catalog(), ensure_ascii=False, indent=2,
                    sort_keys=True) + "\n", encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
     verdicts = [_ok_verdict("sc/ui.sc", "icon_spell_rage",
                             "icons/ui/icon_spell_rage.png")]
     stats = write_rendered_outputs(tmp_path, verdicts, write_catalog=True)
@@ -383,10 +407,11 @@ def test_write_catalog_missing_file_fails_loud(tmp_path):
 
 
 def test_catalog_replace_failure_keeps_original(tmp_path, monkeypatch):
-    """原子性：catalog.json replace 失败 → 原文件不被破坏。"""
+    """原子性：catalog.json replace 失败 → 原文件不被破坏，已替换 PNG 回滚清理。"""
     original = json.dumps(_mini_catalog(), ensure_ascii=False, indent=2,
                           sort_keys=True) + "\n"
     (tmp_path / "catalog.json").write_text(original, encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
 
     import render_generator as rg
 
@@ -398,9 +423,154 @@ def test_catalog_replace_failure_keeps_original(tmp_path, monkeypatch):
         return real_replace(src, dst)
 
     monkeypatch.setattr(rg.os, "replace", boom)
-    with pytest.raises(OSError, match="simulated"):
+    with pytest.raises(CatalogError, match="simulated"):
         write_rendered_outputs(tmp_path, _sample_verdicts(), write_catalog=True)
     assert (tmp_path / "catalog.json").read_text(encoding="utf-8") == original
+    # 已替换的 PNG 被回滚清理、无 .tmp 残留
+    assert list(tmp_path.rglob("*.png")) == []
+    assert not any(".render-tmp-" in p.name for p in tmp_path.rglob("*"))
+
+
+# ---------------------------------------------------------------------------
+# P2：事务性落盘（前置检查 / 阶段 1 全 .tmp / 阶段 2 统一替换 / 失败回滚）
+# ---------------------------------------------------------------------------
+
+
+def test_write_catalog_missing_no_png_left(tmp_path):
+    """P2：catalog.json 缺失 → 前置检查 fail loud，不写任何 PNG/.tmp。"""
+    with pytest.raises(CatalogError, match="catalog.json"):
+        write_rendered_outputs(tmp_path, _sample_verdicts(), write_catalog=True)
+    assert list(tmp_path.rglob("*.png")) == []
+    assert not any(".render-tmp-" in p.name for p in tmp_path.rglob("*"))
+
+
+def test_replace_failure_rolls_back_all_outputs(tmp_path, monkeypatch):
+    """P2：第 N 次 os.replace 失败（第 3 次替换，即第 2 张 PNG）→ 已替换 PNG
+    + 全部 .tmp 清理，catalog.json/manifest.json 保持原内容。"""
+    original = json.dumps(_mini_catalog(), ensure_ascii=False, indent=2,
+                          sort_keys=True) + "\n"
+    (tmp_path / "catalog.json").write_text(original, encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
+
+    import render_generator as rg
+
+    real_replace = rg.os.replace
+    counter = {"n": 0}
+
+    def boom(src, dst):
+        counter["n"] += 1
+        if counter["n"] == 3:  # 替换顺序：4 PNG → catalog.json → manifest.json
+            raise OSError("simulated replace failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(rg.os, "replace", boom)
+    with pytest.raises(CatalogError) as exc_info:
+        write_rendered_outputs(tmp_path, _sample_verdicts(), write_catalog=True)
+    assert "回滚" in str(exc_info.value)
+    assert "simulated replace failure" in str(exc_info.value)
+    # 无最终 PNG、无 .tmp；catalog.json 原内容保留
+    assert list(tmp_path.rglob("*.png")) == []
+    assert not any(".render-tmp-" in p.name for p in tmp_path.rglob("*"))
+    assert (tmp_path / "catalog.json").read_text(encoding="utf-8") == original
+    assert (tmp_path / "manifest.json").read_text(encoding="utf-8") \
+        == _mini_manifest()
+
+
+# ---------------------------------------------------------------------------
+# manifest 刷新（refresh_manifest）：counts 重算 + generatedFiles 一致性
+# ---------------------------------------------------------------------------
+
+
+def test_outputs_manifest_consistent_after_write(tmp_path):
+    """正常路径：PNG/catalog.json/manifest.json 三者一致——manifest 中
+    catalog.json sha256 == 磁盘、PNG 条目与磁盘一致、counts == validate 重算。"""
+    d = _valid_dir(tmp_path)
+    # 让 missingIcons 非平凡：加一个不匹配样本的 level icon 引用（renderedPath null）
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = {
+        "container": "sc/ui.sc", "exportName": "icon_unit_king",
+        "renderedPath": None, "missingReason": "icons_not_rendered",
+    }
+    _write_with_hash(d, catalog=c)
+
+    stats = write_rendered_outputs(d, _sample_verdicts())
+    assert sorted(stats["pngWritten"]) == [
+        "icons/buildings/blacksmith_lvl1.png",
+        "icons/buildings/fireplace_lvl1.png",
+        "icons/ui/icon_spell_rage.png",
+        "icons/ui/icon_unit_barbarian.png",
+    ]
+
+    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    entries = {e["path"]: e for e in manifest["generatedFiles"]}
+    # catalog.json 条目 sha256/size == 磁盘
+    cat_bytes = (d / "catalog.json").read_bytes()
+    assert entries["catalog.json"]["sha256"] \
+        == "sha256:" + hashlib.sha256(cat_bytes).hexdigest()
+    assert entries["catalog.json"]["size"] == len(cat_bytes)
+    # icons/ 目录条目 entries = PNG 数
+    assert entries["icons/"]["entries"] == 4
+    # PNG 条目与磁盘一致
+    for rel in stats["pngWritten"]:
+        data = (d / rel).read_bytes()
+        assert entries[rel]["sha256"] \
+            == "sha256:" + hashlib.sha256(data).hexdigest()
+        assert entries[rel]["size"] == len(data)
+    # counts 与 validate 重算语义一致（missingIcons=1：未匹配引用仍 renderedPath null）
+    assert manifest["counts"] == {"items": 1, "levels": 1,
+                                  "missingTime": 0, "missingIcons": 1}
+    assert validate_catalog(d) == []
+
+
+def test_write_then_validate_zero_errors(tmp_path):
+    """合成目录集成：完整 write_rendered_outputs + refresh_manifest →
+    validate_catalog() 零错误（用 test_validate 合成目录工具）。"""
+    d = _valid_dir(tmp_path)
+    write_rendered_outputs(d, _sample_verdicts())
+    assert validate_catalog(d) == []
+
+
+def test_rewrite_idempotent_validate_clean(tmp_path):
+    """重跑幂等：连续两次完整写入 → 第二次后 validate 仍零错误、条目不重复。"""
+    d = _valid_dir(tmp_path)
+    write_rendered_outputs(d, _sample_verdicts())
+    write_rendered_outputs(d, _sample_verdicts())
+    assert validate_catalog(d) == []
+    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    paths = [e["path"] for e in manifest["generatedFiles"]]
+    assert len(paths) == len(set(paths))
+
+
+def test_refresh_manifest_standalone_recomputes(tmp_path):
+    """refresh_manifest 独立可用（/tmp/refresh_manifest.py 逻辑入库）：陈旧
+    counts/hash 全部刷新、PNG 条目原位去重、幂等。"""
+    d = _valid_dir(tmp_path)
+    png = _PNG_SIG + b"x" * 16
+    (d / "icons/ui").mkdir(parents=True)
+    (d / "icons/ui/icon_unit_barbarian.png").write_bytes(png)
+    m = _load_manifest(d)
+    m["counts"] = {"items": 99, "levels": 99, "missingTime": 99,
+                   "missingIcons": 99}
+    m["generatedFiles"].append({
+        "path": "icons/ui/icon_unit_barbarian.png",
+        "sha256": "sha256:" + "f" * 64, "size": 1})
+    _write(d, manifest=m)
+
+    new = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"])
+    assert new["counts"] == {"items": 1, "levels": 1,
+                             "missingTime": 0, "missingIcons": 0}
+    entries = {e["path"]: e for e in new["generatedFiles"]}
+    assert entries["icons/ui/icon_unit_barbarian.png"] == {
+        "path": "icons/ui/icon_unit_barbarian.png",
+        "sha256": "sha256:" + hashlib.sha256(png).hexdigest(),
+        "size": len(png)}
+    assert entries["icons/"]["entries"] == 1
+    assert entries["catalog.json"]["sha256"].startswith("sha256:")
+    # 幂等：再次刷新不重复追加
+    new2 = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"])
+    paths = [e["path"] for e in new2["generatedFiles"]]
+    assert len(paths) == len(set(paths))
+    assert validate_catalog(d) == []
 
 
 # ---------------------------------------------------------------------------
@@ -712,6 +882,9 @@ class TestRealApk:
         assert src.is_file(), f"bundled catalog 缺失: {src}"
         dst = tmp_path / "catalog.json"
         dst.write_bytes(src.read_bytes())
+        # 默认刷新 manifest.json——复制真实副本（陈旧 hash 由 refresh 重算）
+        dst_manifest = tmp_path / "manifest.json"
+        dst_manifest.write_bytes((_BUNDLED / "manifest.json").read_bytes())
 
         rc = main(["--apk", str(APK), "--catalog", str(tmp_path),
                    "--report", str(tmp_path / "report.json")])

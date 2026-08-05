@@ -177,7 +177,7 @@
 | 阻塞 1：MovieClip 引用链 | `sc2.py` 帧解析（Task 1 实证：MovieClipFrameElement = 6 字节 3×u16，instance_index→children_ids[i]→shape 全局 id；单帧为主）；Shape 命令/顶点完整解析（Task 2：12 字节顶点 x/y float + u/v u16/0xFFFF，**实证 icon 为 6-8 顶点多边形非矩形**）；MatrixBank/Matrix2x3（Task 3：24B float32x6，half 未使用） |
 | 阻塞 2：ASTC/KTX/SCTX | `astc.py`（Task 4：**与官方 astcenc 5.7.0 全图逐像素对拍 diff=0**，4x4+6x6，LDR only，HDR→AstcError）；`ktx.py`（Task 5：KTX 1.x + SCTX 布局实证，ASTC 4x4/6x6/8x8 格式映射） |
 | 渲染/编码 | `render.py`（Task 6：bounds 1:1 + 多边形光栅化（edge function + 重心 UV + 双线性采样）+ 确定性 PNG（gAMA 45455、filter 0、zlib 9）） |
-| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Swift Bundle 读取断言（Task 9，380 测试全绿）。**manifest generatedFiles 更新为手工一次性同步**（`/tmp/refresh_manifest.py`，重算 counts + PNG 条目）；`render_generator.py` 暂不自动刷新 manifest（TODO：全量渲染 #25 前补 `--refresh-manifest`） |
+| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Swift Bundle 读取断言（Task 9，380 测试全绿）。**manifest generatedFiles 由 `render_generator.py` 自动刷新**（`refresh_manifest`：重算 counts + generatedFiles 的 catalog.json sha256/size、icons/ 目录条目 entries、PNG 条目追加/去重，事务性落盘；`--no-refresh-manifest` 可关闭） |
 
 **固定样本实测**（sha256 三次生成一致，R4 成立）：
 - `icons/ui/icon_unit_barbarian.png` 166x166（64,039B）、`icons/ui/icon_spell_rage.png` 166x166（79,083B）、`icons/buildings/fireplace_lvl1.png` 75x58（9,146B）、`icons/buildings/blacksmith_lvl1.png` 110x126（26,696B）
@@ -203,5 +203,5 @@
 | # | 契约规则 |
 |---|---|
 | R12.1 | 所有游戏资产版权归 Supercell 所有；本目录为游戏数据的静态快照，**仅限个人学习/非商业用途**。 |
-| R12.2 | 遵循 Supercell Fan Content Policy：非商业使用、**不加免责声明不得分发**；渲染产物 PNG 不得单独分发。 |
-| R12.3 | 仓库不提交任何 APK/游戏原始资产/提取的 PNG（spike 输出只进 `/tmp` 或 gitignore，plan scope 边界）。 |
+| R12.2 | 遵循 Supercell Fan Content Policy：非商业使用、**不加免责声明不得分发**；渲染产物 PNG 仅作为应用 Bundle 内部资源随私有分发使用（SwiftPM `.copy("GameCatalog")` 打包），**不单独分发**。 |
+| R12.3 | 仓库不提交 APK 与游戏原始资源（`.sc`/`.sctx`/`.zktx` 等）；**渲染产物 PNG 为例外**——为满足 SwiftPM `.copy("GameCatalog")` 打包与 #25 Bundle 读取（Issue #30 验收标准 8），渲染 PNG 可提交入库。当前仓库为 **private**、个人学习/非商业用途，符合 Supercell Fan Content Policy；若仓库转为 public 或对外分发应用，须重新评估（免责声明 + 非商业限制）。 |

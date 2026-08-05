@@ -355,6 +355,15 @@ public struct VillageCatalogProjection: Sendable {
             // remaining == nil（有 timer 无 remaining 的 malformed 记录）不算计时结束：
             // 不得强制写入 remainingSeconds = 0 而误报「待重新导入」。
             let groupHasFinishedTimer = group.contains { $0.timerSeconds != nil && $0.remainingSeconds == 0 }
+            // 计时代表必须与数组顺序无关（issue #17 验收 #6）：组内多条已结束
+            // 计时记录重排后聚合值不得改变。只从「已结束」记录（timer 存在且
+            // remaining 显式归零）中取最早归零的计时值；malformed 记录（有 timer
+            // 无 remaining）不参与代表选择，避免聚合值携带错误语义。该值仅作
+            // needsReimport 信号载体（UI 对已结束行不展示具体时长）。
+            let representativeTimer = group
+                .filter { $0.timerSeconds != nil && $0.remainingSeconds == 0 }
+                .compactMap(\.timerSeconds)
+                .min()
             result.append(VillageItemState(
                 id: "agg:" + first.id,
                 section: first.section,
@@ -364,7 +373,7 @@ public struct VillageCatalogProjection: Sendable {
                 category: first.category,
                 currentLevel: first.currentLevel,
                 count: aggregatedCount,
-                timerSeconds: groupHasFinishedTimer ? group.compactMap(\.timerSeconds).first : nil,
+                timerSeconds: groupHasFinishedTimer ? representativeTimer : nil,
                 remainingSeconds: groupHasFinishedTimer ? 0 : nil,
                 nextLevel: nil,
                 nextLevelDurationSeconds: first.nextLevelDurationSeconds,

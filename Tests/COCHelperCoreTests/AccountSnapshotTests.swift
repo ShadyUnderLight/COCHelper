@@ -110,6 +110,52 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.boosts["clocktower_cooldown"], 24_674)
     }
 
+    /// Issue #17 审计：真实 fixture 不存在任何队列字段或 helper_timer，
+    /// 且带 timer 的项目记录可精确枚举（10 条，含主村/建筑工人基地与嵌套路径）。
+    /// fixture 更新时同步更新下方清单——清单变化即「可观测范围」变化，须人工确认。
+    func testRealFixtureQueueAndHelperAudit() throws {
+        let text = try fixtureText()
+        let snapshot = try AccountSnapshotImporter.parse(
+            text,
+            now: Date(timeIntervalSince1970: 1_785_736_333) // == fixture timestamp：age = 0
+        )
+
+        // 1. 原始 JSON 无任何队列字段（fixture 实测 0 处；解码器也不读取）。
+        for key in QueueTimelineUnavailable.missingQueueFields {
+            XCTAssertFalse(text.contains(key), "fixture 不应包含队列字段 \(key)")
+        }
+
+        // 2. 无 helper_timer：helpers 只有 helper_cooldown，不得被当作队列计时。
+        XCTAssertTrue(snapshot.allObjectItems.allSatisfy { $0.helperTimerSeconds == nil },
+                      "fixture 不应包含任何 helper_timer")
+        let helpers = try XCTUnwrap(snapshot.objectSections["helpers"])
+        XCTAssertEqual(helpers.count, 4)
+        XCTAssertEqual(helpers.filter { $0.helperCooldownSeconds != nil }.count, 3,
+                       "helpers 应为 3/4 项带 helper_cooldown")
+
+        // 3. 带 timer 的项目记录精确枚举（issue 记录的 11 条与本样本口径存在差异：
+        //    仓库 fixture 实测 10 条 timer；以 fixture 为准，差异记录于 issue）。
+        //    注意：下方清单须按 sorted() 字典序排列（"buildings2" 因 "2" < ":" 排在 "buildings" 前）。
+        let timers = snapshot.allObjectItems
+            .filter { $0.timerSeconds != nil }
+            .map { "\($0.section):\($0.dataID):lvl\($0.level ?? -1):\($0.timerSeconds!)" }
+            .sorted()
+        XCTAssertEqual(timers, [
+            "buildings2:1000050:lvl7:264940",
+            "buildings2:1000050:lvl9:371059",
+            "buildings:1000013:lvl17:369441",
+            "buildings:1000013:lvl17:414387",
+            "buildings:1000032:lvl12:357878",
+            "buildings:1000032:lvl12:422074",
+            "buildings:1000072:lvl3:338486",
+            "pets:73000017:lvl7:241213",
+            "traps:12000020:lvl3:412087",
+            "units:4000123:lvl5:381417",
+        ])
+        XCTAssertEqual(timers.count, 10)
+        XCTAssertEqual(snapshot.activeItemCount, 10)
+    }
+
     func testBundledCatalogMapsFixtureIDsToChineseNames() throws {
         let snapshot = try AccountSnapshotImporter.parse(
             try fixtureText(),

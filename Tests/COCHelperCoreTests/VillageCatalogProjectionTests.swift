@@ -70,7 +70,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
     private func makeVillage(
         tag: String? = "#TEST",
-        objectSections: [String: [AccountItem]] = [:]
+        objectSections: [String: [AccountItem]] = [:],
+        boosts: [String: Int64] = [:]
     ) -> VillageProfile {
         VillageProfile(
             name: "测试村庄",
@@ -82,7 +83,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
                 originalText: "",
                 objectSections: objectSections,
                 numericSections: [:],
-                boosts: [:],
+                boosts: boosts,
                 unknownTopLevelKeys: [],
                 diagnostics: []
             )
@@ -118,8 +119,11 @@ final class VillageCatalogProjectionTests: XCTestCase {
             Bundle.module.url(forResource: "anonymized_account_snapshot", withExtension: "json")
         )
         let data = try Data(contentsOf: url)
+        // now 固定为 fixture timestamp（age = 0）：输入不随运行日期漂移，
+        // 全部 timer 记录保持升级中（remaining = raw > 0），测试行为可预测。
         let snapshot = try AccountSnapshotImporter.parse(
-            String(data: data, encoding: .utf8) ?? ""
+            String(data: data, encoding: .utf8) ?? "",
+            now: Date(timeIntervalSince1970: 1_785_736_333)
         )
         return snapshot.objectSections
     }
@@ -545,6 +549,32 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertFalse(item.isUpgrading)
     }
 
+    /// mixed 组（已结束计时 + malformed 记录）的反序变体：malformed 在前时
+    /// 代表值不得被污染（filter{remaining==0} 后取 min；旧 first 实现会取到
+    /// malformed 的 timer 值）。issue 验收 #6 的次序无关性延伸。
+    func testMixedGroupFinishedTimerWithMalformedReversedOrder() throws {
+        func makeItem(_ timer: Int64?, _ remaining: Int64?, path: String) -> AccountItem {
+            AccountItem(
+                id: "buildings:" + path,
+                section: "buildings",
+                dataID: 1_000_032,
+                level: 12,
+                timerSeconds: timer,
+                remainingSeconds: remaining
+            )
+        }
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(600, nil, path: "0"),   // malformed：有 timer 无 remaining
+                makeItem(3_600, 0, path: "1"),   // 已结束
+            ],
+        ])
+        let projection = project(village: village, catalog: syntheticCatalog, base: .home)
+        let item = try XCTUnwrap(projection.items.first { $0.dataID == 1_000_032 })
+        XCTAssertEqual(item.timerSeconds, 3_600, "代表值必须来自已结束记录（不得取 malformed 的 600）")
+        XCTAssertTrue(item.needsReimport)
+    }
+
     func testMixedGroupUpgradingWithMalformedStaysSeparated() throws {
         // 回归（P2-1 覆盖缺口，场景 e）：同键组内升级记录与 malformed 记录并存时，
         // 升级记录必须单独保留（不聚合、count 独立），malformed 记录进「|idle」组
@@ -882,5 +912,222 @@ final class VillageCatalogProjectionTests: XCTestCase {
             XCTAssertEqual(actualCounts, expectedCounts,
                            "升级记录在投影中必须逐条保留（同键计数一致）")
         }
+    }
+
+    // MARK: - Issue #17: 数组重排稳定性与 boost 非归属
+
+    /// 模拟「重排后的 JSON 重新导入」：按新位置重建 id（与解析器规则一致：
+    /// 顶层 section:index，嵌套 path.types.index / path.modules.index；
+    /// id 重建规则与 AccountSnapshotImporter.normalize()（AccountSnapshot.swift L394-430）保持同步），
+    /// 事实字段（dataID/lvl/cnt/timer）保持原样。
+    private func shuffledSections(
+        _ sections: [String: [AccountItem]],
+        using rng: inout SeededRNG
+    ) -> [String: [AccountItem]] {
+        sections.mapValues { items in
+            items.shuffled(using: &rng).enumerated().map { index, item in
+                reshuffled(item, path: String(index), using: &rng)
+            }
+        }
+    }
+
+    private func reshuffled(
+        _ item: AccountItem,
+        path: String,
+        using rng: inout SeededRNG
+    ) -> AccountItem {
+        AccountItem(
+            id: item.section + ":" + path,
+            section: item.section,
+            dataID: item.dataID,
+            level: item.level,
+            count: item.count,
+            timerSeconds: item.timerSeconds,
+            remainingSeconds: item.remainingSeconds,
+            helperTimerSeconds: item.helperTimerSeconds,
+            remainingHelperSeconds: item.remainingHelperSeconds,
+            helperCooldownSeconds: item.helperCooldownSeconds,
+            remainingHelperCooldownSeconds: item.remainingHelperCooldownSeconds,
+            helperRecurrent: item.helperRecurrent,
+            gearUp: item.gearUp,
+            weapon: item.weapon,
+            types: item.types.shuffled(using: &rng).enumerated().map { index, child in
+                reshuffled(child, path: path + ".types." + String(index), using: &rng)
+            },
+            modules: item.modules.shuffled(using: &rng).enumerated().map { index, child in
+                reshuffled(child, path: path + ".modules." + String(index), using: &rng)
+            }
+        )
+    }
+
+    /// 只重建 id（自身 + 嵌套，嵌套按原顺序 enumerated），其余字段原样；
+    /// 与解析器 id 规则一致：顶层 section:index、嵌套 path.types.index / path.modules.index
+    /// （id 重建规则与 AccountSnapshotImporter.normalize()（AccountSnapshot.swift L394-430）保持同步）。
+    private func rebuildID(_ item: AccountItem, path: String) -> AccountItem {
+        AccountItem(
+            id: item.section + ":" + path,
+            section: item.section,
+            dataID: item.dataID,
+            level: item.level,
+            count: item.count,
+            timerSeconds: item.timerSeconds,
+            remainingSeconds: item.remainingSeconds,
+            helperTimerSeconds: item.helperTimerSeconds,
+            remainingHelperSeconds: item.remainingHelperSeconds,
+            helperCooldownSeconds: item.helperCooldownSeconds,
+            remainingHelperCooldownSeconds: item.remainingHelperCooldownSeconds,
+            helperRecurrent: item.helperRecurrent,
+            gearUp: item.gearUp,
+            weapon: item.weapon,
+            types: item.types.enumerated().map { index, child in
+                rebuildID(child, path: path + ".types." + String(index))
+            },
+            modules: item.modules.enumerated().map { index, child in
+                rebuildID(child, path: path + ".modules." + String(index))
+            }
+        )
+    }
+
+    /// 只按新位置重建 id（不打乱顺序）；用于 reversed 等顺序保持型变体，
+    /// 使「id 漂移」统一来自索引 id 重建，而非聚合组 first 项的偶然变化。
+    private func rebuiltIDs(_ sections: [String: [AccountItem]]) -> [String: [AccountItem]] {
+        sections.mapValues { items in
+            items.enumerated().map { index, item in
+                rebuildID(item, path: String(index))
+            }
+        }
+    }
+
+    /// 投影事实行：身份与事实字段（不含 id——id 含数组索引，重排后允许漂移）。
+    /// 排序多集比较对「取首代表/丢弃」类缺陷有效，对组内事实互换（swap）形状
+    /// 不敏感——后者由 testFinishedTimerGroupAggregationIsOrderIndependent 兜底。
+    private func factLines(_ items: [VillageItemState]) -> [String] {
+        items.map { item -> String in
+            let fields: [String] = [
+                item.section, String(item.dataID),
+                item.currentLevel.map(String.init) ?? "nil",
+                item.isNested ? "nested" : "flat",
+                item.count.map(String.init) ?? "nil",
+                item.timerSeconds.map(String.init) ?? "nil",
+                item.remainingSeconds.map(String.init) ?? "nil",
+                item.status.rawValue,
+                item.nextLevel.map(String.init) ?? "nil",
+                item.name,
+                item.maxLevel.map(String.init) ?? "nil",
+                item.nextLevelDurationSeconds.map(String.init) ?? "nil",
+            ]
+            return fields.joined(separator: "|")
+        }.sorted()
+    }
+
+    /// JSON 数组重排不得改变项目身份与事实（issue 验收 #6）：
+    /// 重排后含数组索引的 id 必须漂移（自证测试非空转），而事实集必须完全一致。
+    /// 注意覆盖窗口：当前 fixture（age=0）全部 timer 记录均 remaining>0（升级中，
+    /// 不聚合），本测试对聚合代表选择（first→min 修复）无鉴别力——该缺陷由
+    /// testFinishedTimerGroupAggregationIsOrderIndependent 专门承担；若 fixture
+    /// 更新出现已结束计时组，本测试自动获得第二道鉴别力。
+    func testArrayReorderDoesNotChangeItemFacts() throws {
+        let sections = try loadRealFixture()
+        // 锚定：rebuiltIDs 对解析器产出的 id 应是恒等（解析器 id 本就按位置生成）。
+        // 解析器 id 规则变化时此处立即红，指引同步本文件的手写重建规则
+        // （与 Sources/COCHelperCore/AccountSnapshot.swift normalize() 的 path 生成保持同步）。
+        XCTAssertEqual(rebuiltIDs(sections), sections)
+        let village = makeVillage(objectSections: sections)
+        let catalog = GameCatalog.loadBundled()
+
+        var rng = SeededRNG(seed: 17)
+        let reimportedSections = shuffledSections(sections, using: &rng)
+        let reversedSections = rebuiltIDs(sections.mapValues { Array($0.reversed()) })
+
+        let originalHome = project(village: village, catalog: catalog, base: .home)
+        let originalBuilder = project(village: village, catalog: catalog, base: .builder)
+
+        for variant in [("shuffled", reimportedSections), ("reversed", reversedSections)] {
+            let variantVillage = makeVillage(objectSections: variant.1)
+            let variantHome = project(village: variantVillage, catalog: catalog, base: .home)
+            let variantBuilder = project(village: variantVillage, catalog: catalog, base: .builder)
+
+            // 1. 重排确实生效（输入层自证）：变体输入 item 数组（含 id/事实，
+            //    逐元素顺序比较）与原始不同。注意不能用 id 列表断言差异——
+            //    id 按新位置重建后序列恒为 0..n-1（置换不变，与 Set 比较
+            //    同因失效）；位置 i 上换入不同 item 才是真实信号。
+            let originalInputItems = sections.keys.sorted().flatMap { key in sections[key]! }
+            let variantInputItems = variant.1.keys.sorted().flatMap { key in variant.1[key]! }
+            XCTAssertNotEqual(originalInputItems, variantInputItems,
+                              "\(variant.0) 后输入数组应变化（重排确实生效）")
+
+            // 2. 事实不变：按 (section,dataID,level,isNested) 身份的事实完全一致。
+            XCTAssertEqual(factLines(originalHome.items), factLines(variantHome.items),
+                           "\(variant.0) 后主村事实改变")
+            XCTAssertEqual(factLines(originalBuilder.items), factLines(variantBuilder.items),
+                           "\(variant.0) 后建筑工人基地事实改变")
+        }
+    }
+
+    /// 全局 boost（clocktower_cooldown 等）只留在快照顶层，不得归属到任何项目
+    /// （issue 验收 #5）。用远超真实计时的特殊值避免碰撞。
+    /// 局限：本测试只守护「boost 值直接赋给计时字段」这一种归属形状，
+    /// 派生归属（如 timer - boost）不在检测面内。
+    func testBoostValuesNeverAttributedToProjectItems() throws {
+        let boostValue: Int64 = 987_654_321
+        let village = makeVillage(
+            objectSections: [
+                "buildings": [
+                    makeItem(section: "buildings", dataID: 1_000_013, level: 17,
+                             timerSeconds: 369_441, remainingSeconds: 1000, path: "0"),
+                    makeItem(section: "buildings", dataID: 1_000_032, level: 12, path: "1"),
+                ],
+            ],
+            boosts: ["clocktower_cooldown": boostValue]
+        )
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+
+        // boost 保留在快照顶层（独立来源）。
+        XCTAssertEqual(village.accountSnapshot?.boosts["clocktower_cooldown"], boostValue)
+
+        // 任何投影项目的计时/剩余字段都不得携带 boost 值。
+        XCTAssertFalse(home.items.isEmpty)
+        for item in home.items {
+            XCTAssertNotEqual(item.timerSeconds, boostValue,
+                              "\(item.name) 的计时不得来自全局 boost")
+            XCTAssertNotEqual(item.remainingSeconds, boostValue,
+                              "\(item.name) 的剩余时间不得来自全局 boost")
+        }
+    }
+
+    /// 已结束计时重复组的聚合计时值必须与数组顺序无关（issue 验收 #6）：
+    /// 组内多条已结束计时记录重排后，聚合 timerSeconds 不得改变。
+    /// 当前实现用 first 选择（次序依赖）——本测试先证明该 bug，修复后用 min() 通过。
+    func testFinishedTimerGroupAggregationIsOrderIndependent() throws {
+        func makeFinishedItem(_ timer: Int64, path: String) -> AccountItem {
+            AccountItem(
+                id: "buildings:" + path,
+                section: "buildings",
+                dataID: 1_000_032,
+                level: 12,
+                timerSeconds: timer,
+                remainingSeconds: 0
+            )
+        }
+        let original = makeVillage(objectSections: [
+            "buildings": [
+                makeFinishedItem(357_878, path: "0"),
+                makeFinishedItem(422_074, path: "1"),
+            ],
+        ])
+        let reversed = makeVillage(objectSections: [
+            "buildings": [
+                makeFinishedItem(422_074, path: "1"),
+                makeFinishedItem(357_878, path: "0"),
+            ],
+        ])
+
+        let originalProjection = project(village: original, catalog: syntheticCatalog, base: .home)
+        let reversedProjection = project(village: reversed, catalog: syntheticCatalog, base: .home)
+
+        let originalItem = try XCTUnwrap(originalProjection.items.first { $0.dataID == 1_000_032 })
+        let reversedItem = try XCTUnwrap(reversedProjection.items.first { $0.dataID == 1_000_032 })
+        XCTAssertEqual(originalItem.timerSeconds, reversedItem.timerSeconds,
+                       "已结束计时组的聚合计时值不得随数组顺序改变")
     }
 }

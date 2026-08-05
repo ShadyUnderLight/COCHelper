@@ -103,6 +103,57 @@ final class ClanPaginationDecodeTests: XCTestCase {
         XCTAssertEqual(page.items[0].capitalTotalLoot, 123456, "attackLog 存在时摘要仍正确")
     }
 
+    // MARK: - 资本赛季成员/攻防日志（Issue #20）
+
+    func testDecodeCapitalRaidMembers() throws {
+        let page = try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: fullCapitalRaidPageData())
+        let members = try XCTUnwrap(page.items[0].members)
+        XCTAssertEqual(members.count, 1)
+        XCTAssertEqual(members.first?.tag, "#PLAYERANONYMIZED")
+        XCTAssertEqual(members.first?.name, "anonymized-member")
+        XCTAssertEqual(members.first?.capitalResourcesLooted, 25000)
+        XCTAssertEqual(members.first?.attacks, 6)
+        // 第二赛季无 members 键 → nil
+        XCTAssertNil(page.items[1].members)
+    }
+
+    func testDecodeCapitalRaidAttackLog() throws {
+        let page = try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: fullCapitalRaidPageData())
+        let log = try XCTUnwrap(page.items[0].attackLog)
+        XCTAssertEqual(log.count, 1)
+        let entry = try XCTUnwrap(log.first)
+        XCTAssertEqual(entry.defender?.name, "anonymized-district")
+        XCTAssertEqual(entry.defender?.destructionPercent, 100)
+        XCTAssertEqual(entry.attackCount, 4)
+        XCTAssertEqual(entry.districtCount, 5)
+        XCTAssertEqual(entry.districtsDestroyed, 1)
+        XCTAssertEqual(entry.looted, 20000)
+        XCTAssertNil(page.items[1].attackLog)
+    }
+
+    func testDecodeCapitalRaidDefenseLog() throws {
+        let page = try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: fullCapitalRaidPageData())
+        let log = try XCTUnwrap(page.items[0].defenseLog)
+        XCTAssertEqual(log.count, 1)
+        let entry = try XCTUnwrap(log.first)
+        XCTAssertEqual(entry.defender?.name, "anonymized-home-district")
+        XCTAssertEqual(entry.attackCount, 3)
+        XCTAssertEqual(entry.districtCount, 5)
+        XCTAssertEqual(entry.districtsDestroyed, 0)
+        // 官方 defenseLog 无 looted 字段 → CapitalRaidDefenseLogEntry 类型本身不声明该属性
+        // （type-level 保证，比运行时 nil 断言更强；见模型 doc 注释）。
+    }
+
+    /// 成员/日志字段部分缺失（如 defender 只有 name）不破坏解码。
+    func testDecodeCapitalRaidLogWithPartialFields() throws {
+        let season = try JSONDecoder().decode(
+            OfficialCapitalRaidPage.self,
+            from: Data(##"{"items":[{"state":"ended","attackLog":[{"defender":{"name":"x"},"attackCount":1}]}]}"##.utf8)
+        )
+        XCTAssertEqual(season.items[0].attackLog?.first?.defender?.name, "x")
+        XCTAssertNil(season.items[0].attackLog?.first?.defender?.destructionPercent)
+    }
+
     // MARK: - Round-trip
 
     func testRoundTripWarLogPage() throws {

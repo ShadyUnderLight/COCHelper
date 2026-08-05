@@ -10,8 +10,31 @@
       "enemyDistrictsDestroyed": 120,
       "offensiveReward": 5000,
       "defensiveReward": 2500,
-      "attackLog": [],
-      "defenseLog": []
+      "members": [
+        {
+          "tag": "#PLAYERANONYMIZED",
+          "name": "anonymized-member",
+          "capitalResourcesLooted": 25000,
+          "attacks": 6
+        }
+      ],
+      "attackLog": [
+        {
+          "defender": { "tag": "#DISTRICTANONYMIZED", "name": "anonymized-district", "destructionPercent": 100 },
+          "attackCount": 4,
+          "districtCount": 5,
+          "districtsDestroyed": 1,
+          "looted": 20000
+        }
+      ],
+      "defenseLog": [
+        {
+          "defender": { "tag": "#HOMEDISTRICTANONYMIZED", "name": "anonymized-home-district", "destructionPercent": 40 },
+          "attackCount": 3,
+          "districtCount": 5,
+          "districtsDestroyed": 0
+        }
+      ]
     },
     {
       "state": "ended",

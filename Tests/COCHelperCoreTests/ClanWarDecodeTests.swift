@@ -79,8 +79,7 @@ final class ClanWarDecodeTests: XCTestCase {
         XCTAssertTrue(war.unrecognizedKeys.isEmpty)
     }
 
-    /// 成员级数组（members）嵌套容忍：官方返回完整成员时不破坏解码，
-    /// 首期不解析（deferred），不影响顶层摘要。
+    /// 回归护栏：members 已被解析时，顶层摘要（attacks）仍保持正确。
     func testDecodeToleratesMemberArrays() throws {
         let war = try decode(fullClanWarFixtureData())
         XCTAssertEqual(war.clan?.attacks, 57, "成员数组存在时顶层摘要仍正确")

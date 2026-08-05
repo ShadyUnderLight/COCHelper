@@ -195,7 +195,8 @@ struct WarLogCardView: View {
         if let members = entry.clan?.members, !members.isEmpty {
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(members.prefix(30), id: \.self) { member in
+                    // id: \.offset：成员全 optional，相同对象（如全 nil）会撞 \.self
+                    ForEach(Array(members.prefix(30).enumerated()), id: \.offset) { _, member in
                         memberRow(member)
                     }
                     if members.count > 30 {

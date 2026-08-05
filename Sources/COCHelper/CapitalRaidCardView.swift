@@ -224,7 +224,7 @@ struct CapitalRaidCardView: View {
             if let members = season.members, !members.isEmpty {
                 Text("成员贡献（\(members.count) 人）")
                     .font(.caption.weight(.semibold))
-                ForEach(members.prefix(30), id: \.self) { member in
+                ForEach(Array(members.prefix(30).enumerated()), id: \.offset) { _, member in
                     HStack {
                         Text(member.name ?? "未知成员").font(.caption).lineLimit(1)
                         Spacer()
@@ -240,7 +240,7 @@ struct CapitalRaidCardView: View {
             }
             if let log = season.attackLog, !log.isEmpty {
                 Text("进攻日志（\(log.count) 条）").font(.caption.weight(.semibold)).padding(.top, 4)
-                ForEach(log.prefix(30), id: \.self) { entry in
+                ForEach(Array(log.prefix(30).enumerated()), id: \.offset) { _, entry in
                     raidLogRow(entry)
                 }
                 if log.count > 30 {
@@ -249,7 +249,7 @@ struct CapitalRaidCardView: View {
             }
             if let log = season.defenseLog, !log.isEmpty {
                 Text("防守日志（\(log.count) 条）").font(.caption.weight(.semibold)).padding(.top, 4)
-                ForEach(log.prefix(30), id: \.self) { entry in
+                ForEach(Array(log.prefix(30).enumerated()), id: \.offset) { _, entry in
                     HStack {
                         Text("vs " + (entry.defender?.name ?? "未知区域")).font(.caption).lineLimit(1)
                         Spacer()

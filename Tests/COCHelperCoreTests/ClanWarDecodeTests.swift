@@ -122,6 +122,29 @@ final class ClanWarDecodeTests: XCTestCase {
         XCTAssertTrue(war.unrecognizedKeys.isEmpty, "clan 是已知键，嵌套内容不进顶层审计")
     }
 
+    /// 编码省略 nil 字段：非 nil 的成员数组编码为 `[{}]`（元素字段全省略），
+    /// 合成 Codable 的 encodeIfPresent 保证持久化体积不膨胀。
+    func testEncodeOmitsNilMemberFields() throws {
+        let war = OfficialClanWarSnapshot(
+            state: "inWar", teamSize: nil, attacksPerMember: nil,
+            preparationStartTime: nil, startTime: nil, endTime: nil, warStartTime: nil,
+            clan: ClanWarParticipant(
+                tag: "#A", name: nil, badgeUrls: nil, clanLevel: nil,
+                attacks: nil, stars: nil, destructionPercentage: nil,
+                members: [ClanWarMember(
+                    tag: nil, name: nil, townHallLevel: nil, mapPosition: nil,
+                    attacks: nil, stars: nil, destructionPercentage: nil
+                )]
+            ),
+            opponent: nil,
+            unrecognizedKeys: []
+        )
+        let json = String(data: try JSONEncoder().encode(war), encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"members\":[{}]"), "非 nil 成员数组编码为空对象元素")
+        XCTAssertFalse(json.contains("\"townHallLevel\""), "成员字段全 nil 不应编码")
+        XCTAssertFalse(json.contains("\"mapPosition\""), "成员字段全 nil 不应编码")
+    }
+
     // MARK: - Round-trip
 
     func testRoundTripPreservesUnrecognizedKeys() throws {

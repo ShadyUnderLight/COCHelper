@@ -581,11 +581,19 @@ public final class AppModel: ObservableObject {
             if state.status == .success,
                let fetched = state.lastGood,
                let existing = current.lastGood {
-                var merged = state
-                merged.lastGood = OfficialWarLogPage(
-                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
-                )
-                self.clanWarLogStates[tag] = merged
+                if state.parserVersion == current.parserVersion {
+                    var merged = state
+                    merged.lastGood = OfficialWarLogPage(
+                        page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                    )
+                    self.clanWarLogStates[tag] = merged
+                } else {
+                    // 跨 parserVersion：旧缓存条目（如 0.2，成员明细未解析）与
+                    // 新页同条目（0.3，members 有值）Equatable 不等，按全字段
+                    // 去重合并会残留重复；按刷新语义整页替换（下次首屏刷新
+                    // 同样覆盖，无数据丢失）。
+                    self.clanWarLogStates[tag] = state
+                }
             } else {
                 // 失败：state 已保留 previous 的 last-good（累计页）
                 self.clanWarLogStates[tag] = state
@@ -670,11 +678,16 @@ public final class AppModel: ObservableObject {
             if state.status == .success,
                let fetched = state.lastGood,
                let existing = current.lastGood {
-                var merged = state
-                merged.lastGood = OfficialCapitalRaidPage(
-                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
-                )
-                self.clanCapitalStates[tag] = merged
+                if state.parserVersion == current.parserVersion {
+                    var merged = state
+                    merged.lastGood = OfficialCapitalRaidPage(
+                        page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                    )
+                    self.clanCapitalStates[tag] = merged
+                } else {
+                    // 跨 parserVersion：与战争日志同理，整页替换避免重复。
+                    self.clanCapitalStates[tag] = state
+                }
             } else {
                 self.clanCapitalStates[tag] = state
             }

@@ -369,6 +369,69 @@ extension AppModelTests {
         XCTAssertTrue(model.currentWarLogHasMore)
     }
 
+    /// 跨 parserVersion 的加载更多：旧解析器缓存（如 0.2，members 未解析）与
+    /// 新页同条目（0.3，members 有值）Equatable 不等，按全字段去重合并会残留
+    /// 重复条目——必须按刷新语义整页替换。
+    @MainActor
+    func testLoadMoreWarLogWithOlderParserVersionReplacesInsteadOfMerging() async throws {
+        // 预置「旧版本」缓存：parserVersion 0.2 + 第一页（游标 CURSORAFTER1，
+        // 同场战争但无 members——旧解析器形态）。
+        let oldEntry = OfficialWarLogEntry(
+            result: "win", endTime: "20260730T100000.000Z", teamSize: 30, attacksPerMember: 2,
+            clan: ClanWarParticipant(
+                tag: "#CLANANONYMIZED", name: "anonymized-clan", badgeUrls: nil, clanLevel: 12,
+                attacks: 60, stars: 95, destructionPercentage: 100.0, members: nil
+            ),
+            opponent: ClanWarParticipant(
+                tag: "#OPPONENTANONYMIZED", name: "anonymized-opponent", badgeUrls: nil, clanLevel: 11,
+                attacks: 58, stars: 80, destructionPercentage: 85.0, members: nil
+            )
+        )
+        let oldState = ClanWarLogAPIState(
+            status: .success,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            parserVersion: "clan-war-log-0.2",
+            lastGood: OfficialWarLogPage(
+                page: OfficialPaginatedPage(items: [oldEntry], before: nil, after: "CURSORAFTER1")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanWarLogStateStore(states: ["#CLANA": oldState])),
+            forKey: "coc-helper.clan-war-logs.v1"
+        )
+
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            // 新解析器形态的页：同场战争带 members + 1 条新战争 + 游标推进。
+            let body = Data("""
+            {"items":[
+              {"result":"win","endTime":"20260730T100000.000Z","teamSize":30,"attacksPerMember":2,
+               "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0,
+               "members":[{"tag":"#PLAYERANONYMIZED","name":"anonymized-member","townHallLevel":14,"mapPosition":1,"attacks":2,"stars":6,"destructionPercentage":100}]},
+               "opponent":{"tag":"#OPPONENTANONYMIZED","name":"anonymized-opponent","clanLevel":11,"attacks":58,"stars":80,"destructionPercentage":85.0}},
+              {"result":"lose","endTime":"20260727T100000.000Z","teamSize":30,"attacksPerMember":2,
+               "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","clanLevel":12,"attacks":55,"stars":70,"destructionPercentage":88.0},
+               "opponent":{"tag":"#OPP2","name":"op2","clanLevel":10,"attacks":50,"stars":70,"destructionPercentage":80.0}}
+            ],"paging":{"cursors":{"before":"B2","after":"CURSORAFTER2"}}}
+            """.utf8)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.loadMoreCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        // 替换语义：items = 新页 2 条（若合并会因 members 不同残留 3 条重复）
+        let state = model.currentWarLogState
+        XCTAssertEqual(state?.parserVersion, "clan-war-log-0.3", "状态升级到当前解析器版本")
+        XCTAssertEqual(state?.lastGood?.items.count, 2, "跨版本不得合并旧形态条目")
+        XCTAssertEqual(state?.lastGood?.after, "CURSORAFTER2", "游标推进")
+    }
+
     /// 末页（after nil）后 hasMore = false，加载更多不发起请求。
     @MainActor
     func testLoadMoreWarLogStopsAtLastPage() async throws {

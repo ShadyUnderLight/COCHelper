@@ -769,7 +769,7 @@ git diff --check
 - [ ] 三个端点的成员数据均在现有响应内解析，无任何新增网络请求（grep `fetchPlayer` / `client.fetch` 无新调用）
 - [ ] 老持久化数据兼容：`ClanWarStateStoreTests` / `ClanStateStoreTests` 中旧 parserVersion fixture 未改动且通过（历史数据仍可加载）
 - [ ] 顶层审计不回归：`testDecodeFullInWarFixture` 的 `unrecognizedKeys == ["newOfficialField"]` 仍通过（members 不进入顶层审计）
-- [ ] `git log --oneline` 提交粒度：8 个提交对应 8 个 Task
+- [ ] `git log --oneline` 提交粒度：8 个 Task 对应 10 个提交（Task 1 含 AppModelTests 配套修复的独立提交、Task 2 含评审 minor 修复的独立提交、Task 8 含 README/注释同步与计划文档的 docs 提交）
 - [ ] `git status` 干净，仅剩计划文档（计划文档随 PR 提交）
 
 - [ ] **Step 3: Commit（计划文档）**

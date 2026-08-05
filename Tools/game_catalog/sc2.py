@@ -29,7 +29,8 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Callable
 
 from game_catalog.errors import CatalogError
 from game_catalog.fbs import FlatBuffer
@@ -384,6 +385,197 @@ class ScFile:
     strings: list[str]
     export_names: dict[str, int]  # name → object_id
     chunks: dict[str, bytes]
+    _cache: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def shape_textures(self, object_id: int) -> list[int] | None:
+        """object_id → Shape 命令的 texture_index 列表；非 Shape id → None。
+
+        Shapes chunk 首次调用时惰性解析并缓存（241KB 量级，成本低）。
+        """
+        if "shapes" not in self._cache:
+            self._cache["shapes"] = parse_shapes(self.chunks.get("Shapes", b""))
+        return self._cache["shapes"].get(object_id)
+
+    def texture_data(self, index: int) -> TextureData:
+        """纹理索引 → TextureData（惰性：仅读取对应 TextureSet，不整块解引用）。
+
+        索引越界 → CatalogError（fail loud）。
+        """
+        if "textures" not in self._cache:
+            self._cache["textures"] = parse_textures(
+                self.chunks.get("Textures", b""))
+        textures = self._cache["textures"]
+        if not 0 <= index < len(textures):
+            raise CatalogError(
+                f"SC2 纹理索引 {index} 越界（Textures 共 {len(textures)} 个）")
+        return textures[index]
+
+
+def shape_textures(sc: ScFile, object_id: int) -> list[int] | None:
+    """ScFile.shape_textures 的模块级别名（spike 渲染模块调用入口）。"""
+    return sc.shape_textures(object_id)
+
+
+def texture_data(sc: ScFile, index: int) -> TextureData:
+    """ScFile.texture_data 的模块级别名（spike 渲染模块调用入口）。"""
+    return sc.texture_data(index)
+
+
+@dataclass(frozen=True)
+class TextureData:
+    """Textures chunk 中单个纹理的元数据 + 惰性像素数据。
+
+    data 属性惰性物化：Textures chunk 可达 95MB（真实 ui.sc），构造时只
+    记录读取闭包，首次访问 data 才切片对应 [ubyte] vector——避免整块
+    解引用（--limit 预算之外不触碰数据）。
+    """
+
+    texture_format: int
+    pixel_type: int
+    width: int
+    height: int
+    external_texture: str | None = None
+    _data_loader: Callable[[], bytes] | None = field(
+        default=None, repr=False, compare=False)
+
+    @property
+    def data(self) -> bytes | None:
+        """原始像素/压缩数据字节；data 字段缺失 → None。"""
+        if self._data_loader is None:
+            return None
+        return self._data_loader()
+
+
+def _u16_scalar(fb: FlatBuffer, buf: bytes, table_off: int, slot: int,
+                what: str) -> int:
+    """table 中 inline uint16 标量；字段缺省返回 0。"""
+    off = fb.table_field(table_off, slot)
+    if off == 0:
+        return 0
+    if off < 0 or off + 2 > len(buf):
+        raise CatalogError(f"SC2 {what} u16 字段越界: 偏移 {off}")
+    return struct.unpack("<H", buf[off:off + 2])[0]
+
+
+def _u8_scalar(fb: FlatBuffer, buf: bytes, table_off: int, slot: int,
+               what: str) -> int:
+    """table 中 inline uint8 标量；字段缺省返回 0。"""
+    off = fb.table_field(table_off, slot)
+    if off == 0:
+        return 0
+    if off < 0 or off + 1 > len(buf):
+        raise CatalogError(f"SC2 {what} u8 字段越界: 偏移 {off}")
+    return buf[off]
+
+
+def parse_shapes(payload: bytes) -> dict[int, list[int]]:
+    """Shapes chunk：{shape_id: [texture_index, ...]}。
+
+    `Shapes{shapes: [Shape]}`（slot 0）；`Shape{id: ushort (slot 0),
+    commands: [ShapeDrawBitmapCommand] (slot 1)}`；命令是 **struct**（16 字节：
+    unk1/texture_index/points_count/points_offset 各 u32），vector 元素直接
+    连续排布（无 uoffset），元素 i 绝对偏移 = vector 数据区 + i*16。
+
+    对拍真实 ui.sc：shapes 4053 个，id 稀疏（0..23358，非索引对齐），
+    按 id 建 dict 正确；shape[0] 的 id 字段缺省（→ 0）。
+    畸形数据 → CatalogError。
+    """
+    if not payload:
+        return {}
+    try:
+        fb = FlatBuffer(payload)
+        root = fb.root()
+        shapes_vec = fb.table_field(root, 0)
+        if shapes_vec == 0:
+            return {}
+        count = fb.vector_len(shapes_vec)
+        out: dict[int, list[int]] = {}
+        for i in range(count):
+            shape_tbl = fb.table(fb.vector_elem(shapes_vec, i, 4))
+            shape_id = _u16_scalar(fb, payload, shape_tbl, 0, "Shape.id")
+            commands_vec = fb.table_field(shape_tbl, 1)
+            if commands_vec == 0:
+                out[shape_id] = []
+                continue
+            ncmd = fb.vector_len(commands_vec)
+            tex = []
+            for c in range(ncmd):
+                elem = fb.vector_elem(commands_vec, c, 16)  # struct 16B 连续
+                tex.append(struct.unpack("<I", payload[elem + 4:elem + 8])[0])
+            out[shape_id] = tex
+        return out
+    except CatalogError:
+        raise
+    except ValueError as e:
+        raise CatalogError(f"SC2 Shapes 解析失败: {e}") from e
+
+
+def _parse_texture_data(fb: FlatBuffer, payload: bytes, td_off: int,
+                        what: str) -> TextureData:
+    """TextureData table（slot 0-5）解析；data 字段惰性（不复制字节）。"""
+    fmt = _u8_scalar(fb, payload, td_off, 0, f"{what}.texture_format")
+    pixel_type = _u8_scalar(fb, payload, td_off, 1, f"{what}.pixel_type")
+    width = _u16_scalar(fb, payload, td_off, 2, f"{what}.width")
+    height = _u16_scalar(fb, payload, td_off, 3, f"{what}.height")
+    data_field = fb.table_field(td_off, 4)
+    ext_field = fb.table_field(td_off, 5)
+    external = fb.string(ext_field) if ext_field else None
+
+    loader: Callable[[], bytes] | None = None
+    if data_field:
+        length = fb.vector_len(data_field)
+        first = fb.vector_elem(data_field, 0, 1, alignment=1) if length else 0
+
+        def _load() -> bytes:
+            if length == 0:
+                return b""
+            if first + length > len(payload):
+                raise CatalogError(
+                    f"SC2 {what} data vector 越界: 起点 {first} 长度 "
+                    f"{length}，chunk 长度 {len(payload)}")
+            return payload[first:first + length]
+
+        loader = _load
+    return TextureData(texture_format=fmt, pixel_type=pixel_type,
+                       width=width, height=height,
+                       external_texture=external, _data_loader=loader)
+
+
+def parse_textures(payload: bytes) -> list[TextureData]:
+    """Textures chunk：TextureSet 列表（取 highres，lowres 元数据一并返回）。
+
+    `Textures{textures: [TextureSet]}`（slot 0）；`TextureSet{lowres (slot 0),
+    highres (slot 1, required)}`。highres 缺失（schema 违约）→ CatalogError。
+
+    对拍真实 ui.sc：7 个 set 全部仅 highres，texture_format=8（内嵌 KTX
+    ASTC），pixel_type 字段缺省；buildings.sc 71 个 set 全部 external_texture
+    `.sctx`。data 惰性读取（避免 95MB chunk 整块解引用）。
+    """
+    if not payload:
+        return []
+    try:
+        fb = FlatBuffer(payload)
+        root = fb.root()
+        vec = fb.table_field(root, 0)
+        if vec == 0:
+            return []
+        count = fb.vector_len(vec)
+        out: list[TextureData] = []
+        for i in range(count):
+            set_tbl = fb.table(fb.vector_elem(vec, i, 4))
+            high_field = fb.table_field(set_tbl, 1)
+            if high_field == 0:
+                raise CatalogError(
+                    f"SC2 TextureSet[{i}] 缺少 required highres 字段")
+            high = _parse_texture_data(
+                fb, payload, fb.table(high_field), f"Textures[{i}].highres")
+            # 返回 highres：C++ 默认路径（低内存模式才用 lowres，spike 不需要）
+            out.append(high)
+        return out
+    except CatalogError:
+        raise
+    except ValueError as e:
+        raise CatalogError(f"SC2 Textures 解析失败: {e}") from e
 
 
 def load_sc(data: bytes) -> ScFile:

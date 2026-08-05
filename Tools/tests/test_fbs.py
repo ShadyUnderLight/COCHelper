@@ -90,6 +90,8 @@ class FbBuilder:
         fields: {slot: (kind, value)}
         - ("uoffset", token): 字段处写 uoffset（相对字段自身位置，指向该 token 对象）
         - ("u32", 值): inline uint32 标量
+        - ("u16", 值): inline uint16 标量（0..0xFFFF，Shapes/Textures schema 用）
+        - ("u8", 值): inline uint8 标量（0..0xFF，TextureData 枚举/字节字段用）
         未出现的 slot 在 vtable 中偏移为 0（缺省 → 用默认值）。
         """
         self._objs.append(("table", dict(fields)))
@@ -139,6 +141,14 @@ class FbBuilder:
                         body += b"\x00" * 4
                     elif kind == "u32":
                         body += fb_u32(value)
+                    elif kind == "u16":
+                        if not 0 <= value <= 0xFFFF:
+                            raise ValueError(f"u16 越界: {value}（slot {slot}）")
+                        body += struct.pack("<H", value)
+                    elif kind == "u8":
+                        if not 0 <= value <= 0xFF:
+                            raise ValueError(f"u8 越界: {value}（slot {slot}）")
+                        body += bytes([value])
                     else:
                         raise ValueError(f"未知字段类型 {kind!r}（slot {slot}）")
                 table_start = start  # 对象起点 = table 起点（soffset 处）

@@ -7,16 +7,25 @@ name string + hash [ubyte]），hash 用 add_string(bytes) 构造——string �
 [ubyte] vector 的布局完全一致（u32 len + 原始字节），字节级等价。
 """
 
+import ctypes
 import struct
 
 import pytest
 
 from game_catalog.errors import CatalogError
+from game_catalog.fbs import FlatBuffer
 from game_catalog.sc2 import (
     AssetMetaEntry,
+    ScFile,
     ScHeader,
+    decode_body,
+    load_libzstd,
+    load_sc,
     metadata_entries,
+    parse_data_storage,
+    parse_export_names,
     parse_sc_header,
+    read_chunks,
 )
 from test_fbs import FbBuilder
 
@@ -198,3 +207,346 @@ def test_ubyte_vector_length_out_of_bounds_raises():
     h = parse_sc_header(bytes(data))
     with pytest.raises(CatalogError, match="越界"):
         metadata_entries(bytes(data), h)
+
+
+# ---------------------------------------------------------------------------
+# Task 3: zstd body 解码 + DataStorage + ExportNames + chunks + load_sc
+# ---------------------------------------------------------------------------
+
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+
+
+def _zstd_compress(data: bytes, level: int = 3) -> bytes:
+    """用 libzstd 压缩（测试辅助；libzstd 不可用 → pytest.skip）。"""
+    try:
+        lib = load_libzstd()
+    except CatalogError as e:
+        pytest.skip(f"libzstd 不可用: {e}")
+    lib.ZSTD_compressBound.restype = ctypes.c_size_t
+    lib.ZSTD_compressBound.argtypes = [ctypes.c_size_t]
+    lib.ZSTD_compress.restype = ctypes.c_size_t
+    lib.ZSTD_compress.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_char_p,
+        ctypes.c_size_t, ctypes.c_int,
+    ]
+    cap = lib.ZSTD_compressBound(len(data))
+    dst = ctypes.create_string_buffer(cap)
+    n = lib.ZSTD_compress(dst, cap, data, len(data), level)
+    if n == 0 or n > cap:
+        raise RuntimeError(f"zstd 压缩失败: 返回码 {n}")
+    return dst.raw[:n]
+
+
+def build_data_storage(strings: list[str]) -> bytes:
+    """DataStorage flatbuffer：slot 0 = strings vector<string>。"""
+    b = FbBuilder()
+    tokens = [b.add_string(s) for s in strings]
+    vec = b.add_vector(tokens)
+    root = b.add_table({0: ("uoffset", vec)})
+    return b.finish(root)
+
+
+def build_export_names(object_ids: list[int], name_refs: list[int]) -> bytes:
+    """ExportNames flatbuffer：slot 0 = object_ids [ushort]，slot 1 = name_ref_ids [uint]。
+
+    [ushort]/[uint] vector 长度字段写元素个数（flatbuffers 语义），
+    用 add_raw_vector 构造（add_string(bytes) 只能表达 [ubyte] 等宽字节向量）。
+    """
+    b = FbBuilder()
+    ids = b.add_raw_vector(
+        len(object_ids), struct.pack("<" + "H" * len(object_ids), *object_ids))
+    refs = b.add_raw_vector(
+        len(name_refs), struct.pack("<" + "I" * len(name_refs), *name_refs))
+    root = b.add_table({0: ("uoffset", ids), 1: ("uoffset", refs)})
+    return b.finish(root)
+
+
+# -- decode_body -------------------------------------------------------------
+
+
+def test_decode_body_uncompressed_passthrough():
+    payload = bytes(range(256)) * 4
+    assert decode_body(payload, None) == payload
+    assert decode_body(payload, 0) == payload  # compressed_size=0 → 全量
+
+
+def test_decode_body_compressed_size_slices_region():
+    """compressed_size 指定时只取前 N 字节（body 后可能跟 matrix bank / 尾巴）。"""
+    body = b"raw-body"
+    trailing = ZSTD_MAGIC + b"\x00" * 8  # body 之后的 magic 不应干扰未压缩判断
+    assert decode_body(body + trailing, len(body)) == body
+
+
+def test_decode_body_zstd_roundtrip():
+    payload = ("icon_unit_barbarian" * 50).encode() + bytes(range(64))
+    compressed = _zstd_compress(payload)
+    assert compressed.startswith(ZSTD_MAGIC)
+    assert decode_body(compressed, None) == payload
+    assert decode_body(compressed + b"TRAIL", len(compressed)) == payload
+
+
+def test_decode_body_oversized_bound_rejected(monkeypatch):
+    """bound 超 512MB → CatalogError（防 zip bomb）。
+
+    真实 zstd 默认窗口上限 128MB，合法帧不可能声明 >512MB 内容——该守卫
+    针对损坏/说谎帧（findFrameCompressedSize 失败路径另有 corrupt 测试）。
+    这里用伪 lib 让 decompressBound 直接返回超限值，精确测守卫分支。
+    """
+    compressed = _zstd_compress(b"x" * 100)  # 真实帧，magic 检测通过
+
+    class FakeLib:
+        def ZSTD_findFrameCompressedSize(self, src, size):
+            return size
+
+        def ZSTD_decompressBound(self, src, size):
+            return 600 * 1024 * 1024  # > 512MB
+
+        def ZSTD_decompress(self, *args):
+            raise AssertionError("不应到达解压步骤")
+
+        def ZSTD_isError(self, n):
+            return 0
+
+    monkeypatch.setattr("game_catalog.sc2._libzstd", FakeLib())
+    with pytest.raises(CatalogError, match="上限"):
+        decode_body(compressed, None)
+
+
+def test_decode_body_corrupt_frame_raises():
+    with pytest.raises(CatalogError):
+        decode_body(ZSTD_MAGIC + b"\xff" * 32, None)
+
+
+def test_decode_body_zero_output_is_error():
+    """合法空帧（声明 100B 但实际输出 0 字节）→ 返回码 0 → CatalogError（契约：0 = 失败）。"""
+    frame = ZSTD_MAGIC + b"\xe0" + struct.pack("<Q", 100) + b"\x04\x00\x00"
+    with pytest.raises(CatalogError):
+        decode_body(frame, None)
+
+
+def test_decode_body_zstd_frame_with_trailing_padding():
+    """对拍真实 ui.sc：zstd 帧后有 4 字节对齐填充（findFrameCompressedSize 裁剪）。"""
+    payload = b"x" * 1000
+    frame = _zstd_compress(payload)
+    pad = b"\x00" * ((4 - len(frame) % 4) % 4)
+    assert pad  # 确保确实有填充（压缩 1000B 不可能是 4 的倍数）
+    assert decode_body(frame + pad, len(frame) + len(pad)) == payload
+
+
+# -- parse_data_storage ------------------------------------------------------
+
+
+def test_parse_data_storage_strings():
+    body = build_data_storage(["hello", "icon_unit_barbarian", "building_town_hall"])
+    assert parse_data_storage(FlatBuffer(body), body) == [
+        "hello", "icon_unit_barbarian", "building_town_hall",
+    ]
+
+
+def test_parse_data_storage_missing_strings_returns_empty():
+    b = FbBuilder()
+    root = b.add_table({})
+    body = b.finish(root)
+    assert parse_data_storage(FlatBuffer(body), body) == []
+
+
+def test_parse_data_storage_size_prefixed_layout():
+    """对拍真实 ui.sc：body = [u32 size][DataStorage]，偏移 0 畸形 → 回退偏移 4。"""
+    ds = build_data_storage(["a", "b"])
+    body = struct.pack("<I", len(ds)) + ds
+    assert parse_data_storage(FlatBuffer(body), body) == ["a", "b"]
+
+
+def test_parse_data_storage_corrupt_raises_catalog_error():
+    body = b"\xff\xff\xff\xff"  # root uoffset 越界 → fbs ValueError → CatalogError
+    with pytest.raises(CatalogError):
+        parse_data_storage(FlatBuffer(body), body)
+
+
+# -- read_chunks -------------------------------------------------------------
+
+
+def test_read_chunks_sequential_order():
+    p1 = b"export-names-payload"
+    p2 = b"text-fields-payload"
+    body = (struct.pack("<I", len(p1)) + p1
+            + struct.pack("<I", len(p2)) + p2
+            + b"\x00" * 7)  # 尾部不足一个完整 chunk → 停止
+    chunks = read_chunks(body, 0)
+    assert chunks["ExportNames"] == p1
+    assert chunks["TextFields"] == p2  # 第二块按固定顺序是 TextFields
+    assert len(chunks) == 2  # 剩余 chunk 数据不够 → 停止（记录行为）
+
+
+def test_read_chunks_resources_offset():
+    prefix = b"DATA_STORAGE_PADDING"
+    p = b"shapes-payload"
+    body = prefix + struct.pack("<I", len(p)) + p
+    chunks = read_chunks(body, len(prefix))
+    assert chunks["ExportNames"] == p  # 第一块按固定顺序命名
+
+
+def test_read_chunks_truncated_stops():
+    body = struct.pack("<I", 5) + b"hello" + b"\x00"  # 读完后只剩 1 字节
+    chunks = read_chunks(body, 0)
+    assert chunks["ExportNames"] == b"hello"
+    assert len(chunks) == 1
+
+
+def test_read_chunks_size_out_of_bounds_raises():
+    body = struct.pack("<I", 1000) + b"x"
+    with pytest.raises(CatalogError, match="chunk"):
+        read_chunks(body, 0)
+
+
+def test_read_chunks_zero_size_stops():
+    body = struct.pack("<I", 0) + b"junk"
+    assert read_chunks(body, 0) == {}
+
+
+# -- parse_export_names ------------------------------------------------------
+
+
+def test_parse_export_names_mapping():
+    strings = ["icon_unit_barbarian", "building_town_hall", "icon_missing"]
+    payload = build_export_names([7, 42, 99], [0, 1, 2])
+    assert parse_export_names(payload, strings) == [
+        ("icon_unit_barbarian", 7),
+        ("building_town_hall", 42),
+        ("icon_missing", 99),
+    ]
+
+
+def test_parse_export_names_empty_payload_returns_empty():
+    assert parse_export_names(b"", ["a"]) == []
+
+
+def test_parse_export_names_missing_vectors_returns_empty():
+    b = FbBuilder()
+    root = b.add_table({})
+    payload = b.finish(root)
+    assert parse_export_names(payload, ["a"]) == []
+
+
+def test_parse_export_names_length_mismatch_raises():
+    payload = build_export_names([1, 2], [0, 1, 2])
+    with pytest.raises(CatalogError, match="数量"):
+        parse_export_names(payload, ["a", "b", "c"])
+
+
+def test_parse_export_names_ref_out_of_range_raises():
+    payload = build_export_names([1], [5])  # strings 只有 2 个
+    with pytest.raises(CatalogError, match="越界"):
+        parse_export_names(payload, ["a", "b"])
+
+
+# -- load_sc 端到端 ----------------------------------------------------------
+
+
+def _header_descriptor(resources_offset: int, compressed_size: int = 0,
+                       external_matrix_bank_size: int = 0) -> bytes:
+    """Header table：slot 8 resources_offset、slot 11 compressed_size、
+    slot 12 external_matrix_bank_size。"""
+    b = FbBuilder()
+    root = b.add_table({
+        8: ("u32", resources_offset),
+        11: ("u32", compressed_size),
+        12: ("u32", external_matrix_bank_size),
+    })
+    return b.finish(root)
+
+
+def _build_sc2_file(descriptor: bytes, body: bytes, compressed: bool = False,
+                    matrix_bank: bytes = b"") -> bytes:
+    """[SC][version u16][4B 跳过][descriptor_size][descriptor][matrix_bank][body]。
+
+    布局按 Task 契约：external_matrix_bank 段位于 body 之前（load_sc 先跳过）。
+    """
+    payload = _zstd_compress(body) if compressed else body
+    return (b"SC" + struct.pack("<H", 6) + b"\x00" * 4
+            + struct.pack("<I", len(descriptor)) + descriptor
+            + matrix_bank + payload)
+
+
+def _build_body(strings: list[str], exports: list[tuple[int, int]]
+                ) -> tuple[bytes, bytes, int]:
+    """DataStorage + ExportNames chunk，返回 (body, export_names_payload, ds_len)。"""
+    ds = build_data_storage(strings)
+    en = build_export_names([oid for _, oid in exports],
+                            [ref for ref, _ in exports])
+    return ds + struct.pack("<I", len(en)) + en, en, len(ds)
+
+
+def test_load_sc_end_to_end_compressed():
+    strings = ["icon_unit_barbarian", "building_town_hall"]
+    body, en_payload, ds_len = _build_body(strings, [(0, 7), (1, 42)])
+    compressed = _zstd_compress(body)
+    descriptor = _header_descriptor(resources_offset=ds_len,
+                                    compressed_size=len(compressed))
+    sc = load_sc(_build_sc2_file(descriptor, body, compressed=True))
+    assert sc.header.resources_offset == ds_len
+    assert sc.header.compressed_size == len(compressed)
+    assert sc.header.external_matrix_bank_size == 0
+    assert sc.strings == strings
+    assert sc.export_names == {"icon_unit_barbarian": 7, "building_town_hall": 42}
+    assert sc.chunks["ExportNames"] == en_payload
+    assert sc.metadata == []
+    assert isinstance(sc, ScFile)
+
+
+def test_load_sc_end_to_end_uncompressed():
+    strings = ["icon_unit_barbarian"]
+    body, en_payload, ds_len = _build_body(strings, [(0, 7)])
+    descriptor = _header_descriptor(resources_offset=ds_len)
+    sc = load_sc(_build_sc2_file(descriptor, body, compressed=False))
+    assert sc.strings == strings
+    assert sc.export_names == {"icon_unit_barbarian": 7}
+    assert sc.chunks["ExportNames"] == en_payload
+
+
+def test_load_sc_skips_external_matrix_bank():
+    strings = ["icon_unit_barbarian"]
+    body, _, ds_len = _build_body(strings, [(0, 7)])
+    bank = b"\xde\xad\xbe\xef" * 4
+    descriptor = _header_descriptor(resources_offset=ds_len,
+                                    external_matrix_bank_size=len(bank))
+    sc = load_sc(_build_sc2_file(descriptor, body, compressed=False,
+                                 matrix_bank=bank))
+    assert sc.strings == strings
+    assert sc.export_names == {"icon_unit_barbarian": 7}
+    assert sc.header.external_matrix_bank_size == len(bank)
+
+
+def test_load_sc_bad_magic_raises():
+    with pytest.raises(CatalogError, match="magic"):
+        load_sc(b"XX" + b"\x00" * 10)  # 长度 >= 12 才走到 magic 校验
+
+
+def test_load_sc_corrupt_body_raises():
+    """body 内 ExportNames name_ref_id 越界 → CatalogError（不裸 ValueError 逃逸）。"""
+    strings = ["only"]
+    en = build_export_names([1], [3])  # name_ref_id=3 越界（strings 只有 1 个）
+    body = build_data_storage(strings) + struct.pack("<I", len(en)) + en
+    descriptor = _header_descriptor(resources_offset=len(build_data_storage(strings)))
+    with pytest.raises(CatalogError, match="越界"):
+        load_sc(_build_sc2_file(descriptor, body, compressed=False))
+
+
+def test_load_sc_real_layout_prefixed_and_padded():
+    """镜像真实 ui.sc 完整布局：DataStorage 带 u32 size 前缀（resources_offset
+    = 4 + data_storage_size）+ zstd 帧尾 4 字节对齐填充。"""
+    strings = ["icon_unit_barbarian", "building_town_hall"]
+    ds = build_data_storage(strings)
+    en = build_export_names([7, 42], [0, 1])
+    body = struct.pack("<I", len(ds)) + ds + struct.pack("<I", len(en)) + en
+    resources_offset = 4 + len(ds)
+    compressed = _zstd_compress(body)
+    pad = b"\x00" * ((4 - len(compressed) % 4) % 4)
+    descriptor = _header_descriptor(resources_offset=resources_offset,
+                                    compressed_size=len(compressed) + len(pad))
+    data = _build_sc2_file(descriptor, body, compressed=True) + pad
+    sc = load_sc(data)
+    assert sc.strings == strings
+    assert sc.export_names == {"icon_unit_barbarian": 7, "building_town_hall": 42}
+    assert sc.chunks["ExportNames"] == en
+    assert sc.header.compressed_size == len(compressed) + len(pad)

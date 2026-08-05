@@ -75,6 +75,15 @@ class FbBuilder:
         self._objs.append(("vector", tuple(elem_positions)))
         return len(self._objs) - 1
 
+    def add_raw_vector(self, elem_count: int, raw: bytes) -> int:
+        """注册原始元素 vector（如 [ushort]/[uint]）：u32 元素个数 + 元素字节。
+
+        与 add_string(bytes) 的区别：长度字段写**元素个数**而非字节数
+        （flatbuffers 的 [ushort] vector 长度字段语义是元素个数）。
+        """
+        self._objs.append(("rawvec", (elem_count, raw)))
+        return len(self._objs) - 1
+
     def add_table(self, fields: dict[int, tuple[str, int]]) -> int:
         """注册 table，返回其 token。
 
@@ -106,6 +115,9 @@ class FbBuilder:
             if obj[0] == "string":
                 raw = obj[1]
                 buf += fb_u32(len(raw)) + raw
+            elif obj[0] == "rawvec":
+                elem_count, raw = obj[1]
+                buf += fb_u32(elem_count) + raw
             elif obj[0] == "vector":
                 elems = obj[1]
                 buf += fb_u32(len(elems))

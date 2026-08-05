@@ -90,7 +90,7 @@
 | `sc_parse_failed` | SC2 容器解析失败（magic/version/descriptor/chunk 越界等） | `CatalogError` 路径 |
 | `movieclip_not_parsed` | export→object_id 指向 MovieClip，MovieClip 帧解析链路未实现 | **真实数据中 export 全部指向 MovieClip**（spike `no_shape_command` 阻塞） |
 | `texture_compressed_astc` | 内嵌 KTX/ASTC 压缩纹理，无解码器 | `ui.sc` 全部 7 个 TextureSet：fmt=8 内嵌 KTX（ASTC 系） |
-| `texture_external_sctx` | 纹理存外部 `.sctx` 文件（fmt=4，ASTC_RGBA8_4x4），无解码器 | `buildings.sc` 71 个 set 全部 external（599 个 .sctx） |
+| `texture_external_sctx` | 纹理存外部 `.sctx` 文件，无解码器 | `buildings.sc` 71 个 set 全部 external（599 个 .sctx；实测 `texture_format`=0 + `external_texture` 非空；`.sctx` 的 pixel_type=208，社区枚举为 ASTC 系，**待验证**） |
 | `zstd_unavailable` | libzstd 无法加载（ctypes 全路径失败） | `load_libzstd` 失败 |
 | `texture_unsupported` | pixel_type 不支持 / 畸形数据（0×0、长度不符、无数据、BGRA 未验证） | spike 防御分支 |
 
@@ -157,7 +157,7 @@
 - ✅ 可解析：SC2 V6 头/descriptor/export 名（`ui.sc` exports=3024）/引用链（Shapes 4053 个、id 稀疏 0..23358；Textures 7 个 set）
 - ❌ **双重阻塞**（渲染 PNG）：
   1. **export→object_id 全部指向 MovieClip**：真实数据中 export 无对应 Shape 命令，需 MovieClip→frame→shape 解析链路（当前只扫描 MovieClip id，未解析帧结构）；
-  2. **纹理无原始 RGBA**：`ui.sc` 全部 fmt=8（内嵌 KTX，ASTC 系，pixel_type 字段缺省）；`buildings.sc` 71 个 set 全部 fmt=4（外部 `.sctx`，参考 C++ `SupercellCompressionFormat=ASTC_RGBA8_4x4`）。无原始像素可直写 PNG。
+  2. **纹理无原始 RGBA**：`ui.sc` 全部 7 个 set 的 `texture_format`=8（内嵌 KTX，ASTC 系）；`buildings.sc` 71 个 set 全部 `texture_format`=0 + `external_texture` 指向 `.sctx`（`.sctx` 的 pixel_type=208，社区枚举为 ASTC 系）。无原始像素可直写 PNG。
 
 **verdict：继续阻塞 #25**（渲染相关契约条目 R3/R4 无法实测；渲染无关条目已冻结）。
 

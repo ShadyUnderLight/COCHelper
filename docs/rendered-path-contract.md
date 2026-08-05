@@ -31,7 +31,7 @@
 |---|---|---|
 | R1.1 | `renderedPath` 是**相对版本目录**的路径，语义根为 `GameCatalog/<gameVersion>/icons/`。完整 Bundle 内路径 = `Bundle.module` 下 `GameCatalog/<gameVersion>/icons/<path>`。 | Swift `Bundle.module.url(forResource:withExtension:subdirectory: "GameCatalog/<version>")` 解析后文件存在；validate.py 以 `catalog.json` 所在目录为根解析 |
 | R1.2 | SwiftPM 以 `.copy("GameCatalog")` 打包，目录结构逐级保留（现有约定，README §Tools），`renderedPath` 不得假设 Bundle 内路径被扁平化。 | 打包后 Bundle 内目录结构抽查 |
-| R1.3 | `renderedPath` 永不写绝对路径、不包含 `gameVersion` 段（版本由目录层级表达，见 R7）。 | validate.py 正则负例 |
+| R1.3 | `renderedPath` 永不写绝对路径、不包含 `gameVersion` 段（版本由目录层级表达，见 R7）。 | validate.py 负例（`contract.rendered_path_format_ok`：`icons/<container>/<export>.png` 两级结构 + 拒绝对路径/`..` 段/版本段） |
 
 ---
 
@@ -81,7 +81,7 @@
 |---|---|---|
 | R5.1 | 失败必须设置 `missingReason`（枚举域，见下表），`renderedPath` 为 null。**禁止空 PNG / 伪成功路径**：0×0 尺寸、数据长度不符、无内嵌数据、解析异常 → 一律 blocked + missingReason，绝不写占位/空文件（spike 已按此实现防御分支）。 | 生成器负例测试（0×0、长度不符 fixture） |
 | R5.2 | **互斥不变量**：`renderedPath` 非空 ⇒ `missingReason` 为 null；`renderedPath` 为 null ⇒ 渲染失败类引用必须给 `missingReason`（不留空解释）。 | validate.py 负例 + property-based 测试 |
-| R5.3 | `renderedPath` 非空 ⇒ 文件必须真实存在于版本目录与 App Bundle。 | validate.py `rendered_path_file_must_exist`；Swift 加载路径检查 |
+| R5.3 | `renderedPath` 非空 ⇒ 文件必须真实存在于版本目录与 App Bundle。 | validate.py `rendered_path_file_must_exist`（含格式/`..`/版本段拒绝）；Swift 加载路径检查（#25 UI 接入时落实，当前 loadBundled 只解码 catalog.json） |
 
 **missingReason 枚举扩展建议**（现有 `ASSET_MISSING_REASONS` = `icons_not_rendered` / `no_icon_columns` / `no_visual_columns`）：
 
@@ -104,7 +104,7 @@
 | # | 契约规则 | 校验方式 |
 |---|---|---|
 | R6.1 | `generatedFiles` 为每张 PNG 追加条目：`path`（相对版本目录）、`size`、`sha256`（`"sha256:" + 64 hex` 前缀格式，与现有 catalog.json 条目一致）；`icons/` 目录条目保留（`kind: "directory"`，`entries` 可填 PNG 数）。 | validate.py 重算 hash/size 比对 |
-| R6.2 | `counts` 扩展建议（命名建议，Task 6 实现定稿）：`renderedIcons`（渲染成功且落盘的 PNG 数，**必须 == generatedFiles 中 PNG 条目数**）与 `blockedIcons`（渲染失败/阻塞的引用键数）；新增字段为 optional（`Int?`，旧 manifest 兼容，不 bump schemaVersion）。 | validate.py 断言 `renderedIcons == PNG 条目数` 并可重算 |
+| R6.2 | `counts` 扩展建议（命名建议，Task 6 实现定稿）：`renderedIcons`（渲染成功且落盘的 PNG 数，**必须 == generatedFiles 中 PNG 条目数**）与 `blockedIcons`（渲染失败/阻塞的引用键数）；新增字段为 optional（`Int?`，旧 manifest 兼容，不 bump schemaVersion）。 | **待 #25 渲染管线接入后落实**（validate.py 断言 `renderedIcons == PNG 条目数` 并可重算）；当前无渲染产物，校验器不实现 |
 | R6.3 | 既有 `missingIcons` 计数语义不变（`levels[i].icon.renderedPath is None` 计数，validate.py 现状）。 | validate.py 既有重算 |
 
 ---

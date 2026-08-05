@@ -86,6 +86,43 @@ final class ClanWarDecodeTests: XCTestCase {
         XCTAssertEqual(war.clan?.attacks, 57, "成员数组存在时顶层摘要仍正确")
     }
 
+    // MARK: - 成员级攻击表（Issue #20）
+
+    /// 成员级攻击表解码：full fixture 每方 1 名成员（tag/名称/大本/位置/攻击/星/摧毁%）。
+    func testDecodeClanWarMembers() throws {
+        let war = try decode(fullClanWarFixtureData())
+
+        let clanMembers = try XCTUnwrap(war.clan?.members, "clan.members 应被解析")
+        XCTAssertEqual(clanMembers.count, 1)
+        let member = try XCTUnwrap(clanMembers.first)
+        XCTAssertEqual(member.tag, "#PLAYERANONYMIZED")
+        XCTAssertEqual(member.name, "anonymized-member")
+        XCTAssertEqual(member.townHallLevel, 13)
+        XCTAssertEqual(member.mapPosition, 1)
+        XCTAssertEqual(member.attacks, 2)
+        XCTAssertEqual(member.stars, 6)
+        XCTAssertEqual(member.destructionPercentage, 100)
+
+        let opponentMembers = try XCTUnwrap(war.opponent?.members)
+        XCTAssertEqual(opponentMembers.count, 1)
+        XCTAssertEqual(opponentMembers.first?.townHallLevel, 12)
+    }
+
+    /// 无 members 键（warEnded 等）容忍：成员为 nil，不影响摘要。
+    func testDecodeWithoutMembersTolerated() throws {
+        let war = try decode(fixture("official_clan_war_ended"))
+        XCTAssertNil(war.clan?.members)
+        XCTAssertEqual(war.clan?.stars, 95)
+    }
+
+    /// 成员字段部分缺失（仅 tag+name）不破坏解码。
+    func testDecodeMemberWithPartialFields() throws {
+        let war = try decode(Data(##"{"clan":{"members":[{"tag":"#A","name":"x"}]}}"##.utf8))
+        XCTAssertEqual(war.clan?.members?.first?.tag, "#A")
+        XCTAssertNil(war.clan?.members?.first?.townHallLevel)
+        XCTAssertTrue(war.unrecognizedKeys.isEmpty, "clan 是已知键，嵌套内容不进顶层审计")
+    }
+
     // MARK: - Round-trip
 
     func testRoundTripPreservesUnrecognizedKeys() throws {

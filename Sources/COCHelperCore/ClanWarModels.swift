@@ -9,8 +9,8 @@ import Foundation
 ///   不做本地枚举映射，避免 schema 漂移时解码失败）。
 /// - 时间字段保持官方 ISO 字符串（如 `20260804T080000.000Z`），首期不解析
 ///   为 Date（解析格式与容错留给有明确展示需求时）。
-/// - `clan.members` / `opponent.members`（成员级攻击表）首期 **deferred**：
-///   嵌套结构由 Codable 合成容忍未知子字段，不声明属性即可忽略，不进入审计。
+/// - `clan.members` / `opponent.members`（成员级攻击表）按 `ClanWarMember`
+///   解码；缺失或字段不全均容忍。
 /// - 顶层未知键收集进 `unrecognizedKeys` 供审计。
 public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
     public let state: String?
@@ -118,8 +118,39 @@ private struct SnapshotCodingKey: CodingKey {
 
 // MARK: - 嵌套结构
 
-/// 战争一方（己方/对方）的摘要。
-/// `members`（成员级攻击表）不声明属性：嵌套未知键由 Codable 合成容忍。
+/// currentwar / warlog 成员级攻击表条目（官方 ClanWarMember）。
+///
+/// 全 optional + 合成 Codable：官方新增字段或个别字段缺失（如 warEnded
+/// 后部分成员无攻击记录、大本等级缺失）不破坏解码；未知子字段
+/// （如 opponentAttacks 逐次攻击明细）容忍忽略，不做属性声明（deferred）。
+public struct ClanWarMember: Codable, Hashable, Sendable {
+    public let tag: String?
+    public let name: String?
+    /// 大本等级（战争结束/未开战时可能缺失）。
+    public let townHallLevel: Int?
+    /// 地图位置（1 起）。
+    public let mapPosition: Int?
+    /// 已使用攻击次数（成员可能 0 次攻击）。
+    public let attacks: Int?
+    public let stars: Int?
+    /// 摧毁百分比（官方可能返回浮点或整数，用 Double 容忍两者）。
+    public let destructionPercentage: Double?
+
+    public init(
+        tag: String?, name: String?, townHallLevel: Int?, mapPosition: Int?,
+        attacks: Int?, stars: Int?, destructionPercentage: Double?
+    ) {
+        self.tag = tag
+        self.name = name
+        self.townHallLevel = townHallLevel
+        self.mapPosition = mapPosition
+        self.attacks = attacks
+        self.stars = stars
+        self.destructionPercentage = destructionPercentage
+    }
+}
+
+/// 战争一方（己方/对方）的摘要，含成员级攻击表（缺失容忍）。
 public struct ClanWarParticipant: Codable, Hashable, Sendable {
     public let tag: String?
     public let name: String?
@@ -129,10 +160,13 @@ public struct ClanWarParticipant: Codable, Hashable, Sendable {
     public let stars: Int?
     /// 摧毁百分比（官方可能返回浮点或整数，用 Double 容忍两者）。
     public let destructionPercentage: Double?
+    /// 成员级攻击表（currentwar 双方 / warlog 每场战争；缺失容忍）。
+    public let members: [ClanWarMember]?
 
     public init(
         tag: String?, name: String?, badgeUrls: [String: String]?,
-        clanLevel: Int?, attacks: Int?, stars: Int?, destructionPercentage: Double?
+        clanLevel: Int?, attacks: Int?, stars: Int?, destructionPercentage: Double?,
+        members: [ClanWarMember]?
     ) {
         self.tag = tag
         self.name = name
@@ -141,5 +175,6 @@ public struct ClanWarParticipant: Codable, Hashable, Sendable {
         self.attacks = attacks
         self.stars = stars
         self.destructionPercentage = destructionPercentage
+        self.members = members
     }
 }

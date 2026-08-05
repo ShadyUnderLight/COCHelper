@@ -15,7 +15,17 @@
         "attacks": 60,
         "stars": 95,
         "destructionPercentage": 100.0,
-        "members": []
+        "members": [
+          {
+            "tag": "#PLAYERANONYMIZED",
+            "name": "anonymized-member",
+            "townHallLevel": 14,
+            "mapPosition": 1,
+            "attacks": 2,
+            "stars": 6,
+            "destructionPercentage": 100
+          }
+        ]
       },
       "opponent": {
         "tag": "#OPPONENTANONYMIZED",

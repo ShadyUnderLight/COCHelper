@@ -40,6 +40,22 @@ final class ClanPaginationDecodeTests: XCTestCase {
         XCTAssertNil(page.after)
     }
 
+    // MARK: - warlog 成员明细（Issue #20，与 currentwar 共用 ClanWarMember）
+
+    func testDecodeWarLogEntryMembers() throws {
+        let page = try JSONDecoder().decode(OfficialWarLogPage.self, from: fullWarLogPageData())
+        let members = try XCTUnwrap(page.items[0].clan?.members)
+        XCTAssertEqual(members.count, 1)
+        XCTAssertEqual(members.first?.name, "anonymized-member")
+        XCTAssertEqual(members.first?.townHallLevel, 14)
+        XCTAssertEqual(members.first?.mapPosition, 1)
+        XCTAssertEqual(members.first?.attacks, 2)
+        XCTAssertEqual(members.first?.stars, 6)
+        XCTAssertEqual(members.first?.destructionPercentage, 100)
+        // 第二场战争无 members 键 → nil 容忍
+        XCTAssertNil(page.items[1].clan?.members)
+    }
+
     /// items 缺失/null 是**损坏响应**：必须解码失败（保留既有 last-good），
     /// 不得静默当作成功空页覆盖旧数据。
     func testDecodeMissingItemsFails() {

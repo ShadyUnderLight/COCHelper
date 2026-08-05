@@ -1234,7 +1234,7 @@ def test_collect_catalog_refs_items_none_is_empty(tmp_path):
 
 @pytest.mark.parametrize("bad", ["x", 42, None, True, [1, 2]])
 def test_collect_catalog_refs_malformed_item(tmp_path, bad):
-    """items 元素非 dict → CatalogError（当前实现抛裸 AttributeError）。"""
+    """items 元素非 dict → CatalogError（fail loud，消息含 item 字段）。"""
     cat = tmp_path / "catalog.json"
     cat.write_text(json.dumps({"items": [bad]}), encoding="utf-8")
     with pytest.raises(CatalogError, match="item"):
@@ -1285,6 +1285,38 @@ def test_collect_catalog_refs_malformed_level_ref_field(tmp_path):
     }), encoding="utf-8")
     with pytest.raises(CatalogError, match="container"):
         collect_catalog_refs(cat)
+
+
+@pytest.mark.parametrize("payload", [
+    {"icon": "foo"},                  # item 级 icon 为 str
+    {"levelVisual": 42},              # item 级 levelVisual 为 int
+    {"levels": [{"icon": ["x"]}]},    # level 级 icon 为 list
+])
+def test_collect_catalog_refs_malformed_ref_value(tmp_path, payload):
+    """icon/levelVisual 非 None 且非 dict → CatalogError（消息含路径，
+    不静默跳过）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [payload]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="非对象") as exc_info:
+        collect_catalog_refs(cat)
+    assert str(cat) in str(exc_info.value)
+
+
+def test_collect_catalog_refs_ref_none_and_dict_ok(tmp_path):
+    """icon/levelVisual 为 None 或正常 dict → 不受影响（None 跳过、dict 收集）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [
+        {"icon": None, "levelVisual": None},
+        {"icon": {"container": "sc/ui.sc", "exportName": "icon_ok"}},
+        {"levels": [
+            {"levelVisual": None},
+            {"levelVisual": {"container": "sc/ui.sc", "exportName": "icon_lvl"}},
+        ]},
+    ]}), encoding="utf-8")
+    assert collect_catalog_refs(cat) == [
+        {"container": "sc/ui.sc", "exportName": "icon_ok"},
+        {"container": "sc/ui.sc", "exportName": "icon_lvl"},
+    ]
 
 
 # ---------------------------------------------------------------------------

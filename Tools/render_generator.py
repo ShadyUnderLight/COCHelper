@@ -128,7 +128,8 @@ def collect_catalog_refs(catalog_path: Path) -> list[dict]:
 
     畸形结构 fail loud（CatalogError，含 catalog_path）：顶层非对象、
     items 非 list、item 非 dict、levels 非 list、level 非 dict、
-    container/exportName 非 str 且非 None。items/levels 为 None 视为空。
+    icon/levelVisual 非 None 且非 dict、container/exportName 非 str 且非
+    None。items/levels 为 None 视为空，icon/levelVisual 为 None 跳过。
     """
     data = json.loads(catalog_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -167,8 +168,14 @@ def collect_catalog_refs(catalog_path: Path) -> list[dict]:
                 f"catalog 结构非法（{catalog_path}）: item 不是对象（{item!r}）"
             )
         for ref in (item.get("icon"), item.get("levelVisual")):
-            if isinstance(ref, dict):
-                add(ref.get("container"), ref.get("exportName"))
+            if ref is None:
+                continue
+            if not isinstance(ref, dict):
+                raise CatalogError(
+                    f"catalog 结构非法（{catalog_path}）: icon/levelVisual"
+                    f" 非对象（{ref!r}）"
+                )
+            add(ref.get("container"), ref.get("exportName"))
         levels = item.get("levels")
         if levels is None:
             levels = []
@@ -183,8 +190,14 @@ def collect_catalog_refs(catalog_path: Path) -> list[dict]:
                     f"catalog 结构非法（{catalog_path}）: level 不是对象（{level!r}）"
                 )
             for ref in (level.get("icon"), level.get("levelVisual")):
-                if isinstance(ref, dict):
-                    add(ref.get("container"), ref.get("exportName"))
+                if ref is None:
+                    continue
+                if not isinstance(ref, dict):
+                    raise CatalogError(
+                        f"catalog 结构非法（{catalog_path}）: icon/levelVisual"
+                        f" 非对象（{ref!r}）"
+                    )
+                add(ref.get("container"), ref.get("exportName"))
     return refs
 
 

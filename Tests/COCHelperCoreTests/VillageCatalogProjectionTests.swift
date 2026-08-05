@@ -119,8 +119,11 @@ final class VillageCatalogProjectionTests: XCTestCase {
             Bundle.module.url(forResource: "anonymized_account_snapshot", withExtension: "json")
         )
         let data = try Data(contentsOf: url)
+        // now 固定为 fixture timestamp（age = 0）：输入不随运行日期漂移，
+        // 全部 timer 记录保持升级中（remaining = raw > 0），测试行为可预测。
         let snapshot = try AccountSnapshotImporter.parse(
-            String(data: data, encoding: .utf8) ?? ""
+            String(data: data, encoding: .utf8) ?? "",
+            now: Date(timeIntervalSince1970: 1_785_736_333)
         )
         return snapshot.objectSections
     }
@@ -544,6 +547,32 @@ final class VillageCatalogProjectionTests: XCTestCase {
                       "组内存在计时结束实例时聚合项必须报「待重新导入」")
         XCTAssertEqual(item.status, .complete)
         XCTAssertFalse(item.isUpgrading)
+    }
+
+    /// mixed 组（已结束计时 + malformed 记录）的反序变体：malformed 在前时
+    /// 代表值不得被污染（filter{remaining==0} 后取 min；旧 first 实现会取到
+    /// malformed 的 timer 值）。issue 验收 #6 的次序无关性延伸。
+    func testMixedGroupFinishedTimerWithMalformedReversedOrder() throws {
+        func makeItem(_ timer: Int64?, _ remaining: Int64?, path: String) -> AccountItem {
+            AccountItem(
+                id: "buildings:" + path,
+                section: "buildings",
+                dataID: 1_000_032,
+                level: 12,
+                timerSeconds: timer,
+                remainingSeconds: remaining
+            )
+        }
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(600, nil, path: "0"),   // malformed：有 timer 无 remaining
+                makeItem(3_600, 0, path: "1"),   // 已结束
+            ],
+        ])
+        let projection = project(village: village, catalog: syntheticCatalog, base: .home)
+        let item = try XCTUnwrap(projection.items.first { $0.dataID == 1_000_032 })
+        XCTAssertEqual(item.timerSeconds, 3_600, "代表值必须来自已结束记录（不得取 malformed 的 600）")
+        XCTAssertTrue(item.needsReimport)
     }
 
     func testMixedGroupUpgradingWithMalformedStaysSeparated() throws {
@@ -992,8 +1021,11 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     /// JSON 数组重排不得改变项目身份与事实（issue 验收 #6）：
-    /// 模拟「重排后的 JSON 重新导入」——id 按新位置重建（漂移，自证测试非空转），
-    /// 而事实集必须完全一致。
+    /// 重排后含数组索引的 id 必须漂移（自证测试非空转），而事实集必须完全一致。
+    /// 注意覆盖窗口：当前 fixture（age=0）全部 timer 记录均 remaining>0（升级中，
+    /// 不聚合），本测试对聚合代表选择（first→min 修复）无鉴别力——该缺陷由
+    /// testFinishedTimerGroupAggregationIsOrderIndependent 专门承担；若 fixture
+    /// 更新出现已结束计时组，本测试自动获得第二道鉴别力。
     func testArrayReorderDoesNotChangeItemFacts() throws {
         let sections = try loadRealFixture()
         // 锚定：rebuiltIDs 对解析器产出的 id 应是恒等（解析器 id 本就按位置生成）。

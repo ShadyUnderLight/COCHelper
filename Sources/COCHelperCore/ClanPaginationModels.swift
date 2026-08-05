@@ -99,7 +99,8 @@ public struct OfficialWarLogPage: Codable, Hashable, Sendable, EndpointParserVer
         self.page = page
     }
 
-    public static var currentParserVersion: String { "clan-war-log-0.2" }
+    /// 0.3：成员级攻防日志解析范围（Issue #20，Task 2）。
+    public static var currentParserVersion: String { "clan-war-log-0.3" }
 
     public var items: [OfficialWarLogEntry] { page.items }
     public var after: String? { page.after }
@@ -122,7 +123,8 @@ public struct OfficialCapitalRaidPage: Codable, Hashable, Sendable, EndpointPars
         self.page = page
     }
 
-    public static var currentParserVersion: String { "clan-capital-0.2" }
+    /// 0.3：赛季成员贡献解析范围（Issue #20，Task 2）。
+    public static var currentParserVersion: String { "clan-capital-0.3" }
 
     public var items: [OfficialCapitalRaidSeason] { page.items }
     public var after: String? { page.after }

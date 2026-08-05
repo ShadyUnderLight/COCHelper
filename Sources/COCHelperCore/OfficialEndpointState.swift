@@ -101,7 +101,8 @@ extension OfficialClanSnapshot: EndpointParserVersioning {
 }
 
 extension OfficialClanWarSnapshot: EndpointParserVersioning {
-    public static var currentParserVersion: String { "clan-war-0.1" }
+    /// 0.2：成员级攻击表解析范围（Issue #20，Task 1 新增 ClanWarMember 解码）。
+    public static var currentParserVersion: String { "clan-war-0.2" }
 }
 
 // 分页包装类型（OfficialWarLogPage / OfficialCapitalRaidPage）在

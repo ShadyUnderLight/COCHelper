@@ -888,7 +888,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
     // MARK: - Issue #17: 数组重排稳定性与 boost 非归属
 
     /// 模拟「重排后的 JSON 重新导入」：按新位置重建 id（与解析器规则一致：
-    /// 顶层 section:index，嵌套 path.types.index / path.modules.index），
+    /// 顶层 section:index，嵌套 path.types.index / path.modules.index；
+    /// id 重建规则与 AccountSnapshotImporter.normalize()（AccountSnapshot.swift L394-430）保持同步），
     /// 事实字段（dataID/lvl/cnt/timer）保持原样。
     private func shuffledSections(
         _ sections: [String: [AccountItem]],
@@ -931,7 +932,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     /// 只重建 id（自身 + 嵌套，嵌套按原顺序 enumerated），其余字段原样；
-    /// 与解析器 id 规则一致：顶层 section:index、嵌套 path.types.index / path.modules.index。
+    /// 与解析器 id 规则一致：顶层 section:index、嵌套 path.types.index / path.modules.index
+    /// （id 重建规则与 AccountSnapshotImporter.normalize()（AccountSnapshot.swift L394-430）保持同步）。
     private func rebuildID(_ item: AccountItem, path: String) -> AccountItem {
         AccountItem(
             id: item.section + ":" + path,
@@ -968,6 +970,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     /// 投影事实行：身份与事实字段（不含 id——id 含数组索引，重排后允许漂移）。
+    /// 排序多集比较对「取首代表/丢弃」类缺陷有效，对组内事实互换（swap）形状
+    /// 不敏感——后者由 testFinishedTimerGroupAggregationIsOrderIndependent 兜底。
     private func factLines(_ items: [VillageItemState]) -> [String] {
         items.map { item -> String in
             let fields: [String] = [
@@ -992,6 +996,10 @@ final class VillageCatalogProjectionTests: XCTestCase {
     /// 而事实集必须完全一致。
     func testArrayReorderDoesNotChangeItemFacts() throws {
         let sections = try loadRealFixture()
+        // 锚定：rebuiltIDs 对解析器产出的 id 应是恒等（解析器 id 本就按位置生成）。
+        // 解析器 id 规则变化时此处立即红，指引同步本文件的手写重建规则
+        // （与 Sources/COCHelperCore/AccountSnapshot.swift normalize() 的 path 生成保持同步）。
+        XCTAssertEqual(rebuiltIDs(sections), sections)
         let village = makeVillage(objectSections: sections)
         let catalog = GameCatalog.loadBundled()
 
@@ -1007,10 +1015,14 @@ final class VillageCatalogProjectionTests: XCTestCase {
             let variantHome = project(village: variantVillage, catalog: catalog, base: .home)
             let variantBuilder = project(village: variantVillage, catalog: catalog, base: .builder)
 
-            // 1. 重排确实生效：含索引的原始 id 集合必须变化（否则测试自身无鉴别力）。
-            let originalIDs = Set(originalHome.items.map(\.id))
-            let variantIDs = Set(variantHome.items.map(\.id))
-            XCTAssertNotEqual(originalIDs, variantIDs, "\(variant.0) 后 id 应漂移（id 含数组索引）")
+            // 1. 重排确实生效（输入层自证）：变体输入 item 数组（含 id/事实，
+            //    逐元素顺序比较）与原始不同。注意不能用 id 列表断言差异——
+            //    id 按新位置重建后序列恒为 0..n-1（置换不变，与 Set 比较
+            //    同因失效）；位置 i 上换入不同 item 才是真实信号。
+            let originalInputItems = sections.keys.sorted().flatMap { key in sections[key]! }
+            let variantInputItems = variant.1.keys.sorted().flatMap { key in variant.1[key]! }
+            XCTAssertNotEqual(originalInputItems, variantInputItems,
+                              "\(variant.0) 后输入数组应变化（重排确实生效）")
 
             // 2. 事实不变：按 (section,dataID,level,isNested) 身份的事实完全一致。
             XCTAssertEqual(factLines(originalHome.items), factLines(variantHome.items),
@@ -1022,6 +1034,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
     /// 全局 boost（clocktower_cooldown 等）只留在快照顶层，不得归属到任何项目
     /// （issue 验收 #5）。用远超真实计时的特殊值避免碰撞。
+    /// 局限：本测试只守护「boost 值直接赋给计时字段」这一种归属形状，
+    /// 派生归属（如 timer - boost）不在检测面内。
     func testBoostValuesNeverAttributedToProjectItems() throws {
         let boostValue: Int64 = 987_654_321
         let village = makeVillage(
@@ -1047,5 +1061,41 @@ final class VillageCatalogProjectionTests: XCTestCase {
             XCTAssertNotEqual(item.remainingSeconds, boostValue,
                               "\(item.name) 的剩余时间不得来自全局 boost")
         }
+    }
+
+    /// 已结束计时重复组的聚合计时值必须与数组顺序无关（issue 验收 #6）：
+    /// 组内多条已结束计时记录重排后，聚合 timerSeconds 不得改变。
+    /// 当前实现用 first 选择（次序依赖）——本测试先证明该 bug，修复后用 min() 通过。
+    func testFinishedTimerGroupAggregationIsOrderIndependent() throws {
+        func makeFinishedItem(_ timer: Int64, path: String) -> AccountItem {
+            AccountItem(
+                id: "buildings:" + path,
+                section: "buildings",
+                dataID: 1_000_032,
+                level: 12,
+                timerSeconds: timer,
+                remainingSeconds: 0
+            )
+        }
+        let original = makeVillage(objectSections: [
+            "buildings": [
+                makeFinishedItem(357_878, path: "0"),
+                makeFinishedItem(422_074, path: "1"),
+            ],
+        ])
+        let reversed = makeVillage(objectSections: [
+            "buildings": [
+                makeFinishedItem(422_074, path: "1"),
+                makeFinishedItem(357_878, path: "0"),
+            ],
+        ])
+
+        let originalProjection = project(village: original, catalog: syntheticCatalog, base: .home)
+        let reversedProjection = project(village: reversed, catalog: syntheticCatalog, base: .home)
+
+        let originalItem = try XCTUnwrap(originalProjection.items.first { $0.dataID == 1_000_032 })
+        let reversedItem = try XCTUnwrap(reversedProjection.items.first { $0.dataID == 1_000_032 })
+        XCTAssertEqual(originalItem.timerSeconds, reversedItem.timerSeconds,
+                       "已结束计时组的聚合计时值不得随数组顺序改变")
     }
 }

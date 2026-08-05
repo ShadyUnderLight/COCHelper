@@ -268,9 +268,16 @@ struct VillageDetailView: View {
                 }
 
                 LazyVStack(spacing: 0) {
-                    ForEach(group.items) { item in
-                        itemRow(item, group: group, now: now, village: village)
-                        if item.id != group.items.last?.id {
+                    // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
+                    // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
+                    let rows = VillageDetailProjection.parentedRows(from: group.items)
+                    ForEach(rows) { row in
+                        itemRow(row.item, group: group, now: now, village: village)
+                        ForEach(row.children) { child in
+                            Divider().padding(.leading, 46)
+                            itemRow(child, group: group, now: now, village: village, indented: true)
+                        }
+                        if row.id != rows.last?.id {
                             Divider().padding(.leading, 46)
                         }
                     }
@@ -287,7 +294,8 @@ struct VillageDetailView: View {
         _ item: VillageItemState,
         group: VillageDetailGroup,
         now: Date,
-        village: VillageProfile
+        village: VillageProfile,
+        indented: Bool = false
     ) -> some View {
         let rowID = villageID.uuidString + ":" + selectedBase.rawValue + ":" + item.id
         let record = UpgradeDisplayRecord(
@@ -307,6 +315,8 @@ struct VillageDetailView: View {
                 now: now,
                 showsVillageColumn: false
             )
+            // 嵌套项缩进展示在根父行下（issue #24「类型/模块」区域）。
+            .padding(.leading, indented ? 24 : 0)
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())

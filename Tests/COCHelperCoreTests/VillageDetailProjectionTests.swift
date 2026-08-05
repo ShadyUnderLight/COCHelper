@@ -371,15 +371,16 @@ final class VillageDetailProjectionTests: XCTestCase {
     func testPropertyParentedRowsInvariants() {
         var rng = SplitMix64(seed: 0x24_24)
         for _ in 0..<500 {
-            let items = randomParentedItems(&rng, count: 1 + Int(rng.next() % 30))
+            let (items, orphanIDs) = randomParentedItems(&rng, count: 1 + Int(rng.next() % 30))
             let rows = VillageDetailProjection.parentedRows(from: items)
             // 1. 信息守恒：输入每个 item 恰好出现一次（行 item + children）。
             let all = rows.flatMap { [$0.item] + $0.children }
             XCTAssertEqual(all.count, items.count)
             XCTAssertEqual(Set(all.map(\.id)), Set(items.map(\.id)))
-            // 2. 平铺项（非嵌套）children 必空；子项必为嵌套项。
+            // 2. 平铺项（非嵌套）children 必空；子项必为嵌套项；孤儿独立成行且无子项。
             for row in rows {
                 if row.item.isNested {
+                    XCTAssertTrue(orphanIDs.contains(row.item.id), "独立成行的嵌套项必为生成器标记的孤儿")
                     XCTAssertTrue(row.children.isEmpty, "嵌套孤儿应独立成行且无子项")
                 } else {
                     XCTAssertTrue(row.children.allSatisfy(\.isNested))
@@ -397,9 +398,13 @@ final class VillageDetailProjectionTests: XCTestCase {
                     )
                 }
             }
-            // 4. 输入顺序稳定：行（item 部分）保持输入相对顺序。
-            //    生成器保证根父总在输入中（子项只在 rootIDs 非空时生成）→ 无孤儿行。
-            XCTAssertEqual(rows.map(\.item.id), items.filter { !$0.isNested }.map(\.id))
+            // 4. 输入顺序稳定：平铺项行按输入顺序，孤儿行按输入顺序跟在末尾。
+            let flatIDs = items.filter { !$0.isNested }.map(\.id)
+            let orphanIDsInOrder = items.filter { orphanIDs.contains($0.id) }.map(\.id)
+            XCTAssertEqual(rows.map(\.item.id), flatIDs + orphanIDsInOrder)
+            // 5. 孤儿 ≠ 任何平铺项的 children（孤儿的根父不在输入中）。
+            let allChildrenIDs = rows.flatMap(\.children).map(\.id)
+            XCTAssertTrue(orphanIDs.isDisjoint(with: Set(allChildrenIDs)))
         }
     }
 
@@ -407,8 +412,9 @@ final class VillageDetailProjectionTests: XCTestCase {
         id.hasPrefix("agg:") ? String(id.dropFirst(4)) : id
     }
 
-    private func randomParentedItems(_ rng: inout SplitMix64, count: Int) -> [VillageItemState] {
+    private func randomParentedItems(_ rng: inout SplitMix64, count: Int) -> ([VillageItemState], Set<String>) {
         var items: [VillageItemState] = []
+        var orphanIDs = Set<String>()
         var rootIDs: [String] = []
         func isDuplicate(_ id: String) -> Bool {
             items.contains { Self.normalizeAggPrefix($0.id) == Self.normalizeAggPrefix(id) }
@@ -422,6 +428,19 @@ final class VillageDetailProjectionTests: XCTestCase {
                 guard !isDuplicate(id) else { continue }
                 items.append(item(id: id))
                 rootIDs.append(Self.normalizeAggPrefix(id))
+            } else if roll == 6 {
+                // 孤儿嵌套项：根父使用不存在的 sect:99（永不作为根生成），
+                // 覆盖「父项被过滤」回退路径。深度随机（types/modules 两层）。
+                let depth = rng.next() % 3
+                let childID: String
+                switch depth {
+                case 0: childID = "sect:99.types." + String(rng.next() % 6)
+                case 1: childID = "sect:99.modules." + String(rng.next() % 6)
+                default: childID = "sect:99.types." + String(rng.next() % 6) + ".modules." + String(rng.next() % 6)
+                }
+                guard !isDuplicate(childID) else { continue }
+                items.append(item(id: childID, nested: true))
+                orphanIDs.insert(childID)
             } else {
                 // 挂嵌套子项到随机根项：types 或 modules 或 types+modules 两层。
                 let root = rootIDs[Int(rng.next() % UInt64(rootIDs.count))]
@@ -436,7 +455,7 @@ final class VillageDetailProjectionTests: XCTestCase {
                 items.append(item(id: childID, nested: true))
             }
         }
-        return items
+        return (items, orphanIDs)
     }
 
     func testPropertyInvariantsAcrossRandomCollections() {

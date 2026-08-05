@@ -102,6 +102,8 @@ def test_det_valid_path_no_errors():
     "icons/18.400/icon.png",         # 版本段（18.\d+ 形式）
     "icons/../secret.png",           # .. 段逃逸（正则 [^/]+ 不排除字面 ..，须显式拒绝）
     "icons/../../secret.png",        # 多级逃逸
+    "icons/./secret.png",            # . 段（R2.2：拒绝，P2-1）
+    "icons/ui/./secret.png",         # 第二级 . 段
     "icons/..%2F..%2Fetc/passwd.png",  # URL 编码段逃逸（防未来 URL 解码消费者）
     "icons/%2e%2e/secret.png",       # URL 编码 ..
     "icons/ui/%2e%2e.png",           # export 名含 %
@@ -122,6 +124,17 @@ def test_det_rd_two_level_valid():
     errs = check_rendered_path_contract(
         "icons/ui/icon_unit_barbarian.png", None, True, True)
     assert errs == []
+
+
+def test_det_rd_filename_length_limit():
+    """R2.2 文件名长度上限 200 字节（P2-1）：超限 → 格式非法；边界值通过。"""
+    def check(name: str) -> list:
+        return check_rendered_path_contract(f"icons/ui/{name}.png", None, True, True)
+    assert check("x" * 196) == []          # 196 + 4(.png) = 200 字节 → 通过
+    assert any("格式非法" in e for e in check("x" * 197))   # 201 字节 → 拒绝
+    # 多字节 UTF-8 按字节计：66 汉字 * 3 = 198 + 4 = 202 → 拒绝
+    assert any("格式非法" in e for e in check("中" * 66))
+    assert check("中" * 65) == []          # 195 + 4 = 199 → 通过
 
 
 def test_det_none_path_no_errors():

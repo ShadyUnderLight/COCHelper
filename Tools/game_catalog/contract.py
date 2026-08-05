@@ -12,25 +12,30 @@ import re
 _RD_RE = re.compile(r"^icons/[^/]+/[^/]+\.png$")
 # gameVersion 段（契约 R7 版本隔离：renderedPath 内不得含版本段，如 18.400 / 18.400.13）
 _VERSION_SEGMENT_RE = re.compile(r"^\d+\.\d+(\.\d+)?$")
+# 契约 R2.2：文件名（export_key 段，含 .png 扩展）长度上限 200 字节
+_MAX_FILENAME_BYTES = 200
 
 
 def rendered_path_format_ok(rendered_path: str) -> bool:
     """R-D 严格格式：`icons/<container_key>/<export_key>.png` 两级结构（契约 R2.1）。
 
-    拒绝：`..` 路径段（段级逃逸；`[^/]+` 不排除字面 `..`，须显式拒绝）、版本段
-    （第一段形如 `18.400` / `18.400.13`）、绝对路径、单级/多级路径、非 `.png`、
-    无 `icons/` 前缀。纯函数无 IO——validate.py 用它短路文件系统探测（防 NB-3 逃逸）。
+    拒绝：`.` / `..` 路径段（段级逃逸；`[^/]+` 不排除字面 `.`/`..`，须显式拒绝）、
+    版本段（第一段形如 `18.400` / `18.400.13`）、绝对路径、单级/多级路径、非 `.png`、
+    无 `icons/` 前缀、export 文件名超过 200 字节（契约 R2.2）。纯函数无 IO——
+    validate.py 用它短路文件系统探测（防 NB-3 逃逸）。
     """
     if not _RD_RE.match(rendered_path):
         return False
     parts = rendered_path.split("/")
-    if ".." in parts:
+    if "." in parts or ".." in parts:
         return False
     if "%" in rendered_path:
         # 拒绝 URL 编码段（如 %2e%2e / %2F）：pathlib 不解码，但未来若出现
         # URL 解码消费者会引入真实逃逸；段内 % 对合法文件名也无意义。
         return False
-    return not _VERSION_SEGMENT_RE.match(parts[1])
+    if _VERSION_SEGMENT_RE.match(parts[1]):
+        return False
+    return len(parts[2].encode("utf-8")) <= _MAX_FILENAME_BYTES
 
 
 def is_renderable(rendered_path: str | None, missing_reason: str | None) -> bool:

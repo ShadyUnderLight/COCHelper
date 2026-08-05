@@ -142,7 +142,7 @@
 | `7c7ffe5` | 修复 R-B 互斥检查被 R-D 短路 |
 | `7e346d5` | 契约纯函数与 property-based 测试（`contract.py` + `test_render_contract.py`） |
 
-- **测试**：`python3 -m pytest Tools/tests -q` → **283 passed**（交叉审核后实测），含 hypothesis property-based（`is_renderable` 一致性 + R5.2 互斥不变量）。
+- **测试**：`python3 -m pytest Tools/tests -q` → **288 passed**（交叉审核后实测），含 hypothesis property-based（`is_renderable` 一致性 + R5.2 互斥不变量）。
 - **契约规则**：R-A 文件存在 / R-B 互斥（独立轴，不被 R-D 短路）/ R-C manifest 登记 / R-D 格式（`icons/` 前缀 + `.png` 后缀），纯函数 `contract.py:check_rendered_path_contract`。
 
 ---
@@ -177,7 +177,7 @@
 | 依赖例外 | spike 渲染模块（`sc2.py` zstd body 解码 + `render_spike.py`）需 **ctypes + libzstd**（brew 本机 `/opt/homebrew/lib/libzstd.dylib` 已确认可加载；候选顺序：`/opt/homebrew/lib` → `/usr/local/lib` → `find_library`；全失败 → `CatalogError` = `zstd_unavailable`）。与纯 stdlib 生成/校验管线**分离**（契约 R9），生成器 `generate_game_catalog.py` 不引入该依赖 |
 | 解压保护 | body 解压上限 512MB（`ZSTD_decompressBound` 超限拒绝，防 zip bomb，契约 R9.4） |
 | 边界 | spike 输出只进 `/tmp`（本次：`/tmp/coc-spike-report-check/`）；`git ls-files` 无 `.apk/.sc/.sctx/.ktx`，无 spike 产出的 PNG 被跟踪（`Resources/COCHelperAppIcon.png` 为既有 App 图标资产，非 spike 产物）。契约 R12.3 遵守 |
-| 可复核性 | 复跑命令：`cd Tools && python3 render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-report-check`；契约测试：`python3 -m pytest Tools/tests -q`（283 passed） |
+| 可复核性 | 复跑命令：`cd Tools && python3 render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-report-check`；契约测试：`python3 -m pytest Tools/tests -q`（288 passed） |
 
 ---
 

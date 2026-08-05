@@ -44,7 +44,7 @@
 | # | 契约规则 | 校验方式 |
 |---|---|---|
 | R2.1 | 文件名派生规则（确定性）：`icons/<container_key>/<export_key>.png`，其中 `container_key` = container 去掉 `sc/` 前缀与 `.sc` 后缀（`sc/ui.sc` → `ui`，`sc/buildings_cc.sc` → `buildings_cc`）；`export_key` = sanitize(exportName)。 | 对照表抽查：`sc/ui.sc` + `icon_unit_barbarian` ⇒ `icons/ui/icon_unit_barbarian.png` |
-| R2.2 | sanitize 规则：替换 `/`、`\` 为 `_`；拒绝空串、`.`、`..`（fail loud）；文件名长度上限 200 字节。 | 生成器负例测试（`../` 注入） |
+| R2.2 | sanitize 规则：替换 `/`、`\` 为 `_`；拒绝空串、`.`、`..`（fail loud）；文件名长度上限 200 字节。 | validate.py 负例（`rendered_path_format_ok`：拒 `.`/`..` 段、文件名 >200 字节） |
 | R2.3 | 同键恒同路径、不同键恒不同路径：若 sanitize 后不同原始名产生冲突 → 生成器 fail loud，不静默覆盖（真实数据 export 名唯一，冲突即数据异常）。 | 生成器冲突断言 + validate.py 重复条目检查 |
 | R2.4 | **去重**：跨 item/level 复用同一 `(container, exportName)` 只渲染一份、manifest 记录一次，多 level 引用同一 `renderedPath`（实证：catalog 铁匠铺 dataID 1000070 level1-2 共用 `blacksmith_lvl1`）。 | manifest PNG 条目数 == 唯一键数；validate.py 断言不同 ref 可共享同一 path |
 | R2.5 | **渲染变体区分策略（开放项）**：spike 未发现同键多变体需求（如 lowres/主题色/尺寸变体）。若将来需要，扩展键为 `(container, exportName, variant)`，variant 编码进文件名（如 `<export_key>__<variant>.png`），并 bump schemaVersion——本契约冻结前不允许静默引入变体。 | 无（开放项，记录在案） |

@@ -362,6 +362,49 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(projection.catalogVersion, "18.400.13")
     }
 
+    // MARK: - 目录可用性（issue #16：版本不匹配不纳入可确认完成度）
+
+    func testCatalogIsUsableTrueWhenVersionMatches() throws {
+        let village = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
+        ])
+        let projection = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertTrue(projection.catalogIsUsable, "版本匹配时目录可用于可确认统计")
+    }
+
+    func testCatalogIsUsableFalseWhenVersionMismatches() throws {
+        // 旧版本目录仍能 join（maxLevel 可用），但不得用于可确认完成度。
+        let staleCatalog = try makeCatalog(from: Self.syntheticCatalogJSON
+            .replacingOccurrences(of: "\"gameVersion\": \"18.400.13\"", with: "\"gameVersion\": \"9.9.9\""))
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let projection = project(village: village, catalog: staleCatalog, base: .home)
+        XCTAssertFalse(projection.catalogIsUsable)
+        XCTAssertTrue(projection.diagnostics.contains { $0.severity == .warning })
+        // join 仍发生（旧 maxLevel 用于展示），但调用方必须用 catalogIsUsable 阻断完成度
+        XCTAssertEqual(projection.items.first?.maxLevel, 2)
+    }
+
+    func testCatalogIsUsableFalseWhenCatalogUnavailable() throws {
+        let village = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
+        ])
+        let projection = project(village: village, catalog: nil, base: .home)
+        XCTAssertFalse(projection.catalogIsUsable)
+    }
+
+    func testCatalogIsUsableTrueWhenExpectedVersionNil() throws {
+        // expectedGameVersion == nil：不做版本校验（未来版本目录视为可用）。
+        let futureCatalog = try makeCatalog(from: Self.syntheticCatalogJSON
+            .replacingOccurrences(of: "\"gameVersion\": \"18.400.13\"", with: "\"gameVersion\": \"99.0.0\""))
+        let village = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
+        ])
+        let projection = project(village: village, catalog: futureCatalog, expectedGameVersion: nil, base: .home)
+        XCTAssertTrue(projection.catalogIsUsable)
+    }
+
     // MARK: - Nested items
 
     func testNestedModulesKeepSourcePath() throws {

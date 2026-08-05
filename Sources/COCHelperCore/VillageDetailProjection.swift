@@ -70,10 +70,16 @@ public enum VillageDetailProjection {
         }
     }
 
-    public static func completionStats(from items: [VillageItemState]) -> [VillageCategoryCompletion] {
+    /// 按分类完成度；顺序同 groups。`catalogIsUsable == false`（目录不可用或
+    /// 全局版本不匹配）时不产生任何可确认分母，全部归 unknown（issue #16：
+    /// 「目录无上限或版本不匹配：不纳入可确认完成度，并显示诊断」）。
+    public static func completionStats(
+        from items: [VillageItemState],
+        catalogIsUsable: Bool = true
+    ) -> [VillageCategoryCompletion] {
         groups(from: items).map { group in
-            let known = group.items.filter { isKnown($0) }.count
-            let completed = group.items.filter { $0.status == .maxed && isKnown($0) }.count
+            let known = catalogIsUsable ? group.items.filter { isKnown($0) }.count : 0
+            let completed = catalogIsUsable ? group.items.filter { $0.status == .maxed && isKnown($0) }.count : 0
             return VillageCategoryCompletion(
                 category: group.category,
                 knownCount: known,
@@ -83,9 +89,13 @@ public enum VillageDetailProjection {
         }
     }
 
-    public static func totalCompletion(from items: [VillageItemState]) -> VillageCategoryCompletion {
-        let known = items.filter { isKnown($0) }.count
-        let completed = items.filter { $0.status == .maxed && isKnown($0) }.count
+    /// 全村庄完成度合计。`catalogIsUsable` 语义同 `completionStats`。
+    public static func totalCompletion(
+        from items: [VillageItemState],
+        catalogIsUsable: Bool = true
+    ) -> VillageCategoryCompletion {
+        let known = catalogIsUsable ? items.filter { isKnown($0) }.count : 0
+        let completed = catalogIsUsable ? items.filter { $0.status == .maxed && isKnown($0) }.count : 0
         return VillageCategoryCompletion(
             category: nil,
             knownCount: known,

@@ -168,6 +168,49 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertNil(none.completionRatio)
     }
 
+    // MARK: - 目录不可用/版本不匹配（issue #16：不纳入可确认完成度）
+
+    func testCompletionAllUnknownWhenCatalogUnusable() {
+        // 目录版本不匹配（或不可用）时：即使 maxed/complete 项齐全，
+        // 也不得产生可确认分母（旧目录 maxLevel 不可信）。
+        let items = [
+            item(id: "a", status: .maxed),
+            item(id: "b", status: .complete),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items, catalogIsUsable: false)
+        XCTAssertTrue(stat(total) == (0, 0, 2), "got \(stat(total))")
+        XCTAssertNil(total.completionRatio, "版本不匹配时不得显示百分比")
+    }
+
+    func testCompletionStatsAllUnknownWhenCatalogUnusable() {
+        let items = [
+            item(id: "a", status: .maxed),
+            item(id: "b", status: .complete),
+            item(id: "c", status: .unknown, maxLevel: nil),
+        ]
+        let stats = VillageDetailProjection.completionStats(from: items, catalogIsUsable: false)
+        for s in stats {
+            XCTAssertEqual(s.knownCount, 0, "分类 \(s.id) 不得计入分母")
+            XCTAssertEqual(s.completedCount, 0)
+            XCTAssertEqual(s.unknownCount, s.unknownCount)
+        }
+        XCTAssertEqual(stats.reduce(0) { $0 + $1.unknownCount }, 3)
+        XCTAssertEqual(stats.reduce(0) { $0 + $1.knownCount }, 0)
+    }
+
+    func testCompletionRatioNilWhenCatalogUnusableEvenWithMaxedItems() {
+        let items = [item(status: .maxed)]
+        let total = VillageDetailProjection.totalCompletion(from: items, catalogIsUsable: false)
+        XCTAssertNil(total.completionRatio)
+    }
+
+    func testCatalogUsableDefaultMaintainsExistingBehavior() {
+        // 默认参数 true：现有调用（升级总览等）行为不变。
+        let total = VillageDetailProjection.totalCompletion(from: [item(status: .maxed)])
+        XCTAssertEqual(total.knownCount, 1)
+        XCTAssertEqual(total.completedCount, 1)
+    }
+
     // MARK: - Property-based 不变量（固定 seed SplitMix64，可复现）
 
     func testPropertyInvariantsAcrossRandomCollections() {

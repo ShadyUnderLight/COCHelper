@@ -107,6 +107,11 @@ public struct VillageCatalogProjection: Sendable {
     public let base: TrackerBase
     /// 目录版本；目录不可用时 nil。
     public let catalogVersion: String?
+    /// 目录是否可用于可确认统计（issue #16 完成度规则）：目录存在且版本与
+    /// 期望匹配（`expectedGameVersion == nil` 时不做版本校验）。目录不可用
+    /// 或版本不匹配时，完成度不得产生可确认分母——旧目录的 maxLevel 仍用于
+    /// 展示（行状态/徽标），但不得支撑看似权威的百分比。
+    public let catalogIsUsable: Bool
     public let items: [VillageItemState]
     public let diagnostics: [AccountDataDiagnostic]
 
@@ -119,6 +124,12 @@ public struct VillageCatalogProjection: Sendable {
         now: Date = Date()
     ) -> VillageCatalogProjection {
         var diagnostics: [AccountDataDiagnostic] = []
+        let catalogIsUsable: Bool
+        if let catalog {
+            catalogIsUsable = expectedGameVersion.map { $0 == catalog.gameVersion } ?? true
+        } else {
+            catalogIsUsable = false
+        }
         if catalog == nil {
             diagnostics.append(AccountDataDiagnostic(
                 severity: .warning,
@@ -142,6 +153,7 @@ public struct VillageCatalogProjection: Sendable {
             villageName: village.name,
             base: base,
             catalogVersion: catalog?.gameVersion,
+            catalogIsUsable: catalogIsUsable,
             items: states,
             diagnostics: diagnostics
         )

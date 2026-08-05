@@ -53,9 +53,17 @@ struct VillageDetailView: View {
         // decos/helpers/obstacles 等不参与升级追踪的类别不展示、不计入完成度。
         let trackedItems = projection.items.filter { $0.status != .unavailable }
         let groups = VillageDetailProjection.groups(from: trackedItems)
-        let total = VillageDetailProjection.totalCompletion(from: trackedItems)
+        // 目录不可用或版本不匹配时（projection.catalogIsUsable == false）：
+        // issue #16「不纳入可确认完成度」——完成度全部归未知，不显示百分比。
+        let total = VillageDetailProjection.totalCompletion(
+            from: trackedItems,
+            catalogIsUsable: projection.catalogIsUsable
+        )
         let statsByKey = Dictionary(
-            uniqueKeysWithValues: VillageDetailProjection.completionStats(from: trackedItems)
+            uniqueKeysWithValues: VillageDetailProjection.completionStats(
+                from: trackedItems,
+                catalogIsUsable: projection.catalogIsUsable
+            )
                 .map { ($0.id, $0) }
         )
         let displayGroups = filtered(groups)

@@ -97,7 +97,8 @@ final class ClanPaginationDecodeTests: XCTestCase {
         XCTAssertEqual(page.after, "RAIDCURSORAFTER1")
     }
 
-    /// attackLog/defenseLog（成员攻击明细）deferred：嵌套容忍，不解码失败。
+    /// 回归护栏：attackLog/defenseLog 数组存在时，赛季摘要字段仍正确解码
+    /// （成员明细本身由 testDecodeCapitalRaidAttackLog/DefenseLog 覆盖）。
     func testDecodeToleratesAttackLogArrays() throws {
         let page = try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: fullCapitalRaidPageData())
         XCTAssertEqual(page.items[0].capitalTotalLoot, 123456, "attackLog 存在时摘要仍正确")
@@ -136,7 +137,9 @@ final class ClanPaginationDecodeTests: XCTestCase {
         let log = try XCTUnwrap(page.items[0].defenseLog)
         XCTAssertEqual(log.count, 1)
         let entry = try XCTUnwrap(log.first)
+        XCTAssertEqual(entry.defender?.tag, "#HOMEDISTRICTANONYMIZED")
         XCTAssertEqual(entry.defender?.name, "anonymized-home-district")
+        XCTAssertEqual(entry.defender?.destructionPercent, 40)
         XCTAssertEqual(entry.attackCount, 3)
         XCTAssertEqual(entry.districtCount, 5)
         XCTAssertEqual(entry.districtsDestroyed, 0)

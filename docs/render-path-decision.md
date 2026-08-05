@@ -23,7 +23,7 @@
 |---|---|
 | 可行性 | #27 spike（#29）已打通 SC2 V6 容器解析：头/descriptor/export 名/zstd body/6 chunk；引用链 100% 指向 MovieClip 已确认（ui.sc 3018/3018、buildings.sc 3130/3130） |
 | 公开参考 | sc-workshop/SupercellFlash（MIT）schema + C++ 参考已拉取；MovieClip/Shape/DataStorage/Textures 结构已知（partial 支持，以真实字节对拍） |
-| 工作量可控 | 唯一渲染键仅 **381 个**（catalog 5103 条 level 记录去重后），ASTC 局部解码避免整张 4096×4096 大纹理全解码 |
+| 工作量可控 | 唯一渲染键仅 **381 个**（item 级唯一引用口径；level 级唯一键 1269，catalog 5479 条 level 记录去重后，口径差异见契约 §12.1），ASTC 局部解码避免整张 4096×4096 大纹理全解码 |
 | 双阻塞可解 | 阻塞 1（MovieClip 引用链）→ 本分支实现帧解析；阻塞 2（ASTC/KTX/SCTX）→ 本分支实现解码器 |
 | 契约冻结 | renderedPath 契约 R1–R12 已冻结，渲染无关条目生效；本分支只需实测回写 R3/R4 |
 

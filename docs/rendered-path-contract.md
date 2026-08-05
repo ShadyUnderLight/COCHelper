@@ -89,13 +89,15 @@
 |---|---|---|
 | `icons_not_rendered` / `no_icon_columns` / `no_visual_columns` | #13 遗留：未渲染 / 无列 | catalog 生成器（保留） |
 | `sc_parse_failed` | SC2 容器解析失败（magic/version/descriptor/chunk 越界等） | `CatalogError` 路径 |
-| `movieclip_not_parsed` | export→object_id 指向 MovieClip 且帧解析链路未实现（如嵌套 MovieClip 未递归渲染） | 嵌套动画/阴影层（Task 7 实证：fireplace/blacksmith 帧 0 含嵌套 movieclip，记录 `skippedElements`） |
+| `movieclip_not_parsed` | export 的 object_id 既非 Shape 也非 MovieClip（引用损坏）——**发射于 export 非 shape 非 movieclip 的引用**；嵌套 movieclip 是 `skippedElements` 记录（fireplace/blacksmith 帧 0 实证），**不发射** | `_collect_renders` 防御分支 |
 | `texture_compressed_astc` | 内嵌 KTX/ASTC 压缩纹理，无解码器 | 已解决（astc.py）——保留枚举向后兼容 |
 | `texture_external_sctx` | 纹理存外部 `.sctx` 文件，无解码器 | 已解决（ktx.py）——保留枚举向后兼容 |
 | `zstd_unavailable` | libzstd 无法加载（ctypes 全路径失败） | `load_libzstd` 失败 |
 | `container_not_found` | APK 无此容器（assets/sc/*.sc 缺失） | 样本 `sc/traps.sc`（APK 无该文件） |
 | `export_not_found` | exportNames 无此导出名 | 样本 `icon_unit_does_not_exist` |
-| `texture_unsupported` | 纹理格式/像素类型不支持（ASTC 之外）或畸形数据 | 防御分支 |
+| `astc_unsupported` | KTX/SCTX 容器解析失败或 ASTC 格式不支持（HDR 等） | `.sctx` 非 variant-36 / pixel_type≠208、KTX 未知 glInternalFormat、HDR 解码（AstcError） |
+| `texture_missing` | 纹理无内嵌数据 / 外部 .sctx 缺失或读取失败（含 zip 条目超防炸弹上限，读取前拒绝） | `td.data` 为空、外部 `.sctx` zip 条目不存在、texture_data 索引越界 |
+| `render_failed` | 渲染链失败（bounds/光栅化/PNG 编码/引用越界/容器 zip 条目超上限） | MovieClip 无帧、帧 0 无可渲染 shape 元素、shape 无 draw 命令、其余 `CatalogError` 兜底 |
 
 > 上表为**实现定稿**（Task 7 实际使用的枚举）；原「建议扩展」表被本表取代。
 > 生成器规则：成功 → `renderedPath` 非空 + `missingReason=null`；失败 → `renderedPath=null` + 上述枚举。不写空 PNG、不写伪造路径（样本负例已锁）。
@@ -187,12 +189,12 @@
 1. `UpgradeDisplayRow` 图标列：`isRenderable` 时渲染 PNG，否则 SF Symbol + 缺失角标（预留注释已就位）
 2. `LevelDetailSheet` 逐级行：接入 `levelVisual/icon`
 3. 共享 Bundle asset resolver（`Bundle.module.url(forResource:...)` 模式已由 Task 9 测试锁定）
-4. 全量渲染：381 个唯一键（当前仅渲染 4 个固定样本；`render_generator.py --samples-only` 去掉后全量跑，预计数小时，需增量分批）
+4. 全量渲染：381 个唯一键（当前仅渲染 4 个固定样本；`render_generator.py --samples-only` 去掉后全量跑，预计数小时，需增量分批）。**口径注**：381 = item 级唯一引用键（决策文档沿用此数）；level 级（逐级 `icon`/`levelVisual` 引用）唯一键为 1269（5479 条 level 记录去重后）——全量渲染按 R2.4 对全部引用去重，以实际引用集合为准
 5. 嵌套 MovieClip（动画/阴影层）递归渲染（当前跳过记录 `skippedElements`）
 6. 多帧 MovieClip 取帧 0（当前行为，契约注明）
 7. 视觉人工验收：逐项核对图标朝向/形变/双线性边缘
 
-**已知限制（契约标注）**：HDR 端点拒绝（真实纹理零出现）；3D 块不支持；SCTX 非 buildings 变体（28/32 头）不支持（fail loud）；多命令合成已支持（blacksmith 5 命令实测）。
+**已知限制（契约标注）**：HDR 端点拒绝（真实纹理零出现）；3D 块不支持；SCTX 非 variant-36 头（28/32，`assets/sc/` 150 个）不支持（fail loud）；variant-36 引用容器除 buildings.sc（71 纹理）外，**buildings_cc.sc（13 纹理）、buildings2.sc（5 纹理）同为 SCTX variant-36 可解**（合计 91 个中 89 个可解；building_bases_0/1.sctx 2 个 data_len 声明超文件大小被拒绝，fail-closed 正确）；多命令合成已支持（blacksmith 5 命令实测）。
 
 ---
 

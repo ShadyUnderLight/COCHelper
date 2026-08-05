@@ -296,6 +296,31 @@ final class VillageDetailProjectionTests: XCTestCase {
 
     // MARK: - Real fixture 集成（issue #24）
 
+    func testUpgradingAndAggregatedParentCoexistChildrenOnFirstOnly() {
+        // 同归一化父 id 两个平铺行并存：升级记录（id 无 agg:）单独保留 + 非升级
+        // 聚合记录（id 带 agg:）。两行都必须保留，children 只挂输入中先出现的行。
+        let upgrading = item(id: "buildings:6", isUpgrading: true)
+        let aggregated = item(id: "agg:buildings:6")
+        let child = item(id: "buildings:6.types.0", nested: true)
+        let rows = VillageDetailProjection.parentedRows(from: [upgrading, aggregated, child])
+        XCTAssertEqual(rows.count, 2, "升级行与聚合行都保留")
+        XCTAssertEqual(rows[0].item.id, "buildings:6")
+        XCTAssertEqual(rows[0].children.map(\.id), ["buildings:6.types.0"], "children 挂到先出现的行")
+        XCTAssertEqual(rows[1].item.id, "agg:buildings:6")
+        XCTAssertTrue(rows[1].children.isEmpty, "children 不得重复挂到后出现的同归一化行")
+    }
+
+    func testChildBeforeParentStillAttaches() {
+        // 输入倒序：子项先出现、父项后出现——仍正确挂载（parentedRows 不依赖输入顺序，
+        // 先收集再输出）。回归防护：若实现退化为「遍历时即时匹配已见父项」会漏挂。
+        let child = item(id: "heroes:0.modules.0", nested: true)
+        let parent = item(id: "heroes:0")
+        let rows = VillageDetailProjection.parentedRows(from: [child, parent])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.item.id, "heroes:0")
+        XCTAssertEqual(rows.first?.children.map(\.id), ["heroes:0.modules.0"])
+    }
+
     func testRealFixtureNestedItemsGroupUnderRootParent() throws {
         let url = try XCTUnwrap(
             Bundle.module.url(forResource: "anonymized_account_snapshot", withExtension: "json")

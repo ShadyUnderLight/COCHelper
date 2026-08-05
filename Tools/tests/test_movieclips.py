@@ -156,6 +156,21 @@ def test_parse_movieclips_short_frames():
     assert len(mc.frame_elements) == 3
 
 
+def test_parse_movieclips_frames_preferred_over_short_frames():
+    """frames 与 short_frames 并存 → 用 frames（保留 label），忽略 short_frames。
+
+    若错误优先 short_frames：total=9 → 元素越界 CatalogError；解析成功 +
+    label=77 保真即证明 frames 分支生效。
+    """
+    payload = build_movieclips([{
+        "id": 1, "frames": [(1, 77)], "short_frames": [9],
+        "frame_elements_offset": 0,
+    }])
+    mc = parse_movieclips(payload, build_frame_elements([5, 6, 7]))[0]
+    assert [f.used_transform for f in mc.frames] == [1]
+    assert mc.frames[0].label_ref_id == 77
+
+
 # ---------------------------------------------------------------------------
 # 畸形数据：fail loud
 # ---------------------------------------------------------------------------
@@ -175,6 +190,16 @@ def test_parse_movieclips_buffer_out_of_bounds_raises():
     }])
     with pytest.raises(CatalogError, match="越界"):
         parse_movieclips(payload, build_frame_elements([1, 2, 3, 4]))
+
+
+def test_parse_movieclips_partial_overlap_raises():
+    """起点界内但终点越出缓冲（部分重叠）→ CatalogError，不得截断消费。"""
+    payload = build_movieclips([{
+        "id": 1, "frames": [(3, 0)], "frame_elements_offset": 2,
+    }])
+    buf = build_frame_elements([0] * 10)  # 20 字节：起点 4B 界内，需 18B → 越界
+    with pytest.raises(CatalogError, match="越界"):
+        parse_movieclips(payload, buf)
 
 
 def test_parse_movieclips_elements_count_limit_raises():
@@ -197,6 +222,19 @@ def test_parse_movieclips_frames_count_limit_raises():
     frames_field = mc_table + _table_slot_rel(data, mc_table, 8)
     frames_vec = frames_field + struct.unpack("<I", data[frames_field:frames_field + 4])[0]
     payload[frames_vec:frames_vec + 4] = struct.pack("<I", 2_000_000)
+    with pytest.raises(CatalogError, match="上限"):
+        parse_movieclips(bytes(payload), b"\x00" * 64)
+
+
+def test_parse_movieclips_count_limit_raises():
+    """MovieClips vector 条目数超上限 → CatalogError（防 O(n) 放大）。"""
+    payload = bytearray(build_movieclips([{"id": 1, "frames": [(0, 0)]}]))
+    data = bytes(payload)
+    root_pos = struct.unpack("<I", data[:4])[0]
+    mc_vec_field = root_pos + _table_slot_rel(data, root_pos, 0)
+    mc_vec = mc_vec_field + struct.unpack(
+        "<I", data[mc_vec_field:mc_vec_field + 4])[0]
+    payload[mc_vec:mc_vec + 4] = struct.pack("<I", 2_000_000)
     with pytest.raises(CatalogError, match="上限"):
         parse_movieclips(bytes(payload), b"\x00" * 64)
 
@@ -252,6 +290,24 @@ def test_data_storage_info_missing_buffer_returns_empty_bytes():
     assert info.movieclips_frame_elements == b""
 
 
+def test_data_storage_info_frame_elements_over_64mb_raises():
+    """帧元素池声明长度超 64MB → CatalogError（只查声明长度，不分配缓冲）。"""
+    b = FbBuilder()
+    sv = b.add_vector([])
+    fe = b.add_raw_vector(33_600_000, b"")  # 声明 67.2MB > 64MB 上限
+    root = b.add_table({0: ("uoffset", sv), 4: ("uoffset", fe)})
+    payload = b.finish(root)
+    with pytest.raises(CatalogError, match="超过上限"):
+        parse_data_storage_info(FlatBuffer(payload), payload)
+
+
+def test_data_storage_both_layouts_fail_raises_with_both_offsets():
+    """两种布局均失败 → CatalogError 消息含偏移0 与偏移4 两个上下文。"""
+    payload = bytes(range(32))  # 任意垃圾：偏移0/偏移4 的 root uoffset 均越界
+    with pytest.raises(CatalogError, match="偏移0.*偏移4"):
+        parse_data_storage_info(FlatBuffer(payload), payload)
+
+
 # ---------------------------------------------------------------------------
 # ScFile.movieclip_for_export + 惰性缓存
 # ---------------------------------------------------------------------------
@@ -305,6 +361,16 @@ def test_movieclips_parsed_lazily_and_cached():
     assert "movieclips" in sc._cache
     mc2 = sc.movieclip_for_export("icon_a")
     assert mc1 is mc2  # 同一缓存对象（惰性只解析一次）
+
+
+def test_movieclip_for_export_duplicate_id_raises():
+    """两个 movieclip 同 id → CatalogError（fail loud，防静默 last-wins）。"""
+    sc = _build_scfile(
+        build_movieclips([{"id": 7, "frames": [(0, 0)]},
+                          {"id": 7, "frames": [(0, 0)]}]),
+        b"", export_names={"icon_a": 7})
+    with pytest.raises(CatalogError, match="重复"):
+        sc.movieclip_for_export("icon_a")
 
 
 # ---------------------------------------------------------------------------

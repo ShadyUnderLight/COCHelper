@@ -45,8 +45,9 @@ SC_DESCRIPTOR_OFFSET = 12  # 头部固定字节数
 _MAX_VECTOR_ENTRIES = 1_000_000
 
 # DataStorage movieclips_frame_elements [ushort] 原始缓冲上限（64MB）。
-# 与 _MAX_VECTOR_ENTRIES 区分：这是字节切片（提取 O(1)，无逐元素放大），
-# 真实数据 ui.sc 4.9MB / buildings.sc 15.5MB，64MB 留足余量防伪造长度。
+# 与 _MAX_VECTOR_ENTRIES 区分：这是字节切片（无逐元素放大——切片本身
+# 只是 O(n) memcpy，量级远小于逐元素物化），真实数据 ui.sc 4.9MB /
+# buildings.sc 15.5MB，64MB 留足余量防伪造长度。
 _MAX_FRAME_ELEMENTS_BYTES = 64 * 1024 * 1024
 
 # Header table 槽位（Header.fbs 字段顺序）
@@ -90,7 +91,7 @@ class DataStorageInfo:
     movieclips_frame_elements: bytes = b""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MovieClipFrame:
     """单帧元数据（MovieClips chunk `MovieClipFrame` struct，8 字节）。
 
@@ -103,7 +104,7 @@ class MovieClipFrame:
     label_ref_id: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MovieClipFrameElement:
     """帧元素（6 字节 3×u16，实证对拍 ui.sc/buildings.sc + C++ 参考）。
 
@@ -343,7 +344,7 @@ def _parse_data_storage_info(fb: FlatBuffer) -> DataStorageInfo:
     """单布局解析 DataStorage（strings slot 0 + 帧元素池 slot 4）。
 
     畸形 → ValueError，由调用方包装。帧元素池是 [ushort] 原始字节切片
-    （提取 O(1)），长度上限 _MAX_FRAME_ELEMENTS_BYTES 防伪造长度。
+    （无逐元素放大），长度上限 _MAX_FRAME_ELEMENTS_BYTES 防伪造长度。
     """
     root = fb.root()
     strings_off = fb.table_field(root, 0)
@@ -553,8 +554,15 @@ class ScFile:
         if object_id is None:
             return None
         if "movieclip_by_id" not in self._cache:
-            self._cache["movieclip_by_id"] = {
-                mc.id: mc for mc in self.movieclips().values()}
+            by_id: dict[int, MovieClip] = {}
+            for index, mc in self.movieclips().items():
+                if mc.id in by_id:
+                    raise CatalogError(
+                        f"SC2 MovieClips 数据损坏: movieclip id {mc.id} 重复"
+                        f"（索引 {index} 与既有条目冲突；真实数据无重复，"
+                        "fail loud 防静默 last-wins）")
+                by_id[mc.id] = mc
+            self._cache["movieclip_by_id"] = by_id
         return self._cache["movieclip_by_id"].get(object_id)
 
 
@@ -758,13 +766,14 @@ def parse_movieclips(payload: bytes, frame_elements: bytes = b"") -> dict[int, M
                     raise CatalogError(
                         f"SC2 MovieClip[{i}] 帧元素越界: 起点 {start} 需要 "
                         f"{need} 字节，缓冲共 {len(frame_elements)} 字节")
-                for e in range(total):
-                    pos = start + e * 6
-                    inst, midx, cidx = struct.unpack(
-                        "<HHH", frame_elements[pos:pos + 6])
-                    elements.append(MovieClipFrameElement(
-                        instance_index=inst, matrix_index=midx,
-                        color_transform_index=cidx))
+                # 单次 iter_unpack 批量消费（实测提速数倍于逐元素 unpack 切片；
+                # need=total*6 恒为 6 字节倍数，切片无尾部残块）
+                elements = [
+                    MovieClipFrameElement(instance_index=inst,
+                                          matrix_index=midx,
+                                          color_transform_index=cidx)
+                    for inst, midx, cidx in struct.iter_unpack(
+                        "<HHH", frame_elements[start:start + need])]
             out[i] = MovieClip(id=mc_id, export_name_ref_id=export_ref,
                                frames=frames, frame_elements_offset=feo,
                                matrix_bank_index=matrix_bank,

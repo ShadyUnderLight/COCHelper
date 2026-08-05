@@ -255,21 +255,27 @@ struct WarLogCardView: View {
             Text(member.name ?? "未知成员")
                 .font(.caption)
                 .lineLimit(1)
-            if let th = member.townHallLevel {
+            if let th = member.townhallLevel {
                 Text("TH\(th)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Text([member.attacks.map { "\($0)攻" },
-                  member.stars.map { "⭐\($0)" },
-                  member.destructionPercentage.map { "\(Self.percent($0))%" }]
-                .compactMap { $0 }
-                .joined(separator: " · "))
+            Text(attackSummary(member))
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 1)
+    }
+
+    /// 成员攻击表现摘要：N攻 · ⭐总星 · 摧毁总%（attacks 数组聚合；未攻击显示提示）。
+    private func attackSummary(_ member: ClanWarMember) -> String {
+        guard let attacks = member.attacks, !attacks.isEmpty else {
+            return member.attacks != nil ? "未攻击" : "—"
+        }
+        let stars = attacks.reduce(0) { $0 + ($1.stars ?? 0) }
+        let destruction = attacks.reduce(0.0) { $0 + ($1.destructionPercentage ?? 0) }
+        return "\(attacks.count)攻 · ⭐\(stars) · 摧毁 \(Self.percent(destruction))%"
     }
 
     private static func percent(_ value: Double) -> String {

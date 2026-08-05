@@ -250,14 +250,7 @@ struct CapitalRaidCardView: View {
             if let log = season.defenseLog, !log.isEmpty {
                 Text("防守日志（\(log.count) 条）").font(.caption.weight(.semibold)).padding(.top, 4)
                 ForEach(Array(log.prefix(30).enumerated()), id: \.offset) { _, entry in
-                    HStack {
-                        Text("vs " + (entry.defender?.name ?? "未知区域")).font(.caption).lineLimit(1)
-                        Spacer()
-                        Text([entry.defender?.destructionPercent.map { "摧毁 \(Self.percent($0))%" },
-                              entry.attackCount.map { "\($0) 攻" }]
-                            .compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption2.monospaced()).foregroundStyle(.secondary)
-                    }
+                    defenseLogRow(entry)
                 }
                 if log.count > 30 {
                     Text("还有 \(log.count - 30) 条…").font(.caption2).foregroundStyle(.secondary)
@@ -268,15 +261,37 @@ struct CapitalRaidCardView: View {
 
     private func raidLogRow(_ entry: CapitalRaidAttackLogEntry) -> some View {
         HStack {
-            Text("vs " + (entry.defender?.name ?? "未知区域")).font(.caption).lineLimit(1)
+            Text("vs " + (entry.defender?.name ?? "未知部落"))
+                .font(.caption).lineLimit(1)
             Spacer()
-            Text([entry.defender?.destructionPercent.map { "摧毁 \(Self.percent($0))%" },
-                  entry.attackCount.map { "\($0) 攻" },
+            Text([entry.attackCount.map { "\($0) 攻" },
                   entry.districtsDestroyed.map { "\($0) 区域" },
-                  entry.looted.map { Self.formatted($0) }]
+                  districtSummary(entry.districts)]
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(.caption2.monospaced()).foregroundStyle(.secondary)
         }
+    }
+
+    private func defenseLogRow(_ entry: CapitalRaidDefenseLogEntry) -> some View {
+        HStack {
+            Text("vs " + (entry.attacker?.name ?? "未知部落"))
+                .font(.caption).lineLimit(1)
+            Spacer()
+            Text([entry.attackCount.map { "\($0) 攻" },
+                  entry.districtsDestroyed.map { "\($0) 区域" },
+                  districtSummary(entry.districts)]
+                .compactMap { $0 }.joined(separator: " · "))
+                .font(.caption2.monospaced()).foregroundStyle(.secondary)
+        }
+    }
+
+    /// 区域概要：摧毁 X% · 掠夺 Y（districts 聚合；官方无顶层 looted）。
+    private func districtSummary(_ districts: [CapitalRaidDistrict]?) -> String? {
+        guard let districts, !districts.isEmpty else { return nil }
+        let destruction = districts.reduce(0.0) { $0 + ($1.destructionPercent ?? 0) }
+        let loot = districts.reduce(0) { $0 + ($1.totalLooted ?? 0) }
+        let parts = ["摧毁 \(Self.percent(destruction))%", Self.formatted(loot)]
+        return parts.joined(separator: " · ")
     }
 
     private static func percent(_ value: Double) -> String {

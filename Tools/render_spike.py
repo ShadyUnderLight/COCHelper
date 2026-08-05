@@ -87,12 +87,20 @@ _PIXEL_FORMATS: dict[int, tuple[str, int, int]] = {
 # ---------------------------------------------------------------------------
 
 
+def _sanitize_filename(name: str) -> str:
+    """导出名 → 安全文件名：替换路径分隔符，防 `../` 写出输出目录。"""
+    return name.replace("/", "_").replace("\\", "_")
+
+
 def encode_png(width: int, height: int, pixels: bytes, color_type: int) -> bytes:
     """RGBA/灰度像素 → PNG 文件字节（filter None，每行 1 字节 filter 前缀）。
 
     color_type: 6=RGBA8(4B/px)、4=灰度+alpha(2B/px)、0=灰度(1B/px)。
-    数据长度与 w*h*每像素字节数不符 → ValueError。
+    宽/高必须 > 0（PNG 规范 IHDR 约束）；数据长度与 w*h*每像素字节数
+    不符 → ValueError。
     """
+    if width <= 0 or height <= 0:
+        raise ValueError(f"PNG 尺寸必须 > 0: {width}x{height}")
     bpp = {6: 4, 4: 2, 0: 1}[color_type]
     expected = width * height * bpp
     if len(pixels) != expected:
@@ -139,6 +147,10 @@ def _movieclip_index(sc: ScFile, object_id: int) -> int | None:
             tbl = fb.table(fb.vector_elem(vec, i, 4))
             off = fb.table_field(tbl, 0)
             if not off:
+                continue
+            # vtable 伪造防御：table_size/偏移越界时 table_field 返回
+            # 越界偏移，短切片会抛裸 struct.error（非 ValueError）——跳过
+            if off < 0 or off + 2 > len(payload):
                 continue
             if struct.unpack("<H", payload[off:off + 2])[0] == object_id:
                 return i
@@ -233,77 +245,88 @@ def resolve_sample(sample: dict, sc: ScFile, output_dir: Path,
                 "png": None}
     budget[container] = used + 1
 
+    # 纹理解析（含惰性 data 访问）整体包 try：畸形数据 → 单样本
+    # blocked(catalog_error)，不中止整份报告
     try:
         td = sc.texture_data(tex_indexes[0])
+        evidence["texture"] = _evidence_from_texture(td)
+
+        if td.external_texture:
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked(
+                        "needs_sctx_decode",
+                        {"path": td.external_texture,
+                         "detail": "纹理存于外部 .sctx（SupercellTexture 压缩，"
+                                   "参考 C++ SupercellCompressionFormat="
+                                   "ASTC_RGBA8_4x4）"}),
+                    "png": None}
+        if td.texture_format != 0:
+            # 对拍：ui.sc fmt=8（内嵌 KTX）、buildings.sc fmt=4（.sctx）；
+            # 参考 C++ 仅 NONE=0 走原始缓冲，其余为压缩格式
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked(
+                        "compressed_texture",
+                        {"format": td.texture_format,
+                         "ktx": _ktx_summary(td.data) if td.data else None,
+                         "detail": "texture_format != 0(NONE)：非原始像素"
+                                   "（内嵌 KTX/ASTC 或压缩纹理），需压缩解码"}),
+                    "png": None}
+        pf = _PIXEL_FORMATS.get(td.pixel_type)
+        if pf is None:
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked("unsupported_pixel_type",
+                                        {"pixelType": td.pixel_type}),
+                    "png": None}
+        name, bpp, color_type = pf
+        if td.width <= 0 or td.height <= 0:
+            # 0×0 违反 PNG 规范（IHDR 宽高必须 > 0），不能写假成功
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked(
+                        "invalid_dimensions",
+                        {"width": td.width, "height": td.height}),
+                    "png": None}
+        data = td.data
+        if data is None:
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked("no_texture_data",
+                                        {"detail": "texture_format=0 但无内嵌数据"}),
+                    "png": None}
+        expected = td.width * td.height * bpp
+        if len(data) != expected:
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked(
+                        "data_length_mismatch",
+                        {"expected": expected, "actual": len(data),
+                         "pixelFormat": name}),
+                    "png": None}
+        if name == "bgra8":  # BGRA → RGBA 字节序转换
+            pixels = bytearray(data)
+            for i in range(0, len(pixels), 4):
+                pixels[i], pixels[i + 2] = pixels[i + 2], pixels[i]
+            pixels = bytes(pixels)
+        else:
+            pixels = data
+
+        png_name = f"{_sanitize_filename(export)}.png"
+        png_path = output_dir / png_name
+        png_bytes = encode_png(td.width, td.height, pixels, color_type)
+        png_path.write_bytes(png_bytes)
+        return {"asset_key": asset_key, "status": "success",
+                "evidence": evidence, "blocker": None,
+                "png": {"path": png_name, "size": len(png_bytes),
+                        "sha256": hashlib.sha256(png_bytes).hexdigest()}}
     except CatalogError as e:
+        # 惰性 data 访问（loader）畸形数据 → 单样本 blocked，不中止报告
         return {"asset_key": asset_key, "status": "blocked",
                 "evidence": evidence,
                 "blocker": _blocked("catalog_error", {"message": str(e)}),
                 "png": None}
-    evidence["texture"] = _evidence_from_texture(td)
-
-    if td.external_texture:
-        return {"asset_key": asset_key, "status": "blocked",
-                "evidence": evidence,
-                "blocker": _blocked(
-                    "needs_sctx_decode",
-                    {"path": td.external_texture,
-                     "detail": "纹理存于外部 .sctx（SupercellTexture 压缩，"
-                               "参考 C++ SupercellCompressionFormat="
-                               "ASTC_RGBA8_4x4）"}),
-                "png": None}
-    if td.texture_format != 0:
-        # 对拍：ui.sc fmt=8（内嵌 KTX）、buildings.sc fmt=4（.sctx）；
-        # 参考 C++ 仅 NONE=0 走原始缓冲，其余为压缩格式
-        return {"asset_key": asset_key, "status": "blocked",
-                "evidence": evidence,
-                "blocker": _blocked(
-                    "compressed_texture",
-                    {"format": td.texture_format,
-                     "ktx": _ktx_summary(td.data) if td.data else None,
-                     "detail": "texture_format != 0(NONE)：非原始像素"
-                               "（内嵌 KTX/ASTC 或压缩纹理），需压缩解码"}),
-                "png": None}
-    pf = _PIXEL_FORMATS.get(td.pixel_type)
-    if pf is None:
-        return {"asset_key": asset_key, "status": "blocked",
-                "evidence": evidence,
-                "blocker": _blocked("unsupported_pixel_type",
-                                    {"pixelType": td.pixel_type}),
-                "png": None}
-    name, bpp, color_type = pf
-    data = td.data
-    if data is None:
-        return {"asset_key": asset_key, "status": "blocked",
-                "evidence": evidence,
-                "blocker": _blocked("no_texture_data",
-                                    {"detail": "texture_format=0 但无内嵌数据"}),
-                "png": None}
-    expected = td.width * td.height * bpp
-    if len(data) != expected:
-        return {"asset_key": asset_key, "status": "blocked",
-                "evidence": evidence,
-                "blocker": _blocked(
-                    "data_length_mismatch",
-                    {"expected": expected, "actual": len(data),
-                     "pixelFormat": name}),
-                "png": None}
-    if name == "bgra8":  # BGRA → RGBA 字节序转换
-        pixels = bytearray(data)
-        for i in range(0, len(pixels), 4):
-            pixels[i], pixels[i + 2] = pixels[i + 2], pixels[i]
-        pixels = bytes(pixels)
-    else:
-        pixels = data
-
-    png_name = f"{export}.png"
-    png_path = output_dir / png_name
-    png_bytes = encode_png(td.width, td.height, pixels, color_type)
-    png_path.write_bytes(png_bytes)
-    return {"asset_key": asset_key, "status": "success",
-            "evidence": evidence, "blocker": None,
-            "png": {"path": png_name, "size": len(png_bytes),
-                    "sha256": hashlib.sha256(png_bytes).hexdigest()}}
 
 
 def render_spike(apk: Path, output_dir: Path, limit: int | None) -> dict:

@@ -155,6 +155,9 @@ def decode_png(data: bytes) -> tuple[int, int, int, bytes]:
         length = struct.unpack(">I", data[pos:pos + 4])[0]
         ctype = data[pos + 4:pos + 8]
         cdata = data[pos + 8:pos + 8 + length]
+        stored_crc = struct.unpack(
+            ">I", data[pos + 8 + length:pos + 12 + length])[0]
+        assert stored_crc == (zlib.crc32(ctype + cdata) & 0xFFFFFFFF)
         if ctype == b"IHDR":
             w, h, _, ct, *_ = struct.unpack(">IIBBBBB", cdata)
         elif ctype == b"IDAT":
@@ -295,6 +298,27 @@ def test_encode_png_gray_alpha():
 def test_encode_png_data_length_mismatch_raises():
     with pytest.raises(ValueError, match="长度"):
         encode_png(2, 2, b"\x00" * 10, 6)  # 期望 16 字节
+
+
+def test_encode_png_zero_dimensions_raises():
+    """0×0 违反 PNG 规范（IHDR 宽高必须 > 0）。"""
+    with pytest.raises(ValueError, match="尺寸"):
+        encode_png(0, 0, b"", 6)
+
+
+def test_encode_png_chunk_crc_valid():
+    """编码器产出每个 chunk 的 CRC32 必须正确（PNG 规范一致性）。"""
+    png = encode_png(2, 2, RGBA_2X2, 6)
+    pos = 8
+    while pos < len(png):
+        length = struct.unpack(">I", png[pos:pos + 4])[0]
+        ctype = png[pos + 4:pos + 8]
+        cdata = png[pos + 8:pos + 8 + length]
+        stored = struct.unpack(
+            ">I", png[pos + 8 + length:pos + 12 + length])[0]
+        assert stored == (zlib.crc32(ctype + cdata) & 0xFFFFFFFF)
+        pos += 12 + length
+    assert pos == len(png)
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +485,101 @@ def test_texture_limit_caps_resolutions(tmp_path: Path):
     v = resolve_sample(_sample(), sc, tmp_path, {"sc/ui.sc": 2}, 2)
     assert v["status"] == "blocked"
     assert v["blocker"]["reason"] == "texture_limit_exceeded"
+
+
+# ---------------------------------------------------------------------------
+# review 修复回归：越界防御（Blocker 1 / NB-2 / NB-3）+ 文件名消毒
+# ---------------------------------------------------------------------------
+
+
+def _forge_first_table_vtable(payload: bytes) -> bytes:
+    """伪造首个 table 的 vtable：table_size=0xFFFF + slot0 偏移 0x8000。
+
+    table_field 对 field_rel <= table_size 放行 → 返回越界偏移 → 旧代码
+    在 payload[off:off+2] 短切片抛裸 struct.error（非 ValueError，逃逸）。
+    """
+    data = bytearray(payload)
+    root = struct.unpack("<I", data[:4])[0]
+    soff = struct.unpack("<i", data[root:root + 4])[0]
+    vt = root - soff
+    vec_rel = struct.unpack("<H", data[vt + 4:vt + 6])[0]
+    vec_field = root + vec_rel
+    vec_pos = vec_field + struct.unpack(
+        "<I", data[vec_field:vec_field + 4])[0]
+    elem = vec_pos + 4 + struct.unpack(
+        "<I", data[vec_pos + 4:vec_pos + 8])[0]
+    soff2 = struct.unpack("<i", data[elem:elem + 4])[0]
+    vt2 = elem - soff2
+    data[vt2 + 2:vt2 + 4] = b"\xff\xff"  # table_size → 0xFFFF
+    data[vt2 + 4:vt2 + 6] = b"\x00\x80"  # slot0 偏移 → 0x8000
+    return bytes(data)
+
+
+def test_movieclip_forged_vtable_does_not_crash(tmp_path: Path):
+    """Blocker 1：伪造 MovieClips vtable → 越界短切片不抛 struct.error。
+
+    旧代码崩溃（整个 run 中止）；新代码跳过伪造条目继续扫描。
+    """
+    forged = _forge_first_table_vtable(build_movieclips_payload([5, 99]))
+    sc = make_sc({"Shapes": build_shapes_payload([(7, [0])]),
+                  "MovieClips": forged}, {"icon_x": 99})
+    v = resolve_sample(_sample("icon_x"), sc, tmp_path, {}, None)
+    assert v["status"] == "blocked"
+    assert v["blocker"]["reason"] == "no_shape_command"
+    assert v["evidence"]["movieClipFound"] is True
+    assert v["evidence"]["movieClipIndex"] == 1  # 伪造条目被跳过，命中第二个
+
+
+def test_forged_texture_data_length_blocks_not_crash(tmp_path: Path):
+    """NB-2：data 惰性 loader 抛 CatalogError → 单样本 blocked，不中止报告。"""
+    b = FbBuilder()
+    vec = b.add_raw_vector(0xFFFF, b"\x00" * 16)  # 长度字段伪造 0xFFFF
+    td = b.add_table({0: ("u8", 0), 1: ("u8", 0), 2: ("u16", 2), 3: ("u16", 2),
+                      4: ("uoffset", vec)})
+    ts = b.add_table({1: ("uoffset", td)})
+    payload = b.finish(b.add_table({0: ("uoffset", b.add_vector([ts]))}))
+    sc = make_sc({
+        "Shapes": build_shapes_payload([(5, [0])]),
+        "Textures": payload,
+    }, {"icon_x": 5})
+    v = resolve_sample(_sample(), sc, tmp_path, {}, None)
+    assert v["status"] == "blocked"
+    assert v["blocker"]["reason"] == "catalog_error"
+    assert "越界" in v["blocker"]["details"]["message"]
+    assert v["png"] is None
+
+
+def test_zero_dimensions_blocked_not_success(tmp_path: Path):
+    """NB-3：0×0 尺寸不产出违反 PNG 规范的假成功。"""
+    sc = make_sc({
+        "Shapes": build_shapes_payload([(5, [0])]),
+        "Textures": build_textures_payload([
+            {"highres": {"texture_format": 0, "pixel_type": 0, "width": 0,
+                         "height": 0, "data": b""}}]),
+    }, {"icon_x": 5})
+    v = resolve_sample(_sample(), sc, tmp_path, {}, None)
+    assert v["status"] == "blocked"
+    assert v["blocker"]["reason"] == "invalid_dimensions"
+    assert v["blocker"]["details"] == {"width": 0, "height": 0}
+    assert v["png"] is None
+    assert list(tmp_path.iterdir()) == []  # 无 PNG 落盘
+
+
+def test_png_filename_sanitized(tmp_path: Path):
+    """nit：export 名含路径分隔符 → 文件名消毒，不写出输出目录。"""
+    sc = make_sc({
+        "Shapes": build_shapes_payload([(5, [0])]),
+        "Textures": build_textures_payload([
+            {"highres": {"texture_format": 0, "pixel_type": 0, "width": 2,
+                         "height": 2, "data": RGBA_2X2}}]),
+    }, {"../evil/icon": 5})
+    v = resolve_sample({"container": "sc/ui.sc", "exportName": "../evil/icon"},
+                       sc, tmp_path, {}, None)
+    assert v["status"] == "success"
+    path = v["png"]["path"]
+    assert "/" not in path and "\\" not in path
+    assert (tmp_path / path).is_file()
+    assert not (tmp_path / "evil").exists()
 
 
 # ---------------------------------------------------------------------------

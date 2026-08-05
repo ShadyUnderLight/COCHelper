@@ -92,7 +92,7 @@ def _ubyte_vector_bytes(fb: FlatBuffer, buf: bytes, vec_off: int) -> bytes:
     length = fb.vector_len(vec_off)
     if length == 0:
         return b""
-    first = fb.vector_elem(vec_off, 0, 1, alignment=1)
+    first = fb.vector_elem(vec_off, 0, 1)
     if first + length > len(buf):
         raise CatalogError(
             f"SC2 [ubyte] vector 越界: 起点 {first} 长度 {length}，"
@@ -360,7 +360,7 @@ def parse_export_names(payload: bytes, strings: list[str]) -> list[tuple[str, in
                 f"{ids_count} vs {refs_count}")
         out: list[tuple[str, int]] = []
         for i in range(ids_count):
-            ids_pos = fb.vector_elem(ids_off, i, 2, alignment=2)
+            ids_pos = fb.vector_elem(ids_off, i, 2)
             refs_pos = fb.vector_elem(refs_off, i, 4)
             obj_id = struct.unpack("<H", payload[ids_pos:ids_pos + 2])[0]
             ref_id = struct.unpack("<I", payload[refs_pos:refs_pos + 4])[0]
@@ -524,7 +524,7 @@ def _parse_texture_data(fb: FlatBuffer, payload: bytes, td_off: int,
     loader: Callable[[], bytes] | None = None
     if data_field:
         length = fb.vector_len(data_field)
-        first = fb.vector_elem(data_field, 0, 1, alignment=1) if length else 0
+        first = fb.vector_elem(data_field, 0, 1) if length else 0
 
         def _load() -> bytes:
             if length == 0:

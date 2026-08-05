@@ -115,12 +115,13 @@ class FlatBuffer:
         pos = self._uoffset_target(off, f"vector 字段@{off}")
         return self._u32(pos, f"vector@{pos} 长度")
 
-    def vector_elem(self, vec_off: int, index: int, elem_size: int,
-                    alignment: int = 4) -> int:
+    def vector_elem(self, vec_off: int, index: int, elem_size: int) -> int:
         """vector 元素绝对偏移。vec_off 为 vector 字段绝对偏移（uoffset 起点）。
 
-        elem_size 为元素字节大小（uoffset 元素为 4）；alignment 保留供未来
-        非 4 字节元素使用（当前布局元素紧邻 u32 len 之后排列）。
+        elem_size 为元素字节大小（uoffset 元素为 4；[ushort] 为 2；struct
+        元素为 struct 大小，如 ShapeDrawBitmapCommand 16）。元素紧邻 u32
+        len 之后按 elem_size 步长连续排列（标量/struct vector 元素对齐与
+        步长一致，顺序读无需额外对齐语义）。
         """
         if elem_size <= 0:
             raise ValueError(f"elem_size 必须 > 0，实际 {elem_size}")

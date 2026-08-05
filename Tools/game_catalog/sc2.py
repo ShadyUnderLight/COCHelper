@@ -50,6 +50,11 @@ _MAX_VECTOR_ENTRIES = 1_000_000
 # buildings.sc 15.5MB，64MB 留足余量防伪造长度。
 _MAX_FRAME_ELEMENTS_BYTES = 64 * 1024 * 1024
 
+# DataStorage shapes_bitmap_poins [ubyte] 顶点缓冲上限（64MB，同帧元素池
+# 模式）。真实数据 ui.sc 559572B / buildings.sc 1930932B（均 12 字节/顶点
+# 精确对齐），64MB 留足余量防伪造长度。
+_MAX_POINTS_BYTES = 64 * 1024 * 1024
+
 # Header table 槽位（Header.fbs 字段顺序）
 _SLOT_METADATA = 10
 
@@ -80,15 +85,70 @@ class AssetMetaEntry:
 
 @dataclass(frozen=True)
 class DataStorageInfo:
-    """DataStorage 全量信息（strings + MovieClip 帧元素池缓冲）。
+    """DataStorage 全量信息（strings + MovieClip 帧元素池 + shape 顶点缓冲）。
 
     movieclips_frame_elements 是 `[ushort]` 原始字节（u16 LE 连续排列），
     即 MovieClipFrameElement 池：MovieClip.frame_elements_offset 是其中的
     **ushort 索引**（实证 + C++ 参考 `elements_vector->Get(offset++)`）。
+
+    shapes_bitmap_poins 是 `[ubyte]` 原始字节（ShapeDrawBitmapCommandVertex
+    12 字节/个连续排列）：命令的 points_offset 是**顶点索引**，顶点 i 字节
+    偏移 = (points_offset + i) * 12。
     """
 
     strings: list[str]
     movieclips_frame_elements: bytes = b""
+    shapes_bitmap_poins: bytes = b""
+
+
+@dataclass(frozen=True, slots=True)
+class ShapeCommand:
+    """单个 ShapeDrawBitmapCommand（16 字节 struct 连续，实证 ui.sc/buildings.sc）。
+
+    - texture_index: Textures chunk 纹理集索引（slot 4）
+    - points_count: 命令引用的顶点个数
+    - points_offset: shapes_bitmap_poins 缓冲中的**顶点索引**（非字节偏移）
+
+    原 schema 的 unk1（u32@0）两文件 34520 条命令实测恒 0，不保留。
+    """
+
+    texture_index: int
+    points_count: int
+    points_offset: int
+
+    def vertices(self, points: bytes) -> list[Vertex]:
+        """命令引用的顶点列表（points = DataStorage shapes_bitmap_poins）。"""
+        return read_vertices(points, self.points_offset, self.points_count)
+
+
+@dataclass(frozen=True, slots=True)
+class Vertex:
+    """ShapeDrawBitmapCommandVertex（12 字节，实证 + Shape.cpp 参考一致）。
+
+    布局：`x: float LE @0`、`y: float LE @4`、`u: uint16 LE @8`、
+    `v: uint16 LE @10`（对拍 ui.sc/buildings.sc 真实字节：正确切片
+    DataStorage 后两种布局中只有此顺序产生非退化三角形 strip 且 UV 落在
+    合理范围；任务初期「u/v 在前」结论是探测脚本 4 字节切片错位的假象，
+    已修正）。
+
+    u/v 为归一化 UV 坐标（0..1）：raw u16 / 0xFFFF（0xFFFF → 1.0 精确）。
+    """
+
+    x: float
+    y: float
+    u: float
+    v: float
+
+
+@dataclass(frozen=True)
+class Shape:
+    """Shape（Sprite）：id + 绘制命令列表。
+
+    ShapeDrawBitmapCommand 是 16 字节 struct 连续排布的 vector 元素。
+    """
+
+    id: int
+    commands: list[ShapeCommand]
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,10 +182,13 @@ class MovieClipFrameElement:
 
 @dataclass(frozen=True)
 class MovieClip:
-    """MovieClip（时间线/动画对象）：帧 + 帧元素。
+    """MovieClip（时间线/动画对象）：帧 + 帧元素 + children。
 
     frame_elements_offset 为 movieclips_frame_elements 缓冲中的 ushort 索引
     （0xFFFFFFFF = 无元素）；frame_elements 已按帧顺序全部物化。
+    children_ids 是子对象 id 数组（slot 5 [ushort]）：帧元素的 instance_index
+    是 children 数组索引，children_ids[instance_index] 才是 shape / movieclip
+    / textfield 的全局 id（实证 ui.sc：7753=textfield、8025=shape）。
     """
 
     id: int
@@ -134,6 +197,7 @@ class MovieClip:
     frame_elements_offset: int
     matrix_bank_index: int
     frame_elements: list[MovieClipFrameElement]
+    children_ids: list[int] = field(default_factory=list)
 
 
 def _descriptor(data: bytes, descriptor_size: int) -> bytes:
@@ -341,10 +405,10 @@ def decode_body(compressed: bytes, compressed_size: int | None) -> bytes:
 
 
 def _parse_data_storage_info(fb: FlatBuffer) -> DataStorageInfo:
-    """单布局解析 DataStorage（strings slot 0 + 帧元素池 slot 4）。
+    """单布局解析 DataStorage（strings slot 0 + 帧元素池 slot 4 + 顶点 slot 5）。
 
-    畸形 → ValueError，由调用方包装。帧元素池是 [ushort] 原始字节切片
-    （无逐元素放大），长度上限 _MAX_FRAME_ELEMENTS_BYTES 防伪造长度。
+    畸形 → ValueError，由调用方包装。帧元素池是 [ushort] 原始字节切片、顶点
+    缓冲是 [ubyte] 原始字节切片（均无逐元素放大），长度上限 64MB 防伪造长度。
     """
     root = fb.root()
     strings_off = fb.table_field(root, 0)
@@ -368,8 +432,20 @@ def _parse_data_storage_info(fb: FlatBuffer) -> DataStorageInfo:
             # 校验最后一个元素在界内 → 整段连续切片必然合法
             first = fb.vector_elem(fe_off, n - 1, 2) - (n - 1) * 2
             fe_bytes = fb.data[first:first + n * 2]
+    points = b""
+    p_off = fb.table_field(root, 5)
+    if p_off:
+        n = fb.vector_len(p_off)
+        if n > _MAX_POINTS_BYTES:
+            raise ValueError(
+                f"SC2 DataStorage shapes_bitmap_poins 长度 {n} 字节超过上限 "
+                f"{_MAX_POINTS_BYTES}")
+        if n:
+            first = fb.vector_elem(p_off, n - 1, 1) - (n - 1)
+            points = fb.data[first:first + n]
     return DataStorageInfo(strings=strings,
-                           movieclips_frame_elements=fe_bytes)
+                           movieclips_frame_elements=fe_bytes,
+                           shapes_bitmap_poins=points)
 
 
 def parse_data_storage_info(fb: FlatBuffer, body: bytes) -> DataStorageInfo:
@@ -510,16 +586,25 @@ class ScFile:
     export_names: dict[str, int]  # name → object_id
     chunks: dict[str, bytes]
     frame_elements: bytes = b""  # DataStorage 帧元素池 [ushort] 原始字节
+    points: bytes = b""  # DataStorage shapes_bitmap_poins [ubyte] 顶点缓冲
     _cache: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def shape(self, object_id: int) -> Shape | None:
+        """object_id → Shape；非 Shape id → None（惰性解析并缓存）。"""
+        if "shapes" not in self._cache:
+            self._cache["shapes"] = parse_shapes(self.chunks.get("Shapes", b""))
+        return self._cache["shapes"].get(object_id)
 
     def shape_textures(self, object_id: int) -> list[int] | None:
         """object_id → Shape 命令的 texture_index 列表；非 Shape id → None。
 
-        Shapes chunk 首次调用时惰性解析并缓存（241KB 量级，成本低）。
+        从 Shape.commands 提取（返回形态与 Task 2 前兼容：list[int] | None，
+        render_spike.py 依赖 commandCount/textureIndexes 证据）。
         """
-        if "shapes" not in self._cache:
-            self._cache["shapes"] = parse_shapes(self.chunks.get("Shapes", b""))
-        return self._cache["shapes"].get(object_id)
+        shp = self.shape(object_id)
+        if shp is None:
+            return None
+        return [c.texture_index for c in shp.commands]
 
     def texture_data(self, index: int) -> TextureData:
         """纹理索引 → TextureData（惰性：仅读取对应 TextureSet，不整块解引用）。
@@ -623,8 +708,8 @@ def _u8_scalar(fb: FlatBuffer, buf: bytes, table_off: int, slot: int,
     return buf[off]
 
 
-def parse_shapes(payload: bytes) -> dict[int, list[int]]:
-    """Shapes chunk：{shape_id: [texture_index, ...]}。
+def parse_shapes(payload: bytes) -> dict[int, Shape]:
+    """Shapes chunk：{shape_id: Shape}。
 
     `Shapes{shapes: [Shape]}`（slot 0）；`Shape{id: ushort (slot 0),
     commands: [ShapeDrawBitmapCommand] (slot 1)}`；命令是 **struct**（16 字节：
@@ -632,7 +717,8 @@ def parse_shapes(payload: bytes) -> dict[int, list[int]]:
     连续排布（无 uoffset），元素 i 绝对偏移 = vector 数据区 + i*16。
 
     对拍真实 ui.sc：shapes 4053 个，id 稀疏（0..23358，非索引对齐），
-    按 id 建 dict 正确；shape[0] 的 id 字段缺省（→ 0）。
+    按 id 建 dict 正确；shape[0] 的 id 字段缺省（→ 0）。unk1 两文件 34520
+    条命令实测恒 0 → 不解析进 ShapeCommand。
     畸形数据 → CatalogError。
     """
     if not payload:
@@ -648,29 +734,58 @@ def parse_shapes(payload: bytes) -> dict[int, list[int]]:
             raise CatalogError(
                 f"SC2 Shapes 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
                 "（防 512MB body 解压后的 O(n) 放大）")
-        out: dict[int, list[int]] = {}
+        out: dict[int, Shape] = {}
         for i in range(count):
             shape_tbl = fb.table(fb.vector_elem(shapes_vec, i, 4))
             shape_id = _u16_scalar(fb, payload, shape_tbl, 0, "Shape.id")
             commands_vec = fb.table_field(shape_tbl, 1)
-            if commands_vec == 0:
-                out[shape_id] = []
-                continue
-            ncmd = fb.vector_len(commands_vec)
-            if ncmd > _MAX_VECTOR_ENTRIES:
-                raise CatalogError(
-                    f"SC2 Shape[{i}] 命令数 {ncmd} 超过上限 {_MAX_VECTOR_ENTRIES}"
-                    "（防 512MB body 解压后的 O(n) 放大）")
-            tex = []
-            for c in range(ncmd):
-                elem = fb.vector_elem(commands_vec, c, 16)  # struct 16B 连续
-                tex.append(struct.unpack("<I", payload[elem + 4:elem + 8])[0])
-            out[shape_id] = tex
+            commands: list[ShapeCommand] = []
+            if commands_vec:
+                ncmd = fb.vector_len(commands_vec)
+                if ncmd > _MAX_VECTOR_ENTRIES:
+                    raise CatalogError(
+                        f"SC2 Shape[{i}] 命令数 {ncmd} 超过上限 {_MAX_VECTOR_ENTRIES}"
+                        "（防 512MB body 解压后的 O(n) 放大）")
+                for c in range(ncmd):
+                    elem = fb.vector_elem(commands_vec, c, 16)  # struct 16B 连续
+                    _, tex, cnt, off = struct.unpack(
+                        "<4I", payload[elem:elem + 16])
+                    commands.append(ShapeCommand(texture_index=tex,
+                                                 points_count=cnt,
+                                                 points_offset=off))
+            out[shape_id] = Shape(id=shape_id, commands=commands)
         return out
     except CatalogError:
         raise
     except ValueError as e:
         raise CatalogError(f"SC2 Shapes 解析失败: {e}") from e
+
+
+def read_vertices(points: bytes, offset: int, count: int) -> list[Vertex]:
+    """从 shapes_bitmap_poins 缓冲读 count 个顶点（12 字节/个连续）。
+
+    offset 是**顶点索引**（实证 + Shape.cpp：顶点 i 字节偏移 =
+    (offset + i) * 12）。顶点布局见 Vertex docstring（u/v 在前、x/y 在后，
+    与 sc-workshop 参考顺序不同，以真实字节为准）。
+
+    越界（起点或终点超出缓冲）→ CatalogError（fail loud，不截断）；
+    count 超上限 → CatalogError（防 O(n) 顶点物化放大，模式同
+    _MAX_VECTOR_ENTRIES）。
+    """
+    if count > _MAX_VECTOR_ENTRIES:
+        raise CatalogError(
+            f"SC2 顶点数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
+            "（防 O(n) 顶点物化放大）")
+    start = offset * 12
+    need = count * 12
+    if start + need > len(points):
+        raise CatalogError(
+            f"SC2 顶点越界: 起点 {start} 需要 {need} 字节，"
+            f"points 缓冲共 {len(points)} 字节")
+    # 单次 iter_unpack 批量消费（同 parse_movieclips 帧元素模式；need 恒为
+    # 12 字节倍数，切片无尾部残块）
+    return [Vertex(x=x, y=y, u=u / 0xFFFF, v=v / 0xFFFF)
+            for x, y, u, v in struct.iter_unpack("<ffHH", points[start:start + need])]
 
 
 def _u32_field_or(fb: FlatBuffer, buf: bytes, table_off: int, slot: int,
@@ -690,10 +805,11 @@ def parse_movieclips(payload: bytes, frame_elements: bytes = b"") -> dict[int, M
 
     `MovieClips{movieclips: [MovieClip]}`（slot 0，元素 table 4B uoffset）。
     MovieClip 槽位（MovieClips.fbs）：0=id u16、1=export_name_ref_id u32、
-    8=frames [MovieClipFrame]（**8 字节 struct 连续**：used_transform u32 +
-    label_ref_id u32）、9=frame_elements_offset u32（缺省 0xFFFFFFFF）、
-    10=matrix_bank_index u32、12=short_frames [MovieClipShortFrame]
-    （2 字节 struct 连续，仅 used_transform u16）。frames 缺省时用 short_frames。
+    5=children_ids [ushort]、8=frames [MovieClipFrame]（**8 字节 struct
+    连续**：used_transform u32 + label_ref_id u32）、9=frame_elements_offset
+    u32（缺省 0xFFFFFFFF）、10=matrix_bank_index u32、12=short_frames
+    [MovieClipShortFrame]（2 字节 struct 连续，仅 used_transform u16）。
+    frames 缺省时用 short_frames。
 
     frame elements 实证（对拍 ui.sc/buildings.sc + SupercellFlash
     MovieClip.cpp）：`frame_elements_offset` 是 DataStorage
@@ -722,6 +838,17 @@ def parse_movieclips(payload: bytes, frame_elements: bytes = b"") -> dict[int, M
             export_ref = _u32_field(fb, payload, t, 1)
             matrix_bank = _u32_field(fb, payload, t, 10)
             feo = _u32_field_or(fb, payload, t, 9, 0xFFFFFFFF)
+            children: list[int] = []
+            cvec = fb.table_field(t, 5)
+            if cvec:
+                nc = fb.vector_len(cvec)
+                if nc > _MAX_VECTOR_ENTRIES:
+                    raise CatalogError(
+                        f"SC2 MovieClip[{i}] children 数 {nc} 超过上限 "
+                        f"{_MAX_VECTOR_ENTRIES}（防 O(n) 放大）")
+                children = [struct.unpack(
+                    "<H", payload[fb.vector_elem(cvec, j, 2):][:2])[0]
+                    for j in range(nc)]
             frames: list[MovieClipFrame] = []
             fvec = fb.table_field(t, 8)
             if fvec:
@@ -777,7 +904,8 @@ def parse_movieclips(payload: bytes, frame_elements: bytes = b"") -> dict[int, M
             out[i] = MovieClip(id=mc_id, export_name_ref_id=export_ref,
                                frames=frames, frame_elements_offset=feo,
                                matrix_bank_index=matrix_bank,
-                               frame_elements=elements)
+                               frame_elements=elements,
+                               children_ids=children)
         return out
     except CatalogError:
         raise
@@ -880,4 +1008,5 @@ def load_sc(data: bytes) -> ScFile:
         raise CatalogError(f"SC2 body 解析失败: {e}") from e
     return ScFile(header=header, metadata=metadata, strings=strings,
                   export_names=export_names, chunks=chunks,
-                  frame_elements=info.movieclips_frame_elements)
+                  frame_elements=info.movieclips_frame_elements,
+                  points=info.shapes_bitmap_poins)

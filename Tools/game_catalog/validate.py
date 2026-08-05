@@ -15,9 +15,45 @@ from . import (
     ITEM_MISSING_REASONS,
     LEVEL_MISSING_REASONS,
 )
-from .model import catalog_from_dict
+from .contract import check_rendered_path_contract, rendered_path_format_ok
+from .model import AssetRef, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
+
+
+def _check_rendered_path(
+    errors: list[str],
+    ref: AssetRef,
+    context: str,
+    catalog_dir: Path,
+    registered: set[str] | None,
+) -> None:
+    """renderedPath 负例校验（Issue #27 契约 R1/R2/R5），复用 contract 模块。
+
+    契约规则/顺序/消息见 game_catalog/contract.py 的 check_rendered_path_contract；
+    file_exists 与 registered 布尔由本处计算（保持契约函数纯、无 IO）。契约返回的
+    消息不含 "(<context>)" 后缀，在此追加以保持既有输出文本逐字不变。
+
+    顺序：R-B 互斥（独立轴，先查，不被格式短路）→ R-D 格式 → R-A 文件存在 →
+    R-C manifest 登记。renderedPath 为 None（无引用）不触发——counts.missingIcons
+    的 "renderedPath is None" 语义不变；**空串 "" 不是合法渲染路径**，走 R-D
+    报格式非法（交叉审核 P1-2：空路径不得绕过校验，不得被 isRenderable 视为可渲染）。
+    R-D 短路在**文件系统探测之前**：格式非法（版本段/`..` 段/绝对路径/单级/空串等）
+    直接报格式非法，不执行 `(catalog_dir / rp).is_file()`——防 `icons/../../x.png`
+    逃逸探测 catalog 目录之外的文件（交叉审核 NB-3）。
+    文件存在但已登记时 hash/size 一致性由现有 generatedFiles 重算逻辑兜底
+    （PNG 条目走同一路径）。
+    """
+    rp = ref.renderedPath
+    if rp is None:
+        return
+    # 纯函数先验格式；`and` 短路保证非法路径从不触碰文件系统
+    file_exists = rendered_path_format_ok(rp) and (catalog_dir / rp).is_file()
+    violations = check_rendered_path_contract(
+        rp, ref.missingReason, file_exists,
+        None if registered is None else rp in registered,
+    )
+    errors.extend(f"{e} ({context})" for e in violations)
 
 
 def validate_catalog(dir_path: str | Path) -> list[str]:
@@ -62,10 +98,12 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
 
     # ---- generatedFiles 完整性：hash/size 重算比对 + icons/ 目录存在 ----
     gen = manifest.get("generatedFiles")
+    registered: set[str] | None = None  # 非 directory 条目路径集合（R-C 用）
     if not isinstance(gen, list):
         errors.append("manifest 缺少 generatedFiles")
     else:
         seen_files = set()
+        registered = set()
         for entry in gen:
             path = entry.get("path") if isinstance(entry, dict) else None
             if not isinstance(path, str) or not path:
@@ -78,6 +116,7 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                 if not (d := catalog_path.parent / path).is_dir():
                     errors.append(f"generatedFiles 目录不存在: {path}")
                 continue
+            registered.add(path)
             target = catalog_path.parent / path
             if not target.is_file():
                 errors.append(f"generatedFiles 文件不存在: {path}")
@@ -122,8 +161,12 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                 if lv.durationSeconds is not None and lv.durationSeconds < 0:
                     errors.append(f"{key} level {lv.level}: durationSeconds 为负")
                 for ref, ref_name in ((lv.icon, "icon"), (lv.levelVisual, "levelVisual")):
-                    if ref and ref.missingReason and ref.missingReason not in ASSET_MISSING_REASONS:
+                    if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                         errors.append(f"{key} level {lv.level}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
+                    if ref:
+                        _check_rendered_path(errors, ref,
+                                             f"item={key}, level={lv.level}, {ref_name}",
+                                             catalog_path.parent, registered)
             if item.missingReason and item.missingReason not in ITEM_MISSING_REASONS:
                 errors.append(f"{key}: 未知 item.missingReason {item.missingReason!r}")
             if item.base is None and item.baseMissingReason is None:
@@ -133,8 +176,12 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
             if item.baseMissingReason and item.baseMissingReason not in BASE_MISSING_REASONS:
                 errors.append(f"{key}: 未知 baseMissingReason {item.baseMissingReason!r}")
             for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
-                if ref and ref.missingReason and ref.missingReason not in ASSET_MISSING_REASONS:
+                if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
+                if ref:
+                    _check_rendered_path(errors, ref,
+                                         f"item={key}, {ref_name}",
+                                         catalog_path.parent, registered)
     except (TypeError, ValueError, AttributeError) as exc:
         return [f"catalog 内容非法: {exc}"]
 

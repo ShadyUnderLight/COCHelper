@@ -70,7 +70,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
     private func makeVillage(
         tag: String? = "#TEST",
-        objectSections: [String: [AccountItem]] = [:]
+        objectSections: [String: [AccountItem]] = [:],
+        boosts: [String: Int64] = [:]
     ) -> VillageProfile {
         VillageProfile(
             name: "测试村庄",
@@ -82,7 +83,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
                 originalText: "",
                 objectSections: objectSections,
                 numericSections: [:],
-                boosts: [:],
+                boosts: boosts,
                 unknownTopLevelKeys: [],
                 diagnostics: []
             )
@@ -881,6 +882,133 @@ final class VillageCatalogProjectionTests: XCTestCase {
             }
             XCTAssertEqual(actualCounts, expectedCounts,
                            "升级记录在投影中必须逐条保留（同键计数一致）")
+        }
+    }
+
+    // MARK: - Issue #17: 数组重排稳定性与 boost 非归属
+
+    /// 模拟「重排后的 JSON 重新导入」：按新位置重建 id（与解析器规则一致：
+    /// 顶层 section:index，嵌套 path.types.index / path.modules.index），
+    /// 事实字段（dataID/lvl/cnt/timer）保持原样。
+    private func shuffledSections(
+        _ sections: [String: [AccountItem]],
+        using rng: inout SeededRNG
+    ) -> [String: [AccountItem]] {
+        sections.mapValues { items in
+            items.shuffled(using: &rng).enumerated().map { index, item in
+                reshuffled(item, path: String(index), using: &rng)
+            }
+        }
+    }
+
+    private func reshuffled(
+        _ item: AccountItem,
+        path: String,
+        using rng: inout SeededRNG
+    ) -> AccountItem {
+        AccountItem(
+            id: item.section + ":" + path,
+            section: item.section,
+            dataID: item.dataID,
+            level: item.level,
+            count: item.count,
+            timerSeconds: item.timerSeconds,
+            remainingSeconds: item.remainingSeconds,
+            helperTimerSeconds: item.helperTimerSeconds,
+            remainingHelperSeconds: item.remainingHelperSeconds,
+            helperCooldownSeconds: item.helperCooldownSeconds,
+            remainingHelperCooldownSeconds: item.remainingHelperCooldownSeconds,
+            helperRecurrent: item.helperRecurrent,
+            gearUp: item.gearUp,
+            weapon: item.weapon,
+            types: item.types.shuffled(using: &rng).enumerated().map { index, child in
+                reshuffled(child, path: path + ".types." + String(index), using: &rng)
+            },
+            modules: item.modules.shuffled(using: &rng).enumerated().map { index, child in
+                reshuffled(child, path: path + ".modules." + String(index), using: &rng)
+            }
+        )
+    }
+
+    /// 投影事实行：身份与事实字段（不含 id——id 含数组索引，重排后允许漂移）。
+    private func factLines(_ items: [VillageItemState]) -> [String] {
+        items.map { item -> String in
+            let fields: [String] = [
+                item.section, String(item.dataID),
+                item.currentLevel.map(String.init) ?? "nil",
+                item.isNested ? "nested" : "flat",
+                item.count.map(String.init) ?? "nil",
+                item.timerSeconds.map(String.init) ?? "nil",
+                item.remainingSeconds.map(String.init) ?? "nil",
+                item.status.rawValue,
+                item.nextLevel.map(String.init) ?? "nil",
+                item.name,
+                item.maxLevel.map(String.init) ?? "nil",
+                item.nextLevelDurationSeconds.map(String.init) ?? "nil",
+            ]
+            return fields.joined(separator: "|")
+        }.sorted()
+    }
+
+    /// JSON 数组重排不得改变项目身份与事实（issue 验收 #6）：
+    /// 模拟「重排后的 JSON 重新导入」——id 按新位置重建（漂移，自证测试非空转），
+    /// 而事实集必须完全一致。
+    func testArrayReorderDoesNotChangeItemFacts() throws {
+        let sections = try loadRealFixture()
+        let village = makeVillage(objectSections: sections)
+        let catalog = GameCatalog.loadBundled()
+
+        var rng = SeededRNG(seed: 17)
+        let reimportedSections = shuffledSections(sections, using: &rng)
+        let reversedSections = sections.mapValues { Array($0.reversed()) }
+
+        let originalHome = project(village: village, catalog: catalog, base: .home)
+        let originalBuilder = project(village: village, catalog: catalog, base: .builder)
+
+        for variant in [("shuffled", reimportedSections), ("reversed", reversedSections)] {
+            let variantVillage = makeVillage(objectSections: variant.1)
+            let variantHome = project(village: variantVillage, catalog: catalog, base: .home)
+            let variantBuilder = project(village: variantVillage, catalog: catalog, base: .builder)
+
+            // 1. 重排确实生效：含索引的原始 id 集合必须变化（否则测试自身无鉴别力）。
+            let originalIDs = Set(originalHome.items.map(\.id))
+            let variantIDs = Set(variantHome.items.map(\.id))
+            XCTAssertNotEqual(originalIDs, variantIDs, "\(variant.0) 后 id 应漂移（id 含数组索引）")
+
+            // 2. 事实不变：按 (section,dataID,level,isNested) 身份的事实完全一致。
+            XCTAssertEqual(factLines(originalHome.items), factLines(variantHome.items),
+                           "\(variant.0) 后主村事实改变")
+            XCTAssertEqual(factLines(originalBuilder.items), factLines(variantBuilder.items),
+                           "\(variant.0) 后建筑工人基地事实改变")
+        }
+    }
+
+    /// 全局 boost（clocktower_cooldown 等）只留在快照顶层，不得归属到任何项目
+    /// （issue 验收 #5）。用远超真实计时的特殊值避免碰撞。
+    func testBoostValuesNeverAttributedToProjectItems() throws {
+        let boostValue: Int64 = 987_654_321
+        let village = makeVillage(
+            objectSections: [
+                "buildings": [
+                    makeItem(section: "buildings", dataID: 1_000_013, level: 17,
+                             timerSeconds: 369_441, remainingSeconds: 1000, path: "0"),
+                    makeItem(section: "buildings", dataID: 1_000_032, level: 12, path: "1"),
+                ],
+            ],
+            boosts: ["clocktower_cooldown": boostValue]
+        )
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+
+        // boost 保留在快照顶层（独立来源）。
+        XCTAssertEqual(village.accountSnapshot?.boosts["clocktower_cooldown"], boostValue)
+
+        // 任何投影项目的计时/剩余字段都不得携带 boost 值。
+        XCTAssertFalse(home.items.isEmpty)
+        for item in home.items {
+            XCTAssertNotEqual(item.timerSeconds, boostValue,
+                              "\(item.name) 的计时不得来自全局 boost")
+            XCTAssertNotEqual(item.remainingSeconds, boostValue,
+                              "\(item.name) 的剩余时间不得来自全局 boost")
         }
     }
 }

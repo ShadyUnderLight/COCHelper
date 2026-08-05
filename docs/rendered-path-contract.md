@@ -1,12 +1,12 @@
 # renderedPath 输出契约（Issue #27）
 
-> 状态：**契约冻结（渲染相关条目部分待验证）**。
+> 状态：**契约冻结（渲染相关条目已实测回写，2026-08-05 Issue #30）**。
 > 本契约冻结 `renderedPath` 的输出规则，使 Python 生成器、manifest 校验器、
 > Swift Bundle 加载与 UI 使用遵循同一语义。渲染无关的条目（路径、命名、失败
-> 语义、依赖）为强制契约；PNG 规格与字节稳定性因 spike（Task 1-4）未产出真实
-> PNG 而标记「待 #25 前验证」，解锁条件见 §12。
+> 语义、依赖）为强制契约；PNG 规格（R3）与字节稳定性（R4）已由 Issue #30
+> 固定样本实测回写（见 §12.1 解锁状态）。
 >
-> 关联：issue #13（生成管线）、#27（spike + 契约）、#25（图标渲染管线 + UI 接入）。
+> 关联：issue #13（生成管线）、#27（spike + 契约）、#30（解锁 + 固定样本）、#25（图标渲染管线 + UI 接入）。
 > 相关文件：`Tools/game_catalog/sc2.py`、`Tools/render_spike.py`、
 > `Sources/COCHelperCore/GameCatalog.swift`、`Tools/game_catalog/validate.py`、
 > `Tools/game_catalog/__init__.py`、`Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json`。
@@ -58,10 +58,10 @@
 
 | # | 契约规则 | 校验方式 |
 |---|---|---|
-| R3.1 | 尺寸 = 源纹理尺寸（`TextureData.width/height`），**不缩放、不拉伸、不裁剪**，保持源像素比例。 | PNG IHDR 宽高 == 源纹理宽高断言 |
-| R3.2 | 透明背景：RGBA 输出下背景像素 alpha=0，不做背景填充；灰度系按 pixel_type 保留 alpha 语义。pixel_type 映射参考 sc-workshop `SWFTexture.h` PixelFormat：0=RGBA8、6=LUMINANCE8_ALPHA8、10=LUMINANCE8；1=BGRA8 为社区惯例映射（**未对拍验证，spike 原始路径未触发**，进入生产前必须验证或删除）。 | 像素级抽查（alpha 通道）；pixel_type 支持表评审 |
-| R3.3 | 位深 8-bit；sRGB 色彩空间，PNG 必须声明（`gAMA` chunk = 45455 或 `sRGB` chunk）；无 `tIME` 等时间戳 chunk（与 R4 联动）。 | PNG chunk 遍历断言 |
-| R3.4 | **本条目整体标记「待 #25 前验证」**：spike 未产出真实 PNG（全部 blocked，见 §11），以上规格基于 stdlib 编码器现状 + PNG 规范推演，未用真实渲染图实测。解锁后须以真实渲染图核对尺寸语义、字节序、alpha 语义，并回写本契约。 | 见 §11 解锁条件；核对后更新本文档 |
+| R3.1 | 尺寸 = shape 顶点屏幕空间 bounds（应用 frame element matrix 变换后），按 1:1 像素 ceil 取整、至少 1x1、上限 4096。**2026-08-05 实测回写**：原「尺寸 = 源纹理尺寸」被真实数据否定——icon 是从大 atlas（4096² 等）裁切的小区域，输出尺寸由几何 bounds 决定（icon_unit_barbarian=166x166、fireplace_lvl1=75x58、blacksmith_lvl1=110x126）。 | PNG IHDR 宽高 == `suggest_output_size(compute_bounds(transform_vertices(...)))` |
+| R3.2 | 透明背景：RGBA 输出下未覆盖像素 alpha=0，不做背景填充。**实测回写**：真实纹理全部为 ASTC 系（ui.sc 内嵌 KTX 4x4/6x6/8x8；buildings.sc 外部 .sctx 6x6，pixel_type=208=ASTC_RGBA8_6x6），无灰度/原始 RGBA 路径触发；ASTC 解码输出恒 RGBA8。原 BGRA8 社区惯例映射条目删除（无真实样本，不保留未验证语义）。 | 像素级抽查（alpha 通道）；ASTC 解码单测 |
+| R3.3 | 位深 8-bit；sRGB 色彩空间，PNG 声明 `gAMA` chunk = 45455；无 `tIME` 等时间戳 chunk（与 R4 联动）。**2026-08-05 实测**：`encode_png`（render.py）实现 IHDR/IDAT/IEND + gAMA、filter=0 全行、zlib level=9，已对拍 sips 可读。 | PNG chunk 遍历断言（合成 fixture） |
+| R3.4 | **已实测回写（2026-08-05）**：以上规格基于真实渲染图核对完成——4 个固定样本 PNG 全部可被 sips/PNG 解码器打开、尺寸与 bounds 语义一致、alpha 语义正确（非覆盖像素透明）、字节序 RGBA8。原「待 #25 前验证」标记解除。 | 样本 PNG 断言 + 人工视觉验收（#25 入口） |
 
 ---
 
@@ -71,7 +71,7 @@
 |---|---|---|
 | R4.1 | 生成**必须确定性**：同一 APK + 同一参数 → 字节完全一致。约束：无时间戳、固定 zlib 压缩级别、固定 filter 策略、无随机源。现有生成管线已承诺确定性（README：无时间戳，重复生成字节一致），PNG 编码继承该约定。 | 同一输入连续生成两次，`sha256` 比对必须一致 |
 | R4.2 | manifest 记录的 `sha256/size` 与文件实际值一致（validate.py 已有重算机制，对 PNG 条目同样生效）。 | `validate_game_catalog.py` 重算比对 |
-| R4.3 | **本条目标记「待验证」**：spike 未产出真实 PNG，无法实测编码器确定性。验证方法：解锁后对真实纹理重复生成 ≥2 次，比对 sha256 与 manifest 声明；若出现不稳定来源（如解压器非确定性输出），如实记录并修正编码器，不得放宽契约。 | 见 R4.1 的比对脚本 |
+| R4.3 | **已实测回写（2026-08-05）**：4 个固定样本（icon_unit_barbarian/icon_spell_rage/fireplace_lvl1/blacksmith_lvl1）连续生成 3 次，PNG 字节 sha256 完全一致（确定性成立）。约束不变：无时间戳、固定 zlib 级别（9）、固定 filter（0）、无随机源。 | 生成器集成测试（`test_render_generator.py` 确定性断言） |
 
 ---
 
@@ -83,19 +83,22 @@
 | R5.2 | **互斥不变量**：`renderedPath` 非空（含空串，见 R8.1）⇒ `missingReason` 为 null（`missingReason` 按 `is not None` 判定，空串也是失败原因）；`renderedPath` 为 null ⇒ 渲染失败类引用必须给 `missingReason`（不留空解释）。**空串 `renderedPath` 是非法路径**：不得绕过校验（P1-2），校验器报格式非法。 | validate.py 负例 + property-based 测试（含空串边界） |
 | R5.3 | `renderedPath` 非空 ⇒ 文件必须真实存在于版本目录与 App Bundle。 | validate.py `rendered_path_file_must_exist`（含格式/`..`/版本段拒绝）；Swift 加载路径检查（#25 UI 接入时落实，当前 loadBundled 只解码 catalog.json） |
 
-**missingReason 枚举扩展建议**（现有 `ASSET_MISSING_REASONS` = `icons_not_rendered` / `no_icon_columns` / `no_visual_columns`）：
+**missingReason 枚举（Issue #30 Task 7 实现定稿，`ASSET_MISSING_REASONS` 域）**：
 
-| 建议值 | 语义 | 触发（spike 实证） |
+| 值 | 语义 | 触发（实测） |
 |---|---|---|
+| `icons_not_rendered` / `no_icon_columns` / `no_visual_columns` | #13 遗留：未渲染 / 无列 | catalog 生成器（保留） |
 | `sc_parse_failed` | SC2 容器解析失败（magic/version/descriptor/chunk 越界等） | `CatalogError` 路径 |
-| `movieclip_not_parsed` | export→object_id 指向 MovieClip，MovieClip 帧解析链路未实现 | **真实数据中 export 全部指向 MovieClip**（spike `no_shape_command` 阻塞） |
-| `texture_compressed_astc` | 内嵌 KTX/ASTC 压缩纹理，无解码器 | `ui.sc` 全部 7 个 TextureSet：fmt=8 内嵌 KTX（ASTC 系） |
-| `texture_external_sctx` | 纹理存外部 `.sctx` 文件，无解码器 | `buildings.sc` 71 个 set 全部 external（599 个 .sctx；实测 `texture_format`=0 + `external_texture` 非空；`.sctx` 的 pixel_type=208，社区枚举为 ASTC 系，**待验证**） |
+| `movieclip_not_parsed` | export→object_id 指向 MovieClip 且帧解析链路未实现（如嵌套 MovieClip 未递归渲染） | 嵌套动画/阴影层（Task 7 实证：fireplace/blacksmith 帧 0 含嵌套 movieclip，记录 `skippedElements`） |
+| `texture_compressed_astc` | 内嵌 KTX/ASTC 压缩纹理，无解码器 | 已解决（astc.py）——保留枚举向后兼容 |
+| `texture_external_sctx` | 纹理存外部 `.sctx` 文件，无解码器 | 已解决（ktx.py）——保留枚举向后兼容 |
 | `zstd_unavailable` | libzstd 无法加载（ctypes 全路径失败） | `load_libzstd` 失败 |
-| `texture_unsupported` | pixel_type 不支持 / 畸形数据（0×0、长度不符、无数据、BGRA 未验证） | spike 防御分支 |
+| `container_not_found` | APK 无此容器（assets/sc/*.sc 缺失） | 样本 `sc/traps.sc`（APK 无该文件） |
+| `export_not_found` | exportNames 无此导出名 | 样本 `icon_unit_does_not_exist` |
+| `texture_unsupported` | 纹理格式/像素类型不支持（ASTC 之外）或畸形数据 | 防御分支 |
 
-> `icons_not_rendered`（#13 现状）保留；渲染管线接入后由上述具体原因替换。
-> 上表命名由 Task 6 实现时定稿，本契约冻结**语义**（触发条件 + 所属域 `ASSET_MISSING_REASONS`）。
+> 上表为**实现定稿**（Task 7 实际使用的枚举）；原「建议扩展」表被本表取代。
+> 生成器规则：成功 → `renderedPath` 非空 + `missingReason=null`；失败 → `renderedPath=null` + 上述枚举。不写空 PNG、不写伪造路径（样本负例已锁）。
 
 ---
 
@@ -145,9 +148,9 @@
 |---|---|---|
 | A：sc_extract（Rust） | **排除** | 仓库已删、仅支持 SC1/`_tex.sc`、格式不兼容 |
 | B：自研 Python | **主选（当前实现）** | 公开 schema + C++ 参考齐全；descriptor 未压缩（export 名可解析）；body zstd 用 ctypes+libzstd（本机已确认可加载）。spike 已验证 export 名/引用链解析可行 |
-| C：ClashKing CDN（assets.clashk.ing） | **备选 fallback** | 构建时下载 webp；注意 GPL 规避（其代码不并入本仓库）与 Supercell Fan Content Policy 版权声明（§13） |
+| C：ClashKing CDN（assets.clashk.ing） | **rejected（2026-08-05 Issue #30 Task 0）** | 实测 catalog 381 个唯一引用对 CDN manifest（2585 资产）3 种映射策略 **0 命中**（精确/去前缀/level 归一化）；命名体系不兼容（display_name vs 内部 export 名）；版本对应未声明；覆盖度不足（troops 96/heroes 8/pets 12 vs 游戏全集） |
 
-决策：主路径 B；C 仅在 B 解锁失败或成本失控时启用（需另行评估与声明，不在本 Issue 实现）。
+决策：**reject C，选 B（已实现并通过固定样本验证）**，详见 `docs/render-path-decision.md`。
 
 ---
 
@@ -161,11 +164,35 @@
 
 **verdict：继续阻塞 #25**（渲染相关契约条目 R3/R4 无法实测；渲染无关条目已冻结）。
 
-**解锁条件（任一）**：
-1. 实现 MovieClip 帧解析（MovieClips chunk → frame → shape 命令）+ ASTC 解码器（KTX 内嵌 + `.sctx` 外部）；
-2. 切换备选路径 C（ClashKing CDN webp，见 §11）。
+---
 
-解锁后、#25 前必须：实测 R3（PNG 规格）与 R4（字节稳定性），回写本文档，再进入 #25 实现。
+## 12.1 Issue #30 解锁状态（2026-08-05 回写）
+
+**双重阻塞已解除**（`feat/issue30-render-path`，PR #30）：
+
+| 阻塞 | 解法（本分支提交） |
+|---|---|
+| 阻塞 1：MovieClip 引用链 | `sc2.py` 帧解析（Task 1 实证：MovieClipFrameElement = 6 字节 3×u16，instance_index→children_ids[i]→shape 全局 id；单帧为主）；Shape 命令/顶点完整解析（Task 2：12 字节顶点 x/y float + u/v u16/0xFFFF，**实证 icon 为 6-8 顶点多边形非矩形**）；MatrixBank/Matrix2x3（Task 3：24B float32x6，half 未使用） |
+| 阻塞 2：ASTC/KTX/SCTX | `astc.py`（Task 4：**与官方 astcenc 5.7.0 全图逐像素对拍 diff=0**，4x4+6x6，LDR only，HDR→AstcError）；`ktx.py`（Task 5：KTX 1.x + SCTX 布局实证，ASTC 4x4/6x6/8x8 格式映射） |
+| 渲染/编码 | `render.py`（Task 6：bounds 1:1 + 多边形光栅化（edge function + 重心 UV + 双线性采样）+ 确定性 PNG（gAMA 45455、filter 0、zlib 9）） |
+| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；manifest generatedFiles 更新；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Swift Bundle 读取断言（Task 9，370 测试全绿） |
+
+**固定样本实测**（sha256 三次生成一致，R4 成立）：
+- `icons/ui/icon_unit_barbarian.png` 166x166（64,039B）、`icons/ui/icon_spell_rage.png` 166x166（79,083B）、`icons/buildings/fireplace_lvl1.png` 75x58（9,146B）、`icons/buildings/blacksmith_lvl1.png` 110x126（26,696B）
+- 失败样本：`icon_unit_does_not_exist`→`export_not_found`、`traps.sc/town_hall_lvl1`→`container_not_found`（无空 PNG、无伪造路径）
+
+**verdict：可进入 #25**。R3/R4 已实测回写（§4/§5）。
+
+**#25 剩余前置（UI 接入清单）**：
+1. `UpgradeDisplayRow` 图标列：`isRenderable` 时渲染 PNG，否则 SF Symbol + 缺失角标（预留注释已就位）
+2. `LevelDetailSheet` 逐级行：接入 `levelVisual/icon`
+3. 共享 Bundle asset resolver（`Bundle.module.url(forResource:...)` 模式已由 Task 9 测试锁定）
+4. 全量渲染：381 个唯一键（当前仅渲染 4 个固定样本；`render_generator.py --samples-only` 去掉后全量跑，预计数小时，需增量分批）
+5. 嵌套 MovieClip（动画/阴影层）递归渲染（当前跳过记录 `skippedElements`）
+6. 多帧 MovieClip 取帧 0（当前行为，契约注明）
+7. 视觉人工验收：逐项核对图标朝向/形变/双线性边缘
+
+**已知限制（契约标注）**：HDR 端点拒绝（真实纹理零出现）；3D 块不支持；SCTX 非 buildings 变体（28/32 头）不支持（fail loud）；多命令合成已支持（blacksmith 5 命令实测）。
 
 ---
 

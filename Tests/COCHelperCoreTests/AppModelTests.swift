@@ -331,14 +331,18 @@ extension AppModelTests {
                 body = fullWarLogPageData()  // items 2 条 + after CURSORAFTER1
             } else {
                 // 第二页：1 条新 + 1 条与首页重复（验证去重）
+                // 注意：重复条目必须与 fixture（official_war_log_page.json 第一场）
+                // 结构完全一致（含 members），mergedItems 按 Equatable 全字段去重。
                 body = Data("""
                 {"items":[
                   {"result":"win","endTime":"20260727T100000.000Z","teamSize":30,"attacksPerMember":2,
                    "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0},
                    "opponent":{"tag":"#OPP2","name":"op2","clanLevel":10,"attacks":50,"stars":70,"destructionPercentage":80.0}},
                   {"result":"win","endTime":"20260730T100000.000Z","teamSize":30,"attacksPerMember":2,
-                   "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0},
-                   "opponent":{"tag":"#OPPONENTANONYMIZED","name":"anonymized-opponent","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":11,"attacks":58,"stars":80,"destructionPercentage":85.0}}
+                   "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0,
+                   "members":[{"tag":"#PLAYERANONYMIZED","name":"anonymized-member","townHallLevel":14,"mapPosition":1,"attacks":2,"stars":6,"destructionPercentage":100}]},
+                   "opponent":{"tag":"#OPPONENTANONYMIZED","name":"anonymized-opponent","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":11,"attacks":58,"stars":80,"destructionPercentage":85.0,
+                   "members":[]}}
                 ],"paging":{"cursors":{"before":"B2","after":"CURSORAFTER2"}}}
                 """.utf8)
             }

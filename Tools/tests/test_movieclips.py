@@ -265,6 +265,7 @@ def test_data_storage_info_returns_strings_and_buffer():
     assert info == DataStorageInfo(
         strings=["hello", "world"],
         movieclips_frame_elements=struct.pack("<5H", 10, 20, 30, 40, 50),
+        payload=payload,
     )
 
 

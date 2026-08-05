@@ -220,7 +220,8 @@ def test_data_storage_info_returns_points_buffer():
     info = parse_data_storage_info(FlatBuffer(payload), payload)
     assert info == DataStorageInfo(strings=[],
                                    movieclips_frame_elements=b"",
-                                   shapes_bitmap_poins=b"\x01\x02\x03\x04")
+                                   shapes_bitmap_poins=b"\x01\x02\x03\x04",
+                                   payload=payload)
 
 
 def test_data_storage_info_missing_points_returns_empty():

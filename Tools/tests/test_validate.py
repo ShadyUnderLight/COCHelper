@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from game_catalog.model import catalog_to_dict, Catalog, CatalogItem, CatalogLevel
 from game_catalog.validate import validate_catalog
 
@@ -555,3 +557,159 @@ def test_validate_generated_files_size_wrong_rejected(tmp_path):
     _write(d, manifest=m)
     errors = validate_catalog(d)
     assert any("大小不一致" in e for e in errors)
+
+
+# ---- renderedPath 负例校验（Issue #27 Task 6，契约 R1/R2/R5）----
+
+def _ref(rendered_path=None, reason=None):
+    """构造 AssetRef 字形 dict（renderedPath/missingReason 可配）。"""
+    return {
+        "container": "sc/ui.sc", "exportName": "icon_unit_barbarian",
+        "renderedPath": rendered_path, "missingReason": reason,
+    }
+
+
+def _register_png(d: Path, rel_path: str, data: bytes) -> None:
+    """写 PNG 文件并登记到 manifest generatedFiles（hash/size 如实）。"""
+    import hashlib
+    (d / rel_path).write_bytes(data)
+    m = _load_manifest(d)
+    m["generatedFiles"].append({
+        "path": rel_path,
+        "sha256": "sha256:" + hashlib.sha256(data).hexdigest(),
+        "size": len(data),
+    })
+    _write(d, manifest=m)
+
+
+def test_rendered_path_file_must_exist(tmp_path):
+    """R-A / R5.3 负例：renderedPath 指向不存在的文件 → error。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("renderedPath 指向不存在的文件" in e and "icons/barbarian.png" in e for e in errors)
+
+
+def test_rendered_path_level_visual_must_exist(tmp_path):
+    """R-A 覆盖 levelVisual：同样要求文件存在。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["levelVisual"] = _ref(rendered_path="icons/barracks_lvl1.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("renderedPath 指向不存在的文件" in e and "icons/barracks_lvl1.png" in e for e in errors)
+
+
+def test_rendered_path_item_icon_must_exist(tmp_path):
+    """R-A 覆盖 item 级 icon/levelVisual（上下文无 level）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = _ref(rendered_path="icons/barbarian.png")
+    c["items"][0]["levelVisual"] = _ref(rendered_path="icons/barracks_lvl1.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("renderedPath 指向不存在的文件" in e and "icons/barbarian.png" in e for e in errors)
+    assert any("renderedPath 指向不存在的文件" in e and "icons/barracks_lvl1.png" in e for e in errors)
+
+
+def test_rendered_path_file_exists_passes(tmp_path):
+    """R-A/R-C 正例：文件真实存在且登记（hash/size 如实）→ 通过。"""
+    d = _valid_dir(tmp_path)
+    png = b"\x89PNG\r\n\x1a\n" + b"x" * 64
+    _register_png(d, "icons/barbarian.png", png)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []
+
+
+def test_rendered_path_shared_between_refs_passes(tmp_path):
+    """R2.4 去重：不同 ref 共享同一 renderedPath，manifest 只登记一次 → 通过。"""
+    d = _valid_dir(tmp_path)
+    png = b"\x89PNG\r\n\x1a\n" + b"y" * 32
+    _register_png(d, "icons/barbarian.png", png)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = _ref(rendered_path="icons/barbarian.png")
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []
+
+
+def test_rendered_path_with_missing_reason_rejected(tmp_path):
+    """R-B / R5.2 负例：renderedPath 与 missingReason 互斥。"""
+    d = _valid_dir(tmp_path)
+    png = b"\x89PNG\r\n\x1a\n" + b"z" * 16
+    _register_png(d, "icons/barbarian.png", png)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(
+        rendered_path="icons/barbarian.png", reason="icons_not_rendered")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("renderedPath 与 missingReason 同时存在" in e and "互斥" in e for e in errors)
+
+
+def test_rendered_path_without_icons_prefix_rejected(tmp_path):
+    """R-D 负例：缺少 icons/ 前缀（相对版本目录 icons/ 下）→ error。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("renderedPath" in e and "icons/" in e for e in errors)
+
+
+def test_rendered_path_non_png_rejected(tmp_path):
+    """R-D 负例：非 .png 结尾 → error。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/barbarian.jpg")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("renderedPath" in e and ".png" in e for e in errors)
+
+
+def test_rendered_path_unregistered_rejected(tmp_path):
+    """R-C 负例：文件存在但未在 manifest generatedFiles 登记 → error。"""
+    d = _valid_dir(tmp_path)
+    (d / "icons" / "barbarian.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("未在 manifest generatedFiles 登记" in e for e in errors)
+
+
+def test_rendered_path_registered_png_hash_mismatch_rejected(tmp_path):
+    """R4.2 守卫：PNG 条目登记但 hash/size 与实际不符 → 走现有 generatedFiles 校验。"""
+    import hashlib
+    d = _valid_dir(tmp_path)
+    png = b"\x89PNG\r\n\x1a\n" + b"w" * 24
+    (d / "icons" / "barbarian.png").write_bytes(png)
+    m = _load_manifest(d)
+    m["generatedFiles"].append({
+        "path": "icons/barbarian.png",
+        "sha256": "sha256:" + hashlib.sha256(b"wrong").hexdigest(),
+        "size": len(png) + 7,
+    })
+    _write(d, manifest=m)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("哈希不一致" in e for e in errors)
+    assert any("大小不一致" in e for e in errors)
+
+
+@pytest.mark.parametrize("reason", [
+    "sc_parse_failed", "movieclip_not_parsed", "texture_compressed_astc",
+    "texture_external_sctx", "zstd_unavailable",
+])
+def test_new_asset_missing_reasons_accepted(tmp_path, reason):
+    """R5 新枚举：renderedPath=null + 新 reason → 通过（域校验自动放行）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["icon"] = _ref(rendered_path=None, reason=reason)
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []

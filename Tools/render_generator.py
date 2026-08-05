@@ -124,25 +124,64 @@ def collect_catalog_refs(catalog_path: Path) -> list[dict]:
     """收集 catalog.json 全部 icon/levelVisual 引用（item 级 + level 级），
     按 (container, exportName) 去重（契约 R2.4），返回 render_samples 样本
     列表格式。container 或 exportName 为 nil 的引用跳过（无资产可渲染）。
-    顺序 = catalog 中出现顺序（确定性报告）。"""
+    顺序 = catalog 中出现顺序（确定性报告）。
+
+    畸形结构 fail loud（CatalogError，含 catalog_path）：顶层非对象、
+    items 非 list、item 非 dict、levels 非 list、level 非 dict、
+    container/exportName 非 str 且非 None。items/levels 为 None 视为空。
+    """
     data = json.loads(catalog_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise CatalogError(f"catalog 结构非法（{catalog_path}）: 顶层不是对象")
+    items = data.get("items")
+    if items is None:
+        items = []
+    elif not isinstance(items, list):
+        raise CatalogError(
+            f"catalog 结构非法（{catalog_path}）: items 不是列表"
+            f"（{type(items).__name__}）"
+        )
     seen: set[tuple[str, str]] = set()
     refs: list[dict] = []
 
-    def add(container: str | None, export: str | None) -> None:
+    def add(container, export) -> None:
+        if container is not None and not isinstance(container, str):
+            raise CatalogError(
+                f"catalog 结构非法（{catalog_path}）: container 非字符串"
+                f"（{container!r}）"
+            )
+        if export is not None and not isinstance(export, str):
+            raise CatalogError(
+                f"catalog 结构非法（{catalog_path}）: exportName 非字符串"
+                f"（{export!r}）"
+            )
         if container and export:
             key = (container, export)
             if key not in seen:
                 seen.add(key)
                 refs.append({"container": container, "exportName": export})
 
-    for item in data.get("items", []):
+    for item in items:
+        if not isinstance(item, dict):
+            raise CatalogError(
+                f"catalog 结构非法（{catalog_path}）: item 不是对象（{item!r}）"
+            )
         for ref in (item.get("icon"), item.get("levelVisual")):
             if isinstance(ref, dict):
                 add(ref.get("container"), ref.get("exportName"))
-        for level in item.get("levels", []):
+        levels = item.get("levels")
+        if levels is None:
+            levels = []
+        elif not isinstance(levels, list):
+            raise CatalogError(
+                f"catalog 结构非法（{catalog_path}）: item 的 levels 不是列表"
+                f"（{type(levels).__name__}）"
+            )
+        for level in levels:
             if not isinstance(level, dict):
-                continue
+                raise CatalogError(
+                    f"catalog 结构非法（{catalog_path}）: level 不是对象（{level!r}）"
+                )
             for ref in (level.get("icon"), level.get("levelVisual")):
                 if isinstance(ref, dict):
                     add(ref.get("container"), ref.get("exportName"))

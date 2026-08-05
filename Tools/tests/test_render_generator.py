@@ -1200,3 +1200,125 @@ def test_collect_catalog_refs_deterministic_deduped(pairs, tmp_path):
     assert set(keys) == valid
     # 两次调用结果一致（确定性）
     assert refs == collect_catalog_refs(cat)
+
+
+# ---------------------------------------------------------------------------
+# Issue #25：collect_catalog_refs 畸形输入 fail loud（CatalogError）
+# ---------------------------------------------------------------------------
+
+
+def test_collect_catalog_refs_malformed_top_level(tmp_path):
+    """catalog 顶层非对象 → CatalogError（fail loud，不被 main() 吞掉）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps(["not-an-object"]), encoding="utf-8")
+    with pytest.raises(CatalogError, match="顶层不是对象"):
+        collect_catalog_refs(cat)
+
+
+@pytest.mark.parametrize("bad", [{"a": 1}, 42, "items", True])
+def test_collect_catalog_refs_malformed_items(tmp_path, bad):
+    """items 非 list → CatalogError（消息含字段名）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": bad}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="items"):
+        collect_catalog_refs(cat)
+
+
+def test_collect_catalog_refs_items_none_is_empty(tmp_path):
+    """items 缺失或为 None → 空引用列表（不报错，契约兼容）。"""
+    cat = tmp_path / "catalog.json"
+    for payload in ({}, {"items": None}):
+        cat.write_text(json.dumps(payload), encoding="utf-8")
+        assert collect_catalog_refs(cat) == []
+
+
+@pytest.mark.parametrize("bad", ["x", 42, None, True, [1, 2]])
+def test_collect_catalog_refs_malformed_item(tmp_path, bad):
+    """items 元素非 dict → CatalogError（当前实现抛裸 AttributeError）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [bad]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="item"):
+        collect_catalog_refs(cat)
+
+
+@pytest.mark.parametrize("bad", [{"a": 1}, 42, "lvl", True])
+def test_collect_catalog_refs_malformed_levels(tmp_path, bad):
+    """item.levels 非 list → CatalogError。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [{"levels": bad}]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="levels"):
+        collect_catalog_refs(cat)
+
+
+def test_collect_catalog_refs_levels_none_is_empty(tmp_path):
+    """item.levels 缺失或为 None → 不报错。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [{"levels": None}]}), encoding="utf-8")
+    assert collect_catalog_refs(cat) == []
+
+
+@pytest.mark.parametrize("bad", ["x", 42, None, True, [1, 2]])
+def test_collect_catalog_refs_malformed_level(tmp_path, bad):
+    """level 元素非 dict → CatalogError。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [{"levels": [bad]}]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="level"):
+        collect_catalog_refs(cat)
+
+
+@pytest.mark.parametrize("field", ["container", "exportName"])
+def test_collect_catalog_refs_malformed_ref_field(tmp_path, field):
+    """item 级 container/exportName 非 str 但非 None → CatalogError
+    （防 `container: 123` 这类 truthy 非 str 静默通过）。"""
+    cat = tmp_path / "catalog.json"
+    ref = {"container": "sc/ui.sc", "exportName": "a", field: 123}
+    cat.write_text(json.dumps({"items": [{"icon": ref}]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match=field):
+        collect_catalog_refs(cat)
+
+
+def test_collect_catalog_refs_malformed_level_ref_field(tmp_path):
+    """level 级引用 container 非 str → CatalogError（add 统一入口覆盖）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({
+        "items": [{"levels": [{"icon": {"container": 123, "exportName": "x"}}]}]
+    }), encoding="utf-8")
+    with pytest.raises(CatalogError, match="container"):
+        collect_catalog_refs(cat)
+
+
+# ---------------------------------------------------------------------------
+# Issue #25：_blend_src_over 溢出修复回归（EB3DC59 已修复，钉住行为）
+# ---------------------------------------------------------------------------
+
+
+def test_blend_src_over_low_alpha_no_overflow():
+    """Issue #25 回归：sa=da=1 且 src=dst=255 时旧公式分子 509>255
+    ValueError；修复后必须输出合法 RGBA 值。"""
+    from game_catalog.render import _blend_src_over
+
+    canvas = bytearray([255, 255, 255, 1])
+    layer = bytes([255, 255, 255, 1])
+    _blend_src_over(canvas, layer)  # 修复前抛 ValueError
+    assert all(0 <= b <= 255 for b in canvas)
+
+
+def test_blend_src_over_range_and_alpha_exhaustive():
+    """Issue #25 回归：小范围穷举 sa/da ∈ {1,2,254} × src/dst ∈ {0,128,255}，
+    输出字节全部 ∈ [0,255]（覆盖修复前分子 >255 的溢出路径），且 alpha
+    精确等于 src-over 公式 sa + da*(255-sa)//255。"""
+    from game_catalog.render import _blend_src_over
+
+    for sa in (1, 2, 254):
+        for da in (1, 2, 254):
+            for src in (0, 128, 255):
+                for dst in (0, 128, 255):
+                    canvas = bytearray([dst, dst, dst, da])
+                    layer = bytes([src, src, src, sa])
+                    _blend_src_over(canvas, layer)
+                    assert all(0 <= b <= 255 for b in canvas), (
+                        sa, da, src, dst, list(canvas))
+                    # alpha 按 src-over 公式精确成立（整数除，确定性）
+                    expected_a = sa + da * (255 - sa) // 255
+                    assert canvas[3] == expected_a, (
+                        sa, da, src, dst, list(canvas))

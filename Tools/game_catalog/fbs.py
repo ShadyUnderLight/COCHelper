@@ -76,12 +76,21 @@ class FlatBuffer:
         vtable_size = self._u16(vtable_pos, f"vtable@{vtable_pos} size")
         if vtable_size < 4:
             raise ValueError(f"vtable@{vtable_pos} 畸形: size {vtable_size} < 4")
+        if vtable_pos + vtable_size > len(self._data):
+            raise ValueError(
+                f"vtable@{vtable_pos} 声明超界: size {vtable_size}，"
+                f"数据长度 {len(self._data)}")
         slot_off_pos = vtable_pos + 4 + slot * 2
         if slot_off_pos + 2 > vtable_pos + vtable_size:
             return default  # 字段未声明
         field_rel = self._u16(slot_off_pos, f"vtable@{vtable_pos} slot{slot}")
         if field_rel == 0:
             return default
+        table_size = self._u16(vtable_pos + 2, f"vtable@{vtable_pos} table_size")
+        if field_rel > table_size:
+            raise ValueError(
+                f"vtable@{vtable_pos} slot{slot} 偏移 {field_rel} "
+                f"超过 table_size {table_size}")
         return table_off + field_rel
 
     def table(self, off: int) -> int:

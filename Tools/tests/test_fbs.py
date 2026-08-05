@@ -290,6 +290,38 @@ def test_malformed_vtable_size_raises():
         fb.table_field(root_pos, 0)
 
 
+def test_vtable_size_declared_out_of_bounds_raises():
+    # vtable_size 声明 0xFFFF（远超 buffer）→ 任何 slot 读取都应抛错，
+    # 不能按声明的 size 继续读（可能读到 vtable 外的垃圾当作字段偏移）
+    b = FbBuilder()
+    s = b.add_string("x")
+    root = b.add_table({0: ("uoffset", s)})
+    data = bytearray(b.finish(root))
+    root_pos = struct.unpack("<I", data[:4])[0]
+    soffset = struct.unpack("<i", data[root_pos:root_pos + 4])[0]
+    vtable_pos = root_pos - soffset
+    data[vtable_pos:vtable_pos + 2] = b"\xff\xff"
+    fb = FlatBuffer(bytes(data))
+    with pytest.raises(ValueError):
+        fb.table_field(root_pos, 0)
+
+
+def test_field_rel_exceeding_table_size_raises():
+    # slot 偏移声明 0x7FFF（远超 table_size）→ table_field 应抛错，
+    # 不能静默返回垃圾偏移
+    b = FbBuilder()
+    s = b.add_string("x")
+    root = b.add_table({0: ("uoffset", s)})
+    data = bytearray(b.finish(root))
+    root_pos = struct.unpack("<I", data[:4])[0]
+    soffset = struct.unpack("<i", data[root_pos:root_pos + 4])[0]
+    vtable_pos = root_pos - soffset
+    data[vtable_pos + 4:vtable_pos + 6] = b"\xff\x7f"
+    fb = FlatBuffer(bytes(data))
+    with pytest.raises(ValueError):
+        fb.table_field(root_pos, 0)
+
+
 def test_table_offset_too_small_raises():
     fb = FlatBuffer(build_sample_table())
     with pytest.raises(ValueError):

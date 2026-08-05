@@ -14,22 +14,45 @@ final class ClanMemberDecodeFuzzTests: XCTestCase {
         mutating func bool(_ p: Int = 50) -> Bool { next() % 100 < UInt64(p) }
     }
 
-    /// 生成一个成员 JSON 字典：每个字段以 p% 概率缺失，另加随机未知键。
+    /// 生成一个成员 JSON 字典：字段随机缺失 + 未知键（官方 ClanWarMember 形态：
+    /// attacks 为攻击数组、townhallLevel 小写）。
     private static func memberDict(_ r: inout Rand, seed: Int, unknownKeyPool: [String]) -> [String: Any] {
         var d: [String: Any] = [:]
         if !r.bool(20) { d["tag"] = "#FUZZ\(seed)" }
         if !r.bool(20) { d["name"] = "fuzz-\(seed)" }
-        if !r.bool(20) { d["townHallLevel"] = 1 + Int(r.next() % 20) }
+        if !r.bool(20) { d["townhallLevel"] = 1 + Int(r.next() % 20) }
         if !r.bool(20) { d["mapPosition"] = 1 + Int(r.next() % 50) }
-        if !r.bool(20) { d["attacks"] = Int(r.next() % 3) }
-        if !r.bool(20) { d["stars"] = Int(r.next() % 7) }
-        if !r.bool(20) { d["destructionPercentage"] = Double(r.next() % 101) }
+        if !r.bool(20) { d["opponentAttacks"] = Int(r.next() % 3) }
+        if !r.bool(25) {
+            var attacks: [[String: Any]] = []
+            for _ in 0..<Int(r.next() % 3) {
+                var a: [String: Any] = [:]
+                if !r.bool(25) { a["order"] = Int(r.next() % 3) + 1 }
+                if !r.bool(25) { a["attackerTag"] = "#A\(seed)" }
+                if !r.bool(25) { a["defenderTag"] = "#D\(seed)" }
+                if !r.bool(25) { a["stars"] = Int(r.next() % 4) }
+                if !r.bool(25) { a["destructionPercentage"] = Double(r.next() % 101) }
+                if !r.bool(25) { a["duration"] = Int(r.next() % 300) }
+                attacks.append(a)
+            }
+            d["attacks"] = attacks
+        }
+        if !r.bool(30) {
+            var b: [String: Any] = [:]
+            if !r.bool(25) { b["order"] = 1 }
+            if !r.bool(25) { b["attackerTag"] = "#O\(seed)" }
+            if !r.bool(25) { b["defenderTag"] = "#M\(seed)" }
+            if !r.bool(25) { b["stars"] = Int(r.next() % 4) }
+            if !r.bool(25) { b["destructionPercentage"] = Double(r.next() % 101) }
+            if !r.bool(25) { b["duration"] = Int(r.next() % 300) }
+            d["bestOpponentAttack"] = b
+        }
         if r.bool(15) { d[unknownKeyPool.randomElement()!] = "future" }
         return d
     }
 
     func testClanWarMemberFuzzRoundTrip() throws {
-        let pool = ["opponentAttacks", "newField", "extra", "order"]
+        let pool = ["newField", "extra", "order", "futureKey"]
         var r = Rand(state: 0x2026_0820_0000_0000)
         for i in 0..<200 {
             var members: [[String: Any]] = []
@@ -63,15 +86,33 @@ final class ClanMemberDecodeFuzzTests: XCTestCase {
             }
             var logs: [[String: Any]] = []
             for _ in 0..<Int(r.next() % 4) {
-                var defender: [String: Any] = [:]
-                if !r.bool(20) { defender["tag"] = "#D\(i)" }
-                if !r.bool(20) { defender["name"] = "d\(i)" }
-                if !r.bool(20) { defender["destructionPercent"] = Double(r.next() % 101) }
-                var e: [String: Any] = ["defender": defender]
-                if !r.bool(20) { e["attackCount"] = Int(r.next() % 10) }
-                if !r.bool(20) { e["districtCount"] = Int(r.next() % 6) }
-                if !r.bool(20) { e["districtsDestroyed"] = Int(r.next() % 6) }
-                if !r.bool(20) { e["looted"] = Int(r.next() % 50_000) }
+                var clanInfo: [String: Any] = [:]
+                if !r.bool(25) { clanInfo["tag"] = "#C\(i)" }
+                if !r.bool(25) { clanInfo["name"] = "c\(i)" }
+                if !r.bool(25) { clanInfo["level"] = Int(r.next() % 15) }
+                if r.bool(20) { clanInfo["badgeUrls"] = ["small": "https://x/\(i).png"] }
+                var districts: [[String: Any]] = []
+                for _ in 0..<Int(r.next() % 4) {
+                    var dd: [String: Any] = [:]
+                    if !r.bool(25) { dd["id"] = Int(r.next() % 100) }
+                    if !r.bool(25) { dd["name"] = "d\(i)" }
+                    if !r.bool(25) { dd["districtHallLevel"] = Int(r.next() % 7) }
+                    if !r.bool(25) { dd["stars"] = Int(r.next() % 4) }
+                    if !r.bool(25) { dd["destructionPercent"] = Double(r.next() % 101) }
+                    if !r.bool(25) { dd["attackCount"] = Int(r.next() % 10) }
+                    if !r.bool(25) { dd["totalLooted"] = Int(r.next() % 50_000) }
+                    districts.append(dd)
+                }
+                var e: [String: Any] = ["districts": districts]
+                // 交替生成 attackLog（defender）与 defenseLog（attacker）形态：
+                // 用同一个 logs 数组混两种条目，解码端两模型分开断言太复杂——
+                // 直接对 OfficialCapitalRaidPage 顶层解码验证 round-trip 即可，
+                // 字段名正确性由 R1 的 fixture 测试覆盖。
+                if !r.bool(20) { e["defender"] = clanInfo }
+                if !r.bool(20) { e["attacker"] = clanInfo }
+                if !r.bool(25) { e["attackCount"] = Int(r.next() % 10) }
+                if !r.bool(25) { e["districtCount"] = Int(r.next() % 6) }
+                if !r.bool(25) { e["districtsDestroyed"] = Int(r.next() % 6) }
                 if r.bool(10) { e["futureField"] = true }
                 logs.append(e)
             }

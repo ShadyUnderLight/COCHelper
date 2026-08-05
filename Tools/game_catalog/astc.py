@@ -8,11 +8,12 @@ ARM astc-encoder 5.x（Apache-2.0，表格/算法逐字移植）。
 - 2D 块尺寸参数化（4x4 / 6x6 等，块宽高由调用方传入，不写死）
 - 全部 12 种常规 block mode + dual-plane（位 10）+ const/void-extent（0xFC 家族）
 - 1-4 个 partitions（partition 布局由 hash52 过程式生成，与 spec 静态表等价）
-- 全部端点格式：LDR（CEM 0,1,4,5,6,8,9,10,12,13）+ HDR（2,3,7,11,14,15，
-  12-bit LNS，spec piecewise-log 插值修正后转 fp16 再 clamp 到 RGBA8）
+- 全部端点格式：LDR（CEM 0,1,4,5,6,8,9,10,12,13）；HDR 端点
+  （CEM 2,3,7,11,14,15）未支持 → AstcError
 - BISE 整数序列（trit/quint/bits）解码
 
 限制（实证：真实 COC 纹理零出现，见测试报告）：
+- HDR 端点（CEM 2,3,7,11,14,15）→ AstcError
 - F16 常量块（const 块 bit9 置位）→ AstcError
 - 3D 块不支持
 
@@ -20,7 +21,7 @@ ARM astc-encoder 5.x（Apache-2.0，表格/算法逐字移植）。
 扫描约 200 万块）：
 - 真实纹理全部合法（无保留模式 / weight bits 超界 / grid 超块 / dual+4 分区）
 - 真实纹理全部 LDR 端点（CEM 0,1,4,5,6,8,9,10,12,13），零 HDR；HDR 端点
-  实现按 spec 移植但未对拍验证（无真实样本）
+  与官方 astcenc 5.7.0 对拍确认不一致（16/16 块），故直接拒绝而非输出错误像素
 - 与官方 astcenc 5.7.0（-dl）输出逐像素一致（tex6 912x1024 与 buildings_0
   608x1004 全图对拍 diff=0）
 - 性能：4x4 块约 28µs、6x6 块约 56µs（纯 Python，Mac 本地）
@@ -3182,42 +3183,25 @@ def _bit_transfer_signed(base: int, delta: int) -> tuple[int, int]:
     return base, delta
 
 
-def _unpack_endpoints(
-    fmt: int, values: list[int]
-) -> tuple[list[int], list[int], bool, bool]:
-    """CEM 端点格式 → (端点0, 端点1, rgb_hdr, alpha_hdr)。
+def _unpack_endpoints(fmt: int, values: list[int]) -> tuple[list[int], list[int]]:
+    """CEM 端点格式 → (端点0, 端点1)。
 
-    返回 16-bit 端点：LDR = 8-bit 值（调用方 ×257 展开），HDR = 12-bit LNS << 4。
-    HDR 端点按 spec §23 的 HDR endpoint modes 解码（ARM 逐字移植）。
+    返回 8-bit 端点（调用方 ×257 展开到 16-bit）。HDR 端点 CEM
+    （2/3/7/11/14/15）未支持，入口直接抛 AstcError（与官方 astcenc 对拍
+    确认 HDR 实现有误，且真实 COC 纹理零出现）。
     """
+    if fmt in (2, 3, 7, 11, 14, 15):
+        raise AstcError(f"HDR 端点未支持（CEM {fmt}）")
     if fmt == 0:  # LUMINANCE direct
-        return ([values[0]] * 3 + [255], [values[1]] * 3 + [255], False, False)
+        return ([values[0]] * 3 + [255], [values[1]] * 3 + [255])
     if fmt == 1:  # LUMINANCE delta
         v0, v1 = values
         l0 = (v0 >> 2) | (v1 & 0xC0)
         l1 = min(l0 + (v1 & 0x3F), 255)
-        return ([l0] * 3 + [255], [l1] * 3 + [255], False, False)
-    if fmt == 2:  # HDR LUMINANCE large range
-        v0, v1 = values
-        if v1 >= v0:
-            y0, y1 = v0 << 4, v1 << 4
-        else:
-            y0, y1 = (v1 << 4) + 8, (v0 << 4) - 8
-        y0, y1 = max(y0, 0), max(y1, 0)
-        return ([y0 << 4] * 3 + [0x7800], [y1 << 4] * 3 + [0x7800], True, True)
-    if fmt == 3:  # HDR LUMINANCE small range
-        v0, v1 = values
-        if v0 & 0x80:
-            y0 = ((v1 & 0xE0) << 4) | ((v0 & 0x7F) << 2)
-            y1 = (v1 & 0x1F) << 2
-        else:
-            y0 = ((v1 & 0xF0) << 4) | ((v0 & 0x7F) << 1)
-            y1 = (v1 & 0xF) << 1
-        y1 = min(y1 + y0, 0xFFF)
-        return ([y0 << 4] * 3 + [0x7800], [y1 << 4] * 3 + [0x7800], True, True)
+        return ([l0] * 3 + [255], [l1] * 3 + [255])
     if fmt == 4:  # LUMINANCE_ALPHA direct
         l0, l1, a0, a1 = values
-        return ([l0] * 3 + [a0], [l1] * 3 + [a1], False, False)
+        return ([l0] * 3 + [a0], [l1] * 3 + [a1])
     if fmt == 5:  # LUMINANCE_ALPHA delta
         lum0, lum1, alpha0, alpha1 = values
         lum0 |= (lum1 & 0x80) << 1
@@ -3234,19 +3218,17 @@ def _unpack_endpoints(
         alpha1 += alpha0
         lum1 = max(0, min(255, lum1))
         alpha1 = max(0, min(255, alpha1))
-        return ([lum0] * 3 + [alpha0], [lum1] * 3 + [alpha1], False, False)
+        return ([lum0] * 3 + [alpha0], [lum1] * 3 + [alpha1])
     if fmt == 6:  # RGB base+scale
         r0, g0, b0, scale = values
         ep1 = [r0, g0, b0, 255]
         ep0 = [(r0 * scale) >> 8, (g0 * scale) >> 8, (b0 * scale) >> 8, 255]
-        return (ep0, ep1, False, False)
-    if fmt == 7:  # HDR RGB base+scale
-        return _hdr_rgbo(values)
+        return (ep0, ep1)
     if fmt == 8:  # RGB direct（值交错：R0,R1,G0,G1,B0,B1）
         ep0 = [values[0], values[2], values[4], 255]
         ep1 = [values[1], values[3], values[5], 255]
         ep0, ep1 = _maybe_uncontract(ep0, ep1)
-        return (ep0, ep1, False, False)
+        return (ep0, ep1)
     if fmt == 9:  # RGB delta
         v0, v1 = _bit_transfer_signed(values[0], values[1])
         v2, v3 = _bit_transfer_signed(values[2], values[3])
@@ -3259,19 +3241,17 @@ def _unpack_endpoints(
             ep0, ep1 = ep1, ep0
         ep0 = [max(0, min(255, c)) for c in ep0]
         ep1 = [max(0, min(255, c)) for c in ep1]
-        return (ep0, ep1, False, False)
+        return (ep0, ep1)
     if fmt == 10:  # RGB base+scale + alpha
         r0, g0, b0, scale, a0, a1 = values
         ep1 = [r0, g0, b0, a1]
         ep0 = [(r0 * scale) >> 8, (g0 * scale) >> 8, (b0 * scale) >> 8, a0]
-        return (ep0, ep1, False, False)
-    if fmt == 11:  # HDR RGB direct
-        return _hdr_rgb(values)
+        return (ep0, ep1)
     if fmt == 12:  # RGBA direct（值交错：R0,R1,G0,G1,B0,B1,A0,A1）
         ep0 = [values[0], values[2], values[4], values[6]]
         ep1 = [values[1], values[3], values[5], values[7]]
         ep0, ep1 = _maybe_uncontract(ep0, ep1)
-        return (ep0, ep1, False, False)
+        return (ep0, ep1)
     if fmt == 13:  # RGBA delta
         vals = values
         outs = [_bit_transfer_signed(vals[i], vals[i + 1]) for i in (0, 2, 4, 6)]
@@ -3283,236 +3263,8 @@ def _unpack_endpoints(
             ep0, ep1 = ep1, ep0
         ep0 = [max(0, min(255, c)) for c in ep0]
         ep1 = [max(0, min(255, c)) for c in ep1]
-        return (ep0, ep1, False, False)
-    if fmt == 14:  # HDR RGB + LDR alpha
-        ep0, ep1, _, _ = _hdr_rgb(values[:6])
-        ep0[3] = values[6]
-        ep1[3] = values[7]
-        return (ep0, ep1, True, False)
-    if fmt == 15:  # HDR RGB + HDR alpha
-        ep0, ep1, _, _ = _hdr_rgb(values[:6])
-        a0, a1 = _hdr_alpha(values[6:8])
-        ep0[3], ep1[3] = a0, a1
-        return (ep0, ep1, True, True)
+        return (ep0, ep1)
     raise AstcError(f"未知端点格式 CEM {fmt}")
-
-
-def _hdr_rgbo(values: list[int]) -> tuple[list[int], list[int], bool, bool]:
-    """HDR RGB base+scale（CEM 7；ARM hdr_rgbo_unpack）。"""
-    v0, v1, v2, v3 = values
-    modeval = ((v0 & 0xC0) >> 6) | (((v1 & 0x80) >> 7) << 2) | (((v2 & 0x80) >> 7) << 3)
-    if (modeval & 0xC) != 0xC:
-        majcomp = modeval >> 2
-        mode = modeval & 3
-    elif modeval != 0xF:
-        majcomp = modeval & 3
-        mode = 4
-    else:
-        majcomp = 0
-        mode = 5
-    red = v0 & 0x3F
-    green = v1 & 0x1F
-    blue = v2 & 0x1F
-    scale = v3 & 0x1F
-    bit0 = (v1 >> 6) & 1
-    bit1 = (v1 >> 5) & 1
-    bit2 = (v2 >> 6) & 1
-    bit3 = (v2 >> 5) & 1
-    bit4 = (v3 >> 7) & 1
-    bit5 = (v3 >> 6) & 1
-    bit6 = (v3 >> 5) & 1
-    ohcomp = 1 << mode
-    if ohcomp & 0x30:
-        green |= bit0 << 6
-    if ohcomp & 0x3A:
-        green |= bit1 << 5
-    if ohcomp & 0x30:
-        blue |= bit2 << 6
-    if ohcomp & 0x3A:
-        blue |= bit3 << 5
-    if ohcomp & 0x3D:
-        scale |= bit6 << 5
-    if ohcomp & 0x2D:
-        scale |= bit5 << 6
-    if ohcomp & 0x04:
-        scale |= bit4 << 7
-    if ohcomp & 0x3B:
-        red |= bit4 << 6
-    if ohcomp & 0x04:
-        red |= bit3 << 6
-    if ohcomp & 0x10:
-        red |= bit5 << 7
-    if ohcomp & 0x0F:
-        red |= bit2 << 7
-    if ohcomp & 0x05:
-        red |= bit1 << 8
-    if ohcomp & 0x0A:
-        red |= bit0 << 8
-    if ohcomp & 0x05:
-        red |= bit0 << 9
-    if ohcomp & 0x02:
-        red |= bit6 << 9
-    if ohcomp & 0x01:
-        red |= bit3 << 10
-    if ohcomp & 0x02:
-        red |= bit5 << 10
-    shamt = (1, 1, 2, 3, 4, 5)[mode]
-    red <<= shamt
-    green <<= shamt
-    blue <<= shamt
-    scale <<= shamt
-    if mode != 5:
-        green = red - green
-        blue = red - blue
-    if majcomp == 1:
-        red, green = green, red
-    elif majcomp == 2:
-        red, blue = blue, red
-    red0 = max(red - scale, 0)
-    green0 = max(green - scale, 0)
-    blue0 = max(blue - scale, 0)
-    red = max(red, 0)
-    green = max(green, 0)
-    blue = max(blue, 0)
-    return (
-        [red0 << 4, green0 << 4, blue0 << 4, 0x7800],
-        [red << 4, green << 4, blue << 4, 0x7800],
-        True,
-        True,
-    )
-
-
-def _hdr_rgb(values: list[int]) -> tuple[list[int], list[int], bool, bool]:
-    """HDR RGB direct（CEM 11；ARM hdr_rgb_unpack）。"""
-    v0, v1, v2, v3, v4, v5 = values
-    modeval = ((v1 & 0x80) >> 7) | (((v2 & 0x80) >> 7) << 1) | (((v3 & 0x80) >> 7) << 2)
-    majcomp = ((v4 & 0x80) >> 7) | (((v5 & 0x80) >> 7) << 1)
-    if majcomp == 3:
-        return (
-            [v0 << 8, v2 << 8, (v4 & 0x7F) << 9, 0x7800],
-            [v1 << 8, v3 << 8, (v5 & 0x7F) << 9, 0x7800],
-            True,
-            True,
-        )
-    a = v0 | ((v1 & 0x40) << 2)
-    b0 = v2 & 0x3F
-    b1 = v3 & 0x3F
-    c = v1 & 0x3F
-    d0 = v4 & 0x7F
-    d1 = v5 & 0x7F
-    dbits = (7, 6, 7, 6, 5, 6, 5, 6)[modeval]
-    bit0 = (v2 >> 6) & 1
-    bit1 = (v3 >> 6) & 1
-    bit2 = (v4 >> 6) & 1
-    bit3 = (v5 >> 6) & 1
-    bit4 = (v4 >> 5) & 1
-    bit5 = (v5 >> 5) & 1
-    ohmod = 1 << modeval
-    if ohmod & 0xA4:
-        a |= bit0 << 9
-    if ohmod & 0x8:
-        a |= bit2 << 9
-    if ohmod & 0x50:
-        a |= bit4 << 9
-    if ohmod & 0x50:
-        a |= bit5 << 10
-    if ohmod & 0xA0:
-        a |= bit1 << 10
-    if ohmod & 0xC0:
-        a |= bit2 << 11
-    if ohmod & 0x4:
-        c |= bit1 << 6
-    if ohmod & 0xE8:
-        c |= bit3 << 6
-    if ohmod & 0x20:
-        c |= bit2 << 7
-    if ohmod & 0x5B:
-        b0 |= bit0 << 6
-        b1 |= bit1 << 6
-    if ohmod & 0x12:
-        b0 |= bit2 << 7
-        b1 |= bit3 << 7
-    if ohmod & 0xAF:
-        d0 |= bit4 << 5
-        d1 |= bit5 << 5
-    if ohmod & 0x5:
-        d0 |= bit2 << 6
-        d1 |= bit3 << 6
-    # d0/d1 符号扩展（dbits 位有符号）
-    for vv in (d0, d1):
-        if vv & (1 << (dbits - 1)):
-            vv -= 1 << dbits
-    val_shamt = (modeval >> 1) ^ 3
-    a <<= val_shamt
-    b0 <<= val_shamt
-    b1 <<= val_shamt
-    c <<= val_shamt
-    d0 <<= val_shamt
-    d1 <<= val_shamt
-    red1 = a
-    green1 = a - b0
-    blue1 = a - b1
-    red0 = a - c
-    green0 = a - b0 - c - d0
-    blue0 = a - b1 - c - d1
-    red0 = max(0, min(4095, red0))
-    green0 = max(0, min(4095, green0))
-    blue0 = max(0, min(4095, blue0))
-    red1 = max(0, min(4095, red1))
-    green1 = max(0, min(4095, green1))
-    blue1 = max(0, min(4095, blue1))
-    if majcomp == 1:
-        red0, green0 = green0, red0
-        red1, green1 = green1, red1
-    elif majcomp == 2:
-        red0, blue0 = blue0, red0
-        red1, blue1 = blue1, red1
-    return (
-        [red0 << 4, green0 << 4, blue0 << 4, 0x7800],
-        [red1 << 4, green1 << 4, blue1 << 4, 0x7800],
-        True,
-        True,
-    )
-
-
-def _hdr_alpha(values: list[int]) -> tuple[int, int]:
-    """HDR alpha（CEM 15；ARM hdr_alpha_unpack）。返回 16-bit（12-bit << 4）。"""
-    v6, v7 = values
-    modeval = ((v6 >> 7) & 1) | ((v7 >> 6) & 2)
-    v6 &= 0x7F
-    v7 &= 0x7F
-    if modeval == 3:
-        a0, a1 = v6 << 5, v7 << 5
-    else:
-        v6 |= (v7 << (modeval + 1)) & 0x780
-        v7 &= 0x3F >> modeval
-        v7 ^= 32 >> modeval
-        v7 -= 32 >> modeval
-        v6 <<= 4 - modeval
-        v7 <<= 4 - modeval
-        a0, a1 = v6, max(0, min(0xFFF, v6 + v7))
-    return a0 << 4, a1 << 4
-
-
-def _hdr16_to_u8(c16: int) -> int:
-    """HDR 插值结果（16-bit）→ RGBA8：spec piecewise-log 修正 + fp16 → clamp u8。"""
-    e = (c16 & 0xF800) >> 11
-    m = c16 & 0x7FF
-    if m < 512:
-        mt = 3 * m
-    elif m >= 1536:
-        mt = 5 * m - 2048
-    else:
-        mt = 4 * m - 512
-    cf = (e << 10) + (mt >> 3)  # fp16 位模式（无符号半精度）
-    e2 = (cf >> 10) & 0x1F
-    m2 = cf & 0x3FF
-    if e2 == 0:
-        f = m2 / 2**24
-    else:
-        f = (1 + m2 / 1024) * (2.0 ** (e2 - 15))
-    v = int(f * 255 + 0.5)
-    return max(0, min(255, v))
 
 
 def _maybe_uncontract(ep0: list[int], ep1: list[int]) -> tuple[list[int], list[int]]:
@@ -3533,7 +3285,8 @@ def decode_block(data: bytes, block_w: int, block_h: int) -> bytes:
     """解码单个 16 字节 ASTC 块 → RGBA8（block_w*block_h*4 字节，行优先）。
 
     块尺寸为参数（4x4 / 6x6 等）；支持 LDR 全端点、1-4 分区、dual-plane、
-    const/void-extent。任何畸形/非法/未支持（HDR）输入抛 AstcError。
+    const/void-extent。任何畸形/非法/未支持（HDR 端点、F16 常量块）输入抛
+    AstcError。
     """
     if len(data) < 16:
         raise AstcError(f"ASTC 块数据不足 16 字节: {len(data)}")
@@ -3634,7 +3387,10 @@ def decode_block(data: bytes, block_w: int, block_h: int) -> bytes:
     color_bits = (111 if partition_count == 1 else 99) - wbits - high_size
     if dual:
         color_bits -= 2
-    color_bits = max(0, color_bits)
+    if color_bits < 0:  # ARM：负位数 → 非法块（颜色区挤占权重区）
+        raise AstcError(
+            f"颜色可用位数不足（bits={color_bits} 值={color_integer_count}）"
+        )
     cquant = _QUANT_MODE_TABLE[color_integer_count >> 1][color_bits]
     if cquant < 4:  # QUANT_6 起（枚举值 4）；-1 或 <4 均为不可用
         raise AstcError(
@@ -3651,11 +3407,10 @@ def decode_block(data: bytes, block_w: int, block_h: int) -> bytes:
     pos = 0
     for cem in cems:
         n = 2 * (cem >> 2) + 2
-        ep0, ep1, rgb_hdr, a_hdr = _unpack_endpoints(cem, color_values[pos : pos + n])
-        if not rgb_hdr:
-            ep0 = [c * 257 for c in ep0]
-            ep1 = [c * 257 for c in ep1]
-        endpoints.append((ep0, ep1, rgb_hdr, a_hdr))
+        ep0, ep1 = _unpack_endpoints(cem, color_values[pos : pos + n])
+        ep0 = [c * 257 for c in ep0]
+        ep1 = [c * 257 for c in ep1]
+        endpoints.append((ep0, ep1))
         pos += n
 
     # plane2 分量（dual-plane）
@@ -3677,15 +3432,12 @@ def decode_block(data: bytes, block_w: int, block_h: int) -> bytes:
             for q, w in contribs[t]:
                 s2 += w2[q] * w
             tw2 = (s2 + 8) >> 4
-        ep0, ep1, rgb_hdr, a_hdr = endpoints[parts[t]]
+        ep0, ep1 = endpoints[parts[t]]
         px = bytearray(4)
         for c in range(4):
             w = tw2 if (dual and c == plane2_component) else tw
             v = (ep0[c] * (64 - w) + ep1[c] * w + 32) >> 6
-            if (rgb_hdr and c < 3) or (a_hdr and c == 3):
-                px[c] = _hdr16_to_u8(v)
-            else:
-                px[c] = v >> 8
+            px[c] = v >> 8
         out[t * 4 : t * 4 + 4] = px
     return bytes(out)
 

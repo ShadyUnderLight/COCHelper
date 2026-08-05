@@ -322,8 +322,12 @@ def test_reserved_block_mode_raises():
         decode_block(blk, 4, 4)
 
 
-def test_hdr_endpoint_decodes():
-    """HDR 端点格式（CEM 2/3/7/11/14/15）可解码：HDR 通道 clamp 到 [0,255]。"""
+def test_hdr_endpoint_raises():
+    """HDR 端点格式（CEM 2/3/7/11/14/15）→ AstcError（未支持，不产出错误像素）。
+
+    HDR 端点实现与官方 astcenc 5.7.0 对拍确认不一致，故按「未支持 → AstcError」
+    契约直接拒绝；真实 COC 纹理（约 200 万块）零 HDR，无运行时影响。
+    """
     for cem in (2, 3, 7, 11, 14, 15):
         buf = bytearray(16)
         _write_bits(buf, 0x42, 11, 0)
@@ -331,27 +335,8 @@ def test_hdr_endpoint_decodes():
         _write_bits(buf, cem, 4, 13)
         for i, v in enumerate((255, 0, 255, 0, 255, 0, 255, 0)):
             _write_bits(buf, v, 8, 17 + 8 * i)
-        out = decode_block(bytes(buf), 4, 4)
-        assert len(out) == 64
-        assert all(0 <= v <= 255 for v in out)
-
-
-def test_hdr_luminance_large_handcalc():
-    """HDR luminance large range（CEM 2）手算：v0=240, v1=0 → 端点0 16-bit=128。
-
-    v1 < v0 → y0 = (0<<4)+8 = 8, y1 = (240<<4)-8 = 3832；端点 16-bit =
-    (8<<4, 3832<<4) = (128, 61312)。权重全 0 → 全块 = 端点 0 = 128 →
-    piecewise: E=0, M=128 → Mt=384 → Cf=48 → fp16 次正规 → u8 = 0。
-    alpha 0x7800 (1.0) → 255。
-    """
-    buf = bytearray(16)
-    _write_bits(buf, 0x42, 11, 0)
-    _write_bits(buf, 0, 2, 11)
-    _write_bits(buf, 2, 4, 13)  # CEM 2 HDR luminance large range
-    _write_bits(buf, 240, 8, 17)
-    _write_bits(buf, 0, 8, 25)
-    out = decode_block(bytes(buf), 4, 4)
-    assert out == bytes([0, 0, 0, 255]) * 16
+        with pytest.raises(AstcError, match="HDR"):
+            decode_block(bytes(buf), 4, 4)
 
 
 def test_f16_constant_raises():
@@ -431,7 +416,7 @@ def test_decode_region():
     blue_px = bytes([0, 0, 255, 255])
     for y in range(8):
         row = full[y * 32 : (y + 1) * 32]
-        assert row[:16] == red_px * 4 if y < 4 else row[:16] == blue_px * 4
+        assert (row[:16] == red_px * 4) if y < 4 else (row[:16] == blue_px * 4)
         assert row[16:] == blue_px * 4
 
 

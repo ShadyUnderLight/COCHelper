@@ -23,20 +23,25 @@ _HEX = frozenset(string.hexdigits)
 def _check_rendered_path(
     errors: list[str],
     ref: AssetRef,
-    ref_name: str,
     context: str,
     catalog_dir: Path,
     registered: set[str] | None,
 ) -> None:
     """renderedPath 负例校验（Issue #27 契约 R1/R2/R5）。
 
-    顺序：R-D 格式 → R-A 文件存在 → R-C manifest 登记 → R-B 与 missingReason 互斥。
-    renderedPath 为空（null/""）不触发；文件存在但已登记时 hash/size 一致性由
-    现有 generatedFiles 重算逻辑兜底（PNG 条目走同一路径）。
+    顺序：R-B 互斥（独立轴，先查，不被格式短路）→ R-D 格式 → R-A 文件存在 →
+    R-C manifest 登记。renderedPath 为空（null/""）不触发——与 counts.missingIcons
+    的 "renderedPath is None" 语义一致，勿改为 is None 判断（会改 counts 语义）。
+    文件存在但已登记时 hash/size 一致性由现有 generatedFiles 重算逻辑兜底
+    （PNG 条目走同一路径）。
     """
     rp = ref.renderedPath
     if not rp:
         return
+    if ref.missingReason:
+        errors.append(
+            f"renderedPath 与 missingReason 同时存在（成功字段与失败原因互斥）: {rp} "
+            f"missingReason={ref.missingReason!r} ({context})")
     if not (rp.startswith("icons/") and rp.endswith(".png")):
         errors.append(f"renderedPath 格式非法: {rp!r}（须相对版本目录 icons/ 且 .png 结尾）({context})")
         return
@@ -44,10 +49,6 @@ def _check_rendered_path(
         errors.append(f"renderedPath 指向不存在的文件: {rp} ({context})")
     elif registered is not None and rp not in registered:
         errors.append(f"renderedPath 文件未在 manifest generatedFiles 登记: {rp} ({context})")
-    if ref.missingReason:
-        errors.append(
-            f"renderedPath 与 missingReason 同时存在（成功字段与失败原因互斥）: {rp} "
-            f"missingReason={ref.missingReason!r} ({context})")
 
 
 def validate_catalog(dir_path: str | Path) -> list[str]:
@@ -158,7 +159,7 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                     if ref and ref.missingReason and ref.missingReason not in ASSET_MISSING_REASONS:
                         errors.append(f"{key} level {lv.level}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
                     if ref:
-                        _check_rendered_path(errors, ref, ref_name,
+                        _check_rendered_path(errors, ref,
                                              f"item={key}, level={lv.level}, {ref_name}",
                                              catalog_path.parent, registered)
             if item.missingReason and item.missingReason not in ITEM_MISSING_REASONS:
@@ -173,7 +174,7 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                 if ref and ref.missingReason and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
                 if ref:
-                    _check_rendered_path(errors, ref, ref_name,
+                    _check_rendered_path(errors, ref,
                                          f"item={key}, {ref_name}",
                                          catalog_path.parent, registered)
     except (TypeError, ValueError, AttributeError) as exc:

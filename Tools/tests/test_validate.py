@@ -713,3 +713,41 @@ def test_new_asset_missing_reasons_accepted(tmp_path, reason):
     c["items"][0]["icon"] = _ref(rendered_path=None, reason=reason)
     _write_with_hash(d, catalog=c)
     assert validate_catalog(d) == []
+
+
+def test_rendered_path_format_and_missing_reason_both_reported(tmp_path):
+    """NB-1 回归：R-D 格式非法 + R-B 互斥是两条独立轴，格式非法也要报互斥。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(
+        rendered_path="barbarian.png", reason="icons_not_rendered")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("renderedPath 格式非法" in e for e in errors)
+    assert any("renderedPath 与 missingReason 同时存在" in e and "互斥" in e for e in errors)
+
+
+def test_rendered_path_non_string_type_wrapped(tmp_path):
+    """nit 4 回归：renderedPath 非 str（int）→ "catalog 内容非法" wrapper，不裸崩。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path=5)
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert errors and "内容非法" in errors[0]
+    assert not any("Traceback" in e for e in errors)
+
+
+def test_rendered_path_rc_skipped_when_no_generated_files(tmp_path):
+    """registered=None 分支：manifest 无 generatedFiles 时 R-C 静默跳过，不虚假报"未登记"。"""
+    d = _valid_dir(tmp_path)
+    (d / "icons" / "barbarian.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="icons/barbarian.png")
+    _write_with_hash(d, catalog=c)
+    m = _load_manifest(d)
+    del m["generatedFiles"]
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("缺少 generatedFiles" in e for e in errors)
+    assert not any("未在 manifest generatedFiles 登记" in e for e in errors)

@@ -190,56 +190,93 @@ public struct CapitalRaidSeasonMember: Codable, Hashable, Sendable {
     }
 }
 
-/// 攻防日志中的防守方（区域）摘要。
-public struct CapitalRaidDefender: Codable, Hashable, Sendable {
+/// 攻防日志中的部落方（官方 ClanCapitalRaidSeasonClanInfo）。
+///
+/// attackLog 条目用 `defender`、defenseLog 条目用 `attacker`（官方字段名）。
+public struct CapitalRaidClanInfo: Codable, Hashable, Sendable {
     public let tag: String?
     public let name: String?
-    /// 摧毁百分比（浮点，用 Double 容忍整数形态）。
-    public let destructionPercent: Double?
+    public let level: Int?
+    public let badgeUrls: [String: String]?
 
-    public init(tag: String?, name: String?, destructionPercent: Double?) {
+    public init(tag: String?, name: String?, level: Int?, badgeUrls: [String: String]?) {
         self.tag = tag
         self.name = name
+        self.level = level
+        self.badgeUrls = badgeUrls
+    }
+}
+
+/// 攻防日志中的区域明细（官方 ClanCapitalRaidSeasonDistrict）。
+///
+/// 摧毁率与掠夺在 districts 内（官方无顶层 looted/destructionPercent）。
+public struct CapitalRaidDistrict: Codable, Hashable, Sendable {
+    public let name: String?
+    public let id: Int?
+    /// 区域大厅等级。
+    public let districtHallLevel: Int?
+    public let stars: Int?
+    /// 摧毁百分比（官方整数，用 Double 容忍浮点形态）。
+    public let destructionPercent: Double?
+    public let attackCount: Int?
+    /// 该区域掠夺的战利品。
+    public let totalLooted: Int?
+
+    public init(
+        name: String?, id: Int?, districtHallLevel: Int?, stars: Int?,
+        destructionPercent: Double?, attackCount: Int?, totalLooted: Int?
+    ) {
+        self.name = name
+        self.id = id
+        self.districtHallLevel = districtHallLevel
+        self.stars = stars
         self.destructionPercent = destructionPercent
+        self.attackCount = attackCount
+        self.totalLooted = totalLooted
     }
 }
 
-/// attackLog 条目：一次突袭（进攻方为部落自身，故无 attacker 字段）。
+/// attackLog 条目（官方 ClanCapitalRaidSeasonAttackLogEntry）。
 public struct CapitalRaidAttackLogEntry: Codable, Hashable, Sendable {
-    public let defender: CapitalRaidDefender?
+    /// 被进攻的部落（官方字段名 defender）。
+    public let defender: CapitalRaidClanInfo?
     public let attackCount: Int?
     public let districtCount: Int?
     public let districtsDestroyed: Int?
-    /// 掠夺的部落资本资源。
-    public let looted: Int?
+    /// 区域明细（摧毁率/掠夺在此）。
+    public let districts: [CapitalRaidDistrict]?
 
     public init(
-        defender: CapitalRaidDefender?, attackCount: Int?, districtCount: Int?,
-        districtsDestroyed: Int?, looted: Int?
+        defender: CapitalRaidClanInfo?, attackCount: Int?, districtCount: Int?,
+        districtsDestroyed: Int?, districts: [CapitalRaidDistrict]?
     ) {
         self.defender = defender
         self.attackCount = attackCount
         self.districtCount = districtCount
         self.districtsDestroyed = districtsDestroyed
-        self.looted = looted
+        self.districts = districts
     }
 }
 
-/// defenseLog 条目：一次被进攻的防守记录（无 looted 字段）。
+/// defenseLog 条目（官方 ClanCapitalRaidSeasonDefenseLogEntry）。
+/// 注意：官方字段名是 `attacker`（与 attackLog 的 `defender` 不同）。
 public struct CapitalRaidDefenseLogEntry: Codable, Hashable, Sendable {
-    public let defender: CapitalRaidDefender?
+    /// 进攻的部落（官方字段名 attacker）。
+    public let attacker: CapitalRaidClanInfo?
     public let attackCount: Int?
     public let districtCount: Int?
     public let districtsDestroyed: Int?
+    public let districts: [CapitalRaidDistrict]?
 
     public init(
-        defender: CapitalRaidDefender?, attackCount: Int?, districtCount: Int?,
-        districtsDestroyed: Int?
+        attacker: CapitalRaidClanInfo?, attackCount: Int?, districtCount: Int?,
+        districtsDestroyed: Int?, districts: [CapitalRaidDistrict]?
     ) {
-        self.defender = defender
+        self.attacker = attacker
         self.attackCount = attackCount
         self.districtCount = districtCount
         self.districtsDestroyed = districtsDestroyed
+        self.districts = districts
     }
 }
 

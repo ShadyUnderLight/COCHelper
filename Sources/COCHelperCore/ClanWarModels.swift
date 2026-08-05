@@ -118,35 +118,67 @@ private struct SnapshotCodingKey: CodingKey {
 
 // MARK: - 嵌套结构
 
-/// currentwar / warlog 成员级攻击表条目（官方 ClanWarMember）。
+/// 战争中的一次攻击（官方 ClanWarAttack）。
 ///
-/// 全 optional + 合成 Codable：官方新增字段或个别字段缺失（如 warEnded
-/// 后部分成员无攻击记录、大本等级缺失）不破坏解码；未知子字段
-/// （如 opponentAttacks 逐次攻击明细）容忍忽略，不做属性声明（deferred）。
-public struct ClanWarMember: Codable, Hashable, Sendable {
-    public let tag: String?
-    public let name: String?
-    /// 大本等级（战争结束/未开战时可能缺失）。
-    public let townHallLevel: Int?
-    /// 地图位置（1 起）。
-    public let mapPosition: Int?
-    /// 已使用攻击次数（成员可能 0 次攻击）。
-    public let attacks: Int?
+/// 全 optional + 合成 Codable：字段缺失不破坏解码。
+public struct ClanWarAttack: Codable, Hashable, Sendable {
+    /// 该成员本次战争中的攻击顺序（1 起）。
+    public let order: Int?
+    public let attackerTag: String?
+    public let defenderTag: String?
     public let stars: Int?
     /// 摧毁百分比（官方可能返回浮点或整数，用 Double 容忍两者）。
     public let destructionPercentage: Double?
+    /// 攻击时长（秒）。
+    public let duration: Int?
 
     public init(
-        tag: String?, name: String?, townHallLevel: Int?, mapPosition: Int?,
-        attacks: Int?, stars: Int?, destructionPercentage: Double?
+        order: Int?, attackerTag: String?, defenderTag: String?,
+        stars: Int?, destructionPercentage: Double?, duration: Int?
+    ) {
+        self.order = order
+        self.attackerTag = attackerTag
+        self.defenderTag = defenderTag
+        self.stars = stars
+        self.destructionPercentage = destructionPercentage
+        self.duration = duration
+    }
+}
+
+/// currentwar / warlog 成员级攻击表条目（官方 ClanWarMember）。
+///
+/// 官方 schema 注意点（多个独立来源验证）：
+/// - 大本等级字段名是 `townhallLevel`（小写 h，与 player 端点 townHallLevel 不同）
+/// - `attacks` 是 ClanWarAttack **数组**（不是次数；次数 = attacks.count）
+/// - `opponentAttacks` 是被攻击次数（整数）
+/// - `bestOpponentAttack` 是最佳防守攻击（对象）
+/// - 官方没有成员级 stars/destructionPercentage 顶层字段——成员表现从 attacks 聚合
+/// - 全 optional + 合成 Codable：官方新增字段或个别字段缺失不破坏解码
+public struct ClanWarMember: Codable, Hashable, Sendable {
+    public let tag: String?
+    public let name: String?
+    /// 地图位置（1 起）。
+    public let mapPosition: Int?
+    /// 大本等级（官方字段名 townhallLevel，小写 h）。
+    public let townhallLevel: Int?
+    /// 对敌方发起的攻击列表（次数 = count）。
+    public let attacks: [ClanWarAttack]?
+    /// 被攻击次数（整数）。
+    public let opponentAttacks: Int?
+    /// 最佳防守攻击（对象）。
+    public let bestOpponentAttack: ClanWarAttack?
+
+    public init(
+        tag: String?, name: String?, mapPosition: Int?, townhallLevel: Int?,
+        attacks: [ClanWarAttack]?, opponentAttacks: Int?, bestOpponentAttack: ClanWarAttack?
     ) {
         self.tag = tag
         self.name = name
-        self.townHallLevel = townHallLevel
         self.mapPosition = mapPosition
+        self.townhallLevel = townhallLevel
         self.attacks = attacks
-        self.stars = stars
-        self.destructionPercentage = destructionPercentage
+        self.opponentAttacks = opponentAttacks
+        self.bestOpponentAttack = bestOpponentAttack
     }
 }
 

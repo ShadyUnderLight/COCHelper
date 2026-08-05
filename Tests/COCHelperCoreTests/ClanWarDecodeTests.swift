@@ -87,7 +87,8 @@ final class ClanWarDecodeTests: XCTestCase {
 
     // MARK: - 成员级攻击表（Issue #20）
 
-    /// 成员级攻击表解码：full fixture 每方 1 名成员（tag/名称/大本/位置/攻击/星/摧毁%）。
+    /// 成员级攻击表解码：full fixture 每方 1 名成员（官方 ClanWarMember 形态：
+    /// townhallLevel 小写 h、attacks 为攻击数组、opponentAttacks 为次数）。
     func testDecodeClanWarMembers() throws {
         let war = try decode(fullClanWarFixtureData())
 
@@ -96,15 +97,23 @@ final class ClanWarDecodeTests: XCTestCase {
         let member = try XCTUnwrap(clanMembers.first)
         XCTAssertEqual(member.tag, "#PLAYERANONYMIZED")
         XCTAssertEqual(member.name, "anonymized-member")
-        XCTAssertEqual(member.townHallLevel, 13)
+        XCTAssertEqual(member.townhallLevel, 13, "官方字段名 townhallLevel（小写 h）")
         XCTAssertEqual(member.mapPosition, 1)
-        XCTAssertEqual(member.attacks, 2)
-        XCTAssertEqual(member.stars, 6)
-        XCTAssertEqual(member.destructionPercentage, 100)
+        XCTAssertEqual(member.attacks?.count, 1, "attacks 是攻击数组")
+        XCTAssertEqual(member.attacks?.first?.stars, 3)
+        XCTAssertEqual(member.attacks?.first?.destructionPercentage, 100)
+        XCTAssertEqual(member.attacks?.first?.order, 1)
+        XCTAssertEqual(member.attacks?.first?.attackerTag, "#PLAYERANONYMIZED")
+        XCTAssertEqual(member.attacks?.first?.defenderTag, "#OPPONENTPLAYERANONYMIZED")
+        XCTAssertEqual(member.attacks?.first?.duration, 180)
+        XCTAssertEqual(member.opponentAttacks, 2, "opponentAttacks 为被攻击次数（整数）")
+        XCTAssertEqual(member.bestOpponentAttack?.stars, 2)
+        XCTAssertEqual(member.bestOpponentAttack?.destructionPercentage, 85)
 
         let opponentMembers = try XCTUnwrap(war.opponent?.members)
         XCTAssertEqual(opponentMembers.count, 1)
-        XCTAssertEqual(opponentMembers.first?.townHallLevel, 12)
+        XCTAssertEqual(opponentMembers.first?.townhallLevel, 12)
+        XCTAssertEqual(opponentMembers.first?.attacks?.first?.defenderTag, "#PLAYERANONYMIZED")
     }
 
     /// 无 members 键（warEnded 等）容忍：成员为 nil，不影响摘要。
@@ -118,7 +127,7 @@ final class ClanWarDecodeTests: XCTestCase {
     func testDecodeMemberWithPartialFields() throws {
         let war = try decode(Data(##"{"clan":{"members":[{"tag":"#A","name":"x"}]}}"##.utf8))
         XCTAssertEqual(war.clan?.members?.first?.tag, "#A")
-        XCTAssertNil(war.clan?.members?.first?.townHallLevel)
+        XCTAssertNil(war.clan?.members?.first?.townhallLevel)
         XCTAssertTrue(war.unrecognizedKeys.isEmpty, "clan 是已知键，嵌套内容不进顶层审计")
     }
 
@@ -132,8 +141,8 @@ final class ClanWarDecodeTests: XCTestCase {
                 tag: "#A", name: nil, badgeUrls: nil, clanLevel: nil,
                 attacks: nil, stars: nil, destructionPercentage: nil,
                 members: [ClanWarMember(
-                    tag: nil, name: nil, townHallLevel: nil, mapPosition: nil,
-                    attacks: nil, stars: nil, destructionPercentage: nil
+                    tag: nil, name: nil, mapPosition: nil, townhallLevel: nil,
+                    attacks: nil, opponentAttacks: nil, bestOpponentAttack: nil
                 )]
             ),
             opponent: nil,
@@ -141,7 +150,7 @@ final class ClanWarDecodeTests: XCTestCase {
         )
         let json = String(data: try JSONEncoder().encode(war), encoding: .utf8)!
         XCTAssertTrue(json.contains("\"members\":[{}]"), "非 nil 成员数组编码为空对象元素")
-        XCTAssertFalse(json.contains("\"townHallLevel\""), "成员字段全 nil 不应编码")
+        XCTAssertFalse(json.contains("\"townhallLevel\""), "成员字段全 nil 不应编码")
         XCTAssertFalse(json.contains("\"mapPosition\""), "成员字段全 nil 不应编码")
     }
 

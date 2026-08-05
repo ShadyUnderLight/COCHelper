@@ -47,11 +47,12 @@ final class ClanPaginationDecodeTests: XCTestCase {
         let members = try XCTUnwrap(page.items[0].clan?.members)
         XCTAssertEqual(members.count, 1)
         XCTAssertEqual(members.first?.name, "anonymized-member")
-        XCTAssertEqual(members.first?.townHallLevel, 14)
+        XCTAssertEqual(members.first?.townhallLevel, 14)
         XCTAssertEqual(members.first?.mapPosition, 1)
-        XCTAssertEqual(members.first?.attacks, 2)
-        XCTAssertEqual(members.first?.stars, 6)
-        XCTAssertEqual(members.first?.destructionPercentage, 100)
+        XCTAssertEqual(members.first?.attacks?.count, 1)
+        XCTAssertEqual(members.first?.attacks?.first?.stars, 3)
+        XCTAssertEqual(members.first?.attacks?.first?.destructionPercentage, 100)
+        XCTAssertEqual(members.first?.opponentAttacks, 1)
         // 第二场战争无 members 键 → nil 容忍
         XCTAssertNil(page.items[1].clan?.members)
     }
@@ -123,12 +124,19 @@ final class ClanPaginationDecodeTests: XCTestCase {
         let log = try XCTUnwrap(page.items[0].attackLog)
         XCTAssertEqual(log.count, 1)
         let entry = try XCTUnwrap(log.first)
-        XCTAssertEqual(entry.defender?.name, "anonymized-district")
-        XCTAssertEqual(entry.defender?.destructionPercent, 100)
+        XCTAssertEqual(entry.defender?.name, "anonymized-raid-clan", "attackLog 条目用 defender")
+        XCTAssertEqual(entry.defender?.level, 8)
         XCTAssertEqual(entry.attackCount, 4)
         XCTAssertEqual(entry.districtCount, 5)
         XCTAssertEqual(entry.districtsDestroyed, 1)
-        XCTAssertEqual(entry.looted, 20000)
+        let district = try XCTUnwrap(entry.districts?.first, "摧毁率/掠夺在 districts 内")
+        XCTAssertEqual(district.name, "anonymized-district")
+        XCTAssertEqual(district.id, 10)
+        XCTAssertEqual(district.destructionPercent, 100)
+        XCTAssertEqual(district.totalLooted, 20000)
+        XCTAssertEqual(district.districtHallLevel, 4)
+        // 官方无顶层 looted——类型不存在即编译期保证（模型未声明该属性，
+        // 比运行时 nil 断言更强；looted 数据在 districts[].totalLooted）。
         XCTAssertNil(page.items[1].attackLog)
     }
 
@@ -137,24 +145,24 @@ final class ClanPaginationDecodeTests: XCTestCase {
         let log = try XCTUnwrap(page.items[0].defenseLog)
         XCTAssertEqual(log.count, 1)
         let entry = try XCTUnwrap(log.first)
-        XCTAssertEqual(entry.defender?.tag, "#HOMEDISTRICTANONYMIZED")
-        XCTAssertEqual(entry.defender?.name, "anonymized-home-district")
-        XCTAssertEqual(entry.defender?.destructionPercent, 40)
+        XCTAssertEqual(entry.attacker?.name, "anonymized-raid-clan-2", "defenseLog 条目用 attacker（不是 defender）")
+        XCTAssertEqual(entry.attacker?.level, 7)
         XCTAssertEqual(entry.attackCount, 3)
         XCTAssertEqual(entry.districtCount, 5)
         XCTAssertEqual(entry.districtsDestroyed, 0)
-        // 官方 defenseLog 无 looted 字段 → CapitalRaidDefenseLogEntry 类型本身不声明该属性
-        // （type-level 保证，比运行时 nil 断言更强；见模型 doc 注释）。
+        XCTAssertEqual(entry.districts?.first?.name, "anonymized-home-district")
+        XCTAssertEqual(entry.districts?.first?.destructionPercent, 40)
+        XCTAssertNil(page.items[1].defenseLog)
     }
 
     /// 成员/日志字段部分缺失（如 defender 只有 name）不破坏解码。
     func testDecodeCapitalRaidLogWithPartialFields() throws {
         let season = try JSONDecoder().decode(
             OfficialCapitalRaidPage.self,
-            from: Data(##"{"items":[{"state":"ended","attackLog":[{"defender":{"name":"x"},"attackCount":1}]}]}"##.utf8)
+            from: Data(##"{"items":[{"state":"ended","attackLog":[{"defender":{"name":"x"},"attackCount":1,"districts":[{"id":1}]}]}]}"##.utf8)
         )
         XCTAssertEqual(season.items[0].attackLog?.first?.defender?.name, "x")
-        XCTAssertNil(season.items[0].attackLog?.first?.defender?.destructionPercent)
+        XCTAssertNil(season.items[0].attackLog?.first?.districts?.first?.destructionPercent)
     }
 
     // MARK: - Round-trip

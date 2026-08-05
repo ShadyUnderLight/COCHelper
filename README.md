@@ -82,6 +82,7 @@ spike 结论：export 名与引用链可解析（`ui.sc` exports=3024），但�
 python3 Tools/render_generator.py --apk /Users/lmz/Downloads/base.apk.1 \
   --catalog Sources/COCHelperCore/GameCatalog/18.400.13   # 渲染 + 回写 catalog.json
 python3 Tools/render_generator.py --apk <apk> --catalog <dir> --samples-only  # 只渲染不回写
+python3 Tools/render_generator.py --apk <apk> --catalog <dir>   # 全量渲染 catalog 全部引用（Issue #25）
 ```
 
 4 个固定样本 PNG（`icons/ui/icon_unit_barbarian.png`、`icons/ui/icon_spell_rage.png`、

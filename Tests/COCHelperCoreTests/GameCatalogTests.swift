@@ -241,7 +241,7 @@ final class GameCatalogTests: XCTestCase {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let renderable = allAssetRefs(in: catalog).filter { $0.ref.isRenderable }
         XCTAssertGreaterThan(renderable.count, 0, "bundled 目录应含真实渲染 PNG 引用")
-        // 4 个已知 PNG 路径（与 manifest generatedFiles 一一对应）都必须被引用。
+        // Issue #25 全量渲染后：4 个固定样本仍是子集，唯一路径数大幅增长。
         let known = [
             "icons/buildings/blacksmith_lvl1.png",
             "icons/buildings/fireplace_lvl1.png",
@@ -249,7 +249,12 @@ final class GameCatalogTests: XCTestCase {
             "icons/ui/icon_unit_barbarian.png",
         ]
         let uniquePaths = Set(renderable.map(\.ref.renderedPath).compactMap { $0 })
-        XCTAssertEqual(uniquePaths, Set(known), "可渲染路径集合应与 4 个真实 PNG 一一对应")
+        for path in known {
+            XCTAssertTrue(uniquePaths.contains(path), "\(path) 应仍被引用（跨等级/跨 item 复用）")
+        }
+        // 2026-08-06 实测：18.400.13 全量渲染后唯一 renderedPath 1246 个。
+        // 下限取 500（远小于实测值，容忍未来少量失败键波动）。
+        XCTAssertGreaterThan(uniquePaths.count, 500, "全量渲染后唯一 renderedPath 应远超固定样本数")
     }
 
     /// 文件存在断言：全部 renderable ref 指向的 PNG 都真实存在于 bundle（.copy 打包验证）。
@@ -268,18 +273,28 @@ final class GameCatalogTests: XCTestCase {
     func testMissingRefIsNotRenderableAndHasNoPath() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let missing = allAssetRefs(in: catalog).filter { $0.ref.missingReason != nil }
-        XCTAssertGreaterThan(missing.count, 0, "目录应保留大量未渲染引用（icons_not_rendered）")
+        XCTAssertGreaterThan(missing.count, 0, "目录应保留缺失引用（render_failed/export_not_found）")
         for entry in missing {
             XCTAssertNil(entry.ref.renderedPath,
                          "\(entry.item.section) \(entry.item.dataID) \(entry.slot) 有 missingReason 却仍带 renderedPath")
             XCTAssertFalse(entry.ref.isRenderable)
         }
-        // 具体锚点：兵营 lv2 levelVisual 未渲染（exportName 为 fireplace_lvl2）。
-        let barracks = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_000))
-        let lv2Visual = try XCTUnwrap(barracks.levels.first(where: { $0.level == 2 })?.levelVisual)
-        XCTAssertEqual(lv2Visual.missingReason, "icons_not_rendered")
-        XCTAssertNil(lv2Visual.renderedPath)
-        XCTAssertFalse(lv2Visual.isRenderable)
+        // 具体锚点（2026-08-06 实测：#25 全量渲染后 23 个唯一缺失键，
+        // export_not_found 10 + render_failed 13；兵营 lv2 已渲染为
+        // fireplace_lvl2.png，不再缺失）。各取一个稳定锚点覆盖两种 missingReason：
+        // 1. traps2 12000011（push_trap）lv1 levelVisual → export_not_found
+        // 2. buildings 1000059（siegeWorkshop）lv2 levelVisual → render_failed
+        let pushTrap = try XCTUnwrap(catalog.item(section: "traps2", dataID: 12_000_011))
+        let pushTrapLv1 = try XCTUnwrap(pushTrap.levels.first(where: { $0.level == 1 })?.levelVisual)
+        XCTAssertEqual(pushTrapLv1.missingReason, "export_not_found")
+        XCTAssertNil(pushTrapLv1.renderedPath)
+        XCTAssertFalse(pushTrapLv1.isRenderable)
+
+        let siegeWorkshop = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_059))
+        let siegeWorkshopLv2 = try XCTUnwrap(siegeWorkshop.levels.first(where: { $0.level == 2 })?.levelVisual)
+        XCTAssertEqual(siegeWorkshopLv2.missingReason, "render_failed")
+        XCTAssertNil(siegeWorkshopLv2.renderedPath)
+        XCTAssertFalse(siegeWorkshopLv2.isRenderable)
     }
 
     /// 共享路径断言（契约 R2.4）：铁匠铺 blacksmith_lvl1 被顶层 + lv1 + lv2

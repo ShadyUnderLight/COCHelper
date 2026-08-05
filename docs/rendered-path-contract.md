@@ -196,6 +196,16 @@
 
 **已知限制（契约标注）**：HDR 端点拒绝（真实纹理零出现）；3D 块不支持；SCTX 非 variant-36 头（28/32，`assets/sc/` 150 个）不支持（fail loud）；variant-36 引用容器除 buildings.sc（71 纹理）外，**buildings_cc.sc（13 纹理）、buildings2.sc（5 纹理）同为 SCTX variant-36 可解**（合计 91 个中 89 个可解；building_bases_0/1.sctx 2 个 data_len 声明超文件大小被拒绝，fail-closed 正确）；多命令合成已支持（blacksmith 5 命令实测）。
 
+**#25 全量渲染与 UI 接入完成（2026-08-06 回写）**：
+- 全量渲染 1269 个唯一键 → 成功 1246 / 失败 23；唯一 renderedPath 1246 个，
+  全部 PNG 在 Bundle 内可解析（`testBundledURLResolvesRenderableRefsToExistingFiles` 锁定）
+- missingReason 分布：export_not_found 10（`sc/buildings2.sc` push_trap_lvl1-10_idle 全族）、
+  render_failed 13（帧 0 无可渲染 shape 元素：`sc/buildings.sc` siegeWorkshop_lvl2-9 ×8、
+  spell_tower_lvl1 / lvl2_rage / lvl4_earthquake、clashmas24_spellcage_present_2x2_idle；
+  `sc/buildings_cc.sc` playerhouse_dummy）（全部 ∈ ASSET_MISSING_REASONS）
+- `UpgradeDisplayRow` 图标列 / `LevelDetailSheet` 逐级行已接入
+  （levelVisual 优先、icon 兜底、SF Symbol 最后；缺失角标语义不变）
+
 ---
 
 ## 13. 免责声明与版权（R12）

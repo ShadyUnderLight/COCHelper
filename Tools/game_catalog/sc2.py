@@ -238,7 +238,7 @@ def decode_body(compressed: bytes, compressed_size: int | None) -> bytes:
     lib = load_libzstd()
     frame_size = int(lib.ZSTD_findFrameCompressedSize(region, len(region)))
     if lib.ZSTD_isError(frame_size):
-        raise CatalogError(f"zstd 帧大小解析失败（返回码 {frame_size}）")
+        raise CatalogError(f"zstd 帧大小解析失败（返回码 0x{frame_size:x}）")
     if frame_size > len(region):
         raise CatalogError(
             f"zstd 帧声明 {frame_size} 字节超过区域长度 {len(region)}")
@@ -246,12 +246,14 @@ def decode_body(compressed: bytes, compressed_size: int | None) -> bytes:
     bound = int(lib.ZSTD_decompressBound(frame, len(frame)))
     if bound > _MAX_DECOMPRESSED:
         raise CatalogError(
-            f"zstd 解压上限 {bound} 字节超过允许的 {_MAX_DECOMPRESSED}"
-            "（防 zip bomb）")
+            f"zstd 解压上限 0x{bound:x}（{bound}）字节超过允许的 "
+            f"{_MAX_DECOMPRESSED}（防 zip bomb）")
     dst = ctypes.create_string_buffer(bound)
     n = int(lib.ZSTD_decompress(dst, bound, frame, len(frame)))
     if n == 0 or lib.ZSTD_isError(n):
-        raise CatalogError(f"zstd 解压失败（返回码 {n}）")
+        # n == 0：解压成功但输出 0 字节（真空帧）——SC2 body 恒非空，
+        # 0 字节输出必为异常，按契约视为失败（合法空帧会被误拒，可接受）
+        raise CatalogError(f"zstd 解压失败（返回码 0x{n:x}）")
     if n > bound:
         raise CatalogError(
             f"zstd 解压输出 {n} 字节超过上限 {bound}（数据损坏）")
@@ -272,26 +274,32 @@ def _parse_data_storage(fb: FlatBuffer) -> list[str]:
 def parse_data_storage(fb: FlatBuffer, body: bytes) -> list[str]:
     """DataStorage strings 列表。
 
-    **对拍真实 ui.sc 修正（以真实数据为准）**：解压后 body 实际是
+    **布局（对拍真实 ui.sc，18.400.13）**：解压后 body 是
     `[u32 data_storage_size][DataStorage flatbuffer]`——带 4 字节 size 前缀，
     与 C++ 参考一致（`read_unsigned_int()` 后 `GetDataStorage(position)`），
     resources_offset = 4 + data_storage_size 即 chunk 起点。任务初版契约
     假设无前缀，被真实数据否定。
 
-    本函数两种布局都支持：先按无前缀（body 偏移 0）解析，畸形
-    （root/vtable/字符串越界 → ValueError）则回退到偏移 4（带前缀）。
+    带前缀布局是真实格式（已对拍）；**无前缀（body 偏移 0）回退是防御
+    其他文件变体**：先按偏移 0 解析，畸形（root/vtable/字符串越界 →
+    ValueError）则回退偏移 4。两种布局均失败时，CatalogError 消息保留
+    两个偏移的错误上下文。
+
     strings 索引语义（C++ 注释提及 `strings[ref_id - 1]`）不做偏移，原样
     返回；-1 语义是否成立在 ExportNames 对拍时验证。
     """
     try:
         return _parse_data_storage(fb)
-    except ValueError:
-        if len(body) >= 8:
-            try:
-                return _parse_data_storage(FlatBuffer(body[4:]))
-            except ValueError as e:
-                raise CatalogError(f"SC2 DataStorage 解析失败: {e}") from e
-        raise CatalogError("SC2 DataStorage 解析失败（两种布局均畸形）")
+    except ValueError as e0:
+        if len(body) < 8:
+            raise CatalogError(
+                f"SC2 DataStorage 解析失败（偏移0: {e0}；body 仅 "
+                f"{len(body)} 字节，无法回退偏移4）") from e0
+        try:
+            return _parse_data_storage(FlatBuffer(body[4:]))
+        except ValueError as e:
+            raise CatalogError(
+                f"SC2 DataStorage 解析失败（偏移0: {e0}；偏移4: {e}）") from e
 
 
 # chunk 固定顺序（参考 C++ `Table::load_chunk` 序列）
@@ -393,6 +401,7 @@ def load_sc(data: bytes) -> ScFile:
         fb = FlatBuffer(body)
         strings = parse_data_storage(fb, body)
         chunks = read_chunks(body, header.resources_offset)
+        # 重复 name last-wins（真实 ui.sc 导出名唯一；防御语义）
         export_names = dict(
             parse_export_names(chunks.get("ExportNames", b""), strings))
     except ValueError as e:

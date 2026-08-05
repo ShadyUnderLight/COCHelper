@@ -318,9 +318,16 @@ def test_decode_body_corrupt_frame_raises():
 
 
 def test_decode_body_zero_output_is_error():
-    """合法空帧（声明 100B 但实际输出 0 字节）→ 返回码 0 → CatalogError（契约：0 = 失败）。"""
-    frame = ZSTD_MAGIC + b"\xe0" + struct.pack("<Q", 100) + b"\x04\x00\x00"
-    with pytest.raises(CatalogError):
+    """真空帧（ZSTD_compress(b"") 产生的真实空内容帧）：帧结构合法、解压
+    成功但输出 0 字节 → ZSTD_decompress 返回码 0 → 按契约视为失败。
+
+    契约背景：SC2 body 恒非空，0 字节输出必为异常；代价是合法空帧会被
+    误拒（可接受）。断言消息含「解压失败」以锁定 n == 0 分支（若帧校验
+    先失败会报「帧大小解析失败」）。
+    """
+    frame = _zstd_compress(b"")
+    assert frame.startswith(ZSTD_MAGIC)
+    with pytest.raises(CatalogError, match="解压失败"):
         decode_body(frame, None)
 
 
@@ -360,6 +367,13 @@ def test_parse_data_storage_size_prefixed_layout():
 def test_parse_data_storage_corrupt_raises_catalog_error():
     body = b"\xff\xff\xff\xff"  # root uoffset 越界 → fbs ValueError → CatalogError
     with pytest.raises(CatalogError):
+        parse_data_storage(FlatBuffer(body), body)
+
+
+def test_parse_data_storage_both_layouts_fail_preserves_offsets():
+    """两种布局均畸形 → CatalogError 消息保留两个偏移的错误上下文（NB-1 回归）。"""
+    body = b"\xff" * 8  # 偏移 0 与偏移 4 都是越界 root uoffset
+    with pytest.raises(CatalogError, match=r"偏移0:.*偏移4:"):
         parse_data_storage(FlatBuffer(body), body)
 
 

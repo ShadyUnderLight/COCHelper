@@ -209,6 +209,11 @@ def test_sanitize_export_key_fail_loud():
     assert sanitize_export_key("x" * 200) == "x" * 200
     with pytest.raises(CatalogError):
         sanitize_export_key("x" * 201)
+    # URL 编码段拒绝（与 validate.py rendered_path_format_ok 一致）
+    with pytest.raises(CatalogError):
+        sanitize_export_key("a%2eb")
+    with pytest.raises(CatalogError):
+        sanitize_export_key("a%2Fb")
 
 
 def test_sample_png_relpath_contract_table():

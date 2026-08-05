@@ -134,6 +134,11 @@ def sanitize_export_key(export: str) -> str:
     if not isinstance(export, str):
         raise CatalogError(f"导出名非字符串: {export!r}")
     key = export.replace("/", "_").replace("\\", "_")
+    if "%" in key:
+        # 与 validate.py rendered_path_format_ok 一致：拒绝 URL 编码段
+        # （%2e%2e / %2F 等；真实导出名无 %）。pathlib 不解码，但未来若
+        # 出现 URL 解码消费者会引入真实逃逸，段内 % 对合法文件名也无意义。
+        raise CatalogError(f"导出名含 URL 编码段（%），拒绝: {export!r}")
     if not key or key in (".", ".."):
         raise CatalogError(f"导出名 sanitize 后非法: {export!r}")
     if len(key.encode("utf-8")) > _MAX_FILENAME_BYTES:
@@ -185,10 +190,18 @@ def _resolve_texture(archive: zipfile.ZipFile, sc: ScFile, tex_index: int,
         path = "assets/sc/" + td.external_texture
         if path not in sctx_cache:
             try:
-                raw = archive.read(path)
+                info = archive.getinfo(path)
             except KeyError:
                 raise SampleError("texture_missing",
                                   f"外部纹理不存在: {path}") from None
+            if info.file_size > _MAX_ENTRY_BYTES:
+                # 与 _render_sample 的 container 条目同款防炸弹防护
+                # （读取前先查 zip 条目大小，不读超大条目）
+                raise SampleError(
+                    "texture_missing",
+                    f"外部纹理超过 {_MAX_ENTRY_BYTES} 防炸弹上限: {path}"
+                    f"（{info.file_size} 字节）")
+            raw = archive.read(path)
             try:
                 sctx_cache[path] = parse_sctx(raw)
             except CatalogError as e:
@@ -411,7 +424,16 @@ def apply_rendered_paths(catalog: dict, verdicts: list[dict]) -> tuple[dict, int
       success → renderedPath = verdict.relPath、missingReason = null
       failed  → renderedPath = null、missingReason = 稳定枚举
     其余引用不动。返回 (catalog, 更新引用数)。
+
+    catalog 结构校验（fail loud）：顶层非对象 / items 非数组 / items 含非对象
+    → CatalogError 清晰报错（不裸 AttributeError traceback）。
     """
+    if (not isinstance(catalog, dict)
+            or not isinstance(catalog.get("items"), list)
+            or not all(isinstance(item, dict)
+                       for item in catalog.get("items", []))):
+        raise CatalogError(
+            "catalog.json 结构非法: 顶层对象 items 必须是对象数组")
     by_key = {(v["assetKey"]["container"], v["assetKey"]["exportName"]): v
               for v in verdicts}
     updated = 0
@@ -529,7 +551,7 @@ def main(argv: list[str] | None = None) -> int:
         args.report.write_text(
             json.dumps(report, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8")
-    except (CatalogError, OSError, ValueError) as e:
+    except (CatalogError, OSError, ValueError, zipfile.BadZipFile) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
 

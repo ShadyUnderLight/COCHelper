@@ -121,6 +121,7 @@
 - 对应契约 missingReason 建议值：`texture_compressed_astc` / `texture_external_sctx`（契约 §6 表）。
 
 > **与契约文档表述的偏差记录（如实）**：契约 §6/§11 写「`buildings.sc` … fmt=4（SupercellCompressionFormat=ASTC_RGBA8_4x4）」。实测 `TextureData.texture_format` 对 buildings.sc 全为 0；当前 sc-workshop/SupercellTexture 参考代码中**不存在** `SupercellCompressionFormat` 枚举，ASTC 枚举位于 `ScPixel::Type`（ASTC_RGBA8_4x4 = **204**、ASTC_RGBA8_6x6 = 208）。建议契约文档修订时以 `.sctx` 头 `pixel_type` 为准核对并更新该表述（本次 spike 不擅改已冻结契约正文，仅记录差异）。
+> **已修正**（commit `0ae7998`）：契约 §6 `texture_external_sctx` 行与 §12 已改为实测事实（`texture_format=0` + `external_texture` 指向 `.sctx`，pixel_type=208 ASTC 系）。
 
 ---
 

@@ -661,6 +661,27 @@ def test_rendered_path_without_icons_prefix_rejected(tmp_path):
     assert any("renderedPath" in e and "icons/" in e for e in errors)
 
 
+def test_rendered_path_empty_string_rejected(tmp_path):
+    """P1-2 回归：renderedPath 空串不再绕过校验（None 才是无引用；"" 是非法路径）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(rendered_path="")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("renderedPath" in e and "格式非法" in e for e in errors)
+
+
+def test_asset_empty_missing_reason_rejected(tmp_path):
+    """P1-2 回归：asset ref 的 missingReason 空串不绕过域校验（"" 未知 reason）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["icon"] = _ref(
+        rendered_path="icons/ui/barbarian.png", reason="")
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("missingReason 未知" in e for e in errors)
+
+
 def test_rendered_path_non_png_rejected(tmp_path):
     """R-D 负例：非 .png 结尾 → error。"""
     d = _valid_dir(tmp_path)

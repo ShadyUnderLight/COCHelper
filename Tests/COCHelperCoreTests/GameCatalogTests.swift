@@ -102,6 +102,8 @@ final class GameCatalogTests: XCTestCase {
                       "renderedPath 存在且无缺失原因 → 可渲染")
         XCTAssertFalse(ref(renderedPath: nil, missingReason: nil).isRenderable,
                        "renderedPath 缺失 → 不可渲染")
+        XCTAssertFalse(ref(renderedPath: "", missingReason: nil).isRenderable,
+                       "renderedPath 为空串 → 不可渲染（契约 R2.2/R5.3）")
         XCTAssertFalse(ref(renderedPath: "icons/barbarian.png", missingReason: "icons_not_rendered").isRenderable,
                        "有缺失原因（即使 renderedPath 存在）→ 不可渲染")
         XCTAssertFalse(ref(renderedPath: nil, missingReason: "icons_not_rendered").isRenderable,

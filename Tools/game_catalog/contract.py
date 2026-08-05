@@ -37,9 +37,11 @@ def is_renderable(rendered_path: str | None, missing_reason: str | None) -> bool
     """与 Swift CatalogAssetRef.isRenderable 同一语义：renderedPath 非空 且 missingReason 为空。
 
     Swift 定义 `renderedPath != nil && missingReason == nil`（GameCatalog.swift:47-49），
-    因此空字符串 "" 也视为非空（≠ nil）；格式/文件存在性由 check_rendered_path_contract 另行校验。
+    **空串 "" 视为不可渲染**（交叉审核 P1-2：空路径不得被当作可渲染资源，
+    违反契约 R2.2/R5.3；Swift 侧同规则）。
     """
-    return rendered_path is not None and missing_reason is None
+    return (rendered_path is not None and rendered_path != ""
+            and missing_reason is None)
 
 
 def check_rendered_path_contract(
@@ -54,7 +56,9 @@ def check_rendered_path_contract(
     R-B 互斥（renderedPath 非空且 missingReason 非空）→ R-D 格式（严格两级
     `icons/<container_key>/<export_key>.png`，见 rendered_path_format_ok）→
     R-A 文件存在 → R-C manifest 登记（registered None 时跳过 R-C）。
-    rendered_path 为空（None 或 ""）→ 返回 []。
+    rendered_path 为 None（无引用）→ 返回 []；**空串 "" 不是合法渲染路径，
+    走 R-D 报格式非法**（交叉审核 P1-2：空路径不得绕过校验）。
+    missing_reason 按 `is not None` 判定（空串 "" 也触发 R-B 互斥）。
 
     R-B 是独立轴（最优先、不被 R-D 短路）；R-D 失败后短路剩余轴；R-A/R-C 互斥
     （文件不存在时不报 R-C，与 validate.py 的 if/elif 一致）。
@@ -62,10 +66,10 @@ def check_rendered_path_contract(
     rendered_path 非 str 时行为未定义（AttributeError 上抛；validate.py 顶层
     wrapper 捕获后转 "catalog 内容非法"，勿在此处擅自拦截）。
     """
-    if rendered_path is None or rendered_path == "":
+    if rendered_path is None:
         return []
     errors: list[str] = []
-    if missing_reason:
+    if missing_reason is not None:
         errors.append(
             f"renderedPath 与 missingReason 同时存在（成功字段与失败原因互斥）: {rendered_path} "
             f"missingReason={missing_reason!r}")

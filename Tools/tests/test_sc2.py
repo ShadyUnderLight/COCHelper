@@ -480,7 +480,24 @@ def test_read_chunks_size_out_of_bounds_raises():
 
 def test_read_chunks_zero_size_stops():
     body = struct.pack("<I", 0) + b"junk"
-    assert read_chunks(body, 0) == {}
+    with pytest.raises(CatalogError, match="未读到任何 chunk"):
+        read_chunks(body, 0)
+
+
+def test_read_chunks_resources_offset_out_of_bounds_raises():
+    """P1-1 回归：越界 resources_offset 必须 fail-closed（伪造 0xffffffff 不得
+    静默返回空 chunks → 后续误报 export_not_found）。"""
+    body = struct.pack("<I", 5) + b"hello"
+    for bad in (0xFFFFFFFF, len(body) + 1, -1):
+        with pytest.raises(CatalogError, match="resources_offset 越界"):
+            read_chunks(body, bad)
+
+
+def test_read_chunks_no_chunk_fail_closed():
+    """P1-1 回归：resources_offset 之后无任何 chunk 数据 → CatalogError。"""
+    body = b"\x00" * 100  # 100 字节全零：第一个 chunk size=0 → 无 chunk
+    with pytest.raises(CatalogError, match="未读到任何 chunk"):
+        read_chunks(body, 0)
 
 
 # -- parse_export_names ------------------------------------------------------

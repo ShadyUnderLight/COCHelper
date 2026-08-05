@@ -80,7 +80,7 @@
 | # | 契约规则 | 校验方式 |
 |---|---|---|
 | R5.1 | 失败必须设置 `missingReason`（枚举域，见下表），`renderedPath` 为 null。**禁止空 PNG / 伪成功路径**：0×0 尺寸、数据长度不符、无内嵌数据、解析异常 → 一律 blocked + missingReason，绝不写占位/空文件（spike 已按此实现防御分支）。 | 生成器负例测试（0×0、长度不符 fixture） |
-| R5.2 | **互斥不变量**：`renderedPath` 非空 ⇒ `missingReason` 为 null；`renderedPath` 为 null ⇒ 渲染失败类引用必须给 `missingReason`（不留空解释）。 | validate.py 负例 + property-based 测试 |
+| R5.2 | **互斥不变量**：`renderedPath` 非空（含空串，见 R8.1）⇒ `missingReason` 为 null（`missingReason` 按 `is not None` 判定，空串也是失败原因）；`renderedPath` 为 null ⇒ 渲染失败类引用必须给 `missingReason`（不留空解释）。**空串 `renderedPath` 是非法路径**：不得绕过校验（P1-2），校验器报格式非法。 | validate.py 负例 + property-based 测试（含空串边界） |
 | R5.3 | `renderedPath` 非空 ⇒ 文件必须真实存在于版本目录与 App Bundle。 | validate.py `rendered_path_file_must_exist`（含格式/`..`/版本段拒绝）；Swift 加载路径检查（#25 UI 接入时落实，当前 loadBundled 只解码 catalog.json） |
 
 **missingReason 枚举扩展建议**（现有 `ASSET_MISSING_REASONS` = `icons_not_rendered` / `no_icon_columns` / `no_visual_columns`）：
@@ -122,8 +122,8 @@
 
 | # | 契约规则 | 校验方式 |
 |---|---|---|
-| R8.1 | 单一语义（Swift `CatalogAssetRef.isRenderable` 现状，**不改**）：`isRenderable ⇔ renderedPath != nil ∧ missingReason == nil`。 | Swift 现有属性 |
-| R8.2 | Python 校验器同一规则：任何 ref 的 `renderedPath`/`missingReason` 组合必须满足互斥不变量（R5.2），且渲染失败必须落 `ASSET_MISSING_REASONS` 域。 | property-based 测试（`is_renderable == (path non-nil && reason nil)`，域闭合） |
+| R8.1 | 单一语义：`isRenderable ⇔ renderedPath 非空（非 nil 且非空串）∧ missingReason == nil`。**空串路径不可渲染**（交叉审核 P1-2：空路径不得被视为可渲染资源；Swift `isRenderable` 与 Python `contract.is_renderable` 同规则）。 | Swift 属性 + Python property-based 测试（真值表含空串） |
+| R8.2 | Python 校验器同一规则：任何 ref 的 `renderedPath`/`missingReason` 组合必须满足互斥不变量（R5.2，`missingReason` 按 `is not None` 判定，空串也是失败原因），且渲染失败必须落 `ASSET_MISSING_REASONS` 域（空串 reason → "未知 missingReason"）。 | property-based 测试（域闭合 + 空串边界） |
 | R8.3 | UI 使用侧不得自行发明判定（如只查 `renderedPath` 存在性）；必须消费 `isRenderable`（Swift）或同规则校验器输出（Python）。 | 代码评审 + 契约测试 |
 
 ---

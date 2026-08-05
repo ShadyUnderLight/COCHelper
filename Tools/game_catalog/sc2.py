@@ -338,7 +338,14 @@ def read_chunks(body: bytes, resources_offset: int) -> dict[str, bytes]:
     chunk 顺序固定：ExportNames → TextFields → Shapes → MovieClips →
     MovieClipModifiers → Textures。读到 body 末尾（剩余 < 4 字节）或遇到
     size 0 时停止；size 超过 body 剩余 → CatalogError（数据损坏）。
+
+    **fail-closed（交叉审核 P1）**：resources_offset 越界或未读到任何 chunk
+    → CatalogError（损坏 APK 不得静默降级为空 exports，否则后续会把损坏
+    误报为 export_not_found）。
     """
+    if resources_offset < 0 or resources_offset > len(body):
+        raise CatalogError(
+            f"SC2 resources_offset 越界: {resources_offset}，body 长度 {len(body)}")
     chunks: dict[str, bytes] = {}
     pos = resources_offset
     for name in _CHUNK_NAMES:
@@ -353,6 +360,9 @@ def read_chunks(body: bytes, resources_offset: int) -> dict[str, bytes]:
                 f"body 长度 {len(body)}")
         chunks[name] = body[pos + 4:pos + 4 + size]
         pos += 4 + size
+    if not chunks:
+        raise CatalogError(
+            f"SC2 未读到任何 chunk（resources_offset={resources_offset} 后无数据）")
     return chunks
 
 

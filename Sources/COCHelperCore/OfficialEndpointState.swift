@@ -101,7 +101,8 @@ extension OfficialClanSnapshot: EndpointParserVersioning {
 }
 
 extension OfficialClanWarSnapshot: EndpointParserVersioning {
-    public static var currentParserVersion: String { "clan-war-0.1" }
+    /// 0.2：成员级攻击表解析范围（Issue #20，Task 1 新增 ClanWarMember 解码）。
+    public static var currentParserVersion: String { "clan-war-0.2" }
 }
 
 // 分页包装类型（OfficialWarLogPage / OfficialCapitalRaidPage）在
@@ -112,13 +113,13 @@ extension OfficialClanWarSnapshot: EndpointParserVersioning {
 /// 部落档案状态（3a）：parserVersion "clan-snapshot-0.1"。
 public typealias ClanAPIState = OfficialEndpointState<OfficialClanSnapshot>
 
-/// 部落当前战争状态（3b）：parserVersion "clan-war-0.1"。
+/// 部落当前战争状态（3b）：parserVersion "clan-war-0.2"（0.2 = 成员级攻击表解析范围）。
 public typealias ClanWarAPIState = OfficialEndpointState<OfficialClanWarSnapshot>
 
-/// 部落战争日志状态（3c）：parserVersion "clan-war-log-0.1"。
+/// 部落战争日志状态（3c）：parserVersion "clan-war-log-0.3"。
 public typealias ClanWarLogAPIState = OfficialEndpointState<OfficialWarLogPage>
 
-/// 部落资本赛季状态（3c）：parserVersion "clan-capital-0.1"。
+/// 部落资本赛季状态（3c）：parserVersion "clan-capital-0.3"。
 public typealias ClanCapitalAPIState = OfficialEndpointState<OfficialCapitalRaidPage>
 
 // MARK: - typealias 的 currentParserVersion 兼容（无约束转发：未来端点零样板）

@@ -201,7 +201,7 @@ swift run smoke-api
 - **`notInWar`（当前无战争）是成功响应**：显示“当前没有进行中的战争”空状态，不是失败；`warEnded`（战争已结束）显示结果。
 - 战争抓取失败保留上次成功数据（last-good）；战争失败不会清除部落档案、玩家快照或本地导入数据。
 - 来源标签与部落卡片一致：`official-api` / `cached-official-api`。
-- 首期不展示成员级攻击表（`members` 数组 deferred），只展示双方摘要；战争时间字段保留官方格式字符串，暂不本地化解析。
+- 双方成员攻击表（成员 tag、名称、大本等级、地图位置、攻击次数、总星数、摧毁百分比——成员攻击为官方 `attacks` 数组，星数/摧毁%按次聚合）以展开式明细展示（默认折叠，每表上限 30 行）；战争时间字段保留官方格式字符串，暂不本地化解析。
 
 ### 已知边界
 
@@ -217,7 +217,7 @@ swift run smoke-api
 - **战争日志不公开是显式状态**：部落档案 `isWarLogPublic=false` 时直接显示“战争日志不公开”且不发起请求；请求返回 403 时显示失败原因（档案过期兜底）。不伪造“没有历史战争”。
 - 与部落档案/当前战争一样是独立共享层（独立 key `coc-helper.clan-war-logs.v1` / `coc-helper.clan-capitals.v1`），同部落多村庄共享一份。
 - 分页端点共用客户端（`/warlog`、`/capitalraidseasons`），游标与 `limit` 通过 query 参数传输（官方默认分页大小，不写死限流数值）。
-- 失败保留上次成功数据（last-good）；资本赛季成员级攻击/防守明细（`attackLog`/`defenseLog`）与战争日志成员明细 deferred。
+- 失败保留上次成功数据（last-good）；战争日志条目成员明细与资本赛季成员贡献（`members`）/攻防日志（`attackLog`/`defenseLog`）以展开式明细展示（默认折叠，每段上限 30 行）。
 
 ### 架构（stage 3c 泛化）
 

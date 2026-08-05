@@ -188,7 +188,34 @@ struct WarLogCardView: View {
         }
     }
 
+    /// 战争日志条目行：有成员明细时可展开（默认折叠；上限 30 行，超出提示），
+    /// 无成员时仅渲染摘要（与改动前行为一致，无展开箭头）。
+    @ViewBuilder
     private func warLogRow(_ entry: OfficialWarLogEntry) -> some View {
+        if let members = entry.clan?.members, !members.isEmpty {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 2) {
+                    // id: \.offset：成员全 optional，相同对象（如全 nil）会撞 \.self
+                    ForEach(Array(members.prefix(30).enumerated()), id: \.offset) { _, member in
+                        memberRow(member)
+                    }
+                    if members.count > 30 {
+                        Text("还有 \(members.count - 30) 名成员…")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            } label: {
+                warLogSummary(entry)
+            }
+            .font(.caption)
+        } else {
+            warLogSummary(entry)
+        }
+    }
+
+    private func warLogSummary(_ entry: OfficialWarLogEntry) -> some View {
         HStack(spacing: 10) {
             resultBadge(entry.result)
             VStack(alignment: .leading, spacing: 2) {
@@ -215,6 +242,45 @@ struct WarLogCardView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private func memberRow(_ member: ClanWarMember) -> some View {
+        HStack(spacing: 8) {
+            if let position = member.mapPosition {
+                Text("\(position)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 22, alignment: .trailing)
+            }
+            Text(member.name ?? "未知成员")
+                .font(.caption)
+                .lineLimit(1)
+            if let th = member.townhallLevel {
+                Text("TH\(th)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(attackSummary(member))
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 1)
+    }
+
+    /// 成员攻击表现摘要：N攻 · ⭐总星 · 摧毁总%（attacks 数组聚合；未攻击显示提示）。
+    private func attackSummary(_ member: ClanWarMember) -> String {
+        guard let attacks = member.attacks, !attacks.isEmpty else {
+            return member.attacks != nil ? "未攻击" : "—"
+        }
+        let stars = attacks.reduce(0) { $0 + ($1.stars ?? 0) }
+        let destruction = attacks.reduce(0.0) { $0 + ($1.destructionPercentage ?? 0) }
+        return "\(attacks.count)攻 · ⭐\(stars) · 摧毁 \(Self.percent(destruction))%"
+    }
+
+    private static func percent(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value)) : String(format: "%.1f", value)
     }
 
     @ViewBuilder

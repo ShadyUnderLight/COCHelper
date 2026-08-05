@@ -152,7 +152,25 @@ struct CapitalRaidCardView: View {
         }
     }
 
+    @ViewBuilder
     private func seasonRow(_ season: OfficialCapitalRaidSeason) -> some View {
+        let hasDetail = !(season.members ?? []).isEmpty
+            || !(season.attackLog ?? []).isEmpty
+            || !(season.defenseLog ?? []).isEmpty
+        if hasDetail {
+            DisclosureGroup {
+                seasonDetail(season)
+                    .padding(.vertical, 4)
+            } label: {
+                seasonSummary(season)
+            }
+            .font(.caption)
+        } else {
+            seasonSummary(season)
+        }
+    }
+
+    private func seasonSummary(_ season: OfficialCapitalRaidSeason) -> some View {
         HStack(spacing: 10) {
             Image(systemName: season.state == "ongoing" ? "play.circle.fill" : "checkmark.circle.fill")
                 .foregroundStyle(season.state == "ongoing" ? .orange : .green)
@@ -198,6 +216,87 @@ struct CapitalRaidCardView: View {
             Spacer()
         }
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func seasonDetail(_ season: OfficialCapitalRaidSeason) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let members = season.members, !members.isEmpty {
+                Text("成员贡献（\(members.count) 人）")
+                    .font(.caption.weight(.semibold))
+                ForEach(Array(members.prefix(30).enumerated()), id: \.offset) { _, member in
+                    HStack {
+                        Text(member.name ?? "未知成员").font(.caption).lineLimit(1)
+                        Spacer()
+                        Text([member.attacks.map { "\($0) 攻" },
+                              member.capitalResourcesLooted.map { Self.formatted($0) }]
+                            .compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                    }
+                }
+                if members.count > 30 {
+                    Text("还有 \(members.count - 30) 名成员…").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            if let log = season.attackLog, !log.isEmpty {
+                Text("进攻日志（\(log.count) 条）").font(.caption.weight(.semibold)).padding(.top, 4)
+                ForEach(Array(log.prefix(30).enumerated()), id: \.offset) { _, entry in
+                    raidLogRow(entry)
+                }
+                if log.count > 30 {
+                    Text("还有 \(log.count - 30) 条…").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            if let log = season.defenseLog, !log.isEmpty {
+                Text("防守日志（\(log.count) 条）").font(.caption.weight(.semibold)).padding(.top, 4)
+                ForEach(Array(log.prefix(30).enumerated()), id: \.offset) { _, entry in
+                    defenseLogRow(entry)
+                }
+                if log.count > 30 {
+                    Text("还有 \(log.count - 30) 条…").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func raidLogRow(_ entry: CapitalRaidAttackLogEntry) -> some View {
+        HStack {
+            Text("vs " + (entry.defender?.name ?? "未知部落"))
+                .font(.caption).lineLimit(1)
+            Spacer()
+            Text([entry.attackCount.map { "\($0) 攻" },
+                  entry.districtsDestroyed.map { "\($0) 区域" },
+                  districtSummary(entry.districts)]
+                .compactMap { $0 }.joined(separator: " · "))
+                .font(.caption2.monospaced()).foregroundStyle(.secondary)
+        }
+    }
+
+    private func defenseLogRow(_ entry: CapitalRaidDefenseLogEntry) -> some View {
+        HStack {
+            Text("vs " + (entry.attacker?.name ?? "未知部落"))
+                .font(.caption).lineLimit(1)
+            Spacer()
+            Text([entry.attackCount.map { "\($0) 攻" },
+                  entry.districtsDestroyed.map { "\($0) 区域" },
+                  districtSummary(entry.districts)]
+                .compactMap { $0 }.joined(separator: " · "))
+                .font(.caption2.monospaced()).foregroundStyle(.secondary)
+        }
+    }
+
+    /// 区域概要：摧毁 X% · 掠夺 Y（districts 聚合；官方无顶层 looted）。
+    private func districtSummary(_ districts: [CapitalRaidDistrict]?) -> String? {
+        guard let districts, !districts.isEmpty else { return nil }
+        let destruction = districts.reduce(0.0) { $0 + ($1.destructionPercent ?? 0) }
+        let loot = districts.reduce(0) { $0 + ($1.totalLooted ?? 0) }
+        let parts = ["摧毁 \(Self.percent(destruction))%", Self.formatted(loot)]
+        return parts.joined(separator: " · ")
+    }
+
+    private static func percent(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value)) : String(format: "%.1f", value)
     }
 
     private static func formatted(_ value: Int) -> String {

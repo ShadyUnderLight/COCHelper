@@ -437,8 +437,12 @@ def test_catalog_replace_failure_keeps_original(tmp_path, monkeypatch):
 
 
 def test_write_catalog_missing_no_png_left(tmp_path):
-    """P2：catalog.json 缺失 → 前置检查 fail loud，不写任何 PNG/.tmp。"""
-    with pytest.raises(CatalogError, match="catalog.json"):
+    """P2：catalog.json 缺失 → 前置检查 fail loud，不写任何 PNG/.tmp。
+
+    match 收紧为完整消息（"catalog.json 不存在"）——区分前置检查路径与
+    回滚路径（回滚消息为"渲染落盘失败（已回滚…）"）。
+    """
+    with pytest.raises(CatalogError, match="catalog.json 不存在"):
         write_rendered_outputs(tmp_path, _sample_verdicts(), write_catalog=True)
     assert list(tmp_path.rglob("*.png")) == []
     assert not any(".render-tmp-" in p.name for p in tmp_path.rglob("*"))
@@ -474,6 +478,58 @@ def test_replace_failure_rolls_back_all_outputs(tmp_path, monkeypatch):
     assert (tmp_path / "catalog.json").read_text(encoding="utf-8") == original
     assert (tmp_path / "manifest.json").read_text(encoding="utf-8") \
         == _mini_manifest()
+
+
+def test_manifest_replace_failure_restores_catalog(tmp_path, monkeypatch):
+    """P2：第 6 次 os.replace 失败（manifest 替换——坏窗口）→ catalog.json
+    按事务前字节快照恢复（旧实现 unlink 会删掉新 catalog.json，导致文件
+    消失），manifest.json 原内容保留，PNG/.tmp 零残留。"""
+    original_bytes = (json.dumps(_mini_catalog(), ensure_ascii=False,
+                                 indent=2, sort_keys=True) + "\n") \
+        .encode("utf-8")
+    (tmp_path / "catalog.json").write_bytes(original_bytes)
+    original_manifest = _mini_manifest().encode("utf-8")
+    (tmp_path / "manifest.json").write_bytes(original_manifest)
+
+    import render_generator as rg
+
+    real_replace = rg.os.replace
+    counter = {"n": 0}
+
+    def boom(src, dst):
+        counter["n"] += 1
+        # 替换顺序：4 PNG → catalog.json(第 5 次) → manifest.json(第 6 次)
+        if counter["n"] == 6:
+            raise OSError("simulated manifest replace failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(rg.os, "replace", boom)
+    with pytest.raises(CatalogError, match="simulated manifest replace failure"):
+        write_rendered_outputs(tmp_path, _sample_verdicts(), write_catalog=True)
+    # 坏窗口：catalog.json 已替换——必须字节级恢复为事务前内容
+    assert (tmp_path / "catalog.json").read_bytes() == original_bytes
+    assert (tmp_path / "manifest.json").read_bytes() == original_manifest
+    # 已替换 PNG 回滚清理、无 .tmp 残留
+    assert list(tmp_path.rglob("*.png")) == []
+    assert not any(".render-tmp-" in p.name for p in tmp_path.rglob("*"))
+
+
+def test_replace_keyboard_interrupt_not_swallowed(tmp_path, monkeypatch):
+    """P2：KeyboardInterrupt 不被吞成 CatalogError——保留中断语义（中断时
+    .render-tmp-* 残留可接受，docstring 已注明启动清扫不在本 PR 范围）。"""
+    (tmp_path / "catalog.json").write_text(
+        json.dumps(_mini_catalog(), ensure_ascii=False, indent=2,
+                   sort_keys=True) + "\n", encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
+
+    import render_generator as rg
+
+    def ctrl_c(src, dst):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(rg.os, "replace", ctrl_c)
+    with pytest.raises(KeyboardInterrupt):
+        write_rendered_outputs(tmp_path, _sample_verdicts(), write_catalog=True)
 
 
 # ---------------------------------------------------------------------------
@@ -571,6 +627,18 @@ def test_refresh_manifest_standalone_recomputes(tmp_path):
     paths = [e["path"] for e in new2["generatedFiles"]]
     assert len(paths) == len(set(paths))
     assert validate_catalog(d) == []
+
+
+def test_refresh_manifest_missing_icon_key_fails_loud(tmp_path):
+    """refresh_manifest：手编 catalog 的 level 缺 icon 键（畸形数据）→
+    CatalogError 语义清晰，不泄漏裸 KeyError（fail loud，缺键属畸形而非
+    可容忍缺省）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    del c["items"][0]["levels"][0]["icon"]
+    _write(d, catalog=c)
+    with pytest.raises(CatalogError, match="icon"):
+        refresh_manifest(d, [])
 
 
 # ---------------------------------------------------------------------------

@@ -521,7 +521,23 @@ def _refresh_manifest_content(manifest: dict, catalog: dict,
       原位刷新（去重）或追加
     - resolve(relpath) → 资源实际文件路径：独立调用时即最终路径；事务性
       落盘时指向 .tmp 阶段文件（内容即最终字节，P2）
+
+    结构校验（fail loud，对齐 apply_rendered_paths）：畸形 catalog 不泄漏
+    裸 KeyError——item 缺 levels 数组 / level 缺 icon 键均属畸形数据
+    （真实 catalog 每 level 必有 icon 键，bundled 18.400.13 已核查）。
     """
+    if (not isinstance(catalog, dict)
+            or not isinstance(catalog.get("items"), list)):
+        raise CatalogError(
+            "catalog.json 结构非法: 顶层对象 items 必须是对象数组")
+    for item in catalog["items"]:
+        levels = item.get("levels", []) if isinstance(item, dict) else None
+        if not isinstance(levels, list) or any(
+                not isinstance(lv, dict) or "icon" not in lv
+                for lv in levels):
+            raise CatalogError(
+                "catalog.json 结构非法: item 缺 levels 数组或 level 缺 icon 键"
+                f" (dataID={item.get('dataID') if isinstance(item, dict) else '?'})")
     counts = {
         "items": len(catalog["items"]),
         "levels": sum(len(i["levels"]) for i in catalog["items"]),
@@ -607,9 +623,15 @@ def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
       loud，任何文件（含 PNG）都不落盘
     - 阶段 1：全部目标内容写同目录 `.render-tmp-*`（PNG 逐个、catalog.json、
       manifest.json）；manifest 的 sha256/size 基于 .tmp 内容计算（内容即最终）
-    - 阶段 2：逐个 os.replace（PNG 先、catalog.json 次、manifest.json 最后）
-    - 任一阶段失败：尽力回滚（删除已替换最终文件与全部 .tmp），抛
-      CatalogError（消息说明回滚清理数）
+    - 阶段 2：逐个 os.replace（PNG 先、catalog.json 次、manifest.json 最后）；
+      替换前对已存在的最终文件拍字节快照——回滚按快照恢复而非删除
+      （manifest 替换失败窗口下 unlink 会删掉新 catalog.json，比事务前更糟）
+    - 任一阶段失败：尽力回滚（清理全部 .tmp；已替换 final 有快照 → 按原
+      字节恢复，无快照即事务前不存在 → unlink），抛 CatalogError（消息
+      说明清理/恢复数）
+    - KeyboardInterrupt/SystemExit 不拦截（保留中断语义，不包装成
+      CatalogError）；中断时 .render-tmp-* 残留可接受，启动清扫不在本
+      PR 范围
     write_catalog=False（--samples-only）或 refresh_manifest=False（逃生阀）
     时不触碰 manifest.json。注：参数与模块函数 refresh_manifest 同名——事务
     内基于 .tmp 内容走 _refresh_manifest_content，独立函数在最终路径上使用。
@@ -663,12 +685,19 @@ def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
                                  manifest_text.encode("utf-8")))
 
         # 阶段 2：统一替换（PNG 先、catalog.json 次、manifest.json 最后）
+        # 替换前对已存在的 final 拍字节快照——回滚时恢复而非删除，避免
+        # manifest 替换失败窗口下 unlink 删掉新 catalog.json（比事务前更糟）
+        backups: dict[Path, bytes] = {}
         for tmp, final in staged:
+            if final.is_file():
+                backups[final] = final.read_bytes()
             os.replace(tmp, final)
             replaced.append(final)
-    except BaseException as exc:
-        # 尽力回滚：删除全部 .tmp + 已替换的最终文件
+    except Exception as exc:
+        # 尽力回滚：删除全部 .tmp；已替换 final 有快照 → 按原字节恢复，
+        # 无快照（事务前不存在）→ unlink。恢复失败不覆盖原异常。
         cleaned = 0
+        restored = 0
         for tmp, _ in staged:
             try:
                 os.unlink(tmp)
@@ -676,15 +705,23 @@ def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
             except OSError:
                 pass
         for final in replaced:
-            try:
-                os.unlink(final)
-                cleaned += 1
-            except OSError:
-                pass
+            if final in backups:
+                try:
+                    _atomic_write(final, backups[final])
+                    restored += 1
+                except Exception:
+                    pass
+            else:
+                try:
+                    os.unlink(final)
+                    cleaned += 1
+                except OSError:
+                    pass
         if isinstance(exc, CatalogError):
             raise
         raise CatalogError(
-            f"渲染落盘失败（已回滚，清理 {cleaned} 个文件）: {exc}") from exc
+            f"渲染落盘失败（已回滚，清理 {cleaned} 个文件，"
+            f"恢复 {restored} 个文件）: {exc}") from exc
 
     return {"pngWritten": png_relpaths, "updatedRefs": updated}
 

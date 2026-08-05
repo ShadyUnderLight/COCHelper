@@ -13,7 +13,7 @@ final class QueueTimelineResolverTests: XCTestCase {
         )
         return try AccountSnapshotImporter.parse(
             String(data: Data(contentsOf: url), encoding: .utf8) ?? "",
-            now: Date(timeIntervalSince1970: 1_785_736_933) // == fixture timestamp：age = 0
+            now: Date(timeIntervalSince1970: 1_785_736_333) // == fixture timestamp：age = 0
         )
     }
 
@@ -32,7 +32,7 @@ final class QueueTimelineResolverTests: XCTestCase {
             village: village,
             catalog: GameCatalog.loadBundled(),
             base: .home,
-            now: Date(timeIntervalSince1970: 1_785_736_933)
+            now: Date(timeIntervalSince1970: 1_785_736_333)
         )
         let upgrading = try XCTUnwrap(projection.items.first { $0.isUpgrading })
 
@@ -64,7 +64,7 @@ final class QueueTimelineResolverTests: XCTestCase {
             village: village,
             catalog: GameCatalog.loadBundled(),
             base: .home,
-            now: Date(timeIntervalSince1970: 1_785_736_933)
+            now: Date(timeIntervalSince1970: 1_785_736_333)
         )
         let idle = try XCTUnwrap(projection.items.first { !$0.isUpgrading })
 
@@ -86,7 +86,7 @@ final class QueueTimelineResolverTests: XCTestCase {
             village: village,
             catalog: nil,
             base: .home,
-            now: Date(timeIntervalSince1970: 1_785_736_933)
+            now: Date(timeIntervalSince1970: 1_785_736_333)
         )
         let item = try XCTUnwrap(projection.items.first)
 

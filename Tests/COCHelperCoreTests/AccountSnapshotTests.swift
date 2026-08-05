@@ -117,7 +117,7 @@ final class AccountSnapshotTests: XCTestCase {
         let text = try fixtureText()
         let snapshot = try AccountSnapshotImporter.parse(
             text,
-            now: Date(timeIntervalSince1970: 1_785_736_933) // == fixture timestamp：age = 0
+            now: Date(timeIntervalSince1970: 1_785_736_333) // == fixture timestamp：age = 0
         )
 
         // 1. 原始 JSON 无任何队列字段（fixture 实测 0 处；解码器也不读取）。

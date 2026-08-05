@@ -15,7 +15,7 @@ from . import (
     ITEM_MISSING_REASONS,
     LEVEL_MISSING_REASONS,
 )
-from .contract import check_rendered_path_contract
+from .contract import check_rendered_path_contract, rendered_path_format_ok
 from .model import AssetRef, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
@@ -37,15 +37,19 @@ def _check_rendered_path(
     顺序：R-B 互斥（独立轴，先查，不被格式短路）→ R-D 格式 → R-A 文件存在 →
     R-C manifest 登记。renderedPath 为空（null/""）不触发——与 counts.missingIcons
     的 "renderedPath is None" 语义一致，勿改为 is None 判断（会改 counts 语义）。
+    R-D 短路在**文件系统探测之前**：格式非法（版本段/`..` 段/绝对路径/单级等）
+    直接报格式非法，不执行 `(catalog_dir / rp).is_file()`——防 `icons/../../x.png`
+    逃逸探测 catalog 目录之外的文件（交叉审核 NB-3）。
     文件存在但已登记时 hash/size 一致性由现有 generatedFiles 重算逻辑兜底
     （PNG 条目走同一路径）。
     """
     rp = ref.renderedPath
     if not rp:
         return
+    # 纯函数先验格式；`and` 短路保证非法路径从不触碰文件系统
+    file_exists = rendered_path_format_ok(rp) and (catalog_dir / rp).is_file()
     violations = check_rendered_path_contract(
-        rp, ref.missingReason,
-        (catalog_dir / rp).is_file(),
+        rp, ref.missingReason, file_exists,
         None if registered is None else rp in registered,
     )
     errors.extend(f"{e} ({context})" for e in violations)

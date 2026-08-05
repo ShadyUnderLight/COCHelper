@@ -595,8 +595,8 @@ def _build_fake_apk(tmp_path: Path) -> Path:
                      "height": 2, "data": RGBA_2X2}},
     ])
     ui_sc = build_full_sc_bytes(
-        ["icon_unit_barbarian", "icon_unit_does_not_exist"],
-        [(0, 5)], shapes_ui, textures_ui)
+        ["icon_unit_barbarian", "icon_unit_does_not_exist", "icon_spell_rage"],
+        [(0, 5), (2, 5)], shapes_ui, textures_ui)
     shapes_b = build_shapes_payload([(7, [0])])
     textures_b = build_textures_payload([
         {"highres": {"texture_format": 4, "pixel_type": 0, "width": 10,
@@ -618,7 +618,7 @@ def test_main_flow_writes_report(tmp_path: Path):
     report = json.loads((out / "spike-report.json").read_text(encoding="utf-8"))
     by_key = {(s["asset_key"]["container"], s["asset_key"]["exportName"]): s
               for s in report["samples"]}
-    assert len(report["samples"]) == len(SAMPLES) == 5
+    assert len(report["samples"]) == len(SAMPLES) == 6
     # 1) 单位 icon → 成功（PNG 落盘）
     succ = by_key[("sc/ui.sc", "icon_unit_barbarian")]
     assert succ["status"] == "success"
@@ -640,6 +640,11 @@ def test_main_flow_writes_report(tmp_path: Path):
     miss = by_key[("sc/ui.sc", "icon_unit_does_not_exist")]
     assert miss["status"] == "missing"
     assert miss["blocker"]["reason"] == "export_not_found"
+    # 4c) 法术 icon 样本（验收 2 闭环）：与单位 icon 同一流程 → success
+    spell = by_key[("sc/ui.sc", "icon_spell_rage")]
+    assert spell["status"] == "success"
+    assert spell["blocker"] is None
+    assert (out / spell["png"]["path"]).is_file()
     # 4b) container 不存在
     trap = by_key[("sc/traps.sc", "town_hall_lvl1")]
     assert trap["status"] == "missing"
@@ -663,3 +668,59 @@ def test_render_spike_catalog_error_records_blocked(tmp_path: Path):
     v = by_key[("sc/ui.sc", "icon_unit_barbarian")]
     assert v["status"] == "blocked"
     assert v["blocker"]["reason"] == "catalog_error"
+
+
+def test_verdict_malformed_shapes_blocks_not_escape(tmp_path: Path):
+    """FIX-2 回归：畸形 Shapes chunk → shape_textures 抛 CatalogError →
+    单样本 blocked(catalog_error)，不逃逸中止（fail-soft 契约）。
+
+    旧代码 shape_textures 在 per-sample try 之外，畸形 chunk 会让整个
+    run exit 1 且报告不写盘。
+    """
+    sc = make_sc({"Shapes": b"\xff\xff\xff\xff"}, {"icon_x": 5})
+    v = resolve_sample(_sample(), sc, tmp_path, {}, None)
+    assert v["status"] == "blocked"
+    assert v["blocker"]["reason"] == "catalog_error"
+    assert v["png"] is None
+
+
+def test_main_flow_malformed_shapes_still_writes_report(tmp_path: Path):
+    """FIX-2 回归（main 级）：畸形 Shapes chunk → exit 0 + 报告写盘 + 样本 blocked。"""
+    apk = tmp_path / "bad-shapes.apk"
+    ui_sc = build_full_sc_bytes(
+        ["icon_unit_barbarian"],
+        [(0, 5)],
+        b"\xff\xff\xff\xff",  # 畸形 Shapes chunk
+        build_textures_payload([
+            {"highres": {"texture_format": 0, "pixel_type": 0, "width": 2,
+                         "height": 2, "data": RGBA_2X2}}]),
+    )
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/sc/ui.sc", ui_sc)
+    out = tmp_path / "out"
+    assert main(["--apk", str(apk), "--output", str(out)]) == 0
+    report = json.loads((out / "spike-report.json").read_text(encoding="utf-8"))
+    by_key = {(s["asset_key"]["container"], s["asset_key"]["exportName"]): s
+              for s in report["samples"]}
+    v = by_key[("sc/ui.sc", "icon_unit_barbarian")]
+    assert v["status"] == "blocked"
+    assert v["blocker"]["reason"] == "catalog_error"
+
+
+def test_oversized_zip_entry_blocked(tmp_path, monkeypatch):
+    """FIX-3 回归：条目解压大小超限（zip deflate 炸弹）→ 单样本 blocked，
+    不整块 read；报告照常写盘 exit 0。"""
+    apk = tmp_path / "big.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/sc/ui.sc", b"x" * 200)
+    monkeypatch.setattr("render_spike._MAX_ENTRY_BYTES", 100)
+    out = tmp_path / "out"
+    assert main(["--apk", str(apk), "--output", str(out)]) == 0
+    report = json.loads((out / "spike-report.json").read_text(encoding="utf-8"))
+    by_key = {(s["asset_key"]["container"], s["asset_key"]["exportName"]): s
+              for s in report["samples"]}
+    v = by_key[("sc/ui.sc", "icon_unit_barbarian")]
+    assert v["status"] == "blocked"
+    assert v["blocker"]["reason"] == "entry_too_large"
+    assert v["blocker"]["details"]["fileSize"] == 200
+    assert v["blocker"]["details"]["maxBytes"] == 100

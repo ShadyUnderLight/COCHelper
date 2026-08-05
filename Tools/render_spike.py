@@ -63,6 +63,12 @@ SAMPLES: list[dict] = [
         "note": "失败引用：catalog/APK 中均不存在的导出名",
     },
     {
+        "container": "sc/ui.sc",
+        "exportName": "icon_spell_rage",
+        "note": "法术 icon：真实 ui.sc 导出名（对拍 exports=3024，"
+               "icon_spell_* 共 60 个）",
+    },
+    {
         "container": "sc/traps.sc",
         "exportName": "town_hall_lvl1",
         "note": "container 不存在：APK 无 assets/sc/traps.sc（543 个 sc 文件"
@@ -81,6 +87,8 @@ _PIXEL_FORMATS: dict[int, tuple[str, int, int]] = {
     10: ("luminance8", 1, 0),
 }
 
+
+_MAX_ENTRY_BYTES = 256 * 1024 * 1024  # 单个 APK 条目解压大小上限（对齐 apk.py _MAX_ASSET_BYTES，防 zip deflate 炸弹）
 
 # ---------------------------------------------------------------------------
 # PNG 编码（stdlib zlib，8-bit）
@@ -209,45 +217,48 @@ def resolve_sample(sample: dict, sc: ScFile, output_dir: Path,
                 "evidence": {"objectId": None, "exportFound": False},
                 "blocker": _missing("export_not_found"), "png": None}
 
-    evidence = {"objectId": oid, "exportFound": True}
-    tex_indexes = sc.shape_textures(oid)
-    if tex_indexes is None:
-        # export 存在但 oid 不是 Shape id——记录 MovieClip 证据链
-        mc_idx = _movieclip_index(sc, oid)
-        evidence.update({"shapeFound": False, "commandCount": None,
-                         "textureIndexes": [],
-                         "movieClipFound": mc_idx is not None,
-                         "movieClipIndex": mc_idx})
-        return {"asset_key": asset_key, "status": "blocked",
-                "evidence": evidence,
-                "blocker": _blocked(
-                    "no_shape_command",
-                    {"detail": "export 的 object_id 不在 Shapes chunk（"
-                               "真实数据中 export 全部指向 MovieClip，"
-                               "需 MovieClip→frame→shape 解析链路）"}),
-                "png": None}
-    evidence.update({"shapeFound": True, "commandCount": len(tex_indexes),
-                     "textureIndexes": tex_indexes})
-    if not tex_indexes:
-        return {"asset_key": asset_key, "status": "blocked",
-                "evidence": evidence,
-                "blocker": _blocked("no_shape_command",
-                                    {"detail": "Shape 存在但无 draw 命令"}),
-                "png": None}
-
-    # 预算检查：每容器最多解析 limit 个 texture
-    used = budget.get(container, 0)
-    if limit is not None and used >= limit:
-        return {"asset_key": asset_key, "status": "blocked",
-                "evidence": evidence,
-                "blocker": _blocked("texture_limit_exceeded",
-                                    {"limit": limit, "container": container}),
-                "png": None}
-    budget[container] = used + 1
-
-    # 纹理解析（含惰性 data 访问）整体包 try：畸形数据 → 单样本
-    # blocked(catalog_error)，不中止整份报告
+    # fail-soft 契约：export 解析之后的一切（Shape 命令解析、MovieClip 证据链、
+    # 预算、纹理解析、PNG 编码）整体包 try——畸形 chunk（Shapes/MovieClips/
+    # Textures）的 CatalogError → 单样本 blocked(catalog_error)，报告照常写盘。
+    # 旧代码 shape_textures 在 try 之外，畸形 Shapes chunk 会逃逸中止整个 run
+    # （exit 1 + 报告不写盘），交叉审核 FIX-2。
     try:
+        evidence = {"objectId": oid, "exportFound": True}
+        tex_indexes = sc.shape_textures(oid)
+        if tex_indexes is None:
+            # export 存在但 oid 不是 Shape id——记录 MovieClip 证据链
+            mc_idx = _movieclip_index(sc, oid)
+            evidence.update({"shapeFound": False, "commandCount": None,
+                             "textureIndexes": [],
+                             "movieClipFound": mc_idx is not None,
+                             "movieClipIndex": mc_idx})
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked(
+                        "no_shape_command",
+                        {"detail": "export 的 object_id 不在 Shapes chunk（"
+                                   "真实数据中 export 全部指向 MovieClip，"
+                                   "需 MovieClip→frame→shape 解析链路）"}),
+                    "png": None}
+        evidence.update({"shapeFound": True, "commandCount": len(tex_indexes),
+                         "textureIndexes": tex_indexes})
+        if not tex_indexes:
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked("no_shape_command",
+                                        {"detail": "Shape 存在但无 draw 命令"}),
+                    "png": None}
+
+        # 预算检查：每容器最多解析 limit 个 texture
+        used = budget.get(container, 0)
+        if limit is not None and used >= limit:
+            return {"asset_key": asset_key, "status": "blocked",
+                    "evidence": evidence,
+                    "blocker": _blocked("texture_limit_exceeded",
+                                        {"limit": limit, "container": container}),
+                    "png": None}
+        budget[container] = used + 1
+
         td = sc.texture_data(tex_indexes[0])
         evidence["texture"] = _evidence_from_texture(td)
 
@@ -257,13 +268,14 @@ def resolve_sample(sample: dict, sc: ScFile, output_dir: Path,
                     "blocker": _blocked(
                         "needs_sctx_decode",
                         {"path": td.external_texture,
-                         "detail": "纹理存于外部 .sctx（SupercellTexture 压缩，"
-                                   "参考 C++ SupercellCompressionFormat="
-                                   "ASTC_RGBA8_4x4）"}),
+                         "detail": "纹理存于外部 .sctx（实测 texture_format=0 + "
+                                   "external_texture 非空；.sctx 头 pixel_type=208"
+                                   "=ASTC_RGBA8_6x6，社区枚举，待验证）"}),
                     "png": None}
         if td.texture_format != 0:
-            # 对拍：ui.sc fmt=8（内嵌 KTX）、buildings.sc fmt=4（.sctx）；
-            # 参考 C++ 仅 NONE=0 走原始缓冲，其余为压缩格式
+            # 对拍：ui.sc fmt=8（内嵌 KTX）、buildings.sc fmt=0（external
+            # .sctx，.sctx 头 pixel_type=208=ASTC_RGBA8_6x6）；参考 C++ 仅
+            # NONE=0 走原始缓冲，其余为压缩格式
             return {"asset_key": asset_key, "status": "blocked",
                     "evidence": evidence,
                     "blocker": _blocked(
@@ -341,6 +353,33 @@ def render_spike(apk: Path, output_dir: Path, limit: int | None) -> dict:
     with z:
         for sample in SAMPLES:
             entry = "assets/" + sample["container"]
+            try:
+                info = z.getinfo(entry)
+            except KeyError:
+                verdicts.append({
+                    "asset_key": {"container": sample["container"],
+                                  "exportName": sample["exportName"]},
+                    "status": "missing",
+                    "evidence": {"containerFound": False},
+                    "blocker": _missing("container_not_found"),
+                    "png": None,
+                })
+                continue
+            if info.file_size > _MAX_ENTRY_BYTES:
+                # zip deflate 炸弹防御：read 前查 ZipInfo.file_size（不触发
+                # 整块解压），超限 → 单样本 blocked（FIX-3，对齐 apk.py）
+                verdicts.append({
+                    "asset_key": {"container": sample["container"],
+                                  "exportName": sample["exportName"]},
+                    "status": "blocked",
+                    "evidence": {"containerFound": True},
+                    "blocker": _blocked(
+                        "entry_too_large",
+                        {"path": entry, "fileSize": info.file_size,
+                         "maxBytes": _MAX_ENTRY_BYTES}),
+                    "png": None,
+                })
+                continue
             try:
                 data = z.read(entry)
             except KeyError:

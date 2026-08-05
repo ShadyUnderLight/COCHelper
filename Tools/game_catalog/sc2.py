@@ -39,6 +39,11 @@ SC_MAGIC = b"SC"
 SC_VERSION = 6
 SC_DESCRIPTOR_OFFSET = 12  # 头部固定字节数
 
+# 防资源放大：body 解压上限 512MB（_MAX_DECOMPRESSED），解压后的 vector 条目
+# 数若不加限，O(n) 循环会在已解压的巨型 body 上再放大一轮 CPU/内存
+# （交叉审核 FIX-5；真实数据：metadata ~几千、ExportNames 3024、Shapes 4053）
+_MAX_VECTOR_ENTRIES = 1_000_000
+
 # Header table 槽位（Header.fbs 字段顺序）
 _SLOT_METADATA = 10
 
@@ -150,6 +155,10 @@ def metadata_entries(data: bytes, header: ScHeader) -> list[AssetMetaEntry]:
         if meta_field == 0:
             return []
         count = fb.vector_len(meta_field)
+        if count > _MAX_VECTOR_ENTRIES:
+            raise CatalogError(
+                f"SC2 metadata 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
+                "（防 512MB body 解压后的 O(n) 放大）")
         entries: list[AssetMetaEntry] = []
         for i in range(count):
             entry_table = fb.table(fb.vector_elem(meta_field, i, 4))
@@ -249,7 +258,13 @@ def decode_body(compressed: bytes, compressed_size: int | None) -> bytes:
         raise CatalogError(
             f"zstd 解压上限 0x{bound:x}（{bound}）字节超过允许的 "
             f"{_MAX_DECOMPRESSED}（防 zip bomb）")
-    dst = ctypes.create_string_buffer(bound)
+    try:
+        dst = ctypes.create_string_buffer(bound)
+    except MemoryError as exc:
+        # 分配失败 → CatalogError，不裸 MemoryError traceback 中止
+        # （交叉审核 FIX-4；spike 由 render_spike 捕获转 blocked）
+        raise CatalogError(
+            f"zstd 解压缓冲分配失败（{bound} 字节，内存不足）") from exc
     n = int(lib.ZSTD_decompress(dst, bound, frame, len(frame)))
     if n == 0 or lib.ZSTD_isError(n):
         # n == 0：解压成功但输出 0 字节（真空帧）——SC2 body 恒非空，
@@ -358,6 +373,10 @@ def parse_export_names(payload: bytes, strings: list[str]) -> list[tuple[str, in
             raise CatalogError(
                 f"SC2 ExportNames object_ids/name_ref_ids 数量不等: "
                 f"{ids_count} vs {refs_count}")
+        if ids_count > _MAX_VECTOR_ENTRIES:
+            raise CatalogError(
+                f"SC2 ExportNames 条目数 {ids_count} 超过上限 "
+                f"{_MAX_VECTOR_ENTRIES}（防 512MB body 解压后的 O(n) 放大）")
         out: list[tuple[str, int]] = []
         for i in range(ids_count):
             ids_pos = fb.vector_elem(ids_off, i, 2)
@@ -489,6 +508,10 @@ def parse_shapes(payload: bytes) -> dict[int, list[int]]:
         if shapes_vec == 0:
             return {}
         count = fb.vector_len(shapes_vec)
+        if count > _MAX_VECTOR_ENTRIES:
+            raise CatalogError(
+                f"SC2 Shapes 条目数 {count} 超过上限 {_MAX_VECTOR_ENTRIES}"
+                "（防 512MB body 解压后的 O(n) 放大）")
         out: dict[int, list[int]] = {}
         for i in range(count):
             shape_tbl = fb.table(fb.vector_elem(shapes_vec, i, 4))
@@ -498,6 +521,10 @@ def parse_shapes(payload: bytes) -> dict[int, list[int]]:
                 out[shape_id] = []
                 continue
             ncmd = fb.vector_len(commands_vec)
+            if ncmd > _MAX_VECTOR_ENTRIES:
+                raise CatalogError(
+                    f"SC2 Shape[{i}] 命令数 {ncmd} 超过上限 {_MAX_VECTOR_ENTRIES}"
+                    "（防 512MB body 解压后的 O(n) 放大）")
             tex = []
             for c in range(ncmd):
                 elem = fb.vector_elem(commands_vec, c, 16)  # struct 16B 连续

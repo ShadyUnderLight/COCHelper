@@ -7,6 +7,27 @@
 纯 stdlib、无 IO：file_exists/registered 由调用方计算后传入（bool），保持纯函数可测。
 """
 
+import re
+
+_RD_RE = re.compile(r"^icons/[^/]+/[^/]+\.png$")
+# gameVersion 段（契约 R7 版本隔离：renderedPath 内不得含版本段，如 18.400 / 18.400.13）
+_VERSION_SEGMENT_RE = re.compile(r"^\d+\.\d+(\.\d+)?$")
+
+
+def rendered_path_format_ok(rendered_path: str) -> bool:
+    """R-D 严格格式：`icons/<container_key>/<export_key>.png` 两级结构（契约 R2.1）。
+
+    拒绝：`..` 路径段（段级逃逸；`[^/]+` 不排除字面 `..`，须显式拒绝）、版本段
+    （第一段形如 `18.400` / `18.400.13`）、绝对路径、单级/多级路径、非 `.png`、
+    无 `icons/` 前缀。纯函数无 IO——validate.py 用它短路文件系统探测（防 NB-3 逃逸）。
+    """
+    if not _RD_RE.match(rendered_path):
+        return False
+    parts = rendered_path.split("/")
+    if ".." in parts:
+        return False
+    return not _VERSION_SEGMENT_RE.match(parts[1])
+
 
 def is_renderable(rendered_path: str | None, missing_reason: str | None) -> bool:
     """与 Swift CatalogAssetRef.isRenderable 同一语义：renderedPath 非空 且 missingReason 为空。
@@ -26,7 +47,8 @@ def check_rendered_path_contract(
     """返回违反的契约错误列表（空=通过）。
 
     规则顺序（与 validate.py 一致）：
-    R-B 互斥（renderedPath 非空且 missingReason 非空）→ R-D 格式（icons/ 前缀 + .png 后缀）→
+    R-B 互斥（renderedPath 非空且 missingReason 非空）→ R-D 格式（严格两级
+    `icons/<container_key>/<export_key>.png`，见 rendered_path_format_ok）→
     R-A 文件存在 → R-C manifest 登记（registered None 时跳过 R-C）。
     rendered_path 为空（None 或 ""）→ 返回 []。
 
@@ -43,8 +65,11 @@ def check_rendered_path_contract(
         errors.append(
             f"renderedPath 与 missingReason 同时存在（成功字段与失败原因互斥）: {rendered_path} "
             f"missingReason={missing_reason!r}")
-    if not (rendered_path.startswith("icons/") and rendered_path.endswith(".png")):
-        errors.append(f"renderedPath 格式非法: {rendered_path!r}（须相对版本目录 icons/ 且 .png 结尾）")
+    if not rendered_path_format_ok(rendered_path):
+        errors.append(
+            f"renderedPath 格式非法: {rendered_path!r}"
+            "（须 icons/<container_key>/<export_key>.png 两级结构，"
+            "且不含版本段/.. 段/绝对路径）")
         return errors
     if not file_exists:
         errors.append(f"renderedPath 指向不存在的文件: {rendered_path}")

@@ -18,6 +18,8 @@ property 实证修正（相对任务原稿）：
 
 from hypothesis import given, strategies as st
 
+import pytest
+
 from game_catalog.contract import is_renderable, check_rendered_path_contract
 from game_catalog import ASSET_MISSING_REASONS
 
@@ -55,7 +57,7 @@ def test_contract_invariants(rp, mr, fe, reg):
 
 def test_det_rb_mutual_exclusion():
     """R-B: renderedPath 与 missingReason 非空 → 互斥错误（独立轴，最优先）。"""
-    errs = check_rendered_path_contract("icons/a.png", "icons_not_rendered", True, True)
+    errs = check_rendered_path_contract("icons/ui/a.png", "icons_not_rendered", True, True)
     assert any("互斥" in e for e in errs)
 
 
@@ -63,30 +65,55 @@ def test_det_rd_format_illegal():
     """R-D: 缺 icons/ 前缀或非 .png 结尾 → 格式非法错误。"""
     errs = check_rendered_path_contract("x.png", None, True, True)
     assert any("格式非法" in e for e in errs)
-    errs = check_rendered_path_contract("icons/x.jpg", None, True, True)
+    errs = check_rendered_path_contract("icons/ui/x.jpg", None, True, True)
     assert any("格式非法" in e for e in errs)
 
 
 def test_det_ra_file_missing():
     """R-A: 文件不存在 → 错误含"不存在"。"""
-    errs = check_rendered_path_contract("icons/a.png", None, False, True)
+    errs = check_rendered_path_contract("icons/ui/a.png", None, False, True)
     assert any("不存在" in e for e in errs)
 
 
 def test_det_rc_unregistered():
     """R-C: 文件存在但未登记 → 错误含"登记"。"""
-    errs = check_rendered_path_contract("icons/a.png", None, True, False)
+    errs = check_rendered_path_contract("icons/ui/a.png", None, True, False)
     assert any("登记" in e for e in errs)
 
 
 def test_det_rc_skipped_when_registered_none():
     """R-C 跳过: registered=None（manifest 无 generatedFiles）→ 不报"登记"。"""
-    assert check_rendered_path_contract("icons/a.png", None, True, None) == []
+    assert check_rendered_path_contract("icons/ui/a.png", None, True, None) == []
 
 
 def test_det_valid_path_no_errors():
-    """合法路径: icons/ 前缀 + .png + 文件存在 + 已登记 → 无错误。"""
-    assert check_rendered_path_contract("icons/a.png", None, True, True) == []
+    """合法路径: icons/<container_key>/<export_key>.png 两级 + 文件存在 + 已登记 → 无错误。"""
+    assert check_rendered_path_contract("icons/ui/a.png", None, True, True) == []
+
+
+@pytest.mark.parametrize("bad", [
+    "icons/18.400.13/ui/icon_unit_barbarian.png",  # 版本段 3 级（验收 7 缺口）
+    "icons/18.400.13/icon.png",      # container_key 位置是版本段（\d+\.\d+\.\d+）
+    "icons/18.400/icon.png",         # 版本段（18.\d+ 形式）
+    "icons/../secret.png",           # .. 段逃逸（正则 [^/]+ 不排除字面 ..，须显式拒绝）
+    "icons/../../secret.png",        # 多级逃逸
+    "icons/a.png",                   # 单级（违反 R2.1 两级结构）
+    "icons/ui/a/b.png",              # 三级
+    "/icons/ui/a.png",               # 绝对路径
+    "icons/ui/a.jpg",                # 非 .png
+    "ui/a.png",                      # 无 icons/ 前缀
+])
+def test_det_rd_strict_two_level_rejected(bad):
+    """R-D 严格两级结构（交叉审核）：版本段/.. 段/绝对路径/单级/非 png/无前缀 → 格式非法。"""
+    errs = check_rendered_path_contract(bad, None, True, True)
+    assert any("格式非法" in e for e in errs)
+
+
+def test_det_rd_two_level_valid():
+    """R-D 正例：icons/<container_key>/<export_key>.png → 无格式错误。"""
+    errs = check_rendered_path_contract(
+        "icons/ui/icon_unit_barbarian.png", None, True, True)
+    assert errs == []
 
 
 def test_det_empty_path_no_errors():

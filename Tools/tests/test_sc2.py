@@ -25,6 +25,7 @@ from game_catalog.sc2 import (
     parse_data_storage,
     parse_export_names,
     parse_sc_header,
+    parse_shapes,
     read_chunks,
 )
 from test_fbs import FbBuilder
@@ -191,6 +192,20 @@ def test_u32_field_out_of_bounds_raises_catalog_error():
         parse_sc_header(bytes(data))
 
 
+def test_metadata_entries_count_limit_raises():
+    """FIX-5 回归：metadata vector 条目数超上限（伪造长度字段 200 万）→
+    CatalogError，不进入 O(n) 循环（防 512MB body 解压后的资源放大）。"""
+    data = bytearray(build_header_with_metadata())
+    root_pos = _descriptor_root(bytes(data))
+    meta_field = root_pos + _table_slot_rel(bytes(data), root_pos, 10)
+    vec_pos = meta_field + struct.unpack(
+        "<I", bytes(data[meta_field:meta_field + 4]))[0]
+    data[vec_pos:vec_pos + 4] = struct.pack("<I", 2_000_000)
+    h = parse_sc_header(bytes(data))
+    with pytest.raises(CatalogError, match="上限"):
+        metadata_entries(bytes(data), h)
+
+
 def test_ubyte_vector_length_out_of_bounds_raises():
     """伪造 hash vector 长度字段超界 → _ubyte_vector_bytes 抛 CatalogError。"""
     data = bytearray(build_header_with_metadata())
@@ -309,6 +324,34 @@ def test_decode_body_oversized_bound_rejected(monkeypatch):
 
     monkeypatch.setattr("game_catalog.sc2._libzstd", FakeLib())
     with pytest.raises(CatalogError, match="上限"):
+        decode_body(compressed, None)
+
+
+def test_decode_body_memory_error_wrapped(monkeypatch):
+    """FIX-4 回归：create_string_buffer 分配失败（MemoryError）→ CatalogError，
+    不裸 MemoryError traceback 中止（裸逃逸会让 spike 报告无法写盘）。"""
+    compressed = _zstd_compress(b"y" * 100)
+
+    class FakeLib:
+        def ZSTD_findFrameCompressedSize(self, src, size):
+            return size
+
+        def ZSTD_decompressBound(self, src, size):
+            return 4096
+
+        def ZSTD_decompress(self, *args):
+            raise AssertionError("不应到达解压步骤")
+
+        def ZSTD_isError(self, n):
+            return 0
+
+    monkeypatch.setattr("game_catalog.sc2._libzstd", FakeLib())
+
+    def _oom(*args, **kwargs):
+        raise MemoryError("cannot allocate")
+
+    monkeypatch.setattr("game_catalog.sc2.ctypes.create_string_buffer", _oom)
+    with pytest.raises(CatalogError, match="内存"):
         decode_body(compressed, None)
 
 
@@ -452,6 +495,68 @@ def test_parse_export_names_ref_out_of_range_raises():
     payload = build_export_names([1], [5])  # strings 只有 2 个
     with pytest.raises(CatalogError, match="越界"):
         parse_export_names(payload, ["a", "b"])
+
+
+def test_parse_export_names_count_limit_raises():
+    """FIX-5 回归：ExportNames 条目数超上限（伪造 ids/refs vector 长度）→
+    CatalogError（防 512MB body 解压后的 O(n) 放大）。"""
+    payload = bytearray(build_export_names([7, 42], [0, 1]))
+    root_pos = struct.unpack("<I", payload[:4])[0]
+    ids_field = root_pos + _table_slot_rel(bytes(payload), root_pos, 0)
+    ids_vec = ids_field + struct.unpack(
+        "<I", bytes(payload[ids_field:ids_field + 4]))[0]
+    refs_field = root_pos + _table_slot_rel(bytes(payload), root_pos, 1)
+    refs_vec = refs_field + struct.unpack(
+        "<I", bytes(payload[refs_field:refs_field + 4]))[0]
+    payload[ids_vec:ids_vec + 4] = struct.pack("<I", 2_000_000)
+    payload[refs_vec:refs_vec + 4] = struct.pack("<I", 2_000_000)
+    with pytest.raises(CatalogError, match="上限"):
+        parse_export_names(bytes(payload), ["a", "b"])
+
+
+def test_parse_shapes_count_limit_raises():
+    """FIX-5 回归：Shapes 条目数超上限（伪造 shapes vector 长度）→ CatalogError。"""
+    payload = bytearray(_build_minimal_shapes([(1, None)]))
+    root_pos = struct.unpack("<I", payload[:4])[0]
+    vec_field = root_pos + _table_slot_rel(bytes(payload), root_pos, 0)
+    vec_pos = vec_field + struct.unpack(
+        "<I", bytes(payload[vec_field:vec_field + 4]))[0]
+    payload[vec_pos:vec_pos + 4] = struct.pack("<I", 2_000_000)
+    with pytest.raises(CatalogError, match="上限"):
+        parse_shapes(bytes(payload))
+
+
+def test_parse_shapes_command_count_limit_raises():
+    """FIX-5 回归：单个 Shape 的命令数超上限 → CatalogError（命令是 O(n) 放大源）。"""
+    payload = bytearray(_build_minimal_shapes([(1, [0])]))
+    root_pos = struct.unpack("<I", payload[:4])[0]
+    vec_field = root_pos + _table_slot_rel(bytes(payload), root_pos, 0)
+    vec_pos = vec_field + struct.unpack(
+        "<I", bytes(payload[vec_field:vec_field + 4]))[0]
+    elem = vec_pos + 4 + struct.unpack(
+        "<I", bytes(payload[vec_pos + 4:vec_pos + 8]))[0]
+    cmd_field = elem + _table_slot_rel(bytes(payload), elem, 1)
+    cmd_vec = cmd_field + struct.unpack(
+        "<I", bytes(payload[cmd_field:cmd_field + 4]))[0]
+    payload[cmd_vec:cmd_vec + 4] = struct.pack("<I", 2_000_000)
+    with pytest.raises(CatalogError, match="上限"):
+        parse_shapes(bytes(payload))
+
+
+def _build_minimal_shapes(shapes: list[tuple[int, list[int] | None]]) -> bytes:
+    """Shapes{shapes: [Shape{id u16, commands struct vector}]} 最小构造（FIX-5 用）。"""
+    b = FbBuilder()
+    tokens = []
+    for shape_id, tex_indices in shapes:
+        fields: dict[int, tuple] = {0: ("u16", shape_id)}
+        if tex_indices is not None:
+            cmd = b"".join(struct.pack("<4I", 0, ti, 3, 0)
+                           for ti in (tex_indices or []))
+            fields[1] = ("uoffset", b.add_raw_vector(len(tex_indices), cmd))
+        tokens.append(b.add_table(fields))
+    vec = b.add_vector(tokens)
+    root = b.add_table({0: ("uoffset", vec)})
+    return b.finish(root)
 
 
 # -- load_sc 端到端 ----------------------------------------------------------

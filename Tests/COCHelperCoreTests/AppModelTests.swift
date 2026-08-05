@@ -629,6 +629,58 @@ extension AppModelTests {
         XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER2")
     }
 
+    /// 跨 parserVersion 的资本赛季加载更多：与战争日志同构——重建第一页
+    ///（无游标请求），保持列表完整与游标停滞保护。
+    @MainActor
+    func testLoadMoreCapitalWithOlderParserVersionRebuildsFromFirstPage() async throws {
+        let recorder = TagRecorder()
+        // 预置「旧版本」缓存：parserVersion 0.2 + 第一页（游标 RAIDCURSORAFTER1，
+        // 旧解析器形态条目——无成员明细）。
+        let oldSeason = OfficialCapitalRaidSeason(
+            state: "ended", startTime: "20260701T080000.000Z", endTime: "20260703T080000.000Z",
+            capitalTotalLoot: 123456, raidsCompleted: 6, totalAttacks: 60,
+            enemyDistrictsDestroyed: 120, offensiveReward: 5000, defensiveReward: 2500,
+            members: nil, attackLog: nil, defenseLog: nil
+        )
+        let oldState = ClanCapitalAPIState(
+            status: .success,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            parserVersion: "clan-capital-0.2",
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: [oldSeason], before: nil, after: "RAIDCURSORAFTER1")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": oldState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        // 重建：请求不带 after 游标（第一页）
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 1)
+        XCTAssertFalse(queries[0].contains("after="), "跨版本重建必须请求第一页（无游标）: \(queries[0])")
+        // 结果 = 新首页（fixture 2 条），解析器版本升级，游标为首页 after
+        let state = model.currentCapitalState
+        XCTAssertEqual(state?.parserVersion, "clan-capital-0.3", "状态升级到当前解析器版本")
+        XCTAssertEqual(state?.lastGood?.items.count, 2, "重建后为完整首页（不残留旧条目）")
+        XCTAssertEqual(state?.lastGood?.after, "RAIDCURSORAFTER1", "游标取首页值")
+        XCTAssertTrue(model.currentCapitalHasMore, "首页有 after → 可继续加载更多")
+    }
+
     /// 资本赛季刷新失败保留 last-good。
     @MainActor
     func testRefreshCapitalFailureKeepsLastGood() async throws {

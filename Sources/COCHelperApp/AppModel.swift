@@ -568,10 +568,6 @@ public final class AppModel: ObservableObject {
         isRefreshingWarLogData = true
         let client = clanLogClient
         let parserVersion = ClanWarLogAPIState.currentParserVersion
-        // 跨解析器版本：旧累计页（成员明细未解析等）与新页条目 Equatable 不等，
-        // 合并会残留重复；且旧页形态过时。重建语义：丢弃累计页，重新拉第一页
-        //（refresh 语义），保持列表完整与游标停滞保护（重建请求无游标）。
-        let needsRebuild = current.parserVersion != parserVersion
 
         Task { [weak self] in
             guard let self else { return }
@@ -580,23 +576,26 @@ public final class AppModel: ObservableObject {
                 previous: current,
                 parserVersion: parserVersion
             ) { tag in
-                if needsRebuild {
-                    OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag))
-                } else {
-                    OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag, after: cursor))
-                }
+                OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag, after: cursor))
             }
             if state.status == .success,
                let fetched = state.lastGood,
-               let existing = current.lastGood,
-               !needsRebuild {
-                var merged = state
-                merged.lastGood = OfficialWarLogPage(
-                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
-                )
-                self.clanWarLogStates[tag] = merged
+               let existing = current.lastGood {
+                if state.parserVersion == current.parserVersion {
+                    var merged = state
+                    merged.lastGood = OfficialWarLogPage(
+                        page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                    )
+                    self.clanWarLogStates[tag] = merged
+                } else {
+                    // 跨 parserVersion：旧缓存条目（如 0.2，成员明细未解析）与
+                    // 新页同条目（0.3，members 有值）Equatable 不等，按全字段
+                    // 去重合并会残留重复；按刷新语义整页替换（下次首屏刷新
+                    // 同样覆盖，无数据丢失）。
+                    self.clanWarLogStates[tag] = state
+                }
             } else {
-                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
+                // 失败：state 已保留 previous 的 last-good（累计页）
                 self.clanWarLogStates[tag] = state
             }
             self.persistClanWarLogStates()
@@ -666,8 +665,6 @@ public final class AppModel: ObservableObject {
         isRefreshingCapitalData = true
         let client = clanLogClient
         let parserVersion = ClanCapitalAPIState.currentParserVersion
-        // 跨解析器版本：与战争日志同理——丢弃累计页，重新拉第一页（无游标）。
-        let needsRebuild = current.parserVersion != parserVersion
 
         Task { [weak self] in
             guard let self else { return }
@@ -676,23 +673,22 @@ public final class AppModel: ObservableObject {
                 previous: current,
                 parserVersion: parserVersion
             ) { tag in
-                if needsRebuild {
-                    OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
-                } else {
-                    OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor))
-                }
+                OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor))
             }
             if state.status == .success,
                let fetched = state.lastGood,
-               let existing = current.lastGood,
-               !needsRebuild {
-                var merged = state
-                merged.lastGood = OfficialCapitalRaidPage(
-                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
-                )
-                self.clanCapitalStates[tag] = merged
+               let existing = current.lastGood {
+                if state.parserVersion == current.parserVersion {
+                    var merged = state
+                    merged.lastGood = OfficialCapitalRaidPage(
+                        page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                    )
+                    self.clanCapitalStates[tag] = merged
+                } else {
+                    // 跨 parserVersion：与战争日志同理，整页替换避免重复。
+                    self.clanCapitalStates[tag] = state
+                }
             } else {
-                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
                 self.clanCapitalStates[tag] = state
             }
             self.persistClanCapitalStates()

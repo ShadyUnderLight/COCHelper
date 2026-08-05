@@ -362,6 +362,49 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(projection.catalogVersion, "18.400.13")
     }
 
+    // MARK: - 目录可用性（issue #16：版本不匹配不纳入可确认完成度）
+
+    func testCatalogIsUsableTrueWhenVersionMatches() throws {
+        let village = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
+        ])
+        let projection = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertTrue(projection.catalogIsUsable, "版本匹配时目录可用于可确认统计")
+    }
+
+    func testCatalogIsUsableFalseWhenVersionMismatches() throws {
+        // 旧版本目录仍能 join（maxLevel 可用），但不得用于可确认完成度。
+        let staleCatalog = try makeCatalog(from: Self.syntheticCatalogJSON
+            .replacingOccurrences(of: "\"gameVersion\": \"18.400.13\"", with: "\"gameVersion\": \"9.9.9\""))
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let projection = project(village: village, catalog: staleCatalog, base: .home)
+        XCTAssertFalse(projection.catalogIsUsable)
+        XCTAssertTrue(projection.diagnostics.contains { $0.severity == .warning })
+        // join 仍发生（旧 maxLevel 用于展示），但调用方必须用 catalogIsUsable 阻断完成度
+        XCTAssertEqual(projection.items.first?.maxLevel, 2)
+    }
+
+    func testCatalogIsUsableFalseWhenCatalogUnavailable() throws {
+        let village = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
+        ])
+        let projection = project(village: village, catalog: nil, base: .home)
+        XCTAssertFalse(projection.catalogIsUsable)
+    }
+
+    func testCatalogIsUsableTrueWhenExpectedVersionNil() throws {
+        // expectedGameVersion == nil：不做版本校验（未来版本目录视为可用）。
+        let futureCatalog = try makeCatalog(from: Self.syntheticCatalogJSON
+            .replacingOccurrences(of: "\"gameVersion\": \"18.400.13\"", with: "\"gameVersion\": \"99.0.0\""))
+        let village = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
+        ])
+        let projection = project(village: village, catalog: futureCatalog, expectedGameVersion: nil, base: .home)
+        XCTAssertTrue(projection.catalogIsUsable)
+    }
+
     // MARK: - Nested items
 
     func testNestedModulesKeepSourcePath() throws {
@@ -616,6 +659,57 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(item.status, .upgrading)
         XCTAssertNil(item.nextLevel)
         XCTAssertNil(item.nextLevelDurationSeconds)
+    }
+
+    func testIdleCatalogHitItemGetsNextLevelDuration() throws {
+        // issue #16：普通建筑（非升级、目录命中、未满级）行显示下一等级时间。
+        // syntheticCatalog 加农炮 buildings:1000001 maxLevel=2，level 1 未满级 → 推下一级（2 级）时长 300s。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.status, .complete)
+        XCTAssertNil(item.nextLevel, "#14：目标等级只允许升级中显式推断")
+        XCTAssertEqual(item.nextLevelDurationSeconds, 300, "目录命中的未满级项应有下一级时长")
+    }
+
+    func testMaxedItemHasNoNextLevelDuration() throws {
+        // 已满级（level >= maxLevel）：没有下一级，不推时长。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0")],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.status, .maxed)
+        XCTAssertNil(item.nextLevelDurationSeconds)
+    }
+
+    func testEquipmentWithoutDurationStaysNil() throws {
+        // issue 数据边界：装备缺少升级时长时显示「暂无目录数据」——
+        // 目录命中但该级 durationSeconds 为 nil 时不得伪造时长。
+        let village = makeVillage(objectSections: [
+            "equipment": [makeItem(section: "equipment", dataID: 90_000_000, level: 2, path: "0")],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.status, .complete)
+        XCTAssertNil(item.nextLevelDurationSeconds, "目录该级无时长数据时保持 nil")
+    }
+
+    func testAggregatedIdleItemsPreserveDuration() throws {
+        // 非升级重复项聚合后保留代表记录的下一级时长。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertTrue(item.id.hasPrefix("agg:"), "非升级重复项应聚合")
+        XCTAssertEqual(item.count, 2)
+        XCTAssertEqual(item.nextLevelDurationSeconds, 300, "聚合项应保留下一级时长")
     }
 
     func testPropertyStatusAssignmentIsExhaustiveAndExclusive() throws {

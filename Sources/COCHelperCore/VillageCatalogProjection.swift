@@ -30,7 +30,9 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let remainingSeconds: Int64?
     /// 仅当 isUpgrading 且 currentLevel 存在时为 currentLevel + 1；否则 nil。
     public let nextLevel: Int?
-    /// 目录给出的完整时长（表语义感知）；目录未命中或缺失时 nil。
+    /// 目录给出的「升级到下一级」完整时长（表语义感知）；升级中与非升级已命中项
+    /// （未满级）均推断（下一级 = 当前 + 1），目录未命中、已满级或时长缺失时 nil。
+    /// 注意 nextLevel 字段仍只在升级中推断（#14 契约），duration 与其解耦。
     public let nextLevelDurationSeconds: Int64?
     public let maxLevel: Int?
     public let status: VillageItemStatus
@@ -105,6 +107,11 @@ public struct VillageCatalogProjection: Sendable {
     public let base: TrackerBase
     /// 目录版本；目录不可用时 nil。
     public let catalogVersion: String?
+    /// 目录是否可用于可确认统计（issue #16 完成度规则）：目录存在且版本与
+    /// 期望匹配（`expectedGameVersion == nil` 时不做版本校验）。目录不可用
+    /// 或版本不匹配时，完成度不得产生可确认分母——旧目录的 maxLevel 仍用于
+    /// 展示（行状态/徽标），但不得支撑看似权威的百分比。
+    public let catalogIsUsable: Bool
     public let items: [VillageItemState]
     public let diagnostics: [AccountDataDiagnostic]
 
@@ -117,6 +124,12 @@ public struct VillageCatalogProjection: Sendable {
         now: Date = Date()
     ) -> VillageCatalogProjection {
         var diagnostics: [AccountDataDiagnostic] = []
+        let catalogIsUsable: Bool
+        if let catalog {
+            catalogIsUsable = expectedGameVersion.map { $0 == catalog.gameVersion } ?? true
+        } else {
+            catalogIsUsable = false
+        }
         if catalog == nil {
             diagnostics.append(AccountDataDiagnostic(
                 severity: .warning,
@@ -140,6 +153,7 @@ public struct VillageCatalogProjection: Sendable {
             villageName: village.name,
             base: base,
             catalogVersion: catalog?.gameVersion,
+            catalogIsUsable: catalogIsUsable,
             items: states,
             diagnostics: diagnostics
         )
@@ -222,8 +236,18 @@ public struct VillageCatalogProjection: Sendable {
             nextLevel = nil
         }
         let nextLevelDuration: Int64?
-        if baseMatches, let catalogItem, let nextLevel {
-            nextLevelDuration = catalog?.durationToUpgradeLevel(nextLevel: nextLevel, for: catalogItem)
+        if baseMatches, let catalogItem {
+            if let nextLevel {
+                // 升级中：目标等级 = 当前 + 1（显式推断）。
+                nextLevelDuration = catalog?.durationToUpgradeLevel(nextLevel: nextLevel, for: catalogItem)
+            } else if let level = item.level, level < catalogItem.maxLevel {
+                // 非升级且未满级（issue #16 列表规则：普通建筑显示下一等级时间）：
+                // 下一级 = 当前 + 1 的目录时长；nextLevel 字段保持 nil（#14：目标等级
+                // 只允许升级中显式推断）。已满级（level >= maxLevel）不推。
+                nextLevelDuration = catalog?.durationToUpgradeLevel(nextLevel: level + 1, for: catalogItem)
+            } else {
+                nextLevelDuration = nil
+            }
         } else {
             nextLevelDuration = nil
         }
@@ -343,7 +367,7 @@ public struct VillageCatalogProjection: Sendable {
                 timerSeconds: groupHasFinishedTimer ? group.compactMap(\.timerSeconds).first : nil,
                 remainingSeconds: groupHasFinishedTimer ? 0 : nil,
                 nextLevel: nil,
-                nextLevelDurationSeconds: nil,
+                nextLevelDurationSeconds: first.nextLevelDurationSeconds,
                 maxLevel: first.maxLevel,
                 status: first.status,
                 missingReason: first.missingReason,

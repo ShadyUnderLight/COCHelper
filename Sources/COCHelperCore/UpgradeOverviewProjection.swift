@@ -18,6 +18,26 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
     /// 目录版本；目录不可用时 nil。
     public let catalogVersion: String?
 
+    /// 显式 public init（隐式 memberwise 为 internal，UI 层（COCHelper target）
+    /// 无法跨模块构造；参数与 memberwise 完全一致，不破坏现有调用）。
+    public init(
+        id: String,
+        villageID: UUID,
+        villageName: String,
+        villageTag: String?,
+        base: TrackerBase,
+        item: VillageItemState,
+        catalogVersion: String?
+    ) {
+        self.id = id
+        self.villageID = villageID
+        self.villageName = villageName
+        self.villageTag = villageTag
+        self.base = base
+        self.item = item
+        self.catalogVersion = catalogVersion
+    }
+
     public var remainingSeconds: Int64? { item.remainingSeconds }
 
     /// 预计完成时间；remainingSeconds 不存在或非正时返回 nil。

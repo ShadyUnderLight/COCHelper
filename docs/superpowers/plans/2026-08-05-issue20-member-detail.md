@@ -787,3 +787,17 @@ git commit -m "docs: Issue #20 成员级明细实施计划"
 - 不改分页/刷新/存储语义
 - 不抽公共 UI 组件（两个文件各自声明 `memberRow`/`percent`，超出本期最小范围）
 - 不动工作区无关文件（README、smoke-api、configure_coc_api.sh）
+
+---
+
+## 追加：评审 P1 修复（2026-08-05，外部评审否决后）
+
+评审发现 3 个 P1（经 5 个独立来源验证属实：官方文档镜像 MasiaAntoine/clash-of-clan-api-doc-official、clashperk/clashofclans.js、huyurt/coc-api-consumer、mathsman5133/coc.py、clashperk types）：
+
+| P1 | 事实 | 修复 |
+|---|---|---|
+| P1-1 ClanWarMember | 官方字段名 `townhallLevel`（小写 h，与 player 端点不同）；`attacks` 是 ClanWarAttack **数组**（非整数——原 Int 解码遇真实响应 typeMismatch 整页失败）；成员无 stars/destructionPercentage 顶层字段；`opponentAttacks` 整数（被攻击次数）；`bestOpponentAttack` 对象 | 9e26123：新增 ClanWarAttack，重写 ClanWarMember；fixture/测试同步官方形态；UI 从 attacks 数组聚合（count/Σ星/Σ摧毁） |
+| P1-2 capital 日志 | `defenseLog` 条目字段名是 `attacker`（原读 defender → 全 nil）；`attackLog`/`defenseLog` 的摧毁率/掠夺在嵌套 `districts[]`（`destructionPercent`/`totalLooted`），无顶层 looted；部落方为 ClanInfo{tag,name,level,badgeUrls} | 9e26123 + 41e9873：新增 CapitalRaidClanInfo/CapitalRaidDistrict，重写两个日志条目模型与 UI |
+| P1-3 loadMore 跨版本 | 替换语义丢历史页 + 绕过游标停滞保护（响应 after==请求游标时不清空 → 重复请求） | 4aee514：跨版本改为**重建**——无游标请求第一页替换，停滞保护天然保留；同版本路径不变 |
+
+验证：365/365 全绿、release 构建、diff-check 干净。fuzz 生成器同步官方形态（2c628e1）。

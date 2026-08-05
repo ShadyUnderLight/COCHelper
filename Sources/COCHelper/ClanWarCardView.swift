@@ -8,7 +8,7 @@ import COCHelperApp
 /// - `notInWar` 是**成功**响应 → 显示"当前没有进行中的战争"空状态（不是失败）
 /// - `preparation` / `inWar` → 双方摘要比分（攻击/星/摧毁%）
 /// - `warEnded` → 战争已结束 + 结果
-/// - 失败保留 last-good；成员级攻击表本期不展示（deferred）
+/// - 失败保留 last-good；成员级攻击表以展开组展示（默认折叠，上限 30 行）
 struct ClanWarCardView: View {
     @EnvironmentObject private var model: AppModel
 
@@ -174,6 +174,7 @@ struct ClanWarCardView: View {
                     destruction: clan.destructionPercentage,
                     isClan: true
                 )
+                memberDisclosure(title: "成员攻击表（\(clan.members?.count ?? 0) 人）", members: clan.members ?? [])
             }
             if let opponent = snapshot.opponent {
                 participantRow(
@@ -185,6 +186,7 @@ struct ClanWarCardView: View {
                     destruction: opponent.destructionPercentage,
                     isClan: false
                 )
+                memberDisclosure(title: "对方成员攻击表（\(opponent.members?.count ?? 0) 人）", members: opponent.members ?? [])
             }
             if snapshot.clan == nil && snapshot.opponent == nil {
                 Text("战争详情字段缺失（可能刚结束或数据不完整）")
@@ -237,5 +239,59 @@ struct ClanWarCardView: View {
             Spacer()
         }
         .padding(.vertical, 4)
+    }
+
+    /// 成员攻击表展开组（默认折叠；上限 30 行，超出提示）。
+    @ViewBuilder
+    private func memberDisclosure(title: String, members: [ClanWarMember]) -> some View {
+        if !members.isEmpty {
+            DisclosureGroup(title) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(members.prefix(30), id: \.self) { member in
+                        memberRow(member)
+                    }
+                    if members.count > 30 {
+                        Text("还有 \(members.count - 30) 名成员…")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .font(.caption)
+        }
+    }
+
+    private func memberRow(_ member: ClanWarMember) -> some View {
+        HStack(spacing: 8) {
+            if let position = member.mapPosition {
+                Text("\(position)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 22, alignment: .trailing)
+            }
+            Text(member.name ?? "未知成员")
+                .font(.caption)
+                .lineLimit(1)
+            if let th = member.townHallLevel {
+                Text("TH\(th)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text([member.attacks.map { "\($0)攻" },
+                  member.stars.map { "⭐\($0)" },
+                  member.destructionPercentage.map { "\(Self.percent($0))%" }]
+                .compactMap { $0 }
+                .joined(separator: " · "))
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 1)
+    }
+
+    private static func percent(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value)) : String(format: "%.1f", value)
     }
 }

@@ -930,6 +930,43 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
+    /// 只重建 id（自身 + 嵌套，嵌套按原顺序 enumerated），其余字段原样；
+    /// 与解析器 id 规则一致：顶层 section:index、嵌套 path.types.index / path.modules.index。
+    private func rebuildID(_ item: AccountItem, path: String) -> AccountItem {
+        AccountItem(
+            id: item.section + ":" + path,
+            section: item.section,
+            dataID: item.dataID,
+            level: item.level,
+            count: item.count,
+            timerSeconds: item.timerSeconds,
+            remainingSeconds: item.remainingSeconds,
+            helperTimerSeconds: item.helperTimerSeconds,
+            remainingHelperSeconds: item.remainingHelperSeconds,
+            helperCooldownSeconds: item.helperCooldownSeconds,
+            remainingHelperCooldownSeconds: item.remainingHelperCooldownSeconds,
+            helperRecurrent: item.helperRecurrent,
+            gearUp: item.gearUp,
+            weapon: item.weapon,
+            types: item.types.enumerated().map { index, child in
+                rebuildID(child, path: path + ".types." + String(index))
+            },
+            modules: item.modules.enumerated().map { index, child in
+                rebuildID(child, path: path + ".modules." + String(index))
+            }
+        )
+    }
+
+    /// 只按新位置重建 id（不打乱顺序）；用于 reversed 等顺序保持型变体，
+    /// 使「id 漂移」统一来自索引 id 重建，而非聚合组 first 项的偶然变化。
+    private func rebuiltIDs(_ sections: [String: [AccountItem]]) -> [String: [AccountItem]] {
+        sections.mapValues { items in
+            items.enumerated().map { index, item in
+                rebuildID(item, path: String(index))
+            }
+        }
+    }
+
     /// 投影事实行：身份与事实字段（不含 id——id 含数组索引，重排后允许漂移）。
     private func factLines(_ items: [VillageItemState]) -> [String] {
         items.map { item -> String in
@@ -960,7 +997,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
         var rng = SeededRNG(seed: 17)
         let reimportedSections = shuffledSections(sections, using: &rng)
-        let reversedSections = sections.mapValues { Array($0.reversed()) }
+        let reversedSections = rebuiltIDs(sections.mapValues { Array($0.reversed()) })
 
         let originalHome = project(village: village, catalog: catalog, base: .home)
         let originalBuilder = project(village: village, catalog: catalog, base: .builder)

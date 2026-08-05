@@ -65,6 +65,19 @@ python3 Tools/validate_game_catalog.py --catalog Sources/COCHelperCore/GameCatal
 python3 -m pytest Tools/tests -q
 ```
 
+**渲染 spike（issue #27，前置调研）**：`Tools/render_spike.py` 验证 SC2 V6 视觉资产
+（`.sc`/`.sctx`）的可解析性与渲染可行性，输出 4 类固定样本的 verdict 报告；需要
+`ctypes` + libzstd（`/opt/homebrew/lib/libzstd.dylib`），与生成管线（纯 stdlib）分离：
+
+```bash
+python3 Tools/render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-out
+```
+
+结论：export 名与引用链可解析（`ui.sc` exports=3024），但渲染 PNG 存在双重阻塞
+（export 全部指向 MovieClip + 纹理全部 ASTC/KTX 压缩），当前 **verdict = 继续阻塞 #25**；
+`renderedPath` 输出契约见 `docs/rendered-path-contract.md`，spike 报告见
+`docs/spike-2026-08-05-render.md`。
+
 - **`--game-version` 语义**：APK 内不含版本字符串，必须显式传入（如 `18.400.13`）；不传时默认从
   `assets/build.tag` 推断（`18_400_7` → `18.400.7`）。生成器写盘前自检，失败不落盘；输出确定性
   （无时间戳，重复生成字节一致）。

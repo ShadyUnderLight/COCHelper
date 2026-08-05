@@ -806,7 +806,7 @@ def test_rendered_path_version_segment_rejected_even_when_file_exists(tmp_path):
 
 def test_rendered_path_backslash_rejected_even_when_file_exists(tmp_path):
     """P2-1c 回归：含反斜杠的 renderedPath（未 sanitize，R2.2）即使文件真实存在+
-    登记+hash 对也必须拒绝——`\` 是 Windows 路径分隔符，跨平台逃逸风险。"""
+    登记+hash 对也必须拒绝——反斜杠是 Windows 路径分隔符，跨平台逃逸风险。"""
     import hashlib
     d = _valid_dir(tmp_path)
     png = b"\x89PNG\r\n\x1a\n" + b"w" * 8

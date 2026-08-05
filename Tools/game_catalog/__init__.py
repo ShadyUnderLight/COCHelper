@@ -14,7 +14,7 @@ ASSET_MISSING_REASONS = frozenset({
     "icons_not_rendered", "no_icon_columns", "no_visual_columns",
     # Issue #27 R5：渲染管线失败语义（spike 实证触发条件，契约 docs/rendered-path-contract.md §6）
     "sc_parse_failed",  # SC2 容器解析失败（magic/version/descriptor/chunk 越界等）
-    "movieclip_not_parsed",  # export 指向 MovieClip 且帧解析链路未实现（真实数据 export 全指向 MovieClip）
+    "movieclip_not_parsed",  # export 的 object_id 非 Shape 非 MovieClip（引用损坏，防御分支发射）；嵌套 MovieClip 走 skippedElements 记录不发射（契约 §6）
     "texture_compressed_astc",  # 内嵌 KTX/ASTC 压缩纹理，无解码器
     "texture_external_sctx",  # 纹理存外部 .sctx 文件（实测 texture_format=0 + external_texture 非空；.sctx 头 pixel_type=208=ASTC_RGBA8_6x6，社区枚举，待验证），无解码器
     "zstd_unavailable",  # libzstd 无法加载（ctypes 全路径失败）

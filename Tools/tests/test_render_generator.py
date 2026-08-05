@@ -480,6 +480,99 @@ def test_render_samples_sc_parse_failed(tmp_path):
     assert verdicts[0]["missingReason"] == "sc_parse_failed"
 
 
+def _sc_with_external_texture(export: str, shape_id: int, sctx_name: str) -> bytes:
+    """含外部纹理引用的最小 SC2：ExportNames → Shape(1 命令) → Textures(external)。
+
+    chunk 顺序固定（read_chunks 按位置识别名字）：ExportNames → TextFields →
+    Shapes → MovieClips → MovieClipModifiers → Textures；中间三位用空 table
+    占位（size=0 会被 read_chunks 视为终止，不能用来占位）。
+    Shape 命令 texture_index=0 引用第一个 TextureSet 的 highres
+    （external_texture → 触发 _resolve_texture 外部 sctx 分支）。
+    """
+    from test_fbs import FbBuilder
+
+    # DataStorage(strings)
+    b = FbBuilder()
+    ds = b.add_table({0: ("uoffset", b.add_vector([b.add_string(export)]))})
+    ds_bytes = b.finish(ds)
+
+    # ExportNames：export → shape_id
+    b2 = FbBuilder()
+    ids_v = b2.add_raw_vector(1, struct.pack("<H", shape_id))
+    refs_v = b2.add_raw_vector(1, struct.pack("<I", 0))
+    en = b2.add_table({0: ("uoffset", ids_v), 1: ("uoffset", refs_v)})
+    en_bytes = b2.finish(en)
+
+    # Shapes：shape_id + 1 条命令（16B struct：unk1 / texture_index / points_count / points_offset）
+    b3 = FbBuilder()
+    cmd = struct.pack("<4I", 0, 0, 0, 0)
+    shape_tbl = b3.add_table({0: ("u16", shape_id),
+                              1: ("uoffset", b3.add_raw_vector(1, cmd))})
+    shapes = b3.finish(b3.add_table({0: ("uoffset", b3.add_vector([shape_tbl]))}))
+
+    # Textures：TextureSet{highres: TextureData{external_texture}}
+    b4 = FbBuilder()
+    td = b4.add_table({5: ("uoffset", b4.add_string(sctx_name))})
+    ts = b4.add_table({1: ("uoffset", td)})
+    textures = b4.finish(b4.add_table({0: ("uoffset", b4.add_vector([ts]))}))
+
+    b5 = FbBuilder()
+    empty = b5.finish(b5.add_table({}))
+
+    body = (ds_bytes
+            + struct.pack("<I", len(en_bytes)) + en_bytes
+            + struct.pack("<I", len(empty)) + empty  # TextFields
+            + struct.pack("<I", len(shapes)) + shapes  # Shapes
+            + struct.pack("<I", len(empty)) + empty  # MovieClips
+            + struct.pack("<I", len(empty)) + empty  # MovieClipModifiers
+            + struct.pack("<I", len(textures)) + textures)  # Textures
+    b6 = FbBuilder()
+    desc = b6.finish(b6.add_table({8: ("u32", len(ds_bytes))}))
+    return (b"SC" + struct.pack("<H", 6) + b"\x00" * 4
+            + struct.pack("<I", len(desc)) + desc + body)
+
+
+def test_render_samples_container_size_gate(tmp_path, monkeypatch):
+    """防炸弹门回归（container 读取门）：zip 条目超过 _MAX_ENTRY_BYTES →
+    render_failed，不整块 read。
+
+    monkeypatch 把门值调小到 100B（不真写 256MB），容器条目 200B 超限。
+    """
+    apk = tmp_path / "big-container.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/sc/ui.sc", b"x" * 200)
+    monkeypatch.setattr("render_generator._MAX_ENTRY_BYTES", 100)
+    samples = [{"container": "sc/ui.sc", "exportName": "icon_unit_barbarian"}]
+    _, verdicts = render_samples(apk, samples)
+    v = verdicts[0]
+    assert v["status"] == "failed"
+    assert v["missingReason"] == "render_failed"
+    assert v["details"]["fileSize"] == 200
+    assert "防炸弹上限" in v["details"]["detail"]
+    assert v["relPath"] is None and v["png"] is None
+
+
+def test_render_samples_external_texture_size_gate(tmp_path, monkeypatch):
+    """防炸弹门回归（_resolve_texture 门）：外部 .sctx 条目超过
+    _MAX_ENTRY_BYTES → texture_missing，不读超大条目。
+
+    门值动态取「容器条目大小 + 1」：SC2 通过、外部纹理超限（不真写
+    256MB）。"""
+    sc_bytes = _sc_with_external_texture("icon_unit_barbarian", 5, "big.sctx")
+    apk = tmp_path / "big-sctx.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/sc/ui.sc", sc_bytes)
+        z.writestr("assets/sc/big.sctx", b"x" * (len(sc_bytes) * 2))
+    monkeypatch.setattr("render_generator._MAX_ENTRY_BYTES", len(sc_bytes) + 1)
+    samples = [{"container": "sc/ui.sc", "exportName": "icon_unit_barbarian"}]
+    _, verdicts = render_samples(apk, samples)
+    v = verdicts[0]
+    assert v["status"] == "failed"
+    assert v["missingReason"] == "texture_missing"
+    assert "防炸弹上限" in v["details"]["message"]
+    assert v["relPath"] is None and v["png"] is None
+
+
 # ---------------------------------------------------------------------------
 # render.composite_shapes：多命令合成（blacksmith 5 命令路径）
 # ---------------------------------------------------------------------------

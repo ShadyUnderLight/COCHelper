@@ -170,14 +170,14 @@
 
 ## 12.1 Issue #30 解锁状态（2026-08-05 回写）
 
-**双重阻塞已解除**（`feat/issue30-render-path`，PR #30）：
+**双重阻塞已解除**（`feat/issue30-render-path`，PR #32）：
 
 | 阻塞 | 解法（本分支提交） |
 |---|---|
 | 阻塞 1：MovieClip 引用链 | `sc2.py` 帧解析（Task 1 实证：MovieClipFrameElement = 6 字节 3×u16，instance_index→children_ids[i]→shape 全局 id；单帧为主）；Shape 命令/顶点完整解析（Task 2：12 字节顶点 x/y float + u/v u16/0xFFFF，**实证 icon 为 6-8 顶点多边形非矩形**）；MatrixBank/Matrix2x3（Task 3：24B float32x6，half 未使用） |
 | 阻塞 2：ASTC/KTX/SCTX | `astc.py`（Task 4：**与官方 astcenc 5.7.0 全图逐像素对拍 diff=0**，4x4+6x6，LDR only，HDR→AstcError）；`ktx.py`（Task 5：KTX 1.x + SCTX 布局实证，ASTC 4x4/6x6/8x8 格式映射） |
 | 渲染/编码 | `render.py`（Task 6：bounds 1:1 + 多边形光栅化（edge function + 重心 UV + 双线性采样）+ 确定性 PNG（gAMA 45455、filter 0、zlib 9）） |
-| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；manifest generatedFiles 更新；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Swift Bundle 读取断言（Task 9，370 测试全绿） |
+| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Swift Bundle 读取断言（Task 9，380 测试全绿）。**manifest generatedFiles 更新为手工一次性同步**（`/tmp/refresh_manifest.py`，重算 counts + PNG 条目）；`render_generator.py` 暂不自动刷新 manifest（TODO：全量渲染 #25 前补 `--refresh-manifest`） |
 
 **固定样本实测**（sha256 三次生成一致，R4 成立）：
 - `icons/ui/icon_unit_barbarian.png` 166x166（64,039B）、`icons/ui/icon_spell_rage.png` 166x166（79,083B）、`icons/buildings/fireplace_lvl1.png` 75x58（9,146B）、`icons/buildings/blacksmith_lvl1.png` 110x126（26,696B）

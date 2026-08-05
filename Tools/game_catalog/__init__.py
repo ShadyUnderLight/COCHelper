@@ -18,6 +18,12 @@ ASSET_MISSING_REASONS = frozenset({
     "texture_compressed_astc",  # 内嵌 KTX/ASTC 压缩纹理，无解码器
     "texture_external_sctx",  # 纹理存外部 .sctx 文件（实测 texture_format=0 + external_texture 非空；.sctx 头 pixel_type=208=ASTC_RGBA8_6x6，社区枚举，待验证），无解码器
     "zstd_unavailable",  # libzstd 无法加载（ctypes 全路径失败）
+    # Issue #30 Task 7：渲染生成器（Tools/render_generator.py）稳定枚举
+    "container_not_found",  # APK 无此容器（assets/sc/*.sc 缺失）
+    "export_not_found",  # exportNames 无此导出名
+    "astc_unsupported",  # KTX/SCTX 容器解析失败或 ASTC 格式不支持（HDR 等）
+    "texture_missing",  # 纹理无内嵌数据 / 外部 .sctx 缺失或读取失败
+    "render_failed",  # 渲染链失败（bounds/光栅化/PNG 编码/引用越界）
 })
 
 # 兼容别名：全量并集（既有引用可用；新代码请用分域词表）

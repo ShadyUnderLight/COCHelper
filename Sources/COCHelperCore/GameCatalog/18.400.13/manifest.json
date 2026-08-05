@@ -3,20 +3,40 @@
   "counts": {
     "items": 683,
     "levels": 5479,
-    "missingIcons": 3445,
+    "missingIcons": 3372,
     "missingTime": 3308
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [
     {
       "path": "catalog.json",
-      "sha256": "sha256:ca4fbf1a164115c7208a592395a601f0db124efdd2b6b9c501d4a9343e32052f",
-      "size": 2938231
+      "sha256": "sha256:51253a5ab0e3c09dcad8c74dd2e3828eb72f3e10b0ff77fc5c8c6d73ecc7a905",
+      "size": 2939674
     },
     {
-      "entries": 0,
+      "entries": 4,
       "kind": "directory",
       "path": "icons/"
+    },
+    {
+      "path": "icons/buildings/blacksmith_lvl1.png",
+      "sha256": "sha256:9bc055b9e098720d37fe9648997f37fee65dc2d9fb731cac7bf85112783d0db0",
+      "size": 26696
+    },
+    {
+      "path": "icons/buildings/fireplace_lvl1.png",
+      "sha256": "sha256:14b40c671c69c664be52e675bebb601072e3a8d0e63355a2d5db7b15db242107",
+      "size": 9146
+    },
+    {
+      "path": "icons/ui/icon_spell_rage.png",
+      "sha256": "sha256:e131c806b760519fa2e239544e54b39ffa7f0d5a27af0221843e29e504de98cb",
+      "size": 79083
+    },
+    {
+      "path": "icons/ui/icon_unit_barbarian.png",
+      "sha256": "sha256:57f32ae33df8980c79cc7eea59277376e04babcbc3cfb408cebb23da20e45e2a",
+      "size": 64039
     }
   ],
   "locale": "zh-CN",

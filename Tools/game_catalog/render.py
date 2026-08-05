@@ -350,6 +350,69 @@ def render_shape_from_image(img: KtxImage | SctxImage,
     return (w, h, rgba)
 
 
+def _blend_src_over(canvas: bytearray, layer: bytes) -> None:
+    """canvas = layer over canvas（非预乘 alpha src-over，纯整数确定性）。
+
+    outA = sa + da*(1-sa)；outRGB = (srcRGB*sa + dstRGB*da*(1-sa)) / outA。
+    整数除法无浮点舍入差异，同一输入两次混合字节一致（R4）。
+    """
+    for i in range(0, len(layer), 4):
+        sa = layer[i + 3]
+        if sa == 0:
+            continue  # 完全透明：无影响
+        if sa == 255:
+            canvas[i:i + 4] = layer[i:i + 4]
+            continue
+        da = canvas[i + 3]
+        out_a = sa + da * (255 - sa) // 255
+        if out_a == 0:
+            continue
+        for c in range(3):
+            canvas[i + c] = ((layer[i + c] * sa
+                              + canvas[i + c] * da * (255 - sa) // 255)
+                             // out_a)
+        canvas[i + 3] = out_a
+
+
+def composite_shapes(
+    shapes: Sequence[tuple[KtxImage | SctxImage, list[Vertex]]],
+) -> tuple[int, int, bytes]:
+    """多 shape 命令合成：全部画到同一输出画布（共享 bounds/输出尺寸）。
+
+    - 所有命令的顶点在同一局部坐标系（同一 movieclip 帧元素），union bounds
+      决定画布尺寸 = suggest_output_size(union)（上限 4096 防放大）
+    - 每命令独立纹理 → 各自 region 解码 + 光栅化，再 **src-over 混合**（后画
+      覆盖先画，与 SWF painter's algorithm 一致；不同命令可不同纹理，
+      不能合并顶点一次光栅化）
+    - 单一 shape 时输出与 render_shape_from_image 完全一致（同 bounds、
+      同输出尺寸；混合恒等）
+
+    空列表 / 任一 shape 畸形 → CatalogError（fail loud）。
+    """
+    if not shapes:
+        raise CatalogError("composite_shapes: 无任何 shape 命令可合成")
+    all_vertices: list[Vertex] = []
+    for _, vs in shapes:
+        all_vertices.extend(vs)
+    bounds = compute_bounds(all_vertices)
+    w, h = suggest_output_size(bounds)
+    canvas = bytearray(w * h * 4)
+    for img, vs in shapes:
+        x0, y0, x1, y1 = _texture_region(vs, img.width, img.height)
+        region_w = x1 - x0
+        region_h = y1 - y0
+        region = texture_to_rgba(img, x0, y0, x1, y1)
+        if len(region) != region_w * region_h * 4:
+            raise CatalogError(
+                f"decode_region 输出长度不符: {len(region)}（期望 "
+                f"{region_w * region_h * 4} = {region_w}x{region_h} RGBA8）")
+        mapped = _remap_uvs(vs, x0, y0, region_w, region_h,
+                            img.width, img.height)
+        layer = rasterize(mapped, region, region_w, region_h, bounds, w, h)
+        _blend_src_over(canvas, layer)
+    return (w, h, bytes(canvas))
+
+
 # ---------------------------------------------------------------------------
 # 确定性 PNG 编码（R3.3 / R4）
 # ---------------------------------------------------------------------------

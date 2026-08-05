@@ -10,8 +10,8 @@
       "levelVisual": {
         "container": "sc/buildings.sc",
         "exportName": "fireplace_lvl1",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/buildings/fireplace_lvl1.png"
       },
       "levels": [
         {
@@ -21,8 +21,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "fireplace_lvl1",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/fireplace_lvl1.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7800,8 +7800,8 @@
       "levelVisual": {
         "container": "sc/buildings.sc",
         "exportName": "blacksmith_lvl1",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/buildings/blacksmith_lvl1.png"
       },
       "levels": [
         {
@@ -7811,8 +7811,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "blacksmith_lvl1",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/blacksmith_lvl1.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7827,8 +7827,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "blacksmith_lvl1",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/blacksmith_lvl1.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -20339,8 +20339,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -20349,8 +20349,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -20365,8 +20365,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 2,
           "levelVisual": null,
@@ -20381,8 +20381,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 3,
           "levelVisual": null,
@@ -20397,8 +20397,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 4,
           "levelVisual": null,
@@ -20413,8 +20413,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 5,
           "levelVisual": null,
@@ -55644,8 +55644,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_rage",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_spell_rage.png"
       },
       "levelVisual": null,
       "levels": [
@@ -55654,8 +55654,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_spell_rage",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_spell_rage.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -55670,8 +55670,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_spell_rage",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_spell_rage.png"
           },
           "level": 2,
           "levelVisual": null,
@@ -55686,8 +55686,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_spell_rage",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_spell_rage.png"
           },
           "level": 3,
           "levelVisual": null,
@@ -55702,8 +55702,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_spell_rage",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_spell_rage.png"
           },
           "level": 4,
           "levelVisual": null,
@@ -55718,8 +55718,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_spell_rage",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_spell_rage.png"
           },
           "level": 5,
           "levelVisual": null,
@@ -55734,8 +55734,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_spell_rage",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_spell_rage.png"
           },
           "level": 6,
           "levelVisual": null,
@@ -55750,8 +55750,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_spell_rage",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_spell_rage.png"
           },
           "level": 7,
           "levelVisual": null,
@@ -59372,8 +59372,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_rage",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_spell_rage.png"
       },
       "levelVisual": null,
       "levels": [
@@ -59382,8 +59382,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_spell_rage",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_spell_rage.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -69221,8 +69221,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -69231,8 +69231,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -69247,8 +69247,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 2,
           "levelVisual": null,
@@ -69263,8 +69263,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 3,
           "levelVisual": null,
@@ -69279,8 +69279,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 4,
           "levelVisual": null,
@@ -69295,8 +69295,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 5,
           "levelVisual": null,
@@ -69311,8 +69311,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 6,
           "levelVisual": null,
@@ -69327,8 +69327,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 7,
           "levelVisual": null,
@@ -69343,8 +69343,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 8,
           "levelVisual": null,
@@ -69359,8 +69359,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 9,
           "levelVisual": null,
@@ -69375,8 +69375,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 10,
           "levelVisual": null,
@@ -69391,8 +69391,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 11,
           "levelVisual": null,
@@ -69407,8 +69407,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 12,
           "levelVisual": null,
@@ -69423,8 +69423,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 13,
           "levelVisual": null,
@@ -75143,8 +75143,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -75153,8 +75153,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -75169,8 +75169,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 2,
           "levelVisual": null,
@@ -75185,8 +75185,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 3,
           "levelVisual": null,
@@ -75201,8 +75201,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 4,
           "levelVisual": null,
@@ -75217,8 +75217,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 5,
           "levelVisual": null,
@@ -75233,8 +75233,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 6,
           "levelVisual": null,
@@ -75249,8 +75249,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 7,
           "levelVisual": null,
@@ -75265,8 +75265,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 8,
           "levelVisual": null,
@@ -75281,8 +75281,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 9,
           "levelVisual": null,
@@ -75297,8 +75297,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 10,
           "levelVisual": null,
@@ -75313,8 +75313,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 11,
           "levelVisual": null,
@@ -75329,8 +75329,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 12,
           "levelVisual": null,
@@ -75345,8 +75345,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 13,
           "levelVisual": null,
@@ -75824,8 +75824,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -75834,8 +75834,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -75850,8 +75850,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 2,
           "levelVisual": null,
@@ -75866,8 +75866,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 3,
           "levelVisual": null,
@@ -75882,8 +75882,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 4,
           "levelVisual": null,
@@ -75898,8 +75898,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 5,
           "levelVisual": null,
@@ -75914,8 +75914,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 6,
           "levelVisual": null,
@@ -75930,8 +75930,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 7,
           "levelVisual": null,
@@ -75946,8 +75946,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 8,
           "levelVisual": null,
@@ -75962,8 +75962,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 9,
           "levelVisual": null,
@@ -75978,8 +75978,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 10,
           "levelVisual": null,
@@ -75994,8 +75994,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 11,
           "levelVisual": null,
@@ -76010,8 +76010,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 12,
           "levelVisual": null,
@@ -76026,8 +76026,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 13,
           "levelVisual": null,
@@ -80483,8 +80483,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -80493,8 +80493,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -80553,8 +80553,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -80563,8 +80563,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -82756,8 +82756,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -82766,8 +82766,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -82791,8 +82791,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -82801,8 +82801,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -82851,8 +82851,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -82861,8 +82861,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -82886,8 +82886,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -82896,8 +82896,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -85432,8 +85432,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -85442,8 +85442,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -85550,8 +85550,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -85560,8 +85560,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -85585,8 +85585,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -85595,8 +85595,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -85847,8 +85847,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -85857,8 +85857,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -85882,8 +85882,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -85892,8 +85892,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -85917,8 +85917,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -85927,8 +85927,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -85952,8 +85952,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -85962,8 +85962,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -87225,8 +87225,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -87235,8 +87235,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -87260,8 +87260,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -87270,8 +87270,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -87295,8 +87295,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -87305,8 +87305,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -88382,8 +88382,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -88392,8 +88392,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -88417,8 +88417,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -88427,8 +88427,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -90513,8 +90513,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -90523,8 +90523,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -91786,8 +91786,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -91796,8 +91796,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,
@@ -91821,8 +91821,8 @@
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
-        "missingReason": "icons_not_rendered",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/ui/icon_unit_barbarian.png"
       },
       "levelVisual": null,
       "levels": [
@@ -91831,8 +91831,8 @@
           "icon": {
             "container": "sc/ui.sc",
             "exportName": "icon_unit_barbarian",
-            "missingReason": "icons_not_rendered",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/ui/icon_unit_barbarian.png"
           },
           "level": 1,
           "levelVisual": null,

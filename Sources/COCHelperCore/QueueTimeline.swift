@@ -23,6 +23,8 @@ public struct QueueTimelineUnavailable: Codable, Hashable, Sendable {
     /// 静态目录版本；目录不可用时 nil。
     public let catalogVersion: String?
 
+    /// 显式 public init（隐式 memberwise 为 internal，UI 层（COCHelper target）
+    /// 无法跨模块构造；参数与 memberwise 完全一致，不破坏现有调用）。
     public init(
         reason: String,
         missingFields: [String],

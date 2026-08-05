@@ -99,7 +99,8 @@ public struct OfficialWarLogPage: Codable, Hashable, Sendable, EndpointParserVer
         self.page = page
     }
 
-    public static var currentParserVersion: String { "clan-war-log-0.2" }
+    /// 0.3：成员级攻防日志解析范围（Issue #20，Task 2）。
+    public static var currentParserVersion: String { "clan-war-log-0.3" }
 
     public var items: [OfficialWarLogEntry] { page.items }
     public var after: String? { page.after }
@@ -122,7 +123,8 @@ public struct OfficialCapitalRaidPage: Codable, Hashable, Sendable, EndpointPars
         self.page = page
     }
 
-    public static var currentParserVersion: String { "clan-capital-0.2" }
+    /// 0.3：赛季成员贡献解析范围（Issue #20，Task 2）。
+    public static var currentParserVersion: String { "clan-capital-0.3" }
 
     public var items: [OfficialCapitalRaidSeason] { page.items }
     public var after: String? { page.after }
@@ -141,8 +143,8 @@ public struct OfficialCapitalRaidPage: Codable, Hashable, Sendable, EndpointPars
 
 /// warlog 中的一个已结束战争条目。
 ///
-/// 成员攻击明细（`clan.members`/`opponent.members`）deferred：嵌套未知键由
-/// Codable 合成容忍，不声明属性。
+/// 成员攻击明细经 `ClanWarParticipant.members` 解析（缺失容忍，见
+/// ClanWarModels.swift）。
 public struct OfficialWarLogEntry: Codable, Hashable, Sendable {
     /// win / lose / tie（官方字符串，不做本地枚举映射）。
     public let result: String?
@@ -165,12 +167,126 @@ public struct OfficialWarLogEntry: Codable, Hashable, Sendable {
     }
 }
 
+// MARK: - 部落资本赛季成员与攻防日志（Issue #20）
+
+/// capitalraidseasons 赛季成员贡献条目（官方 ClanCapitalRaidSeasonMember）。
+///
+/// 全 optional + 合成 Codable：官方新增字段或个别字段缺失不破坏解码。
+public struct CapitalRaidSeasonMember: Codable, Hashable, Sendable {
+    public let tag: String?
+    public let name: String?
+    /// 本成员赛季掠夺的部落资本资源。
+    public let capitalResourcesLooted: Int?
+    /// 本成员赛季攻击次数。
+    public let attacks: Int?
+
+    public init(
+        tag: String?, name: String?, capitalResourcesLooted: Int?, attacks: Int?
+    ) {
+        self.tag = tag
+        self.name = name
+        self.capitalResourcesLooted = capitalResourcesLooted
+        self.attacks = attacks
+    }
+}
+
+/// 攻防日志中的部落方（官方 ClanCapitalRaidSeasonClanInfo）。
+///
+/// attackLog 条目用 `defender`、defenseLog 条目用 `attacker`（官方字段名）。
+public struct CapitalRaidClanInfo: Codable, Hashable, Sendable {
+    public let tag: String?
+    public let name: String?
+    public let level: Int?
+    public let badgeUrls: [String: String]?
+
+    public init(tag: String?, name: String?, level: Int?, badgeUrls: [String: String]?) {
+        self.tag = tag
+        self.name = name
+        self.level = level
+        self.badgeUrls = badgeUrls
+    }
+}
+
+/// 攻防日志中的区域明细（官方 ClanCapitalRaidSeasonDistrict）。
+///
+/// 摧毁率与掠夺在 districts 内（官方无顶层 looted/destructionPercent）。
+public struct CapitalRaidDistrict: Codable, Hashable, Sendable {
+    public let name: String?
+    public let id: Int?
+    /// 区域大厅等级。
+    public let districtHallLevel: Int?
+    public let stars: Int?
+    /// 摧毁百分比（官方整数，用 Double 容忍浮点形态）。
+    public let destructionPercent: Double?
+    public let attackCount: Int?
+    /// 该区域掠夺的战利品。
+    public let totalLooted: Int?
+
+    public init(
+        name: String?, id: Int?, districtHallLevel: Int?, stars: Int?,
+        destructionPercent: Double?, attackCount: Int?, totalLooted: Int?
+    ) {
+        self.name = name
+        self.id = id
+        self.districtHallLevel = districtHallLevel
+        self.stars = stars
+        self.destructionPercent = destructionPercent
+        self.attackCount = attackCount
+        self.totalLooted = totalLooted
+    }
+}
+
+/// attackLog 条目（官方 ClanCapitalRaidSeasonAttackLogEntry）。
+public struct CapitalRaidAttackLogEntry: Codable, Hashable, Sendable {
+    /// 被进攻的部落（官方字段名 defender）。
+    public let defender: CapitalRaidClanInfo?
+    public let attackCount: Int?
+    public let districtCount: Int?
+    public let districtsDestroyed: Int?
+    /// 区域明细（摧毁率/掠夺在此）。
+    public let districts: [CapitalRaidDistrict]?
+
+    public init(
+        defender: CapitalRaidClanInfo?, attackCount: Int?, districtCount: Int?,
+        districtsDestroyed: Int?, districts: [CapitalRaidDistrict]?
+    ) {
+        self.defender = defender
+        self.attackCount = attackCount
+        self.districtCount = districtCount
+        self.districtsDestroyed = districtsDestroyed
+        self.districts = districts
+    }
+}
+
+/// defenseLog 条目（官方 ClanCapitalRaidSeasonDefenseLogEntry）。
+/// 注意：官方字段名是 `attacker`（与 attackLog 的 `defender` 不同）。
+public struct CapitalRaidDefenseLogEntry: Codable, Hashable, Sendable {
+    /// 进攻的部落（官方字段名 attacker）。
+    public let attacker: CapitalRaidClanInfo?
+    public let attackCount: Int?
+    public let districtCount: Int?
+    public let districtsDestroyed: Int?
+    public let districts: [CapitalRaidDistrict]?
+
+    public init(
+        attacker: CapitalRaidClanInfo?, attackCount: Int?, districtCount: Int?,
+        districtsDestroyed: Int?, districts: [CapitalRaidDistrict]?
+    ) {
+        self.attacker = attacker
+        self.attackCount = attackCount
+        self.districtCount = districtCount
+        self.districtsDestroyed = districtsDestroyed
+        self.districts = districts
+    }
+}
+
 // MARK: - 部落资本赛季条目
 
 /// capitalraidseasons 中的一个赛季（字段与官方 APICapitalRaidSeason 对齐：
 /// 统计字段为**顶层**，无嵌套 clan 对象）。
 ///
-/// 成员/攻击/防守明细（`members`/`attackLog`/`defenseLog`）deferred：嵌套容忍。
+/// 成员/攻击/防守明细（`members`/`attackLog`/`defenseLog`）缺失容忍：
+/// 全 optional + 合成 Codable，官方省略或字段缺失不破坏解码。
 public struct OfficialCapitalRaidSeason: Codable, Hashable, Sendable {
     /// ended / ongoing（官方字符串）。
     public let state: String?
@@ -186,11 +302,19 @@ public struct OfficialCapitalRaidSeason: Codable, Hashable, Sendable {
     public let enemyDistrictsDestroyed: Int?
     public let offensiveReward: Int?
     public let defensiveReward: Int?
+    /// 赛季成员贡献列表（缺失容忍）。
+    public let members: [CapitalRaidSeasonMember]?
+    /// 进攻日志（每次突袭一条；缺失容忍）。
+    public let attackLog: [CapitalRaidAttackLogEntry]?
+    /// 防守日志（缺失容忍）。
+    public let defenseLog: [CapitalRaidDefenseLogEntry]?
 
     public init(
         state: String?, startTime: String?, endTime: String?,
         capitalTotalLoot: Int?, raidsCompleted: Int?, totalAttacks: Int?,
-        enemyDistrictsDestroyed: Int?, offensiveReward: Int?, defensiveReward: Int?
+        enemyDistrictsDestroyed: Int?, offensiveReward: Int?, defensiveReward: Int?,
+        members: [CapitalRaidSeasonMember]?, attackLog: [CapitalRaidAttackLogEntry]?,
+        defenseLog: [CapitalRaidDefenseLogEntry]?
     ) {
         self.state = state
         self.startTime = startTime
@@ -201,6 +325,9 @@ public struct OfficialCapitalRaidSeason: Codable, Hashable, Sendable {
         self.enemyDistrictsDestroyed = enemyDistrictsDestroyed
         self.offensiveReward = offensiveReward
         self.defensiveReward = defensiveReward
+        self.members = members
+        self.attackLog = attackLog
+        self.defenseLog = defenseLog
     }
 }
 

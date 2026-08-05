@@ -568,6 +568,10 @@ public final class AppModel: ObservableObject {
         isRefreshingWarLogData = true
         let client = clanLogClient
         let parserVersion = ClanWarLogAPIState.currentParserVersion
+        // 跨解析器版本：旧累计页（成员明细未解析等）与新页条目 Equatable 不等，
+        // 合并会残留重复；且旧页形态过时。重建语义：丢弃累计页，重新拉第一页
+        //（refresh 语义），保持列表完整与游标停滞保护（重建请求无游标）。
+        let needsRebuild = current.parserVersion != parserVersion
 
         Task { [weak self] in
             guard let self else { return }
@@ -576,18 +580,23 @@ public final class AppModel: ObservableObject {
                 previous: current,
                 parserVersion: parserVersion
             ) { tag in
-                OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag, after: cursor))
+                if needsRebuild {
+                    OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag))
+                } else {
+                    OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag, after: cursor))
+                }
             }
             if state.status == .success,
                let fetched = state.lastGood,
-               let existing = current.lastGood {
+               let existing = current.lastGood,
+               !needsRebuild {
                 var merged = state
                 merged.lastGood = OfficialWarLogPage(
                     page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
                 )
                 self.clanWarLogStates[tag] = merged
             } else {
-                // 失败：state 已保留 previous 的 last-good（累计页）
+                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
                 self.clanWarLogStates[tag] = state
             }
             self.persistClanWarLogStates()
@@ -657,6 +666,8 @@ public final class AppModel: ObservableObject {
         isRefreshingCapitalData = true
         let client = clanLogClient
         let parserVersion = ClanCapitalAPIState.currentParserVersion
+        // 跨解析器版本：与战争日志同理——丢弃累计页，重新拉第一页（无游标）。
+        let needsRebuild = current.parserVersion != parserVersion
 
         Task { [weak self] in
             guard let self else { return }
@@ -665,17 +676,23 @@ public final class AppModel: ObservableObject {
                 previous: current,
                 parserVersion: parserVersion
             ) { tag in
-                OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor))
+                if needsRebuild {
+                    OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
+                } else {
+                    OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor))
+                }
             }
             if state.status == .success,
                let fetched = state.lastGood,
-               let existing = current.lastGood {
+               let existing = current.lastGood,
+               !needsRebuild {
                 var merged = state
                 merged.lastGood = OfficialCapitalRaidPage(
                     page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
                 )
                 self.clanCapitalStates[tag] = merged
             } else {
+                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
                 self.clanCapitalStates[tag] = state
             }
             self.persistClanCapitalStates()

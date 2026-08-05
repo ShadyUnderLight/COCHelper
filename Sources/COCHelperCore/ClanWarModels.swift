@@ -9,8 +9,8 @@ import Foundation
 ///   不做本地枚举映射，避免 schema 漂移时解码失败）。
 /// - 时间字段保持官方 ISO 字符串（如 `20260804T080000.000Z`），首期不解析
 ///   为 Date（解析格式与容错留给有明确展示需求时）。
-/// - `clan.members` / `opponent.members`（成员级攻击表）首期 **deferred**：
-///   嵌套结构由 Codable 合成容忍未知子字段，不声明属性即可忽略，不进入审计。
+/// - `clan.members` / `opponent.members`（成员级攻击表）按 `ClanWarMember`
+///   解码；缺失或字段不全均容忍。
 /// - 顶层未知键收集进 `unrecognizedKeys` 供审计。
 public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
     public let state: String?
@@ -118,8 +118,71 @@ private struct SnapshotCodingKey: CodingKey {
 
 // MARK: - 嵌套结构
 
-/// 战争一方（己方/对方）的摘要。
-/// `members`（成员级攻击表）不声明属性：嵌套未知键由 Codable 合成容忍。
+/// 战争中的一次攻击（官方 ClanWarAttack）。
+///
+/// 全 optional + 合成 Codable：字段缺失不破坏解码。
+public struct ClanWarAttack: Codable, Hashable, Sendable {
+    /// 该成员本次战争中的攻击顺序（1 起）。
+    public let order: Int?
+    public let attackerTag: String?
+    public let defenderTag: String?
+    public let stars: Int?
+    /// 摧毁百分比（官方可能返回浮点或整数，用 Double 容忍两者）。
+    public let destructionPercentage: Double?
+    /// 攻击时长（秒）。
+    public let duration: Int?
+
+    public init(
+        order: Int?, attackerTag: String?, defenderTag: String?,
+        stars: Int?, destructionPercentage: Double?, duration: Int?
+    ) {
+        self.order = order
+        self.attackerTag = attackerTag
+        self.defenderTag = defenderTag
+        self.stars = stars
+        self.destructionPercentage = destructionPercentage
+        self.duration = duration
+    }
+}
+
+/// currentwar / warlog 成员级攻击表条目（官方 ClanWarMember）。
+///
+/// 官方 schema 注意点（多个独立来源验证）：
+/// - 大本等级字段名是 `townhallLevel`（小写 h，与 player 端点 townHallLevel 不同）
+/// - `attacks` 是 ClanWarAttack **数组**（不是次数；次数 = attacks.count）
+/// - `opponentAttacks` 是被攻击次数（整数）
+/// - `bestOpponentAttack` 是最佳防守攻击（对象）
+/// - 官方没有成员级 stars/destructionPercentage 顶层字段——成员表现从 attacks 聚合
+/// - 全 optional + 合成 Codable：官方新增字段或个别字段缺失不破坏解码
+public struct ClanWarMember: Codable, Hashable, Sendable {
+    public let tag: String?
+    public let name: String?
+    /// 地图位置（1 起）。
+    public let mapPosition: Int?
+    /// 大本等级（官方字段名 townhallLevel，小写 h）。
+    public let townhallLevel: Int?
+    /// 对敌方发起的攻击列表（次数 = count）。
+    public let attacks: [ClanWarAttack]?
+    /// 被攻击次数（整数）。
+    public let opponentAttacks: Int?
+    /// 最佳防守攻击（对象）。
+    public let bestOpponentAttack: ClanWarAttack?
+
+    public init(
+        tag: String?, name: String?, mapPosition: Int?, townhallLevel: Int?,
+        attacks: [ClanWarAttack]?, opponentAttacks: Int?, bestOpponentAttack: ClanWarAttack?
+    ) {
+        self.tag = tag
+        self.name = name
+        self.mapPosition = mapPosition
+        self.townhallLevel = townhallLevel
+        self.attacks = attacks
+        self.opponentAttacks = opponentAttacks
+        self.bestOpponentAttack = bestOpponentAttack
+    }
+}
+
+/// 战争一方（己方/对方）的摘要，含成员级攻击表（缺失容忍）。
 public struct ClanWarParticipant: Codable, Hashable, Sendable {
     public let tag: String?
     public let name: String?
@@ -129,10 +192,13 @@ public struct ClanWarParticipant: Codable, Hashable, Sendable {
     public let stars: Int?
     /// 摧毁百分比（官方可能返回浮点或整数，用 Double 容忍两者）。
     public let destructionPercentage: Double?
+    /// 成员级攻击表（currentwar 双方 / warlog 每场战争；缺失容忍）。
+    public let members: [ClanWarMember]?
 
     public init(
         tag: String?, name: String?, badgeUrls: [String: String]?,
-        clanLevel: Int?, attacks: Int?, stars: Int?, destructionPercentage: Double?
+        clanLevel: Int?, attacks: Int?, stars: Int?, destructionPercentage: Double?,
+        members: [ClanWarMember]?
     ) {
         self.tag = tag
         self.name = name
@@ -141,5 +207,6 @@ public struct ClanWarParticipant: Codable, Hashable, Sendable {
         self.attacks = attacks
         self.stars = stars
         self.destructionPercentage = destructionPercentage
+        self.members = members
     }
 }

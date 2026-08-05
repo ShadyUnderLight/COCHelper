@@ -19,6 +19,7 @@
     x∈[-40,34.8]、y∈[13.6,71.6]、u∈[0.56,0.74]、v∈[0.60,0.78]
 """
 
+import os
 import struct
 import zipfile
 from pathlib import Path
@@ -41,7 +42,7 @@ from game_catalog.sc2 import (
 )
 from test_fbs import FbBuilder
 
-APK = Path("/Users/lmz/Downloads/base.apk.1")
+APK = Path(os.environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +258,8 @@ def test_scfile_shape_lazy_and_cached():
     assert sc.shape(999) is None  # 非 Shape id → None
 
 
-def test_shape_textures_compat_return_shape():
-    """shape_textures 返回形态保持 Task 2 前兼容：list[int] | None。"""
+def test_shape_textures_returns_texture_index_list():
+    """shape_textures 返回 texture_index 列表：list[int] | None（Task 2 前兼容）。"""
     sc = _build_scfile(build_shapes([
         (7, [(3, 4, 100), (5, 6, 200)]),
         (42, []),
@@ -303,10 +304,19 @@ def test_prop_read_vertices_roundtrip(verts):
                    for x, y, u, v in verts]
 
 
-@given(st.integers(0, 0xFFFF), st.integers(0, 0xFFFF))
-def test_prop_uv_normalization_monotonic(u1, u2):
-    """归一化保持序：raw 值大小关系与 0..1 值大小关系一致。"""
-    assert (u1 < u2) == (u1 / 0xFFFF < u2 / 0xFFFF)
+@given(st.lists(st.tuples(st.integers(0, 0xFFFF), st.integers(0, 0xFFFF)),
+                min_size=2, max_size=128))
+def test_prop_uv_normalization_monotonic(pairs):
+    """read_vertices 解析后 u/v 归一化保序且落在 [0,1]（覆盖被测代码）。"""
+    points = b"".join(struct.pack("<ffHH", 0.0, 0.0, u, v) for u, v in pairs)
+    vs = read_vertices(points, 0, len(pairs))
+    u_norm = [vert.u for vert in vs]
+    v_norm = [vert.v for vert in vs]
+    assert all(0.0 <= u <= 1.0 and 0.0 <= v <= 1.0
+               for u, v in zip(u_norm, v_norm))
+    # 归一化是严格单调映射：raw u16 排序后归一化 == 归一化值排序（保序）
+    assert sorted(u_norm) == [u / 0xFFFF for u in sorted(u for u, _ in pairs)]
+    assert sorted(v_norm) == [v / 0xFFFF for v in sorted(v for _, v in pairs)]
 
 
 # ---------------------------------------------------------------------------

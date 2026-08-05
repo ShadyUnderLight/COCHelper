@@ -765,8 +765,8 @@ def read_vertices(points: bytes, offset: int, count: int) -> list[Vertex]:
     """从 shapes_bitmap_poins 缓冲读 count 个顶点（12 字节/个连续）。
 
     offset 是**顶点索引**（实证 + Shape.cpp：顶点 i 字节偏移 =
-    (offset + i) * 12）。顶点布局见 Vertex docstring（u/v 在前、x/y 在后，
-    与 sc-workshop 参考顺序不同，以真实字节为准）。
+    (offset + i) * 12）。顶点布局见 Vertex docstring（x/y 在前、u/v 在后，
+    与 sc-workshop 参考一致）。
 
     越界（起点或终点超出缓冲）→ CatalogError（fail loud，不截断）；
     count 超上限 → CatalogError（防 O(n) 顶点物化放大，模式同
@@ -846,9 +846,9 @@ def parse_movieclips(payload: bytes, frame_elements: bytes = b"") -> dict[int, M
                     raise CatalogError(
                         f"SC2 MovieClip[{i}] children 数 {nc} 超过上限 "
                         f"{_MAX_VECTOR_ENTRIES}（防 O(n) 放大）")
-                children = [struct.unpack(
-                    "<H", payload[fb.vector_elem(cvec, j, 2):][:2])[0]
-                    for j in range(nc)]
+                children = [struct.unpack("<H", payload[off:off + 2])[0]
+                            for off in (fb.vector_elem(cvec, j, 2)
+                                        for j in range(nc))]
             frames: list[MovieClipFrame] = []
             fvec = fb.table_field(t, 8)
             if fvec:

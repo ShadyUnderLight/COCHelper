@@ -21,16 +21,21 @@
   块行恒 4 字节对齐 → 无行填充）；imageSize 恒等于
   ceil(w/bw)*ceil(h/bh)*16，文件无尾随字节（全部实测一致）
 
-**.sctx**（buildings.sc 外部纹理，实测 71 个全量一致）：
-- 固定头 60B：u32@0 = 数据起点 - 52（元数据 blob 偏移，1420..26972 不等）；
-  u32@4 = 36（buildings 风格变体标记，APK 内 28/32 变体是其他布局，
-  不支持）；u32@8 = `SCTX` magic；u32@44 = pixel_type（208 =
+**.sctx**（buildings 风格变体 = variant-36，实测 APK `assets/sc/` 全量 241 个
+外部 sctx：148 variant-28 + 2 variant-32（其他布局，fail loud）+
+91 variant-36）：
+- 固定头 60B：u32@0 = 数据起点 - 52（元数据 blob 偏移，1420..26972 不等——
+  variant-36 内仍有子变体，但布局一致可解）；u32@4 = 36（buildings 风格变体
+  标记）；u32@8 = `SCTX` magic；u32@44 = pixel_type（208 =
   ASTC_RGBA8_6x6）；u16@48/u16@50 = 宽/高；u32@56 = 数据长度
-- 数据区：起点 = u32@0 + 52，长度 = u32@56 = ceil(w/6)*ceil(h/6)*16
-  （71/71 与 SC2 TextureData 宽高及 ASTC 6x6 块数精确一致，无尾随字节）
+- variant-36 家族 = buildings.sc 71 + buildings_cc.sc 13 + buildings2.sc 5
+  （91 个中 89 个与 SC2 TextureData 宽高及 ASTC 6x6 块数精确一致，无尾随
+  字节——**"71/71 精确一致"仅对 buildings.sc 成立**）；其余 2 个
+  building_bases_0/1.sctx 的 data_len 声明超文件大小，被截断检查拒绝
+  （fail-closed 正确，不读取越界像素）
 - 任务书 spike 猜测（u16@12=width、u16@14=height）被实测否定：off12/14
   恒为 0/26；宽高在 off48/50
-- 头内另有若干常量字段（off12-44 之间）未解码——两文件变体一致且渲染
+- 头内另有若干常量字段（off12-44 之间）未解码——同变体一致且渲染
   不需要，不做语义猜测；需要时按 SupercellTexture Header.fbs 补充
 
 一切畸形数据统一抛 CatalogError（fail loud，不静默降级）；decode_region
@@ -55,7 +60,7 @@ SCTX_MAGIC = b"SCTX"
 SCTX_HEADER_SIZE = 60  # 解析所需固定头（读至 u32@56 数据长度字段）
 _SCTX_DATA_BASE = 52  # 数据起点 = u32@0 + 52（实证）
 _SCTX_VARIANT_BUILDINGS = 36  # u32@4 变体标记（实测 28/32 = 其他布局）
-_SCTX_PIXEL_TYPE_ASTC_6X6 = 208  # ASTC_RGBA8_6x6（社区枚举，实测 71/71）
+_SCTX_PIXEL_TYPE_ASTC_6X6 = 208  # ASTC_RGBA8_6x6（社区枚举，variant-36 实测）
 
 # GL_COMPRESSED_RGBA_ASTC_*_KHR 官方枚举 → (block_w, block_h)。
 # 实测 APK 只用 0x93B0/0x93B4/0x93B7，其余条目为规范完整性防御。
@@ -173,12 +178,15 @@ def parse_ktx(data: bytes) -> KtxImage:
 
 
 def parse_sctx(data: bytes) -> SctxImage:
-    """解析 Supercell SCTX 容器（buildings 风格）→ SctxImage。
+    """解析 Supercell SCTX 容器（variant-36 / buildings 风格）→ SctxImage。
 
-    布局（实测 71 个全量一致）：u32@0+52 = 数据起点、u32@4=36 = 变体标记、
-    u32@8=`SCTX`、u32@44=pixel_type（208=ASTC 6x6）、u16@48/50=宽/高、
-    u32@56=数据长度。数据长度必须等于 ceil(w/6)*ceil(h/6)*16。
-    其他头变体（u32@4=28/32，APK 内 508 个，布局不同）→ CatalogError。
+    布局（实测 variant-36 全量一致——buildings.sc 71 + buildings_cc.sc 13 +
+    buildings2.sc 5 可解；building_bases_0/1.sctx 2 个 data_len 声明超文件
+    大小被截断检查拒绝，fail-closed）：u32@0+52 = 数据起点、u32@4=36 =
+    变体标记、u32@8=`SCTX`、u32@44=pixel_type（208=ASTC 6x6）、
+    u16@48/50=宽/高、u32@56=数据长度。数据长度必须等于
+    ceil(w/6)*ceil(h/6)*16。其他头变体（u32@4=28/32，全 APK 508 个、其中
+    `assets/sc/` 150 个，布局不同）→ CatalogError。
     """
     if len(data) < SCTX_HEADER_SIZE:
         raise CatalogError(

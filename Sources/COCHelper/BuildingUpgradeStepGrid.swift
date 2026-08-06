@@ -1,21 +1,22 @@
 import SwiftUI
 import COCHelperCore
 
-/// Issue #45：同类建筑组卡右列逐级升级阶梯网格。
+/// Issue #45：建筑组卡实例行内逐级升级阶梯网格（per-record）。
 ///
 /// 输入升序 `[BuildingUpgradeStep]`（BuildingGroupProjection 已保证 level 升序
-/// 且界内）。两列 LazyVGrid 单元格展示 Lv / 费用 / 完整时长，单元格语义与
-/// `LevelDetailSheet` 逐级行一致：durationSeconds == 0 显示「即时」、
-/// nil 显示「暂无目录数据」、费用 nil 显示「暂无费用」。
-/// 外层横向滚动适配窄窗口；阶梯为空（满级或不可 join）时显示占位「无剩余等级」。
+/// 且界内；**每组实例只传该记录自己的阶梯，不得跨实例合并**——不同等级记录
+/// 的阶梯各自显示，避免把当前等级画成待升级项）。自适应列宽 LazyVGrid
+/// 单元格展示 Lv / 费用 / 完整时长，单元格语义与 `LevelDetailSheet` 逐级行
+/// 一致：durationSeconds == 0 显示「即时」、nil 显示「暂无目录数据」、
+/// 费用 nil 显示「暂无费用」。阶梯为空（满级或不可 join）时显示占位
+/// 「无剩余等级」。
 struct BuildingUpgradeStepGrid: View {
     /// 升序阶梯（调用方传入；可为空数组）。
     let steps: [BuildingUpgradeStep]
 
-    /// 两列固定宽度单元格（内容超宽时由外层横向滚动兜底）。
+    /// 自适应列宽（min 150 / max 180，按可用宽度自动分列）。
     private let columns = [
-        GridItem(.fixed(150), spacing: 8),
-        GridItem(.fixed(150), spacing: 8),
+        GridItem(.adaptive(minimum: 150, maximum: 180), spacing: 8),
     ]
 
     /// 费用文案：千分位；费用缺失 →「暂无费用」；资源缺失归「未知资源」
@@ -54,13 +55,11 @@ struct BuildingUpgradeStepGrid: View {
             Text("无剩余等级")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                    ForEach(steps, id: \.level) { step in
-                        stepCell(step)
-                    }
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                ForEach(steps, id: \.level) { step in
+                    stepCell(step)
                 }
             }
         }

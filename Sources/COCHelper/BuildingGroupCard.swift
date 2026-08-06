@@ -2,17 +2,20 @@ import SwiftUI
 import AppKit
 import COCHelperCore
 
-/// Issue #45：同类建筑组卡（Panel + HStack 三列）。
+/// Issue #45：同类建筑组卡（Panel + HStack 两区）。
 ///
-/// - 左：`BuildingGroupSummaryView`（组级汇总，固定宽）
-/// - 中：实例列表——每条原始快照记录一行（图标 / Lv 当前 / 上限 / ×N / 状态
-///   徽标 / 实时剩余时间），整行 Button 点击回调 `onOpenDetail(instance)`
-///   （由调用方决定如何打开详情，如 `LevelDetailSheet`）；行间分隔线。
-/// - 右：`BuildingUpgradeStepGrid`（固定宽区域，内部横向滚动）
+/// - 左：`BuildingGroupSummaryView`（组级汇总，固定宽 180pt）
+/// - 右：实例区 VStack——每条原始快照记录一个实例块：头部行（图标 /
+///   Lv 当前 / 上限 / ×N / 状态徽标 / 实时剩余时间，整行 Button 点击回调
+///   `onOpenDetail(instance)`，由调用方决定如何打开详情）+ 该实例自己的
+///   `BuildingUpgradeStepGrid`（per-record 阶梯，内嵌在实例行内，缩进与
+///   图标列对齐）；实例块间分隔线。
 ///
-/// 右列阶梯为组内全部实例阶梯的等级并集（去重保序）：同一 dataID 共享同一
-/// 目录项，同一 level 的费用/时长跨实例一致，按 level 去重不丢信息，避免
-/// 同组多实例（如不同等级城墙）重复单元格。
+/// 阶梯必须 per-record：Core 层 `instance.steps` 已是按该记录
+/// `(currentLevel, maxLevel]` 过滤的升序阶梯（BuildingGroupProjectionTests
+/// T4 钉死），跨实例并集会破坏语义——如 Lv9/Lv10 两条记录并集出 Lv10 单元格，
+/// Lv10 记录的当前等级会被画成待升级项（Issue #45 验收「不同等级记录各自
+/// 显示正确的等级阶梯」）。
 ///
 /// 图标复用 `VillageItemState.preferredAssetURLs` 4 级候选链（与列表行/详情
 /// sheet 同解析防漂移），版本固定 `GameCatalog.defaultBundledVersion`（本组件
@@ -24,33 +27,33 @@ struct BuildingGroupCard: View {
     let group: BuildingGroup
     let onOpenDetail: (BuildingInstance) -> Void
 
-    /// 组内全部实例阶梯的等级并集（按 level 去重，保持升序）。
-    private var mergedSteps: [BuildingUpgradeStep] {
-        var seenLevels = Set<Int>()
-        var steps: [BuildingUpgradeStep] = []
-        for instance in group.instances {
-            for step in instance.steps where !seenLevels.contains(step.level) {
-                seenLevels.insert(step.level)
-                steps.append(step)
-            }
-        }
-        return steps
-    }
-
-    /// 实例列表：每条记录一行 Button，行间分隔线。
+    /// 实例区：每条记录一个实例块（头部行 + 内嵌阶梯），实例块间分隔线。
+    /// 用索引判断末位（避免逐实例 O(n²) 的 `last?.id` 比较）。
     private var instanceList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(group.instances) { instance in
-                instanceRow(instance)
-                if instance.id != group.instances.last?.id {
+            ForEach(group.instances.indices, id: \.self) { index in
+                instanceBlock(group.instances[index])
+                if index != group.instances.count - 1 {
                     Divider()
                 }
             }
         }
-        .frame(minWidth: 200, alignment: .leading)
+        .frame(minWidth: 320, alignment: .leading)
     }
 
-    /// 单实例行。`BuildingInstance` 直接回传调用方（Task 3 集成时由调用方
+    /// 单实例块：头部行（Button → `onOpenDetail`）+ 该记录自己的阶梯网格。
+    private func instanceBlock(_ instance: BuildingInstance) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            instanceRow(instance)
+            Divider()
+            // 缩进与头部图标列对齐（24pt 图标 + 10pt spacing）。
+            BuildingUpgradeStepGrid(steps: instance.steps)
+                .padding(.leading, 34)
+                .padding(.vertical, 8)
+        }
+    }
+
+    /// 实例头部行。`BuildingInstance` 直接回传调用方（Task 3 集成时由调用方
     /// 决定打开哪个 sheet/详情），本组件不构造 `UpgradeDisplayRecord`。
     private func instanceRow(_ instance: BuildingInstance) -> some View {
         let item = instance.item
@@ -131,8 +134,6 @@ struct BuildingGroupCard: View {
             HStack(alignment: .top, spacing: 18) {
                 BuildingGroupSummaryView(group: group)
                 instanceList
-                BuildingUpgradeStepGrid(steps: mergedSteps)
-                    .frame(width: 320, alignment: .leading)
             }
         }
     }

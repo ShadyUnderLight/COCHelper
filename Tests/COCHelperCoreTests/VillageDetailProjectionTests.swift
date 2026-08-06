@@ -233,12 +233,47 @@ final class VillageDetailProjectionTests: XCTestCase {
     }
 
     func testIsFullyMaxedFalseWhenOneUpgrading() {
-        // 计时结束待重新导入：status 非 .maxed（level 未更新）→ 不算完成。
+        // 升级中：status == .upgrading（remainingSeconds > 0）→ 不算完成。
         let total = VillageDetailProjection.totalCompletion(from: [
             item(id: "a", status: .maxed),
             item(id: "b", status: .upgrading, level: 3, maxLevel: 10, isUpgrading: true, nextLevel: 4),
         ])
         XCTAssertFalse(total.isFullyMaxed, "upgrading 项不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenFinishedTimerNeedsReimport() {
+        // 计时结束待重新导入（timerSeconds != nil && remainingSeconds == 0）：
+        // 快照 level 仍是升级前等级（未更新）→ status 非 .maxed → 不算完成。
+        // item() helper 无法构造此形态（timer 字段由 isUpgrading 硬编码），直接构造。
+        let needsReimport = VillageItemState(
+            id: "b",
+            section: "buildings",
+            dataID: 1,
+            base: .home,
+            name: "item-b",
+            category: .buildings,
+            currentLevel: 3,
+            count: 1,
+            timerSeconds: 3600,
+            remainingSeconds: 0,
+            nextLevel: nil,
+            nextLevelDurationSeconds: nil,
+            maxLevel: 10,
+            status: .complete,
+            missingReason: nil,
+            icon: nil,
+            levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
+            isNested: false,
+            displayCategory: nil
+        )
+        XCTAssertTrue(needsReimport.needsReimport, "前置：构造形态确为待重新导入")
+        let total = VillageDetailProjection.totalCompletion(from: [
+            item(id: "a", status: .maxed),
+            needsReimport,
+        ])
+        XCTAssertFalse(total.isFullyMaxed, "计时结束待重新导入项不得判满级")
     }
 
     func testIsFullyMaxedFalseWhenUnknownPresent() {

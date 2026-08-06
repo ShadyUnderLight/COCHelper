@@ -1,14 +1,14 @@
 import SwiftUI
+import AppKit
 import COCHelperCore
 
 /// Issue #15：升级总览 / 村庄详情共用的升级行组件。
 ///
 /// 输入 `UpgradeDisplayRecord`（投影聚合层），展示：
-/// - 图标列：目录图标资产当前全部未渲染（renderedPath == nil），统一走类别
-///   SF Symbol 兜底；`item.assetMissingReason`（icon 或 levelVisual 的缺失原因）
+/// - 图标列：`item.icon?.isRenderable == true` 时渲染目录 PNG
+///   （`bundledURL()` 解析 + NSImage 加载）；加载失败或不可渲染时统一走类别
+///   SF Symbol 兜底。`item.assetMissingReason`（icon 或 levelVisual 的缺失原因）
 ///   非 nil 时叠加橙色警示角标（可见的缺失状态）+ `.help` 提示原因，不隐藏行。
-///   `item.icon?.isRenderable == true`
-///   （#13 渲染管线产出后）应在此接入 `renderedPath` 加载，替换兜底图标。
 /// - 名称 × 数量、嵌套标记、副标题（类别 · #dataID · 目录版本）
 /// - 完整时长行（目录缺失时显示「暂无目录数据」；duration == 0 的即时升级显示「即时」）
 /// - 当前 → 目标等级；状态徽标（目录版本不匹配 / 待重新导入确认 / 已满级）
@@ -103,17 +103,15 @@ struct UpgradeDisplayRow: View {
 
     /// 目录视觉资产缺失原因（icon 优先、levelVisual 兜底，见
     /// `VillageItemState.assetMissingReason`）：当前 bundled 目录（18.400.13）
-    /// 325 项 icon 缺失 + 188 项仅 levelVisual 缺失（均为 icons_not_rendered），
+    /// 27 个引用带缺失原因（23 个唯一键，export_not_found / render_failed），
     /// 非 nil 时 UI 必须给出可见的缺失状态（角标 + help），不能只在 hover 里。
     private var iconMissingReason: String? {
         item.assetMissingReason
     }
 
     /// 图标列 help 文案优先级：目录视觉资产缺失原因（icon 或 levelVisual）→
-    /// 目录 join 缺失原因 → 通用兜底。
-    /// `item.icon?.isRenderable == true` 时（#13 图标资源管线产出真实渲染图后）
-    /// 应在此渲染 renderedPath 图标替换 SF Symbol；当前全目录 icons_not_rendered，
-    /// 只暴露缺失状态，不写无法验证的加载代码。
+    /// 目录 join 缺失原因 → 通用兜底。icon 可渲染时 help 仍是缺失/join 原因
+    /// 的兜底入口（真实图标无缺失时提示 SF Symbol 回退语义）。
     private var iconHelp: String {
         if let iconMissingReason {
             return "目录图标或等级外观缺失：" + iconMissingReason
@@ -126,17 +124,34 @@ struct UpgradeDisplayRow: View {
         item.category?.systemImage ?? "hammer.fill"
     }
 
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+    /// 目录渲染 PNG（icon 可渲染时）；否则 nil → SF Symbol 兜底。
+    /// Issue #25：`item.icon?.isRenderable` 为 true 时优先渲染真实图标
+    /// （`bundledURL()` 解析 + NSImage 加载）；加载失败（Bundle 文件缺失
+    /// 等）同样回退 SF Symbol，不崩溃。版本参数取投影层 catalogVersion
+    /// （与 `loadBundled()` 同源），避免未来多版本资源错配。
+    @ViewBuilder
+    private var iconView: some View {
+        if let url = item.icon?.bundledURL(
+            version: record.catalogVersion ?? GameCatalog.defaultBundledVersion
+        ), let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 24, height: 24)
+                .help(iconHelp)
+        } else {
             Image(systemName: iconImageName)
                 .font(.body)
                 .foregroundStyle(item.category?.tint ?? Color.secondary)
                 .frame(width: 24)
                 .help(iconHelp)
-                // 视觉资产缺失的可见状态（P2-2 验收「图标缺失有明确状态」）：
-                // 目录 icon 或 levelVisual 引用带 missingReason（如 icons_not_rendered，
-                // 325 项 icon + 188 项仅 levelVisual）时叠加橙色警示角标，
-                // 不只在 hover 提示。SF Symbol 兜底保留，角标只是状态标记。
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            iconView
                 .overlay(alignment: .bottomTrailing) {
                     if iconMissingReason != nil {
                         Image(systemName: "exclamationmark.triangle.fill")

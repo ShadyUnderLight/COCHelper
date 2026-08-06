@@ -31,11 +31,14 @@ from pathlib import Path
 
 import pytest
 
+from hypothesis import HealthCheck, given, settings, strategies as st
+
 from game_catalog.errors import CatalogError
 from game_catalog.validate import validate_catalog
 from render_generator import (
     SAMPLES,
     apply_rendered_paths,
+    collect_catalog_refs,
     container_key,
     refresh_manifest,
     render_samples,
@@ -1073,17 +1076,20 @@ class TestRealApk:
         assert len(ok1) == 4
 
     def test_writeback_on_catalog_copy(self, tmp_path):
-        """完整回写（真实 catalog.json 副本）：匹配引用全更新、PNG 落盘、
-        失败样本不更新不写文件。"""
+        """完整回写（迷你 catalog 副本，Issue #25 全量模式）：收集引用全更新、
+        PNG 落盘、失败引用写入 missingReason 且不写文件。"""
         from render_generator import main
 
-        src = _BUNDLED / "catalog.json"
-        assert src.is_file(), f"bundled catalog 缺失: {src}"
-        dst = tmp_path / "catalog.json"
-        dst.write_bytes(src.read_bytes())
-        # 默认刷新 manifest.json——复制真实副本（陈旧 hash 由 refresh 重算）
-        dst_manifest = tmp_path / "manifest.json"
-        dst_manifest.write_bytes((_BUNDLED / "manifest.json").read_bytes())
+        catalog = _mini_catalog()
+        # heroes 条目改为已知失败键：验证失败引用也参与全量收集与回写
+        catalog["items"][3]["icon"] = {
+            "container": "sc/ui.sc", "exportName": "icon_unit_does_not_exist",
+            "renderedPath": None, "missingReason": "icons_not_rendered"}
+        (tmp_path / "catalog.json").write_text(
+            json.dumps(catalog, ensure_ascii=False, indent=2,
+                       sort_keys=True) + "\n", encoding="utf-8")
+        (tmp_path / "manifest.json").write_text(_mini_manifest(),
+                                                encoding="utf-8")
 
         rc = main(["--apk", str(APK), "--catalog", str(tmp_path),
                    "--report", str(tmp_path / "report.json")])
@@ -1101,26 +1107,16 @@ class TestRealApk:
                             n += 1
             return n
 
-        sample_keys = {(s["container"], s["exportName"]) for s in SAMPLES}
-        matched_before = 0
-        for item in json.loads(src.read_text(encoding="utf-8"))["items"]:
-            for holder in (item, *item.get("levels", [])):
-                for key in ("icon", "levelVisual"):
-                    r = holder.get(key)
-                    if r and (r.get("container"), r.get("exportName")) \
-                            in sample_keys:
-                        matched_before += 1
-
-        # 所有匹配引用：成功 → 同一路径；失败 → 无匹配引用（不动）
-        assert matched_before == count_refs(
-            lambda r: r.get("renderedPath") is not None
-            and r.get("missingReason") is None)
-        assert matched_before == count_refs(
-            lambda r: (r.get("container"), r.get("exportName"))
-            in sample_keys and r.get("renderedPath") is not None)
-        # 无关引用保持 missingReason
-        assert count_refs(lambda r: r.get("renderedPath") is None
-                          and r.get("missingReason") == "icons_not_rendered") > 0
+        # 全量收集 5 键（4 成功 + 1 失败）→ 7 处成功引用 + 1 处失败引用
+        assert count_refs(lambda r: r.get("renderedPath") is not None) == 7
+        assert count_refs(lambda r: r.get("missingReason") is not None) == 1
+        fail_ref = None
+        for item in new["items"]:
+            r = item.get("icon")
+            if r and r["exportName"] == "icon_unit_does_not_exist":
+                fail_ref = r
+        assert fail_ref["renderedPath"] is None
+        assert fail_ref["missingReason"] == "export_not_found"
 
         # 每个成功样本的 PNG 落盘（R2.1 命名）
         for s in SAMPLES[:4]:
@@ -1136,7 +1132,8 @@ class TestRealApk:
         # 报告 JSON 可解析且含 verdict/sha256
         report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
         assert report["meta"]["successCount"] == 4
-        assert len(report["samples"]) == 6
+        assert report["meta"]["failedCount"] == 1
+        assert len(report["samples"]) == 5
         assert report["samples"][0]["png"]["sha256"]
 
     def test_cli_samples_only_does_not_touch_catalog(self, tmp_path):
@@ -1154,3 +1151,206 @@ class TestRealApk:
         assert dst.read_bytes() == before
         assert (tmp_path / "icons/ui/icon_unit_barbarian.png").is_file()
         assert (tmp_path / "r.json").is_file()
+
+
+# ---------------------------------------------------------------------------
+# Issue #25：全量引用收集（collect_catalog_refs）
+# ---------------------------------------------------------------------------
+
+
+def test_collect_catalog_refs_dedupes_and_skips_empty(tmp_path):
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [
+        {"icon": {"container": "sc/ui.sc", "exportName": "icon_a"}},
+        # 跨 item 重复（R2.4：只保留一份）
+        {"levelVisual": {"container": "sc/ui.sc", "exportName": "icon_a"}},
+        # level 级引用
+        {"levels": [{"icon": {"container": "sc/buildings.sc", "exportName": "lvl1"}}]},
+        # 无引用（container/exportName 为 nil）→ 跳过
+        {"icon": {"container": None, "exportName": None},
+         "levels": [{"levelVisual": {"container": None, "exportName": "x"}}]},
+        # 部分缺失 → 跳过
+        {"icon": {"container": "sc/ui.sc", "exportName": None}},
+    ]}), encoding="utf-8")
+    refs = collect_catalog_refs(cat)
+    keys = {(r["container"], r["exportName"]) for r in refs}
+    assert keys == {("sc/ui.sc", "icon_a"), ("sc/buildings.sc", "lvl1")}
+    # 顺序确定性：输出与输入顺序一致（便于稳定报告）
+    assert refs[0] == {"container": "sc/ui.sc", "exportName": "icon_a"}
+
+
+@given(pairs=st.lists(st.tuples(
+    st.one_of(st.none(), st.text(min_size=1)),
+    st.one_of(st.none(), st.text(min_size=1)),
+), max_size=50))
+@settings(max_examples=100,
+          suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_collect_catalog_refs_deterministic_deduped(pairs, tmp_path):
+    cat = tmp_path / "catalog.json"
+    items = [{"icon": {"container": c, "exportName": e}} for c, e in pairs]
+    cat.write_text(json.dumps({"items": items}), encoding="utf-8")
+    refs = collect_catalog_refs(cat)
+    keys = [(r["container"], r["exportName"]) for r in refs]
+    # 无 None 组件
+    assert all(c and e for c, e in keys)
+    # 去重
+    assert len(keys) == len(set(keys))
+    # 集合与输入有效对一致
+    valid = {(c, e) for c, e in pairs if c and e}
+    assert set(keys) == valid
+    # 两次调用结果一致（确定性）
+    assert refs == collect_catalog_refs(cat)
+
+
+# ---------------------------------------------------------------------------
+# Issue #25：collect_catalog_refs 畸形输入 fail loud（CatalogError）
+# ---------------------------------------------------------------------------
+
+
+def test_collect_catalog_refs_malformed_top_level(tmp_path):
+    """catalog 顶层非对象 → CatalogError（fail loud，不被 main() 吞掉）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps(["not-an-object"]), encoding="utf-8")
+    with pytest.raises(CatalogError, match="顶层不是对象"):
+        collect_catalog_refs(cat)
+
+
+@pytest.mark.parametrize("bad", [{"a": 1}, 42, "items", True])
+def test_collect_catalog_refs_malformed_items(tmp_path, bad):
+    """items 非 list → CatalogError（消息含字段名）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": bad}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="items"):
+        collect_catalog_refs(cat)
+
+
+def test_collect_catalog_refs_items_none_is_empty(tmp_path):
+    """items 缺失或为 None → 空引用列表（不报错，契约兼容）。"""
+    cat = tmp_path / "catalog.json"
+    for payload in ({}, {"items": None}):
+        cat.write_text(json.dumps(payload), encoding="utf-8")
+        assert collect_catalog_refs(cat) == []
+
+
+@pytest.mark.parametrize("bad", ["x", 42, None, True, [1, 2]])
+def test_collect_catalog_refs_malformed_item(tmp_path, bad):
+    """items 元素非 dict → CatalogError（fail loud，消息含 item 字段）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [bad]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="item"):
+        collect_catalog_refs(cat)
+
+
+@pytest.mark.parametrize("bad", [{"a": 1}, 42, "lvl", True])
+def test_collect_catalog_refs_malformed_levels(tmp_path, bad):
+    """item.levels 非 list → CatalogError。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [{"levels": bad}]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="levels"):
+        collect_catalog_refs(cat)
+
+
+def test_collect_catalog_refs_levels_none_is_empty(tmp_path):
+    """item.levels 缺失或为 None → 不报错。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [{"levels": None}]}), encoding="utf-8")
+    assert collect_catalog_refs(cat) == []
+
+
+@pytest.mark.parametrize("bad", ["x", 42, None, True, [1, 2]])
+def test_collect_catalog_refs_malformed_level(tmp_path, bad):
+    """level 元素非 dict → CatalogError。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [{"levels": [bad]}]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="level"):
+        collect_catalog_refs(cat)
+
+
+@pytest.mark.parametrize("field", ["container", "exportName"])
+def test_collect_catalog_refs_malformed_ref_field(tmp_path, field):
+    """item 级 container/exportName 非 str 但非 None → CatalogError
+    （防 `container: 123` 这类 truthy 非 str 静默通过）。"""
+    cat = tmp_path / "catalog.json"
+    ref = {"container": "sc/ui.sc", "exportName": "a", field: 123}
+    cat.write_text(json.dumps({"items": [{"icon": ref}]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match=field):
+        collect_catalog_refs(cat)
+
+
+def test_collect_catalog_refs_malformed_level_ref_field(tmp_path):
+    """level 级引用 container 非 str → CatalogError（add 统一入口覆盖）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({
+        "items": [{"levels": [{"icon": {"container": 123, "exportName": "x"}}]}]
+    }), encoding="utf-8")
+    with pytest.raises(CatalogError, match="container"):
+        collect_catalog_refs(cat)
+
+
+@pytest.mark.parametrize("payload", [
+    {"icon": "foo"},                  # item 级 icon 为 str
+    {"levelVisual": 42},              # item 级 levelVisual 为 int
+    {"levels": [{"icon": ["x"]}]},    # level 级 icon 为 list
+])
+def test_collect_catalog_refs_malformed_ref_value(tmp_path, payload):
+    """icon/levelVisual 非 None 且非 dict → CatalogError（消息含路径，
+    不静默跳过）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [payload]}), encoding="utf-8")
+    with pytest.raises(CatalogError, match="非对象") as exc_info:
+        collect_catalog_refs(cat)
+    assert str(cat) in str(exc_info.value)
+
+
+def test_collect_catalog_refs_ref_none_and_dict_ok(tmp_path):
+    """icon/levelVisual 为 None 或正常 dict → 不受影响（None 跳过、dict 收集）。"""
+    cat = tmp_path / "catalog.json"
+    cat.write_text(json.dumps({"items": [
+        {"icon": None, "levelVisual": None},
+        {"icon": {"container": "sc/ui.sc", "exportName": "icon_ok"}},
+        {"levels": [
+            {"levelVisual": None},
+            {"levelVisual": {"container": "sc/ui.sc", "exportName": "icon_lvl"}},
+        ]},
+    ]}), encoding="utf-8")
+    assert collect_catalog_refs(cat) == [
+        {"container": "sc/ui.sc", "exportName": "icon_ok"},
+        {"container": "sc/ui.sc", "exportName": "icon_lvl"},
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Issue #25：_blend_src_over 溢出修复回归（EB3DC59 已修复，钉住行为）
+# ---------------------------------------------------------------------------
+
+
+def test_blend_src_over_low_alpha_no_overflow():
+    """Issue #25 回归：sa=da=1 且 src=dst=255 时旧公式分子 509>255
+    ValueError；修复后必须输出合法 RGBA 值。"""
+    from game_catalog.render import _blend_src_over
+
+    canvas = bytearray([255, 255, 255, 1])
+    layer = bytes([255, 255, 255, 1])
+    _blend_src_over(canvas, layer)  # 修复前抛 ValueError
+    assert all(0 <= b <= 255 for b in canvas)
+
+
+def test_blend_src_over_range_and_alpha_exhaustive():
+    """Issue #25 回归：小范围穷举 sa/da ∈ {1,2,254} × src/dst ∈ {0,128,255}，
+    输出字节全部 ∈ [0,255]（覆盖修复前分子 >255 的溢出路径），且 alpha
+    精确等于 src-over 公式 sa + da*(255-sa)//255。"""
+    from game_catalog.render import _blend_src_over
+
+    for sa in (1, 2, 254):
+        for da in (1, 2, 254):
+            for src in (0, 128, 255):
+                for dst in (0, 128, 255):
+                    canvas = bytearray([dst, dst, dst, da])
+                    layer = bytes([src, src, src, sa])
+                    _blend_src_over(canvas, layer)
+                    assert all(0 <= b <= 255 for b in canvas), (
+                        sa, da, src, dst, list(canvas))
+                    # alpha 按 src-over 公式精确成立（整数除，确定性）
+                    expected_a = sa + da * (255 - sa) // 255
+                    assert canvas[3] == expected_a, (
+                        sa, da, src, dst, list(canvas))

@@ -119,6 +119,88 @@ SAMPLES: list[dict] = [
     },
 ]
 
+
+def collect_catalog_refs(catalog_path: Path) -> list[dict]:
+    """收集 catalog.json 全部 icon/levelVisual 引用（item 级 + level 级），
+    按 (container, exportName) 去重（契约 R2.4），返回 render_samples 样本
+    列表格式。container 或 exportName 为 nil 的引用跳过（无资产可渲染）。
+    顺序 = catalog 中出现顺序（确定性报告）。
+
+    畸形结构 fail loud（CatalogError，含 catalog_path）：顶层非对象、
+    items 非 list、item 非 dict、levels 非 list、level 非 dict、
+    icon/levelVisual 非 None 且非 dict、container/exportName 非 str 且非
+    None。items/levels 为 None 视为空，icon/levelVisual 为 None 跳过。
+    """
+    data = json.loads(catalog_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise CatalogError(f"catalog 结构非法（{catalog_path}）: 顶层不是对象")
+    items = data.get("items")
+    if items is None:
+        items = []
+    elif not isinstance(items, list):
+        raise CatalogError(
+            f"catalog 结构非法（{catalog_path}）: items 不是列表"
+            f"（{type(items).__name__}）"
+        )
+    seen: set[tuple[str, str]] = set()
+    refs: list[dict] = []
+
+    def add(container, export) -> None:
+        if container is not None and not isinstance(container, str):
+            raise CatalogError(
+                f"catalog 结构非法（{catalog_path}）: container 非字符串"
+                f"（{container!r}）"
+            )
+        if export is not None and not isinstance(export, str):
+            raise CatalogError(
+                f"catalog 结构非法（{catalog_path}）: exportName 非字符串"
+                f"（{export!r}）"
+            )
+        if container and export:
+            key = (container, export)
+            if key not in seen:
+                seen.add(key)
+                refs.append({"container": container, "exportName": export})
+
+    for item in items:
+        if not isinstance(item, dict):
+            raise CatalogError(
+                f"catalog 结构非法（{catalog_path}）: item 不是对象（{item!r}）"
+            )
+        for ref in (item.get("icon"), item.get("levelVisual")):
+            if ref is None:
+                continue
+            if not isinstance(ref, dict):
+                raise CatalogError(
+                    f"catalog 结构非法（{catalog_path}）: icon/levelVisual"
+                    f" 非对象（{ref!r}）"
+                )
+            add(ref.get("container"), ref.get("exportName"))
+        levels = item.get("levels")
+        if levels is None:
+            levels = []
+        elif not isinstance(levels, list):
+            raise CatalogError(
+                f"catalog 结构非法（{catalog_path}）: item 的 levels 不是列表"
+                f"（{type(levels).__name__}）"
+            )
+        for level in levels:
+            if not isinstance(level, dict):
+                raise CatalogError(
+                    f"catalog 结构非法（{catalog_path}）: level 不是对象（{level!r}）"
+                )
+            for ref in (level.get("icon"), level.get("levelVisual")):
+                if ref is None:
+                    continue
+                if not isinstance(ref, dict):
+                    raise CatalogError(
+                        f"catalog 结构非法（{catalog_path}）: icon/levelVisual"
+                        f" 非对象（{ref!r}）"
+                    )
+                add(ref.get("container"), ref.get("exportName"))
+    return refs
+
+
 _MAX_ENTRY_BYTES = 256 * 1024 * 1024  # 单 zip 条目解压上限（防 deflate 炸弹，对齐 apk.py）
 _MAX_FILENAME_BYTES = 200  # 契约 R2.2：export_key 文件名长度上限
 
@@ -890,7 +972,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        meta, verdicts = render_samples(args.apk)
+        # Issue #25：全量模式收集 catalog 全部引用（R2.4 去重）；--samples-only
+        # 保持固定样本语义（回归基线）。
+        samples = (SAMPLES if args.samples_only
+                   else collect_catalog_refs(args.catalog / "catalog.json"))
+        meta, verdicts = render_samples(args.apk, samples)
         stats = write_rendered_outputs(args.catalog, verdicts,
                                        write_catalog=not args.samples_only,
                                        refresh_manifest=args.refresh_manifest)

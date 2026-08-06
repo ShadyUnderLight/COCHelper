@@ -43,12 +43,37 @@ public struct CatalogAssetRef: Codable, Hashable, Sendable {
 
     /// 是否有可渲染的静态资源：renderedPath 存在且无缺失原因。
     /// 空串路径（""）不可渲染（契约 R2.2/R5.3，与 Python contract.is_renderable
-    /// 同一语义）；当前 bundled 目录（18.400.13）所有 icon ref 均为
-    /// icons_not_rendered（renderedPath nil），该属性为 false；#13 图标资源
-    /// 管线产出真实渲染图后为 true。
+    /// 同一语义）；18.400.13 全量渲染后：1246 个唯一路径可渲染（renderedPath
+    /// 非空且无 missingReason）；23 个唯一缺失键（export_not_found /
+    /// render_failed）带 missingReason，该属性为 false。UI 依据该属性选择
+    /// PNG 或 SF Symbol。
     public var isRenderable: Bool {
         guard let renderedPath, !renderedPath.isEmpty else { return false }
         return missingReason == nil
+    }
+}
+
+extension CatalogAssetRef {
+    /// renderedPath 在 Core 资源 Bundle 内的 URL（契约 R1.1/R5.3）。
+    ///
+    /// - 仅当 `isRenderable` 时解析（renderedPath 非空且无缺失原因）；
+    ///   否则返回 nil，UI 回退 SF Symbol。
+    /// - `Bundle.module` 在本模块（COCHelperCore）内编译 → 解析到 Core
+    ///   资源 bundle（与 `loadBundled()` 同一机制）。
+    /// - 文件不存在时 Bundle 解析返回 nil，不抛错。
+    /// - 注意：`Bundle.url(forResource:)` 的 resource 名必须是纯文件名
+    ///   （`lastPathComponent`），目录部分走 `subdirectory` 参数；带路径
+    ///   分隔符会解析失败返回 nil。
+    public func bundledURL(version: String = GameCatalog.defaultBundledVersion) -> URL? {
+        guard isRenderable, let renderedPath else { return nil }
+        let nsPath = renderedPath as NSString
+        let subdirectory = "GameCatalog/" + version + "/" + nsPath.deletingLastPathComponent
+        let last = nsPath.lastPathComponent as NSString
+        return Bundle.module.url(
+            forResource: last.deletingPathExtension,
+            withExtension: last.pathExtension,
+            subdirectory: subdirectory
+        )
     }
 }
 

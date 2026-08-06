@@ -747,6 +747,7 @@ struct AccountDataView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                identityHeader
                 VillageNameEditor()
                 AccountImportPanel()
                 // 账号数据页是"当前村庄"语义：与详情页共享同一组件 = 同一状态，
@@ -776,6 +777,43 @@ struct AccountDataView: View {
             .padding(28)
         }
         .background(Color.cocBackground)
+    }
+
+    // MARK: - 身份行
+
+    /// Issue #49 交叉审核修复：官方玩家卡片（Task 4）不再显示昵称，账号数据页
+    /// 作为"当前村庄"页面在此补充身份行——与详情页头部同一投影与 helper，
+    /// 只是权重更小（"账号数据" 仍是本页最大标题）。
+    ///
+    /// 本页无 TimelineView，stale 派生用默认 `Date()`：与 TrackerHeaderView 同类
+    /// 残留——跨过 24h 阈值后需等模型变化或村庄切换才重算翻转为「已过期」。
+    /// 村庄不存在（边缘）时不渲染，不崩溃。
+    @ViewBuilder
+    private var identityHeader: some View {
+        if let village = model.villages.first(where: { $0.id == model.selectedVillageID }) {
+            let identity = VillageDisplayIdentityProjection.project(
+                village: village,
+                officialState: village.officialAPIState
+            )
+            VStack(alignment: .leading, spacing: 6) {
+                Text(identity.primaryName)
+                    .font(.title2.weight(.semibold))
+                    .lineLimit(1)
+                Text(VillageIdentityDisplayText.tagLineText(
+                    identity: identity,
+                    fallback: "尚未导入账号 JSON"
+                ))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if let alias = identity.localAlias {
+                    Text("本地别名：" + alias)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
     }
 }
 

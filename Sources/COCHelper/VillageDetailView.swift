@@ -42,6 +42,10 @@ struct VillageDetailView: View {
         }
     }
 
+    /// Issue #49 验收阅读顺序：首屏自上而下为「玩家昵称与身份（header）→
+    /// 玩家信息（officialAPISection）→ 完成度/升级列表（completionBar →
+    /// basePicker → 分类筛选 → 分组列表）」。完成度条位于官方玩家信息之后、
+    /// 基地选择之前。
     private func detailContent(village: VillageProfile, now: Date) -> some View {
         let projection = VillageCatalogProjection.project(
             village: village,
@@ -73,8 +77,9 @@ struct VillageDetailView: View {
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header(village: village, projection: projection, total: total, now: now)
+                header(village: village, projection: projection, now: now)
                 officialAPISection()
+                completionBar(total: total)
                 basePicker()
                 categoryFilterBar(groups: groups)
 
@@ -121,6 +126,10 @@ struct VillageDetailView: View {
 
     /// Issue #49 Task 3：头部身份投影（昵称优先）。
     ///
+    /// 头部只含身份信息（昵称主标题、tag 行、本地别名、快照时间、目录版本、
+    /// 更新按钮、诊断行）；完成度条不在头部内——#49 验收顺序要求它在官方玩家
+    /// 信息之后（见 detailContent 的阅读顺序契约）。
+    ///
     /// `now` 来自外层 `TimelineView(.periodic)` 的 `context.date`（detailContent 在
     /// TimelineView 内），投影 `at:` 用它而非默认 `Date()`——stale 派生随 60s tick
     /// 重算，跨过 24h 阈值后头部在下一分钟即可翻转为「已过期」，修掉升级总览头部
@@ -128,7 +137,6 @@ struct VillageDetailView: View {
     private func header(
         village: VillageProfile,
         projection: VillageCatalogProjection,
-        total: VillageCategoryCompletion,
         now: Date
     ) -> some View {
         let identity = VillageDisplayIdentityProjection.project(
@@ -177,7 +185,6 @@ struct VillageDetailView: View {
                 .tint(Color.cocAccent)
             }
 
-            completionBar(total: total)
             diagnosticsNote(projection)
         }
     }

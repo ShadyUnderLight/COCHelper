@@ -470,6 +470,9 @@ struct VillageDetailView: View {
     /// 的 items 来自聚合层（aggregate 对静态记录统一加 agg: 前缀），而
     /// BuildingGroupProjection 的实例 id 是原始记录层 id——查找键不归一化会
     /// 全部 miss，组卡只剩升级中记录（Issue #45 组卡聚类键）。
+    /// 剥离安全前提：原始快照 id 由解析器生成为 `section:path` 形态
+    /// （AccountSnapshot），结构上不可能以 `agg:` 开头，故剥离只映射聚合行
+    /// 回其源记录，不会误伤原始 id。
     private static func rawRecordID(_ id: String) -> String {
         id.hasPrefix("agg:") ? String(id.dropFirst(4)) : id
     }

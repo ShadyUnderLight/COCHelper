@@ -498,7 +498,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
         var rng = SeededRNG(seed: 0x4A_CE)
         for round in 0..<20 {
             let maxLevel = Int.random(in: 8...20, using: &rng)
-            // 随机稀疏目录：每个等级以 60% 概率收录（等级号不连续）。
+            // 随机稀疏目录：每个等级以 50% 概率收录（等级号不连续）。
             let catalogLevels = (1...maxLevel).compactMap { level -> SpecLevel? in
                 guard Bool.random(using: &rng) else { return nil }
                 return SpecLevel(level: level, durationSeconds: Int64(level * 60),
@@ -531,4 +531,3 @@ final class BuildingGroupProjectionTests: XCTestCase {
         }
     }
 }
-

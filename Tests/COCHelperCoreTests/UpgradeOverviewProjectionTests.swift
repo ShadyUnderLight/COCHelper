@@ -138,6 +138,8 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             missingReason: nil,
             icon: nil,
             levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
             isNested: false
         )
     }
@@ -631,6 +633,8 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             missingReason: nil,
             icon: nil,
             levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
             isNested: false
         )
     }

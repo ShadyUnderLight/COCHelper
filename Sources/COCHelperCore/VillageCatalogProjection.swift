@@ -39,6 +39,12 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let missingReason: String?
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
+    /// 当前等级（currentLevel）匹配的 CatalogLevel 资产（level-level，Issue #39）：
+    /// 列表行/详情头部按 currentLevel 显示对应等级外观；无匹配等级时为 nil。
+    /// 注意与 item-level 的 icon/levelVisual 区分：这两者来自 CatalogLevel，
+    /// 选择优先级高于 item-level 资产（见 preferredAssetURLs）。
+    public let currentLevelIcon: CatalogAssetRef?
+    public let currentLevelVisual: CatalogAssetRef?
     public let isNested: Bool
     /// Issue #37：展示分类（防御/军事/精制台）；nil 表示无细分（走原分类兜底）。
     public let displayCategory: TrackerDisplayCategory?
@@ -62,14 +68,19 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         icon?.missingReason ?? levelVisual?.missingReason
     }
 
-    /// 视觉资产候选 URL（levelVisual → icon 优先级，运行时文件存在性过滤）：
+    /// 视觉资产候选 URL（4 级回退链，运行时文件存在性过滤）：
+    /// currentLevelVisual → currentLevelIcon → levelVisual → icon。
     /// `bundledURL` 仅在 isRenderable 且 Bundle 文件真实存在时返回 URL，因此
     /// 「元数据可渲染但文件缺失」的候选自动过滤——UI 对返回数组依次做 NSImage
-    /// 加载探测，实现 levelVisual → icon → SF Symbol 的运行时回退链。
-    /// Issue #34 P2 评审：不能只按元数据选定一个 ref、加载失败就直接回退
-    /// SF Symbol 而跳过次选 icon。列表行与详情 sheet 必须共用本解析防漂移。
+    /// 加载探测，实现逐级回退链。前两级为 level-level 资产（Issue #39 按
+    /// currentLevel 显示对应等级外观，来自 CatalogLevel），优先级高于
+    /// item-level 的 levelVisual/icon；后两级为 item-level 资产（Issue #34）。
+    /// 列表行与详情 sheet 必须共用本解析防漂移。
     public func preferredAssetURLs(version: String) -> [URL] {
-        CatalogAssetRef.availableURLs([levelVisual, icon], version: version)
+        CatalogAssetRef.availableURLs(
+            [currentLevelVisual, currentLevelIcon, levelVisual, icon],
+            version: version
+        )
     }
 
     init(
@@ -90,6 +101,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         missingReason: String?,
         icon: CatalogAssetRef?,
         levelVisual: CatalogAssetRef?,
+        currentLevelIcon: CatalogAssetRef?,
+        currentLevelVisual: CatalogAssetRef?,
         isNested: Bool,
         displayCategory: TrackerDisplayCategory? = nil
     ) {
@@ -110,6 +123,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.missingReason = missingReason
         self.icon = icon
         self.levelVisual = levelVisual
+        self.currentLevelIcon = currentLevelIcon
+        self.currentLevelVisual = currentLevelVisual
         self.isNested = isNested
         self.displayCategory = displayCategory
     }
@@ -249,6 +264,8 @@ public struct VillageCatalogProjection: Sendable {
                 missingReason: "该类别不参与升级追踪（\(item.section)）。",
                 icon: nil,
                 levelVisual: nil,
+                currentLevelIcon: nil,
+                currentLevelVisual: nil,
                 isNested: isNested,
                 displayCategory: displayCategory
             )
@@ -339,6 +356,8 @@ public struct VillageCatalogProjection: Sendable {
             missingReason: missingReason,
             icon: baseMatches ? catalogItem?.icon : nil,
             levelVisual: baseMatches ? catalogItem?.levelVisual : nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
             isNested: isNested,
             displayCategory: displayCategory
         )
@@ -422,6 +441,8 @@ public struct VillageCatalogProjection: Sendable {
                 missingReason: first.missingReason,
                 icon: first.icon,
                 levelVisual: first.levelVisual,
+                currentLevelIcon: nil,
+                currentLevelVisual: nil,
                 isNested: first.isNested,
                 displayCategory: first.displayCategory
             ))

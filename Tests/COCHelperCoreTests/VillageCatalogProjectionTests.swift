@@ -845,7 +845,12 @@ final class VillageCatalogProjectionTests: XCTestCase {
     // MARK: - VillageItemState.assetMissingReason 谓词
 
     /// 直接构造状态（成员初始化器，@testable 可访问），用于验证 assetMissingReason 真值表。
-    private func makeAssetState(icon: CatalogAssetRef?, levelVisual: CatalogAssetRef?) -> VillageItemState {
+    private func makeAssetState(
+        icon: CatalogAssetRef?,
+        levelVisual: CatalogAssetRef?,
+        currentLevelIcon: CatalogAssetRef? = nil,
+        currentLevelVisual: CatalogAssetRef? = nil
+    ) -> VillageItemState {
         VillageItemState(
             id: "units:0",
             section: "units",
@@ -864,6 +869,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
             missingReason: nil,
             icon: icon,
             levelVisual: levelVisual,
+            currentLevelIcon: currentLevelIcon,
+            currentLevelVisual: currentLevelVisual,
             isNested: false
         )
     }
@@ -988,6 +995,61 @@ final class VillageCatalogProjectionTests: XCTestCase {
             [],
             "两者均不可加载 → 空数组（SF Symbol 回退）"
         )
+    }
+
+    /// P1 property-based（穷举全空间）：候选链 currentLevelVisual → currentLevelIcon
+    /// → levelVisual → icon，4 槽位 × 4 状态（nil / 真实可加载 / phantom 文件缺失 /
+    /// 带缺失原因）= 256 组合。断言：输出 == 候选序列中有序过滤「isRenderable 且
+    /// Bundle 文件真实存在」后的 URL 子序列（顺序保持、无泄漏、无乱序）。
+    func testPropertyAssetChainExhaustivePriority256() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let realPaths = realRenderedPaths(catalog, count: 4)
+        let version = GameCatalog.defaultBundledVersion
+        enum Slot: Int, CaseIterable { case nilRef, real, phantom, missing }
+        // 每个槽位一个独立真实路径（可区分顺序），phantom/missing 均为不可加载。
+        let refFor: (Slot, Int) -> CatalogAssetRef? = { slot, idx in
+            switch slot {
+            case .nilRef: return nil
+            case .real:
+                return CatalogAssetRef(
+                    container: nil, exportName: nil,
+                    renderedPath: realPaths[idx], missingReason: nil
+                )
+            case .phantom:
+                return CatalogAssetRef(
+                    container: nil, exportName: nil,
+                    renderedPath: "icons/buildings/phantom_lvl\(idx).png", missingReason: nil
+                )
+            case .missing:
+                return CatalogAssetRef(
+                    container: nil, exportName: nil,
+                    renderedPath: nil, missingReason: "icons_not_rendered"
+                )
+            }
+        }
+        var combos = 0
+        for a in Slot.allCases { for b in Slot.allCases {
+            for c in Slot.allCases { for d in Slot.allCases {
+                let state = makeAssetState(
+                    icon: refFor(d, 3), levelVisual: refFor(c, 2),
+                    currentLevelIcon: refFor(b, 1), currentLevelVisual: refFor(a, 0)
+                )
+                let urls = state.preferredAssetURLs(version: version)
+                // 期望：按链序取所有 .real 槽位的真实 URL
+                var expected: [URL] = []
+                let slots: [(Slot, Int)] = [(a, 0), (b, 1), (c, 2), (d, 3)]
+                for (slot, idx) in slots where slot == .real {
+                    let ref = try XCTUnwrap(refFor(slot, idx))
+                    expected.append(try XCTUnwrap(ref.bundledURL(version: version)))
+                }
+                XCTAssertEqual(
+                    urls, expected,
+                    "组合 a=\(a) b=\(b) c=\(c) d=\(d)：输出应为可加载候选的有序子序列"
+                )
+                combos += 1
+            }}
+        }}
+        XCTAssertEqual(combos, 256, "穷举应覆盖 4^4 全空间")
     }
 
     /// 数据锚点：锁定真实 bundled 目录满足 Issue #34 触发场景——buildings:1000000

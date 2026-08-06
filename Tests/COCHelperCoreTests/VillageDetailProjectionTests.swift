@@ -35,6 +35,8 @@ final class VillageDetailProjectionTests: XCTestCase {
             missingReason: nil,
             icon: nil,
             levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
             isNested: nested,
             displayCategory: displayCategory
         )

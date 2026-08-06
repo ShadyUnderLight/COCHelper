@@ -122,6 +122,17 @@ struct UpgradeDisplayRow: View {
         return "目录图标未渲染，显示类别图标"
     }
 
+    /// PNG 已成功渲染时的 hover 提示：缺失原因优先（icon 缺失但 levelVisual
+    /// 可渲染时仍需告知），无缺失原因时提示资产来源而非错误的「未渲染」
+    /// （Issue #34 后 184 项建筑/陷阱行真实渲染 PNG，不能复用 SF Symbol 分支
+    /// 的「未渲染」兜底文案）。
+    private var pngIconHelp: String {
+        if let iconMissingReason {
+            return "目录图标或等级外观缺失：" + iconMissingReason
+        }
+        return "目录渲染资产"
+    }
+
     private var iconImageName: String {
         item.category?.systemImage ?? "hammer.fill"
     }
@@ -143,7 +154,7 @@ struct UpgradeDisplayRow: View {
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 24, height: 24)
-                .help(iconHelp)
+                .help(pngIconHelp)
         } else {
             Image(systemName: iconImageName)
                 .font(.body)

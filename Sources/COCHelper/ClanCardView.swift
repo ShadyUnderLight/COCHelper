@@ -256,7 +256,11 @@ struct ClanCardView: View {
                         metric("所需大本", snapshot.requiredTownHallLevel.map { "\($0) 本" })
                     }
                     GridRow {
-                        metric("所需联赛等级", snapshot.requiredLeagueTier.map { "\($0)" })
+                        metric(
+                            "所需联赛等级",
+                            snapshot.requiredLeagueTier?.name
+                                ?? snapshot.requiredLeagueTier?.id.map { "\($0)" }
+                        )
                         metric("", nil)
                         metric("", nil)
                     }

@@ -29,6 +29,8 @@ final class CoAPIFetchClanTests: XCTestCase {
         XCTAssertEqual(clan.tag, "#CLANANONYMIZED")
         XCTAssertEqual(clan.name, "anonymized-clan")
         XCTAssertEqual(clan.clanLevel, 12)
+        XCTAssertEqual(clan.requiredLeagueTier?.id, 105000028)
+        XCTAssertEqual(clan.requiredLeagueTier?.name, "Titan League I")
 
         let lastRequest = MockURLProtocol.lastRequest()
         XCTAssertEqual(lastRequest?.url?.path(percentEncoded: true), "/v1/clans/%23CLANANONYMIZED")
@@ -92,6 +94,25 @@ final class CoAPIFetchClanTests: XCTestCase {
                 return XCTFail("expected malformedResponse, got \(error)")
             }
             XCTAssertTrue(detail.contains("clanLevel"), "detail 应包含字段路径: \(detail)")
+        } catch {
+            XCTFail("unexpected error type: \(error)")
+        }
+    }
+
+    func testFetchClanMalformedLeagueTierIncludesFieldPath() async {
+        let client = makeClient { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+             Data(#"{"requiredLeagueTier": "not-an-object"}"#.utf8))
+        }
+
+        do {
+            _ = try await client.fetchClan(tag: "#CLAN")
+            XCTFail("expected malformedResponse")
+        } catch let error as CoAPIError {
+            guard case .malformedResponse(let detail) = error else {
+                return XCTFail("expected malformedResponse, got \(error)")
+            }
+            XCTAssertTrue(detail.contains("requiredLeagueTier"), "detail 应包含字段路径: \(detail)")
         } catch {
             XCTFail("unexpected error type: \(error)")
         }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// 端点解析器版本协议：每个快照类型声明自己的 parserVersion
-/// （如 "clan-snapshot-0.2"）。`OfficialEndpointState` 的 init 默认值
+/// （如 "clan-snapshot-0.3"）。`OfficialEndpointState` 的 init 默认值
 /// 引用它，恢复旧构造语义（`ClanAPIState(...)` 默认端点版本）。
 public protocol EndpointParserVersioning {
     static var currentParserVersion: String { get }
@@ -103,8 +103,8 @@ public struct OfficialEndpointState<Snapshot: Codable & Hashable & Sendable & En
 // MARK: - 各端点 parserVersion（协议遵守）
 
 extension OfficialClanSnapshot: EndpointParserVersioning {
-    /// 0.2：解析部落联赛、建筑大师/资本积分与最新入会要求字段。
-    public static var currentParserVersion: String { "clan-snapshot-0.2" }
+    /// 0.3：按官方对象形状解析入会所需联赛等级，并保留上一版本的整数兼容。
+    public static var currentParserVersion: String { "clan-snapshot-0.3" }
 }
 
 extension OfficialClanWarSnapshot: EndpointParserVersioning {
@@ -117,7 +117,7 @@ extension OfficialClanWarSnapshot: EndpointParserVersioning {
 
 // MARK: - 端点 typealias（保持既有 public API 与持久化格式）
 
-/// 部落档案状态（3a）：parserVersion "clan-snapshot-0.2"。
+/// 部落档案状态（3a）：parserVersion "clan-snapshot-0.3"。
 public typealias ClanAPIState = OfficialEndpointState<OfficialClanSnapshot>
 
 /// 部落当前战争状态（3b）：parserVersion "clan-war-0.2"（0.2 = 成员级攻击表解析范围）。

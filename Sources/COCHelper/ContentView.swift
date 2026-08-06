@@ -414,7 +414,8 @@ private struct AddTrackedClanSheet: View {
                 if let builderTrophies = snapshot.requiredBuilderBaseTrophies {
                     previewRow("所需建筑大师奖杯", "\(builderTrophies)")
                 }
-                if let leagueTier = snapshot.requiredLeagueTier {
+                if let leagueTier = snapshot.requiredLeagueTier?.name
+                    ?? snapshot.requiredLeagueTier?.id.map({ "\($0)" }) {
                     previewRow("所需联赛等级", "\(leagueTier)")
                 }
                 if let builderPoints = snapshot.clanBuilderBasePoints {

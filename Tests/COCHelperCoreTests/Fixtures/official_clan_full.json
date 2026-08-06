@@ -12,7 +12,14 @@
   "requiredTrophies": 2000,
   "requiredBuilderBaseTrophies": 1200,
   "requiredTownhallLevel": 8,
-  "requiredLeagueTier": 5,
+  "requiredLeagueTier": {
+    "id": 105000028,
+    "name": "Titan League I",
+    "iconUrls": {
+      "small": "https://example.invalid/league-tier-small.png",
+      "large": "https://example.invalid/league-tier-large.png"
+    }
+  },
   "warFrequency": "always",
   "warWinStreak": 4,
   "warWins": 250,

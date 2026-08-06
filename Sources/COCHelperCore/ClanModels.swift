@@ -28,7 +28,7 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
     /// Swift 属性保留既有 `requiredTownHallLevel` 名称，兼容现有调用方。
     public let requiredTownHallLevel: Int?
     public let requiredBuilderBaseTrophies: Int?
-    public let requiredLeagueTier: Int?
+    public let requiredLeagueTier: ClanLeagueTier?
 
     // MARK: 积分与联赛
     public let clanBuilderBasePoints: Int?
@@ -59,7 +59,7 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         labels: [ClanLabel]?, clanCapital: ClanCapital?,
         unrecognizedKeys: [String],
         requiredBuilderBaseTrophies: Int? = nil,
-        requiredLeagueTier: Int? = nil,
+        requiredLeagueTier: ClanLeagueTier? = nil,
         clanBuilderBasePoints: Int? = nil,
         clanCapitalPoints: Int? = nil,
         capitalLeague: ClanLeague? = nil
@@ -129,7 +129,7 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
             Int.self, forKey: .init(stringValue: "requiredBuilderBaseTrophies")!
         )
         requiredLeagueTier = try container.decodeIfPresent(
-            Int.self, forKey: .init(stringValue: "requiredLeagueTier")!
+            ClanLeagueTier.self, forKey: .init(stringValue: "requiredLeagueTier")!
         )
         clanBuilderBasePoints = try container.decodeIfPresent(
             Int.self, forKey: .init(stringValue: "clanBuilderBasePoints")!
@@ -224,6 +224,42 @@ public struct ClanLeague: Codable, Hashable, Sendable {
     public init(id: Int?, name: String?) {
         self.id = id
         self.name = name
+    }
+}
+
+/// 部落加入所需的联赛等级引用。
+///
+/// 官方响应返回对象（`id/name/iconUrls`）；自定义解码同时接受上一版
+/// 本地模型可能写出的整数，避免升级后旧缓存因字段形状变化而整条失效。
+public struct ClanLeagueTier: Codable, Hashable, Sendable {
+    public let id: Int?
+    public let name: String?
+    public let iconUrls: [String: String]?
+
+    public init(id: Int?, name: String?, iconUrls: [String: String]? = nil) {
+        self.id = id
+        self.name = name
+        self.iconUrls = iconUrls
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case iconUrls
+    }
+
+    public init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            id = try container.decodeIfPresent(Int.self, forKey: .id)
+            name = try container.decodeIfPresent(String.self, forKey: .name)
+            iconUrls = try container.decodeIfPresent([String: String].self, forKey: .iconUrls)
+            return
+        }
+
+        let container = try decoder.singleValueContainer()
+        id = try container.decodeNil() ? nil : container.decode(Int.self)
+        name = nil
+        iconUrls = nil
     }
 }
 

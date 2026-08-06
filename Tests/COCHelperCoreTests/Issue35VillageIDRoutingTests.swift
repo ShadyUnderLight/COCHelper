@@ -565,4 +565,142 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - 刷新进行中状态按村庄 / 部落 ID 隔离（Issue #35 P2-1）
+
+    /// 官方玩家刷新在途状态按村庄 ID 隔离（mock 请求挂起模拟在途）：
+    /// - A 在途 → isRefreshingOfficialPlayer(A.id) == true、B == false；
+    /// - 在途期间切换到村庄 B：两者状态不变（切村回归）；
+    /// - 请求完成 → 全部 false；兼容计算属性 isRefreshingOfficialData 同步可用。
+    @MainActor
+    func testRefreshingStateIsolatedByVillageID() async throws {
+        // 挂起门闩：handler 阻塞直到测试放行，制造"请求在途"窗口。
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // 兜底：断言失败也放行，避免挂起的 mock 请求阻塞测试进程
+        let playerHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            gate.wait()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullPlayerFixtureData())
+        }
+        let clanHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+             fullClanFixtureData())
+        }
+        let villages = [
+            VillageProfile(name: "A", accountSnapshot: snapshot("#A"), officialAPIState: playerState(clanTag: "#CLANA")),
+            VillageProfile(name: "B", accountSnapshot: snapshot("#B"), officialAPIState: playerState(clanTag: "#CLANB")),
+        ]
+        let model = try makeModel(villages: villages, playerHandler: playerHandler, clanHandler: clanHandler)
+
+        // A 的刷新在途（集合在同步段设置，立即生效）
+        model.refreshOfficialPlayer(villageID: model.villages[0].id)
+        XCTAssertTrue(model.isRefreshingOfficialPlayer(villageID: model.villages[0].id),
+                      "A 刷新在途 → A 卡片必须显示刷新中")
+        XCTAssertFalse(model.isRefreshingOfficialPlayer(villageID: model.villages[1].id),
+                       "B 未刷新 → B 卡片不得显示刷新中（P2-1 串村修复）")
+        XCTAssertFalse(model.isRefreshingOfficialPlayer(villageID: UUID()), "不存在的 ID → false")
+        XCTAssertTrue(model.isRefreshingOfficialData, "兼容计算属性：任意村庄在途 → true")
+
+        // 在途期间切换到村庄 B：隔离状态不得漂移
+        model.selectVillage(id: model.villages[1].id)
+        XCTAssertTrue(model.isRefreshingOfficialPlayer(villageID: model.villages[0].id),
+                      "切村后 A 的刷新在途状态必须保留")
+        XCTAssertFalse(model.isRefreshingOfficialPlayer(villageID: model.villages[1].id),
+                       "切村后 B 仍不得显示刷新中")
+
+        // 放行请求 → 完成清空
+        gate.signal()
+        await waitUntil {
+            !model.isRefreshingOfficialPlayer(villageID: model.villages[0].id)
+                && !model.isRefreshingOfficialPlayer(villageID: model.villages[1].id)
+        }
+        XCTAssertFalse(model.isRefreshingOfficialData, "完成后兼容计算属性 → false")
+    }
+
+    /// 部落档案刷新在途状态按 clan tag 隔离：
+    /// - A 村部落 #CLANANON 在途 → isRefreshingClan("#CLANANON") == true、
+    ///   isRefreshingClan("#CLANB") == false、isRefreshingClan(nil) == false；
+    /// - 完成 → 全部 false；兼容计算属性 isRefreshingClanData 同步可用。
+    @MainActor
+    func testRefreshingClanTagIsolated() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let clanHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            gate.wait()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullClanFixtureData())
+        }
+        let villages = [
+            VillageProfile(name: "A", accountSnapshot: snapshot("#A"), officialAPIState: playerState(clanTag: "#CLANANON")),
+            VillageProfile(name: "B", accountSnapshot: snapshot("#B"), officialAPIState: playerState(clanTag: "#CLANB")),
+        ]
+        let model = try makeModel(villages: villages, clanHandler: clanHandler)
+
+        model.refreshClan(villageID: model.villages[0].id)
+        XCTAssertTrue(model.isRefreshingClan(clanTag: "#CLANANON"), "A 部落档案在途 → true")
+        XCTAssertFalse(model.isRefreshingClan(clanTag: "#CLANB"), "B 部落档案未在途 → false（P2-1 串卡修复）")
+        XCTAssertFalse(model.isRefreshingClan(clanTag: nil), "nil tag → false")
+        XCTAssertTrue(model.isRefreshingClanData, "兼容计算属性：任意部落档案在途 → true")
+
+        gate.signal()
+        await waitUntil { !model.isRefreshingClan(clanTag: "#CLANANON") }
+        XCTAssertFalse(model.isRefreshingClan(clanTag: "#CLANANON"), "完成后 → false")
+        XCTAssertFalse(model.isRefreshingClanData, "完成后兼容计算属性 → false")
+    }
+
+    /// war / log / capital 三层与部落档案同构（同步段捕获发起村庄 tag 后设置集合），
+    /// 各做最小在途断言 + 完成后兼容计算属性可用性。
+    @MainActor
+    func testRefreshingWarLogCapitalTagsIsolated() async throws {
+        let logGate = DispatchSemaphore(value: 0)
+        defer { logGate.signal() }
+        // 仅 warlog 请求挂起制造在途窗口；capital 请求不挂起
+        //（其"在途"断言靠同步段设置的集合即可确定性成立，见下方注释）。
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            if request.url?.path.contains("/capitalraidseasons") == true {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                        fullCapitalRaidPageData())
+            }
+            logGate.wait()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let warHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+             Data(#"{"state":"notInWar"}"#.utf8))
+        }
+        let villages = [
+            VillageProfile(name: "A", accountSnapshot: snapshot("#A"), officialAPIState: playerState(clanTag: "#CLANANON")),
+            VillageProfile(name: "B", accountSnapshot: snapshot("#B"), officialAPIState: playerState(clanTag: "#CLANB")),
+        ]
+        let model = try makeModel(villages: villages, clanWarHandler: warHandler, clanLogHandler: logHandler)
+
+        // 战争层（不挂起，完成即清空）
+        model.refreshClanWar(villageID: model.villages[0].id)
+        XCTAssertTrue(model.isRefreshingClanWar(clanTag: "#CLANANON"), "A 部落战争在途 → true")
+        XCTAssertFalse(model.isRefreshingClanWar(clanTag: "#CLANB"), "B 部落战争未在途 → false")
+        XCTAssertFalse(model.isRefreshingClanWar(clanTag: nil), "nil tag → false")
+        await waitUntil { !model.isRefreshingClanWar(clanTag: "#CLANANON") }
+
+        // 战争日志层（挂起在途）
+        model.refreshWarLog(villageID: model.villages[0].id)
+        XCTAssertTrue(model.isRefreshingWarLog(clanTag: "#CLANANON"), "A 部落战争日志在途 → true")
+        XCTAssertFalse(model.isRefreshingWarLog(clanTag: "#CLANB"), "B 部落战争日志未在途 → false")
+        XCTAssertFalse(model.isRefreshingWarLog(clanTag: nil), "nil tag → false")
+        logGate.signal()
+        await waitUntil { !model.isRefreshingWarLog(clanTag: "#CLANANON") }
+
+        // 资本层（集合在同步段设置；调用与断言之间无 await，Task 无法抢先
+        // 清空集合，因此不挂起请求也可确定性断言"在途"）
+        model.refreshCapitalRaid(villageID: model.villages[0].id)
+        XCTAssertTrue(model.isRefreshingCapital(clanTag: "#CLANANON"), "A 部落资本在途 → true")
+        XCTAssertFalse(model.isRefreshingCapital(clanTag: "#CLANB"), "B 部落资本未在途 → false")
+        XCTAssertFalse(model.isRefreshingCapital(clanTag: nil), "nil tag → false")
+        await waitUntil { !model.isRefreshingCapital(clanTag: "#CLANANON") }
+
+        // 三层兼容计算属性完成 → false
+        XCTAssertFalse(model.isRefreshingClanWarData)
+        XCTAssertFalse(model.isRefreshingWarLogData)
+        XCTAssertFalse(model.isRefreshingCapitalData)
+    }
 }

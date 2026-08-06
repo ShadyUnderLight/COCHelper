@@ -87,7 +87,7 @@ struct WarLogCardView: View {
                         Label("仍要检查", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(model.isRefreshingWarLogData)
+                    .disabled(model.isRefreshingWarLog(clanTag: clanTag))
                     Spacer()
                 }
             }
@@ -123,7 +123,7 @@ struct WarLogCardView: View {
                     model.refreshWarLog(villageID: villageID)
                 }
             } label: {
-                if model.isRefreshingWarLogData {
+                if model.isRefreshingWarLog(clanTag: clanTag) {
                     ProgressView().controlSize(.small)
                 } else {
                     Label(title, systemImage: "arrow.clockwise")
@@ -131,7 +131,7 @@ struct WarLogCardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.cocAccent)
-            .disabled(model.isRefreshingWarLogData)
+            .disabled(model.isRefreshingWarLog(clanTag: clanTag))
             Spacer()
         }
     }
@@ -141,14 +141,14 @@ struct WarLogCardView: View {
             Button {
                 model.loadMoreWarLog(villageID: villageID)
             } label: {
-                if model.isRefreshingWarLogData {
+                if model.isRefreshingWarLog(clanTag: clanTag) {
                     ProgressView().controlSize(.small)
                 } else {
                     Label(title, systemImage: "ellipsis.circle")
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(model.isRefreshingWarLogData)
+            .disabled(model.isRefreshingWarLog(clanTag: clanTag))
             Spacer()
         }
     }

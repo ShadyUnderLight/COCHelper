@@ -88,7 +88,7 @@ struct CapitalRaidCardView: View {
             Button {
                 model.refreshCapitalRaid(villageID: villageID)
             } label: {
-                if model.isRefreshingCapitalData {
+                if model.isRefreshingCapital(clanTag: clanTag) {
                     ProgressView().controlSize(.small)
                 } else {
                     Label(title, systemImage: "arrow.clockwise")
@@ -96,7 +96,7 @@ struct CapitalRaidCardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.cocAccent)
-            .disabled(model.isRefreshingCapitalData)
+            .disabled(model.isRefreshingCapital(clanTag: clanTag))
             Spacer()
         }
     }
@@ -106,14 +106,14 @@ struct CapitalRaidCardView: View {
             Button {
                 model.loadMoreCapitalRaid(villageID: villageID)
             } label: {
-                if model.isRefreshingCapitalData {
+                if model.isRefreshingCapital(clanTag: clanTag) {
                     ProgressView().controlSize(.small)
                 } else {
                     Label(title, systemImage: "ellipsis.circle")
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(model.isRefreshingCapitalData)
+            .disabled(model.isRefreshingCapital(clanTag: clanTag))
             Spacer()
         }
     }

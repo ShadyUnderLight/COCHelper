@@ -47,7 +47,7 @@ struct OfficialPlayerCardView: View {
                     Button {
                         model.refreshOfficialPlayer(villageID: villageID)
                     } label: {
-                        if model.isRefreshingOfficialData {
+                        if model.isRefreshingOfficialPlayer(villageID: villageID) {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
@@ -56,7 +56,7 @@ struct OfficialPlayerCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.cocAccent)
-                    .disabled(model.isRefreshingOfficialData || villageTag == nil)
+                    .disabled(model.isRefreshingOfficialPlayer(villageID: villageID) || villageTag == nil)
 
                     Spacer()
 

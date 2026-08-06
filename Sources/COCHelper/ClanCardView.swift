@@ -80,7 +80,7 @@ struct ClanCardView: View {
                 Button {
                     model.refreshClan(villageID: villageID)
                 } label: {
-                    if model.isRefreshingClanData {
+                    if model.isRefreshingClan(clanTag: clanTag) {
                         ProgressView()
                             .controlSize(.small)
                     } else {
@@ -89,7 +89,7 @@ struct ClanCardView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.cocAccent)
-                .disabled(model.isRefreshingClanData)
+                .disabled(model.isRefreshingClan(clanTag: clanTag))
                 Spacer()
             }
         } else {
@@ -106,7 +106,7 @@ struct ClanCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.cocAccent)
-                    .disabled(model.isRefreshingClanData)
+                    .disabled(model.isRefreshingClan(clanTag: clanTag))
                     Spacer()
                 }
             }

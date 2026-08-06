@@ -196,7 +196,7 @@ struct ClanCardView: View {
     private func clanSummary(state: ClanAPIState, snapshot: OfficialClanSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if let badgeURL = badgeURL(snapshot) {
+                if let badgeURL = ClanDisplayFormat.badgeURL(snapshot) {
                     AsyncImage(url: badgeURL) { phase in
                         switch phase {
                         case .success(let image):
@@ -221,11 +221,11 @@ struct ClanCardView: View {
                 GridRow {
                     metric("等级", snapshot.clanLevel.map { "\($0)" })
                     metric("成员数", snapshot.members.map { "\($0)" })
-                    metric("类型", snapshot.type.map(typeLabel))
+                    metric("类型", snapshot.type.map(ClanDisplayFormat.typeLabel))
                 }
                 GridRow {
                     metric("战争胜利", snapshot.warWins.map { "\($0)" })
-                    metric("胜-平-负", warRecordLabel(snapshot))
+                    metric("胜-负-平", ClanDisplayFormat.warRecordLabel(snapshot))
                     metric("连胜", snapshot.warWinStreak.map { "\($0)" })
                 }
                 GridRow {
@@ -241,39 +241,6 @@ struct ClanCardView: View {
                     }
                 }
             }
-        }
-    }
-
-    /// 徽章 URL 安全：仅加载官方 https 图片域名，防止异常数据注入其他
-    /// 协议/域名（AsyncImage 会跟随重定向，allowlist 是纵深防御）。
-    private func badgeURL(_ snapshot: OfficialClanSnapshot) -> URL? {
-        guard let string = snapshot.badgeUrls?["medium"] ?? snapshot.badgeUrls?["small"],
-              let url = URL(string: string),
-              url.scheme?.lowercased() == "https",
-              let host = url.host,
-              host == "clashofclans.com" || host.hasSuffix(".clashofclans.com") else {
-            return nil
-        }
-        return url
-    }
-
-    private func typeLabel(_ raw: String) -> String {
-        switch raw {
-        case "open": "开放"
-        case "inviteOnly": "仅邀请"
-        case "closed": "关闭"
-        default: raw
-        }
-    }
-
-    private func warRecordLabel(_ snapshot: OfficialClanSnapshot) -> String? {
-        switch (snapshot.warWins, snapshot.warLosses, snapshot.warTies) {
-        case let (wins?, losses?, ties?):
-            return "\(wins)-\(losses)-\(ties)"
-        case let (wins?, losses?, _):
-            return "\(wins)-\(losses)"
-        default:
-            return nil
         }
     }
 

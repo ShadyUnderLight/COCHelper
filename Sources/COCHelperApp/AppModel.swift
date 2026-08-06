@@ -540,6 +540,9 @@ public final class AppModel: ObservableObject {
         if isRefreshingClanData {
             // 被占用时排队记录 tag：补跑必须覆盖手动 tag（B1 修复——
             // 旧实现置 pendingClanRefreshAll 补跑村庄全量，手动 tag 被静默吞掉）。
+            // 注：即使 tag 已在当前批次中仍入队——手动刷新语义是"补跑确保
+            // 最新数据"（B1 测试锁定），重复请求是故意的，不属于 single-flight
+            // 范围（single-flight 仅约束 resolveClan 解析路径）。
             pendingClanRefreshTags.insert(tag)
             return
         }
@@ -747,8 +750,17 @@ public final class AppModel: ObservableObject {
     }
 
     private func performClanRefresh(villageClanTags: [String?]) {
-        refreshingClanTags = Set(villageClanTags.compactMap { $0 })
+        // 防御：入集合前规范化（与 EndpointRefresher.uniqueTags 同源），
+        // 保证 single-flight 的 contains 判定与请求 tag 一致。
+        refreshingClanTags = Set(villageClanTags.compactMap {
+            OfficialPlayerTagValidator.normalized($0).flatMap { tag in
+                OfficialPlayerTagValidator.isValid(tag) ? tag : nil
+            }
+        })
         let previous = clanStates
+        // 批次开始时间：合并时用于防回退（C1）——批次期间若有更新的成功
+        // 数据写入（如解析预览成功），批次失败不得覆盖它。
+        let batchStart = Date()
 
         Task { [weak self] in
             guard let self else { return }
@@ -758,7 +770,7 @@ public final class AppModel: ObservableObject {
                 villageClanTags: villageClanTags,
                 previous: previous
             )
-            self.mergeClanStates(refreshed)
+            self.mergeClanStates(refreshed, batchStart: batchStart)
             self.refreshingClanTags.removeAll()
             // 排队补跑：pendingClanRefreshAll（村庄全量联动）∪ pendingClanRefreshTags（含手动 tag）。
             // 补跑集合 = 村庄 tags ∪ 排队的手动 tags（去重；已清空的 refreshingClanTags
@@ -778,10 +790,45 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// C1 防回退谓词（纯函数，独立可测）：
+    /// 刷新批次失败时，若批次开始后已有更新的成功数据（如解析预览写入），
+    /// 跳过覆盖——否则用户刚看到的成功预览会被陈旧的失败状态抹掉。
+    /// `existing.fetchedAt > batchStart` 严格大于：previous 与 batchStart 在
+    /// 同一主 actor 同步块捕获，批次期间写入的成功数据 fetchedAt 必然严格
+    /// 晚于 batchStart（== 不可达，防御上不跳过）。
+    static func shouldSkipFailedOverwrite(
+        refreshedState: ClanAPIState,
+        existing: ClanAPIState?,
+        batchStart: Date
+    ) -> Bool {
+        guard refreshedState.status == .failed,
+              let existing, existing.status == .success,
+              let fetchedAt = existing.fetchedAt else { return false }
+        return fetchedAt > batchStart
+    }
+
     /// 合并刷新结果到共享存储：只覆盖本次请求过的 tag，其余保留
     /// （旧部落快照不因换部落而丢失）。
-    private func mergeClanStates(_ refreshed: [String: ClanAPIState]) {
-        clanStates = ClanStateStore(states: clanStates).merging(refreshed).states
+    ///
+    /// `batchStart` 防回退（C1）：刷新批次开始时捕获 `previous` 快照，
+    /// 批次进行中若该 tag 出现了更新的成功数据（如解析预览写入成功），
+    /// 批次以失败收尾时**不得用陈旧的失败状态覆盖它**——否则用户刚看到的
+    /// 成功预览会在保存后变成"获取失败"。批次成功时正常覆盖（更新的抓取
+    /// 数据优先）。其他调用（resolveClan）不传 batchStart，行为不变。
+    private func mergeClanStates(
+        _ refreshed: [String: ClanAPIState],
+        batchStart: Date? = nil
+    ) {
+        let current = clanStates
+        let protected = refreshed.filter { tag, state in
+            guard let batchStart else { return true }
+            return !Self.shouldSkipFailedOverwrite(
+                refreshedState: state,
+                existing: current[tag],
+                batchStart: batchStart
+            )
+        }
+        clanStates = ClanStateStore(states: current).merging(protected).states
         persistClanStates()
     }
 
@@ -918,6 +965,185 @@ public final class AppModel: ObservableObject {
     public enum TrackedClanAddError: Equatable, Error {
         case invalidTag
         case duplicate
+    }
+
+    /// 部落解析错误（Issue #48 Step A：添加流程的解析预览阶段）。
+    ///
+    /// 展示导向的独立枚举：与 `CoAPIError`（传输语义）解耦，UI 直接按 case
+    /// 展示 `userFacingMessage`，无需感知 HTTP 细节。映射规则见 `map(_:)`。
+    public enum ClanResolveError: Equatable, Sendable, Error {
+        case invalidTag
+        case missingToken
+        case notFound
+        case accessDenied
+        case rateLimited
+        case server
+        case network
+        case malformed
+        case cancelled
+
+        /// 展示文案（脱敏，可安全用于 UI）。
+        public var userFacingMessage: String {
+            switch self {
+            case .invalidTag:
+                return "Tag 无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。"
+            case .missingToken:
+                return "未配置 API token，请先在账号数据页配置。"
+            case .notFound:
+                return "未找到该部落（404），请检查 Tag 是否正确。"
+            case .accessDenied:
+                return "访问被拒绝（401/403）：请检查 API token 是否有效。"
+            case .rateLimited:
+                return "请求被限流（429），请稍后再试。"
+            case .server:
+                return "服务器错误（5xx），请稍后再试。"
+            case .network:
+                return "网络错误，请检查连接后重试。"
+            case .malformed:
+                return "响应解析失败，请稍后再试。"
+            case .cancelled:
+                return "解析已取消。"
+            }
+        }
+    }
+
+    /// 解析部落（Issue #48 Step A）：本地规范化 → `fetchClan` → 成功后写入
+    /// 共享缓存并返回快照。**不保存跟踪关系**（保存由 `addTrackedClan` 负责），
+    /// **不查重**（查重由 `isClanTracked` 提供，sheet 在发起请求前拦截）。
+    ///
+    /// 成功写入 `clanStates` 的理由：#48「详情页首屏只读取已保存的基础信息/
+    /// API 状态」——确认保存后打开详情页首屏直接有数据，无需再次请求。
+    ///
+    /// single-flight（#48 验收"同一 Tag 并发刷新只产生一次实际请求"）：
+    /// 同 tag 刷新批次在途时（`refreshingClanTags` 含该 tag），解析**等待**
+    /// 批次结束并复用其结果（成功返回快照、失败映射分类），不发第二个请求；
+    /// 仅"确实等待过批次"才复用，避免误复用解析前的旧缓存。等待可取消。
+    /// `performClanRefresh` 保证合并先于集合清空，等待恢复后读到的是批次
+    /// 合并后的状态（成功/失败；C1 防回退下可能保留批次期间更新的成功）。
+    /// 批次成功但数据未合并到状态的情况不可达。
+    ///
+    /// 错误映射：`CoAPIError.missingCredentials`（token provider 返回 nil 时
+    /// 由 client 抛出，与刷新链路一致，不重复检查 Keychain）→ `.missingToken`；
+    /// 401/403 → `.accessDenied`；404 → `.notFound`；429 → `.rateLimited`；
+    /// 5xx → `.server`；超时/网络 → `.network`；解析 → `.malformed`。
+    public func resolveClan(rawTag: String?) async -> Result<OfficialClanSnapshot, ClanResolveError> {
+        guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(.invalidTag) }
+        // 等待前记录该 tag 的 lastAttemptAt：用于区分"批次确实处理了该 tag"
+        // 与"批次未包含该 tag"（pendingClanRefreshAll 的补跑集合动态读村庄
+        // tags，该 tag 可能被丢弃）——只有前者才复用，后者 fallthrough 请求。
+        let previousLastAttempt = clanStates[tag]?.lastAttemptAt
+        var waitedForBatch = false
+        while isClanRefreshPending(involving: tag) {
+            waitedForBatch = true
+            if Task.isCancelled { return .failure(.cancelled) }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        if waitedForBatch, let existing = clanStates[tag], existing.lastAttemptAt != previousLastAttempt {
+            if existing.status == .success, let snapshot = existing.lastGood {
+                return .success(snapshot)
+            }
+            if existing.status == .failed {
+                return .failure(Self.mapFailedState(existing))
+            }
+        }
+        do {
+            let snapshot = try await clanRefresher.client.fetchClan(tag: tag)
+            let state = ClanAPIState(
+                status: .success,
+                clanTag: tag,
+                fetchedAt: Date(),
+                lastAttemptAt: Date(),
+                lastErrorReason: nil,
+                lastHTTPStatus: nil,
+                parserVersion: ClanAPIState.currentParserVersion,
+                lastGood: snapshot,
+                unrecognizedKeys: snapshot.unrecognizedKeys
+            )
+            mergeClanStates([tag: state])
+            return .success(snapshot)
+        } catch is CancellationError {
+            // CoAPIClient 显式透传取消（含 URLSession 的 URLError(.cancelled)），
+            // 不得误报为网络错误。
+            return .failure(.cancelled)
+        } catch let error as URLError where error.code == .cancelled {
+            return .failure(.cancelled)
+        } catch let error as CoAPIError {
+            return .failure(Self.mapResolveError(error))
+        } catch {
+            return .failure(.network)
+        }
+    }
+
+    /// single-flight 判定（外部终审 P1）：tag 是否在**当前批次**或**已排队批次**
+    /// 中——等待条件必须覆盖 `pendingClanRefreshTags`（显式 tag 排队）与
+    /// `pendingClanRefreshAll`（村庄全量联动排队，补跑集合动态读当前村庄 tags）。
+    private func isClanRefreshPending(involving tag: String) -> Bool {
+        Self.isClanRefreshPending(
+            inFlightTags: refreshingClanTags,
+            queuedTags: pendingClanRefreshTags,
+            queuedAll: pendingClanRefreshAll,
+            villageClanTags: villages.compactMap { $0.officialAPIState?.currentClanTag },
+            tag: tag
+        )
+    }
+
+    /// single-flight 判定谓词（纯函数，独立可测；模式同 `shouldSkipFailedOverwrite`）。
+    static func isClanRefreshPending(
+        inFlightTags: Set<String>,
+        queuedTags: Set<String>,
+        queuedAll: Bool,
+        villageClanTags: [String],
+        tag: String
+    ) -> Bool {
+        if inFlightTags.contains(tag) { return true }
+        if queuedTags.contains(tag) { return true }
+        if queuedAll { return villageClanTags.contains(tag) }
+        return false
+    }
+
+    /// 批次失败状态 → 解析错误分类（single-flight 复用路径）。
+    /// `ClanAPIState` 只保留脱敏 HTTP 状态码与原因字符串，按码映射；
+    /// 传输层失败/解析失败/缺 token 的 `lastHTTPStatus` 均为 nil，统一
+    /// 归为 .network（与直接路径的精确分类有差距：malformed/missingToken
+    /// 无法从状态区分——完整修复需在 `OfficialEndpointState` 增加结构化
+    /// 错误类别字段，记 follow-up）。"已取消"是 `EndpointRefresher` 写死的
+    /// 稳定文案，可精确识别。
+    private static func mapFailedState(_ state: ClanAPIState) -> ClanResolveError {
+        if state.lastErrorReason == "已取消" {
+            return .cancelled
+        }
+        switch state.lastHTTPStatus {
+        case 404: return .notFound
+        case 401, 403: return .accessDenied
+        case 429: return .rateLimited
+        case let code? where (500..<600).contains(code): return .server
+        default: return .network
+        }
+    }
+
+    /// 该 Tag 是否已在跟踪列表（解析前查重，避免无谓请求）。非法输入返回 false。
+    public func isClanTracked(rawTag: String?) -> Bool {
+        guard let tag = ClanTagNormalizer.normalize(rawTag) else { return false }
+        return trackedClans.contains { $0.clanTag == tag }
+    }
+
+    private static func mapResolveError(_ error: CoAPIError) -> ClanResolveError {
+        switch error {
+        case .missingCredentials:
+            return .missingToken
+        case .unauthorized, .accessDenied:
+            return .accessDenied
+        case .notFound:
+            return .notFound
+        case .rateLimited:
+            return .rateLimited
+        case .serverError:
+            return .server
+        case .timeout, .network:
+            return .network
+        case .malformedResponse:
+            return .malformed
+        }
     }
 
     /// 添加手动跟踪部落：只做本地校验与保存，**不触发任何网络请求**。

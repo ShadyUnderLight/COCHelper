@@ -9,6 +9,28 @@ func printError(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 
+// 供 configure_coc_api.sh 使用：从 stdin 读取完整 JWT，再通过 Keychain API
+// 写入，避免 `security add-generic-password -w` 的交互式输入长度限制。
+if CommandLine.arguments.contains("--configure") {
+    let input = FileHandle.standardInput.readDataToEndOfFile()
+    let token = String(decoding: input, as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    let segments = token.split(separator: ".", omittingEmptySubsequences: false)
+    guard !token.isEmpty, segments.count == 3, segments.allSatisfy({ !$0.isEmpty }) else {
+        printError("FAILED: token 格式无效")
+        exit(2)
+    }
+
+    do {
+        try KeychainTokenStore().saveToken(token)
+        print("SUCCESS: 凭证已安全写入 macOS Keychain")
+        exit(0)
+    } catch {
+        printError("FAILED: 无法写入 Keychain: \(error)")
+        exit(1)
+    }
+}
+
 // 1. 读取 token：COC_TOKEN 环境变量优先，否则 Keychain（nil = 未配置）。
 let token: String?
 if let envToken = ProcessInfo.processInfo.environment["COC_TOKEN"], !envToken.isEmpty {

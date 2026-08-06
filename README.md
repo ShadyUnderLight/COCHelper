@@ -141,7 +141,13 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
 ### token 存储（二选一）
 
 - **环境变量（临时验证）**：`COC_TOKEN=<你的token> swift run smoke-api`。注意：token 会留在 shell history 与进程环境中，临时验证后建议清理；长期使用推荐下面的 Keychain 方式。
-- **Keychain（推荐）**：token 存入 macOS Keychain（service `com.coc-helper.coapi`，account `developer-token`）。可通过运行 `swift run smoke-api` 配合工具写入，或使用 `security add-generic-password -s com.coc-helper.coapi -a developer-token -w`。
+- **Keychain（推荐）**：token 存入 macOS Keychain（service `com.coc-helper.coapi`，account `developer-token`）。运行下面的配置脚本，在终端隐藏输入 token，写入 Keychain 后自动执行 smoke：
+
+  ```bash
+  zsh scripts/configure_coc_api.sh
+  ```
+
+  使用项目脚本即可；它通过 Swift Keychain API 写入完整 JWT，避免系统命令交互式密码输入的长度限制。
 
 **安全边界**：token 绝不写入源码、UserDefaults、村庄 JSON、日志或测试 fixture；本仓库任何文件都不应出现真实凭证。
 

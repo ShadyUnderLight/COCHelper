@@ -274,6 +274,73 @@ final class AppModelClanResolveTests: XCTestCase {
         let result = await model.resolveClan(rawTag: "#2QJQ8J88")
         XCTAssertNotNil(result.successOrNil)
     }
+
+    // MARK: - C1 防回退谓词边界（纯函数，无需并发时序）
+
+    private func clanState(_ status: OfficialAPIRequestStatus, fetchedAt: Date?) -> ClanAPIState {
+        ClanAPIState(status: status, clanTag: "#T", fetchedAt: fetchedAt)
+    }
+
+    /// 批次失败 + 批次期间更新的成功（fetchedAt > batchStart）→ 跳过覆盖。
+    @MainActor
+    func testShouldSkipFailedOverwriteWhenNewerSuccessExists() {
+        let batchStart = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertTrue(AppModel.shouldSkipFailedOverwrite(
+            refreshedState: clanState(.failed, fetchedAt: nil),
+            existing: clanState(.success, fetchedAt: batchStart.addingTimeInterval(1)),
+            batchStart: batchStart
+        ))
+    }
+
+    /// 批次失败 + 既有成功早于批次开始（正常失败覆盖，保留 last-good）→ 不跳过。
+    @MainActor
+    func testShouldSkipFailedOverwriteFalseForOlderSuccess() {
+        let batchStart = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertFalse(AppModel.shouldSkipFailedOverwrite(
+            refreshedState: clanState(.failed, fetchedAt: nil),
+            existing: clanState(.success, fetchedAt: batchStart.addingTimeInterval(-1)),
+            batchStart: batchStart
+        ))
+    }
+
+    /// 批次成功 → 永远不跳过（更新的抓取数据正常覆盖）。
+    @MainActor
+    func testShouldSkipFailedOverwriteFalseForSuccessfulBatch() {
+        let batchStart = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertFalse(AppModel.shouldSkipFailedOverwrite(
+            refreshedState: clanState(.success, fetchedAt: batchStart.addingTimeInterval(1)),
+            existing: clanState(.success, fetchedAt: batchStart.addingTimeInterval(2)),
+            batchStart: batchStart
+        ))
+    }
+
+    /// 无既有状态 / 既有状态失败 / 既有成功无 fetchedAt / fetchedAt == batchStart
+    /// （不可达边界，防御上不跳过）→ 不跳过。
+    @MainActor
+    func testShouldSkipFailedOverwriteFalseWithoutNewerSuccess() {
+        let batchStart = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertFalse(AppModel.shouldSkipFailedOverwrite(
+            refreshedState: clanState(.failed, fetchedAt: nil),
+            existing: nil,
+            batchStart: batchStart
+        ))
+        XCTAssertFalse(AppModel.shouldSkipFailedOverwrite(
+            refreshedState: clanState(.failed, fetchedAt: nil),
+            existing: clanState(.failed, fetchedAt: batchStart.addingTimeInterval(1)),
+            batchStart: batchStart
+        ))
+        XCTAssertFalse(AppModel.shouldSkipFailedOverwrite(
+            refreshedState: clanState(.failed, fetchedAt: nil),
+            existing: clanState(.success, fetchedAt: nil),
+            batchStart: batchStart
+        ))
+        // == 边界：严格大于语义（主 actor 串行下 == 不可达，防御上不跳过）。
+        XCTAssertFalse(AppModel.shouldSkipFailedOverwrite(
+            refreshedState: clanState(.failed, fetchedAt: nil),
+            existing: clanState(.success, fetchedAt: batchStart),
+            batchStart: batchStart
+        ))
+    }
 }
 
 private extension Result {

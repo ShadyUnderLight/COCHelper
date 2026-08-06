@@ -781,6 +781,23 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// C1 防回退谓词（纯函数，独立可测）：
+    /// 刷新批次失败时，若批次开始后已有更新的成功数据（如解析预览写入），
+    /// 跳过覆盖——否则用户刚看到的成功预览会被陈旧的失败状态抹掉。
+    /// `existing.fetchedAt > batchStart` 严格大于：previous 与 batchStart 在
+    /// 同一主 actor 同步块捕获，批次期间写入的成功数据 fetchedAt 必然严格
+    /// 晚于 batchStart（== 不可达，防御上不跳过）。
+    static func shouldSkipFailedOverwrite(
+        refreshedState: ClanAPIState,
+        existing: ClanAPIState?,
+        batchStart: Date
+    ) -> Bool {
+        guard refreshedState.status == .failed,
+              let existing, existing.status == .success,
+              let fetchedAt = existing.fetchedAt else { return false }
+        return fetchedAt > batchStart
+    }
+
     /// 合并刷新结果到共享存储：只覆盖本次请求过的 tag，其余保留
     /// （旧部落快照不因换部落而丢失）。
     ///
@@ -795,12 +812,12 @@ public final class AppModel: ObservableObject {
     ) {
         let current = clanStates
         let protected = refreshed.filter { tag, state in
-            if let batchStart, state.status == .failed,
-               let existing = current[tag], existing.status == .success,
-               let fetchedAt = existing.fetchedAt, fetchedAt > batchStart {
-                return false
-            }
-            return true
+            guard let batchStart else { return true }
+            return !Self.shouldSkipFailedOverwrite(
+                refreshedState: state,
+                existing: current[tag],
+                batchStart: batchStart
+            )
         }
         clanStates = ClanStateStore(states: current).merging(protected).states
         persistClanStates()

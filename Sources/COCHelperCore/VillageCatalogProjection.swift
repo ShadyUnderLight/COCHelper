@@ -338,6 +338,17 @@ public struct VillageCatalogProjection: Sendable {
             missingReason = "目录未收录（\(item.section):\(item.dataID)）。"
         }
 
+        // Issue #39：当前等级资产。按值匹配 level（目录等级号可能不连续），
+        // 仅 baseMatches 且目录命中时解析；currentLevel 为 nil / 超范围 / 未收录
+        // 时两字段均为 nil，UI 回退 item-level 资产（不按名称/位置猜测）。
+        let currentLevelAssets: (visual: CatalogAssetRef?, icon: CatalogAssetRef?)
+        if baseMatches, let catalogItem, let level = item.level {
+            let matched = catalogItem.levels.first { $0.level == level }
+            currentLevelAssets = (matched?.levelVisual, matched?.icon)
+        } else {
+            currentLevelAssets = (nil, nil)
+        }
+
         return VillageItemState(
             id: item.id,
             section: item.section,
@@ -356,8 +367,8 @@ public struct VillageCatalogProjection: Sendable {
             missingReason: missingReason,
             icon: baseMatches ? catalogItem?.icon : nil,
             levelVisual: baseMatches ? catalogItem?.levelVisual : nil,
-            currentLevelIcon: nil,
-            currentLevelVisual: nil,
+            currentLevelIcon: currentLevelAssets.icon,
+            currentLevelVisual: currentLevelAssets.visual,
             isNested: isNested,
             displayCategory: displayCategory
         )
@@ -441,8 +452,8 @@ public struct VillageCatalogProjection: Sendable {
                 missingReason: first.missingReason,
                 icon: first.icon,
                 levelVisual: first.levelVisual,
-                currentLevelIcon: nil,
-                currentLevelVisual: nil,
+                currentLevelIcon: first.currentLevelIcon,
+                currentLevelVisual: first.currentLevelVisual,
                 isNested: first.isNested,
                 displayCategory: first.displayCategory
             ))

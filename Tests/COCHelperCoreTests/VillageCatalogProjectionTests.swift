@@ -1109,6 +1109,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         }
     }
 
+
     // MARK: - Issue #37 展示分类
 
     func testRealFixtureDisplayCategoryForCraftTableAndNested() throws {
@@ -1158,6 +1159,86 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let home = project(village: village, catalog: syntheticCatalog, base: .home)
         let agg = home.items.first { $0.id.hasPrefix("agg:") }
         XCTAssertEqual(agg?.displayCategory, .defense, "聚合项应透传展示分类")
+
+    }
+
+    // MARK: - Issue #39: currentLevel 资产解析
+
+    /// 投影层按 currentLevel 解析等级资产：命中 CatalogLevel 的 levelVisual/icon；
+    /// 聚合传播（P4）；升级中仍显示当前等级外观（P5，nextLevel 不参与）。
+    func testProjectionResolvesCurrentLevelAssets() throws {
+        let bundled = try XCTUnwrap(GameCatalog.loadBundled())
+        let realPaths = realRenderedPaths(bundled, count: 2)
+        let level1Visual = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: realPaths[0], missingReason: nil
+        )
+        let level2Visual = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: realPaths[1], missingReason: nil
+        )
+        let item = CatalogItem(
+            section: "buildings", category: "buildings", dataID: 1_000_001,
+            base: "home", baseMissingReason: nil, name: "加农炮", maxLevel: 2,
+            icon: nil, levelVisual: nil,
+            levels: [
+                CatalogLevel(level: 1, durationSeconds: 60, upgradeResource: nil,
+                             upgradeCost: nil, requiredTownHallLevel: nil,
+                             requiredLaboratoryLevel: nil,
+                             icon: nil, levelVisual: level1Visual, missingReason: nil),
+                CatalogLevel(level: 2, durationSeconds: 300, upgradeResource: nil,
+                             upgradeCost: nil, requiredTownHallLevel: nil,
+                             requiredLaboratoryLevel: nil,
+                             icon: nil, levelVisual: level2Visual, missingReason: nil),
+            ]
+        )
+        let catalog = GameCatalog(gameVersion: GameCatalog.defaultBundledVersion, items: [item])
+
+        // 当前等级 2 → 命中 levels[2].levelVisual
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0")]
+        ])
+        let home = project(village: village, catalog: catalog, base: .home)
+        let state = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(state.currentLevel, 2)
+        XCTAssertEqual(state.currentLevelVisual, level2Visual,
+                       "currentLevel=2 → 命中 levels[2] 的 levelVisual")
+        XCTAssertNil(state.currentLevelIcon)
+        XCTAssertNil(state.levelVisual, "item-level 无资产 → nil（不被伪造）")
+        XCTAssertNil(state.currentLevelVisual?.missingReason, "可渲染资产无缺失原因")
+
+        // 聚合传播（P4）：两条同 (section,dataID,level=2) 非升级记录 → 聚合 1 条，字段保留
+        let village2 = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "1"),
+            ]
+        ])
+        let home2 = project(village: village2, catalog: catalog, base: .home)
+        let aggregated = try XCTUnwrap(home2.items.first)
+        XCTAssertEqual(aggregated.count, 2, "两条同键非升级记录应聚合为一条 ×2")
+        XCTAssertEqual(aggregated.currentLevelVisual, level2Visual,
+                       "聚合项必须保留当前等级资产（P4）")
+
+        // 升级中（P5）：remaining > 0 且 currentLevel=2 → 仍命中 Lv2，与 nextLevel 无关
+        let village3 = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings", dataID: 1_000_001, level: 2,
+                timerSeconds: 600, remainingSeconds: 300, path: "0"
+            )]
+        ])
+        let home3 = project(village: village3, catalog: catalog, base: .home)
+        let upgrading = try XCTUnwrap(home3.items.first)
+        XCTAssertTrue(upgrading.isUpgrading)
+        XCTAssertEqual(upgrading.nextLevel, 3, "升级中 nextLevel = currentLevel + 1（#14 契约）")
+        XCTAssertEqual(upgrading.currentLevelVisual, level2Visual,
+                       "升级中仍显示当前等级外观，不提前显示目标等级（P5）")
+
+        // 当前等级 1 → 命中 levels[1]
+        let village4 = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")]
+        ])
+        let home4 = project(village: village4, catalog: catalog, base: .home)
+        XCTAssertEqual(home4.items.first?.currentLevelVisual, level1Visual,
+                       "currentLevel=1 → 命中 levels[1] 的 levelVisual")
     }
 
     // MARK: - Issue #17: 数组重排稳定性与 boost 非归属
@@ -1377,3 +1458,5 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        "已结束计时组的聚合计时值不得随数组顺序改变")
     }
 }
+
+

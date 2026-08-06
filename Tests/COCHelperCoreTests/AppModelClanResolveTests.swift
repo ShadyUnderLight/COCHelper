@@ -275,6 +275,42 @@ final class AppModelClanResolveTests: XCTestCase {
         XCTAssertNotNil(result.successOrNil)
     }
 
+    // MARK: - single-flight（#48 验收：同一 Tag 并发刷新只产生一次实际请求）
+
+    /// 同 tag 刷新批次在途时解析：必须等待批次结束并**复用结果**，
+    /// 不得发起第二个请求（handler 计数 = 1）。
+    ///
+    /// 时序：`refreshClan` 同步设置 `refreshingClanTags` 后返回（Task 尚未
+    /// 执行）；`resolveClan` 的同步段先检查到 tag 在途 → 进入等待让出主
+    /// actor → 批次 Task 执行完成（合并先于清空集合）→ resolveClan 恢复
+    /// 读到批次成功结果 → 复用。
+    @MainActor
+    func testResolveClanReusesInFlightRefresh() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            counter.record(tag: request.url?.path ?? "")
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        model.refreshClan(tag: "#2QJQ8J88")
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertNotNil(result.successOrNil, "等待批次结束后必须复用成功快照")
+        XCTAssertEqual(counter.count, 1, "single-flight：解析不得发起第二个请求")
+    }
+
+    /// 在途批次失败：解析等待后映射批次失败状态，不发第二个请求。
+    @MainActor
+    func testResolveClanReusesInFlightRefreshFailure() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            counter.record(tag: request.url?.path ?? "")
+            return clanResolveResponse(404, url: request.url!)
+        }
+        model.refreshClan(tag: "#2QJQ8J88")
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.notFound), "批次失败状态必须映射复用")
+        XCTAssertEqual(counter.count, 1, "single-flight：失败也不得发起第二个请求")
+    }
+
     // MARK: - C1 防回退谓词边界（纯函数，无需并发时序）
 
     private func clanState(_ status: OfficialAPIRequestStatus, fetchedAt: Date?) -> ClanAPIState {
@@ -351,3 +387,14 @@ private extension Result {
     }
 }
 
+/// 请求计数（线程安全：URLProtocol 在不同线程调用 handler）。
+private final class ResolveRequestCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var count = 0
+
+    func record(tag: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+    }
+}

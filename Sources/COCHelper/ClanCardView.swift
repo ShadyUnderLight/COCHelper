@@ -225,7 +225,7 @@ struct ClanCardView: View {
                 }
                 GridRow {
                     metric("战争胜利", snapshot.warWins.map { "\($0)" })
-                    metric("胜-平-负", ClanDisplayFormat.warRecordLabel(snapshot))
+                    metric("胜-负-平", ClanDisplayFormat.warRecordLabel(snapshot))
                     metric("连胜", snapshot.warWinStreak.map { "\($0)" })
                 }
                 GridRow {

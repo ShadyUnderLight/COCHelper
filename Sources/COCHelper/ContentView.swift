@@ -197,6 +197,7 @@ private struct VillageSidebarRow: View {
 
 /// 侧边栏部落行：备注/名称 + Tag + "当前村庄所属"标识。
 private struct TrackedClanSidebarRow: View {
+    @EnvironmentObject private var model: AppModel
     let clan: TrackedClanProfile
     let isCurrentVillageClan: Bool
 
@@ -205,7 +206,10 @@ private struct TrackedClanSidebarRow: View {
             Image(systemName: "shield.lefthalf.filled")
                 .foregroundStyle(Color.cocAccent)
             VStack(alignment: .leading, spacing: 1) {
-                Text(clan.displayName ?? clan.clanTag)
+                // 名称回退链：用户备注 → API 快照名称 → Tag（评审 P2）。
+                Text(clan.displayName
+                    ?? model.clanState(for: clan.clanTag)?.lastGood?.name
+                    ?? clan.clanTag)
                     .lineLimit(1)
                 Text(clan.clanTag)
                     .font(.caption2.monospaced())
@@ -303,7 +307,12 @@ private struct AddTrackedClanSheet: View {
     private var phaseContent: some View {
         switch phase {
         case .idle:
-            EmptyView()
+            // 空 Tag 时给可理解引导（评审 P2：仅禁用按钮不提示）。
+            if rawTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("输入部落 Tag（如 #2QJQ8J88）后点击「解析」获取部落信息。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         case .resolving:
             HStack(spacing: 8) {
                 ProgressView()
@@ -362,7 +371,7 @@ private struct AddTrackedClanSheet: View {
                     previewRow("成员", "\(members) 人")
                 }
                 if let record = ClanDisplayFormat.warRecordLabel(snapshot) {
-                    previewRow("胜-平-负", record)
+                    previewRow("胜-负-平", record)
                 }
                 if let streak = snapshot.warWinStreak, streak > 0 {
                     previewRow("连胜", "\(streak) 场")

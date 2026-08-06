@@ -1004,12 +1004,13 @@ public final class AppModel: ObservableObject {
     ///
     /// 成功写入 `clanStates` 的理由：#48「详情页首屏只读取已保存的基础信息/
     /// API 状态」——确认保存后打开详情页首屏直接有数据，无需再次请求。
-    /// 并发说明：解析不经过 `refreshingClanTags` 防重入守卫（部落未收藏前
-    /// 详情页不可达，且模态 sheet 阻断新的刷新触发）。唯一窗口是 sheet 打开
-    /// **前**已在途的村庄联动刷新与解析命中同一 tag（如该部落正是某村庄
-    /// 所属）：此时会发两个请求（超出 ClanRefresher 单批次去重契约的边界）。
-    /// 合并安全由 `mergeClanStates(batchStart:)` 防回退保证——批次失败不会
-    /// 覆盖解析刚写入的成功数据（C1）。
+    ///
+    /// single-flight（#48 验收"同一 Tag 并发刷新只产生一次实际请求"）：
+    /// 同 tag 刷新批次在途时（`refreshingClanTags` 含该 tag），解析**等待**
+    /// 批次结束并复用其结果（成功返回快照、失败映射分类），不发第二个请求；
+    /// 仅"确实等待过批次"才复用，避免误复用解析前的旧缓存。等待可取消。
+    /// `performClanRefresh` 保证合并先于集合清空，等待恢复后读到的一定是
+    /// 本次批次结果。
     ///
     /// 错误映射：`CoAPIError.missingCredentials`（token provider 返回 nil 时
     /// 由 client 抛出，与刷新链路一致，不重复检查 Keychain）→ `.missingToken`；
@@ -1017,6 +1018,20 @@ public final class AppModel: ObservableObject {
     /// 5xx → `.server`；超时/网络 → `.network`；解析 → `.malformed`。
     public func resolveClan(rawTag: String?) async -> Result<OfficialClanSnapshot, ClanResolveError> {
         guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(.invalidTag) }
+        var waitedForBatch = false
+        while refreshingClanTags.contains(tag) {
+            waitedForBatch = true
+            if Task.isCancelled { return .failure(.cancelled) }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        if waitedForBatch, let existing = clanStates[tag] {
+            if existing.status == .success, let snapshot = existing.lastGood {
+                return .success(snapshot)
+            }
+            if existing.status == .failed {
+                return .failure(Self.mapFailedState(existing))
+            }
+        }
         do {
             let snapshot = try await clanRefresher.client.fetchClan(tag: tag)
             let state = ClanAPIState(
@@ -1042,6 +1057,18 @@ public final class AppModel: ObservableObject {
             return .failure(Self.mapResolveError(error))
         } catch {
             return .failure(.network)
+        }
+    }
+
+    /// 批次失败状态 → 解析错误分类（single-flight 复用路径）。
+    /// `ClanAPIState` 只保留脱敏 HTTP 状态码，按码映射；传输层失败为 nil → 网络。
+    private static func mapFailedState(_ state: ClanAPIState) -> ClanResolveError {
+        switch state.lastHTTPStatus {
+        case 404: return .notFound
+        case 401, 403: return .accessDenied
+        case 429: return .rateLimited
+        case let code? where (500..<600).contains(code): return .server
+        default: return .network
         }
     }
 

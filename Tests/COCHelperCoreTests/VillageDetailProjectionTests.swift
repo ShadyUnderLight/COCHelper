@@ -293,8 +293,12 @@ final class VillageDetailProjectionTests: XCTestCase {
 
     func testPropertyIsFullyMaxedConservation() {
         var rng = SplitMix64(seed: 0x53_53)
-        for _ in 0..<500 {
-            let items = randomItems(&rng, count: 1 + Int(rng.next() % 30))
+        for round in 0..<600 {
+            // 前 300 轮普通桶（category/other），后 300 轮混入 display 桶
+            //（defense/military/craftTable，category 恒 .buildings），覆盖 #37 拆分路径。
+            let items = round < 300
+                ? randomItems(&rng, count: 1 + Int(rng.next() % 30))
+                : randomDisplayItems(&rng, count: 1 + Int(rng.next() % 30))
             let stats = VillageDetailProjection.completionStats(from: items)
             let total = VillageDetailProjection.totalCompletion(from: items)
 
@@ -311,6 +315,18 @@ final class VillageDetailProjectionTests: XCTestCase {
             // 反例合法：unknown > 0 时 ratio 可能 == 1.0 但 isFullyMaxed == false）。
             if total.isFullyMaxed {
                 XCTAssertEqual(total.completionRatio, 1.0)
+            }
+
+            // 不变量 3（oracle）：isFullyMaxed 必须与文档契约逐字等价——
+            // 防谓词被削弱（去掉 unknownCount == 0 / knownCount > 0）后
+            // 不变量 1 因 total/stats 共享同一谓词而同步翻转、无法检出。
+            let oracle = total.knownCount > 0 && total.unknownCount == 0
+                && total.completedCount == total.knownCount
+            XCTAssertEqual(total.isFullyMaxed, oracle, "total=\(stat(total))")
+            for s in stats {
+                let sOracle = s.knownCount > 0 && s.unknownCount == 0
+                    && s.completedCount == s.knownCount
+                XCTAssertEqual(s.isFullyMaxed, sOracle, "stats id=\(s.id) \(stat(s))")
             }
         }
     }
@@ -745,6 +761,45 @@ final class VillageDetailProjectionTests: XCTestCase {
             return item(id: "r\(i)", category: category, status: status,
                         level: level, maxLevel: maxLevel,
                         isUpgrading: isUpgrading, nextLevel: nextLevel)
+        }
+    }
+
+    /// 带 display 桶（defense/military/craftTable）的随机生成器（issue #53 property 覆盖）。
+    /// display 项 category 恒 .buildings（与投影层 #37 契约一致），其余同 randomItems。
+    private func randomDisplayItems(_ rng: inout SplitMix64, count: Int) -> [VillageItemState] {
+        (0..<count).map { i in
+            let statusRoll = rng.next() % 6
+            let status: VillageItemStatus
+            switch statusRoll {
+            case 0: status = .complete
+            case 1: status = .maxed
+            case 2: status = .upgrading
+            case 3: status = .unknown
+            case 4: status = .unavailable
+            default: status = .available
+            }
+            let isCatalogHit = status != .unknown && status != .unavailable
+            let level: Int? = Int(rng.next() % 20)
+            let maxLevel: Int? = isCatalogHit ? Int(rng.next() % 20) : nil
+            let isUpgrading = status == .upgrading
+            let nextLevel: Int? = isUpgrading ? level.map { l in
+                (maxLevel != nil && rng.next() % 5 == 0) ? l + 2 : l + 1
+            } : nil
+            // 60% 概率 display 桶（category 恒 .buildings），40% 普通 category/other。
+            if rng.next() % 5 < 3 {
+                let dcs: [TrackerDisplayCategory?] = [.defense, .military, .craftTable, nil]
+                let dc = dcs[Int(rng.next() % UInt64(dcs.count))]
+                return item(id: "d\(i)", category: .buildings, displayCategory: dc,
+                            status: status, level: level, maxLevel: maxLevel,
+                            isUpgrading: isUpgrading, nextLevel: nextLevel)
+            } else {
+                let cats: [TrackerCategory?] = [.buildings, .traps, .troops, .spells,
+                    .siegeMachines, .heroes, .equipment, .pets, .guardians, nil]
+                let category = cats[Int(rng.next() % UInt64(cats.count))]
+                return item(id: "r\(i)", category: category, status: status,
+                            level: level, maxLevel: maxLevel,
+                            isUpgrading: isUpgrading, nextLevel: nextLevel)
+            }
         }
     }
 }

@@ -74,6 +74,7 @@ struct VillageDetailView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, total: total)
+                officialAPISection()
                 basePicker()
                 categoryFilterBar(groups: groups)
 
@@ -205,6 +206,34 @@ struct VillageDetailView: View {
                 .font(.caption)
                 .foregroundStyle(diagnostic.severity == .warning ? .orange : .secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - 官方 API
+
+    /// Issue #35：官方 API 区域（header 之后、basePicker 之前，首屏可见）。
+    ///
+    /// 契约：本区域不发起任何自动请求——没有 onAppear/task/onChange 触发刷新，
+    /// 打开或切换村庄页面不会自动调用官方 API；数据获取仅由各卡片内按钮显式
+    /// 触发（Task 1/2 已接入的 by-ID 路由，全部使用本视图的存储属性 `villageID`）。
+    private func officialAPISection() -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            // 玩家卡平铺（主诉求：进入详情页首屏即见）。
+            OfficialPlayerCardView(villageID: villageID)
+
+            // 部落 4 卡是二级信息：包在 DisclosureGroup 中默认折叠，
+            // 避免首屏被 5 张卡片占满。
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 18) {
+                    ClanCardView(villageID: villageID)
+                    ClanWarCardView(villageID: villageID)
+                    WarLogCardView(villageID: villageID)
+                    CapitalRaidCardView(villageID: villageID)
+                }
+            } label: {
+                Label("部落信息（official-api）", systemImage: "shield.lefthalf.filled")
+                    .font(.headline)
+            }
         }
     }
 

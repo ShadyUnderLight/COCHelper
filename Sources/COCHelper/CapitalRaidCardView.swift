@@ -8,6 +8,25 @@ import COCHelperApp
 /// deferred。分页语义与战争日志一致（累计页 + 游标 + 防无限）。
 struct CapitalRaidCardView: View {
     @EnvironmentObject private var model: AppModel
+    /// 本卡片数据来源的村庄（显式路由，不得读全局选中村庄）。
+    let villageID: UUID
+
+    /// 本卡片村庄的部落归属 tag（nil = 无部落 / 从未成功抓取）。
+    private var clanTag: String? {
+        model.officialClanTag(for: villageID)
+    }
+
+    /// 本卡片村庄所属部落的资本赛季状态（nil = 无部落 / 从未请求）。
+    private var capitalState: ClanCapitalAPIState? {
+        guard let clanTag else { return nil }
+        return model.capitalState(for: clanTag)
+    }
+
+    /// 本卡片村庄所属部落的资本赛季是否还有更多页（分页按钮可用性）。
+    private var hasMore: Bool {
+        guard let clanTag else { return false }
+        return model.capitalHasMore(for: clanTag)
+    }
 
     var body: some View {
         Panel {
@@ -23,7 +42,7 @@ struct CapitalRaidCardView: View {
             Label("部落资本赛季", systemImage: "building.columns.fill")
                 .font(.headline)
             Spacer()
-            if let label = model.currentCapitalState?.sourceLabel {
+            if let label = capitalState?.sourceLabel {
                 Text(label)
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
@@ -36,19 +55,19 @@ struct CapitalRaidCardView: View {
 
     @ViewBuilder
     private var statusContent: some View {
-        if model.currentVillageClanStatusUnknown {
+        if model.clanStatusUnknown(for: villageID) {
             Label("刷新官方玩家数据后可查看部落资本", systemImage: "questionmark.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if model.currentVillageClanTag == nil {
+        } else if clanTag == nil {
             Label("不在部落中，没有资本数据", systemImage: "person.crop.circle.badge.questionmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if let state = model.currentCapitalState {
+        } else if let state = capitalState {
             statusLine(state)
             if let page = state.lastGood {
                 seasonList(page)
-                if model.currentCapitalHasMore {
+                if hasMore {
                     loadMoreButton("加载更多赛季")
                 }
             }
@@ -67,9 +86,9 @@ struct CapitalRaidCardView: View {
     private func refreshButton(_ title: String) -> some View {
         HStack {
             Button {
-                model.refreshCurrentCapitalRaid()
+                model.refreshCapitalRaid(villageID: villageID)
             } label: {
-                if model.isRefreshingCapitalData {
+                if model.isRefreshingCapital(clanTag: clanTag) {
                     ProgressView().controlSize(.small)
                 } else {
                     Label(title, systemImage: "arrow.clockwise")
@@ -77,7 +96,7 @@ struct CapitalRaidCardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.cocAccent)
-            .disabled(model.isRefreshingCapitalData)
+            .disabled(model.isRefreshingCapitalData || model.isRefreshingCapital(clanTag: clanTag))
             Spacer()
         }
     }
@@ -85,16 +104,16 @@ struct CapitalRaidCardView: View {
     private func loadMoreButton(_ title: String) -> some View {
         HStack {
             Button {
-                model.loadMoreCurrentCapitalRaid()
+                model.loadMoreCapitalRaid(villageID: villageID)
             } label: {
-                if model.isRefreshingCapitalData {
+                if model.isRefreshingCapital(clanTag: clanTag) {
                     ProgressView().controlSize(.small)
                 } else {
                     Label(title, systemImage: "ellipsis.circle")
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(model.isRefreshingCapitalData)
+            .disabled(model.isRefreshingCapitalData || model.isRefreshingCapital(clanTag: clanTag))
             Spacer()
         }
     }

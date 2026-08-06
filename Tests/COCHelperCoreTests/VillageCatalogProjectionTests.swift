@@ -1241,6 +1241,137 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        "currentLevel=1 → 命中 levels[1] 的 levelVisual")
     }
 
+    /// 数据锚点（Issue #39）：真实 bundled 目录中 buildings:1000000（壁炉）
+    /// Lv2 必须解析到 fireplace_lvl2.png、Lv14 到 fireplace_lvl14.png，
+    /// 而不是固定 item-level 的 fireplace_lvl1.png。目录数据漂移立即红。
+    func testBundledFireplaceResolvesLevelAppearance() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let version = catalog.gameVersion
+
+        func stateFor(level: Int?) throws -> VillageItemState {
+            let village = makeVillage(objectSections: [
+                "buildings": [makeItem(section: "buildings", dataID: 1_000_000, level: level, path: "0")]
+            ])
+            return try XCTUnwrap(
+                project(village: village, catalog: catalog, base: .home).items.first
+            )
+        }
+
+        // Lv2 → 精确命中 levels[2].levelVisual（fireplace_lvl2.png）
+        let lv2 = try stateFor(level: 2)
+        XCTAssertEqual(lv2.currentLevelVisual?.renderedPath, "icons/buildings/fireplace_lvl2.png")
+        XCTAssertEqual(
+            lv2.preferredAssetURLs(version: version).first,
+            try XCTUnwrap(lv2.currentLevelVisual?.bundledURL(version: version)),
+            "Lv2 首选 URL 必须是 fireplace_lvl2.png 而非 lvl1"
+        )
+
+        // Lv14 → fireplace_lvl14.png
+        let lv14 = try stateFor(level: 14)
+        XCTAssertEqual(lv14.currentLevelVisual?.renderedPath, "icons/buildings/fireplace_lvl14.png")
+        XCTAssertEqual(
+            lv14.preferredAssetURLs(version: version).first,
+            try XCTUnwrap(lv14.currentLevelVisual?.bundledURL(version: version)),
+            "Lv14 首选 URL 必须是 fireplace_lvl14.png 而非 lvl1"
+        )
+
+        // 超范围（Lv15 > maxLevel 14）→ 不猜等级资源，回退 item-level lvl1
+        let lv15 = try stateFor(level: 15)
+        XCTAssertNil(lv15.currentLevelVisual, "超范围等级不得猜测资产")
+        XCTAssertEqual(
+            lv15.preferredAssetURLs(version: version).first,
+            try XCTUnwrap(lv15.levelVisual?.bundledURL(version: version)),
+            "超范围 → 回退 item-level levelVisual"
+        )
+
+        // currentLevel nil → 同样回退 item-level
+        let nilState = try stateFor(level: nil)
+        XCTAssertNil(nilState.currentLevelVisual)
+        XCTAssertEqual(
+            nilState.preferredAssetURLs(version: version).first,
+            try XCTUnwrap(nilState.levelVisual?.bundledURL(version: version)),
+            "currentLevel nil → 回退 item-level levelVisual"
+        )
+    }
+
+    /// 当前等级资产缺失 → 安全回退 item-level（traps2:12000011 Lv1 levelVisual
+    /// 为 export_not_found；buildings:1000059 Lv2 levelVisual 为 render_failed，
+    /// 均来自 GameCatalogTests 已知数据契约）。
+    func testBundledMissingLevelAssetFallsBackToItemLevel() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let version = catalog.gameVersion
+
+        // traps2:12000011 push_trap Lv1：level 级 levelVisual 带缺失原因
+        let pushTrap = try XCTUnwrap(
+            catalog.item(section: "traps2", dataID: 12_000_011),
+            "bundled 目录应包含 traps2:12000011"
+        )
+        let trapVillage = makeVillage(objectSections: [
+            "traps2": [makeItem(section: "traps2", dataID: 12_000_011, level: 1, path: "0")]
+        ])
+        let trapState = try XCTUnwrap(
+            project(village: trapVillage, catalog: catalog, base: .builder).items.first
+        )
+        let trapLevelVisual = try XCTUnwrap(
+            pushTrap.levels.first { $0.level == 1 }?.levelVisual
+        )
+        XCTAssertEqual(trapState.currentLevelVisual, trapLevelVisual,
+                       "level 级 ref 原样暴露（含缺失原因），由链过滤")
+        XCTAssertFalse(trapState.currentLevelVisual?.isRenderable ?? false,
+                       "traps2:12000011 Lv1 levelVisual 应为 export_not_found（已知契约）")
+        // 链过滤后首选回退 item-level（若可渲染）；不可渲染的 level 资产不得出现在候选 URL 中
+        let trapURLs = trapState.preferredAssetURLs(version: version)
+        XCTAssertFalse(
+            trapURLs.contains { $0 == trapLevelVisual.bundledURL(version: version) },
+            "不可渲染的 level 资产不得出现在候选 URL 中"
+        )
+
+        // buildings:1000059 siegeWorkshop Lv2 → render_failed 同样被过滤
+        let siege = try XCTUnwrap(
+            catalog.item(section: "buildings", dataID: 1_000_059),
+            "bundled 目录应包含 buildings:1000059"
+        )
+        let siegeVillage = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_059, level: 2, path: "0")]
+        ])
+        let siegeState = try XCTUnwrap(
+            project(village: siegeVillage, catalog: catalog, base: .home).items.first
+        )
+        let siegeLevelVisual = try XCTUnwrap(
+            siege.levels.first { $0.level == 2 }?.levelVisual
+        )
+        XCTAssertEqual(siegeState.currentLevelVisual, siegeLevelVisual)
+        XCTAssertFalse(siegeState.currentLevelVisual?.isRenderable ?? false,
+                       "buildings:1000059 Lv2 levelVisual 应为 render_failed（已知契约）")
+        let siegeURLs = siegeState.preferredAssetURLs(version: version)
+        XCTAssertFalse(
+            siegeURLs.contains { $0 == siegeLevelVisual.bundledURL(version: version) },
+            "不可渲染的 level 资产不得出现在候选 URL 中"
+        )
+    }
+
+    /// 类别不串线：buildings2:1000033（secondVillage_wall）Lv2 必须命中
+    /// buildings2 自己的逐级路径，不得命中 buildings 同名资源。
+    func testBundledSectionsDoNotCrossResolve() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let village = makeVillage(objectSections: [
+            "buildings2": [makeItem(section: "buildings2", dataID: 1_000_033, level: 2, path: "0")]
+        ])
+        let state = try XCTUnwrap(
+            project(village: village, catalog: catalog, base: .builder).items.first
+        )
+        let expectedPath = try XCTUnwrap(
+            catalog.item(section: "buildings2", dataID: 1_000_033)?
+                .levels.first { $0.level == 2 }?.levelVisual?.renderedPath
+        )
+        XCTAssertEqual(state.currentLevelVisual?.renderedPath, expectedPath,
+                       "buildings2 资产必须来自 buildings2 目录项（按 section:dataID join）")
+        XCTAssertTrue(
+            expectedPath.hasPrefix("icons/buildings2/"),
+            "buildings2:1000033 Lv2 路径应位于 icons/buildings2/ 下（数据契约）"
+        )
+    }
+
     // MARK: - Issue #17: 数组重排稳定性与 boost 非归属
 
     /// 模拟「重排后的 JSON 重新导入」：按新位置重建 id（与解析器规则一致：

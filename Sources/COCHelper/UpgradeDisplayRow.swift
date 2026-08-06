@@ -90,7 +90,7 @@ struct UpgradeDisplayRow: View {
     }
 
     private var subtitle: String {
-        (item.category?.title ?? item.section) + " · #" + String(item.dataID) + " · " + catalogVersionLabel
+        (item.displayCategory?.title ?? item.category?.title ?? item.section) + " · #" + String(item.dataID) + " · " + catalogVersionLabel
     }
 
     // MARK: - 进度
@@ -134,7 +134,7 @@ struct UpgradeDisplayRow: View {
     }
 
     private var iconImageName: String {
-        item.category?.systemImage ?? "hammer.fill"
+        item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill"
     }
 
     /// 目录渲染 PNG（`preferredAssetURLs` 非空且可加载时）；否则 SF Symbol 兜底。
@@ -158,7 +158,7 @@ struct UpgradeDisplayRow: View {
         } else {
             Image(systemName: iconImageName)
                 .font(.body)
-                .foregroundStyle(item.category?.tint ?? Color.secondary)
+                .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
                 .frame(width: 24)
                 .help(iconHelp)
         }
@@ -315,6 +315,17 @@ extension TrackerCategory {
         case .equipment: .cyan
         case .pets: .pink
         case .guardians: .indigo
+        }
+    }
+}
+
+/// issue #37：展示分类的 SF Symbol 着色（与 `TrackerCategory.tint` 同模式）。
+extension TrackerDisplayCategory {
+    var tint: Color {
+        switch self {
+        case .defense: .blue
+        case .military: .orange
+        case .craftTable: .purple
         }
     }
 }

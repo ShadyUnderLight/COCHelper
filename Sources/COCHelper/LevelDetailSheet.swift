@@ -93,16 +93,16 @@ struct LevelDetailSheet: View {
                                     .aspectRatio(contentMode: .fit)
                                     .frame(width: 36, height: 36)
                             } else {
-                                Image(systemName: item.category?.systemImage ?? "hammer.fill")
+                                Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
                                     .font(.title2)
-                                    .foregroundStyle(item.category?.tint ?? Color.secondary)
+                                    .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
                                     .frame(width: 36)
                             }
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.name)
                                 .font(.title3.weight(.bold))
-                            Text(item.category?.title ?? item.section)
+                            Text(item.displayCategory?.title ?? item.category?.title ?? item.section)
                                 + Text(" · #" + String(item.dataID))
                             Text(statusLabel)
                                 .font(.caption.weight(.semibold))
@@ -174,9 +174,9 @@ struct LevelDetailSheet: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 28, height: 28)
                 } else {
-                    Image(systemName: item.category?.systemImage ?? "hammer.fill")
+                    Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
                         .font(.body)
-                        .foregroundStyle(item.category?.tint ?? Color.secondary)
+                        .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
                         .frame(width: 28, height: 28)
                 }
             }

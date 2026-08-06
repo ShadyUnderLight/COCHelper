@@ -199,15 +199,22 @@ struct VillageDetailView: View {
         .frame(maxWidth: 320)
     }
 
+    /// issue #37：展示分类（防御/军事/精制台）作为一级筛选维度，原分类兜底。
+    /// 计数规则与分组键一致：display 组按 displayCategory 匹配；无细分项的
+    /// category 组按原分类匹配；category 为 nil 的项归「其他」。
     private func categoryFilterBar(groups: [VillageDetailGroup]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 filterChip(title: "全部", count: groups.reduce(0) { $0 + $1.items.count }, filter: .all)
+                ForEach(TrackerDisplayCategory.allCases) { display in
+                    let count = groups.first(where: { $0.displayCategory == display })?.items.count ?? 0
+                    filterChip(title: display.title, count: count, filter: .display(display))
+                }
                 ForEach(TrackerCategory.allCases) { category in
-                    let count = groups.first(where: { $0.category == category })?.items.count ?? 0
+                    let count = groups.first(where: { $0.displayCategory == nil && $0.category == category })?.items.count ?? 0
                     filterChip(title: category.title, count: count, filter: .category(category))
                 }
-                let otherCount = groups.first(where: { $0.category == nil })?.items.count ?? 0
+                let otherCount = groups.first(where: { $0.displayCategory == nil && $0.category == nil })?.items.count ?? 0
                 if otherCount > 0 {
                     filterChip(title: "其他", count: otherCount, filter: .other)
                 }
@@ -242,6 +249,7 @@ struct VillageDetailView: View {
     private func filtered(_ groups: [VillageDetailGroup]) -> [VillageDetailGroup] {
         switch selectedFilter {
         case .all: return groups
+        case .display(let dc): return groups.filter { $0.displayCategory == dc }
         case .category(let c): return groups.filter { $0.category == c }
         case .other: return groups.filter { $0.category == nil }
         }
@@ -259,8 +267,8 @@ struct VillageDetailView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
                     Label(
-                        group.category?.title ?? "其他",
-                        systemImage: group.category?.systemImage ?? "ellipsis.circle"
+                        group.displayCategory?.title ?? group.category?.title ?? "其他",
+                        systemImage: group.displayCategory?.systemImage ?? group.category?.systemImage ?? "ellipsis.circle"
                     )
                     .font(.headline)
                     Spacer()
@@ -336,6 +344,7 @@ struct VillageDetailView: View {
 
     private enum CategoryFilter: Hashable {
         case all
+        case display(TrackerDisplayCategory)
         case category(TrackerCategory)
         case other
     }

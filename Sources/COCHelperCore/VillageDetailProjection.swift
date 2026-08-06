@@ -3,6 +3,8 @@ import Foundation
 // MARK: - 分组
 
 public struct VillageDetailGroup: Identifiable, Hashable, Sendable {
+    /// 来源分类。`displayCategory != nil` 时本字段仅为归属提示（恒为 .buildings），
+    /// UI 不得用它做标题/计数/筛选——必须优先 `displayCategory`（issue #37）。
     public let category: TrackerCategory?
     public let displayCategory: TrackerDisplayCategory?
     public let items: [VillageItemState]

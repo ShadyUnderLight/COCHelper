@@ -2,6 +2,19 @@ import SwiftUI
 import AppKit
 import COCHelperCore
 
+/// Issue #47：升级列表与详情 Sheet 共用的图标/间距常量。
+///
+/// 图标资源选择仍由投影层的 `preferredAssetURLs` 决定；这里仅统一 UI
+/// 绘制槽位，确保 PNG、SF Symbol、总览分隔线和村庄详情行不会尺寸漂移。
+enum UpgradeDisplayLayout {
+    static let listIconSize: CGFloat = 48
+    static let listIconColumnWidth: CGFloat = 60
+    static let listDividerLeading: CGFloat = 70
+    static let nestedIndent: CGFloat = 24
+    static let detailHeaderIconSize: CGFloat = 52
+    static let detailLevelIconSize: CGFloat = 36
+}
+
 /// Issue #15：升级总览 / 村庄详情共用的升级行组件。
 ///
 /// 输入 `UpgradeDisplayRecord`（投影聚合层），展示：
@@ -162,13 +175,15 @@ struct UpgradeDisplayRow: View {
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+                .frame(width: UpgradeDisplayLayout.listIconSize,
+                       height: UpgradeDisplayLayout.listIconSize)
                 .help(pngIconHelp)
         } else {
             Image(systemName: iconImageName)
-                .font(.body)
+                .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
-                .frame(width: 24)
+                .frame(width: UpgradeDisplayLayout.listIconSize,
+                       height: UpgradeDisplayLayout.listIconSize)
                 .help(iconHelp)
         }
     }
@@ -179,11 +194,13 @@ struct UpgradeDisplayRow: View {
                 .overlay(alignment: .bottomTrailing) {
                     if iconMissingReason != nil {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.orange)
                             .offset(x: 4, y: 4)
                     }
                 }
+                .frame(width: UpgradeDisplayLayout.listIconColumnWidth,
+                       height: UpgradeDisplayLayout.listIconColumnWidth)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
@@ -293,7 +310,7 @@ struct UpgradeDisplayRow: View {
             }
             .frame(width: 160, alignment: .trailing)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
     }
 }
 

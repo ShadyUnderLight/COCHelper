@@ -190,7 +190,7 @@ struct OfficialPlayerCardView: View {
 
             summarySection(title: "部落与联赛", systemImage: "person.3.fill") {
                 metric("部落", snapshot.clan?.name)
-                metric("部落角色", snapshot.role)
+                metric("部落角色", roleLabel(snapshot.role))
                 metric("当前联赛", snapshot.league?.name)
                 metric("建筑大师联赛", snapshot.builderBaseLeague?.name)
                 metric("战争偏好", warPreferenceLabel(snapshot.warPreference))
@@ -198,11 +198,7 @@ struct OfficialPlayerCardView: View {
 
             // 低频信息默认折叠（与页面「部落信息」分组同模式），展开后同用自适应网格。
             DisclosureGroup {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 130, maximum: 200), alignment: .leading)],
-                    alignment: .leading,
-                    spacing: 12
-                ) {
+                LazyVGrid(columns: Self.gridColumns, alignment: .leading, spacing: 12) {
                     metric("捐兵", snapshot.donations.map { "\($0)" })
                     metric("受捐", snapshot.donationsReceived.map { "\($0)" })
                     metric("部落资本贡献", snapshot.clanCapitalContributions.map { "\($0)" })
@@ -221,6 +217,9 @@ struct OfficialPlayerCardView: View {
         }
     }
 
+    /// 分组与折叠区块共用的自适应网格列配置（最小列宽 130，宽窗口自动加列）。
+    private static let gridColumns = [GridItem(.adaptive(minimum: 130, maximum: 200), alignment: .leading)]
+
     /// 分组区块：次级标题 + 自适应网格（最小列宽 130，宽窗口自动加列）。
     private func summarySection<Content: View>(
         title: String,
@@ -231,20 +230,18 @@ struct OfficialPlayerCardView: View {
             Label(title, systemImage: systemImage)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 130, maximum: 200), alignment: .leading)],
-                alignment: .leading,
-                spacing: 12
-            ) {
+            LazyVGrid(columns: Self.gridColumns, alignment: .leading, spacing: 12) {
                 content()
             }
         }
     }
 
-    /// 战争偏好：官方 API 文档化取值映射，未知值原样透传（不推断）。
+    /// 战争偏好：官方文档化取值映射（out/in/always/any/never），未知值原样透传（不推断）。
     private func warPreferenceLabel(_ raw: String?) -> String? {
         guard let raw else { return nil }
         switch raw {
+        case "out": return "未参战"
+        case "in": return "可参战"
         case "always": return "随时可战"
         case "any": return "任意"
         case "never": return "从不"
@@ -252,11 +249,24 @@ struct OfficialPlayerCardView: View {
         }
     }
 
-    /// 传奇赛季行：`排名 · 奖杯`，字段全缺时返回 nil（显示 "—"，不推断）。
+    /// 部落角色：官方文档化取值映射（leader/coLeader/admin/member），未知值原样透传（不推断）。
+    private func roleLabel(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        switch raw {
+        case "leader": return "首领"
+        case "coLeader": return "副首领"
+        case "admin": return "长老"
+        case "member": return "成员"
+        default: return raw
+        }
+    }
+
+    /// 传奇赛季行：`排名 · 奖杯`；rank 为 0（官方表示未上榜）时省略排名只显示奖杯；
+    /// 字段全缺时返回 nil（显示 "—"，不推断）。
     private func seasonLabel(_ season: LegendSeason?) -> String? {
         guard let season else { return nil }
         let parts = [
-            season.rank.map { "第 \($0) 名" },
+            season.rank.flatMap { $0 > 0 ? "第 \($0) 名" : nil },
             season.trophies.map { "\($0) 杯" },
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")

@@ -338,4 +338,21 @@ final class GameCatalogTests: XCTestCase {
                          "\(entry.item.section) \(entry.item.dataID) \(entry.slot) 有 missingReason 不应解析出 URL")
         }
     }
+
+    /// 版本参数：不存在的版本目录 → nil（UI 回落 SF Symbol，静默安全）；
+    /// 明确版本（18.400.13）→ 与默认版本解析一致。
+    func testBundledURLVersionParameter() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let renderable = try XCTUnwrap(allAssetRefs(in: catalog)
+            .map(\.ref).first { $0.isRenderable })
+        // 不存在的版本：资源子目录不存在 → nil（不崩溃、不回退到默认版本）
+        XCTAssertNil(renderable.bundledURL(version: "0.0.0-no-such-version"),
+                     "不存在的版本目录不应解析出 URL")
+        // 显式指定 bundled 版本：与默认参数一致
+        XCTAssertNotNil(renderable.bundledURL(version: GameCatalog.defaultBundledVersion))
+        // 默认解析的 URL 必须含版本段（证明版本参数确实参与路径拼接）
+        let defaultURL = try XCTUnwrap(renderable.bundledURL())
+        XCTAssertTrue(defaultURL.path.contains(GameCatalog.defaultBundledVersion),
+                      "URL 应包含版本段（\(defaultURL.path)）")
+    }
 }

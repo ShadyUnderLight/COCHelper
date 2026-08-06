@@ -82,6 +82,11 @@ struct ClanCardView: View {
             statusLine(state)
             if let snapshot = state.lastGood {
                 clanSummary(state: state, snapshot: snapshot)
+                if !state.isCurrentParserVersion {
+                    Text("缓存使用旧字段解析规则，请刷新部落数据以获取最新字段。")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
                 if !state.unrecognizedKeys.isEmpty {
                     Text("官方响应包含未识别字段：" + state.unrecognizedKeys.joined(separator: "、"))
                         .font(.caption2)
@@ -231,11 +236,27 @@ struct ClanCardView: View {
                 GridRow {
                     metric("战争日志", snapshot.isWarLogPublic.map { $0 ? "公开" : "不公开" })
                     metric("资本大厅", snapshot.clanCapital?.capitalHallLevel.map { "\($0) 级" })
-                    metric("", nil)
+                    metric("资本联赛", snapshot.capitalLeague?.name)
                 }
-                if let requiredTrophies = snapshot.requiredTrophies, requiredTrophies > 0 {
+                if snapshot.clanBuilderBasePoints != nil
+                    || snapshot.clanCapitalPoints != nil {
                     GridRow {
-                        metric("入会奖杯", "\(requiredTrophies)")
+                        metric("建筑大师积分", snapshot.clanBuilderBasePoints.map { "\($0)" })
+                        metric("部落资本积分", snapshot.clanCapitalPoints.map { "\($0)" })
+                        metric("", nil)
+                    }
+                }
+                if snapshot.requiredTrophies != nil
+                    || snapshot.requiredBuilderBaseTrophies != nil
+                    || snapshot.requiredTownHallLevel != nil
+                    || snapshot.requiredLeagueTier != nil {
+                    GridRow {
+                        metric("入会奖杯", snapshot.requiredTrophies.map { "\($0)" })
+                        metric("建筑大师奖杯", snapshot.requiredBuilderBaseTrophies.map { "\($0)" })
+                        metric("所需大本", snapshot.requiredTownHallLevel.map { "\($0) 本" })
+                    }
+                    GridRow {
+                        metric("所需联赛等级", snapshot.requiredLeagueTier.map { "\($0)" })
                         metric("", nil)
                         metric("", nil)
                     }

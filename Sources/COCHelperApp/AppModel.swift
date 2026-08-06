@@ -540,6 +540,9 @@ public final class AppModel: ObservableObject {
         if isRefreshingClanData {
             // 被占用时排队记录 tag：补跑必须覆盖手动 tag（B1 修复——
             // 旧实现置 pendingClanRefreshAll 补跑村庄全量，手动 tag 被静默吞掉）。
+            // 注：即使 tag 已在当前批次中仍入队——手动刷新语义是"补跑确保
+            // 最新数据"（B1 测试锁定），重复请求是故意的，不属于 single-flight
+            // 范围（single-flight 仅约束 resolveClan 解析路径）。
             pendingClanRefreshTags.insert(tag)
             return
         }
@@ -1075,11 +1078,26 @@ public final class AppModel: ObservableObject {
     /// 中——等待条件必须覆盖 `pendingClanRefreshTags`（显式 tag 排队）与
     /// `pendingClanRefreshAll`（村庄全量联动排队，补跑集合动态读当前村庄 tags）。
     private func isClanRefreshPending(involving tag: String) -> Bool {
-        if refreshingClanTags.contains(tag) { return true }
-        if pendingClanRefreshTags.contains(tag) { return true }
-        if pendingClanRefreshAll {
-            return villages.contains { $0.officialAPIState?.currentClanTag == tag }
-        }
+        Self.isClanRefreshPending(
+            inFlightTags: refreshingClanTags,
+            queuedTags: pendingClanRefreshTags,
+            queuedAll: pendingClanRefreshAll,
+            villageClanTags: villages.compactMap { $0.officialAPIState?.currentClanTag },
+            tag: tag
+        )
+    }
+
+    /// single-flight 判定谓词（纯函数，独立可测；模式同 `shouldSkipFailedOverwrite`）。
+    static func isClanRefreshPending(
+        inFlightTags: Set<String>,
+        queuedTags: Set<String>,
+        queuedAll: Bool,
+        villageClanTags: [String],
+        tag: String
+    ) -> Bool {
+        if inFlightTags.contains(tag) { return true }
+        if queuedTags.contains(tag) { return true }
+        if queuedAll { return villageClanTags.contains(tag) }
         return false
     }
 

@@ -354,6 +354,24 @@ final class AppModelClanResolveTests: XCTestCase {
         XCTAssertEqual(counter.count(forTag: "#AAA"), 1, "批次 A 正常请求一次")
     }
 
+    // MARK: - isClanRefreshPending 谓词边界（纯函数，无需时序）
+
+    /// 三个来源（当前批次 / 显式排队 / 全量排队的村庄 tags）逐一命中。
+    @MainActor
+    func testIsClanRefreshPendingMatchesEachSource() {
+        XCTAssertTrue(AppModel.isClanRefreshPending(
+            inFlightTags: ["#A"], queuedTags: [], queuedAll: false, villageClanTags: [], tag: "#A"))
+        XCTAssertTrue(AppModel.isClanRefreshPending(
+            inFlightTags: [], queuedTags: ["#B"], queuedAll: false, villageClanTags: [], tag: "#B"))
+        XCTAssertTrue(AppModel.isClanRefreshPending(
+            inFlightTags: [], queuedTags: [], queuedAll: true, villageClanTags: ["#C"], tag: "#C"))
+        XCTAssertFalse(AppModel.isClanRefreshPending(
+            inFlightTags: [], queuedTags: [], queuedAll: false, villageClanTags: [], tag: "#X"))
+        // queuedAll 但村庄 tags 不含该 tag（动态集合丢弃）→ false（等待退出，fallthrough 请求）
+        XCTAssertFalse(AppModel.isClanRefreshPending(
+            inFlightTags: [], queuedTags: [], queuedAll: true, villageClanTags: ["#C"], tag: "#X"))
+    }
+
     // MARK: - C1 防回退谓词边界（纯函数，无需并发时序）
 
     private func clanState(_ status: OfficialAPIRequestStatus, fetchedAt: Date?) -> ClanAPIState {

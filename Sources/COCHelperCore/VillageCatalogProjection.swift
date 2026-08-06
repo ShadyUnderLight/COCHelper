@@ -59,13 +59,21 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 避免两处手写条件漂移。
     public var needsReimport: Bool { timerSeconds != nil && remainingSeconds == 0 }
 
-    /// 目录视觉资产（icon 或 levelVisual）的缺失原因；两者均可用时 icon 优先。
-    /// 注意：这是缺失原因优先级（icon 优先），与 `preferredAssetURLs` 的显示
-    /// 优先级（当前等级资产优先，4 级链）相反，勿混用。当前 bundled 目录
-    /// （18.400.13）：27 个引用带缺失原因（23 个唯一键，export_not_found /
-    /// render_failed）；UI 依据该值给出可见缺失状态。
+    /// 视觉资产缺失原因（用于 UI 降级提示角标）。
+    ///
+    /// 优先级：level-level 资产优先于 item-level（显示链首选缺失最值得提示，
+    /// Issue #39 P2：currentLevel 对应等级资产 render_failed 时必须可见提示，
+    /// 不能静默回退 item-level 外观）；同层级内 icon 优先（保持 #34 语义：
+    /// 报告"缺失的图标类资产"）。两者均可用时返回 nil。
+    /// 注意：这是缺失原因优先级，与 `preferredAssetURLs` 的显示候选顺序
+    /// （currentLevelVisual → currentLevelIcon → levelVisual → icon）不同维
+    /// 度，勿混用。当前 bundled 目录（18.400.13）：部分等级资产带缺失原因
+    /// （export_not_found / render_failed）；UI 依据该值给出可见缺失状态。
     public var assetMissingReason: String? {
-        icon?.missingReason ?? levelVisual?.missingReason
+        currentLevelIcon?.missingReason
+            ?? currentLevelVisual?.missingReason
+            ?? icon?.missingReason
+            ?? levelVisual?.missingReason
     }
 
     /// 视觉资产候选 URL（4 级回退链，运行时文件存在性过滤）：

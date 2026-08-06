@@ -914,6 +914,77 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
+    /// P2 扩展（Issue #39）：assetMissingReason 必须覆盖 current-level 资产。
+    /// level-level 缺失优先于 item-level（显示链首选缺失最值得提示），
+    /// 同层级内 icon 优先（保持 #34 缺失原因哲学）。
+    func testAssetMissingReasonCoversCurrentLevelAssets() throws {
+        let itemIconMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "item_icon_missing"
+        )
+        let itemLevelVisualMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "item_lv_missing"
+        )
+        let levelIconMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "level_icon_missing"
+        )
+        let levelLevelVisualMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "level_lv_missing"
+        )
+        let renderable = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: "icons/barracks.png", missingReason: nil
+        )
+
+        // 当前等级 levelVisual 缺失 + item-level 全部可渲染 → 必须提示 level 级缺失
+        // （P2 核心场景：buildings:1000059 Lv2-9 静默回退的修复）。
+        XCTAssertEqual(
+            makeAssetState(icon: renderable, levelVisual: renderable,
+                           currentLevelVisual: levelLevelVisualMissing).assetMissingReason,
+            "level_lv_missing",
+            "currentLevelVisual 缺失 → 返回其缺失原因（即使 item-level 可渲染）"
+        )
+        // 同层级 icon 优先：currentLevelIcon 缺失优先于 currentLevelVisual 缺失。
+        XCTAssertEqual(
+            makeAssetState(icon: renderable, levelVisual: renderable,
+                           currentLevelIcon: levelIconMissing,
+                           currentLevelVisual: levelLevelVisualMissing).assetMissingReason,
+            "level_icon_missing",
+            "level 级 icon 缺失 → 优先于 level 级 levelVisual（icon 优先哲学）"
+        )
+        // level-level 优先于 item-level：currentLevelVisual 缺失 + item icon 缺失
+        // → 返回 level 级原因（显示链首选）。
+        XCTAssertEqual(
+            makeAssetState(icon: itemIconMissing, levelVisual: renderable,
+                           currentLevelVisual: levelLevelVisualMissing).assetMissingReason,
+            "level_lv_missing",
+            "level 级缺失优先于 item 级缺失（显示链首选）"
+        )
+        // 全部可渲染 → nil（无角标）。
+        XCTAssertNil(
+            makeAssetState(icon: renderable, levelVisual: renderable,
+                           currentLevelIcon: renderable, currentLevelVisual: renderable).assetMissingReason,
+            "全部可渲染 → nil（不显示缺失角标）"
+        )
+    }
+
+    /// P2 数据锚点（bundled）：buildings:1000059（攻城机器工坊）Lv2-9 的
+    /// level 级 levelVisual 为 render_failed（renderedPath nil）——投影后
+    /// assetMissingReason 必须非 nil，否则 UI 静默显示 Lv1 外观且无降级提示。
+    func testBundledSiegeWorkshopLevelAssetMissingReason() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_059, level: 2, path: "0")]
+        ])
+        let state = try XCTUnwrap(
+            project(village: village, catalog: catalog, base: .home).items.first
+        )
+        XCTAssertEqual(state.currentLevelVisual?.missingReason, "render_failed",
+                       "buildings:1000059 Lv2 levelVisual 应为 render_failed（数据契约）")
+        XCTAssertEqual(
+            state.assetMissingReason, "render_failed",
+            "level 级资产 render_failed 必须反映到 assetMissingReason（P2 静默回退修复）"
+        )
+    }
+
     // MARK: - VillageItemState.preferredAssetURLs 运行时回退（Issue #34，P2 评审修复）
 
     /// bundled 目录前 count 个可渲染且文件真实存在的资产路径（顺序稳定：buildings 优先）。

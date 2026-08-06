@@ -216,6 +216,156 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertEqual(total.completedCount, 1)
     }
 
+    // MARK: - isFullyMaxed（issue #53：全部可确认且已满级）
+
+    func testIsFullyMaxedTrueWhenAllMaxed() {
+        let single = VillageDetailProjection.totalCompletion(from: [item(status: .maxed)])
+        XCTAssertTrue(single.isFullyMaxed, "单 maxed 应为满级")
+        let both = VillageDetailProjection.totalCompletion(
+            from: [item(id: "a", status: .maxed), item(id: "b", status: .maxed)])
+        XCTAssertTrue(both.isFullyMaxed, "全部 maxed 应为满级")
+    }
+
+    func testIsFullyMaxedFalseWhenOneComplete() {
+        let total = VillageDetailProjection.totalCompletion(
+            from: [item(id: "a", status: .maxed), item(id: "b", status: .complete)])
+        XCTAssertFalse(total.isFullyMaxed, "存在未满级 known 项不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenOneUpgrading() {
+        // 升级中：status == .upgrading（remainingSeconds > 0）→ 不算完成。
+        let total = VillageDetailProjection.totalCompletion(from: [
+            item(id: "a", status: .maxed),
+            item(id: "b", status: .upgrading, level: 3, maxLevel: 10, isUpgrading: true, nextLevel: 4),
+        ])
+        XCTAssertFalse(total.isFullyMaxed, "upgrading 项不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenFinishedTimerNeedsReimport() {
+        // 计时结束待重新导入（timerSeconds != nil && remainingSeconds == 0）：
+        // 快照 level 仍是升级前等级（未更新）→ status 非 .maxed → 不算完成。
+        // item() helper 无法构造此形态（timer 字段由 isUpgrading 硬编码），直接构造。
+        let needsReimport = VillageItemState(
+            id: "b",
+            section: "buildings",
+            dataID: 1,
+            base: .home,
+            name: "item-b",
+            category: .buildings,
+            currentLevel: 3,
+            count: 1,
+            timerSeconds: 3600,
+            remainingSeconds: 0,
+            nextLevel: nil,
+            nextLevelDurationSeconds: nil,
+            maxLevel: 10,
+            status: .complete,
+            missingReason: nil,
+            icon: nil,
+            levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
+            isNested: false,
+            displayCategory: nil
+        )
+        XCTAssertTrue(needsReimport.needsReimport, "前置：构造形态确为待重新导入")
+        let total = VillageDetailProjection.totalCompletion(from: [
+            item(id: "a", status: .maxed),
+            needsReimport,
+        ])
+        XCTAssertFalse(total.isFullyMaxed, "计时结束待重新导入项不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenUnknownPresent() {
+        // 关键负向：completedCount == knownCount 但 unknownCount > 0。
+        // completionRatio 可达 1.0，但 isFullyMaxed 刻意更严格，不得判满级。
+        let total = VillageDetailProjection.totalCompletion(from: [
+            item(id: "a", status: .maxed),
+            item(id: "b", status: .maxed),
+            item(id: "c", status: .unknown, maxLevel: nil),
+        ])
+        XCTAssertTrue(stat(total) == (2, 2, 1), "got \(stat(total))")
+        XCTAssertEqual(total.completionRatio, 1.0, "前置：completionRatio == 1.0 是可达的")
+        XCTAssertFalse(total.isFullyMaxed, "unknown > 0 时不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenCatalogUnusable() {
+        // 目录不可用/版本不匹配：knownCount 恒为 0 → 不得判满级（total 与分类一致）。
+        let items = [item(id: "a", status: .maxed), item(id: "b", status: .maxed)]
+        let total = VillageDetailProjection.totalCompletion(from: items, catalogIsUsable: false)
+        XCTAssertTrue(stat(total) == (0, 0, 2), "got \(stat(total))")
+        XCTAssertFalse(total.isFullyMaxed)
+        let stats = VillageDetailProjection.completionStats(from: items, catalogIsUsable: false)
+        XCTAssertTrue(stats.allSatisfy { !$0.isFullyMaxed }, "分类 stats 也不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenNoKnownItems() {
+        let empty = VillageDetailProjection.totalCompletion(from: [])
+        XCTAssertFalse(empty.isFullyMaxed, "空分类不得判满级")
+        let unknownOnly = VillageDetailProjection.totalCompletion(from: [item(status: .unknown, maxLevel: nil)])
+        XCTAssertFalse(unknownOnly.isFullyMaxed, "无可确认项不得判满级")
+    }
+
+    func testIsFullyMaxedTotalAndCategoryShareContract() {
+        let allMaxed = [
+            item(id: "a", category: .buildings, status: .maxed),
+            item(id: "b", category: .traps, status: .maxed),
+        ]
+        let total1 = VillageDetailProjection.totalCompletion(from: allMaxed)
+        let stats1 = VillageDetailProjection.completionStats(from: allMaxed)
+        XCTAssertTrue(total1.isFullyMaxed)
+        XCTAssertTrue(stats1.allSatisfy(\.isFullyMaxed), "全 maxed 时各分类 stats 也应为满级")
+
+        let mixed = [
+            item(id: "a", category: .buildings, status: .maxed),
+            item(id: "b", category: .buildings, status: .complete),
+        ]
+        let total2 = VillageDetailProjection.totalCompletion(from: mixed)
+        let stats2 = VillageDetailProjection.completionStats(from: mixed)
+        XCTAssertFalse(total2.isFullyMaxed)
+        XCTAssertTrue(stats2.allSatisfy { !$0.isFullyMaxed }, "混合分类（maxed + complete 同组）不得判满级")
+    }
+
+    func testPropertyIsFullyMaxedConservation() {
+        var rng = SplitMix64(seed: 0x53_53)
+        for round in 0..<600 {
+            // 前 300 轮普通桶（category/other），后 300 轮混入 display 桶
+            //（defense/military/craftTable，category 恒 .buildings），覆盖 #37 拆分路径。
+            let items = round < 300
+                ? randomItems(&rng, count: 1 + Int(rng.next() % 30))
+                : randomDisplayItems(&rng, count: 1 + Int(rng.next() % 30))
+            let stats = VillageDetailProjection.completionStats(from: items)
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            // 不变量 1：total.isFullyMaxed ⟺ 所有非空分类 stats 均 isFullyMaxed。
+            // known/unknown/completed 在分类间是加法拆分；空分类 stats = (0,0,0) → false。
+            let nonEmptyStats = stats.filter { $0.knownCount > 0 || $0.unknownCount > 0 }
+            let allCategoriesFullyMaxed = !nonEmptyStats.isEmpty && nonEmptyStats.allSatisfy(\.isFullyMaxed)
+            XCTAssertEqual(
+                total.isFullyMaxed, allCategoriesFullyMaxed,
+                "total=\(stat(total)) stats=\(stats.map(stat))"
+            )
+
+            // 不变量 2：isFullyMaxed ⟹ completionRatio == 1.0（单向蕴含；
+            // 反例合法：unknown > 0 时 ratio 可能 == 1.0 但 isFullyMaxed == false）。
+            if total.isFullyMaxed {
+                XCTAssertEqual(total.completionRatio, 1.0)
+            }
+
+            // 不变量 3（oracle）：isFullyMaxed 必须与文档契约逐字等价——
+            // 防谓词被削弱（去掉 unknownCount == 0 / knownCount > 0）后
+            // 不变量 1 因 total/stats 共享同一谓词而同步翻转、无法检出。
+            let oracle = total.knownCount > 0 && total.unknownCount == 0
+                && total.completedCount == total.knownCount
+            XCTAssertEqual(total.isFullyMaxed, oracle, "total=\(stat(total))")
+            for s in stats {
+                let sOracle = s.knownCount > 0 && s.unknownCount == 0
+                    && s.completedCount == s.knownCount
+                XCTAssertEqual(s.isFullyMaxed, sOracle, "stats id=\(s.id) \(stat(s))")
+            }
+        }
+    }
+
     // MARK: - 嵌套归父（issue #24：嵌套 types/modules 归入根父的「类型/模块」区域）
 
     func testFlatItemsStandAloneWithNoChildren() {
@@ -646,6 +796,45 @@ final class VillageDetailProjectionTests: XCTestCase {
             return item(id: "r\(i)", category: category, status: status,
                         level: level, maxLevel: maxLevel,
                         isUpgrading: isUpgrading, nextLevel: nextLevel)
+        }
+    }
+
+    /// 带 display 桶（defense/military/craftTable）的随机生成器（issue #53 property 覆盖）。
+    /// display 项 category 恒 .buildings（与投影层 #37 契约一致），其余同 randomItems。
+    private func randomDisplayItems(_ rng: inout SplitMix64, count: Int) -> [VillageItemState] {
+        (0..<count).map { i in
+            let statusRoll = rng.next() % 6
+            let status: VillageItemStatus
+            switch statusRoll {
+            case 0: status = .complete
+            case 1: status = .maxed
+            case 2: status = .upgrading
+            case 3: status = .unknown
+            case 4: status = .unavailable
+            default: status = .available
+            }
+            let isCatalogHit = status != .unknown && status != .unavailable
+            let level: Int? = Int(rng.next() % 20)
+            let maxLevel: Int? = isCatalogHit ? Int(rng.next() % 20) : nil
+            let isUpgrading = status == .upgrading
+            let nextLevel: Int? = isUpgrading ? level.map { l in
+                (maxLevel != nil && rng.next() % 5 == 0) ? l + 2 : l + 1
+            } : nil
+            // 60% 概率 display 桶（category 恒 .buildings），40% 普通 category/other。
+            if rng.next() % 5 < 3 {
+                let dcs: [TrackerDisplayCategory?] = [.defense, .military, .craftTable, nil]
+                let dc = dcs[Int(rng.next() % UInt64(dcs.count))]
+                return item(id: "d\(i)", category: .buildings, displayCategory: dc,
+                            status: status, level: level, maxLevel: maxLevel,
+                            isUpgrading: isUpgrading, nextLevel: nextLevel)
+            } else {
+                let cats: [TrackerCategory?] = [.buildings, .traps, .troops, .spells,
+                    .siegeMachines, .heroes, .equipment, .pets, .guardians, nil]
+                let category = cats[Int(rng.next() % UInt64(cats.count))]
+                return item(id: "r\(i)", category: category, status: status,
+                            level: level, maxLevel: maxLevel,
+                            isUpgrading: isUpgrading, nextLevel: nextLevel)
+            }
         }
     }
 }

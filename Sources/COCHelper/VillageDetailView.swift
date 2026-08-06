@@ -74,6 +74,19 @@ struct VillageDetailView: View {
         // 分组 id 集合：数据变化（重新导入快照、切换基地等）后用于校正筛选，
         // 不得残留成错误的空筛选（issue #37 验收）。
         let groupIDs = groups.map(\.id)
+        // Issue #45：同类建筑组卡投影（buildings/buildings2 原始记录层）。
+        // 与 VillageCatalogProjection.project 并行调用：聚合层（agg: 前缀记录）
+        // 继续供完成度/诊断/筛选使用，组卡基于原始记录层，两者语义互不影响。
+        let buildingGroups = BuildingGroupProjection.project(
+            village: village, catalog: catalog, base: selectedBase, now: now
+        )
+        // 原始快照记录 id → 组。BuildingInstance.id 与 VillageItemState.id 同源
+        //（同一条快照记录），但聚合层记录 id 带 agg: 前缀，查找键需归一化
+        //（rawRecordID）。快照记录 id 全局唯一，字典 1:1。
+        let groupByInstanceID = Dictionary(
+            buildingGroups.flatMap { group in group.instances.map { ($0.id, group) } },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -81,7 +94,7 @@ struct VillageDetailView: View {
                 officialAPISection()
                 completionBar(total: total)
                 basePicker()
-                categoryFilterBar(groups: groups)
+                categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
 
                 if displayGroups.isEmpty {
                     Panel {
@@ -96,7 +109,13 @@ struct VillageDetailView: View {
                     }
                 } else {
                     ForEach(displayGroups) { group in
-                        sectionCard(group: group, now: now, stats: statsByKey[group.id], village: village)
+                        sectionCard(
+                            group: group,
+                            now: now,
+                            stats: statsByKey[group.id],
+                            village: village,
+                            groupByInstanceID: groupByInstanceID
+                        )
                     }
                 }
             }
@@ -291,48 +310,106 @@ struct VillageDetailView: View {
     /// issue #37：展示分类（防御/军事/精制台）作为一级筛选维度，原分类兜底。
     /// 计数规则与分组键一致：display 组按 displayCategory 匹配；无细分项的
     /// category 组按原分类匹配；category 为 nil 的项归「其他」。
-    private func categoryFilterBar(groups: [VillageDetailGroup]) -> some View {
+    /// issue #53：满级判定复用 completion 统计（key = completion.id），
+    /// 与分组桶键天然一致；空分类（count 0）无 stats → 不显示勾。
+    private func categoryFilterBar(
+        groups: [VillageDetailGroup],
+        total: VillageCategoryCompletion,
+        statsByKey: [String: VillageCategoryCompletion]
+    ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                filterChip(title: "全部", count: groups.reduce(0) { $0 + $1.items.count }, filter: .all)
+                filterChip(
+                    title: "全部",
+                    count: groups.reduce(0) { $0 + $1.items.count },
+                    filter: .all,
+                    isFullyMaxed: total.isFullyMaxed
+                )
                 ForEach(TrackerDisplayCategory.allCases) { display in
                     let count = groups.first(where: { $0.displayCategory == display })?.items.count ?? 0
-                    filterChip(title: display.title, count: count, filter: .display(display))
+                    filterChip(
+                        title: display.title,
+                        count: count,
+                        filter: .display(display),
+                        isFullyMaxed: statsByKey[display.rawValue]?.isFullyMaxed ?? false
+                    )
                 }
                 ForEach(TrackerCategory.allCases) { category in
                     let count = groups.first(where: { $0.displayCategory == nil && $0.category == category })?.items.count ?? 0
-                    filterChip(title: category.title, count: count, filter: .category(category))
+                    filterChip(
+                        title: category.title,
+                        count: count,
+                        filter: .category(category),
+                        isFullyMaxed: statsByKey[category.rawValue]?.isFullyMaxed ?? false
+                    )
                 }
                 let otherCount = groups.first(where: { $0.displayCategory == nil && $0.category == nil })?.items.count ?? 0
                 if otherCount > 0 {
-                    filterChip(title: "其他", count: otherCount, filter: .other)
+                    filterChip(
+                        title: "其他",
+                        count: otherCount,
+                        filter: .other,
+                        isFullyMaxed: statsByKey["other"]?.isFullyMaxed ?? false
+                    )
                 }
             }
         }
     }
 
-    private func filterChip(title: String, count: Int, filter: CategoryFilter) -> some View {
-        Button {
+    /// issue #53：全部满级（isFullyMaxed）的 chip 以绿色 + 勾选图标呈现；
+    /// 未满级路径与 issue #37 既有灰/蓝样式完全一致，不改变筛选语义与点击区域。
+    private func filterChip(
+        title: String,
+        count: Int,
+        filter: CategoryFilter,
+        isFullyMaxed: Bool
+    ) -> some View {
+        let isSelected = selectedFilter == filter
+        let foreground: Color
+        let background: Color
+        let countColor: Color
+        if isFullyMaxed {
+            foreground = isSelected ? Color.white : .green
+            background = isSelected ? Color.green : Color.green.opacity(0.15)
+            countColor = isSelected ? Color.white.opacity(0.8) : Color.green.opacity(0.8)
+        } else {
+            foreground = isSelected ? Color.white : Color.secondary
+            background = isSelected ? Color.cocAccent : Color.white.opacity(0.06)
+            countColor = isSelected ? Color.white.opacity(0.8) : .secondary
+        }
+        return Button {
             selectedFilter = filter
         } label: {
-            HStack(spacing: 5) {
+            let chip = HStack(spacing: 5) {
                 Text(title)
                 if count > 0 {
                     Text(String(count))
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(selectedFilter == filter ? Color.white.opacity(0.8) : .secondary)
+                        .foregroundStyle(countColor)
+                }
+                if isFullyMaxed {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(foreground)
+                        // 纯装饰图标：不进辅助功能树，避免被误报为选中/多读一次。
+                        .accessibilityHidden(true)
                 }
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(selectedFilter == filter ? Color.white : Color.secondary)
+            .foregroundStyle(foreground)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(
-                selectedFilter == filter ? Color.cocAccent : Color.white.opacity(0.06),
-                in: Capsule()
-            )
+            .background(background, in: Capsule())
+            if isFullyMaxed {
+                chip.accessibilityLabel("\(title) \(count) 全部满级")
+            } else {
+                chip
+            }
         }
         .buttonStyle(.plain)
+        // 显式声明筛选选中态（外部 review P2：勾选图标曾误报 selected，
+        // 实际选中的 chip 反而无选中语义）。
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func filtered(_ groups: [VillageDetailGroup]) -> [VillageDetailGroup] {
@@ -346,11 +423,15 @@ struct VillageDetailView: View {
 
     // MARK: - 列表
 
+    /// 分组卡片：标题 + 完成度（保持现状）；内容按展示分类分派（Issue #45）——
+    /// 精制台整组走旧列表（父子缩进），其余组（buildings/buildings2 平铺记录）
+    /// 接入组卡，无组卡归属的 items（防御性兜底）继续走旧行。
     private func sectionCard(
         group: VillageDetailGroup,
         now: Date,
         stats: VillageCategoryCompletion?,
-        village: VillageProfile
+        village: VillageProfile,
+        groupByInstanceID: [String: BuildingGroup]
     ) -> some View {
         Panel {
             VStack(alignment: .leading, spacing: 10) {
@@ -364,20 +445,17 @@ struct VillageDetailView: View {
                     sectionCompletionLabel(stats: stats)
                 }
 
-                LazyVStack(spacing: 0) {
-                    // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
-                    // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
-                    let rows = VillageDetailProjection.parentedRows(from: group.items)
-                    ForEach(rows) { row in
-                        itemRow(row.item, group: group, now: now, village: village)
-                        ForEach(row.children) { child in
-                            Divider().padding(.leading, 46)
-                            itemRow(child, group: group, now: now, village: village, indented: true)
-                        }
-                        if row.id != rows.last?.id {
-                            Divider().padding(.leading, 46)
-                        }
-                    }
+                if group.displayCategory == .craftTable {
+                    // 精制台：整组走旧列表（issue #24 父子缩进），不接入组卡。
+                    legacyRows(items: group.items, group: group, now: now, village: village)
+                } else {
+                    groupedRows(
+                        items: group.items,
+                        group: group,
+                        groupByInstanceID: groupByInstanceID,
+                        now: now,
+                        village: village
+                    )
                 }
             }
         }
@@ -413,10 +491,83 @@ struct VillageDetailView: View {
                 showsVillageColumn: false
             )
             // 嵌套项缩进展示在根父行下（issue #24「类型/模块」区域）。
-            .padding(.leading, indented ? 24 : 0)
+            .padding(.leading, indented ? UpgradeDisplayLayout.nestedIndent : 0)
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
+    }
+
+    /// Issue #45：非精制台分组的组卡内容。有组归属的 items 按 BuildingGroup 聚类
+    /// 渲染组卡（组按 items 首现顺序，组内实例保持快照输入序），无归属的 items
+    ///（防御性兜底：未知 section 项、嵌套后代等）走旧列表行，统一放在组卡下方。
+    /// 聚合行与组卡实例数量可能不同（如同等级墙聚合为 1 行 ×N，组卡按原始记录
+    /// 逐实例展示），chips 计数仍按聚合口径，已知外观差异（Task 4 验证）。
+    private func groupedRows(
+        items: [VillageItemState],
+        group: VillageDetailGroup,
+        groupByInstanceID: [String: BuildingGroup],
+        now: Date,
+        village: VillageProfile
+    ) -> some View {
+        var orderedGroups: [BuildingGroup] = []
+        var seenGroupIDs = Set<String>()
+        var fallbackItems: [VillageItemState] = []
+        for item in items {
+            if let buildingGroup = groupByInstanceID[Self.rawRecordID(item.id)] {
+                if !seenGroupIDs.contains(buildingGroup.id) {
+                    seenGroupIDs.insert(buildingGroup.id)
+                    orderedGroups.append(buildingGroup)
+                }
+            } else {
+                fallbackItems.append(item)
+            }
+        }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(orderedGroups) { buildingGroup in
+                BuildingGroupCard(group: buildingGroup) { instance in
+                    selectedItem = instance.item
+                }
+            }
+            if !fallbackItems.isEmpty {
+                legacyRows(items: fallbackItems, group: group, now: now, village: village)
+            }
+        }
+    }
+
+    /// 旧列表行（精制台整组 / 无组卡归属的兜底 items）：issue #24 父子缩进平铺。
+    private func legacyRows(
+        items: [VillageItemState],
+        group: VillageDetailGroup,
+        now: Date,
+        village: VillageProfile
+    ) -> some View {
+        LazyVStack(spacing: 0) {
+            // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
+            // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
+            let rows = VillageDetailProjection.parentedRows(from: items)
+            ForEach(rows) { row in
+                itemRow(row.item, group: group, now: now, village: village)
+                ForEach(row.children) { child in
+                    Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
+                    itemRow(child, group: group, now: now, village: village, indented: true)
+                }
+                if row.id != rows.last?.id {
+                    Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
+                }
+            }
+        }
+    }
+
+    /// 聚合记录 id 归一化：`agg:` 前缀 → 原始快照记录 id。VillageDetailProjection
+    /// 的 items 来自聚合层（aggregate 对静态记录统一加 agg: 前缀），而
+    /// BuildingGroupProjection 的实例 id 是原始记录层 id——查找键不归一化会
+    /// 全部 miss，组卡只剩升级中记录（Issue #45 组卡聚类键）。
+    /// 剥离安全前提：原始快照 id 由解析器生成为 `section:path` 形态
+    /// （AccountSnapshot），结构上不可能以 `agg:` 开头，故剥离只映射聚合行
+    /// 回其源记录，不会误伤原始 id。
+    private static func rawRecordID(_ id: String) -> String {
+        id.hasPrefix("agg:") ? String(id.dropFirst(4)) : id
     }
 
     private func sectionCompletionLabel(stats: VillageCategoryCompletion?) -> some View {
@@ -425,7 +576,9 @@ struct VillageDetailView: View {
         }
         let summary = String(stats.completedCount) + "/" + String(stats.knownCount)
             + " · " + String(Int((ratio * 100).rounded())) + "%"
-        let tint: Color = stats.completedCount == stats.knownCount ? .green : .secondary
+        // issue #53：满级判定改用严格谓词 isFullyMaxed——known 全满但
+        // unknownCount > 0（存在未知/未观测项）时不再标绿，与 chip 一致。
+        let tint: Color = stats.isFullyMaxed ? .green : .secondary
         return Text(summary)
             .font(.caption2.monospacedDigit())
             .foregroundStyle(tint)

@@ -208,7 +208,7 @@ public struct VillageCatalogProjection: Sendable {
 
     // MARK: - Record derivation
 
-    private static func records(
+    static func records(
         from snapshot: AccountSnapshot,
         catalog: GameCatalog?,
         base: TrackerBase,

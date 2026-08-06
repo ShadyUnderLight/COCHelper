@@ -597,7 +597,7 @@ private struct ActiveUpgradesPanel: View {
                         ForEach(records) { record in
                             UpgradeDisplayRow(record: record, now: now)
                             if record.id != records.last?.id {
-                                Divider().padding(.leading, 46)
+                                Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
                             }
                         }
                     }
@@ -629,7 +629,7 @@ private struct PendingReimportBlock: View {
                 ForEach(records) { record in
                     UpgradeDisplayRow(record: record, now: now)
                     if record.id != records.last?.id {
-                        Divider().padding(.leading, 46)
+                        Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
                     }
                 }
             }
@@ -653,7 +653,7 @@ private struct TrackerTableHeader: View {
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(.secondary)
-        .padding(.leading, 46)
+        .padding(.leading, UpgradeDisplayLayout.listDividerLeading)
         .padding(.trailing, 4)
     }
 }

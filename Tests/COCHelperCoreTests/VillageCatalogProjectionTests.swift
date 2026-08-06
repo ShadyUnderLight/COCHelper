@@ -1372,6 +1372,72 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
+    /// P3 property-based（全空间穷举）：bundled 目录 buildings/buildings2/traps/traps2
+    /// 的每个 item × 每个 level 组合都投影一次，断言 currentLevelVisual/currentLevelIcon
+    /// 精确等于该 level 的 ref（ref 存在则相等、不存在则 nil）。
+    func testPropertyEveryBundledLevelResolvesExactly() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        var checked = 0
+        for section in ["buildings", "buildings2", "traps", "traps2"] {
+            let base: TrackerBase = section.hasSuffix("2") ? .builder : .home
+            for item in catalog.items(in: section) {
+                for level in item.levels {
+                    let village = makeVillage(objectSections: [
+                        section: [makeItem(section: section, dataID: item.dataID,
+                                           level: level.level, path: "0")]
+                    ])
+                    let state = try XCTUnwrap(
+                        project(village: village, catalog: catalog, base: base).items.first,
+                        "\(section):\(item.dataID)@Lv\(level.level) 投影应产出状态"
+                    )
+                    XCTAssertEqual(
+                        state.currentLevelVisual?.renderedPath,
+                        level.levelVisual?.renderedPath,
+                        "\(section):\(item.dataID)@Lv\(level.level) currentLevelVisual 必须精确命中"
+                    )
+                    XCTAssertEqual(
+                        state.currentLevelIcon?.renderedPath,
+                        level.icon?.renderedPath,
+                        "\(section):\(item.dataID)@Lv\(level.level) currentLevelIcon 必须精确命中"
+                    )
+                    checked += 1
+                }
+            }
+        }
+        XCTAssertGreaterThan(checked, 500, "穷举应覆盖 500+ 个 item×level 组合（实际 \(checked)）")
+    }
+
+    /// P2 property-based（确定性随机）：随机 (section, dataID, level)，level 可能
+    /// 为 0 / 超范围 / 目录无此等级 —— 断言绝不猜测：字段只可能等于按值匹配的
+    /// CatalogLevel ref，无匹配则必为 nil。
+    func testPropertyRandomLevelsNeverGuessAssets() throws {
+        var rng = SeededRNG(seed: 20_260_806)
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let sections = ["buildings", "buildings2", "traps", "traps2", "units", "heroes"]
+        for _ in 0..<60 {
+            let section = sections[Int.random(in: 0..<sections.count, using: &rng)]
+            let items = catalog.items(in: section)
+            let item = items[Int.random(in: 0..<items.count, using: &rng)]
+            let level = Int.random(in: 0...(item.maxLevel + 3), using: &rng)
+            let base: TrackerBase = section.hasSuffix("2") ? .builder : .home
+            let village = makeVillage(objectSections: [
+                section: [makeItem(section: section, dataID: item.dataID, level: level, path: "0")]
+            ])
+            let state = try XCTUnwrap(
+                project(village: village, catalog: catalog, base: base).items.first
+            )
+            let matched = item.levels.first { $0.level == level }
+            XCTAssertEqual(
+                state.currentLevelVisual?.renderedPath, matched?.levelVisual?.renderedPath,
+                "\(section):\(item.dataID)@Lv\(level) 不得猜测等级资产"
+            )
+            XCTAssertEqual(
+                state.currentLevelIcon?.renderedPath, matched?.icon?.renderedPath,
+                "\(section):\(item.dataID)@Lv\(level) 不得猜测等级资产"
+            )
+        }
+    }
+
     // MARK: - Issue #17: 数组重排稳定性与 boost 非归属
 
     /// 模拟「重排后的 JSON 重新导入」：按新位置重建 id（与解析器规则一致：

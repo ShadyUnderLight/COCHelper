@@ -34,6 +34,16 @@ final class OfficialPlayerTagValidatorTests: XCTestCase {
         XCTAssertFalse(OfficialPlayerTagValidator.isValid(""))
     }
 
+    /// 钉住 isASCII 门（Issue #48 历史教训：非 ASCII 走私，如 ß→SS 折叠）：
+    /// Ä/É 是 Uppercase+Letter 但非 ASCII，若 isValid 丢失 isASCII 检查会被放行；
+    /// property 生成器字符集纯 ASCII，结构上喂不进这类输入，必须显式断言。
+    func testIsValidRejectsNonASCIIUppercase() {
+        XCTAssertFalse(OfficialPlayerTagValidator.isValid("#ÄBC"))
+        XCTAssertFalse(OfficialPlayerTagValidator.isValid("#É"))
+        XCTAssertFalse(OfficialPlayerTagValidator.isValid("#Ü"))
+        XCTAssertFalse(OfficialPlayerTagValidator.isValid("#Ö9"))
+    }
+
     // MARK: - 长度上限（权威规则：官方 tag 8-12 位，body ≤ 14 防御上限）
 
     func testIsValidAcceptsMaxLengthBody() {
@@ -69,11 +79,12 @@ final class OfficialPlayerTagValidatorTests: XCTestCase {
 
     /// 参照实现（**独立技术路线**，Issue #48 Step 1 契约审计修复）：
     /// 用正则锚定完整匹配验证 tag 合法 ⇔ `#` + 1...14 个大写字母/数字。
+    /// `\z` 表达绝对末尾锚定（不依赖 ICU `$` 对行尾换行的平台行为）；
     /// 与生产实现（字符扫描 + 长度判断）结构不同，互相证伪——
     /// 逐字同构的参照实现只能抓"两边不同步"，抓不到"两边共有的逻辑 bug"
     /// （例如把 14 改成 20、漏掉字符集检查等）。
     private func referenceIsValid(_ tag: String) -> Bool {
-        tag.range(of: "^#[A-Z0-9]{1,14}$", options: .regularExpression) != nil
+        tag.range(of: "^#[A-Z0-9]{1,14}\\z", options: .regularExpression) != nil
     }
 
     func testPropertyIsValidMatchesReference() {
@@ -135,10 +146,10 @@ struct SeededRandomGenerator {
     }
 
     /// 随机 tag：可能包含非法字符、小写、空白，长度 0-20。
-    /// 注：随机样本几乎不可能命中「全大写字母数字且超长」的暴露形态（概率约
-    /// 1.3e-7/样本），长度上限规则由 `testIsValidAcceptsMaxLengthBody` /
-    /// `testIsValidRejectsOverlongBody` 两个显式边界测试钉住，property 测试
-    /// 负责格式规则（字符集/前缀）的一致性对比。
+    /// 注：随机样本几乎不可能命中「全大写字母数字且超长」的暴露形态（body≥15
+    /// 的并集概率约 8e-6/样本，2000 样本期望命中 ≈1.7%），长度上限规则由
+    /// `testIsValidAcceptsMaxLengthBody` / `testIsValidRejectsOverlongBody`
+    /// 两个显式边界测试钉住，property 测试负责格式规则（字符集/前缀）的一致性对比。
     mutating func randomTag() -> String {
         let length = randomInt(in: 0...20)
         let charset = Array("#ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz-_. ")

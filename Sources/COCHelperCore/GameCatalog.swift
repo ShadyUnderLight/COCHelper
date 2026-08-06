@@ -75,6 +75,15 @@ extension CatalogAssetRef {
             subdirectory: subdirectory
         )
     }
+
+    /// 按显示优先级依次解析候选 ref 的 Bundle URL。`bundledURL` 仅在
+    /// isRenderable 且文件真实存在时返回 URL，因此「元数据可渲染但文件缺失」
+    /// 的候选被自动过滤——UI 对返回数组依次做 NSImage 加载探测，实现
+    /// levelVisual → icon → SF Symbol 的运行时回退链（Issue #34 P2 评审：
+    /// 不能只按元数据选定一个 ref、加载失败就直接回退 SF Symbol 而跳过次选）。
+    public static func availableURLs(_ refs: [CatalogAssetRef?], version: String) -> [URL] {
+        refs.compactMap { $0?.bundledURL(version: version) }
+    }
 }
 
 // MARK: - Items
@@ -108,6 +117,13 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
     public let missingReason: String?
+
+    /// 逐级视觉资产候选 URL（levelVisual → icon，运行时文件存在性过滤）；
+    /// 与 `VillageItemState.preferredAssetURLs` 共用 `availableURLs` 实现，
+    /// 防逐级行与列表行/详情头部优先级漂移（Issue #34 P2 评审）。
+    public func preferredAssetURLs(version: String) -> [URL] {
+        CatalogAssetRef.availableURLs([levelVisual, icon], version: version)
+    }
 
     public var id: String { String(level) }
 }

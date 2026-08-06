@@ -5,9 +5,9 @@ import COCHelperCore
 /// Issue #15：升级总览 / 村庄详情共用的升级行组件。
 ///
 /// 输入 `UpgradeDisplayRecord`（投影聚合层），展示：
-/// - 图标列：`item.preferredAssetRef` 可渲染时渲染目录 PNG（`bundledURL()`
-///   解析 + NSImage 加载；levelVisual 优先、icon 兜底，Issue #34，与详情
-///   sheet 共用 `VillageItemState.preferredAssetRef` 谓词防漂移）；加载失败
+/// - 图标列：`item.preferredAssetURLs` 非空且可加载时渲染目录 PNG（`bundledURL()`
+///   解析 + NSImage 加载；levelVisual → icon 运行时候选，Issue #34，与详情
+///   sheet 共用 `VillageItemState.preferredAssetURLs` 解析防漂移）；加载失败
 ///   或不可渲染时统一走类别 SF Symbol 兜底。`item.assetMissingReason`
 ///   （icon 或 levelVisual 的缺失原因）非 nil 时叠加橙色警示角标（可见的
 ///   缺失状态）+ `.help` 提示原因，不隐藏行。
@@ -137,18 +137,18 @@ struct UpgradeDisplayRow: View {
         item.category?.systemImage ?? "hammer.fill"
     }
 
-    /// 目录渲染 PNG（`preferredAssetRef` 可渲染时）；否则 nil → SF Symbol 兜底。
-    /// Issue #25/#34：视觉资产首选 levelVisual、icon 兜底（`VillageItemState.preferredAssetRef`，
-    /// 与详情 sheet 同谓词防漂移）——建筑/陷阱目录项 icon 为 nil 但 levelVisual 可渲染
-    /// （如 buildings:1000000 fireplace_lvl1.png），列表行必须显示真实 PNG。
-    /// `bundledURL()` 解析 + NSImage 加载失败（Bundle 文件缺失等）同样回退 SF
-    /// Symbol，不崩溃。版本参数取投影层 catalogVersion（与 `loadBundled()` 同源），
+    /// 目录渲染 PNG（`preferredAssetURLs` 非空且可加载时）；否则 SF Symbol 兜底。
+    /// Issue #25/#34：视觉资产候选 levelVisual → icon（`VillageItemState.preferredAssetURLs`，
+    /// 与详情 sheet 同解析防漂移）——建筑/陷阱目录项 icon 为 nil 但 levelVisual 可渲染
+    /// （如 buildings:1000000 fireplace_lvl1.png），列表行必须显示真实 PNG；
+    /// 首选文件缺失时自动尝试次选（P2 评审），全部加载失败同样回退 SF Symbol，
+    /// 不崩溃。版本参数取投影层 catalogVersion（与 `loadBundled()` 同源），
     /// 避免未来多版本资源错配。
     @ViewBuilder
     private var iconView: some View {
-        if let url = item.preferredAssetRef?.bundledURL(
+        if let image = item.preferredAssetURLs(
             version: record.catalogVersion ?? GameCatalog.defaultBundledVersion
-        ), let image = NSImage(contentsOf: url) {
+        ).lazy.compactMap({ NSImage(contentsOf: $0) }).first {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)

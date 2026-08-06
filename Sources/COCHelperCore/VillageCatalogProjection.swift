@@ -52,7 +52,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public var needsReimport: Bool { timerSeconds != nil && remainingSeconds == 0 }
 
     /// 目录视觉资产（icon 或 levelVisual）的缺失原因；两者均可用时 icon 优先。
-    /// 注意：这是缺失原因优先级（icon 优先），与 `preferredAssetRef` 的显示
+    /// 注意：这是缺失原因优先级（icon 优先），与 `preferredAssetURLs` 的显示
     /// 优先级（levelVisual 优先）相反，勿混用。当前 bundled 目录（18.400.13）：
     /// 27 个引用带缺失原因（23 个唯一键，export_not_found / render_failed）；
     /// UI 依据该值给出可见缺失状态。
@@ -60,12 +60,14 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         icon?.missingReason ?? levelVisual?.missingReason
     }
 
-    /// 视觉资产首选：levelVisual 可渲染优先、icon 兜底；均不可渲染返回 nil（SF Symbol 回退）。
-    /// Issue #34：建筑/陷阱目录项 icon 为 nil 但 levelVisual 可渲染（如 buildings:1000000
-    /// fireplace_lvl1.png），列表行与详情 sheet 必须共用同一优先级防漂移。
-    public var preferredAssetRef: CatalogAssetRef? {
-        (levelVisual?.isRenderable == true) ? levelVisual
-            : ((icon?.isRenderable == true) ? icon : nil)
+    /// 视觉资产候选 URL（levelVisual → icon 优先级，运行时文件存在性过滤）：
+    /// `bundledURL` 仅在 isRenderable 且 Bundle 文件真实存在时返回 URL，因此
+    /// 「元数据可渲染但文件缺失」的候选自动过滤——UI 对返回数组依次做 NSImage
+    /// 加载探测，实现 levelVisual → icon → SF Symbol 的运行时回退链。
+    /// Issue #34 P2 评审：不能只按元数据选定一个 ref、加载失败就直接回退
+    /// SF Symbol 而跳过次选 icon。列表行与详情 sheet 必须共用本解析防漂移。
+    public func preferredAssetURLs(version: String) -> [URL] {
+        CatalogAssetRef.availableURLs([levelVisual, icon], version: version)
     }
 
     init(

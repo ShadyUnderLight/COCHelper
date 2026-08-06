@@ -883,71 +883,93 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
-    // MARK: - VillageItemState.preferredAssetRef 谓词（Issue #34）
+    // MARK: - VillageItemState.preferredAssetURLs 运行时回退（Issue #34，P2 评审修复）
 
-    /// 真值表：levelVisual 可渲染优先、icon 兜底；均不可渲染返回 nil（SF Symbol 回退）。
-    /// 列表行（UpgradeDisplayRow）与详情 sheet（LevelDetailSheet）必须共用此谓词防漂移；
-    /// 建筑/陷阱目录项 icon 为 nil 但 levelVisual 可渲染（如 buildings:1000000
-    /// fireplace_lvl1.png），谓词必须命中 levelVisual 而不是 SF Symbol。
-    func testPreferredAssetRefTruthTable() throws {
-        let levelVisualRenderable = CatalogAssetRef(
-            container: nil, exportName: nil, renderedPath: "icons/fireplace_lvl1.png", missingReason: nil
+    /// bundled 目录前 count 个可渲染且文件真实存在的资产路径（顺序稳定：buildings 优先）。
+    /// 测试需要「真实存在」的路径作为加载成功基准；文件存在性由
+    /// GameCatalogTests 的 bundledURL 测试锁定，这里只取路径。
+    private func realRenderedPaths(_ catalog: GameCatalog, count: Int) -> [String] {
+        var seen: [String] = []
+        var visited = Set<String>()
+        for section in ["buildings", "buildings2", "traps", "units"] {
+            for item in catalog.items(in: section) {
+                for ref in [item.icon, item.levelVisual].compactMap({ $0 }) where ref.isRenderable {
+                    guard let path = ref.renderedPath, visited.insert(path).inserted else { continue }
+                    seen.append(path)
+                    if seen.count == count { return seen }
+                }
+            }
+        }
+        XCTFail("bundled 目录应有至少 \(count) 个可渲染资产路径，实际 \(seen.count)")
+        return seen
+    }
+
+    /// 运行时候选 URL 数组（levelVisual → icon 优先级）：`bundledURL` 只在
+    /// isRenderable 且 Bundle 文件真实存在时返回 URL——元数据可渲染但文件缺失
+    /// 时该候选被过滤，UI 对返回数组依次做 NSImage 加载探测后回退次选/SF
+    /// Symbol。列表行（UpgradeDisplayRow）与详情 sheet（LevelDetailSheet）
+    /// 必须共用此解析防漂移。
+    func testPreferredAssetURLsTruthTable() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let realPaths = realRenderedPaths(catalog, count: 2)
+        let realFirst = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: realPaths[0], missingReason: nil
         )
-        let iconRenderable = CatalogAssetRef(
-            container: nil, exportName: nil, renderedPath: "icons/barracks.png", missingReason: nil
+        let realSecond = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: realPaths[1], missingReason: nil
         )
-        let iconOtherRenderable = CatalogAssetRef(
-            container: nil, exportName: nil, renderedPath: "icons/cannon.png", missingReason: nil
+        // 元数据可渲染（isRenderable true）但 Bundle 文件不存在的路径（P2 核心场景）。
+        let phantom = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: "icons/buildings/phantom_lvl1.png", missingReason: nil
         )
-        let levelVisualMissing = CatalogAssetRef(
+        let missingRef = CatalogAssetRef(
             container: nil, exportName: nil, renderedPath: nil, missingReason: "icons_not_rendered"
         )
-        let levelVisualRenderedButMissing = CatalogAssetRef(
-            container: nil, exportName: nil, renderedPath: "icons/fireplace_lvl2.png", missingReason: "icons_not_rendered"
-        )
-        let iconMissing = CatalogAssetRef(
-            container: nil, exportName: nil, renderedPath: nil, missingReason: "icons_not_rendered"
-        )
+        let version = GameCatalog.defaultBundledVersion
 
+        // P2 核心：levelVisual 文件缺失 + icon 真实存在 → 数组只含 icon 的真实 URL，
+        // UI 才能渲染 icon 而不是直接 SF Symbol。
         XCTAssertEqual(
-            makeAssetState(icon: nil, levelVisual: levelVisualRenderable).preferredAssetRef,
-            levelVisualRenderable,
-            "levelVisual 可渲染 + icon nil → levelVisual（Issue #34 核心修复场景：列表行显示真实 PNG）"
+            makeAssetState(icon: realFirst, levelVisual: phantom).preferredAssetURLs(version: version),
+            [try XCTUnwrap(realFirst.bundledURL(version: version))],
+            "levelVisual 文件缺失 + icon 文件存在 → 回退 icon 的真实 URL（P2 核心修复场景）"
+        )
+        // 两者文件都存在 → 按 levelVisual → icon 顺序保留（UI 依次加载，levelVisual 优先）。
+        XCTAssertEqual(
+            makeAssetState(icon: realSecond, levelVisual: realFirst).preferredAssetURLs(version: version),
+            [try XCTUnwrap(realFirst.bundledURL(version: version)),
+             try XCTUnwrap(realSecond.bundledURL(version: version))],
+            "两者文件均存在 → 数组按 levelVisual → icon 顺序（与详情 sheet 同规则，防漂移）"
+        )
+        // levelVisual nil + icon 真实存在 → icon URL（兜底）。
+        XCTAssertEqual(
+            makeAssetState(icon: realFirst, levelVisual: nil).preferredAssetURLs(version: version),
+            [try XCTUnwrap(realFirst.bundledURL(version: version))],
+            "levelVisual nil + icon 文件存在 → icon URL 兜底"
+        )
+        // levelVisual 带缺失原因（isRenderable false）+ icon 真实存在 → icon URL。
+        XCTAssertEqual(
+            makeAssetState(icon: realFirst, levelVisual: missingRef).preferredAssetURLs(version: version),
+            [try XCTUnwrap(realFirst.bundledURL(version: version))],
+            "levelVisual 缺失原因（isRenderable false）→ 过滤，icon URL 兜底"
+        )
+        // 两者都缺失/不可渲染 → 空数组（UI 回退 SF Symbol）。
+        XCTAssertEqual(
+            makeAssetState(icon: nil, levelVisual: nil).preferredAssetURLs(version: version),
+            [],
+            "两者均 nil → 空数组（SF Symbol 回退）"
         )
         XCTAssertEqual(
-            makeAssetState(icon: iconRenderable, levelVisual: levelVisualRenderable).preferredAssetRef,
-            levelVisualRenderable,
-            "两者均可渲染 → levelVisual 优先（与详情 sheet 同规则，防漂移）"
-        )
-        XCTAssertEqual(
-            makeAssetState(icon: iconRenderable, levelVisual: nil).preferredAssetRef,
-            iconRenderable,
-            "levelVisual nil + icon 可渲染 → icon 兜底"
-        )
-        XCTAssertEqual(
-            makeAssetState(icon: iconRenderable, levelVisual: levelVisualMissing).preferredAssetRef,
-            iconRenderable,
-            "levelVisual 缺失（missingReason 非空） + icon 可渲染 → icon 兜底"
-        )
-        XCTAssertEqual(
-            makeAssetState(icon: iconOtherRenderable, levelVisual: levelVisualRenderedButMissing).preferredAssetRef,
-            iconOtherRenderable,
-            "levelVisual 带缺失原因（isRenderable false 路径） + icon 可渲染 → icon 兜底"
-        )
-        XCTAssertNil(
-            makeAssetState(icon: nil, levelVisual: nil).preferredAssetRef,
-            "两者均 nil → nil（SF Symbol 回退）"
-        )
-        XCTAssertNil(
-            makeAssetState(icon: iconMissing, levelVisual: levelVisualMissing).preferredAssetRef,
-            "两者均不可渲染 → nil（SF Symbol 回退）"
+            makeAssetState(icon: missingRef, levelVisual: phantom).preferredAssetURLs(version: version),
+            [],
+            "两者均不可加载 → 空数组（SF Symbol 回退）"
         )
     }
 
-    /// 数据锚点：真值表只验谓词逻辑，此处锁定真实 bundled 目录满足 Issue #34
-    /// 的触发场景——buildings:1000000（壁炉）icon 为 nil 但 levelVisual 可渲染
-    /// （fireplace_lvl1.png）。若目录数据漂移（icon 补全或 levelVisual 不可渲染），
-    /// 本测试立即红，防止谓词修复在无真实场景下空转。
+    /// 数据锚点：锁定真实 bundled 目录满足 Issue #34 触发场景——buildings:1000000
+    /// （壁炉）icon 为 nil 但 levelVisual 可渲染（fireplace_lvl1.png），且运行时
+    /// 解析出的首选 URL 真实指向该 PNG。若目录数据漂移（icon 补全或 levelVisual
+    /// 不可渲染/文件缺失），本测试立即红，防止修复在无真实场景下空转。
     func testBundledCatalogFireplaceHasRenderableLevelVisual() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let fireplace = try XCTUnwrap(
@@ -963,12 +985,11 @@ final class VillageCatalogProjectionTests: XCTestCase {
             levelVisual.isRenderable,
             "buildings:1000000 levelVisual 应可渲染（fireplace_lvl1.png，Issue #34 数据契约）"
         )
-        // 谓词必须命中 levelVisual 而非 SF Symbol 回退——列表行依赖此契约显示真实 PNG。
-        XCTAssertEqual(
-            makeAssetState(icon: fireplace.icon, levelVisual: fireplace.levelVisual).preferredAssetRef,
-            levelVisual,
-            "buildings:1000000 谓词应命中 levelVisual（Issue #34 核心修复场景）"
-        )
+        // 运行时解析必须命中 levelVisual 的真实 URL——列表行依赖此契约显示真实 PNG。
+        let urls = makeAssetState(icon: fireplace.icon, levelVisual: fireplace.levelVisual)
+            .preferredAssetURLs(version: catalog.gameVersion)
+        let expected = try XCTUnwrap(levelVisual.bundledURL(version: catalog.gameVersion))
+        XCTAssertEqual(urls, [expected], "buildings:1000000 首选 URL 应为 fireplace_lvl1.png（Issue #34 核心修复场景）")
     }
 
     func testPropertyEveryUpgradingRecordSurvivesProjection() throws {

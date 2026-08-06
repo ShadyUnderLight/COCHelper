@@ -161,6 +161,17 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
         }
     }
 
+    /// 从部落端点请求路径提取 clan tag（`/v1/clans/%23TAG/currentwar` → `#TAG`）。
+    private static func clanTag(from request: URLRequest) -> String {
+        let path = request.url?.path ?? ""
+        return path
+            .replacingOccurrences(of: "/v1/clans/", with: "")
+            .replacingOccurrences(of: "/currentwar", with: "")
+            .replacingOccurrences(of: "/warlog", with: "")
+            .replacingOccurrences(of: "/capitalraidseasons", with: "")
+            .replacingOccurrences(of: "%23", with: "#")
+    }
+
     // MARK: - 随机生成（property-based）
 
     /// 随机部落 tag 形态：nil（无部落）/ 有效 / 各类无效（无 #、小写、空、仅 #）。
@@ -265,6 +276,94 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
         // 部落联动必须刷新 A 刷新后的部落（#CLANANON），不得刷新当前选中的 B
         XCTAssertEqual(clanRecorder.snapshot(), ["#CLANANON"],
                        "联动必须作用于发起村庄 A 的部落，而非当前选中的 B: \(clanRecorder.snapshot())")
+    }
+
+    // MARK: - 部落按 ID 刷新路由（war/log/capital）
+
+    /// refreshClanWar(villageID:) 的 tag 来源是发起村庄 A（#CLANANON）：
+    /// 发起后立即切换到当前选中 B（#CLANB），请求仍打到 #CLANANON，
+    /// 结果写入 #CLANANON 键，B 的部落不受影响。
+    @MainActor
+    func testRefreshClanWarByIDRoutesToOriginatingVillageTag() async throws {
+        let warRecorder = TagRecorder()
+        let clanWarHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            warRecorder.record(Self.clanTag(from: request))
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(#"{"state":"notInWar"}"#.utf8))
+        }
+        let villages = [
+            VillageProfile(name: "A", accountSnapshot: snapshot("#A"), officialAPIState: playerState(clanTag: "#CLANANON")),
+            VillageProfile(name: "B", accountSnapshot: snapshot("#B"), officialAPIState: playerState(clanTag: "#CLANB")),
+        ]
+        let model = try makeModel(villages: villages, clanWarHandler: clanWarHandler)
+
+        // 发起村庄 A 的战争刷新，请求在途时切换到 B
+        model.refreshClanWar(villageID: model.villages[0].id)
+        model.selectVillage(id: model.villages[1].id)
+
+        await waitUntil { !model.isRefreshingClanWarData }
+
+        XCTAssertEqual(warRecorder.snapshot(), ["#CLANANON"],
+                       "战争刷新必须请求发起村庄 A 的部落，而非当前选中的 B: \(warRecorder.snapshot())")
+        XCTAssertEqual(model.clanWarState(for: "#CLANANON")?.status, .success)
+        XCTAssertEqual(model.clanWarState(for: "#CLANANON")?.lastGood?.state, "notInWar")
+        XCTAssertNil(model.clanWarState(for: "#CLANB"), "B 的部落战争数据不得被写入")
+    }
+
+    /// refreshWarLog(villageID:) 同语义：请求打发起村庄 A 的部落（#CLANANON），
+    /// 结果写入 #CLANANON 的 war log 键。
+    @MainActor
+    func testRefreshWarLogByIDRoutesToOriginatingVillageTag() async throws {
+        let logRecorder = TagRecorder()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            logRecorder.record(Self.clanTag(from: request))
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let villages = [
+            VillageProfile(name: "A", accountSnapshot: snapshot("#A"), officialAPIState: playerState(clanTag: "#CLANANON")),
+            VillageProfile(name: "B", accountSnapshot: snapshot("#B"), officialAPIState: playerState(clanTag: "#CLANB")),
+        ]
+        let model = try makeModel(villages: villages, clanLogHandler: logHandler)
+
+        model.refreshWarLog(villageID: model.villages[0].id)
+        model.selectVillage(id: model.villages[1].id)
+
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        XCTAssertEqual(logRecorder.snapshot(), ["#CLANANON"],
+                       "战争日志刷新必须请求发起村庄 A 的部落，而非当前选中的 B: \(logRecorder.snapshot())")
+        XCTAssertEqual(model.warLogState(for: "#CLANANON")?.status, .success)
+        XCTAssertEqual(model.warLogState(for: "#CLANANON")?.lastGood?.items.count, 2)
+        XCTAssertNil(model.warLogState(for: "#CLANB"), "B 的部落 war log 不得被写入")
+    }
+
+    /// refreshCapitalRaid(villageID:) 同语义：请求打发起村庄 A 的部落（#CLANANON），
+    /// 结果写入 #CLANANON 的 capital 键。
+    @MainActor
+    func testRefreshCapitalRaidByIDRoutesToOriginatingVillageTag() async throws {
+        let capitalRecorder = TagRecorder()
+        let capitalHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            capitalRecorder.record(Self.clanTag(from: request))
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let villages = [
+            VillageProfile(name: "A", accountSnapshot: snapshot("#A"), officialAPIState: playerState(clanTag: "#CLANANON")),
+            VillageProfile(name: "B", accountSnapshot: snapshot("#B"), officialAPIState: playerState(clanTag: "#CLANB")),
+        ]
+        let model = try makeModel(villages: villages, clanLogHandler: capitalHandler)
+
+        model.refreshCapitalRaid(villageID: model.villages[0].id)
+        model.selectVillage(id: model.villages[1].id)
+
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(capitalRecorder.snapshot(), ["#CLANANON"],
+                       "资本赛季刷新必须请求发起村庄 A 的部落，而非当前选中的 B: \(capitalRecorder.snapshot())")
+        XCTAssertEqual(model.capitalState(for: "#CLANANON")?.status, .success)
+        XCTAssertEqual(model.capitalState(for: "#CLANANON")?.lastGood?.items.count, 2)
+        XCTAssertNil(model.capitalState(for: "#CLANB"), "B 的部落 capital 数据不得被写入")
     }
 
     // MARK: - 部落按 tag 共享

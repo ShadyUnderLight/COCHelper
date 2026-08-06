@@ -119,6 +119,10 @@ struct VillageDetailView: View {
                     }
                 }
             }
+            // 撑满窗口宽度：ScrollView 内 VStack(alignment: .leading) 默认按内容
+            // 理想宽度布局（实测 1180pt 窗口内容只占 ~600pt，右侧大片空白）；
+            // 官方玩家卡等自适布局依赖完整提议宽度（Issue #49 窗口级验收）。
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)
         }
         .onChange(of: groupIDs) { _, newIDs in

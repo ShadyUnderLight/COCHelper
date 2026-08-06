@@ -355,6 +355,8 @@ struct UpgradeTrackerView: View {
                     EmptyTrackerView(openImport: openImport)
                 }
             }
+            // 撑满窗口宽度（ScrollView 内 VStack 默认内容宽，Issue #49 窗口级验收）。
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)
         }
         .background(Color.cocBackground)
@@ -785,6 +787,8 @@ struct AccountDataView: View {
                     }
                 }
             }
+            // 撑满窗口宽度（ScrollView 内 VStack 默认内容宽，Issue #49 窗口级验收）。
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)
         }
         .background(Color.cocBackground)
@@ -1120,6 +1124,7 @@ struct TrackerInfoView: View {
                     text: "导入解析全部在本地完成；只有主动点击“刷新官方数据”时才会访问 Clash of Clans 官方 API，且官方数据作为独立来源展示，不填充缺失的资源、工人归属或未来目标。原始文本、未知字段和解析诊断会保留在当前村庄快照中。"
                 )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)
         }
         .background(Color.cocBackground)

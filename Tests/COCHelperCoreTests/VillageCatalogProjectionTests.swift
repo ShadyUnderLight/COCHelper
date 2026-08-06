@@ -1242,6 +1242,133 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        "currentLevel=1 → 命中 levels[1] 的 levelVisual")
     }
 
+    /// 等级号不连续时按值匹配（非下标）：合成目录 levels = [1, 5, 9]，
+    /// currentLevel=5 必须命中 Lv5 资产——若实现误用下标会命中 Lv1/Lv9 而立即红。
+    func testProjectionValueMatchesNonContiguousLevels() throws {
+        let bundled = try XCTUnwrap(GameCatalog.loadBundled())
+        let realPaths = realRenderedPaths(bundled, count: 3)
+        func makeRef(_ i: Int) -> CatalogAssetRef {
+            CatalogAssetRef(container: nil, exportName: nil,
+                            renderedPath: realPaths[i], missingReason: nil)
+        }
+        let item = CatalogItem(
+            section: "buildings", category: "buildings", dataID: 1_000_009,
+            base: "home", baseMissingReason: nil, name: "不连续等级", maxLevel: 9,
+            icon: nil, levelVisual: nil,
+            levels: [
+                CatalogLevel(level: 1, durationSeconds: 60, upgradeResource: nil,
+                             upgradeCost: nil, requiredTownHallLevel: nil,
+                             requiredLaboratoryLevel: nil, icon: nil,
+                             levelVisual: makeRef(0), missingReason: nil),
+                CatalogLevel(level: 5, durationSeconds: 300, upgradeResource: nil,
+                             upgradeCost: nil, requiredTownHallLevel: nil,
+                             requiredLaboratoryLevel: nil, icon: nil,
+                             levelVisual: makeRef(1), missingReason: nil),
+                CatalogLevel(level: 9, durationSeconds: 600, upgradeResource: nil,
+                             upgradeCost: nil, requiredTownHallLevel: nil,
+                             requiredLaboratoryLevel: nil, icon: nil,
+                             levelVisual: makeRef(2), missingReason: nil),
+            ]
+        )
+        let catalog = GameCatalog(gameVersion: GameCatalog.defaultBundledVersion, items: [item])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_009, level: 5, path: "0")]
+        ])
+        let state = try XCTUnwrap(
+            project(village: village, catalog: catalog, base: .home).items.first
+        )
+        XCTAssertEqual(state.currentLevelVisual, makeRef(1),
+                       "currentLevel=5 必须按值命中 Lv5 资产（非下标）")
+        XCTAssertNotEqual(state.currentLevelVisual, makeRef(0),
+                          "不得命中 Lv1（下标错位防护）")
+    }
+
+    /// 目录物品的 base 与投影基地不匹配（baseMatches false → 未知状态）时，
+    /// currentLevel 资产必须保持 nil：不按名称/位置猜测等级资产，也不暴露
+    /// item 级资产（Issue #39 与既有 base 防御规则一致）。
+    func testProjectionBaseMismatchLeavesCurrentLevelAssetsNil() throws {
+        let bundled = try XCTUnwrap(GameCatalog.loadBundled())
+        let realPath = try XCTUnwrap(realRenderedPaths(bundled, count: 1).first)
+        let level1Visual = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: realPath, missingReason: nil
+        )
+        // 唯一目录项：section "buildings"（主村语义）但 base 为 "builder"。
+        let item = CatalogItem(
+            section: "buildings", category: "buildings", dataID: 1_000_008,
+            base: "builder", baseMissingReason: nil, name: "错基地建筑", maxLevel: 2,
+            icon: nil, levelVisual: nil,
+            levels: [
+                CatalogLevel(level: 1, durationSeconds: 60, upgradeResource: nil,
+                             upgradeCost: nil, requiredTownHallLevel: nil,
+                             requiredLaboratoryLevel: nil,
+                             icon: nil, levelVisual: level1Visual, missingReason: nil),
+            ]
+        )
+        let catalog = GameCatalog(gameVersion: GameCatalog.defaultBundledVersion, items: [item])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_008, level: 1, path: "0")]
+        ])
+        let state = try XCTUnwrap(
+            project(village: village, catalog: catalog, base: .home).items.first
+        )
+        XCTAssertEqual(state.status, .unknown, "base 不匹配 → 未知状态（有目录记录但不匹配）")
+        XCTAssertTrue(state.missingReason?.contains("不匹配") == true,
+                      "base 不匹配应有说明原因的 missingReason")
+        XCTAssertNil(state.icon, "base 不匹配不得暴露 item 级 icon")
+        XCTAssertNil(state.levelVisual, "base 不匹配不得暴露 item 级 levelVisual")
+        XCTAssertNil(state.currentLevelVisual, "base 不匹配不得解析等级资产")
+        XCTAssertNil(state.currentLevelIcon, "base 不匹配不得解析等级资产")
+        XCTAssertNil(state.maxLevel, "base 不匹配 maxLevel 保持 nil")
+    }
+
+    /// 同 (section, dataID, level) 升级记录与空闲记录并存（aggregate 的「|idle」分支）：
+    /// 升级记录单独保留、空闲记录聚合为一条，两条都必须携带 currentLevelVisual
+    /// （map 解析 + 聚合传播 P4 同时锁定）。
+    func testMixedUpgradingAndIdleSameKeyBothResolveLevelAssets() throws {
+        let bundled = try XCTUnwrap(GameCatalog.loadBundled())
+        let realPaths = realRenderedPaths(bundled, count: 2)
+        let level1Visual = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: realPaths[0], missingReason: nil
+        )
+        let level2Visual = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: realPaths[1], missingReason: nil
+        )
+        let item = CatalogItem(
+            section: "buildings", category: "buildings", dataID: 1_000_001,
+            base: "home", baseMissingReason: nil, name: "加农炮", maxLevel: 2,
+            icon: nil, levelVisual: nil,
+            levels: [
+                CatalogLevel(level: 1, durationSeconds: 60, upgradeResource: nil,
+                             upgradeCost: nil, requiredTownHallLevel: nil,
+                             requiredLaboratoryLevel: nil,
+                             icon: nil, levelVisual: level1Visual, missingReason: nil),
+                CatalogLevel(level: 2, durationSeconds: 300, upgradeResource: nil,
+                             upgradeCost: nil, requiredTownHallLevel: nil,
+                             requiredLaboratoryLevel: nil,
+                             icon: nil, levelVisual: level2Visual, missingReason: nil),
+            ]
+        )
+        let catalog = GameCatalog(gameVersion: GameCatalog.defaultBundledVersion, items: [item])
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, count: 1,
+                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "1"),
+            ]
+        ])
+        let home = project(village: village, catalog: catalog, base: .home)
+        XCTAssertEqual(home.items.count, 2,
+                       "同键升级 + 空闲 → 升级记录单独保留 + 空闲聚合（|idle 分支）")
+        let upgrading = try XCTUnwrap(home.items.first(where: \.isUpgrading))
+        XCTAssertEqual(upgrading.currentLevelVisual, level2Visual,
+                       "升级记录命中当前等级资产（P5）")
+        let idle = try XCTUnwrap(home.items.first { !$0.isUpgrading })
+        XCTAssertTrue(idle.id.hasPrefix("agg:"), "空闲同键记录应聚合为一条")
+        XCTAssertEqual(idle.count, 1)
+        XCTAssertEqual(idle.currentLevelVisual, level2Visual,
+                       "聚合空闲项必须传播当前等级资产（P4）")
+    }
+
     /// 数据锚点（Issue #39）：真实 bundled 目录中 buildings:1000000（兵营）
     /// Lv2 必须解析到 fireplace_lvl2.png、Lv14 到 fireplace_lvl14.png，
     /// 而不是固定 item-level 的 fireplace_lvl1.png。目录数据漂移立即红。
@@ -1418,6 +1545,10 @@ final class VillageCatalogProjectionTests: XCTestCase {
         for _ in 0..<60 {
             let section = sections[Int.random(in: 0..<sections.count, using: &rng)]
             let items = catalog.items(in: section)
+            guard !items.isEmpty else {
+                XCTFail("bundled 目录 section \(section) 不应为空（数据契约）")
+                continue
+            }
             let item = items[Int.random(in: 0..<items.count, using: &rng)]
             let level = Int.random(in: 0...(item.maxLevel + 3), using: &rng)
             let base: TrackerBase = section.hasSuffix("2") ? .builder : .home

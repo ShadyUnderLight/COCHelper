@@ -41,8 +41,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let levelVisual: CatalogAssetRef?
     /// 当前等级（currentLevel）匹配的 CatalogLevel 资产（level-level，Issue #39）：
     /// 列表行/详情头部按 currentLevel 显示对应等级外观；无匹配等级时为 nil。
-    /// 注意与 item-level 的 icon/levelVisual 区分：这两者来自 CatalogLevel，
-    /// 选择优先级高于 item-level 资产（见 preferredAssetURLs）。
+    /// 注意与 item-level 的 icon/levelVisual 区分：这两个新字段来自 currentLevel
+    /// 匹配的 CatalogLevel 记录，选择优先级高于 item-level 资产（见 preferredAssetURLs）。
     public let currentLevelIcon: CatalogAssetRef?
     public let currentLevelVisual: CatalogAssetRef?
     public let isNested: Bool

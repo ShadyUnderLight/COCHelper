@@ -3,12 +3,18 @@ import Foundation
 // MARK: - 分组
 
 public struct VillageDetailGroup: Identifiable, Hashable, Sendable {
+    /// 来源分类。`displayCategory != nil` 时本字段仅为归属提示（恒为 .buildings），
+    /// UI 不得用它做标题/计数/筛选——必须优先 `displayCategory`（issue #37）。
     public let category: TrackerCategory?
+    public let displayCategory: TrackerDisplayCategory?
     public let items: [VillageItemState]
-    public var id: String { category?.rawValue ?? "other" }
+    public var id: String {
+        displayCategory?.rawValue ?? category?.rawValue ?? "other"
+    }
 
-    public init(category: TrackerCategory?, items: [VillageItemState]) {
+    public init(category: TrackerCategory?, displayCategory: TrackerDisplayCategory? = nil, items: [VillageItemState]) {
         self.category = category
+        self.displayCategory = displayCategory
         self.items = items
     }
 }
@@ -31,16 +37,24 @@ public struct VillageParentedRow: Identifiable, Hashable, Sendable {
 
 public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
     public let category: TrackerCategory?
+    public let displayCategory: TrackerDisplayCategory?
     public let knownCount: Int
     public let completedCount: Int
     public let unknownCount: Int
-    public var id: String { category?.rawValue ?? "other" }
+    public var id: String { displayCategory?.rawValue ?? category?.rawValue ?? "other" }
     public var completionRatio: Double? {
         knownCount > 0 ? Double(completedCount) / Double(knownCount) : nil
     }
 
-    public init(category: TrackerCategory?, knownCount: Int, completedCount: Int, unknownCount: Int) {
+    public init(
+        category: TrackerCategory?,
+        displayCategory: TrackerDisplayCategory? = nil,
+        knownCount: Int,
+        completedCount: Int,
+        unknownCount: Int
+    ) {
         self.category = category
+        self.displayCategory = displayCategory
         self.knownCount = knownCount
         self.completedCount = completedCount
         self.unknownCount = unknownCount
@@ -59,28 +73,62 @@ public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
 /// - 未知（unknown）：其余全部（unknown/unavailable/available/缺失上限/缺失等级/版本不匹配）；
 /// - 快照缺失项目由投影层不产出，天然不计为 0 级。
 public enum VillageDetailProjection {
+    /// Issue #37：分组桶键。有展示分类的项（防御/军事/精制台）从 `.buildings`
+    /// 拆到独立展示分类组；无细分的项走原分类兜底；category 为 nil 的项归 other。
+    private enum GroupKey: Hashable {
+        case display(TrackerDisplayCategory)
+        case category(TrackerCategory)
+        case other
+    }
+
+    private static func key(for item: VillageItemState) -> GroupKey {
+        if let displayCategory = item.displayCategory {
+            return .display(displayCategory)
+        }
+        if let category = item.category {
+            return .category(category)
+        }
+        return .other
+    }
+
+    /// Issue #37：组是否属于「原分类」筛选。display 组（防御/军事/精制台）的
+    /// category 恒为 .buildings 仅作归属提示，必须排除——否则点「建筑与防御」
+    /// 会误含全部展示分类组，与 chip 计数矛盾。
+    public static func matchesCategoryFilter(_ group: VillageDetailGroup, category: TrackerCategory) -> Bool {
+        group.displayCategory == nil && group.category == category
+    }
+
+    /// 组顺序：展示分类组（按 sortOrder）→ 原分类组（按 sortOrder）→ other 最后。
+    private static func orderedKeys(_ keys: [GroupKey]) -> [GroupKey] {
+        keys.sorted { lhs, rhs in
+            switch (lhs, rhs) {
+            case (.display(let l), .display(let r)): l.sortOrder < r.sortOrder
+            case (.display, _): true
+            case (_, .display): false
+            case (.category(let l), .category(let r)): l.sortOrder < r.sortOrder
+            case (.category, .other): true
+            case (.other, _): false
+            }
+        }
+    }
+
     public static func groups(from items: [VillageItemState]) -> [VillageDetailGroup] {
-        var buckets: [String: [VillageItemState]] = [:]
-        var keyOrder: [String] = []
+        var buckets: [GroupKey: [VillageItemState]] = [:]
+        var keyOrder: [GroupKey] = []
         for item in items {
-            let key = Self.key(for: item.category)
+            let key = Self.key(for: item)
             if buckets[key] == nil { keyOrder.append(key) }
             buckets[key, default: []].append(item)
         }
-        let sortedKeys = keyOrder
-            .filter { $0 != "other" }
-            .sorted { (lhs, rhs) in
-                guard let l = TrackerCategory(rawValue: lhs), let r = TrackerCategory(rawValue: rhs) else {
-                    return lhs < rhs
-                }
-                return l.sortOrder < r.sortOrder
+        return orderedKeys(keyOrder).map { key in
+            switch key {
+            case .display(let dc):
+                VillageDetailGroup(category: .buildings, displayCategory: dc, items: buckets[key] ?? [])
+            case .category(let c):
+                VillageDetailGroup(category: c, displayCategory: nil, items: buckets[key] ?? [])
+            case .other:
+                VillageDetailGroup(category: nil, displayCategory: nil, items: buckets[key] ?? [])
             }
-            + (keyOrder.contains("other") ? ["other"] : [])
-        return sortedKeys.map { key in
-            VillageDetailGroup(
-                category: key == "other" ? nil : TrackerCategory(rawValue: key),
-                items: buckets[key] ?? []
-            )
         }
     }
 
@@ -96,6 +144,7 @@ public enum VillageDetailProjection {
             let completed = catalogIsUsable ? group.items.filter { $0.status == .maxed && isKnown($0) }.count : 0
             return VillageCategoryCompletion(
                 category: group.category,
+                displayCategory: group.displayCategory,
                 knownCount: known,
                 completedCount: completed,
                 unknownCount: group.items.count - known
@@ -116,10 +165,6 @@ public enum VillageDetailProjection {
             completedCount: completed,
             unknownCount: items.count - known
         )
-    }
-
-    private static func key(for category: TrackerCategory?) -> String {
-        category?.rawValue ?? "other"
     }
 
     /// 计入完成度分母的条件（见类型 doc comment）。

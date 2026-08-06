@@ -105,7 +105,7 @@ final class ClanPaginationDecodeTests: XCTestCase {
         XCTAssertEqual(page.items[0].capitalTotalLoot, 123456, "attackLog 存在时摘要仍正确")
     }
 
-    // MARK: - 资本赛季成员/攻防日志（Issue #20）
+    // MARK: - 突袭周末成员/攻防日志（Issue #20）
 
     func testDecodeCapitalRaidMembers() throws {
         let page = try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: fullCapitalRaidPageData())

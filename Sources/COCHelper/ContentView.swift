@@ -224,7 +224,7 @@ private struct VillageSidebarRow: View {
     }
 }
 
-/// 侧边栏部落行：备注/名称 + Tag + "当前村庄所属"标识。
+/// 侧边栏部落行：备注/名称 + 部落标签 + "当前村庄所属"标识。
 private struct TrackedClanSidebarRow: View {
     @EnvironmentObject private var model: AppModel
     let clan: TrackedClanProfile
@@ -235,7 +235,7 @@ private struct TrackedClanSidebarRow: View {
             Image(systemName: "shield.lefthalf.filled")
                 .foregroundStyle(Color.cocAccent)
             VStack(alignment: .leading, spacing: 1) {
-                // 名称回退链：用户备注 → API 快照名称 → Tag（评审 P2）。
+                // 名称回退链：用户备注 → API 快照名称 → 部落标签（评审 P2）。
                 Text(clan.displayName
                     ?? model.clanState(for: clan.clanTag)?.lastGood?.name
                     ?? clan.clanTag)
@@ -263,7 +263,7 @@ private enum ClanResolvePhase {
     case failed(String)
 }
 
-/// 添加部落表单（Issue #48 Step A）：输入 Tag → API 解析 → 预览 → 确认保存。
+/// 添加部落表单（Issue #48 Step A）：输入部落标签 → API 解析 → 预览 → 确认保存。
 ///
 /// 流程：本地格式校验（AppModel）→ 查重（已跟踪直接提示，不请求）→
 /// `resolveClan` 调基础部落 API → 成功后展示预览（名称/等级/成员数等），
@@ -285,7 +285,7 @@ private struct AddTrackedClanSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("添加部落")
                 .font(.headline)
-            TextField("部落 Tag（如 #2QJQ8J88）", text: $rawTag)
+            TextField("部落标签（如 #2QJQ8J88）", text: $rawTag)
                 .textFieldStyle(.roundedBorder)
                 .disabled(isBusy)
                 .onChange(of: rawTag) { _, _ in
@@ -336,9 +336,9 @@ private struct AddTrackedClanSheet: View {
     private var phaseContent: some View {
         switch phase {
         case .idle:
-            // 空 Tag 时给可理解引导（评审 P2：仅禁用按钮不提示）。
+            // 空标签时给可理解引导（评审 P2：仅禁用按钮不提示）。
             if rawTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("输入部落 Tag（如 #2QJQ8J88）后点击「解析」获取部落信息。")
+                Text("输入部落标签（如 #2QJQ8J88）后点击「解析」获取部落信息。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -385,7 +385,7 @@ private struct AddTrackedClanSheet: View {
                 }
                 Spacer()
                 if let level = snapshot.clanLevel {
-                    Text("Lv.\(level)")
+                    Text("\(level)级")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -400,7 +400,7 @@ private struct AddTrackedClanSheet: View {
                     previewRow("成员", "\(members) 人")
                 }
                 if let record = ClanDisplayFormat.warRecordLabel(snapshot) {
-                    previewRow("胜-负-平", record)
+                    previewRow("部落对战战绩", record)
                 }
                 if let streak = snapshot.warWinStreak, streak > 0 {
                     previewRow("连胜", "\(streak) 场")
@@ -409,26 +409,25 @@ private struct AddTrackedClanSheet: View {
                     previewRow("所需奖杯", "\(trophies)")
                 }
                 if let th = snapshot.requiredTownHallLevel {
-                    previewRow("所需大本等级", "\(th) 本")
+                    previewRow("所需大本营等级", "\(th)级")
                 }
                 if let builderTrophies = snapshot.requiredBuilderBaseTrophies {
-                    previewRow("所需建筑大师奖杯", "\(builderTrophies)")
+                    previewRow("所需建筑大师基地奖杯", "\(builderTrophies)")
                 }
-                if let leagueTier = snapshot.requiredLeagueTier?.name
-                    ?? snapshot.requiredLeagueTier?.id.map({ "\($0)" }) {
+                if let leagueTier = ClanDisplayFormat.requiredLeagueTierLabel(snapshot.requiredLeagueTier) {
                     previewRow("所需联赛等级", "\(leagueTier)")
                 }
                 if let builderPoints = snapshot.clanBuilderBasePoints {
-                    previewRow("建筑大师积分", "\(builderPoints)")
+                    previewRow("建筑大师基地奖杯", "\(builderPoints)")
                 }
                 if let capitalPoints = snapshot.clanCapitalPoints {
-                    previewRow("部落资本积分", "\(capitalPoints)")
+                    previewRow("都城奖杯", "\(capitalPoints)")
                 }
-                if let capitalLeague = snapshot.capitalLeague?.name {
-                    previewRow("资本联赛", capitalLeague)
+                if let capitalLeague = ClanDisplayFormat.capitalLeagueLabel(snapshot.capitalLeague) {
+                    previewRow("部落都城联赛", capitalLeague)
                 }
                 if let capital = snapshot.clanCapital?.capitalHallLevel {
-                    previewRow("部落首都", "大本 \(capital) 级")
+                    previewRow("都城大本营", "\(capital)级")
                 }
             }
             Text("确认保存后，部落详情可在侧边栏随时打开查看。")
@@ -482,7 +481,7 @@ private struct AddTrackedClanSheet: View {
             onAdded(profile.clanTag)
             dismiss()
         case .failure(.invalidTag):
-            phase = .failed("Tag 无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。")
+            phase = .failed("标签无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。")
         case .failure(.duplicate):
             phase = .failed("该部落已在跟踪列表中。")
         }
@@ -1144,8 +1143,8 @@ private struct AccountSnapshotSummaryView: View {
                 }
 
                 HStack(spacing: 10) {
-                    SnapshotMetric(title: "主村记录", value: String(snapshot.mainVillageObjectItemCount))
-                    SnapshotMetric(title: "建筑基地", value: String(snapshot.builderBaseObjectItemCount))
+                    SnapshotMetric(title: "家乡村庄记录", value: String(snapshot.mainVillageObjectItemCount))
+                    SnapshotMetric(title: "建筑大师基地记录", value: String(snapshot.builderBaseObjectItemCount))
                     SnapshotMetric(title: "计时字段", value: String(snapshot.activeItemCount))
                     SnapshotMetric(title: "警告", value: String(snapshot.warningCount))
                 }
@@ -1286,7 +1285,7 @@ struct TrackerInfoView: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("数据说明")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                Text("这是一个本地升级 tracker：它读取游戏内复制的账号 JSON，整理当前快照中的计时和等级记录。")
+                Text("这是一个本地升级追踪器：它读取游戏内复制的账号 JSON，整理当前快照中的计时和等级记录。")
                     .font(.title3)
                     .foregroundStyle(.secondary)
 
@@ -1298,7 +1297,7 @@ struct TrackerInfoView: View {
                 InfoCard(
                     number: "02",
                     title: "项目身份",
-                    text: "每条进行中的记录都会标出项目名称、所属村庄、主村或建筑工人基地、账号 tag 和数据 ID；重复记录和数量不会合并丢失。"
+                    text: "每条进行中的记录都会标出项目名称、所属村庄、家乡村庄或建筑大师基地、账号标签和数据编号；重复记录和数量不会合并丢失。"
                 )
                 InfoCard(
                     number: "03",

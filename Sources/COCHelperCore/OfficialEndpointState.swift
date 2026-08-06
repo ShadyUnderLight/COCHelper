@@ -126,7 +126,7 @@ public typealias ClanWarAPIState = OfficialEndpointState<OfficialClanWarSnapshot
 /// 部落战争日志状态（3c）：parserVersion "clan-war-log-0.3"。
 public typealias ClanWarLogAPIState = OfficialEndpointState<OfficialWarLogPage>
 
-/// 部落资本赛季状态（3c）：parserVersion "clan-capital-0.3"。
+/// 部落都城突袭周末状态（3c）：parserVersion "clan-capital-0.3"。
 public typealias ClanCapitalAPIState = OfficialEndpointState<OfficialCapitalRaidPage>
 
 // MARK: - typealias 的 currentParserVersion 兼容（无约束转发：未来端点零样板）

@@ -8,7 +8,7 @@
 
 - 不改官方 API schema / 不加请求；不自动刷新
 - 不删 `troops`/`heroes`/`spells`/`heroEquipment` 字段与解码持久化
-- 不重新实现部落/战争/资本卡；不动 #45 组卡 / #47 图标
+- 不重新实现部落/战争/都城卡；不动 #45 组卡 / #47 图标
 - 不改 `UpgradeDisplayRecord.villageName` 等本地升级数据语义
 - 不把卡片改回读 `selectedVillageID`（保持显式 villageID 路由）
 
@@ -70,7 +70,7 @@ stale/failed 但 `lastGood != nil` → 仍显示昵称，`source == .officialNam
 - 删除 `unitsSummary` 调用与函数（snapshot 字段不动）
 - 卡片 header 降级为低权重来源标签（"official-api" + 状态），不再 headline 平级
 - `snapshotSummary` 去重复：不再显示 name+tag 大标题（昵称只在页面头部出现一次）
-- 固定三列 Grid 改分组布局：进度（大本营/武器/建筑大师基地/经验）/ 战绩（奖杯/最佳/建筑大师奖杯/战争星数/攻防胜场）/ 部落与联赛（部落/角色/联赛/大师联赛/战争偏好）+ 折叠"更多玩家信息"（捐兵/受捐/资本贡献/传奇统计），用 `LazyVGrid(.adaptive)` 或分组 section，宽窗口不留大片空白
+- 固定三列 Grid 改分组布局：进度（大本营/武器/建筑大师基地/经验）/ 战绩（奖杯/最佳/建筑大师奖杯/战争星数/攻防胜场）/ 部落与联赛（部落/角色/联赛/大师联赛/战争偏好）+ 折叠"更多玩家信息"（捐兵/受捐/都城金币贡献/传奇统计），用 `LazyVGrid(.adaptive)` 或分组 section，宽窗口不留大片空白
 - 保留刷新按钮/状态行/Token 设置/villageID 路由/未识别键提示；提交
 
 ### Task 5：全量验证（controller 执行）

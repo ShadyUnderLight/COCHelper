@@ -2,10 +2,10 @@ import SwiftUI
 import COCHelperCore
 import COCHelperApp
 
-/// 村庄详情页的战争日志卡片（分页，按需刷新）。
+/// 村庄详情页的部落对战日志卡片（分页，按需刷新）。
 ///
 /// 状态语义（Issue #7 stage 3c）：
-/// - 档案已知 `isWarLogPublic=false` → 显式"战争日志不公开"（不发起请求）
+/// - 档案已知 `isWarLogPublic=false` → 显式"部落对战日志不公开"（不发起请求）
 /// - 403 兜底：档案过期时请求失败显示失败原因
 /// - lastGood = 累计页（items + 游标）；"加载更多"向后翻页，游标不前进即停
 struct WarLogCardView: View {
@@ -58,10 +58,10 @@ struct WarLogCardView: View {
 
     private var header: some View {
         HStack {
-            Label("战争日志", systemImage: "list.bullet.clipboard.fill")
+            Label("部落对战日志", systemImage: "list.bullet.clipboard.fill")
                 .font(.headline)
             Spacer()
-            if let label = warLogState?.sourceLabel {
+            if let label = ClanDisplayFormat.sourceLabel(warLogState?.sourceLabel) {
                 Text(label)
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
@@ -76,21 +76,21 @@ struct WarLogCardView: View {
     private var statusContent: some View {
         let statusUnknown = villageID.map { model.clanStatusUnknown(for: $0) } ?? false
         if !isManualEntry, statusUnknown {
-            Label("刷新官方玩家数据后可查看战争日志", systemImage: "questionmark.circle")
+            Label("刷新官方玩家数据后可查看部落对战日志", systemImage: "questionmark.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else if !isManualEntry, clanTag == nil {
-            Label("不在部落中，没有战争日志", systemImage: "person.crop.circle.badge.questionmark")
+            Label("不在部落中，没有部落对战日志", systemImage: "person.crop.circle.badge.questionmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else if knownNotPublic,
                   !(warLogState?.status == .success || warLogState?.status == .failed),
                   let clanTag {
-            // 显式状态：不伪造"没有历史战争"。
+            // 显式状态：不伪造"没有历史部落对战"。
             // 仅当从未请求过时显示预判（force 请求后 success/failed 由
             // 状态分支呈现，避免 force 结果被预判 shadowing）。
             VStack(alignment: .leading, spacing: 8) {
-                Label("该部落的战争日志不公开", systemImage: "eye.slash.fill")
+                Label("该部落的部落对战日志不公开", systemImage: "eye.slash.fill")
                     .font(.callout)
                     .foregroundStyle(.orange)
                 HStack {
@@ -114,20 +114,20 @@ struct WarLogCardView: View {
             if let page = state.lastGood {
                 warLogList(page)
                 if hasMore {
-                    loadMoreButton("加载更多战争", tag: clanTag)
+                        loadMoreButton("加载更多部落对战", tag: clanTag)
                 }
             }
             // 总是显示刷新按钮：failed（重试）与 stale（重新拉取）都需入口，
             // 避免"有 lastGood 但状态非 success"时卡片死锁（对齐 3b 模式）。
             // 档案已知"不公开"时用户点刷新意图明确 → force 绕过预判
             //（否则被 AppModel 预判静默拦截，按钮无任何效果）。
-            refreshButton("刷新战争日志", force: knownNotPublic, tag: clanTag)
+            refreshButton("刷新部落对战日志", force: knownNotPublic, tag: clanTag)
         } else if let clanTag {
             VStack(alignment: .leading, spacing: 8) {
-                Label("尚未获取战争日志", systemImage: "circle.dashed")
+                Label("尚未获取部落对战日志", systemImage: "circle.dashed")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                refreshButton("查看战争日志", tag: clanTag)
+                refreshButton("查看部落对战日志", tag: clanTag)
             }
         }
     }
@@ -197,9 +197,9 @@ struct WarLogCardView: View {
                         .foregroundStyle(.secondary)
                 }
                 if state.lastHTTPStatus == 403 {
-                    // 403 可能是"战争日志不公开"（档案预判过期时兜底），
+                    // 403 可能是"部落对战日志不公开"（档案预判过期时兜底），
                     // 也可能是 invalidIp 等凭证问题（reason 原样透传可区分）。
-                    Text("战争日志可能不公开（403）")
+                    Text("部落对战日志可能不公开（403）")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -217,7 +217,7 @@ struct WarLogCardView: View {
     private func warLogList(_ page: OfficialWarLogPage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if page.items.isEmpty {
-                Text("没有历史战争记录")
+                Text("没有历史部落对战记录")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
@@ -278,7 +278,7 @@ struct WarLogCardView: View {
                         .font(.callout.weight(.semibold))
                 }
                 if let destruction = entry.clan?.destructionPercentage {
-                    Text("摧毁 \(destruction)%")
+                        Text("摧毁率 \(destruction)%")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -299,7 +299,7 @@ struct WarLogCardView: View {
                 .font(.caption)
                 .lineLimit(1)
             if let th = member.townhallLevel {
-                Text("TH\(th)")
+                Text("\(th)级大本营")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -318,7 +318,7 @@ struct WarLogCardView: View {
         }
         let stars = attacks.reduce(0) { $0 + ($1.stars ?? 0) }
         let destruction = attacks.reduce(0.0) { $0 + ($1.destructionPercentage ?? 0) }
-        return "\(attacks.count)攻 · ⭐\(stars) · 摧毁 \(Self.percent(destruction))%"
+        return "\(attacks.count)次进攻 · ⭐\(stars) · 摧毁率 \(Self.percent(destruction))%"
     }
 
     private static func percent(_ value: Double) -> String {

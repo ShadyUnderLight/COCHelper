@@ -344,7 +344,7 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
         XCTAssertEqual(recorder.snapshot().count, 2, "手动 + 村庄各一次请求（共享状态不产生重复请求）")
     }
 
-    // MARK: - 按 Tag 刷新战争日志 / 资本赛季 / 当前战争
+    // MARK: - 按 Tag 刷新战争日志 / 突袭周末 / 当前战争
 
     /// tag 版战争日志首屏：请求 warlog 端点，成功写入按 tag 状态。
     @MainActor
@@ -367,7 +367,7 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
         XCTAssertEqual(logRecorder.snapshot(), ["/v1/clans/%23WARLOG1/warlog"], "必须请求显式 tag 的 warlog")
     }
 
-    /// tag 版资本赛季首屏：请求 capitalraidseasons 端点，成功写入按 tag 状态。
+    /// tag 版突袭周末首屏：请求 capitalraidseasons 端点，成功写入按 tag 状态。
     @MainActor
     func testRefreshCapitalRaidByTag() async throws {
         let logRecorder = TagRecorder()

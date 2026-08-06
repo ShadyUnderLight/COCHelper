@@ -192,7 +192,7 @@ public struct CoAPIClient: Sendable {
         )
     }
 
-    /// 拉取官方部落资本赛季（分页）。语义与 `fetchWarLog` 一致。
+    /// 拉取官方部落都城突袭周末（分页）。语义与 `fetchWarLog` 一致。
     public func fetchCapitalRaidSeasons(
         tag: String,
         after: String? = nil,

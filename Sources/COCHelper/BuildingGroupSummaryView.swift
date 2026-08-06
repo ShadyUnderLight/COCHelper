@@ -36,7 +36,7 @@ struct BuildingGroupSummaryView: View {
     /// 前缀，明确只汇总了已知部分，不得被误读为完整总额。
     private var costSummaryLabel: String {
         let parts = group.summary.costByResource.map {
-            $0.resource + " " + BuildingCostFormatter.label($0.totalCost)
+            ClanDisplayFormat.resourceLabel($0.resource) + " " + BuildingCostFormatter.label($0.totalCost)
         }
         if parts.isEmpty { return "无费用数据" }
         if group.summary.completeness == .partialMissing {
@@ -135,7 +135,7 @@ struct BuildingGroupSummaryView: View {
             return "目录图标或等级外观缺失：" + reason
         }
         if let missingReason = firstInstance?.item.missingReason { return missingReason }
-        return "目录渲染资产"
+        return "游戏资源图标"
     }
 
     /// 时长前缀：partialMissing 时明确「已知时长」（Review 反馈 P1-1），

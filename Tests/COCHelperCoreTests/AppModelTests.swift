@@ -571,7 +571,7 @@ extension AppModelTests {
 // MARK: - capital raid 分页（stage 3c 外部复核补充）
 
 extension AppModelTests {
-    /// 资本赛季首屏：请求 capitalraidseasons → 状态 success + 条目 + 游标。
+    /// 突袭周末首屏：请求 capitalraidseasons → 状态 success + 条目 + 游标。
     @MainActor
     func testRefreshCapitalFirstPage() async throws {
         let recorder = TagRecorder()
@@ -597,7 +597,7 @@ extension AppModelTests {
         XCTAssertTrue(model.currentCapitalHasMore)
     }
 
-    /// 资本赛季加载更多：游标参数 + 合并去重。
+    /// 突袭周末加载更多：游标参数 + 合并去重。
     @MainActor
     func testLoadMoreCapitalMerges() async throws {
         let recorder = TagRecorder()
@@ -629,7 +629,7 @@ extension AppModelTests {
         XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER2")
     }
 
-    /// 跨 parserVersion 的资本赛季加载更多：与战争日志同构——重建第一页
+    /// 跨 parserVersion 的突袭周末加载更多：与战争日志同构——重建第一页
     ///（无游标请求），保持列表完整与游标停滞保护。
     @MainActor
     func testLoadMoreCapitalWithOlderParserVersionRebuildsFromFirstPage() async throws {
@@ -681,7 +681,7 @@ extension AppModelTests {
         XCTAssertTrue(model.currentCapitalHasMore, "首页有 after → 可继续加载更多")
     }
 
-    /// 资本赛季刷新失败保留 last-good。
+    /// 突袭周末刷新失败保留 last-good。
     @MainActor
     func testRefreshCapitalFailureKeepsLastGood() async throws {
         let failFlag = FailFlag()

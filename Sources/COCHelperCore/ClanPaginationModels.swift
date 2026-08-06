@@ -167,7 +167,7 @@ public struct OfficialWarLogEntry: Codable, Hashable, Sendable {
     }
 }
 
-// MARK: - 部落资本赛季成员与攻防日志（Issue #20）
+// MARK: - 部落都城突袭周末成员与攻防日志（Issue #20）
 
 /// capitalraidseasons 赛季成员贡献条目（官方 ClanCapitalRaidSeasonMember）。
 ///
@@ -175,7 +175,7 @@ public struct OfficialWarLogEntry: Codable, Hashable, Sendable {
 public struct CapitalRaidSeasonMember: Codable, Hashable, Sendable {
     public let tag: String?
     public let name: String?
-    /// 本成员赛季掠夺的部落资本资源。
+    /// 本成员突袭周末掠夺的都城金币。
     public let capitalResourcesLooted: Int?
     /// 本成员赛季攻击次数。
     public let attacks: Int?
@@ -207,19 +207,19 @@ public struct CapitalRaidClanInfo: Codable, Hashable, Sendable {
     }
 }
 
-/// 攻防日志中的区域明细（官方 ClanCapitalRaidSeasonDistrict）。
+/// 攻防日志中的子城明细（官方 ClanCapitalRaidSeasonDistrict）。
 ///
-/// 摧毁率与掠夺在 districts 内（官方无顶层 looted/destructionPercent）。
+/// 摧毁率与都城金币掠夺量在 districts 内（官方无顶层 looted/destructionPercent）。
 public struct CapitalRaidDistrict: Codable, Hashable, Sendable {
     public let name: String?
     public let id: Int?
-    /// 区域大厅等级。
+    /// 子城大本营等级。
     public let districtHallLevel: Int?
     public let stars: Int?
     /// 摧毁百分比（官方整数，用 Double 容忍浮点形态）。
     public let destructionPercent: Double?
     public let attackCount: Int?
-    /// 该区域掠夺的战利品。
+    /// 该子城掠夺的都城金币。
     public let totalLooted: Int?
 
     public init(
@@ -243,7 +243,7 @@ public struct CapitalRaidAttackLogEntry: Codable, Hashable, Sendable {
     public let attackCount: Int?
     public let districtCount: Int?
     public let districtsDestroyed: Int?
-    /// 区域明细（摧毁率/掠夺在此）。
+    /// 子城明细（摧毁率/都城金币掠夺量在此）。
     public let districts: [CapitalRaidDistrict]?
 
     public init(
@@ -280,7 +280,7 @@ public struct CapitalRaidDefenseLogEntry: Codable, Hashable, Sendable {
     }
 }
 
-// MARK: - 部落资本赛季条目
+// MARK: - 部落都城突袭周末条目
 
 /// capitalraidseasons 中的一个赛季（字段与官方 APICapitalRaidSeason 对齐：
 /// 统计字段为**顶层**，无嵌套 clan 对象）。
@@ -292,13 +292,13 @@ public struct OfficialCapitalRaidSeason: Codable, Hashable, Sendable {
     public let state: String?
     public let startTime: String?
     public let endTime: String?
-    /// 赛季总战利品（官方字段名 capitalTotalLoot）。
+    /// 突袭周末掠夺的都城金币总量（官方字段名 capitalTotalLoot）。
     public let capitalTotalLoot: Int?
     /// 完成突袭数。
     public let raidsCompleted: Int?
     /// 总攻击数。
     public let totalAttacks: Int?
-    /// 摧毁敌方区域数。
+    /// 摧毁敌方子城数。
     public let enemyDistrictsDestroyed: Int?
     public let offensiveReward: Int?
     public let defensiveReward: Int?

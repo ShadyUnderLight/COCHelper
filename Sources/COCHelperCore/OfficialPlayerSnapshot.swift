@@ -33,6 +33,7 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
     public let warPreference: String?
     public let donations: Int?
     public let donationsReceived: Int?
+    /// 玩家累计贡献给部落都城的都城金币数量。
     public let clanCapitalContributions: Int?
 
     // MARK: 联赛与成就

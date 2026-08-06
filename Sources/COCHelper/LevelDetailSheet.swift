@@ -40,10 +40,10 @@ struct LevelDetailSheet: View {
 
     private var missingNote: String? {
         if item.isNested {
-            return "嵌套模块/类型不参与静态目录 join（\(item.section):\(item.dataID)），无逐级数据。"
+            return "该项目属于内部子项目，暂不提供逐级升级数据。"
         }
         if catalogItem == nil {
-            return item.missingReason ?? "静态目录未收录该项目，无逐级数据。"
+            return item.missingReason ?? "该项目暂无逐级升级数据。"
         }
         return nil
     }
@@ -56,15 +56,14 @@ struct LevelDetailSheet: View {
 
     private func unlockLabel(_ level: CatalogLevel) -> String {
         var parts: [String] = []
-        if let th = level.requiredTownHallLevel { parts.append("大本营 " + String(th) + " 级") }
-        if let lab = level.requiredLaboratoryLevel { parts.append("实验室 " + String(lab) + " 级") }
+        if let th = level.requiredTownHallLevel { parts.append("所需大本营等级 " + String(th) + "级") }
+        if let lab = level.requiredLaboratoryLevel { parts.append("所需实验室等级 " + String(lab) + "级") }
         return parts.isEmpty ? "无解锁条件" : parts.joined(separator: " · ")
     }
 
     private func costLabel(_ level: CatalogLevel) -> String {
         guard let cost = level.upgradeCost else { return "无费用数据" }
-        let resource = level.upgradeResource ?? "资源"
-        return resource + " " + String(cost)
+        return ClanDisplayFormat.resourceLabel(level.upgradeResource) + " " + String(cost)
     }
 
     /// 资产解析的目录版本：优先当前 catalog 的 gameVersion，缺失时回落
@@ -168,7 +167,7 @@ struct LevelDetailSheet: View {
     private func levelRow(_ level: CatalogLevel) -> some View {
         let isCurrent = item.currentLevel == level.level
         // 升级中：item.nextLevel（投影显式推断）；非升级未满级：currentLevel + 1
-        // （与 UpgradeDisplayRow.durationLabel 的「下一级 Lv N」推导同规则）。
+        // （与 UpgradeDisplayRow.durationLabel 的「下一级：N级」推导同规则）。
         let effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })
         let isNext = effectiveNext == level.level
         return HStack(spacing: 12) {
@@ -190,7 +189,7 @@ struct LevelDetailSheet: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text("Lv " + String(level.level))
+                    Text(String(level.level) + "级")
                         .font(.subheadline.weight(.bold).monospacedDigit())
                     if isCurrent {
                         Text("当前")

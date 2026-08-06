@@ -31,9 +31,9 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var clanWarLogStates: [String: ClanWarLogAPIState] = [:]
     /// 正在刷新战争日志的部落 tag 集合（防重入守卫 + 卡片按部落隔离，Issue #35）。
     @Published public private(set) var refreshingWarLogTags: Set<String> = []
-    /// 部落资本赛季共享数据层（分页）。
+    /// 部落都城突袭周末共享数据层（分页）。
     @Published public private(set) var clanCapitalStates: [String: ClanCapitalAPIState] = [:]
-    /// 正在刷新资本赛季的部落 tag 集合（防重入守卫 + 卡片按部落隔离，Issue #35）。
+    /// 正在刷新突袭周末的部落 tag 集合（防重入守卫 + 卡片按部落隔离，Issue #35）。
     @Published public private(set) var refreshingCapitalTags: Set<String> = []
     /// 手动跟踪的部落档案（Issue #41）：独立于村庄档案与玩家快照。
     /// 只存档案元数据（tag/备注/创建时间），部落 API 数据仍在
@@ -213,7 +213,7 @@ public final class AppModel: ObservableObject {
         clanWarLogStates[clanTag]
     }
 
-    /// 指定部落 tag 的资本赛季状态（分页）。
+    /// 指定部落 tag 的突袭周末状态（分页）。
     public func capitalState(for clanTag: String) -> ClanCapitalAPIState? {
         clanCapitalStates[clanTag]
     }
@@ -230,7 +230,7 @@ public final class AppModel: ObservableObject {
         return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
     }
 
-    /// 指定部落的资本赛季是否还有更多页。
+    /// 指定部落的突袭周末是否还有更多页。
     public func capitalHasMore(for clanTag: String) -> Bool {
         guard let state = capitalState(for: clanTag), state.status == .success,
               let cursor = state.lastGood?.after else { return false }
@@ -262,7 +262,7 @@ public final class AppModel: ObservableObject {
         return refreshingWarLogTags.contains(clanTag)
     }
 
-    /// 指定部落的资本赛季刷新/翻页是否在途（clanTag 为 nil 时返回 false）。
+    /// 指定部落的突袭周末刷新/翻页是否在途（clanTag 为 nil 时返回 false）。
     public func isRefreshingCapital(clanTag: String?) -> Bool {
         guard let clanTag else { return false }
         return refreshingCapitalTags.contains(clanTag)
@@ -644,7 +644,7 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 按显式 Tag 刷新部落资本赛季（手动部落入口）。
+    /// 按显式 Tag 刷新部落都城突袭周末（手动部落入口）。
     public func refreshCapitalRaid(tag: String) {
         guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingCapitalData else { return }
@@ -669,7 +669,7 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 按显式 Tag 资本赛季加载更多（手动部落入口；入参规范化，非法输入 no-op）。
+    /// 按显式 Tag 突袭周末加载更多（手动部落入口；入参规范化，非法输入 no-op）。
     public func loadMoreCapitalRaid(tag: String) {
         guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingCapitalData else { return }
@@ -924,38 +924,38 @@ public final class AppModel: ObservableObject {
         return store.states
     }
 
-    // MARK: - 部落资本赛季（分页，按需）
+    // MARK: - 部落都城突袭周末（分页，按需）
 
-    /// 当前村庄所属部落的资本赛季状态。
+    /// 当前村庄所属部落的突袭周末状态。
     public var currentCapitalState: ClanCapitalAPIState? {
         guard let tag = currentVillageClanTag else { return nil }
         return capitalState(for: tag)
     }
 
-    /// 当前资本赛季是否还有更多页。
+    /// 当前突袭周末是否还有更多页。
     public var currentCapitalHasMore: Bool {
         guard let tag = currentVillageClanTag else { return false }
         return capitalHasMore(for: tag)
     }
 
-    /// 指定村庄所属部落的资本赛季首屏/刷新（替换累计列表；失败保留既有 last-good）。
+    /// 指定村庄所属部落的突袭周末首屏/刷新（替换累计列表；失败保留既有 last-good）。
     public func refreshCapitalRaid(villageID: UUID) {
         guard let tag = officialClanTag(for: villageID) else { return }
         refreshCapitalRaid(tag: tag)
     }
 
-    /// 当前村庄所属部落的资本赛季首屏/刷新（兼容转发，语义不变）。
+    /// 当前村庄所属部落的突袭周末首屏/刷新（兼容转发，语义不变）。
     public func refreshCurrentCapitalRaid() {
         refreshCapitalRaid(villageID: selectedVillageID)
     }
 
-    /// 指定村庄所属部落的资本赛季加载更多（合并去重）。
+    /// 指定村庄所属部落的突袭周末加载更多（合并去重）。
     public func loadMoreCapitalRaid(villageID: UUID) {
         guard let tag = officialClanTag(for: villageID) else { return }
         loadMoreCapitalRaid(tag: tag)
     }
 
-    /// 当前村庄所属部落的资本赛季加载更多（兼容转发，语义不变）。
+    /// 当前村庄所属部落的突袭周末加载更多（兼容转发，语义不变）。
     public func loadMoreCurrentCapitalRaid() {
         loadMoreCapitalRaid(villageID: selectedVillageID)
     }
@@ -986,11 +986,11 @@ public final class AppModel: ObservableObject {
         public var userFacingMessage: String {
             switch self {
             case .invalidTag:
-                return "Tag 无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。"
+                return "标签无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。"
             case .missingToken:
                 return "未配置 API token，请先在账号数据页配置。"
             case .notFound:
-                return "未找到该部落（404），请检查 Tag 是否正确。"
+                return "未找到该部落（404），请检查标签是否正确。"
             case .accessDenied:
                 return "访问被拒绝（401/403）：请检查 API token 是否有效。"
             case .rateLimited:
@@ -1014,7 +1014,7 @@ public final class AppModel: ObservableObject {
     /// 成功写入 `clanStates` 的理由：#48「详情页首屏只读取已保存的基础信息/
     /// API 状态」——确认保存后打开详情页首屏直接有数据，无需再次请求。
     ///
-    /// single-flight（#48 验收"同一 Tag 并发刷新只产生一次实际请求"）：
+    /// single-flight（#48 验收"同一部落标签并发刷新只产生一次实际请求"）：
     /// 同 tag 刷新批次在途时（`refreshingClanTags` 含该 tag），解析**等待**
     /// 批次结束并复用其结果（成功返回快照、失败映射分类），不发第二个请求；
     /// 仅"确实等待过批次"才复用，避免误复用解析前的旧缓存。等待可取消。

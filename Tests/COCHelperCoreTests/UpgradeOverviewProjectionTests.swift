@@ -15,7 +15,8 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
     }
 
     /// 小型合成目录：加农炮(建筑语义)、野蛮人(单位语义)、建筑工人小屋(builder)、野蛮人木偶(装备无时长)。
-    /// 与 VillageCatalogProjectionTests 的合成目录一致。
+    /// 基线与 VillageCatalogProjectionTests 的合成目录一致；唯一差异：units:4000000
+    /// Lv2 带 levelVisual 资产（供升级总览「记录携带当前等级资产」集成断言使用）。
     static let syntheticCatalogJSON = """
     {
       "gameVersion": "18.400.13",
@@ -30,7 +31,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
          "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
          "levels":[
            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
-           {"level":2,"durationSeconds":1800,"upgradeResource":"Elixir","upgradeCost":250,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":2,"durationSeconds":1800,"upgradeResource":"Elixir","upgradeCost":250,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":{"renderedPath":"icons/units/barbarian_lvl2.png","missingReason":null},"missingReason":null},
            {"level":3,"durationSeconds":3600,"upgradeResource":"Elixir","upgradeCost":500,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null}
          ]},
         {"section":"buildings2","category":"buildings","dataID":1000033,"base":"builder","name":"建筑工人小屋","maxLevel":2,
@@ -138,6 +139,8 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             missingReason: nil,
             icon: nil,
             levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
             isNested: false
         )
     }
@@ -528,6 +531,14 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         XCTAssertTrue(withCatalog.allSatisfy { $0.catalogVersion == "18.400.13" })
         let record = try XCTUnwrap(withCatalog.first)
         XCTAssertEqual(record.item.currentLevel, 2)
+        // Issue #39：升级总览记录携带投影的当前等级资产——record.item 即
+        // VillageCatalogProjection 的 state（与村庄详情同一 resolver 数据源）。
+        XCTAssertEqual(
+            record.item.currentLevelVisual,
+            try XCTUnwrap(syntheticCatalog.item(section: record.item.section, dataID: record.item.dataID)?
+                .levels.first { $0.level == record.item.currentLevel }?.levelVisual),
+            "升级总览记录必须携带 currentLevel 对应的等级资产"
+        )
         XCTAssertNil(record.item.nextLevel, "计时结束项不得自动推断下一等级（等重新导入确认）")
 
         let withoutCatalog = pendingReimportRecords([village], catalog: nil)
@@ -631,6 +642,8 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             missingReason: nil,
             icon: nil,
             levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
             isNested: false
         )
     }

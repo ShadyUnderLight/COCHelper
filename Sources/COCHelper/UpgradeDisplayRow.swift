@@ -6,8 +6,10 @@ import COCHelperCore
 ///
 /// 输入 `UpgradeDisplayRecord`（投影聚合层），展示：
 /// - 图标列：`item.preferredAssetURLs` 非空且可加载时渲染目录 PNG（`bundledURL()`
-///   解析 + NSImage 加载；levelVisual → icon 运行时候选，Issue #34，与详情
-///   sheet 共用 `VillageItemState.preferredAssetURLs` 解析防漂移）；加载失败
+///   解析 + NSImage 加载；4 级候选链 currentLevelVisual → currentLevelIcon →
+///   levelVisual → icon，Issue #39（按 currentLevel 显示对应等级外观，
+///   level-level 资产优先于 item-level）/#34，与详情 sheet 共用
+///   `VillageItemState.preferredAssetURLs` 解析防漂移）；加载失败
 ///   或不可渲染时统一走类别 SF Symbol 兜底。`item.assetMissingReason`
 ///   （icon 或 levelVisual 的缺失原因）非 nil 时叠加橙色警示角标（可见的
 ///   缺失状态）+ `.help` 提示原因，不隐藏行。
@@ -103,9 +105,9 @@ struct UpgradeDisplayRow: View {
 
     // MARK: - 图标
 
-    /// 目录视觉资产缺失原因（icon 优先、levelVisual 兜底，见
+    /// 目录视觉资产缺失原因（level-level 优先、icon 优先于 levelVisual，见
     /// `VillageItemState.assetMissingReason`）：当前 bundled 目录（18.400.13）
-    /// 27 个引用带缺失原因（23 个唯一键，export_not_found / render_failed），
+    /// 部分 item/level 资产带缺失原因（export_not_found / render_failed），
     /// 非 nil 时 UI 必须给出可见的缺失状态（角标 + help），不能只在 hover 里。
     private var iconMissingReason: String? {
         item.assetMissingReason
@@ -138,12 +140,14 @@ struct UpgradeDisplayRow: View {
     }
 
     /// 目录渲染 PNG（`preferredAssetURLs` 非空且可加载时）；否则 SF Symbol 兜底。
-    /// Issue #25/#34：视觉资产候选 levelVisual → icon（`VillageItemState.preferredAssetURLs`，
-    /// 与详情 sheet 同解析防漂移）——建筑/陷阱目录项 icon 为 nil 但 levelVisual 可渲染
-    /// （如 buildings:1000000 fireplace_lvl1.png），列表行必须显示真实 PNG；
-    /// 首选文件缺失时自动尝试次选（P2 评审），全部加载失败同样回退 SF Symbol，
-    /// 不崩溃。版本参数取投影层 catalogVersion（与 `loadBundled()` 同源），
-    /// 避免未来多版本资源错配。
+    /// Issue #25/#34/#39：视觉资产候选链 currentLevelVisual → currentLevelIcon →
+    /// levelVisual → icon（`VillageItemState.preferredAssetURLs`，与详情 sheet
+    /// 同解析防漂移）——链首为当前等级资产（level-level，按 currentLevel 显示
+    /// 对应等级外观，优先于 item-level）；建筑/陷阱目录项 icon 为 nil 但
+    /// levelVisual 可渲染（如 buildings:1000000 fireplace_lvl1.png），列表行必须
+    /// 显示真实 PNG；首选文件缺失时自动尝试次选（P2 评审），全部加载失败同样
+    /// 回退 SF Symbol，不崩溃。版本参数取投影层 catalogVersion（与 `loadBundled()`
+    /// 同源），避免未来多版本资源错配。
     @ViewBuilder
     private var iconView: some View {
         if let image = item.preferredAssetURLs(

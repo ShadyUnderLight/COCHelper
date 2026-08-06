@@ -78,9 +78,13 @@ extension CatalogAssetRef {
 
     /// 按显示优先级依次解析候选 ref 的 Bundle URL。`bundledURL` 仅在
     /// isRenderable 且文件真实存在时返回 URL，因此「元数据可渲染但文件缺失」
-    /// 的候选被自动过滤——UI 对返回数组依次做 NSImage 加载探测，实现
-    /// levelVisual → icon → SF Symbol 的运行时回退链（Issue #34 P2 评审：
-    /// 不能只按元数据选定一个 ref、加载失败就直接回退 SF Symbol 而跳过次选）。
+    /// 的候选被自动过滤——本函数只对给定候选做有序过滤，回退链语义在调用方：
+    /// `VillageItemState.preferredAssetURLs`（4 级候选 currentLevelVisual →
+    /// currentLevelIcon → levelVisual → icon，Issue #39/#34）与
+    /// `CatalogLevel.preferredAssetURLs`（2 级候选 levelVisual → icon）。
+    /// UI 对返回数组依次做 NSImage 加载探测，逐级回退到 SF Symbol（Issue #34
+    /// P2 评审：不能只按元数据选定一个 ref、加载失败就直接回退 SF Symbol 而
+    /// 跳过次选）。
     public static func availableURLs(_ refs: [CatalogAssetRef?], version: String) -> [URL] {
         refs.compactMap { $0?.bundledURL(version: version) }
     }

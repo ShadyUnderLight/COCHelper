@@ -7,8 +7,10 @@ import COCHelperCore
 /// 数据来源：`GameCatalog.item(section:dataID:)` 的 `levels` 数组（逐级时长、
 /// 费用、解锁条件）。嵌套 items（`.types.`/`.modules.`）与目录未收录项
 /// 与投影层同规则不 join，显示缺失原因而不是伪造数据。
-/// Issue #25：头部图标与逐级行图标渲染目录 PNG（levelVisual 优先、icon 兜底），
-/// 均不可渲染/加载失败时回退 SF Symbol，不崩溃。
+/// Issue #25：逐级行图标渲染目录 PNG（CatalogLevel 内 levelVisual 优先、icon 兜底）；
+/// Issue #39：头部图标走 4 级候选链 currentLevelVisual → currentLevelIcon →
+/// levelVisual → icon（按 currentLevel 显示对应等级外观，超范围/无匹配时回退
+/// item-level 资产）。均不可渲染/加载失败时回退 SF Symbol，不崩溃。
 struct LevelDetailSheet: View {
     let item: VillageItemState
     let catalog: GameCatalog?
@@ -71,10 +73,12 @@ struct LevelDetailSheet: View {
         catalog?.gameVersion ?? GameCatalog.defaultBundledVersion
     }
 
-    /// 头部图标：levelVisual → icon 运行时候选（`VillageItemState.preferredAssetURLs`，
-    /// 与列表行共用解析防漂移；首选文件缺失时自动尝试次选，P2 评审）。
-    /// 目录中部分 item（如兵营 buildings:1000000）icon 为 nil 但 levelVisual
-    /// 可渲染（fireplace_lvl1.png）——头部必须与逐级行一致显示真实外观。
+    /// 头部图标：4 级候选链 currentLevelVisual → currentLevelIcon → levelVisual →
+    /// icon 运行时候选（`VillageItemState.preferredAssetURLs`，与列表行共用解析
+    /// 防漂移；首选文件缺失时自动尝试次选，P2 评审）。Issue #39：链首为当前等级
+    /// 资产（按 currentLevel 显示对应等级外观）；目录中部分 item（如兵营
+    /// buildings:1000000）icon 为 nil 但 levelVisual 可渲染（fireplace_lvl1.png——
+    /// 游戏内部导出代号，兵营中心营火）——头部必须与逐级行一致显示真实外观。
     private var headerImage: NSImage? {
         item.preferredAssetURLs(version: assetVersion)
             .lazy.compactMap { NSImage(contentsOf: $0) }.first

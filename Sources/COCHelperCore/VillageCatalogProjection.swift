@@ -39,6 +39,12 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let missingReason: String?
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
+    /// 当前等级（currentLevel）匹配的 CatalogLevel 资产（level-level，Issue #39）：
+    /// 列表行/详情头部按 currentLevel 显示对应等级外观；无匹配等级时为 nil。
+    /// 注意与 item-level 的 icon/levelVisual 区分：这两个新字段来自 currentLevel
+    /// 匹配的 CatalogLevel 记录，选择优先级高于 item-level 资产（见 preferredAssetURLs）。
+    public let currentLevelIcon: CatalogAssetRef?
+    public let currentLevelVisual: CatalogAssetRef?
     public let isNested: Bool
     /// Issue #37：展示分类（防御/军事/精制台）；nil 表示无细分（走原分类兜底）。
     public let displayCategory: TrackerDisplayCategory?
@@ -53,23 +59,36 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 避免两处手写条件漂移。
     public var needsReimport: Bool { timerSeconds != nil && remainingSeconds == 0 }
 
-    /// 目录视觉资产（icon 或 levelVisual）的缺失原因；两者均可用时 icon 优先。
-    /// 注意：这是缺失原因优先级（icon 优先），与 `preferredAssetURLs` 的显示
-    /// 优先级（levelVisual 优先）相反，勿混用。当前 bundled 目录（18.400.13）：
-    /// 27 个引用带缺失原因（23 个唯一键，export_not_found / render_failed）；
-    /// UI 依据该值给出可见缺失状态。
+    /// 视觉资产缺失原因（用于 UI 降级提示角标）。
+    ///
+    /// 优先级：level-level 资产优先于 item-level（显示链首选缺失最值得提示，
+    /// Issue #39 P2：currentLevel 对应等级资产 render_failed 时必须可见提示，
+    /// 不能静默回退 item-level 外观）；同层级内 icon 优先（保持 #34 语义：
+    /// 报告"缺失的图标类资产"）。两者均可用时返回 nil。
+    /// 注意：这是缺失原因优先级，与 `preferredAssetURLs` 的显示候选顺序
+    /// （currentLevelVisual → currentLevelIcon → levelVisual → icon）不同维
+    /// 度，勿混用。当前 bundled 目录（18.400.13）：部分等级资产带缺失原因
+    /// （export_not_found / render_failed）；UI 依据该值给出可见缺失状态。
     public var assetMissingReason: String? {
-        icon?.missingReason ?? levelVisual?.missingReason
+        currentLevelIcon?.missingReason
+            ?? currentLevelVisual?.missingReason
+            ?? icon?.missingReason
+            ?? levelVisual?.missingReason
     }
 
-    /// 视觉资产候选 URL（levelVisual → icon 优先级，运行时文件存在性过滤）：
+    /// 视觉资产候选 URL（4 级回退链，运行时文件存在性过滤）：
+    /// currentLevelVisual → currentLevelIcon → levelVisual → icon。
     /// `bundledURL` 仅在 isRenderable 且 Bundle 文件真实存在时返回 URL，因此
     /// 「元数据可渲染但文件缺失」的候选自动过滤——UI 对返回数组依次做 NSImage
-    /// 加载探测，实现 levelVisual → icon → SF Symbol 的运行时回退链。
-    /// Issue #34 P2 评审：不能只按元数据选定一个 ref、加载失败就直接回退
-    /// SF Symbol 而跳过次选 icon。列表行与详情 sheet 必须共用本解析防漂移。
+    /// 加载探测，实现逐级回退链。前两级为 level-level 资产（Issue #39 按
+    /// currentLevel 显示对应等级外观，来自 CatalogLevel），优先级高于
+    /// item-level 的 levelVisual/icon；后两级为 item-level 资产（Issue #34）。
+    /// 列表行与详情 sheet 必须共用本解析防漂移。
     public func preferredAssetURLs(version: String) -> [URL] {
-        CatalogAssetRef.availableURLs([levelVisual, icon], version: version)
+        CatalogAssetRef.availableURLs(
+            [currentLevelVisual, currentLevelIcon, levelVisual, icon],
+            version: version
+        )
     }
 
     init(
@@ -90,6 +109,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         missingReason: String?,
         icon: CatalogAssetRef?,
         levelVisual: CatalogAssetRef?,
+        currentLevelIcon: CatalogAssetRef?,
+        currentLevelVisual: CatalogAssetRef?,
         isNested: Bool,
         displayCategory: TrackerDisplayCategory? = nil
     ) {
@@ -110,6 +131,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.missingReason = missingReason
         self.icon = icon
         self.levelVisual = levelVisual
+        self.currentLevelIcon = currentLevelIcon
+        self.currentLevelVisual = currentLevelVisual
         self.isNested = isNested
         self.displayCategory = displayCategory
     }
@@ -249,6 +272,8 @@ public struct VillageCatalogProjection: Sendable {
                 missingReason: "该类别不参与升级追踪（\(item.section)）。",
                 icon: nil,
                 levelVisual: nil,
+                currentLevelIcon: nil,
+                currentLevelVisual: nil,
                 isNested: isNested,
                 displayCategory: displayCategory
             )
@@ -321,6 +346,17 @@ public struct VillageCatalogProjection: Sendable {
             missingReason = "目录未收录（\(item.section):\(item.dataID)）。"
         }
 
+        // Issue #39：当前等级资产。按值匹配 level（目录等级号可能不连续），
+        // 仅 baseMatches 且目录命中时解析；currentLevel 为 nil / 超范围 / 未收录
+        // 时两字段均为 nil，UI 回退 item-level 资产（不按名称/位置猜测）。
+        let currentLevelAssets: (visual: CatalogAssetRef?, icon: CatalogAssetRef?)
+        if baseMatches, let catalogItem, let level = item.level {
+            let matched = catalogItem.levels.first { $0.level == level }
+            currentLevelAssets = (matched?.levelVisual, matched?.icon)
+        } else {
+            currentLevelAssets = (nil, nil)
+        }
+
         return VillageItemState(
             id: item.id,
             section: item.section,
@@ -339,6 +375,8 @@ public struct VillageCatalogProjection: Sendable {
             missingReason: missingReason,
             icon: baseMatches ? catalogItem?.icon : nil,
             levelVisual: baseMatches ? catalogItem?.levelVisual : nil,
+            currentLevelIcon: currentLevelAssets.icon,
+            currentLevelVisual: currentLevelAssets.visual,
             isNested: isNested,
             displayCategory: displayCategory
         )
@@ -422,6 +460,8 @@ public struct VillageCatalogProjection: Sendable {
                 missingReason: first.missingReason,
                 icon: first.icon,
                 levelVisual: first.levelVisual,
+                currentLevelIcon: first.currentLevelIcon,
+                currentLevelVisual: first.currentLevelVisual,
                 isNested: first.isNested,
                 displayCategory: first.displayCategory
             ))

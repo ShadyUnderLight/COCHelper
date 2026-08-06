@@ -70,6 +70,19 @@ struct VillageDetailView: View {
         // 分组 id 集合：数据变化（重新导入快照、切换基地等）后用于校正筛选，
         // 不得残留成错误的空筛选（issue #37 验收）。
         let groupIDs = groups.map(\.id)
+        // Issue #45：同类建筑组卡投影（buildings/buildings2 原始记录层）。
+        // 与 VillageCatalogProjection.project 并行调用：聚合层（agg: 前缀记录）
+        // 继续供完成度/诊断/筛选使用，组卡基于原始记录层，两者语义互不影响。
+        let buildingGroups = BuildingGroupProjection.project(
+            village: village, catalog: catalog, base: selectedBase, now: now
+        )
+        // 原始快照记录 id → 组。BuildingInstance.id 与 VillageItemState.id 同源
+        //（同一条快照记录），但聚合层记录 id 带 agg: 前缀，查找键需归一化
+        //（rawRecordID）。快照记录 id 全局唯一，字典 1:1。
+        let groupByInstanceID = Dictionary(
+            buildingGroups.flatMap { group in group.instances.map { ($0.id, group) } },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -91,7 +104,13 @@ struct VillageDetailView: View {
                     }
                 } else {
                     ForEach(displayGroups) { group in
-                        sectionCard(group: group, now: now, stats: statsByKey[group.id], village: village)
+                        sectionCard(
+                            group: group,
+                            now: now,
+                            stats: statsByKey[group.id],
+                            village: village,
+                            groupByInstanceID: groupByInstanceID
+                        )
                     }
                 }
             }
@@ -311,11 +330,15 @@ struct VillageDetailView: View {
 
     // MARK: - 列表
 
+    /// 分组卡片：标题 + 完成度（保持现状）；内容按展示分类分派（Issue #45）——
+    /// 精制台整组走旧列表（父子缩进），其余组（buildings/buildings2 平铺记录）
+    /// 接入组卡，无组卡归属的 items（防御性兜底）继续走旧行。
     private func sectionCard(
         group: VillageDetailGroup,
         now: Date,
         stats: VillageCategoryCompletion?,
-        village: VillageProfile
+        village: VillageProfile,
+        groupByInstanceID: [String: BuildingGroup]
     ) -> some View {
         Panel {
             VStack(alignment: .leading, spacing: 10) {
@@ -329,20 +352,17 @@ struct VillageDetailView: View {
                     sectionCompletionLabel(stats: stats)
                 }
 
-                LazyVStack(spacing: 0) {
-                    // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
-                    // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
-                    let rows = VillageDetailProjection.parentedRows(from: group.items)
-                    ForEach(rows) { row in
-                        itemRow(row.item, group: group, now: now, village: village)
-                        ForEach(row.children) { child in
-                            Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
-                            itemRow(child, group: group, now: now, village: village, indented: true)
-                        }
-                        if row.id != rows.last?.id {
-                            Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
-                        }
-                    }
+                if group.displayCategory == .craftTable {
+                    // 精制台：整组走旧列表（issue #24 父子缩进），不接入组卡。
+                    legacyRows(items: group.items, group: group, now: now, village: village)
+                } else {
+                    groupedRows(
+                        items: group.items,
+                        group: group,
+                        groupByInstanceID: groupByInstanceID,
+                        now: now,
+                        village: village
+                    )
                 }
             }
         }
@@ -382,6 +402,79 @@ struct VillageDetailView: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
+    }
+
+    /// Issue #45：非精制台分组的组卡内容。有组归属的 items 按 BuildingGroup 聚类
+    /// 渲染组卡（组按 items 首现顺序，组内实例保持快照输入序），无归属的 items
+    ///（防御性兜底：未知 section 项、嵌套后代等）走旧列表行，统一放在组卡下方。
+    /// 聚合行与组卡实例数量可能不同（如同等级墙聚合为 1 行 ×N，组卡按原始记录
+    /// 逐实例展示），chips 计数仍按聚合口径，已知外观差异（Task 4 验证）。
+    private func groupedRows(
+        items: [VillageItemState],
+        group: VillageDetailGroup,
+        groupByInstanceID: [String: BuildingGroup],
+        now: Date,
+        village: VillageProfile
+    ) -> some View {
+        var orderedGroups: [BuildingGroup] = []
+        var seenGroupIDs = Set<String>()
+        var fallbackItems: [VillageItemState] = []
+        for item in items {
+            if let buildingGroup = groupByInstanceID[Self.rawRecordID(item.id)] {
+                if !seenGroupIDs.contains(buildingGroup.id) {
+                    seenGroupIDs.insert(buildingGroup.id)
+                    orderedGroups.append(buildingGroup)
+                }
+            } else {
+                fallbackItems.append(item)
+            }
+        }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(orderedGroups) { buildingGroup in
+                BuildingGroupCard(group: buildingGroup) { instance in
+                    selectedItem = instance.item
+                }
+            }
+            if !fallbackItems.isEmpty {
+                legacyRows(items: fallbackItems, group: group, now: now, village: village)
+            }
+        }
+    }
+
+    /// 旧列表行（精制台整组 / 无组卡归属的兜底 items）：issue #24 父子缩进平铺。
+    private func legacyRows(
+        items: [VillageItemState],
+        group: VillageDetailGroup,
+        now: Date,
+        village: VillageProfile
+    ) -> some View {
+        LazyVStack(spacing: 0) {
+            // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
+            // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
+            let rows = VillageDetailProjection.parentedRows(from: items)
+            ForEach(rows) { row in
+                itemRow(row.item, group: group, now: now, village: village)
+                ForEach(row.children) { child in
+                    Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
+                    itemRow(child, group: group, now: now, village: village, indented: true)
+                }
+                if row.id != rows.last?.id {
+                    Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
+                }
+            }
+        }
+    }
+
+    /// 聚合记录 id 归一化：`agg:` 前缀 → 原始快照记录 id。VillageDetailProjection
+    /// 的 items 来自聚合层（aggregate 对静态记录统一加 agg: 前缀），而
+    /// BuildingGroupProjection 的实例 id 是原始记录层 id——查找键不归一化会
+    /// 全部 miss，组卡只剩升级中记录（Issue #45 组卡聚类键）。
+    /// 剥离安全前提：原始快照 id 由解析器生成为 `section:path` 形态
+    /// （AccountSnapshot），结构上不可能以 `agg:` 开头，故剥离只映射聚合行
+    /// 回其源记录，不会误伤原始 id。
+    private static func rawRecordID(_ id: String) -> String {
+        id.hasPrefix("agg:") ? String(id.dropFirst(4)) : id
     }
 
     private func sectionCompletionLabel(stats: VillageCategoryCompletion?) -> some View {

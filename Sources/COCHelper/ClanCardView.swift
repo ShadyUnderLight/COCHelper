@@ -102,7 +102,12 @@ struct ClanCardView: View {
                     Button {
                         model.refreshClan(villageID: villageID)
                     } label: {
-                        Label("刷新部落数据", systemImage: "arrow.clockwise")
+                        if model.isRefreshingClan(clanTag: clanTag) {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("刷新部落数据", systemImage: "arrow.clockwise")
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.cocAccent)

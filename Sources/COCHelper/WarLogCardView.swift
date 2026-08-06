@@ -84,7 +84,12 @@ struct WarLogCardView: View {
                     Button {
                         model.refreshWarLog(villageID: villageID, force: true)
                     } label: {
-                        Label("仍要检查", systemImage: "arrow.clockwise")
+                        if model.isRefreshingWarLog(clanTag: clanTag) {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("仍要检查", systemImage: "arrow.clockwise")
+                        }
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.isRefreshingWarLogData || model.isRefreshingWarLog(clanTag: clanTag))

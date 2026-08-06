@@ -133,7 +133,7 @@ public final class AppModel: ObservableObject {
     }
 
     public var currentVillageName: String {
-        villages.first(where: { $0.id == selectedVillageID })?.name ?? "未命名村庄"
+        villages.first(where: { $0.id == selectedVillageID })?.name ?? VillageProfile.placeholderName
     }
 
     public var currentVillageTag: String? {
@@ -411,7 +411,7 @@ public final class AppModel: ObservableObject {
 
         // tag 变化时自动重置官方数据（applyImportedSnapshot 内部处理）。
         villages[targetIndex].applyImportedSnapshot(snapshot)
-        if villages[targetIndex].name.hasPrefix("村庄 ") || villages[targetIndex].name == "未命名村庄" {
+        if villages[targetIndex].name.hasPrefix("村庄 ") || villages[targetIndex].name == VillageProfile.placeholderName {
             villages[targetIndex].name = normalizedTag(snapshot.tag) ?? villages[targetIndex].name
         }
         villages[targetIndex].updatedAt = Date()

@@ -20,7 +20,9 @@ public enum VillageIdentitySource: Equatable, Hashable, Sendable {
 /// 村庄身份投影结果：UI 直接消费的纯值类型。
 public struct VillageDisplayIdentity: Equatable, Hashable, Sendable {
     public let primaryName: String
-    /// 展示用 tag：`officialState.playerTag ?? village.tag`
+    /// 展示用 tag：`officialState.playerTag ?? village.tag`。
+    /// 注意：契约只对名称链做 trim；display tag 按原样透传（playerTag 是规范化后的
+    /// 请求 tag、village.tag 是原始导入 tag），刻意不 trim，勿与名称链的 trim 混同。
     public let tag: String?
     /// 本地别名：仅当官方昵称存在且本地名不同、非占位"未命名村庄"时提供
     public let localAlias: String?
@@ -51,7 +53,8 @@ public struct VillageDisplayIdentity: Equatable, Hashable, Sendable {
 /// 身份投影入口：纯函数（village, state）→ identity，无全局状态，天然多村庄隔离。
 public enum VillageDisplayIdentityProjection {
     /// 占位名：`VillageProfile.init` 对空白名的归一化结果，链中视为"无名字"。
-    private static let placeholderName = "未命名村庄"
+    /// 唯一来源为 `VillageProfile.placeholderName`（改占位名只改一处，避免契约静默失效）。
+    private static let placeholderName = VillageProfile.placeholderName
 
     public static func project(
         village: VillageProfile,

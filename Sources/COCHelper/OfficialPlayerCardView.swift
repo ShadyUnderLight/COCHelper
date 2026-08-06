@@ -203,7 +203,7 @@ struct OfficialPlayerCardView: View {
             // 两行满铺：列数整除项数，任何窗口宽度都无尾部空白。
             DisclosureGroup {
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(minimum: 100), spacing: 12), count: 4),
+                    columns: Array(repeating: GridItem(.flexible(minimum: 80), spacing: 12), count: 4),
                     alignment: .leading,
                     spacing: 12
                 ) {
@@ -236,7 +236,7 @@ struct OfficialPlayerCardView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             LazyVGrid(
-                columns: items.map { _ in GridItem(.flexible(minimum: 100), spacing: 12) },
+                columns: items.map { _ in GridItem(.flexible(minimum: 80), spacing: 12) },
                 alignment: .leading,
                 spacing: 12
             ) {

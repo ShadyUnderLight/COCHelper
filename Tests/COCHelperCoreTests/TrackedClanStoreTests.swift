@@ -74,4 +74,19 @@ final class TrackedClanStoreTests: XCTestCase {
         store.remove(tag: "#NOT_EXIST")
         XCTAssertEqual(store.profiles.map(\.clanTag), ["#BBB"])
     }
+
+    /// 防失控上限契约钉住：10_001 条合法 profile 解码必须停在 10_000（静默截断，
+    /// 与 OfficialStateStore 一致）。防御异常存储导致解码失控（内存/CPU）。
+    func testDecodeEnforcesMaxEntriesCap() throws {
+        let profile = TrackedClanProfile(clanTag: "#AAA", displayName: nil, createdAt: Date(timeIntervalSince1970: 0))
+        var payload = Data()
+        payload.append(contentsOf: [UInt8(0x5B)]) // [
+        for i in 0..<10_001 {
+            if i > 0 { payload.append(contentsOf: [UInt8(0x2C)]) } // ,
+            payload.append(try JSONEncoder().encode(profile))
+        }
+        payload.append(contentsOf: [UInt8(0x5D)]) // ]
+        let decoded = try JSONDecoder().decode(TrackedClanStore.self, from: payload)
+        XCTAssertEqual(decoded.profiles.count, 10_000, "超出上限必须静默截断（与 OfficialStateStore 契约一致）")
+    }
 }

@@ -232,7 +232,9 @@ private struct AddTrackedClanSheet: View {
                 .font(.headline)
             TextField("部落 Tag（如 #2QJQ8J88）", text: $rawTag)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: rawTag) { errorMessage = nil }
+                .onChange(of: rawTag) { _, _ in
+                    errorMessage = nil
+                }
             TextField("备注/显示名称（可选）", text: $displayName)
                 .textFieldStyle(.roundedBorder)
             if let errorMessage {
@@ -264,7 +266,7 @@ private struct AddTrackedClanSheet: View {
             onAdded(profile.clanTag)
             dismiss()
         case .failure(.invalidTag):
-            errorMessage = "Tag 无效：需要以 # 开头，仅含大写字母和数字。"
+            errorMessage = "Tag 无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。"
         case .failure(.duplicate):
             errorMessage = "该部落已在跟踪列表中。"
         }

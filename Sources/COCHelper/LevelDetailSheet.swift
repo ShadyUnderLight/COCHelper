@@ -74,9 +74,9 @@ struct LevelDetailSheet: View {
     /// 头部图标：4 级候选链 currentLevelVisual → currentLevelIcon → levelVisual →
     /// icon 运行时候选（`VillageItemState.preferredAssetURLs`，与列表行共用解析
     /// 防漂移；首选文件缺失时自动尝试次选，P2 评审）。Issue #39：链首为当前等级
-    /// 资产（按 currentLevel 显示对应等级外观）；目录中部分 item（如壁炉
-    /// buildings:1000000）icon 为 nil 但 levelVisual 可渲染（fireplace_lvl1.png）
-    /// ——头部必须与逐级行一致显示真实外观。
+    /// 资产（按 currentLevel 显示对应等级外观）；目录中部分 item（如兵营
+    /// buildings:1000000）icon 为 nil 但 levelVisual 可渲染（fireplace_lvl1.png——
+    /// 游戏内部导出代号，兵营中心营火）——头部必须与逐级行一致显示真实外观。
     private var headerImage: NSImage? {
         item.preferredAssetURLs(version: assetVersion)
             .lazy.compactMap { NSImage(contentsOf: $0) }.first

@@ -1053,14 +1053,14 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     /// 数据锚点：锁定真实 bundled 目录满足 Issue #34 触发场景——buildings:1000000
-    /// （壁炉）icon 为 nil 但 levelVisual 可渲染（fireplace_lvl1.png），且运行时
+    /// （兵营）icon 为 nil 但 levelVisual 可渲染（fireplace_lvl1.png），且运行时
     /// 解析出的首选 URL 真实指向该 PNG。若目录数据漂移（icon 补全或 levelVisual
     /// 不可渲染/文件缺失），本测试立即红，防止修复在无真实场景下空转。
     func testBundledCatalogFireplaceHasRenderableLevelVisual() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let fireplace = try XCTUnwrap(
             catalog.item(section: "buildings", dataID: 1_000_000),
-            "bundled 目录应包含 buildings:1000000（壁炉）"
+            "bundled 目录应包含 buildings:1000000（兵营）"
         )
         XCTAssertNil(fireplace.icon, "buildings:1000000 icon 应为 nil（Issue #34 数据契约）")
         let levelVisual = try XCTUnwrap(
@@ -1242,7 +1242,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        "currentLevel=1 → 命中 levels[1] 的 levelVisual")
     }
 
-    /// 数据锚点（Issue #39）：真实 bundled 目录中 buildings:1000000（壁炉）
+    /// 数据锚点（Issue #39）：真实 bundled 目录中 buildings:1000000（兵营）
     /// Lv2 必须解析到 fireplace_lvl2.png、Lv14 到 fireplace_lvl14.png，
     /// 而不是固定 item-level 的 fireplace_lvl1.png。目录数据漂移立即红。
     func testBundledFireplaceResolvesLevelAppearance() throws {

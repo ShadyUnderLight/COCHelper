@@ -475,4 +475,79 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
         XCTAssertEqual(model.warLogState(for: "#WARLOG1")?.status, .success)
         XCTAssertNil(model.warLogState(for: " #warlog1 "), "不得产生非 canonical 条目")
     }
+
+    /// 遍历全部 6 个 tag 版入口：**合法但小写**的输入必须被 normalize 后发出请求。
+    /// 这是 guard 位置的判别测试：无 guard 时小写输入被 EndpointRefresher 的
+    /// isValid 过滤（0 请求）→ 测试红；有 guard 时发出规范化大写请求 → 绿。
+    @MainActor
+    func testAllTagEntryPointsNormalizeLowercaseInput() async throws {
+        let recorder = TagRecorder()
+        let model = try makeModel(clanHandler: { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            let tag = request.url?.path(percentEncoded: false).replacingOccurrences(of: "/v1/clans/", with: "") ?? "#X"
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    trackedClanJSON(tag: tag))
+        }, clanLogHandler: { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data("{\"items\":[]}".utf8))
+        }, clanWarHandler: { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data("{\"state\":\"notInWar\"}".utf8))
+        })
+
+        // 6 入口各传小写合法输入（正常化后应发出请求）
+        model.refreshClan(tag: "#abc1")
+        model.refreshClanWar(tag: "#war1")
+        model.refreshWarLog(tag: "#warlog1")
+        model.refreshCapitalRaid(tag: "#cap1")
+        await waitUntil {
+            model.clanState(for: "#ABC1")?.status == .success
+                && model.clanWarState(for: "#WAR1")?.status == .success
+                && model.warLogState(for: "#WARLOG1") != nil
+                && model.capitalState(for: "#CAP1") != nil
+        }
+        // loadMore 需要已有成功状态 + 游标：先首屏刷新，再以非 canonical 输入 loadMore
+        await waitUntil { model.warLogState(for: "#WARLOG1") != nil }
+        model.loadMoreWarLog(tag: "#warlog1")  // 无游标（items 空）→ no-op，只验证不崩溃
+        model.loadMoreCapitalRaid(tag: "#cap1")
+
+        let snapshot = recorder.snapshot()
+        XCTAssertEqual(snapshot.filter { $0 == "/v1/clans/%23ABC1" }.count, 1,
+                       "refreshClan 必须 normalize 小写输入")
+        XCTAssertEqual(snapshot.filter { $0 == "/v1/clans/%23WAR1/currentwar" }.count, 1,
+                       "refreshClanWar 必须 normalize 小写输入")
+        XCTAssertEqual(snapshot.filter { $0 == "/v1/clans/%23WARLOG1/warlog" }.count, 1,
+                       "refreshWarLog 必须 normalize 小写输入（首屏）")
+        XCTAssertEqual(snapshot.filter { $0 == "/v1/clans/%23CAP1/capitalraidseasons" }.count, 1,
+                       "refreshCapitalRaid 必须 normalize 小写输入")
+        XCTAssertFalse(snapshot.contains { $0.contains("abc1") || $0.contains("war1") || $0.contains("warlog1") || $0.contains("cap1") },
+                       "请求路径不得出现小写 tag（非 canonical）")
+        XCTAssertNil(model.clanState(for: "#abc1"), "小写输入不得产生非 canonical 条目")
+    }
+
+    /// 忙时排队 + 非 canonical 输入组合：guard 必须在 busy-check 之前，
+    /// 入队/补跑的必须是规范化值（原始小写入队会被 EndpointRefresher 静默丢弃）。
+    @MainActor
+    func testQueuedNonCanonicalTagIsNormalizedBeforeInsert() async throws {
+        let recorder = TagRecorder()
+        let model = try makeModel(clanHandler: { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            let tag = request.url?.path(percentEncoded: false).replacingOccurrences(of: "/v1/clans/", with: "") ?? "#X"
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    trackedClanJSON(tag: tag))
+        })
+        model.refreshClan(tag: "#QUEUE1")            // 首轮在途（canonical 输入）
+        model.refreshClan(tag: " #queue1 ")          // 忙时排队：非 canonical 输入
+        await waitUntil {
+            !model.isRefreshingClanData && model.clanState(for: "#QUEUE1")?.status == .success
+        }
+
+        let snapshot = recorder.snapshot()
+        XCTAssertEqual(snapshot, ["/v1/clans/%23QUEUE1", "/v1/clans/%23QUEUE1"],
+                       "排队输入必须先规范化：补跑必须请求 %23QUEUE1（而非 %23queue1 或带空格值）")
+        XCTAssertEqual(model.clanState(for: "#QUEUE1")?.status, .success)
+        XCTAssertNil(model.clanState(for: "#queue1"), "小写输入不得产生非 canonical 条目")
+    }
 }

@@ -938,17 +938,19 @@ public final class AppModel: ObservableObject {
     }
 
     /// 删除跟踪关系：**保留**按 Tag 的共享 API 缓存（clanStates 等），
-    /// 误删后重新添加不丢失历史数据。
+    /// 误删后重新添加不丢失历史数据。入参规范化（幂等），非法输入 no-op。
     public func removeTrackedClan(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard trackedClans.contains(where: { $0.clanTag == tag }) else { return }
         trackedClans.removeAll { $0.clanTag == tag }
         persistTrackedClans()
     }
 
     /// 该 Tag 是否为**当前选中村庄**所属部落（列表"当前村庄所属"标识）。
-    /// 只做标识展示，不改变手动档案身份。
+    /// 只做标识展示，不改变手动档案身份。入参规范化（幂等）。
     public func isCurrentVillageClan(_ tag: String) -> Bool {
-        currentVillageClanTag == tag
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return false }
+        return currentVillageClanTag == tag
     }
 
     private func persistTrackedClans() {

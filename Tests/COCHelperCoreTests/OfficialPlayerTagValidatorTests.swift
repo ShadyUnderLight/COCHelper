@@ -133,7 +133,11 @@ struct SeededRandomGenerator {
         Int(next() % UInt64(range.upperBound - range.lowerBound + 1)) + range.lowerBound
     }
 
-    /// 随机 tag：可能包含非法字符、小写、空白，长度 0-20（覆盖超长边界，钉住长度上限规则）。
+    /// 随机 tag：可能包含非法字符、小写、空白，长度 0-20。
+    /// 注：随机样本几乎不可能命中「全大写字母数字且超长」的暴露形态（概率约
+    /// 1.3e-7/样本），长度上限规则由 `testIsValidAcceptsMaxLengthBody` /
+    /// `testIsValidRejectsOverlongBody` 两个显式边界测试钉住，property 测试
+    /// 负责格式规则（字符集/前缀）的一致性对比。
     mutating func randomTag() -> String {
         let length = randomInt(in: 0...20)
         let charset = Array("#ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz-_. ")

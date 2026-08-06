@@ -89,7 +89,7 @@ struct ClanCardView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.cocAccent)
-                .disabled(model.isRefreshingClan(clanTag: clanTag))
+                .disabled(model.isRefreshingClanData || model.isRefreshingClan(clanTag: clanTag))
                 Spacer()
             }
         } else {
@@ -106,7 +106,7 @@ struct ClanCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.cocAccent)
-                    .disabled(model.isRefreshingClan(clanTag: clanTag))
+                    .disabled(model.isRefreshingClanData || model.isRefreshingClan(clanTag: clanTag))
                     Spacer()
                 }
             }

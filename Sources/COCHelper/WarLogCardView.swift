@@ -87,7 +87,7 @@ struct WarLogCardView: View {
                         Label("仍要检查", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(model.isRefreshingWarLog(clanTag: clanTag))
+                    .disabled(model.isRefreshingWarLogData || model.isRefreshingWarLog(clanTag: clanTag))
                     Spacer()
                 }
             }
@@ -131,7 +131,7 @@ struct WarLogCardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.cocAccent)
-            .disabled(model.isRefreshingWarLog(clanTag: clanTag))
+            .disabled(model.isRefreshingWarLogData || model.isRefreshingWarLog(clanTag: clanTag))
             Spacer()
         }
     }
@@ -148,7 +148,7 @@ struct WarLogCardView: View {
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(model.isRefreshingWarLog(clanTag: clanTag))
+            .disabled(model.isRefreshingWarLogData || model.isRefreshingWarLog(clanTag: clanTag))
             Spacer()
         }
     }

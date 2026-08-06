@@ -450,11 +450,12 @@ public final class AppModel: ObservableObject {
         let expectedTag = village.officialTag
         Task { [weak self] in
             guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingOfficialPlayerVillageIDs.removeAll() }
             let state = await self.refresher.refresh(village: village)
             // 竞态防护：刷新期间账号若已变化（重导入/清除），丢弃过期结果。
             let applied = self.applyOfficialState(state, to: village.id, expectedTag: expectedTag)
             self.persistVillages()
-            self.refreshingOfficialPlayerVillageIDs.removeAll()
             // 玩家快照更新后部落归属可能变化，联动刷新**发起村庄**的部落
             // （传 village.id 而非读取当前选中村庄：刷新期间用户可能已切换
             // 村庄，读 selectedVillageID 会误刷当前村庄、漏刷发起村庄）。
@@ -484,6 +485,8 @@ public final class AppModel: ObservableObject {
         }
         Task { [weak self] in
             guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingOfficialPlayerVillageIDs.removeAll() }
             let states = await self.refresher.refreshAll(villages: villages)
             for (id, state) in states {
                 self.applyOfficialState(state, to: id, expectedTag: tagByID[id])
@@ -494,7 +497,6 @@ public final class AppModel: ObservableObject {
             self.officialRefreshSummary = "刷新完成：成功 \(successCount)，失败 \(failedCount)，跳过 \(skippedCount)"
             // 批量刷新只写一次 UserDefaults，避免 N+1 次全量 JSON 编码。
             self.persistVillages()
-            self.refreshingOfficialPlayerVillageIDs.removeAll()
             // 玩家快照更新后部落归属可能变化，联动刷新部落共享数据
             // （refreshAllClans 内部按 clan tag 去重，被占用时排队补跑）。
             // 仅在本次存在成功时联动：玩家请求全挂（如断网/429）时不追加
@@ -560,12 +562,13 @@ public final class AppModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
+            // 清空 + 排队补跑都不能用 defer 的"闭包末尾执行"：refreshAllClans
+            // 以集合为空判断可进入（会重新设置集合），必须先清空再触发。
             let refreshed = await self.clanRefresher.refreshClans(
                 villageClanTags: villageClanTags,
                 previous: previous
             )
             self.mergeClanStates(refreshed)
-            // 先清空再触发排队补跑：refreshAllClans 会重新设置集合。
             self.refreshingClanTags.removeAll()
             if self.pendingClanRefreshAll {
                 self.pendingClanRefreshAll = false
@@ -600,6 +603,8 @@ public final class AppModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingClanWarTags.removeAll() }
             let refreshed = await self.clanWarRefresher.refreshClanWars(
                 villageClanTags: [tag],
                 previous: previous
@@ -607,7 +612,6 @@ public final class AppModel: ObservableObject {
             self.clanWarStates = ClanWarStateStore(states: self.clanWarStates)
                 .merging(refreshed).states
             self.persistClanWarStates()
-            self.refreshingClanWarTags.removeAll()
         }
     }
 
@@ -665,6 +669,8 @@ public final class AppModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingWarLogTags.removeAll() }
             let state = await EndpointRefresher.fetchSingle(
                 tag: tag,
                 previous: previous,
@@ -674,7 +680,6 @@ public final class AppModel: ObservableObject {
             }
             self.clanWarLogStates[tag] = state
             self.persistClanWarLogStates()
-            self.refreshingWarLogTags.removeAll()
         }
     }
 
@@ -700,6 +705,8 @@ public final class AppModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingWarLogTags.removeAll() }
             let state = await EndpointRefresher.fetchSingle(
                 tag: tag,
                 previous: current,
@@ -725,7 +732,6 @@ public final class AppModel: ObservableObject {
                 self.clanWarLogStates[tag] = state
             }
             self.persistClanWarLogStates()
-            self.refreshingWarLogTags.removeAll()
         }
     }
 
@@ -772,6 +778,8 @@ public final class AppModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingCapitalTags.removeAll() }
             let state = await EndpointRefresher.fetchSingle(
                 tag: tag,
                 previous: previous,
@@ -781,7 +789,6 @@ public final class AppModel: ObservableObject {
             }
             self.clanCapitalStates[tag] = state
             self.persistClanCapitalStates()
-            self.refreshingCapitalTags.removeAll()
         }
     }
 
@@ -805,6 +812,8 @@ public final class AppModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingCapitalTags.removeAll() }
             let state = await EndpointRefresher.fetchSingle(
                 tag: tag,
                 previous: current,
@@ -830,7 +839,6 @@ public final class AppModel: ObservableObject {
                 self.clanCapitalStates[tag] = state
             }
             self.persistClanCapitalStates()
-            self.refreshingCapitalTags.removeAll()
         }
     }
 

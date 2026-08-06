@@ -96,7 +96,7 @@ struct ClanWarCardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.cocAccent)
-            .disabled(model.isRefreshingClanWar(clanTag: clanTag))
+            .disabled(model.isRefreshingClanWarData || model.isRefreshingClanWar(clanTag: clanTag))
             Spacer()
         }
     }

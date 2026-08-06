@@ -96,7 +96,7 @@ struct CapitalRaidCardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.cocAccent)
-            .disabled(model.isRefreshingCapital(clanTag: clanTag))
+            .disabled(model.isRefreshingCapitalData || model.isRefreshingCapital(clanTag: clanTag))
             Spacer()
         }
     }
@@ -113,7 +113,7 @@ struct CapitalRaidCardView: View {
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(model.isRefreshingCapital(clanTag: clanTag))
+            .disabled(model.isRefreshingCapitalData || model.isRefreshingCapital(clanTag: clanTag))
             Spacer()
         }
     }

@@ -56,7 +56,13 @@ struct OfficialPlayerCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.cocAccent)
-                    .disabled(model.isRefreshingOfficialPlayer(villageID: villageID) || villageTag == nil)
+                    // 禁用跟随全局（其他村庄刷新时按钮不可点，避免点击被静默吞掉）；
+                    // spinner 仍只跟自身村庄（by-ID），见上方 label 分支。
+                    .disabled(
+                        model.isRefreshingOfficialData
+                            || model.isRefreshingOfficialPlayer(villageID: villageID)
+                            || villageTag == nil
+                    )
 
                     Spacer()
 

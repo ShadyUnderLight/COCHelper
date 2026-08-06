@@ -46,6 +46,13 @@ public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
         knownCount > 0 ? Double(completedCount) / Double(knownCount) : nil
     }
 
+    /// 全部可确认且已满级（issue #53 契约）：known > 0 且无未知项且完成 == 已知。
+    /// 刻意比 `completionRatio == 1.0` 更严格——unknownCount > 0 时 ratio 也可能
+    /// 为 1.0（completed 只统计 maxed 项，分母仍为 known），但不得判满级。
+    public var isFullyMaxed: Bool {
+        knownCount > 0 && unknownCount == 0 && completedCount == knownCount
+    }
+
     public init(
         category: TrackerCategory?,
         displayCategory: TrackerDisplayCategory? = nil,

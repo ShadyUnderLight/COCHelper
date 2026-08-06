@@ -1023,6 +1023,57 @@ final class VillageCatalogProjectionTests: XCTestCase {
         }
     }
 
+    // MARK: - Issue #37 展示分类
+
+    func testRealFixtureDisplayCategoryForCraftTableAndNested() throws {
+        let sections = try loadRealFixture()
+        let village = makeVillage(objectSections: sections)
+        let catalog = GameCatalog.loadBundled()
+        let home = project(village: village, catalog: catalog, base: .home)
+
+        // 精制台父项（fixture dataID 1000097）
+        let craftParent = try XCTUnwrap(home.items.first {
+            !$0.isNested && $0.section == "buildings" && $0.dataID == 100_0097
+        })
+        XCTAssertEqual(craftParent.displayCategory, .craftTable)
+
+        // 嵌套 types/modules 后代全部归精制台（按根父归属）
+        let nested = home.items.filter(\.isNested)
+        XCTAssertFalse(nested.isEmpty)
+        XCTAssertTrue(nested.allSatisfy { $0.displayCategory == .craftTable },
+                       "fixture 嵌套项（精制台后代）应全部归精制台")
+
+        // 兵营 → 军事设施；加农炮 → 防御建筑
+        XCTAssertEqual(
+            home.items.first { $0.dataID == 1_000_000 && !$0.isNested }?.displayCategory, .military
+        )
+        XCTAssertEqual(
+            home.items.first { $0.dataID == 1_000_013 && !$0.isNested }?.displayCategory, .defense
+        )
+    }
+
+    func testBuilderBaseItemsHaveNilDisplayCategory() throws {
+        let sections = try loadRealFixture()
+        let village = makeVillage(objectSections: sections)
+        let catalog = GameCatalog.loadBundled()
+        let builder = project(village: village, catalog: catalog, base: .builder)
+        XCTAssertFalse(builder.items.isEmpty)
+        XCTAssertTrue(builder.items.allSatisfy { $0.displayCategory == nil },
+                       "建筑工人基地项目不应细分")
+    }
+
+    func testAggregatedItemPreservesDisplayCategory() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_013, level: 18, count: nil, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_013, level: 18, count: 1, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        let agg = home.items.first { $0.id.hasPrefix("agg:") }
+        XCTAssertEqual(agg?.displayCategory, .defense, "聚合项应透传展示分类")
+    }
+
     // MARK: - Issue #17: 数组重排稳定性与 boost 非归属
 
     /// 模拟「重排后的 JSON 重新导入」：按新位置重建 id（与解析器规则一致：

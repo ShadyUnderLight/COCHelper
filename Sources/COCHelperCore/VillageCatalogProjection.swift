@@ -40,6 +40,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
     public let isNested: Bool
+    /// Issue #37：展示分类（防御/军事/精制台）；nil 表示无细分（走原分类兜底）。
+    public let displayCategory: TrackerDisplayCategory?
 
     public var isUpgrading: Bool { (remainingSeconds ?? 0) > 0 }
 
@@ -88,7 +90,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         missingReason: String?,
         icon: CatalogAssetRef?,
         levelVisual: CatalogAssetRef?,
-        isNested: Bool
+        isNested: Bool,
+        displayCategory: TrackerDisplayCategory? = nil
     ) {
         self.id = id
         self.section = section
@@ -108,6 +111,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.icon = icon
         self.levelVisual = levelVisual
         self.isNested = isNested
+        self.displayCategory = displayCategory
     }
 }
 
@@ -178,9 +182,20 @@ public struct VillageCatalogProjection: Sendable {
         base: TrackerBase,
         now: Date
     ) -> [VillageItemState] {
-        snapshot.allObjectItems.compactMap { item in
-            map(item, in: snapshot, catalog: catalog, base: base, now: now)
+        // Issue #37：第一遍扫描构建「根父 id → dataID」映射。快照 id 是数组索引路径
+        //（如 buildings:6.types.0），嵌套项归属精制台必须回查根父的 dataID。
+        var rootParentDataIDs: [String: Int64] = [:]
+        for item in snapshot.allObjectItems where !isNestedItem(item) {
+            rootParentDataIDs[BuildingDisplayCategoryRules.rootID(of: item.id)] = item.dataID
         }
+        return snapshot.allObjectItems.compactMap { item in
+            map(item, in: snapshot, catalog: catalog, base: base, now: now,
+                rootParentDataIDs: rootParentDataIDs)
+        }
+    }
+
+    private static func isNestedItem(_ item: AccountItem) -> Bool {
+        item.id.contains(".types.") || item.id.contains(".modules.")
     }
 
     private static func map(
@@ -188,7 +203,8 @@ public struct VillageCatalogProjection: Sendable {
         in snapshot: AccountSnapshot,
         catalog: GameCatalog?,
         base: TrackerBase,
-        now: Date
+        now: Date,
+        rootParentDataIDs: [String: Int64]
     ) -> VillageItemState? {
         let isBuilderSection = item.section.hasSuffix("2")
         guard isBuilderSection == (base == .builder) else { return nil }
@@ -201,6 +217,17 @@ public struct VillageCatalogProjection: Sendable {
         let isUpgrading = (remainingSeconds ?? 0) > 0
         let category = TrackerCategory.from(section: item.section)
         let isNested = item.id.contains(".types.") || item.id.contains(".modules.")
+
+        // Issue #37：展示分类。嵌套项按根父归属（回查第一遍扫描的根父 dataID），
+        // 平铺项按自身 dataID 白名单；非 buildings/非 home 一律 nil（走原分类兜底）。
+        let displayCategory = BuildingDisplayCategoryRules.displayCategory(
+            section: item.section,
+            dataID: item.dataID,
+            base: base,
+            rootParentDataID: isNested
+                ? rootParentDataIDs[BuildingDisplayCategoryRules.rootID(of: item.id)]
+                : nil
+        )
 
         // 1. 类别不支持（helpers/decos/obstacles/…）。
         guard let category else {
@@ -222,7 +249,8 @@ public struct VillageCatalogProjection: Sendable {
                 missingReason: "该类别不参与升级追踪（\(item.section)）。",
                 icon: nil,
                 levelVisual: nil,
-                isNested: isNested
+                isNested: isNested,
+                displayCategory: displayCategory
             )
         }
 
@@ -311,7 +339,8 @@ public struct VillageCatalogProjection: Sendable {
             missingReason: missingReason,
             icon: baseMatches ? catalogItem?.icon : nil,
             levelVisual: baseMatches ? catalogItem?.levelVisual : nil,
-            isNested: isNested
+            isNested: isNested,
+            displayCategory: displayCategory
         )
     }
 
@@ -393,7 +422,8 @@ public struct VillageCatalogProjection: Sendable {
                 missingReason: first.missingReason,
                 icon: first.icon,
                 levelVisual: first.levelVisual,
-                isNested: first.isNested
+                isNested: first.isNested,
+                displayCategory: first.displayCategory
             ))
         }
 

@@ -920,6 +920,105 @@ public final class AppModel: ObservableObject {
         case duplicate
     }
 
+    /// 部落解析错误（Issue #48 Step A：添加流程的解析预览阶段）。
+    ///
+    /// 展示导向的独立枚举：与 `CoAPIError`（传输语义）解耦，UI 直接按 case
+    /// 展示 `userFacingMessage`，无需感知 HTTP 细节。映射规则见 `map(_:)`。
+    public enum ClanResolveError: Equatable, Sendable, Error {
+        case invalidTag
+        case missingToken
+        case notFound
+        case accessDenied
+        case rateLimited
+        case server
+        case network
+        case malformed
+
+        /// 展示文案（脱敏，可安全用于 UI）。
+        public var userFacingMessage: String {
+            switch self {
+            case .invalidTag:
+                return "Tag 无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。"
+            case .missingToken:
+                return "未配置 API token，请先在账号数据页配置。"
+            case .notFound:
+                return "未找到该部落（404），请检查 Tag 是否正确。"
+            case .accessDenied:
+                return "访问被拒绝（401/403）：请检查 API token 是否有效。"
+            case .rateLimited:
+                return "请求被限流（429），请稍后再试。"
+            case .server:
+                return "服务器错误（5xx），请稍后再试。"
+            case .network:
+                return "网络错误，请检查连接后重试。"
+            case .malformed:
+                return "响应解析失败，请稍后再试。"
+            }
+        }
+    }
+
+    /// 解析部落（Issue #48 Step A）：本地规范化 → `fetchClan` → 成功后写入
+    /// 共享缓存并返回快照。**不保存跟踪关系**（保存由 `addTrackedClan` 负责），
+    /// **不查重**（查重由 `isClanTracked` 提供，sheet 在发起请求前拦截）。
+    ///
+    /// 成功写入 `clanStates` 的理由：#48「详情页首屏只读取已保存的基础信息/
+    /// API 状态」——确认保存后打开详情页首屏直接有数据，无需再次请求。
+    /// 解析不经过 `refreshingClanTags` 防重入守卫（部落未收藏前详情页不可达，
+    /// 与刷新并发实际不会发生；文档注明以防未来接线时误用）。
+    ///
+    /// 错误映射：`CoAPIError.missingCredentials`（token provider 返回 nil 时
+    /// 由 client 抛出，与刷新链路一致，不重复检查 Keychain）→ `.missingToken`；
+    /// 401/403 → `.accessDenied`；404 → `.notFound`；429 → `.rateLimited`；
+    /// 5xx → `.server`；超时/网络 → `.network`；解析 → `.malformed`。
+    public func resolveClan(rawTag: String?) async -> Result<OfficialClanSnapshot, ClanResolveError> {
+        guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(.invalidTag) }
+        do {
+            let snapshot = try await clanRefresher.client.fetchClan(tag: tag)
+            let state = ClanAPIState(
+                status: .success,
+                clanTag: tag,
+                fetchedAt: Date(),
+                lastAttemptAt: Date(),
+                lastErrorReason: nil,
+                lastHTTPStatus: nil,
+                parserVersion: ClanAPIState.currentParserVersion,
+                lastGood: snapshot,
+                unrecognizedKeys: snapshot.unrecognizedKeys
+            )
+            mergeClanStates([tag: state])
+            return .success(snapshot)
+        } catch let error as CoAPIError {
+            return .failure(Self.mapResolveError(error))
+        } catch {
+            return .failure(.network)
+        }
+    }
+
+    /// 该 Tag 是否已在跟踪列表（解析前查重，避免无谓请求）。非法输入返回 false。
+    public func isClanTracked(rawTag: String?) -> Bool {
+        guard let tag = ClanTagNormalizer.normalize(rawTag) else { return false }
+        return trackedClans.contains { $0.clanTag == tag }
+    }
+
+    private static func mapResolveError(_ error: CoAPIError) -> ClanResolveError {
+        switch error {
+        case .missingCredentials:
+            return .missingToken
+        case .unauthorized, .accessDenied:
+            return .accessDenied
+        case .notFound:
+            return .notFound
+        case .rateLimited:
+            return .rateLimited
+        case .serverError:
+            return .server
+        case .timeout, .network:
+            return .network
+        case .malformedResponse:
+            return .malformed
+        }
+    }
+
     /// 添加手动跟踪部落：只做本地校验与保存，**不触发任何网络请求**。
     /// Tag 规范化失败 → .invalidTag；规范化后已存在 → .duplicate（不覆盖原档案）。
     @discardableResult

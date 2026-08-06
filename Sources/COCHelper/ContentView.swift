@@ -76,6 +76,13 @@ struct ContentView: View {
                     }
 
                     Section("部落") {
+                        if model.trackedClans.isEmpty {
+                            // Issue #48 Step B：空状态引导（不依赖村庄的部落查看）。
+                            Label("尚未添加部落，点击下方按钮添加后可从侧边栏随时查看",
+                                  systemImage: "shield.lefthalf.filled")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         ForEach(model.trackedClans) { clan in
                             Button {
                                 selection = .clan(clan.clanTag)
@@ -215,8 +222,20 @@ private struct TrackedClanSidebarRow: View {
     }
 }
 
-/// 添加部落表单：Tag 输入 + 可选备注 + 校验错误提示。
-/// 只做本地校验与保存，不触发任何网络请求。
+/// 解析预览阶段（Issue #48 Step A：输入 → 解析 → 预览 → 确认保存）。
+private enum ClanResolvePhase {
+    case idle
+    case resolving
+    case resolved(OfficialClanSnapshot)
+    case failed(String)
+}
+
+/// 添加部落表单（Issue #48 Step A）：输入 Tag → API 解析 → 预览 → 确认保存。
+///
+/// 流程：本地格式校验（AppModel）→ 查重（已跟踪直接提示，不请求）→
+/// `resolveClan` 调基础部落 API → 成功后展示预览（名称/等级/成员数等），
+/// 确认后才保存跟踪关系。失败（404/403/429/网络等）展示分类文案且不保存，
+/// 避免"看起来已保存"的不存在部落。
 private struct AddTrackedClanSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -224,7 +243,7 @@ private struct AddTrackedClanSheet: View {
 
     @State private var rawTag = ""
     @State private var displayName = ""
-    @State private var errorMessage: String?
+    @State private var phase: ClanResolvePhase = .idle
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -232,43 +251,158 @@ private struct AddTrackedClanSheet: View {
                 .font(.headline)
             TextField("部落 Tag（如 #2QJQ8J88）", text: $rawTag)
                 .textFieldStyle(.roundedBorder)
+                .disabled(isBusy)
                 .onChange(of: rawTag) { _, _ in
-                    errorMessage = nil
+                    phase = .idle
                 }
             TextField("备注/显示名称（可选）", text: $displayName)
                 .textFieldStyle(.roundedBorder)
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
+                .disabled(isBusy)
+
+            phaseContent
+
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
-                Button("添加") {
-                    submit()
+                    .disabled(isBusy)
+                if case .resolved = phase {
+                    Button("保存") { save() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.cocAccent)
+                } else {
+                    Button("解析") { resolve() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.cocAccent)
+                        .disabled(isBusy || rawTag.isEmpty)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.cocAccent)
             }
         }
         .padding(20)
-        .frame(width: 360)
+        .frame(width: 380)
     }
 
-    private func submit() {
-        // 与 AppModel.addTrackedClan 的权威 trim 语义保持一致（评审 N1）。
+    private var isBusy: Bool {
+        if case .resolving = phase { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var phaseContent: some View {
+        switch phase {
+        case .idle:
+            EmptyView()
+        case .resolving:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("正在解析部落信息…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        case .resolved(let snapshot):
+            clanPreview(snapshot)
+        }
+    }
+
+    /// 预览卡：只读展示解析结果，确认保存前不写任何状态。
+    private func clanPreview(_ snapshot: OfficialClanSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(snapshot.name ?? "（未命名部落）")
+                    .font(.subheadline.weight(.semibold))
+                if let level = snapshot.clanLevel {
+                    Text("Lv.\(level)")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.cocAccent.opacity(0.18), in: Capsule())
+                        .foregroundStyle(Color.cocAccent)
+                }
+            }
+            Text(snapshot.tag ?? rawTag)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+            Divider()
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                previewRow("类型", snapshot.type.map(clanTypeLabel) ?? "未知")
+                if let members = snapshot.members {
+                    previewRow("成员", "\(members) 人")
+                }
+                if let trophies = snapshot.requiredTrophies {
+                    previewRow("所需奖杯", "\(trophies)")
+                }
+                if let th = snapshot.requiredTownHallLevel {
+                    previewRow("所需大本等级", "\(th) 本")
+                }
+                if let capital = snapshot.clanCapital?.capitalHallLevel {
+                    previewRow("部落首都", "大本 \(capital) 级")
+                }
+            }
+            Text("确认保存后，部落详情可在侧边栏随时打开查看。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func previewRow(_ label: String, _ value: String) -> some View {
+        GridRow {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption)
+        }
+    }
+
+    /// 官方部落类型字符串 → 中文（open / inviteOnly / closed）。
+    private func clanTypeLabel(_ type: String) -> String {
+        switch type {
+        case "open": return "公开"
+        case "inviteOnly": return "邀请制"
+        case "closed": return "关闭"
+        default: return type
+        }
+    }
+
+    /// 解析：查重（不请求）→ resolveClan → 更新阶段。
+    private func resolve() {
+        if model.isClanTracked(rawTag: rawTag) {
+            phase = .failed("该部落已在跟踪列表中，无需重复添加。")
+            return
+        }
+        phase = .resolving
+        Task {
+            let result = await model.resolveClan(rawTag: rawTag)
+            switch result {
+            case .success(let snapshot):
+                phase = .resolved(snapshot)
+            case .failure(let error):
+                phase = .failed(error.userFacingMessage)
+            }
+        }
+    }
+
+    /// 保存：resolved 阶段确认后写入跟踪列表（addTrackedClan 自带重复防御）。
+    private func save() {
+        guard case .resolved(let snapshot) = phase else { return }
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmedName.isEmpty ? nil : trimmedName
-        switch model.addTrackedClan(rawTag: rawTag, displayName: name) {
+        switch model.addTrackedClan(rawTag: snapshot.tag, displayName: name) {
         case .success(let profile):
-            errorMessage = nil
             onAdded(profile.clanTag)
             dismiss()
         case .failure(.invalidTag):
-            errorMessage = "Tag 无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。"
+            phase = .failed("Tag 无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。")
         case .failure(.duplicate):
-            errorMessage = "该部落已在跟踪列表中。"
+            phase = .failed("该部落已在跟踪列表中。")
         }
     }
 }

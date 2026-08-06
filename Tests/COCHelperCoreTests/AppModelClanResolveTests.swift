@@ -1,0 +1,227 @@
+import Foundation
+import XCTest
+@testable import COCHelperCore
+@testable import COCHelperApp
+
+/// 构造 mock HTTP 响应（free function，避免 @Sendable handler 捕获 self）。
+private func clanResolveResponse(_ status: Int, url: URL, body: Data = Data()) -> (HTTPURLResponse, Data) {
+    (HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!, body)
+}
+
+/// AppModel.resolveClan（Issue #48 Step A：添加部落的解析预览阶段）测试。
+///
+/// 覆盖：本地校验失败、无 token、404/403/429/5xx/网络错误分类、
+/// 成功写入共享缓存（clanStates + 持久化）、规范化入参、查重查询。
+final class AppModelClanResolveTests: XCTestCase {
+    private var defaults: UserDefaults!
+    private let suiteName = "AppModelClanResolveTests"
+
+    override func setUp() {
+        super.setUp()
+        defaults = UserDefaults(suiteName: suiteName)
+    }
+
+    override func tearDown() {
+        MockURLProtocol.handler = nil
+        defaults.removePersistentDomain(forName: suiteName)
+        super.tearDown()
+    }
+
+    /// 复刻 AppModelTrackedClanRefreshTests.makeModel 的注入方式。
+    /// `tokenProvider` 可注入 nil（模拟未配置 token）或 "fake-token"。
+    @MainActor
+    private func makeModel(
+        tokenProvider: @escaping @Sendable () -> String? = { "fake-token" },
+        clanHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+    ) throws -> AppModel {
+        MockURLProtocol.handler = { request in
+            try clanHandler(request)
+        }
+        let clanRefresher = ClanRefresher(client: CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession()
+        ) { tokenProvider() })
+        return AppModel(
+            defaults: defaults,
+            clanRefresher: clanRefresher,
+            clanWarRefresher: ClanWarRefresher(client: CoAPIClient(
+                config: CoAPIConfig(maxRetryCount: 0),
+                session: MockURLProtocol.makeSession()
+            ) { "fake-token" }),
+            clanLogClient: CoAPIClient(
+                config: CoAPIConfig(maxRetryCount: 0),
+                session: MockURLProtocol.makeSession()
+            ) { "fake-token" }
+        )
+    }
+
+    // MARK: - 本地校验失败
+
+    @MainActor
+    func testResolveClanRejectsInvalidTagWithoutRequest() async throws {
+        let model = try makeModel { request in
+            XCTFail("非法 tag 不应发起请求: \(request.url?.path ?? "")")
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        let result = await model.resolveClan(rawTag: "abc-123")
+        guard case .failure(let error) = result else {
+            return XCTFail("非法 tag 必须失败，实际: \(result)")
+        }
+        XCTAssertEqual(error, .invalidTag)
+    }
+
+    @MainActor
+    func testResolveClanRejectsNilAndEmptyWithoutRequest() async throws {
+        let model = try makeModel { request in
+            XCTFail("空输入不应发起请求")
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        for raw in [nil as String?, "", "   "] {
+            let result = await model.resolveClan(rawTag: raw)
+            guard case .failure(let error) = result else {
+                return XCTFail("输入 \(raw.debugDescription) 必须失败")
+            }
+            XCTAssertEqual(error, .invalidTag)
+        }
+    }
+
+    // MARK: - 错误分类（CoAPIError → ClanResolveError 映射）
+
+    @MainActor
+    func testResolveClanWithoutTokenMapsToMissingToken() async throws {
+        let model = try makeModel(tokenProvider: { nil }) { request in
+            XCTFail("无 token 不应发起请求")
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        guard case .failure(let error) = result else {
+            return XCTFail("无 token 必须失败，实际: \(result)")
+        }
+        XCTAssertEqual(error, .missingToken)
+    }
+
+    @MainActor
+    func testResolveClanNotFoundMapsToNotFound() async throws {
+        let model = try makeModel { request in
+            clanResolveResponse(404, url: request.url!)
+        }
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.notFound))
+    }
+
+    @MainActor
+    func testResolveClanAccessDeniedMapsFrom401And403() async throws {
+        for status in [401, 403] {
+            let model = try makeModel { request in
+                clanResolveResponse(status, url: request.url!)
+            }
+            let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+            XCTAssertEqual(result, .failure(.accessDenied), "HTTP \(status) 应映射为 accessDenied")
+        }
+    }
+
+    @MainActor
+    func testResolveClanRateLimitedMapsToRateLimited() async throws {
+        let model = try makeModel { request in
+            clanResolveResponse(429, url: request.url!)
+        }
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.rateLimited))
+    }
+
+    @MainActor
+    func testResolveClanServerErrorMapsToServer() async throws {
+        for status in [500, 502, 503] {
+            let model = try makeModel { request in
+                clanResolveResponse(status, url: request.url!)
+            }
+            let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+            XCTAssertEqual(result, .failure(.server), "HTTP \(status) 应映射为 server")
+        }
+    }
+
+    @MainActor
+    func testResolveClanNetworkErrorMapsToNetwork() async throws {
+        let model = try makeModel { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.network))
+    }
+
+    // MARK: - 成功路径
+
+    @MainActor
+    func testResolveClanSuccessReturnsSnapshotAndWritesSharedState() async throws {
+        let model = try makeModel { request in
+            // URL.path 返回解码后的形式（%23 → #）。
+            XCTAssertEqual(request.url?.path, "/v1/clans/#2QJQ8J88")
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        let snapshot = try XCTUnwrap(result.successOrNil, "解析必须成功")
+        XCTAssertEqual(snapshot.name, "anonymized-clan")
+        // 共享缓存已写入：详情页首屏可直接展示，无需再次请求。
+        let state = try XCTUnwrap(model.clanStates["#2QJQ8J88"], "解析成功后必须写入 clanStates")
+        XCTAssertEqual(state.status, .success)
+        XCTAssertNotNil(state.fetchedAt)
+        XCTAssertEqual(state.lastGood?.name, "anonymized-clan")
+    }
+
+    @MainActor
+    func testResolveClanNormalizesInputBeforeRequest() async throws {
+        let model = try makeModel { request in
+            XCTAssertEqual(request.url?.path, "/v1/clans/#2QJQ8J88", "小写/空白输入必须规范化后再请求")
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        let result = await model.resolveClan(rawTag: "  #2qjq8j88  ")
+        XCTAssertNotNil(result.successOrNil)
+    }
+
+    @MainActor
+    func testResolveClanSuccessPersistsSharedState() async throws {
+        let model = try makeModel { request in
+            clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        _ = await model.resolveClan(rawTag: "#2QJQ8J88")
+        // 持久化：重新解码 clanStates 存储 key，确认写入。
+        let data = try XCTUnwrap(defaults.data(forKey: "coc-helper.clans.v1"), "解析成功后必须持久化 clanStates")
+        let store = try JSONDecoder().decode(ClanStateStore.self, from: data)
+        XCTAssertNotNil(store.states["#2QJQ8J88"])
+    }
+
+    // MARK: - 查重查询（isClanTracked）
+
+    @MainActor
+    func testIsClanTrackedMatchesTrackedList() throws {
+        let model = try makeModel { request in
+            clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        XCTAssertFalse(model.isClanTracked(rawTag: "#2QJQ8J88"), "初始无跟踪")
+        model.addTrackedClan(rawTag: "#2QJQ8J88", displayName: nil)
+        XCTAssertTrue(model.isClanTracked(rawTag: "#2QJQ8J88"))
+        XCTAssertTrue(model.isClanTracked(rawTag: "  #2qjq8j88  "), "规范化后匹配")
+        XCTAssertFalse(model.isClanTracked(rawTag: "#OTHER"))
+        XCTAssertFalse(model.isClanTracked(rawTag: "非法"), "非法输入返回 false 而非崩溃")
+    }
+
+    /// resolveClan 本身不查重（职责单一）：已收藏部落仍可解析（预览/刷新用途）。
+    @MainActor
+    func testResolveClanAllowsAlreadyTrackedTag() async throws {
+        let model = try makeModel { request in
+            clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        model.addTrackedClan(rawTag: "#2QJQ8J88", displayName: nil)
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertNotNil(result.successOrNil)
+    }
+}
+
+private extension Result {
+    /// 测试辅助：success 值或 nil。
+    var successOrNil: Success? {
+        if case .success(let value) = self { return value }
+        return nil
+    }
+}
+

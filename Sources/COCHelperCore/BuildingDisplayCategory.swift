@@ -59,7 +59,8 @@ public enum BuildingDisplayCategoryRules {
     }
 
     /// 展示分类判定。嵌套项必须传 `rootParentDataID`（其自身 dataID 是 types/modules 段，
-    /// 不在任何白名单内）；平铺项传 nil。
+    /// 不在任何白名单内）；平铺项传 nil。`rootParentDataID` 非 nil 时优先于 `dataID`
+    /// （嵌套项归属只看根父），平铺项仍按自身 `dataID` 白名单判定。
     public static func displayCategory(
         section: String,
         dataID: Int64,

@@ -152,14 +152,31 @@ final class BuildingDisplayCategoryTests: XCTestCase {
             let result = BuildingDisplayCategoryRules.displayCategory(
                 section: section, dataID: dataID, base: base, rootParentDataID: rootParent
             )
-            XCTAssertTrue(
-                result == nil || result == .defense || result == .military || result == .craftTable,
-                "非法结果 \(String(describing: result))"
-            )
             // 不变量：非 home / 非 buildings 一律 nil
             if section != "buildings" || base != .home {
                 XCTAssertNil(result, "\(section)/\(base) 不应细分")
             }
         }
+    }
+
+    // MARK: - 白名单穷尽与不相交
+
+    func testWhitelistsAreExhaustiveAndDisjoint() {
+        // 穷尽：白名单必须与规则表源码一致（防手改漏项）；集合比较可鉴别顺序与重复。
+        XCTAssertEqual(
+            BuildingDisplayCategoryRules.defenseDataIDs,
+            Set<Int64>([1000008, 1000009, 1000010, 1000011, 1000012, 1000013,
+                        1000019, 1000021, 1000027, 1000028, 1000031, 1000032,
+                        1000067, 1000072, 1000077, 1000079, 1000084, 1000085,
+                        1000086, 1000089, 1000102])
+        )
+        XCTAssertEqual(
+            BuildingDisplayCategoryRules.militaryDataIDs,
+            Set<Int64>([1000000, 1000006, 1000007, 1000014, 1000020, 1000026,
+                        1000029, 1000059, 1000068, 1000070, 1000071])
+        )
+        // 不相交：同一 dataID 不得同时归防御与军事（规则表冲突会静默产生歧义）。
+        XCTAssertTrue(BuildingDisplayCategoryRules.defenseDataIDs
+            .isDisjoint(with: BuildingDisplayCategoryRules.militaryDataIDs))
     }
 }

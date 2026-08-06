@@ -921,9 +921,6 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let itemIconMissing = CatalogAssetRef(
             container: nil, exportName: nil, renderedPath: nil, missingReason: "item_icon_missing"
         )
-        let itemLevelVisualMissing = CatalogAssetRef(
-            container: nil, exportName: nil, renderedPath: nil, missingReason: "item_lv_missing"
-        )
         let levelIconMissing = CatalogAssetRef(
             container: nil, exportName: nil, renderedPath: nil, missingReason: "level_icon_missing"
         )
@@ -1858,5 +1855,3 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        "已结束计时组的聚合计时值不得随数组顺序改变")
     }
 }
-
-

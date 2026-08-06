@@ -47,7 +47,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
         SpecItem(section: "buildings", category: "buildings", dataID: 1_000_097, base: "home", name: "精制台", maxLevel: 9, levels: standardLevels(9)),
     ]
 
-    private func makeCatalog(items: [SpecItem]) throws -> GameCatalog {
+    private func makeCatalog(items: [SpecItem], gameVersion: String = "18.400.13") throws -> GameCatalog {
         struct Payload: Encodable {
             let gameVersion: String
             let items: [SpecItem]
@@ -56,7 +56,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
             let gameVersion: String
             let items: [CatalogItem]
         }
-        let data = try JSONEncoder().encode(Payload(gameVersion: "18.400.13", items: items))
+        let data = try JSONEncoder().encode(Payload(gameVersion: gameVersion, items: items))
         let payload = try JSONDecoder().decode(DecodedPayload.self, from: data)
         return GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
     }
@@ -531,5 +531,43 @@ final class BuildingGroupProjectionTests: XCTestCase {
                 }
             }
         }
+    }
+
+    // MARK: - T14/T15: 全局目录版本不匹配（Review 反馈 P1-2）
+
+    /// 目录 gameVersion 与期望版本不匹配：即使实例 currentLevel 全部正常、阶梯
+    /// 完整，组卡也不得输出权威汇总（Issue #45「版本不匹配：不能把旧目录的汇总
+    /// 结果当成确定事实」）——completeness 必须降级为 versionMismatch。
+    func testT14GlobalCatalogVersionMismatchDowngradesCompleteness() throws {
+        let catalog = try makeCatalog(items: Self.syntheticCatalogItems, gameVersion: "18.400.12")
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 5, path: "0")],
+        ])
+
+        let groups = BuildingGroupProjection.project(
+            village: village, catalog: catalog, base: .home,
+            expectedGameVersion: "18.400.13"
+        )
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(
+            groups.first?.summary.completeness,
+            .versionMismatch,
+            "全局版本不匹配必须降级为 versionMismatch（即使实例级检查全过）"
+        )
+    }
+
+    /// expectedGameVersion == nil：不做版本校验（与 VillageCatalogProjection 同语义），
+    /// 实例级检查正常时 completeness 保持 .complete。
+    func testT15NilExpectedGameVersionSkipsVersionCheck() throws {
+        let catalog = try makeCatalog(items: Self.syntheticCatalogItems, gameVersion: "18.400.12")
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 5, path: "0")],
+        ])
+
+        let groups = BuildingGroupProjection.project(
+            village: village, catalog: catalog, base: .home,
+            expectedGameVersion: nil
+        )
+        XCTAssertEqual(groups.first?.summary.completeness, .complete)
     }
 }

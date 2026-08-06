@@ -74,9 +74,21 @@ public enum BuildingGroupProjection {
         village: VillageProfile,
         catalog: GameCatalog?,
         base: TrackerBase,
+        expectedGameVersion: String? = GameCatalog.defaultBundledVersion,
         now: Date = Date()
     ) -> [BuildingGroup] {
         guard let snapshot = village.accountSnapshot else { return [] }
+        // 目录可用性（与 VillageCatalogProjection 同语义，Review 反馈 P1-2）：
+        // 目录存在且版本与期望匹配时才可用；expectedGameVersion == nil 不校验。
+        // 注意区分两种降级（Issue #45 契约第 5 节）：目录不可用（catalog == nil）
+        // 是「缺失态」→ partialMissing（UI 橙标 + 诊断）；目录存在但版本不匹配
+        // 是「不得输出权威汇总」→ versionMismatch（UI 红标诊断）。
+        let hasGlobalVersionMismatch: Bool
+        if let catalog, let expectedGameVersion {
+            hasGlobalVersionMismatch = catalog.gameVersion != expectedGameVersion
+        } else {
+            hasGlobalVersionMismatch = false
+        }
         // 原始记录层（聚合前）：只取 buildings/buildings2 的非嵌套项。
         let records = VillageCatalogProjection.records(
             from: snapshot,
@@ -105,7 +117,7 @@ public enum BuildingGroupProjection {
                 dataID: first.dataID,
                 name: first.name,
                 instances: instances,
-                summary: summary(for: instances),
+                summary: summary(for: instances, hasGlobalVersionMismatch: hasGlobalVersionMismatch),
                 displayCategory: first.displayCategory,
                 category: first.category
             )
@@ -136,7 +148,7 @@ public enum BuildingGroupProjection {
             }
     }
 
-    private static func summary(for instances: [BuildingInstance]) -> BuildingGroupSummary {
+    private static func summary(for instances: [BuildingInstance], hasGlobalVersionMismatch: Bool) -> BuildingGroupSummary {
         var remainingLevelCount = 0
         var totalDurationSeconds: Int64 = 0
         var costByResource: [String: Int64] = [:]
@@ -188,7 +200,10 @@ public enum BuildingGroupProjection {
             costByResource: costByResource
                 .sorted { $0.key < $1.key }
                 .map { BuildingResourceTotal(resource: $0.key, totalCost: $0.value) },
-            completeness: hasVersionMismatch ? .versionMismatch
+            // 全局版本不匹配优先级最高（旧目录不得支撑权威汇总，Issue #45 契约）；
+            // 其次实例级目录过时；再其次数据缺失。
+            completeness: hasGlobalVersionMismatch ? .versionMismatch
+                : hasVersionMismatch ? .versionMismatch
                 : hasPartialMissing ? .partialMissing
                 : .complete
         )

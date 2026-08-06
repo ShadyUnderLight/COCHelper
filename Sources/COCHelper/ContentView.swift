@@ -20,7 +20,8 @@ struct ContentView: View {
                                 VillageSidebarRow(
                                     village: village,
                                     isSelected: village.id == model.selectedVillageID,
-                                    activeCount: model.activeUpgradeCount(for: village, at: context.date)
+                                    activeCount: model.activeUpgradeCount(for: village, at: context.date),
+                                    now: context.date
                                 )
                             }
                             .buttonStyle(.plain)
@@ -148,10 +149,23 @@ private enum AppSection: Hashable {
     case clan(String)
 }
 
+/// Issue #49 Task 2：侧边栏村庄行，昵称优先（官方昵称 → 本地名 → tag → 未命名村庄）。
+/// 纯函数：(village, isSelected, activeCount, now) → 行内容，无 AppModel 依赖。
+/// 无官方昵称时第一行带小标记"待获取昵称"；官方昵称存在且本地名不同时保留本地名
+/// （评审坑点：不得让用户丢失本地命名）。
 private struct VillageSidebarRow: View {
     let village: VillageProfile
     let isSelected: Bool
     let activeCount: Int
+    let now: Date
+
+    private var identity: VillageDisplayIdentity {
+        VillageDisplayIdentityProjection.project(
+            village: village,
+            officialState: village.officialAPIState,
+            at: now
+        )
+    }
 
     var body: some View {
         HStack(spacing: 9) {
@@ -160,10 +174,25 @@ private struct VillageSidebarRow: View {
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(village.name)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text(village.tag ?? "等待导入 JSON")
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(identity.primaryName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    if let alias = identity.localAlias {
+                        Text("本地：" + alias)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        // Issue #49 评审 P2：统一到共享回退小标记（source !=
+                        // .officialName 时渲染，视觉与原先内联实现一致）。
+                        VillageIdentityDisplayText.nicknamePendingMarkerView(identity: identity)
+                    }
+                }
+                Text(VillageIdentityDisplayText.tagLineText(
+                    identity: identity,
+                    fallback: "等待导入 JSON"
+                ))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -291,7 +320,16 @@ struct UpgradeTrackerView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                TrackerHeaderView(village: village, openImport: openImport)
+                // Issue #49 评审 P2：头部在 TimelineView 之外，stale 派生用默认
+                // Date() 不会随 60s tick 重算；包一层同频率 TimelineView 并透传
+                // context.date，跨过 24h stale 阈值后下一分钟即可翻转为「已过期」。
+                TimelineView(.periodic(from: Date(), by: 60)) { context in
+                    TrackerHeaderView(
+                        village: village,
+                        openImport: openImport,
+                        now: context.date
+                    )
+                }
 
                 if let village {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
@@ -317,6 +355,8 @@ struct UpgradeTrackerView: View {
                     EmptyTrackerView(openImport: openImport)
                 }
             }
+            // 撑满窗口宽度（ScrollView 内 VStack 默认内容宽，Issue #49 窗口级验收）。
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)
         }
         .background(Color.cocBackground)
@@ -327,18 +367,47 @@ private struct TrackerHeaderView: View {
     @EnvironmentObject private var model: AppModel
     let village: VillageProfile?
     let openImport: () -> Void
+    /// Issue #49 评审 P2：调用点包在 `TimelineView(.periodic(by: 60))` 内，投影
+    /// `at:` 用 tick 的 `context.date`——stale 派生随 60s tick 重算，跨过 24h
+    /// 阈值后下一分钟即可翻转为「已过期」（与侧边栏/详情页同一机制）。
+    let now: Date
+
+    private var identity: VillageDisplayIdentity? {
+        guard let village else { return nil }
+        return VillageDisplayIdentityProjection.project(
+            village: village,
+            officialState: village.officialAPIState,
+            at: now
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(village == nil ? "升级总览" : "升级追踪")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text(village?.name ?? "全部村庄")
-                        .font(.title3.weight(.semibold))
-                    Text(village.map { $0.tag ?? "尚未导入账号 JSON" } ?? "已导入 " + String(model.villages.filter(\.hasImportedData).count) + " 个村庄")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                    if let identity {
+                        Text(identity.primaryName)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                        Text(VillageIdentityDisplayText.tagLineText(
+                            identity: identity,
+                            fallback: "尚未导入账号 JSON"
+                        ))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        // Issue #49 评审 P2：无官方昵称（本地名/tag/未命名回退）时
+                        // 明确标出"待获取昵称"，与侧边栏同语义。
+                        VillageIdentityDisplayText.nicknamePendingMarkerView(identity: identity)
+                    } else {
+                        Text("升级总览")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                        Text("全部村庄")
+                            .font(.title3.weight(.semibold))
+                        Text("已导入 " + String(model.villages.filter(\.hasImportedData).count) + " 个村庄")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Spacer()
@@ -691,6 +760,7 @@ struct AccountDataView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                identityHeader
                 VillageNameEditor()
                 AccountImportPanel()
                 // 账号数据页是"当前村庄"语义：与详情页共享同一组件 = 同一状态，
@@ -717,9 +787,55 @@ struct AccountDataView: View {
                     }
                 }
             }
+            // 撑满窗口宽度（ScrollView 内 VStack 默认内容宽，Issue #49 窗口级验收）。
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)
         }
         .background(Color.cocBackground)
+    }
+
+    // MARK: - 身份行
+
+    /// Issue #49 交叉审核修复：官方玩家卡片（Task 4）不再显示昵称，账号数据页
+    /// 作为"当前村庄"页面在此补充身份行——与详情页头部同一投影与 helper，
+    /// 只是权重更小（"账号数据" 仍是本页最大标题）。
+    ///
+    /// Issue #49 评审 P2：本页原本无 TimelineView，stale 派生用默认 `Date()`
+    /// 跨过 24h 阈值后要等模型变化才翻转为「已过期」；现在只包住身份行
+    /// （不包导入面板/TextEditor），随 60s tick 重算投影。
+    /// 村庄不存在（边缘）时不渲染，不崩溃。
+    @ViewBuilder
+    private var identityHeader: some View {
+        if let village = model.villages.first(where: { $0.id == model.selectedVillageID }) {
+            TimelineView(.periodic(from: Date(), by: 60)) { context in
+                let identity = VillageDisplayIdentityProjection.project(
+                    village: village,
+                    officialState: village.officialAPIState,
+                    at: context.date
+                )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(identity.primaryName)
+                        .font(.title2.weight(.semibold))
+                        .lineLimit(1)
+                    Text(VillageIdentityDisplayText.tagLineText(
+                        identity: identity,
+                        fallback: "尚未导入账号 JSON"
+                    ))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if let alias = identity.localAlias {
+                        Text("本地别名：" + alias)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        // Issue #49 评审 P2：与详情页头部同语义的回退小标记。
+                        VillageIdentityDisplayText.nicknamePendingMarkerView(identity: identity)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1008,6 +1124,7 @@ struct TrackerInfoView: View {
                     text: "导入解析全部在本地完成；只有主动点击“刷新官方数据”时才会访问 Clash of Clans 官方 API，且官方数据作为独立来源展示，不填充缺失的资源、工人归属或未来目标。原始文本、未知字段和解析诊断会保留在当前村庄快照中。"
                 )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)
         }
         .background(Color.cocBackground)

@@ -6,6 +6,11 @@ import Foundation
 /// old planner input field was intentionally removed; old persisted village
 /// JSON remains decodable because unknown fields are ignored by Codable.
 public struct VillageProfile: Identifiable, Codable, Hashable, Sendable {
+    /// 空白名归一化后的占位名：全项目共享的唯一来源
+    /// （`VillageProfile.init`、`VillageDisplayIdentityProjection` 的占位判定、
+    /// AppModel 的占位名替换均引用此常量，改名字只改一处）。
+    public static let placeholderName = "未命名村庄"
+
     public let id: UUID
     public var name: String
     public var accountSnapshot: AccountSnapshot?
@@ -25,7 +30,7 @@ public struct VillageProfile: Identifiable, Codable, Hashable, Sendable {
     ) {
         self.id = id
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.name = trimmedName.isEmpty ? "未命名村庄" : trimmedName
+        self.name = trimmedName.isEmpty ? Self.placeholderName : trimmedName
         self.accountSnapshot = accountSnapshot
         self.officialAPIState = officialAPIState
         self.createdAt = createdAt

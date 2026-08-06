@@ -32,11 +32,17 @@ struct BuildingGroupSummaryView: View {
 
     /// 费用汇总：每项「资源 千分位数量」，按投影字典序（确定性）；
     /// 无任何费用数据时兜底「无费用数据」。
+    /// Review 反馈 P1-1：部分目录数据缺失（partialMissing）时加「已知费用：」
+    /// 前缀，明确只汇总了已知部分，不得被误读为完整总额。
     private var costSummaryLabel: String {
         let parts = group.summary.costByResource.map {
             $0.resource + " " + BuildingCostFormatter.label($0.totalCost)
         }
-        return parts.isEmpty ? "无费用数据" : parts.joined(separator: " · ")
+        if parts.isEmpty { return "无费用数据" }
+        if group.summary.completeness == .partialMissing {
+            return "已知费用：" + parts.joined(separator: " · ")
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// 完整时长合计：按 completeness 分支（交叉评审发现的口径缺陷修复——
@@ -95,20 +101,47 @@ struct BuildingGroupSummaryView: View {
     }
 
     /// 组图标：第一个实例的 4 级候选链，失败回退 SF Symbol（不崩溃）。
+    /// Review 反馈 P2-1：资产缺失原因叠加警告角标 + help（同 UpgradeDisplayRow 模式）。
     @ViewBuilder
     private var iconView: some View {
-        if let image = assetImage(firstInstance?.item) {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 36, height: 36)
-        } else {
-            Image(systemName: group.displayCategory?.systemImage ?? group.category?.systemImage ?? "hammer.fill")
-                .font(.title2)
-                .foregroundStyle(group.displayCategory?.tint ?? group.category?.tint ?? Color.secondary)
-                .frame(width: 36, height: 36)
+        Group {
+            if let image = assetImage(firstInstance?.item) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 36, height: 36)
+            } else {
+                Image(systemName: group.displayCategory?.systemImage ?? group.category?.systemImage ?? "hammer.fill")
+                    .font(.title2)
+                    .foregroundStyle(group.displayCategory?.tint ?? group.category?.tint ?? Color.secondary)
+                    .frame(width: 36, height: 36)
+            }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if firstInstance?.item.assetMissingReason != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .offset(x: 4, y: 4)
+            }
+        }
+        .help(iconHelp)
+    }
+
+    /// 组图标 help：资产缺失原因优先（与 UpgradeDisplayRow.iconHelp 同语义）。
+    private var iconHelp: String {
+        if let reason = firstInstance?.item.assetMissingReason {
+            return "目录图标或等级外观缺失：" + reason
+        }
+        if let missingReason = firstInstance?.item.missingReason { return missingReason }
+        return "目录渲染资产"
+    }
+
+    /// 时长前缀：partialMissing 时明确「已知时长」（Review 反馈 P1-1），
+    /// 不得把部分汇总误读为完整总额；其余情况保持「完整时长合计」。
+    private var durationPrefix: String {
+        group.summary.completeness == .partialMissing ? "已知时长：" : "完整时长合计："
     }
 
     var body: some View {
@@ -138,7 +171,7 @@ struct BuildingGroupSummaryView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("完整时长合计：" + totalDurationLabel)
+            Text(durationPrefix + totalDurationLabel)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

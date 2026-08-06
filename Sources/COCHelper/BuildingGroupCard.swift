@@ -113,21 +113,44 @@ struct BuildingGroupCard: View {
     }
 
     /// 实例图标：4 级候选链 NSImage 加载，失败回退 SF Symbol（同列表行规格）。
+    /// Review 反馈 P2-1：资产缺失原因（assetMissingReason，render_failed /
+    /// export_not_found 等）必须可见——叠加警告角标 + help 文案，与
+    /// `UpgradeDisplayRow.iconView` 同模式，不得静默回退成普通 SF Symbol。
     @ViewBuilder
     private func iconView(_ item: VillageItemState) -> some View {
-        if let image = item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion)
-            .lazy.compactMap({ NSImage(contentsOf: $0) }).first {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
-        } else {
-            Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
-                .font(.body)
-                .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
-                .frame(width: 24, height: 24)
+        Group {
+            if let image = item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion)
+                .lazy.compactMap({ NSImage(contentsOf: $0) }).first {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+            } else {
+                Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
+                    .font(.body)
+                    .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
+                    .frame(width: 24, height: 24)
+            }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if item.assetMissingReason != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.orange)
+                    .offset(x: 4, y: 4)
+            }
+        }
+        .help(iconHelp(item))
+    }
+
+    /// 图标 help 文案：资产缺失原因优先（与 UpgradeDisplayRow.iconHelp 同语义）。
+    private func iconHelp(_ item: VillageItemState) -> String {
+        if let reason = item.assetMissingReason {
+            return "目录图标或等级外观缺失：" + reason
+        }
+        if let missingReason = item.missingReason { return missingReason }
+        return "目录渲染资产"
     }
 
     var body: some View {

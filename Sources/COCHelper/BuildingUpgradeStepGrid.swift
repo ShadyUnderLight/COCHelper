@@ -10,16 +10,20 @@ import COCHelperCore
 /// 一致：durationSeconds == 0 显示「即时」、nil 显示「暂无目录数据」、
 /// 费用 nil 显示「无费用数据」。阶梯为空（满级或不可 join）时显示占位
 /// 「无剩余等级」。
+///
+/// 窄窗口适配（Issue #45：「用横向滚动适配较窄窗口」，Review 反馈 P2-2）：
+/// 固定列宽 3×150pt + 外层横向 ScrollView——实例区宽度不足 466pt 时横向滚动，
+/// 充足时三列完整显示，单元格不因挤压而截断。
 struct BuildingUpgradeStepGrid: View {
     /// 升序阶梯（调用方传入；可为空数组）。
     let steps: [BuildingUpgradeStep]
 
-    /// 固定三列（规格「两列或三列」取上限；窄窗口每列收缩，不加横向滚动）。
-    private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8),
-    ]
+    /// 单列固定宽：3 列 + 2×8 spacing = 466pt 内容宽。
+    private static let columnWidth: CGFloat = 150
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.fixed(Self.columnWidth), spacing: 8), count: 3)
+    }
 
     /// 费用文案：千分位；费用缺失 →「无费用数据」；资源缺失归「未知资源」
     /// （与投影汇总 `BuildingGroupProjection.summary` 同规则，不丢弃费用）。
@@ -59,9 +63,11 @@ struct BuildingUpgradeStepGrid: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(steps, id: \.level) { step in
-                    stepCell(step)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                    ForEach(steps, id: \.level) { step in
+                        stepCell(step)
+                    }
                 }
             }
         }

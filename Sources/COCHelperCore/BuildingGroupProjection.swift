@@ -1,0 +1,196 @@
+import Foundation
+
+/// 单个升级阶梯单元格（目录逐级数据）。
+public struct BuildingUpgradeStep: Hashable, Sendable {
+    /// 目标等级（升序）。
+    public let level: Int
+    /// 目录费用；nil = 缺失。
+    public let upgradeCost: Int64?
+    /// 费用资源类型；nil = 缺失（仅当 cost 存在时可能）。
+    public let upgradeResource: String?
+    /// 完整升级时长；nil = 缺失，0 = 有效即时升级。
+    public let durationSeconds: Int64?
+
+    public var hasCost: Bool { upgradeCost != nil }
+    public var hasDuration: Bool { durationSeconds != nil }
+    public var isInstant: Bool { durationSeconds == 0 }
+}
+
+/// 一条原始快照记录 + 其升级阶梯（可追溯）。
+public struct BuildingInstance: Identifiable, Hashable, Sendable {
+    /// 原始快照记录 ID（可追溯，非 agg: 前缀）。
+    public let id: String
+    /// 原始投影记录（复用全部现有字段：currentLevel/maxLevel/count/计时/资产…）。
+    public let item: VillageItemState
+    /// 阶梯单元格，level 升序；满级或不可 join 时为空数组。
+    public let steps: [BuildingUpgradeStep]
+}
+
+/// 单资源费用汇总。
+public struct BuildingResourceTotal: Hashable, Sendable {
+    public let resource: String
+    public let totalCost: Int64
+}
+
+/// 组卡汇总完整性。
+public enum BuildingGroupCompleteness: String, Hashable, Sendable, CaseIterable {
+    /// 全部阶梯费用/时长齐全。
+    case complete
+    /// 任一阶梯费用或时长缺失（或存在无法生成阶梯的已知实例）。
+    case partialMissing
+    /// 任一实例 currentLevel > maxLevel（目录过时）：不得输出权威汇总。
+    case versionMismatch
+}
+
+/// 组卡汇总。
+public struct BuildingGroupSummary: Hashable, Sendable {
+    /// 所有实例剩余等级数之和（×count ?? 1）。
+    public let remainingLevelCount: Int
+    /// 所有已知等级完整升级时间之和（×count ?? 1，秒）。
+    public let totalDurationSeconds: Int64
+    /// 按资源类型汇总的费用（×count ?? 1；按 resource 字典序）。
+    public let costByResource: [BuildingResourceTotal]
+    public let completeness: BuildingGroupCompleteness
+}
+
+/// 同类建筑组。
+public struct BuildingGroup: Identifiable, Hashable, Sendable {
+    public let base: TrackerBase
+    public let section: String
+    public let dataID: Int64
+    public let name: String
+    public let instances: [BuildingInstance]  // 快照输入顺序
+    public let summary: BuildingGroupSummary
+    /// 投影层推导（复用 BuildingDisplayCategoryRules），UI 分派键。
+    public let displayCategory: TrackerDisplayCategory?
+    public let category: TrackerCategory?
+    public var id: String { "\(base.rawValue):\(section):\(dataID)" }
+}
+
+/// 组卡投影入口。纯函数，不改变任何现有投影/持久化语义。
+/// 输出范围：section ∈ {buildings, buildings2} 的非嵌套项（UI 门仅剩 craftTable 防御）。
+public enum BuildingGroupProjection {
+    public static func project(
+        village: VillageProfile,
+        catalog: GameCatalog?,
+        base: TrackerBase,
+        now: Date = Date()
+    ) -> [BuildingGroup] {
+        guard let snapshot = village.accountSnapshot else { return [] }
+        // 原始记录层（聚合前）：只取 buildings/buildings2 的非嵌套项。
+        let records = VillageCatalogProjection.records(
+            from: snapshot,
+            catalog: catalog,
+            base: base,
+            now: now
+        ).filter { !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2") }
+
+        // 按 (base, section, dataID) 分组，组按首现顺序输出（字典 + 有序键数组）。
+        var keys: [String] = []
+        var grouped: [String: [VillageItemState]] = [:]
+        for record in records {
+            let key = "\(base.rawValue):\(record.section):\(record.dataID)"
+            if grouped[key] == nil { keys.append(key) }
+            grouped[key, default: []].append(record)
+        }
+
+        return keys.compactMap { key in
+            guard let records = grouped[key], let first = records.first else { return nil }
+            let instances = records.map { record in
+                BuildingInstance(id: record.id, item: record, steps: steps(for: record, catalog: catalog))
+            }
+            return BuildingGroup(
+                base: base,
+                section: first.section,
+                dataID: first.dataID,
+                name: first.name,
+                instances: instances,
+                summary: summary(for: instances),
+                displayCategory: first.displayCategory,
+                category: first.category
+            )
+        }
+    }
+
+    /// 阶梯：目录 levels 中 `level ∈ (currentLevel, maxLevel]` 的条目，按 level 升序。
+    /// 目录等级可能不连续，必须过滤目录 levels 而非生成连续整数。
+    /// currentLevel 为 nil、目录未命中或 base 不匹配（maxLevel == nil）→ 空数组。
+    private static func steps(
+        for item: VillageItemState,
+        catalog: GameCatalog?
+    ) -> [BuildingUpgradeStep] {
+        guard let maxLevel = item.maxLevel,
+              let catalogItem = catalog?.item(section: item.section, dataID: item.dataID)
+        else { return [] }
+        let currentLevel = item.currentLevel
+        return catalogItem.levels
+            .filter { $0.level > (currentLevel ?? .max) && $0.level <= maxLevel }
+            .sorted { $0.level < $1.level }
+            .map {
+                BuildingUpgradeStep(
+                    level: $0.level,
+                    upgradeCost: $0.upgradeCost,
+                    upgradeResource: $0.upgradeResource,
+                    durationSeconds: $0.durationSeconds
+                )
+            }
+    }
+
+    private static func summary(for instances: [BuildingInstance]) -> BuildingGroupSummary {
+        var remainingLevelCount = 0
+        var totalDurationSeconds: Int64 = 0
+        var costByResource: [String: Int64] = [:]
+        var hasPartialMissing = false
+        var hasVersionMismatch = false
+
+        for instance in instances {
+            let count = instance.item.count ?? 1
+            // 任一实例 currentLevel > maxLevel（目录过时）→ versionMismatch，最高优先级。
+            if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel,
+               currentLevel > maxLevel {
+                hasVersionMismatch = true
+            }
+            // 仅目录命中且 currentLevel 存在的实例计入剩余等级数（max(0, …) 防御目录过时）。
+            if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
+                remainingLevelCount += max(0, maxLevel - currentLevel) * count
+            }
+            // 无法生成阶梯的实例降级：目录未命中（或 base 不匹配，maxLevel == nil）；
+            // 或目录命中但 currentLevel 缺失 / 未满级却 steps 为空。已满级
+            // （currentLevel >= maxLevel）steps 为空是正常状态，不降级。
+            if let maxLevel = instance.item.maxLevel {
+                let maxed = instance.item.currentLevel.map { $0 >= maxLevel } ?? false
+                if instance.item.currentLevel == nil || (instance.steps.isEmpty && !maxed) {
+                    hasPartialMissing = true
+                }
+            } else {
+                hasPartialMissing = true
+            }
+            for step in instance.steps {
+                // 任一阶梯费用或时长缺失 → 降级（0 是有效即时升级，不降级）。
+                if step.upgradeCost == nil || step.durationSeconds == nil {
+                    hasPartialMissing = true
+                }
+                if let duration = step.durationSeconds {
+                    totalDurationSeconds += duration * Int64(count)
+                }
+                if let cost = step.upgradeCost {
+                    // 资源缺失但费用存在 → 归入「未知资源」桶（不丢弃费用）。
+                    let resource = step.upgradeResource ?? "未知资源"
+                    costByResource[resource, default: 0] += cost * Int64(count)
+                }
+            }
+        }
+
+        return BuildingGroupSummary(
+            remainingLevelCount: remainingLevelCount,
+            totalDurationSeconds: totalDurationSeconds,
+            // 按 resource 字典序排序（确定性：实例重排后桶序不变）。
+            costByResource: costByResource
+                .sorted { $0.key < $1.key }
+                .map { BuildingResourceTotal(resource: $0.key, totalCost: $0.value) },
+            completeness: hasVersionMismatch ? .versionMismatch
+                : hasPartialMissing ? .partialMissing
+                : .complete
+        )
+    }
+}

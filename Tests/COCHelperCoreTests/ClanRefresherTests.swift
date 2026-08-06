@@ -108,6 +108,22 @@ final class ClanRefresherTests: XCTestCase {
         XCTAssertTrue(result.isEmpty, "无有效 clan tag 时不产生状态")
     }
 
+    /// 超长 tag（> 20 字符，Issue #48 Step 1 新长度上限）在刷新链路中被跳过，
+    /// 不发起请求、不产生状态——锁住 validator 长度契约在下游的生效。
+    func testOverlongClanTagIsIgnoredWithoutRequest() async {
+        let counter = RequestCounter()
+        let refresher = makeRefresher { request in
+            counter.record(tag: "unexpected")
+            return (clanMockResponse(200, url: request.url!), fullClanFixtureData())
+        }
+
+        let overlong = "#" + String(repeating: "A", count: 21)
+        let result = await refresher.refreshClans(villageClanTags: [overlong], previous: [:])
+
+        XCTAssertTrue(counter.requestedTags.isEmpty, "超长 clan tag 不发起请求")
+        XCTAssertTrue(result.isEmpty, "超长 clan tag 不产生状态")
+    }
+
     // MARK: - 规范化
 
     func testWhitespaceTagIsNormalizedBeforeRequest() async {

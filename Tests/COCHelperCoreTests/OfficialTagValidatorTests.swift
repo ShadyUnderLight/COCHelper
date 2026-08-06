@@ -94,6 +94,32 @@ final class OfficialTagValidatorTests: XCTestCase {
         XCTAssertFalse(OfficialTagValidator.isValid(OfficialTagValidator.normalizedInput("abc-12")!))
     }
 
+    /// 非 ASCII 输入不被 `uppercased()` 折叠（ß→SS、ı→I、ſ→S 是折叠陷阱）：
+    /// 原样保留 + 补 #，由 isValid 拒绝，错误提示契约成立。
+    func testNormalizedInputPreservesNonASCIIForValidation() {
+        XCTAssertEqual(OfficialTagValidator.normalizedInput("ß"), "#ß")
+        XCTAssertFalse(OfficialTagValidator.isValid("#ß"))
+        XCTAssertEqual(OfficialTagValidator.normalizedInput("ı"), "#ı")
+        XCTAssertFalse(OfficialTagValidator.isValid("#ı"))
+        XCTAssertEqual(OfficialTagValidator.normalizedInput("ſ"), "#ſ")
+        XCTAssertFalse(OfficialTagValidator.isValid("#ſ"))
+        XCTAssertEqual(OfficialTagValidator.normalizedInput("éabc"), "#éabc")
+        XCTAssertFalse(OfficialTagValidator.isValid("#éabc"))
+    }
+
+    /// 10 个 ß 若被折叠为 SS 恰好 20 字符、能骗过长度上限——门控后必须被拒。
+    func testNormalizedInputRejectsUnicodeExpansionExploit() {
+        let input = String(repeating: "ß", count: 10)
+        XCTAssertEqual(OfficialTagValidator.normalizedInput(input), "#" + input)
+        XCTAssertFalse(OfficialTagValidator.isValid("#" + input))
+    }
+
+    /// 双 # 前缀：只补一个 #，多余 # 视为非法（isValid 拒绝，不静默折叠）。
+    func testNormalizedInputKeepsDoubleHash() {
+        XCTAssertEqual(OfficialTagValidator.normalizedInput("##ABC"), "##ABC")
+        XCTAssertFalse(OfficialTagValidator.isValid("##ABC"))
+    }
+
     /// 大小写/前缀规范化后，isValid 接受原本小写或无 # 的输入。
     func testNormalizedInputProducesValidTagFromSloppyInput() {
         XCTAssertTrue(OfficialTagValidator.isValid(OfficialTagValidator.normalizedInput("abc123")!))
@@ -109,22 +135,27 @@ final class OfficialTagValidatorTests: XCTestCase {
 
     // MARK: - property-based：随机生成 + 参照实现对比
 
-    /// 参照实现（独立编写，避免与生产实现共享逻辑）：
-    /// tag 合法 ⇔ 以 # 开头、其余 1...20 个 ASCII 大写字母或数字。
+    /// 参照实现（**独立技术路线**，避免与生产实现共享逻辑产生自证盲区）：
+    /// - `referenceIsValid` 用正则锚定完整匹配（生产用字符扫描 + 长度判断）；
+    /// - `referenceNormalizedInput` 用 scalar 数值判断 ASCII + 首字符判断前缀
+    ///   （生产用 `isASCII` 属性 + `hasPrefix`）。
+    /// 两条路线互相证伪：任何一条写错（如字符集、长度、ASCII 门控）都会暴露。
     private func referenceIsValid(_ tag: String) -> Bool {
-        guard tag.hasPrefix("#") else { return false }
-        let rest = tag.dropFirst()
-        guard !rest.isEmpty, rest.count <= 20 else { return false }
-        return rest.allSatisfy { $0.isASCII && (($0.isLetter && $0.isUppercase) || $0.isNumber) }
+        // ^#[A-Z0-9]{1,20}$：完整匹配才合法。
+        guard tag.range(of: "^#[A-Z0-9]{1,20}$", options: .regularExpression) != nil else {
+            return false
+        }
+        return true
     }
 
-    /// 参照实现：trim + 全大写 + 补齐 #。
     private func referenceNormalizedInput(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let uppercased = trimmed.uppercased()
-        return uppercased.hasPrefix("#") ? uppercased : "#" + uppercased
+        // 非 ASCII（scalar 值 ≥ 128）不参与大写化，原样保留。
+        let isPureASCII = trimmed.unicodeScalars.allSatisfy { $0.value < 128 }
+        let core = isPureASCII ? trimmed.uppercased() : trimmed
+        return core.first == "#" ? core : "#" + core
     }
 
     func testPropertyIsValidMatchesReference() {
@@ -242,10 +273,11 @@ struct SeededRandomGenerator {
         Int(next() % UInt64(range.upperBound - range.lowerBound + 1)) + range.lowerBound
     }
 
-    /// 随机 tag：可能包含非法字符、小写、空白，长度 0-30（覆盖长度边界两侧）。
+    /// 随机 tag：可能包含非法字符、小写、空白、非 ASCII（ß/ı/ſ/é），
+    /// 长度 0-30（覆盖长度边界两侧与 Unicode 折叠路径）。
     mutating func randomTag() -> String {
         let length = randomInt(in: 0...30)
-        let charset = Array("#ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz-_. ")
+        let charset = Array("#ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz-_. ßıſé")
         return (0..<length).map { _ in String(charset[randomInt(in: 0...(charset.count - 1))]) }.joined()
     }
 
@@ -259,7 +291,7 @@ struct SeededRandomGenerator {
     mutating func paddedTag() -> String {
         let whitespace = randomWhitespace()
         let core = randomTag()
-        if Int.random(in: 0...1) == 0 {
+        if randomInt(in: 0...1) == 0 {
             return core
         }
         return whitespace + core + whitespace

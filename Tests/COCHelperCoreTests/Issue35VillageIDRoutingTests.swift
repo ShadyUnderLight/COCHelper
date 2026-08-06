@@ -558,6 +558,8 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
                                 "第 \(iteration) 轮：officialClanTag 非 nil ⟹ lastGood 存在")
                 XCTAssertNotNil(state.lastGood?.clan?.tag,
                                 "第 \(iteration) 轮：officialClanTag 非 nil ⟹ 快照含部落 tag")
+                // 刻意保留旧类型名：作为 OfficialTagValidator typealias 的
+                // 真实兼容回归（Issue #48 Step 1 重命名后仍可编译运行）。
                 XCTAssertTrue(OfficialPlayerTagValidator.isValid(tag),
                               "第 \(iteration) 轮：officialClanTag 必须是有效格式: \(tag)")
                 XCTAssertEqual(tag, OfficialPlayerTagValidator.normalized(state.lastGood?.clan?.tag),

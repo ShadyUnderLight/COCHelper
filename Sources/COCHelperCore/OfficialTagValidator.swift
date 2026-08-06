@@ -32,13 +32,27 @@ public enum OfficialTagValidator {
     /// 输入级标准化：trim + 全大写 + 补齐 `#`；空串或 nil 返回 nil。
     ///
     /// 幂等：结果再次传入返回相同值（大写稳定、`#` 不重复补）。
-    /// 非法字符（如 `-`）会被**保留**，由 `isValid` 拒绝——这样调用方可以把
+    /// 非法字符会被**保留**，由 `isValid` 拒绝——这样调用方可以把
     /// `normalizedInput` 的结果直接展示给用户做错误提示，而非静默吞掉字符。
+    ///
+    /// ASCII 门控：**非 ASCII 输入不执行 `uppercased()`**。`String.uppercased()`
+    /// 对个别 Unicode 字符会折叠成合法 ASCII 形态（如 `ß`→`SS`、`ı`→`I`、
+    /// `ſ`→`S`），若对这些字符大写化，非法输入会被静默改写成"看似合法"的
+    /// tag（10 个 `ß` 恰好折叠成 20 字符的 `SSSS…` 甚至能通过 `isValid`）。
+    /// 因此含非 ASCII 的输入原样补 `#` 返回，交给 `isValid` 拒绝并保留错误提示。
+    ///
+    /// `#` 前缀：只补一个 `#`；输入本身以 `#` 开头则不重复补。多余 `#`
+    /// （如 `##ABC`）视为非法字符，由 `isValid` 拒绝。
     public static func normalizedInput(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let uppercased = trimmed.uppercased()
+        let uppercased: String
+        if trimmed.unicodeScalars.allSatisfy(\.isASCII) {
+            uppercased = trimmed.uppercased()
+        } else {
+            uppercased = trimmed
+        }
         return uppercased.hasPrefix("#") ? uppercased : "#" + uppercased
     }
 

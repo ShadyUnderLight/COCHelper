@@ -5,10 +5,12 @@ import COCHelperCore
 /// Issue #15：升级总览 / 村庄详情共用的升级行组件。
 ///
 /// 输入 `UpgradeDisplayRecord`（投影聚合层），展示：
-/// - 图标列：`item.icon?.isRenderable == true` 时渲染目录 PNG
-///   （`bundledURL()` 解析 + NSImage 加载）；加载失败或不可渲染时统一走类别
-///   SF Symbol 兜底。`item.assetMissingReason`（icon 或 levelVisual 的缺失原因）
-///   非 nil 时叠加橙色警示角标（可见的缺失状态）+ `.help` 提示原因，不隐藏行。
+/// - 图标列：`item.preferredAssetRef` 可渲染时渲染目录 PNG（`bundledURL()`
+///   解析 + NSImage 加载；levelVisual 优先、icon 兜底，Issue #34，与详情
+///   sheet 共用 `VillageItemState.preferredAssetRef` 谓词防漂移）；加载失败
+///   或不可渲染时统一走类别 SF Symbol 兜底。`item.assetMissingReason`
+///   （icon 或 levelVisual 的缺失原因）非 nil 时叠加橙色警示角标（可见的
+///   缺失状态）+ `.help` 提示原因，不隐藏行。
 /// - 名称 × 数量、嵌套标记、副标题（类别 · #dataID · 目录版本）
 /// - 完整时长行（目录缺失时显示「暂无目录数据」；duration == 0 的即时升级显示「即时」）
 /// - 当前 → 目标等级；状态徽标（目录版本不匹配 / 待重新导入确认 / 已满级）
@@ -124,14 +126,16 @@ struct UpgradeDisplayRow: View {
         item.category?.systemImage ?? "hammer.fill"
     }
 
-    /// 目录渲染 PNG（icon 可渲染时）；否则 nil → SF Symbol 兜底。
-    /// Issue #25：`item.icon?.isRenderable` 为 true 时优先渲染真实图标
-    /// （`bundledURL()` 解析 + NSImage 加载）；加载失败（Bundle 文件缺失
-    /// 等）同样回退 SF Symbol，不崩溃。版本参数取投影层 catalogVersion
-    /// （与 `loadBundled()` 同源），避免未来多版本资源错配。
+    /// 目录渲染 PNG（`preferredAssetRef` 可渲染时）；否则 nil → SF Symbol 兜底。
+    /// Issue #25/#34：视觉资产首选 levelVisual、icon 兜底（`VillageItemState.preferredAssetRef`，
+    /// 与详情 sheet 同谓词防漂移）——建筑/陷阱目录项 icon 为 nil 但 levelVisual 可渲染
+    /// （如 buildings:1000000 fireplace_lvl1.png），列表行必须显示真实 PNG。
+    /// `bundledURL()` 解析 + NSImage 加载失败（Bundle 文件缺失等）同样回退 SF
+    /// Symbol，不崩溃。版本参数取投影层 catalogVersion（与 `loadBundled()` 同源），
+    /// 避免未来多版本资源错配。
     @ViewBuilder
     private var iconView: some View {
-        if let url = item.icon?.bundledURL(
+        if let url = item.preferredAssetRef?.bundledURL(
             version: record.catalogVersion ?? GameCatalog.defaultBundledVersion
         ), let image = NSImage(contentsOf: url) {
             Image(nsImage: image)

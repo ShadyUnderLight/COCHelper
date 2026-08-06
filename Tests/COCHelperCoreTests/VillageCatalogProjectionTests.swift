@@ -883,6 +883,94 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
+    // MARK: - VillageItemState.preferredAssetRef 谓词（Issue #34）
+
+    /// 真值表：levelVisual 可渲染优先、icon 兜底；均不可渲染返回 nil（SF Symbol 回退）。
+    /// 列表行（UpgradeDisplayRow）与详情 sheet（LevelDetailSheet）必须共用此谓词防漂移；
+    /// 建筑/陷阱目录项 icon 为 nil 但 levelVisual 可渲染（如 buildings:1000000
+    /// fireplace_lvl1.png），谓词必须命中 levelVisual 而不是 SF Symbol。
+    func testPreferredAssetRefTruthTable() throws {
+        let levelVisualRenderable = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: "icons/fireplace_lvl1.png", missingReason: nil
+        )
+        let iconRenderable = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: "icons/barracks.png", missingReason: nil
+        )
+        let iconOtherRenderable = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: "icons/cannon.png", missingReason: nil
+        )
+        let levelVisualMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "icons_not_rendered"
+        )
+        let levelVisualRenderedButMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: "icons/fireplace_lvl2.png", missingReason: "icons_not_rendered"
+        )
+        let iconMissing = CatalogAssetRef(
+            container: nil, exportName: nil, renderedPath: nil, missingReason: "icons_not_rendered"
+        )
+
+        XCTAssertEqual(
+            makeAssetState(icon: nil, levelVisual: levelVisualRenderable).preferredAssetRef,
+            levelVisualRenderable,
+            "levelVisual 可渲染 + icon nil → levelVisual（Issue #34 核心修复场景：列表行显示真实 PNG）"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: iconRenderable, levelVisual: levelVisualRenderable).preferredAssetRef,
+            levelVisualRenderable,
+            "两者均可渲染 → levelVisual 优先（与详情 sheet 同规则，防漂移）"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: iconRenderable, levelVisual: nil).preferredAssetRef,
+            iconRenderable,
+            "levelVisual nil + icon 可渲染 → icon 兜底"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: iconRenderable, levelVisual: levelVisualMissing).preferredAssetRef,
+            iconRenderable,
+            "levelVisual 缺失（missingReason 非空） + icon 可渲染 → icon 兜底"
+        )
+        XCTAssertEqual(
+            makeAssetState(icon: iconOtherRenderable, levelVisual: levelVisualRenderedButMissing).preferredAssetRef,
+            iconOtherRenderable,
+            "levelVisual 带缺失原因（isRenderable false 路径） + icon 可渲染 → icon 兜底"
+        )
+        XCTAssertNil(
+            makeAssetState(icon: nil, levelVisual: nil).preferredAssetRef,
+            "两者均 nil → nil（SF Symbol 回退）"
+        )
+        XCTAssertNil(
+            makeAssetState(icon: iconMissing, levelVisual: levelVisualMissing).preferredAssetRef,
+            "两者均不可渲染 → nil（SF Symbol 回退）"
+        )
+    }
+
+    /// 数据锚点：真值表只验谓词逻辑，此处锁定真实 bundled 目录满足 Issue #34
+    /// 的触发场景——buildings:1000000（壁炉）icon 为 nil 但 levelVisual 可渲染
+    /// （fireplace_lvl1.png）。若目录数据漂移（icon 补全或 levelVisual 不可渲染），
+    /// 本测试立即红，防止谓词修复在无真实场景下空转。
+    func testBundledCatalogFireplaceHasRenderableLevelVisual() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let fireplace = try XCTUnwrap(
+            catalog.item(section: "buildings", dataID: 1_000_000),
+            "bundled 目录应包含 buildings:1000000（壁炉）"
+        )
+        XCTAssertNil(fireplace.icon, "buildings:1000000 icon 应为 nil（Issue #34 数据契约）")
+        let levelVisual = try XCTUnwrap(
+            fireplace.levelVisual,
+            "buildings:1000000 应有 levelVisual（Issue #34 数据契约）"
+        )
+        XCTAssertTrue(
+            levelVisual.isRenderable,
+            "buildings:1000000 levelVisual 应可渲染（fireplace_lvl1.png，Issue #34 数据契约）"
+        )
+        // 谓词必须命中 levelVisual 而非 SF Symbol 回退——列表行依赖此契约显示真实 PNG。
+        XCTAssertEqual(
+            makeAssetState(icon: fireplace.icon, levelVisual: fireplace.levelVisual).preferredAssetRef,
+            levelVisual,
+            "buildings:1000000 谓词应命中 levelVisual（Issue #34 核心修复场景）"
+        )
+    }
+
     func testPropertyEveryUpgradingRecordSurvivesProjection() throws {
         var rng = SeededRNG(seed: 2024)
         let sections = ["buildings", "units"]

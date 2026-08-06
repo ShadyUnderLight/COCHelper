@@ -71,12 +71,12 @@ struct LevelDetailSheet: View {
         catalog?.gameVersion ?? GameCatalog.defaultBundledVersion
     }
 
-    /// 头部图标引用：levelVisual 优先（与逐级行同规则）、icon 兜底。
+    /// 头部图标引用：levelVisual 优先、icon 兜底（与列表行共用
+    /// `VillageItemState.preferredAssetRef` 谓词防漂移）。
     /// 目录中部分 item（如兵营 buildings:1000000）icon 为 nil 但 levelVisual
     /// 可渲染（fireplace_lvl1.png）——头部必须与逐级行一致显示真实外观。
     private var itemAssetRef: CatalogAssetRef? {
-        (item.levelVisual?.isRenderable == true) ? item.levelVisual
-            : ((item.icon?.isRenderable == true) ? item.icon : nil)
+        item.preferredAssetRef
     }
 
     var body: some View {

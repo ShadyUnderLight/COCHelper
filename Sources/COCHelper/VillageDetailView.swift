@@ -255,7 +255,7 @@ struct VillageDetailView: View {
         case .all: return groups
         case .display(let dc): return groups.filter { $0.displayCategory == dc }
         case .category(let c): return groups.filter { VillageDetailProjection.matchesCategoryFilter($0, category: c) }
-        case .other: return groups.filter { $0.category == nil }
+        case .other: return groups.filter { $0.displayCategory == nil && $0.category == nil }
         }
     }
 

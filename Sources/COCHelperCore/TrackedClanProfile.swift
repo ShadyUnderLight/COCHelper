@@ -4,8 +4,9 @@ import Foundation
 ///
 /// 与村庄档案（`VillageProfile`）、玩家快照（`AccountSnapshot`）完全独立；
 /// API 数据不写入本档案——部落数据仍在按 Tag 共享的 `clanStates` 等状态层。
-/// `clanTag` 是规范化后的唯一主键（`Identifiable.id`），重复添加由
-/// `TrackedClanStore` 负责去重。
+/// `clanTag` 是规范化后的唯一主键（`Identifiable.id`）。AppModel 添加时
+/// 先查重（重复返回 .duplicate，不覆盖原档案）；`TrackedClanStore.upsert`
+/// 是替换语义，供其他场景使用。
 public struct TrackedClanProfile: Codable, Hashable, Identifiable, Sendable {
     public var id: String { clanTag }
     /// 规范化部落 Tag（trim + 大写 + `#` 前缀校验），稳定身份。

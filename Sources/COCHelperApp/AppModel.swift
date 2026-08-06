@@ -1010,8 +1010,8 @@ public final class AppModel: ObservableObject {
     }
 
     /// 测试辅助：为指定 Tag 注入共享部落缓存（验证删除跟踪关系保留缓存）。
-    /// 仅测试模块可见（public + @testable），生产路径不调用。
-    public func seedClanStateForTesting(tag: String) {
+    /// 仅测试模块通过 @testable 可见，生产路径不调用。
+    func seedClanStateForTesting(tag: String) {
         clanStates[tag] = ClanAPIState(
             status: .success,
             fetchedAt: Date(),

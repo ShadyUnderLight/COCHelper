@@ -54,6 +54,13 @@ final class TrackedClanStoreTests: XCTestCase {
         XCTAssertEqual(store.profiles[0].clanTag, "#AAA")
     }
 
+    func testUpsertReplacesInPlacePreservingOrder() {
+        var store = TrackedClanStore(profiles: [profile("#AAA"), profile("#BBB"), profile("#CCC")])
+        store.upsert(profile("#BBB", name: "改名"))
+        XCTAssertEqual(store.profiles.map(\.clanTag), ["#AAA", "#BBB", "#CCC"], "替换必须保持原位置")
+        XCTAssertEqual(store.profiles[1].displayName, "改名")
+    }
+
     func testUpsertAppendsNewTag() {
         var store = TrackedClanStore(profiles: [profile("#AAA")])
         store.upsert(profile("#BBB"))

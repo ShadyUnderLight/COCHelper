@@ -31,6 +31,9 @@ public struct TrackedClanStore: Codable, Hashable, Sendable {
 
     // MARK: - Codable（逐条容错）
 
+    // 演进约定：TrackedClanProfile 新增字段必须带默认值或使用 decodeIfPresent，
+    // 否则旧存储条目解码失败会被 JSONSkipper 静默丢弃（容错机制把 schema
+    // 错误变成整库静默数据丢失）。
     public init(from decoder: Decoder) throws {
         var container = try decoder.unkeyedContainer()
         var decoded: [TrackedClanProfile] = []

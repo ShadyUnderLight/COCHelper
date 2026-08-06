@@ -23,6 +23,37 @@ final class AppModelTrackedClansTests: XCTestCase {
         AppModel(defaults: defaults)
     }
 
+    /// 通过村庄存储注入带官方玩家快照的村庄（与 Issue35/AppModelTests 同构，
+    /// 无需网络：isCurrentVillageClan 是纯查询）。
+    @MainActor
+    private func makeModel(villages: [VillageProfile]) throws -> AppModel {
+        let data = try JSONEncoder().encode(villages)
+        defaults.set(data, forKey: "coc-helper.villages.v1")
+        return AppModel(defaults: defaults)
+    }
+
+    /// 带官方玩家快照的村庄：lastGood.clan.tag 决定 currentVillageClanTag。
+    private func villageWithOfficialClan(clanTag: String) -> VillageProfile {
+        VillageProfile(
+            name: "官方村",
+            officialAPIState: OfficialAPIState(
+                status: .success,
+                lastGood: OfficialPlayerSnapshot(
+                    tag: "#P", name: "p", townHallLevel: nil, townHallWeaponLevel: nil,
+                    builderHallLevel: nil, expLevel: nil, trophies: nil, bestTrophies: nil,
+                    warStars: nil, attackWins: nil, defenseWins: nil, builderBaseTrophies: nil,
+                    versusBattleWins: nil, legendStatistics: nil,
+                    clan: PlayerClan(tag: clanTag, name: "c", clanLevel: nil, badgeUrls: nil),
+                    role: nil, warPreference: nil, donations: nil, donationsReceived: nil,
+                    clanCapitalContributions: nil, league: nil, builderBaseLeague: nil,
+                    achievements: nil, labels: nil, playerHouse: nil,
+                    troops: nil, heroes: nil, spells: nil, heroEquipment: nil,
+                    unrecognizedKeys: []
+                )
+            )
+        )
+    }
+
     @MainActor
     func testAddTrackedClanSuccess() throws {
         let model = try makeModel()
@@ -104,6 +135,14 @@ final class AppModelTrackedClansTests: XCTestCase {
     func testIsCurrentVillageClan() throws {
         let model = try makeModel()
         XCTAssertFalse(model.isCurrentVillageClan("#XXX999"), "无玩家快照时不应误报")
+    }
+
+    @MainActor
+    func testIsCurrentVillageClanPositivePath() throws {
+        let model = try makeModel(villages: [villageWithOfficialClan(clanTag: "#VILLAGECLAN")])
+        XCTAssertEqual(model.currentVillageClanTag, "#VILLAGECLAN")
+        XCTAssertTrue(model.isCurrentVillageClan("#VILLAGECLAN"), "玩家快照的部落 tag 应命中")
+        XCTAssertFalse(model.isCurrentVillageClan("#OTHER"), "非当前归属 tag 不应命中")
     }
 
     @MainActor

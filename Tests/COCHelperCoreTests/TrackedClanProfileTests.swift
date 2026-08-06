@@ -34,6 +34,12 @@ final class TrackedClanProfileTests: XCTestCase {
         XCTAssertNil(ClanTagNormalizer.normalize("中文"))
     }
 
+    func testNormalizeRejectsNonASCII() {
+        XCTAssertNil(ClanTagNormalizer.normalize("#ß123"))   // ß uppercase→SS 不得静默改写
+        XCTAssertNil(ClanTagNormalizer.normalize("#ı123"))   // ı→I 同理
+        XCTAssertNil(ClanTagNormalizer.normalize("α#ABC"))
+    }
+
     func testNormalizeMixedCase() {
         XCTAssertEqual(ClanTagNormalizer.normalize("#AbC1"), "#ABC1")
     }

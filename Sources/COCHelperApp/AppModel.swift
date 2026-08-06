@@ -138,6 +138,12 @@ public final class AppModel: ObservableObject {
         villages.first(where: { $0.id == selectedVillageID })?.officialTag
     }
 
+    /// 按村庄 ID 的官方 tag（村庄导入 tag 的规范化；无有效 tag 返回 nil）。
+    /// 语义与 currentVillageOfficialTag 一致，仅来源改为显式 ID。
+    public func officialTag(for villageID: UUID) -> String? {
+        villages.first(where: { $0.id == villageID })?.officialTag
+    }
+
     public var currentVillageOfficialState: OfficialAPIState? {
         officialState(for: selectedVillageID)
     }

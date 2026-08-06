@@ -11,6 +11,7 @@ import XCTest
 /// - by-ID 刷新切村写回（发起村庄更新、当前选中村庄不受影响、部落联动仍走发起村庄）；
 /// - 部落四层共享字典按 tag 路由（同 tag 共享同一份、不同 tag 各自）；
 /// - officialClanTag / clanStatusUnknown 派生语义（lastGood nil / clan 缺失 / tag 无效 / 换部落）；
+/// - officialTag(for:) 派生语义（规范化 / 无效 tag / 无快照 → nil，与选中村庄一致）；
 /// - property-based 一致性（随机村庄列表 + 随机状态，50 轮）。
 ///
 /// 注意：类级不标 @MainActor（setUp/tearDown 是 nonisolated override）；
@@ -380,6 +381,37 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
         XCTAssertFalse(model.clanStatusUnknown(for: villages[3].id))
         XCTAssertEqual(model.officialClanTag(for: villages[3].id), "#CLANNEW",
                        "officialClanTag 必须反映最近成功快照的部落")
+    }
+
+    /// officialTag(for:) 派生规则（与 currentVillageOfficialTag 一致，仅来源改为显式 ID）：
+    /// - 有有效 tag → 返回规范化（去首尾空白）后的 tag；
+    /// - 无效格式 / 无快照 / 不存在 ID → nil；
+    /// - 与 currentVillageOfficialTag（对选中村庄）一致。
+    @MainActor
+    func testOfficialTagRoutesByVillageID() throws {
+        let villages = [
+            VillageProfile(name: "valid", accountSnapshot: snapshot("  #ABC9  ")),
+            VillageProfile(name: "invalid", accountSnapshot: snapshot("#lowercase")),
+            VillageProfile(name: "noSnapshot"),
+        ]
+        let model = try makeModel(villages: villages)
+
+        // 有有效 tag → 规范化结果
+        XCTAssertEqual(model.officialTag(for: villages[0].id), "#ABC9", "首尾空白必须被去除")
+        XCTAssertNotEqual(model.officialTag(for: villages[0].id), "  #ABC9  ", "必须是规范化后的 tag")
+
+        // 无有效 tag → nil（格式无效 / 无快照 / 不存在 ID）
+        XCTAssertNil(model.officialTag(for: villages[1].id), "格式无效的 tag → nil")
+        XCTAssertNil(model.officialTag(for: villages[2].id), "无快照 → nil")
+        XCTAssertNil(model.officialTag(for: UUID()), "不存在的 ID → nil（不崩溃）")
+
+        // 与 currentVillageOfficialTag（对选中村庄）一致：初始选中 villages[0]
+        XCTAssertEqual(model.currentVillageOfficialTag, model.officialTag(for: model.selectedVillageID),
+                       "选中村庄的 currentVillageOfficialTag 必须与 by-ID 接口一致")
+        // 切换到无有效 tag 的村庄：两者一致地变 nil
+        model.selectVillage(id: villages[2].id)
+        XCTAssertEqual(model.currentVillageOfficialTag, model.officialTag(for: model.selectedVillageID))
+        XCTAssertNil(model.currentVillageOfficialTag, "切换后选中村庄无有效 tag → nil")
     }
 
     // MARK: - Property-based 一致性

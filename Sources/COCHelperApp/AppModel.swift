@@ -747,7 +747,13 @@ public final class AppModel: ObservableObject {
     }
 
     private func performClanRefresh(villageClanTags: [String?]) {
-        refreshingClanTags = Set(villageClanTags.compactMap { $0 })
+        // 防御：入集合前规范化（与 EndpointRefresher.uniqueTags 同源），
+        // 保证 single-flight 的 contains 判定与请求 tag 一致。
+        refreshingClanTags = Set(villageClanTags.compactMap {
+            OfficialPlayerTagValidator.normalized($0).flatMap { tag in
+                OfficialPlayerTagValidator.isValid(tag) ? tag : nil
+            }
+        })
         let previous = clanStates
         // 批次开始时间：合并时用于防回退（C1）——批次期间若有更新的成功
         // 数据写入（如解析预览成功），批次失败不得覆盖它。
@@ -1009,8 +1015,9 @@ public final class AppModel: ObservableObject {
     /// 同 tag 刷新批次在途时（`refreshingClanTags` 含该 tag），解析**等待**
     /// 批次结束并复用其结果（成功返回快照、失败映射分类），不发第二个请求；
     /// 仅"确实等待过批次"才复用，避免误复用解析前的旧缓存。等待可取消。
-    /// `performClanRefresh` 保证合并先于集合清空，等待恢复后读到的一定是
-    /// 本次批次结果。
+    /// `performClanRefresh` 保证合并先于集合清空，等待恢复后读到的是批次
+    /// 合并后的状态（成功/失败；C1 防回退下可能保留批次期间更新的成功）。
+    /// 批次成功但数据未合并到状态的情况不可达。
     ///
     /// 错误映射：`CoAPIError.missingCredentials`（token provider 返回 nil 时
     /// 由 client 抛出，与刷新链路一致，不重复检查 Keychain）→ `.missingToken`；
@@ -1061,8 +1068,16 @@ public final class AppModel: ObservableObject {
     }
 
     /// 批次失败状态 → 解析错误分类（single-flight 复用路径）。
-    /// `ClanAPIState` 只保留脱敏 HTTP 状态码，按码映射；传输层失败为 nil → 网络。
+    /// `ClanAPIState` 只保留脱敏 HTTP 状态码与原因字符串，按码映射；
+    /// 传输层失败/解析失败/缺 token 的 `lastHTTPStatus` 均为 nil，统一
+    /// 归为 .network（与直接路径的精确分类有差距：malformed/missingToken
+    /// 无法从状态区分——完整修复需在 `OfficialEndpointState` 增加结构化
+    /// 错误类别字段，记 follow-up）。"已取消"是 `EndpointRefresher` 写死的
+    /// 稳定文案，可精确识别。
     private static func mapFailedState(_ state: ClanAPIState) -> ClanResolveError {
+        if state.lastErrorReason == "已取消" {
+            return .cancelled
+        }
         switch state.lastHTTPStatus {
         case 404: return .notFound
         case 401, 403: return .accessDenied

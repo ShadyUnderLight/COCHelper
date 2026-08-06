@@ -311,6 +311,22 @@ final class AppModelClanResolveTests: XCTestCase {
         XCTAssertEqual(counter.count, 1, "single-flight：失败也不得发起第二个请求")
     }
 
+    /// waitedForBatch 负例：**无在途批次**时，即使 clanStates 已有该 tag 的
+    /// 成功缓存（上次解析/刷新遗留），也必须重新请求——解析语义是获取最新，
+    /// 不得误复用旧缓存。锁定"仅确实等待过批次才复用"的核心语义。
+    @MainActor
+    func testResolveClanDoesNotReuseStaleCacheWithoutInFlight() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            counter.record(tag: request.url?.path ?? "")
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        _ = await model.resolveClan(rawTag: "#2QJQ8J88")  // 第一次：写入成功缓存
+        XCTAssertEqual(counter.count, 1)
+        _ = await model.resolveClan(rawTag: "#2QJQ8J88")  // 第二次：无在途 → 必须重新请求
+        XCTAssertEqual(counter.count, 2, "无在途批次时不得复用旧缓存，必须重新请求")
+    }
+
     // MARK: - C1 防回退谓词边界（纯函数，无需并发时序）
 
     private func clanState(_ status: OfficialAPIRequestStatus, fetchedAt: Date?) -> ClanAPIState {

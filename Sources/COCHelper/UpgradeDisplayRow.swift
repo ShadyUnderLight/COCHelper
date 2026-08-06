@@ -127,10 +127,13 @@ struct UpgradeDisplayRow: View {
     /// 目录渲染 PNG（icon 可渲染时）；否则 nil → SF Symbol 兜底。
     /// Issue #25：`item.icon?.isRenderable` 为 true 时优先渲染真实图标
     /// （`bundledURL()` 解析 + NSImage 加载）；加载失败（Bundle 文件缺失
-    /// 等）同样回退 SF Symbol，不崩溃。
+    /// 等）同样回退 SF Symbol，不崩溃。版本参数取投影层 catalogVersion
+    /// （与 `loadBundled()` 同源），避免未来多版本资源错配。
     @ViewBuilder
     private var iconView: some View {
-        if let url = item.icon?.bundledURL(), let image = NSImage(contentsOf: url) {
+        if let url = item.icon?.bundledURL(
+            version: record.catalogVersion ?? GameCatalog.defaultBundledVersion
+        ), let image = NSImage(contentsOf: url) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)

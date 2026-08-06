@@ -85,13 +85,17 @@ python3 Tools/render_generator.py --apk <apk> --catalog <dir> --samples-only  # 
 python3 Tools/render_generator.py --apk <apk> --catalog <dir>   # 全量渲染 catalog 全部引用（Issue #25）
 ```
 
-4 个固定样本 PNG（`icons/ui/icon_unit_barbarian.png`、`icons/ui/icon_spell_rage.png`、
-`icons/buildings/fireplace_lvl1.png`、`icons/buildings/blacksmith_lvl1.png`）已随目录入库
-（`manifest.json` `generatedFiles` 登记 sha256/size）；失败样本写 `missingReason` 稳定枚举、
-不产生 PNG。渲染模块依赖例外同 spike：`sc2.py` 的 zstd body 解压需 `ctypes` + libzstd；
-`astc.py`/`ktx.py`/`render.py` 纯 stdlib（契约 R9.2/R9.3）。`renderedPath` 输出契约见
-`docs/rendered-path-contract.md`，路径选型决策见 `docs/render-path-decision.md`，spike 报告见
-`docs/spike-2026-08-05-render.md`。
+**Issue #25 全量渲染完成**：`render_generator.py` 默认模式收集 catalog 全部
+icon/levelVisual 引用（item 级 + level 级，R2.4 去重，1269 个唯一键）并渲染回写
+`renderedPath`；18.400.13 目录当前含 **1246 张 PNG**（成功 1246 / 失败 23：
+export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PNG），
+`manifest.json` `generatedFiles` 登记全部 path/size/sha256。4 个固定样本
+（`icons/ui/icon_unit_barbarian.png`、`icons/ui/icon_spell_rage.png`、
+`icons/buildings/fireplace_lvl1.png`、`icons/buildings/blacksmith_lvl1.png`）作为
+回归基线仍在样本集中。渲染模块依赖例外同 spike：`sc2.py` 的 zstd body 解压需
+`ctypes` + libzstd；`astc.py`/`ktx.py`/`render.py` 纯 stdlib（契约 R9.2/R9.3）。
+`renderedPath` 输出契约见 `docs/rendered-path-contract.md`，路径选型决策见
+`docs/render-path-decision.md`，spike 报告见 `docs/spike-2026-08-05-render.md`。
 
 - **`--game-version` 语义**：APK 内不含版本字符串，必须显式传入（如 `18.400.13`）；不传时默认从
   `assets/build.tag` 推断（`18_400_7` → `18.400.7`）。生成器写盘前自检，失败不落盘；输出确定性

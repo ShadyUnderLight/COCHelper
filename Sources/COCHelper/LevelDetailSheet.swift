@@ -65,13 +65,28 @@ struct LevelDetailSheet: View {
         return resource + " " + String(cost)
     }
 
+    /// 资产解析的目录版本：优先当前 catalog 的 gameVersion，缺失时回落
+    /// bundled 默认版本（与 `loadBundled()` 同源，避免未来多版本错配）。
+    private var assetVersion: String {
+        catalog?.gameVersion ?? GameCatalog.defaultBundledVersion
+    }
+
+    /// 头部图标引用：levelVisual 优先（与逐级行同规则）、icon 兜底。
+    /// 目录中部分 item（如兵营 buildings:1000000）icon 为 nil 但 levelVisual
+    /// 可渲染（fireplace_lvl1.png）——头部必须与逐级行一致显示真实外观。
+    private var itemAssetRef: CatalogAssetRef? {
+        (item.levelVisual?.isRenderable == true) ? item.levelVisual
+            : ((item.icon?.isRenderable == true) ? item.icon : nil)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .center, spacing: 12) {
                         Group {
-                            if let url = item.icon?.bundledURL(), let nsImage = NSImage(contentsOf: url) {
+                            if let url = itemAssetRef?.bundledURL(version: assetVersion),
+                               let nsImage = NSImage(contentsOf: url) {
                                 Image(nsImage: nsImage)
                                     .resizable()
                                     .interpolation(.high)
@@ -138,7 +153,8 @@ struct LevelDetailSheet: View {
     private func levelAssetImage(_ level: CatalogLevel) -> Image? {
         let ref = (level.levelVisual?.isRenderable == true) ? level.levelVisual
             : ((level.icon?.isRenderable == true) ? level.icon : nil)
-        guard let url = ref?.bundledURL(), let nsImage = NSImage(contentsOf: url) else {
+        guard let url = ref?.bundledURL(version: assetVersion),
+              let nsImage = NSImage(contentsOf: url) else {
             return nil
         }
         return Image(nsImage: nsImage)

@@ -73,7 +73,7 @@ struct VillageDetailView: View {
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header(village: village, projection: projection, total: total)
+                header(village: village, projection: projection, total: total, now: now)
                 officialAPISection()
                 basePicker()
                 categoryFilterBar(groups: groups)
@@ -119,19 +119,47 @@ struct VillageDetailView: View {
 
     // MARK: - 头部
 
+    /// Issue #49 Task 3：头部身份投影（昵称优先）。
+    ///
+    /// `now` 来自外层 `TimelineView(.periodic)` 的 `context.date`（detailContent 在
+    /// TimelineView 内），投影 `at:` 用它而非默认 `Date()`——stale 派生随 60s tick
+    /// 重算，跨过 24h 阈值后头部在下一分钟即可翻转为「已过期」，修掉升级总览头部
+    /// （TrackerHeaderView，位于 TimelineView 之外）同类 stale 残留在本页的问题。
     private func header(
         village: VillageProfile,
         projection: VillageCatalogProjection,
-        total: VillageCategoryCompletion
+        total: VillageCategoryCompletion,
+        now: Date
     ) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let identity = VillageDisplayIdentityProjection.project(
+            village: village,
+            officialState: village.officialAPIState,
+            at: now
+        )
+        return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(village.name)
+                    // 主标题 = 玩家昵称（官方昵称 → 本地名 → tag → 未命名村庄），
+                    // 单行截断，不挤压右侧按钮（与升级总览头部一致）。
+                    Text(identity.primaryName)
                         .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text(village.tag ?? "尚未导入账号 JSON")
+                        .lineLimit(1)
+                    // 第二行：tag · 官方来源/状态（stale/failed/fallback 文案与
+                    // 侧边栏、升级总览头部共用同一 helper）。
+                    Text(VillageIdentityDisplayText.tagLineText(
+                        identity: identity,
+                        fallback: "尚未导入账号 JSON"
+                    ))
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    // 官方昵称存在且与本地名不同：保留本地命名，不丢用户信息（#49 评审坑点）。
+                    if let alias = identity.localAlias {
+                        Text("本地别名：" + alias)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     HStack(spacing: 10) {
                         snapshotTimeLabel(village)
                         if let version = projection.catalogVersion {

@@ -145,6 +145,27 @@ final class AppModelTrackedClansTests: XCTestCase {
         XCTAssertFalse(model.isCurrentVillageClan("#OTHER"), "非当前归属 tag 不应命中")
     }
 
+    /// 非 canonical 输入（小写/带空格）必须被规范化后处理（与公开刷新入口同构）：
+    /// remove 幂等命中、isCurrentVillageClan 正确命中；非法输入静默 no-op。
+    @MainActor
+    func testNonCanonicalInputNormalizedForRemoveAndQuery() throws {
+        let model = try makeModel(villages: [villageWithOfficialClan(clanTag: "#VILLAGECLAN")])
+        _ = model.addTrackedClan(rawTag: "#DDD444", displayName: nil)
+
+        // remove：非 canonical 输入必须命中规范化档案
+        model.removeTrackedClan(tag: " #ddd444 ")
+        XCTAssertTrue(model.trackedClans.isEmpty, "removeTrackedClan 必须规范化入参（小写+空格命中 #DDD444）")
+
+        // 重新添加后，isCurrentVillageClan 非 canonical 输入必须命中
+        _ = model.addTrackedClan(rawTag: "#VILLAGECLAN", displayName: nil)
+        XCTAssertTrue(model.isCurrentVillageClan(" #villageclan "),
+                      "isCurrentVillageClan 必须规范化入参（小写+空格命中 #VILLAGECLAN）")
+        // 非法输入：静默 no-op 不崩溃
+        model.removeTrackedClan(tag: "#ab-c")
+        model.removeTrackedClan(tag: "")
+        XCTAssertFalse(model.isCurrentVillageClan("#ab-c"))
+    }
+
     @MainActor
     func testCorruptTrackedClansStorageDoesNotCrashInit() throws {
         defaults.set(Data("垃圾数据".utf8), forKey: "coc-helper.tracked-clans.v1")

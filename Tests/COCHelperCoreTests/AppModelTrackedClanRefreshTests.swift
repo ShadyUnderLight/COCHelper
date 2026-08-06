@@ -550,4 +550,43 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
         XCTAssertEqual(model.clanState(for: "#QUEUE1")?.status, .success)
         XCTAssertNil(model.clanState(for: "#queue1"), "小写输入不得产生非 canonical 条目")
     }
+
+    /// loadMore 入口的 guard 判别测试：带游标后以非 canonical 输入调用，
+    /// 请求必须使用规范化 tag（无 guard 时原始小写入队会被 EndpointRefresher
+    /// 过滤 → 0 请求 → 红）。覆盖终审 nit「loadMore 无游标分支对 guard 无判别力」。
+    @MainActor
+    func testLoadMoreWarLogNormalizesInput() async throws {
+        let logRecorder = TagRecorder()
+        let model = try makeModel(
+            clanHandler: { _ in
+                (HTTPURLResponse(url: URL(string: "https://api.clashofclans.com/v1/clans/%23X/warlog")!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                 Data("{\"items\":[],\"paging\":{\"cursors\":{\"after\":\"A1\"}}}".utf8))
+            },
+            clanLogHandler: { request in
+                logRecorder.record((request.url?.path(percentEncoded: true) ?? "") + (request.url?.query.map { "?" + $0 } ?? ""))
+                let body: Data
+                if request.url?.query?.contains("after=") == true {
+                    // loadMore：带游标请求 → 末页（无游标）
+                    body = Data("{\"items\":[]}".utf8)
+                } else {
+                    // 首屏：返回带 after 游标的响应（loadMore 的前置条件）
+                    body = Data("{\"items\":[],\"paging\":{\"cursors\":{\"after\":\"A1\"}}}".utf8)
+                }
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+            }
+        )
+        // 首屏：带 after 游标的响应（loadMore 的前置条件）
+        model.refreshWarLog(tag: "#WARLOG1")
+        await waitUntil { model.warLogState(for: "#WARLOG1")?.lastGood?.after != nil }
+
+        // loadMore：非 canonical 输入（小写）
+        model.loadMoreWarLog(tag: "#warlog1")
+        await waitUntil { !model.isRefreshingWarLogData }
+
+        XCTAssertEqual(model.warLogState(for: "#WARLOG1")?.status, .success)
+        XCTAssertTrue(logRecorder.snapshot().contains { $0.hasPrefix("/v1/clans/%23WARLOG1/warlog?") },
+                      "loadMore 请求必须使用规范化 tag（%23WARLOG1）")
+        XCTAssertFalse(logRecorder.snapshot().contains { $0.contains("warlog1") },
+                       "loadMore 请求不得出现小写 tag（非 canonical）")
+    }
 }

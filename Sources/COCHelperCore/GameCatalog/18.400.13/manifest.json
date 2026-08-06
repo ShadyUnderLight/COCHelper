@@ -6,7 +6,7 @@
     "levels": 5479,
     "missingIcons": 0,
     "missingTime": 3308,
-    "renderedIcons": 1258
+    "renderedIcons": 1261
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [
@@ -16,9 +16,24 @@
       "size": 3031427
     },
     {
-      "entries": 1258,
+      "entries": 1261,
       "kind": "directory",
       "path": "icons/"
+    },
+    {
+      "path": "icons/ui/info_icon_damage.png",
+      "sha256": "sha256:c728011dc490bfc58a34ca351d7ce3ae73cad3cec5d0f1f2f03ef7450df50d68",
+      "size": 2631
+    },
+    {
+      "path": "icons/ui/info_icon_hp.png",
+      "sha256": "sha256:07fcaa24837c3c13499ce9d5333c445b63ffc25ef729bdbc28d8987013c11f3d",
+      "size": 2209
+    },
+    {
+      "path": "icons/ui/info_icon_time_boosted.png",
+      "sha256": "sha256:037177389fa82fa03628769da02d73a0e888beb7e97f7a5adf7bcaa9e9f39557",
+      "size": 2793
     },
     {
       "path": "icons/buildings/blacksmith_lvl1.png",

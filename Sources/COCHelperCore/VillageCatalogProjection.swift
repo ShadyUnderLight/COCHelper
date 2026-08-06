@@ -76,8 +76,10 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
             ?? levelVisual?.missingReason
     }
 
-    /// 视觉资产候选 URL（4 级回退链，运行时文件存在性过滤）：
-    /// currentLevelVisual → currentLevelIcon → levelVisual → icon。
+    /// 视觉资产候选 URL（运行时文件存在性过滤）：
+    /// 精制台模组属性图标 → currentLevelVisual → currentLevelIcon → levelVisual → icon。
+    /// 精制台模组的图标来自 APK UI 资源，不属于静态目录的 item/level join；其余项
+    /// 继续使用原有 4 级目录资产回退链。
     /// `bundledURL` 仅在 isRenderable 且 Bundle 文件真实存在时返回 URL，因此
     /// 「元数据可渲染但文件缺失」的候选自动过滤——UI 对返回数组依次做 NSImage
     /// 加载探测，实现逐级回退链。前两级为 level-level 资产（Issue #39 按
@@ -85,8 +87,9 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// item-level 的 levelVisual/icon；后两级为 item-level 资产（Issue #34）。
     /// 列表行与详情 sheet 必须共用本解析防漂移。
     public func preferredAssetURLs(version: String) -> [URL] {
-        CatalogAssetRef.availableURLs(
-            [currentLevelVisual, currentLevelIcon, levelVisual, icon],
+        let moduleAsset = isNested ? ModuleUpgradeIconCatalog.asset(for: dataID) : nil
+        return CatalogAssetRef.availableURLs(
+            [moduleAsset, currentLevelVisual, currentLevelIcon, levelVisual, icon],
             version: version
         )
     }

@@ -106,6 +106,16 @@
 
 ## 7. manifest 记录（R6）
 
+### 精制台模组 UI 图标
+
+精制台 `types/modules` 的 9 个模组 ID 不参与 `GameCatalog` 的 item/level join，
+但其升级属性图标仍由 APK `sc/ui.sc` 直接解析并作为独立 Bundle 资源提供。当前版本
+由 `ModuleUpgradeIconCatalog` 固定映射：102000033/036/039 → `info_icon_hp`，
+102000034/037/040 → `info_icon_damage`，102000035/038/041 →
+`info_icon_time_boosted`。三张 PNG 位于 `icons/ui/`，并在 manifest 的
+`generatedFiles` 中登记；`VillageItemState.preferredAssetURLs` 将其置于普通目录
+资产候选链之前。
+
 | # | 契约规则 | 校验方式 |
 |---|---|---|
 | R6.1 | `generatedFiles` 为每张 PNG 追加条目：`path`（相对版本目录）、`size`、`sha256`（`"sha256:" + 64 hex` 前缀格式，与现有 catalog.json 条目一致）；`icons/` 目录条目保留（`kind: "directory"`，`entries` 可填 PNG 数）。 | validate.py 重算 hash/size 比对 |

@@ -216,6 +216,105 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertEqual(total.completedCount, 1)
     }
 
+    // MARK: - isFullyMaxed（issue #53：全部可确认且已满级）
+
+    func testIsFullyMaxedTrueWhenAllMaxed() {
+        let single = VillageDetailProjection.totalCompletion(from: [item(status: .maxed)])
+        XCTAssertTrue(single.isFullyMaxed, "单 maxed 应为满级")
+        let both = VillageDetailProjection.totalCompletion(
+            from: [item(id: "a", status: .maxed), item(id: "b", status: .maxed)])
+        XCTAssertTrue(both.isFullyMaxed, "全部 maxed 应为满级")
+    }
+
+    func testIsFullyMaxedFalseWhenOneComplete() {
+        let total = VillageDetailProjection.totalCompletion(
+            from: [item(id: "a", status: .maxed), item(id: "b", status: .complete)])
+        XCTAssertFalse(total.isFullyMaxed, "存在未满级 known 项不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenOneUpgrading() {
+        // 计时结束待重新导入：status 非 .maxed（level 未更新）→ 不算完成。
+        let total = VillageDetailProjection.totalCompletion(from: [
+            item(id: "a", status: .maxed),
+            item(id: "b", status: .upgrading, level: 3, maxLevel: 10, isUpgrading: true, nextLevel: 4),
+        ])
+        XCTAssertFalse(total.isFullyMaxed, "upgrading 项不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenUnknownPresent() {
+        // 关键负向：completedCount == knownCount 但 unknownCount > 0。
+        // completionRatio 可达 1.0，但 isFullyMaxed 刻意更严格，不得判满级。
+        let total = VillageDetailProjection.totalCompletion(from: [
+            item(id: "a", status: .maxed),
+            item(id: "b", status: .maxed),
+            item(id: "c", status: .unknown, maxLevel: nil),
+        ])
+        XCTAssertTrue(stat(total) == (2, 2, 1), "got \(stat(total))")
+        XCTAssertEqual(total.completionRatio, 1.0, "前置：completionRatio == 1.0 是可达的")
+        XCTAssertFalse(total.isFullyMaxed, "unknown > 0 时不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenCatalogUnusable() {
+        // 目录不可用/版本不匹配：knownCount 恒为 0 → 不得判满级（total 与分类一致）。
+        let items = [item(id: "a", status: .maxed), item(id: "b", status: .maxed)]
+        let total = VillageDetailProjection.totalCompletion(from: items, catalogIsUsable: false)
+        XCTAssertTrue(stat(total) == (0, 0, 2), "got \(stat(total))")
+        XCTAssertFalse(total.isFullyMaxed)
+        let stats = VillageDetailProjection.completionStats(from: items, catalogIsUsable: false)
+        XCTAssertTrue(stats.allSatisfy { !$0.isFullyMaxed }, "分类 stats 也不得判满级")
+    }
+
+    func testIsFullyMaxedFalseWhenNoKnownItems() {
+        let empty = VillageDetailProjection.totalCompletion(from: [])
+        XCTAssertFalse(empty.isFullyMaxed, "空分类不得判满级")
+        let unknownOnly = VillageDetailProjection.totalCompletion(from: [item(status: .unknown, maxLevel: nil)])
+        XCTAssertFalse(unknownOnly.isFullyMaxed, "无可确认项不得判满级")
+    }
+
+    func testIsFullyMaxedTotalAndCategoryShareContract() {
+        let allMaxed = [
+            item(id: "a", category: .buildings, status: .maxed),
+            item(id: "b", category: .traps, status: .maxed),
+        ]
+        let total1 = VillageDetailProjection.totalCompletion(from: allMaxed)
+        let stats1 = VillageDetailProjection.completionStats(from: allMaxed)
+        XCTAssertTrue(total1.isFullyMaxed)
+        XCTAssertTrue(stats1.allSatisfy(\.isFullyMaxed), "全 maxed 时各分类 stats 也应为满级")
+
+        let mixed = [
+            item(id: "a", category: .buildings, status: .maxed),
+            item(id: "b", category: .buildings, status: .complete),
+        ]
+        let total2 = VillageDetailProjection.totalCompletion(from: mixed)
+        let stats2 = VillageDetailProjection.completionStats(from: mixed)
+        XCTAssertFalse(total2.isFullyMaxed)
+        XCTAssertTrue(stats2.allSatisfy { !$0.isFullyMaxed }, "混合分类（maxed + complete 同组）不得判满级")
+    }
+
+    func testPropertyIsFullyMaxedConservation() {
+        var rng = SplitMix64(seed: 0x53_53)
+        for _ in 0..<500 {
+            let items = randomItems(&rng, count: 1 + Int(rng.next() % 30))
+            let stats = VillageDetailProjection.completionStats(from: items)
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            // 不变量 1：total.isFullyMaxed ⟺ 所有非空分类 stats 均 isFullyMaxed。
+            // known/unknown/completed 在分类间是加法拆分；空分类 stats = (0,0,0) → false。
+            let nonEmptyStats = stats.filter { $0.knownCount > 0 || $0.unknownCount > 0 }
+            let allCategoriesFullyMaxed = !nonEmptyStats.isEmpty && nonEmptyStats.allSatisfy(\.isFullyMaxed)
+            XCTAssertEqual(
+                total.isFullyMaxed, allCategoriesFullyMaxed,
+                "total=\(stat(total)) stats=\(stats.map(stat))"
+            )
+
+            // 不变量 2：isFullyMaxed ⟹ completionRatio == 1.0（单向蕴含；
+            // 反例合法：unknown > 0 时 ratio 可能 == 1.0 但 isFullyMaxed == false）。
+            if total.isFullyMaxed {
+                XCTAssertEqual(total.completionRatio, 1.0)
+            }
+        }
+    }
+
     // MARK: - 嵌套归父（issue #24：嵌套 types/modules 归入根父的「类型/模块」区域）
 
     func testFlatItemsStandAloneWithNoChildren() {

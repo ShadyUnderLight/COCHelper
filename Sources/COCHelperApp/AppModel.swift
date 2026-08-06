@@ -35,6 +35,10 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var clanCapitalStates: [String: ClanCapitalAPIState] = [:]
     /// 正在刷新资本赛季的部落 tag 集合（防重入守卫 + 卡片按部落隔离，Issue #35）。
     @Published public private(set) var refreshingCapitalTags: Set<String> = []
+    /// 手动跟踪的部落档案（Issue #41）：独立于村庄档案与玩家快照。
+    /// 只存档案元数据（tag/备注/创建时间），部落 API 数据仍在
+    /// clanStates 等按 Tag 共享状态层。
+    @Published public private(set) var trackedClans: [TrackedClanProfile] = []
     /// 静态升级目录（Issue #15 升级总览展示用：完整时长 / 等级上限 / 版本）。
     /// lazy：避免 AppModel.init 同步解码目录 JSON（当前 2.9MB / ~16ms 无感，
     /// 防御未来目录体积增长），首次访问（升级总览渲染）时才加载，启动路径保持纯净。
@@ -48,6 +52,7 @@ public final class AppModel: ObservableObject {
     private static let clanWarStatesStorageKey = "coc-helper.clan-wars.v1"
     private static let clanWarLogStatesStorageKey = "coc-helper.clan-war-logs.v1"
     private static let clanCapitalStatesStorageKey = "coc-helper.clan-capitals.v1"
+    private static let trackedClansStorageKey = "coc-helper.tracked-clans.v1"
     private let refresher: OfficialPlayerRefresher
     private let clanRefresher: ClanRefresher
     private let clanWarRefresher: ClanWarRefresher
@@ -113,6 +118,7 @@ public final class AppModel: ObservableObject {
         clanWarStates = Self.loadClanWarStates(from: defaults)
         clanWarLogStates = Self.loadClanWarLogStates(from: defaults)
         clanCapitalStates = Self.loadClanCapitalStates(from: defaults)
+        trackedClans = Self.loadTrackedClans(from: defaults)
         villages = initialVillages
         selectedVillageID = initialVillages[0].id
         accountSnapshot = initialVillages[0].accountSnapshot
@@ -847,6 +853,57 @@ public final class AppModel: ObservableObject {
         loadMoreCapitalRaid(villageID: selectedVillageID)
     }
 
+    // MARK: - 手动跟踪部落（Issue #41）
+
+    public enum TrackedClanAddError: Equatable, Error {
+        case invalidTag
+        case duplicate
+    }
+
+    /// 添加手动跟踪部落：只做本地校验与保存，**不触发任何网络请求**。
+    /// Tag 规范化失败 → .invalidTag；规范化后已存在 → .duplicate（不覆盖原档案）。
+    @discardableResult
+    public func addTrackedClan(rawTag: String?, displayName: String?) -> Result<TrackedClanProfile, TrackedClanAddError> {
+        guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(TrackedClanAddError.invalidTag) }
+        guard !trackedClans.contains(where: { $0.clanTag == tag }) else { return .failure(TrackedClanAddError.duplicate) }
+        let trimmedName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let profile = TrackedClanProfile(
+            clanTag: tag,
+            displayName: trimmedName?.isEmpty == false ? trimmedName : nil,
+            createdAt: Date()
+        )
+        trackedClans.append(profile)
+        persistTrackedClans()
+        return .success(profile)
+    }
+
+    /// 删除跟踪关系：**保留**按 Tag 的共享 API 缓存（clanStates 等），
+    /// 误删后重新添加不丢失历史数据。
+    public func removeTrackedClan(tag: String) {
+        guard trackedClans.contains(where: { $0.clanTag == tag }) else { return }
+        trackedClans.removeAll { $0.clanTag == tag }
+        persistTrackedClans()
+    }
+
+    /// 该 Tag 是否为**当前选中村庄**所属部落（列表"当前村庄所属"标识）。
+    /// 只做标识展示，不改变手动档案身份。
+    public func isCurrentVillageClan(_ tag: String) -> Bool {
+        currentVillageClanTag == tag
+    }
+
+    private func persistTrackedClans() {
+        guard let data = try? JSONEncoder().encode(TrackedClanStore(profiles: trackedClans)) else { return }
+        defaults.set(data, forKey: Self.trackedClansStorageKey)
+    }
+
+    private static func loadTrackedClans(from defaults: UserDefaults) -> [TrackedClanProfile] {
+        guard let data = defaults.data(forKey: Self.trackedClansStorageKey),
+              let store = try? JSONDecoder().decode(TrackedClanStore.self, from: data) else {
+            return []
+        }
+        return store.profiles
+    }
+
     private func persistClanCapitalStates() {
         guard let data = try? JSONEncoder().encode(ClanCapitalStateStore(states: clanCapitalStates)) else { return }
         defaults.set(data, forKey: Self.clanCapitalStatesStorageKey)
@@ -918,5 +975,24 @@ public final class AppModel: ObservableObject {
             return []
         }
         return decoded
+    }
+
+    /// 测试辅助：为指定 Tag 注入共享部落缓存（验证删除跟踪关系保留缓存）。
+    /// 仅测试模块可见（public + @testable），生产路径不调用。
+    public func seedClanStateForTesting(tag: String) {
+        clanStates[tag] = ClanAPIState(
+            status: .success,
+            fetchedAt: Date(),
+            lastErrorReason: nil,
+            parserVersion: ClanAPIState.currentParserVersion,
+            lastGood: OfficialClanSnapshot(
+                tag: tag, name: "测试部落", type: nil, description: nil,
+                clanLevel: 1, badgeUrls: nil,
+                members: 1, requiredTrophies: nil, requiredTownHallLevel: nil,
+                warWins: nil, warLosses: nil, warTies: nil, warWinStreak: nil,
+                isWarLogPublic: nil,
+                labels: nil, clanCapital: nil, unrecognizedKeys: []
+            )
+        )
     }
 }

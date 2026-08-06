@@ -533,7 +533,10 @@ public final class AppModel: ObservableObject {
     /// 同一 Tag 与村庄入口共享状态与防重入守卫，不产生重复请求。
     /// 忙时排队记录该 tag 本身（`pendingClanRefreshTags`），补跑覆盖手动 tag；
     /// 不会退化为村庄全量联动（村庄入口忙时同样走这里，其 tag 也被排队记录）。
+    /// 入参先经 `ClanTagNormalizer.normalize` 规范化（trim + 大写），
+    /// 请求/状态/在途 key 统一使用规范化值；非法输入静默 no-op。
     public func refreshClan(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         if isRefreshingClanData {
             // 被占用时排队记录 tag：补跑必须覆盖手动 tag（B1 修复——
             // 旧实现置 pendingClanRefreshAll 补跑村庄全量，手动 tag 被静默吞掉）。
@@ -543,8 +546,9 @@ public final class AppModel: ObservableObject {
         performClanRefresh(villageClanTags: [tag])
     }
 
-    /// 按显式 Tag 刷新当前战争（手动部落入口）。
+    /// 按显式 Tag 刷新当前战争（手动部落入口；入参规范化，非法输入 no-op）。
     public func refreshClanWar(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingClanWarData else { return }
         refreshingClanWarTags = [tag]
         let previous = clanWarStates
@@ -563,8 +567,10 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 按显式 Tag 刷新战争日志（手动部落入口；force 语义与村庄版一致）。
+    /// 按显式 Tag 刷新战争日志（手动部落入口；force 语义与村庄版一致；
+    /// 入参规范化，非法输入 no-op）。
     public func refreshWarLog(tag: String, force: Bool = false) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingWarLogData else { return }
         if !force, isWarLogKnownNotPublic(for: tag) { return }
         refreshingWarLogTags = [tag]
@@ -588,8 +594,9 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 按显式 Tag 战争日志加载更多（手动部落入口）。
+    /// 按显式 Tag 战争日志加载更多（手动部落入口；入参规范化，非法输入 no-op）。
     public func loadMoreWarLog(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingWarLogData else { return }
         guard let current = clanWarLogStates[tag],
               current.status == .success,
@@ -636,6 +643,7 @@ public final class AppModel: ObservableObject {
 
     /// 按显式 Tag 刷新部落资本赛季（手动部落入口）。
     public func refreshCapitalRaid(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingCapitalData else { return }
         refreshingCapitalTags = [tag]
         let client = clanLogClient
@@ -658,8 +666,9 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 按显式 Tag 资本赛季加载更多（手动部落入口）。
+    /// 按显式 Tag 资本赛季加载更多（手动部落入口；入参规范化，非法输入 no-op）。
     public func loadMoreCapitalRaid(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingCapitalData else { return }
         guard let current = clanCapitalStates[tag],
               current.status == .success,

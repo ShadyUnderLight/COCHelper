@@ -411,4 +411,68 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
                        "notInWar 是成功空状态，不是失败")
         XCTAssertEqual(warRecorder.snapshot(), ["/v1/clans/%23WAR1/currentwar"], "必须请求显式 tag 的 currentwar")
     }
+
+    // MARK: - 公开入口 Tag 规范化（P2-2：入口统一 normalize，杜绝非 canonical 缓存键）
+
+    /// 带空格/小写的非规范输入必须被规范化：请求、状态 key、在途 key 全部用
+    /// 规范化值（" #abc123 " → "#ABC123"）。旧实现直接用原始值：小写被
+    /// EndpointRefresher 的 isValid 过滤静默丢弃、带空格产生双 key。
+    @MainActor
+    func testRefreshClanByTagNormalizesInput() async throws {
+        let recorder = TagRecorder()
+        let model = try makeModel(clanHandler: { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    trackedClanJSON(tag: "#ABC123"))
+        })
+        model.refreshClan(tag: " #abc123 ") // 非规范输入：小写 + 首尾空格
+        await waitUntil { model.clanState(for: "#ABC123")?.status == .success }
+
+        XCTAssertEqual(recorder.snapshot(), ["/v1/clans/%23ABC123"],
+                       "请求必须使用规范化 tag（uppercase + trim）")
+        XCTAssertEqual(model.clanState(for: "#ABC123")?.status, .success,
+                       "状态必须写入规范化 key")
+        XCTAssertNil(model.clanState(for: " #abc123 "),
+                     "原始输入不得产生非 canonical 缓存条目")
+    }
+
+    /// 非法输入（无法规范化）必须静默 no-op：无请求、无状态、不崩溃。
+    @MainActor
+    func testRefreshClanByTagWithInvalidInputIsNoOp() async throws {
+        let recorder = TagRecorder()
+        let model = try makeModel(clanHandler: { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    trackedClanJSON(tag: "#ABC123"))
+        })
+        model.refreshClan(tag: "#ab-c") // 非法字符（小写 - 在 isValid 之外）
+        model.refreshClan(tag: "   ")
+        model.refreshClan(tag: "")
+        try? await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertTrue(recorder.snapshot().isEmpty, "非法输入不得发起网络请求")
+        XCTAssertTrue(model.clanStates.isEmpty, "非法输入不得写入状态")
+    }
+
+    /// 其他端点的 tag 版入口同样规范化：warlog 请求与状态 key 一致。
+    @MainActor
+    func testRefreshWarLogByTagNormalizesInput() async throws {
+        let logRecorder = TagRecorder()
+        let model = try makeModel(
+            clanHandler: { _ in
+                (HTTPURLResponse(url: URL(string: "https://api.clashofclans.com/v1/clans/%23X/warlog")!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("{\"items\":[]}".utf8))
+            },
+            clanLogHandler: { request in
+                logRecorder.record(request.url?.path(percentEncoded: true) ?? "")
+                return (HTTPURLResponse(url: URL(string: "https://api.clashofclans.com/v1/clans/%23X/warlog")!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("{\"items\":[]}".utf8))
+            }
+        )
+        model.refreshWarLog(tag: " #warlog1 ") // 非规范输入
+        await waitUntil { model.warLogState(for: "#WARLOG1") != nil }
+
+        XCTAssertEqual(logRecorder.snapshot(), ["/v1/clans/%23WARLOG1/warlog"],
+                       "warlog 请求必须使用规范化 tag")
+        XCTAssertEqual(model.warLogState(for: "#WARLOG1")?.status, .success)
+        XCTAssertNil(model.warLogState(for: " #warlog1 "), "不得产生非 canonical 条目")
+    }
 }

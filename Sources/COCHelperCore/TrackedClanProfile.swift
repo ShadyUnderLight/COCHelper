@@ -25,7 +25,8 @@ public struct TrackedClanProfile: Codable, Hashable, Identifiable, Sendable {
 
 /// 官方部落 Tag 的规范化与校验（Issue #41）。
 ///
-/// 字符集与玩家 Tag 相同（`#` + 大写 `A-Z` + `0-9`），但语义独立：
+/// 权威格式规则（字符集 + body ≤ 14 长度上限）统一由
+/// `OfficialPlayerTagValidator.isValid` 负责（村庄/手动/刷新入口共用）：
 /// - 输入先 trim 首尾空白；
 /// - 先拒非 ASCII：避免 uppercase 后 `ß→SS`、`ı→I` 等静默改写 tag 字符
 ///   （官方 Tag 不含非 ASCII 字符，拒绝比改写更安全）；
@@ -41,7 +42,6 @@ public enum ClanTagNormalizer {
         // 先拒非 ASCII：避免 uppercase 后 ß→SS、ı→I 等静默改写 tag 字符
         guard trimmed.allSatisfy({ $0.isASCII }) else { return nil }
         let uppercased = trimmed.uppercased()
-        guard uppercased.dropFirst().count <= 14 else { return nil } // 官方 tag 极短（8-12 位），上限防御
         guard OfficialPlayerTagValidator.isValid(uppercased) else { return nil }
         return uppercased
     }

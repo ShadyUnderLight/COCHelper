@@ -1025,13 +1025,17 @@ public final class AppModel: ObservableObject {
     /// 5xx → `.server`；超时/网络 → `.network`；解析 → `.malformed`。
     public func resolveClan(rawTag: String?) async -> Result<OfficialClanSnapshot, ClanResolveError> {
         guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(.invalidTag) }
+        // 等待前记录该 tag 的 lastAttemptAt：用于区分"批次确实处理了该 tag"
+        // 与"批次未包含该 tag"（pendingClanRefreshAll 的补跑集合动态读村庄
+        // tags，该 tag 可能被丢弃）——只有前者才复用，后者 fallthrough 请求。
+        let previousLastAttempt = clanStates[tag]?.lastAttemptAt
         var waitedForBatch = false
-        while refreshingClanTags.contains(tag) {
+        while isClanRefreshPending(involving: tag) {
             waitedForBatch = true
             if Task.isCancelled { return .failure(.cancelled) }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
-        if waitedForBatch, let existing = clanStates[tag] {
+        if waitedForBatch, let existing = clanStates[tag], existing.lastAttemptAt != previousLastAttempt {
             if existing.status == .success, let snapshot = existing.lastGood {
                 return .success(snapshot)
             }
@@ -1065,6 +1069,18 @@ public final class AppModel: ObservableObject {
         } catch {
             return .failure(.network)
         }
+    }
+
+    /// single-flight 判定（外部终审 P1）：tag 是否在**当前批次**或**已排队批次**
+    /// 中——等待条件必须覆盖 `pendingClanRefreshTags`（显式 tag 排队）与
+    /// `pendingClanRefreshAll`（村庄全量联动排队，补跑集合动态读当前村庄 tags）。
+    private func isClanRefreshPending(involving tag: String) -> Bool {
+        if refreshingClanTags.contains(tag) { return true }
+        if pendingClanRefreshTags.contains(tag) { return true }
+        if pendingClanRefreshAll {
+            return villages.contains { $0.officialAPIState?.currentClanTag == tag }
+        }
+        return false
     }
 
     /// 批次失败状态 → 解析错误分类（single-flight 复用路径）。

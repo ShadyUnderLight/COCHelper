@@ -327,6 +327,33 @@ final class AppModelClanResolveTests: XCTestCase {
         XCTAssertEqual(counter.count, 2, "无在途批次时不得复用旧缓存，必须重新请求")
     }
 
+    /// **排队批次 single-flight**（外部终审 P1）：批次 A 在途（handler 阻塞
+    /// 500ms 保证 A 未完成）时 refreshClan(B) 进入 pendingClanRefreshTags 排队；
+    /// resolveClan(B) 同步段执行时 B 不在当前批次（refreshingClanTags）但在已
+    /// 排队批次中——必须等待补跑批次处理 B 并复用结果，B 全程只请求一次。
+    @MainActor
+    func testResolveClanWaitsForQueuedRefresh() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            let tag = request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? ""
+            counter.record(tag: tag)
+            if tag == "#AAA" {
+                // 批次 A 的请求阻塞 500ms：确保 resolveClan 同步段执行时
+                // 批次 A 仍在途（refreshingClanTags 尚未清空/补跑）。
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        model.refreshClan(tag: "#AAA")          // 批次 A：在途 500ms
+        model.refreshClan(tag: "#2QJQ8J88")     // 忙时 → B 进入 pendingClanRefreshTags 排队
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertNotNil(result.successOrNil, "等待补跑批次后必须复用成功快照")
+        // 等批次 A + 补跑批次（含 B）全部完成后再断言请求次数。
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertEqual(counter.count(forTag: "#2QJQ8J88"), 1, "排队的 B 解析后只应请求一次")
+        XCTAssertEqual(counter.count(forTag: "#AAA"), 1, "批次 A 正常请求一次")
+    }
+
     // MARK: - C1 防回退谓词边界（纯函数，无需并发时序）
 
     private func clanState(_ status: OfficialAPIRequestStatus, fetchedAt: Date?) -> ClanAPIState {
@@ -407,10 +434,18 @@ private extension Result {
 private final class ResolveRequestCounter: @unchecked Sendable {
     private let lock = NSLock()
     private(set) var count = 0
+    private var countsByTag: [String: Int] = [:]
 
     func record(tag: String) {
         lock.lock()
         defer { lock.unlock() }
         count += 1
+        countsByTag[tag, default: 0] += 1
+    }
+
+    func count(forTag tag: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return countsByTag[tag] ?? 0
     }
 }

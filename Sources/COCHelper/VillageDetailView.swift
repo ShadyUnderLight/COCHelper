@@ -336,11 +336,11 @@ struct VillageDetailView: View {
                     ForEach(rows) { row in
                         itemRow(row.item, group: group, now: now, village: village)
                         ForEach(row.children) { child in
-                            Divider().padding(.leading, 46)
+                            Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
                             itemRow(child, group: group, now: now, village: village, indented: true)
                         }
                         if row.id != rows.last?.id {
-                            Divider().padding(.leading, 46)
+                            Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
                         }
                     }
                 }
@@ -378,7 +378,7 @@ struct VillageDetailView: View {
                 showsVillageColumn: false
             )
             // 嵌套项缩进展示在根父行下（issue #24「类型/模块」区域）。
-            .padding(.leading, indented ? 24 : 0)
+            .padding(.leading, indented ? UpgradeDisplayLayout.nestedIndent : 0)
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())

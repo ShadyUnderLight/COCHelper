@@ -95,12 +95,14 @@ struct LevelDetailSheet: View {
                                     .resizable()
                                     .interpolation(.high)
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(width: 36, height: 36)
+                                    .frame(width: UpgradeDisplayLayout.detailHeaderIconSize,
+                                           height: UpgradeDisplayLayout.detailHeaderIconSize)
                             } else {
                                 Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
-                                    .font(.title2)
+                                    .font(.system(size: 30, weight: .medium))
                                     .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
-                                    .frame(width: 36)
+                                    .frame(width: UpgradeDisplayLayout.detailHeaderIconSize,
+                                           height: UpgradeDisplayLayout.detailHeaderIconSize)
                             }
                         }
                         VStack(alignment: .leading, spacing: 4) {
@@ -176,12 +178,14 @@ struct LevelDetailSheet: View {
                         .resizable()
                         .interpolation(.high)
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 28, height: 28)
+                        .frame(width: UpgradeDisplayLayout.detailLevelIconSize,
+                               height: UpgradeDisplayLayout.detailLevelIconSize)
                 } else {
                     Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
-                        .font(.body)
+                        .font(.system(size: 22, weight: .medium))
                         .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
-                        .frame(width: 28, height: 28)
+                        .frame(width: UpgradeDisplayLayout.detailLevelIconSize,
+                               height: UpgradeDisplayLayout.detailLevelIconSize)
                 }
             }
             VStack(alignment: .leading, spacing: 3) {

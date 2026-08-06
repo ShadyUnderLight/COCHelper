@@ -2,12 +2,12 @@ import SwiftUI
 import COCHelperCore
 import COCHelperApp
 
-/// 村庄详情页的当前战争卡片（**按需刷新**：用户点击按钮才请求 currentwar）。
+/// 村庄详情页的当前部落对战卡片（**按需刷新**：用户点击按钮才请求 currentwar）。
 ///
 /// 状态语义（Issue #7 stage 3b）：
-/// - `notInWar` 是**成功**响应 → 显示"当前没有进行中的战争"空状态（不是失败）
+/// - `notInWar` 是**成功**响应 → 显示"当前没有进行中的部落对战"空状态（不是失败）
 /// - `preparation` / `inWar` → 双方摘要比分（攻击/星/摧毁%）
-/// - `warEnded` → 战争已结束 + 结果
+/// - `warEnded` → 部落对战已结束 + 结果
 /// - 失败保留 last-good；成员级攻击表以展开组展示（默认折叠，上限 30 行）
 struct ClanWarCardView: View {
     @EnvironmentObject private var model: AppModel
@@ -47,10 +47,10 @@ struct ClanWarCardView: View {
 
     private var header: some View {
         HStack {
-            Label("当前战争", systemImage: "cross.case.fill")
+            Label("当前部落对战", systemImage: "cross.case.fill")
                 .font(.headline)
             Spacer()
-            if let label = clanWarState?.sourceLabel {
+            if let label = ClanDisplayFormat.sourceLabel(clanWarState?.sourceLabel) {
                 Text(label)
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
@@ -65,11 +65,11 @@ struct ClanWarCardView: View {
     private var statusContent: some View {
         let statusUnknown = villageID.map { model.clanStatusUnknown(for: $0) } ?? false
         if !isManualEntry, statusUnknown {
-            Label("刷新官方玩家数据后可查看当前战争", systemImage: "questionmark.circle")
+            Label("刷新官方玩家数据后可查看当前部落对战", systemImage: "questionmark.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else if !isManualEntry, clanTag == nil {
-            Label("不在部落中，没有战争数据", systemImage: "person.crop.circle.badge.questionmark")
+            Label("不在部落中，没有部落对战数据", systemImage: "person.crop.circle.badge.questionmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else if let state = clanWarState, let clanTag {
@@ -82,14 +82,14 @@ struct ClanWarCardView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            refreshButton(title: "刷新战争状态", tag: clanTag)
+            refreshButton(title: "刷新部落对战状态", tag: clanTag)
         } else if let clanTag {
             // 从未请求过：按需懒加载入口
             VStack(alignment: .leading, spacing: 8) {
-                Label("尚未获取当前战争", systemImage: "circle.dashed")
+                Label("尚未获取当前部落对战", systemImage: "circle.dashed")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                refreshButton(title: "查看当前战争", tag: clanTag)
+                refreshButton(title: "查看当前部落对战", tag: clanTag)
             }
         }
     }
@@ -153,21 +153,21 @@ struct ClanWarCardView: View {
     private func warSummary(_ snapshot: OfficialClanWarSnapshot) -> some View {
         switch snapshot.state {
         case "notInWar":
-            // 成功空状态：无战争不是失败
-            Label("当前没有进行中的战争", systemImage: "checkmark.circle")
+            // 成功空状态：无部落对战不是失败
+            Label("当前没有进行中的部落对战", systemImage: "checkmark.circle")
                 .font(.callout)
                 .foregroundStyle(.green)
         case "preparation":
             stateBadge("备战中", color: .orange)
             scoreRow(snapshot)
         case "inWar":
-            stateBadge("战争中", color: .red)
+            stateBadge("部落对战进行中", color: .red)
             scoreRow(snapshot)
         case "warEnded":
-            stateBadge("战争已结束", color: .secondary)
+            stateBadge("部落对战已结束", color: .secondary)
             scoreRow(snapshot)
         default:
-            Label("未知战争状态", systemImage: "questionmark.circle")
+            Label("未知部落对战状态", systemImage: "questionmark.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -185,7 +185,7 @@ struct ClanWarCardView: View {
     private func scoreRow(_ snapshot: OfficialClanWarSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let teamSize = snapshot.teamSize {
-                Text("队伍规模：\(teamSize) 人")
+                Text("对战规模：\(teamSize) 人")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -199,7 +199,7 @@ struct ClanWarCardView: View {
                     destruction: clan.destructionPercentage,
                     isClan: true
                 )
-                memberDisclosure(title: "成员攻击表（\(clan.members?.count ?? 0) 人）", members: clan.members ?? [])
+                memberDisclosure(title: "成员进攻记录（\(clan.members?.count ?? 0) 人）", members: clan.members ?? [])
             }
             if let opponent = snapshot.opponent {
                 participantRow(
@@ -211,10 +211,10 @@ struct ClanWarCardView: View {
                     destruction: opponent.destructionPercentage,
                     isClan: false
                 )
-                memberDisclosure(title: "对方成员攻击表（\(opponent.members?.count ?? 0) 人）", members: opponent.members ?? [])
+                memberDisclosure(title: "对方成员进攻记录（\(opponent.members?.count ?? 0) 人）", members: opponent.members ?? [])
             }
             if snapshot.clan == nil && snapshot.opponent == nil {
-                Text("战争详情字段缺失（可能刚结束或数据不完整）")
+                Text("部落对战详情字段缺失（可能刚结束或数据不完整）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -244,7 +244,7 @@ struct ClanWarCardView: View {
                     Text(name ?? (isClan ? "我方" : "对方"))
                         .font(.subheadline.weight(.semibold))
                     if let level {
-                        Text("Lv.\(level)")
+                        Text("\(level)级大本营")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -256,7 +256,7 @@ struct ClanWarCardView: View {
                 }
                 if let stars {
                     Text("⭐ \(stars) 星" + (attacks.map { " · \($0) 次攻击" } ?? "")
-                        + (destruction.map { " · 摧毁 \($0)%" } ?? ""))
+                        + (destruction.map { " · 摧毁率 \($0)%" } ?? ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -300,7 +300,7 @@ struct ClanWarCardView: View {
                 .font(.caption)
                 .lineLimit(1)
             if let th = member.townhallLevel {
-                Text("TH\(th)")
+                Text("\(th)级大本营")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -319,7 +319,7 @@ struct ClanWarCardView: View {
         }
         let stars = attacks.reduce(0) { $0 + ($1.stars ?? 0) }
         let destruction = attacks.reduce(0.0) { $0 + ($1.destructionPercentage ?? 0) }
-        return "\(attacks.count)攻 · ⭐\(stars) · 摧毁 \(Self.percent(destruction))%"
+        return "\(attacks.count)次进攻 · ⭐\(stars) · 摧毁率 \(Self.percent(destruction))%"
     }
 
     private static func percent(_ value: Double) -> String {

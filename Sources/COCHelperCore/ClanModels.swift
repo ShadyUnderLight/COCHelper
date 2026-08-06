@@ -32,7 +32,9 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
 
     // MARK: 积分与联赛
     public let clanBuilderBasePoints: Int?
+    /// 部落的都城奖杯数量。
     public let clanCapitalPoints: Int?
+    /// 部落都城联赛。
     public let capitalLeague: ClanLeague?
 
     // MARK: 战争记录概览
@@ -43,7 +45,7 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
     /// false = 战争日志不公开（3c 处理 warlog 时依赖此字段做显式不可用状态）。
     public let isWarLogPublic: Bool?
 
-    // MARK: 标签与资本概览
+    // MARK: 标签与都城概览
     public let labels: [ClanLabel]?
     public let clanCapital: ClanCapital?
 
@@ -205,7 +207,7 @@ private struct SnapshotCodingKey: CodingKey {
 // MARK: - 嵌套结构
 
 public struct ClanCapital: Codable, Hashable, Sendable {
-    /// 部落资本大厅等级（部落资本相关概览，首期只展示这一项）。
+    /// 都城大本营等级（部落都城相关概览，首期只展示这一项）。
     public let capitalHallLevel: Int?
 
     public init(capitalHallLevel: Int?) {
@@ -213,7 +215,7 @@ public struct ClanCapital: Codable, Hashable, Sendable {
     }
 }
 
-/// 部落联赛引用（如 `capitalLeague`）。
+/// 部落都城联赛引用（如 `capitalLeague`）。
 ///
 /// 官方可能在该嵌套对象中增加图标等字段；合成 Codable 会忽略未知子字段，
 /// 不影响顶层字段审计。

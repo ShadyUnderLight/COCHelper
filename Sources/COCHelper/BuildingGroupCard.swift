@@ -103,13 +103,13 @@ struct BuildingGroupCard: View {
         .buttonStyle(.plain)
     }
 
-    /// 等级标签：currentLevel 缺失 →「等级未记录」；maxLevel 缺失 →「Lv X / --」。
+    /// 等级标签：currentLevel 缺失 →「等级未记录」；maxLevel 缺失 →「X级 / --」。
     private func levelLabel(_ item: VillageItemState) -> String {
         guard let currentLevel = item.currentLevel else { return "等级未记录" }
         if let maxLevel = item.maxLevel {
-            return "Lv " + String(currentLevel) + " / " + String(maxLevel)
+            return String(currentLevel) + "级 / " + String(maxLevel) + "级"
         }
-        return "Lv " + String(currentLevel) + " / --"
+        return String(currentLevel) + "级 / --"
     }
 
     /// 实例图标：4 级候选链 NSImage 加载，失败回退 SF Symbol（同列表行规格）。
@@ -150,7 +150,7 @@ struct BuildingGroupCard: View {
             return "目录图标或等级外观缺失：" + reason
         }
         if let missingReason = item.missingReason { return missingReason }
-        return "目录渲染资产"
+        return "游戏资源图标"
     }
 
     var body: some View {

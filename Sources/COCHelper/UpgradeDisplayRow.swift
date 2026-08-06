@@ -77,7 +77,7 @@ struct UpgradeDisplayRow: View {
     private var durationLabel: String {
         if item.status == .maxed {
             // 已满级：目录无下一级，显示上限（避免误导的「暂无目录数据」）。
-            return "已达目录上限 Lv " + String(item.maxLevel ?? 0)
+            return "已达到目录最高等级 " + String(item.maxLevel ?? 0) + "级"
         }
         guard let duration = item.nextLevelDurationSeconds else { return "暂无目录数据" }
         let prefix: String
@@ -87,7 +87,7 @@ struct UpgradeDisplayRow: View {
         } else if let currentLevel = item.currentLevel, let maxLevel = item.maxLevel, currentLevel < maxLevel {
             // 非升级未满级（投影层已推下一级时长）：issue 列表规则要求显示下一等级。
             // 编号由当前 + 1 推导（与投影层 nextLevel 推断同规则），时长来自目录。
-            prefix = "下一级 Lv " + String(currentLevel + 1) + " · 完整时长："
+            prefix = "下一级：" + String(currentLevel + 1) + "级 · 完整时长："
         } else {
             prefix = "完整时长："
         }
@@ -146,12 +146,12 @@ struct UpgradeDisplayRow: View {
         if item.isNested,
            ModuleUpgradeIconCatalog.kind(for: item.dataID) != nil
             || CraftTableTypeIconCatalog.asset(for: item.dataID) != nil {
-            return "APK 精制台图标"
+            return "精制台图标（来自游戏资源）"
         }
         if let iconMissingReason {
             return "目录图标或等级外观缺失：" + iconMissingReason
         }
-        return "目录渲染资产"
+        return "游戏资源图标"
     }
 
     private var iconImageName: String {

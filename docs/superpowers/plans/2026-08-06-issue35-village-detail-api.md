@@ -16,7 +16,7 @@
 
 1. `AppModel` 新增按 `villageID` 查询与按 `villageID` 刷新的显式接口（现有 `current*` 保留为兼容转发）。
 2. 5 张卡片接收显式 `villageID` 参数，读状态与刷新全部走 by-ID 接口。
-3. `VillageDetailView` 在 header 之后接入官方 API 区域（玩家卡平铺 + 部落区默认折叠）。
+3. `VillageDetailView` 在 header 之后接入官方 API 数据区域（玩家卡平铺 + 部落区默认折叠）。
 4. `AccountDataView` 保留卡片，传 `model.selectedVillageID`（复用组件 = 单状态，不形成两套刷新入口）。
 5. 测试：by-ID 路由隔离 + 刷新切村写回 + property-based 一致性。
 
@@ -84,13 +84,13 @@ TDD 顺序：
 - `AccountDataView`（ContentView.swift:562-604）保持卡片顺序，传 `model.selectedVillageID`。
 - 视图层无测试基建：以 `swift build` 编译通过 + 语义走查为准（Self-review 逐行核对每处替换）。
 
-### Task 3：VillageDetailView 官方 API 区域
+### Task 3：VillageDetailView 官方 API 数据区域
 
 文件：`Sources/COCHelper/VillageDetailView.swift`
 
-- 在 `detailContent` 的 `header` 之后、`basePicker` 之前插入官方 API 区域：
+- 在 `detailContent` 的 `header` 之后、`basePicker` 之前插入官方 API 数据区域：
   - `OfficialPlayerCardView(villageID: villageID)` 平铺（首屏可见，主诉求）。
-  - 部落区（Clan/War/WarLog/Capital 4 卡）包在 `DisclosureGroup("部落信息（official-api）")` 中，默认折叠。
+  - 部落区（Clan/War/WarLog/Capital 4 卡）包在 `DisclosureGroup("部落信息（官方 API 数据）")` 中，默认折叠。
 - 无自动请求：不新增任何 onAppear/task 触发刷新。
 - 布局：沿用现有 `.padding(28)` 与 Panel 风格。
 

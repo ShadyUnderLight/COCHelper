@@ -360,7 +360,7 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
         await waitUntil { !model.isRefreshingCapitalData }
 
         XCTAssertEqual(capitalRecorder.snapshot(), ["#CLANANON"],
-                       "资本赛季刷新必须请求发起村庄 A 的部落，而非当前选中的 B: \(capitalRecorder.snapshot())")
+                       "突袭周末刷新必须请求发起村庄 A 的部落，而非当前选中的 B: \(capitalRecorder.snapshot())")
         XCTAssertEqual(model.capitalState(for: "#CLANANON")?.status, .success)
         XCTAssertEqual(model.capitalState(for: "#CLANANON")?.lastGood?.items.count, 2)
         XCTAssertNil(model.capitalState(for: "#CLANB"), "B 的部落 capital 数据不得被写入")
@@ -690,11 +690,11 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
         logGate.signal()
         await waitUntil { !model.isRefreshingWarLog(clanTag: "#CLANANON") }
 
-        // 资本层（集合在同步段设置；调用与断言之间无 await，Task 无法抢先
+        // 都城层（集合在同步段设置；调用与断言之间无 await，Task 无法抢先
         // 清空集合，因此不挂起请求也可确定性断言"在途"）
         model.refreshCapitalRaid(villageID: model.villages[0].id)
-        XCTAssertTrue(model.isRefreshingCapital(clanTag: "#CLANANON"), "A 部落资本在途 → true")
-        XCTAssertFalse(model.isRefreshingCapital(clanTag: "#CLANB"), "B 部落资本未在途 → false")
+        XCTAssertTrue(model.isRefreshingCapital(clanTag: "#CLANANON"), "A 部落突袭周末在途 → true")
+        XCTAssertFalse(model.isRefreshingCapital(clanTag: "#CLANB"), "B 部落突袭周末未在途 → false")
         XCTAssertFalse(model.isRefreshingCapital(clanTag: nil), "nil tag → false")
         await waitUntil { !model.isRefreshingCapital(clanTag: "#CLANANON") }
 

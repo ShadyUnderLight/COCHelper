@@ -6,7 +6,7 @@ import COCHelperApp
 ///
 /// 数据来自**共享数据层**（`AppModel.clanStates`，clan tag → 状态）：
 /// 同一部落的多个村庄看到同一份数据与来源，不复制到村庄档案。
-/// 来源标签：`official-api`（最近成功）/ `cached-official-api`（失败但保留
+    /// 来源标签：官方 API 数据（最近成功）/ 缓存的官方 API 数据（失败但保留
 /// last-good）/ no-clan 空状态（玩家不在部落中）。
 struct ClanCardView: View {
     @EnvironmentObject private var model: AppModel
@@ -54,12 +54,12 @@ struct ClanCardView: View {
     }
 
     /// 来源标签：基于**部落状态本身**（`sourceLabel`），而非玩家状态。
-    /// - success / stale → official-api
-    /// - failed 且保留 last-good → cached-official-api
+    /// - success / stale → 官方 API 数据
+    /// - failed 且保留 last-good → 缓存的官方 API 数据
     /// - 部落数据从未获取 / no-clan / 首次失败无 last-good → 隐藏
     @ViewBuilder
     private var sourceBadge: some View {
-        if let label = clanState?.sourceLabel {
+        if let label = ClanDisplayFormat.sourceLabel(clanState?.sourceLabel) {
             Text(label)
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 8)
@@ -229,20 +229,20 @@ struct ClanCardView: View {
                     metric("类型", snapshot.type.map(ClanDisplayFormat.typeLabel))
                 }
                 GridRow {
-                    metric("战争胜利", snapshot.warWins.map { "\($0)" })
-                    metric("胜-负-平", ClanDisplayFormat.warRecordLabel(snapshot))
+                    metric("部落对战胜利次数", snapshot.warWins.map { "\($0)" })
+                    metric("部落对战战绩", ClanDisplayFormat.warRecordLabel(snapshot))
                     metric("连胜", snapshot.warWinStreak.map { "\($0)" })
                 }
                 GridRow {
-                    metric("战争日志", snapshot.isWarLogPublic.map { $0 ? "公开" : "不公开" })
-                    metric("资本大厅", snapshot.clanCapital?.capitalHallLevel.map { "\($0) 级" })
-                    metric("资本联赛", snapshot.capitalLeague?.name)
+                    metric("部落对战日志", snapshot.isWarLogPublic.map { $0 ? "公开" : "不公开" })
+                    metric("都城大本营", snapshot.clanCapital?.capitalHallLevel.map { "\($0)级" })
+                    metric("部落都城联赛", ClanDisplayFormat.capitalLeagueLabel(snapshot.capitalLeague))
                 }
                 if snapshot.clanBuilderBasePoints != nil
                     || snapshot.clanCapitalPoints != nil {
                     GridRow {
-                        metric("建筑大师积分", snapshot.clanBuilderBasePoints.map { "\($0)" })
-                        metric("部落资本积分", snapshot.clanCapitalPoints.map { "\($0)" })
+                        metric("建筑大师基地奖杯", snapshot.clanBuilderBasePoints.map { "\($0)" })
+                        metric("都城奖杯", snapshot.clanCapitalPoints.map { "\($0)" })
                         metric("", nil)
                     }
                 }
@@ -252,14 +252,13 @@ struct ClanCardView: View {
                     || snapshot.requiredLeagueTier != nil {
                     GridRow {
                         metric("入会奖杯", snapshot.requiredTrophies.map { "\($0)" })
-                        metric("建筑大师奖杯", snapshot.requiredBuilderBaseTrophies.map { "\($0)" })
-                        metric("所需大本", snapshot.requiredTownHallLevel.map { "\($0) 本" })
+                        metric("建筑大师基地奖杯", snapshot.requiredBuilderBaseTrophies.map { "\($0)" })
+                        metric("所需大本营等级", snapshot.requiredTownHallLevel.map { "\($0)级" })
                     }
                     GridRow {
                         metric(
                             "所需联赛等级",
-                            snapshot.requiredLeagueTier?.name
-                                ?? snapshot.requiredLeagueTier?.id.map { "\($0)" }
+                            ClanDisplayFormat.requiredLeagueTierLabel(snapshot.requiredLeagueTier)
                         )
                         metric("", nil)
                         metric("", nil)

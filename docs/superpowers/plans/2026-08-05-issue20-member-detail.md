@@ -227,7 +227,7 @@ git commit -m "feat: 战争成员级攻击表解码模型 ClanWarMember (Issue #
 - [ ] **Step 1: 写失败测试（RED）** — `ClanPaginationDecodeTests.swift` 新增：
 
 ```swift
-// MARK: - 资本赛季成员/攻防日志（Issue #20）
+// MARK: - 突袭周末成员/攻防日志（Issue #20）
 
 func testDecodeCapitalRaidMembers() throws {
     let page = try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: fullCapitalRaidPageData())
@@ -320,7 +320,7 @@ func testDecodeCapitalRaidLogWithPartialFields() throws {
 
 ```bash
 git add Sources/COCHelperCore/ClanPaginationModels.swift Tests/COCHelperCoreTests/ClanPaginationDecodeTests.swift Tests/COCHelperCoreTests/Fixtures/official_capital_raid_page.json
-git commit -m "feat: 资本赛季成员贡献与攻防日志解码模型 (Issue #20)"
+git commit -m "feat: 突袭周末成员贡献与攻防日志解码模型 (Issue #20)"
 ```
 
 ## Task 3: parserVersion bump
@@ -710,7 +710,7 @@ git commit -m "feat: 战争日志条目成员明细展开 (Issue #20)"
                 Text("防守日志（\(log.count) 条）").font(.caption.weight(.semibold)).padding(.top, 4)
                 ForEach(log.prefix(30), id: \.self) { entry in
                     HStack {
-                        Text("vs " + (entry.defender?.name ?? "未知区域")).font(.caption).lineLimit(1)
+                        Text("对阵 " + (entry.defender?.name ?? "未知子城")).font(.caption).lineLimit(1)
                         Spacer()
                         Text([entry.defender?.destructionPercent.map { "摧毁 \(Self.percent($0))%" },
                               entry.attackCount.map { "\($0) 攻" }]
@@ -727,11 +727,11 @@ git commit -m "feat: 战争日志条目成员明细展开 (Issue #20)"
 
     private func raidLogRow(_ entry: CapitalRaidAttackLogEntry) -> some View {
         HStack {
-            Text("vs " + (entry.defender?.name ?? "未知区域")).font(.caption).lineLimit(1)
+            Text("对阵 " + (entry.defender?.name ?? "未知子城")).font(.caption).lineLimit(1)
             Spacer()
             Text([entry.defender?.destructionPercent.map { "摧毁 \(Self.percent($0))%" },
                   entry.attackCount.map { "\($0) 攻" },
-                  entry.districtsDestroyed.map { "\($0) 区域" },
+                  entry.districtsDestroyed.map { "摧毁 \($0) 座子城" },
                   entry.looted.map { Self.formatted($0) }]
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(.caption2.monospaced()).foregroundStyle(.secondary)
@@ -750,7 +750,7 @@ git commit -m "feat: 战争日志条目成员明细展开 (Issue #20)"
 
 ```bash
 git add Sources/COCHelper/CapitalRaidCardView.swift
-git commit -m "feat: 资本赛季成员贡献与攻防日志展开明细 (Issue #20)"
+git commit -m "feat: 突袭周末成员贡献与攻防日志展开明细 (Issue #20)"
 ```
 
 ## Task 8: 全量验证与自查（Reflexion）

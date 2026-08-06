@@ -29,8 +29,7 @@ struct BuildingUpgradeStepGrid: View {
     /// （与投影汇总 `BuildingGroupProjection.summary` 同规则，不丢弃费用）。
     private func costLabel(_ step: BuildingUpgradeStep) -> String {
         guard let cost = step.upgradeCost else { return "无费用数据" }
-        let resource = step.upgradeResource ?? "未知资源"
-        return resource + " " + BuildingCostFormatter.label(cost)
+        return ClanDisplayFormat.resourceLabel(step.upgradeResource) + " " + BuildingCostFormatter.label(cost)
     }
 
     /// 时长文案：0 = 有效即时升级 →「即时」；nil = 缺失 →「暂无目录数据」。
@@ -42,7 +41,7 @@ struct BuildingUpgradeStepGrid: View {
 
     private func stepCell(_ step: BuildingUpgradeStep) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("Lv " + String(step.level))
+            Text(String(step.level) + "级")
                 .font(.subheadline.weight(.bold).monospacedDigit())
             Text(costLabel(step))
                 .font(.caption2)

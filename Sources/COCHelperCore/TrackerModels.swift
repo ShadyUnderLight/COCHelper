@@ -8,15 +8,15 @@ public enum TrackerBase: String, CaseIterable, Codable, Hashable, Identifiable, 
 
     public var title: String {
         switch self {
-        case .home: "主村"
-        case .builder: "建筑工人基地"
+        case .home: "家乡村庄"
+        case .builder: "建筑大师基地"
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .home: "Home Village"
-        case .builder: "Builder Base"
+        case .home: "家乡村庄"
+        case .builder: "建筑大师基地"
         }
     }
 }
@@ -40,7 +40,7 @@ public enum TrackerCategory: String, CaseIterable, Codable, Hashable, Identifiab
         case .traps: "陷阱"
         case .troops: "兵种"
         case .spells: "法术"
-        case .siegeMachines: "攻城器械"
+        case .siegeMachines: "攻城机器"
         case .heroes: "英雄"
         case .equipment: "装备"
         case .pets: "战宠"

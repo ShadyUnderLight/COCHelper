@@ -294,7 +294,7 @@ struct VillageDetailView: View {
                     CapitalRaidCardView(villageID: villageID)
                 }
             } label: {
-                Label("部落信息（official-api）", systemImage: "shield.lefthalf.filled")
+                Label("部落信息（官方 API 数据）", systemImage: "shield.lefthalf.filled")
                     .font(.headline)
             }
         }

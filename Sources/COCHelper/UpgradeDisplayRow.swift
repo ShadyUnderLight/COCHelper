@@ -5,10 +5,12 @@ import COCHelperCore
 /// Issue #15：升级总览 / 村庄详情共用的升级行组件。
 ///
 /// 输入 `UpgradeDisplayRecord`（投影聚合层），展示：
-/// - 图标列：`item.icon?.isRenderable == true` 时渲染目录 PNG
-///   （`bundledURL()` 解析 + NSImage 加载）；加载失败或不可渲染时统一走类别
-///   SF Symbol 兜底。`item.assetMissingReason`（icon 或 levelVisual 的缺失原因）
-///   非 nil 时叠加橙色警示角标（可见的缺失状态）+ `.help` 提示原因，不隐藏行。
+/// - 图标列：`item.preferredAssetURLs` 非空且可加载时渲染目录 PNG（`bundledURL()`
+///   解析 + NSImage 加载；levelVisual → icon 运行时候选，Issue #34，与详情
+///   sheet 共用 `VillageItemState.preferredAssetURLs` 解析防漂移）；加载失败
+///   或不可渲染时统一走类别 SF Symbol 兜底。`item.assetMissingReason`
+///   （icon 或 levelVisual 的缺失原因）非 nil 时叠加橙色警示角标（可见的
+///   缺失状态）+ `.help` 提示原因，不隐藏行。
 /// - 名称 × 数量、嵌套标记、副标题（类别 · #dataID · 目录版本）
 /// - 完整时长行（目录缺失时显示「暂无目录数据」；duration == 0 的即时升级显示「即时」）
 /// - 当前 → 目标等级；状态徽标（目录版本不匹配 / 待重新导入确认 / 已满级）
@@ -109,9 +111,9 @@ struct UpgradeDisplayRow: View {
         item.assetMissingReason
     }
 
-    /// 图标列 help 文案优先级：目录视觉资产缺失原因（icon 或 levelVisual）→
-    /// 目录 join 缺失原因 → 通用兜底。icon 可渲染时 help 仍是缺失/join 原因
-    /// 的兜底入口（真实图标无缺失时提示 SF Symbol 回退语义）。
+    /// SF Symbol 分支 help 文案优先级：目录视觉资产缺失原因（icon 或
+    /// levelVisual）→ 目录 join 缺失原因 → 通用兜底（真实 PNG 渲染分支
+    /// 用 `pngIconHelp`，勿在 SF Symbol 分支复用该文案）。
     private var iconHelp: String {
         if let iconMissingReason {
             return "目录图标或等级外观缺失：" + iconMissingReason
@@ -120,26 +122,39 @@ struct UpgradeDisplayRow: View {
         return "目录图标未渲染，显示类别图标"
     }
 
+    /// PNG 已成功渲染时的 hover 提示：缺失原因优先（icon 缺失但 levelVisual
+    /// 可渲染时仍需告知），无缺失原因时提示资产来源而非错误的「未渲染」
+    /// （Issue #34 后 184 项建筑/陷阱行真实渲染 PNG，不能复用 SF Symbol 分支
+    /// 的「未渲染」兜底文案）。
+    private var pngIconHelp: String {
+        if let iconMissingReason {
+            return "目录图标或等级外观缺失：" + iconMissingReason
+        }
+        return "目录渲染资产"
+    }
+
     private var iconImageName: String {
         item.category?.systemImage ?? "hammer.fill"
     }
 
-    /// 目录渲染 PNG（icon 可渲染时）；否则 nil → SF Symbol 兜底。
-    /// Issue #25：`item.icon?.isRenderable` 为 true 时优先渲染真实图标
-    /// （`bundledURL()` 解析 + NSImage 加载）；加载失败（Bundle 文件缺失
-    /// 等）同样回退 SF Symbol，不崩溃。版本参数取投影层 catalogVersion
-    /// （与 `loadBundled()` 同源），避免未来多版本资源错配。
+    /// 目录渲染 PNG（`preferredAssetURLs` 非空且可加载时）；否则 SF Symbol 兜底。
+    /// Issue #25/#34：视觉资产候选 levelVisual → icon（`VillageItemState.preferredAssetURLs`，
+    /// 与详情 sheet 同解析防漂移）——建筑/陷阱目录项 icon 为 nil 但 levelVisual 可渲染
+    /// （如 buildings:1000000 fireplace_lvl1.png），列表行必须显示真实 PNG；
+    /// 首选文件缺失时自动尝试次选（P2 评审），全部加载失败同样回退 SF Symbol，
+    /// 不崩溃。版本参数取投影层 catalogVersion（与 `loadBundled()` 同源），
+    /// 避免未来多版本资源错配。
     @ViewBuilder
     private var iconView: some View {
-        if let url = item.icon?.bundledURL(
+        if let image = item.preferredAssetURLs(
             version: record.catalogVersion ?? GameCatalog.defaultBundledVersion
-        ), let image = NSImage(contentsOf: url) {
+        ).lazy.compactMap({ NSImage(contentsOf: $0) }).first {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 24, height: 24)
-                .help(iconHelp)
+                .help(pngIconHelp)
         } else {
             Image(systemName: iconImageName)
                 .font(.body)

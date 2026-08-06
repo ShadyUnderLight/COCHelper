@@ -34,6 +34,20 @@ final class OfficialPlayerTagValidatorTests: XCTestCase {
         XCTAssertFalse(OfficialPlayerTagValidator.isValid(""))
     }
 
+    // MARK: - 长度上限（权威规则：官方 tag 8-12 位，body ≤ 14 防御上限）
+
+    func testIsValidAcceptsMaxLengthBody() {
+        // body 恰好 14 位（含 # 共 15 字符）：上限内合法
+        XCTAssertTrue(OfficialPlayerTagValidator.isValid("#" + String(repeating: "A", count: 14)))
+        XCTAssertTrue(OfficialPlayerTagValidator.isValid("#" + String(repeating: "9", count: 14)))
+    }
+
+    func testIsValidRejectsOverlongBody() {
+        // body 超过 14 位：防御上限拒绝（与手动添加路径 ClanTagNormalizer 规则一致）
+        XCTAssertFalse(OfficialPlayerTagValidator.isValid("#" + String(repeating: "A", count: 15)))
+        XCTAssertFalse(OfficialPlayerTagValidator.isValid("#" + String(repeating: "9", count: 15)))
+    }
+
     // MARK: - normalized 基本用例
 
     func testNormalizedTrimsWhitespace() {
@@ -53,11 +67,11 @@ final class OfficialPlayerTagValidatorTests: XCTestCase {
 
     // MARK: - property-based：随机生成 + 参照实现对比
 
-    /// 参照实现：tag 合法 ⇔ 以 # 开头且其余全为大写字母或数字。
+    /// 参照实现：tag 合法 ⇔ 以 # 开头、其余全为大写字母或数字、且 body ≤ 14 位。
     private func referenceIsValid(_ tag: String) -> Bool {
         guard tag.hasPrefix("#") else { return false }
         let rest = tag.dropFirst()
-        guard !rest.isEmpty else { return false }
+        guard !rest.isEmpty, rest.count <= 14 else { return false }
         return rest.allSatisfy { $0.isASCII && (($0.isLetter && $0.isUppercase) || $0.isNumber) }
     }
 
@@ -119,9 +133,13 @@ struct SeededRandomGenerator {
         Int(next() % UInt64(range.upperBound - range.lowerBound + 1)) + range.lowerBound
     }
 
-    /// 随机 tag：可能包含非法字符、小写、空白，长度 0-12。
+    /// 随机 tag：可能包含非法字符、小写、空白，长度 0-20。
+    /// 注：随机样本几乎不可能命中「全大写字母数字且超长」的暴露形态（概率约
+    /// 1.3e-7/样本），长度上限规则由 `testIsValidAcceptsMaxLengthBody` /
+    /// `testIsValidRejectsOverlongBody` 两个显式边界测试钉住，property 测试
+    /// 负责格式规则（字符集/前缀）的一致性对比。
     mutating func randomTag() -> String {
-        let length = randomInt(in: 0...12)
+        let length = randomInt(in: 0...20)
         let charset = Array("#ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz-_. ")
         return (0..<length).map { _ in String(charset[randomInt(in: 0...(charset.count - 1))]) }.joined()
     }

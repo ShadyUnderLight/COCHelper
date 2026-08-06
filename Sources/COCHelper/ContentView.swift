@@ -5,6 +5,7 @@ import COCHelperApp
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var selection: AppSection? = .tracker
+    @State private var showAddTrackedClan = false
 
     var body: some View {
         NavigationSplitView {
@@ -73,6 +74,27 @@ struct ContentView: View {
                                 .lineLimit(2)
                         }
                     }
+
+                    Section("部落") {
+                        ForEach(model.trackedClans) { clan in
+                            Button {
+                                selection = .clan(clan.clanTag)
+                            } label: {
+                                TrackedClanSidebarRow(
+                                    clan: clan,
+                                    isCurrentVillageClan: model.isCurrentVillageClan(clan.clanTag)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Button {
+                            showAddTrackedClan = true
+                        } label: {
+                            Label("添加部落", systemImage: "plus.circle")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.cocAccent)
+                    }
                 }
                 .listStyle(.sidebar)
                 .navigationTitle("COC 助手")
@@ -103,6 +125,16 @@ struct ContentView: View {
                 AccountDataView()
             case .info:
                 TrackerInfoView()
+            case .clan(let tag):
+                TrackedClanDetailView(clanTag: tag) {
+                    selection = .tracker
+                }
+                .id(tag)
+            }
+        }
+        .sheet(isPresented: $showAddTrackedClan) {
+            AddTrackedClanSheet { tag in
+                selection = .clan(tag)
             }
         }
     }
@@ -113,6 +145,7 @@ private enum AppSection: Hashable {
     case villageTracker(UUID)
     case accountData
     case info
+    case clan(String)
 }
 
 private struct VillageSidebarRow: View {
@@ -152,6 +185,91 @@ private struct VillageSidebarRow: View {
             in: RoundedRectangle(cornerRadius: 8)
         )
         .contentShape(Rectangle())
+    }
+}
+
+/// 侧边栏部落行：备注/名称 + Tag + "当前村庄所属"标识。
+private struct TrackedClanSidebarRow: View {
+    let clan: TrackedClanProfile
+    let isCurrentVillageClan: Bool
+
+    var body: some View {
+        HStack {
+            Image(systemName: "shield.lefthalf.filled")
+                .foregroundStyle(Color.cocAccent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(clan.displayName ?? clan.clanTag)
+                    .lineLimit(1)
+                Text(clan.clanTag)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if isCurrentVillageClan {
+                Text("当前村庄")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.cocAccent)
+            }
+        }
+    }
+}
+
+/// 添加部落表单：Tag 输入 + 可选备注 + 校验错误提示。
+/// 只做本地校验与保存，不触发任何网络请求。
+private struct AddTrackedClanSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let onAdded: (String) -> Void
+
+    @State private var rawTag = ""
+    @State private var displayName = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("添加部落")
+                .font(.headline)
+            TextField("部落 Tag（如 #2QJQ8J88）", text: $rawTag)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: rawTag) { _, _ in
+                    errorMessage = nil
+                }
+            TextField("备注/显示名称（可选）", text: $displayName)
+                .textFieldStyle(.roundedBorder)
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                Button("添加") {
+                    submit()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.cocAccent)
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+    }
+
+    private func submit() {
+        // 与 AppModel.addTrackedClan 的权威 trim 语义保持一致（评审 N1）。
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmedName.isEmpty ? nil : trimmedName
+        switch model.addTrackedClan(rawTag: rawTag, displayName: name) {
+        case .success(let profile):
+            errorMessage = nil
+            onAdded(profile.clanTag)
+            dismiss()
+        case .failure(.invalidTag):
+            errorMessage = "Tag 无效：需要以 # 开头，仅含大写字母和数字，长度不超过 15 字符。"
+        case .failure(.duplicate):
+            errorMessage = "该部落已在跟踪列表中。"
+        }
     }
 }
 

@@ -35,6 +35,10 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var clanCapitalStates: [String: ClanCapitalAPIState] = [:]
     /// 正在刷新资本赛季的部落 tag 集合（防重入守卫 + 卡片按部落隔离，Issue #35）。
     @Published public private(set) var refreshingCapitalTags: Set<String> = []
+    /// 手动跟踪的部落档案（Issue #41）：独立于村庄档案与玩家快照。
+    /// 只存档案元数据（tag/备注/创建时间），部落 API 数据仍在
+    /// clanStates 等按 Tag 共享状态层。
+    @Published public private(set) var trackedClans: [TrackedClanProfile] = []
     /// 静态升级目录（Issue #15 升级总览展示用：完整时长 / 等级上限 / 版本）。
     /// lazy：避免 AppModel.init 同步解码目录 JSON（当前 2.9MB / ~16ms 无感，
     /// 防御未来目录体积增长），首次访问（升级总览渲染）时才加载，启动路径保持纯净。
@@ -48,6 +52,7 @@ public final class AppModel: ObservableObject {
     private static let clanWarStatesStorageKey = "coc-helper.clan-wars.v1"
     private static let clanWarLogStatesStorageKey = "coc-helper.clan-war-logs.v1"
     private static let clanCapitalStatesStorageKey = "coc-helper.clan-capitals.v1"
+    private static let trackedClansStorageKey = "coc-helper.tracked-clans.v1"
     private let refresher: OfficialPlayerRefresher
     private let clanRefresher: ClanRefresher
     private let clanWarRefresher: ClanWarRefresher
@@ -113,6 +118,7 @@ public final class AppModel: ObservableObject {
         clanWarStates = Self.loadClanWarStates(from: defaults)
         clanWarLogStates = Self.loadClanWarLogStates(from: defaults)
         clanCapitalStates = Self.loadClanCapitalStates(from: defaults)
+        trackedClans = Self.loadTrackedClans(from: defaults)
         villages = initialVillages
         selectedVillageID = initialVillages[0].id
         accountSnapshot = initialVillages[0].accountSnapshot
@@ -521,10 +527,199 @@ public final class AppModel: ObservableObject {
         return true
     }
 
+    // MARK: - 按 Tag 刷新入口（Issue #41 手动部落）
+
+    /// 按显式 Tag 刷新部落档案（手动部落入口；村庄入口转发）。
+    /// 同一 Tag 与村庄入口共享状态与防重入守卫，不产生重复请求。
+    /// 忙时排队记录该 tag 本身（`pendingClanRefreshTags`），补跑覆盖手动 tag；
+    /// 不会退化为村庄全量联动（村庄入口忙时同样走这里，其 tag 也被排队记录）。
+    /// 入参先经 `ClanTagNormalizer.normalize` 规范化（trim + 大写），
+    /// 请求/状态/在途 key 统一使用规范化值；非法输入静默 no-op。
+    public func refreshClan(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
+        if isRefreshingClanData {
+            // 被占用时排队记录 tag：补跑必须覆盖手动 tag（B1 修复——
+            // 旧实现置 pendingClanRefreshAll 补跑村庄全量，手动 tag 被静默吞掉）。
+            pendingClanRefreshTags.insert(tag)
+            return
+        }
+        performClanRefresh(villageClanTags: [tag])
+    }
+
+    /// 按显式 Tag 刷新当前战争（手动部落入口；入参规范化，非法输入 no-op）。
+    public func refreshClanWar(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
+        guard !isRefreshingClanWarData else { return }
+        refreshingClanWarTags = [tag]
+        let previous = clanWarStates
+
+        Task { [weak self] in
+            guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingClanWarTags.removeAll() }
+            let refreshed = await self.clanWarRefresher.refreshClanWars(
+                villageClanTags: [tag],
+                previous: previous
+            )
+            self.clanWarStates = ClanWarStateStore(states: self.clanWarStates)
+                .merging(refreshed).states
+            self.persistClanWarStates()
+        }
+    }
+
+    /// 按显式 Tag 刷新战争日志（手动部落入口；force 语义与村庄版一致；
+    /// 入参规范化，非法输入 no-op）。
+    public func refreshWarLog(tag: String, force: Bool = false) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
+        guard !isRefreshingWarLogData else { return }
+        if !force, isWarLogKnownNotPublic(for: tag) { return }
+        refreshingWarLogTags = [tag]
+        let client = clanLogClient
+        let parserVersion = ClanWarLogAPIState.currentParserVersion
+        let previous = clanWarLogStates[tag]
+
+        Task { [weak self] in
+            guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingWarLogTags.removeAll() }
+            let state = await EndpointRefresher.fetchSingle(
+                tag: tag,
+                previous: previous,
+                parserVersion: parserVersion
+            ) { tag in
+                OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag))
+            }
+            self.clanWarLogStates[tag] = state
+            self.persistClanWarLogStates()
+        }
+    }
+
+    /// 按显式 Tag 战争日志加载更多（手动部落入口；入参规范化，非法输入 no-op）。
+    public func loadMoreWarLog(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
+        guard !isRefreshingWarLogData else { return }
+        guard let current = clanWarLogStates[tag],
+              current.status == .success,
+              let cursor = current.lastGood?.after else { return }
+        refreshingWarLogTags = [tag]
+        let client = clanLogClient
+        let parserVersion = ClanWarLogAPIState.currentParserVersion
+        // 跨解析器版本：旧累计页（成员明细未解析等）与新页条目 Equatable 不等，
+        // 合并会残留重复；且旧页形态过时。重建语义：丢弃累计页，重新拉第一页
+        //（refresh 语义），保持列表完整与游标停滞保护（重建请求无游标）。
+        let needsRebuild = current.parserVersion != parserVersion
+
+        Task { [weak self] in
+            guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingWarLogTags.removeAll() }
+            let state = await EndpointRefresher.fetchSingle(
+                tag: tag,
+                previous: current,
+                parserVersion: parserVersion
+            ) { tag in
+                if needsRebuild {
+                    OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag))
+                } else {
+                    OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag, after: cursor))
+                }
+            }
+            if state.status == .success,
+               let fetched = state.lastGood,
+               let existing = current.lastGood,
+               !needsRebuild {
+                var merged = state
+                merged.lastGood = OfficialWarLogPage(
+                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                )
+                self.clanWarLogStates[tag] = merged
+            } else {
+                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
+                self.clanWarLogStates[tag] = state
+            }
+            self.persistClanWarLogStates()
+        }
+    }
+
+    /// 按显式 Tag 刷新部落资本赛季（手动部落入口）。
+    public func refreshCapitalRaid(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
+        guard !isRefreshingCapitalData else { return }
+        refreshingCapitalTags = [tag]
+        let client = clanLogClient
+        let parserVersion = ClanCapitalAPIState.currentParserVersion
+        let previous = clanCapitalStates[tag]
+
+        Task { [weak self] in
+            guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingCapitalTags.removeAll() }
+            let state = await EndpointRefresher.fetchSingle(
+                tag: tag,
+                previous: previous,
+                parserVersion: parserVersion
+            ) { tag in
+                OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
+            }
+            self.clanCapitalStates[tag] = state
+            self.persistClanCapitalStates()
+        }
+    }
+
+    /// 按显式 Tag 资本赛季加载更多（手动部落入口；入参规范化，非法输入 no-op）。
+    public func loadMoreCapitalRaid(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
+        guard !isRefreshingCapitalData else { return }
+        guard let current = clanCapitalStates[tag],
+              current.status == .success,
+              let cursor = current.lastGood?.after else { return }
+        refreshingCapitalTags = [tag]
+        let client = clanLogClient
+        let parserVersion = ClanCapitalAPIState.currentParserVersion
+        // 跨解析器版本：与战争日志同理——丢弃累计页，重新拉第一页（无游标）。
+        let needsRebuild = current.parserVersion != parserVersion
+
+        Task { [weak self] in
+            guard let self else { return }
+            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
+            defer { self.refreshingCapitalTags.removeAll() }
+            let state = await EndpointRefresher.fetchSingle(
+                tag: tag,
+                previous: current,
+                parserVersion: parserVersion
+            ) { tag in
+                if needsRebuild {
+                    OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
+                } else {
+                    OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor))
+                }
+            }
+            if state.status == .success,
+               let fetched = state.lastGood,
+               let existing = current.lastGood,
+               !needsRebuild {
+                var merged = state
+                merged.lastGood = OfficialCapitalRaidPage(
+                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                )
+                self.clanCapitalStates[tag] = merged
+            } else {
+                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
+                self.clanCapitalStates[tag] = state
+            }
+            self.persistClanCapitalStates()
+        }
+    }
+
     // MARK: - 部落数据刷新（共享数据层）
 
     /// 部落刷新进行中被再次触发时排队补跑，避免联动刷新被静默丢弃。
+    /// - `pendingClanRefreshAll`：村庄全量联动语义（`refreshAllClans` 忙时置位，
+    ///   补跑 = 当前村庄 tags 全量重拉）。
+    /// - `pendingClanRefreshTags`：显式 tag 排队语义（`refreshClan(tag:)` 忙时记录，
+    ///   补跑 = 村庄 tags ∪ 排队手动 tags；手动 tag 不再被静默丢弃）。
     private var pendingClanRefreshAll = false
+    private var pendingClanRefreshTags: Set<String> = []
 
     /// 刷新当前选中村庄所属部落的档案（UI 按钮入口）。
     public func refreshCurrentClan() {
@@ -537,12 +732,7 @@ public final class AppModel: ObservableObject {
     /// COCHelper executable 无法访问本模块 internal，必须 public。
     public func refreshClan(villageID: UUID) {
         guard let tag = officialClanTag(for: villageID) else { return }
-        if isRefreshingClanData {
-            // 被占用时排队为一次全量补跑（覆盖所有村庄，语义更广且确定性）。
-            pendingClanRefreshAll = true
-            return
-        }
-        performClanRefresh(villageClanTags: [tag])
+        refreshClan(tag: tag)
     }
 
     /// 批量刷新所有已导入村庄所属部落（同 clan tag 只请求一次，顺序执行）。
@@ -570,9 +760,20 @@ public final class AppModel: ObservableObject {
             )
             self.mergeClanStates(refreshed)
             self.refreshingClanTags.removeAll()
-            if self.pendingClanRefreshAll {
+            // 排队补跑：pendingClanRefreshAll（村庄全量联动）∪ pendingClanRefreshTags（含手动 tag）。
+            // 补跑集合 = 村庄 tags ∪ 排队的手动 tags（去重；已清空的 refreshingClanTags
+            // 保证补跑直接进入 performClanRefresh，不重复请求）。
+            if self.pendingClanRefreshAll || !self.pendingClanRefreshTags.isEmpty {
+                var tags: [String?] = []
+                if self.pendingClanRefreshAll {
+                    tags = self.villages.compactMap { $0.officialAPIState?.currentClanTag }
+                }
+                for tag in self.pendingClanRefreshTags where !tags.contains(tag) {
+                    tags.append(tag)
+                }
                 self.pendingClanRefreshAll = false
-                self.refreshAllClans()
+                self.pendingClanRefreshTags.removeAll()
+                self.performClanRefresh(villageClanTags: tags)
             }
         }
     }
@@ -593,26 +794,10 @@ public final class AppModel: ObservableObject {
 
     /// 刷新**指定村庄**所属部落的当前战争（按需：用户打开战争面板时显式触发；
     /// 不做批量联动，避免启动/批量刷新时全量拉取战争请求）。
-    /// tag 在同步段捕获：刷新期间切换村庄不影响写回目标。
     /// `notInWar` 是成功响应（无战争空状态），失败保留 last-good。
     public func refreshClanWar(villageID: UUID) {
-        guard !isRefreshingClanWarData else { return }
         guard let tag = officialClanTag(for: villageID) else { return }
-        refreshingClanWarTags = [tag]
-        let previous = clanWarStates
-
-        Task { [weak self] in
-            guard let self else { return }
-            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
-            defer { self.refreshingClanWarTags.removeAll() }
-            let refreshed = await self.clanWarRefresher.refreshClanWars(
-                villageClanTags: [tag],
-                previous: previous
-            )
-            self.clanWarStates = ClanWarStateStore(states: self.clanWarStates)
-                .merging(refreshed).states
-            self.persistClanWarStates()
-        }
+        refreshClanWar(tag: tag)
     }
 
     /// 刷新当前村庄所属部落的当前战争（兼容转发，语义不变）。
@@ -659,28 +844,8 @@ public final class AppModel: ObservableObject {
     /// `force` 为 true 时跳过"已知不公开"预判（用户主动要求检查，
     /// 应对部落档案过期导致的误判；真实 403 仍会显示失败原因）。
     public func refreshWarLog(villageID: UUID, force: Bool = false) {
-        guard !isRefreshingWarLogData else { return }
         guard let tag = officialClanTag(for: villageID) else { return }
-        if !force, isWarLogKnownNotPublic(for: tag) { return }
-        refreshingWarLogTags = [tag]
-        let client = clanLogClient
-        let parserVersion = ClanWarLogAPIState.currentParserVersion
-        let previous = clanWarLogStates[tag]
-
-        Task { [weak self] in
-            guard let self else { return }
-            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
-            defer { self.refreshingWarLogTags.removeAll() }
-            let state = await EndpointRefresher.fetchSingle(
-                tag: tag,
-                previous: previous,
-                parserVersion: parserVersion
-            ) { tag in
-                OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag))
-            }
-            self.clanWarLogStates[tag] = state
-            self.persistClanWarLogStates()
-        }
+        refreshWarLog(tag: tag, force: force)
     }
 
     /// 当前村庄所属部落的战争日志首屏/刷新（兼容转发，语义不变）。
@@ -690,49 +855,8 @@ public final class AppModel: ObservableObject {
 
     /// 指定村庄所属部落的战争日志加载更多：用现有游标向后翻页，**合并**（去重）到累计列表。
     public func loadMoreWarLog(villageID: UUID) {
-        guard !isRefreshingWarLogData else { return }
         guard let tag = officialClanTag(for: villageID) else { return }
-        guard let current = clanWarLogStates[tag],
-              current.status == .success,
-              let cursor = current.lastGood?.after else { return }
-        refreshingWarLogTags = [tag]
-        let client = clanLogClient
-        let parserVersion = ClanWarLogAPIState.currentParserVersion
-        // 跨解析器版本：旧累计页（成员明细未解析等）与新页条目 Equatable 不等，
-        // 合并会残留重复；且旧页形态过时。重建语义：丢弃累计页，重新拉第一页
-        //（refresh 语义），保持列表完整与游标停滞保护（重建请求无游标）。
-        let needsRebuild = current.parserVersion != parserVersion
-
-        Task { [weak self] in
-            guard let self else { return }
-            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
-            defer { self.refreshingWarLogTags.removeAll() }
-            let state = await EndpointRefresher.fetchSingle(
-                tag: tag,
-                previous: current,
-                parserVersion: parserVersion
-            ) { tag in
-                if needsRebuild {
-                    OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag))
-                } else {
-                    OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag, after: cursor))
-                }
-            }
-            if state.status == .success,
-               let fetched = state.lastGood,
-               let existing = current.lastGood,
-               !needsRebuild {
-                var merged = state
-                merged.lastGood = OfficialWarLogPage(
-                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
-                )
-                self.clanWarLogStates[tag] = merged
-            } else {
-                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
-                self.clanWarLogStates[tag] = state
-            }
-            self.persistClanWarLogStates()
-        }
+        loadMoreWarLog(tag: tag)
     }
 
     /// 当前村庄所属部落的战争日志加载更多（兼容转发，语义不变）。
@@ -769,27 +893,8 @@ public final class AppModel: ObservableObject {
 
     /// 指定村庄所属部落的资本赛季首屏/刷新（替换累计列表；失败保留既有 last-good）。
     public func refreshCapitalRaid(villageID: UUID) {
-        guard !isRefreshingCapitalData else { return }
         guard let tag = officialClanTag(for: villageID) else { return }
-        refreshingCapitalTags = [tag]
-        let client = clanLogClient
-        let parserVersion = ClanCapitalAPIState.currentParserVersion
-        let previous = clanCapitalStates[tag]
-
-        Task { [weak self] in
-            guard let self else { return }
-            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
-            defer { self.refreshingCapitalTags.removeAll() }
-            let state = await EndpointRefresher.fetchSingle(
-                tag: tag,
-                previous: previous,
-                parserVersion: parserVersion
-            ) { tag in
-                OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
-            }
-            self.clanCapitalStates[tag] = state
-            self.persistClanCapitalStates()
-        }
+        refreshCapitalRaid(tag: tag)
     }
 
     /// 当前村庄所属部落的资本赛季首屏/刷新（兼容转发，语义不变）。
@@ -799,52 +904,66 @@ public final class AppModel: ObservableObject {
 
     /// 指定村庄所属部落的资本赛季加载更多（合并去重）。
     public func loadMoreCapitalRaid(villageID: UUID) {
-        guard !isRefreshingCapitalData else { return }
         guard let tag = officialClanTag(for: villageID) else { return }
-        guard let current = clanCapitalStates[tag],
-              current.status == .success,
-              let cursor = current.lastGood?.after else { return }
-        refreshingCapitalTags = [tag]
-        let client = clanLogClient
-        let parserVersion = ClanCapitalAPIState.currentParserVersion
-        // 跨解析器版本：与战争日志同理——丢弃累计页，重新拉第一页（无游标）。
-        let needsRebuild = current.parserVersion != parserVersion
-
-        Task { [weak self] in
-            guard let self else { return }
-            // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
-            defer { self.refreshingCapitalTags.removeAll() }
-            let state = await EndpointRefresher.fetchSingle(
-                tag: tag,
-                previous: current,
-                parserVersion: parserVersion
-            ) { tag in
-                if needsRebuild {
-                    OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
-                } else {
-                    OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag, after: cursor))
-                }
-            }
-            if state.status == .success,
-               let fetched = state.lastGood,
-               let existing = current.lastGood,
-               !needsRebuild {
-                var merged = state
-                merged.lastGood = OfficialCapitalRaidPage(
-                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
-                )
-                self.clanCapitalStates[tag] = merged
-            } else {
-                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
-                self.clanCapitalStates[tag] = state
-            }
-            self.persistClanCapitalStates()
-        }
+        loadMoreCapitalRaid(tag: tag)
     }
 
     /// 当前村庄所属部落的资本赛季加载更多（兼容转发，语义不变）。
     public func loadMoreCurrentCapitalRaid() {
         loadMoreCapitalRaid(villageID: selectedVillageID)
+    }
+
+    // MARK: - 手动跟踪部落（Issue #41）
+
+    public enum TrackedClanAddError: Equatable, Error {
+        case invalidTag
+        case duplicate
+    }
+
+    /// 添加手动跟踪部落：只做本地校验与保存，**不触发任何网络请求**。
+    /// Tag 规范化失败 → .invalidTag；规范化后已存在 → .duplicate（不覆盖原档案）。
+    @discardableResult
+    public func addTrackedClan(rawTag: String?, displayName: String?) -> Result<TrackedClanProfile, TrackedClanAddError> {
+        guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(TrackedClanAddError.invalidTag) }
+        guard !trackedClans.contains(where: { $0.clanTag == tag }) else { return .failure(TrackedClanAddError.duplicate) }
+        let trimmedName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let profile = TrackedClanProfile(
+            clanTag: tag,
+            displayName: trimmedName?.isEmpty == false ? trimmedName : nil,
+            createdAt: Date()
+        )
+        trackedClans.append(profile)
+        persistTrackedClans()
+        return .success(profile)
+    }
+
+    /// 删除跟踪关系：**保留**按 Tag 的共享 API 缓存（clanStates 等），
+    /// 误删后重新添加不丢失历史数据。入参规范化（幂等），非法输入 no-op。
+    public func removeTrackedClan(tag: String) {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return }
+        guard trackedClans.contains(where: { $0.clanTag == tag }) else { return }
+        trackedClans.removeAll { $0.clanTag == tag }
+        persistTrackedClans()
+    }
+
+    /// 该 Tag 是否为**当前选中村庄**所属部落（列表"当前村庄所属"标识）。
+    /// 只做标识展示，不改变手动档案身份。入参规范化（幂等）。
+    public func isCurrentVillageClan(_ tag: String) -> Bool {
+        guard let tag = ClanTagNormalizer.normalize(tag) else { return false }
+        return currentVillageClanTag == tag
+    }
+
+    private func persistTrackedClans() {
+        guard let data = try? JSONEncoder().encode(TrackedClanStore(profiles: trackedClans)) else { return }
+        defaults.set(data, forKey: Self.trackedClansStorageKey)
+    }
+
+    private static func loadTrackedClans(from defaults: UserDefaults) -> [TrackedClanProfile] {
+        guard let data = defaults.data(forKey: Self.trackedClansStorageKey),
+              let store = try? JSONDecoder().decode(TrackedClanStore.self, from: data) else {
+            return []
+        }
+        return store.profiles
     }
 
     private func persistClanCapitalStates() {
@@ -918,5 +1037,24 @@ public final class AppModel: ObservableObject {
             return []
         }
         return decoded
+    }
+
+    /// 测试辅助：为指定 Tag 注入共享部落缓存（验证删除跟踪关系保留缓存）。
+    /// 仅测试模块通过 @testable 可见，生产路径不调用。
+    func seedClanStateForTesting(tag: String) {
+        clanStates[tag] = ClanAPIState(
+            status: .success,
+            fetchedAt: Date(),
+            lastErrorReason: nil,
+            parserVersion: ClanAPIState.currentParserVersion,
+            lastGood: OfficialClanSnapshot(
+                tag: tag, name: "测试部落", type: nil, description: nil,
+                clanLevel: 1, badgeUrls: nil,
+                members: 1, requiredTrophies: nil, requiredTownHallLevel: nil,
+                warWins: nil, warLosses: nil, warTies: nil, warWinStreak: nil,
+                isWarLogPublic: nil,
+                labels: nil, clanCapital: nil, unrecognizedKeys: []
+            )
+        )
     }
 }

@@ -25,6 +25,12 @@ final class ClanDecodeTests: XCTestCase {
         XCTAssertEqual(clan.members, 48)
         XCTAssertEqual(clan.requiredTrophies, 2000)
         XCTAssertEqual(clan.requiredTownHallLevel, 8)
+        XCTAssertEqual(clan.requiredBuilderBaseTrophies, 1200)
+        XCTAssertEqual(clan.requiredLeagueTier, 5)
+        XCTAssertEqual(clan.clanBuilderBasePoints, 12345)
+        XCTAssertEqual(clan.clanCapitalPoints, 67890)
+        XCTAssertEqual(clan.capitalLeague?.id, 85000006)
+        XCTAssertEqual(clan.capitalLeague?.name, "Titan League I")
         XCTAssertEqual(clan.warWins, 250)
         XCTAssertEqual(clan.warLosses, 120)
         XCTAssertEqual(clan.warTies, 10)
@@ -81,7 +87,9 @@ final class ClanDecodeTests: XCTestCase {
     func testKnownKeysNotCollected() throws {
         let clan = try decode(fullClanFixtureData())
         for key in ["tag", "name", "type", "description", "clanLevel", "clanPoints",
-                    "clanVersusPoints", "requiredTrophies", "requiredTownHallLevel",
+                    "clanBuilderBasePoints", "clanCapitalPoints", "capitalLeague",
+                    "clanVersusPoints", "requiredTrophies", "requiredTownhallLevel",
+                    "requiredTownHallLevel", "requiredBuilderBaseTrophies", "requiredLeagueTier",
                     "warFrequency", "warWinStreak", "warWins", "warTies", "warLosses",
                     "isWarLogPublic", "warLeague", "members", "labels",
                     "requiredVersusTrophies", "chatLanguage", "clanCapital",
@@ -100,5 +108,41 @@ final class ClanDecodeTests: XCTestCase {
         XCTAssertEqual(decoded, original)
         XCTAssertEqual(decoded.unrecognizedKeys, original.unrecognizedKeys)
         XCTAssertEqual(decoded.unrecognizedKeys, ["newOfficialField"])
+    }
+
+    func testStateRoundTripPersistsOfficialFields() throws {
+        let snapshot = try decode(fullClanFixtureData())
+        let state = ClanAPIState(
+            status: .success,
+            clanTag: snapshot.tag,
+            lastGood: snapshot,
+            unrecognizedKeys: snapshot.unrecognizedKeys
+        )
+
+        let decoded = try JSONDecoder().decode(
+            ClanAPIState.self,
+            from: try JSONEncoder().encode(state)
+        )
+
+        XCTAssertEqual(decoded.parserVersion, "clan-snapshot-0.2")
+        XCTAssertEqual(decoded.lastGood?.requiredBuilderBaseTrophies, 1200)
+        XCTAssertEqual(decoded.lastGood?.requiredLeagueTier, 5)
+        XCTAssertEqual(decoded.lastGood?.clanBuilderBasePoints, 12345)
+        XCTAssertEqual(decoded.lastGood?.clanCapitalPoints, 67890)
+        XCTAssertEqual(decoded.lastGood?.capitalLeague?.name, "Titan League I")
+        XCTAssertEqual(decoded.unrecognizedKeys, ["newOfficialField"])
+    }
+
+    func testLegacyTownHallKeyDecodesAndEncodesWithOfficialSpelling() throws {
+        let legacy = try decode(Data(#"{"requiredTownHallLevel":9}"#.utf8))
+
+        XCTAssertEqual(legacy.requiredTownHallLevel, 9)
+        XCTAssertTrue(legacy.unrecognizedKeys.isEmpty)
+
+        let encoded = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(legacy)
+        ) as? [String: Any]
+        XCTAssertEqual(encoded?["requiredTownhallLevel"] as? Int, 9)
+        XCTAssertNil(encoded?["requiredTownHallLevel"])
     }
 }

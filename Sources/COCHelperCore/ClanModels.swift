@@ -24,7 +24,16 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
     // MARK: 规模与要求
     public let members: Int?
     public let requiredTrophies: Int?
+    /// 官方 raw key 是 `requiredTownhallLevel`（Hall 的 H 为小写）。
+    /// Swift 属性保留既有 `requiredTownHallLevel` 名称，兼容现有调用方。
     public let requiredTownHallLevel: Int?
+    public let requiredBuilderBaseTrophies: Int?
+    public let requiredLeagueTier: Int?
+
+    // MARK: 积分与联赛
+    public let clanBuilderBasePoints: Int?
+    public let clanCapitalPoints: Int?
+    public let capitalLeague: ClanLeague?
 
     // MARK: 战争记录概览
     public let warWins: Int?
@@ -48,7 +57,12 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         warWins: Int?, warLosses: Int?, warTies: Int?, warWinStreak: Int?,
         isWarLogPublic: Bool?,
         labels: [ClanLabel]?, clanCapital: ClanCapital?,
-        unrecognizedKeys: [String]
+        unrecognizedKeys: [String],
+        requiredBuilderBaseTrophies: Int? = nil,
+        requiredLeagueTier: Int? = nil,
+        clanBuilderBasePoints: Int? = nil,
+        clanCapitalPoints: Int? = nil,
+        capitalLeague: ClanLeague? = nil
     ) {
         self.tag = tag
         self.name = name
@@ -59,6 +73,11 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         self.members = members
         self.requiredTrophies = requiredTrophies
         self.requiredTownHallLevel = requiredTownHallLevel
+        self.requiredBuilderBaseTrophies = requiredBuilderBaseTrophies
+        self.requiredLeagueTier = requiredLeagueTier
+        self.clanBuilderBasePoints = clanBuilderBasePoints
+        self.clanCapitalPoints = clanCapitalPoints
+        self.capitalLeague = capitalLeague
         self.warWins = warWins
         self.warLosses = warLosses
         self.warTies = warTies
@@ -75,7 +94,10 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
     /// 注意 `memberList`：已知但首期不解析（deferred），列入此处避免审计噪音。
     private static let knownKeys: Set<String> = [
         "tag", "name", "type", "description", "clanLevel",
-        "clanPoints", "clanVersusPoints", "requiredTrophies", "requiredTownHallLevel",
+        "clanPoints", "clanVersusPoints", "requiredTrophies", "requiredTownhallLevel",
+        // 旧版本曾错误地按 Swift 属性名编码，继续作为兼容别名接受。
+        "requiredTownHallLevel", "requiredBuilderBaseTrophies", "requiredLeagueTier",
+        "clanBuilderBasePoints", "clanCapitalPoints", "capitalLeague",
         "warFrequency", "warWinStreak", "warWins", "warTies", "warLosses",
         "isWarLogPublic", "warLeague", "members", "memberList", "labels",
         "requiredVersusTrophies", "chatLanguage", "clanCapital",
@@ -94,7 +116,30 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         badgeUrls = try container.decodeIfPresent([String: String].self, forKey: .init(stringValue: "badgeUrls")!)
         members = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "members")!)
         requiredTrophies = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "requiredTrophies")!)
-        requiredTownHallLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "requiredTownHallLevel")!)
+        requiredTownHallLevel = try (
+            container.decodeIfPresent(
+                Int.self,
+                forKey: .init(stringValue: "requiredTownhallLevel")!
+            ) ?? container.decodeIfPresent(
+                Int.self,
+                forKey: .init(stringValue: "requiredTownHallLevel")!
+            )
+        )
+        requiredBuilderBaseTrophies = try container.decodeIfPresent(
+            Int.self, forKey: .init(stringValue: "requiredBuilderBaseTrophies")!
+        )
+        requiredLeagueTier = try container.decodeIfPresent(
+            Int.self, forKey: .init(stringValue: "requiredLeagueTier")!
+        )
+        clanBuilderBasePoints = try container.decodeIfPresent(
+            Int.self, forKey: .init(stringValue: "clanBuilderBasePoints")!
+        )
+        clanCapitalPoints = try container.decodeIfPresent(
+            Int.self, forKey: .init(stringValue: "clanCapitalPoints")!
+        )
+        capitalLeague = try container.decodeIfPresent(
+            ClanLeague.self, forKey: .init(stringValue: "capitalLeague")!
+        )
         warWins = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "warWins")!)
         warLosses = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "warLosses")!)
         warTies = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "warTies")!)
@@ -125,7 +170,13 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         try container.encodeIfPresent(badgeUrls, forKey: key("badgeUrls"))
         try container.encodeIfPresent(members, forKey: key("members"))
         try container.encodeIfPresent(requiredTrophies, forKey: key("requiredTrophies"))
-        try container.encodeIfPresent(requiredTownHallLevel, forKey: key("requiredTownHallLevel"))
+        // 只写官方 raw key；旧的 Swift 属性名仅用于源码兼容。
+        try container.encodeIfPresent(requiredTownHallLevel, forKey: key("requiredTownhallLevel"))
+        try container.encodeIfPresent(requiredBuilderBaseTrophies, forKey: key("requiredBuilderBaseTrophies"))
+        try container.encodeIfPresent(requiredLeagueTier, forKey: key("requiredLeagueTier"))
+        try container.encodeIfPresent(clanBuilderBasePoints, forKey: key("clanBuilderBasePoints"))
+        try container.encodeIfPresent(clanCapitalPoints, forKey: key("clanCapitalPoints"))
+        try container.encodeIfPresent(capitalLeague, forKey: key("capitalLeague"))
         try container.encodeIfPresent(warWins, forKey: key("warWins"))
         try container.encodeIfPresent(warLosses, forKey: key("warLosses"))
         try container.encodeIfPresent(warTies, forKey: key("warTies"))
@@ -159,6 +210,20 @@ public struct ClanCapital: Codable, Hashable, Sendable {
 
     public init(capitalHallLevel: Int?) {
         self.capitalHallLevel = capitalHallLevel
+    }
+}
+
+/// 部落联赛引用（如 `capitalLeague`）。
+///
+/// 官方可能在该嵌套对象中增加图标等字段；合成 Codable 会忽略未知子字段，
+/// 不影响顶层字段审计。
+public struct ClanLeague: Codable, Hashable, Sendable {
+    public let id: Int?
+    public let name: String?
+
+    public init(id: Int?, name: String?) {
+        self.id = id
+        self.name = name
     }
 }
 

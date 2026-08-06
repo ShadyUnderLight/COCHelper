@@ -411,6 +411,21 @@ private struct AddTrackedClanSheet: View {
                 if let th = snapshot.requiredTownHallLevel {
                     previewRow("所需大本等级", "\(th) 本")
                 }
+                if let builderTrophies = snapshot.requiredBuilderBaseTrophies {
+                    previewRow("所需建筑大师奖杯", "\(builderTrophies)")
+                }
+                if let leagueTier = snapshot.requiredLeagueTier {
+                    previewRow("所需联赛等级", "\(leagueTier)")
+                }
+                if let builderPoints = snapshot.clanBuilderBasePoints {
+                    previewRow("建筑大师积分", "\(builderPoints)")
+                }
+                if let capitalPoints = snapshot.clanCapitalPoints {
+                    previewRow("部落资本积分", "\(capitalPoints)")
+                }
+                if let capitalLeague = snapshot.capitalLeague?.name {
+                    previewRow("资本联赛", capitalLeague)
+                }
                 if let capital = snapshot.clanCapital?.capitalHallLevel {
                     previewRow("部落首都", "大本 \(capital) 级")
                 }

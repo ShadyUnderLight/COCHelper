@@ -11,11 +11,22 @@ import COCHelperApp
 struct ClanCardView: View {
     @EnvironmentObject private var model: AppModel
     /// 本卡片数据来源的村庄（显式路由，不得读全局选中村庄）。
-    let villageID: UUID
+    /// 手动部落入口传 nil，并直接注入 `clanTag`。
+    let villageID: UUID?
+    /// 手动部落入口注入的部落 tag（村庄入口为 nil）。
+    let injectedClanTag: String?
 
-    /// 本卡片村庄的部落归属 tag（nil = 无部落 / 从未成功抓取）。
+    init(villageID: UUID? = nil, clanTag: String? = nil) {
+        self.villageID = villageID
+        self.injectedClanTag = clanTag
+    }
+
+    /// 手动入口直接使用注入 tag；村庄入口从玩家快照派生。
+    private var isManualEntry: Bool { injectedClanTag != nil }
+
+    /// 本卡片部落归属 tag（nil = 无部落 / 从未成功抓取）。
     private var clanTag: String? {
-        model.officialClanTag(for: villageID)
+        injectedClanTag ?? villageID.flatMap { model.officialClanTag(for: $0) }
     }
 
     /// 本卡片村庄所属部落的共享状态（nil = 无部落 / 从未请求）。
@@ -60,13 +71,14 @@ struct ClanCardView: View {
 
     @ViewBuilder
     private var statusContent: some View {
-        if model.clanStatusUnknown(for: villageID) {
+        let statusUnknown = villageID.map { model.clanStatusUnknown(for: $0) } ?? false
+        if !isManualEntry, statusUnknown {
             // 从未成功抓取玩家数据：归属是"未知"，不是"不在部落中"。
             unknownClanState
-        } else if clanTag == nil {
+        } else if !isManualEntry, clanTag == nil {
             // 最近成功玩家快照确认无部落（clan 缺失/无效）。
             noClanState
-        } else if let state = clanState {
+        } else if let state = clanState, let clanTag {
             statusLine(state)
             if let snapshot = state.lastGood {
                 clanSummary(state: state, snapshot: snapshot)
@@ -78,7 +90,7 @@ struct ClanCardView: View {
             }
             HStack(spacing: 12) {
                 Button {
-                    model.refreshClan(villageID: villageID)
+                    model.refreshClan(tag: clanTag)
                 } label: {
                     if model.isRefreshingClan(clanTag: clanTag) {
                         ProgressView()
@@ -92,7 +104,7 @@ struct ClanCardView: View {
                 .disabled(model.isRefreshingClanData || model.isRefreshingClan(clanTag: clanTag))
                 Spacer()
             }
-        } else {
+        } else if let clanTag {
             // 有部落 tag 但从未请求过部落数据：提示可刷新
             VStack(alignment: .leading, spacing: 8) {
                 Label("尚未获取部落数据", systemImage: "circle.dashed")
@@ -100,7 +112,7 @@ struct ClanCardView: View {
                     .foregroundStyle(.secondary)
                 HStack(spacing: 12) {
                     Button {
-                        model.refreshClan(villageID: villageID)
+                        model.refreshClan(tag: clanTag)
                     } label: {
                         if model.isRefreshingClan(clanTag: clanTag) {
                             ProgressView()

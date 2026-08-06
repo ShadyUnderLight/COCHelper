@@ -12,11 +12,22 @@ import COCHelperApp
 struct ClanWarCardView: View {
     @EnvironmentObject private var model: AppModel
     /// 本卡片数据来源的村庄（显式路由，不得读全局选中村庄）。
-    let villageID: UUID
+    /// 手动部落入口传 nil，并直接注入 `clanTag`。
+    let villageID: UUID?
+    /// 手动部落入口注入的部落 tag（村庄入口为 nil）。
+    let injectedClanTag: String?
 
-    /// 本卡片村庄的部落归属 tag（nil = 无部落 / 从未成功抓取）。
+    init(villageID: UUID? = nil, clanTag: String? = nil) {
+        self.villageID = villageID
+        self.injectedClanTag = clanTag
+    }
+
+    /// 手动入口直接使用注入 tag；村庄入口从玩家快照派生。
+    private var isManualEntry: Bool { injectedClanTag != nil }
+
+    /// 本卡片部落归属 tag（nil = 无部落 / 从未成功抓取）。
     private var clanTag: String? {
-        model.officialClanTag(for: villageID)
+        injectedClanTag ?? villageID.flatMap { model.officialClanTag(for: $0) }
     }
 
     /// 本卡片村庄所属部落的当前战争共享状态（nil = 无部落 / 从未请求）。
@@ -52,15 +63,16 @@ struct ClanWarCardView: View {
 
     @ViewBuilder
     private var statusContent: some View {
-        if model.clanStatusUnknown(for: villageID) {
+        let statusUnknown = villageID.map { model.clanStatusUnknown(for: $0) } ?? false
+        if !isManualEntry, statusUnknown {
             Label("刷新官方玩家数据后可查看当前战争", systemImage: "questionmark.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if clanTag == nil {
+        } else if !isManualEntry, clanTag == nil {
             Label("不在部落中，没有战争数据", systemImage: "person.crop.circle.badge.questionmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if let state = clanWarState {
+        } else if let state = clanWarState, let clanTag {
             statusLine(state)
             if let snapshot = state.lastGood {
                 warSummary(snapshot)
@@ -70,22 +82,22 @@ struct ClanWarCardView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            refreshButton(title: "刷新战争状态")
-        } else {
+            refreshButton(title: "刷新战争状态", tag: clanTag)
+        } else if let clanTag {
             // 从未请求过：按需懒加载入口
             VStack(alignment: .leading, spacing: 8) {
                 Label("尚未获取当前战争", systemImage: "circle.dashed")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                refreshButton(title: "查看当前战争")
+                refreshButton(title: "查看当前战争", tag: clanTag)
             }
         }
     }
 
-    private func refreshButton(title: String) -> some View {
+    private func refreshButton(title: String, tag: String) -> some View {
         HStack {
             Button {
-                model.refreshClanWar(villageID: villageID)
+                model.refreshClanWar(tag: tag)
             } label: {
                 if model.isRefreshingClanWar(clanTag: clanTag) {
                     ProgressView()

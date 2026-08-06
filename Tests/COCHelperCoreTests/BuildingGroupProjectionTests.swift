@@ -37,6 +37,8 @@ final class BuildingGroupProjectionTests: XCTestCase {
         }
     }
 
+    /// 合成目录 fixture：dataID/名称仅为测试内部一致性，与真实 bundled 目录的
+    /// dataID 映射无关（如 1000008 在真实目录是加农炮，此处仅作「城墙」测试用）。
     private static let syntheticCatalogItems: [SpecItem] = [
         SpecItem(section: "buildings", category: "buildings", dataID: 1_000_001, base: "home", name: "加农炮", maxLevel: 16, levels: standardLevels(16)),
         SpecItem(section: "buildings", category: "buildings", dataID: 1_000_008, base: "home", name: "城墙", maxLevel: 12, levels: standardLevels(12)),

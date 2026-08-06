@@ -39,15 +39,26 @@ struct BuildingGroupSummaryView: View {
         return parts.isEmpty ? "无费用数据" : parts.joined(separator: " · ")
     }
 
-    /// 完整时长合计：剩余等级为 0（满级组）时显示「已达目录上限」（参照
-    /// `UpgradeDisplayRow.durationLabel` 的 isMaxed 分支先例，避免把「无待升级
-    /// 时长」误报成目录缺失）；> 0 走 `AccountDurationFormatter.label`（完整升级
-    /// 耗时，不得写成完成日期）；== 0 且阶梯非空且全部时长已知（如城墙
-    /// durationSeconds == 0 计入 0 秒）显示「即时」；其余（阶梯部分缺失）显示
-    /// 「暂无目录数据」。
+    /// 完整时长合计：按 completeness 分支（交叉评审发现的口径缺陷修复——
+    /// 不能只看 remainingLevelCount == 0 就报「已达目录上限」）：
+    /// - versionMismatch（目录过时，如大本营 Lv19 > 目录 max 18）：一律显示
+    ///   「暂无目录数据」，不得把旧目录汇总当成确定事实（Issue #45 契约）；
+    /// - complete 且剩余等级 0：真满级 →「已达目录上限」（参照
+    ///   `UpgradeDisplayRow.durationLabel` 的 isMaxed 分支先例）；
+    /// - partialMissing 且剩余等级 0（如 currentLevel == nil，剩余等级不可确定）：
+    ///   「暂无目录数据」，不误报已满级；
+    /// - 剩余等级 > 0：`AccountDurationFormatter.label`（完整升级耗时，不得写成
+    ///   完成日期）；== 0 秒且阶梯非空且全部时长已知（如城墙 durationSeconds == 0
+    ///   计入 0 秒）显示「即时」；其余（阶梯部分缺失）显示「暂无目录数据」。
     private var totalDurationLabel: String {
+        if group.summary.completeness == .versionMismatch {
+            return "暂无目录数据"
+        }
         if group.summary.remainingLevelCount == 0 {
-            return "已达目录上限"
+            if group.summary.completeness == .complete {
+                return "已达目录上限"
+            }
+            return "暂无目录数据"
         }
         let seconds = group.summary.totalDurationSeconds
         if seconds > 0 { return AccountDurationFormatter.label(seconds) }

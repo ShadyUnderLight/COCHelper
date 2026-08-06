@@ -59,8 +59,8 @@ public enum BuildingDisplayCategoryRules {
     }
 
     /// 展示分类判定。嵌套项必须传 `rootParentDataID`（其自身 dataID 是 types/modules 段，
-    /// 不在任何白名单内）；平铺项传 nil。`rootParentDataID` 非 nil 时优先于 `dataID`
-    /// （嵌套项归属只看根父），平铺项仍按自身 `dataID` 白名单判定。
+    /// 不在任何白名单内）；平铺项传 nil。`rootParentDataID` 非 nil 时按根父自身归类
+    /// （嵌套项继承根父展示分类，避免父子跨组分裂），平铺项仍按自身 `dataID` 白名单判定。
     public static func displayCategory(
         section: String,
         dataID: Int64,
@@ -69,8 +69,9 @@ public enum BuildingDisplayCategoryRules {
     ) -> TrackerDisplayCategory? {
         guard section == "buildings", base == .home else { return nil }
         if let rootParentDataID {
-            // 嵌套项：仅精制台细分（根父 1000097）；其余嵌套后代不细分。
-            return rootParentDataID == craftTableDataID ? .craftTable : nil
+            // 嵌套项：继承根父展示分类（根父自身归类；精制台 1000097 → .craftTable，
+            // 防御/军事白名单父建筑的后代跟随父项，避免跨组父子分裂）。
+            return displayCategory(section: section, dataID: rootParentDataID, base: base, rootParentDataID: nil)
         }
         if dataID == craftTableDataID { return .craftTable }
         if defenseDataIDs.contains(dataID) { return .defense }

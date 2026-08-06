@@ -447,6 +447,20 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertEqual(root.children.count, 12)
     }
 
+    func testMatchesCategoryFilterExcludesDisplayGroups() {
+        // 回归（评审 blocker）：display 组的 category 恒为 .buildings 仅作归属提示，
+        // 点「建筑与防御」chip 若按 category 匹配会误含防御/军事/精制台全部展示组，
+        // 与 chip 计数（已排除 display 组）矛盾。
+        let display = VillageDetailGroup(category: .buildings, displayCategory: .defense, items: [])
+        let fallback = VillageDetailGroup(category: .buildings, displayCategory: nil, items: [])
+        let traps = VillageDetailGroup(category: .traps, displayCategory: nil, items: [])
+        XCTAssertTrue(VillageDetailProjection.matchesCategoryFilter(fallback, category: .buildings))
+        XCTAssertFalse(VillageDetailProjection.matchesCategoryFilter(display, category: .buildings),
+                       "display 组不得命中 buildings 筛选")
+        XCTAssertFalse(VillageDetailProjection.matchesCategoryFilter(traps, category: .buildings))
+        XCTAssertTrue(VillageDetailProjection.matchesCategoryFilter(traps, category: .traps))
+    }
+
     // MARK: - Property-based：展示分类随机输入不变量
 
     func testPropertyDisplayCategoryGroupsConserveItems() {
@@ -576,6 +590,7 @@ final class VillageDetailProjectionTests: XCTestCase {
 
             XCTAssertEqual(groups.flatMap(\.items).map(\.id).sorted(), items.map(\.id).sorted())
             // 组内保持输入相对顺序（组间按 sortOrder 重排）
+            // 前置条件：该生成器不产生 displayCategory（issue #37 拆分后此断言仅对无细分项成立）
             for group in groups {
                 XCTAssertEqual(group.items, items.filter { $0.category == group.category })
             }

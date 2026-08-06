@@ -124,9 +124,19 @@ final class BuildingDisplayCategoryTests: XCTestCase {
         ))
     }
 
-    func testNestedChildOfNonCraftTableFallsThrough() {
-        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
+    func testNestedChildInheritsParentCategory() {
+        // 嵌套项继承根父展示分类（评审发现）：防御父建筑（加农炮 1000008）的后代
+        // 跟随防御、军事父建筑（兵营 1000000）的后代跟随军事——否则后代 displayCategory
+        // 为 nil 会落兜底组，与父项跨组分裂成孤儿行。
+        XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
             section: "buildings", dataID: 103000011, base: .home, rootParentDataID: 1000008
+        ), .defense)
+        XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings", dataID: 103000011, base: .home, rootParentDataID: 1000000
+        ), .military)
+        // 兜底父建筑（大本营 1000001）的后代仍兜底
+        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings", dataID: 103000011, base: .home, rootParentDataID: 1000001
         ))
     }
 
@@ -155,6 +165,13 @@ final class BuildingDisplayCategoryTests: XCTestCase {
             // 不变量：非 home / 非 buildings 一律 nil
             if section != "buildings" || base != .home {
                 XCTAssertNil(result, "\(section)/\(base) 不应细分")
+            }
+            // 正方向约束：home + buildings 平铺且非白名单 → 恒 nil（随机 dataID 几乎必然非白名单）
+            if section == "buildings", base == .home, !nested,
+               !BuildingDisplayCategoryRules.defenseDataIDs.contains(dataID),
+               !BuildingDisplayCategoryRules.militaryDataIDs.contains(dataID),
+               dataID != BuildingDisplayCategoryRules.craftTableDataID {
+                XCTAssertNil(result, "非白名单 home 建筑 dataID \(dataID) 应兜底")
             }
         }
     }

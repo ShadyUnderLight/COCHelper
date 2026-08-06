@@ -430,11 +430,14 @@ public struct VillageCatalogProjection: Sendable {
         return result
     }
 
-    /// 聚合键 = (section, dataID, currentLevel, isNested)。
+    /// 聚合键 = (section, dataID, currentLevel, isNested, 嵌套根父)。
     /// isNested 必须参与分组：父项与嵌套项可能同 section/dataID/level，
     /// 不区分会导致嵌套项被并入父项组而消失（且状态/图标按父项保留）。
+    /// 根父身份必须参与：不同根父下的同 dataID/level 嵌套项合并会错标展示分类
+    ///（issue #37 展示分类评审）。
     private static func aggregateKey(_ record: VillageItemState) -> String {
-        "\(record.section):\(record.dataID):\(record.currentLevel.map(String.init) ?? "nil"):\(record.isNested ? "nested" : "flat")"
+        let root = record.isNested ? BuildingDisplayCategoryRules.rootID(of: record.id) : ""
+        return "\(record.section):\(record.dataID):\(record.currentLevel.map(String.init) ?? "nil"):\(record.isNested ? "nested" : "flat"):\(root)"
     }
 
     // MARK: - Live timers

@@ -91,6 +91,13 @@ public enum VillageDetailProjection {
         return .other
     }
 
+    /// Issue #37：组是否属于「原分类」筛选。display 组（防御/军事/精制台）的
+    /// category 恒为 .buildings 仅作归属提示，必须排除——否则点「建筑与防御」
+    /// 会误含全部展示分类组，与 chip 计数矛盾。
+    public static func matchesCategoryFilter(_ group: VillageDetailGroup, category: TrackerCategory) -> Bool {
+        group.displayCategory == nil && group.category == category
+    }
+
     /// 组顺序：展示分类组（按 sortOrder）→ 原分类组（按 sortOrder）→ other 最后。
     private static func orderedKeys(_ keys: [GroupKey]) -> [GroupKey] {
         keys.sorted { lhs, rhs in

@@ -197,6 +197,10 @@ struct VillageDetailView: View {
         }
         .pickerStyle(.segmented)
         .frame(maxWidth: 320)
+        .onChange(of: selectedBase) { _, _ in
+            // issue #37 验收：切换基地后不得残留成错误的空筛选
+            selectedFilter = .all
+        }
     }
 
     /// issue #37：展示分类（防御/军事/精制台）作为一级筛选维度，原分类兜底。
@@ -250,7 +254,7 @@ struct VillageDetailView: View {
         switch selectedFilter {
         case .all: return groups
         case .display(let dc): return groups.filter { $0.displayCategory == dc }
-        case .category(let c): return groups.filter { $0.category == c }
+        case .category(let c): return groups.filter { VillageDetailProjection.matchesCategoryFilter($0, category: c) }
         case .other: return groups.filter { $0.category == nil }
         }
     }

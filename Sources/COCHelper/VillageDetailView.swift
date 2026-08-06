@@ -76,7 +76,7 @@ struct VillageDetailView: View {
                 header(village: village, projection: projection, total: total)
                 officialAPISection()
                 basePicker()
-                categoryFilterBar(groups: groups)
+                categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
 
                 if displayGroups.isEmpty {
                     Panel {
@@ -256,46 +256,99 @@ struct VillageDetailView: View {
     /// issue #37：展示分类（防御/军事/精制台）作为一级筛选维度，原分类兜底。
     /// 计数规则与分组键一致：display 组按 displayCategory 匹配；无细分项的
     /// category 组按原分类匹配；category 为 nil 的项归「其他」。
-    private func categoryFilterBar(groups: [VillageDetailGroup]) -> some View {
+    /// issue #53：满级判定复用 completion 统计（key = completion.id），
+    /// 与分组桶键天然一致；空分类（count 0）无 stats → 不显示勾。
+    private func categoryFilterBar(
+        groups: [VillageDetailGroup],
+        total: VillageCategoryCompletion,
+        statsByKey: [String: VillageCategoryCompletion]
+    ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                filterChip(title: "全部", count: groups.reduce(0) { $0 + $1.items.count }, filter: .all)
+                filterChip(
+                    title: "全部",
+                    count: groups.reduce(0) { $0 + $1.items.count },
+                    filter: .all,
+                    isFullyMaxed: total.isFullyMaxed
+                )
                 ForEach(TrackerDisplayCategory.allCases) { display in
                     let count = groups.first(where: { $0.displayCategory == display })?.items.count ?? 0
-                    filterChip(title: display.title, count: count, filter: .display(display))
+                    filterChip(
+                        title: display.title,
+                        count: count,
+                        filter: .display(display),
+                        isFullyMaxed: statsByKey[display.rawValue]?.isFullyMaxed ?? false
+                    )
                 }
                 ForEach(TrackerCategory.allCases) { category in
                     let count = groups.first(where: { $0.displayCategory == nil && $0.category == category })?.items.count ?? 0
-                    filterChip(title: category.title, count: count, filter: .category(category))
+                    filterChip(
+                        title: category.title,
+                        count: count,
+                        filter: .category(category),
+                        isFullyMaxed: statsByKey[category.rawValue]?.isFullyMaxed ?? false
+                    )
                 }
                 let otherCount = groups.first(where: { $0.displayCategory == nil && $0.category == nil })?.items.count ?? 0
                 if otherCount > 0 {
-                    filterChip(title: "其他", count: otherCount, filter: .other)
+                    filterChip(
+                        title: "其他",
+                        count: otherCount,
+                        filter: .other,
+                        isFullyMaxed: statsByKey["other"]?.isFullyMaxed ?? false
+                    )
                 }
             }
         }
     }
 
-    private func filterChip(title: String, count: Int, filter: CategoryFilter) -> some View {
-        Button {
+    /// issue #53：全部满级（isFullyMaxed）的 chip 以绿色 + 勾选图标呈现；
+    /// 未满级路径与 issue #37 既有灰/蓝样式完全一致，不改变筛选语义与点击区域。
+    private func filterChip(
+        title: String,
+        count: Int,
+        filter: CategoryFilter,
+        isFullyMaxed: Bool
+    ) -> some View {
+        let isSelected = selectedFilter == filter
+        let foreground: Color
+        let background: Color
+        let countColor: Color
+        if isFullyMaxed {
+            foreground = isSelected ? Color.white : .green
+            background = isSelected ? Color.green : Color.green.opacity(0.15)
+            countColor = isSelected ? Color.white.opacity(0.8) : Color.green.opacity(0.8)
+        } else {
+            foreground = isSelected ? Color.white : Color.secondary
+            background = isSelected ? Color.cocAccent : Color.white.opacity(0.06)
+            countColor = isSelected ? Color.white.opacity(0.8) : .secondary
+        }
+        return Button {
             selectedFilter = filter
         } label: {
-            HStack(spacing: 5) {
+            let chip = HStack(spacing: 5) {
                 Text(title)
                 if count > 0 {
                     Text(String(count))
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(selectedFilter == filter ? Color.white.opacity(0.8) : .secondary)
+                        .foregroundStyle(countColor)
+                }
+                if isFullyMaxed {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(foreground)
                 }
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(selectedFilter == filter ? Color.white : Color.secondary)
+            .foregroundStyle(foreground)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(
-                selectedFilter == filter ? Color.cocAccent : Color.white.opacity(0.06),
-                in: Capsule()
-            )
+            .background(background, in: Capsule())
+            if isFullyMaxed {
+                chip.accessibilityLabel("\(title) \(count) 全部满级")
+            } else {
+                chip
+            }
         }
         .buttonStyle(.plain)
     }
@@ -390,7 +443,9 @@ struct VillageDetailView: View {
         }
         let summary = String(stats.completedCount) + "/" + String(stats.knownCount)
             + " · " + String(Int((ratio * 100).rounded())) + "%"
-        let tint: Color = stats.completedCount == stats.knownCount ? .green : .secondary
+        // issue #53：满级判定改用严格谓词 isFullyMaxed——known 全满但
+        // unknownCount > 0（存在未知/未观测项）时不再标绿，与 chip 一致。
+        let tint: Color = stats.isFullyMaxed ? .green : .secondary
         return Text(summary)
             .font(.caption2.monospacedDigit())
             .foregroundStyle(tint)

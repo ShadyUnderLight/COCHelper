@@ -99,9 +99,30 @@ struct OfficialPlayerCardView: View {
     private var statusLine: some View {
         switch villageState?.displayStatus ?? .never {
         case .never:
-            Label("尚未获取官方数据", systemImage: "circle.dashed")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            if villageTag == nil {
+                // 无有效 tag：刷新按钮同时被禁用，需要明确告诉用户原因与出路。
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("缺少有效玩家 Tag，无法获取官方数据", systemImage: "tag.slash")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text("请先在账号数据页导入该村庄的账号 JSON")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if !model.hasAPIToken {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("尚未获取官方数据", systemImage: "circle.dashed")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text("未配置 API Token，刷新将无法请求（点击“设置 API Token”）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Label("尚未获取官方数据", systemImage: "circle.dashed")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         case .loading:
             Label("正在获取官方数据…", systemImage: "arrow.triangle.2.circlepath")
                 .font(.callout)

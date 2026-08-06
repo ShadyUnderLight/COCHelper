@@ -9,6 +9,9 @@ import COCHelperApp
 struct TrackedClanDetailView: View {
     @EnvironmentObject private var model: AppModel
     let clanTag: String
+    /// 删除跟踪成功后回调（由 ContentView 传入，用于复位侧边栏选择，
+    /// 避免 selection 残留导致幽灵详情页）。
+    var onRemove: (() -> Void)? = nil
 
     private var profile: TrackedClanProfile? {
         model.trackedClans.first { $0.clanTag == clanTag }
@@ -35,6 +38,7 @@ struct TrackedClanDetailView: View {
         ) {
             Button("删除", role: .destructive) {
                 model.removeTrackedClan(tag: clanTag)
+                onRemove?()
             }
             Button("取消", role: .cancel) {}
         } message: {

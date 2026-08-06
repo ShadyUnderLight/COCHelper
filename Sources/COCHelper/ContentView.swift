@@ -126,8 +126,10 @@ struct ContentView: View {
             case .info:
                 TrackerInfoView()
             case .clan(let tag):
-                TrackedClanDetailView(clanTag: tag)
-                    .id(tag)
+                TrackedClanDetailView(clanTag: tag) {
+                    selection = .tracker
+                }
+                .id(tag)
             }
         }
         .sheet(isPresented: $showAddTrackedClan) {
@@ -251,7 +253,9 @@ private struct AddTrackedClanSheet: View {
     }
 
     private func submit() {
-        let name = displayName.isEmpty ? nil : displayName
+        // 与 AppModel.addTrackedClan 的权威 trim 语义保持一致（评审 N1）。
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmedName.isEmpty ? nil : trimmedName
         switch model.addTrackedClan(rawTag: rawTag, displayName: name) {
         case .success(let profile):
             errorMessage = nil

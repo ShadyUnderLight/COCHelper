@@ -8,12 +8,13 @@ final class VillageDetailProjectionTests: XCTestCase {
     private func item(
         id: String = "id",
         category: TrackerCategory? = .buildings,
+        displayCategory: TrackerDisplayCategory? = nil,
+        nested: Bool = false,
         status: VillageItemStatus = .complete,
         level: Int? = 3,
         maxLevel: Int? = 10,
         isUpgrading: Bool = false,
-        nextLevel: Int? = nil,
-        nested: Bool = false
+        nextLevel: Int? = nil
     ) -> VillageItemState {
         let effectiveNext = nextLevel ?? (isUpgrading ? level.map { $0 + 1 } : nil)
         return VillageItemState(
@@ -34,7 +35,8 @@ final class VillageDetailProjectionTests: XCTestCase {
             missingReason: nil,
             icon: nil,
             levelVisual: nil,
-            isNested: nested
+            isNested: nested,
+            displayCategory: displayCategory
         )
     }
 
@@ -360,21 +362,116 @@ final class VillageDetailProjectionTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_700_000_000)
         )
         let tracked = projection.items.filter { $0.status != .unavailable }
-        let buildings = try XCTUnwrap(
-            VillageDetailProjection.groups(from: tracked).first { $0.category == .buildings }
+        // Issue #37：精制台（buildings:6 / dataID 1000097）已从 .buildings 拆到独立展示分类组。
+        let craftGroup = try XCTUnwrap(
+            VillageDetailProjection.groups(from: tracked).first { $0.displayCategory == .craftTable }
         )
-        let rows = VillageDetailProjection.parentedRows(from: buildings.items)
-        // fixture：buildings:1000097（战宠小屋）3 types × 3 modules = 12 个嵌套后代。
+        let rows = VillageDetailProjection.parentedRows(from: craftGroup.items)
+        // fixture：buildings:1000097（精制台）3 types × 3 modules = 12 个嵌套后代。
         // 父项与嵌套项均非升级 → 聚合后 id 带 agg: 前缀，正好覆盖归一化路径。
-        let petHouse = try XCTUnwrap(
+        let craftTable = try XCTUnwrap(
             rows.first { Self.normalizeAggPrefix($0.item.id) == "buildings:6" },
             "根父行 buildings:6 应存在"
         )
-        XCTAssertEqual(petHouse.children.count, 12, "全部 12 个嵌套后代应归入根父行")
-        XCTAssertTrue(petHouse.children.allSatisfy(\.isNested))
-        // 所有嵌套项都有归属：buildings 组无孤儿嵌套行。
+        XCTAssertEqual(craftTable.children.count, 12, "全部 12 个嵌套后代应归入根父行")
+        XCTAssertTrue(craftTable.children.allSatisfy(\.isNested))
+        // 所有嵌套项都有归属：craftTable 组无孤儿嵌套行。
         let orphans = rows.filter { $0.item.isNested }
-        XCTAssertTrue(orphans.isEmpty, "真实 fixture 中嵌套项不应独立成行")
+        XCTAssertTrue(orphans.isEmpty, "精制台组内嵌套项不应独立成行")
+    }
+
+    // MARK: - Issue #37 展示分类分组
+
+    func testGroupsSplitBuildingsIntoDisplayCategories() {
+        let items = [
+            item(id: "def1", category: .buildings, displayCategory: .defense),
+            item(id: "def2", category: .buildings, displayCategory: .defense),
+            item(id: "mil1", category: .buildings, displayCategory: .military),
+            item(id: "craft", category: .buildings, displayCategory: .craftTable),
+            item(id: "fallback", category: .buildings),  // 兜底：资源/大本营等
+            item(id: "trap", category: .traps),
+            item(id: "other", category: nil, status: .unavailable),
+        ]
+        let groups = VillageDetailProjection.groups(from: items)
+        let byID = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
+        XCTAssertEqual(byID["defense"]?.items.map(\.id), ["def1", "def2"])
+        XCTAssertEqual(byID["military"]?.items.map(\.id), ["mil1"])
+        XCTAssertEqual(byID["craftTable"]?.items.map(\.id), ["craft"])
+        XCTAssertEqual(byID["buildings"]?.items.map(\.id), ["fallback"])
+        XCTAssertEqual(byID["traps"]?.items.map(\.id), ["trap"])
+        // 守恒：分组 flatten 不丢不重
+        XCTAssertEqual(groups.flatMap(\.items).map(\.id).sorted(), items.map(\.id).sorted())
+    }
+
+    func testGroupsOrderDisplayCategoriesFirst() {
+        let items = [
+            item(id: "trap", category: .traps),
+            item(id: "craft", category: .buildings, displayCategory: .craftTable),
+            item(id: "def", category: .buildings, displayCategory: .defense),
+            item(id: "b", category: .buildings),  // 兜底
+        ]
+        let groups = VillageDetailProjection.groups(from: items)
+        XCTAssertEqual(groups.map(\.id), ["defense", "craftTable", "buildings", "traps"])
+    }
+
+    func testCompletionStatsConserveAcrossDisplaySplit() throws {
+        let items = [
+            item(id: "def", category: .buildings, displayCategory: .defense, status: .maxed),
+            item(id: "mil", category: .buildings, displayCategory: .military, status: .complete),
+            item(id: "fb", category: .buildings, status: .unknown, maxLevel: nil),
+            item(id: "trap", category: .traps, status: .complete),
+        ]
+        let stats = VillageDetailProjection.completionStats(from: items)
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertEqual(total.knownCount, stats.reduce(0) { $0 + $1.knownCount })
+        XCTAssertEqual(total.completedCount, stats.reduce(0) { $0 + $1.completedCount })
+        XCTAssertEqual(total.unknownCount, stats.reduce(0) { $0 + $1.unknownCount })
+        // 注意：tuple 不遵循 Equatable（SE-0283 未实现），拆为两个独立断言。
+        let defense = try XCTUnwrap(stats.first { $0.displayCategory == .defense })
+        XCTAssertEqual(defense.knownCount, 1)
+        XCTAssertEqual(defense.completedCount, 1)
+    }
+
+    func testCraftTableGroupParentedRowsStillNest() throws {
+        // 精制台父项 + 3 types × 3 modules（id 索引路径格式）
+        let children: [VillageItemState] = (0..<12).map { idx in
+            item(id: "buildings:0.types.\(idx / 3).modules.\(idx % 3)",
+                 category: .buildings, displayCategory: .craftTable, nested: true,
+                 status: .unknown, level: nil, maxLevel: nil)
+        }
+        let parent = item(id: "buildings:0", category: .buildings, displayCategory: .craftTable)
+        let groups = VillageDetailProjection.groups(from: [parent] + children)
+        let craft = try XCTUnwrap(groups.first { $0.displayCategory == .craftTable })
+        let rows = VillageDetailProjection.parentedRows(from: craft.items)
+        let root = try XCTUnwrap(rows.first { $0.item.id == "buildings:0" })
+        XCTAssertEqual(root.children.count, 12)
+    }
+
+    // MARK: - Property-based：展示分类随机输入不变量
+
+    func testPropertyDisplayCategoryGroupsConserveItems() {
+        var rng = SeededRNG(seed: 0xAB_CD)
+        let displayCats: [TrackerDisplayCategory?] = [.defense, .military, .craftTable, nil]
+        for _ in 0..<200 {
+            let items = (0..<Int(rng.next() % 40)).map { idx in
+                let dc = displayCats[Int(rng.next() % UInt64(displayCats.count))]
+                let category: TrackerCategory? = (dc == nil && rng.next() % 3 == 0) ? nil : .buildings
+                return item(id: "i\(idx)", category: category, displayCategory: dc,
+                            status: rng.next() % 2 == 0 ? .complete : .maxed)
+            }
+            let groups = VillageDetailProjection.groups(from: items)
+            XCTAssertEqual(groups.flatMap(\.items).map(\.id).sorted(), items.map(\.id).sorted())
+            XCTAssertEqual(Set(groups.map(\.id)).count, groups.count)
+            for group in groups {
+                if let dc = group.displayCategory {
+                    XCTAssertTrue(group.items.allSatisfy { $0.displayCategory == dc })
+                } else if let c = group.category {
+                    XCTAssertTrue(group.items.allSatisfy { $0.displayCategory == nil && $0.category == c })
+                } else {
+                    XCTAssertTrue(group.items.allSatisfy { $0.category == nil })
+                }
+            }
+        }
     }
 
     // MARK: - Property-based 不变量（固定 seed SplitMix64，可复现）

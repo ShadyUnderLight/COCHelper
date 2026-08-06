@@ -67,6 +67,9 @@ struct VillageDetailView: View {
                 .map { ($0.id, $0) }
         )
         let displayGroups = filtered(groups)
+        // 分组 id 集合：数据变化（重新导入快照、切换基地等）后用于校正筛选，
+        // 不得残留成错误的空筛选（issue #37 验收）。
+        let groupIDs = groups.map(\.id)
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -92,6 +95,24 @@ struct VillageDetailView: View {
                 }
             }
             .padding(28)
+        }
+        .onChange(of: groupIDs) { _, newIDs in
+            // 同一基地重新导入快照后分组可能变化（如精制台消失）：当前选中
+            // 分类若不再被数据代表，自动重置为「全部」，避免残留空筛选
+            //（issue #37 验收「分类数据变化后不能残留成错误的空筛选」）。
+            if !Self.filterIsRepresented(selectedFilter, in: Set(newIDs)) {
+                selectedFilter = .all
+            }
+        }
+    }
+
+    /// 当前筛选是否仍被分组数据代表（数据变化后校正用，issue #37 验收）。
+    private static func filterIsRepresented(_ filter: CategoryFilter, in groupIDs: Set<String>) -> Bool {
+        switch filter {
+        case .all: true
+        case .display(let dc): groupIDs.contains(dc.rawValue)
+        case .category(let c): groupIDs.contains(c.rawValue)
+        case .other: groupIDs.contains("other")
         }
     }
 

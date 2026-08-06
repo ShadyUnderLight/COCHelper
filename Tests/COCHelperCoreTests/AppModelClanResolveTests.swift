@@ -29,16 +29,19 @@ final class AppModelClanResolveTests: XCTestCase {
 
     /// 复刻 AppModelTrackedClanRefreshTests.makeModel 的注入方式。
     /// `tokenProvider` 可注入 nil（模拟未配置 token）或 "fake-token"。
+    /// `maxRetryCount`/`baseRetryDelay` 用于重试退避取消路径（默认不重试）。
     @MainActor
     private func makeModel(
         tokenProvider: @escaping @Sendable () -> String? = { "fake-token" },
+        maxRetryCount: Int = 0,
+        baseRetryDelay: TimeInterval = 0,
         clanHandler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> AppModel {
         MockURLProtocol.handler = { request in
             try clanHandler(request)
         }
         let clanRefresher = ClanRefresher(client: CoAPIClient(
-            config: CoAPIConfig(maxRetryCount: 0),
+            config: CoAPIConfig(maxRetryCount: maxRetryCount, baseRetryDelay: baseRetryDelay),
             session: MockURLProtocol.makeSession()
         ) { tokenProvider() })
         return AppModel(
@@ -147,6 +150,51 @@ final class AppModelClanResolveTests: XCTestCase {
         }
         let result = await model.resolveClan(rawTag: "#2QJQ8J88")
         XCTAssertEqual(result, .failure(.network))
+    }
+
+    /// CoAPIError.timeout（URLError.timedOut）→ .network（与 network 同类文案）。
+    @MainActor
+    func testResolveClanTimeoutMapsToNetwork() async throws {
+        let model = try makeModel { _ in
+            throw URLError(.timedOut)
+        }
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.network))
+    }
+
+    /// 200 + 非法 JSON → CoAPIError.malformedResponse → .malformed（文案区分于网络错误）。
+    @MainActor
+    func testResolveClanMalformedMapsToMalformed() async throws {
+        let model = try makeModel { request in
+            clanResolveResponse(200, url: request.url!, body: Data("not-json".utf8))
+        }
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.malformed))
+    }
+
+    /// 取消传播（重试退避路径）：429 + 重试配置下，client 在 Task.sleep 退避时
+    /// 被取消 → CancellationError 透传 → resolveClan 必须映射为 .cancelled
+    /// 而非 .network（CoAPIClient 契约："never be misreported as a network failure"）。
+    @MainActor
+    func testResolveClanCancellationMapsToCancelled() async throws {
+        let model = try makeModel(maxRetryCount: 1, baseRetryDelay: 2) { request in
+            clanResolveResponse(429, url: request.url!)
+        }
+        let task = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        task.cancel()
+        let result = await task.value
+        XCTAssertEqual(result, .failure(.cancelled))
+    }
+
+    /// URLSession 取消路径：URLError(.cancelled) 同样透传，必须映射为 .cancelled。
+    @MainActor
+    func testResolveClanCancelledURLErrorMapsToCancelled() async throws {
+        let model = try makeModel { _ in
+            throw URLError(.cancelled)
+        }
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.cancelled))
     }
 
     // MARK: - 成功路径

@@ -933,6 +933,7 @@ public final class AppModel: ObservableObject {
         case server
         case network
         case malformed
+        case cancelled
 
         /// 展示文案（脱敏，可安全用于 UI）。
         public var userFacingMessage: String {
@@ -953,6 +954,8 @@ public final class AppModel: ObservableObject {
                 return "网络错误，请检查连接后重试。"
             case .malformed:
                 return "响应解析失败，请稍后再试。"
+            case .cancelled:
+                return "解析已取消。"
             }
         }
     }
@@ -963,8 +966,11 @@ public final class AppModel: ObservableObject {
     ///
     /// 成功写入 `clanStates` 的理由：#48「详情页首屏只读取已保存的基础信息/
     /// API 状态」——确认保存后打开详情页首屏直接有数据，无需再次请求。
-    /// 解析不经过 `refreshingClanTags` 防重入守卫（部落未收藏前详情页不可达，
-    /// 与刷新并发实际不会发生；文档注明以防未来接线时误用）。
+    /// 并发说明：解析不经过 `refreshingClanTags` 防重入守卫（部落未收藏前
+    /// 详情页不可达，且模态 sheet 阻断新的刷新触发）。唯一窗口是 sheet 打开
+    /// **前**已在途的村庄联动刷新与解析命中同一 tag（如该部落正是某村庄
+    /// 所属）：此时会发两个请求（超出 ClanRefresher 单批次去重契约的边界），
+    /// 但双写同为成功快照、`ClanStateStore.merging` 幂等无害，可接受。
     ///
     /// 错误映射：`CoAPIError.missingCredentials`（token provider 返回 nil 时
     /// 由 client 抛出，与刷新链路一致，不重复检查 Keychain）→ `.missingToken`；
@@ -987,6 +993,12 @@ public final class AppModel: ObservableObject {
             )
             mergeClanStates([tag: state])
             return .success(snapshot)
+        } catch is CancellationError {
+            // CoAPIClient 显式透传取消（含 URLSession 的 URLError(.cancelled)），
+            // 不得误报为网络错误。
+            return .failure(.cancelled)
+        } catch let error as URLError where error.code == .cancelled {
+            return .failure(.cancelled)
         } catch let error as CoAPIError {
             return .failure(Self.mapResolveError(error))
         } catch {

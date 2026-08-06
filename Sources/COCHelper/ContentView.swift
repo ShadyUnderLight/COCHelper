@@ -244,6 +244,9 @@ private struct AddTrackedClanSheet: View {
     @State private var rawTag = ""
     @State private var displayName = ""
     @State private var phase: ClanResolvePhase = .idle
+    /// 解析任务句柄：取消按钮可中断在途请求（网络挂起时用户不必干等
+    /// 超时+重试的最坏 ~61s），CoAPIClient 的重试退避与 URLSession 均可取消。
+    @State private var resolveTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -263,14 +266,18 @@ private struct AddTrackedClanSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
-                    .disabled(isBusy)
+                Button("取消") {
+                    // 解析中取消：中断在途请求并关闭；非解析中直接关闭。
+                    resolveTask?.cancel()
+                    resolveTask = nil
+                    dismiss()
+                }
                 if case .resolved = phase {
                     Button("保存") { save() }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.cocAccent)
                 } else {
-                    Button("解析") { resolve() }
+                    Button(isBusy ? "解析中…" : "解析") { resolve() }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.cocAccent)
                         .disabled(isBusy || rawTag.isEmpty)
@@ -372,15 +379,16 @@ private struct AddTrackedClanSheet: View {
         }
     }
 
-    /// 解析：查重（不请求）→ resolveClan → 更新阶段。
+    /// 解析：查重（不请求）→ resolveClan → 更新阶段。持有 Task 句柄供取消。
     private func resolve() {
         if model.isClanTracked(rawTag: rawTag) {
             phase = .failed("该部落已在跟踪列表中，无需重复添加。")
             return
         }
         phase = .resolving
-        Task {
+        let task = Task {
             let result = await model.resolveClan(rawTag: rawTag)
+            resolveTask = nil
             switch result {
             case .success(let snapshot):
                 phase = .resolved(snapshot)
@@ -388,14 +396,17 @@ private struct AddTrackedClanSheet: View {
                 phase = .failed(error.userFacingMessage)
             }
         }
+        resolveTask = task
     }
 
     /// 保存：resolved 阶段确认后写入跟踪列表（addTrackedClan 自带重复防御）。
+    /// 用 rawTag（解析时已通过校验）而非 snapshot.tag：缓存 key 契约是
+    /// "请求使用的规范化 tag"，且避免 snapshot.tag 缺失的理论边界。
     private func save() {
-        guard case .resolved(let snapshot) = phase else { return }
+        guard case .resolved = phase else { return }
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmedName.isEmpty ? nil : trimmedName
-        switch model.addTrackedClan(rawTag: snapshot.tag, displayName: name) {
+        switch model.addTrackedClan(rawTag: rawTag, displayName: name) {
         case .success(let profile):
             onAdded(profile.clanTag)
             dismiss()

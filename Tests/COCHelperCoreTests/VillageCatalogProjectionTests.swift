@@ -1294,9 +1294,13 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
-    /// 当前等级资产缺失 → 安全回退 item-level（traps2:12000011 Lv1 levelVisual
-    /// 为 export_not_found；buildings:1000059 Lv2 levelVisual 为 render_failed，
-    /// 均来自 GameCatalogTests 已知数据契约）。
+    /// level 级资产缺失时的候选链行为（traps2:12000011 / buildings:1000059，
+    /// 均来自 GameCatalogTests 已知数据契约）：
+    /// - traps2:12000011 Lv1：level 级与 item 级的 levelVisual/icon 全部缺失
+    ///   （export_not_found / nil）→ ref 原样暴露（带 missingReason）但被
+    ///   候选链过滤，链为空 → UI 回退 SF Symbol（非 item-level 回退）。
+    /// - buildings:1000059 Lv2：level 级为 render_failed → 过滤后首选回退
+    ///   item-level levelVisual（siegeWorkshop_lvl1.png）。
     func testBundledMissingLevelAssetFallsBackToItemLevel() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let version = catalog.gameVersion
@@ -1317,14 +1321,13 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
         XCTAssertEqual(trapState.currentLevelVisual, trapLevelVisual,
                        "level 级 ref 原样暴露（含缺失原因），由链过滤")
-        XCTAssertFalse(trapState.currentLevelVisual?.isRenderable ?? false,
+        XCTAssertFalse(trapLevelVisual.isRenderable,
                        "traps2:12000011 Lv1 levelVisual 应为 export_not_found（已知契约）")
-        // 链过滤后首选回退 item-level（若可渲染）；不可渲染的 level 资产不得出现在候选 URL 中
+        // 链过滤：item 级 levelVisual（export_not_found）与 icon（nil）同样缺失 →
+        // 候选链为空 → UI 回退 SF Symbol
         let trapURLs = trapState.preferredAssetURLs(version: version)
-        XCTAssertFalse(
-            trapURLs.contains { $0 == trapLevelVisual.bundledURL(version: version) },
-            "不可渲染的 level 资产不得出现在候选 URL 中"
-        )
+        XCTAssertTrue(trapURLs.isEmpty,
+                      "traps2:12000011 半边：level 与 item 级均不可用 → 空链（SF Symbol 兜底）")
 
         // buildings:1000059 siegeWorkshop Lv2 → render_failed 同样被过滤
         let siege = try XCTUnwrap(
@@ -1341,17 +1344,19 @@ final class VillageCatalogProjectionTests: XCTestCase {
             siege.levels.first { $0.level == 2 }?.levelVisual
         )
         XCTAssertEqual(siegeState.currentLevelVisual, siegeLevelVisual)
-        XCTAssertFalse(siegeState.currentLevelVisual?.isRenderable ?? false,
+        XCTAssertFalse(siegeLevelVisual.isRenderable,
                        "buildings:1000059 Lv2 levelVisual 应为 render_failed（已知契约）")
         let siegeURLs = siegeState.preferredAssetURLs(version: version)
-        XCTAssertFalse(
-            siegeURLs.contains { $0 == siegeLevelVisual.bundledURL(version: version) },
-            "不可渲染的 level 资产不得出现在候选 URL 中"
+        XCTAssertEqual(
+            siegeURLs.first,
+            try XCTUnwrap(siege.levelVisual?.bundledURL(version: version)),
+            "Lv2 render_failed → 首选回退 item-level levelVisual（siegeWorkshop_lvl1.png）"
         )
     }
 
     /// 类别不串线：buildings2:1000033（secondVillage_wall）Lv2 必须命中
-    /// buildings2 自己的逐级路径，不得命中 buildings 同名资源。
+    /// buildings2 自己的逐级路径（icons/buildings2/secondVillage_wall_lvl2.png，
+    /// 数据契约），不得命中 buildings 同名资源。
     func testBundledSectionsDoNotCrossResolve() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let village = makeVillage(objectSections: [
@@ -1360,15 +1365,10 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let state = try XCTUnwrap(
             project(village: village, catalog: catalog, base: .builder).items.first
         )
-        let expectedPath = try XCTUnwrap(
-            catalog.item(section: "buildings2", dataID: 1_000_033)?
-                .levels.first { $0.level == 2 }?.levelVisual?.renderedPath
-        )
-        XCTAssertEqual(state.currentLevelVisual?.renderedPath, expectedPath,
-                       "buildings2 资产必须来自 buildings2 目录项（按 section:dataID join）")
-        XCTAssertTrue(
-            expectedPath.hasPrefix("icons/buildings2/"),
-            "buildings2:1000033 Lv2 路径应位于 icons/buildings2/ 下（数据契约）"
+        XCTAssertEqual(
+            state.currentLevelVisual?.renderedPath,
+            "icons/buildings2/secondVillage_wall_lvl2.png",
+            "buildings2:1000033 Lv2 必须命中 buildings2 自己的逐级路径（数据契约）"
         )
     }
 

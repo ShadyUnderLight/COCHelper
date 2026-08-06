@@ -220,11 +220,15 @@ final class AppModelClanResolveTests: XCTestCase {
         let result = await model.resolveClan(rawTag: "#2QJQ8J88")
         let snapshot = try XCTUnwrap(result.successOrNil, "解析必须成功")
         XCTAssertEqual(snapshot.name, "anonymized-clan")
+        XCTAssertEqual(snapshot.requiredLeagueTier?.id, 105000028)
+        XCTAssertEqual(snapshot.requiredLeagueTier?.name, "Titan League I")
         // 共享缓存已写入：详情页首屏可直接展示，无需再次请求。
         let state = try XCTUnwrap(model.clanStates["#2QJQ8J88"], "解析成功后必须写入 clanStates")
         XCTAssertEqual(state.status, .success)
         XCTAssertNotNil(state.fetchedAt)
         XCTAssertEqual(state.lastGood?.name, "anonymized-clan")
+        XCTAssertEqual(state.parserVersion, "clan-snapshot-0.3")
+        XCTAssertEqual(state.unrecognizedKeys, ["newOfficialField"])
     }
 
     @MainActor

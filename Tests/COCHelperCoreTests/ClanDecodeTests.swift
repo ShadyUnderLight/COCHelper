@@ -26,7 +26,12 @@ final class ClanDecodeTests: XCTestCase {
         XCTAssertEqual(clan.requiredTrophies, 2000)
         XCTAssertEqual(clan.requiredTownHallLevel, 8)
         XCTAssertEqual(clan.requiredBuilderBaseTrophies, 1200)
-        XCTAssertEqual(clan.requiredLeagueTier, 5)
+        XCTAssertEqual(clan.requiredLeagueTier?.id, 105000028)
+        XCTAssertEqual(clan.requiredLeagueTier?.name, "Titan League I")
+        XCTAssertEqual(
+            clan.requiredLeagueTier?.iconUrls?["small"],
+            "https://example.invalid/league-tier-small.png"
+        )
         XCTAssertEqual(clan.clanBuilderBasePoints, 12345)
         XCTAssertEqual(clan.clanCapitalPoints, 67890)
         XCTAssertEqual(clan.capitalLeague?.id, 85000006)
@@ -124,9 +129,10 @@ final class ClanDecodeTests: XCTestCase {
             from: try JSONEncoder().encode(state)
         )
 
-        XCTAssertEqual(decoded.parserVersion, "clan-snapshot-0.2")
+        XCTAssertEqual(decoded.parserVersion, "clan-snapshot-0.3")
         XCTAssertEqual(decoded.lastGood?.requiredBuilderBaseTrophies, 1200)
-        XCTAssertEqual(decoded.lastGood?.requiredLeagueTier, 5)
+        XCTAssertEqual(decoded.lastGood?.requiredLeagueTier?.id, 105000028)
+        XCTAssertEqual(decoded.lastGood?.requiredLeagueTier?.name, "Titan League I")
         XCTAssertEqual(decoded.lastGood?.clanBuilderBasePoints, 12345)
         XCTAssertEqual(decoded.lastGood?.clanCapitalPoints, 67890)
         XCTAssertEqual(decoded.lastGood?.capitalLeague?.name, "Titan League I")
@@ -144,5 +150,19 @@ final class ClanDecodeTests: XCTestCase {
         ) as? [String: Any]
         XCTAssertEqual(encoded?["requiredTownhallLevel"] as? Int, 9)
         XCTAssertNil(encoded?["requiredTownHallLevel"])
+    }
+
+    func testLegacyNumericLeagueTierDecodesWithoutLosingTheID() throws {
+        let legacy = try decode(Data(#"{"requiredLeagueTier":5}"#.utf8))
+
+        XCTAssertEqual(legacy.requiredLeagueTier?.id, 5)
+        XCTAssertNil(legacy.requiredLeagueTier?.name)
+        XCTAssertTrue(legacy.unrecognizedKeys.isEmpty)
+
+        let encoded = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(legacy)
+        ) as? [String: Any]
+        let tier = encoded?["requiredLeagueTier"] as? [String: Any]
+        XCTAssertEqual(tier?["id"] as? Int, 5)
     }
 }

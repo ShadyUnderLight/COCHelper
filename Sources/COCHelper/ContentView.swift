@@ -203,6 +203,7 @@ private struct TrackedClanSidebarRow: View {
                 Text(clan.clanTag)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer()
             if isCurrentVillageClan {
@@ -231,6 +232,7 @@ private struct AddTrackedClanSheet: View {
                 .font(.headline)
             TextField("部落 Tag（如 #2QJQ8J88）", text: $rawTag)
                 .textFieldStyle(.roundedBorder)
+                .onChange(of: rawTag) { errorMessage = nil }
             TextField("备注/显示名称（可选）", text: $displayName)
                 .textFieldStyle(.roundedBorder)
             if let errorMessage {

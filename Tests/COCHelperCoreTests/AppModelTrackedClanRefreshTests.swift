@@ -163,9 +163,10 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
     }
 
     /// 占用时第二个同 tag 请求排队补跑（不丢弃、不发起第二个并行请求）。
-    /// 村庄 A 归属 #VILLAGE1：排队补跑会触发一次 refreshAllClans（村庄归属），
-    /// 请求序列 = [手动 tag, 村庄归属]——既能区分"并行重复请求"，也能区分
-    /// "忙时丢弃"（丢弃语义只有 1 次请求，测试变红）。
+    /// 新语义（B1 修复）：忙时排队记录 tag 本身，补跑重请求该 tag，不再
+    /// 退化为村庄全量联动。村庄 A 归属 #VILLAGE1 但不影响补跑集合。
+    /// 请求序列 = [手动 tag, 手动 tag 补跑]——既能区分"并行重复请求"（两次
+    /// 并发重叠），也能区分"忙时丢弃"（丢弃语义只有 1 次请求，测试变红）。
     @MainActor
     func testRefreshClanByTagWhileBusyQueuesAndCompletes() async throws {
         let villages = [VillageProfile(
@@ -188,11 +189,41 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
         }
 
         XCTAssertEqual(model.clanState(for: "#QUEUE99")?.status, .success)
-        // 排队语义：第二个请求不得并行发起；第一个完成后补跑一次全量（村庄归属）。
-        // 若第二个请求被丢弃 → 只有 1 条；若并行重发 → 手动 tag 出现两次。
+        // 排队语义：第二个请求不得在第一个在途时并行发出；第一个完成后补跑
+        // 排队 tag 本身。若第二个请求被丢弃 → 只有 1 条；若并行重发 → 两次
+        // 请求在时间上重叠（队列内同时存在两个在途批次）。
         XCTAssertEqual(recorder.snapshot(),
-                       ["/v1/clans/%23QUEUE99", "/v1/clans/%23VILLAGE1"],
-                       "占用时必须排队为一次全量补跑（补跑村庄归属），不得重复请求手动 tag")
+                       ["/v1/clans/%23QUEUE99", "/v1/clans/%23QUEUE99"],
+                       "占用时排队记录 tag，补跑必须重请求该 tag（不得静默丢弃）")
+    }
+
+    /// 村庄批量刷新在途时手动 tag 排队：补跑必须请求手动 tag（不得只补村庄全量）。
+    /// 回归 B1：旧实现忙时补跑 refreshAllClans 只含村庄 tags，手动 tag 被静默吞掉
+    /// （无请求、无错误、无补跑，测试会因等待条件超时而红）。
+    @MainActor
+    func testManualTagQueuedDuringVillageBatchIsNotLost() async throws {
+        let villages = [VillageProfile(
+            name: "A",
+            accountSnapshot: trackedClanTestSnapshot("#A"),
+            officialAPIState: trackedClanTestPlayerState(clanTag: "#VILLAGE1")
+        )]
+        defaults.set(try JSONEncoder().encode(villages), forKey: "coc-helper.villages.v1")
+
+        let recorder = TagRecorder()
+        let model = try makeModel(clanHandler: { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    trackedClanJSON(tag: "#MANUAL99"))
+        })
+        model.refreshAllClans()            // 村庄批量在途（请求 #VILLAGE1）
+        model.refreshClan(tag: "#MANUAL99") // 忙时排队：必须补跑，不得静默丢弃
+        await waitUntil {
+            !model.isRefreshingClanData && model.clanState(for: "#MANUAL99")?.status == .success
+        }
+
+        XCTAssertEqual(model.clanState(for: "#MANUAL99")?.status, .success)
+        XCTAssertTrue(recorder.snapshot().contains("/v1/clans/%23MANUAL99"),
+                      "村庄批量在途时手动 tag 排队，补跑必须请求手动 tag（不被静默丢弃）")
     }
 
     /// 手动入口与村庄入口共享同一状态层：手动刷新后村庄路径读到同一状态，

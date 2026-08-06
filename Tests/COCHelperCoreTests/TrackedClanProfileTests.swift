@@ -40,6 +40,21 @@ final class TrackedClanProfileTests: XCTestCase {
         XCTAssertNil(ClanTagNormalizer.normalize("α#ABC"))
     }
 
+    /// 真实 CoC tag body 约 8-12 字符；超长 body（>14）拒绝，防止任意长度
+    /// 输入通过字符集校验被持久化（N2 评审修复）。
+    func testNormalizeRejectsOverlongTag() {
+        let longBody = String(repeating: "A", count: 15)
+        XCTAssertNil(ClanTagNormalizer.normalize("#" + longBody), "超过 14 位 body 应拒绝")
+        XCTAssertNotNil(ClanTagNormalizer.normalize("#" + String(repeating: "A", count: 14)))
+    }
+
+    /// 钉住 isASCII 门的盲区行为：全角 ＃/字母与控制字符必须拒绝（评审盲区补充）。
+    func testNormalizeRejectsFullwidthAndControl() {
+        XCTAssertNil(ClanTagNormalizer.normalize("＃ABC"))   // 全角 ＃
+        XCTAssertNil(ClanTagNormalizer.normalize("#ＡＢＣ")) // 全角字母
+        XCTAssertNil(ClanTagNormalizer.normalize("#ABC\u{0000}"))
+    }
+
     func testNormalizeMixedCase() {
         XCTAssertEqual(ClanTagNormalizer.normalize("#AbC1"), "#ABC1")
     }

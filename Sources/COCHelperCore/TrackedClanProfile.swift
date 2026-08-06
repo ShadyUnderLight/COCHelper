@@ -41,6 +41,7 @@ public enum ClanTagNormalizer {
         // 先拒非 ASCII：避免 uppercase 后 ß→SS、ı→I 等静默改写 tag 字符
         guard trimmed.allSatisfy({ $0.isASCII }) else { return nil }
         let uppercased = trimmed.uppercased()
+        guard uppercased.dropFirst().count <= 14 else { return nil } // 官方 tag 极短（8-12 位），上限防御
         guard OfficialPlayerTagValidator.isValid(uppercased) else { return nil }
         return uppercased
     }

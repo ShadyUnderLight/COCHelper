@@ -7,6 +7,8 @@ import Foundation
 /// - 解码逐条容错：一条损坏只丢弃该条，不株连整库；
 /// - 坏条目用 `JSONSkipper` 强制推进解码游标；
 /// - 整体损坏时抛错（调用方按空库处理）。
+/// - 防失控上限：单次解码最多处理 10_000 条，超出静默截断（与 OfficialStateStore 一致）；
+///   正常使用（手动部落几十条）远低于上限，仅防御异常存储。
 /// `clanTag` 是唯一键：`upsert` 已存在则替换、不存在则追加；`remove` 幂等。
 public struct TrackedClanStore: Codable, Hashable, Sendable {
     public private(set) var profiles: [TrackedClanProfile]

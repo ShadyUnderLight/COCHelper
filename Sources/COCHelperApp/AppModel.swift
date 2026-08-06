@@ -531,10 +531,13 @@ public final class AppModel: ObservableObject {
 
     /// 按显式 Tag 刷新部落档案（手动部落入口；村庄入口转发）。
     /// 同一 Tag 与村庄入口共享状态与防重入守卫，不产生重复请求。
+    /// 忙时排队记录该 tag 本身（`pendingClanRefreshTags`），补跑覆盖手动 tag；
+    /// 不会退化为村庄全量联动（村庄入口忙时同样走这里，其 tag 也被排队记录）。
     public func refreshClan(tag: String) {
         if isRefreshingClanData {
-            // 被占用时排队为一次全量补跑（覆盖所有村庄，语义更广且确定性）。
-            pendingClanRefreshAll = true
+            // 被占用时排队记录 tag：补跑必须覆盖手动 tag（B1 修复——
+            // 旧实现置 pendingClanRefreshAll 补跑村庄全量，手动 tag 被静默吞掉）。
+            pendingClanRefreshTags.insert(tag)
             return
         }
         performClanRefresh(villageClanTags: [tag])
@@ -702,7 +705,12 @@ public final class AppModel: ObservableObject {
     // MARK: - 部落数据刷新（共享数据层）
 
     /// 部落刷新进行中被再次触发时排队补跑，避免联动刷新被静默丢弃。
+    /// - `pendingClanRefreshAll`：村庄全量联动语义（`refreshAllClans` 忙时置位，
+    ///   补跑 = 当前村庄 tags 全量重拉）。
+    /// - `pendingClanRefreshTags`：显式 tag 排队语义（`refreshClan(tag:)` 忙时记录，
+    ///   补跑 = 村庄 tags ∪ 排队手动 tags；手动 tag 不再被静默丢弃）。
     private var pendingClanRefreshAll = false
+    private var pendingClanRefreshTags: Set<String> = []
 
     /// 刷新当前选中村庄所属部落的档案（UI 按钮入口）。
     public func refreshCurrentClan() {
@@ -743,9 +751,20 @@ public final class AppModel: ObservableObject {
             )
             self.mergeClanStates(refreshed)
             self.refreshingClanTags.removeAll()
-            if self.pendingClanRefreshAll {
+            // 排队补跑：pendingClanRefreshAll（村庄全量联动）∪ pendingClanRefreshTags（含手动 tag）。
+            // 补跑集合 = 村庄 tags ∪ 排队的手动 tags（去重；已清空的 refreshingClanTags
+            // 保证补跑直接进入 performClanRefresh，不重复请求）。
+            if self.pendingClanRefreshAll || !self.pendingClanRefreshTags.isEmpty {
+                var tags: [String?] = []
+                if self.pendingClanRefreshAll {
+                    tags = self.villages.compactMap { $0.officialAPIState?.currentClanTag }
+                }
+                for tag in self.pendingClanRefreshTags where !tags.contains(tag) {
+                    tags.append(tag)
+                }
                 self.pendingClanRefreshAll = false
-                self.refreshAllClans()
+                self.pendingClanRefreshTags.removeAll()
+                self.performClanRefresh(villageClanTags: tags)
             }
         }
     }

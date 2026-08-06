@@ -199,6 +199,17 @@ final class AppModelClanResolveTests: XCTestCase {
 
     // MARK: - 成功路径
 
+    /// 失败不得写入共享缓存/持久化（"看起来已保存"防护的不变量）。
+    @MainActor
+    func testResolveClanFailureDoesNotWriteSharedState() async throws {
+        let model = try makeModel { request in
+            clanResolveResponse(404, url: request.url!)
+        }
+        _ = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertNil(model.clanStates["#2QJQ8J88"], "失败不得写入 clanStates")
+        XCTAssertNil(defaults.data(forKey: "coc-helper.clans.v1"), "失败不得持久化")
+    }
+
     @MainActor
     func testResolveClanSuccessReturnsSnapshotAndWritesSharedState() async throws {
         let model = try makeModel { request in

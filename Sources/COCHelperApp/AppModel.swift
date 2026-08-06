@@ -749,6 +749,9 @@ public final class AppModel: ObservableObject {
     private func performClanRefresh(villageClanTags: [String?]) {
         refreshingClanTags = Set(villageClanTags.compactMap { $0 })
         let previous = clanStates
+        // 批次开始时间：合并时用于防回退（C1）——批次期间若有更新的成功
+        // 数据写入（如解析预览成功），批次失败不得覆盖它。
+        let batchStart = Date()
 
         Task { [weak self] in
             guard let self else { return }
@@ -758,7 +761,7 @@ public final class AppModel: ObservableObject {
                 villageClanTags: villageClanTags,
                 previous: previous
             )
-            self.mergeClanStates(refreshed)
+            self.mergeClanStates(refreshed, batchStart: batchStart)
             self.refreshingClanTags.removeAll()
             // 排队补跑：pendingClanRefreshAll（村庄全量联动）∪ pendingClanRefreshTags（含手动 tag）。
             // 补跑集合 = 村庄 tags ∪ 排队的手动 tags（去重；已清空的 refreshingClanTags
@@ -780,8 +783,26 @@ public final class AppModel: ObservableObject {
 
     /// 合并刷新结果到共享存储：只覆盖本次请求过的 tag，其余保留
     /// （旧部落快照不因换部落而丢失）。
-    private func mergeClanStates(_ refreshed: [String: ClanAPIState]) {
-        clanStates = ClanStateStore(states: clanStates).merging(refreshed).states
+    ///
+    /// `batchStart` 防回退（C1）：刷新批次开始时捕获 `previous` 快照，
+    /// 批次进行中若该 tag 出现了更新的成功数据（如解析预览写入成功），
+    /// 批次以失败收尾时**不得用陈旧的失败状态覆盖它**——否则用户刚看到的
+    /// 成功预览会在保存后变成"获取失败"。批次成功时正常覆盖（更新的抓取
+    /// 数据优先）。其他调用（resolveClan）不传 batchStart，行为不变。
+    private func mergeClanStates(
+        _ refreshed: [String: ClanAPIState],
+        batchStart: Date? = nil
+    ) {
+        let current = clanStates
+        let protected = refreshed.filter { tag, state in
+            if let batchStart, state.status == .failed,
+               let existing = current[tag], existing.status == .success,
+               let fetchedAt = existing.fetchedAt, fetchedAt > batchStart {
+                return false
+            }
+            return true
+        }
+        clanStates = ClanStateStore(states: current).merging(protected).states
         persistClanStates()
     }
 
@@ -969,8 +990,9 @@ public final class AppModel: ObservableObject {
     /// 并发说明：解析不经过 `refreshingClanTags` 防重入守卫（部落未收藏前
     /// 详情页不可达，且模态 sheet 阻断新的刷新触发）。唯一窗口是 sheet 打开
     /// **前**已在途的村庄联动刷新与解析命中同一 tag（如该部落正是某村庄
-    /// 所属）：此时会发两个请求（超出 ClanRefresher 单批次去重契约的边界），
-    /// 但双写同为成功快照、`ClanStateStore.merging` 幂等无害，可接受。
+    /// 所属）：此时会发两个请求（超出 ClanRefresher 单批次去重契约的边界）。
+    /// 合并安全由 `mergeClanStates(batchStart:)` 防回退保证——批次失败不会
+    /// 覆盖解析刚写入的成功数据（C1）。
     ///
     /// 错误映射：`CoAPIError.missingCredentials`（token provider 返回 nil 时
     /// 由 client 抛出，与刷新链路一致，不重复检查 Keychain）→ `.missingToken`；

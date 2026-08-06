@@ -280,12 +280,18 @@ private struct AddTrackedClanSheet: View {
                     Button(isBusy ? "解析中…" : "解析") { resolve() }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.cocAccent)
-                        .disabled(isBusy || rawTag.isEmpty)
+                        .disabled(isBusy
+                            || rawTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
         .padding(20)
         .frame(width: 380)
+        // ESC / 系统关闭 sheet 也取消在途解析（B1：不只"取消"按钮路径）。
+        .onDisappear {
+            resolveTask?.cancel()
+            resolveTask = nil
+        }
     }
 
     private var isBusy: Bool {
@@ -319,9 +325,27 @@ private struct AddTrackedClanSheet: View {
     /// 预览卡：只读展示解析结果，确认保存前不写任何状态。
     private func clanPreview(_ snapshot: OfficialClanSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(snapshot.name ?? "（未命名部落）")
-                    .font(.subheadline.weight(.semibold))
+            HStack(alignment: .center, spacing: 8) {
+                if let badgeURL = ClanDisplayFormat.badgeURL(snapshot) {
+                    AsyncImage(url: badgeURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFit()
+                        default:
+                            Image(systemName: "shield.lefthalf.filled")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(width: 32, height: 32)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(snapshot.name ?? "（未命名部落）")
+                        .font(.subheadline.weight(.semibold))
+                    Text(snapshot.tag ?? rawTag)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
                 if let level = snapshot.clanLevel {
                     Text("Lv.\(level)")
                         .font(.caption.weight(.semibold))
@@ -331,14 +355,17 @@ private struct AddTrackedClanSheet: View {
                         .foregroundStyle(Color.cocAccent)
                 }
             }
-            Text(snapshot.tag ?? rawTag)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
             Divider()
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-                previewRow("类型", snapshot.type.map(clanTypeLabel) ?? "未知")
+                previewRow("类型", snapshot.type.map(ClanDisplayFormat.typeLabel) ?? "未知")
                 if let members = snapshot.members {
                     previewRow("成员", "\(members) 人")
+                }
+                if let record = ClanDisplayFormat.warRecordLabel(snapshot) {
+                    previewRow("胜-平-负", record)
+                }
+                if let streak = snapshot.warWinStreak, streak > 0 {
+                    previewRow("连胜", "\(streak) 场")
                 }
                 if let trophies = snapshot.requiredTrophies {
                     previewRow("所需奖杯", "\(trophies)")
@@ -366,16 +393,6 @@ private struct AddTrackedClanSheet: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.caption)
-        }
-    }
-
-    /// 官方部落类型字符串 → 中文（open / inviteOnly / closed）。
-    private func clanTypeLabel(_ type: String) -> String {
-        switch type {
-        case "open": return "公开"
-        case "inviteOnly": return "邀请制"
-        case "closed": return "关闭"
-        default: return type
         }
     }
 

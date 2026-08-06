@@ -575,11 +575,13 @@ struct AccountDataView: View {
 
                 VillageNameEditor()
                 AccountImportPanel()
-                OfficialPlayerCardView()
-                ClanCardView()
-                ClanWarCardView()
-                WarLogCardView()
-                CapitalRaidCardView()
+                // 账号数据页是"当前村庄"语义：与详情页共享同一组件 = 同一状态，
+                // 不形成两套刷新入口（显式 villageID 均指向当前选中村庄）。
+                OfficialPlayerCardView(villageID: model.selectedVillageID)
+                ClanCardView(villageID: model.selectedVillageID)
+                ClanWarCardView(villageID: model.selectedVillageID)
+                WarLogCardView(villageID: model.selectedVillageID)
+                CapitalRaidCardView(villageID: model.selectedVillageID)
 
                 if let pending = model.pendingAccountSnapshot {
                     AccountSnapshotSummaryView(snapshot: pending, isPending: true)

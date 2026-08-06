@@ -10,6 +10,31 @@ import COCHelperApp
 /// - lastGood = 累计页（items + 游标）；"加载更多"向后翻页，游标不前进即停
 struct WarLogCardView: View {
     @EnvironmentObject private var model: AppModel
+    /// 本卡片数据来源的村庄（显式路由，不得读全局选中村庄）。
+    let villageID: UUID
+
+    /// 本卡片村庄的部落归属 tag（nil = 无部落 / 从未成功抓取）。
+    private var clanTag: String? {
+        model.officialClanTag(for: villageID)
+    }
+
+    /// 本卡片村庄所属部落的战争日志状态（nil = 无部落 / 从未请求）。
+    private var warLogState: ClanWarLogAPIState? {
+        guard let clanTag else { return nil }
+        return model.warLogState(for: clanTag)
+    }
+
+    /// 本卡片村庄所属部落档案是否已知战争日志不公开。
+    private var knownNotPublic: Bool {
+        guard let clanTag else { return false }
+        return model.isWarLogKnownNotPublic(for: clanTag)
+    }
+
+    /// 本卡片村庄所属部落的战争日志是否还有更多页（分页按钮可用性）。
+    private var hasMore: Bool {
+        guard let clanTag else { return false }
+        return model.warLogHasMore(for: clanTag)
+    }
 
     var body: some View {
         Panel {
@@ -25,7 +50,7 @@ struct WarLogCardView: View {
             Label("战争日志", systemImage: "list.bullet.clipboard.fill")
                 .font(.headline)
             Spacer()
-            if let label = model.currentWarLogState?.sourceLabel {
+            if let label = warLogState?.sourceLabel {
                 Text(label)
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
@@ -38,16 +63,16 @@ struct WarLogCardView: View {
 
     @ViewBuilder
     private var statusContent: some View {
-        if model.currentVillageClanStatusUnknown {
+        if model.clanStatusUnknown(for: villageID) {
             Label("刷新官方玩家数据后可查看战争日志", systemImage: "questionmark.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if model.currentVillageClanTag == nil {
+        } else if clanTag == nil {
             Label("不在部落中，没有战争日志", systemImage: "person.crop.circle.badge.questionmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if model.isCurrentWarLogKnownNotPublic,
-                  !(model.currentWarLogState?.status == .success || model.currentWarLogState?.status == .failed) {
+        } else if knownNotPublic,
+                  !(warLogState?.status == .success || warLogState?.status == .failed) {
             // 显式状态：不伪造"没有历史战争"。
             // 仅当从未请求过时显示预判（force 请求后 success/failed 由
             // 状态分支呈现，避免 force 结果被预判 shadowing）。
@@ -57,7 +82,7 @@ struct WarLogCardView: View {
                     .foregroundStyle(.orange)
                 HStack {
                     Button {
-                        model.refreshCurrentWarLog(force: true)
+                        model.refreshWarLog(villageID: villageID, force: true)
                     } label: {
                         Label("仍要检查", systemImage: "arrow.clockwise")
                     }
@@ -66,11 +91,11 @@ struct WarLogCardView: View {
                     Spacer()
                 }
             }
-        } else if let state = model.currentWarLogState {
+        } else if let state = warLogState {
             statusLine(state)
             if let page = state.lastGood {
                 warLogList(page)
-                if model.currentWarLogHasMore {
+                if hasMore {
                     loadMoreButton("加载更多战争")
                 }
             }
@@ -78,7 +103,7 @@ struct WarLogCardView: View {
             // 避免"有 lastGood 但状态非 success"时卡片死锁（对齐 3b 模式）。
             // 档案已知"不公开"时用户点刷新意图明确 → force 绕过预判
             //（否则被 AppModel 预判静默拦截，按钮无任何效果）。
-            refreshButton("刷新战争日志", force: model.isCurrentWarLogKnownNotPublic)
+            refreshButton("刷新战争日志", force: knownNotPublic)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Label("尚未获取战争日志", systemImage: "circle.dashed")
@@ -93,9 +118,9 @@ struct WarLogCardView: View {
         HStack {
             Button {
                 if force {
-                    model.refreshCurrentWarLog(force: true)
+                    model.refreshWarLog(villageID: villageID, force: true)
                 } else {
-                    model.refreshCurrentWarLog()
+                    model.refreshWarLog(villageID: villageID)
                 }
             } label: {
                 if model.isRefreshingWarLogData {
@@ -114,7 +139,7 @@ struct WarLogCardView: View {
     private func loadMoreButton(_ title: String) -> some View {
         HStack {
             Button {
-                model.loadMoreCurrentWarLog()
+                model.loadMoreWarLog(villageID: villageID)
             } label: {
                 if model.isRefreshingWarLogData {
                     ProgressView().controlSize(.small)

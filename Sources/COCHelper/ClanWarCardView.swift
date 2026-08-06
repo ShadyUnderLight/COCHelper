@@ -11,6 +11,19 @@ import COCHelperApp
 /// - 失败保留 last-good；成员级攻击表以展开组展示（默认折叠，上限 30 行）
 struct ClanWarCardView: View {
     @EnvironmentObject private var model: AppModel
+    /// 本卡片数据来源的村庄（显式路由，不得读全局选中村庄）。
+    let villageID: UUID
+
+    /// 本卡片村庄的部落归属 tag（nil = 无部落 / 从未成功抓取）。
+    private var clanTag: String? {
+        model.officialClanTag(for: villageID)
+    }
+
+    /// 本卡片村庄所属部落的当前战争共享状态（nil = 无部落 / 从未请求）。
+    private var clanWarState: ClanWarAPIState? {
+        guard let clanTag else { return nil }
+        return model.clanWarState(for: clanTag)
+    }
 
     var body: some View {
         Panel {
@@ -26,7 +39,7 @@ struct ClanWarCardView: View {
             Label("当前战争", systemImage: "cross.case.fill")
                 .font(.headline)
             Spacer()
-            if let label = model.currentClanWarState?.sourceLabel {
+            if let label = clanWarState?.sourceLabel {
                 Text(label)
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
@@ -39,15 +52,15 @@ struct ClanWarCardView: View {
 
     @ViewBuilder
     private var statusContent: some View {
-        if model.currentVillageClanStatusUnknown {
+        if model.clanStatusUnknown(for: villageID) {
             Label("刷新官方玩家数据后可查看当前战争", systemImage: "questionmark.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if model.currentVillageClanTag == nil {
+        } else if clanTag == nil {
             Label("不在部落中，没有战争数据", systemImage: "person.crop.circle.badge.questionmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-        } else if let state = model.currentClanWarState {
+        } else if let state = clanWarState {
             statusLine(state)
             if let snapshot = state.lastGood {
                 warSummary(snapshot)
@@ -72,7 +85,7 @@ struct ClanWarCardView: View {
     private func refreshButton(title: String) -> some View {
         HStack {
             Button {
-                model.refreshCurrentClanWar()
+                model.refreshClanWar(villageID: villageID)
             } label: {
                 if model.isRefreshingClanWarData {
                     ProgressView()

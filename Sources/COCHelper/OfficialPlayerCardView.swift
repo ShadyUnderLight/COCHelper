@@ -5,6 +5,18 @@ import COCHelperApp
 /// 村庄详情的官方玩家数据卡片（独立来源，来源标签 official-api）。
 struct OfficialPlayerCardView: View {
     @EnvironmentObject private var model: AppModel
+    /// 本卡片数据来源的村庄（显式路由，不得读全局选中村庄）。
+    let villageID: UUID
+
+    /// 本卡片村庄的官方状态（nil = 不存在该 ID / 从未刷新）。
+    private var villageState: OfficialAPIState? {
+        model.officialState(for: villageID)
+    }
+
+    /// 本卡片村庄的官方 tag（nil = 无有效 tag，禁用刷新）。
+    private var villageTag: String? {
+        model.officialTag(for: villageID)
+    }
 
     var body: some View {
         Panel {
@@ -12,7 +24,7 @@ struct OfficialPlayerCardView: View {
                 header
                 statusLine
 
-                if let state = model.currentVillageOfficialState, let snapshot = state.lastGood {
+                if let state = villageState, let snapshot = state.lastGood {
                     snapshotSummary(state: state, snapshot: snapshot)
                     Divider()
                     unitsSummary(snapshot: snapshot)
@@ -23,9 +35,9 @@ struct OfficialPlayerCardView: View {
                     }
                 }
 
-                if model.currentVillageOfficialState?.status == .never
-                    || model.currentVillageOfficialState?.status == .skipped
-                    || model.currentVillageOfficialState?.status == .failed {
+                if villageState?.status == .never
+                    || villageState?.status == .skipped
+                    || villageState?.status == .failed {
                     Text("刷新失败或尚未获取不会影响本地导入数据与升级追踪。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -33,7 +45,7 @@ struct OfficialPlayerCardView: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        model.refreshOfficialPlayer()
+                        model.refreshOfficialPlayer(villageID: villageID)
                     } label: {
                         if model.isRefreshingOfficialData {
                             ProgressView()
@@ -44,7 +56,7 @@ struct OfficialPlayerCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.cocAccent)
-                    .disabled(model.isRefreshingOfficialData || model.currentVillageOfficialTag == nil)
+                    .disabled(model.isRefreshingOfficialData || villageTag == nil)
 
                     Spacer()
 
@@ -79,7 +91,7 @@ struct OfficialPlayerCardView: View {
 
     @ViewBuilder
     private var statusLine: some View {
-        switch model.currentVillageOfficialState?.displayStatus ?? .never {
+        switch villageState?.displayStatus ?? .never {
         case .never:
             Label("尚未获取官方数据", systemImage: "circle.dashed")
                 .font(.callout)
@@ -89,7 +101,7 @@ struct OfficialPlayerCardView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
         case .success:
-            if let fetchedAt = model.currentVillageOfficialState?.fetchedAt {
+            if let fetchedAt = villageState?.fetchedAt {
                 Label("已获取 · \(fetchedAt.formatted(date: .abbreviated, time: .shortened))", systemImage: "checkmark.circle.fill")
                     .font(.callout)
                     .foregroundStyle(.green)
@@ -99,7 +111,7 @@ struct OfficialPlayerCardView: View {
                     .foregroundStyle(.green)
             }
         case .stale:
-            if let fetchedAt = model.currentVillageOfficialState?.fetchedAt {
+            if let fetchedAt = villageState?.fetchedAt {
                 Label("数据已过期（上次获取 \(fetchedAt.formatted(date: .abbreviated, time: .shortened))）", systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
                     .foregroundStyle(.orange)
@@ -109,12 +121,12 @@ struct OfficialPlayerCardView: View {
                 Label("获取失败", systemImage: "xmark.octagon.fill")
                     .font(.callout)
                     .foregroundStyle(.red)
-                if let reason = model.currentVillageOfficialState?.lastErrorReason {
+                if let reason = villageState?.lastErrorReason {
                     Text(reason)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if let fetchedAt = model.currentVillageOfficialState?.fetchedAt {
+                if let fetchedAt = villageState?.fetchedAt {
                     Text("保留上次成功数据（\(fetchedAt.formatted(date: .abbreviated, time: .shortened))）")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -122,7 +134,7 @@ struct OfficialPlayerCardView: View {
             }
         case .skipped:
             Label(
-                model.currentVillageOfficialState?.lastErrorReason ?? "已跳过",
+                villageState?.lastErrorReason ?? "已跳过",
                 systemImage: "arrow.uturn.backward.circle"
             )
             .font(.callout)

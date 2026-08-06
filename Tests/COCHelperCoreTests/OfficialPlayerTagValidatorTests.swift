@@ -67,12 +67,13 @@ final class OfficialPlayerTagValidatorTests: XCTestCase {
 
     // MARK: - property-based：随机生成 + 参照实现对比
 
-    /// 参照实现：tag 合法 ⇔ 以 # 开头、其余全为大写字母或数字、且 body ≤ 14 位。
+    /// 参照实现（**独立技术路线**，Issue #48 Step 1 契约审计修复）：
+    /// 用正则锚定完整匹配验证 tag 合法 ⇔ `#` + 1...14 个大写字母/数字。
+    /// 与生产实现（字符扫描 + 长度判断）结构不同，互相证伪——
+    /// 逐字同构的参照实现只能抓"两边不同步"，抓不到"两边共有的逻辑 bug"
+    /// （例如把 14 改成 20、漏掉字符集检查等）。
     private func referenceIsValid(_ tag: String) -> Bool {
-        guard tag.hasPrefix("#") else { return false }
-        let rest = tag.dropFirst()
-        guard !rest.isEmpty, rest.count <= 14 else { return false }
-        return rest.allSatisfy { $0.isASCII && (($0.isLetter && $0.isUppercase) || $0.isNumber) }
+        tag.range(of: "^#[A-Z0-9]{1,14}$", options: .regularExpression) != nil
     }
 
     func testPropertyIsValidMatchesReference() {
@@ -147,7 +148,9 @@ struct SeededRandomGenerator {
     mutating func paddedTag() -> String {
         let whitespace = randomWhitespace()
         let core = randomTag()
-        if Int.random(in: 0...1) == 0 {
+        // 用 seeded RNG（而非系统 Int.random），保证同一 seed 生成完全一致的
+        // 输入序列——property 测试可复现、可调试（Issue #48 Step 1 审计修复）。
+        if randomInt(in: 0...1) == 0 {
             return core
         }
         return whitespace + core + whitespace

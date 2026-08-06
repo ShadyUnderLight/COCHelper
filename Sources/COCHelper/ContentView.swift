@@ -170,6 +170,17 @@ private enum VillageIdentityDisplayText {
         case .skipped: return "已跳过"
         }
     }
+
+    /// 第二行 tag 行：`<tag> · <状态>`（一行 caption，tag 优先不被截断）。
+    /// tag 缺失或空白（Task 1 文档化的病态输入，契约字面透传）时返回调用点各自的
+    /// 兜底文案——兜底文案按调用点保持（侧边栏 "等待导入 JSON"、头部
+    /// "尚未导入账号 JSON"），不统一（历史行为）。UI 展示侧的空白裁剪只用于
+    /// 兜底判定，不透传、不改 Core 契约。
+    static func tagLineText(identity: VillageDisplayIdentity, fallback: String) -> String {
+        guard let tag = identity.tag,
+              !tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return fallback }
+        return tag + " · " + statusText(for: identity)
+    }
 }
 
 /// Issue #49 Task 2：侧边栏村庄行，昵称优先（官方昵称 → 本地名 → tag → 未命名村庄）。
@@ -188,13 +199,6 @@ private struct VillageSidebarRow: View {
             officialState: village.officialAPIState,
             at: now
         )
-    }
-
-    /// 第二行：tag + 官方状态上下文（一行 caption，tag 优先不被截断）。
-    /// 空串 tag 属 Task 1 文档化的病态输入（契约字面透传），按缺失兜底，避免渲染 " · 状态"。
-    private var secondLineText: String {
-        guard let tag = identity.tag, !tag.isEmpty else { return "等待导入 JSON" }
-        return tag + " · " + VillageIdentityDisplayText.statusText(for: identity)
     }
 
     var body: some View {
@@ -220,7 +224,10 @@ private struct VillageSidebarRow: View {
                             .lineLimit(1)
                     }
                 }
-                Text(secondLineText)
+                Text(VillageIdentityDisplayText.tagLineText(
+                    identity: identity,
+                    fallback: "等待导入 JSON"
+                ))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -386,20 +393,16 @@ private struct TrackerHeaderView: View {
     let openImport: () -> Void
 
     /// 村庄模式：投影身份（主标题 = 官方昵称优先；status 的 stale 派生使用默认 `Date()`，
-    /// 无 TimelineView 上下文，24h 阈值下秒级漂移无影响；模型变化/切换村庄时必重算）。
+    /// 头部无 TimelineView 上下文）。
+    /// 已知残留：头部没有周期重渲染——跨过 24h stale 阈值后，若期间没有模型变化或
+    /// 村庄切换，头部会继续显示 "官方 API 已更新 <昨天>"，直到下次重算；侧边栏行在
+    /// 60s TimelineView tick 内可正确翻转为 "已过期"。24h 阈值下秒级/分钟级漂移无影响。
     private var identity: VillageDisplayIdentity? {
         guard let village else { return nil }
         return VillageDisplayIdentityProjection.project(
             village: village,
             officialState: village.officialAPIState
         )
-    }
-
-    /// 村庄模式第二行：tag + 官方来源/状态（一行 caption）。
-    /// 空串 tag 属 Task 1 文档化的病态输入（契约字面透传），按缺失兜底，避免渲染 " · 状态"。
-    private func secondLineText(for identity: VillageDisplayIdentity) -> String {
-        guard let tag = identity.tag, !tag.isEmpty else { return "尚未导入账号 JSON" }
-        return tag + " · " + VillageIdentityDisplayText.statusText(for: identity)
     }
 
     var body: some View {
@@ -410,7 +413,10 @@ private struct TrackerHeaderView: View {
                         Text(identity.primaryName)
                             .font(.system(size: 30, weight: .bold, design: .rounded))
                             .lineLimit(1)
-                        Text(secondLineText(for: identity))
+                        Text(VillageIdentityDisplayText.tagLineText(
+                            identity: identity,
+                            fallback: "尚未导入账号 JSON"
+                        ))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

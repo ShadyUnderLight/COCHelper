@@ -267,6 +267,46 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
         XCTAssertEqual(snapshot.sorted(), ["/v1/clans/%23MANUAL1", "/v1/clans/%23VILLAGEA", "/v1/clans/%23VILLAGEA"])
     }
 
+    /// all∧tags 同置合并：村庄全量排队（pendingClanRefreshAll）与手动 tag 排队
+    /// （pendingClanRefreshTags）同时发生时，补跑集合 = 村庄全量 ∪ 手动 tags（去重）。
+    /// 场景：首轮 refreshAllClans 在途（请求 #VILLAGEA）→ 忙时再 refreshAllClans
+    /// （排队全量）→ 忙时 refreshClan("#MANUAL1")（排队手动 tag）。
+    /// 补跑轮必须合并两者：请求序列 = 首轮 VILLAGEA + 补跑 VILLAGEA + MANUAL1。
+    @MainActor
+    func testQueuedAllAndManualTagMergeInCatchUpRound() async throws {
+        let villages = [VillageProfile(
+            name: "A",
+            accountSnapshot: trackedClanTestSnapshot("#A"),
+            officialAPIState: trackedClanTestPlayerState(clanTag: "#VILLAGEA")
+        )]
+        defaults.set(try JSONEncoder().encode(villages), forKey: "coc-helper.villages.v1")
+
+        let recorder = TagRecorder()
+        let model = try makeModel(clanHandler: { request in
+            recorder.record(request.url?.path(percentEncoded: true) ?? "")
+            let tag = request.url?.path(percentEncoded: false).replacingOccurrences(of: "/v1/clans/", with: "") ?? "#X"
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    trackedClanJSON(tag: tag))
+        })
+        model.refreshAllClans()             // 首轮：村庄全量联动（请求 #VILLAGEA）
+        model.refreshAllClans()             // 忙时排队全量（pendingClanRefreshAll = true）
+        model.refreshClan(tag: "#MANUAL1")  // 忙时排队手动 tag（pendingClanRefreshTags）
+        await waitUntil {
+            !model.isRefreshingClanData
+                && model.clanState(for: "#MANUAL1")?.status == .success
+        }
+
+        let snapshot = recorder.snapshot()
+        XCTAssertEqual(snapshot.count, 3, "首轮 1 次 + 补跑轮 2 次（村庄全量 ∪ 手动 tag 合并）")
+        XCTAssertEqual(snapshot.first, "/v1/clans/%23VILLAGEA", "首轮必须来自村庄全量联动")
+        XCTAssertEqual(snapshot.filter { $0 == "/v1/clans/%23VILLAGEA" }.count, 2,
+                       "村庄全量排队：补跑必须重请求村庄 tag，不得被手动 tag 合并路径吞掉")
+        XCTAssertEqual(snapshot.filter { $0 == "/v1/clans/%23MANUAL1" }.count, 1,
+                       "手动 tag 忙时排队必须并入补跑（不被静默丢弃）")
+        XCTAssertEqual(snapshot.sorted(),
+                       ["/v1/clans/%23MANUAL1", "/v1/clans/%23VILLAGEA", "/v1/clans/%23VILLAGEA"])
+    }
+
     /// 手动入口与村庄入口共享同一状态层：手动刷新后村庄路径读到同一状态，
     /// 村庄刷新后 tag 路径读到同一状态。
     @MainActor

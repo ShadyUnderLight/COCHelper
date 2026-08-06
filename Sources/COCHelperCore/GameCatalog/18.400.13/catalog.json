@@ -7112,8 +7112,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "siegeWorkshop_lvl2",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/siegeWorkshop_lvl2.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7128,8 +7128,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "siegeWorkshop_lvl3",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/siegeWorkshop_lvl3.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7144,8 +7144,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "siegeWorkshop_lvl4",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/siegeWorkshop_lvl4.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7160,8 +7160,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "siegeWorkshop_lvl5",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/siegeWorkshop_lvl5.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7176,8 +7176,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "siegeWorkshop_lvl6",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/siegeWorkshop_lvl6.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7192,8 +7192,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "siegeWorkshop_lvl7",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/siegeWorkshop_lvl7.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7208,8 +7208,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "siegeWorkshop_lvl8",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/siegeWorkshop_lvl8.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -7224,8 +7224,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "siegeWorkshop_lvl9",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/siegeWorkshop_lvl9.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -8190,8 +8190,8 @@
       "levelVisual": {
         "container": "sc/buildings.sc",
         "exportName": "spell_tower_lvl1",
-        "missingReason": "render_failed",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/buildings/spell_tower_lvl1.png"
       },
       "levels": [
         {
@@ -8201,8 +8201,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "spell_tower_lvl1",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/spell_tower_lvl1.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -8217,8 +8217,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "spell_tower_lvl2_rage",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/spell_tower_lvl2_rage.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -8249,8 +8249,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "spell_tower_lvl4_earthquake",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/spell_tower_lvl4_earthquake.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,
@@ -8343,8 +8343,8 @@
       "levelVisual": {
         "container": "sc/buildings.sc",
         "exportName": "clashmas24_spellcage_present_2x2_idle",
-        "missingReason": "render_failed",
-        "renderedPath": null
+        "missingReason": null,
+        "renderedPath": "icons/buildings/clashmas24_spellcage_present_2x2_idle.png"
       },
       "levels": [
         {
@@ -8354,8 +8354,8 @@
           "levelVisual": {
             "container": "sc/buildings.sc",
             "exportName": "clashmas24_spellcage_present_2x2_idle",
-            "missingReason": "render_failed",
-            "renderedPath": null
+            "missingReason": null,
+            "renderedPath": "icons/buildings/clashmas24_spellcage_present_2x2_idle.png"
           },
           "missingReason": null,
           "requiredLaboratoryLevel": null,

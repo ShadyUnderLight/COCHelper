@@ -89,7 +89,7 @@
 |---|---|---|
 | `icons_not_rendered` / `no_icon_columns` / `no_visual_columns` | #13 遗留：未渲染 / 无列 | catalog 生成器（保留） |
 | `sc_parse_failed` | SC2 容器解析失败（magic/version/descriptor/chunk 越界等） | `CatalogError` 路径 |
-| `movieclip_not_parsed` | export 的 object_id 既非 Shape 也非 MovieClip（引用损坏）——**发射于 export 非 shape 非 movieclip 的引用**；嵌套 movieclip 是 `skippedElements` 记录（fireplace/blacksmith 帧 0 实证），**不发射** | `_collect_renders` 防御分支 |
+| `movieclip_not_parsed` | export 的 object_id 既非 Shape 也非 MovieClip（引用损坏）——**发射于 export 非 shape 非 movieclip 的引用**；嵌套 movieclip 会递归展开，textfield 等非图形子项仍记录在 `skippedElements`，**不发射** | `_collect_renders` 防御分支 |
 | `texture_compressed_astc` | 内嵌 KTX/ASTC 压缩纹理，无解码器 | 已解决（astc.py）——保留枚举向后兼容 |
 | `texture_external_sctx` | 纹理存外部 `.sctx` 文件，无解码器 | 已解决（ktx.py）——保留枚举向后兼容 |
 | `zstd_unavailable` | libzstd 无法加载（ctypes 全路径失败） | `load_libzstd` 失败 |
@@ -105,6 +105,16 @@
 ---
 
 ## 7. manifest 记录（R6）
+
+### 精制台模组 UI 图标
+
+精制台 `types/modules` 的 9 个模组 ID 不参与 `GameCatalog` 的 item/level join，
+但其升级属性图标仍由 APK `sc/ui.sc` 直接解析并作为独立 Bundle 资源提供。当前版本
+由 `ModuleUpgradeIconCatalog` 固定映射：102000033/036/039 → `info_icon_hp`，
+102000034/037/040 → `info_icon_damage`，102000035/038/041 →
+`info_icon_time_boosted`。三张 PNG 位于 `icons/ui/`，并在 manifest 的
+`generatedFiles` 中登记；`VillageItemState.preferredAssetURLs` 将其置于普通目录
+资产候选链之前。
 
 | # | 契约规则 | 校验方式 |
 |---|---|---|
@@ -185,24 +195,26 @@
 
 **verdict：可进入 #25**。R3/R4 已实测回写（§4/§5）。
 
-**#25 剩余前置（UI 接入清单）**：
+**#25 UI 接入与全量渲染清单（2026-08-06 已完成）**：
 1. `UpgradeDisplayRow` 图标列：`isRenderable` 时渲染 PNG，否则 SF Symbol + 缺失角标（预留注释已就位）
 2. `LevelDetailSheet` 逐级行：接入 `levelVisual/icon`
 3. 共享 Bundle asset resolver（`Bundle.module.url(forResource:...)` 模式已由 Task 9 测试锁定）
-4. 全量渲染：381 个唯一键（当前仅渲染 4 个固定样本；`render_generator.py --samples-only` 去掉后全量跑，预计数小时，需增量分批）。**口径注**：381 = item 级唯一引用键（决策文档沿用此数）；level 级（逐级 `icon`/`levelVisual` 引用）唯一键为 1269（5479 条 level 记录去重后）——全量渲染按 R2.4 对全部引用去重，以实际引用集合为准
-5. 嵌套 MovieClip（动画/阴影层）递归渲染（当前跳过记录 `skippedElements`）
+4. 全量渲染：真实 APK 已处理 1269 个唯一键（R2.4 去重），当前成功 1258、失败 11；**口径注**：381 = item 级唯一引用键（决策文档沿用此数）；level 级（逐级 `icon`/`levelVisual` 引用）唯一键为 1269（5479 条 level 记录去重后）——全量渲染按实际引用集合为准
+5. 嵌套 MovieClip（动画/阴影层）递归渲染（**已在 2026-08-06 完成**；父子矩阵合成，退化占位层在有其它有效图层时忽略）
 6. 多帧 MovieClip 取帧 0（当前行为，契约注明）
 7. 视觉人工验收：逐项核对图标朝向/形变/双线性边缘
 
 **已知限制（契约标注）**：HDR 端点拒绝（真实纹理零出现）；3D 块不支持；SCTX 非 variant-36 头（28/32，`assets/sc/` 150 个）不支持（fail loud）；variant-36 引用容器除 buildings.sc（71 纹理）外，**buildings_cc.sc（13 纹理）、buildings2.sc（5 纹理）同为 SCTX variant-36 可解**（合计 91 个中 89 个可解；building_bases_0/1.sctx 2 个 data_len 声明超文件大小被拒绝，fail-closed 正确）；多命令合成已支持（blacksmith 5 命令实测）。
 
 **#25 全量渲染与 UI 接入完成（2026-08-06 回写）**：
-- 全量渲染 1269 个唯一键 → 成功 1246 / 失败 23；唯一 renderedPath 1246 个，
+- 全量渲染 1269 个唯一键 → 成功 1258 / 失败 11；唯一 renderedPath 1258 个，
   全部 PNG 在 Bundle 内可解析（`testBundledURLResolvesRenderableRefsToExistingFiles` 锁定）
+- 2026-08-06 重新从真实 `base.apk.1` 递归展开 MovieClip 后，
+  `sc/buildings.sc / firespitter_lvl1` 由 1 个 shape 扩展为 37 个 shape 元素，输出完整蓝金炮塔图，
+  不再是只有紫色圆球的局部图标。
 - missingReason 分布：export_not_found 10（`sc/buildings2.sc` push_trap_lvl1-10_idle 全族）、
-  render_failed 13（帧 0 无可渲染 shape 元素：`sc/buildings.sc` siegeWorkshop_lvl2-9 ×8、
-  spell_tower_lvl1 / lvl2_rage / lvl4_earthquake、clashmas24_spellcage_present_2x2_idle；
-  `sc/buildings_cc.sc` playerhouse_dummy）（全部 ∈ ASSET_MISSING_REASONS）
+  render_failed 1（`sc/buildings_cc.sc` playerhouse_dummy 帧 0 无可渲染 shape 元素；全部 ∈
+  ASSET_MISSING_REASONS）
 - `UpgradeDisplayRow` 图标列 / `LevelDetailSheet` 逐级行已接入
   （levelVisual 优先、icon 兜底、SF Symbol 最后；缺失角标语义不变）
 - 图标优先级按组件区分：`LevelDetailSheet`（逐级行与头部同规则）=

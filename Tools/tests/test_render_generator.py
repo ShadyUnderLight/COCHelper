@@ -10,15 +10,16 @@
 - 多命令合成（render.composite_shapes）：两张图叠加 → 共享画布 + src-over
 - 真实 APK（COC_APK_PATH + skipif，标记 slow）：4 成功样本 PNG 存在且非空、
   IHDR 尺寸可解析、sha256 两次一致（R4 确定性）、2 失败样本 missingReason
-  正确、catalog 回写字段正确、失败样本不产生 PNG
+  正确、catalog 回写字段正确、失败样本不产生 PNG；火焰喷射器额外覆盖
+  嵌套 MovieClip 递归展开
 
 真实样本期望（Task 1-6 实证 + 本任务对拍）：
 - icon_unit_barbarian：帧 0 有 2 元素（textfield 跳过 + shape 8025 单命令）→ 成功
 - icon_spell_rage：帧 0 单元素 shape 21490 单命令 → 成功
 - fireplace_lvl1：帧 0 有 shape 1549（单命令）+ 嵌套 movieclip 1607（360 帧，
-  记录跳过）→ 成功
+  递归取帧 0）→ 成功
 - blacksmith_lvl1：帧 0 shape 1643 五命令（合成一画布）+ 嵌套 movieclip 1645
-  （阴影，记录跳过）→ 成功
+  （递归合成）→ 成功
 - icon_unit_does_not_exist / sc/traps.sc town_hall_lvl1 → 失败
 """
 
@@ -37,6 +38,7 @@ from game_catalog.errors import CatalogError
 from game_catalog.validate import validate_catalog
 from render_generator import (
     SAMPLES,
+    _compose_matrices,
     apply_rendered_paths,
     collect_catalog_refs,
     container_key,
@@ -46,6 +48,7 @@ from render_generator import (
     sanitize_export_key,
     write_rendered_outputs,
 )
+from game_catalog.sc2 import Matrix2x3
 from test_validate import (
     _load_catalog,
     _load_manifest,
@@ -1013,10 +1016,37 @@ def test_composite_shapes_single_equals_render_shape_from_image():
     assert composite_shapes([(img, vs)]) == render_shape_from_image(img, vs)
 
 
+def test_composite_shapes_ignores_degenerate_layer_when_other_layer_is_valid():
+    """共线的 APK 占位层不应吞掉同一 MovieClip 中的有效图层。"""
+    from game_catalog.ktx import parse_ktx
+    from game_catalog.render import composite_shapes
+
+    img = parse_ktx(_make_ktx(2, 2, (0x0A00, 0x1400, 0x1E00, 0xFF00)))
+    valid = _quad(0, 0, 8, 6, 0, 0, 1, 1)
+    degenerate = [
+        _v(20, 20, 0, 0), _v(25, 25, 0.5, 0.5),
+        _v(30, 30, 1, 1), _v(35, 35, 1, 1),
+    ]
+    w, h, rgba = composite_shapes([(img, valid), (img, degenerate)])
+    assert (w, h) == (8, 6)
+    assert any(rgba[i + 3] for i in range(0, len(rgba), 4))
+
+
 def test_composite_shapes_empty_fails():
     from game_catalog.render import composite_shapes
     with pytest.raises(CatalogError, match="无任何"):
         composite_shapes([])
+
+
+def test_compose_matrices_applies_child_then_parent():
+    """嵌套 MovieClip：先应用子层局部矩阵，再应用父层矩阵。"""
+    parent = Matrix2x3(a=2, b=0, c=0, d=3, tx=10, ty=20)
+    child = Matrix2x3(a=1, b=0, c=0, d=1, tx=4, ty=5)
+    composed = _compose_matrices(parent, child)
+    assert composed is not None
+    assert composed.apply(1, 1) == (20, 38)
+    assert _compose_matrices(None, child) == child
+    assert _compose_matrices(parent, None) == parent
 
 
 # ---------------------------------------------------------------------------
@@ -1026,6 +1056,25 @@ def test_composite_shapes_empty_fails():
 
 @_real_apk
 class TestRealApk:
+    def test_firespitter_recursively_renders_nested_movieclips(self):
+        """火焰喷射器不是单个 shape：嵌套层必须进入最终 PNG。"""
+        _, verdicts = render_samples(APK, [{
+            "container": "sc/buildings.sc",
+            "exportName": "firespitter_lvl1",
+        }])
+        v = verdicts[0]
+        assert v["status"] == "success", v
+        assert v["missingReason"] is None
+        assert v["details"]["shapeElementCount"] > 1
+        tree = v["details"]["movieClipTree"]
+        assert any(node["depth"] > 0 for node in tree)
+        assert not any(
+            item["kind"] == "nested_movieclip"
+            for item in v["details"].get("skippedElements", [])
+        )
+        w, h = png_size(v["pngBytes"])
+        assert w > 0 and h > 0
+
     def test_render_samples_4_success_2_failed(self, tmp_path):
         """4 成功样本 PNG 存在且非空 + IHDR 尺寸可解析；失败样本无 PNG。"""
         meta, verdicts = render_samples(APK)

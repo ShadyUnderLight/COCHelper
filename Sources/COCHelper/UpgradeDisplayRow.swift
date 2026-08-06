@@ -5,9 +5,9 @@ import COCHelperCore
 /// Issue #15：升级总览 / 村庄详情共用的升级行组件。
 ///
 /// 输入 `UpgradeDisplayRecord`（投影聚合层），展示：
-/// - 图标列：`item.preferredAssetURLs` 非空且可加载时渲染目录 PNG（`bundledURL()`
-///   解析 + NSImage 加载；4 级候选链 currentLevelVisual → currentLevelIcon →
-///   levelVisual → icon，Issue #39（按 currentLevel 显示对应等级外观，
+/// - 图标列：`item.preferredAssetURLs` 非空且可加载时渲染 APK/目录 PNG（`bundledURL()`
+///   解析 + NSImage 加载；精制台模组属性图标优先，普通项 4 级候选链
+///   currentLevelVisual → currentLevelIcon → levelVisual → icon，Issue #39（按 currentLevel 显示对应等级外观，
 ///   level-level 资产优先于 item-level）/#34，与详情 sheet 共用
 ///   `VillageItemState.preferredAssetURLs` 解析防漂移）；加载失败
 ///   或不可渲染时统一走类别 SF Symbol 兜底。`item.assetMissingReason`
@@ -124,11 +124,15 @@ struct UpgradeDisplayRow: View {
         return "目录图标未渲染，显示类别图标"
     }
 
-    /// PNG 已成功渲染时的 hover 提示：缺失原因优先（icon 缺失但 levelVisual
+    /// PNG 已成功渲染时的 hover 提示：精制台模组先标注 APK 属性图标；其余为
+    /// 缺失原因优先（icon 缺失但 levelVisual
     /// 可渲染时仍需告知），无缺失原因时提示资产来源而非错误的「未渲染」
     /// （Issue #34 后 184 项建筑/陷阱行真实渲染 PNG，不能复用 SF Symbol 分支
     /// 的「未渲染」兜底文案）。
     private var pngIconHelp: String {
+        if item.isNested, ModuleUpgradeIconCatalog.kind(for: item.dataID) != nil {
+            return "APK 精制台模组升级图标"
+        }
         if let iconMissingReason {
             return "目录图标或等级外观缺失：" + iconMissingReason
         }
@@ -139,11 +143,12 @@ struct UpgradeDisplayRow: View {
         item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill"
     }
 
-    /// 目录渲染 PNG（`preferredAssetURLs` 非空且可加载时）；否则 SF Symbol 兜底。
-    /// Issue #25/#34/#39：视觉资产候选链 currentLevelVisual → currentLevelIcon →
-    /// levelVisual → icon（`VillageItemState.preferredAssetURLs`，与详情 sheet
-    /// 同解析防漂移）——链首为当前等级资产（level-level，按 currentLevel 显示
-    /// 对应等级外观，优先于 item-level）；建筑/陷阱目录项 icon 为 nil 但
+    /// 目录/APK 渲染 PNG（`preferredAssetURLs` 非空且可加载时）；否则 SF Symbol 兜底。
+    /// Issue #25/#34/#39：普通项视觉资产候选链为 currentLevelVisual →
+    /// currentLevelIcon → levelVisual → icon；精制台模组会在该链前加入 APK 属性图标
+    /// （`VillageItemState.preferredAssetURLs`，与详情 sheet 同解析防漂移）。链首为
+    /// 当前等级资产（level-level，按 currentLevel 显示对应等级外观，优先于
+    /// item-level）；建筑/陷阱目录项 icon 为 nil 但
     /// levelVisual 可渲染（如 buildings:1000000 fireplace_lvl1.png），列表行必须
     /// 显示真实 PNG；首选文件缺失时自动尝试次选（P2 评审），全部加载失败同样
     /// 回退 SF Symbol，不崩溃。版本参数取投影层 catalogVersion（与 `loadBundled()`

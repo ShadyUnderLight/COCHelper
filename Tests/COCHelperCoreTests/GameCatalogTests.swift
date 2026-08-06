@@ -252,7 +252,7 @@ final class GameCatalogTests: XCTestCase {
         for path in known {
             XCTAssertTrue(uniquePaths.contains(path), "\(path) 应仍被引用（跨等级/跨 item 复用）")
         }
-        // 2026-08-06 实测：18.400.13 全量渲染后唯一 renderedPath 1246 个。
+        // 2026-08-06 实测：18.400.13 递归展开 MovieClip 后唯一 renderedPath 1258 个。
         // 下限取 500（远小于实测值，容忍未来少量失败键波动）。
         XCTAssertGreaterThan(uniquePaths.count, 500, "全量渲染后唯一 renderedPath 应远超固定样本数")
     }
@@ -279,22 +279,22 @@ final class GameCatalogTests: XCTestCase {
                          "\(entry.item.section) \(entry.item.dataID) \(entry.slot) 有 missingReason 却仍带 renderedPath")
             XCTAssertFalse(entry.ref.isRenderable)
         }
-        // 具体锚点（2026-08-06 实测：#25 全量渲染后 23 个唯一缺失键，
-        // export_not_found 10 + render_failed 13；兵营 lv2 已渲染为
-        // fireplace_lvl2.png，不再缺失）。各取一个稳定锚点覆盖两种 missingReason：
+        // 具体锚点（2026-08-06 实测：递归展开 MovieClip 后 11 个唯一缺失键，
+        // export_not_found 10 + render_failed 1；兵营/攻城机器等此前误判的
+        // 资源已恢复为可渲染）。各取一个稳定锚点覆盖两种 missingReason：
         // 1. traps2 12000011（push_trap）lv1 levelVisual → export_not_found
-        // 2. buildings 1000059（siegeWorkshop）lv2 levelVisual → render_failed
+        // 2. capital_buildings 110000003（部落营房）levelVisual → render_failed
         let pushTrap = try XCTUnwrap(catalog.item(section: "traps2", dataID: 12_000_011))
         let pushTrapLv1 = try XCTUnwrap(pushTrap.levels.first(where: { $0.level == 1 })?.levelVisual)
         XCTAssertEqual(pushTrapLv1.missingReason, "export_not_found")
         XCTAssertNil(pushTrapLv1.renderedPath)
         XCTAssertFalse(pushTrapLv1.isRenderable)
 
-        let siegeWorkshop = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_059))
-        let siegeWorkshopLv2 = try XCTUnwrap(siegeWorkshop.levels.first(where: { $0.level == 2 })?.levelVisual)
-        XCTAssertEqual(siegeWorkshopLv2.missingReason, "render_failed")
-        XCTAssertNil(siegeWorkshopLv2.renderedPath)
-        XCTAssertFalse(siegeWorkshopLv2.isRenderable)
+        let playerHouse = try XCTUnwrap(catalog.item(section: "capital_buildings", dataID: 110_000_003))
+        let playerHouseVisual = try XCTUnwrap(playerHouse.levelVisual)
+        XCTAssertEqual(playerHouseVisual.missingReason, "render_failed")
+        XCTAssertNil(playerHouseVisual.renderedPath)
+        XCTAssertFalse(playerHouseVisual.isRenderable)
     }
 
     /// 共享路径断言（契约 R2.4）：铁匠铺 blacksmith_lvl1 被顶层 + lv1 + lv2

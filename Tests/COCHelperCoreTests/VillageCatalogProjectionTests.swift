@@ -963,10 +963,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
-    /// P2 数据锚点（bundled）：buildings:1000059（攻城机器工坊）Lv2-9 的
-    /// level 级 levelVisual 为 render_failed（renderedPath nil）——投影后
-    /// assetMissingReason 必须非 nil，否则 UI 静默显示 Lv1 外观且无降级提示。
-    func testBundledSiegeWorkshopLevelAssetMissingReason() throws {
+    /// 递归 MovieClip 展开后的数据锚点（bundled）：buildings:1000059
+    /// （攻城机器工坊）Lv2 应解析出当前等级的真实视觉资产，而不是退回 Lv1。
+    func testBundledSiegeWorkshopLevelAssetResolvesCurrentLevel() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_059, level: 2, path: "0")]
@@ -974,12 +973,15 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let state = try XCTUnwrap(
             project(village: village, catalog: catalog, base: .home).items.first
         )
-        XCTAssertEqual(state.currentLevelVisual?.missingReason, "render_failed",
-                       "buildings:1000059 Lv2 levelVisual 应为 render_failed（数据契约）")
         XCTAssertEqual(
-            state.assetMissingReason, "render_failed",
-            "level 级资产 render_failed 必须反映到 assetMissingReason（P2 静默回退修复）"
+            state.currentLevelVisual?.renderedPath,
+            "icons/buildings/siegeWorkshop_lvl2.png",
+            "buildings:1000059 Lv2 应命中当前等级的递归渲染资产"
         )
+        XCTAssertTrue(state.currentLevelVisual?.isRenderable == true,
+                      "buildings:1000059 Lv2 levelVisual 应可渲染")
+        XCTAssertNil(state.assetMissingReason,
+                     "当前等级资产可渲染时不应显示缺失提示")
     }
 
     // MARK: - VillageItemState.preferredAssetURLs 运行时回退（Issue #34，P2 评审修复）
@@ -1490,14 +1492,14 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
-    /// level 级资产缺失时的候选链行为（traps2:12000011 / buildings:1000059，
-    /// 均来自 GameCatalogTests 已知数据契约）：
+    /// level 级资产缺失时的候选链行为（traps2:12000011，来自
+    /// GameCatalogTests 已知数据契约）：
     /// - traps2:12000011 Lv1：level 级与 item 级的 levelVisual/icon 全部缺失
     ///   （export_not_found / nil）→ ref 原样暴露（带 missingReason）但被
     ///   候选链过滤，链为空 → UI 回退 SF Symbol（非 item-level 回退）。
-    /// - buildings:1000059 Lv2：level 级为 render_failed → 过滤后首选回退
-    ///   item-level levelVisual（siegeWorkshop_lvl1.png）。
-    func testBundledMissingLevelAssetFallsBackToItemLevel() throws {
+    /// - buildings:1000059 Lv2：递归展开后当前等级资产可渲染，候选链必须
+    ///   首选 siegeWorkshop_lvl2.png，不能回到旧的 Lv1 资产。
+    func testBundledMissingLevelAssetFallbacksAreExplicit() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let version = catalog.gameVersion
 
@@ -1525,7 +1527,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertTrue(trapURLs.isEmpty,
                       "traps2:12000011 半边：level 与 item 级均不可用 → 空链（SF Symbol 兜底）")
 
-        // buildings:1000059 siegeWorkshop Lv2 → render_failed 同样被过滤
+        // buildings:1000059 siegeWorkshop Lv2 → 递归展开后命中当前等级资产
         let siege = try XCTUnwrap(
             catalog.item(section: "buildings", dataID: 1_000_059),
             "bundled 目录应包含 buildings:1000059"
@@ -1540,13 +1542,15 @@ final class VillageCatalogProjectionTests: XCTestCase {
             siege.levels.first { $0.level == 2 }?.levelVisual
         )
         XCTAssertEqual(siegeState.currentLevelVisual, siegeLevelVisual)
-        XCTAssertFalse(siegeLevelVisual.isRenderable,
-                       "buildings:1000059 Lv2 levelVisual 应为 render_failed（已知契约）")
+        XCTAssertEqual(siegeLevelVisual.renderedPath,
+                       "icons/buildings/siegeWorkshop_lvl2.png")
+        XCTAssertTrue(siegeLevelVisual.isRenderable,
+                      "buildings:1000059 Lv2 levelVisual 应可渲染")
         let siegeURLs = siegeState.preferredAssetURLs(version: version)
         XCTAssertEqual(
             siegeURLs.first,
-            try XCTUnwrap(siege.levelVisual?.bundledURL(version: version)),
-            "Lv2 render_failed → 首选回退 item-level levelVisual（siegeWorkshop_lvl1.png）"
+            try XCTUnwrap(siegeLevelVisual.bundledURL(version: version)),
+            "Lv2 当前等级资产可用时应优先使用 siegeWorkshop_lvl2.png"
         )
     }
 

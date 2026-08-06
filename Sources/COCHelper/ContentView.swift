@@ -20,7 +20,8 @@ struct ContentView: View {
                                 VillageSidebarRow(
                                     village: village,
                                     isSelected: village.id == model.selectedVillageID,
-                                    activeCount: model.activeUpgradeCount(for: village, at: context.date)
+                                    activeCount: model.activeUpgradeCount(for: village, at: context.date),
+                                    now: context.date
                                 )
                             }
                             .buttonStyle(.plain)
@@ -148,10 +149,53 @@ private enum AppSection: Hashable {
     case clan(String)
 }
 
+/// Issue #49 Task 2：侧边栏与追踪头部共用的身份行内文案（紧凑一行 caption）。
+/// 状态文案遵守 issue 风格表：stale→"已过期"；failed→"获取失败"；
+/// success→"官方 API 已更新 <time>"；never/skipped/loading→短次级文案。
+/// 无官方昵称（本地名/tag/未命名回退）时显示小标记"待获取昵称"，不把 tag 冒充大标题。
+private enum VillageIdentityDisplayText {
+    /// 无官方昵称时的一行小标记（subtle、secondary 样式）。
+    static let nicknamePendingMarker = "待获取昵称"
+
+    /// 官方展示状态 → 一行 caption 文案。
+    static func statusText(for identity: VillageDisplayIdentity) -> String {
+        switch identity.officialStatus {
+        case .never: return "尚未获取官方数据"
+        case .loading: return "获取中…"
+        case .success:
+            guard let fetchedAt = identity.officialFetchedAt else { return "官方 API 已更新" }
+            return "官方 API 已更新 " + fetchedAt.formatted(date: .abbreviated, time: .shortened)
+        case .stale: return "已过期"
+        case .failed: return "获取失败"
+        case .skipped: return "已跳过"
+        }
+    }
+}
+
+/// Issue #49 Task 2：侧边栏村庄行，昵称优先（官方昵称 → 本地名 → tag → 未命名村庄）。
+/// 纯函数：(village, isSelected, activeCount, now) → 行内容，无 AppModel 依赖。
+/// 无官方昵称时第一行带小标记"待获取昵称"；官方昵称存在且本地名不同时保留本地名
+/// （评审坑点：不得让用户丢失本地命名）。
 private struct VillageSidebarRow: View {
     let village: VillageProfile
     let isSelected: Bool
     let activeCount: Int
+    let now: Date
+
+    private var identity: VillageDisplayIdentity {
+        VillageDisplayIdentityProjection.project(
+            village: village,
+            officialState: village.officialAPIState,
+            at: now
+        )
+    }
+
+    /// 第二行：tag + 官方状态上下文（一行 caption，tag 优先不被截断）。
+    /// 空串 tag 属 Task 1 文档化的病态输入（契约字面透传），按缺失兜底，避免渲染 " · 状态"。
+    private var secondLineText: String {
+        guard let tag = identity.tag, !tag.isEmpty else { return "等待导入 JSON" }
+        return tag + " · " + VillageIdentityDisplayText.statusText(for: identity)
+    }
 
     var body: some View {
         HStack(spacing: 9) {
@@ -160,10 +204,23 @@ private struct VillageSidebarRow: View {
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(village.name)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text(village.tag ?? "等待导入 JSON")
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(identity.primaryName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    if let alias = identity.localAlias {
+                        Text("本地：" + alias)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else if identity.source != .officialName {
+                        Text(VillageIdentityDisplayText.nicknamePendingMarker)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Text(secondLineText)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -328,17 +385,44 @@ private struct TrackerHeaderView: View {
     let village: VillageProfile?
     let openImport: () -> Void
 
+    /// 村庄模式：投影身份（主标题 = 官方昵称优先；status 的 stale 派生使用默认 `Date()`，
+    /// 无 TimelineView 上下文，24h 阈值下秒级漂移无影响；模型变化/切换村庄时必重算）。
+    private var identity: VillageDisplayIdentity? {
+        guard let village else { return nil }
+        return VillageDisplayIdentityProjection.project(
+            village: village,
+            officialState: village.officialAPIState
+        )
+    }
+
+    /// 村庄模式第二行：tag + 官方来源/状态（一行 caption）。
+    /// 空串 tag 属 Task 1 文档化的病态输入（契约字面透传），按缺失兜底，避免渲染 " · 状态"。
+    private func secondLineText(for identity: VillageDisplayIdentity) -> String {
+        guard let tag = identity.tag, !tag.isEmpty else { return "尚未导入账号 JSON" }
+        return tag + " · " + VillageIdentityDisplayText.statusText(for: identity)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(village == nil ? "升级总览" : "升级追踪")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text(village?.name ?? "全部村庄")
-                        .font(.title3.weight(.semibold))
-                    Text(village.map { $0.tag ?? "尚未导入账号 JSON" } ?? "已导入 " + String(model.villages.filter(\.hasImportedData).count) + " 个村庄")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                    if let identity {
+                        Text(identity.primaryName)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                        Text(secondLineText(for: identity))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text("升级总览")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                        Text("全部村庄")
+                            .font(.title3.weight(.semibold))
+                        Text("已导入 " + String(model.villages.filter(\.hasImportedData).count) + " 个村庄")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Spacer()

@@ -376,7 +376,7 @@ public final class AppModel: ObservableObject {
             return action + "「" + targetName + "」"
         }
 
-        let newName = normalizedTag(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
+        let newName = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
         return "创建「" + newName + "」"
     }
 
@@ -391,7 +391,7 @@ public final class AppModel: ObservableObject {
             return "导入目标：应用到「" + targetName + "」"
         }
 
-        let newName = normalizedTag(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
+        let newName = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
         return "导入目标：没有同 tag 档案，将创建「" + newName + "」"
     }
 
@@ -404,7 +404,7 @@ public final class AppModel: ObservableObject {
             // Re-importing the same account refreshes only its raw snapshot.
             targetIndex = existingIndex
         } else {
-            let name = normalizedTag(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
+            let name = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
             villages.append(VillageProfile(name: name))
             targetIndex = villages.count - 1
         }
@@ -412,7 +412,7 @@ public final class AppModel: ObservableObject {
         // tag 变化时自动重置官方数据（applyImportedSnapshot 内部处理）。
         villages[targetIndex].applyImportedSnapshot(snapshot)
         if villages[targetIndex].name.hasPrefix("村庄 ") || villages[targetIndex].name == "未命名村庄" {
-            villages[targetIndex].name = normalizedTag(snapshot.tag) ?? villages[targetIndex].name
+            villages[targetIndex].name = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? villages[targetIndex].name
         }
         villages[targetIndex].updatedAt = Date()
 
@@ -1008,15 +1008,9 @@ public final class AppModel: ObservableObject {
         defaults.set(data, forKey: villagesStorageKey)
     }
 
-    private func normalizedTag(_ tag: String?) -> String? {
-        guard let tag else { return nil }
-        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
     private func targetVillageIndex(for snapshot: AccountSnapshot) -> Int? {
-        if let tag = normalizedTag(snapshot.tag),
-           let existingIndex = villages.firstIndex(where: { normalizedTag($0.tag) == tag }) {
+        if let tag = OfficialPlayerTagValidator.normalized(snapshot.tag),
+           let existingIndex = villages.firstIndex(where: { OfficialPlayerTagValidator.normalized($0.tag) == tag }) {
             return existingIndex
         }
 
@@ -1027,8 +1021,8 @@ public final class AppModel: ObservableObject {
     }
 
     private func isReimportingExistingVillage(_ snapshot: AccountSnapshot, at index: Int) -> Bool {
-        guard let tag = normalizedTag(snapshot.tag) else { return false }
-        return normalizedTag(villages[index].tag) == tag
+        guard let tag = OfficialPlayerTagValidator.normalized(snapshot.tag) else { return false }
+        return OfficialPlayerTagValidator.normalized(villages[index].tag) == tag
     }
 
     private static func loadVillages(from defaults: UserDefaults) -> [VillageProfile] {

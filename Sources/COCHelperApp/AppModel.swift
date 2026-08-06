@@ -139,31 +139,89 @@ public final class AppModel: ObservableObject {
     }
 
     public var currentVillageOfficialState: OfficialAPIState? {
-        villages.first(where: { $0.id == selectedVillageID })?.officialAPIState
+        officialState(for: selectedVillageID)
     }
 
     /// 当前村庄的部落归属：派生自最近成功玩家快照的 `clan.tag`。
     /// 玩家换部落/离开部落后，新快照刷新即更新此值；旧部落数据保留在
     /// `clanStates` 中但不会显示为当前归属。
     public var currentVillageClanTag: String? {
-        currentVillageOfficialState?.currentClanTag
+        officialClanTag(for: selectedVillageID)
     }
 
     /// 玩家官方数据是否从未成功抓取过（用于区分"未知归属"与"确认无部落"）。
     public var currentVillageClanStatusUnknown: Bool {
-        currentVillageOfficialState?.lastGood == nil
+        clanStatusUnknown(for: selectedVillageID)
     }
 
     /// 当前村庄所属部落的共享状态（nil = 无部落 / 从未请求）。
     public var currentClanState: ClanAPIState? {
         guard let tag = currentVillageClanTag else { return nil }
-        return clanStates[tag]
+        return clanState(for: tag)
     }
 
     /// 当前村庄所属部落的当前战争共享状态（nil = 无部落 / 从未请求）。
     public var currentClanWarState: ClanWarAPIState? {
         guard let tag = currentVillageClanTag else { return nil }
-        return clanWarStates[tag]
+        return clanWarState(for: tag)
+    }
+
+    // MARK: - 官方数据读取（显式 ID 路由，Issue #35）
+
+    /// 指定村庄的官方玩家状态（nil = 不存在该 ID / 从未刷新，不崩溃）。
+    /// 页面必须始终以当前 villageID 为数据来源，不得读 `selectedVillageID`。
+    public func officialState(for villageID: UUID) -> OfficialAPIState? {
+        villages.first(where: { $0.id == villageID })?.officialAPIState
+    }
+
+    /// 指定村庄的部落归属：派生自最近成功玩家快照的 `clan.tag`
+    ///（复用 `OfficialAPIState.currentClanTag` 的规范化与格式校验）。
+    public func officialClanTag(for villageID: UUID) -> String? {
+        officialState(for: villageID)?.currentClanTag
+    }
+
+    /// 指定村庄的玩家官方数据是否从未成功抓取过（`lastGood == nil`）。
+    public func clanStatusUnknown(for villageID: UUID) -> Bool {
+        officialState(for: villageID)?.lastGood == nil
+    }
+
+    /// 指定部落 tag 的共享档案状态（nil = 无部落 / 从未请求）。
+    public func clanState(for clanTag: String) -> ClanAPIState? {
+        clanStates[clanTag]
+    }
+
+    /// 指定部落 tag 的当前战争共享状态。
+    public func clanWarState(for clanTag: String) -> ClanWarAPIState? {
+        clanWarStates[clanTag]
+    }
+
+    /// 指定部落 tag 的战争日志状态（分页）。
+    public func warLogState(for clanTag: String) -> ClanWarLogAPIState? {
+        clanWarLogStates[clanTag]
+    }
+
+    /// 指定部落 tag 的资本赛季状态（分页）。
+    public func capitalState(for clanTag: String) -> ClanCapitalAPIState? {
+        clanCapitalStates[clanTag]
+    }
+
+    /// 部落档案已知战争日志不公开（无档案/未知 → false）。
+    public func isWarLogKnownNotPublic(for clanTag: String) -> Bool {
+        clanState(for: clanTag)?.lastGood?.isWarLogPublic == false
+    }
+
+    /// 指定部落的战争日志是否还有更多页（分页按钮可用性）。
+    public func warLogHasMore(for clanTag: String) -> Bool {
+        guard let state = warLogState(for: clanTag), state.status == .success,
+              let cursor = state.lastGood?.after else { return false }
+        return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
+    }
+
+    /// 指定部落的资本赛季是否还有更多页。
+    public func capitalHasMore(for clanTag: String) -> Bool {
+        guard let state = capitalState(for: clanTag), state.status == .success,
+              let cursor = state.lastGood?.after else { return false }
+        return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
     }
 
     // MARK: - API Token（仅 Keychain）
@@ -332,10 +390,12 @@ public final class AppModel: ObservableObject {
 
     // MARK: - 官方数据刷新
 
-    /// 刷新当前村庄的官方玩家信息。
-    public func refreshOfficialPlayer() {
+    /// 刷新**指定村庄**的官方玩家信息（页面入口必须传显式 villageID）。
+    /// 同步段捕获 village.id 与 expectedTag：刷新期间切换村庄不影响写回目标
+    ///（applyOfficialState 按 villageID 定位、按 expectedTag 丢弃过期结果）。
+    public func refreshOfficialPlayer(villageID: UUID) {
         guard !isRefreshingOfficialData else { return }
-        guard let index = villages.firstIndex(where: { $0.id == selectedVillageID }) else { return }
+        guard let index = villages.firstIndex(where: { $0.id == villageID }) else { return }
         isRefreshingOfficialData = true
         officialRefreshSummary = nil
 
@@ -355,6 +415,11 @@ public final class AppModel: ObservableObject {
                 self.refreshClan(villageID: village.id)
             }
         }
+    }
+
+    /// 刷新当前选中村庄的官方玩家信息（兼容转发，语义不变）。
+    public func refreshOfficialPlayer() {
+        refreshOfficialPlayer(villageID: selectedVillageID)
     }
 
     /// 刷新所有已导入村庄的官方玩家信息（同 tag 只请求一次，顺序执行）。
@@ -416,12 +481,18 @@ public final class AppModel: ObservableObject {
         refreshClan(villageID: selectedVillageID)
     }
 
+    /// 指定村庄当前归属的部落 tag（派生自最近成功玩家快照；
+    /// 无部落/从未成功抓取 → nil）。
+    private func clanTag(of villageID: UUID) -> String? {
+        villages.first(where: { $0.id == villageID })?.officialAPIState?.currentClanTag
+    }
+
     /// 刷新**指定村庄**所属部落的档案（按 clan tag 去重，单 tag 单请求）。
     /// 联动场景必须传发起村庄 id：刷新期间用户可能已切换村庄，
     /// 读取当前选中村庄会导致误刷新（P1 竞态）。
-    func refreshClan(villageID: UUID) {
-        guard let tag = villages.first(where: { $0.id == villageID })?
-            .officialAPIState?.currentClanTag else { return }
+    /// COCHelper executable 无法访问本模块 internal，必须 public。
+    public func refreshClan(villageID: UUID) {
+        guard let tag = clanTag(of: villageID) else { return }
         if isRefreshingClanData {
             // 被占用时排队为一次全量补跑（覆盖所有村庄，语义更广且确定性）。
             pendingClanRefreshAll = true
@@ -474,12 +545,13 @@ public final class AppModel: ObservableObject {
 
     // MARK: - 当前战争刷新（按需）
 
-    /// 刷新当前村庄所属部落的当前战争（按需：用户打开战争面板时显式触发；
+    /// 刷新**指定村庄**所属部落的当前战争（按需：用户打开战争面板时显式触发；
     /// 不做批量联动，避免启动/批量刷新时全量拉取战争请求）。
+    /// tag 在同步段捕获：刷新期间切换村庄不影响写回目标。
     /// `notInWar` 是成功响应（无战争空状态），失败保留 last-good。
-    public func refreshCurrentClanWar() {
+    public func refreshClanWar(villageID: UUID) {
         guard !isRefreshingClanWarData else { return }
-        guard let tag = currentVillageClanTag else { return }
+        guard let tag = clanTag(of: villageID) else { return }
         isRefreshingClanWarData = true
         let previous = clanWarStates
 
@@ -494,6 +566,11 @@ public final class AppModel: ObservableObject {
             self.persistClanWarStates()
             self.isRefreshingClanWarData = false
         }
+    }
+
+    /// 刷新当前村庄所属部落的当前战争（兼容转发，语义不变）。
+    public func refreshCurrentClanWar() {
+        refreshClanWar(villageID: selectedVillageID)
     }
 
     private func persistClanWarStates() {
@@ -514,30 +591,30 @@ public final class AppModel: ObservableObject {
     /// 当前村庄所属部落的战争日志状态（nil = 无部落 / 从未请求）。
     public var currentWarLogState: ClanWarLogAPIState? {
         guard let tag = currentVillageClanTag else { return nil }
-        return clanWarLogStates[tag]
+        return warLogState(for: tag)
     }
 
     /// 部落档案已知战争日志不公开（UI 预判：不发起请求，显示显式状态）。
     /// 403 兜底：即使档案过期，请求失败也会显示失败原因。
     public var isCurrentWarLogKnownNotPublic: Bool {
-        currentClanState?.lastGood?.isWarLogPublic == false
+        guard let tag = currentVillageClanTag else { return false }
+        return isWarLogKnownNotPublic(for: tag)
     }
 
     /// 当前战争日志是否还有更多页（分页按钮可用性）。
     public var currentWarLogHasMore: Bool {
-        guard let state = currentWarLogState, state.status == .success,
-              let cursor = state.lastGood?.after else { return false }
-        return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
+        guard let tag = currentVillageClanTag else { return false }
+        return warLogHasMore(for: tag)
     }
 
     /// 战争日志首屏/刷新：重新拉第一页（**替换**累计列表，避免陈旧混合）。
     /// 刷新失败时保留既有 last-good（传 previous 保持共享层契约）。
     /// `force` 为 true 时跳过"已知不公开"预判（用户主动要求检查，
     /// 应对部落档案过期导致的误判；真实 403 仍会显示失败原因）。
-    public func refreshCurrentWarLog(force: Bool = false) {
+    public func refreshWarLog(villageID: UUID, force: Bool = false) {
         guard !isRefreshingWarLogData else { return }
-        guard let tag = currentVillageClanTag else { return }
-        if !force, isCurrentWarLogKnownNotPublic { return }
+        guard let tag = clanTag(of: villageID) else { return }
+        if !force, isWarLogKnownNotPublic(for: tag) { return }
         isRefreshingWarLogData = true
         let client = clanLogClient
         let parserVersion = ClanWarLogAPIState.currentParserVersion
@@ -558,10 +635,15 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 战争日志加载更多：用现有游标向后翻页，**合并**（去重）到累计列表。
-    public func loadMoreCurrentWarLog() {
+    /// 当前村庄所属部落的战争日志首屏/刷新（兼容转发，语义不变）。
+    public func refreshCurrentWarLog(force: Bool = false) {
+        refreshWarLog(villageID: selectedVillageID, force: force)
+    }
+
+    /// 指定村庄所属部落的战争日志加载更多：用现有游标向后翻页，**合并**（去重）到累计列表。
+    public func loadMoreWarLog(villageID: UUID) {
         guard !isRefreshingWarLogData else { return }
-        guard let tag = currentVillageClanTag else { return }
+        guard let tag = clanTag(of: villageID) else { return }
         guard let current = clanWarLogStates[tag],
               current.status == .success,
               let cursor = current.lastGood?.after else { return }
@@ -604,6 +686,11 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// 当前村庄所属部落的战争日志加载更多（兼容转发，语义不变）。
+    public func loadMoreCurrentWarLog() {
+        loadMoreWarLog(villageID: selectedVillageID)
+    }
+
     private func persistClanWarLogStates() {
         guard let data = try? JSONEncoder().encode(ClanWarLogStateStore(states: clanWarLogStates)) else { return }
         defaults.set(data, forKey: Self.clanWarLogStatesStorageKey)
@@ -622,20 +709,19 @@ public final class AppModel: ObservableObject {
     /// 当前村庄所属部落的资本赛季状态。
     public var currentCapitalState: ClanCapitalAPIState? {
         guard let tag = currentVillageClanTag else { return nil }
-        return clanCapitalStates[tag]
+        return capitalState(for: tag)
     }
 
     /// 当前资本赛季是否还有更多页。
     public var currentCapitalHasMore: Bool {
-        guard let state = currentCapitalState, state.status == .success,
-              let cursor = state.lastGood?.after else { return false }
-        return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
+        guard let tag = currentVillageClanTag else { return false }
+        return capitalHasMore(for: tag)
     }
 
-    /// 资本赛季首屏/刷新（替换累计列表；失败保留既有 last-good）。
-    public func refreshCurrentCapitalRaid() {
+    /// 指定村庄所属部落的资本赛季首屏/刷新（替换累计列表；失败保留既有 last-good）。
+    public func refreshCapitalRaid(villageID: UUID) {
         guard !isRefreshingCapitalData else { return }
-        guard let tag = currentVillageClanTag else { return }
+        guard let tag = clanTag(of: villageID) else { return }
         isRefreshingCapitalData = true
         let client = clanLogClient
         let parserVersion = ClanCapitalAPIState.currentParserVersion
@@ -656,10 +742,15 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 资本赛季加载更多（合并去重）。
-    public func loadMoreCurrentCapitalRaid() {
+    /// 当前村庄所属部落的资本赛季首屏/刷新（兼容转发，语义不变）。
+    public func refreshCurrentCapitalRaid() {
+        refreshCapitalRaid(villageID: selectedVillageID)
+    }
+
+    /// 指定村庄所属部落的资本赛季加载更多（合并去重）。
+    public func loadMoreCapitalRaid(villageID: UUID) {
         guard !isRefreshingCapitalData else { return }
-        guard let tag = currentVillageClanTag else { return }
+        guard let tag = clanTag(of: villageID) else { return }
         guard let current = clanCapitalStates[tag],
               current.status == .success,
               let cursor = current.lastGood?.after else { return }
@@ -698,6 +789,11 @@ public final class AppModel: ObservableObject {
             self.persistClanCapitalStates()
             self.isRefreshingCapitalData = false
         }
+    }
+
+    /// 当前村庄所属部落的资本赛季加载更多（兼容转发，语义不变）。
+    public func loadMoreCurrentCapitalRaid() {
+        loadMoreCapitalRaid(villageID: selectedVillageID)
     }
 
     private func persistClanCapitalStates() {

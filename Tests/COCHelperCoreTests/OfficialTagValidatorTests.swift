@@ -105,6 +105,13 @@ final class OfficialTagValidatorTests: XCTestCase {
         XCTAssertFalse(OfficialTagValidator.isValid("#ſ"))
         XCTAssertEqual(OfficialTagValidator.normalizedInput("éabc"), "#éabc")
         XCTAssertFalse(OfficialTagValidator.isValid("#éabc"))
+        // U+0130 带点大写 I / i+combining dot / I+combining dot：门控保留，isValid 拒绝。
+        XCTAssertEqual(OfficialTagValidator.normalizedInput("İ"), "#İ")
+        XCTAssertFalse(OfficialTagValidator.isValid("#İ"))
+        XCTAssertEqual(OfficialTagValidator.normalizedInput("i\u{307}"), "#i\u{307}")
+        XCTAssertFalse(OfficialTagValidator.isValid("#i\u{307}"))
+        XCTAssertEqual(OfficialTagValidator.normalizedInput("I\u{307}"), "#I\u{307}")
+        XCTAssertFalse(OfficialTagValidator.isValid("#I\u{307}"))
     }
 
     /// 10 个 ß 若被折叠为 SS 恰好 20 字符、能骗过长度上限——门控后必须被拒。

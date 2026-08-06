@@ -66,3 +66,39 @@ public enum ModuleUpgradeIconCatalog {
         asset(for: dataID)?.bundledURL(version: version)
     }
 }
+
+/// 精制台父级 `types` 使用的实际建筑图标目录。
+///
+/// 这类图标来自 APK 的 `sc/buildings.sc`，与 `types/modules` 一样不参与
+/// `GameCatalog` 的 item/level join；它们是父级精制台条目的视觉资产，不能用
+/// 模组属性图标或 `hammer.fill` 代替。
+public enum CraftTableTypeIconCatalog {
+    public static let mappings: [Int64: String] = [
+        103_000_011: "inferno_candle_tower_lvl1",
+        103_000_012: "headhunter_tower_lvl1",
+        103_000_013: "cake_thrower_lvl1",
+    ]
+
+    public static func exportName(for dataID: Int64) -> String? {
+        mappings[dataID]
+    }
+
+    /// 返回与普通目录资产一致的引用模型，便于复用 Bundle URL 解析和可渲染判定。
+    public static func asset(for dataID: Int64) -> CatalogAssetRef? {
+        guard let exportName = exportName(for: dataID) else { return nil }
+        return CatalogAssetRef(
+            container: "sc/buildings.sc",
+            exportName: exportName,
+            renderedPath: "icons/buildings/\(exportName).png",
+            missingReason: nil
+        )
+    }
+
+    /// 解析当前版本 Bundle 中的实际 PNG；资源缺失时返回 nil，让 UI 继续走 SF Symbol 兜底。
+    public static func bundledURL(
+        for dataID: Int64,
+        version: String = GameCatalog.defaultBundledVersion
+    ) -> URL? {
+        asset(for: dataID)?.bundledURL(version: version)
+    }
+}

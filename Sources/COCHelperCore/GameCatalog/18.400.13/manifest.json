@@ -6,7 +6,7 @@
     "levels": 5479,
     "missingIcons": 0,
     "missingTime": 3308,
-    "renderedIcons": 1261
+    "renderedIcons": 1264
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [
@@ -16,9 +16,24 @@
       "size": 3031427
     },
     {
-      "entries": 1261,
+      "entries": 1264,
       "kind": "directory",
       "path": "icons/"
+    },
+    {
+      "path": "icons/buildings/cake_thrower_lvl1.png",
+      "sha256": "sha256:eb2f20a1634edd42b19c02296bd102c63d8b99482d4c5af53758eff90c7d1527",
+      "size": 49746
+    },
+    {
+      "path": "icons/buildings/headhunter_tower_lvl1.png",
+      "sha256": "sha256:47a58ab81a65bcc636d4a118240bb9cf41ad2abdc85fe4221b5b56844b860319",
+      "size": 24558
+    },
+    {
+      "path": "icons/buildings/inferno_candle_tower_lvl1.png",
+      "sha256": "sha256:6dd6d1ddd9b93647632e378fbf666e6c60390c9f71aeade4594b5d598f0095ec",
+      "size": 26478
     },
     {
       "path": "icons/ui/info_icon_damage.png",

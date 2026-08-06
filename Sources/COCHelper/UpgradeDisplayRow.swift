@@ -111,9 +111,9 @@ struct UpgradeDisplayRow: View {
         item.assetMissingReason
     }
 
-    /// 图标列 help 文案优先级：目录视觉资产缺失原因（icon 或 levelVisual）→
-    /// 目录 join 缺失原因 → 通用兜底。icon 可渲染时 help 仍是缺失/join 原因
-    /// 的兜底入口（真实图标无缺失时提示 SF Symbol 回退语义）。
+    /// SF Symbol 分支 help 文案优先级：目录视觉资产缺失原因（icon 或
+    /// levelVisual）→ 目录 join 缺失原因 → 通用兜底（真实 PNG 渲染分支
+    /// 用 `pngIconHelp`，勿在 SF Symbol 分支复用该文案）。
     private var iconHelp: String {
         if let iconMissingReason {
             return "目录图标或等级外观缺失：" + iconMissingReason

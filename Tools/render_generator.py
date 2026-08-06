@@ -14,8 +14,7 @@
 3. movieclip frames[0]（多帧只取帧 0 并在报告记录）→ frame 0 元素
    （= frame_elements 前 frames[0].used_transform 个）
 4. 元素 instance_index → children_ids[i] → 全局 id：shape 元素收集渲染；
-   **嵌套 movieclip / textfield 元素记录跳过，不阻断**（实证 fireplace/
-   blacksmith 帧 0 含嵌套 mc——阴影/动画层，先不支持）
+   嵌套 movieclip 递归展开并合成父子矩阵，textfield 等非图形元素记录跳过
 5. shape → 每条命令：texture_data(texture_index) → 内嵌 KTX（parse_ktx）
    或外部 `.sctx`（zip 读 `assets/sc/<name>`，**同文件只解析一次**缓存）；
    vertices → element_matrix(element) 变换
@@ -80,7 +79,7 @@ from game_catalog.render import (
     render_shape_from_image,
     transform_vertices,
 )
-from game_catalog.sc2 import Matrix2x3, ScFile, Shape, load_sc
+from game_catalog.sc2 import Matrix2x3, MovieClip, ScFile, Shape, load_sc
 
 # ---------------------------------------------------------------------------
 # 固定样本表（4 成功 + 2 失败；来源：catalog.json 与真实 APK 对拍）
@@ -100,12 +99,12 @@ SAMPLES: list[dict] = [
     {
         "container": "sc/buildings.sc",
         "exportName": "fireplace_lvl1",
-        "note": "建筑等级外观：shape 1549 单命令 + 嵌套 mc 1607（360 帧动画，跳过）",
+        "note": "建筑等级外观：shape 1549 单命令 + 嵌套 mc 1607（360 帧动画，递归取帧 0）",
     },
     {
         "container": "sc/buildings.sc",
         "exportName": "blacksmith_lvl1",
-        "note": "跨等级复用（catalog 铁匠铺 level1-2 共用）：shape 1643 五命令合成 + 嵌套 mc 1645（阴影，跳过）",
+        "note": "跨等级复用（catalog 铁匠铺 level1-2 共用）：shape 1643 五命令合成 + 嵌套 mc 1645（递归合成）",
     },
     {
         "container": "sc/ui.sc",
@@ -313,6 +312,101 @@ def _resolve_texture(archive: zipfile.ZipFile, sc: ScFile, tex_index: int,
         raise SampleError("astc_unsupported", f"KTX 解析失败: {e}") from e
 
 
+_MAX_MOVIECLIP_DEPTH = 64
+
+
+def _compose_matrices(parent: Matrix2x3 | None,
+                       child: Matrix2x3 | None) -> Matrix2x3 | None:
+    """合成父子 2x3 仿射矩阵，返回 ``parent ∘ child``。
+
+    ``None`` 表示单位矩阵，是 SC2 中 ``matrix_index=0xFFFF`` 的合法
+    表示。MovieClip 的元素矩阵把子对象放入当前时间线，因此递归进入
+    子 MovieClip 时必须保留所有祖先变换；只使用最内层矩阵会把嵌套图层
+    放错位置或缩放错误。
+    """
+    if parent is None:
+        return child
+    if child is None:
+        return parent
+    return Matrix2x3(
+        a=parent.a * child.a + parent.c * child.b,
+        b=parent.b * child.a + parent.d * child.b,
+        c=parent.a * child.c + parent.c * child.d,
+        d=parent.b * child.c + parent.d * child.d,
+        tx=parent.a * child.tx + parent.c * child.ty + parent.tx,
+        ty=parent.b * child.tx + parent.d * child.ty + parent.ty,
+    )
+
+
+def _collect_movieclip_shapes(
+    sc: ScFile,
+    mc: MovieClip,
+    banks,
+    movieclips: dict[int, MovieClip],
+    parent_matrix: Matrix2x3 | None,
+    shape_elements: list[tuple[Shape, Matrix2x3 | None]],
+    skipped: list[dict],
+    nested_details: list[dict],
+    active_ids: set[int],
+    depth: int,
+) -> None:
+    """递归收集 MovieClip 帧 0 中的 Shape 及其累计变换。
+
+    真实建筑资源通常是 export → MovieClip → MovieClip → Shape 的多层
+    图形树。递归过程保持每层的绘制顺序；非图形子项（例如 textfield）仍
+    记录到 ``skippedElements``，但不会让同一张图的其它图层丢失。
+    空的嵌套 MovieClip 作为不可见层跳过，根 MovieClip 的空帧由调用方
+    统一报错。
+    """
+    if depth > _MAX_MOVIECLIP_DEPTH:
+        raise SampleError(
+            "render_failed",
+            f"MovieClip 嵌套超过 {_MAX_MOVIECLIP_DEPTH} 层（globalId={mc.id}）",
+        )
+    if mc.id in active_ids:
+        raise SampleError(
+            "render_failed", f"MovieClip 出现循环引用（globalId={mc.id}）"
+        )
+    if not mc.frames:
+        skipped.append({"kind": "empty_movieclip", "globalId": mc.id})
+        return
+
+    active_ids.add(mc.id)
+    try:
+        frame = mc.frames[0]
+        elems = mc.frame_elements[:frame.used_transform]
+        nested_details.append({
+            "globalId": mc.id,
+            "depth": depth,
+            "frameCount": len(mc.frames),
+            "elementCount": len(elems),
+        })
+        for el in elems:
+            if el.instance_index >= len(mc.children_ids):
+                raise CatalogError(
+                    f"帧元素 instance_index {el.instance_index} 越界"
+                    f"（MovieClip {mc.id} children 共 {len(mc.children_ids)} 个）"
+                )
+            gid = mc.children_ids[el.instance_index]
+            element_matrix = mc.element_matrix(el, banks)
+            world_matrix = _compose_matrices(parent_matrix, element_matrix)
+            shp = sc.shape(gid)
+            if shp is not None:
+                shape_elements.append((shp, world_matrix))
+                continue
+            nested = movieclips.get(gid)
+            if nested is not None:
+                _collect_movieclip_shapes(
+                    sc, nested, banks, movieclips, world_matrix,
+                    shape_elements, skipped, nested_details, active_ids,
+                    depth + 1,
+                )
+                continue
+            skipped.append({"kind": "non_shape", "globalId": gid})
+    finally:
+        active_ids.remove(mc.id)
+
+
 def _collect_renders(archive: zipfile.ZipFile, sc: ScFile, export: str,
                      sctx_cache: dict[str, SctxImage],
                      details: dict) -> list[tuple[KtxImage | SctxImage, list]]:
@@ -320,9 +414,8 @@ def _collect_renders(archive: zipfile.ZipFile, sc: ScFile, export: str,
 
     - export 直接指向 Shape（无 movieclip 层）→ 直接渲染（防御路径；
       真实数据 export 全指向 MovieClip）
-    - export 指向 MovieClip → frames[0]；shape 元素收集，嵌套 movieclip /
-      textfield 元素记录跳过（不阻断——实证 fireplace/blacksmith 帧 0 含
-      嵌套 mc：阴影/动画层，Task 7 先不支持）
+    - export 指向 MovieClip → frames[0]；递归展开嵌套 movieclip 并合成累计
+      矩阵，textfield 等非图形元素记录跳过
     - 无任何可渲染命令 → SampleError（movieclip_not_parsed / render_failed）
     """
     mc = sc.movieclip_for_export(export)
@@ -341,23 +434,20 @@ def _collect_renders(archive: zipfile.ZipFile, sc: ScFile, export: str,
             details["renderedFrame"] = 0  # 多帧只渲染帧 0（记录不阻塞）
         if not mc.frames:
             raise SampleError("render_failed", "MovieClip 无任何帧")
-        f0 = mc.frames[0]
-        elems = mc.frame_elements[:f0.used_transform]
         banks = sc.matrix_banks
+        movieclips = sc.movieclips()
+        movieclips_by_id = {candidate.id: candidate
+                            for candidate in movieclips.values()}
         skipped: list[dict] = []
-        for el in elems:
-            if el.instance_index >= len(mc.children_ids):
-                raise CatalogError(
-                    f"帧元素 instance_index {el.instance_index} 越界"
-                    f"（children 共 {len(mc.children_ids)} 个）")
-            gid = mc.children_ids[el.instance_index]
-            shp = sc.shape(gid)
-            if shp is not None:
-                shape_elements.append((shp, mc.element_matrix(el, banks)))
-            elif sc.movieclips().get(gid) is not None:
-                skipped.append({"kind": "nested_movieclip", "globalId": gid})
-            else:
-                skipped.append({"kind": "non_shape", "globalId": gid})
+        nested_details: list[dict] = []
+        _collect_movieclip_shapes(
+            sc, mc, banks, movieclips_by_id, None, shape_elements, skipped,
+            nested_details, set(), 0,
+        )
+        details["shapeElementCount"] = len(shape_elements)
+        # 根 MovieClip 也纳入明细，便于报告确认实际展开了哪棵图形树。
+        if nested_details:
+            details["movieClipTree"] = nested_details
         if skipped:
             details["skippedElements"] = skipped
 

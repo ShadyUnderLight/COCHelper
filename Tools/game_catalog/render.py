@@ -145,6 +145,24 @@ def _strip_triangles(count: int) -> list[tuple[int, int, int]]:
             for t in range(count - 2)]
 
 
+def _has_non_degenerate_triangle(vertices: Sequence[Vertex]) -> bool:
+    """判断 triangle strip 是否至少包含一个有面积的三角形。
+
+    APK 中部分 setup/占位 MovieClip 图层会保留共线顶点。它们本身没有
+    可见像素，但可能和同一导出的有效图层一起出现；合成时应忽略这类
+    不可见层，而不是让整张图失败。单独渲染的退化 shape 仍由
+    ``rasterize`` 报错，保持 fail loud。
+    """
+    for i0, i1, i2 in _strip_triangles(len(vertices)):
+        area = ((vertices[i1].x - vertices[i0].x)
+                * (vertices[i2].y - vertices[i0].y)
+                - (vertices[i1].y - vertices[i0].y)
+                * (vertices[i2].x - vertices[i0].x))
+        if abs(area) > _EPSILON:
+            return True
+    return False
+
+
 def _sample_bilinear(texture: bytes, tex_w: int, tex_h: int,
                      u: float, v: float) -> bytes:
     """双线性采样：texel = uv*(tex_w-1)/uv*(tex_h-1)，越界 clamp。
@@ -393,17 +411,32 @@ def composite_shapes(
     - 单一 shape 时输出与 render_shape_from_image 完全一致（同 bounds、
       同输出尺寸；混合恒等）
 
-    空列表 / 任一 shape 畸形 → CatalogError（fail loud）。
+    空列表 / shape 顶点结构畸形 / 全部 shape 退化 → CatalogError（fail
+    loud）。单个共线 shape 在存在其它有效图层时作为不可见层忽略。
     """
     if not shapes:
         raise CatalogError("composite_shapes: 无任何 shape 命令可合成")
     all_vertices: list[Vertex] = []
     for _, vs in shapes:
+        if len(vs) < 3:
+            raise CatalogError(
+                f"渲染需要 >= 3 个顶点（triangle strip），实际 {len(vs)} 个")
         all_vertices.extend(vs)
-    bounds = compute_bounds(all_vertices)
+    # 先校验所有输入（含被过滤的退化层）中的 finite/bounds 语义，再
+    # 丢弃确实没有任何覆盖像素的 triangle strip，避免错误数据被静默吞掉。
+    compute_bounds(all_vertices)
+    visible_shapes = [(img, vs) for img, vs in shapes
+                      if _has_non_degenerate_triangle(vs)]
+    if not visible_shapes:
+        raise CatalogError(
+            "composite_shapes: 所有 shape 均退化（无有效三角形）")
+    visible_vertices: list[Vertex] = []
+    for _, vs in visible_shapes:
+        visible_vertices.extend(vs)
+    bounds = compute_bounds(visible_vertices)
     w, h = suggest_output_size(bounds)
     canvas = bytearray(w * h * 4)
-    for img, vs in shapes:
+    for img, vs in visible_shapes:
         x0, y0, x1, y1 = _texture_region(vs, img.width, img.height)
         region_w = x1 - x0
         region_h = y1 - y0

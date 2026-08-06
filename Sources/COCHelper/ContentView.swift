@@ -183,11 +183,10 @@ private struct VillageSidebarRow: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                    } else if identity.source != .officialName {
-                        Text(VillageIdentityDisplayText.nicknamePendingMarker)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    } else {
+                        // Issue #49 评审 P2：统一到共享回退小标记（source !=
+                        // .officialName 时渲染，视觉与原先内联实现一致）。
+                        VillageIdentityDisplayText.nicknamePendingMarkerView(identity: identity)
                     }
                 }
                 Text(VillageIdentityDisplayText.tagLineText(
@@ -321,7 +320,16 @@ struct UpgradeTrackerView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                TrackerHeaderView(village: village, openImport: openImport)
+                // Issue #49 评审 P2：头部在 TimelineView 之外，stale 派生用默认
+                // Date() 不会随 60s tick 重算；包一层同频率 TimelineView 并透传
+                // context.date，跨过 24h stale 阈值后下一分钟即可翻转为「已过期」。
+                TimelineView(.periodic(from: Date(), by: 60)) { context in
+                    TrackerHeaderView(
+                        village: village,
+                        openImport: openImport,
+                        now: context.date
+                    )
+                }
 
                 if let village {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
@@ -357,17 +365,17 @@ private struct TrackerHeaderView: View {
     @EnvironmentObject private var model: AppModel
     let village: VillageProfile?
     let openImport: () -> Void
+    /// Issue #49 评审 P2：调用点包在 `TimelineView(.periodic(by: 60))` 内，投影
+    /// `at:` 用 tick 的 `context.date`——stale 派生随 60s tick 重算，跨过 24h
+    /// 阈值后下一分钟即可翻转为「已过期」（与侧边栏/详情页同一机制）。
+    let now: Date
 
-    /// 村庄模式：投影身份（主标题 = 官方昵称优先；status 的 stale 派生使用默认 `Date()`，
-    /// 头部无 TimelineView 上下文）。
-    /// 已知残留：头部没有周期重渲染——跨过 24h stale 阈值后，若期间没有模型变化或
-    /// 村庄切换，头部会继续显示 "官方 API 已更新 <昨天>"，直到下次重算；侧边栏行在
-    /// 60s TimelineView tick 内可正确翻转为 "已过期"。24h 阈值下秒级/分钟级漂移无影响。
     private var identity: VillageDisplayIdentity? {
         guard let village else { return nil }
         return VillageDisplayIdentityProjection.project(
             village: village,
-            officialState: village.officialAPIState
+            officialState: village.officialAPIState,
+            at: now
         )
     }
 
@@ -386,6 +394,9 @@ private struct TrackerHeaderView: View {
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        // Issue #49 评审 P2：无官方昵称（本地名/tag/未命名回退）时
+                        // 明确标出"待获取昵称"，与侧边栏同语义。
+                        VillageIdentityDisplayText.nicknamePendingMarkerView(identity: identity)
                     } else {
                         Text("升级总览")
                             .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -785,32 +796,39 @@ struct AccountDataView: View {
     /// 作为"当前村庄"页面在此补充身份行——与详情页头部同一投影与 helper，
     /// 只是权重更小（"账号数据" 仍是本页最大标题）。
     ///
-    /// 本页无 TimelineView，stale 派生用默认 `Date()`：与 TrackerHeaderView 同类
-    /// 残留——跨过 24h 阈值后需等模型变化或村庄切换才重算翻转为「已过期」。
+    /// Issue #49 评审 P2：本页原本无 TimelineView，stale 派生用默认 `Date()`
+    /// 跨过 24h 阈值后要等模型变化才翻转为「已过期」；现在只包住身份行
+    /// （不包导入面板/TextEditor），随 60s tick 重算投影。
     /// 村庄不存在（边缘）时不渲染，不崩溃。
     @ViewBuilder
     private var identityHeader: some View {
         if let village = model.villages.first(where: { $0.id == model.selectedVillageID }) {
-            let identity = VillageDisplayIdentityProjection.project(
-                village: village,
-                officialState: village.officialAPIState
-            )
-            VStack(alignment: .leading, spacing: 6) {
-                Text(identity.primaryName)
-                    .font(.title2.weight(.semibold))
-                    .lineLimit(1)
-                Text(VillageIdentityDisplayText.tagLineText(
-                    identity: identity,
-                    fallback: "尚未导入账号 JSON"
-                ))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if let alias = identity.localAlias {
-                    Text("本地别名：" + alias)
-                        .font(.caption)
+            TimelineView(.periodic(from: Date(), by: 60)) { context in
+                let identity = VillageDisplayIdentityProjection.project(
+                    village: village,
+                    officialState: village.officialAPIState,
+                    at: context.date
+                )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(identity.primaryName)
+                        .font(.title2.weight(.semibold))
+                        .lineLimit(1)
+                    Text(VillageIdentityDisplayText.tagLineText(
+                        identity: identity,
+                        fallback: "尚未导入账号 JSON"
+                    ))
+                        .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if let alias = identity.localAlias {
+                        Text("本地别名：" + alias)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        // Issue #49 评审 P2：与详情页头部同语义的回退小标记。
+                        VillageIdentityDisplayText.nicknamePendingMarkerView(identity: identity)
+                    }
                 }
             }
         }

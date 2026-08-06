@@ -189,7 +189,11 @@ struct OfficialPlayerCardView: View {
             }
 
             summarySection(title: "部落与联赛", systemImage: "person.3.fill") {
+                // Issue #49 要求"部落名称和 Tag"（评审 P2）：名称与 Tag 分开两格，
+                // name/tag 各自可空独立展示——name 缺失但 tag 存在时仍显示 Tag，
+                // 不做推断（tag 原样透传，带 # 前缀）。
                 metric("部落", snapshot.clan?.name)
+                metric("部落 Tag", snapshot.clan?.tag)
                 metric("部落角色", roleLabel(snapshot.role))
                 metric("当前联赛", snapshot.league?.name)
                 metric("建筑大师联赛", snapshot.builderBaseLeague?.name)

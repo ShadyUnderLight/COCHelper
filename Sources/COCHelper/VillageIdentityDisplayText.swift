@@ -1,7 +1,9 @@
 import Foundation
 import COCHelperCore
+import SwiftUI
 
-/// Issue #49 Task 2/3：侧边栏、升级总览头部与村庄详情页头部共用的身份行内文案。
+/// Issue #49 Task 2/3：侧边栏、升级总览头部、账号数据页与村庄详情页头部共用的
+/// 身份行内文案与回退小标记。
 /// 状态文案遵守 issue 风格表：stale→"已过期"；failed→"获取失败"；
 /// success→"官方 API 已更新 <time>"；never/skipped/loading→短次级文案。
 /// 无官方昵称（本地名/tag/未命名回退）时显示小标记"待获取昵称"，不把 tag 冒充大标题。
@@ -11,6 +13,20 @@ import COCHelperCore
 enum VillageIdentityDisplayText {
     /// 无官方昵称时的一行小标记（subtle、secondary 样式）。
     static let nicknamePendingMarker = "待获取昵称"
+
+    /// 回退小标记视图（Issue #49 评审 P2）：`identity.source != .officialName`
+    /// 时渲染一行"待获取昵称"（所有非官方来源——本地名/tag/未命名——都是
+    /// 昵称缺失的回退状态，不把 tag 冒充昵称），有官方昵称时不渲染任何内容。
+    /// 语义与侧边栏内联条件完全一致；各页面在"别名行"缺失处使用它。
+    @ViewBuilder
+    static func nicknamePendingMarkerView(identity: VillageDisplayIdentity) -> some View {
+        if identity.source != .officialName {
+            Text(nicknamePendingMarker)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
 
     /// 官方展示状态 → 一行 caption 文案。
     static func statusText(for identity: VillageDisplayIdentity) -> String {

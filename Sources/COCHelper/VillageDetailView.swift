@@ -151,8 +151,8 @@ struct VillageDetailView: View {
     ///
     /// `now` 来自外层 `TimelineView(.periodic)` 的 `context.date`（detailContent 在
     /// TimelineView 内），投影 `at:` 用它而非默认 `Date()`——stale 派生随 60s tick
-    /// 重算，跨过 24h 阈值后头部在下一分钟即可翻转为「已过期」，修掉升级总览头部
-    /// （TrackerHeaderView，位于 TimelineView 之外）同类 stale 残留在本页的问题。
+    /// 重算，跨过 24h 阈值后头部在下一分钟即可翻转为「已过期」；升级总览头部与
+    /// 账号数据页身份行同规则（#49 评审 P2 修复）。
     private func header(
         village: VillageProfile,
         projection: VillageCatalogProjection,
@@ -186,6 +186,11 @@ struct VillageDetailView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                    } else {
+                        // Issue #49 评审 P2：无官方昵称（本地名/tag/未命名回退）时
+                        // 明确标出"待获取昵称"，与侧边栏同语义（别名与标记互斥：
+                        // 别名只在 source == .officialName 时出现）。
+                        VillageIdentityDisplayText.nicknamePendingMarkerView(identity: identity)
                     }
                     HStack(spacing: 10) {
                         snapshotTimeLabel(village)

@@ -38,8 +38,8 @@ public struct VillageProfile: Identifiable, Codable, Hashable, Sendable {
 
     /// 规范化且格式有效的官方 tag；缺 tag 或格式无效返回 nil（UI 显示为 skipped）。
     public var officialTag: String? {
-        guard let normalized = OfficialPlayerTagValidator.normalized(tag),
-              OfficialPlayerTagValidator.isValid(normalized) else {
+        guard let normalized = OfficialTagValidator.normalized(tag),
+              OfficialTagValidator.isValid(normalized) else {
             return nil
         }
         return normalized
@@ -56,8 +56,8 @@ public struct VillageProfile: Identifiable, Codable, Hashable, Sendable {
     /// 应用一个新的导入快照；若账号 tag 变化（含变为缺失），官方数据不再适用于
     /// 本村庄，必须重置，避免在详情中展示旧账号的官方资料。
     public mutating func applyImportedSnapshot(_ snapshot: AccountSnapshot) {
-        let tagChanged = OfficialPlayerTagValidator.normalized(tag)
-            != OfficialPlayerTagValidator.normalized(snapshot.tag)
+        let tagChanged = OfficialTagValidator.normalized(tag)
+            != OfficialTagValidator.normalized(snapshot.tag)
         accountSnapshot = snapshot
         if tagChanged {
             officialAPIState = nil

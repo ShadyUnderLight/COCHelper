@@ -116,8 +116,8 @@ extension OfficialAPIState {
     /// "未知"与"确认不在部落中"（`lastGood?.clan == nil` 且抓取成功）区分开。
     public var currentClanTag: String? {
         guard let raw = lastGood?.clan?.tag,
-              let normalized = OfficialPlayerTagValidator.normalized(raw),
-              OfficialPlayerTagValidator.isValid(normalized) else {
+              let normalized = OfficialTagValidator.normalized(raw),
+              OfficialTagValidator.isValid(normalized) else {
             return nil
         }
         return normalized

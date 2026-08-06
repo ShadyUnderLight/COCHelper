@@ -23,8 +23,8 @@ public enum EndpointRefresher {
     where Snapshot: Codable & Hashable & Sendable & UnrecognizedKeysProviding & EndpointParserVersioning {
         var uniqueTags = Set<String>()
         for rawTag in tags {
-            guard let normalized = OfficialPlayerTagValidator.normalized(rawTag),
-                  OfficialPlayerTagValidator.isValid(normalized) else {
+            guard let normalized = OfficialTagValidator.normalized(rawTag),
+                  OfficialTagValidator.isValid(normalized) else {
                 continue
             }
             uniqueTags.insert(normalized)

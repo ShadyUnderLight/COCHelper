@@ -337,6 +337,8 @@ struct VillageDetailView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.caption2)
                         .foregroundStyle(foreground)
+                        // 纯装饰图标：不进辅助功能树，避免被误报为选中/多读一次。
+                        .accessibilityHidden(true)
                 }
             }
             .font(.caption.weight(.semibold))
@@ -351,6 +353,9 @@ struct VillageDetailView: View {
             }
         }
         .buttonStyle(.plain)
+        // 显式声明筛选选中态（外部 review P2：勾选图标曾误报 selected，
+        // 实际选中的 chip 反而无选中语义）。
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func filtered(_ groups: [VillageDetailGroup]) -> [VillageDetailGroup] {

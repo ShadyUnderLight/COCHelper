@@ -1203,6 +1203,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        "currentLevel=2 → 命中 levels[2] 的 levelVisual")
         XCTAssertNil(state.currentLevelIcon)
         XCTAssertNil(state.levelVisual, "item-level 无资产 → nil（不被伪造）")
+        XCTAssertNil(state.icon, "item-level 无 icon → nil（不被伪造）")
         XCTAssertNil(state.currentLevelVisual?.missingReason, "可渲染资产无缺失原因")
 
         // 聚合传播（P4）：两条同 (section,dataID,level=2) 非升级记录 → 聚合 1 条，字段保留

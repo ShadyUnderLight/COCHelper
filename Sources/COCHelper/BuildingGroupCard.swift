@@ -28,12 +28,13 @@ struct BuildingGroupCard: View {
     let onOpenDetail: (BuildingInstance) -> Void
 
     /// 实例区：每条记录一个实例块（头部行 + 内嵌阶梯），实例块间分隔线。
-    /// 用索引判断末位（避免逐实例 O(n²) 的 `last?.id` 比较）。
+    /// `BuildingInstance` 是 Identifiable（id = 原始快照记录 ID，组内唯一），
+    /// 末位判断用 `last?.id` 与 `LevelDetailSheet` 逐级行先例一致。
     private var instanceList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(group.instances.indices, id: \.self) { index in
-                instanceBlock(group.instances[index])
-                if index != group.instances.count - 1 {
+            ForEach(group.instances) { instance in
+                instanceBlock(instance)
+                if instance.id != group.instances.last?.id {
                     Divider()
                 }
             }

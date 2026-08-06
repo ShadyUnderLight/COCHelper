@@ -17,7 +17,8 @@ import COCHelperCore
 /// - 完整时长合计（totalDurationSeconds，前缀必须注明是完整升级耗时而非完成日期）
 /// - 完整性标注（partialMissing 橙色 / versionMismatch 红色 / complete 不显示）
 ///
-/// 布局：VStack(alignment: .leading) 紧凑间距，整列浅色背景圆角。
+/// 布局：VStack(alignment: .leading) 紧凑间距；组件撑满可用高度（组卡内即
+/// 实例区高度，实现「跨实例高度」的整列浅色背景圆角汇总栏）。
 struct BuildingGroupSummaryView: View {
     let group: BuildingGroup
 
@@ -38,11 +39,16 @@ struct BuildingGroupSummaryView: View {
         return parts.isEmpty ? "无费用数据" : parts.joined(separator: " · ")
     }
 
-    /// 完整时长合计：> 0 走 `AccountDurationFormatter.label`（完整升级耗时，
-    /// 不得写成完成日期）；== 0 时区分「全为即时升级」（阶梯非空且全部时长
-    /// 已知，如城墙 durationSeconds == 0 计入 0 秒）与「暂无目录数据」
-    /// （无阶梯或时长缺失，如满级组 / 目录缺失——此时不计入误导性时长）。
+    /// 完整时长合计：剩余等级为 0（满级组）时显示「已达目录上限」（参照
+    /// `UpgradeDisplayRow.durationLabel` 的 isMaxed 分支先例，避免把「无待升级
+    /// 时长」误报成目录缺失）；> 0 走 `AccountDurationFormatter.label`（完整升级
+    /// 耗时，不得写成完成日期）；== 0 且阶梯非空且全部时长已知（如城墙
+    /// durationSeconds == 0 计入 0 秒）显示「即时」；其余（阶梯部分缺失）显示
+    /// 「暂无目录数据」。
     private var totalDurationLabel: String {
+        if group.summary.remainingLevelCount == 0 {
+            return "已达目录上限"
+        }
         let seconds = group.summary.totalDurationSeconds
         if seconds > 0 { return AccountDurationFormatter.label(seconds) }
         let steps = group.instances.flatMap(\.steps)
@@ -128,7 +134,7 @@ struct BuildingGroupSummaryView: View {
 
             completenessLabel
         }
-        .frame(width: 180, alignment: .leading)
+        .frame(minWidth: 180, maxWidth: 180, maxHeight: .infinity, alignment: .leading)
         .padding(12)
         .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
     }

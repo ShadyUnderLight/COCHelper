@@ -5,24 +5,26 @@ import COCHelperCore
 ///
 /// 输入升序 `[BuildingUpgradeStep]`（BuildingGroupProjection 已保证 level 升序
 /// 且界内；**每组实例只传该记录自己的阶梯，不得跨实例合并**——不同等级记录
-/// 的阶梯各自显示，避免把当前等级画成待升级项）。自适应列宽 LazyVGrid
+/// 的阶梯各自显示，避免把当前等级画成待升级项）。固定三列 LazyVGrid
 /// 单元格展示 Lv / 费用 / 完整时长，单元格语义与 `LevelDetailSheet` 逐级行
 /// 一致：durationSeconds == 0 显示「即时」、nil 显示「暂无目录数据」、
-/// 费用 nil 显示「暂无费用」。阶梯为空（满级或不可 join）时显示占位
+/// 费用 nil 显示「无费用数据」。阶梯为空（满级或不可 join）时显示占位
 /// 「无剩余等级」。
 struct BuildingUpgradeStepGrid: View {
     /// 升序阶梯（调用方传入；可为空数组）。
     let steps: [BuildingUpgradeStep]
 
-    /// 自适应列宽（min 150 / max 180，按可用宽度自动分列）。
+    /// 固定三列（规格「两列或三列」取上限；窄窗口每列收缩，不加横向滚动）。
     private let columns = [
-        GridItem(.adaptive(minimum: 150, maximum: 180), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
     ]
 
-    /// 费用文案：千分位；费用缺失 →「暂无费用」；资源缺失归「未知资源」
+    /// 费用文案：千分位；费用缺失 →「无费用数据」；资源缺失归「未知资源」
     /// （与投影汇总 `BuildingGroupProjection.summary` 同规则，不丢弃费用）。
     private func costLabel(_ step: BuildingUpgradeStep) -> String {
-        guard let cost = step.upgradeCost else { return "暂无费用" }
+        guard let cost = step.upgradeCost else { return "无费用数据" }
         let resource = step.upgradeResource ?? "未知资源"
         return resource + " " + BuildingCostFormatter.label(cost)
     }

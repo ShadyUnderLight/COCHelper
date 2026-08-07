@@ -87,6 +87,8 @@ final class ClanCombatSummaryTests: XCTestCase {
         ])
         XCTAssertNil(summary.districts[1].destructionPercent)
         XCTAssertNil(summary.districts[1].stars)
+        XCTAssertNil(summary.districts[1].attackCount)
+        XCTAssertNil(summary.districts[1].totalLooted)
         XCTAssertEqual(summary.totalLooted, 5000)
     }
 
@@ -99,5 +101,7 @@ final class ClanCombatSummaryTests: XCTestCase {
         XCTAssertEqual(ClanCombatSummary.clampedPercent(100), 100)
         XCTAssertEqual(ClanCombatSummary.clampedPercent(50.5), 50.5)
         XCTAssertEqual(ClanCombatSummary.clampedPercent(Double.nan), 0)  // NaN → 0 防御
+        XCTAssertEqual(ClanCombatSummary.clampedPercent(Double.infinity), 0)
+        XCTAssertEqual(ClanCombatSummary.clampedPercent(-Double.infinity), 0)
     }
 }

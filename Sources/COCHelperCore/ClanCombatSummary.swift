@@ -11,6 +11,12 @@ public struct ClanWarAttackLine: Hashable, Sendable {
     public let stars: Int?
     /// 摧毁百分比；nil = 缺失（不得用 0 顶替）。
     public let destructionPercentage: Double?
+
+    public init(order: Int? = nil, stars: Int? = nil, destructionPercentage: Double? = nil) {
+        self.order = order
+        self.stars = stars
+        self.destructionPercentage = destructionPercentage
+    }
 }
 
 /// 单个成员的战争攻击汇总。
@@ -21,6 +27,12 @@ public struct ClanWarMemberSummary: Hashable, Sendable {
     public let totalStars: Int
     /// 逐次攻击明细，与输入一一对应、保持官方顺序。
     public let lines: [ClanWarAttackLine]
+
+    public init(attackCount: Int, totalStars: Int, lines: [ClanWarAttackLine]) {
+        self.attackCount = attackCount
+        self.totalStars = totalStars
+        self.lines = lines
+    }
 }
 
 /// 突袭日志中的单个子城明细行（与官方 districts 数组一一对应）。
@@ -37,6 +49,15 @@ public struct CapitalRaidDistrictLine: Hashable, Sendable {
     public let attackCount: Int?
     /// 掠夺的都城金币；nil = 缺失。
     public let totalLooted: Int?
+
+    public init(name: String? = nil, stars: Int? = nil, destructionPercent: Double? = nil,
+                attackCount: Int? = nil, totalLooted: Int? = nil) {
+        self.name = name
+        self.stars = stars
+        self.destructionPercent = destructionPercent
+        self.attackCount = attackCount
+        self.totalLooted = totalLooted
+    }
 }
 
 /// 突袭季日志的子城汇总。
@@ -45,6 +66,11 @@ public struct CapitalRaidDistrictSummary: Hashable, Sendable {
     public let districts: [CapitalRaidDistrictLine]
     /// 掠夺金币总和（缺失记 0）。
     public let totalLooted: Int
+
+    public init(districts: [CapitalRaidDistrictLine], totalLooted: Int) {
+        self.districts = districts
+        self.totalLooted = totalLooted
+    }
 }
 
 /// 战争/突袭聚合投影入口。纯函数，不改变任何现有模型/持久化语义。

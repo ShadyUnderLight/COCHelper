@@ -76,9 +76,11 @@ struct LevelDetailSheet: View {
     }
 
     private func durationLabel(_ level: CatalogLevel) -> String {
-        guard let seconds = level.durationSeconds else { return "暂无目录数据" }
-        if seconds > 0 { return AccountDurationFormatter.label(seconds) }
-        return "即时"
+        // Issue #74b：时长语义状态化——缺失类（初始等级/装备无时长/目录缺失/
+        // 解析失败）不再统一显示「暂无目录数据」；文案与列表行共用
+        // CatalogDurationState.durationLabel 防漂移。nil = 无目录记录/未知
+        // 场景（UI 兜底）。
+        level.durationState?.durationLabel ?? "暂无目录数据"
     }
 
     /// 逐级解锁条件（Issue #68）：统一走 `CatalogLevel.requirements(base:)` +

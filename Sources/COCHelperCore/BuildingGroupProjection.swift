@@ -10,10 +10,34 @@ public struct BuildingUpgradeStep: Hashable, Sendable {
     public let upgradeResource: String?
     /// 完整升级时长；nil = 缺失，0 = 有效即时升级。
     public let durationSeconds: Int64?
+    /// Issue #74b：目录缺失原因（CatalogLevel.missingReason 透传；组卡据此
+    /// 区分「全部缺失」与「部分缺失」，缺失类不再与「无目录」同文案）。
+    public let missingReason: String?
+
+    public init(
+        level: Int,
+        upgradeCost: Int64?,
+        upgradeResource: String?,
+        durationSeconds: Int64?,
+        missingReason: String? = nil
+    ) {
+        self.level = level
+        self.upgradeCost = upgradeCost
+        self.upgradeResource = upgradeResource
+        self.durationSeconds = durationSeconds
+        self.missingReason = missingReason
+    }
 
     public var hasCost: Bool { upgradeCost != nil }
     public var hasDuration: Bool { durationSeconds != nil }
     public var isInstant: Bool { durationSeconds == 0 }
+
+    /// Issue #74b：时长语义映射（与 `CatalogLevel.durationState` 同一单一
+    /// 映射点 `CatalogDurationState.state`，防双实现漂移）。nil = 双 nil
+    /// 未知场景（UI 兜底「暂无目录数据」）。
+    public var durationState: CatalogDurationState? {
+        CatalogDurationState.state(durationSeconds: durationSeconds, missingReason: missingReason)
+    }
 }
 
 /// 一条原始快照记录 + 其升级阶梯（可追溯）。
@@ -175,7 +199,8 @@ public enum BuildingGroupProjection {
                     level: $0.level,
                     upgradeCost: $0.upgradeCost,
                     upgradeResource: $0.upgradeResource,
-                    durationSeconds: $0.durationSeconds
+                    durationSeconds: $0.durationSeconds,
+                    missingReason: $0.missingReason
                 )
             }
     }

@@ -128,3 +128,72 @@ def test_generate_missing_upgrade_data_fails_loud(full_minimal_apk, tmp_path):
     with pytest.raises(CatalogError, match="upgrade_data.csv"):
         generate(str(apk), None, out)
     assert not out.exists()
+
+
+# ---- Issue #74b：时长语义 counts 拆分 ----
+
+def _level(seconds, reason):
+    from game_catalog.model import CatalogLevel
+    return CatalogLevel(
+        level=1, durationSeconds=seconds, missingReason=reason,
+        upgradeResource=None, upgradeCost=None,
+        requiredTownHallLevel=None, requiredLaboratoryLevel=None,
+        icon=None, levelVisual=None,
+    )
+
+
+def _item(data_id, levels):
+    from game_catalog.model import CatalogItem
+    return CatalogItem(
+        section="units", dataID=data_id, category="troops", base="home",
+        baseMissingReason=None, name="x", maxLevel=len(levels),
+        icon=None, levelVisual=None, missingReason=None, levels=levels,
+    )
+
+
+def test_counts_for_duration_buckets():
+    """counts_for 把时长拆到 6 个语义桶，且 sum 不变量成立。"""
+    from game_catalog.catalog import counts_for
+    items = [
+        _item(1, [_level(3600, None), _level(0, None)]),                      # timed + instant
+        _item(2, [_level(None, "min_level_initial_no_upgrade")]),             # initialLevel
+        _item(3, [_level(None, "no_time_source")]),                           # notApplicable
+        _item(4, [_level(None, "time_missing"), _level(None, "upgrade_data_missing")]),  # sourceMissing ×2
+        _item(5, [_level(None, "time_invalid")]),                             # parseFailed
+        _item(6, [_level(None, None)]),                                       # unknown（计入 missingTime）
+    ]
+    counts = counts_for(items)
+    assert counts["timed"] == 1
+    assert counts["instant"] == 1
+    assert counts["initialLevel"] == 1
+    assert counts["notApplicable"] == 1
+    assert counts["sourceMissing"] == 2
+    assert counts["parseFailed"] == 1
+    # missingTime 语义保持：全部 durationSeconds is None（含 unknown）
+    assert counts["missingTime"] == 6
+    # sum 不变量：timed + instant + missingTime == levels
+    assert counts["timed"] + counts["instant"] + counts["missingTime"] == counts["levels"] == 8
+
+
+def test_generate_manifest_counts_include_duration_buckets(full_minimal_apk, tmp_path):
+    """生成器产出的 manifest counts 带拆分字段（Town Hall 0 秒 → instant）。"""
+    import json
+    out = tmp_path / "out"
+    generate(full_minimal_apk, None, out)
+    c = json.loads((out / "manifest.json").read_text())["counts"]
+    for field in ("timed", "instant", "notApplicable", "initialLevel",
+                  "sourceMissing", "parseFailed"):
+        assert isinstance(c.get(field), int), f"counts.{field} 缺失或非 int"
+    assert c["timed"] == 0
+    assert c["instant"] == 1
+    assert c["missingTime"] == 0
+    assert c["timed"] + c["instant"] + c["missingTime"] == c["levels"]
+
+
+def test_counts_for_annotations_evaluable():
+    """P1 回归：counts_for 的类型注解必须可立即求值（Python 3.11 模块导入即
+    求值注解；3.14 PEP 649 延迟掩盖了 NameError——get_type_hints 强制求值）。"""
+    import typing
+    from game_catalog import catalog as catalog_mod
+    hints = typing.get_type_hints(catalog_mod.counts_for)
+    assert "items" in hints

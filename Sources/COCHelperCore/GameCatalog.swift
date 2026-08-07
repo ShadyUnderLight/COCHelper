@@ -7,6 +7,16 @@ public struct CatalogCounts: Codable, Hashable, Sendable {
     public let levels: Int
     public let missingIcons: Int?
     public let missingTime: Int?
+    /// Issue #74b：时长语义拆分（可选字段，旧 manifest 缺键 → nil 向后兼容；
+    /// 语义与 Python classify_duration 同桶）。不变量：
+    /// timed + instant + missingTime == levels；缺失类四桶之和 == missingTime
+    ///（有效目录由 validate 的 nil⟺reason 互斥保证 unknown == 0 时成立）。
+    public let timed: Int?
+    public let instant: Int?
+    public let notApplicable: Int?
+    public let initialLevel: Int?
+    public let sourceMissing: Int?
+    public let parseFailed: Int?
 }
 
 public struct CatalogGeneratedFile: Codable, Hashable, Sendable {
@@ -90,6 +100,79 @@ extension CatalogAssetRef {
     }
 }
 
+// MARK: - Duration semantics (Issue #74b)
+
+/// 逐级时长的可区分语义。`CatalogLevel.missingReason` 字符串值域在 Python
+/// 生成器（LEVEL_MISSING_REASONS）与 Swift 映射点（`durationState`）两处定义；
+/// 契约外 reason 走 `unknownReason` 防御，不修改值域契约。
+public enum CatalogDurationState: Hashable, Sendable {
+    /// 有值且 > 0：完整升级时长（秒）。
+    case timed(seconds: Int64)
+    /// 0 秒：有效即时升级（如城墙），不得归为缺失。
+    case instant
+    /// 初始等级（min_level_initial_no_upgrade）：to_next 表最低等级，无升级时长。
+    case initialLevel
+    /// 源表无时间列（no_time_source）：仅表示数据源层面无时长数据；
+    /// 不得推断为「游戏内无需升级时间」（Issue #74 评审定稿）。
+    case notApplicable
+    /// 源字段缺失（time_missing / upgrade_data_missing）。
+    case sourceMissing
+    /// 源字段格式解析失败（time_invalid）。
+    case parseFailed
+    /// 未知 reason（防御：值域契约外或合成数据）。
+    case unknownReason(String)
+
+    /// 时长语义唯一映射点（`CatalogLevel`/`BuildingUpgradeStep` 共用防漂移，
+    /// Issue #74b）。nil = durationSeconds 与 reason 双 nil（未知场景，UI 兜底
+    /// 「暂无目录数据」）；unknownReason = reason 在契约外，或 durationSeconds
+    /// 为负（防御分支：生成层已拒绝负数，仅解码旧/损坏数据可达）。
+    public static func state(
+        durationSeconds: Int64?,
+        missingReason: String?
+    ) -> CatalogDurationState? {
+        if let seconds = durationSeconds {
+            if seconds > 0 { return .timed(seconds: seconds) }
+            if seconds == 0 { return .instant }
+            return .unknownReason("negative_duration")  // 防御：生成层已拒绝负数
+        }
+        switch missingReason {
+        case "min_level_initial_no_upgrade": return .initialLevel
+        case "no_time_source": return .notApplicable
+        case "time_invalid": return .parseFailed
+        case "time_missing", "upgrade_data_missing": return .sourceMissing
+        case let reason?: return .unknownReason(reason)
+        case nil: return nil
+        }
+    }
+}
+
+extension CatalogLevel {
+    /// 时长语义映射（单一映射点 `CatalogDurationState.state` 的便捷包装）。
+    /// nil = durationSeconds 为 nil 且 reason 为 nil（未知场景，UI 兜底
+    /// 「暂无目录数据」）；unknownReason = 目录记录存在但 reason 在契约外，
+    /// 或 durationSeconds 为负（防御分支：生成层已拒绝负数，仅解码旧/损坏
+    /// 数据可达）。
+    public var durationState: CatalogDurationState? {
+        CatalogDurationState.state(durationSeconds: durationSeconds, missingReason: missingReason)
+    }
+}
+
+extension CatalogDurationState {
+    /// 展示文案（Core 层可测；timed 走既有 AccountDurationFormatter 防格式漂移）。
+    /// prefix（「完整时长：」等）由 UI 上下文拼接；缺失类文案不带 prefix。
+    public var durationLabel: String {
+        switch self {
+        case .timed(let seconds): return AccountDurationFormatter.label(seconds)
+        case .instant: return "即时"
+        case .initialLevel: return "初始等级，无升级时长"
+        case .notApplicable: return "该类别无时长数据"
+        case .sourceMissing: return "目录缺失"
+        case .parseFailed: return "目录解析失败"
+        case .unknownReason: return "暂无目录数据"
+        }
+    }
+}
+
 // MARK: - Items
 
 public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
@@ -104,7 +187,40 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
     public let maxLevel: Int
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
+    /// Issue #74b（deprecated provenance）：来源级缺失原因（如
+    /// `deprecated_in_source`）。旧目录缺键 → nil（向后兼容）；此前该字段
+    /// 在 Swift 模型缺失，解码时被静默丢弃。
+    public let missingReason: String?
     public let levels: [CatalogLevel]
+
+    /// 显式 memberwise init：`missingReason` 带默认值 nil（既有调用点不传该
+    /// 参数保持兼容——与 `CatalogLevel.requiredHeroTavernLevel` 同先例；
+    /// 注意 Swift 合成 init 对「let 带默认值」显式传参会报错，故必须显式写）。
+    public init(
+        section: String,
+        category: String,
+        dataID: Int64,
+        base: String?,
+        baseMissingReason: String?,
+        name: String,
+        maxLevel: Int,
+        icon: CatalogAssetRef?,
+        levelVisual: CatalogAssetRef?,
+        missingReason: String? = nil,
+        levels: [CatalogLevel]
+    ) {
+        self.section = section
+        self.category = category
+        self.dataID = dataID
+        self.base = base
+        self.baseMissingReason = baseMissingReason
+        self.name = name
+        self.maxLevel = maxLevel
+        self.icon = icon
+        self.levelVisual = levelVisual
+        self.missingReason = missingReason
+        self.levels = levels
+    }
 
     public var id: String { "\(section):\(dataID)" }
 }
@@ -306,13 +422,20 @@ public struct GameCatalog: Sendable {
         itemsBySection[section] ?? []
     }
 
+    /// 「升级到 nextLevel 级的完整等级记录」（含 missingReason）；目录无该等级
+    /// 记录返回 nil。Issue #74b：投影层用它单一查表，同时取 durationSeconds 与
+    /// durationState，避免 `durationToUpgradeLevel`（只返回秒数）二次查表漂移。
+    public func catalogLevel(toUpgrade nextLevel: Int, for item: CatalogItem) -> CatalogLevel? {
+        guard nextLevel > 0 else { return nil }
+        return item.levels.first(where: { $0.level == nextLevel })
+    }
+
     /// 「升级到 nextLevel 级的完整时长」；目录无该等级记录时返回 nil。
     /// 所有表的 `levels[N].durationSeconds` 语义统一（见类型 doc comment）。
     /// 目录不存在 level <= 0 的记录，`nextLevel <= 0` 仅作非法输入防御；
     /// `nextLevel == 1` 时建筑系返回 0→1 建造时长、单位系返回 nil（初始等级）。
     public func durationToUpgradeLevel(nextLevel: Int, for item: CatalogItem) -> Int64? {
-        guard nextLevel > 0 else { return nil }
-        return item.levels.first(where: { $0.level == nextLevel })?.durationSeconds
+        catalogLevel(toUpgrade: nextLevel, for: item)?.durationSeconds
     }
 
     private static func key(section: String, dataID: Int64) -> String {

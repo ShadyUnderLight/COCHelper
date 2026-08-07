@@ -73,3 +73,28 @@ def test_parse_optional_int():
     assert parse_optional_int("0") == 0
     assert parse_optional_int("250") == 250
     assert parse_optional_int("abc") is None
+
+
+# ---- Issue #74b：时长语义桶分类（classify_duration）----
+
+def test_classify_duration_timed_and_instant():
+    from game_catalog.durations import classify_duration
+    assert classify_duration(3600, None) == "timed"
+    assert classify_duration(0, None) == "instant"
+
+
+def test_classify_duration_reason_buckets():
+    from game_catalog.durations import classify_duration
+    assert classify_duration(None, "min_level_initial_no_upgrade") == "initialLevel"
+    assert classify_duration(None, "no_time_source") == "notApplicable"
+    assert classify_duration(None, "time_invalid") == "parseFailed"
+    assert classify_duration(None, "time_missing") == "sourceMissing"
+    assert classify_duration(None, "upgrade_data_missing") == "sourceMissing"
+
+
+def test_classify_duration_unknown_and_defensive():
+    from game_catalog.durations import classify_duration
+    assert classify_duration(None, None) == "unknown"
+    assert classify_duration(None, "future_reason") == "unknown"
+    # 负数防御：生成层已拒绝（parse_duration CatalogError），分类函数不崩溃
+    assert classify_duration(-1, None) == "unknown"

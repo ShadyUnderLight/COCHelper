@@ -119,13 +119,29 @@ final class ClanCombatSummaryTests: XCTestCase {
     }
 
     func testDestroyedCountUnknownWhenNoEvidence() {
-        // 无明确摧毁且存在未知/未摧毁 → nil（调用方省略分句，不编造 0）
-        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
-            districtsDestroyed: nil, districts: [district(name: "A", destruction: 40)]))
+        // 存在未知摧毁率且无明确摧毁 → nil（调用方省略分句，不编造 0）
         XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
             districtsDestroyed: nil, districts: [district(name: "A", destruction: nil), district(name: "B", destruction: nil)]))
         XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: 40), district(name: "B", destruction: nil)]))
+        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
             districtsDestroyed: nil, districts: []))
+    }
+
+    func testDestroyedCountAllKnownUndestroyedIsZero() {
+        // 全部已知且未摧毁 → 0 是事实（与官方字段 0 路径一致，显示"摧毁 0 座子城"）
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: 40)]), 0)
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: 0), district(name: "B", destruction: 99.9)]), 0)
+    }
+
+    func testDestroyedCountInfAndNaNNotCountedAsDestroyed() {
+        // Inf/NaN 经 clampedPercent → 0，不算摧毁（与渲染端一致）
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: Double.infinity)]), 0)
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: Double.nan)]), 0)
     }
 
     // MARK: - clampedPercent

@@ -172,6 +172,10 @@ public struct BuildingUpgradeStep: ... {
   `BuildingUpgradeStep.missingReason` 透传；3 个 UI 消费方（LevelDetailSheet /
   UpgradeDisplayRow prefix 规则 / BuildingGroupSummaryView 全部缺失分支）；tests +10
 - ✅ 验证：`pytest -q Tools/tests` 572 passed；`swift test` 733 passed；无编译警告
+- ✅ 交叉审核修复（PR #83 两独立 reviewer）：`VillageItemState.init` 恢复必填
+  （交叉审核 N1：plan 定稿「必填」被默认值静默偏离——8 处测试构造点已补参）；
+  Swift 负数/契约外 reason 映射级测试补全；MARK 段缩进 4 格；doc 补防御场景；
+  UpgradeDisplayRow 遗留矛盾注释修正
 - ⚠️ 踩坑记录：Swift 合成 memberwise init 对「let 带默认值」的字段显式传参会报
   "extra argument"（Swift 6.3）→ 必须写显式 init（`CatalogItem`/`BuildingUpgradeStep`）；
   `CatalogItem` 参数顺序为 (section, category, dataID)（label 顺序敏感，测试锚定）

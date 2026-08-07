@@ -104,7 +104,8 @@ struct UpgradeDisplayRow: View {
         guard let state = item.nextLevelDurationState else { return "暂无目录数据" }
         let prefix: String
         if item.isUpgrading {
-            // 升级行：levelLabel 已显示「当前 → 目标」，时长不加前缀。
+            // 升级行：levelLabel 已显示「当前 → 目标」；时长行仍带「完整时长：」
+            // 前缀（与旧实现一致，明确这是完整耗时而非完成时刻）。
             prefix = "完整时长："
         } else if case .available(let level, _) = item.nextUpgrade {
             // 非升级未满级（issue 列表规则要求显示下一等级）：编号来自

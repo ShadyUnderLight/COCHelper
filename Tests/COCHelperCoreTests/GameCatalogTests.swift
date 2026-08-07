@@ -356,46 +356,52 @@ final class GameCatalogTests: XCTestCase {
                       "URL 应包含版本段（\(defaultURL.path)）")
     }
 
-// MARK: - Issue #74b: duration state 语义
+    // MARK: - Issue #74b: duration state 语义
 
-// MARK 段测试用 Payload（GameCatalogTests 私有；RequirementTests 另有同名
-// private struct，词法作用域隔离，互不冲突）。
-private struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
+    // MARK 段测试用 Payload（GameCatalogTests 私有；RequirementTests 另有同名
+    // private struct，词法作用域隔离，互不冲突）。
+    private struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
 
-private let durationStateCatalogJSON = """
-{"gameVersion":"18.400.13","items":[
-  {"section":"units","category":"troops","dataID":1,"base":"home","name":"a","maxLevel":8,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,"levels":[
-    {"level":1,"durationSeconds":3600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-    {"level":2,"durationSeconds":0,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-    {"level":3,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
-    {"level":4,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_time_source"},
-    {"level":5,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"time_invalid"},
-    {"level":6,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"time_missing"},
-    {"level":7,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"upgrade_data_missing"},
-    {"level":8,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
-  ]}
-]}
-"""
+    private let durationStateCatalogJSON = """
+    {"gameVersion":"18.400.13","items":[
+      {"section":"units","category":"troops","dataID":1,"base":"home","name":"a","maxLevel":8,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,"levels":[
+        {"level":1,"durationSeconds":3600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+        {"level":2,"durationSeconds":0,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+        {"level":3,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+        {"level":4,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_time_source"},
+        {"level":5,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"time_invalid"},
+        {"level":6,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"time_missing"},
+        {"level":7,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"upgrade_data_missing"},
+        {"level":8,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+        {"level":9,"durationSeconds":-1,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+        {"level":10,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"future_reason"}
+      ]}
+    ]}
+    """
 
-func testDurationStateMappingAllBuckets() throws {
-    let data = Data(durationStateCatalogJSON.utf8)
-    let payload = try JSONDecoder().decode(Payload.self, from: data)
-    let catalog = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
-    let item = try XCTUnwrap(catalog.item(section: "units", dataID: 1))
-    let states = Dictionary(uniqueKeysWithValues: item.levels.map { ($0.level, $0.durationState) })
-    XCTAssertEqual(states[1], .timed(seconds: 3600))
-    XCTAssertEqual(states[2], .instant)
-    XCTAssertEqual(states[3], .initialLevel)
-    XCTAssertEqual(states[4], .notApplicable)
-    XCTAssertEqual(states[5], .parseFailed)
-    XCTAssertEqual(states[6], .sourceMissing)
-    XCTAssertEqual(states[7], .sourceMissing, "upgrade_data_missing 归入 sourceMissing")
-    // nil duration + nil reason → nil（UI 兜底「暂无目录数据」，未知场景）。
-    // 注意 states 字典值本身是 Optional，需 flatMap 拍平后再断言。
-    XCTAssertNil(states[8].flatMap { $0 })
-}
+    func testDurationStateMappingAllBuckets() throws {
+        let data = Data(durationStateCatalogJSON.utf8)
+        let payload = try JSONDecoder().decode(Payload.self, from: data)
+        let catalog = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+        let item = try XCTUnwrap(catalog.item(section: "units", dataID: 1))
+        let states = Dictionary(uniqueKeysWithValues: item.levels.map { ($0.level, $0.durationState) })
+        XCTAssertEqual(states[1], .timed(seconds: 3600))
+        XCTAssertEqual(states[2], .instant)
+        XCTAssertEqual(states[3], .initialLevel)
+        XCTAssertEqual(states[4], .notApplicable)
+        XCTAssertEqual(states[5], .parseFailed)
+        XCTAssertEqual(states[6], .sourceMissing)
+        XCTAssertEqual(states[7], .sourceMissing, "upgrade_data_missing 归入 sourceMissing")
+        // nil duration + nil reason → nil（UI 兜底「暂无目录数据」，未知场景）。
+        // 注意 states 字典值本身是 Optional，需 flatMap 拍平后再断言。
+        XCTAssertNil(states[8].flatMap { $0 })
+        // 负数防御（生成层已拒绝，解码旧/损坏数据可达）：映射不崩溃、归未知
+        XCTAssertEqual(states[9], .unknownReason("negative_duration"))
+        // 契约外 reason（词表校验拒绝，但防御分支必须存在）：原样透传
+        XCTAssertEqual(states[10], .unknownReason("future_reason"))
+    }
 
-func testDurationStateRealCatalog() throws {
+    func testDurationStateRealCatalog() throws {
     let catalog = try XCTUnwrap(GameCatalog.loadBundled())
     // 单位系 level 1 = 初始等级
     let barbarian = try XCTUnwrap(catalog.item(section: "units", dataID: 4_000_000))
@@ -412,9 +418,9 @@ func testDurationStateRealCatalog() throws {
         $0.levels.contains { $0.missingReason == "time_missing" }
     }
     XCTAssertTrue(anySourceMissing, "真实目录应存在 time_missing 锚点")
-}
+    }
 
-func testDurationStateLabel() {
+    func testDurationStateLabel() {
     XCTAssertEqual(CatalogDurationState.timed(seconds: 3600).durationLabel, "1小时 0分钟")
     XCTAssertEqual(CatalogDurationState.instant.durationLabel, "即时")
     XCTAssertEqual(CatalogDurationState.initialLevel.durationLabel, "初始等级，无升级时长")
@@ -422,9 +428,9 @@ func testDurationStateLabel() {
     XCTAssertEqual(CatalogDurationState.sourceMissing.durationLabel, "目录缺失")
     XCTAssertEqual(CatalogDurationState.parseFailed.durationLabel, "目录解析失败")
     XCTAssertEqual(CatalogDurationState.unknownReason("future").durationLabel, "暂无目录数据")
-}
+    }
 
-func testCatalogItemMissingReasonDecodes() throws {
+    func testCatalogItemMissingReasonDecodes() throws {
     // 有字段：deprecated_in_source 保留
     let withReason = """
     {"gameVersion":"18.400.13","items":[
@@ -447,9 +453,9 @@ func testCatalogItemMissingReasonDecodes() throws {
     let payload2 = try JSONDecoder().decode(Payload.self, from: Data(withoutReason.utf8))
     let oldItem = try XCTUnwrap(payload2.items.first)
     XCTAssertNil(oldItem.missingReason)
-}
+    }
 
-func testCatalogCountsDecodesNewFields() throws {
+    func testCatalogCountsDecodesNewFields() throws {
     let withNew = """
     {"items":1,"levels":1,"missingIcons":0,"missingTime":0,"timed":1,"instant":0,"notApplicable":0,"initialLevel":0,"sourceMissing":0,"parseFailed":0}
     """
@@ -463,7 +469,7 @@ func testCatalogCountsDecodesNewFields() throws {
     let oldCounts = try JSONDecoder().decode(CatalogCounts.self, from: Data(old.utf8))
     XCTAssertNil(oldCounts.timed)
     XCTAssertNil(oldCounts.parseFailed)
-}
+    }
 
 }
 

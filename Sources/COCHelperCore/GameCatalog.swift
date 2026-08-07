@@ -9,7 +9,8 @@ public struct CatalogCounts: Codable, Hashable, Sendable {
     public let missingTime: Int?
     /// Issue #74b：时长语义拆分（可选字段，旧 manifest 缺键 → nil 向后兼容；
     /// 语义与 Python classify_duration 同桶）。不变量：
-    /// timed + instant + missingTime == levels；缺失类四桶之和 == missingTime。
+    /// timed + instant + missingTime == levels；缺失类四桶之和 == missingTime
+    ///（有效目录由 validate 的 nil⟺reason 互斥保证 unknown == 0 时成立）。
     public let timed: Int?
     public let instant: Int?
     public let notApplicable: Int?
@@ -125,7 +126,9 @@ public enum CatalogDurationState: Hashable, Sendable {
 extension CatalogLevel {
     /// 时长语义唯一映射点（UI/投影共用防漂移，Issue #74b）。
     /// nil = durationSeconds 为 nil 且 reason 为 nil（未知场景，UI 兜底
-    /// 「暂无目录数据」）；unknownReason = 目录记录存在但 reason 在契约外。
+    /// 「暂无目录数据」）；unknownReason = 目录记录存在但 reason 在契约外，
+    /// 或 durationSeconds 为负（防御分支：生成层已拒绝负数，仅解码旧/损坏
+    /// 数据可达）。
     public var durationState: CatalogDurationState? {
         if let seconds = durationSeconds {
             if seconds > 0 { return .timed(seconds: seconds) }

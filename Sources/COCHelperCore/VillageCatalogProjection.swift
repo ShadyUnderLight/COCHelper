@@ -64,7 +64,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let nextLevelDurationSeconds: Int64?
     /// Issue #74b：`nextLevelDurationSeconds` 的伴随语义（与时长来自同一
     /// CatalogLevel 单一查表，见 `GameCatalog.catalogLevel(toUpgrade:for:)`）。
-    /// nil = 无目录/未命中/超范围/满级/版本不匹配（UI 兜底「暂无目录数据」）；
+    /// nil = 无目录/未命中/超范围/满级/版本不匹配，以及目录记录
+    /// durationSeconds 与 reason 双 nil 的防御场景（UI 兜底「暂无目录数据」）；
     /// 非 nil 时 UI 按状态分支展示——缺失类（initialLevel/notApplicable/
     /// sourceMissing/parseFailed）不再统一显示「暂无目录数据」。
     public let nextLevelDurationState: CatalogDurationState?
@@ -169,7 +170,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         remainingSeconds: Int64?,
         nextLevel: Int?,
         nextLevelDurationSeconds: Int64?,
-        nextLevelDurationState: CatalogDurationState? = nil,
+        nextLevelDurationState: CatalogDurationState?,
         maxLevel: Int?,
         currentStageMaxLevel: Int? = nil,
         nextUpgrade: VillageNextUpgrade? = nil,

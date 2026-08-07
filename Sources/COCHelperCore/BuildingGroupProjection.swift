@@ -117,7 +117,11 @@ public enum BuildingGroupProjection {
         return keys.compactMap { key in
             guard let records = grouped[key], let first = records.first else { return nil }
             let instances = records.map { record in
-                BuildingInstance(id: record.id, item: record, steps: steps(for: record, catalog: catalog))
+                BuildingInstance(
+                    id: record.id,
+                    item: record,
+                    steps: steps(for: record, catalog: catalog, catalogIsUsable: catalogIsUsable)
+                )
             }
             return BuildingGroup(
                 base: base,
@@ -141,11 +145,23 @@ public enum BuildingGroupProjection {
     /// → 空数组：不得把无法验证的全局等级展示为可升级阶梯。
     /// unknown（含版本不匹配，Issue #67 P1-2 fail-closed）→ 空数组：旧目录
     /// 阶梯不得展示（maxLevel 仅保留供展示，不产生可升级阶梯，审核 G important）。
+    /// Issue #68 Task 2：升级记录 status 恒为 .upgrading（独立于目录），上述
+    /// status 守卫挡不住，必须显式 fail-closed 两条规则：
+    /// - `!catalogIsUsable`（目录版本不匹配/不可用）→ 空数组：T17b no-stale-ladder
+    ///   规则扩展到升级记录（版本不匹配降级整个投影，与 records() 同口径）；
+    /// - 升级中且 `currentStageMaxLevel == nil`（缺 prerequisite 无法验证阶段上限）
+    ///   → 空数组：不得回退全局 maxLevel 生成超出阶段上限的阶梯（与 unverified
+    ///   同 fail-closed 语义）。
+    /// 升级中且阶段上限可计算：阶梯 = `(currentLevel, effectiveMax]`，目标等级
+    ///（currentLevel + 1）保留（升级记录阶梯起点同非升级记录，T8）。
     private static func steps(
         for item: VillageItemState,
-        catalog: GameCatalog?
+        catalog: GameCatalog?,
+        catalogIsUsable: Bool
     ) -> [BuildingUpgradeStep] {
-        guard item.status != .unverified, item.status != .unknown,
+        guard catalogIsUsable,
+              !(item.status == .upgrading && item.currentStageMaxLevel == nil),
+              item.status != .unverified, item.status != .unknown,
               let maxLevel = item.maxLevel,
               let catalogItem = catalog?.item(section: item.section, dataID: item.dataID)
         else { return [] }

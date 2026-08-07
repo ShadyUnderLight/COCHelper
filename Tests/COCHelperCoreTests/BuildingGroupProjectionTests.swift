@@ -718,6 +718,103 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertEqual(group.summary.completeness, .versionMismatch)
     }
 
+    // MARK: - Issue #68 Task 2: 升级中记录组卡阶梯 fail-closed
+
+    /// T16/T18 同款带门槛目录（加农炮 dataID 1000002：lvl2 需 TH2、lvl3 需 TH3、lvl4 需 TH4）。
+    private func makeGatedCatalog() throws -> GameCatalog {
+        let gateJSON = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":4,
+           "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":2,"durationSeconds":120,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":180,"upgradeResource":"Elixir","upgradeCost":300,"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":4,"durationSeconds":240,"upgradeResource":"Elixir","upgradeCost":400,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
+        let payload = try JSONDecoder().decode(Payload.self, from: Data(gateJSON.utf8))
+        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+    }
+
+    /// 升级中记录 + 全局目录版本不匹配：status 保持 .upgrading（升级状态独立于目录，
+    /// 不得降级为 .unknown），但旧目录阶梯不得展示（T17b no-stale-ladder 规则
+    /// 必须扩展到升级记录——旧实现 status 仅挡 .unverified/.unknown，升级记录漏过）。
+    func testUpgradingVersionMismatchNoLadder() throws {
+        let catalog = try makeCatalog(items: Self.syntheticCatalogItems, gameVersion: "18.400.12")
+        // 加农炮 lvl5 升级中：若消费旧目录，阶梯 6..16 非空。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 5,
+                         timerSeconds: 3600, remainingSeconds: 3000, path: "0"),
+            ],
+        ])
+
+        let groups = BuildingGroupProjection.project(
+            village: village, catalog: catalog, base: .home,
+            expectedGameVersion: "18.400.13",
+            now: Date(timeIntervalSince1970: 1_700_000_000)  // now == importedAt：计时记录保持升级中
+        )
+        let group = try XCTUnwrap(groups.first)
+        let instance = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(instance.item.status, .upgrading,
+                       "升级状态独立于目录：版本不匹配不得降级为 unknown")
+        XCTAssertTrue(instance.steps.isEmpty,
+                      "版本不匹配：升级记录的旧目录阶梯不得展示（got \(instance.steps.map(\.level))）")
+        XCTAssertEqual(group.summary.completeness, .versionMismatch)
+    }
+
+    /// 升级中记录 + 缺 prerequisite（无大本营，阶段上限不可计算）：阶梯必须
+    /// fail-closed 为空——不得用 GLOBAL maxLevel 生成超出阶段上限的阶梯
+    ///（旧实现 currentStageMaxLevel == nil 回退全局 maxLevel，升级记录漏过）。
+    func testUpgradingMissingPrerequisiteNoLadder() throws {
+        let gated = try makeGatedCatalog()
+        // 村庄只有加农炮（无大本营），加农炮 lvl2 升级中。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_002, level: 2,
+                         timerSeconds: 3600, remainingSeconds: 3000, path: "0"),
+            ],
+        ])
+
+        let groups = project(village: village, catalog: gated, base: .home)
+        let group = try XCTUnwrap(groups.first)
+        let instance = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(instance.item.status, .upgrading)
+        XCTAssertNil(instance.item.currentStageMaxLevel, "缺 prerequisite → 阶段上限不可计算")
+        XCTAssertTrue(instance.steps.isEmpty,
+                      "缺 prerequisite：升级记录阶梯 fail-closed（got \(instance.steps.map(\.level))）")
+        XCTAssertEqual(group.summary.completeness, .partialMissing, "无法验证阶段上限的组降级 partialMissing")
+    }
+
+    /// 升级中记录 + 阶段上限可计算：阶梯止于阶段上限，目标等级（currentLevel + 1）
+    /// 保留、超出阶段上限的等级排除（行为回归保护——不得被 fail-closed 误伤）。
+    func testUpgradingLadderCappedAtStageMax() throws {
+        let gated = try makeGatedCatalog()
+        // 大本营 TH=2 + 加农炮 lvl1 升级中（目标 lvl2，阶段上限 2）。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1,
+                         timerSeconds: 3600, remainingSeconds: 3000, path: "0"),
+            ],
+        ])
+
+        let groups = project(village: village, catalog: gated, base: .home)
+        let group = try XCTUnwrap(groups.first { $0.dataID == 1_000_002 }, "加农炮组（大本营 1000001 不在目录）")
+        let instance = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(instance.item.status, .upgrading)
+        XCTAssertEqual(instance.item.currentStageMaxLevel, 2, "TH=2 → 阶段上限 2")
+        XCTAssertEqual(instance.steps.map(\.level), [2],
+                       "升级中阶梯必须包含目标等级 2 且止于阶段上限，不含 3/4（got \(instance.steps.map(\.level))）")
+        XCTAssertEqual(group.summary.remainingLevelCount, 1,
+                       "剩余等级 = 阶段上限 - 当前等级 = 2 - 1（升级中的目标级计入）")
+        XCTAssertEqual(group.summary.totalDurationSeconds, 120, "仅目标等级 lvl2 的 120s 计入")
+        XCTAssertEqual(group.summary.completeness, .complete, "阶段上限可计算的升级记录不降级")
+    }
+
     /// 缺 prerequisite（无大本营）→ 组卡实例 status unverified、steps 空、partialMissing。
     func testT18MissingPrerequisiteGroupInstanceUnverified() throws {
         // syntheticCatalogItems 无 TH 门槛（standardLevels 无 requiredTownHallLevel），

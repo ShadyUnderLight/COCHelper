@@ -380,42 +380,42 @@ final class GameCatalogTests: XCTestCase {
     """
 
     func testDurationStateMappingAllBuckets() throws {
-        let data = Data(durationStateCatalogJSON.utf8)
-        let payload = try JSONDecoder().decode(Payload.self, from: data)
-        let catalog = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
-        let item = try XCTUnwrap(catalog.item(section: "units", dataID: 1))
-        let states = Dictionary(uniqueKeysWithValues: item.levels.map { ($0.level, $0.durationState) })
-        XCTAssertEqual(states[1], .timed(seconds: 3600))
-        XCTAssertEqual(states[2], .instant)
-        XCTAssertEqual(states[3], .initialLevel)
-        XCTAssertEqual(states[4], .notApplicable)
-        XCTAssertEqual(states[5], .parseFailed)
-        XCTAssertEqual(states[6], .sourceMissing)
-        XCTAssertEqual(states[7], .sourceMissing, "upgrade_data_missing 归入 sourceMissing")
-        // nil duration + nil reason → nil（UI 兜底「暂无目录数据」，未知场景）。
-        // 注意 states 字典值本身是 Optional，需 flatMap 拍平后再断言。
-        XCTAssertNil(states[8].flatMap { $0 })
-        // 负数防御（生成层已拒绝，解码旧/损坏数据可达）：映射不崩溃、归未知
-        XCTAssertEqual(states[9], .unknownReason("negative_duration"))
-        // 契约外 reason（词表校验拒绝，但防御分支必须存在）：原样透传
-        XCTAssertEqual(states[10], .unknownReason("future_reason"))
+            let data = Data(durationStateCatalogJSON.utf8)
+            let payload = try JSONDecoder().decode(Payload.self, from: data)
+            let catalog = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+            let item = try XCTUnwrap(catalog.item(section: "units", dataID: 1))
+            let states = Dictionary(uniqueKeysWithValues: item.levels.map { ($0.level, $0.durationState) })
+            XCTAssertEqual(states[1], .timed(seconds: 3600))
+            XCTAssertEqual(states[2], .instant)
+            XCTAssertEqual(states[3], .initialLevel)
+            XCTAssertEqual(states[4], .notApplicable)
+            XCTAssertEqual(states[5], .parseFailed)
+            XCTAssertEqual(states[6], .sourceMissing)
+            XCTAssertEqual(states[7], .sourceMissing, "upgrade_data_missing 归入 sourceMissing")
+            // nil duration + nil reason → nil（UI 兜底「暂无目录数据」，未知场景）。
+            // 注意 states 字典值本身是 Optional，需 flatMap 拍平后再断言。
+            XCTAssertNil(states[8].flatMap { $0 })
+            // 负数防御（生成层已拒绝，解码旧/损坏数据可达）：映射不崩溃、归未知
+            XCTAssertEqual(states[9], .unknownReason("negative_duration"))
+            // 契约外 reason（词表校验拒绝，但防御分支必须存在）：原样透传
+            XCTAssertEqual(states[10], .unknownReason("future_reason"))
     }
 
     func testDurationStateRealCatalog() throws {
-    let catalog = try XCTUnwrap(GameCatalog.loadBundled())
-    // 单位系 level 1 = 初始等级
-    let barbarian = try XCTUnwrap(catalog.item(section: "units", dataID: 4_000_000))
-    XCTAssertEqual(barbarian.levels.first { $0.level == 1 }?.durationState, .initialLevel)
-    XCTAssertEqual(barbarian.levels.first { $0.level == 2 }?.durationState, .timed(seconds: 1800))
-    // 装备：no_time_source → notApplicable（1032 个 level）
-    let equipment = try XCTUnwrap(catalog.item(section: "equipment", dataID: 90_000_000))
-    XCTAssertEqual(equipment.levels.first?.durationState, .notApplicable)
-    // 真实目录存在 0 秒即时升级（城墙 buildings:1000010 level 1）
-    let walls = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_010))
-    XCTAssertEqual(walls.levels.first { $0.level == 1 }?.durationState, .instant)
-    // 真实目录存在 time_missing（units 系 843 个 level）
-    let anySourceMissing = catalog.items(in: "units").contains {
-        $0.levels.contains { $0.missingReason == "time_missing" }
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        // 单位系 level 1 = 初始等级
+        let barbarian = try XCTUnwrap(catalog.item(section: "units", dataID: 4_000_000))
+        XCTAssertEqual(barbarian.levels.first { $0.level == 1 }?.durationState, .initialLevel)
+        XCTAssertEqual(barbarian.levels.first { $0.level == 2 }?.durationState, .timed(seconds: 1800))
+        // 装备：no_time_source → notApplicable（1032 个 level）
+        let equipment = try XCTUnwrap(catalog.item(section: "equipment", dataID: 90_000_000))
+        XCTAssertEqual(equipment.levels.first?.durationState, .notApplicable)
+        // 真实目录存在 0 秒即时升级（城墙 buildings:1000010 level 1）
+        let walls = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_010))
+        XCTAssertEqual(walls.levels.first { $0.level == 1 }?.durationState, .instant)
+        // 真实目录存在 time_missing（units 系 843 个 level）
+        let anySourceMissing = catalog.items(in: "units").contains {
+            $0.levels.contains { $0.missingReason == "time_missing" }
     }
     XCTAssertTrue(anySourceMissing, "真实目录应存在 time_missing 锚点")
     }
@@ -431,44 +431,44 @@ final class GameCatalogTests: XCTestCase {
     }
 
     func testCatalogItemMissingReasonDecodes() throws {
-    // 有字段：deprecated_in_source 保留
-    let withReason = """
-    {"gameVersion":"18.400.13","items":[
-      {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":"deprecated_in_source","levels":[
-        {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"}
-      ]}
-    ]}
-    """
-    let payload = try JSONDecoder().decode(Payload.self, from: Data(withReason.utf8))
-    let item = try XCTUnwrap(payload.items.first)
-    XCTAssertEqual(item.missingReason, "deprecated_in_source")
-    // 无字段：旧目录向后兼容
-    let withoutReason = """
-    {"gameVersion":"18.400.13","items":[
-      {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"levels":[
-        {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
-      ]}
-    ]}
-    """
-    let payload2 = try JSONDecoder().decode(Payload.self, from: Data(withoutReason.utf8))
-    let oldItem = try XCTUnwrap(payload2.items.first)
-    XCTAssertNil(oldItem.missingReason)
+        // 有字段：deprecated_in_source 保留
+        let withReason = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":"deprecated_in_source","levels":[
+            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"}
+          ]}
+        ]}
+        """
+        let payload = try JSONDecoder().decode(Payload.self, from: Data(withReason.utf8))
+        let item = try XCTUnwrap(payload.items.first)
+        XCTAssertEqual(item.missingReason, "deprecated_in_source")
+        // 无字段：旧目录向后兼容
+        let withoutReason = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"levels":[
+            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+          ]}
+        ]}
+        """
+        let payload2 = try JSONDecoder().decode(Payload.self, from: Data(withoutReason.utf8))
+        let oldItem = try XCTUnwrap(payload2.items.first)
+        XCTAssertNil(oldItem.missingReason)
     }
 
     func testCatalogCountsDecodesNewFields() throws {
-    let withNew = """
-    {"items":1,"levels":1,"missingIcons":0,"missingTime":0,"timed":1,"instant":0,"notApplicable":0,"initialLevel":0,"sourceMissing":0,"parseFailed":0}
-    """
-    let counts = try JSONDecoder().decode(CatalogCounts.self, from: Data(withNew.utf8))
-    XCTAssertEqual(counts.timed, 1)
-    XCTAssertEqual(counts.instant, 0)
-    // 旧 manifest：新字段缺键 → nil（向后兼容）
-    let old = """
-    {"items":1,"levels":1,"missingIcons":0,"missingTime":0}
-    """
-    let oldCounts = try JSONDecoder().decode(CatalogCounts.self, from: Data(old.utf8))
-    XCTAssertNil(oldCounts.timed)
-    XCTAssertNil(oldCounts.parseFailed)
+        let withNew = """
+        {"items":1,"levels":1,"missingIcons":0,"missingTime":0,"timed":1,"instant":0,"notApplicable":0,"initialLevel":0,"sourceMissing":0,"parseFailed":0}
+        """
+        let counts = try JSONDecoder().decode(CatalogCounts.self, from: Data(withNew.utf8))
+        XCTAssertEqual(counts.timed, 1)
+        XCTAssertEqual(counts.instant, 0)
+        // 旧 manifest：新字段缺键 → nil（向后兼容）
+        let old = """
+        {"items":1,"levels":1,"missingIcons":0,"missingTime":0}
+        """
+        let oldCounts = try JSONDecoder().decode(CatalogCounts.self, from: Data(old.utf8))
+        XCTAssertNil(oldCounts.timed)
+        XCTAssertNil(oldCounts.parseFailed)
     }
 
 }
@@ -502,21 +502,21 @@ final class RequirementTests: XCTestCase {
 
     /// 旧目录（无 requiredHeroTavernLevel 键）仍可解码（Codable 向后兼容）。
     func testLegacyLevelDecodesWithoutHeroTavernField() throws {
-        let json = """
-        {"gameVersion":"v","items":[
-          {"section":"heroes","category":"heroes","dataID":28000000,"base":"home",
-           "name":"野蛮人之王","maxLevel":2,"icon":null,"levelVisual":null,
-           "baseMissingReason":null,"missingReason":null,
-           "levels":[
-             {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,
-              "requiredTownHallLevel":4,"requiredLaboratoryLevel":null,
-              "icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"}
-           ]}
-        ]}
-        """
-        let payload = try JSONDecoder().decode(Payload.self, from: Data(json.utf8))
-        XCTAssertNil(payload.items[0].levels[0].requiredHeroTavernLevel)
-        XCTAssertEqual(payload.items[0].requirements, [.townHall(level: 4)])
+            let json = """
+            {"gameVersion":"v","items":[
+              {"section":"heroes","category":"heroes","dataID":28000000,"base":"home",
+               "name":"野蛮人之王","maxLevel":2,"icon":null,"levelVisual":null,
+               "baseMissingReason":null,"missingReason":null,
+               "levels":[
+                 {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,
+                  "requiredTownHallLevel":4,"requiredLaboratoryLevel":null,
+                  "icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"}
+               ]}
+            ]}
+            """
+            let payload = try JSONDecoder().decode(Payload.self, from: Data(json.utf8))
+            XCTAssertNil(payload.items[0].levels[0].requiredHeroTavernLevel)
+            XCTAssertEqual(payload.items[0].requirements, [.townHall(level: 4)])
     }
 
     /// tavern == 0（heroes2 建筑大师基地英雄源数据）→ 不产生 heroHall requirement（0 级门槛恒满足）。
@@ -583,28 +583,28 @@ final class RequirementTests: XCTestCase {
     /// 真实 bundled 目录：12 本玩家加农炮阶段上限 15（全局 17）——目录升级时锚点
     /// 主动红，防「阶段上限被全局上限替代」回归（审核 B important-2）。
     func testBundledCannonStageMaxAtTH12() throws {
-        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
-        let cannon = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_002))
-        let unlocks = PlayerUnlockLevels(townHall: 12)
-        XCTAssertEqual(cannon.maxLevel, 17, "全局上限锚点")
-        XCTAssertEqual(
-            VillageCatalogProjection.currentStageMaxLevel(for: cannon, unlocks: unlocks),
-            15,
-            "TH=12 时加农炮阶段上限应为 15（lvl16 需 TH14）"
-        )
+            let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+            let cannon = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_002))
+            let unlocks = PlayerUnlockLevels(townHall: 12)
+            XCTAssertEqual(cannon.maxLevel, 17, "全局上限锚点")
+            XCTAssertEqual(
+                VillageCatalogProjection.currentStageMaxLevel(for: cannon, unlocks: unlocks),
+                15,
+                "TH=12 时加农炮阶段上限应为 15（lvl16 需 TH14）"
+            )
     }
 
     /// 真实 bundled 目录：野蛮人之王 TH18 + 英雄殿堂 8 → 阶段上限 86（全局 110）。
     /// 英雄殿堂门槛（tavern）真实生效锚点。
     func testBundledKingStageMaxAtTH18Tavern8() throws {
-        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
-        let king = try XCTUnwrap(catalog.item(section: "heroes", dataID: 28_000_000))
-        let unlocks = PlayerUnlockLevels(townHall: 18, heroHall: 8)
-        XCTAssertEqual(king.maxLevel, 110, "全局上限锚点")
-        XCTAssertEqual(
-            VillageCatalogProjection.currentStageMaxLevel(for: king, unlocks: unlocks),
-            86,
-            "tavern=8 时英雄阶段上限应为 86（tavern 门槛 9+ 不满足）"
-        )
+            let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+            let king = try XCTUnwrap(catalog.item(section: "heroes", dataID: 28_000_000))
+            let unlocks = PlayerUnlockLevels(townHall: 18, heroHall: 8)
+            XCTAssertEqual(king.maxLevel, 110, "全局上限锚点")
+            XCTAssertEqual(
+                VillageCatalogProjection.currentStageMaxLevel(for: king, unlocks: unlocks),
+                86,
+                "tavern=8 时英雄阶段上限应为 86（tavern 门槛 9+ 不满足）"
+            )
     }
 }

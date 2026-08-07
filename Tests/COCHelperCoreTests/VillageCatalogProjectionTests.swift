@@ -1187,7 +1187,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             timerSeconds: nil,
             remainingSeconds: nil,
             nextLevel: 3,
-nextLevelDurationSeconds: 3600,
+            nextLevelDurationSeconds: 3600,
             nextLevelDurationState: nil,
             maxLevel: 3,
             status: .complete,

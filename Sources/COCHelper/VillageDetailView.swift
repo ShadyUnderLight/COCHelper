@@ -305,6 +305,8 @@ struct VillageDetailView: View {
     /// category 组按原分类匹配；category 为 nil 的项归「其他」。
     /// issue #53：满级判定复用 completion 统计（key = completion.id），
     /// 与分组桶键天然一致；空分类（count 0）无 stats → 不显示勾。
+    /// issue #66：chip 数字为实例权重数（聚合行按 count 计入，如 300 块城墙
+    /// 显示 300 而非 1 行），与完成度统计口径一致；勿改回行数 `items.count`。
     private func categoryFilterBar(
         groups: [VillageDetailGroup],
         total: VillageCategoryCompletion,
@@ -314,12 +316,14 @@ struct VillageDetailView: View {
             HStack(spacing: 8) {
                 filterChip(
                     title: "全部",
-                    count: groups.reduce(0) { $0 + $1.items.count },
+                    count: VillageDetailProjection.instanceCount(of: groups.flatMap(\.items)),
                     filter: .all,
                     isFullyMaxed: total.isFullyMaxed
                 )
                 ForEach(TrackerDisplayCategory.allCases) { display in
-                    let count = groups.first(where: { $0.displayCategory == display })?.items.count ?? 0
+                    let count = VillageDetailProjection.instanceCount(
+                        of: groups.first(where: { $0.displayCategory == display })?.items ?? []
+                    )
                     filterChip(
                         title: display.title,
                         count: count,
@@ -328,7 +332,9 @@ struct VillageDetailView: View {
                     )
                 }
                 ForEach(TrackerCategory.allCases) { category in
-                    let count = groups.first(where: { $0.displayCategory == nil && $0.category == category })?.items.count ?? 0
+                    let count = VillageDetailProjection.instanceCount(
+                        of: groups.first(where: { $0.displayCategory == nil && $0.category == category })?.items ?? []
+                    )
                     filterChip(
                         title: category.title,
                         count: count,
@@ -336,7 +342,9 @@ struct VillageDetailView: View {
                         isFullyMaxed: statsByKey[category.rawValue]?.isFullyMaxed ?? false
                     )
                 }
-                let otherCount = groups.first(where: { $0.displayCategory == nil && $0.category == nil })?.items.count ?? 0
+                let otherCount = VillageDetailProjection.instanceCount(
+                    of: groups.first(where: { $0.displayCategory == nil && $0.category == nil })?.items ?? []
+                )
                 if otherCount > 0 {
                     filterChip(
                         title: "其他",

@@ -376,6 +376,68 @@ final class AppModelQuickImportTests: XCTestCase {
         XCTAssertEqual(persistedVillagesData(), persistedBefore)
     }
 
+    /// apply 的 no-op guard：prepare 后目标村庄被删除 → apply 安全 no-op，
+    /// 不崩溃、其余村庄不变、UserDefaults 数据不变。
+    @MainActor
+    func testApplyNoOpWhenTargetVillageDeleted() async {
+        let a = VillageProfile(name: "A", accountSnapshot: makeSnapshot(tag: "#A"))
+        let b = VillageProfile(name: "B", accountSnapshot: makeSnapshot(tag: "#B"))
+        let clipboard: String? = ##"{"tag":"#A2","buildings":[]}"##
+        let model = makeModel(villages: [a, b]) { clipboard }
+        let aID = model.villages[0].id
+
+        guard case .success(let preview) = model.prepareQuickImport(for: aID) else {
+            return XCTFail("prepare 应成功")
+        }
+
+        // 预览后目标村庄被删除（选中自动顶替为 B）
+        model.deleteVillage(id: aID)
+        XCTAssertEqual(model.villages.map(\.name), ["B"], "前置条件：A 已删除")
+        let bBefore = model.villages[0]
+        let persistedBefore = persistedVillagesData()
+
+        // apply 必须安全 no-op：不崩溃、其余村庄不变、持久化数据不变
+        model.applyQuickImport(preview)
+
+        XCTAssertEqual(model.villages, [bBefore], "apply 不得触碰剩余村庄")
+        XCTAssertEqual(model.villages[0].accountSnapshot?.tag, "#B")
+        XCTAssertEqual(persistedVillagesData(), persistedBefore, "apply no-op 不得写 UserDefaults")
+    }
+
+    /// 占位名改名分支：name 为「村庄 N」或 placeholderName 时，
+    /// apply 后替换为 normalized(snapshot.tag)；实名村庄名字不变。
+    @MainActor
+    func testApplyReplacesPlaceholderName() async {
+        let v1 = VillageProfile(name: "村庄 1", accountSnapshot: makeSnapshot(tag: "#V1"))
+        let v2 = VillageProfile(name: "未命名村庄", accountSnapshot: makeSnapshot(tag: "#V2"))
+        let v3 = VillageProfile(name: "A", accountSnapshot: makeSnapshot(tag: "#A"))
+        let model = makeModel(villages: [v1, v2, v3]) { nil }
+        let ids = model.villages.map(\.id)
+
+        // 构造 preview：snapshot 必须带有效 tag（normalized 后替换占位名）
+        let snapshot = makeSnapshot(tag: "#RENAMED")
+        let preview1 = QuickImportPreview(
+            snapshot: snapshot, targetVillageID: ids[0], targetVillageName: "村庄 1",
+            targetVillageTag: "#V1", replacesSameTag: false, destinationDescription: "测试"
+        )
+        let preview2 = QuickImportPreview(
+            snapshot: snapshot, targetVillageID: ids[1], targetVillageName: "未命名村庄",
+            targetVillageTag: "#V2", replacesSameTag: false, destinationDescription: "测试"
+        )
+        let preview3 = QuickImportPreview(
+            snapshot: snapshot, targetVillageID: ids[2], targetVillageName: "A",
+            targetVillageTag: "#A", replacesSameTag: false, destinationDescription: "测试"
+        )
+
+        model.applyQuickImport(preview1)
+        model.applyQuickImport(preview2)
+        model.applyQuickImport(preview3)
+
+        XCTAssertEqual(model.villages[0].name, "#RENAMED", "「村庄 N」占位名必须替换为规范化 tag")
+        XCTAssertEqual(model.villages[1].name, "#RENAMED", "placeholderName 必须替换为规范化 tag")
+        XCTAssertEqual(model.villages[2].name, "A", "实名村庄不得被改名")
+    }
+
     // MARK: - property-based 用例（手写确定性生成器，无外部框架）
 
     /// 随机村庄集合 × 随机剪贴板（nil / 坏 JSON / 有效 JSON）：路由不变式——

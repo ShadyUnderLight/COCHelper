@@ -464,6 +464,11 @@ public final class AppModel: ObservableObject {
     /// （刷新 accountSnapshot 属性与 selectedVillageID）→ 最后 `persistVillages`
     /// （`syncCurrentVillage` 用属性回写，必须先 load 才能写盘一致）。
     /// 目标村庄已不存在时 no-op（不崩溃）。
+    ///
+    /// 隐性不变式：`accountSnapshot` 属性与 selectedVillageID 指向的村庄 entry
+    /// 必须保持同步——`persistVillages` 内部经 `syncCurrentVillage` 用属性回写
+    /// 该 entry，因此任何属性写入点之后都必须紧跟 persist（本方法在 load 之后
+    /// 只写一次盘），新代码不得在两者之间插入状态变更或绕过该顺序。
     public func applyQuickImport(_ preview: QuickImportPreview) {
         guard let index = villages.firstIndex(where: { $0.id == preview.targetVillageID }) else { return }
 

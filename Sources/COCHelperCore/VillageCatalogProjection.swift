@@ -193,6 +193,21 @@ public struct PlayerUnlockLevels: Sendable {
     public let builderHall: Int?
     public let starLaboratory: Int?
 
+    /// 测试/合成构造入口（默认全 nil）；生产路径统一走 `init(snapshot:)`。
+    public init(
+        townHall: Int? = nil,
+        builderHall: Int? = nil,
+        laboratory: Int? = nil,
+        starLaboratory: Int? = nil,
+        heroHall: Int? = nil
+    ) {
+        self.townHall = townHall
+        self.builderHall = builderHall
+        self.laboratory = laboratory
+        self.starLaboratory = starLaboratory
+        self.heroHall = heroHall
+    }
+
     public init(snapshot: AccountSnapshot?) {
         func firstLevel(in section: String, dataID: Int64) -> Int? {
             snapshot?.objectSections[section]?.first { $0.dataID == dataID }?.level
@@ -400,7 +415,8 @@ public struct VillageCatalogProjection: Sendable {
 
         // Issue #67：阶段上限。仅 baseMatches 且目录命中时计算；nil = 不可计算
         //（快照缺 prerequisite 建筑记录）→ 满级判定回退全局 maxLevel（fail-safe，
-        // 严格上限判定不误报）。升级中/unknown 等路径不计算（字段保持 nil）。
+        // 严格上限判定不误报）。计算与 status 独立：升级中/unknown 等其他状态路径
+        // 也计算该信息字段（供 UI 展示），仅当目录未命中或 base 不匹配时为 nil。
         let stageMax: Int?
         if baseMatches, let catalogItem {
             stageMax = currentStageMaxLevel(for: catalogItem, unlocks: unlocks)
@@ -503,8 +519,9 @@ public struct VillageCatalogProjection: Sendable {
     ///   （无门槛，阶段上限 == 全局上限，始终可计算）；
     /// - 任一 requirement 类型对应解锁等级为 nil（快照缺该建筑记录）→ nil
     ///   （不可计算，调用方回退全局 maxLevel，保守不误报满级）；
-    /// - 否则逐级（目录契约 level 升序）检查：该级 requirement 全部满足则作为
-    ///   候选；遇到第一个不满足的级即停止（门槛随等级单调不减），返回最高候选。
+    /// - 否则逐级检查（目录契约 levels 升序，此处防御性 sort 保证不变量）：
+    ///   该级 requirement 全部满足则作为候选；遇到第一个不满足的级即停止
+    ///   （门槛随等级单调不减，目录 validate 保证），返回最高候选。
     static func currentStageMaxLevel(
         for item: CatalogItem,
         unlocks: PlayerUnlockLevels
@@ -516,7 +533,8 @@ public struct VillageCatalogProjection: Sendable {
             return nil
         }
         var highest: Int?
-        for level in item.levels {
+        // 防御性排序：契约保证升序，此处防测试/合成目录乱序输入破坏 break 语义。
+        for level in item.levels.sorted(by: { $0.level < $1.level }) {
             let satisfied = level.requirements(base: item.base).allSatisfy { requirement in
                 guard let unlock = unlocks.level(for: requirement) else { return false }
                 return unlock >= requirement.requiredLevel

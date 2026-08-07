@@ -2347,4 +2347,157 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(cannon.count, 2)
         XCTAssertEqual(cannon.currentStageMaxLevel, 2, "聚合项必须传播阶段上限")
     }
+
+    // MARK: - Issue #67 Task 6：星空实验室（StarLab）正反例 + property-based
+
+    /// StarLab 正例：builder 单位带 requiredLaboratoryLevel（builder 语义 = 星空实验室），
+    /// 星空实验室 1000046 等级满足 → 阶段上限按 StarLab 门槛计算。
+    /// 目录：units2 单位 maxLevel 3，lvl2/lvl3 需 requiredLaboratoryLevel=1（→ .starLaboratory(level: 1)）。
+    func testStageMaxLevelHonorsStarLaboratoryGate() throws {
+        let catalogJSON = """
+        {"gameVersion":"v","items":[
+          {"section":"units2","category":"troops","dataID":4000001,"base":"builder","name":"重拳野蛮人","maxLevel":3,
+           "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+             {"level":2,"durationSeconds":1800,"upgradeResource":"Elixir","upgradeCost":250,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":3600,"upgradeResource":"Elixir","upgradeCost":500,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        let catalog = try makeCatalog(from: catalogJSON)
+        let village = makeVillage(objectSections: [
+            "buildings2": [
+                makeItem(section: "buildings2", dataID: 1_000_046, level: 1, path: "0"),  // 星空实验室
+                makeItem(section: "units2", dataID: 4_000_001, level: 3, path: "1"),   // 重拳野蛮人
+            ],
+        ])
+        let builder = project(village: village, catalog: catalog, base: .builder)
+        let unit = try XCTUnwrap(builder.items.first { $0.dataID == 4_000_001 })
+        XCTAssertEqual(unit.currentStageMaxLevel, 3, "StarLab=1 满足 lvl2/lvl3 门槛 → 阶段上限 3")
+        XCTAssertEqual(unit.status, .maxed)
+    }
+
+    /// StarLab 反例 1：星空实验室缺失 → 阶段上限不可计算（nil）→ 回退全局，level 2 < 3 → complete。
+    func testMissingStarLaboratoryMakesStageUncomputable() throws {
+        let catalogJSON = """
+        {"gameVersion":"v","items":[
+          {"section":"units2","category":"troops","dataID":4000001,"base":"builder","name":"重拳野蛮人","maxLevel":3,
+           "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+             {"level":2,"durationSeconds":1800,"upgradeResource":"Elixir","upgradeCost":250,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":3600,"upgradeResource":"Elixir","upgradeCost":500,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        let catalog = try makeCatalog(from: catalogJSON)
+        let village = makeVillage(objectSections: [
+            "buildings2": [
+                makeItem(section: "units2", dataID: 4_000_001, level: 2, path: "0"),
+            ],
+        ])
+        let builder = project(village: village, catalog: catalog, base: .builder)
+        let unit = try XCTUnwrap(builder.items.first { $0.dataID == 4_000_001 })
+        XCTAssertNil(unit.currentStageMaxLevel)
+        XCTAssertEqual(unit.status, .complete, "回退全局：level 2 < maxLevel 3 → complete")
+    }
+
+    /// StarLab 反例 2：星空实验室等级不足（lvl3 需 StarLab 2）→ 阶段上限 2，单位 3 级 → 阶段满级。
+    func testStarLaboratoryBelowGateLowersStageMax() throws {
+        let catalogJSON = """
+        {"gameVersion":"v","items":[
+          {"section":"units2","category":"troops","dataID":4000001,"base":"builder","name":"重拳野蛮人","maxLevel":3,
+           "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+             {"level":2,"durationSeconds":1800,"upgradeResource":"Elixir","upgradeCost":250,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":3600,"upgradeResource":"Elixir","upgradeCost":500,"requiredTownHallLevel":null,"requiredLaboratoryLevel":2,"icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        let catalog = try makeCatalog(from: catalogJSON)
+        let village = makeVillage(objectSections: [
+            "buildings2": [
+                makeItem(section: "buildings2", dataID: 1_000_046, level: 1, path: "0"),  // StarLab=1
+                makeItem(section: "units2", dataID: 4_000_001, level: 3, path: "1"),
+            ],
+        ])
+        let builder = project(village: village, catalog: catalog, base: .builder)
+        let unit = try XCTUnwrap(builder.items.first { $0.dataID == 4_000_001 })
+        XCTAssertEqual(unit.currentStageMaxLevel, 2, "lvl3 需 StarLab2 不满足 → 阶段上限 2")
+        XCTAssertEqual(unit.status, .maxed, "level 3 >= 阶段上限 2 → 阶段满级")
+        XCTAssertLessThan(unit.currentStageMaxLevel ?? .max, unit.maxLevel ?? .min)
+    }
+
+    /// Property：currentStageMaxLevel 不变量（固定种子 SeededRNG，零依赖）。
+    /// - 1) 可计算时 currentStageMaxLevel <= maxLevel；
+    /// - 2) 全部门槛满足（解锁 >= 各级最大要求）→ currentStageMaxLevel == maxLevel；
+    /// - 3) 解锁等级单调不减提升 → 阶段上限不减（TH/Lab 双维度分别验证）；
+    /// - 4) 任一存在 requirement 类型的解锁缺失 → nil。
+    func testPropertyStageMaxLevelInvariants() {
+        var rng = SeededRNG(seed: 4242)
+        for _ in 0..<200 {
+            // 随机 levels：升序 level 1...N（目录契约），TH 门槛单调不减，随机 maxLevel。
+            let levelCount = Int.random(in: 2...12, using: &rng)
+            var thGate = 0
+            var levels: [CatalogLevel] = []
+            for level in 1...levelCount {
+                // 门槛单调：30% 概率提升 1-3 级
+                if Int.random(in: 0..<10, using: &rng) < 3 {
+                    thGate += Int.random(in: 1...3, using: &rng)
+                }
+                levels.append(CatalogLevel(
+                    level: level,
+                    durationSeconds: nil,
+                    upgradeResource: nil,
+                    upgradeCost: nil,
+                    requiredTownHallLevel: level == 1 ? nil : thGate, // level 1 初始无门槛
+                    requiredLaboratoryLevel: nil,
+                    icon: nil,
+                    levelVisual: nil,
+                    missingReason: nil
+                ))
+            }
+            let item = CatalogItem(
+                section: "buildings", category: "buildings", dataID: 10_000,
+                base: "home", baseMissingReason: nil, name: "随机建筑", maxLevel: levelCount,
+                icon: nil, levelVisual: nil, levels: levels
+            )
+            let maxGate = levels.map { $0.requiredTownHallLevel ?? 0 }.max() ?? 0
+
+            // 随机解锁等级：0（缺失）或 1...maxGate+5
+            let th = Int.random(in: 0...(maxGate + 5), using: &rng)
+            let unlocks = PlayerUnlockLevels(
+                townHall: th == 0 ? nil : th,
+                builderHall: nil, laboratory: nil, starLaboratory: nil, heroHall: nil
+            )
+
+            let stageMax = VillageCatalogProjection.currentStageMaxLevel(for: item, unlocks: unlocks)
+
+            if th == 0 {
+                // 不变量 4：存在 TH requirement 且解锁缺失 → nil（level > 1 时必有门槛）
+                if levels.contains(where: { $0.requiredTownHallLevel != nil }) {
+                    XCTAssertNil(stageMax, "存在门槛但 TH 缺失 → 不可计算")
+                }
+                continue
+            }
+            let unwrapped = try! XCTUnwrap(stageMax)
+            // 不变量 1
+            XCTAssertLessThanOrEqual(unwrapped, item.maxLevel, "阶段上限不得超过全局上限")
+            // 不变量 2
+            if th >= maxGate {
+                XCTAssertEqual(unwrapped, item.maxLevel, "门槛全满足 → 阶段上限 == 全局上限")
+            }
+            // 不变量 3：TH+1 → 阶段上限不减（对 th < maxGate 且 th > 0 的情形）
+            let higherUnlocks = PlayerUnlockLevels(
+                townHall: th + 1,
+                builderHall: nil, laboratory: nil, starLaboratory: nil, heroHall: nil
+            )
+            let higherMax = VillageCatalogProjection.currentStageMaxLevel(for: item, unlocks: higherUnlocks)
+            if let higherMax {
+                XCTAssertGreaterThanOrEqual(higherMax, unwrapped, "解锁提升 → 阶段上限不减")
+            }
+        }
+    }
 }

@@ -332,35 +332,68 @@ final class VillageDetailProjectionTests: XCTestCase {
     }
 
     func testSaturationDoesNotEraseUnknown() {
-        // 外部评审复现（P2）：known 侧饱和（count=Int.max）时，unknown 不得因
-        // 「sat(total) − sat(known) = 0」的减法推导而消失（旧实现 unknown==0、
-        // isFullyMaxed 误判 true）。unknown 独立饱和求和 → unknown==1、不得判满级。
-        // 注：饱和下 known + unknown != instanceCount（sat 后相加会溢出），
+        // 外部评审复现（P2）：known 侧饱和时，unknown 不得因「sat(total) −
+        // sat(known) = 0」的减法推导而消失（旧实现 unknown==0、isFullyMaxed
+        // 误判 true）。unknown 独立饱和求和 → unknown==1、不得判满级。
+        // 注：单条 count=Int.max 求和恰为 Int.max 无溢出（精确、不算饱和），
+        // 需两条已知行触发真实溢出（Int.max + Int.max）才置位 saturated——
+        // 本用例由此同时锁定 fail-closed（ratio nil、isFullyMaxed 不判定）。
+        // 饱和下 known + unknown != instanceCount（sat 后相加会溢出），
         // 本用例不（也不能）断言守恒等式——守恒仅在正常数据下成立。
         let items = [
             item(id: "hugeMaxed", status: .maxed, count: Int.max),
+            item(id: "hugeLower", status: .complete, count: Int.max),
             item(id: "unknown1", status: .unknown, level: nil, maxLevel: nil, count: 1),
         ]
         let total = VillageDetailProjection.totalCompletion(from: items)
         XCTAssertTrue(stat(total) == (Int.max, Int.max, 1), "got \(stat(total))")
         XCTAssertFalse(total.isFullyMaxed, "存在未知实例时不得判满级")
+        XCTAssertNil(total.completionRatio, "饱和 fail-closed：不得给出百分比")
+        XCTAssertTrue(total.saturated, "known 侧溢出饱和必须上报 saturated")
 
         let stats = VillageDetailProjection.completionStats(from: items)
         XCTAssertEqual(stats.count, 1)
         XCTAssertTrue(stat(stats[0]) == (Int.max, Int.max, 1), "got \(stat(stats[0]))")
         XCTAssertFalse(stats[0].isFullyMaxed, "分类 stats 同样不得判满级")
+        XCTAssertTrue(stats[0].saturated, "分类 stats 同样上报 saturated")
     }
 
-    func testSaturationAllMaxedStillFullyMaxed() {
-        // 饱和本身不破坏满级判定：无未知实例时，两条 maxed count=Int.max
-        // 仍应判满级（known/completed 饱和、unknown 独立求和 == 0）。
+    func testSaturationAllMaxedFailsClosed() {
+        // 外部评审第 4 轮复现（P2）：known 与 completed 均饱和到 Int.max 时，
+        // completed == known 成立——若继续按数值判定会误判满级（实际两条
+        // count=Int.max 各行权重无法精确累加，真实总量可能未满级）。
+        // fail-closed 语义：饱和时数值不完整，宁可判否，不误判满级。
         let items = [
             item(id: "huge1", status: .maxed, count: Int.max),
             item(id: "huge2", status: .maxed, count: Int.max),
         ]
         let total = VillageDetailProjection.totalCompletion(from: items)
         XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
-        XCTAssertTrue(total.isFullyMaxed, "全已知且全满级时饱和不得破坏满级判定")
+        XCTAssertFalse(total.isFullyMaxed, "饱和时不得做权威满级判定（fail closed）")
+        XCTAssertNil(total.completionRatio, "饱和 fail-closed：不得给出百分比")
+        XCTAssertTrue(total.saturated, "溢出饱和必须上报 saturated")
+    }
+
+    func testMixedSaturationNeverFullyMaxed() {
+        // 外部评审第 4 轮复现：maxed 行 count=Int.max + complete 行 count=Int.max
+        // 同组 → known==Int.max、completed==Int.max、unknown==0（减不出 unknown），
+        // 若按数值判定 completed==known → 误判满级绿勾，实际只满级一半。
+        // saturated 标志驱动 fail-closed：不得判满级、不得给百分比。
+        let items = [
+            item(id: "hugeMaxed", status: .maxed, count: Int.max),
+            item(id: "hugeLower", status: .complete, count: Int.max),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
+        XCTAssertFalse(total.isFullyMaxed, "混合饱和不得误判满级绿勾")
+        XCTAssertNil(total.completionRatio, "饱和 fail-closed：不得给出百分比")
+        XCTAssertTrue(total.saturated, "溢出饱和必须上报 saturated")
+
+        let stats = VillageDetailProjection.completionStats(from: items)
+        XCTAssertEqual(stats.count, 1)
+        XCTAssertTrue(stat(stats[0]) == (Int.max, Int.max, 0), "got \(stat(stats[0]))")
+        XCTAssertFalse(stats[0].isFullyMaxed, "分类 stats 同样不得误判满级")
+        XCTAssertTrue(stats[0].saturated, "分类 stats 同样上报 saturated")
     }
 
     func testUpgradingAndIdleAggregatedNoDoubleCount() {

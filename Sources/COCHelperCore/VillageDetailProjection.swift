@@ -47,16 +47,22 @@ public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
     public let knownCount: Int
     public let completedCount: Int
     public let unknownCount: Int
+
+    /// 任一计数字段求和时发生溢出饱和（数据超出 Int 表示范围，仅恶意/损坏快照可达）。
+    /// 饱和时数值不完整，`isFullyMaxed`/`completionRatio` 不得做权威判定（fail closed）。
+    public let saturated: Bool
     public var id: String { displayCategory?.rawValue ?? category?.rawValue ?? "other" }
     public var completionRatio: Double? {
-        knownCount > 0 ? Double(completedCount) / Double(knownCount) : nil
+        guard !saturated, knownCount > 0 else { return nil }
+        return Double(completedCount) / Double(knownCount)
     }
 
-    /// 全部可确认且已满级（issue #53 契约）：known > 0 且无未知项且完成 == 已知。
+    /// 全部可确认且已满级（issue #53 契约）：known > 0 且无未知项且完成 == 已知，
+    /// 且未饱和（fail closed：饱和时数值不完整，不做权威判定，宁可判否）。
     /// 刻意比 `completionRatio == 1.0` 更严格——unknownCount > 0 时 ratio 也可能
     /// 为 1.0（completed 只统计 maxed 项，分母仍为 known），但不得判满级。
     public var isFullyMaxed: Bool {
-        knownCount > 0 && unknownCount == 0 && completedCount == knownCount
+        !saturated && knownCount > 0 && unknownCount == 0 && completedCount == knownCount
     }
 
     public init(
@@ -64,13 +70,15 @@ public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
         displayCategory: TrackerDisplayCategory? = nil,
         knownCount: Int,
         completedCount: Int,
-        unknownCount: Int
+        unknownCount: Int,
+        saturated: Bool = false
     ) {
         self.category = category
         self.displayCategory = displayCategory
         self.knownCount = knownCount
         self.completedCount = completedCount
         self.unknownCount = unknownCount
+        self.saturated = saturated
     }
 }
 
@@ -152,30 +160,33 @@ public enum VillageDetailProjection {
     /// 计数按实例权重（issue #66）：聚合行（`count > 1`）按 count 计入，
     /// 不再把行数当实例数。正常数据下 `known + unknown == Σweight` 精确成立；
     /// 恶意/损坏数据（和 > Int.max）时三列各自独立饱和，未知实例不因饱和而
-    /// 消失，此时守恒退化为逐项饱和上界。三个计数字段均为实例权重语义。
+    /// 消失，此时守恒退化为逐项饱和上界、三列数值仅为饱和上界而非精确值，
+    /// `saturated` 标志置位驱动 fail-closed（isFullyMaxed/ratio 不判定）。
+    /// 三个计数字段均为实例权重语义。
     public static func completionStats(
         from items: [VillageItemState],
         catalogIsUsable: Bool = true
     ) -> [VillageCategoryCompletion] {
         groups(from: items).map { group in
-            let known = catalogIsUsable
-                ? Self.instanceCount(of: group.items.filter { isKnown($0) })
-                : 0
-            let completed = catalogIsUsable
-                ? Self.instanceCount(of: group.items.filter { $0.status == .maxed && isKnown($0) })
-                : 0
+            let knownInfo = catalogIsUsable
+                ? Self.instanceCountAndOverflow(of: group.items.filter { isKnown($0) })
+                : (count: 0, didOverflow: false)
+            let completedInfo = catalogIsUsable
+                ? Self.instanceCountAndOverflow(of: group.items.filter { $0.status == .maxed && isKnown($0) })
+                : (count: 0, didOverflow: false)
             // unknown 独立求和（不再用减法推导）：catalogIsUsable == false 时
             // 已知侧归 0，全部权重进 unknown（issue #16「全部归 unknown」）；
             // 目录可用时仅统计未知侧，正常数据下与减法等价，饱和时不丢实例。
-            let unknown = Self.instanceCount(
+            let unknownInfo = Self.instanceCountAndOverflow(
                 of: catalogIsUsable ? group.items.filter { !isKnown($0) } : group.items
             )
             return VillageCategoryCompletion(
                 category: group.category,
                 displayCategory: group.displayCategory,
-                knownCount: known,
-                completedCount: completed,
-                unknownCount: unknown
+                knownCount: knownInfo.count,
+                completedCount: completedInfo.count,
+                unknownCount: unknownInfo.count,
+                saturated: knownInfo.didOverflow || completedInfo.didOverflow || unknownInfo.didOverflow
             )
         }
     }
@@ -183,25 +194,27 @@ public enum VillageDetailProjection {
     /// 全村庄完成度合计。`catalogIsUsable` 语义同 `completionStats`。
     /// 计数按实例权重（issue #66）。正常数据下 `known + unknown == Σweight`
     /// 精确成立；恶意/损坏数据（和 > Int.max）时三列各自独立饱和，未知实例
-    /// 不因饱和而消失，此时守恒退化为逐项饱和上界。
+    /// 不因饱和而消失，此时守恒退化为逐项饱和上界、三列数值仅为饱和上界而
+    /// 非精确值，`saturated` 标志置位驱动 fail-closed（isFullyMaxed/ratio 不判定）。
     public static func totalCompletion(
         from items: [VillageItemState],
         catalogIsUsable: Bool = true
     ) -> VillageCategoryCompletion {
-        let known = catalogIsUsable
-            ? Self.instanceCount(of: items.filter { isKnown($0) })
-            : 0
-        let completed = catalogIsUsable
-            ? Self.instanceCount(of: items.filter { $0.status == .maxed && isKnown($0) })
-            : 0
-        let unknown = Self.instanceCount(
+        let knownInfo = catalogIsUsable
+            ? Self.instanceCountAndOverflow(of: items.filter { isKnown($0) })
+            : (count: 0, didOverflow: false)
+        let completedInfo = catalogIsUsable
+            ? Self.instanceCountAndOverflow(of: items.filter { $0.status == .maxed && isKnown($0) })
+            : (count: 0, didOverflow: false)
+        let unknownInfo = Self.instanceCountAndOverflow(
             of: catalogIsUsable ? items.filter { !isKnown($0) } : items
         )
         return VillageCategoryCompletion(
             category: nil,
-            knownCount: known,
-            completedCount: completed,
-            unknownCount: unknown
+            knownCount: knownInfo.count,
+            completedCount: completedInfo.count,
+            unknownCount: unknownInfo.count,
+            saturated: knownInfo.didOverflow || completedInfo.didOverflow || unknownInfo.didOverflow
         )
     }
 
@@ -214,10 +227,23 @@ public enum VillageDetailProjection {
     /// `count == Int.max`，加法溢出时饱和到 Int.max——debug/release 均不崩溃、
     /// 不产生垃圾负数（审核 A Minor 1）。
     internal static func instanceCount(of items: [VillageItemState]) -> Int {
-        items.reduce(0) { acc, item in
+        instanceCountAndOverflow(of: items).count
+    }
+
+    /// 同 `instanceCount`，额外返回是否发生溢出饱和（任一加法和溢出）。
+    /// 饱和后 count 保持 Int.max，后续加法继续溢出，didOverflow 恒 true；
+    /// 恰好等于 Int.max 无溢出则 false（精确）。
+    internal static func instanceCountAndOverflow(of items: [VillageItemState]) -> (count: Int, didOverflow: Bool) {
+        var didOverflow = false
+        let count = items.reduce(0) { acc, item in
             let (sum, overflow) = acc.addingReportingOverflow(item.instanceWeight)
-            return overflow ? Int.max : sum
+            if overflow {
+                didOverflow = true
+                return Int.max
+            }
+            return sum
         }
+        return (count, didOverflow)
     }
 
     /// 计入完成度分母的条件（见类型 doc comment）。

@@ -6,7 +6,7 @@
 
 **Bug 证据：** `VillageCatalogProjection.aggregate`（L414-480）已按 `(section, dataID, currentLevel, isNested, 根父)` 聚合非升级记录并写入 `count`；但 `VillageDetailProjection.completionStats`（L145-160）/`totalCompletion`（L163-175）对聚合后的行做 `.count`。6 门满级 + 1 门未满级 → 1/2（应为 6/7）；300 满级墙 + 25 未满级 → 1/2（应为 300/325）。
 
-**Architecture:** 只改纯逻辑层 `VillageDetailProjection.swift`（核心加权）+ `VillageDetailView.swift`（chip 计数消费）。`aggregate()` 不动（issue 边界 1）。`BuildingGroupProjection` 已有 `×count ?? 1` 加权先例（L47-52），本 issue 拉齐该口径。
+**Architecture:** 只改纯逻辑层 `VillageDetailProjection.swift`（核心加权 + saturated fail-closed）+ `VillageDetailView.swift`（chip 计数消费）。`BuildingGroupProjection` 已有 `×count ?? 1` 加权先例（L47-52），本 issue 拉齐该口径。**修订（P2 外部评审引入）：** 原边界 1「`aggregate()` 不动」已不适用——行级聚合保留，但 `VillageCatalogProjection.aggregate` 的 count 计算改为实例权重归一化 + 饱和求和（见「修订记录」）。
 
 **Tech Stack:** Swift 6 / SwiftUI（macOS 14）/ XCTest（无第三方依赖，property-based 用仓库既有固定 seed SplitMix64 PRNG 模式）。
 
@@ -33,35 +33,53 @@
 
 | 候选 | 方案 | 评 |
 |---|---|---|
-| **A（推荐）** | `VillageDetailProjection` 新增 `public static func instanceCount(of items: [VillageItemState]) -> Int`，UI 与统计共用 | 单一加权口径（issue 边界 2），weight 逻辑不复制到 UI 层 |
+| **A（推荐）** | `VillageDetailProjection` 提供加权求和 API，UI 与统计共用 | 单一加权口径（issue 边界 2），weight 逻辑不复制到 UI 层 |
 | B | UI 层内联 `count ?? 1` 求和 | 两处口径，漂移风险 |
 
-## 类型契约
+**最终实现（第 5 轮修订）：** 加权 API 收敛为 `internal static func instanceCount(of:)` 与溢出感知版 `instanceCountAndOverflow(of:) -> (count, didOverflow)`，仅供统计函数内部使用；UI 分类 chip 计数不直接调用，而是由 `completionStats` 的 `known + unknown` 派生（`chipInstanceCount`，饱和加法兜底，见 VillageDetailView）。`VillageItemState.instanceWeight`（internal，VillageCatalogProjection.swift）为权重契约单一来源，聚合层与统计层共用。
+
+## 类型契约（最终语义，第 5 轮）
 
 ```swift
-// VillageDetailProjection.swift
+// VillageCatalogProjection.swift（权重单一来源）
 /// 实例权重：count == nil → 1；count <= 0（malformed）→ 1（与 countLabel 展示口径一致）；
 /// count > 0 → count。不得产生负权重（issue #66 边界 3）。
-private static func weight(_ item: VillageItemState) -> Int
+internal var instanceWeight: Int { ... }   // 聚合层 + 统计层共用
+// aggregate 的 count：同键记录按 instanceWeight 归一化后求和，和溢出时饱和到 Int.max
+//（P2 修订：原边界 1「aggregate() 不动」不适用——行级聚合保留，但 count 计算改
+//  归一化 + 饱和，避免 debug SIGTRAP 崩溃 / release 负数回绕）。
 
-/// 按实例权重求和（供 UI chip 计数与统计复用，单一口径）。
-public static func instanceCount(of items: [VillageItemState]) -> Int
+// VillageDetailProjection.swift
+/// 按实例权重求和；仅供统计函数内部使用（UI chip 计数经 completionStats 派生）。
+internal static func instanceCount(of items: [VillageItemState]) -> Int
+/// 溢出感知版：任一加法和溢出 → count 饱和到 Int.max 且 didOverflow == true；
+/// 恰好等于 Int.max 无溢出则 false（精确）。饱和后继续加法恒溢出，didOverflow 恒 true。
+internal static func instanceCountAndOverflow(of items: [VillageItemState]) -> (count: Int, didOverflow: Bool)
 
-// completionStats / totalCompletion 保持签名不变：
+// completionStats / totalCompletion 签名不变：
 public static func completionStats(from items: [VillageItemState], catalogIsUsable: Bool = true) -> [VillageCategoryCompletion]
-// knownCount   = catalogIsUsable ? Σ weight(where isKnown)   : 0
-// completedCount = catalogIsUsable ? Σ weight(where maxed && isKnown) : 0
-// unknownCount = instanceCount(of: items) - knownCount   // 守恒：未知不因聚合消失
+// knownCount    = catalogIsUsable ? Σ weight(where isKnown)              : 0（独立饱和求和）
+// completedCount = catalogIsUsable ? Σ weight(where maxed && isKnown)    : 0（独立饱和求和）
+// unknownCount  = Σ weight(unknown 侧)（独立求和，不用减法推导——catalogIsUsable ==
+//                false 时全量归 unknown，issue #16「全部归 unknown」；饱和数据下
+//                未知实例不因减法推导而消失。正常数据下与减法等价）
+// saturated     = 三列任一 didOverflow（catalogIsUsable == false 时 known/completed 为
+//                (0, false)，unknown 照常求和）
 
 public static func totalCompletion(from items: [VillageItemState], catalogIsUsable: Bool = true) -> VillageCategoryCompletion
 // 同上，作用于全部 items。
 
-// VillageCategoryCompletion.completionRatio / isFullyMaxed 不变（由加权后的字段派生）。
+// VillageCategoryCompletion
+public let saturated: Bool   // init 默认 false——既有构造调用（含测试直接构造）零改动
+// completionRatio / isFullyMaxed：saturated == true 时 fail-closed——
+// ratio 返回 nil、isFullyMaxed 返回 false（饱和时数值不完整，不做权威判定；
+// 宁可判否，不误判满级绿勾，issue #66 第 5 轮）。
 ```
 
 ```swift
-// VillageDetailView.swift categoryFilterBar（L313-355）
-// 4 处 chip 计数：groups.reduce(0){$0 + $1.items.count} → instanceCount(of: group.items)
+// VillageDetailView.swift categoryFilterBar
+// 4 处 chip 计数：groups.reduce(0){$0 + $1.items.count} → chipInstanceCount(statsByKey[...])
+//（known + unknown 派生；独立饱和后相加可能溢出，chipInstanceCount 用饱和加法兜底）
 // 筛选语义（按组键）不变，仅显示数字改为实例数。
 ```
 
@@ -86,6 +104,14 @@ public static func totalCompletion(from items: [VillageItemState], catalogIsUsab
 
 ## 非目标
 
-- 不动 `aggregate()` 与列表行展示（×N）
+- 不动 `aggregate()` 的**行级聚合**（×N 展示保留）；~~完全不动 aggregate~~ —— count 计算已由 P2 修订为归一化 + 饱和（见「修订记录」）
 - 不引入库存/工人占用/排程；不假设未观测项目为 0 级；不合并"当前满级"与"全局最终上限"
 - 不改 chip 筛选逻辑，只改显示数字
+
+## 修订记录
+
+| 时间 | 修订 | 内容 |
+|---|---|---|
+| 033bccf | 初始实施 + 审核补测 | 加权统计落地、饱和加法、`unknownCount` 独立求和（弃减法推导）、isFullyMaxed 严格谓词、fuzz 补测 |
+| 1b28686 | P2 修复（外部评审） | `VillageCatalogProjection.aggregate` count 改为 instanceWeight 归一化 + 饱和求和（原边界 1「不动 aggregate()」不适用：行级聚合保留，仅 count 计算修订）；统计层与聚合层共用饱和语义 |
+| 本 commit | 第 5 轮修复（saturated fail-closed） | 饱和（任一列溢出）时 `VillageCategoryCompletion.saturated == true`，`isFullyMaxed`/`completionRatio` 不做权威判定（ratio nil、满级 false，宁可判否不误判绿勾）；新增 `instanceCountAndOverflow(of:)` 供统计函数上报溢出；新增 `testMixedSaturationNeverFullyMaxed`、`testSaturationAllMaxedFailsClosed`（原 `...StillFullyMaxed` 改名） |

@@ -44,12 +44,16 @@ public enum BuildingGroupCompleteness: String, Hashable, Sendable, CaseIterable 
 
 /// 组卡汇总。
 public struct BuildingGroupSummary: Hashable, Sendable {
-    /// 所有实例剩余等级数之和（×count ?? 1）。
+    /// 所有实例数量之和（使用 `VillageItemState.instanceWeight`）。
+    public let instanceCount: Int
+    /// 所有实例剩余等级数之和（×instanceWeight）。
     public let remainingLevelCount: Int
-    /// 所有已知等级完整升级时间之和（×count ?? 1，秒）。
+    /// 所有已知等级完整升级时间之和（×instanceWeight，秒）。
     public let totalDurationSeconds: Int64
-    /// 按资源类型汇总的费用（×count ?? 1；按 resource 字典序）。
+    /// 按资源类型汇总的费用（×instanceWeight；按 resource 字典序）。
     public let costByResource: [BuildingResourceTotal]
+    /// 任一汇总字段发生饱和。为 true 时数值仅是可表示上界，不应作为精确业务数据展示。
+    public let saturated: Bool
     public let completeness: BuildingGroupCompleteness
 }
 
@@ -149,14 +153,21 @@ public enum BuildingGroupProjection {
     }
 
     private static func summary(for instances: [BuildingInstance], hasGlobalVersionMismatch: Bool) -> BuildingGroupSummary {
+        var instanceCount = 0
         var remainingLevelCount = 0
         var totalDurationSeconds: Int64 = 0
         var costByResource: [String: Int64] = [:]
         var hasPartialMissing = false
         var hasVersionMismatch = false
+        var saturated = false
 
         for instance in instances {
-            let count = instance.item.count ?? 1
+            let count = instance.item.instanceWeight
+            let instanceCountResult = SaturatingArithmetic.add(instanceCount, count)
+            instanceCount = instanceCountResult.value
+            // 原始 group path 当前不会携带聚合结果，但保留该标志可防止未来
+            // 复用带聚合 count 的状态时静默丢失上游饱和信息。
+            saturated = saturated || instance.item.countOverflowed || instanceCountResult.overflowed
             // 任一实例 currentLevel > maxLevel（目录过时）→ versionMismatch，最高优先级。
             if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel,
                currentLevel > maxLevel {
@@ -164,7 +175,17 @@ public enum BuildingGroupProjection {
             }
             // 仅目录命中且 currentLevel 存在的实例计入剩余等级数（max(0, …) 防御目录过时）。
             if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
-                remainingLevelCount += max(0, maxLevel - currentLevel) * count
+                let levelDifference = SaturatingArithmetic.subtract(maxLevel, currentLevel)
+                saturated = saturated || levelDifference.overflowed
+                let remainingLevels = max(0, levelDifference.value)
+                let weightedRemainingLevels = SaturatingArithmetic.multiply(remainingLevels, count)
+                saturated = saturated || weightedRemainingLevels.overflowed
+                let remainingTotal = SaturatingArithmetic.add(
+                    remainingLevelCount,
+                    weightedRemainingLevels.value
+                )
+                remainingLevelCount = remainingTotal.value
+                saturated = saturated || remainingTotal.overflowed
             }
             // 无法生成阶梯的实例降级：目录未命中（或 base 不匹配，maxLevel == nil）；
             // 或目录命中但 currentLevel 缺失 / 未满级却 steps 为空。已满级
@@ -183,23 +204,39 @@ public enum BuildingGroupProjection {
                     hasPartialMissing = true
                 }
                 if let duration = step.durationSeconds {
-                    totalDurationSeconds += duration * Int64(count)
+                    let weightedDuration = SaturatingArithmetic.multiply(duration, Int64(count))
+                    saturated = saturated || weightedDuration.overflowed
+                    let durationTotal = SaturatingArithmetic.add(
+                        totalDurationSeconds,
+                        weightedDuration.value
+                    )
+                    totalDurationSeconds = durationTotal.value
+                    saturated = saturated || durationTotal.overflowed
                 }
                 if let cost = step.upgradeCost {
                     // 资源缺失但费用存在 → 归入「未知资源」桶（不丢弃费用）。
                     let resource = step.upgradeResource ?? "未知资源"
-                    costByResource[resource, default: 0] += cost * Int64(count)
+                    let weightedCost = SaturatingArithmetic.multiply(cost, Int64(count))
+                    saturated = saturated || weightedCost.overflowed
+                    let costTotal = SaturatingArithmetic.add(
+                        costByResource[resource, default: 0],
+                        weightedCost.value
+                    )
+                    costByResource[resource] = costTotal.value
+                    saturated = saturated || costTotal.overflowed
                 }
             }
         }
 
         return BuildingGroupSummary(
+            instanceCount: instanceCount,
             remainingLevelCount: remainingLevelCount,
             totalDurationSeconds: totalDurationSeconds,
             // 按 resource 字典序排序（确定性：实例重排后桶序不变）。
             costByResource: costByResource
                 .sorted { $0.key < $1.key }
                 .map { BuildingResourceTotal(resource: $0.key, totalCost: $0.value) },
+            saturated: saturated,
             // 全局版本不匹配优先级最高（旧目录不得支撑权威汇总，Issue #45 契约）；
             // 其次实例级目录过时；再其次数据缺失。
             completeness: hasGlobalVersionMismatch ? .versionMismatch

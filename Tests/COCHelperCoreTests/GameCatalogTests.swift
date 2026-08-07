@@ -422,4 +422,34 @@ final class RequirementTests: XCTestCase {
             )]
         )
     }
+
+    // MARK: - 真实目录阶段上限锚点（Issue #67 契约硬化）
+
+    /// 真实 bundled 目录：12 本玩家加农炮阶段上限 15（全局 17）——目录升级时锚点
+    /// 主动红，防「阶段上限被全局上限替代」回归（审核 B important-2）。
+    func testBundledCannonStageMaxAtTH12() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let cannon = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_002))
+        let unlocks = PlayerUnlockLevels(townHall: 12)
+        XCTAssertEqual(cannon.maxLevel, 17, "全局上限锚点")
+        XCTAssertEqual(
+            VillageCatalogProjection.currentStageMaxLevel(for: cannon, unlocks: unlocks),
+            15,
+            "TH=12 时加农炮阶段上限应为 15（lvl16 需 TH13+）"
+        )
+    }
+
+    /// 真实 bundled 目录：野蛮人之王 TH18 + 英雄殿堂 8 → 阶段上限 86（全局 110）。
+    /// 英雄殿堂门槛（tavern）真实生效锚点。
+    func testBundledKingStageMaxAtTH18Tavern8() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let king = try XCTUnwrap(catalog.item(section: "heroes", dataID: 28_000_000))
+        let unlocks = PlayerUnlockLevels(townHall: 18, heroHall: 8)
+        XCTAssertEqual(king.maxLevel, 110, "全局上限锚点")
+        XCTAssertEqual(
+            VillageCatalogProjection.currentStageMaxLevel(for: king, unlocks: unlocks),
+            86,
+            "tavern=8 时英雄阶段上限应为 86（tavern 门槛 9+ 不满足）"
+        )
+    }
 }

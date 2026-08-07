@@ -99,7 +99,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         {"section":"heroes","category":"heroes","dataID":28000000,"base":"home","name":"野蛮人之王","maxLevel":10,
          "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
          "levels":[
-           {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":2,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+           {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
            {"level":2,"durationSeconds":3600,"upgradeResource":"DarkElixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":2,"icon":null,"levelVisual":null,"missingReason":null},
            {"level":3,"durationSeconds":7200,"upgradeResource":"DarkElixir","upgradeCost":200,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":4,"icon":null,"levelVisual":null,"missingReason":null},
            {"level":4,"durationSeconds":10800,"upgradeResource":"DarkElixir","upgradeCost":300,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":4,"icon":null,"levelVisual":null,"missingReason":null},

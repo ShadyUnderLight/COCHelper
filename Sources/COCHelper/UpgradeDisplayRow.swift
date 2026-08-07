@@ -280,7 +280,7 @@ struct UpgradeDisplayRow: View {
                 if isMaxed {
                     StatusBadge(text: isStageMaxed ? "当前阶段已满级" : "已满级", tint: .green)
                         .help(isStageMaxed
-                            ? "全局尚有 " + String((item.maxLevel ?? 0) - (item.currentStageMaxLevel ?? 0)) + "级"
+                            ? "全局尚有 " + String(item.maxLevel! - item.currentStageMaxLevel!) + "级"
                             : "当前目录最高等级")
                 }
             }

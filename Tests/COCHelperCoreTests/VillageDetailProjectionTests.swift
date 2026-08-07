@@ -31,8 +31,10 @@ final class VillageDetailProjectionTests: XCTestCase {
             timerSeconds: isUpgrading ? 3600 : nil,
             remainingSeconds: isUpgrading ? 1800 : nil,
             nextLevel: effectiveNext,
+            // Issue #74b：生产语义 seconds 与 state 同源（单一查表）；fixture
+            // 保持同源一致，避免「有秒数但状态缺失」的不可达组合误导后续测试。
             nextLevelDurationSeconds: isUpgrading ? 3600 : nil,
-            nextLevelDurationState: nil,
+            nextLevelDurationState: isUpgrading ? .timed(seconds: 3600) : nil,
             maxLevel: maxLevel,
             currentStageMaxLevel: currentStageMaxLevel,
             status: status,

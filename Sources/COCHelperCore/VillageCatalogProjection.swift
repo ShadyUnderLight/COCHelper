@@ -68,6 +68,10 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         return count
     }
 
+    /// 该行的 count 是否为聚合层饱和结果（原始多条记录权重和 > Int.max，issue #66）。
+    /// 统计层求和时该位并入溢出标志——饱和信息不得在链路前端丢失。
+    internal var countOverflowed: Bool = false
+
     /// 视觉资产缺失原因（用于 UI 降级提示角标）。
     ///
     /// 优先级：level-level 资产优先于 item-level（显示链首选缺失最值得提示，
@@ -130,7 +134,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         currentLevelIcon: CatalogAssetRef?,
         currentLevelVisual: CatalogAssetRef?,
         isNested: Bool,
-        displayCategory: TrackerDisplayCategory? = nil
+        displayCategory: TrackerDisplayCategory? = nil,
+        countOverflowed: Bool = false
     ) {
         self.id = id
         self.section = section
@@ -153,6 +158,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.currentLevelVisual = currentLevelVisual
         self.isNested = isNested
         self.displayCategory = displayCategory
+        self.countOverflowed = countOverflowed
     }
 }
 
@@ -447,9 +453,13 @@ public struct VillageCatalogProjection: Sendable {
 
         for (_, group) in grouped.sorted(by: { $0.key < $1.key }) {
             guard let first = group.first else { continue }
-            let aggregatedCount = group.reduce(0) { acc, record in
-                let (sum, overflow) = acc.addingReportingOverflow(record.instanceWeight)
-                return overflow ? Int.max : sum
+            // 第 7 轮：饱和求和同时记录 didOverflow——聚合行 count==Int.max 时
+            // 统计层单行求和恰好 Int.max 无算术溢出，若无此标志，saturated 会在
+            // 链路前端被静默丢弃（契约绕过）。饱和后各 instanceWeight ≥ 1，
+            // 后续加法恒溢出，didOverflow 保持 true。
+            let (aggregatedCount, countOverflowed) = group.reduce((0, false)) { acc, record in
+                let (sum, overflow) = acc.0.addingReportingOverflow(record.instanceWeight)
+                return overflow ? (Int.max, true) : (sum, acc.1)
             }
             // 计时已结束的记录（timer 存在且 remaining 显式归零）进入聚合，但「需重新导入」
             // 信号必须保留：组内任一记录带已结束计时时，聚合项保留 timerSeconds 并将
@@ -487,7 +497,8 @@ public struct VillageCatalogProjection: Sendable {
                 currentLevelIcon: first.currentLevelIcon,
                 currentLevelVisual: first.currentLevelVisual,
                 isNested: first.isNested,
-                displayCategory: first.displayCategory
+                displayCategory: first.displayCategory,
+                countOverflowed: countOverflowed
             ))
         }
 

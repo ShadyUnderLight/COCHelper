@@ -248,7 +248,9 @@ struct VillageDetailView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                Text("无可确认项目")
+                // 第 7 轮：ratio == nil 时区分饱和（数据超出可表示范围，非业务上的
+                // 不可确认）与正常无已知项——饱和时数值不完整，明示异常而非误导。
+                Text(total.saturated ? "数据异常（超出可表示范围）" : "无可确认项目")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

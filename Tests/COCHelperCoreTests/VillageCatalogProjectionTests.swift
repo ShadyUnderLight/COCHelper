@@ -886,6 +886,36 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(total.knownCount, Int.max, "got known=\(total.knownCount)")
         XCTAssertEqual(total.completedCount, 0)
         XCTAssertEqual(total.unknownCount, 0)
+        // 第 7 轮修复回归：聚合行单行 count=Int.max 求和恰好 Int.max 无算术溢出，
+        // 若聚合层饱和标志不传播，统计层会误判 saturated == false（契约绕过）。
+        XCTAssertTrue(total.saturated, "聚合层饱和标志必须传播到统计层")
+    }
+
+    func testAggregateSaturationFlagPropagatesToStats() throws {
+        // 第 7 轮修复回归：同键两条 maxed count=Int.max 经聚合层饱和为单行
+        // count=Int.max（原始和 = 2×Int.max > Int.max，确实溢出）。聚合行单行
+        // 求和恰好 Int.max 无算术溢出——若聚合层饱和标志不传播，统计层会误判
+        // saturated == false，isFullyMaxed 契约在链路前端被绕过（completed == known
+        // 且无 unknown → 误判满级，百分比可显示 100%）。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, count: Int.max, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, count: Int.max, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1, "同键非升级记录应聚合为一条")
+        let aggregated = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(aggregated.count, Int.max, "聚合层溢出必须饱和到 Int.max")
+        XCTAssertEqual(aggregated.status, .maxed, "level 2 == maxLevel 2 → maxed")
+
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, Int.max, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, Int.max, "got completed=\(total.completedCount)")
+        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertTrue(total.saturated, "聚合层饱和标志必须传播到统计层（fail-closed 契约不得在链路前端被绕过）")
+        XCTAssertFalse(total.isFullyMaxed, "饱和数据不得判满级（fail closed）")
+        XCTAssertNil(total.completionRatio, "饱和数据不得给出百分比")
     }
 
     // MARK: - 完成度全链路（issue #66：投影聚合 × count 加权）

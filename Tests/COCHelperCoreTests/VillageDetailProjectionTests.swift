@@ -331,6 +331,20 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
     }
 
+    func testExactIntMaxWithoutOverflowNotSaturated() {
+        // 第 7 轮修复语义锁定：单条 maxed count=Int.max（无聚合）求和恰为
+        // Int.max 无溢出——「恰好 Int.max 是精确算术」，不得因数值达到上限就
+        // 误报 saturated（区分把溢出判据写成 >= 的突变）。精确值仍可做权威
+        // 判定：isFullyMaxed == true、ratio == 1.0。
+        let total = VillageDetailProjection.totalCompletion(from: [
+            item(id: "hugeSingle", status: .maxed, count: Int.max),
+        ])
+        XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
+        XCTAssertFalse(total.saturated, "恰好 Int.max 是精确算术，不算饱和")
+        XCTAssertTrue(total.isFullyMaxed, "精确 Int.max 全满级应判满级")
+        XCTAssertEqual(total.completionRatio, 1.0)
+    }
+
     func testSaturationDoesNotEraseUnknown() {
         // 外部评审复现（P2）：known 侧饱和时，unknown 不得因「sat(total) −
         // sat(known) = 0」的减法推导而消失（旧实现 unknown==0、isFullyMaxed
@@ -589,10 +603,13 @@ final class VillageDetailProjectionTests: XCTestCase {
             let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30))
             let total = VillageDetailProjection.totalCompletion(from: items)
 
-            // oracle：isFullyMaxed ⟺ 全部 item 已知且满级（且非空）。
+            // oracle：isFullyMaxed ⟺ 全部 item 已知且满级（且非空）且未饱和
+            //（第 7 轮补 !saturated，与生产契约逐字一致；fuzz 域不触饱和路径，
+            // 该条件恒 true，属 fail-closed 硬化而非行为变化）。
             // 覆盖三个方向：全 maxed → true；任一 known 非 maxed → false；
             // 存在 unknown（即使 known 全 maxed）→ false。
             let allKnownMaxed = !items.isEmpty
+                && !total.saturated
                 && items.allSatisfy { oracleKnown($0) && $0.status == .maxed }
             XCTAssertEqual(
                 total.isFullyMaxed, allKnownMaxed,
@@ -744,13 +761,13 @@ final class VillageDetailProjectionTests: XCTestCase {
             }
 
             // 不变量 3（oracle）：isFullyMaxed 必须与文档契约逐字等价——
-            // 防谓词被削弱（去掉 unknownCount == 0 / knownCount > 0）后
-            // 不变量 1 因 total/stats 共享同一谓词而同步翻转、无法检出。
-            let oracle = total.knownCount > 0 && total.unknownCount == 0
+            // 防谓词被削弱（去掉 unknownCount == 0 / knownCount > 0 / saturated
+            // 排除）后不变量 1 因 total/stats 共享同一谓词而同步翻转、无法检出。
+            let oracle = !total.saturated && total.knownCount > 0 && total.unknownCount == 0
                 && total.completedCount == total.knownCount
             XCTAssertEqual(total.isFullyMaxed, oracle, "total=\(stat(total))")
             for s in stats {
-                let sOracle = s.knownCount > 0 && s.unknownCount == 0
+                let sOracle = !s.saturated && s.knownCount > 0 && s.unknownCount == 0
                     && s.completedCount == s.knownCount
                 XCTAssertEqual(s.isFullyMaxed, sOracle, "stats id=\(s.id) \(stat(s))")
             }
@@ -1235,6 +1252,9 @@ final class VillageDetailProjectionTests: XCTestCase {
     /// level/maxLevel 组合覆盖 known（maxed/complete/upgrading 目录命中）、
     /// unknown（目录未命中/等级缺失/上限缺失）与版本不匹配（upgrading 且
     /// nextLevel > maxLevel）路径。
+    /// 域声明（第 7 轮）：counts 池上限 300 × 最多 30 项 → Σweight ≤ 9000
+    /// << Int.max，本生成器不触饱和路径，产物 saturated 恒为 false——fuzz
+    /// oracle 补 `!saturated` 与生产契约逐字等价是纯硬化，不改变 fuzz 行为。
     private func randomWeightedItems(
         _ rng: inout SplitMix64,
         count: Int,

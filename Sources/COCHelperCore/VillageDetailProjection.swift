@@ -233,9 +233,15 @@ public enum VillageDetailProjection {
     /// 同 `instanceCount`，额外返回是否发生溢出饱和（任一加法和溢出）。
     /// 饱和后 count 保持 Int.max，后续加法继续溢出，didOverflow 恒 true；
     /// 恰好等于 Int.max 无溢出则 false（精确）。
+    /// 第 7 轮：聚合行的 `countOverflowed` 标志并入——聚合层饱和（原始多条记录
+    /// 权重和 > Int.max）产生的 count==Int.max 单行求和恰好无算术溢出，必须由
+    /// 该标志补位上报，饱和信息不得在链路前端丢失。
     internal static func instanceCountAndOverflow(of items: [VillageItemState]) -> (count: Int, didOverflow: Bool) {
         var didOverflow = false
         let count = items.reduce(0) { acc, item in
+            if item.countOverflowed {
+                didOverflow = true
+            }
             let (sum, overflow) = acc.addingReportingOverflow(item.instanceWeight)
             if overflow {
                 didOverflow = true

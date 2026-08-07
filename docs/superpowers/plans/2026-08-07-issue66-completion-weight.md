@@ -85,8 +85,8 @@ public let saturated: Bool   // init 默认 false——既有构造调用（含�
 
 ## Tasks
 
-- [ ] **Task 1（TDD）** Core 加权：`VillageDetailProjection.swift` 加 `weight`/`instanceCount`，`completionStats`/`totalCompletion` 改加权；`VillageDetailProjectionTests.swift` 先写失败用例（6/7、300/325、nil→1、≤0→1、升级+空闲不重复、加权守恒、isFullyMaxed 加权、目录不可用时按权重归 unknown），再实现。
-- [ ] **Task 2** UI chip：`VillageDetailView.swift` 4 处计数改 `instanceCount`，doc comment 注明口径。
+- [ ] **Task 1（TDD）** Core 加权：`VillageItemState.instanceWeight` 为权重契约单一来源（聚合层与统计层共用，`VillageCatalogProjection.swift`）；`VillageDetailProjection.swift` 加 `instanceCount`/`instanceCountAndOverflow`，`completionStats`/`totalCompletion` 改加权；`VillageDetailProjectionTests.swift` 先写失败用例（6/7、300/325、nil→1、≤0→1、升级+空闲不重复、加权守恒、isFullyMaxed 加权、目录不可用时按权重归 unknown），再实现。
+- [ ] **Task 2** UI chip：`VillageDetailView.swift` 4 处计数改 `chipInstanceCount`（从 `completionStats` 的 known+unknown 派生，饱和加法兜底——UI 不直接调用 `instanceCount`），doc comment 注明口径。
 - [ ] **Task 3** Property-based + 全链路：`VillageDetailProjectionTests` 加固定 seed fuzz（守恒：known+unknown == Σweight；completed ≤ known；全 count=1 时与旧口径一致；满级权重全 maxed → isFullyMaxed）；`VillageCatalogProjectionTests` 加真实 `AccountSnapshot → project → totalCompletion` 链路用例（6/7 与 300/325）。
 - [ ] **Task 4** 收尾：`swift test` 全绿 → 自查 → PR。
 
@@ -115,3 +115,4 @@ public let saturated: Bool   // init 默认 false——既有构造调用（含�
 | 033bccf | 初始实施 + 审核补测 | 加权统计落地、饱和加法、`unknownCount` 独立求和（弃减法推导）、isFullyMaxed 严格谓词、fuzz 补测 |
 | 1b28686 | P2 修复（外部评审） | `VillageCatalogProjection.aggregate` count 改为 instanceWeight 归一化 + 饱和求和（原边界 1「不动 aggregate()」不适用：行级聚合保留，仅 count 计算修订）；统计层与聚合层共用饱和语义 |
 | 本 commit | 第 5 轮修复（saturated fail-closed） | 饱和（任一列溢出）时 `VillageCategoryCompletion.saturated == true`，`isFullyMaxed`/`completionRatio` 不做权威判定（ratio nil、满级 false，宁可判否不误判绿勾）；新增 `instanceCountAndOverflow(of:)` 供统计函数上报溢出；新增 `testMixedSaturationNeverFullyMaxed`、`testSaturationAllMaxedFailsClosed`（原 `...StillFullyMaxed` 改名） |
+| 本 commit | 第 7 轮修复（饱和标志传播 + fail-closed 测试硬化） | 第 6 轮交叉审核 Important：聚合层把多条 count=Int.max 同键行饱和为单行 count=Int.max，溢出信息被丢弃 → 统计层单行求和恰好 Int.max 无溢出 → `saturated=false` → 契约在链路前端被绕过（可显示 100%）。修复：`VillageItemState.countOverflowed` 存储属性（init 默认参数，既有调用零改动），`aggregate` 饱和时置位，`instanceCountAndOverflow` 循环内并入 didOverflow；UI `completionBar` ratio==nil 分支在 saturated 时显示「数据异常（超出可表示范围）」；fuzz oracle 补 `!saturated` 与生产契约逐字等价（fuzz 域 Σweight ≤ 9000 不触饱和，纯硬化）；新增 `testAggregateSaturationFlagPropagatesToStats`、`testExactIntMaxWithoutOverflowNotSaturated`（锁定「恰好 Int.max 是精确算术」，区分 `>=` 误判突变），`testAggregateSaturatesHugeCounts` 追加 saturated 断言 |

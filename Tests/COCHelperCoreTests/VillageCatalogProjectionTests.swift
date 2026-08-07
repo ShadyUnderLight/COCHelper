@@ -842,6 +842,70 @@ final class VillageCatalogProjectionTests: XCTestCase {
         }
     }
 
+    // MARK: - 完成度全链路（issue #66：投影聚合 × count 加权）
+
+    /// 真实 bundled 目录（加农炮 buildings:1000008 maxLevel=21）全链路：
+    /// 6 条 21 级（count 各 1）+ 1 条 20 级 → 聚合 2 行（count 6/1）→
+    /// totalCompletion (7, 6, 0)、ratio 6/7。锁住 bug 根因「行数 ≠ 实例数」。
+    func testFullChainCompletionWeightedByCount() throws {
+        let cannon21 = (0..<6).map { i in
+            makeItem(section: "buildings", dataID: 1_000_008, level: 21, count: 1, path: "c\(i)")
+        }
+        let cannon20 = makeItem(section: "buildings", dataID: 1_000_008, level: 20, count: 1, path: "c6")
+        let village = makeVillage(objectSections: ["buildings": cannon21 + [cannon20]])
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let home = project(village: village, catalog: catalog, base: .home)
+
+        XCTAssertTrue(home.catalogIsUsable)
+        // 投影聚合形态：7 条实例记录 → 2 行（行数 < 实例数，聚合真实发生）。
+        let cannons = home.items.filter { $0.dataID == 1_000_008 }
+        XCTAssertEqual(cannons.count, 2, "6 条 21 级 + 1 条 20 级应聚合为 2 行")
+        let maxedRow = try XCTUnwrap(cannons.first { $0.currentLevel == 21 })
+        XCTAssertEqual(maxedRow.count, 6, "21 级聚合行 count = 6")
+        XCTAssertEqual(maxedRow.status, .maxed)
+        let lowerRow = try XCTUnwrap(cannons.first { $0.currentLevel == 20 })
+        XCTAssertEqual(lowerRow.count, 1)
+        XCTAssertEqual(lowerRow.status, .complete)
+
+        // 加权统计：实例口径 7 = 6 + 1（行数口径只有 2，必错）。
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, 7, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, 6, "got completed=\(total.completedCount)")
+        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertEqual(total.completionRatio ?? -1, 6.0 / 7.0, accuracy: 0.0001)
+        XCTAssertFalse(total.isFullyMaxed, "1 条未满级实例 → 不得判满级")
+    }
+
+    /// 300 条满级城墙（buildings:1000010 maxLevel=19）+ 25 条 18 级 →
+    /// 聚合 2 行（count 300/25）→ (325, 300, 0)、ratio 300/325。
+    func testFullChainWalls300Maxed25Lower() throws {
+        let walls19 = (0..<300).map { i in
+            makeItem(section: "buildings", dataID: 1_000_010, level: 19, count: 1, path: "w\(i)")
+        }
+        let walls18 = (0..<25).map { i in
+            makeItem(section: "buildings", dataID: 1_000_010, level: 18, count: 1, path: "l\(i)")
+        }
+        let village = makeVillage(objectSections: ["buildings": walls19 + walls18])
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let home = project(village: village, catalog: catalog, base: .home)
+
+        XCTAssertTrue(home.catalogIsUsable)
+        let walls = home.items.filter { $0.dataID == 1_000_010 }
+        XCTAssertEqual(walls.count, 2, "325 条实例记录应聚合为 2 行（行数 < 实例数）")
+        let maxedRow = try XCTUnwrap(walls.first { $0.currentLevel == 19 })
+        XCTAssertEqual(maxedRow.count, 300)
+        XCTAssertEqual(maxedRow.status, .maxed)
+        let lowerRow = try XCTUnwrap(walls.first { $0.currentLevel == 18 })
+        XCTAssertEqual(lowerRow.count, 25)
+        XCTAssertEqual(lowerRow.status, .complete)
+
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, 325, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, 300, "got completed=\(total.completedCount)")
+        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertEqual(total.completionRatio ?? -1, 300.0 / 325.0, accuracy: 0.0001)
+    }
+
     // MARK: - VillageItemState.assetMissingReason 谓词
 
     /// 直接构造状态（成员初始化器，@testable 可访问），用于验证 assetMissingReason 真值表。

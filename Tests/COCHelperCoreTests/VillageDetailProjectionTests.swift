@@ -370,6 +370,108 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertTrue(stat(total) == (0, 0, 6), "got \(stat(total))")
     }
 
+    // MARK: - Issue #66 fuzz：按实例加权不变量（固定 seed SplitMix64，可复现）
+
+    func testFuzzConservationWithWeights() {
+        var rng = SplitMix64(seed: 0x66_01)
+        for round in 0..<200 {
+            let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30))
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            // oracle：独立复算加权实例数（实现同源漂移防护——若实现退化为
+            // 恒 1 权重或行数口径，oracle 立即对不上）。
+            let expectedKnown = items.filter(oracleKnown).reduce(0) { $0 + oracleWeight($1) }
+            let expectedCompleted = items
+                .filter { $0.status == .maxed && oracleKnown($0) }
+                .reduce(0) { $0 + oracleWeight($1) }
+            let expectedUnknown = items.reduce(0) { $0 + oracleWeight($1) } - expectedKnown
+            XCTAssertEqual(total.knownCount, expectedKnown,
+                           "round \(round): known 应为加权实例数，got \(stat(total))")
+            XCTAssertEqual(total.completedCount, expectedCompleted,
+                           "round \(round): completed 应为满级加权实例数，got \(stat(total))")
+            XCTAssertEqual(total.unknownCount, expectedUnknown,
+                           "round \(round): unknown 应为剩余加权实例数，got \(stat(total))")
+
+            // 守恒：known + unknown == Σweight（未知实例不因聚合而消失）。
+            XCTAssertEqual(total.knownCount + total.unknownCount,
+                           VillageDetailProjection.instanceCount(of: items),
+                           "round \(round): 守恒，got \(stat(total))")
+            XCTAssertLessThanOrEqual(total.completedCount, total.knownCount,
+                                     "round \(round): completed ≤ known")
+        }
+    }
+
+    func testFuzzTotalEqualsSumOfCategories() {
+        var rng = SplitMix64(seed: 0x66_02)
+        for round in 0..<200 {
+            let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30))
+            let stats = VillageDetailProjection.completionStats(from: items)
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            // 三列之和守恒（含加权）：分类统计与总统计同一口径。
+            XCTAssertEqual(total.knownCount, stats.reduce(0) { $0 + $1.knownCount },
+                           "round \(round): known 列")
+            XCTAssertEqual(total.completedCount, stats.reduce(0) { $0 + $1.completedCount },
+                           "round \(round): completed 列")
+            XCTAssertEqual(total.unknownCount, stats.reduce(0) { $0 + $1.unknownCount },
+                           "round \(round): unknown 列")
+
+            // 组内守恒（stats 与 groups 同序）：每分类 known + unknown == 该组 Σweight。
+            let groups = VillageDetailProjection.groups(from: items)
+            for (group, s) in zip(groups, stats) {
+                XCTAssertEqual(
+                    s.knownCount + s.unknownCount,
+                    VillageDetailProjection.instanceCount(of: group.items),
+                    "round \(round): 组 \(s.id) 守恒，\(stat(s))"
+                )
+            }
+        }
+    }
+
+    func testFuzzAllCountsOneMatchesRowSemantics() {
+        // 向后兼容锁定：全部 count == 1 时，加权口径必须与旧行数口径等价。
+        var rng = SplitMix64(seed: 0x66_03)
+        for round in 0..<200 {
+            let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30), counts: [1])
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            let knownRows = items.filter(oracleKnown).count
+            let maxedRows = items.filter { $0.status == .maxed && oracleKnown($0) }.count
+            XCTAssertEqual(total.knownCount, knownRows,
+                           "round \(round): count==1 时 known == isKnown 行数")
+            XCTAssertEqual(total.completedCount, maxedRows,
+                           "round \(round): count==1 时 completed == maxed 行数")
+            XCTAssertEqual(total.unknownCount, items.count - knownRows,
+                           "round \(round): count==1 时 unknown == 行数 - known")
+            XCTAssertEqual(VillageDetailProjection.instanceCount(of: items), items.count,
+                           "round \(round): count==1 时 Σweight == 行数")
+        }
+    }
+
+    func testFuzzFullyMaxedOnlyWhenAllKnownMaxed() {
+        var rng = SplitMix64(seed: 0x66_04)
+        for round in 0..<200 {
+            let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30))
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            // oracle：isFullyMaxed ⟺ 全部 item 已知且满级（且非空）。
+            // 覆盖三个方向：全 maxed → true；任一 known 非 maxed → false；
+            // 存在 unknown（即使 known 全 maxed）→ false。
+            let allKnownMaxed = !items.isEmpty
+                && items.allSatisfy { oracleKnown($0) && $0.status == .maxed }
+            XCTAssertEqual(
+                total.isFullyMaxed, allKnownMaxed,
+                "round \(round): isFullyMaxed=\(total.isFullyMaxed) allKnownMaxed=\(allKnownMaxed) \(stat(total))"
+            )
+        }
+        // 显式混合构造（含 count>1）：权重与行数脱钩，300 满级 + 1 未满级不得判满级。
+        let mixed = [
+            item(id: "maxed300", status: .maxed, count: 300),
+            item(id: "lower", status: .complete, count: 1),
+        ]
+        XCTAssertFalse(VillageDetailProjection.totalCompletion(from: mixed).isFullyMaxed)
+    }
+
     // MARK: - isFullyMaxed（issue #53：全部可确认且已满级）
 
     func testIsFullyMaxedTrueWhenAllMaxed() {
@@ -990,6 +1092,83 @@ final class VillageDetailProjectionTests: XCTestCase {
                             isUpgrading: isUpgrading, nextLevel: nextLevel)
             }
         }
+    }
+
+    /// Issue #66：按实例加权的随机生成器。count 从 `counts`（默认
+    /// [nil, 1, 2, 3, 5, 300]）随机取——与 `randomItems`（count 恒 1）互不影响，
+    /// 既有 fuzz 用例保持行数口径不变。status 限定投影可达五态（无 .available）；
+    /// level/maxLevel 组合覆盖 known（maxed/complete/upgrading 目录命中）、
+    /// unknown（目录未命中/等级缺失/上限缺失）与版本不匹配（upgrading 且
+    /// nextLevel > maxLevel）路径。
+    private func randomWeightedItems(
+        _ rng: inout SplitMix64,
+        count: Int,
+        counts: [Int?] = [nil, 1, 2, 3, 5, 300]
+    ) -> [VillageItemState] {
+        let statuses: [VillageItemStatus] = [.maxed, .complete, .upgrading, .unknown, .unavailable]
+        let cats: [TrackerCategory?] = [.buildings, .traps, .troops, .spells,
+            .siegeMachines, .heroes, .equipment, .pets, .guardians, nil]
+        return (0..<count).map { i in
+            let status = statuses[Int(rng.next() % UInt64(statuses.count))]
+            let instanceCount = counts[Int(rng.next() % UInt64(counts.count))]
+            // 投影层可达约束（同 randomItems）：unknown/unavailable 目录未命中
+            // → maxLevel 必 nil；其余状态目录命中 → level/maxLevel 非 nil。
+            // 再混入少量防御性不可达组合（满级缺上限、升级缺上限/缺等级）。
+            let isCatalogHit = status != .unknown && status != .unavailable
+            let level: Int? = rng.next() % 5 == 0 ? nil : Int(rng.next() % 21)
+            let maxLevel: Int?
+            let nextLevel: Int?
+            switch (status, level) {
+            case (_, nil):
+                maxLevel = isCatalogHit && rng.next() % 4 != 0 ? Int(rng.next() % 21) : nil
+                nextLevel = nil
+            case (.maxed, .some(let l)):
+                maxLevel = rng.next() % 6 == 0 ? nil : l  // level == maxLevel → 满级
+                nextLevel = nil
+            case (.complete, .some(let l)):
+                maxLevel = l + 1 + Int(rng.next() % 3)     // level < maxLevel → 未满级
+                nextLevel = nil
+            case (.upgrading, .some(let l)):
+                let roll = rng.next() % 6
+                switch roll {
+                case 0: maxLevel = nil                     // 目录未命中但计时中 → unknown
+                case 1: maxLevel = l                       // 版本不匹配：next(l+1) > max(l) → unknown
+                default: maxLevel = l + 1 + Int(rng.next() % 3)  // 正常升级 → known
+                }
+                nextLevel = l + 1
+            default:
+                maxLevel = isCatalogHit ? Int(rng.next() % 21) : nil
+                nextLevel = nil
+            }
+            return item(id: "w\(i)",
+                        category: cats[Int(rng.next() % UInt64(cats.count))],
+                        status: status, level: level, maxLevel: maxLevel,
+                        count: instanceCount,
+                        isUpgrading: status == .upgrading, nextLevel: nextLevel)
+        }
+    }
+
+    /// oracle 权重：与实现 `weight(_:)` 逐字一致的独立复算（count > 0 ? count : 1）。
+    /// 测试不得复用 `instanceCount(of:)` 当 oracle——实现退化时两侧会同源漂移。
+    private func oracleWeight(_ item: VillageItemState) -> Int {
+        guard let count = item.count, count > 0 else { return 1 }
+        return count
+    }
+
+    /// oracle known 谓词：与实现 `isKnown(_:)` 逐字一致（doc 契约：
+    /// 非 unknown/unavailable/available、level/maxLevel 非 nil、非版本不匹配）。
+    private func oracleKnown(_ item: VillageItemState) -> Bool {
+        guard item.status != .unknown, item.status != .unavailable, item.status != .available else {
+            return false
+        }
+        guard item.maxLevel != nil, item.currentLevel != nil else { return false }
+        if item.isUpgrading,
+           let nextLevel = item.nextLevel,
+           let maxLevel = item.maxLevel,
+           nextLevel > maxLevel {
+            return false // 版本不匹配：目录可能过时，不纳入可确认完成度
+        }
+        return true
     }
 }
 

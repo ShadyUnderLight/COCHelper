@@ -459,6 +459,13 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(projection.items.first?.status, .unknown,
                        "版本不匹配 → 行状态降级 unknown（fail-closed，P1-2）")
         XCTAssertTrue(projection.items.first?.missingReason?.contains("版本不匹配") == true)
+        // 详情页输入数据 fail-closed（P1-2 复审）：nextLevelDuration nil → 详情页
+        // 不得标「下一级」；currentStageMaxLevel nil → 不得展示阶段上限——旧目录
+        // 等级/时长/费用不得成为可操作数据源。
+        XCTAssertNil(projection.items.first?.nextLevelDurationSeconds,
+                     "版本不匹配 → 详情页不得从旧目录推断下一级时长")
+        XCTAssertNil(projection.items.first?.currentStageMaxLevel,
+                     "版本不匹配 → 阶段上限不可计算")
         // 完成度：catalogIsUsable=false 时全部归 unknown（既有契约）
         let total = VillageDetailProjection.totalCompletion(
             from: projection.items, catalogIsUsable: false

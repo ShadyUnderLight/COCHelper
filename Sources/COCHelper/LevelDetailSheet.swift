@@ -55,6 +55,13 @@ struct LevelDetailSheet: View {
             //（不伪装成可升级/未满级）。
             return item.missingReason ?? "快照缺少 prerequisite 解锁建筑记录，无法验证当前阶段上限。"
         }
+        if item.status == .unknown {
+            // Issue #67 P1-2 fail-closed：unknown 含版本不匹配/base 不匹配——
+            // catalogItem 存在时旧目录 join 数据仍可用，但不得展示为可操作
+            // 等级阶梯（旧目录等级/时长/费用）。有 missingReason 就展示原因，
+            // 让 body 走提示分支而非「全部等级」列表（审核 P1：详情页旧目录泄漏）。
+            return item.missingReason ?? "该项目暂无逐级升级数据。"
+        }
         if catalogItem == nil {
             return item.missingReason ?? "该项目暂无逐级升级数据。"
         }
@@ -195,9 +202,11 @@ struct LevelDetailSheet: View {
         // Issue #67：阶段满级（currentLevel >= currentStageMaxLevel）时下一级
         // 超出当前阶段上限，不标「下一级」——避免与「当前阶段已满级」文案矛盾
         //（审核 C important：验收「不把全局更高等级当作当前可升级项」）。
-        // unverified（缺 prerequisite 无法验证）同样不标「下一级」（fail-closed）。
+        // unverified（缺 prerequisite 无法验证）与 unknown（版本不匹配/base 不匹配，
+        // 旧目录不可信）同样不标「下一级」（fail-closed，P1-2 审核：不得从旧目录
+        // 推断可操作的下一级）。
         let effectiveNext: Int?
-        if item.status == .unverified {
+        if item.status == .unverified || item.status == .unknown {
             effectiveNext = nil
         } else if let stage = item.currentStageMaxLevel, item.currentLevel ?? -1 >= stage {
             effectiveNext = nil

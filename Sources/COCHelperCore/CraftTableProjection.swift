@@ -61,7 +61,7 @@ public struct CraftTableModuleState: Identifiable, Codable, Hashable, Sendable {
     public var isUpgrading: Bool { status == .upgrading }
 
     public var needsReimport: Bool {
-        timerSeconds != nil && (remainingSeconds ?? 0) <= 0
+        timerSeconds != nil && remainingSeconds == 0
     }
 }
 
@@ -98,7 +98,7 @@ public enum CraftTableProjection {
         village: VillageProfile,
         catalog: CraftTableCatalog?,
         base: TrackerBase,
-        now _: Date = Date()
+        now: Date = Date()
     ) -> [CraftTableDefenseState] {
         guard base == .home,
               let snapshot = village.accountSnapshot,
@@ -112,7 +112,13 @@ public enum CraftTableProjection {
         return craftTable.types.map { defense in
             let defenseSpec = catalog?.defense(dataID: defense.dataID)
             var modules = defense.modules.map { module in
-                makeModule(module, parentID: defense.id, catalog: catalog)
+                makeModule(
+                    module,
+                    parentID: defense.id,
+                    snapshot: snapshot,
+                    catalog: catalog,
+                    now: now
+                )
             }
             let observedIDs = Set(defense.modules.map(\.dataID))
             for moduleID in defenseSpec?.moduleIDs ?? [] where !observedIDs.contains(moduleID) {
@@ -136,10 +142,16 @@ public enum CraftTableProjection {
     private static func makeModule(
         _ item: AccountItem,
         parentID: String,
-        catalog: CraftTableCatalog?
+        snapshot: AccountSnapshot,
+        catalog: CraftTableCatalog?,
+        now: Date
     ) -> CraftTableModuleState {
         let spec = catalog?.module(dataID: item.dataID)
-        let remaining = item.timerSeconds.map { item.remainingSeconds ?? $0 }
+        let remaining = VillageCatalogProjection.liveRemainingSeconds(
+            for: item,
+            snapshot: snapshot,
+            at: now
+        )
         let status: CraftTableModuleStatus
         if (remaining ?? 0) > 0 {
             status = .upgrading

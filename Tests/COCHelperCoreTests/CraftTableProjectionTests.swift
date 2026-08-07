@@ -66,7 +66,12 @@ final class CraftTableProjectionTests: XCTestCase {
         let catalog = try XCTUnwrap(CraftTableCatalog.loadBundled())
 
         let modules = try XCTUnwrap(
-            CraftTableProjection.project(village: village, catalog: catalog, base: .home).first?.modules
+            CraftTableProjection.project(
+                village: village,
+                catalog: catalog,
+                base: .home,
+                now: Date(timeIntervalSince1970: 1_700_000_000)
+            ).first?.modules
         )
 
         XCTAssertEqual(modules.map(\.dataID), [102_000_035, 102_000_033, 102_000_034])
@@ -117,6 +122,70 @@ final class CraftTableProjectionTests: XCTestCase {
         XCTAssertEqual(projected.first?.modules.first?.status, .unknown)
         XCTAssertNil(projected.first?.modules.first?.maxLevel)
         XCTAssertEqual(projected.first?.modules.first?.missingReason, "版本化精制台目录未收录该模组")
+    }
+
+    func testModuleTimerAdvancesAndReachesReimportState() throws {
+        let importedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let module = AccountItem(
+            id: "buildings:0.types.0.modules.0",
+            section: "buildings",
+            dataID: 102_000_033,
+            level: 1,
+            timerSeconds: 120,
+            remainingSeconds: 120
+        )
+        let defense = AccountItem(
+            id: "buildings:0.types.0",
+            section: "buildings",
+            dataID: 103_000_011,
+            modules: [module]
+        )
+        let root = AccountItem(
+            id: "buildings:0",
+            section: "buildings",
+            dataID: BuildingDisplayCategoryRules.craftTableDataID,
+            types: [defense]
+        )
+        let village = VillageProfile(
+            name: "测试村庄",
+            accountSnapshot: AccountSnapshot(
+                tag: "#TEST",
+                capturedAt: nil,
+                importedAt: importedAt,
+                ageSeconds: nil,
+                originalText: "",
+                objectSections: ["buildings": [root]],
+                numericSections: [:],
+                boosts: [:],
+                unknownTopLevelKeys: [],
+                diagnostics: []
+            )
+        )
+        let catalog = try XCTUnwrap(CraftTableCatalog.loadBundled())
+
+        let halfway = try XCTUnwrap(
+            CraftTableProjection.project(
+                village: village,
+                catalog: catalog,
+                base: .home,
+                now: importedAt.addingTimeInterval(60)
+            ).first?.modules.first
+        )
+        XCTAssertEqual(halfway.remainingSeconds, 60)
+        XCTAssertTrue(halfway.isUpgrading)
+        XCTAssertFalse(halfway.needsReimport)
+
+        let finished = try XCTUnwrap(
+            CraftTableProjection.project(
+                village: village,
+                catalog: catalog,
+                base: .home,
+                now: importedAt.addingTimeInterval(120)
+            ).first?.modules.first
+        )
+        XCTAssertEqual(finished.remainingSeconds, 0)
+        XCTAssertFalse(finished.isUpgrading)
+        XCTAssertTrue(finished.needsReimport)
     }
 
     private func fixtureVillage() throws -> VillageProfile {

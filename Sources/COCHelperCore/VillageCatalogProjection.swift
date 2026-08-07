@@ -491,7 +491,7 @@ public struct VillageCatalogProjection: Sendable {
 
     // MARK: - Live timers
 
-    private static func liveRemainingSeconds(
+    static func liveRemainingSeconds(
         for item: AccountItem,
         snapshot: AccountSnapshot,
         at now: Date

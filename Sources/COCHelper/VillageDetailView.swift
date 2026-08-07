@@ -21,6 +21,7 @@ struct VillageDetailView: View {
     }
 
     private var catalog: GameCatalog? { model.gameCatalog }
+    private var craftTableCatalog: CraftTableCatalog? { model.craftTableCatalog }
 
     var body: some View {
         Group {
@@ -80,6 +81,9 @@ struct VillageDetailView: View {
         let buildingGroups = BuildingGroupProjection.project(
             village: village, catalog: catalog, base: selectedBase, now: now
         )
+        let craftTable = CraftTableProjection.project(
+            village: village, catalog: craftTableCatalog, base: selectedBase, now: now
+        )
         // 原始快照记录 id → 组。BuildingInstance.id 与 VillageItemState.id 同源
         //（同一条快照记录），但聚合层记录 id 带 agg: 前缀，查找键需归一化
         //（rawRecordID）。快照记录 id 全局唯一，字典 1:1。
@@ -114,7 +118,8 @@ struct VillageDetailView: View {
                             now: now,
                             stats: statsByKey[group.id],
                             village: village,
-                            groupByInstanceID: groupByInstanceID
+                            groupByInstanceID: groupByInstanceID,
+                            craftTable: craftTable
                         )
                     }
                 }
@@ -424,7 +429,8 @@ struct VillageDetailView: View {
         now: Date,
         stats: VillageCategoryCompletion?,
         village: VillageProfile,
-        groupByInstanceID: [String: BuildingGroup]
+        groupByInstanceID: [String: BuildingGroup],
+        craftTable: [CraftTableDefenseState]
     ) -> some View {
         Panel {
             VStack(alignment: .leading, spacing: 10) {
@@ -439,8 +445,10 @@ struct VillageDetailView: View {
                 }
 
                 if group.displayCategory == .craftTable {
-                    // 精制台：整组走旧列表（issue #24 父子缩进），不接入组卡。
-                    legacyRows(items: group.items, group: group, now: now, village: village)
+                    CraftTableView(
+                        defenses: craftTable,
+                        catalogVersion: craftTableCatalog?.gameVersion
+                    )
                 } else {
                     groupedRows(
                         items: group.items,

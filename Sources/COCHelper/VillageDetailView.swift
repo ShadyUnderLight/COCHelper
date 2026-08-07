@@ -682,7 +682,9 @@ private struct QuickImportSheet: View {
                     destinationDescription: preview.destinationDescription,
                     confirmTitle: preview.confirmationTitle,
                     onConfirm: onConfirm,
-                    onCancel: onCancel
+                    onCancel: onCancel,
+                    targetVillageName: preview.targetVillageName,
+                    targetVillageTag: preview.targetVillageTag
                 )
             }
             .padding(24)

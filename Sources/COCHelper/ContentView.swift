@@ -1127,6 +1127,11 @@ struct AccountSnapshotSummaryView: View {
     var onConfirm: (() -> Void)? = nil
     /// 放弃动作（默认 model.discardPendingAccountSnapshot()）。
     var onCancel: (() -> Void)? = nil
+    /// Issue #61：快捷导入的目标村庄名称（非 nil 时渲染「目标村庄 / 目标 Tag /
+    /// JSON Tag」对照行，账号数据页不传 = 不渲染，行为不变）。
+    var targetVillageName: String? = nil
+    /// Issue #61：目标村庄当前快照 Tag（nil = 尚未导入快照，对照行标注）。
+    var targetVillageTag: String? = nil
 
     private var snapshotTitle: String {
         isPending ? "待确认的账号快照" : "当前账号快照"
@@ -1151,6 +1156,22 @@ struct AccountSnapshotSummaryView: View {
                     Text(isPending ? "解析成功，尚未应用" : "已保存到本机")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(isPending ? .orange : .green)
+                }
+
+                // Issue #61 验收：预览必须展示目标村庄名称、目标 Tag 与 JSON
+                // Tag 的对照（Tag 变化/缺失场景下用户需确认「将写入哪个账号」）。
+                // 仅快捷导入（VillageDetailView 传参）渲染；账号数据页不传 = 零变化。
+                if let targetVillageName {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("目标村庄：" + targetVillageName)
+                        Text("目标 Tag：" + (targetVillageTag ?? "尚未导入快照"))
+                        Text("JSON Tag：" + (snapshot.tag ?? "未提供"))
+                            .foregroundStyle(snapshot.tag == nil ? .orange : .secondary)
+                    }
+                    .font(.caption.monospaced())
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
                 }
 
                 HStack(spacing: 10) {

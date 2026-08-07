@@ -220,12 +220,11 @@ public enum VillageDetailProjection {
 
     // MARK: - 实例权重（issue #66）
 
-    /// 按实例权重求和（单一契约在 `VillageItemState.instanceWeight`，issue #66）。
-    /// 仅供本文件统计函数内部使用；UI 分类 chip 计数经 completionStats 的 known+unknown
-    /// 派生（见 VillageDetailView），不直接调用本函数。聚合行（count > 1，如 6 门 21 级
-    /// 加农炮）按 count 计入，避免把行数当实例数。溢出防御：恶意/损坏快照可含
-    /// `count == Int.max`，加法溢出时饱和到 Int.max——debug/release 均不崩溃、
-    /// 不产生垃圾负数（审核 A Minor 1）。
+    /// 按实例权重求和（饱和，单一契约在 `VillageItemState.instanceWeight`，issue #66）。
+    /// 统计函数实际使用带溢出标志的 `instanceCountAndOverflow`；本函数供测试校验
+    /// 与内部守恒断言使用。聚合行（count > 1，如 6 门 21 级加农炮）按 count 计入，
+    /// 避免把行数当实例数。溢出防御：恶意/损坏快照可含 `count == Int.max`，加法
+    /// 溢出时饱和到 Int.max——debug/release 均不崩溃、不产生垃圾负数（审核 A Minor 1）。
     internal static func instanceCount(of items: [VillageItemState]) -> Int {
         instanceCountAndOverflow(of: items).count
     }

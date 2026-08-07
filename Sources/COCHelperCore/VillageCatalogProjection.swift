@@ -308,7 +308,7 @@ public struct VillageCatalogProjection: Sendable {
         base: TrackerBase,
         now: Date,
         unlocks: PlayerUnlockLevels,
-        catalogIsUsable: Bool = true
+        catalogIsUsable: Bool
     ) -> [VillageItemState] {
         // Issue #37：第一遍扫描构建「根父 id → dataID」映射。快照 id 是数组索引路径
         //（如 buildings:6.types.0），嵌套项归属精制台必须回查根父的 dataID。

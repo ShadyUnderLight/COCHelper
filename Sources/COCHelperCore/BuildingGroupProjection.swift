@@ -87,19 +87,22 @@ public enum BuildingGroupProjection {
         // 注意区分两种降级（Issue #45 契约第 5 节）：目录不可用（catalog == nil）
         // 是「缺失态」→ partialMissing（UI 橙标 + 诊断）；目录存在但版本不匹配
         // 是「不得输出权威汇总」→ versionMismatch（UI 红标诊断）。
-        let hasGlobalVersionMismatch: Bool
-        if let catalog, let expectedGameVersion {
-            hasGlobalVersionMismatch = catalog.gameVersion != expectedGameVersion
+        let catalogIsUsable: Bool
+        if let catalog {
+            catalogIsUsable = expectedGameVersion.map { $0 == catalog.gameVersion } ?? true
         } else {
-            hasGlobalVersionMismatch = false
+            catalogIsUsable = false
         }
         // 原始记录层（聚合前）：只取 buildings/buildings2 的非嵌套项。
+        // catalogIsUsable 必须显式传入（Issue #67 P1-2）：版本不匹配时行状态
+        // 不得消费旧目录判 maxed/complete——组卡→详情链路与列表行同口径。
         let records = VillageCatalogProjection.records(
             from: snapshot,
             catalog: catalog,
             base: base,
             now: now,
-            unlocks: PlayerUnlockLevels(snapshot: snapshot)
+            unlocks: PlayerUnlockLevels(snapshot: snapshot),
+            catalogIsUsable: catalogIsUsable
         ).filter { !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2") }
 
         // 按 (base, section, dataID) 分组，组按首现顺序输出（字典 + 有序键数组）。
@@ -122,7 +125,7 @@ public enum BuildingGroupProjection {
                 dataID: first.dataID,
                 name: first.name,
                 instances: instances,
-                summary: summary(for: instances, hasGlobalVersionMismatch: hasGlobalVersionMismatch),
+                summary: summary(for: instances, catalogIsUsable: catalogIsUsable, catalogIsNil: catalog == nil),
                 displayCategory: first.displayCategory,
                 category: first.category
             )
@@ -159,7 +162,7 @@ public enum BuildingGroupProjection {
             }
     }
 
-    private static func summary(for instances: [BuildingInstance], hasGlobalVersionMismatch: Bool) -> BuildingGroupSummary {
+    private static func summary(for instances: [BuildingInstance], catalogIsUsable: Bool, catalogIsNil: Bool) -> BuildingGroupSummary {
         var instanceCount = 0
         var remainingLevelCount = 0
         var totalDurationSeconds: Int64 = 0
@@ -252,9 +255,11 @@ public enum BuildingGroupProjection {
                 .sorted { $0.key < $1.key }
                 .map { BuildingResourceTotal(resource: $0.key, totalCost: $0.value) },
             saturated: saturated,
-            // 全局版本不匹配优先级最高（旧目录不得支撑权威汇总，Issue #45 契约）；
-            // 其次实例级目录过时；再其次数据缺失。
-            completeness: hasGlobalVersionMismatch ? .versionMismatch
+            // 目录缺失（catalogIsNil）是「缺失态」→ partialMissing（Issue #45 契约）；
+            // 目录存在但版本不匹配（!catalogIsUsable）→ versionMismatch（旧目录不得支撑
+            // 权威汇总）；其次实例级目录过时；再其次数据缺失。
+            completeness: catalogIsNil ? .partialMissing
+                : !catalogIsUsable ? .versionMismatch
                 : hasVersionMismatch ? .versionMismatch
                 : hasPartialMissing ? .partialMissing
                 : .complete

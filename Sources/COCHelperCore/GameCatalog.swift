@@ -173,6 +173,39 @@ extension CatalogDurationState {
     }
 }
 
+// MARK: - Compatibility (Issue #74a)
+
+/// 目录与玩家客户端 build 的兼容性状态。
+///
+/// 玩家真实 build 数据源当前不存在（官方 CoC API 不返回客户端 build）；
+/// 生产路径恒为 `.unverified`——UI 必须明确「未验证」，不得把目录自我比较
+/// 伪装成「已验证」。`.verified`/`.mismatch` 仅在显式传入玩家 build 时产生。
+public enum CatalogCompatibility: Hashable, Sendable {
+    /// 无玩家 build 输入：目录可用但未验证。
+    case unverified(gameVersion: String)
+    /// 玩家 build == catalog.gameVersion。
+    case verified(gameVersion: String)
+    /// 玩家 build != catalog.gameVersion：`catalogIsUsable` 必须 false（fail-closed）。
+    case mismatch(catalogVersion: String, expectedVersion: String)
+    /// 目录不可用（catalog == nil）。
+    case unavailable
+
+    /// 领域助手：投影与 UI 共用同一判定，防三态判定散落手搓。
+    public static func resolve(
+        catalog: GameCatalog?,
+        expectedGameVersion: String?
+    ) -> CatalogCompatibility {
+        guard let catalog else { return .unavailable }
+        guard let expectedGameVersion else {
+            return .unverified(gameVersion: catalog.gameVersion)
+        }
+        if expectedGameVersion == catalog.gameVersion {
+            return .verified(gameVersion: catalog.gameVersion)
+        }
+        return .mismatch(catalogVersion: catalog.gameVersion, expectedVersion: expectedGameVersion)
+    }
+}
+
 // MARK: - Items
 
 public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
@@ -381,13 +414,17 @@ public struct GameCatalog: Sendable {
     public static let defaultBundledVersion = "18.400.13"
 
     public let gameVersion: String
+    /// Issue #74a：同版本 manifest（buildTag/sourceFingerprint/counts 等）；
+    /// 测试注入或 manifest 缺失/损坏时 nil（增强信息，不阻塞目录加载）。
+    public let manifest: CatalogManifest?
 
     private let itemsBySection: [String: [CatalogItem]]
     private let index: [String: CatalogItem]
 
     /// 测试注入入口；`loadBundled` 只是其便捷包装。
-    public init(gameVersion: String, items: [CatalogItem]) {
+    public init(gameVersion: String, items: [CatalogItem], manifest: CatalogManifest? = nil) {
         self.gameVersion = gameVersion
+        self.manifest = manifest
         var bySection: [String: [CatalogItem]] = [:]
         var byKey: [String: CatalogItem] = [:]
         for item in items {
@@ -410,7 +447,18 @@ public struct GameCatalog: Sendable {
         else {
             return nil
         }
-        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+        // Issue #74a：manifest 是增强信息——缺失/解码失败不阻塞目录加载（nil）。
+        let manifest: CatalogManifest?
+        if let manifestURL = Bundle.module.url(
+            forResource: "manifest",
+            withExtension: "json",
+            subdirectory: "GameCatalog/" + version
+        ), let manifestData = try? Data(contentsOf: manifestURL) {
+            manifest = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData)
+        } else {
+            manifest = nil
+        }
+        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items, manifest: manifest)
     }
 
     /// 主查询：`(section, dataID)` 精确匹配（catalog.section 与快照 section 同源）。

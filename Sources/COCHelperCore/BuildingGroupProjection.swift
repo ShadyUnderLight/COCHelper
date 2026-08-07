@@ -102,7 +102,7 @@ public enum BuildingGroupProjection {
         village: VillageProfile,
         catalog: GameCatalog?,
         base: TrackerBase,
-        expectedGameVersion: String? = GameCatalog.defaultBundledVersion,
+        expectedGameVersion: String? = nil,  // Issue #74a：默认不自我比较（unverified）
         now: Date = Date()
     ) -> [BuildingGroup] {
         guard let snapshot = village.accountSnapshot else { return [] }

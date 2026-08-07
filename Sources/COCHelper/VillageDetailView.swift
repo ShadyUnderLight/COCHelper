@@ -236,7 +236,10 @@ struct VillageDetailView: View {
                     HStack(spacing: 10) {
                         snapshotTimeLabel(village)
                         if let version = projection.catalogVersion {
-                            Text("目录 v" + version)
+                            // Issue #74a：无玩家 build 时明确「未验证」，不得伪装已匹配。
+                            let suffix = projection.compatibility == .unverified(gameVersion: version)
+                                ? " · 未验证" : ""
+                            Text("目录 v" + version + suffix)
                                 .font(.caption2.monospaced())
                                 .foregroundStyle(.tertiary)
                         }

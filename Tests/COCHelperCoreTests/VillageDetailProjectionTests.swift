@@ -13,6 +13,7 @@ final class VillageDetailProjectionTests: XCTestCase {
         status: VillageItemStatus = .complete,
         level: Int? = 3,
         maxLevel: Int? = 10,
+        count: Int? = 1,
         isUpgrading: Bool = false,
         nextLevel: Int? = nil
     ) -> VillageItemState {
@@ -25,7 +26,7 @@ final class VillageDetailProjectionTests: XCTestCase {
             name: "item-" + id,
             category: category,
             currentLevel: level,
-            count: 1,
+            count: count,
             timerSeconds: isUpgrading ? 3600 : nil,
             remainingSeconds: isUpgrading ? 1800 : nil,
             nextLevel: effectiveNext,
@@ -214,6 +215,122 @@ final class VillageDetailProjectionTests: XCTestCase {
         let total = VillageDetailProjection.totalCompletion(from: [item(status: .maxed)])
         XCTAssertEqual(total.knownCount, 1)
         XCTAssertEqual(total.completedCount, 1)
+    }
+
+    // MARK: - 完成度按实例加权（issue #66：聚合行 × count 计入实例数）
+
+    func testCompletionWeightedByCount() {
+        // 投影后聚合行形态：满级行 count=6 + 未满级行 count=1 → 6/7 而非行数 1/2。
+        let items = [
+            item(id: "maxed", status: .maxed, count: 6),
+            item(id: "lower", status: .complete, count: 1),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (7, 6, 0), "got \(stat(total))")
+        XCTAssertEqual(total.completionRatio ?? -1, 6.0 / 7.0, accuracy: 0.0001)
+    }
+
+    func testWalls300Maxed25Lower() {
+        // 300 满级墙 + 25 未满级墙 → 300/325（非 1/2）。
+        let items = [
+            item(id: "maxed", status: .maxed, count: 300),
+            item(id: "lower", status: .complete, count: 25),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (325, 300, 0), "got \(stat(total))")
+        XCTAssertEqual(total.completionRatio ?? -1, 300.0 / 325.0, accuracy: 0.0001)
+    }
+
+    func testNilCountWeightsOne() {
+        // count == nil（非聚合行/旧快照）按 1 计。
+        let items = [
+            item(id: "maxed", status: .maxed, count: nil),
+            item(id: "lower", status: .complete, count: nil),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (2, 1, 0), "got \(stat(total))")
+    }
+
+    func testNonPositiveCountWeightsOne() {
+        // malformed count（0/负数）floor 为 1：不得产生 0/负权重（issue #66 边界 3）。
+        let items = [
+            item(id: "zero", status: .maxed, count: 0),
+            item(id: "neg", status: .maxed, count: -3),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (2, 2, 0), "got \(stat(total))")
+    }
+
+    func testUpgradingAndIdleAggregatedNoDoubleCount() {
+        // 升级中单条（count=1，未聚合）+ 已聚合空闲行（count=3）并存形态：
+        // 各行独立加权，不重复不丢失。
+        let items = [
+            item(id: "upgrading", status: .upgrading, level: 3, maxLevel: 10, count: 1, isUpgrading: true, nextLevel: 4),
+            item(id: "agg:lower", status: .complete, count: 3),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (4, 0, 0), "got \(stat(total))")
+    }
+
+    func testConservationHoldsWithWeights() {
+        // 混合已知/未知/满级/未满级（count 2、3、nil、4、5）：守恒 + completed ≤ known。
+        let items = [
+            item(id: "maxed2", status: .maxed, count: 2),
+            item(id: "lower3", status: .complete, count: 3),
+            item(id: "unknown", status: .unknown, level: nil, maxLevel: nil, count: nil),
+            item(id: "unavailable", status: .unavailable, level: nil, maxLevel: nil, count: 5),
+            item(id: "mismatch", status: .upgrading, level: 10, maxLevel: 10, count: 4, isUpgrading: true, nextLevel: 11),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        let weighted = VillageDetailProjection.instanceCount(of: items)
+        XCTAssertEqual(total.knownCount + total.unknownCount, weighted,
+                       "已知 + 未知 == Σweight：未知不因聚合消失")
+        XCTAssertLessThanOrEqual(total.completedCount, total.knownCount)
+        XCTAssertEqual(total.completedCount, 2, "满级权重 = 2")
+    }
+
+    func testWeightedIsFullyMaxed() {
+        // 权重与行数脱钩：300 满级 + 1 未满级 ≠ 满级；全满级（任意 count）才是。
+        let mixed = [
+            item(id: "maxed", status: .maxed, count: 300),
+            item(id: "lower", status: .complete, count: 1),
+        ]
+        XCTAssertFalse(VillageDetailProjection.totalCompletion(from: mixed).isFullyMaxed)
+        let allMaxed = [
+            item(id: "maxed300", status: .maxed, count: 300),
+            item(id: "maxedNil", status: .maxed, count: nil),
+        ]
+        XCTAssertTrue(VillageDetailProjection.totalCompletion(from: allMaxed).isFullyMaxed)
+    }
+
+    func testCatalogUnusableWeightsIntoUnknown() {
+        // 目录不可用：全部按实例权重归 unknown（6+1=7）。
+        let items = [
+            item(id: "maxed", status: .maxed, count: 6),
+            item(id: "lower", status: .complete, count: 1),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items, catalogIsUsable: false)
+        XCTAssertTrue(stat(total) == (0, 0, 7), "got \(stat(total))")
+        XCTAssertNil(total.completionRatio)
+    }
+
+    func testCategoryStatsWeightedAndConserved() throws {
+        // 两个分类各有 count>1 项：分类统计之和 == 总统计（known/completed/unknown 三列均守恒）。
+        let items = [
+            item(id: "b-maxed", category: .buildings, status: .maxed, count: 6),
+            item(id: "b-lower", category: .buildings, status: .complete, count: 1),
+            item(id: "t-maxed", category: .traps, status: .maxed, count: 3),
+            item(id: "t-unknown", category: .traps, status: .unknown, level: nil, maxLevel: nil, count: 2),
+        ]
+        let stats = VillageDetailProjection.completionStats(from: items)
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertEqual(total.knownCount, stats.reduce(0) { $0 + $1.knownCount })
+        XCTAssertEqual(total.completedCount, stats.reduce(0) { $0 + $1.completedCount })
+        XCTAssertEqual(total.unknownCount, stats.reduce(0) { $0 + $1.unknownCount })
+        let buildings = try XCTUnwrap(stats.first { $0.category == .buildings })
+        XCTAssertTrue(stat(buildings) == (7, 6, 0), "got \(stat(buildings))")
+        let traps = try XCTUnwrap(stats.first { $0.category == .traps })
+        XCTAssertTrue(stat(traps) == (3, 3, 2), "got \(stat(traps))")
     }
 
     // MARK: - isFullyMaxed（issue #53：全部可确认且已满级）

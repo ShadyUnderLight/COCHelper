@@ -38,6 +38,9 @@ public struct VillageParentedRow: Identifiable, Hashable, Sendable {
 public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
     public let category: TrackerCategory?
     public let displayCategory: TrackerDisplayCategory?
+    /// 实例权重语义（issue #66）：按 `count` 加权（`count ?? 1`）后的实例数，
+    /// 非聚合行数。known = 计入分母的实例数；completed = 其中已满级的实例数；
+    /// unknown = 总实例数 − known（守恒：未知实例不因聚合而消失）。
     public let knownCount: Int
     public let completedCount: Int
     public let unknownCount: Int
@@ -142,36 +145,65 @@ public enum VillageDetailProjection {
     /// 按分类完成度；顺序同 groups。`catalogIsUsable == false`（目录不可用或
     /// 全局版本不匹配）时不产生任何可确认分母，全部归 unknown（issue #16：
     /// 「目录无上限或版本不匹配：不纳入可确认完成度，并显示诊断」）。
+    ///
+    /// 计数按实例权重（issue #66）：聚合行（`count > 1`）按 count 计入，
+    /// 不再把行数当实例数；`unknownCount = instanceCount(of: group.items) - knownCount`
+    /// 守恒——未知实例不因聚合而消失。三个计数字段均为实例权重语义。
     public static func completionStats(
         from items: [VillageItemState],
         catalogIsUsable: Bool = true
     ) -> [VillageCategoryCompletion] {
         groups(from: items).map { group in
-            let known = catalogIsUsable ? group.items.filter { isKnown($0) }.count : 0
-            let completed = catalogIsUsable ? group.items.filter { $0.status == .maxed && isKnown($0) }.count : 0
+            let known = catalogIsUsable
+                ? group.items.filter { isKnown($0) }.reduce(0) { $0 + Self.weight($1) }
+                : 0
+            let completed = catalogIsUsable
+                ? group.items.filter { $0.status == .maxed && isKnown($0) }.reduce(0) { $0 + Self.weight($1) }
+                : 0
             return VillageCategoryCompletion(
                 category: group.category,
                 displayCategory: group.displayCategory,
                 knownCount: known,
                 completedCount: completed,
-                unknownCount: group.items.count - known
+                unknownCount: Self.instanceCount(of: group.items) - known
             )
         }
     }
 
     /// 全村庄完成度合计。`catalogIsUsable` 语义同 `completionStats`。
+    /// 计数按实例权重（issue #66），守恒：`known + unknown == instanceCount(of: items)`。
     public static func totalCompletion(
         from items: [VillageItemState],
         catalogIsUsable: Bool = true
     ) -> VillageCategoryCompletion {
-        let known = catalogIsUsable ? items.filter { isKnown($0) }.count : 0
-        let completed = catalogIsUsable ? items.filter { $0.status == .maxed && isKnown($0) }.count : 0
+        let known = catalogIsUsable
+            ? items.filter { isKnown($0) }.reduce(0) { $0 + Self.weight($1) }
+            : 0
+        let completed = catalogIsUsable
+            ? items.filter { $0.status == .maxed && isKnown($0) }.reduce(0) { $0 + Self.weight($1) }
+            : 0
         return VillageCategoryCompletion(
             category: nil,
             knownCount: known,
             completedCount: completed,
-            unknownCount: items.count - known
+            unknownCount: Self.instanceCount(of: items) - known
         )
+    }
+
+    // MARK: - 实例权重（issue #66）
+
+    /// 实例权重：count == nil → 1；count <= 0（malformed）→ 1（与
+    /// `TrackerModels.countLabel` 展示口径一致：count <= 1 不显示 ×N，
+    /// 按单条处理）；count > 0 → count。不得产生负权重（issue #66 边界 3）。
+    private static func weight(_ item: VillageItemState) -> Int {
+        guard let count = item.count, count > 0 else { return 1 }
+        return count
+    }
+
+    /// 按实例权重求和（供 UI chip 计数与统计复用，单一口径，issue #66）。
+    /// 聚合行（count > 1，如 6 门 21 级加农炮）按 count 计入，避免把行数当实例数。
+    public static func instanceCount(of items: [VillageItemState]) -> Int {
+        items.reduce(0) { $0 + Self.weight($1) }
     }
 
     /// 计入完成度分母的条件（见类型 doc comment）。

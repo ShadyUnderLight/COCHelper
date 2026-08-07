@@ -339,7 +339,9 @@ struct WarLogCardView: View {
                 .font(.caption2.monospaced())
                 .foregroundStyle(.tertiary)
                 .frame(width: 22, alignment: .trailing)
-            Text(line.stars.map { String(repeating: "⭐", count: $0) } ?? "—")
+            // 星数钳制到 [0,3]：官方契约虽为 0...3，但 schema 外输入不可信，
+            // String(repeating:count:) 对负 count 会触发 fatal error "Negative count not allowed"
+            Text(line.stars.map { String(repeating: "⭐", count: min(max($0, 0), 3)) } ?? "—")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Spacer()

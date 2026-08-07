@@ -631,23 +631,10 @@ final class BuildingGroupProjectionTests: XCTestCase {
     /// TH=2 的村庄：阶段上限 = 2（lvl3 需 TH3）→ 阶梯只到 level 2，汇总剩余 0 级
     ///（不是全局剩余 2 级）；阶段满级实例 steps 空且不降级。
     func testT16StageMaxCapsLadderAndSummary() throws {
-        // 带 TH 门槛的目录（门槛写进 levels：lvl1 无、lvl2 TH2、lvl3 TH3、lvl4 TH4）。
-        let catalog = try makeCatalog(items: [
-            SpecItem(
-                section: "buildings", category: "buildings", dataID: 1_000_001,
-                base: "home", name: "加农炮", maxLevel: 4,
-                levels: [
-                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 2, durationSeconds: 120, upgradeResource: "Elixir", upgradeCost: 200),
-                    SpecLevel(level: 3, durationSeconds: 180, upgradeResource: "Elixir", upgradeCost: 300),
-                    SpecLevel(level: 4, durationSeconds: 240, upgradeResource: "Elixir", upgradeCost: 400),
-                ]
-            ),
-        ])
-        // 手工构造带 TH 门槛的目录（SpecLevel 无门槛字段，用原始 JSON 构造）。
+        // 带 TH 门槛的目录（lvl1 无、lvl2 TH2、lvl3 TH3、lvl4 TH4），加农炮 dataID 1000002。
         let gateJSON = """
         {"gameVersion":"18.400.13","items":[
-          {"section":"buildings","category":"buildings","dataID":1000001,"base":"home","name":"加农炮","maxLevel":4,
+          {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":4,
            "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
            "levels":[
              {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
@@ -663,25 +650,13 @@ final class BuildingGroupProjectionTests: XCTestCase {
 
         let village = makeVillage(objectSections: [
             "buildings": [
-                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "th"),  // 大本营 TH=12
-                makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0"),    // 加农炮 lvl2
-            ],
-        ])
-        // 注意：村庄里大本营与加农炮同 dataID 会冲突——加农炮改 1000002。
-        let village2 = makeVillage(objectSections: [
-            "buildings": [
                 makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "th"),  // 大本营 TH=2
                 makeItem(section: "buildings", dataID: 1_000_002, level: 2, path: "0"),   // 加农炮 lvl2
             ],
         ])
-        // 目录里加农炮也改 1000002
-        let gateJSON2 = gateJSON.replacingOccurrences(of: "\"dataID\":1000001", with: "\"dataID\":1000002")
-        struct Payload2: Decodable { let gameVersion: String; let items: [CatalogItem] }
-        let payload2 = try JSONDecoder().decode(Payload2.self, from: Data(gateJSON2.utf8))
-        let gated2 = GameCatalog(gameVersion: payload2.gameVersion, items: payload2.items)
 
         let groups = BuildingGroupProjection.project(
-            village: village2, catalog: gated2, base: .home
+            village: village, catalog: gated, base: .home
         )
         let group = try XCTUnwrap(groups.first { $0.dataID == 1_000_002 }, "加农炮组（大本营 1000001 不在目录）")
         let instance = try XCTUnwrap(group.instances.first)

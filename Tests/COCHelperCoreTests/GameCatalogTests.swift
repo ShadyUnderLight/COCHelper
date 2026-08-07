@@ -435,7 +435,7 @@ final class RequirementTests: XCTestCase {
         XCTAssertEqual(
             VillageCatalogProjection.currentStageMaxLevel(for: cannon, unlocks: unlocks),
             15,
-            "TH=12 时加农炮阶段上限应为 15（lvl16 需 TH13+）"
+            "TH=12 时加农炮阶段上限应为 15（lvl16 需 TH14）"
         )
     }
 

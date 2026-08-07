@@ -97,9 +97,79 @@ final class AppModelQuickImportTests: XCTestCase {
         }
         XCTAssertNil(preview.targetVillageTag)
         XCTAssertEqual(preview.isFirstImport, true)
+        XCTAssertEqual(preview.targetVillageHasSnapshot, false)
         XCTAssertEqual(preview.replacesSameTag, false)
         XCTAssertEqual(preview.destinationDescription, "将建立「A」的账号快照并导入")
         XCTAssertTrue(preview.destinationDescription.contains("建立"))
+    }
+
+    /// P2：目标村庄已有快照但快照无 Tag（targetVillageTag 为 nil）时，
+    /// 不得误判为首次导入（isFirstImport=false、hasSnapshot=true、描述走
+    /// 「JSON 未提供账号 Tag」分支而非「建立」分支）。
+    @MainActor
+    func testPrepareHasSnapshotWithoutTagIsNotFirstImport() async {
+        let a = VillageProfile(
+            name: "A",
+            accountSnapshot: makeSnapshot(tag: nil, originalText: "{\"buildings\":[]}")
+        )
+        let clipboard: String? = ##"{"buildings":[]}"##
+        let model = makeModel(villages: [a]) { clipboard }
+
+        let result = model.prepareQuickImport(for: model.villages[0].id)
+
+        guard case .success(let preview) = result else {
+            return XCTFail("应成功，实际失败: \(result)")
+        }
+        XCTAssertNil(preview.targetVillageTag)
+        XCTAssertEqual(preview.targetVillageHasSnapshot, true)
+        XCTAssertEqual(preview.isFirstImport, false, "有快照但无 Tag 不是首次导入")
+        XCTAssertFalse(preview.destinationDescription.contains("建立"),
+                       "有快照时描述不得进入「建立」分支: \(preview.destinationDescription)")
+        XCTAssertTrue(preview.destinationDescription.contains("JSON 未提供账号 Tag"),
+                      "JSON 无 tag 应走缺失分支: \(preview.destinationDescription)")
+    }
+
+    /// P2 补充：目标村庄有快照但无 Tag、JSON 带 Tag → 描述走「Tag 变化被重置」
+    /// 分支（从无 tag 变为有 tag），不得进入「建立」分支。
+    @MainActor
+    func testPrepareHasSnapshotWithoutTagWithJSONTag() async {
+        let a = VillageProfile(
+            name: "A",
+            accountSnapshot: makeSnapshot(tag: nil, originalText: "{\"buildings\":[]}")
+        )
+        let clipboard: String? = ##"{"tag":"#NEW","buildings":[]}"##
+        let model = makeModel(villages: [a]) { clipboard }
+
+        let result = model.prepareQuickImport(for: model.villages[0].id)
+
+        guard case .success(let preview) = result else {
+            return XCTFail("应成功，实际失败: \(result)")
+        }
+        XCTAssertEqual(preview.targetVillageHasSnapshot, true)
+        XCTAssertEqual(preview.isFirstImport, false)
+        XCTAssertFalse(preview.destinationDescription.contains("建立"))
+        XCTAssertTrue(preview.destinationDescription.contains("Tag 变化被重置"),
+                      "目标无 tag → JSON 有 tag 应走变化分支: \(preview.destinationDescription)")
+    }
+
+    /// P2 边界：空字符串 Tag 保留原样（UI 层负责「未提供」展示），
+    /// 数据层承诺 targetVillageTag 是「原样、未规范化」。
+    @MainActor
+    func testPrepareEmptyTagKeptAsIs() async {
+        let a = VillageProfile(
+            name: "A",
+            accountSnapshot: makeSnapshot(tag: "  ", originalText: "{\"buildings\":[]}")
+        )
+        let clipboard: String? = ##"{"tag":"#NEW","buildings":[]}"##
+        let model = makeModel(villages: [a]) { clipboard }
+
+        let result = model.prepareQuickImport(for: model.villages[0].id)
+
+        guard case .success(let preview) = result else {
+            return XCTFail("应成功，实际失败: \(result)")
+        }
+        XCTAssertEqual(preview.targetVillageTag, "  ", "targetVillageTag 保持原样")
+        XCTAssertEqual(preview.targetVillageHasSnapshot, true)
     }
 
     /// 剪贴板为 nil → .emptyClipboard。
@@ -518,15 +588,18 @@ final class AppModelQuickImportTests: XCTestCase {
         let snapshot = makeSnapshot(tag: "#RENAMED")
         let preview1 = QuickImportPreview(
             snapshot: snapshot, targetVillageID: ids[0], targetVillageName: "村庄 1",
-            targetVillageTag: "#V1", replacesSameTag: false, destinationDescription: "测试"
+            targetVillageTag: "#V1", targetVillageHasSnapshot: true,
+            replacesSameTag: false, destinationDescription: "测试"
         )
         let preview2 = QuickImportPreview(
             snapshot: snapshot, targetVillageID: ids[1], targetVillageName: "未命名村庄",
-            targetVillageTag: "#V2", replacesSameTag: false, destinationDescription: "测试"
+            targetVillageTag: "#V2", targetVillageHasSnapshot: true,
+            replacesSameTag: false, destinationDescription: "测试"
         )
         let preview3 = QuickImportPreview(
             snapshot: snapshot, targetVillageID: ids[2], targetVillageName: "A",
-            targetVillageTag: "#A", replacesSameTag: false, destinationDescription: "测试"
+            targetVillageTag: "#A", targetVillageHasSnapshot: true,
+            replacesSameTag: false, destinationDescription: "测试"
         )
 
         model.applyQuickImport(preview1)
@@ -627,6 +700,7 @@ final class AppModelQuickImportTests: XCTestCase {
                 targetVillageID: village.id,
                 targetVillageName: "V",
                 targetVillageTag: oldTag,
+                targetVillageHasSnapshot: true,
                 replacesSameTag: OfficialPlayerTagValidator.normalized(newTag)
                     == OfficialPlayerTagValidator.normalized(oldTag),
                 destinationDescription: "测试"

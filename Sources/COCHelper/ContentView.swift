@@ -1132,9 +1132,35 @@ struct AccountSnapshotSummaryView: View {
     var targetVillageName: String? = nil
     /// Issue #61：目标村庄当前快照 Tag（nil = 尚未导入快照，对照行标注）。
     var targetVillageTag: String? = nil
+    /// Issue #61：目标村庄是否已有导入快照（有快照但无 Tag 时 targetVillageTag
+    /// 为 nil 但本字段为 true——对照行区分「尚未导入快照」与「未提供」，P2）。
+    var targetVillageHasSnapshot: Bool = false
 
     private var snapshotTitle: String {
         isPending ? "待确认的账号快照" : "当前账号快照"
+    }
+
+    /// P2：目标 Tag 三态展示——有 Tag 显示原样；有快照但无 Tag 显示「未提供」；
+    /// 从未导入快照显示「尚未导入快照」。
+    private var targetTagDisplayText: String {
+        if let tag = targetVillageTag,
+           !tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return tag
+        }
+        return targetVillageHasSnapshot ? "未提供" : "尚未导入快照"
+    }
+
+    /// JSON Tag 缺失或空白时显示「未提供」（含空串边界）。
+    private var jsonTagDisplayText: String {
+        if let tag = snapshot.tag,
+           !tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return tag
+        }
+        return "未提供"
+    }
+
+    private var jsonTagIsMissing: Bool {
+        jsonTagDisplayText == "未提供"
     }
 
     private var activeItems: [AccountItem] {
@@ -1161,12 +1187,14 @@ struct AccountSnapshotSummaryView: View {
                 // Issue #61 验收：预览必须展示目标村庄名称、目标 Tag 与 JSON
                 // Tag 的对照（Tag 变化/缺失场景下用户需确认「将写入哪个账号」）。
                 // 仅快捷导入（VillageDetailView 传参）渲染；账号数据页不传 = 零变化。
+                // P2：目标 Tag 三态——有 Tag 显示具体 Tag；有快照但无 Tag 显示
+                //「未提供」；从未导入快照显示「尚未导入快照」。
                 if let targetVillageName {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("目标村庄：" + targetVillageName)
-                        Text("目标 Tag：" + (targetVillageTag ?? "尚未导入快照"))
-                        Text("JSON Tag：" + (snapshot.tag ?? "未提供"))
-                            .foregroundStyle(snapshot.tag == nil ? .orange : .secondary)
+                        Text("目标 Tag：" + targetTagDisplayText)
+                        Text("JSON Tag：" + jsonTagDisplayText)
+                            .foregroundStyle(jsonTagIsMissing ? .orange : .secondary)
                     }
                     .font(.caption.monospaced())
                     .padding(10)

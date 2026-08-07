@@ -13,10 +13,13 @@ public struct QuickImportPreview: Identifiable, Equatable, Sendable {
     public let targetVillageName: String
     /// 目标村庄当前快照 tag（原样，未规范化）。
     public let targetVillageTag: String?
+    /// 目标村庄是否已有导入快照（与 tag 是否缺失无关：有快照但无 tag 时
+    /// targetVillageTag 为 nil 但本字段为 true，P2 修正 isFirstImport 误判）。
+    public let targetVillageHasSnapshot: Bool
     /// normalized(JSON tag) == normalized(targetVillageTag)。
     public let replacesSameTag: Bool
-    /// 目标村庄从未导入过快照（targetVillageTag == nil）。
-    public var isFirstImport: Bool { targetVillageTag == nil }
+    /// 目标村庄从未导入过快照（targetVillageHasSnapshot == false）。
+    public var isFirstImport: Bool { !targetVillageHasSnapshot }
     public var id: UUID { targetVillageID }
     public var confirmationTitle: String { "更新「\(targetVillageName)」" }
     public let destinationDescription: String
@@ -454,9 +457,12 @@ public final class AppModel: ObservableObject {
         let normalizedSnapshotTag = OfficialPlayerTagValidator.normalized(snapshot.tag)
         let replacesSameTag = normalizedSnapshotTag != nil
             && normalizedSnapshotTag == OfficialPlayerTagValidator.normalized(target.tag)
+        let targetVillageHasSnapshot = target.accountSnapshot != nil
 
         let description: String
-        if target.tag == nil {
+        if !targetVillageHasSnapshot {
+            // P2：仅「从未导入快照」才进入建立分支；有快照但无 tag 时
+            // targetVillageTag 为 nil，不得误判为首次导入。
             description = "将建立「\(target.name)」的账号快照并导入"
         } else if normalizedSnapshotTag == nil {
             // 无 tag 是独立分支：目标已有快照但 JSON 未带 tag，官方数据因 Tag
@@ -473,6 +479,7 @@ public final class AppModel: ObservableObject {
             targetVillageID: target.id,
             targetVillageName: target.name,
             targetVillageTag: target.tag,
+            targetVillageHasSnapshot: targetVillageHasSnapshot,
             replacesSameTag: replacesSameTag,
             destinationDescription: description
         ))

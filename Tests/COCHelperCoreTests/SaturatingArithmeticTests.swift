@@ -2,6 +2,20 @@ import XCTest
 @testable import COCHelperCore
 
 final class SaturatingArithmeticTests: XCTestCase {
+    func testDeterministicSignedExtremeBoundaries() {
+        let round = -1
+
+        assertAdd(Int.max, 1, round: round)
+        assertAdd(Int.min, -1, round: round)
+        assertSubtract(0, Int.min, round: round)
+        assertMultiply(Int.min, -1, round: round)
+
+        assertAdd(Int64.max, 1, round: round)
+        assertAdd(Int64.min, -1, round: round)
+        assertSubtract(Int64.max, Int64.min, round: round)
+        assertMultiply(Int64.min, -1, round: round)
+    }
+
     func testPropertyBasedSignedArithmeticMatchesReportingOverflow() {
         var rng = SeededRNG(seed: 0x78_5A_7E)
 

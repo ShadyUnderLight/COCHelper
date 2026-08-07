@@ -193,6 +193,11 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertFalse(group.summary.saturated)
         XCTAssertEqual(group.summary.remainingLevelCount, 33,
                        "三条 level 5 记录各有 11 个剩余等级")
+        XCTAssertEqual(group.summary.totalDurationSeconds, 21_780,
+                       "nil/0/负数 count 的三条记录都必须按 1 计入时长")
+        XCTAssertEqual(group.summary.costByResource, [
+            BuildingResourceTotal(resource: "Elixir", totalCost: 36_300),
+        ], "nil/0/负数 count 的三条记录都必须按 1 计入费用")
     }
 
     func testIssue78SaturatesEveryGroupTotalWithoutCrashing() throws {

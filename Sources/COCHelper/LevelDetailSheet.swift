@@ -186,7 +186,15 @@ struct LevelDetailSheet: View {
         let isCurrent = item.currentLevel == level.level
         // 升级中：item.nextLevel（投影显式推断）；非升级未满级：currentLevel + 1
         // （与 UpgradeDisplayRow.durationLabel 的「下一级：N级」推导同规则）。
-        let effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })
+        // Issue #67：阶段满级（currentLevel >= currentStageMaxLevel）时下一级
+        // 超出当前阶段上限，不标「下一级」——避免与「当前阶段已满级」文案矛盾
+        //（审核 C important：验收「不把全局更高等级当作当前可升级项」）。
+        let effectiveNext: Int?
+        if let stage = item.currentStageMaxLevel, item.currentLevel ?? -1 >= stage {
+            effectiveNext = nil
+        } else {
+            effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })
+        }
         let isNext = effectiveNext == level.level
         return HStack(spacing: 12) {
             Group {

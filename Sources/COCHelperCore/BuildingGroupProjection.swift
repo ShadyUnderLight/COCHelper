@@ -129,8 +129,10 @@ public enum BuildingGroupProjection {
         }
     }
 
-    /// 阶梯：目录 levels 中 `level ∈ (currentLevel, maxLevel]` 的条目，按 level 升序。
+    /// 阶梯：目录 levels 中 `level ∈ (currentLevel, effectiveMax]` 的条目，按 level 升序。
     /// 目录等级可能不连续，必须过滤目录 levels 而非生成连续整数。
+    /// `effectiveMax` = 阶段上限（issue #67）优先，不可计算时回退全局 maxLevel——
+    /// 与行级 `.maxed` 判定同口径，保证组卡与列表行不矛盾（审核 C important）。
     /// currentLevel 为 nil、目录未命中或 base 不匹配（maxLevel == nil）→ 空数组。
     private static func steps(
         for item: VillageItemState,
@@ -139,9 +141,10 @@ public enum BuildingGroupProjection {
         guard let maxLevel = item.maxLevel,
               let catalogItem = catalog?.item(section: item.section, dataID: item.dataID)
         else { return [] }
+        let effectiveMax = item.currentStageMaxLevel ?? maxLevel
         let currentLevel = item.currentLevel
         return catalogItem.levels
-            .filter { $0.level > (currentLevel ?? .max) && $0.level <= maxLevel }
+            .filter { $0.level > (currentLevel ?? .max) && $0.level <= effectiveMax }
             .sorted { $0.level < $1.level }
             .map {
                 BuildingUpgradeStep(
@@ -175,8 +178,10 @@ public enum BuildingGroupProjection {
                 hasVersionMismatch = true
             }
             // 仅目录命中且 currentLevel 存在的实例计入剩余等级数（max(0, …) 防御目录过时）。
+            // 上限 = 阶段上限优先（issue #67，与阶梯/行级满级同口径）；不可计算回退全局。
             if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
-                let levelDifference = SaturatingArithmetic.subtract(maxLevel, currentLevel)
+                let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
+                let levelDifference = SaturatingArithmetic.subtract(effectiveMax, currentLevel)
                 saturated = saturated || levelDifference.overflowed
                 let remainingLevels = max(0, levelDifference.value)
                 let weightedRemainingLevels = SaturatingArithmetic.multiply(remainingLevels, count)
@@ -190,9 +195,11 @@ public enum BuildingGroupProjection {
             }
             // 无法生成阶梯的实例降级：目录未命中（或 base 不匹配，maxLevel == nil）；
             // 或目录命中但 currentLevel 缺失 / 未满级却 steps 为空。已满级
-            // （currentLevel >= maxLevel）steps 为空是正常状态，不降级。
+            // （currentLevel >= effectiveMax，阶段或全局，issue #67）steps 为空是
+            // 正常状态，不降级。
             if let maxLevel = instance.item.maxLevel {
-                let maxed = instance.item.currentLevel.map { $0 >= maxLevel } ?? false
+                let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
+                let maxed = instance.item.currentLevel.map { $0 >= effectiveMax } ?? false
                 if instance.item.currentLevel == nil || (instance.steps.isEmpty && !maxed) {
                     hasPartialMissing = true
                 }

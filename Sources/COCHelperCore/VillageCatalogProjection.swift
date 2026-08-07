@@ -20,6 +20,26 @@ public enum VillageItemStatus: String, Codable, Hashable, Sendable {
     case unverified
 }
 
+/// 单个物品的「下一等级」投影语义（Issue #68）。
+/// UI 三处（列表行/详情 sheet/组卡）必须消费本字段，禁止各自 currentLevel + 1 推导。
+public enum VillageNextUpgrade: Hashable, Sendable {
+    /// 可操作升级：未达阶段上限，下一等级（目录真实等级）gate 全部满足。
+    case available(level: Int, durationSeconds: Int64?)
+    /// 阶段满级且目录存在更高等级：nextLevel 是第一个超过 currentStageMax 的真实
+    /// 等级，requirements 为其解锁条件；referenceDurationSeconds 是「解锁后参考」
+    /// 时长，UI 不得与 available 混用（不得显示为当前可操作升级时长）。
+    case requires(nextLevel: Int, requirements: [UpgradeRequirement], referenceDurationSeconds: Int64?)
+    /// 全局已满级：currentLevel >= 目录 maxLevel。
+    case globalMaxed
+    /// 升级中：目标等级是快照事实（非可达性判断）；durationSeconds 是目录目标等级
+    /// 时长（版本不匹配/目录不可用时为 nil，不得泄漏旧目录时长）。
+    case inProgressFact(level: Int, durationSeconds: Int64?)
+    /// 缺 prerequisite 无法验证阶段上限（fail-closed，不推断可升级）。
+    case unverified
+    /// 目录不可用/版本不匹配（非升级）/未收录（fail-closed，不推断可升级）。
+    case unknown
+}
+
 /// 单个物品的投影状态。
 public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 快照原始 id（含 `.types.`/`.modules.` 路径 → 可追溯）。
@@ -36,7 +56,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 仅当 isUpgrading 且 currentLevel 存在时为 currentLevel + 1；否则 nil。
     public let nextLevel: Int?
     /// 目录给出的「升级到下一级」完整时长（表语义感知）；升级中与非升级已命中项
-    /// （未满级）均推断（下一级 = 当前 + 1），目录未命中、已满级或时长缺失时 nil。
+    ///（未满级）均推断（升级中 = 当前 + 1（#14 契约）；非升级 = 目录真实下一等级，
+    /// 值匹配、非连续目录安全（Issue #68）），目录未命中、已满级或时长缺失时 nil。
     /// 注意 nextLevel 字段仍只在升级中推断（#14 契约），duration 与其解耦。
     public let nextLevelDurationSeconds: Int64?
     public let maxLevel: Int?
@@ -45,6 +66,10 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 可计算时 ≤ maxLevel（无 requirement 的 item 恒等于 maxLevel）；
     /// nil = 不可计算（快照缺 prerequisite 建筑记录）→ 满级判定回退全局 maxLevel。
     public let currentStageMaxLevel: Int?
+    /// Issue #68：下一等级可达性投影（UI 三处必须消费本字段，禁止各自
+    /// currentLevel + 1 推导）。nil = 嵌套项/不支持类别/目录未命中
+    ///（与 nextLevelDurationSeconds 的 nil 场景一致，不参与升级追踪）。
+    public let nextUpgrade: VillageNextUpgrade?
     public let status: VillageItemStatus
     public let missingReason: String?
     public let icon: CatalogAssetRef?
@@ -138,6 +163,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         nextLevelDurationSeconds: Int64?,
         maxLevel: Int?,
         currentStageMaxLevel: Int? = nil,
+        nextUpgrade: VillageNextUpgrade? = nil,
         status: VillageItemStatus,
         missingReason: String?,
         icon: CatalogAssetRef?,
@@ -162,6 +188,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.nextLevelDurationSeconds = nextLevelDurationSeconds
         self.maxLevel = maxLevel
         self.currentStageMaxLevel = currentStageMaxLevel
+        self.nextUpgrade = nextUpgrade
         self.status = status
         self.missingReason = missingReason
         self.icon = icon
@@ -419,6 +446,25 @@ public struct VillageCatalogProjection: Sendable {
             stageMax = nil
         }
 
+        // Issue #68：目录「真实下一等级」——值匹配而非 currentLevel + 1（非连续目录
+        // 安全，如战斗直升机 15..35）。阶段满级（level >= stageMax 且 < maxLevel）时
+        // 目标是第一个超过 stageMax 的真实等级（被门槛阻塞的目标）；否则为第一个
+        // 超过当前等级的真实等级。防御性 sort：契约保证升序，防合成目录乱序。
+        let realNext: CatalogLevel?
+        if baseMatches, let catalogItem, let level = item.level, level < catalogItem.maxLevel {
+            let threshold: Int
+            if let stageMax, level >= stageMax {
+                threshold = stageMax
+            } else {
+                threshold = level
+            }
+            realNext = catalogItem.levels
+                .sorted(by: { $0.level < $1.level })
+                .first { $0.level > threshold }
+        } else {
+            realNext = nil
+        }
+
         // Issue #67 fail-closed：目录有 requirement 但快照缺 prerequisite（stageMax == nil）
         // → 非升级记录不推断下一级时长（无法验证，不得伪装成「未满级可升级」）。
         // 升级中记录（isUpgrading）不受限：目标等级已显式推断（#14 契约），时长是
@@ -427,18 +473,90 @@ public struct VillageCatalogProjection: Sendable {
         let nextLevelDuration: Int64?
         if baseMatches, let catalogItem, catalogIsUsable, (stageMax != nil || isUpgrading) {
             if let nextLevel {
-                // 升级中：目标等级 = 当前 + 1（显式推断）。
+                // 升级中：目标等级 = 当前 + 1（显式推断，#14 契约）。
                 nextLevelDuration = catalog?.durationToUpgradeLevel(nextLevel: nextLevel, for: catalogItem)
             } else if let level = item.level, level < (stageMax ?? catalogItem.maxLevel) {
                 // 非升级且未满级（issue #16 列表规则：普通建筑显示下一等级时间）：
-                // 下一级 = 当前 + 1 的目录时长；nextLevel 字段保持 nil（#14：目标等级
-                // 只允许升级中显式推断）。已满级（level >= effectiveMax）不推。
-                nextLevelDuration = catalog?.durationToUpgradeLevel(nextLevel: level + 1, for: catalogItem)
+                // 下一级 = 目录真实下一级（Issue #68：修复非连续目录下 level + 1 推
+                // 时长恒 nil）；nextLevel 字段保持 nil（#14：目标等级只允许升级中
+                // 显式推断）。已满级（level >= effectiveMax）不推。
+                nextLevelDuration = realNext.flatMap {
+                    catalog?.durationToUpgradeLevel(nextLevel: $0.level, for: catalogItem)
+                }
             } else {
                 nextLevelDuration = nil
             }
         } else {
             nextLevelDuration = nil
+        }
+
+        // Issue #68：下一等级可达性投影（fail-closed，与 status 同口径）。
+        // - 升级中：目标等级是快照事实（inProgressFact），与目录/阶段上限无关；
+        // - 非升级：目录不可用/版本不匹配 → .unknown；缺 prereq → .unverified；
+        //   全局满级 → .globalMaxed；阶段满级 → .requires（含被门槛阻塞的真实下一级）；
+        //   其余 → .available（真实下一级）。
+        let nextUpgrade: VillageNextUpgrade?
+        if baseMatches, let catalogItem {
+            if isUpgrading {
+                if let level = item.level {
+                    // #14 契约：仅升级中显式推断目标等级；时长在版本不匹配时不得
+                    // 泄漏旧目录值（nil）。
+                    let factLevel = level + 1
+                    let duration = catalogIsUsable
+                        ? catalog?.durationToUpgradeLevel(nextLevel: factLevel, for: catalogItem)
+                        : nil
+                    nextUpgrade = .inProgressFact(level: factLevel, durationSeconds: duration)
+                } else {
+                    // 升级中但快照当前等级未知：目标等级事实无法确定（fail-closed）。
+                    nextUpgrade = .unknown
+                }
+            } else if !catalogIsUsable {
+                // 目录版本不匹配/不可用：旧目录等级/时长不可信（与 status .unknown 同口径）。
+                nextUpgrade = .unknown
+            } else if let stageMax {
+                if (item.level ?? -1) >= catalogItem.maxLevel {
+                    // 全局满级（含 currentLevel > maxLevel 的目录过时场景）。
+                    nextUpgrade = .globalMaxed
+                } else if (item.level ?? -1) >= stageMax {
+                    // 阶段满级且目录存在更高等级：真实下一级被门槛阻塞。
+                    if let realNext {
+                        let requirements = realNext.requirements(base: catalogItem.base)
+                        if requirements.isEmpty {
+                            // 数据异常兜底：阶段上限之上存在无门槛等级（门槛断裂）→ 该
+                            // 等级实际可达，与 stageMax 语义矛盾。按全局满级处理，不产生
+                            //「需要解锁 []」的空列表误导（Issue #68 决策）。
+                            nextUpgrade = .globalMaxed
+                        } else {
+                            nextUpgrade = .requires(
+                                nextLevel: realNext.level,
+                                requirements: requirements,
+                                referenceDurationSeconds: catalog?.durationToUpgradeLevel(
+                                    nextLevel: realNext.level, for: catalogItem
+                                )
+                            )
+                        }
+                    } else {
+                        // 防御：目录无更高等级（数据异常）→ 按满级处理。
+                        nextUpgrade = .globalMaxed
+                    }
+                } else if let realNext {
+                    // 可操作升级：真实下一级 gate 全部满足（未达阶段上限）。
+                    nextUpgrade = .available(
+                        level: realNext.level,
+                        durationSeconds: catalog?.durationToUpgradeLevel(nextLevel: realNext.level, for: catalogItem)
+                    )
+                } else {
+                    // 防御：数据异常（未满级但无更高等级）→ 不推断可升级。
+                    nextUpgrade = .unknown
+                }
+            } else {
+                // 缺 prerequisite 解锁建筑记录：阶段上限不可计算
+                //（fail-closed，不推断可升级）。
+                nextUpgrade = .unverified
+            }
+        } else {
+            // 目录未命中 / base 不匹配 / 嵌套项：不参与升级追踪。
+            nextUpgrade = nil
         }
 
         let status: VillageItemStatus
@@ -447,9 +565,19 @@ public struct VillageCatalogProjection: Sendable {
             // 升级状态独立于目录：记录在升级就是 upgrading，
             // 目录未命中时通过 missingReason 说明原因。
             status = .upgrading
-            missingReason = isNested
-                ? "嵌套模块/类型不参与静态目录 join（\(item.section):\(item.dataID)）。"
-                : missingReasonForStatus(baseMatches: baseMatches, catalogItem: catalogItem, catalogAvailable: catalog != nil, item: item)
+            if isNested {
+                missingReason = "嵌套模块/类型不参与静态目录 join（\(item.section):\(item.dataID)）。"
+            } else if baseMatches, catalogItem != nil, !catalogIsUsable {
+                // Issue #68：升级中 + 目录版本不匹配——升级时长来自旧目录目标等级
+                // 记录，不可信必须显式标注（旧实现 missingReasonForStatus 对
+                // baseMatches 恒返回 nil，版本不匹配原因泄漏）。
+                missingReason = "目录版本不匹配（\(catalog?.gameVersion ?? "?") vs 期望版本），旧目录等级/时长不可信。"
+            } else {
+                missingReason = missingReasonForStatus(
+                    baseMatches: baseMatches, catalogItem: catalogItem,
+                    catalogAvailable: catalog != nil, item: item
+                )
+            }
         } else if isNested {
             status = .unknown
             missingReason = "嵌套模块/类型不参与静态目录 join（\(item.section):\(item.dataID)）。"
@@ -517,6 +645,7 @@ public struct VillageCatalogProjection: Sendable {
             nextLevelDurationSeconds: nextLevelDuration,
             maxLevel: baseMatches ? catalogItem?.maxLevel : nil,
             currentStageMaxLevel: stageMax,
+            nextUpgrade: nextUpgrade,
             status: status,
             missingReason: missingReason,
             icon: baseMatches ? catalogItem?.icon : nil,
@@ -645,6 +774,7 @@ public struct VillageCatalogProjection: Sendable {
                 nextLevelDurationSeconds: first.nextLevelDurationSeconds,
                 maxLevel: first.maxLevel,
                 currentStageMaxLevel: first.currentStageMaxLevel,
+                nextUpgrade: first.nextUpgrade,
                 status: first.status,
                 missingReason: first.missingReason,
                 icon: first.icon,

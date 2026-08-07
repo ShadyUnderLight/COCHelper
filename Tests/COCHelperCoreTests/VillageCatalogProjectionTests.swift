@@ -2689,6 +2689,40 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        "realNext(9) < currentLevel(10) → 不得输出倒挂的 .requires，fail-closed 为 .unknown")
     }
 
+    /// 相等边（评审 nit）：快照 level 9 == 阶段上限 8 + 1，连续目录 realNext == 9 ==
+    /// currentLevel → `<=` 守卫同样 fail-closed 为 .unknown（自指「下一级 9级」不得输出）。
+    func testRequiresAnomalousLevelEqualToRealNextIsUnknown() throws {
+        let catalogJSON = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"units","category":"troops","dataID":4000001,"base":"home","name":"异常单位","maxLevel":15,
+           "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+             {"level":2,"durationSeconds":1800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":3600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":4,"durationSeconds":5400,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":5,"durationSeconds":7200,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":5,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":6,"durationSeconds":9000,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":6,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":7,"durationSeconds":10800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":7,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":8,"durationSeconds":12600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":8,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":9,"durationSeconds":28800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":9,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        let catalog = try makeCatalog(from: catalogJSON)
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 8, path: "th")],
+            "units": [makeItem(section: "units", dataID: 4_000_001, level: 9, path: "0")],
+        ])
+        let home = project(village: village, catalog: catalog, base: .home)
+        let unit = try XCTUnwrap(home.items.first { $0.dataID == 4_000_001 })
+        XCTAssertEqual(unit.currentStageMaxLevel, 8)
+        XCTAssertEqual(unit.status, .maxed)
+        XCTAssertNil(unit.nextLevelDurationSeconds)
+        XCTAssertEqual(unit.nextUpgrade, .unknown,
+                       "realNext(9) == currentLevel(9) → 自指「下一级 9级」不得输出，`<=` 守卫 fail-closed 为 .unknown")
+    }
+
     /// 全局满级：level == maxLevel → .globalMaxed；level > maxLevel（目录过时/数据
     /// 异常）→ 同样 .globalMaxed，不得推断可升级。
     func testNextUpgradeGlobalMaxed() throws {

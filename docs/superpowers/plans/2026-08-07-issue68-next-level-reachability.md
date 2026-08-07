@@ -125,8 +125,8 @@ else:                               // 可升级
 - Test: `Tests/COCHelperCoreTests/GameCatalogTests.swift`（displayLabel 单测）
 
  - [x] `UpgradeRequirement.displayLabel(base:)`：`.townHall(12)` home → 「所需大本营等级 12级」；builder → 「所需建筑大师大本营等级 12级」；`.laboratory` → 「所需实验室等级 X级」；`.starLaboratory` → 「所需星空实验室等级 X级」；`.heroHall` → 「所需英雄殿堂等级 X级」；`[UpgradeRequirement].displayLabels(base:)` → 「A · B」连接（与现有 unlockLabel 措辞逐字一致）
- - [x] `LevelDetailSheet`：`effectiveNext` 改为消费 `item.nextUpgrade`（`.available` → level；`.inProgressFact` → level；其余 nil）；`unlockLabel` 改用 `requirements(base:)` + `displayLabels`；升级中 + 版本不匹配（missingReason 非 nil 且 status == .upgrading）→ missingNote 分支显示，不渲染旧目录等级列表；阶段满级（`.requires`）时 statusLabel 下方加一行「下一级 N 级需要 X」（用 displayLabels）
- - [x] `UpgradeDisplayRow`：非升级「下一级：N级」编号改用 `nextUpgrade.available.level`（删除 `currentLevel + 1`）；`.requires` 时在 durationLabel 区域显示「下一级 N 级需要 X」阻塞文案（替换「当前阶段已满级」的时长位或并列）
+ - [x] `LevelDetailSheet`：`effectiveNext` 改为消费 `item.nextUpgrade`（`.available` → level；`.inProgressFact` → level；其余 nil）；`unlockLabel` 改用 `requirements(base:)` + `displayLabels`；升级中 + 版本不匹配（missingReason 非 nil 且 status == .upgrading）→ missingNote 分支显示，不渲染旧目录等级列表；阶段满级（`.requires`）时 statusLabel 下方加一行「下一级 N 级 解锁条件：…」（用 displayLabels；评审后措辞统一）
+ - [x] `UpgradeDisplayRow`：非升级「下一级：N级」编号改用 `nextUpgrade.available.level`（删除 `currentLevel + 1`）；`.requires` 时在 durationLabel 区域显示「下一级 N 级 解锁条件：…」阻塞文案（替换「当前阶段已满级」的时长位或并列）
  - [x] `BuildingGroupSummaryView`：组内实例存在 `.requires` 时，阶段上限文案下加阻塞 requirement 摘要（取第一个 requires 的 displayLabels）
  - [x] `testRequirementDisplayLabelHomeBuilder`：displayLabel 全类型 + base 分支单测
  - [x] UI 层无单测基建（项目现状），SwiftUI 改动靠交叉 code review 验证

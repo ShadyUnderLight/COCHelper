@@ -13,6 +13,7 @@ final class VillageDetailProjectionTests: XCTestCase {
         status: VillageItemStatus = .complete,
         level: Int? = 3,
         maxLevel: Int? = 10,
+        count: Int? = 1,
         isUpgrading: Bool = false,
         nextLevel: Int? = nil
     ) -> VillageItemState {
@@ -25,7 +26,7 @@ final class VillageDetailProjectionTests: XCTestCase {
             name: "item-" + id,
             category: category,
             currentLevel: level,
-            count: 1,
+            count: count,
             timerSeconds: isUpgrading ? 3600 : nil,
             remainingSeconds: isUpgrading ? 1800 : nil,
             nextLevel: effectiveNext,
@@ -44,6 +45,39 @@ final class VillageDetailProjectionTests: XCTestCase {
 
     private func stat(_ c: VillageCategoryCompletion) -> (known: Int, completed: Int, unknown: Int) {
         (c.knownCount, c.completedCount, c.unknownCount)
+    }
+
+    /// 直接构造「计时已结束待重新导入」形态（`item()` helper 的 timer 字段由
+    /// isUpgrading 硬编码无法表达：timerSeconds 非 nil + remainingSeconds == 0 + status 任意）。
+    private func needsReimportRow(
+        level: Int,
+        maxLevel: Int,
+        count: Int,
+        status: VillageItemStatus
+    ) -> VillageItemState {
+        VillageItemState(
+            id: "agg:buildings:0",
+            section: "buildings",
+            dataID: 1_000_008,
+            base: .home,
+            name: "加农炮",
+            category: .buildings,
+            currentLevel: level,
+            count: count,
+            timerSeconds: 3600,
+            remainingSeconds: 0,
+            nextLevel: nil,
+            nextLevelDurationSeconds: nil,
+            maxLevel: maxLevel,
+            status: status,
+            missingReason: nil,
+            icon: nil,
+            levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
+            isNested: false,
+            displayCategory: nil
+        )
     }
 
     // MARK: - 分组
@@ -216,6 +250,380 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertEqual(total.completedCount, 1)
     }
 
+    // MARK: - 完成度按实例加权（issue #66：聚合行 × count 计入实例数）
+
+    func testCompletionWeightedByCount() {
+        // 投影后聚合行形态：满级行 count=6 + 未满级行 count=1 → 6/7 而非行数 1/2。
+        let items = [
+            item(id: "maxed", status: .maxed, count: 6),
+            item(id: "lower", status: .complete, count: 1),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (7, 6, 0), "got \(stat(total))")
+        XCTAssertEqual(total.completionRatio ?? -1, 6.0 / 7.0, accuracy: 0.0001)
+    }
+
+    func testWalls300Maxed25Lower() {
+        // 300 满级墙 + 25 未满级墙 → 300/325（非 1/2）。
+        let items = [
+            item(id: "maxed", status: .maxed, count: 300),
+            item(id: "lower", status: .complete, count: 25),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (325, 300, 0), "got \(stat(total))")
+        XCTAssertEqual(total.completionRatio ?? -1, 300.0 / 325.0, accuracy: 0.0001)
+    }
+
+    func testNilCountWeightsOne() {
+        // count == nil（非聚合行/旧快照）按 1 计。
+        let items = [
+            item(id: "maxed", status: .maxed, count: nil),
+            item(id: "lower", status: .complete, count: nil),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (2, 1, 0), "got \(stat(total))")
+    }
+
+    func testNonPositiveCountWeightsOne() {
+        // malformed count（0/负数）floor 为 1：不得产生 0/负权重（issue #66 边界 3）。
+        let items = [
+            item(id: "zero", status: .maxed, count: 0),
+            item(id: "neg", status: .maxed, count: -3),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (2, 2, 0), "got \(stat(total))")
+    }
+
+    func testNeedsReimportAggregatedRowWeightsIntoKnownNotCompleted() {
+        // 聚合行形态：计时已结束（timerSeconds != nil、remainingSeconds == 0）记录在
+        // 真实导出中携带的是升级前旧等级（3 < maxLevel 10）→ status .complete。
+        // 按实例权重计入分母（known 6）但不计完成（completed 0）——
+        // #16/#17 既有语义，本测试锁定加权后的行为。
+        let needsReimport = needsReimportRow(level: 3, maxLevel: 10, count: 6, status: .complete)
+        XCTAssertTrue(needsReimport.needsReimport, "前置：构造形态确为待重新导入")
+        let total = VillageDetailProjection.totalCompletion(from: [needsReimport])
+        XCTAssertTrue(stat(total) == (6, 0, 0), "got \(stat(total))")
+    }
+
+    func testNeedsReimportRowAtMaxLevelCountsMaxed() {
+        // 防御性/不可达组合的文档化：快照等级即满级（10 == maxLevel 10）的计时
+        // 结束记录。该组合真实导出不可达（升级中导出的是升级前旧等级 < maxLevel），
+        // 但快照等级即满级时按等级判定为 maxed 是观察正确的语义，刻意锁定。
+        let needsReimportMaxed = needsReimportRow(level: 10, maxLevel: 10, count: 6, status: .maxed)
+        XCTAssertTrue(needsReimportMaxed.needsReimport, "前置：构造形态确为待重新导入")
+        let total = VillageDetailProjection.totalCompletion(from: [needsReimportMaxed])
+        XCTAssertTrue(stat(total) == (6, 6, 0), "got \(stat(total))")
+    }
+
+    func testInstanceCountSaturatesAtIntMax() {
+        // 恶意/损坏快照可含 cnt == Int.max：普通求和会在 debug 构建 SIGTRAP 崩溃、
+        // release 回绕成负数（本 PR 引入的溢出路径）。饱和加法 clamp 到 Int.max：
+        // 不崩溃、不产生垃圾负数。注：本测试对旧实现（无饱和）会崩溃整个测试进程，
+        // 故测试与修复同 commit，运行验证以新实现无崩溃且饱和为准。
+        let items = [
+            item(id: "huge1", status: .maxed, count: Int.max),
+            item(id: "huge2", status: .maxed, count: Int.max),
+        ]
+        XCTAssertEqual(VillageDetailProjection.instanceCount(of: items), Int.max,
+                       "溢出必须饱和到 Int.max（不得崩溃或回绕为负数）")
+        // 全链路一致：totalCompletion 的 known/completed 同样饱和、unknown 守恒不溢出。
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
+    }
+
+    func testExactIntMaxWithoutOverflowNotSaturated() {
+        // 第 7 轮修复语义锁定：单条 maxed count=Int.max（无聚合）求和恰为
+        // Int.max 无溢出——「恰好 Int.max 是精确算术」，不得因数值达到上限就
+        // 误报 saturated（区分把溢出判据写成 >= 的突变）。精确值仍可做权威
+        // 判定：isFullyMaxed == true、ratio == 1.0。
+        let total = VillageDetailProjection.totalCompletion(from: [
+            item(id: "hugeSingle", status: .maxed, count: Int.max),
+        ])
+        XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
+        XCTAssertFalse(total.saturated, "恰好 Int.max 是精确算术，不算饱和")
+        XCTAssertTrue(total.isFullyMaxed, "精确 Int.max 全满级应判满级")
+        XCTAssertEqual(total.completionRatio, 1.0)
+    }
+
+    func testSaturationDoesNotEraseUnknown() {
+        // 外部评审复现（P2）：known 侧饱和时，unknown 不得因「sat(total) −
+        // sat(known) = 0」的减法推导而消失（旧实现 unknown==0、isFullyMaxed
+        // 误判 true）。unknown 独立饱和求和 → unknown==1、不得判满级。
+        // 注：单条 count=Int.max 求和恰为 Int.max 无溢出（精确、不算饱和），
+        // 需两条已知行触发真实溢出（Int.max + Int.max）才置位 saturated——
+        // 本用例由此同时锁定 fail-closed（ratio nil、isFullyMaxed 不判定）。
+        // 饱和下 known + unknown != instanceCount（sat 后相加会溢出），
+        // 本用例不（也不能）断言守恒等式——守恒仅在正常数据下成立。
+        let items = [
+            item(id: "hugeMaxed", status: .maxed, count: Int.max),
+            item(id: "hugeLower", status: .complete, count: Int.max),
+            item(id: "unknown1", status: .unknown, level: nil, maxLevel: nil, count: 1),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (Int.max, Int.max, 1), "got \(stat(total))")
+        XCTAssertFalse(total.isFullyMaxed, "存在未知实例时不得判满级")
+        XCTAssertNil(total.completionRatio, "饱和 fail-closed：不得给出百分比")
+        XCTAssertTrue(total.saturated, "known 侧溢出饱和必须上报 saturated")
+
+        let stats = VillageDetailProjection.completionStats(from: items)
+        XCTAssertEqual(stats.count, 1)
+        XCTAssertTrue(stat(stats[0]) == (Int.max, Int.max, 1), "got \(stat(stats[0]))")
+        XCTAssertFalse(stats[0].isFullyMaxed, "分类 stats 同样不得判满级")
+        XCTAssertTrue(stats[0].saturated, "分类 stats 同样上报 saturated")
+    }
+
+    func testSaturationAllMaxedFailsClosed() {
+        // 外部评审第 4 轮复现（P2）：known 与 completed 均饱和到 Int.max 时，
+        // completed == known 成立——若继续按数值判定会误判满级（实际两条
+        // count=Int.max 各行权重无法精确累加，真实总量可能未满级）。
+        // fail-closed 语义：饱和时数值不完整，宁可判否，不误判满级。
+        let items = [
+            item(id: "huge1", status: .maxed, count: Int.max),
+            item(id: "huge2", status: .maxed, count: Int.max),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
+        XCTAssertFalse(total.isFullyMaxed, "饱和时不得做权威满级判定（fail closed）")
+        XCTAssertNil(total.completionRatio, "饱和 fail-closed：不得给出百分比")
+        XCTAssertTrue(total.saturated, "溢出饱和必须上报 saturated")
+    }
+
+    func testMixedSaturationNeverFullyMaxed() {
+        // 外部评审第 4 轮复现：maxed 行 count=Int.max + complete 行 count=Int.max
+        // 同组 → known==Int.max、completed==Int.max、unknown==0（减不出 unknown），
+        // 若按数值判定 completed==known → 误判满级绿勾，实际只满级一半。
+        // saturated 标志驱动 fail-closed：不得判满级、不得给百分比。
+        let items = [
+            item(id: "hugeMaxed", status: .maxed, count: Int.max),
+            item(id: "hugeLower", status: .complete, count: Int.max),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
+        XCTAssertFalse(total.isFullyMaxed, "混合饱和不得误判满级绿勾")
+        XCTAssertNil(total.completionRatio, "饱和 fail-closed：不得给出百分比")
+        XCTAssertTrue(total.saturated, "溢出饱和必须上报 saturated")
+
+        let stats = VillageDetailProjection.completionStats(from: items)
+        XCTAssertEqual(stats.count, 1)
+        XCTAssertTrue(stat(stats[0]) == (Int.max, Int.max, 0), "got \(stat(stats[0]))")
+        XCTAssertFalse(stats[0].isFullyMaxed, "分类 stats 同样不得误判满级")
+        XCTAssertTrue(stats[0].saturated, "分类 stats 同样上报 saturated")
+    }
+
+    func testUpgradingAndIdleAggregatedNoDoubleCount() {
+        // 升级中单条（count=1，未聚合）+ 已聚合空闲行（count=3）并存形态：
+        // 各行独立加权，不重复不丢失。
+        let items = [
+            item(id: "upgrading", status: .upgrading, level: 3, maxLevel: 10, count: 1, isUpgrading: true, nextLevel: 4),
+            item(id: "agg:lower", status: .complete, count: 3),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (4, 0, 0), "got \(stat(total))")
+    }
+
+    func testConservationHoldsWithWeights() {
+        // 混合已知/未知/满级/未满级（count 2、3、nil、4、5）：守恒 + completed ≤ known。
+        let items = [
+            item(id: "maxed2", status: .maxed, count: 2),
+            item(id: "lower3", status: .complete, count: 3),
+            item(id: "unknown", status: .unknown, level: nil, maxLevel: nil, count: nil),
+            item(id: "unavailable", status: .unavailable, level: nil, maxLevel: nil, count: 5),
+            item(id: "mismatch", status: .upgrading, level: 10, maxLevel: 10, count: 4, isUpgrading: true, nextLevel: 11),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        let weighted = VillageDetailProjection.instanceCount(of: items)
+        XCTAssertEqual(total.knownCount + total.unknownCount, weighted,
+                       "已知 + 未知 == Σweight：未知不因聚合消失")
+        XCTAssertLessThanOrEqual(total.completedCount, total.knownCount)
+        XCTAssertEqual(total.completedCount, 2, "满级权重 = 2")
+    }
+
+    func testWeightedIsFullyMaxed() {
+        // 权重与行数脱钩：300 满级 + 1 未满级 ≠ 满级；全满级（任意 count）才是。
+        let mixed = [
+            item(id: "maxed", status: .maxed, count: 300),
+            item(id: "lower", status: .complete, count: 1),
+        ]
+        XCTAssertFalse(VillageDetailProjection.totalCompletion(from: mixed).isFullyMaxed)
+        let allMaxed = [
+            item(id: "maxed300", status: .maxed, count: 300),
+            item(id: "maxedNil", status: .maxed, count: nil),
+        ]
+        XCTAssertTrue(VillageDetailProjection.totalCompletion(from: allMaxed).isFullyMaxed)
+    }
+
+    func testCatalogUnusableWeightsIntoUnknown() {
+        // 目录不可用：全部按实例权重归 unknown（6+1=7）。
+        let items = [
+            item(id: "maxed", status: .maxed, count: 6),
+            item(id: "lower", status: .complete, count: 1),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items, catalogIsUsable: false)
+        XCTAssertTrue(stat(total) == (0, 0, 7), "got \(stat(total))")
+        XCTAssertNil(total.completionRatio)
+    }
+
+    func testCategoryStatsWeightedAndConserved() throws {
+        // 两个分类各有 count>1 项：分类统计之和 == 总统计（known/completed/unknown 三列均守恒）。
+        let items = [
+            item(id: "b-maxed", category: .buildings, status: .maxed, count: 6),
+            item(id: "b-lower", category: .buildings, status: .complete, count: 1),
+            item(id: "t-maxed", category: .traps, status: .maxed, count: 3),
+            item(id: "t-unknown", category: .traps, status: .unknown, level: nil, maxLevel: nil, count: 2),
+        ]
+        let stats = VillageDetailProjection.completionStats(from: items)
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertEqual(total.knownCount, stats.reduce(0) { $0 + $1.knownCount })
+        XCTAssertEqual(total.completedCount, stats.reduce(0) { $0 + $1.completedCount })
+        XCTAssertEqual(total.unknownCount, stats.reduce(0) { $0 + $1.unknownCount })
+        let buildings = try XCTUnwrap(stats.first { $0.category == .buildings })
+        XCTAssertTrue(stat(buildings) == (7, 6, 0), "got \(stat(buildings))")
+        let traps = try XCTUnwrap(stats.first { $0.category == .traps })
+        XCTAssertTrue(stat(traps) == (3, 3, 2), "got \(stat(traps))")
+    }
+
+    func testCatalogUnusableWeightsPerGroup() throws {
+        // 目录不可用 + 多分类 + count>1：各分类 known/completed 全 0，
+        // unknown == 该组 Σweight（未知按实例权重归组，不因聚合丢失）。
+        let items = [
+            item(id: "b-maxed", category: .buildings, status: .maxed, count: 6),
+            item(id: "b-lower", category: .buildings, status: .complete, count: 1),
+            item(id: "t-maxed", category: .traps, status: .maxed, count: 3),
+            item(id: "t-unknown", category: .traps, status: .unknown, level: nil, maxLevel: nil, count: 2),
+        ]
+        let stats = VillageDetailProjection.completionStats(from: items, catalogIsUsable: false)
+        XCTAssertEqual(stats.count, 2)
+        for s in stats {
+            XCTAssertEqual(s.knownCount, 0)
+            XCTAssertEqual(s.completedCount, 0)
+        }
+        let buildings = try XCTUnwrap(stats.first { $0.category == .buildings })
+        XCTAssertEqual(buildings.unknownCount, 7, "buildings 组 Σweight = 6+1")
+        let traps = try XCTUnwrap(stats.first { $0.category == .traps })
+        XCTAssertEqual(traps.unknownCount, 5, "traps 组 Σweight = 3+2")
+    }
+
+    func testTotalCompletionEmptyArray() {
+        let empty = VillageDetailProjection.totalCompletion(from: [])
+        XCTAssertTrue(stat(empty) == (0, 0, 0), "got \(stat(empty))")
+        XCTAssertNil(empty.completionRatio)
+    }
+
+    func testAllUnknownWeightsIntoUnknown() {
+        // 全 unknown + count>1：1 条 unknown count=5 + 1 条 unknown count=nil → (0, 0, 6)。
+        let items = [
+            item(id: "u5", status: .unknown, level: nil, maxLevel: nil, count: 5),
+            item(id: "unil", status: .unknown, level: nil, maxLevel: nil, count: nil),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (0, 0, 6), "got \(stat(total))")
+    }
+
+    // MARK: - Issue #66 fuzz：按实例加权不变量（固定 seed SplitMix64，可复现）
+
+    func testFuzzConservationWithWeights() {
+        var rng = SplitMix64(seed: 0x66_01)
+        for round in 0..<200 {
+            let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30))
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            // oracle：独立复算加权实例数（实现同源漂移防护——若实现退化为
+            // 恒 1 权重或行数口径，oracle 立即对不上）。
+            let expectedKnown = items.filter(oracleKnown).reduce(0) { $0 + oracleWeight($1) }
+            let expectedCompleted = items
+                .filter { $0.status == .maxed && oracleKnown($0) }
+                .reduce(0) { $0 + oracleWeight($1) }
+            let expectedUnknown = items.reduce(0) { $0 + oracleWeight($1) } - expectedKnown
+            XCTAssertEqual(total.knownCount, expectedKnown,
+                           "round \(round): known 应为加权实例数，got \(stat(total))")
+            XCTAssertEqual(total.completedCount, expectedCompleted,
+                           "round \(round): completed 应为满级加权实例数，got \(stat(total))")
+            XCTAssertEqual(total.unknownCount, expectedUnknown,
+                           "round \(round): unknown 应为剩余加权实例数，got \(stat(total))")
+
+            // 守恒：known + unknown == Σweight（未知实例不因聚合而消失）。
+            XCTAssertEqual(total.knownCount + total.unknownCount,
+                           VillageDetailProjection.instanceCount(of: items),
+                           "round \(round): 守恒，got \(stat(total))")
+            XCTAssertLessThanOrEqual(total.completedCount, total.knownCount,
+                                     "round \(round): completed ≤ known")
+        }
+    }
+
+    func testFuzzTotalEqualsSumOfCategories() {
+        var rng = SplitMix64(seed: 0x66_02)
+        for round in 0..<200 {
+            let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30))
+            let stats = VillageDetailProjection.completionStats(from: items)
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            // 三列之和守恒（含加权）：分类统计与总统计同一口径。
+            XCTAssertEqual(total.knownCount, stats.reduce(0) { $0 + $1.knownCount },
+                           "round \(round): known 列")
+            XCTAssertEqual(total.completedCount, stats.reduce(0) { $0 + $1.completedCount },
+                           "round \(round): completed 列")
+            XCTAssertEqual(total.unknownCount, stats.reduce(0) { $0 + $1.unknownCount },
+                           "round \(round): unknown 列")
+
+            // 组内守恒（stats 与 groups 同序）：每分类 known + unknown == 该组 Σweight。
+            let groups = VillageDetailProjection.groups(from: items)
+            for (group, s) in zip(groups, stats) {
+                XCTAssertEqual(
+                    s.knownCount + s.unknownCount,
+                    VillageDetailProjection.instanceCount(of: group.items),
+                    "round \(round): 组 \(s.id) 守恒，\(stat(s))"
+                )
+            }
+        }
+    }
+
+    func testFuzzAllCountsOneMatchesRowSemantics() {
+        // 向后兼容锁定：全部 count == 1 时，加权口径必须与旧行数口径等价。
+        var rng = SplitMix64(seed: 0x66_03)
+        for round in 0..<200 {
+            let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30), counts: [1])
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            let knownRows = items.filter(oracleKnown).count
+            let maxedRows = items.filter { $0.status == .maxed && oracleKnown($0) }.count
+            XCTAssertEqual(total.knownCount, knownRows,
+                           "round \(round): count==1 时 known == isKnown 行数")
+            XCTAssertEqual(total.completedCount, maxedRows,
+                           "round \(round): count==1 时 completed == maxed 行数")
+            XCTAssertEqual(total.unknownCount, items.count - knownRows,
+                           "round \(round): count==1 时 unknown == 行数 - known")
+            XCTAssertEqual(VillageDetailProjection.instanceCount(of: items), items.count,
+                           "round \(round): count==1 时 Σweight == 行数")
+        }
+    }
+
+    func testFuzzFullyMaxedOnlyWhenAllKnownMaxed() {
+        var rng = SplitMix64(seed: 0x66_04)
+        for round in 0..<200 {
+            let items = randomWeightedItems(&rng, count: 1 + Int(rng.next() % 30))
+            let total = VillageDetailProjection.totalCompletion(from: items)
+
+            // oracle：isFullyMaxed ⟺ 全部 item 已知且满级（且非空）且未饱和
+            //（第 7 轮补 !saturated，与生产契约逐字一致；fuzz 域不触饱和路径，
+            // 该条件恒 true，属 fail-closed 硬化而非行为变化）。
+            // 覆盖三个方向：全 maxed → true；任一 known 非 maxed → false；
+            // 存在 unknown（即使 known 全 maxed）→ false。
+            let allKnownMaxed = !items.isEmpty
+                && !total.saturated
+                && items.allSatisfy { oracleKnown($0) && $0.status == .maxed }
+            XCTAssertEqual(
+                total.isFullyMaxed, allKnownMaxed,
+                "round \(round): isFullyMaxed=\(total.isFullyMaxed) allKnownMaxed=\(allKnownMaxed) \(stat(total))"
+            )
+        }
+        // 显式混合构造（含 count>1）：权重与行数脱钩，300 满级 + 1 未满级不得判满级。
+        let mixed = [
+            item(id: "maxed300", status: .maxed, count: 300),
+            item(id: "lower", status: .complete, count: 1),
+        ]
+        XCTAssertFalse(VillageDetailProjection.totalCompletion(from: mixed).isFullyMaxed)
+    }
+
     // MARK: - isFullyMaxed（issue #53：全部可确认且已满级）
 
     func testIsFullyMaxedTrueWhenAllMaxed() {
@@ -353,13 +761,13 @@ final class VillageDetailProjectionTests: XCTestCase {
             }
 
             // 不变量 3（oracle）：isFullyMaxed 必须与文档契约逐字等价——
-            // 防谓词被削弱（去掉 unknownCount == 0 / knownCount > 0）后
-            // 不变量 1 因 total/stats 共享同一谓词而同步翻转、无法检出。
-            let oracle = total.knownCount > 0 && total.unknownCount == 0
+            // 防谓词被削弱（去掉 unknownCount == 0 / knownCount > 0 / saturated
+            // 排除）后不变量 1 因 total/stats 共享同一谓词而同步翻转、无法检出。
+            let oracle = !total.saturated && total.knownCount > 0 && total.unknownCount == 0
                 && total.completedCount == total.knownCount
             XCTAssertEqual(total.isFullyMaxed, oracle, "total=\(stat(total))")
             for s in stats {
-                let sOracle = s.knownCount > 0 && s.unknownCount == 0
+                let sOracle = !s.saturated && s.knownCount > 0 && s.unknownCount == 0
                     && s.completedCount == s.knownCount
                 XCTAssertEqual(s.isFullyMaxed, sOracle, "stats id=\(s.id) \(stat(s))")
             }
@@ -836,6 +1244,86 @@ final class VillageDetailProjectionTests: XCTestCase {
                             isUpgrading: isUpgrading, nextLevel: nextLevel)
             }
         }
+    }
+
+    /// Issue #66：按实例加权的随机生成器。count 从 `counts`（默认
+    /// [nil, 1, 2, 3, 5, 300]）随机取——与 `randomItems`（count 恒 1）互不影响，
+    /// 既有 fuzz 用例保持行数口径不变。status 限定投影可达五态（无 .available）；
+    /// level/maxLevel 组合覆盖 known（maxed/complete/upgrading 目录命中）、
+    /// unknown（目录未命中/等级缺失/上限缺失）与版本不匹配（upgrading 且
+    /// nextLevel > maxLevel）路径。
+    /// 域声明（第 7 轮）：counts 池上限 300 × 最多 30 项 → Σweight ≤ 9000
+    /// << Int.max，本生成器不触饱和路径，产物 saturated 恒为 false——fuzz
+    /// oracle 补 `!saturated` 与生产契约逐字等价是纯硬化，不改变 fuzz 行为。
+    private func randomWeightedItems(
+        _ rng: inout SplitMix64,
+        count: Int,
+        counts: [Int?] = [nil, 1, 2, 3, 5, 300]
+    ) -> [VillageItemState] {
+        let statuses: [VillageItemStatus] = [.maxed, .complete, .upgrading, .unknown, .unavailable]
+        let cats: [TrackerCategory?] = [.buildings, .traps, .troops, .spells,
+            .siegeMachines, .heroes, .equipment, .pets, .guardians, nil]
+        return (0..<count).map { i in
+            let status = statuses[Int(rng.next() % UInt64(statuses.count))]
+            let itemCount = counts[Int(rng.next() % UInt64(counts.count))]
+            // 投影层可达约束（同 randomItems）：unknown/unavailable 目录未命中
+            // → maxLevel 必 nil；其余状态目录命中 → level/maxLevel 非 nil。
+            // 再混入少量防御性不可达组合（满级缺上限、升级缺上限/缺等级）。
+            let isCatalogHit = status != .unknown && status != .unavailable
+            let level: Int? = rng.next() % 5 == 0 ? nil : Int(rng.next() % 21)
+            let maxLevel: Int?
+            let nextLevel: Int?
+            switch (status, level) {
+            case (_, nil):
+                maxLevel = isCatalogHit && rng.next() % 4 != 0 ? Int(rng.next() % 21) : nil
+                nextLevel = nil
+            case (.maxed, .some(let l)):
+                maxLevel = rng.next() % 6 == 0 ? nil : l  // level == maxLevel → 满级
+                nextLevel = nil
+            case (.complete, .some(let l)):
+                maxLevel = l + 1 + Int(rng.next() % 3)     // level < maxLevel → 未满级
+                nextLevel = nil
+            case (.upgrading, .some(let l)):
+                let roll = rng.next() % 6
+                switch roll {
+                case 0: maxLevel = nil                     // 目录未命中但计时中 → unknown
+                case 1: maxLevel = l                       // 版本不匹配：next(l+1) > max(l) → unknown
+                default: maxLevel = l + 1 + Int(rng.next() % 3)  // 正常升级 → known
+                }
+                nextLevel = l + 1
+            default:
+                maxLevel = nil                          // unknown/unavailable：目录未命中 → maxLevel 必 nil
+                nextLevel = nil
+            }
+            return item(id: "w\(i)",
+                        category: cats[Int(rng.next() % UInt64(cats.count))],
+                        status: status, level: level, maxLevel: maxLevel,
+                        count: itemCount,
+                        isUpgrading: status == .upgrading, nextLevel: nextLevel)
+        }
+    }
+
+    /// oracle 权重：与实现 `weight(_:)` 逐字一致的独立复算（count > 0 ? count : 1）。
+    /// 测试不得复用 `instanceCount(of:)` 当 oracle——实现退化时两侧会同源漂移。
+    private func oracleWeight(_ item: VillageItemState) -> Int {
+        guard let count = item.count, count > 0 else { return 1 }
+        return count
+    }
+
+    /// oracle known 谓词：与实现 `isKnown(_:)` 逐字一致（doc 契约：
+    /// 非 unknown/unavailable/available、level/maxLevel 非 nil、非版本不匹配）。
+    private func oracleKnown(_ item: VillageItemState) -> Bool {
+        guard item.status != .unknown, item.status != .unavailable, item.status != .available else {
+            return false
+        }
+        guard item.maxLevel != nil, item.currentLevel != nil else { return false }
+        if item.isUpgrading,
+           let nextLevel = item.nextLevel,
+           let maxLevel = item.maxLevel,
+           nextLevel > maxLevel {
+            return false // 版本不匹配：目录可能过时，不纳入可确认完成度
+        }
+        return true
     }
 }
 

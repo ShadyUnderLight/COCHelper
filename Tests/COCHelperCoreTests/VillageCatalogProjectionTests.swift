@@ -842,6 +842,212 @@ final class VillageCatalogProjectionTests: XCTestCase {
         }
     }
 
+    // MARK: - 聚合 count 归一化与饱和（issue #66 外部评审 P2 闭环）
+
+    func testAggregateNormalizesInvalidCountsBeforeSumming() throws {
+        // 同 (section,dataID,level) 4 条非升级记录 count=[5, 0, -3, nil]：
+        // 聚合 count == 8（instanceWeight 契约：nil/≤0 计 1 → 5+1+1+1）。
+        // 旧实现裸相加得 5+0−3+1 = 3：丢失实例贡献、可制造负值。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: 5, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: 0, path: "1"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: -3, path: "2"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: nil, path: "3"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1, "同键非升级记录应聚合为一条")
+        XCTAssertEqual(home.items.first?.count, 8,
+                       "非法 count（0/−3）按 instanceWeight 计 1，不得累加 0/负值")
+
+        // 全链路：聚合行权重进入完成度统计（level 1 < maxLevel 2 → 全 complete）。
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, 8, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, 0)
+        XCTAssertEqual(total.unknownCount, 0)
+    }
+
+    func testAggregateSaturatesHugeCounts() throws {
+        // 两条 count=Int.max 同键记录：聚合层必须在统计层饱和保护之前就饱和，
+        // 裸相加会在 debug 构建 SIGTRAP 崩溃整个测试进程（非断言失败）——
+        // 故测试与修复同 commit，运行验证以新实现无崩溃且饱和为准。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1)
+        XCTAssertEqual(home.items.first?.count, Int.max, "聚合层溢出必须饱和到 Int.max")
+
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, Int.max, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, 0)
+        XCTAssertEqual(total.unknownCount, 0)
+        // 第 7 轮修复回归：聚合行单行 count=Int.max 求和恰好 Int.max 无算术溢出，
+        // 若聚合层饱和标志不传播，统计层会误判 saturated == false（契约绕过）。
+        XCTAssertTrue(total.saturated, "聚合层饱和标志必须传播到统计层")
+    }
+
+    func testAggregateSaturationFlagPropagatesToStats() throws {
+        // 第 7 轮修复回归：同键两条 maxed count=Int.max 经聚合层饱和为单行
+        // count=Int.max（原始和 = 2×Int.max > Int.max，确实溢出）。聚合行单行
+        // 求和恰好 Int.max 无算术溢出——若聚合层饱和标志不传播，统计层会误判
+        // saturated == false，isFullyMaxed 契约在链路前端被绕过（completed == known
+        // 且无 unknown → 误判满级，百分比可显示 100%）。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, count: Int.max, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, count: Int.max, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1, "同键非升级记录应聚合为一条")
+        let aggregated = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(aggregated.count, Int.max, "聚合层溢出必须饱和到 Int.max")
+        XCTAssertEqual(aggregated.status, .maxed, "level 2 == maxLevel 2 → maxed")
+
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, Int.max, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, Int.max, "got completed=\(total.completedCount)")
+        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertTrue(total.saturated, "聚合层饱和标志必须传播到统计层（fail-closed 契约不得在链路前端被绕过）")
+        XCTAssertFalse(total.isFullyMaxed, "饱和数据不得判满级（fail closed）")
+        XCTAssertNil(total.completionRatio, "饱和数据不得给出百分比")
+    }
+
+    // MARK: - 完成度全链路（issue #66：投影聚合 × count 加权）
+
+    /// 真实 bundled 目录（加农炮 buildings:1000008 maxLevel=21）全链路：
+    /// 6 条 21 级（count 各 1）+ 1 条 20 级 → 聚合 2 行（count 6/1）→
+    /// totalCompletion (7, 6, 0)、ratio 6/7。锁住 bug 根因「行数 ≠ 实例数」。
+    func testFullChainCompletionWeightedByCount() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        // 契约硬化（审核 B）：等级锚点从 bundled 目录动态读取——目录升级立即红并
+        // 提示更新本用例，避免硬编码等级在目录漂移后静默失效。
+        XCTAssertEqual(catalog.gameVersion, GameCatalog.defaultBundledVersion,
+                       "bundled 目录版本已升级，请更新本用例锚点")
+        let cannon = try XCTUnwrap(
+            catalog.item(section: "buildings", dataID: 1_000_008),
+            "bundled 目录应包含 buildings:1000008（加农炮）"
+        )
+        XCTAssertEqual(cannon.maxLevel, 21,
+                       "bundled 目录已升级：加农炮 maxLevel 应为 21，请更新本用例锚点")
+        let maxedLevel = cannon.maxLevel       // = 21（上面已锚定）
+        let lowerLevel = cannon.maxLevel - 1   // = 20
+
+        let cannon21 = (0..<6).map { i in
+            makeItem(section: "buildings", dataID: 1_000_008, level: maxedLevel, count: 1, path: "c\(i)")
+        }
+        let cannon20 = makeItem(section: "buildings", dataID: 1_000_008, level: lowerLevel, count: 1, path: "c6")
+        let village = makeVillage(objectSections: ["buildings": cannon21 + [cannon20]])
+        let home = project(village: village, catalog: catalog, base: .home)
+
+        XCTAssertTrue(home.catalogIsUsable)
+        // 投影聚合形态：7 条实例记录 → 2 行（行数 < 实例数，聚合真实发生）。
+        let cannons = home.items.filter { $0.dataID == 1_000_008 }
+        XCTAssertEqual(cannons.count, 2, "6 条 21 级 + 1 条 20 级应聚合为 2 行")
+        let maxedRow = try XCTUnwrap(cannons.first { $0.currentLevel == maxedLevel })
+        XCTAssertEqual(maxedRow.count, 6, "21 级聚合行 count = 6")
+        XCTAssertEqual(maxedRow.status, .maxed)
+        let lowerRow = try XCTUnwrap(cannons.first { $0.currentLevel == lowerLevel })
+        XCTAssertEqual(lowerRow.count, 1)
+        XCTAssertEqual(lowerRow.status, .complete)
+
+        // 加权统计：实例口径 7 = 6 + 1（行数口径只有 2，必错）。
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, 7, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, 6, "got completed=\(total.completedCount)")
+        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertEqual(total.completionRatio ?? -1, 6.0 / 7.0, accuracy: 0.0001)
+        XCTAssertFalse(total.isFullyMaxed, "1 条未满级实例 → 不得判满级")
+
+        // 全链路防御组（审核 B）：加农炮 1000008 投影后 displayCategory == .defense
+        //（实测验证：#37 白名单 1000008 ∈ defenseDataIDs，section buildings + base home），
+        // 组统计与总统计同口径 (7, 6, 0)，且 known + unknown == 该组 Σweight（守恒）。
+        let stats = VillageDetailProjection.completionStats(from: home.items)
+        let defense = try XCTUnwrap(
+            stats.first { $0.displayCategory == .defense },
+            "加农炮 1000008 投影后应归防御组；实际组: \(stats.map { $0.id })"
+        )
+        XCTAssertEqual(defense.knownCount, 7, "got known=\(defense.knownCount)")
+        XCTAssertEqual(defense.completedCount, 6, "got completed=\(defense.completedCount)")
+        XCTAssertEqual(defense.unknownCount, 0, "got unknown=\(defense.unknownCount)")
+        let defenseGroup = try XCTUnwrap(
+            VillageDetailProjection.groups(from: home.items).first { $0.displayCategory == .defense }
+        )
+        XCTAssertEqual(
+            defense.knownCount + defense.unknownCount,
+            VillageDetailProjection.instanceCount(of: defenseGroup.items),
+            "防御组三列守恒：known + unknown == 该组 Σweight"
+        )
+    }
+
+    /// 300 条满级城墙（buildings:1000010 maxLevel=19）+ 25 条 18 级 →
+    /// 聚合 2 行（count 300/25）→ (325, 300, 0)、ratio 300/325。
+    func testFullChainWalls300Maxed25Lower() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        // 契约硬化（审核 B）：等级锚点从 bundled 目录动态读取（同
+        // testFullChainCompletionWeightedByCount）。
+        XCTAssertEqual(catalog.gameVersion, GameCatalog.defaultBundledVersion,
+                       "bundled 目录版本已升级，请更新本用例锚点")
+        let wall = try XCTUnwrap(
+            catalog.item(section: "buildings", dataID: 1_000_010),
+            "bundled 目录应包含 buildings:1000010（城墙）"
+        )
+        XCTAssertEqual(wall.maxLevel, 19,
+                       "bundled 目录已升级：城墙 maxLevel 应为 19，请更新本用例锚点")
+        let maxedLevel = wall.maxLevel        // = 19（上面已锚定）
+        let lowerLevel = wall.maxLevel - 1    // = 18
+
+        let walls19 = (0..<300).map { i in
+            makeItem(section: "buildings", dataID: 1_000_010, level: maxedLevel, count: 1, path: "w\(i)")
+        }
+        let walls18 = (0..<25).map { i in
+            makeItem(section: "buildings", dataID: 1_000_010, level: lowerLevel, count: 1, path: "l\(i)")
+        }
+        let village = makeVillage(objectSections: ["buildings": walls19 + walls18])
+        let home = project(village: village, catalog: catalog, base: .home)
+
+        XCTAssertTrue(home.catalogIsUsable)
+        let walls = home.items.filter { $0.dataID == 1_000_010 }
+        XCTAssertEqual(walls.count, 2, "325 条实例记录应聚合为 2 行（行数 < 实例数）")
+        let maxedRow = try XCTUnwrap(walls.first { $0.currentLevel == maxedLevel })
+        XCTAssertEqual(maxedRow.count, 300)
+        XCTAssertEqual(maxedRow.status, .maxed)
+        let lowerRow = try XCTUnwrap(walls.first { $0.currentLevel == lowerLevel })
+        XCTAssertEqual(lowerRow.count, 25)
+        XCTAssertEqual(lowerRow.status, .complete)
+
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, 325, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, 300, "got completed=\(total.completedCount)")
+        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertEqual(total.completionRatio ?? -1, 300.0 / 325.0, accuracy: 0.0001)
+
+        // 全链路防御组（审核 B）：城墙 1000010 投影后 displayCategory == .defense
+        //（实测验证：#37 白名单 1000010 ∈ defenseDataIDs），组统计 == (325, 300, 0)，
+        // 且 known + unknown == 该组 Σweight（守恒）。
+        let stats = VillageDetailProjection.completionStats(from: home.items)
+        let defense = try XCTUnwrap(
+            stats.first { $0.displayCategory == .defense },
+            "城墙 1000010 投影后应归防御组；实际组: \(stats.map { $0.id })"
+        )
+        XCTAssertEqual(defense.knownCount, 325, "got known=\(defense.knownCount)")
+        XCTAssertEqual(defense.completedCount, 300, "got completed=\(defense.completedCount)")
+        XCTAssertEqual(defense.unknownCount, 0, "got unknown=\(defense.unknownCount)")
+        let defenseGroup = try XCTUnwrap(
+            VillageDetailProjection.groups(from: home.items).first { $0.displayCategory == .defense }
+        )
+        XCTAssertEqual(
+            defense.knownCount + defense.unknownCount,
+            VillageDetailProjection.instanceCount(of: defenseGroup.items),
+            "防御组三列守恒：known + unknown == 该组 Σweight"
+        )
+    }
+
     // MARK: - VillageItemState.assetMissingReason 谓词
 
     /// 直接构造状态（成员初始化器，@testable 可访问），用于验证 assetMissingReason 真值表。

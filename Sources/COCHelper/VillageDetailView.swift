@@ -307,7 +307,9 @@ struct VillageDetailView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                Text("无可确认项目")
+                // 第 7 轮：ratio == nil 时区分饱和（数据超出可表示范围，非业务上的
+                // 不可确认）与正常无已知项——饱和时数值不完整，明示异常而非误导。
+                Text(total.saturated ? "数据异常（超出可表示范围）" : "无可确认项目")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -364,6 +366,13 @@ struct VillageDetailView: View {
     /// category 组按原分类匹配；category 为 nil 的项归「其他」。
     /// issue #53：满级判定复用 completion 统计（key = completion.id），
     /// 与分组桶键天然一致；空分类（count 0）无 stats → 不显示勾。
+    /// issue #66：chip 数字为实例权重数（聚合行按 count 计入，如 300 块城墙
+    /// 显示 300 而非 1 行），由 completionStats 派生：known + unknown（守恒
+    /// → 实例权重数，catalogIsUsable=false 时同样成立），不重复手写分组谓词。
+    /// 「其他」chip 的 `otherCount > 0` 显隐判断依赖权重 ≥ 1 不变量（非空组
+    /// 实例数 ≥ 1）；勿改回行数 `items.count`。
+    /// 独立饱和后 known + unknown 可能溢出（两条 Int.max 相加），计数经
+    /// `chipInstanceCount` 饱和加法兜底（issue #66 边界 3：UI 不崩溃）。
     private func categoryFilterBar(
         groups: [VillageDetailGroup],
         total: VillageCategoryCompletion,
@@ -373,12 +382,12 @@ struct VillageDetailView: View {
             HStack(spacing: 8) {
                 filterChip(
                     title: "全部",
-                    count: groups.reduce(0) { $0 + $1.items.count },
+                    count: chipInstanceCount(total),
                     filter: .all,
                     isFullyMaxed: total.isFullyMaxed
                 )
                 ForEach(TrackerDisplayCategory.allCases) { display in
-                    let count = groups.first(where: { $0.displayCategory == display })?.items.count ?? 0
+                    let count = chipInstanceCount(statsByKey[display.rawValue])
                     filterChip(
                         title: display.title,
                         count: count,
@@ -387,7 +396,7 @@ struct VillageDetailView: View {
                     )
                 }
                 ForEach(TrackerCategory.allCases) { category in
-                    let count = groups.first(where: { $0.displayCategory == nil && $0.category == category })?.items.count ?? 0
+                    let count = chipInstanceCount(statsByKey[category.rawValue])
                     filterChip(
                         title: category.title,
                         count: count,
@@ -395,7 +404,7 @@ struct VillageDetailView: View {
                         isFullyMaxed: statsByKey[category.rawValue]?.isFullyMaxed ?? false
                     )
                 }
-                let otherCount = groups.first(where: { $0.displayCategory == nil && $0.category == nil })?.items.count ?? 0
+                let otherCount = chipInstanceCount(statsByKey["other"])
                 if otherCount > 0 {
                     filterChip(
                         title: "其他",
@@ -406,6 +415,13 @@ struct VillageDetailView: View {
                 }
             }
         }
+    }
+
+    /// chip 实例数 = known + unknown；独立饱和后可能溢出，用饱和加法兜底（issue #66）。
+    private func chipInstanceCount(_ stats: VillageCategoryCompletion?) -> Int {
+        guard let stats else { return 0 }
+        let (sum, overflow) = stats.knownCount.addingReportingOverflow(stats.unknownCount)
+        return overflow ? Int.max : sum
     }
 
     /// issue #53：全部满级（isFullyMaxed）的 chip 以绿色 + 勾选图标呈现；

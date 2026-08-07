@@ -59,6 +59,19 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 避免两处手写条件漂移。
     public var needsReimport: Bool { timerSeconds != nil && remainingSeconds == 0 }
 
+    /// 实例权重（issue #66 契约，聚合层与统计层共用同一来源）：
+    /// count == nil → 1；count <= 0（malformed）→ 1（与 `TrackerModels.countLabel`
+    /// 展示口径一致：count <= 1 不显示 ×N，按单条处理）；count > 0 → count。
+    /// 非法 count 不得产生 0/负权重（issue #66 边界 3）。
+    internal var instanceWeight: Int {
+        guard let count, count > 0 else { return 1 }
+        return count
+    }
+
+    /// 该行的 count 是否为聚合层饱和结果（原始多条记录权重和 > Int.max，issue #66）。
+    /// 统计层求和时该位并入溢出标志——饱和信息不得在链路前端丢失。
+    internal var countOverflowed: Bool = false
+
     /// 视觉资产缺失原因（用于 UI 降级提示角标）。
     ///
     /// 优先级：level-level 资产优先于 item-level（显示链首选缺失最值得提示，
@@ -121,7 +134,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         currentLevelIcon: CatalogAssetRef?,
         currentLevelVisual: CatalogAssetRef?,
         isNested: Bool,
-        displayCategory: TrackerDisplayCategory? = nil
+        displayCategory: TrackerDisplayCategory? = nil,
+        countOverflowed: Bool = false
     ) {
         self.id = id
         self.section = section
@@ -144,6 +158,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.currentLevelVisual = currentLevelVisual
         self.isNested = isNested
         self.displayCategory = displayCategory
+        self.countOverflowed = countOverflowed
     }
 }
 
@@ -414,6 +429,9 @@ public struct VillageCatalogProjection: Sendable {
     /// 同 `(section, dataID, currentLevel, isNested)` 的非升级记录合并为一条并聚合 count；
     /// 升级记录各自保留（每个计时实例独立）。count 聚合规则：nil 计 1
     /// （一条快照记录 = 至少一个实例）。isNested 参与分组，父项与嵌套项不合并。
+    /// count 归一化与饱和求和先于统计层执行：非法 count（nil/≤0）按
+    /// `instanceWeight` 契约计 1（不得累加 0/负值）；和溢出时饱和到 Int.max，
+    /// 聚合层不崩溃（恶意/损坏快照可含多条 count == Int.max，issue #66 边界 3）。
     private static func aggregate(_ records: [VillageItemState]) -> [VillageItemState] {
         var result: [VillageItemState] = []
         var upgradingKeys = Set<String>()
@@ -435,7 +453,14 @@ public struct VillageCatalogProjection: Sendable {
 
         for (_, group) in grouped.sorted(by: { $0.key < $1.key }) {
             guard let first = group.first else { continue }
-            let aggregatedCount = group.reduce(0) { $0 + ($1.count ?? 1) }
+            // 第 7 轮：饱和求和同时记录 didOverflow——聚合行 count==Int.max 时
+            // 统计层单行求和恰好 Int.max 无算术溢出，若无此标志，saturated 会在
+            // 链路前端被静默丢弃（契约绕过）。饱和后各 instanceWeight ≥ 1，
+            // 后续加法恒溢出，didOverflow 保持 true。
+            let (aggregatedCount, countOverflowed) = group.reduce((0, false)) { acc, record in
+                let (sum, overflow) = acc.0.addingReportingOverflow(record.instanceWeight)
+                return overflow ? (Int.max, true) : (sum, acc.1)
+            }
             // 计时已结束的记录（timer 存在且 remaining 显式归零）进入聚合，但「需重新导入」
             // 信号必须保留：组内任一记录带已结束计时时，聚合项保留 timerSeconds 并将
             // remainingSeconds 置 0，UI 可据此推导「计时已结束」而不会与普通完成状态混淆。
@@ -472,7 +497,8 @@ public struct VillageCatalogProjection: Sendable {
                 currentLevelIcon: first.currentLevelIcon,
                 currentLevelVisual: first.currentLevelVisual,
                 isNested: first.isNested,
-                displayCategory: first.displayCategory
+                displayCategory: first.displayCategory,
+                countOverflowed: countOverflowed
             ))
         }
 

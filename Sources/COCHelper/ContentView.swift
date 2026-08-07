@@ -1112,13 +1112,55 @@ private struct VillageNameEditor: View {
     }
 }
 
-private struct AccountSnapshotSummaryView: View {
+struct AccountSnapshotSummaryView: View {
     @EnvironmentObject private var model: AppModel
     let snapshot: AccountSnapshot
     let isPending: Bool
+    // Issue #61：快捷导入（村庄详情页「粘贴并更新」）复用本组件时的注入参数。
+    // 全部可选：非 nil 时覆盖账号数据页默认文案与动作，绕过 AppModel 的
+    // pendingAccountSnapshot 状态；nil（默认）时行为与账号数据页完全一致。
+    /// 目的地描述（默认取 model.pendingAccountSnapshotDestinationDescription）。
+    var destinationDescription: String? = nil
+    /// 确认按钮标题（默认取 pendingAccountSnapshotActionTitle ?? "应用快照"）。
+    var confirmTitle: String? = nil
+    /// 确认动作（默认 model.applyPendingAccountSnapshot()）。
+    var onConfirm: (() -> Void)? = nil
+    /// 放弃动作（默认 model.discardPendingAccountSnapshot()）。
+    var onCancel: (() -> Void)? = nil
+    /// Issue #61：快捷导入的目标村庄名称（非 nil 时渲染「目标村庄 / 目标 Tag /
+    /// JSON Tag」对照行，账号数据页不传 = 不渲染，行为不变）。
+    var targetVillageName: String? = nil
+    /// Issue #61：目标村庄当前快照 Tag（nil = 尚未导入快照，对照行标注）。
+    var targetVillageTag: String? = nil
+    /// Issue #61：目标村庄是否已有导入快照（有快照但无 Tag 时 targetVillageTag
+    /// 为 nil 但本字段为 true——对照行区分「尚未导入快照」与「未提供」，P2）。
+    var targetVillageHasSnapshot: Bool = false
 
     private var snapshotTitle: String {
         isPending ? "待确认的账号快照" : "当前账号快照"
+    }
+
+    /// P2：目标 Tag 三态展示——有 Tag 显示原样；有快照但无 Tag 显示「未提供」；
+    /// 从未导入快照显示「尚未导入快照」。
+    private var targetTagDisplayText: String {
+        if let tag = targetVillageTag,
+           !tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return tag
+        }
+        return targetVillageHasSnapshot ? "未提供" : "尚未导入快照"
+    }
+
+    /// JSON Tag 缺失或空白时显示「未提供」（含空串边界）。
+    private var jsonTagDisplayText: String {
+        if let tag = snapshot.tag,
+           !tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return tag
+        }
+        return "未提供"
+    }
+
+    private var jsonTagIsMissing: Bool {
+        jsonTagDisplayText == "未提供"
     }
 
     private var activeItems: [AccountItem] {
@@ -1140,6 +1182,24 @@ private struct AccountSnapshotSummaryView: View {
                     Text(isPending ? "解析成功，尚未应用" : "已保存到本机")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(isPending ? .orange : .green)
+                }
+
+                // Issue #61 验收：预览必须展示目标村庄名称、目标 Tag 与 JSON
+                // Tag 的对照（Tag 变化/缺失场景下用户需确认「将写入哪个账号」）。
+                // 仅快捷导入（VillageDetailView 传参）渲染；账号数据页不传 = 零变化。
+                // P2：目标 Tag 三态——有 Tag 显示具体 Tag；有快照但无 Tag 显示
+                //「未提供」；从未导入快照显示「尚未导入快照」。
+                if let targetVillageName {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("目标村庄：" + targetVillageName)
+                        Text("目标 Tag：" + targetTagDisplayText)
+                        Text("JSON Tag：" + jsonTagDisplayText)
+                            .foregroundStyle(jsonTagIsMissing ? .orange : .secondary)
+                    }
+                    .font(.caption.monospaced())
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
                 }
 
                 HStack(spacing: 10) {
@@ -1227,7 +1287,8 @@ private struct AccountSnapshotSummaryView: View {
                 }
 
                 if isPending {
-                    if let destination = model.pendingAccountSnapshotDestinationDescription {
+                    if let destination = destinationDescription
+                        ?? model.pendingAccountSnapshotDestinationDescription {
                         Text(destination)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Color.cocAccent)
@@ -1235,11 +1296,19 @@ private struct AccountSnapshotSummaryView: View {
                     HStack {
                         Spacer()
                         Button("放弃") {
-                            model.discardPendingAccountSnapshot()
+                            if let onCancel {
+                                onCancel()
+                            } else {
+                                model.discardPendingAccountSnapshot()
+                            }
                         }
                         .buttonStyle(.bordered)
-                        Button(model.pendingAccountSnapshotActionTitle ?? "应用快照") {
-                            model.applyPendingAccountSnapshot()
+                        Button(confirmTitle ?? model.pendingAccountSnapshotActionTitle ?? "应用快照") {
+                            if let onConfirm {
+                                onConfirm()
+                            } else {
+                                model.applyPendingAccountSnapshot()
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.cocAccent)

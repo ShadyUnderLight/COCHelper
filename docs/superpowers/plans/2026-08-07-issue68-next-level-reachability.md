@@ -83,19 +83,19 @@ else:                               // 可升级
 
 **测试（TDD，全部先 RED）：**
 
-- [ ] `testNextUpgradeAvailableBelowStageMax`：加农炮 level 1、TH 12 → `.available(level: 2, duration: 300)`
-- [ ] `testNextUpgradeRealNextLevelNonContiguous`：非连续目录 levels [1,2,3,5,7]、level 3、gate 全满足 → `.available(level: 5, ...)` 且 `nextLevelDurationSeconds` 为 5 级时长（非 nil）
-- [ ] `testNextUpgradeRequiresWhenStageMaxed`：野蛮人 level 2（=stageMax，lab gate）、TH 12 → `.requires(nextLevel: 3, requirements: [.laboratory(level: 1)], ...)`
-- [ ] `testNextUpgradeHeroHallGateRequires`：英雄 level 8（=stageMax，tavern 10 gate）、heroHall 8 → `.requires` 含 `.heroHall(level: 10)`、referenceDuration 为 9 级时长
-- [ ] `testNextUpgradeGlobalMaxed`：level == maxLevel → `.globalMaxed`；level > maxLevel（目录过时）→ `.globalMaxed`
-- [ ] `testNextUpgradeInProgressFact`：升级中 → `.inProgressFact(level: current+1, durationSeconds: 目录目标级时长)`
-- [ ] `testNextUpgradeUpgradingVersionMismatchNoDuration`：升级中 + 版本不匹配 → `.inProgressFact(durationSeconds: nil)` 且 missingReason 含「版本不匹配」
-- [ ] `testNextUpgradeUpgradingMissingPrerequisiteKeepsFact`：升级中 + 快照缺大本营（stageMax nil）→ `.inProgressFact(level: current+1, durationSeconds: 非 nil)`
-- [ ] `testNextUpgradeUnverifiedWhenPrerequisiteMissing`：非升级 + 缺 prereq → `.unverified`
-- [ ] `testNextUpgradeUnknownWhenVersionMismatchIdle`：非升级 + 版本不匹配 → `.unknown`
-- [ ] `testNextUpgradeNilForNestedAndUnavailable`：嵌套项/unavailable → nil
-- [ ] `testAggregatePropagatesNextUpgrade`：聚合后 nextUpgrade 保留
-- [ ] `testPropertyNextUpgradeInvariants`（property-based，SeededRNG）：随机 levels/requirement gate/unlocks/currentLevel → 不变量：(1) `.available` 的 level ∈ 目录 levels；(2) `.requires` 的 nextLevel > currentStageMaxLevel；(3) `.inProgressFact` 的 level == currentLevel + 1；(4) status == .maxed ⟺ nextUpgrade ∈ {.requires, .globalMaxed}（有目录且可计算时）；(5) nextUpgrade == nil ⟺ 嵌套/unavailable/目录未命中
+ - [x] `testNextUpgradeAvailableBelowStageMax`：加农炮 level 1、TH 12 → `.available(level: 2, duration: 300)`
+ - [x] `testNextUpgradeRealNextLevelNonContiguous`：非连续目录 levels [1,2,3,5,7]、level 3、gate 全满足 → `.available(level: 5, ...)` 且 `nextLevelDurationSeconds` 为 5 级时长（非 nil）
+ - [x] `testNextUpgradeRequiresWhenStageMaxed`：野蛮人 level 2（=stageMax，lab gate）、TH 12 → `.requires(nextLevel: 3, requirements: [.laboratory(level: 1)], ...)`
+ - [x] `testNextUpgradeHeroHallGateRequires`：英雄 level 8（=stageMax，tavern 10 gate）、heroHall 8 → `.requires` 含 `.heroHall(level: 10)`、referenceDuration 为 9 级时长
+ - [x] `testNextUpgradeGlobalMaxed`：level == maxLevel → `.globalMaxed`；level > maxLevel（目录过时）→ `.globalMaxed`
+ - [x] `testNextUpgradeInProgressFact`：升级中 → `.inProgressFact(level: current+1, durationSeconds: 目录目标级时长)`
+ - [x] `testNextUpgradeUpgradingVersionMismatchNoDuration`：升级中 + 版本不匹配 → `.inProgressFact(durationSeconds: nil)` 且 missingReason 含「版本不匹配」
+ - [x] `testNextUpgradeUpgradingMissingPrerequisiteKeepsFact`：升级中 + 快照缺大本营（stageMax nil）→ `.inProgressFact(level: current+1, durationSeconds: 非 nil)`
+ - [x] `testNextUpgradeUnverifiedWhenPrerequisiteMissing`：非升级 + 缺 prereq → `.unverified`
+ - [x] `testNextUpgradeUnknownWhenVersionMismatchIdle`：非升级 + 版本不匹配 → `.unknown`
+ - [x] `testNextUpgradeNilForNestedAndUnavailable`：嵌套项/unavailable → nil
+ - [x] `testAggregatePropagatesNextUpgrade`：聚合后 nextUpgrade 保留
+ - [x] `testPropertyNextUpgradeInvariants`（property-based，SeededRNG）：随机 levels/requirement gate/unlocks/currentLevel → 不变量：(1) `.available` 的 level ∈ 目录 levels；(2) `.requires` 的 nextLevel > currentStageMaxLevel；(3) `.inProgressFact` 的 level == currentLevel + 1；(4) status == .maxed ⟺ nextUpgrade ∈ {.requires, .globalMaxed}（有目录且可计算时）；(5) nextUpgrade == nil ⟺ 嵌套/unavailable/目录未命中
 
 ---
 
@@ -105,13 +105,13 @@ else:                               // 可升级
 - Modify: `Sources/COCHelperCore/BuildingGroupProjection.swift`
 - Test: `Tests/COCHelperCoreTests/BuildingGroupProjectionTests.swift`
 
-- [ ] `steps(for:item:catalog:)` 增加 `catalogIsUsable: Bool` 参数：false → 空数组（升级中版本不匹配不再泄漏旧目录阶梯，T17b 口径扩展）
-- [ ] 升级中 + 缺 prereq（status == .upgrading 且 currentStageMaxLevel == nil）→ 空数组（与 unverified 同口径 fail-closed）
-- [ ] 升级中 + stageMax 可计算：阶梯仍按 `level ∈ (currentLevel, effectiveMax]` 过滤（现状逻辑已正确，加测试锁定）
-- [ ] `testUpgradingVersionMismatchNoLadder`：升级中 + 版本不匹配 → steps 空、completeness 不为 versionMismatch 之外的误导
-- [ ] `testUpgradingMissingPrerequisiteNoLadder`：升级中 + 快照缺 prereq → steps 空
-- [ ] `testUpgradingLadderCappedAtStageMax`：升级中 + stageMax < maxLevel → 阶梯不含超过 stageMax 的等级（若升级目标 > stageMax 属数据异常，阶梯截断到 stageMax）
-- [ ] 现有 T8（upgrading ladder）回归通过（无 gate 目录 → stageMax == maxLevel → 不变）
+ - [x] `steps(for:item:catalog:)` 增加 `catalogIsUsable: Bool` 参数：false → 空数组（升级中版本不匹配不再泄漏旧目录阶梯，T17b 口径扩展）
+ - [x] 升级中 + 缺 prereq（status == .upgrading 且 currentStageMaxLevel == nil）→ 空数组（与 unverified 同口径 fail-closed）
+ - [x] 升级中 + stageMax 可计算：阶梯仍按 `level ∈ (currentLevel, effectiveMax]` 过滤（现状逻辑已正确，加测试锁定）
+ - [x] `testUpgradingVersionMismatchNoLadder`：升级中 + 版本不匹配 → steps 空、completeness 不为 versionMismatch 之外的误导
+ - [x] `testUpgradingMissingPrerequisiteNoLadder`：升级中 + 快照缺 prereq → steps 空
+ - [x] `testUpgradingLadderCappedAtStageMax`：升级中 + stageMax < maxLevel → 阶梯不含超过 stageMax 的等级（若升级目标 > stageMax 属数据异常，阶梯截断到 stageMax）
+ - [x] 现有 T8（upgrading ladder）回归通过（无 gate 目录 → stageMax == maxLevel → 不变）
 
 ---
 
@@ -124,21 +124,21 @@ else:                               // 可升级
 - Modify: `Sources/COCHelper/BuildingGroupSummaryView.swift`
 - Test: `Tests/COCHelperCoreTests/GameCatalogTests.swift`（displayLabel 单测）
 
-- [ ] `UpgradeRequirement.displayLabel(base:)`：`.townHall(12)` home → 「所需大本营等级 12级」；builder → 「所需建筑大师大本营等级 12级」；`.laboratory` → 「所需实验室等级 X级」；`.starLaboratory` → 「所需星空实验室等级 X级」；`.heroHall` → 「所需英雄殿堂等级 X级」；`[UpgradeRequirement].displayLabels(base:)` → 「A · B」连接（与现有 unlockLabel 措辞逐字一致）
-- [ ] `LevelDetailSheet`：`effectiveNext` 改为消费 `item.nextUpgrade`（`.available` → level；`.inProgressFact` → level；其余 nil）；`unlockLabel` 改用 `requirements(base:)` + `displayLabels`；升级中 + 版本不匹配（missingReason 非 nil 且 status == .upgrading）→ missingNote 分支显示，不渲染旧目录等级列表；阶段满级（`.requires`）时 statusLabel 下方加一行「下一级 N 级需要 X」（用 displayLabels）
-- [ ] `UpgradeDisplayRow`：非升级「下一级：N级」编号改用 `nextUpgrade.available.level`（删除 `currentLevel + 1`）；`.requires` 时在 durationLabel 区域显示「下一级 N 级需要 X」阻塞文案（替换「当前阶段已满级」的时长位或并列）
-- [ ] `BuildingGroupSummaryView`：组内实例存在 `.requires` 时，阶段上限文案下加阻塞 requirement 摘要（取第一个 requires 的 displayLabels）
-- [ ] `testRequirementDisplayLabelHomeBuilder`：displayLabel 全类型 + base 分支单测
-- [ ] UI 层无单测基建（项目现状），SwiftUI 改动靠交叉 code review 验证
+ - [x] `UpgradeRequirement.displayLabel(base:)`：`.townHall(12)` home → 「所需大本营等级 12级」；builder → 「所需建筑大师大本营等级 12级」；`.laboratory` → 「所需实验室等级 X级」；`.starLaboratory` → 「所需星空实验室等级 X级」；`.heroHall` → 「所需英雄殿堂等级 X级」；`[UpgradeRequirement].displayLabels(base:)` → 「A · B」连接（与现有 unlockLabel 措辞逐字一致）
+ - [x] `LevelDetailSheet`：`effectiveNext` 改为消费 `item.nextUpgrade`（`.available` → level；`.inProgressFact` → level；其余 nil）；`unlockLabel` 改用 `requirements(base:)` + `displayLabels`；升级中 + 版本不匹配（missingReason 非 nil 且 status == .upgrading）→ missingNote 分支显示，不渲染旧目录等级列表；阶段满级（`.requires`）时 statusLabel 下方加一行「下一级 N 级需要 X」（用 displayLabels）
+ - [x] `UpgradeDisplayRow`：非升级「下一级：N级」编号改用 `nextUpgrade.available.level`（删除 `currentLevel + 1`）；`.requires` 时在 durationLabel 区域显示「下一级 N 级需要 X」阻塞文案（替换「当前阶段已满级」的时长位或并列）
+ - [x] `BuildingGroupSummaryView`：组内实例存在 `.requires` 时，阶段上限文案下加阻塞 requirement 摘要（取第一个 requires 的 displayLabels）
+ - [x] `testRequirementDisplayLabelHomeBuilder`：displayLabel 全类型 + base 分支单测
+ - [x] UI 层无单测基建（项目现状），SwiftUI 改动靠交叉 code review 验证
 
 ---
 
 ### Task 4: 全量回归 + 自查
 
-- [ ] `swift test` 全绿（预期 ~715+）
-- [ ] `python3 -m pytest -q Tools/tests` 全绿（应无改动，防目录校验回归）
-- [ ] `git diff --check`、`swift build`（Debug + Release）
-- [ ] Reflexion：对照 #68 验收标准 8 条逐条核对（验收 7 的测试场景逐项列出）
+ - [x] `swift test` 全绿（预期 ~715+）
+ - [x] `python3 -m pytest -q Tools/tests` 全绿（应无改动，防目录校验回归）
+ - [x] `git diff --check`、`swift build`（Debug + Release）
+ - [x] Reflexion：对照 #68 验收标准 8 条逐条核对（验收 7 的测试场景逐项列出）
 
 **验收标准映射（#68）：**
 1. 阶段满级显示「当前阶段已满级」→ #67 已有 + `.requires` 文案增强

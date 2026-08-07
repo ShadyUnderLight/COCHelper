@@ -278,7 +278,7 @@ struct WarLogCardView: View {
                         .font(.callout.weight(.semibold))
                 }
                 if let destruction = entry.clan?.destructionPercentage {
-                        Text("摧毁率 \(destruction)%")
+                        Text("摧毁率 \(Self.percent(ClanCombatSummary.clampedPercent(destruction)))%")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

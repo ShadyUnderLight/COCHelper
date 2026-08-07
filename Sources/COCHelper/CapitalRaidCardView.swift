@@ -327,7 +327,9 @@ struct CapitalRaidCardView: View {
                     opponentName: opponentName,
                     summaryText: logEntrySummaryText(
                         attackCount: attackCount,
-                        destroyed: districtsDestroyed ?? districts.count,
+                        destroyed: ClanCombatSummary.destroyedDistrictCount(
+                            districtsDestroyed: districtsDestroyed, districts: districts
+                        ),
                         looted: summary.totalLooted
                     )
                 )
@@ -338,7 +340,9 @@ struct CapitalRaidCardView: View {
                 opponentName: opponentName,
                 summaryText: logEntrySummaryText(
                     attackCount: attackCount,
-                    destroyed: districtsDestroyed,
+                    destroyed: ClanCombatSummary.destroyedDistrictCount(
+                        districtsDestroyed: districtsDestroyed, districts: []
+                    ),
                     looted: nil
                 )
             )
@@ -357,7 +361,7 @@ struct CapitalRaidCardView: View {
         }
     }
 
-    /// 摘要文案：N 次进攻 · 摧毁 M 座子城 · 掠夺 X 都城金币（无金币数据时省略金币）。
+    /// 摘要文案：N 次进攻 · 摧毁 M 座子城 · 掠夺 X 都城金币（金币为 nil 时省略分句，缺失记 0 时显示 0）。
     private func logEntrySummaryText(attackCount: Int?, destroyed: Int?, looted: Int?) -> String {
         [attackCount.map { "\($0) 次进攻" },
          destroyed.map { "摧毁 \($0) 座子城" },
@@ -381,7 +385,7 @@ struct CapitalRaidCardView: View {
                 .font(.caption)
                 .lineLimit(1)
             Spacer()
-            Text([district.stars.map { "⭐\($0)" },
+            Text([district.stars.map { "⭐\(min(max($0, 0), 3))" },
                   district.destructionPercent.map { "摧毁率 \(Self.percent(ClanCombatSummary.clampedPercent($0)))%" },
                   district.attackCount.map { "\($0) 次进攻" },
                   district.totalLooted.map { "掠夺 \(Self.formatted($0)) 都城金币" }]

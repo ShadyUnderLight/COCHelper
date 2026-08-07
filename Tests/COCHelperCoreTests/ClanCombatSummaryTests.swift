@@ -92,6 +92,42 @@ final class ClanCombatSummaryTests: XCTestCase {
         XCTAssertEqual(summary.totalLooted, 5000)
     }
 
+    // MARK: - destroyedDistrictCount
+
+    func testDestroyedCountPrefersOfficialField() {
+        // 官方字段存在时优先，即使与明细不一致（0 也是官方事实）
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: 2,
+            districts: [district(name: "A", destruction: 100), district(name: "B", destruction: 40)]), 2)
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: 0,
+            districts: [district(name: "A", destruction: 100)]), 0)
+    }
+
+    func testDestroyedCountDerivesFromDistrictsWhenOfficialMissing() {
+        // 官方缺失 → 摧毁率 ≥100 才计数
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil,
+            districts: [district(name: "A", destruction: 100), district(name: "B", destruction: 100), district(name: "C", destruction: 40)]), 2)
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil,
+            districts: [district(name: "A", destruction: 100), district(name: "B", destruction: nil)]), 1)
+        // 浮点噪声容忍：100.0001 也算摧毁
+        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil,
+            districts: [district(name: "A", destruction: 100.0001)]), 1)
+    }
+
+    func testDestroyedCountUnknownWhenNoEvidence() {
+        // 无明确摧毁且存在未知/未摧毁 → nil（调用方省略分句，不编造 0）
+        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: 40)]))
+        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: nil), district(name: "B", destruction: nil)]))
+        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: []))
+    }
+
     // MARK: - clampedPercent
 
     func testClampedPercentBounds() {

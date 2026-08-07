@@ -84,6 +84,16 @@ public enum ClanCombatSummary {
         return min(max(value, 0), 100)
     }
 
+    /// 已摧毁子城数：官方字段优先；缺失时从子城明细推导（摧毁率 ≥ 100 视为已摧毁）。
+    /// 无法确定（无任何明确摧毁且存在未知摧毁率）时返回 nil，调用方应省略该信息而非编造 0。
+    public static func destroyedDistrictCount(
+        districtsDestroyed: Int?, districts: [CapitalRaidDistrict]
+    ) -> Int? {
+        if let districtsDestroyed { return districtsDestroyed }
+        let destroyed = districts.filter { ($0.destructionPercent ?? 0) >= 100 }.count
+        return destroyed > 0 ? destroyed : nil
+    }
+
     /// 聚合成员战争攻击：逐次攻击明细原样保留，星数求和。
     public static func warMember(attacks: [ClanWarAttack]) -> ClanWarMemberSummary {
         ClanWarMemberSummary(

@@ -887,7 +887,6 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertNil(level7.missingReason)
     }
 
-
     // MARK: - Issue #74b: step durationState 映射（与 CatalogLevel 同一映射点）
 
     func testStepDurationStateMapping() {

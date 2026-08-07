@@ -44,6 +44,34 @@ struct BuildingGroupSummaryView: View {
         return parts.joined(separator: " · ")
     }
 
+    /// 组内是否存在阶段满级实例（`currentStageMaxLevel < maxLevel`，Issue #67）：
+    /// 与行级「当前阶段已满级（全局尚有 N 级）」文案同口径，汇总「已达当前阶段
+    /// 上限」判定与组卡摘要共用，防双实现漂移。
+    private var hasStageCappedInstance: Bool {
+        group.instances.contains { instance in
+            guard let stage = instance.item.currentStageMaxLevel,
+                  let max = instance.item.maxLevel else { return false }
+            return stage < max
+        }
+    }
+
+    /// 阶段满级阻塞条件摘要（Issue #68 验收 2，组卡侧）：仅当汇总实际显示
+    /// 「已达当前阶段上限」且组内至少一个实例 `.requires` 时，展示第一个
+    /// .requires 实例的下一级解锁条件（与详情 sheet 头部 caption 同文案来源
+    /// `displayLabels`）。其余情况 nil（不打扰用户）。
+    private var stageGateSummary: String? {
+        let showsStageCappedText = group.summary.remainingLevelCount == 0
+            && group.summary.completeness == .complete
+            && hasStageCappedInstance
+        guard showsStageCappedText else { return nil }
+        guard let first = group.instances.first(where: {
+            if case .requires = $0.item.nextUpgrade { return true }
+            return false
+        }) else { return nil }
+        guard case .requires(_, let requirements, _) = first.item.nextUpgrade else { return nil }
+        return "下一级解锁条件：" + requirements.displayLabels(base: first.item.base.rawValue)
+    }
+
     /// 完整时长合计：按 completeness 分支（交叉评审发现的口径缺陷修复——
     /// 不能只看 remainingLevelCount == 0 就报「已达目录上限」）：
     /// - versionMismatch（目录过时，如大本营 Lv19 > 目录 max 18）：一律显示
@@ -68,12 +96,7 @@ struct BuildingGroupSummaryView: View {
         }
         if group.summary.remainingLevelCount == 0 {
             if group.summary.completeness == .complete {
-                let anyStageCapped = group.instances.contains { instance in
-                    guard let stage = instance.item.currentStageMaxLevel,
-                          let max = instance.item.maxLevel else { return false }
-                    return stage < max
-                }
-                return anyStageCapped ? "已达当前阶段上限" : "已达目录上限"
+                return hasStageCappedInstance ? "已达当前阶段上限" : "已达目录上限"
             }
             return "暂无目录数据"
         }
@@ -193,6 +216,15 @@ struct BuildingGroupSummaryView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let stageGateSummary {
+                    // Issue #68 验收 2：阶段满级（「已达当前阶段上限」）下补充
+                    // 具体阻塞 Requirement（仅当组内存在 .requires 实例）。
+                    Text(stageGateSummary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             completenessLabel

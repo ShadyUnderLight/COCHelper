@@ -3,6 +3,46 @@ import Combine
 import Foundation
 import COCHelperCore
 
+// MARK: - 快捷快照导入（Issue #61）
+
+/// 「按当前详情页」快捷导入的预览：目标村庄固定为 `targetVillageID`，
+/// 与剪贴板 JSON 的账号 tag 无关（路由到显式 ID，而非按 tag 匹配）。
+public struct QuickImportPreview: Identifiable, Equatable, Sendable {
+    public let snapshot: AccountSnapshot
+    public let targetVillageID: UUID
+    public let targetVillageName: String
+    /// 目标村庄当前快照 tag（原样，未规范化）。
+    public let targetVillageTag: String?
+    /// normalized(JSON tag) == normalized(targetVillageTag)。
+    public let replacesSameTag: Bool
+    /// 目标村庄从未导入过快照（targetVillageTag == nil）。
+    public var isFirstImport: Bool { targetVillageTag == nil }
+    public var id: UUID { targetVillageID }
+    public var confirmationTitle: String { "更新「\(targetVillageName)」" }
+    public let destinationDescription: String
+}
+
+/// 快捷导入错误（展示导向：UI 直接展示 `errorDescription`）。
+public enum QuickImportError: Error, LocalizedError, Equatable, Sendable {
+    case emptyClipboard
+    case parseFailed(AccountSnapshotImportError)
+    case targetVillageMissing
+    case tagBelongsToAnotherVillage(tag: String, villageName: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyClipboard:
+            "系统剪贴板中没有可用的文本。"
+        case .parseFailed(let error):
+            error.errorDescription ?? "解析失败。"
+        case .targetVillageMissing:
+            "目标村庄已不存在，请刷新后重试。"
+        case .tagBelongsToAnotherVillage(let tag, let villageName):
+            "剪贴板 JSON 的账号 Tag（\(tag)）属于另一档案「\(villageName)」。为避免误覆盖，请到「账号数据」页手动导入。"
+        }
+    }
+}
+
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public private(set) var villages: [VillageProfile]
@@ -58,15 +98,19 @@ public final class AppModel: ObservableObject {
     private let clanWarRefresher: ClanWarRefresher
     /// 分页端点（warlog / capitalraidseasons）共用的客户端。
     private let clanLogClient: CoAPIClient
+    /// 快捷导入的剪贴板读取器（测试注入；生产默认读系统剪贴板）。
+    private let clipboardReader: () -> String?
 
     public init(
         defaults: UserDefaults = .standard,
         refresher: OfficialPlayerRefresher? = nil,
         clanRefresher: ClanRefresher? = nil,
         clanWarRefresher: ClanWarRefresher? = nil,
-        clanLogClient: CoAPIClient? = nil
+        clanLogClient: CoAPIClient? = nil,
+        clipboardReader: (() -> String?)? = nil
     ) {
         self.defaults = defaults
+        self.clipboardReader = clipboardReader ?? { NSPasteboard.general.string(forType: .string) }
         let loadedVillages = Self.loadVillages(from: defaults)
         let initialVillages: [VillageProfile]
         if loadedVillages.isEmpty {
@@ -348,12 +392,90 @@ public final class AppModel: ObservableObject {
     }
 
     public func pasteFromClipboard() {
-        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
+        guard let text = clipboardReader(), !text.isEmpty else {
             accountImportError = "系统剪贴板中没有可用的文本。"
             return
         }
         importText = text
         accountImportError = nil
+    }
+
+    // MARK: - 快捷快照导入（按显式 villageID，Issue #61）
+
+    /// 为指定村庄准备快捷导入预览：解析剪贴板 JSON 并做路由校验。
+    /// **纯函数**：不写任何持久化状态、不改 villages、不改
+    /// accountSnapshot / importText / pending 状态（失败与成功路径均无副作用）。
+    ///
+    /// 路由语义：目标固定为传入 `villageID`（与 JSON 的账号 tag 无关）；
+    /// 仅当 JSON tag 规范化后命中**其他**村庄时才拦截（防误覆盖）。
+    public func prepareQuickImport(for villageID: UUID) -> Result<QuickImportPreview, QuickImportError> {
+        guard let text = clipboardReader(),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .failure(.emptyClipboard)
+        }
+
+        let snapshot: AccountSnapshot
+        do {
+            snapshot = try AccountSnapshotImporter.parse(text)
+        } catch let error as AccountSnapshotImportError {
+            return .failure(.parseFailed(error))
+        } catch {
+            // 防御分支：解析器只抛 AccountSnapshotImportError，此路径不可达。
+            return .failure(.parseFailed(.invalidJSON(error.localizedDescription)))
+        }
+
+        guard let target = villages.first(where: { $0.id == villageID }) else {
+            return .failure(.targetVillageMissing)
+        }
+
+        // 规范化后的 JSON tag 命中其他村庄 → 阻止（避免误覆盖另一档案）。
+        if let snapshotTag = OfficialPlayerTagValidator.normalized(snapshot.tag),
+           let other = villages.first(where: {
+               $0.id != villageID && OfficialPlayerTagValidator.normalized($0.tag) == snapshotTag
+           }) {
+            return .failure(.tagBelongsToAnotherVillage(tag: snapshot.tag ?? "", villageName: other.name))
+        }
+
+        let normalizedSnapshotTag = OfficialPlayerTagValidator.normalized(snapshot.tag)
+        let replacesSameTag = normalizedSnapshotTag != nil
+            && normalizedSnapshotTag == OfficialPlayerTagValidator.normalized(target.tag)
+
+        let description: String
+        if target.tag == nil {
+            description = "将建立「\(target.name)」的账号快照并导入"
+        } else if replacesSameTag {
+            description = "导入目标：按当前详情页更新「\(target.name)」"
+        } else {
+            description = "导入目标：按当前详情页应用到「\(target.name)」，原官方数据将因 Tag 变化被重置"
+        }
+
+        return .success(QuickImportPreview(
+            snapshot: snapshot,
+            targetVillageID: target.id,
+            targetVillageName: target.name,
+            targetVillageTag: target.tag,
+            replacesSameTag: replacesSameTag,
+            destinationDescription: description
+        ))
+    }
+
+    /// 应用快捷导入：按 preview 固定的目标村庄写入快照。
+    /// 顺序契约：先 `applyImportedSnapshot`（tag 变化清官方数据）→ 再 `load`
+    /// （刷新 accountSnapshot 属性与 selectedVillageID）→ 最后 `persistVillages`
+    /// （`syncCurrentVillage` 用属性回写，必须先 load 才能写盘一致）。
+    /// 目标村庄已不存在时 no-op（不崩溃）。
+    public func applyQuickImport(_ preview: QuickImportPreview) {
+        guard let index = villages.firstIndex(where: { $0.id == preview.targetVillageID }) else { return }
+
+        villages[index].applyImportedSnapshot(preview.snapshot)
+        if villages[index].name.hasPrefix("村庄 ") || villages[index].name == VillageProfile.placeholderName {
+            villages[index].name = OfficialPlayerTagValidator.normalized(preview.snapshot.tag) ?? villages[index].name
+        }
+        villages[index].updatedAt = Date()
+
+        let targetVillage = villages[index]
+        load(targetVillage, importText: preview.snapshot.originalText)
+        persistVillages()
     }
 
     public func parseAccountText() {

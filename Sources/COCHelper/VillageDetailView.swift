@@ -310,6 +310,8 @@ struct VillageDetailView: View {
     /// → 实例权重数，catalogIsUsable=false 时同样成立），不重复手写分组谓词。
     /// 「其他」chip 的 `otherCount > 0` 显隐判断依赖权重 ≥ 1 不变量（非空组
     /// 实例数 ≥ 1）；勿改回行数 `items.count`。
+    /// 独立饱和后 known + unknown 可能溢出（两条 Int.max 相加），计数经
+    /// `chipInstanceCount` 饱和加法兜底（issue #66 边界 3：UI 不崩溃）。
     private func categoryFilterBar(
         groups: [VillageDetailGroup],
         total: VillageCategoryCompletion,
@@ -319,13 +321,12 @@ struct VillageDetailView: View {
             HStack(spacing: 8) {
                 filterChip(
                     title: "全部",
-                    count: total.knownCount + total.unknownCount,
+                    count: chipInstanceCount(total),
                     filter: .all,
                     isFullyMaxed: total.isFullyMaxed
                 )
                 ForEach(TrackerDisplayCategory.allCases) { display in
-                    let count = (statsByKey[display.rawValue]?.knownCount ?? 0)
-                        + (statsByKey[display.rawValue]?.unknownCount ?? 0)
+                    let count = chipInstanceCount(statsByKey[display.rawValue])
                     filterChip(
                         title: display.title,
                         count: count,
@@ -334,8 +335,7 @@ struct VillageDetailView: View {
                     )
                 }
                 ForEach(TrackerCategory.allCases) { category in
-                    let count = (statsByKey[category.rawValue]?.knownCount ?? 0)
-                        + (statsByKey[category.rawValue]?.unknownCount ?? 0)
+                    let count = chipInstanceCount(statsByKey[category.rawValue])
                     filterChip(
                         title: category.title,
                         count: count,
@@ -343,8 +343,7 @@ struct VillageDetailView: View {
                         isFullyMaxed: statsByKey[category.rawValue]?.isFullyMaxed ?? false
                     )
                 }
-                let otherCount = (statsByKey["other"]?.knownCount ?? 0)
-                    + (statsByKey["other"]?.unknownCount ?? 0)
+                let otherCount = chipInstanceCount(statsByKey["other"])
                 if otherCount > 0 {
                     filterChip(
                         title: "其他",
@@ -355,6 +354,13 @@ struct VillageDetailView: View {
                 }
             }
         }
+    }
+
+    /// chip 实例数 = known + unknown；独立饱和后可能溢出，用饱和加法兜底（issue #66）。
+    private func chipInstanceCount(_ stats: VillageCategoryCompletion?) -> Int {
+        guard let stats else { return 0 }
+        let (sum, overflow) = stats.knownCount.addingReportingOverflow(stats.unknownCount)
+        return overflow ? Int.max : sum
     }
 
     /// issue #53：全部满级（isFullyMaxed）的 chip 以绿色 + 勾选图标呈现；

@@ -39,9 +39,11 @@ public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
     public let category: TrackerCategory?
     public let displayCategory: TrackerDisplayCategory?
     /// 实例权重语义（issue #66）：按 `count` 加权后的实例数，非聚合行数。
-    /// 权重 = `count > 0 ? count : 1`（nil 或 ≤0 均按 1 计，floor，不产生负权重），
-    /// 与 `weight(_:)` 实现逐字一致。known = 计入分母的实例数；completed = 其中
-    /// 已满级的实例数；unknown = 总实例数 − known（守恒：未知实例不因聚合而消失）。
+    /// 权重契约单一来源为 `VillageItemState.instanceWeight`
+    /// （`count > 0 ? count : 1`，nil 或 ≤0 均按 1 计，floor，不产生负权重），
+    /// 聚合层与统计层共用。known = 计入分母的实例数；completed = 其中
+    /// 已满级的实例数；unknown = 未知实例权重独立求和（正常数据下
+    /// known + unknown == Σweight；饱和数据下未知实例不因减法推导而消失）。
     public let knownCount: Int
     public let completedCount: Int
     public let unknownCount: Int
@@ -148,8 +150,9 @@ public enum VillageDetailProjection {
     /// 「目录无上限或版本不匹配：不纳入可确认完成度，并显示诊断」）。
     ///
     /// 计数按实例权重（issue #66）：聚合行（`count > 1`）按 count 计入，
-    /// 不再把行数当实例数；`unknownCount = instanceCount(of: group.items) - knownCount`
-    /// 守恒——未知实例不因聚合而消失。三个计数字段均为实例权重语义。
+    /// 不再把行数当实例数。正常数据下 `known + unknown == Σweight` 精确成立；
+    /// 恶意/损坏数据（和 > Int.max）时三列各自独立饱和，未知实例不因饱和而
+    /// 消失，此时守恒退化为逐项饱和上界。三个计数字段均为实例权重语义。
     public static func completionStats(
         from items: [VillageItemState],
         catalogIsUsable: Bool = true
@@ -161,18 +164,26 @@ public enum VillageDetailProjection {
             let completed = catalogIsUsable
                 ? Self.instanceCount(of: group.items.filter { $0.status == .maxed && isKnown($0) })
                 : 0
+            // unknown 独立求和（不再用减法推导）：catalogIsUsable == false 时
+            // 已知侧归 0，全部权重进 unknown（issue #16「全部归 unknown」）；
+            // 目录可用时仅统计未知侧，正常数据下与减法等价，饱和时不丢实例。
+            let unknown = Self.instanceCount(
+                of: catalogIsUsable ? group.items.filter { !isKnown($0) } : group.items
+            )
             return VillageCategoryCompletion(
                 category: group.category,
                 displayCategory: group.displayCategory,
                 knownCount: known,
                 completedCount: completed,
-                unknownCount: Self.instanceCount(of: group.items) - known
+                unknownCount: unknown
             )
         }
     }
 
     /// 全村庄完成度合计。`catalogIsUsable` 语义同 `completionStats`。
-    /// 计数按实例权重（issue #66），守恒：`known + unknown == instanceCount(of: items)`。
+    /// 计数按实例权重（issue #66）。正常数据下 `known + unknown == Σweight`
+    /// 精确成立；恶意/损坏数据（和 > Int.max）时三列各自独立饱和，未知实例
+    /// 不因饱和而消失，此时守恒退化为逐项饱和上界。
     public static func totalCompletion(
         from items: [VillageItemState],
         catalogIsUsable: Bool = true
@@ -183,32 +194,28 @@ public enum VillageDetailProjection {
         let completed = catalogIsUsable
             ? Self.instanceCount(of: items.filter { $0.status == .maxed && isKnown($0) })
             : 0
+        let unknown = Self.instanceCount(
+            of: catalogIsUsable ? items.filter { !isKnown($0) } : items
+        )
         return VillageCategoryCompletion(
             category: nil,
             knownCount: known,
             completedCount: completed,
-            unknownCount: Self.instanceCount(of: items) - known
+            unknownCount: unknown
         )
     }
 
     // MARK: - 实例权重（issue #66）
 
-    /// 实例权重：count == nil → 1；count <= 0（malformed）→ 1（与
-    /// `TrackerModels.countLabel` 展示口径一致：count <= 1 不显示 ×N，
-    /// 按单条处理）；count > 0 → count。不得产生负权重（issue #66 边界 3）。
-    private static func weight(_ item: VillageItemState) -> Int {
-        guard let count = item.count, count > 0 else { return 1 }
-        return count
-    }
-
-    /// 按实例权重求和（内部单一口径，issue #66）。仅供本文件统计函数内部使用；
-    /// UI 分类 chip 计数经 completionStats 的 known+unknown 派生（见 VillageDetailView），
-    /// 不直接调用本函数。聚合行（count > 1，如 6 门 21 级加农炮）按 count 计入，
-    /// 避免把行数当实例数。溢出防御：恶意/损坏快照可含 `count == Int.max`，加法
-    /// 溢出时饱和到 Int.max——debug/release 均不崩溃、不产生垃圾负数（审核 A Minor 1）。
+    /// 按实例权重求和（单一契约在 `VillageItemState.instanceWeight`，issue #66）。
+    /// 仅供本文件统计函数内部使用；UI 分类 chip 计数经 completionStats 的 known+unknown
+    /// 派生（见 VillageDetailView），不直接调用本函数。聚合行（count > 1，如 6 门 21 级
+    /// 加农炮）按 count 计入，避免把行数当实例数。溢出防御：恶意/损坏快照可含
+    /// `count == Int.max`，加法溢出时饱和到 Int.max——debug/release 均不崩溃、
+    /// 不产生垃圾负数（审核 A Minor 1）。
     internal static func instanceCount(of items: [VillageItemState]) -> Int {
         items.reduce(0) { acc, item in
-            let (sum, overflow) = acc.addingReportingOverflow(Self.weight(item))
+            let (sum, overflow) = acc.addingReportingOverflow(item.instanceWeight)
             return overflow ? Int.max : sum
         }
     }

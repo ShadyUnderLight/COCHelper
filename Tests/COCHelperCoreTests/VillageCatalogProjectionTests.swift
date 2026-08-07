@@ -842,6 +842,52 @@ final class VillageCatalogProjectionTests: XCTestCase {
         }
     }
 
+    // MARK: - 聚合 count 归一化与饱和（issue #66 外部评审 P2 闭环）
+
+    func testAggregateNormalizesInvalidCountsBeforeSumming() throws {
+        // 同 (section,dataID,level) 4 条非升级记录 count=[5, 0, -3, nil]：
+        // 聚合 count == 8（instanceWeight 契约：nil/≤0 计 1 → 5+1+1+1）。
+        // 旧实现裸相加得 5+0−3+1 = 3：丢失实例贡献、可制造负值。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: 5, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: 0, path: "1"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: -3, path: "2"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: nil, path: "3"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1, "同键非升级记录应聚合为一条")
+        XCTAssertEqual(home.items.first?.count, 8,
+                       "非法 count（0/−3）按 instanceWeight 计 1，不得累加 0/负值")
+
+        // 全链路：聚合行权重进入完成度统计（level 1 < maxLevel 2 → 全 complete）。
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, 8, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, 0)
+        XCTAssertEqual(total.unknownCount, 0)
+    }
+
+    func testAggregateSaturatesHugeCounts() throws {
+        // 两条 count=Int.max 同键记录：聚合层必须在统计层饱和保护之前就饱和，
+        // 裸相加会在 debug 构建 SIGTRAP 崩溃整个测试进程（非断言失败）——
+        // 故测试与修复同 commit，运行验证以新实现无崩溃且饱和为准。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.items.count, 1)
+        XCTAssertEqual(home.items.first?.count, Int.max, "聚合层溢出必须饱和到 Int.max")
+
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, Int.max, "got known=\(total.knownCount)")
+        XCTAssertEqual(total.completedCount, 0)
+        XCTAssertEqual(total.unknownCount, 0)
+    }
+
     // MARK: - 完成度全链路（issue #66：投影聚合 × count 加权）
 
     /// 真实 bundled 目录（加农炮 buildings:1000008 maxLevel=21）全链路：

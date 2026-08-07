@@ -72,11 +72,24 @@ struct UpgradeDisplayRow: View {
 
     private var isMaxed: Bool { item.status == .maxed }
 
+    /// 阶段满级（Issue #67）：currentStageMaxLevel 存在且低于全局 maxLevel——
+    /// 当前大本营阶段已达目录上限，但目录全局仍有更高等级。仅用于 maxed
+    /// 分支内的文案区分；`hasVersionMismatch` 保持全局语义（升级中 nextLevel
+    /// 超过阶段上限属正常升级，不是目录过时，不参与版本不匹配判定）。
+    private var isStageMaxed: Bool {
+        guard let stage = item.currentStageMaxLevel, let max = item.maxLevel else { return false }
+        return stage < max
+    }
+
     // MARK: - 完整时长
 
     private var durationLabel: String {
         if item.status == .maxed {
             // 已满级：目录无下一级，显示上限（避免误导的「暂无目录数据」）。
+            // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分。
+            if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
+                return "当前阶段已满级（全局尚有 " + String(max - stage) + "级）"
+            }
             return "已达到目录最高等级 " + String(item.maxLevel ?? 0) + "级"
         }
         guard let duration = item.nextLevelDurationSeconds else { return "暂无目录数据" }
@@ -265,8 +278,10 @@ struct UpgradeDisplayRow: View {
                     StatusBadge(text: "待重新导入确认", tint: .orange)
                 }
                 if isMaxed {
-                    StatusBadge(text: "已满级", tint: .green)
-                        .help("当前目录最高等级")
+                    StatusBadge(text: isStageMaxed ? "当前阶段已满级" : "已满级", tint: .green)
+                        .help(isStageMaxed
+                            ? "全局尚有 " + String((item.maxLevel ?? 0) - (item.currentStageMaxLevel ?? 0)) + "级"
+                            : "当前目录最高等级")
                 }
             }
             .frame(width: 130, alignment: .trailing)
@@ -305,7 +320,7 @@ struct UpgradeDisplayRow: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
                 } else {
-                    Text(isMaxed ? "已满级" : "已记录")
+                    Text(isMaxed ? (isStageMaxed ? "当前阶段已满级" : "已满级") : "已记录")
                         .font(.caption)
                         .foregroundStyle(.green)
                 }

@@ -30,7 +30,14 @@ struct LevelDetailSheet: View {
     private var statusLabel: String {
         switch item.status {
         case .upgrading: "正在升级"
-        case .maxed: "已满级"
+        case .maxed:
+            // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分，
+            // 但都不当作当前可升级项。
+            if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
+                "当前阶段已满级（全局尚有 \(max - stage) 级）"
+            } else {
+                "已满级"
+            }
         case .complete: "已记录"
         case .unknown: "目录未收录"
         case .unavailable: "不参与升级追踪"
@@ -54,10 +61,21 @@ struct LevelDetailSheet: View {
         return "即时"
     }
 
-    private func unlockLabel(_ level: CatalogLevel) -> String {
+    /// 逐级解锁条件（Issue #67）：按 item.base 解析 village 语义，与
+    /// `CatalogLevel.requirements(base:)` 共用同一分支规则防漂移。
+    /// builder：requiredTownHallLevel → 建筑大师大本营、requiredLaboratoryLevel → 星空实验室；
+    /// home/其他：requiredTownHallLevel → 大本营、requiredLaboratoryLevel → 实验室、
+    /// requiredHeroTavernLevel（>0）→ 英雄殿堂。
+    private func unlockLabel(_ level: CatalogLevel, base: String?) -> String {
         var parts: [String] = []
-        if let th = level.requiredTownHallLevel { parts.append("所需大本营等级 " + String(th) + "级") }
-        if let lab = level.requiredLaboratoryLevel { parts.append("所需实验室等级 " + String(lab) + "级") }
+        if base == "builder" {
+            if let bh = level.requiredTownHallLevel { parts.append("所需建筑大师大本营等级 " + String(bh) + "级") }
+            if let sl = level.requiredLaboratoryLevel { parts.append("所需星空实验室等级 " + String(sl) + "级") }
+        } else {
+            if let th = level.requiredTownHallLevel { parts.append("所需大本营等级 " + String(th) + "级") }
+            if let lab = level.requiredLaboratoryLevel { parts.append("所需实验室等级 " + String(lab) + "级") }
+            if let ht = level.requiredHeroTavernLevel, ht > 0 { parts.append("所需英雄殿堂等级 " + String(ht) + "级") }
+        }
         return parts.isEmpty ? "无解锁条件" : parts.joined(separator: " · ")
     }
 
@@ -216,7 +234,7 @@ struct LevelDetailSheet: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(costLabel(level))
                     .font(.caption)
-                Text(unlockLabel(level))
+                Text(unlockLabel(level, base: catalogItem?.base))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

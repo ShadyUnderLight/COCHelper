@@ -319,6 +319,11 @@ struct UpgradeDisplayRow: View {
                     Text("目录未收录")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
+                } else if item.status == .unverified {
+                    // Issue #67 fail-closed：缺 prerequisite 无法验证阶段上限。
+                    Text("无法验证阶段上限")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
                 } else {
                     Text(isMaxed ? (isStageMaxed ? "当前阶段已满级" : "已满级") : "已记录")
                         .font(.caption)

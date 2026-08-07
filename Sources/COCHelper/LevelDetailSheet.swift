@@ -40,6 +40,7 @@ struct LevelDetailSheet: View {
             }
         case .complete: "已记录"
         case .unknown: "目录未收录"
+        case .unverified: "无法验证当前阶段上限"
         case .unavailable: "不参与升级追踪"
         case .available: "目录中可用"
         }
@@ -48,6 +49,11 @@ struct LevelDetailSheet: View {
     private var missingNote: String? {
         if item.isNested {
             return "该项目属于内部子项目，暂不提供逐级升级数据。"
+        }
+        if item.status == .unverified {
+            // Issue #67 fail-closed：缺 prerequisite 无法验证阶段上限，展示原因
+            //（不伪装成可升级/未满级）。
+            return item.missingReason ?? "快照缺少 prerequisite 解锁建筑记录，无法验证当前阶段上限。"
         }
         if catalogItem == nil {
             return item.missingReason ?? "该项目暂无逐级升级数据。"
@@ -189,8 +195,11 @@ struct LevelDetailSheet: View {
         // Issue #67：阶段满级（currentLevel >= currentStageMaxLevel）时下一级
         // 超出当前阶段上限，不标「下一级」——避免与「当前阶段已满级」文案矛盾
         //（审核 C important：验收「不把全局更高等级当作当前可升级项」）。
+        // unverified（缺 prerequisite 无法验证）同样不标「下一级」（fail-closed）。
         let effectiveNext: Int?
-        if let stage = item.currentStageMaxLevel, item.currentLevel ?? -1 >= stage {
+        if item.status == .unverified {
+            effectiveNext = nil
+        } else if let stage = item.currentStageMaxLevel, item.currentLevel ?? -1 >= stage {
             effectiveNext = nil
         } else {
             effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })

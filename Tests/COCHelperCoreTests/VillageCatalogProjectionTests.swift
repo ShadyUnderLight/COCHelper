@@ -322,13 +322,14 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
     func testUpgradingItemHasNextLevelAndStaticDuration() throws {
         let village = makeVillage(objectSections: [
-            "units": [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_007, level: 1, path: "lab")],  // 实验室
+                        "units": [
                 makeItem(section: "units", dataID: 4_000_000, level: 2,
                          timerSeconds: 3600, remainingSeconds: 500, path: "0"),
             ],
         ])
         let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        let item = try XCTUnwrap(home.items.first)
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 4_000_000 }, "野蛮人记录")
         XCTAssertEqual(item.status, .upgrading)
         XCTAssertEqual(item.nextLevel, 3)
         // 野蛮人 2→3 的目录时长 = levels[2].durationSeconds
@@ -337,10 +338,11 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
     func testNextLevelNilWhenNotUpgrading() throws {
         let village = makeVillage(objectSections: [
-            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_007, level: 1, path: "lab")],  // 实验室
+                        "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
         ])
         let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        let item = try XCTUnwrap(home.items.first)
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 4_000_000 }, "野蛮人记录")
         XCTAssertNil(item.nextLevel)
         XCTAssertEqual(item.status, .complete)
     }
@@ -441,17 +443,27 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     func testCatalogIsUsableFalseWhenVersionMismatches() throws {
-        // 旧版本目录仍能 join（maxLevel 可用），但不得用于可确认完成度。
+        // 旧版本目录仍能 join（maxLevel 可用于展示），但行状态不得判 maxed/complete
+        // ——Issue #67 fail-closed（P1-2）：版本不匹配时不得产生看似权威的满级状态。
         let staleCatalog = try makeCatalog(from: Self.syntheticCatalogJSON
             .replacingOccurrences(of: "\"gameVersion\": \"18.400.13\"", with: "\"gameVersion\": \"9.9.9\""))
         let village = makeVillage(objectSections: [
-            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0")],
         ])
         let projection = project(village: village, catalog: staleCatalog, base: .home)
         XCTAssertFalse(projection.catalogIsUsable)
         XCTAssertTrue(projection.diagnostics.contains { $0.severity == .warning })
-        // join 仍发生（旧 maxLevel 用于展示），但调用方必须用 catalogIsUsable 阻断完成度
+        // maxLevel 仍保留供 UI 展示（旧目录 join 数据）
         XCTAssertEqual(projection.items.first?.maxLevel, 2)
+        // 行状态降级：版本不匹配不得判 maxed（level 2 == 旧 maxLevel 2 也不能）
+        XCTAssertEqual(projection.items.first?.status, .unknown,
+                       "版本不匹配 → 行状态降级 unknown（fail-closed，P1-2）")
+        XCTAssertTrue(projection.items.first?.missingReason?.contains("版本不匹配") == true)
+        // 完成度：catalogIsUsable=false 时全部归 unknown（既有契约）
+        let total = VillageDetailProjection.totalCompletion(
+            from: projection.items, catalogIsUsable: false
+        )
+        XCTAssertEqual(total.knownCount, 0)
     }
 
     func testCatalogIsUsableFalseWhenCatalogUnavailable() throws {
@@ -572,15 +584,16 @@ final class VillageCatalogProjectionTests: XCTestCase {
         // 「需重新导入」信号（timerSeconds 非 nil、remainingSeconds == 0），
         // 不能与普通完成状态混淆。
         let village = makeVillage(objectSections: [
-            "units": [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_007, level: 1, path: "lab")],  // 实验室
+                        "units": [
                 makeItem(section: "units", dataID: 4_000_000, level: 2,
                          timerSeconds: 3600, remainingSeconds: 0, path: "0"),
                 makeItem(section: "units", dataID: 4_000_000, level: 2, path: "1"),
             ],
         ])
         let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        XCTAssertEqual(home.items.count, 1)
-        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(home.items.filter { $0.dataID == 4_000_000 }.count, 1, "实验室记录不计入野蛮人聚合")
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 4_000_000 }, "野蛮人聚合项")
         XCTAssertEqual(item.count, 2)
         XCTAssertNotNil(item.timerSeconds, "计时已结束信号不能因聚合丢失")
         XCTAssertEqual(item.remainingSeconds, 0)
@@ -595,15 +608,16 @@ final class VillageCatalogProjectionTests: XCTestCase {
         // timer 存在就把聚合项强制写成 remainingSeconds = 0，导致 UI 误报
         // 「待重新导入确认」。聚合后必须回到普通完成状态：无 timer、无 remaining。
         let village = makeVillage(objectSections: [
-            "units": [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_007, level: 1, path: "lab")],  // 实验室
+                        "units": [
                 makeItem(section: "units", dataID: 4_000_000, level: 2,
                          timerSeconds: 600, remainingSeconds: nil, path: "0"),
                 makeItem(section: "units", dataID: 4_000_000, level: 2, path: "1"),
             ],
         ])
         let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        XCTAssertEqual(home.items.count, 1)
-        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(home.items.filter { $0.dataID == 4_000_000 }.count, 1, "实验室记录不计入野蛮人聚合")
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 4_000_000 }, "野蛮人聚合项")
         XCTAssertEqual(item.count, 2)
         XCTAssertNil(item.timerSeconds, "malformed 记录不得伪造计时结束信号")
         XCTAssertNil(item.remainingSeconds, "malformed 记录不得强制写入 remainingSeconds = 0")
@@ -617,7 +631,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
         // 聚合项必须保留「计时已结束」信号——组内确实存在计时结束实例，
         // 不得因 malformed 记录参与聚合而把 needsReimport 一起吞掉。
         let village = makeVillage(objectSections: [
-            "units": [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_007, level: 1, path: "lab")],  // 实验室
+                        "units": [
                 makeItem(section: "units", dataID: 4_000_000, level: 2,
                          timerSeconds: 3600, remainingSeconds: 0, path: "0"),
                 makeItem(section: "units", dataID: 4_000_000, level: 2,
@@ -625,8 +640,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
             ],
         ])
         let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        XCTAssertEqual(home.items.count, 1)
-        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(home.items.filter { $0.dataID == 4_000_000 }.count, 1, "实验室记录不计入野蛮人聚合")
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 4_000_000 }, "野蛮人聚合项")
         XCTAssertEqual(item.count, 2)
         XCTAssertNotNil(item.timerSeconds,
                         "组内合法计时结束实例的信号不能因 malformed 记录而丢失")
@@ -669,7 +684,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
         // 聚合成普通完成项（无 timer、无 remaining、不报「待重新导入」）——
         // 不得混入升级组、不得伪造升级/计时结束状态。
         let village = makeVillage(objectSections: [
-            "units": [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_007, level: 1, path: "lab")],  // 实验室
+                        "units": [
                 makeItem(section: "units", dataID: 4_000_000, level: 2, count: 1,
                          timerSeconds: 3600, remainingSeconds: 300, path: "0"),
                 makeItem(section: "units", dataID: 4_000_000, level: 2,
@@ -677,8 +693,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
             ],
         ])
         let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        XCTAssertEqual(home.items.count, 2,
-                       "升级记录与 |idle 聚合项必须各自保留")
+        XCTAssertEqual(home.items.filter { $0.dataID == 4_000_000 }.count, 2,
+                       "升级记录与 |idle 聚合项必须各自保留（实验室记录不计入）")
         let upgrading = try XCTUnwrap(home.items.first(where: \.isUpgrading))
         XCTAssertEqual(upgrading.count, 1)
         XCTAssertTrue(upgrading.isUpgrading)
@@ -687,7 +703,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(upgrading.timerSeconds, 3600)
         XCTAssertFalse(upgrading.needsReimport)
 
-        let idle = try XCTUnwrap(home.items.first { !$0.isUpgrading })
+        let idle = try XCTUnwrap(home.items.first { !$0.isUpgrading && $0.dataID == 4_000_000 }, "malformed 聚合项")
         XCTAssertEqual(idle.status, .complete, "malformed 记录不得混入升级组")
         XCTAssertEqual(idle.count, 1)
         XCTAssertNil(idle.timerSeconds, "malformed 记录不得伪造计时结束信号")
@@ -823,14 +839,18 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
     func testAggregatedIdleItemsPreserveDuration() throws {
         // 非升级重复项聚合后保留代表记录的下一级时长。
+        // 用 stageCatalog：大本营 1000001@2（阶段上限 2）+ 加农炮 1000002@1 ×2
+        // → level 1 < stage 2 → complete，时长推断可用（synthetic 的 1000001
+        // 是加农炮且会被 PlayerUnlockLevels 误读为大本营，见 stageCatalogJSON 注释）。
         let village = makeVillage(objectSections: [
             "buildings": [
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0"),
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "1"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
             ],
         ])
-        let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        let item = try XCTUnwrap(home.items.first)
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
         XCTAssertTrue(item.id.hasPrefix("agg:"), "非升级重复项应聚合")
         XCTAssertEqual(item.count, 2)
         XCTAssertEqual(item.nextLevelDurationSeconds, 300, "聚合项应保留下一级时长")
@@ -873,7 +893,12 @@ final class VillageCatalogProjectionTests: XCTestCase {
                         expected = .upgrading
                     } else if !catalogHits.contains("\(item.section):\(item.dataID):\(base.rawValue)") {
                         expected = .unknown
-                    } else if item.currentLevel ?? -1 >= (item.maxLevel ?? .max) {
+                    } else if item.currentStageMaxLevel == nil {
+                        // pool 不含解锁建筑 → 有 requirement 的 item 阶段上限不可计算
+                        // → unverified（Issue #67 fail-closed，取代旧的「回退全局」语义）。
+                        // equipment 等无 requirement item 的 stageMax == maxLevel（可计算）。
+                        expected = .unverified
+                    } else if item.currentLevel ?? -1 >= (item.currentStageMaxLevel ?? .max) {
                         expected = .maxed
                     } else {
                         expected = .complete
@@ -1020,7 +1045,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
             makeItem(section: "buildings", dataID: 1_000_008, level: maxedLevel, count: 1, path: "c\(i)")
         }
         let cannon20 = makeItem(section: "buildings", dataID: 1_000_008, level: lowerLevel, count: 1, path: "c6")
-        let village = makeVillage(objectSections: ["buildings": cannon21 + [cannon20]])
+        let village = makeVillage(objectSections: ["buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+            ] + cannon21 + [cannon20]])
         let home = project(village: village, catalog: catalog, base: .home)
 
         XCTAssertTrue(home.catalogIsUsable)
@@ -1035,7 +1062,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(lowerRow.status, .complete)
 
         // 加权统计：实例口径 7 = 6 + 1（行数口径只有 2，必错）。
-        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        // 统计仅针对被测加农炮（TH 记录本身满级会 +1，须过滤）。
+        let targetItems = home.items.filter { $0.dataID == 1_000_008 }
+        let total = VillageDetailProjection.totalCompletion(from: targetItems)
         XCTAssertEqual(total.knownCount, 7, "got known=\(total.knownCount)")
         XCTAssertEqual(total.completedCount, 6, "got completed=\(total.completedCount)")
         XCTAssertEqual(total.unknownCount, 0)
@@ -1045,7 +1074,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         // 全链路防御组（审核 B）：加农炮 1000008 投影后 displayCategory == .defense
         //（实测验证：#37 白名单 1000008 ∈ defenseDataIDs，section buildings + base home），
         // 组统计与总统计同口径 (7, 6, 0)，且 known + unknown == 该组 Σweight（守恒）。
-        let stats = VillageDetailProjection.completionStats(from: home.items)
+        let stats = VillageDetailProjection.completionStats(from: targetItems)
         let defense = try XCTUnwrap(
             stats.first { $0.displayCategory == .defense },
             "加农炮 1000008 投影后应归防御组；实际组: \(stats.map { $0.id })"
@@ -1086,7 +1115,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let walls18 = (0..<25).map { i in
             makeItem(section: "buildings", dataID: 1_000_010, level: lowerLevel, count: 1, path: "l\(i)")
         }
-        let village = makeVillage(objectSections: ["buildings": walls19 + walls18])
+        let village = makeVillage(objectSections: ["buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+            ] + walls19 + walls18])
         let home = project(village: village, catalog: catalog, base: .home)
 
         XCTAssertTrue(home.catalogIsUsable)
@@ -1099,7 +1130,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(lowerRow.count, 25)
         XCTAssertEqual(lowerRow.status, .complete)
 
-        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        // 统计仅针对被测城墙（TH 记录本身满级会 +1，须过滤）。
+        let targetItems = home.items.filter { $0.dataID == 1_000_010 }
+        let total = VillageDetailProjection.totalCompletion(from: targetItems)
         XCTAssertEqual(total.knownCount, 325, "got known=\(total.knownCount)")
         XCTAssertEqual(total.completedCount, 300, "got completed=\(total.completedCount)")
         XCTAssertEqual(total.unknownCount, 0)
@@ -1108,7 +1141,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         // 全链路防御组（审核 B）：城墙 1000010 投影后 displayCategory == .defense
         //（实测验证：#37 白名单 1000010 ∈ defenseDataIDs），组统计 == (325, 300, 0)，
         // 且 known + unknown == 该组 Σweight（守恒）。
-        let stats = VillageDetailProjection.completionStats(from: home.items)
+        let stats = VillageDetailProjection.completionStats(from: targetItems)
         let defense = try XCTUnwrap(
             stats.first { $0.displayCategory == .defense },
             "城墙 1000010 投影后应归防御组；实际组: \(stats.map { $0.id })"
@@ -2194,27 +2227,33 @@ final class VillageCatalogProjectionTests: XCTestCase {
                           "阶段满级但全局未满必须可区分")
     }
 
-    /// 快照无大本营 → 阶段上限不可计算（nil）→ 满级判定回退全局 maxLevel：
-    /// level 2 == maxLevel 2 → 仍 .maxed（严格上限判定不误报）。
-    func testMissingPrerequisiteFallsBackToGlobalMaxed() throws {
+    /// 快照无大本营 → 阶段上限不可计算 → fail-closed：状态 unverified，
+    /// 不判 maxed/complete（Issue #67：缺失 prerequisite 不得产生看似权威的满级
+    /// 或未满级状态；P1-1 修复，取代旧的「回退全局 maxed」行为）。
+    func testMissingPrerequisiteBecomesUnverified() throws {
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_002, level: 2, path: "0")],
         ])
         let home = project(village: village, catalog: stageCatalog, base: .home)
         let cannon = try XCTUnwrap(home.items.first)
         XCTAssertNil(cannon.currentStageMaxLevel, "快照缺大本营记录 → 阶段上限不可计算")
-        XCTAssertEqual(cannon.status, .maxed, "回退全局：level 2 == maxLevel 2 → maxed")
+        XCTAssertEqual(cannon.status, .unverified, "缺 prerequisite → unverified，不判 maxed")
+        XCTAssertEqual(cannon.nextLevelDurationSeconds, nil, "unverified 不推断下一级时长")
+        // 完成度：unverified 不计入 known（全进 unknown 侧）。
+        let total = VillageDetailProjection.totalCompletion(from: home.items)
+        XCTAssertEqual(total.knownCount, 0, "unverified 不得计入完成度 known")
+        XCTAssertEqual(total.unknownCount, 1)
     }
 
-    /// 快照无大本营 + level 1 < maxLevel 2 → .complete（回退全局不得误报阶段满级）。
-    func testMissingPrerequisiteFallbackDoesNotOverclaim() throws {
+    /// 快照无大本营 + level 1 < maxLevel 2 → 同样 unverified（不伪装成 complete）。
+    func testMissingPrerequisiteDoesNotOverclaimComplete() throws {
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "0")],
         ])
         let home = project(village: village, catalog: stageCatalog, base: .home)
         let cannon = try XCTUnwrap(home.items.first)
         XCTAssertNil(cannon.currentStageMaxLevel)
-        XCTAssertEqual(cannon.status, .complete, "回退全局：level 1 < maxLevel 2 → complete")
+        XCTAssertEqual(cannon.status, .unverified, "缺 prerequisite → unverified，不判 complete")
     }
 
     /// 实验室门槛：Lab=1 满足野蛮人全部等级（lvl2/3 需 Lab1）→ stage == 3 == 全局。
@@ -2229,15 +2268,15 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(barbarian.status, .maxed)
     }
 
-    /// 快照无实验室 → 野蛮人阶段上限不可计算（nil）；level 3 == maxLevel 3 → 回退全局仍 maxed。
-    func testMissingLaboratoryMakesStageUncomputable() throws {
+    /// 快照无实验室 → 野蛮人阶段上限不可计算 → unverified（fail-closed，不判 maxed）。
+    func testMissingLaboratoryBecomesUnverified() throws {
         let village = makeVillage(objectSections: [
             "units": [makeItem(section: "units", dataID: 4_000_000, level: 3, path: "0")],
         ])
         let home = project(village: village, catalog: stageCatalog, base: .home)
         let barbarian = try XCTUnwrap(home.items.first)
         XCTAssertNil(barbarian.currentStageMaxLevel, "快照缺实验室 → 阶段上限不可计算")
-        XCTAssertEqual(barbarian.status, .maxed, "回退全局：level 3 == maxLevel 3 → maxed")
+        XCTAssertEqual(barbarian.status, .unverified, "缺 prerequisite → unverified，不判 maxed")
     }
 
     /// 无 requirement 的 item（建筑工人小屋）→ 阶段上限恒等于全局上限（始终可计算）。
@@ -2278,15 +2317,16 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertLessThan(king.currentStageMaxLevel ?? .max, king.maxLevel ?? .min)
     }
 
-    /// 快照无英雄殿堂 → 英雄阶段上限不可计算 → 回退全局（level 10 == maxLevel 10 → maxed）。
-    func testMissingHeroHallMakesStageUncomputable() throws {
+    /// 快照无英雄殿堂 → 英雄阶段上限不可计算 → unverified（fail-closed，
+    /// 不得把英雄判成全局满级或未满级，Issue #67 验收「缺失不伪推」）。
+    func testMissingHeroHallBecomesUnverified() throws {
         let village = makeVillage(objectSections: [
             "heroes": [makeItem(section: "heroes", dataID: 28_000_000, level: 10, path: "0")],
         ])
         let home = project(village: village, catalog: stageCatalog, base: .home)
         let king = try XCTUnwrap(home.items.first)
         XCTAssertNil(king.currentStageMaxLevel)
-        XCTAssertEqual(king.status, .maxed)
+        XCTAssertEqual(king.status, .unverified)
     }
 
     /// 建筑大师基地：BH=8 满足双管加农炮全部门槛（lvl4 需 BH6）→ stage == 4 == 全局。
@@ -2319,7 +2359,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     /// 跨基地隔离：主村大本营 12 级不能替代建筑大师大本营（builderHall 解锁缺失
-    /// → 双管加农炮阶段上限不可计算 → 回退全局，level 2 < 4 → complete）。
+    /// → 双管加农炮阶段上限不可计算 → unverified，fail-closed）。
     func testHomeTownHallDoesNotSatisfyBuilderHall() throws {
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "0")],
@@ -2328,7 +2368,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let builder = project(village: village, catalog: stageCatalog, base: .builder)
         let cannon = try XCTUnwrap(builder.items.first { $0.dataID == 1_000_042 })
         XCTAssertNil(cannon.currentStageMaxLevel)
-        XCTAssertEqual(cannon.status, .complete, "回退全局：level 2 < maxLevel 4 → complete")
+        XCTAssertEqual(cannon.status, .unverified, "缺 BH 记录 → unverified，主村大本营不替代")
     }
 
     /// 聚合传播：同键非升级记录聚合后 currentStageMaxLevel 保留 first 值（Task 4 会
@@ -2369,10 +2409,12 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let village = makeVillage(objectSections: [
             "buildings2": [
                 makeItem(section: "buildings2", dataID: 1_000_046, level: 1, path: "0"),  // 星空实验室
-                makeItem(section: "units2", dataID: 4_000_001, level: 3, path: "1"),   // 重拳野蛮人
+            ],
+            "units2": [
+                makeItem(section: "units2", dataID: 4_000_001, level: 3, path: "0"),   // 重拳野蛮人
             ],
         ])
-        let builder = project(village: village, catalog: catalog, base: .builder)
+        let builder = project(village: village, catalog: catalog, expectedGameVersion: nil, base: .builder)
         let unit = try XCTUnwrap(builder.items.first { $0.dataID == 4_000_001 })
         XCTAssertEqual(unit.currentStageMaxLevel, 3, "StarLab=1 满足 lvl2/lvl3 门槛 → 阶段上限 3")
         XCTAssertEqual(unit.status, .maxed)
@@ -2393,14 +2435,14 @@ final class VillageCatalogProjectionTests: XCTestCase {
         """
         let catalog = try makeCatalog(from: catalogJSON)
         let village = makeVillage(objectSections: [
-            "buildings2": [
+            "units2": [
                 makeItem(section: "units2", dataID: 4_000_001, level: 2, path: "0"),
             ],
         ])
-        let builder = project(village: village, catalog: catalog, base: .builder)
+        let builder = project(village: village, catalog: catalog, expectedGameVersion: nil, base: .builder)
         let unit = try XCTUnwrap(builder.items.first { $0.dataID == 4_000_001 })
         XCTAssertNil(unit.currentStageMaxLevel)
-        XCTAssertEqual(unit.status, .complete, "回退全局：level 2 < maxLevel 3 → complete")
+        XCTAssertEqual(unit.status, .unverified, "缺 StarLab 记录 → unverified，不判 complete")
     }
 
     /// StarLab 反例 2：星空实验室等级不足（lvl3 需 StarLab 2）→ 阶段上限 2，单位 3 级 → 阶段满级。
@@ -2420,10 +2462,12 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let village = makeVillage(objectSections: [
             "buildings2": [
                 makeItem(section: "buildings2", dataID: 1_000_046, level: 1, path: "0"),  // StarLab=1
-                makeItem(section: "units2", dataID: 4_000_001, level: 3, path: "1"),
+            ],
+            "units2": [
+                makeItem(section: "units2", dataID: 4_000_001, level: 3, path: "0"),
             ],
         ])
-        let builder = project(village: village, catalog: catalog, base: .builder)
+        let builder = project(village: village, catalog: catalog, expectedGameVersion: nil, base: .builder)
         let unit = try XCTUnwrap(builder.items.first { $0.dataID == 4_000_001 })
         XCTAssertEqual(unit.currentStageMaxLevel, 2, "lvl3 需 StarLab2 不满足 → 阶段上限 2")
         XCTAssertEqual(unit.status, .maxed, "level 3 >= 阶段上限 2 → 阶段满级")

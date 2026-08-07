@@ -134,11 +134,14 @@ public enum BuildingGroupProjection {
     /// `effectiveMax` = 阶段上限（issue #67）优先，不可计算时回退全局 maxLevel——
     /// 与行级 `.maxed` 判定同口径，保证组卡与列表行不矛盾（审核 C important）。
     /// currentLevel 为 nil、目录未命中或 base 不匹配（maxLevel == nil）→ 空数组。
+    /// unverified（缺 prerequisite 无法验证阶段上限，Issue #67 fail-closed）
+    /// → 空数组：不得把无法验证的全局等级展示为可升级阶梯。
     private static func steps(
         for item: VillageItemState,
         catalog: GameCatalog?
     ) -> [BuildingUpgradeStep] {
-        guard let maxLevel = item.maxLevel,
+        guard item.status != .unverified,
+              let maxLevel = item.maxLevel,
               let catalogItem = catalog?.item(section: item.section, dataID: item.dataID)
         else { return [] }
         let effectiveMax = item.currentStageMaxLevel ?? maxLevel
@@ -179,7 +182,11 @@ public enum BuildingGroupProjection {
             }
             // 仅目录命中且 currentLevel 存在的实例计入剩余等级数（max(0, …) 防御目录过时）。
             // 上限 = 阶段上限优先（issue #67，与阶梯/行级满级同口径）；不可计算回退全局。
-            if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
+            // unverified（缺 prerequisite 无法验证）→ 不计剩余等级（fail-closed，
+            // 不得把无法验证的全局等级数伪装成可升级剩余）。
+            if instance.item.status == .unverified {
+                hasPartialMissing = true
+            } else if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
                 let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
                 let levelDifference = SaturatingArithmetic.subtract(effectiveMax, currentLevel)
                 saturated = saturated || levelDifference.overflowed
@@ -196,8 +203,8 @@ public enum BuildingGroupProjection {
             // 无法生成阶梯的实例降级：目录未命中（或 base 不匹配，maxLevel == nil）；
             // 或目录命中但 currentLevel 缺失 / 未满级却 steps 为空。已满级
             // （currentLevel >= effectiveMax，阶段或全局，issue #67）steps 为空是
-            // 正常状态，不降级。
-            if let maxLevel = instance.item.maxLevel {
+            // 正常状态，不降级。unverified 在上面已置位 partialMissing（fail-closed）。
+            if let maxLevel = instance.item.maxLevel, instance.item.status != .unverified {
                 let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
                 let maxed = instance.item.currentLevel.map { $0 >= effectiveMax } ?? false
                 if instance.item.currentLevel == nil || (instance.steps.isEmpty && !maxed) {

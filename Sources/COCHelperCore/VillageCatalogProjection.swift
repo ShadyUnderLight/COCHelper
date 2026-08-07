@@ -13,6 +13,11 @@ public enum VillageItemStatus: String, Codable, Hashable, Sendable {
     case unavailable
     /// 目录存在但快照无记录。投影不产出该项；枚举留给 UI 层（#12）遍历目录时使用。
     case available
+    /// Issue #67 fail-closed：目录有 prerequisite requirement（TH/BH/Lab/StarLab/
+    /// HeroHall）但快照缺少对应解锁建筑记录，无法验证当前阶段上限。
+    /// 不判 maxed/complete、不推断下一级、不计入完成度 known——「无法验证」
+    /// 不得伪装成「未满级」或「满级」（#70 契约）。
+    case unverified
 }
 
 /// 单个物品的投影状态。
@@ -278,7 +283,10 @@ public struct VillageCatalogProjection: Sendable {
         // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
         let unlocks = PlayerUnlockLevels(snapshot: village.accountSnapshot)
         let states = village.accountSnapshot.map { snapshot in
-            aggregate(records(from: snapshot, catalog: catalog, base: base, now: now, unlocks: unlocks))
+            aggregate(records(
+                from: snapshot, catalog: catalog, base: base, now: now,
+                unlocks: unlocks, catalogIsUsable: catalogIsUsable
+            ))
         } ?? []
 
         return VillageCatalogProjection(
@@ -299,7 +307,8 @@ public struct VillageCatalogProjection: Sendable {
         catalog: GameCatalog?,
         base: TrackerBase,
         now: Date,
-        unlocks: PlayerUnlockLevels
+        unlocks: PlayerUnlockLevels,
+        catalogIsUsable: Bool = true
     ) -> [VillageItemState] {
         // Issue #37：第一遍扫描构建「根父 id → dataID」映射。快照 id 是数组索引路径
         //（如 buildings:6.types.0），嵌套项归属精制台必须回查根父的 dataID。
@@ -309,7 +318,8 @@ public struct VillageCatalogProjection: Sendable {
         }
         return snapshot.allObjectItems.compactMap { item in
             map(item, in: snapshot, catalog: catalog, base: base, now: now,
-                rootParentDataIDs: rootParentDataIDs, unlocks: unlocks)
+                rootParentDataIDs: rootParentDataIDs, unlocks: unlocks,
+                catalogIsUsable: catalogIsUsable)
         }
     }
 
@@ -324,7 +334,8 @@ public struct VillageCatalogProjection: Sendable {
         base: TrackerBase,
         now: Date,
         rootParentDataIDs: [String: Int64],
-        unlocks: PlayerUnlockLevels
+        unlocks: PlayerUnlockLevels,
+        catalogIsUsable: Bool
     ) -> VillageItemState? {
         let isBuilderSection = item.section.hasSuffix("2")
         guard isBuilderSection == (base == .builder) else { return nil }
@@ -396,32 +407,38 @@ public struct VillageCatalogProjection: Sendable {
         } else {
             nextLevel = nil
         }
+
+        // Issue #67：阶段上限。仅 baseMatches 且目录命中时计算。
+        // - 无 requirement（equipment/capital 等）→ 返回 maxLevel（可计算）；
+        // - 有 requirement 但快照缺对应解锁建筑 → nil（不可计算，见 status 分支）。
+        // 必须在 nextLevelDuration 之前计算：unverified（nil）时禁止推断下一级时长。
+        let stageMax: Int?
+        if baseMatches, let catalogItem, catalogIsUsable {
+            stageMax = currentStageMaxLevel(for: catalogItem, unlocks: unlocks)
+        } else {
+            stageMax = nil
+        }
+
+        // Issue #67 fail-closed：目录有 requirement 但快照缺 prerequisite（stageMax == nil）
+        // → 非升级记录不推断下一级时长（无法验证，不得伪装成「未满级可升级」）。
+        // 升级中记录（isUpgrading）不受限：目标等级已显式推断（#14 契约），时长是
+        // 进行中升级的事实，与阶段上限无关。目录版本不匹配（catalogIsUsable == false）
+        // → 一律不推断（旧目录时长不可信）。
         let nextLevelDuration: Int64?
-        if baseMatches, let catalogItem {
+        if baseMatches, let catalogItem, catalogIsUsable, (stageMax != nil || isUpgrading) {
             if let nextLevel {
                 // 升级中：目标等级 = 当前 + 1（显式推断）。
                 nextLevelDuration = catalog?.durationToUpgradeLevel(nextLevel: nextLevel, for: catalogItem)
-            } else if let level = item.level, level < catalogItem.maxLevel {
+            } else if let level = item.level, level < (stageMax ?? catalogItem.maxLevel) {
                 // 非升级且未满级（issue #16 列表规则：普通建筑显示下一等级时间）：
                 // 下一级 = 当前 + 1 的目录时长；nextLevel 字段保持 nil（#14：目标等级
-                // 只允许升级中显式推断）。已满级（level >= maxLevel）不推。
+                // 只允许升级中显式推断）。已满级（level >= effectiveMax）不推。
                 nextLevelDuration = catalog?.durationToUpgradeLevel(nextLevel: level + 1, for: catalogItem)
             } else {
                 nextLevelDuration = nil
             }
         } else {
             nextLevelDuration = nil
-        }
-
-        // Issue #67：阶段上限。仅 baseMatches 且目录命中时计算；nil = 不可计算
-        //（快照缺 prerequisite 建筑记录）→ 满级判定回退全局 maxLevel（fail-safe，
-        // 严格上限判定不误报）。计算与 status 独立：升级中/unknown 等其他状态路径
-        // 也计算该信息字段（供 UI 展示），仅当目录未命中或 base 不匹配时为 nil。
-        let stageMax: Int?
-        if baseMatches, let catalogItem {
-            stageMax = currentStageMaxLevel(for: catalogItem, unlocks: unlocks)
-        } else {
-            stageMax = nil
         }
 
         let status: VillageItemStatus
@@ -436,17 +453,33 @@ public struct VillageCatalogProjection: Sendable {
         } else if isNested {
             status = .unknown
             missingReason = "嵌套模块/类型不参与静态目录 join（\(item.section):\(item.dataID)）。"
+        } else if baseMatches, catalogItem != nil, !catalogIsUsable {
+            // Issue #67 fail-closed：目录版本不匹配（或不可用）时，行状态不得消费
+            // 旧目录判 maxed/complete——「看似权威的满级状态」禁止（#70 契约）。
+            // maxLevel 字段仍保留供 UI 展示，但 status 不产生满级判定。
+            status = .unknown
+            missingReason = catalog == nil
+                ? "静态目录不可用。"
+                : "目录版本不匹配（\(catalog?.gameVersion ?? "?") vs 期望版本），满级状态不可信。"
         } else if let catalogItem, baseMatches {
-            // 阶段上限优先；不可计算回退全局 maxLevel。阶段满级（stage < maxLevel）
-            // 与全局满级同报 .maxed——完成度口径：阶段满级即完成，UI 用
-            // currentStageMaxLevel 区分文案（Issue #67）。
-            let effectiveMax = stageMax ?? catalogItem.maxLevel
-            if item.level ?? -1 >= effectiveMax {
-                status = .maxed
+            if stageMax == nil {
+                // Issue #67 fail-closed：有 prerequisite requirement 但快照缺对应
+                // 解锁建筑记录（如英雄殿堂/实验室）→ 无法验证当前阶段上限。
+                // 不判 maxed/complete、不计入完成度 known、不推断下一级。
+                status = .unverified
+                missingReason = "快照缺少 prerequisite 解锁建筑记录（大本营/实验室/英雄殿堂等），无法验证当前阶段上限。"
             } else {
-                status = .complete
+                // 阶段上限优先（可计算时恒非 nil：无 requirement 时 = maxLevel）。
+                // 阶段满级（stage < maxLevel）与全局满级同报 .maxed——完成度口径：
+                // 阶段满级即完成，UI 用 currentStageMaxLevel 区分文案（Issue #67）。
+                let effectiveMax = stageMax ?? catalogItem.maxLevel
+                if item.level ?? -1 >= effectiveMax {
+                    status = .maxed
+                } else {
+                    status = .complete
+                }
+                missingReason = nil
             }
-            missingReason = nil
         } else if catalogItem != nil {
             status = .unknown
             missingReason = "目录物品与投影基地不匹配（\(item.section):\(item.dataID)）。"

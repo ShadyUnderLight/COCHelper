@@ -333,6 +333,43 @@ final class VillageDetailProjectionTests: XCTestCase {
         XCTAssertTrue(stat(traps) == (3, 3, 2), "got \(stat(traps))")
     }
 
+    func testCatalogUnusableWeightsPerGroup() throws {
+        // 目录不可用 + 多分类 + count>1：各分类 known/completed 全 0，
+        // unknown == 该组 Σweight（未知按实例权重归组，不因聚合丢失）。
+        let items = [
+            item(id: "b-maxed", category: .buildings, status: .maxed, count: 6),
+            item(id: "b-lower", category: .buildings, status: .complete, count: 1),
+            item(id: "t-maxed", category: .traps, status: .maxed, count: 3),
+            item(id: "t-unknown", category: .traps, status: .unknown, level: nil, maxLevel: nil, count: 2),
+        ]
+        let stats = VillageDetailProjection.completionStats(from: items, catalogIsUsable: false)
+        XCTAssertEqual(stats.count, 2)
+        for s in stats {
+            XCTAssertEqual(s.knownCount, 0)
+            XCTAssertEqual(s.completedCount, 0)
+        }
+        let buildings = try XCTUnwrap(stats.first { $0.category == .buildings })
+        XCTAssertEqual(buildings.unknownCount, 7, "buildings 组 Σweight = 6+1")
+        let traps = try XCTUnwrap(stats.first { $0.category == .traps })
+        XCTAssertEqual(traps.unknownCount, 5, "traps 组 Σweight = 3+2")
+    }
+
+    func testTotalCompletionEmptyArray() {
+        let empty = VillageDetailProjection.totalCompletion(from: [])
+        XCTAssertTrue(stat(empty) == (0, 0, 0), "got \(stat(empty))")
+        XCTAssertNil(empty.completionRatio)
+    }
+
+    func testAllUnknownWeightsIntoUnknown() {
+        // 全 unknown + count>1：1 条 unknown count=5 + 1 条 unknown count=nil → (0, 0, 6)。
+        let items = [
+            item(id: "u5", status: .unknown, level: nil, maxLevel: nil, count: 5),
+            item(id: "unil", status: .unknown, level: nil, maxLevel: nil, count: nil),
+        ]
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (0, 0, 6), "got \(stat(total))")
+    }
+
     // MARK: - isFullyMaxed（issue #53：全部可确认且已满级）
 
     func testIsFullyMaxedTrueWhenAllMaxed() {

@@ -38,9 +38,10 @@ public struct VillageParentedRow: Identifiable, Hashable, Sendable {
 public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
     public let category: TrackerCategory?
     public let displayCategory: TrackerDisplayCategory?
-    /// 实例权重语义（issue #66）：按 `count` 加权（`count ?? 1`）后的实例数，
-    /// 非聚合行数。known = 计入分母的实例数；completed = 其中已满级的实例数；
-    /// unknown = 总实例数 − known（守恒：未知实例不因聚合而消失）。
+    /// 实例权重语义（issue #66）：按 `count` 加权后的实例数，非聚合行数。
+    /// 权重 = `count > 0 ? count : 1`（nil 或 ≤0 均按 1 计，floor，不产生负权重），
+    /// 与 `weight(_:)` 实现逐字一致。known = 计入分母的实例数；completed = 其中
+    /// 已满级的实例数；unknown = 总实例数 − known（守恒：未知实例不因聚合而消失）。
     public let knownCount: Int
     public let completedCount: Int
     public let unknownCount: Int
@@ -155,10 +156,10 @@ public enum VillageDetailProjection {
     ) -> [VillageCategoryCompletion] {
         groups(from: items).map { group in
             let known = catalogIsUsable
-                ? group.items.filter { isKnown($0) }.reduce(0) { $0 + Self.weight($1) }
+                ? Self.instanceCount(of: group.items.filter { isKnown($0) })
                 : 0
             let completed = catalogIsUsable
-                ? group.items.filter { $0.status == .maxed && isKnown($0) }.reduce(0) { $0 + Self.weight($1) }
+                ? Self.instanceCount(of: group.items.filter { $0.status == .maxed && isKnown($0) })
                 : 0
             return VillageCategoryCompletion(
                 category: group.category,
@@ -177,10 +178,10 @@ public enum VillageDetailProjection {
         catalogIsUsable: Bool = true
     ) -> VillageCategoryCompletion {
         let known = catalogIsUsable
-            ? items.filter { isKnown($0) }.reduce(0) { $0 + Self.weight($1) }
+            ? Self.instanceCount(of: items.filter { isKnown($0) })
             : 0
         let completed = catalogIsUsable
-            ? items.filter { $0.status == .maxed && isKnown($0) }.reduce(0) { $0 + Self.weight($1) }
+            ? Self.instanceCount(of: items.filter { $0.status == .maxed && isKnown($0) })
             : 0
         return VillageCategoryCompletion(
             category: nil,

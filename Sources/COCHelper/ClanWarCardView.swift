@@ -256,7 +256,7 @@ struct ClanWarCardView: View {
                 }
                 if let stars {
                     Text("⭐ \(stars) 星" + (attacks.map { " · \($0) 次攻击" } ?? "")
-                        + (destruction.map { " · 摧毁率 \($0)%" } ?? ""))
+                        + (destruction.flatMap(ClanCombatSummary.displayDestructionPercent).map { " · 摧毁率 \(Self.percent($0))%" } ?? ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -288,7 +288,28 @@ struct ClanWarCardView: View {
         }
     }
 
+    @ViewBuilder
     private func memberRow(_ member: ClanWarMember) -> some View {
+        if let attacks = member.attacks, !attacks.isEmpty {
+            let summary = ClanCombatSummary.warMember(attacks: attacks)
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(summary.lines.enumerated()), id: \.offset) { _, line in
+                        attackLineRow(line)
+                    }
+                }
+                .padding(.vertical, 2)
+            } label: {
+                memberLabel(member, summaryText: "\(summary.attackCount)次进攻 · ⭐\(summary.totalStars)")
+            }
+            .font(.caption)
+        } else {
+            memberLabel(member, summaryText: member.attacks != nil ? "未攻击" : "—")
+        }
+    }
+
+    /// 成员行标签（旧布局，仅汇总文案参数化）。
+    private func memberLabel(_ member: ClanWarMember, summaryText: String) -> some View {
         HStack(spacing: 8) {
             if let position = member.mapPosition {
                 Text("\(position)")
@@ -305,21 +326,31 @@ struct ClanWarCardView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Text(attackSummary(member))
+            Text(summaryText)
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 1)
     }
 
-    /// 成员攻击表现摘要：N攻 · ⭐总星 · 摧毁总%（attacks 数组聚合；未攻击显示提示）。
-    private func attackSummary(_ member: ClanWarMember) -> String {
-        guard let attacks = member.attacks, !attacks.isEmpty else {
-            return member.attacks != nil ? "未攻击" : "—"
+    /// 逐次攻击明细行：`1. ⭐⭐⭐ 摧毁率 100%`；缺失摧毁率显示"摧毁率未知"。
+    private func attackLineRow(_ line: ClanWarAttackLine) -> some View {
+        HStack(spacing: 8) {
+            Text(line.order.map { "\($0)." } ?? "?")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.tertiary)
+                .frame(width: 22, alignment: .trailing)
+            // 星数钳制到 [0,3]：官方契约虽为 0...3，但 schema 外输入不可信，
+            // String(repeating:count:) 对负 count 会触发 fatal error "Negative count not allowed"
+            Text(line.stars.map { String(repeating: "⭐", count: min(max($0, 0), 3)) } ?? "—")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(ClanCombatSummary.displayDestructionPercent(line.destructionPercentage).map { "摧毁率 \(Self.percent($0))%" } ?? "摧毁率未知")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
         }
-        let stars = attacks.reduce(0) { $0 + ($1.stars ?? 0) }
-        let destruction = attacks.reduce(0.0) { $0 + ($1.destructionPercentage ?? 0) }
-        return "\(attacks.count)次进攻 · ⭐\(stars) · 摧毁率 \(Self.percent(destruction))%"
+        .padding(.vertical, 1)
     }
 
     private static func percent(_ value: Double) -> String {

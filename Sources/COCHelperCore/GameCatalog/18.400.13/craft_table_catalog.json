@@ -1,0 +1,3849 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "18.400.13",
+  "buildTag": "18_400_7",
+  "locale": "zh-CN",
+  "source": "Clash of Clans APK seasonal defense logic tables",
+  "defenses": [
+    {
+      "dataID": 103000000,
+      "name": "钩索塔",
+      "sourceName": "HookTower",
+      "specialAbility": "SeasonalDefenseHookTower",
+      "moduleIDs": [
+        102000000,
+        102000001,
+        102000002
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000001,
+      "name": "太阳光束",
+      "sourceName": "SunBeam",
+      "specialAbility": "SeasonalDefenseSunBeam",
+      "moduleIDs": [
+        102000015,
+        102000016,
+        102000017
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000002,
+      "name": "掷木器",
+      "sourceName": "LogLobber",
+      "specialAbility": "SeasonalDefenseLogLobber",
+      "moduleIDs": [
+        102000006,
+        102000007,
+        102000008
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000003,
+      "name": "旋转喷火器",
+      "sourceName": "FlameSpinner",
+      "specialAbility": "SeasonalDefenseFlameSpinner",
+      "moduleIDs": [
+        102000009,
+        102000010,
+        102000011
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000004,
+      "name": "碎岩迫击炮",
+      "sourceName": "CrusherMortar",
+      "specialAbility": "SeasonalDefenseCrusherMortar",
+      "moduleIDs": [
+        102000012,
+        102000013,
+        102000014
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000005,
+      "name": "懒惰激光",
+      "sourceName": "LazyLaser",
+      "specialAbility": "SeasonalDefenseLazyLaser",
+      "moduleIDs": [
+        102000003,
+        102000004,
+        102000005
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000006,
+      "name": "减速塔",
+      "sourceName": "SlowdownTower",
+      "specialAbility": "SeasonalDefenseSlowdownTower",
+      "moduleIDs": [
+        102000018,
+        102000019,
+        102000020
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000007,
+      "name": "英雄助推器",
+      "sourceName": "HeroBooster",
+      "specialAbility": "SeasonalDefenseHeroBooster",
+      "moduleIDs": [
+        102000021,
+        102000022,
+        102000023
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000008,
+      "name": "熔岩火炮",
+      "sourceName": "SDRoaster",
+      "specialAbility": "SeasonalDefenseRoaster",
+      "moduleIDs": [
+        102000024,
+        102000025,
+        102000026
+      ],
+      "totalModuleLevelThresholds": [
+        3,
+        6,
+        9,
+        12,
+        15,
+        18,
+        21,
+        24,
+        27
+      ]
+    },
+    {
+      "dataID": 103000009,
+      "name": "防空炸弹",
+      "sourceName": "SDAirBombs",
+      "specialAbility": "SeasonalDefenseAirBombs",
+      "moduleIDs": [
+        102000027,
+        102000028,
+        102000029
+      ],
+      "totalModuleLevelThresholds": [
+        3,
+        6,
+        9,
+        12,
+        15,
+        18,
+        21,
+        24,
+        27
+      ]
+    },
+    {
+      "dataID": 103000010,
+      "name": "熔岩发射器",
+      "sourceName": "SDLavaLauncher",
+      "specialAbility": "SeasonalDefenseLavaLauncher",
+      "moduleIDs": [
+        102000030,
+        102000031,
+        102000032
+      ],
+      "totalModuleLevelThresholds": [
+        3,
+        6,
+        9,
+        12,
+        15,
+        18,
+        21,
+        24,
+        27
+      ]
+    },
+    {
+      "dataID": 103000011,
+      "name": "火热蜡烛",
+      "sourceName": "Inferno Candle",
+      "specialAbility": "SeasonalDefenseInfernoCandle",
+      "moduleIDs": [
+        102000033,
+        102000034,
+        102000035
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000012,
+      "name": "英雄猎台",
+      "sourceName": "Headhunter Tower",
+      "specialAbility": "SeasonalDefenseHeadhunterTower",
+      "moduleIDs": [
+        102000036,
+        102000037,
+        102000038
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    },
+    {
+      "dataID": 103000013,
+      "name": "蛋糕投掷器",
+      "sourceName": "Cake Thrower",
+      "specialAbility": "SeasonalDefenseCakeThrower",
+      "moduleIDs": [
+        102000039,
+        102000040,
+        102000041
+      ],
+      "totalModuleLevelThresholds": [
+        9,
+        18,
+        27
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "dataID": 102000000,
+      "name": "钩索塔生命值模组",
+      "sourceName": "HookTowerHPModule",
+      "specialAbility": "HookTowerHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 86400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 108000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 129600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 151200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 194400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 216000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 237600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000001,
+      "name": "钩索塔攻击力模组",
+      "sourceName": "HookTowerAttackModule",
+      "specialAbility": "HookTowerAttackAbility",
+      "statTypes": [
+        "AttackSpeed",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "攻击速度",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 43200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 57600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 72000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 86400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 108000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 129600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 216000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000002,
+      "name": "钩索塔效果模组",
+      "sourceName": "HookTowerEffectModule",
+      "specialAbility": "HookTowerEffectAbility",
+      "statTypes": [
+        "StunTime"
+      ],
+      "displayTitles": [
+        "眩晕时间"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 129600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 25000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 30000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 216000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 35000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 223200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 40000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 230400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 55000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 237600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 70000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 244800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 85000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 252000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000003,
+      "name": "懒惰激光生命值模组",
+      "sourceName": "LazyLaserHPModule",
+      "specialAbility": "LazyLaserHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 86400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 108000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 129600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 151200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 194400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 216000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 237600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000004,
+      "name": "懒惰激光攻击力模组",
+      "sourceName": "LazyLaserAttackModule",
+      "specialAbility": "LazyLaserAttackAbility",
+      "statTypes": [
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 43200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 57600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 72000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 86400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 108000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 129600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 216000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000005,
+      "name": "懒惰激光效果模组",
+      "sourceName": "LazyLaserEffectModule",
+      "specialAbility": "LazyLaserEffectAbility",
+      "statTypes": [
+        "AttackRange"
+      ],
+      "displayTitles": [
+        "攻击范围"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 129600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 25000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 30000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 216000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 35000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 223200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 40000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 230400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 55000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 237600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 70000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 244800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 85000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 252000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000006,
+      "name": "掷木器生命值模组",
+      "sourceName": "LogLobberHPModule",
+      "specialAbility": "LogLobberHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 129600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 3000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 3500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 216000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 223200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 230400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 237600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 244800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 252000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000007,
+      "name": "掷木器攻击力模组",
+      "sourceName": "LogLobberAttackModule",
+      "specialAbility": "LogLobberAttackAbility",
+      "statTypes": [
+        "DamagePerHit",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每次伤害",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 86400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 35000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 108000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 45000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 129600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 55000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 151200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 65000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 75000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 194400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 85000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 216000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 95000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 237600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 105000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000008,
+      "name": "掷木器效果模组",
+      "sourceName": "LogLobberEffectModule",
+      "specialAbility": "LogLobberEffectAbility",
+      "statTypes": [
+        "AttackRange"
+      ],
+      "displayTitles": [
+        "攻击范围"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 43200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 57600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 72000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 86400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 108000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 129600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 216000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000009,
+      "name": "旋转喷火器生命值模组",
+      "sourceName": "FlameSpinnerHPModule",
+      "specialAbility": "FlameSpinnerHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 129600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 3000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 3500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 216000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 223200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 230400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 237600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 244800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 252000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000010,
+      "name": "旋转喷火器攻击力模组",
+      "sourceName": "FlameSpinnerAttackModule",
+      "specialAbility": "FlameSpinnerAttackAbility",
+      "statTypes": [
+        "DamagePerHit",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每次伤害",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 86400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 35000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 108000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 45000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 129600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 55000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 151200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 65000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 75000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 194400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 85000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 216000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 95000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 237600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 105000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000011,
+      "name": "旋转喷火器效果模组",
+      "sourceName": "FlameSpinnerEffectModule",
+      "specialAbility": "FlameSpinnerEffectAbility",
+      "statTypes": [
+        "BurstCount",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "爆发次数",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 43200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 57600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 72000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 86400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 108000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 129600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 216000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000012,
+      "name": "碎岩迫击炮生命值模组",
+      "sourceName": "CrusherMortarHPModule",
+      "specialAbility": "CrusherMortarHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 43200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 45000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 57600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 60000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 72000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 75000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 86400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 90000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 108000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 95000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 129600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 105000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 216000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 110000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000013,
+      "name": "碎岩迫击炮攻击力模组",
+      "sourceName": "CrusherMortarAttackModule",
+      "specialAbility": "CrusherMortarAttackAbility",
+      "statTypes": [
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 129600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 3000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 3500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 216000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 223200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 230400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 237600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 244800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 252000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000014,
+      "name": "碎岩迫击炮效果模组",
+      "sourceName": "CrusherMortarEffectModule",
+      "specialAbility": "CrusherMortarEffectAbility",
+      "statTypes": [
+        "DamageRadius"
+      ],
+      "displayTitles": [
+        "伤害范围"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 86400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 108000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 129600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 151200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 194400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 216000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 237600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000015,
+      "name": "太阳光束生命值模组",
+      "sourceName": "SunBeamHPModule",
+      "specialAbility": "SunBeamHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 43200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 45000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 57600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 60000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 72000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 75000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 86400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 90000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 108000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 95000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 129600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 105000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 216000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 110000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000016,
+      "name": "太阳光束攻击力模组",
+      "sourceName": "SunBeamAttackModule",
+      "specialAbility": "SunBeamAttackAbility",
+      "statTypes": [
+        "DamagePerHit",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每次伤害",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 129600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 3000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 3500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 216000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 223200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 230400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 237600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 244800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 252000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000017,
+      "name": "太阳光束效果模组",
+      "sourceName": "SunBeamEffectModule",
+      "specialAbility": "SunBeamEffectAbility",
+      "statTypes": [
+        "AttackSpeed",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "攻击速度",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 86400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 108000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 129600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 151200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 194400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 216000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 237600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000018,
+      "name": "减速塔生命值模组",
+      "sourceName": "SlowdownTowerHPModule",
+      "specialAbility": "SlowdownTowerHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 86400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 108000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 129600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 151200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 194400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 216000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 237600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000019,
+      "name": "减速塔攻击力模组",
+      "sourceName": "SlowdownTowerAttackModule",
+      "specialAbility": "SlowdownTowerAttackAbility",
+      "statTypes": [
+        "AttackSpeed"
+      ],
+      "displayTitles": [
+        "攻击速度"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 43200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 57600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 72000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 86400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 108000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 129600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 216000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000020,
+      "name": "减速塔效果模组",
+      "sourceName": "SlowdownTowerEffectModule",
+      "specialAbility": "SlowdownTowerEffectAbility",
+      "statTypes": [
+        "AttackRange"
+      ],
+      "displayTitles": [
+        "攻击范围"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 129600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 25000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 30000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 216000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 35000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 223200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 40000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 230400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 55000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 237600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 70000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 244800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 85000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 252000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000021,
+      "name": "英雄助推器生命值模组",
+      "sourceName": "HeroBoosterHPModule",
+      "specialAbility": "HeroBoosterHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 86400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 108000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 129600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 151200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 194400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 216000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 237600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000022,
+      "name": "英雄助推器攻击力模组",
+      "sourceName": "HeroBoosterAttackModule",
+      "specialAbility": "HeroBoosterAttackAbility",
+      "statTypes": [
+        "AuraDefendingHeroDamage"
+      ],
+      "displayTitles": [
+        "防守英雄伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 43200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 57600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 72000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 86400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 108000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 129600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 216000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000023,
+      "name": "英雄助推器效果模组",
+      "sourceName": "HeroBoosterEffectModule",
+      "specialAbility": "HeroBoosterEffectAbility",
+      "statTypes": [
+        "AuraDefendingHeroHealth"
+      ],
+      "displayTitles": [
+        "防守英雄生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 2,
+          "durationSeconds": 129600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 25000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 3,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 30000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 4,
+          "durationSeconds": 216000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 35000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 5,
+          "durationSeconds": 223200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 40000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 6,
+          "durationSeconds": 230400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 55000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 7,
+          "durationSeconds": 237600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 70000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 8,
+          "durationSeconds": 244800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 85000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 9,
+          "durationSeconds": 252000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 1
+        },
+        {
+          "level": 10,
+          "durationSeconds": 259200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 1
+        }
+      ]
+    },
+    {
+      "dataID": 102000024,
+      "name": "Roaster生命值模组",
+      "sourceName": "RoasterHPModule",
+      "specialAbility": "RoasterHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 21600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 3500000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 28800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4500000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 36000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5500000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 43200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 50400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 93600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8500000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 187200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 367200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 734400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 13000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000025,
+      "name": "Roaster攻击力模组",
+      "sourceName": "RoasterAttackModule",
+      "specialAbility": "RoasterAttackAbility",
+      "statTypes": [
+        "DamagePerHit",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每次伤害",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 28800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 36000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 39600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 46800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 54000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 97200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 194400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 388800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 13500000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 777600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 15000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000026,
+      "name": "Roaster效果模组",
+      "sourceName": "RoasterEffectModule",
+      "specialAbility": "RoasterEffectAbility",
+      "statTypes": [
+        "BurstCount",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "爆发次数",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 14400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 30000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 21600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 40000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 28800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 50000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 36000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 60000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 43200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 70000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 86400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 80000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 90000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 345600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 691200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 110000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000027,
+      "name": "AirBombs生命值模组",
+      "sourceName": "AirBombsHPModule",
+      "specialAbility": "AirBombsHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 28800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 40000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 36000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 50000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 39600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 60000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 46800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 70000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 54000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 80000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 97200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 90000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 194400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 388800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 110000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 777600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 120000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000028,
+      "name": "AirBombs攻击力模组",
+      "sourceName": "AirBombsAttackModule",
+      "specialAbility": "AirBombsAttackAbility",
+      "statTypes": [
+        "DamagePerHit",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每次伤害",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 14400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 3000000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 21600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 28800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 36000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 43200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 86400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 345600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 691200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000029,
+      "name": "AirBombs效果模组",
+      "sourceName": "AirBombsEffectModule",
+      "specialAbility": "AirBombsEffectAbility",
+      "statTypes": [
+        "AttackSpeed",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "攻击速度",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 21600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 3500000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 28800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4500000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 36000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5500000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 43200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 50400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 93600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8500000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 187200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 367200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 734400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 13000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000030,
+      "name": "LavaLauncher生命值模组",
+      "sourceName": "LavaLauncherHPModule",
+      "specialAbility": "LavaLauncherHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 14400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 3000000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 21600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 28800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 36000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 43200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 86400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 172800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 345600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 691200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000031,
+      "name": "LavaLauncher攻击力模组",
+      "sourceName": "LavaLauncherAttackModule",
+      "specialAbility": "LavaLauncherAttackAbility",
+      "statTypes": [
+        "DamagePerSecond",
+        "DamagePerHit",
+        "ProjectileHitSpellTotalDamage"
+      ],
+      "displayTitles": [
+        "每秒伤害",
+        "每次伤害",
+        "投射物命中总伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 21600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 35000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 28800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 45000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 36000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 55000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 43200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 65000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 50400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 75000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 93600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 85000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 187200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 95000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 367200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 105000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 734400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000032,
+      "name": "LavaLauncher效果模组",
+      "sourceName": "LavaLauncherEffectModule",
+      "specialAbility": "LavaLauncherEffectAbility",
+      "statTypes": [
+        "AttackRange"
+      ],
+      "displayTitles": [
+        "攻击范围"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 9
+        },
+        {
+          "level": 2,
+          "durationSeconds": 28800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 10
+        },
+        {
+          "level": 3,
+          "durationSeconds": 36000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 11
+        },
+        {
+          "level": 4,
+          "durationSeconds": 39600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 5,
+          "durationSeconds": 46800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 6,
+          "durationSeconds": 54000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 7,
+          "durationSeconds": 97200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 8,
+          "durationSeconds": 194400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 9,
+          "durationSeconds": 388800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 13500000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 10,
+          "durationSeconds": 777600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 15000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000033,
+      "name": "火热蜡烛生命值模组",
+      "sourceName": "InfernoCandleHPModule",
+      "specialAbility": "InfernoCandleHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 21600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 3500000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 28800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4500000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 36000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5500000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 43200,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 64800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 154800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8500000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 288000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 496800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 820800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 13000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000034,
+      "name": "火热蜡烛攻击力模组",
+      "sourceName": "InfernoCandleAttackModule",
+      "specialAbility": "InfernoCandleAttackAbility",
+      "statTypes": [
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 28800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 36000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 39600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 46800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 68400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 165600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 298800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 532800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 13500000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 864000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 15000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000035,
+      "name": "火热蜡烛效果模组",
+      "sourceName": "InfernoCandleEffectModule",
+      "specialAbility": "InfernoCandleEffectAbility",
+      "statTypes": [
+        "TotalTimeAbilityActiveInBattle"
+      ],
+      "displayTitles": [
+        "战斗中效果持续时间"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 14400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 30000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 21600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 40000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 28800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 50000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 36000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 60000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 57600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 70000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 144000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 80000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 266400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 90000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 453600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 777600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 110000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000036,
+      "name": "英雄猎台生命值模组",
+      "sourceName": "HeadhunterTowerHPModule",
+      "specialAbility": "HeadhunterTowerHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 28800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 40000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 36000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 50000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 39600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 60000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 46800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 70000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 68400,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 80000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 165600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 90000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 298800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 100000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 532800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 110000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 864000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 120000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000037,
+      "name": "英雄猎台攻击力模组",
+      "sourceName": "HeadhunterTowerAttackModule",
+      "specialAbility": "HeadhunterTowerAttackAbility",
+      "statTypes": [
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 14400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 3000000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 21600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 28800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 36000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 57600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 144000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 266400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 453600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 777600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000038,
+      "name": "英雄猎台效果模组",
+      "sourceName": "HeadhunterTowerEffectModule",
+      "specialAbility": "HeadhunterTowerEffectAbility",
+      "statTypes": [
+        "PoisonOnHitSpellLevel"
+      ],
+      "displayTitles": [
+        "命中毒药法术等级"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 21600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 3500000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 28800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4500000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 36000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5500000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 43200,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6500000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 64800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 154800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8500000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 288000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 496800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11500000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 820800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 13000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000039,
+      "name": "蛋糕投掷器生命值模组",
+      "sourceName": "CakeThrowerHPModule",
+      "specialAbility": "CakeThrowerHPAbility",
+      "statTypes": [
+        "HitPoints"
+      ],
+      "displayTitles": [
+        "生命值"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Gold",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 14400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 3000000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 21600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 28800,
+          "upgradeResource": "Gold",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 36000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 57600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 7000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 144000,
+          "upgradeResource": "Gold",
+          "upgradeCost": 8000000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 266400,
+          "upgradeResource": "Gold",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 453600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 10000000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 777600,
+          "upgradeResource": "Gold",
+          "upgradeCost": 11000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000040,
+      "name": "蛋糕投掷器攻击力模组",
+      "sourceName": "CakeThrowerAttackModule",
+      "specialAbility": "CakeThrowerAttackAbility",
+      "statTypes": [
+        "DamagePerHit",
+        "DamagePerSecond"
+      ],
+      "displayTitles": [
+        "每次伤害",
+        "每秒伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 21600,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 35000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 28800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 45000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 36000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 55000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 43200,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 65000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 64800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 75000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 154800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 85000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 288000,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 95000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 496800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 105000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 820800,
+          "upgradeResource": "DarkElixir",
+          "upgradeCost": 115000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    },
+    {
+      "dataID": 102000041,
+      "name": "蛋糕投掷器效果模组",
+      "sourceName": "CakeThrowerEffectModule",
+      "specialAbility": "CakeThrowerEffectAbility",
+      "statTypes": [
+        "ProjectileHitSpellExplosionDamage"
+      ],
+      "displayTitles": [
+        "投射物命中爆炸伤害"
+      ],
+      "maxLevel": 10,
+      "levels": [
+        {
+          "level": 1,
+          "durationSeconds": 0,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 0,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 2,
+          "durationSeconds": 28800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 4000000,
+          "requiredTownHallLevel": 12
+        },
+        {
+          "level": 3,
+          "durationSeconds": 36000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 5000000,
+          "requiredTownHallLevel": 13
+        },
+        {
+          "level": 4,
+          "durationSeconds": 39600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 6000000,
+          "requiredTownHallLevel": 14
+        },
+        {
+          "level": 5,
+          "durationSeconds": 46800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 7500000,
+          "requiredTownHallLevel": 15
+        },
+        {
+          "level": 6,
+          "durationSeconds": 68400,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 9000000,
+          "requiredTownHallLevel": 16
+        },
+        {
+          "level": 7,
+          "durationSeconds": 165600,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 10500000,
+          "requiredTownHallLevel": 17
+        },
+        {
+          "level": 8,
+          "durationSeconds": 298800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 12000000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 9,
+          "durationSeconds": 532800,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 13500000,
+          "requiredTownHallLevel": 18
+        },
+        {
+          "level": 10,
+          "durationSeconds": 864000,
+          "upgradeResource": "Elixir",
+          "upgradeCost": 15000000,
+          "requiredTownHallLevel": 18
+        }
+      ]
+    }
+  ]
+}

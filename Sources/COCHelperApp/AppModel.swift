@@ -87,6 +87,8 @@ public final class AppModel: ObservableObject {
     /// 防御未来目录体积增长），首次访问（升级总览渲染）时才加载，启动路径保持纯净。
     /// `loadBundled` 失败返回 nil 是合法路径——UI 显示「目录不可用」，不允许崩溃。
     public private(set) lazy var gameCatalog: GameCatalog? = GameCatalog.loadBundled()
+    /// 精制台 Defense/Module 目录独立于普通升级目录；缺失时只降级为未知状态。
+    public private(set) lazy var craftTableCatalog: CraftTableCatalog? = CraftTableCatalog.loadBundled()
 
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"

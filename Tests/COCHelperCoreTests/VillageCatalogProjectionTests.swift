@@ -18,9 +18,11 @@ final class VillageCatalogProjectionTests: XCTestCase {
     // MARK: - Helpers
 
     private var syntheticCatalog: GameCatalog!
+    private var stageCatalog: GameCatalog!
 
     override func setUpWithError() throws {
         syntheticCatalog = try makeCatalog(from: Self.syntheticCatalogJSON)
+        stageCatalog = try makeCatalog(from: Self.stageCatalogJSON)
     }
 
     /// 小型合成目录：加农炮(建筑语义)、野蛮人(单位语义)、建筑工人小屋(builder)、野蛮人木偶(装备无时长)。
@@ -53,6 +55,68 @@ final class VillageCatalogProjectionTests: XCTestCase {
            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
            {"level":2,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
            {"level":3,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"}
+         ]}
+      ]
+    }
+    """
+
+    /// Issue #67 阶段上限专用合成目录。与 syntheticCatalogJSON 的关键差异：
+    /// 加农炮 dataID 用 1000002——syntheticCatalogJSON 里 1000001 被加农炮占用，
+    /// 而 1000001 是真实大本营 dataID（PlayerUnlockLevels 从 buildings 按 dataID
+    /// 查大本营等级）；若村庄加农炮记录用 1000001，会把加农炮等级误读成大本营。
+    /// 本目录另含带 requiredHeroTavernLevel 的英雄（tavern 门槛 2/4/6/8/10）与
+    /// 带 builderHall 门槛（requiredTownHallLevel → builder 语义）的双管加农炮。
+    static let stageCatalogJSON = """
+    {
+      "gameVersion": "18.400.13",
+      "items": [
+        {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":2,
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":2,"durationSeconds":300,"upgradeResource":"Elixir","upgradeCost":2000,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+         ]},
+        {"section":"units","category":"troops","dataID":4000000,"base":"home","name":"野蛮人","maxLevel":3,
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+           {"level":2,"durationSeconds":1800,"upgradeResource":"Elixir","upgradeCost":250,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":3,"durationSeconds":3600,"upgradeResource":"Elixir","upgradeCost":500,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null}
+         ]},
+        {"section":"buildings2","category":"buildings","dataID":1000033,"base":"builder","name":"建筑工人小屋","maxLevel":2,
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":60,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":2,"durationSeconds":600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+         ]},
+        {"section":"equipment","category":"equipment","dataID":90000000,"base":"home","name":"野蛮人木偶","maxLevel":3,
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
+           {"level":2,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
+           {"level":3,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"}
+         ]},
+        {"section":"heroes","category":"heroes","dataID":28000000,"base":"home","name":"野蛮人之王","maxLevel":10,
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":2,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+           {"level":2,"durationSeconds":3600,"upgradeResource":"DarkElixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":2,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":3,"durationSeconds":7200,"upgradeResource":"DarkElixir","upgradeCost":200,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":4,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":4,"durationSeconds":10800,"upgradeResource":"DarkElixir","upgradeCost":300,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":4,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":5,"durationSeconds":14400,"upgradeResource":"DarkElixir","upgradeCost":400,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":6,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":6,"durationSeconds":18000,"upgradeResource":"DarkElixir","upgradeCost":500,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":6,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":7,"durationSeconds":21600,"upgradeResource":"DarkElixir","upgradeCost":600,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":8,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":8,"durationSeconds":25200,"upgradeResource":"DarkElixir","upgradeCost":700,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":8,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":9,"durationSeconds":28800,"upgradeResource":"DarkElixir","upgradeCost":800,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":10,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":10,"durationSeconds":32400,"upgradeResource":"DarkElixir","upgradeCost":900,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredHeroTavernLevel":10,"icon":null,"levelVisual":null,"missingReason":null}
+         ]},
+        {"section":"buildings2","category":"buildings","dataID":1000042,"base":"builder","name":"双管加农炮","maxLevel":4,
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":60,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":2,"durationSeconds":600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":3,"durationSeconds":1800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":4,"durationSeconds":3600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":6,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
          ]}
       ]
     }
@@ -717,12 +781,18 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
     func testIdleCatalogHitItemGetsNextLevelDuration() throws {
         // issue #16：普通建筑（非升级、目录命中、未满级）行显示下一等级时间。
-        // syntheticCatalog 加农炮 buildings:1000001 maxLevel=2，level 1 未满级 → 推下一级（2 级）时长 300s。
+        // stageCatalog 加农炮 buildings:1000002 maxLevel=2（TH 门槛 1/2），村庄大本营
+        // 12 级满足全部门槛 → 阶段上限 2；level 1 未满级 → 推下一级（2 级）时长 300s。
+        // 注：不能用 syntheticCatalog 的 1000001（加农炮）——1000001 是真实大本营
+        // dataID，村庄加农炮记录会被 PlayerUnlockLevels 误读成大本营等级（Issue #67 测试数据约定）。
         let village = makeVillage(objectSections: [
-            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "0"),  // 大本营
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),   // 加农炮
+            ],
         ])
-        let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        let item = try XCTUnwrap(home.items.first)
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
         XCTAssertEqual(item.status, .complete)
         XCTAssertNil(item.nextLevel, "#14：目标等级只允许升级中显式推断")
         XCTAssertEqual(item.nextLevelDurationSeconds, 300, "目录命中的未满级项应有下一级时长")
@@ -769,12 +839,15 @@ final class VillageCatalogProjectionTests: XCTestCase {
     func testPropertyStatusAssignmentIsExhaustiveAndExclusive() throws {
         var rng = SeededRNG(seed: 99)
         let sections = ["units", "buildings", "helpers", "traps2", "equipment"]
-        let pool: [Int64] = [4_000_000, 1_000_001, 93_000_000, 12_000_010, 90_000_000]
-        // 合成目录收录键（section, dataID, base）：oracle 独立于输出状态计算。
-        // 合成目录仅有 4 项：units 4000000(home)、buildings 1000001(home)、
+        // 加农炮用 1000002（stageCatalog）：pool 不含任何解锁建筑（1000001/1000007/
+        // 1000071/1000034/1000046）→ 所有 requirement 型 item 阶段上限不可计算 →
+        // 回退全局 maxLevel，oracle 保持 level >= maxLevel 判定（见 stageCatalogJSON 注释）。
+        let pool: [Int64] = [4_000_000, 1_000_002, 93_000_000, 12_000_010, 90_000_000]
+        // stageCatalog 收录键（section, dataID, base）：oracle 独立于输出状态计算。
+        // stageCatalog 有 6 项，pool 涉及 4 项：units 4000000(home)、buildings 1000002(home)、
         // buildings2 1000033(builder)、equipment 90000000(home)。
         let catalogHits: Set<String> = [
-            "units:4000000:home", "buildings:1000001:home",
+            "units:4000000:home", "buildings:1000002:home",
             "buildings2:1000033:builder", "equipment:90000000:home",
         ]
         for _ in 0..<20 {
@@ -783,7 +856,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             )
             let village = makeVillage(objectSections: snapshot)
             for base in TrackerBase.allCases {
-                let projection = project(village: village, catalog: syntheticCatalog, base: base)
+                let projection = project(village: village, catalog: stageCatalog, base: base)
                 XCTAssertFalse(projection.items.isEmpty)
                 for item in projection.items {
                     let expected: VillageItemStatus
@@ -848,44 +921,49 @@ final class VillageCatalogProjectionTests: XCTestCase {
         // 同 (section,dataID,level) 4 条非升级记录 count=[5, 0, -3, nil]：
         // 聚合 count == 8（instanceWeight 契约：nil/≤0 计 1 → 5+1+1+1）。
         // 旧实现裸相加得 5+0−3+1 = 3：丢失实例贡献、可制造负值。
+        // 用 stageCatalog（加农炮 1000002）+ 大本营 1000001@12：阶段上限 2，
+        // level 1 未满级 → complete（synthetic 的 1000001 被加农炮占用，见 stageCatalogJSON 注释）。
         let village = makeVillage(objectSections: [
             "buildings": [
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: 5, path: "0"),
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: 0, path: "1"),
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: -3, path: "2"),
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: nil, path: "3"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, count: 5, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, count: 0, path: "1"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, count: -3, path: "2"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, count: nil, path: "3"),
             ],
         ])
-        let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        XCTAssertEqual(home.items.count, 1, "同键非升级记录应聚合为一条")
-        XCTAssertEqual(home.items.first?.count, 8,
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(cannon.count, 8,
                        "非法 count（0/−3）按 instanceWeight 计 1，不得累加 0/负值")
 
-        // 全链路：聚合行权重进入完成度统计（level 1 < maxLevel 2 → 全 complete）。
+        // 全链路：聚合行权重进入完成度统计（level 1 < 阶段上限 2 → 全 complete）。
         let total = VillageDetailProjection.totalCompletion(from: home.items)
         XCTAssertEqual(total.knownCount, 8, "got known=\(total.knownCount)")
         XCTAssertEqual(total.completedCount, 0)
-        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertEqual(total.unknownCount, 1, "大本营 1000001 未收录于 stageCatalog → unknown 行")
     }
 
     func testAggregateSaturatesHugeCounts() throws {
         // 两条 count=Int.max 同键记录：聚合层必须在统计层饱和保护之前就饱和，
         // 裸相加会在 debug 构建 SIGTRAP 崩溃整个测试进程（非断言失败）——
         // 故测试与修复同 commit，运行验证以新实现无崩溃且饱和为准。
+        // stageCatalog 加农炮 1000002 + 大本营 1000001@12（阶段上限 2，level 1 未满级）。
         let village = makeVillage(objectSections: [
             "buildings": [
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "0"),
-                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "1"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, count: Int.max, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, count: Int.max, path: "1"),
             ],
         ])
-        let home = project(village: village, catalog: syntheticCatalog, base: .home)
-        XCTAssertEqual(home.items.count, 1)
-        XCTAssertEqual(home.items.first?.count, Int.max, "聚合层溢出必须饱和到 Int.max")
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(cannon.count, Int.max, "聚合层溢出必须饱和到 Int.max")
 
         let total = VillageDetailProjection.totalCompletion(from: home.items)
         XCTAssertEqual(total.knownCount, Int.max, "got known=\(total.knownCount)")
         XCTAssertEqual(total.completedCount, 0)
-        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertEqual(total.unknownCount, 1, "大本营 1000001 未收录于 stageCatalog → unknown 行")
         // 第 7 轮修复回归：聚合行单行 count=Int.max 求和恰好 Int.max 无算术溢出，
         // 若聚合层饱和标志不传播，统计层会误判 saturated == false（契约绕过）。
         XCTAssertTrue(total.saturated, "聚合层饱和标志必须传播到统计层")
@@ -2063,5 +2141,210 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let reversedItem = try XCTUnwrap(reversedProjection.items.first { $0.dataID == 1_000_032 })
         XCTAssertEqual(originalItem.timerSeconds, reversedItem.timerSeconds,
                        "已结束计时组的聚合计时值不得随数组顺序改变")
+    }
+
+    // MARK: - Issue #67: currentStageMaxLevel（阶段上限）与 maxed 判定
+
+    /// 阶段上限可计算（TH=12 满足加农炮全部 TH 门槛）→ stage == 目录上限；
+    /// 加农炮 level 1 < 2 → 未满级。
+    func testStageMaxLevelHonorsTownHallGate() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "0"),  // 大本营
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),   // 加农炮
+            ],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(cannon.currentStageMaxLevel, 2,
+                       "TH=12 满足 lvl1(TH1)/lvl2(TH2) → 阶段上限 == 目录上限")
+        XCTAssertEqual(cannon.maxLevel, 2)
+        XCTAssertEqual(cannon.status, .complete, "level 1 < 阶段上限 2 → 未满级")
+    }
+
+    /// TH=2：加农炮 level 2 == 阶段上限 == 目录上限 → .maxed。
+    func testStageMaxedAtGlobalCap() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 2, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(cannon.currentStageMaxLevel, 2)
+        XCTAssertEqual(cannon.status, .maxed, "level 2 >= 阶段上限 2 → 满级")
+    }
+
+    /// 关键验收场景：TH=1 只解锁加农炮到 level 1；快照里 2 级加农炮 → 阶段满级
+    ///（currentStageMaxLevel 1 < maxLevel 2，阶段满级与全局未满可区分——Issue #67 核心）。
+    func testStageMaxedBelowGlobalCap() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 2, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(cannon.currentStageMaxLevel, 1, "TH=1 不满足 lvl2 的 TH=2 门槛")
+        XCTAssertEqual(cannon.maxLevel, 2)
+        XCTAssertEqual(cannon.status, .maxed, "level 2 >= 阶段上限 1 → 阶段满级")
+        XCTAssertLessThan(cannon.currentStageMaxLevel ?? .max, cannon.maxLevel ?? .min,
+                          "阶段满级但全局未满必须可区分")
+    }
+
+    /// 快照无大本营 → 阶段上限不可计算（nil）→ 满级判定回退全局 maxLevel：
+    /// level 2 == maxLevel 2 → 仍 .maxed（严格上限判定不误报）。
+    func testMissingPrerequisiteFallsBackToGlobalMaxed() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_002, level: 2, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first)
+        XCTAssertNil(cannon.currentStageMaxLevel, "快照缺大本营记录 → 阶段上限不可计算")
+        XCTAssertEqual(cannon.status, .maxed, "回退全局：level 2 == maxLevel 2 → maxed")
+    }
+
+    /// 快照无大本营 + level 1 < maxLevel 2 → .complete（回退全局不得误报阶段满级）。
+    func testMissingPrerequisiteFallbackDoesNotOverclaim() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first)
+        XCTAssertNil(cannon.currentStageMaxLevel)
+        XCTAssertEqual(cannon.status, .complete, "回退全局：level 1 < maxLevel 2 → complete")
+    }
+
+    /// 实验室门槛：Lab=1 满足野蛮人全部等级（lvl2/3 需 Lab1）→ stage == 3 == 全局。
+    func testStageMaxLevelHonorsLaboratoryGate() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_007, level: 1, path: "0")],  // 实验室
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 3, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let barbarian = try XCTUnwrap(home.items.first { $0.dataID == 4_000_000 })
+        XCTAssertEqual(barbarian.currentStageMaxLevel, 3, "Lab=1 满足 lvl2/lvl3 的 Lab1 门槛")
+        XCTAssertEqual(barbarian.status, .maxed)
+    }
+
+    /// 快照无实验室 → 野蛮人阶段上限不可计算（nil）；level 3 == maxLevel 3 → 回退全局仍 maxed。
+    func testMissingLaboratoryMakesStageUncomputable() throws {
+        let village = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 3, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let barbarian = try XCTUnwrap(home.items.first)
+        XCTAssertNil(barbarian.currentStageMaxLevel, "快照缺实验室 → 阶段上限不可计算")
+        XCTAssertEqual(barbarian.status, .maxed, "回退全局：level 3 == maxLevel 3 → maxed")
+    }
+
+    /// 无 requirement 的 item（建筑工人小屋）→ 阶段上限恒等于全局上限（始终可计算）。
+    func testNoRequirementStageEqualsGlobalMax() throws {
+        let village = makeVillage(objectSections: [
+            "buildings2": [makeItem(section: "buildings2", dataID: 1_000_033, level: 1, path: "0")],
+        ])
+        let builder = project(village: village, catalog: stageCatalog, base: .builder)
+        let hut = try XCTUnwrap(builder.items.first)
+        XCTAssertEqual(hut.currentStageMaxLevel, 2, "无 requirement → 阶段上限 == maxLevel")
+        XCTAssertEqual(hut.status, .complete, "level 1 < 2 → 未满级")
+    }
+
+    /// 英雄殿堂门槛（requiredHeroTavernLevel）：tavern=8 → 阶段上限 = tavern ≤8 的最高等级
+    /// 8（lvl9 需 tavern10）；英雄 8 级 == 阶段上限 → 阶段满级。
+    func testStageMaxLevelHonorsHeroHallTavernGate() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_071, level: 8, path: "0")],  // 英雄殿堂
+            "heroes": [makeItem(section: "heroes", dataID: 28_000_000, level: 8, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let king = try XCTUnwrap(home.items.first { $0.dataID == 28_000_000 })
+        XCTAssertEqual(king.currentStageMaxLevel, 8, "lvl1-8 tavern≤8 满足；lvl9 需 tavern10 不满足")
+        XCTAssertEqual(king.maxLevel, 10)
+        XCTAssertEqual(king.status, .maxed)
+    }
+
+    /// 英雄殿堂 4 级：阶段上限 4；英雄 5 级 → 阶段满级（maxLevel 10 全局未满）。
+    func testHeroStageMaxedBelowGlobal() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_071, level: 4, path: "0")],
+            "heroes": [makeItem(section: "heroes", dataID: 28_000_000, level: 5, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let king = try XCTUnwrap(home.items.first { $0.dataID == 28_000_000 })
+        XCTAssertEqual(king.currentStageMaxLevel, 4)
+        XCTAssertEqual(king.status, .maxed, "level 5 >= 阶段上限 4 → 阶段满级")
+        XCTAssertLessThan(king.currentStageMaxLevel ?? .max, king.maxLevel ?? .min)
+    }
+
+    /// 快照无英雄殿堂 → 英雄阶段上限不可计算 → 回退全局（level 10 == maxLevel 10 → maxed）。
+    func testMissingHeroHallMakesStageUncomputable() throws {
+        let village = makeVillage(objectSections: [
+            "heroes": [makeItem(section: "heroes", dataID: 28_000_000, level: 10, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let king = try XCTUnwrap(home.items.first)
+        XCTAssertNil(king.currentStageMaxLevel)
+        XCTAssertEqual(king.status, .maxed)
+    }
+
+    /// 建筑大师基地：BH=8 满足双管加农炮全部门槛（lvl4 需 BH6）→ stage == 4 == 全局。
+    func testBuilderStageMaxLevelHonorsBuilderHallGate() throws {
+        let village = makeVillage(objectSections: [
+            "buildings2": [
+                makeItem(section: "buildings2", dataID: 1_000_034, level: 8, path: "0"),  // 建筑大师大本营
+                makeItem(section: "buildings2", dataID: 1_000_042, level: 4, path: "1"),   // 双管加农炮
+            ],
+        ])
+        let builder = project(village: village, catalog: stageCatalog, base: .builder)
+        let cannon = try XCTUnwrap(builder.items.first { $0.dataID == 1_000_042 })
+        XCTAssertEqual(cannon.currentStageMaxLevel, 4)
+        XCTAssertEqual(cannon.status, .maxed)
+    }
+
+    /// BH=3：阶段上限 2（lvl3 需 BH4 不满足）；双管加农炮 3 级 → 阶段满级（maxLevel 4 全局未满）。
+    func testBuilderStageMaxedBelowGlobalWithLowerHall() throws {
+        let village = makeVillage(objectSections: [
+            "buildings2": [
+                makeItem(section: "buildings2", dataID: 1_000_034, level: 3, path: "0"),
+                makeItem(section: "buildings2", dataID: 1_000_042, level: 3, path: "1"),
+            ],
+        ])
+        let builder = project(village: village, catalog: stageCatalog, base: .builder)
+        let cannon = try XCTUnwrap(builder.items.first { $0.dataID == 1_000_042 })
+        XCTAssertEqual(cannon.currentStageMaxLevel, 2, "BH=3 满足 lvl1(BH1)/lvl2(BH2)，lvl3 需 BH4 不满足")
+        XCTAssertEqual(cannon.status, .maxed, "level 3 >= 阶段上限 2 → 阶段满级")
+        XCTAssertLessThan(cannon.currentStageMaxLevel ?? .max, cannon.maxLevel ?? .min)
+    }
+
+    /// 跨基地隔离：主村大本营 12 级不能替代建筑大师大本营（builderHall 解锁缺失
+    /// → 双管加农炮阶段上限不可计算 → 回退全局，level 2 < 4 → complete）。
+    func testHomeTownHallDoesNotSatisfyBuilderHall() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "0")],
+            "buildings2": [makeItem(section: "buildings2", dataID: 1_000_042, level: 2, path: "0")],
+        ])
+        let builder = project(village: village, catalog: stageCatalog, base: .builder)
+        let cannon = try XCTUnwrap(builder.items.first { $0.dataID == 1_000_042 })
+        XCTAssertNil(cannon.currentStageMaxLevel)
+        XCTAssertEqual(cannon.status, .complete, "回退全局：level 2 < maxLevel 4 → complete")
+    }
+
+    /// 聚合传播：同键非升级记录聚合后 currentStageMaxLevel 保留 first 值（Task 4 会
+    /// 在 VillageDetailProjectionTests 加专项测试，这里先锁定字段不丢）。
+    func testAggregatedStatePreservesStageMaxLevel() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
+        XCTAssertTrue(cannon.id.hasPrefix("agg:"), "同键非升级记录应聚合")
+        XCTAssertEqual(cannon.count, 2)
+        XCTAssertEqual(cannon.currentStageMaxLevel, 2, "聚合项必须传播阶段上限")
     }
 }

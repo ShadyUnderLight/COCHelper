@@ -35,6 +35,11 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 注意 nextLevel 字段仍只在升级中推断（#14 契约），duration 与其解耦。
     public let nextLevelDurationSeconds: Int64?
     public let maxLevel: Int?
+    /// 当前玩家解锁等级下的阶段上限（Issue #67）：目录允许的最高等级受解锁建筑
+    ///（大本营/实验室/英雄殿堂/建筑大师大本营/星空实验室）门槛约束。
+    /// 可计算时 ≤ maxLevel（无 requirement 的 item 恒等于 maxLevel）；
+    /// nil = 不可计算（快照缺 prerequisite 建筑记录）→ 满级判定回退全局 maxLevel。
+    public let currentStageMaxLevel: Int?
     public let status: VillageItemStatus
     public let missingReason: String?
     public let icon: CatalogAssetRef?
@@ -127,6 +132,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         nextLevel: Int?,
         nextLevelDurationSeconds: Int64?,
         maxLevel: Int?,
+        currentStageMaxLevel: Int? = nil,
         status: VillageItemStatus,
         missingReason: String?,
         icon: CatalogAssetRef?,
@@ -150,6 +156,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.nextLevel = nextLevel
         self.nextLevelDurationSeconds = nextLevelDurationSeconds
         self.maxLevel = maxLevel
+        self.currentStageMaxLevel = currentStageMaxLevel
         self.status = status
         self.missingReason = missingReason
         self.icon = icon
@@ -159,6 +166,53 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.isNested = isNested
         self.displayCategory = displayCategory
         self.countOverflowed = countOverflowed
+    }
+}
+
+// MARK: - 解锁建筑（Issue #67 阶段上限）
+
+/// 解锁建筑的快照 dataID（真实目录契约，Task 1 落库锚定）：
+/// 主村大本营 buildings:1000001、实验室 buildings:1000007、英雄殿堂 buildings:1000071；
+/// 建筑大师大本营 buildings2:1000034、星空实验室 buildings2:1000046。
+enum UnlockBuildingDataID {
+    static let townHall: Int64 = 1_000_001
+    static let laboratory: Int64 = 1_000_007
+    static let heroHall: Int64 = 1_000_071
+    static let builderHall: Int64 = 1_000_034
+    static let starLaboratory: Int64 = 1_000_046
+}
+
+/// 玩家当前解锁建筑等级（Issue #67）。
+///
+/// 从快照 buildings/buildings2 按 dataID 找第一个匹配记录取其 level；
+/// 快照无该建筑记录 → nil（阶段上限不可计算，满级判定回退全局）。
+public struct PlayerUnlockLevels: Sendable {
+    public let townHall: Int?
+    public let laboratory: Int?
+    public let heroHall: Int?
+    public let builderHall: Int?
+    public let starLaboratory: Int?
+
+    public init(snapshot: AccountSnapshot?) {
+        func firstLevel(in section: String, dataID: Int64) -> Int? {
+            snapshot?.objectSections[section]?.first { $0.dataID == dataID }?.level
+        }
+        townHall = firstLevel(in: "buildings", dataID: UnlockBuildingDataID.townHall)
+        laboratory = firstLevel(in: "buildings", dataID: UnlockBuildingDataID.laboratory)
+        heroHall = firstLevel(in: "buildings", dataID: UnlockBuildingDataID.heroHall)
+        builderHall = firstLevel(in: "buildings2", dataID: UnlockBuildingDataID.builderHall)
+        starLaboratory = firstLevel(in: "buildings2", dataID: UnlockBuildingDataID.starLaboratory)
+    }
+
+    /// requirement 类型对应的解锁等级；nil = 快照无该建筑记录。
+    func level(for requirement: UpgradeRequirement) -> Int? {
+        switch requirement {
+        case .townHall: return townHall
+        case .builderHall: return builderHall
+        case .laboratory: return laboratory
+        case .starLaboratory: return starLaboratory
+        case .heroHall: return heroHall
+        }
     }
 }
 
@@ -206,8 +260,10 @@ public struct VillageCatalogProjection: Sendable {
             ))
         }
 
+        // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
+        let unlocks = PlayerUnlockLevels(snapshot: village.accountSnapshot)
         let states = village.accountSnapshot.map { snapshot in
-            aggregate(records(from: snapshot, catalog: catalog, base: base, now: now))
+            aggregate(records(from: snapshot, catalog: catalog, base: base, now: now, unlocks: unlocks))
         } ?? []
 
         return VillageCatalogProjection(
@@ -227,7 +283,8 @@ public struct VillageCatalogProjection: Sendable {
         from snapshot: AccountSnapshot,
         catalog: GameCatalog?,
         base: TrackerBase,
-        now: Date
+        now: Date,
+        unlocks: PlayerUnlockLevels
     ) -> [VillageItemState] {
         // Issue #37：第一遍扫描构建「根父 id → dataID」映射。快照 id 是数组索引路径
         //（如 buildings:6.types.0），嵌套项归属精制台必须回查根父的 dataID。
@@ -237,7 +294,7 @@ public struct VillageCatalogProjection: Sendable {
         }
         return snapshot.allObjectItems.compactMap { item in
             map(item, in: snapshot, catalog: catalog, base: base, now: now,
-                rootParentDataIDs: rootParentDataIDs)
+                rootParentDataIDs: rootParentDataIDs, unlocks: unlocks)
         }
     }
 
@@ -251,7 +308,8 @@ public struct VillageCatalogProjection: Sendable {
         catalog: GameCatalog?,
         base: TrackerBase,
         now: Date,
-        rootParentDataIDs: [String: Int64]
+        rootParentDataIDs: [String: Int64],
+        unlocks: PlayerUnlockLevels
     ) -> VillageItemState? {
         let isBuilderSection = item.section.hasSuffix("2")
         guard isBuilderSection == (base == .builder) else { return nil }
@@ -340,6 +398,16 @@ public struct VillageCatalogProjection: Sendable {
             nextLevelDuration = nil
         }
 
+        // Issue #67：阶段上限。仅 baseMatches 且目录命中时计算；nil = 不可计算
+        //（快照缺 prerequisite 建筑记录）→ 满级判定回退全局 maxLevel（fail-safe，
+        // 严格上限判定不误报）。升级中/unknown 等路径不计算（字段保持 nil）。
+        let stageMax: Int?
+        if baseMatches, let catalogItem {
+            stageMax = currentStageMaxLevel(for: catalogItem, unlocks: unlocks)
+        } else {
+            stageMax = nil
+        }
+
         let status: VillageItemStatus
         let missingReason: String?
         if isUpgrading {
@@ -353,7 +421,11 @@ public struct VillageCatalogProjection: Sendable {
             status = .unknown
             missingReason = "嵌套模块/类型不参与静态目录 join（\(item.section):\(item.dataID)）。"
         } else if let catalogItem, baseMatches {
-            if item.level ?? -1 >= catalogItem.maxLevel {
+            // 阶段上限优先；不可计算回退全局 maxLevel。阶段满级（stage < maxLevel）
+            // 与全局满级同报 .maxed——完成度口径：阶段满级即完成，UI 用
+            // currentStageMaxLevel 区分文案（Issue #67）。
+            let effectiveMax = stageMax ?? catalogItem.maxLevel
+            if item.level ?? -1 >= effectiveMax {
                 status = .maxed
             } else {
                 status = .complete
@@ -395,6 +467,7 @@ public struct VillageCatalogProjection: Sendable {
             nextLevel: nextLevel,
             nextLevelDurationSeconds: nextLevelDuration,
             maxLevel: baseMatches ? catalogItem?.maxLevel : nil,
+            currentStageMaxLevel: stageMax,
             status: status,
             missingReason: missingReason,
             icon: baseMatches ? catalogItem?.icon : nil,
@@ -422,6 +495,36 @@ public struct VillageCatalogProjection: Sendable {
             return "静态目录不可用。"
         }
         return nil
+    }
+
+    /// 计算单个目录 item 的当前阶段上限（Issue #67）。
+    ///
+    /// - 无 requirement（equipment/guardians/capital 等）→ `item.maxLevel`
+    ///   （无门槛，阶段上限 == 全局上限，始终可计算）；
+    /// - 任一 requirement 类型对应解锁等级为 nil（快照缺该建筑记录）→ nil
+    ///   （不可计算，调用方回退全局 maxLevel，保守不误报满级）；
+    /// - 否则逐级（目录契约 level 升序）检查：该级 requirement 全部满足则作为
+    ///   候选；遇到第一个不满足的级即停止（门槛随等级单调不减），返回最高候选。
+    static func currentStageMaxLevel(
+        for item: CatalogItem,
+        unlocks: PlayerUnlockLevels
+    ) -> Int? {
+        let itemRequirements = item.requirements
+        guard !itemRequirements.isEmpty else { return item.maxLevel }
+        // 可计算性检查：item 级存在任一 requirement 类型，其解锁等级必须已知。
+        for requirement in itemRequirements where unlocks.level(for: requirement) == nil {
+            return nil
+        }
+        var highest: Int?
+        for level in item.levels {
+            let satisfied = level.requirements(base: item.base).allSatisfy { requirement in
+                guard let unlock = unlocks.level(for: requirement) else { return false }
+                return unlock >= requirement.requiredLevel
+            }
+            guard satisfied else { break }
+            highest = level.level
+        }
+        return highest
     }
 
     // MARK: - Aggregation
@@ -490,6 +593,7 @@ public struct VillageCatalogProjection: Sendable {
                 nextLevel: nil,
                 nextLevelDurationSeconds: first.nextLevelDurationSeconds,
                 maxLevel: first.maxLevel,
+                currentStageMaxLevel: first.currentStageMaxLevel,
                 status: first.status,
                 missingReason: first.missingReason,
                 icon: first.icon,

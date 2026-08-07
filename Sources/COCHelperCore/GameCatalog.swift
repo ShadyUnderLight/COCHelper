@@ -171,33 +171,46 @@ public enum UpgradeRequirement: Hashable, Sendable {
     case laboratory(level: Int)
     case starLaboratory(level: Int)
     case heroHall(level: Int)
+
+    /// 要求的解锁等级（如 `.townHall(level: 12)` 要求大本营 ≥ 12 级）。
+    public var requiredLevel: Int {
+        switch self {
+        case .townHall(let level), .builderHall(let level), .laboratory(let level),
+             .starLaboratory(let level), .heroHall(let level):
+            return level
+        }
+    }
+}
+
+extension CatalogLevel {
+    /// 单级升级前置条件（Issue #67 Task 3）：按 item.base 解析 village 语义，
+    /// 与 `CatalogItem.requirements`（item 级 flatMap）共用同一分支规则，防双实现漂移。
+    /// tavern == 0 视为无英雄殿堂门槛（heroes2 源数据），不产生 .heroHall。
+    public func requirements(base: String?) -> [UpgradeRequirement] {
+        switch base {
+        case "home":
+            var out: [UpgradeRequirement] = []
+            if let th = requiredTownHallLevel { out.append(.townHall(level: th)) }
+            if let lab = requiredLaboratoryLevel { out.append(.laboratory(level: lab)) }
+            if let ht = requiredHeroTavernLevel, ht > 0 { out.append(.heroHall(level: ht)) }
+            return out
+        case "builder":
+            var out: [UpgradeRequirement] = []
+            if let th = requiredTownHallLevel { out.append(.builderHall(level: th)) }
+            if let lab = requiredLaboratoryLevel { out.append(.starLaboratory(level: lab)) }
+            return out
+        default:
+            return []
+        }
+    }
 }
 
 extension CatalogItem {
     /// 本 item 各级升级前置条件的 village 语义列表（按 item.base 解析）。
     /// 无 requirement 的 item（equipment/guardians/capital 等）→ 空数组。
     /// base == nil（capital）→ 空数组（capital 无大本营门槛语义）。
-    /// tavern == 0 视为无英雄殿堂门槛（heroes2 源数据），不产生 .heroHall。
     public var requirements: [UpgradeRequirement] {
-        switch base {
-        case "home":
-            levels.flatMap { level in
-                var out: [UpgradeRequirement] = []
-                if let th = level.requiredTownHallLevel { out.append(.townHall(level: th)) }
-                if let lab = level.requiredLaboratoryLevel { out.append(.laboratory(level: lab)) }
-                if let ht = level.requiredHeroTavernLevel, ht > 0 { out.append(.heroHall(level: ht)) }
-                return out
-            }
-        case "builder":
-            levels.flatMap { level in
-                var out: [UpgradeRequirement] = []
-                if let th = level.requiredTownHallLevel { out.append(.builderHall(level: th)) }
-                if let lab = level.requiredLaboratoryLevel { out.append(.starLaboratory(level: lab)) }
-                return out
-            }
-        default:
-            []
-        }
+        levels.flatMap { $0.requirements(base: base) }
     }
 }
 

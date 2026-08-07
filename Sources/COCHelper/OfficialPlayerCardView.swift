@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import COCHelperCore
 import COCHelperApp
 
@@ -181,33 +182,48 @@ struct OfficialPlayerCardView: View {
     /// 会留下 30%~60% 行尾空白，窗口级验收实测：1180pt 进度组右侧空白 692pt）。
     private func snapshotSummary(snapshot: OfficialPlayerSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            summarySection(title: "进度", systemImage: "building.columns.fill", items: [
-                ("大本营等级", snapshot.townHallLevel.map { "\($0)级" }),
-                // 武器未建造时官方返回 nil：显示 "—"（issue：缺失显示未知/未提供，不推断、不隐藏）。
-                ("大本营武器等级", snapshot.townHallWeaponLevel.map { "\($0)级" }),
-                ("建筑大师大本营", snapshot.builderHallLevel.map { "\($0)级" }),
-                ("经验等级", snapshot.expLevel.map { "\($0)" }),
-            ])
+            summarySection(
+                title: "进度",
+                icon: .progress,
+                fallbackSystemImage: "building.columns.fill",
+                items: [
+                    ("大本营等级", snapshot.townHallLevel.map { "\($0)级" }),
+                    // 武器未建造时官方返回 nil：显示 "—"（issue：缺失显示未知/未提供，不推断、不隐藏）。
+                    ("大本营武器等级", snapshot.townHallWeaponLevel.map { "\($0)级" }),
+                    ("建筑大师大本营", snapshot.builderHallLevel.map { "\($0)级" }),
+                    ("经验等级", snapshot.expLevel.map { "\($0)" }),
+                ]
+            )
 
-            summarySection(title: "战绩", systemImage: "trophy.fill", items: [
-                ("奖杯", snapshot.trophies.map { "\($0)" }),
-                ("最佳奖杯", snapshot.bestTrophies.map { "\($0)" }),
-                ("建筑大师基地奖杯", snapshot.builderBaseTrophies.map { "\($0)" }),
-                ("部落对战之星", snapshot.warStars.map { "\($0)" }),
-                ("进攻获胜次数", snapshot.attackWins.map { "\($0)" }),
-                ("防守获胜次数", snapshot.defenseWins.map { "\($0)" }),
-            ])
+            summarySection(
+                title: "战绩",
+                icon: .results,
+                fallbackSystemImage: "trophy.fill",
+                items: [
+                    ("奖杯", snapshot.trophies.map { "\($0)" }),
+                    ("最佳奖杯", snapshot.bestTrophies.map { "\($0)" }),
+                    ("建筑大师基地奖杯", snapshot.builderBaseTrophies.map { "\($0)" }),
+                    ("部落对战之星", snapshot.warStars.map { "\($0)" }),
+                    ("进攻获胜次数", snapshot.attackWins.map { "\($0)" }),
+                    ("防守获胜次数", snapshot.defenseWins.map { "\($0)" }),
+                ]
+            )
 
-            summarySection(title: "部落与联赛", systemImage: "person.3.fill", items: [
-                // Issue #49 要求"部落名称和标签"（评审 P2）：name/tag 各自可空
-                // 独立展示——name 缺失但 tag 存在时仍显示标签，不做推断。
-                ("部落", snapshot.clan?.name),
-                ("部落标签", snapshot.clan?.tag),
-                ("部落角色", roleLabel(snapshot.role)),
-                ("当前联赛", ClanDisplayFormat.playerLeagueLabel(snapshot.league)),
-                ("建筑大师联赛", ClanDisplayFormat.builderBaseLeagueLabel(snapshot.builderBaseLeague)),
-                ("参战偏好", warPreferenceLabel(snapshot.warPreference)),
-            ])
+            summarySection(
+                title: "部落与联赛",
+                icon: .clan,
+                fallbackSystemImage: "person.3.fill",
+                items: [
+                    // Issue #49 要求"部落名称和标签"（评审 P2）：name/tag 各自可空
+                    // 独立展示——name 缺失但 tag 存在时仍显示标签，不做推断。
+                    ("部落", snapshot.clan?.name),
+                    ("部落标签", snapshot.clan?.tag),
+                    ("部落角色", roleLabel(snapshot.role)),
+                    ("当前联赛", ClanDisplayFormat.playerLeagueLabel(snapshot.league)),
+                    ("建筑大师联赛", ClanDisplayFormat.builderBaseLeagueLabel(snapshot.builderBaseLeague)),
+                    ("参战偏好", warPreferenceLabel(snapshot.warPreference)),
+                ]
+            )
 
             // 低频信息默认折叠（与页面「部落信息」分组同模式）。8 项固定 4 列
             // 两行满铺：列数整除项数，任何窗口宽度都无尾部空白。
@@ -238,13 +254,17 @@ struct OfficialPlayerCardView: View {
     /// 分组区块：次级标题 + 一行均分网格（列数 = 项数，无尾部空白）。
     private func summarySection(
         title: String,
-        systemImage: String,
+        icon: OfficialPlayerCardIcon,
+        fallbackSystemImage: String,
         items: [(title: String, value: String?)]
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 7) {
+                sectionIcon(icon, fallbackSystemImage: fallbackSystemImage)
+                Text(title)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
             LazyVGrid(
                 columns: items.map { _ in GridItem(.flexible(minimum: 80), spacing: 12) },
                 alignment: .leading,
@@ -254,6 +274,25 @@ struct OfficialPlayerCardView: View {
                     metric(item.title, item.value)
                 }
             }
+        }
+    }
+
+    /// APK 原生图标优先；资源丢失或无法解码时回退系统图标，避免官方卡片
+    /// 因静态资源问题消失。PNG 自带游戏原色，因此不套用标题的 secondary 色。
+    @ViewBuilder
+    private func sectionIcon(
+        _ icon: OfficialPlayerCardIcon,
+        fallbackSystemImage: String
+    ) -> some View {
+        if let url = icon.bundledURL(), let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: fallbackSystemImage)
         }
     }
 

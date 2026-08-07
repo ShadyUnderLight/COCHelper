@@ -10,7 +10,9 @@
     "notApplicable": 1032,
     "initialLevel": 429,
     "sourceMissing": 1847,
-    "parseFailed": 0
+    "parseFailed": 0,
+    "blockedIcons": 11,
+    "renderedIcons": 1264
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [

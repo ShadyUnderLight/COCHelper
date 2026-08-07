@@ -402,6 +402,15 @@ public final class AppModel: ObservableObject {
 
     // MARK: - 快捷快照导入（按显式 villageID，Issue #61）
 
+    /// 跨档案拦截用比较键：trim 后去掉可选 `#` 前缀并统一大写。
+    /// 仅用于 prepareQuickImport 的拦截（防御门）；replacesSameTag / apply
+    /// 契约仍用 OfficialPlayerTagValidator.normalized 的大小写敏感比较。
+    private static func interceptKey(_ tag: String?) -> String? {
+        guard let normalized = OfficialPlayerTagValidator.normalized(tag) else { return nil }
+        let body = normalized.hasPrefix("#") ? String(normalized.dropFirst()) : normalized
+        return body.uppercased()
+    }
+
     /// 为指定村庄准备快捷导入预览：解析剪贴板 JSON 并做路由校验。
     /// **纯函数**：不写任何持久化状态、不改 villages、不改
     /// accountSnapshot / importText / pending 状态（失败与成功路径均无副作用）。
@@ -429,9 +438,15 @@ public final class AppModel: ObservableObject {
         }
 
         // 规范化后的 JSON tag 命中其他村庄 → 阻止（避免误覆盖另一档案）。
-        if let snapshotTag = OfficialPlayerTagValidator.normalized(snapshot.tag),
+        // 拦截是防御门：比较键忽略大小写与可选 `#` 前缀（normalized 只 trim，
+        // `#abc`/`ABC` 这类非 canonical 变体同样必须命中），防止快捷路径把 A
+        // 的账号数据写进 B。
+        // 注意与下方 replacesSameTag 的判定基准刻意不同：replacesSameTag 保持
+        // 大小写敏感，与 VillageProfile.applyImportedSnapshot 的 tagChanged 判定
+        // 同基准——否则会出现「预览说同 Tag 更新、实际官方状态被清」的语义矛盾。
+        if let snapshotKey = Self.interceptKey(snapshot.tag),
            let other = villages.first(where: {
-               $0.id != villageID && OfficialPlayerTagValidator.normalized($0.tag) == snapshotTag
+               $0.id != villageID && Self.interceptKey($0.tag) == snapshotKey
            }) {
             return .failure(.tagBelongsToAnotherVillage(tag: snapshot.tag ?? "", villageName: other.name))
         }
@@ -443,6 +458,10 @@ public final class AppModel: ObservableObject {
         let description: String
         if target.tag == nil {
             description = "将建立「\(target.name)」的账号快照并导入"
+        } else if normalizedSnapshotTag == nil {
+            // 无 tag 是独立分支：目标已有快照但 JSON 未带 tag，官方数据因 Tag
+            // 缺失被重置（缺失 ≠ 变化，文案必须区分，不得误称「Tag 变化」）。
+            description = "导入目标：按当前详情页应用到「\(target.name)」。JSON 未提供账号 Tag，将按当前目标处理，原官方数据将因 Tag 缺失被重置"
         } else if replacesSameTag {
             description = "导入目标：按当前详情页更新「\(target.name)」"
         } else {
@@ -469,6 +488,12 @@ public final class AppModel: ObservableObject {
     /// 必须保持同步——`persistVillages` 内部经 `syncCurrentVillage` 用属性回写
     /// 该 entry，因此任何属性写入点之后都必须紧跟 persist（本方法在 load 之后
     /// 只写一次盘），新代码不得在两者之间插入状态变更或绕过该顺序。
+    ///
+    /// 副作用（load 语义的既有复用，账号数据页全局状态会被重置）：
+    /// `pendingAccountSnapshot` / `accountImportError` / `importIntoCurrentVillage`
+    /// 被 load 清空，`importText` 替换为导入快照的原文，selectedVillageID 切回
+    /// 目标村庄。详情页快捷入口不经过 pending 流程，UI 路径上这些重置不可达；
+    /// 但本方法是 public API，调用方（尤其测试与未来调用点）需知晓。
     public func applyQuickImport(_ preview: QuickImportPreview) {
         guard let index = villages.firstIndex(where: { $0.id == preview.targetVillageID }) else { return }
 

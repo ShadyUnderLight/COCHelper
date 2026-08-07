@@ -185,6 +185,52 @@ final class AppModelQuickImportTests: XCTestCase {
         XCTAssertEqual(persistedVillagesData(), persistedBefore, "拦截后持久化数据不得变化")
     }
 
+    /// H1（Issue #61 修复）：拦截必须大小写不敏感——A(#ABC)、B(#ABC) 同 tag 两档案，
+    /// A 页粘贴小写变体 {"tag":"#abc"} → 必须拦截（否则 apply 后 A 被 B 的账号数据覆盖）。
+    @MainActor
+    func testPrepareLowercaseTagVariantBlocked() async {
+        let a = VillageProfile(name: "A", accountSnapshot: makeSnapshot(tag: "#ABC"))
+        let b = VillageProfile(name: "B", accountSnapshot: makeSnapshot(tag: "#ABC"))
+        let clipboard: String? = ##"{"tag":"#abc","buildings":[]}"##
+        let model = makeModel(villages: [a, b]) { clipboard }
+        let aID = model.villages[0].id
+        let villagesBefore = model.villages
+        let persistedBefore = persistedVillagesData()
+
+        let result = model.prepareQuickImport(for: aID)
+
+        guard case .failure(.tagBelongsToAnotherVillage(let tag, let name)) = result else {
+            return XCTFail("小写 tag 变体必须被拦截（大小写不敏感）: \(result)")
+        }
+        XCTAssertEqual(tag, "#abc", "错误信息应展示剪贴板原始 tag")
+        XCTAssertEqual(name, "B")
+        XCTAssertEqual(model.villages, villagesBefore, "拦截后村庄数据不得变化")
+        XCTAssertEqual(persistedVillagesData(), persistedBefore, "拦截后持久化数据不得变化")
+    }
+
+    /// H2（Issue #61 修复）：拦截必须容忍缺 # 变体——A(#ABC)、B(#ABC)，
+    /// A 页粘贴 {"tag":"ABC"} → 必须拦截（normalized 不补 #，比较时须归一）。
+    @MainActor
+    func testPrepareMissingHashVariantBlocked() async {
+        let a = VillageProfile(name: "A", accountSnapshot: makeSnapshot(tag: "#ABC"))
+        let b = VillageProfile(name: "B", accountSnapshot: makeSnapshot(tag: "#ABC"))
+        let clipboard: String? = ##"{"tag":"ABC","buildings":[]}"##
+        let model = makeModel(villages: [a, b]) { clipboard }
+        let aID = model.villages[0].id
+        let villagesBefore = model.villages
+        let persistedBefore = persistedVillagesData()
+
+        let result = model.prepareQuickImport(for: aID)
+
+        guard case .failure(.tagBelongsToAnotherVillage(let tag, let name)) = result else {
+            return XCTFail("缺 # tag 变体必须被拦截: \(result)")
+        }
+        XCTAssertEqual(tag, "ABC", "错误信息应展示剪贴板原始 tag")
+        XCTAssertEqual(name, "B")
+        XCTAssertEqual(model.villages, villagesBefore, "拦截后村庄数据不得变化")
+        XCTAssertEqual(persistedVillagesData(), persistedBefore, "拦截后持久化数据不得变化")
+    }
+
     /// 目标村庄 ID 不存在 → .targetVillageMissing。
     @MainActor
     func testPrepareMissingTargetVillageFails() async {
@@ -217,7 +263,61 @@ final class AppModelQuickImportTests: XCTestCase {
         XCTAssertEqual(preview.targetVillageID, targetID)
         XCTAssertEqual(preview.replacesSameTag, false, "无 tag 不构成同 tag 更新")
         XCTAssertEqual(preview.destinationDescription,
-                       "导入目标：按当前详情页应用到「A」，原官方数据将因 Tag 变化被重置")
+                       "导入目标：按当前详情页应用到「A」。JSON 未提供账号 Tag，将按当前目标处理，原官方数据将因 Tag 缺失被重置")
+    }
+
+    /// 锁定（Issue #61 修复）：replacesSameTag 保持大小写敏感——单档案 A(#ABC)
+    /// 粘贴 {"tag":"#abc"} → 成功且 replacesSameTag == false（与
+    /// applyImportedSnapshot 的 tagChanged 判定同基准，避免「预览说同 Tag 更新、
+    /// 实际官方状态被清」的语义矛盾），预览描述走「Tag 变化被重置」分支。
+    @MainActor
+    func testPrepareLowercaseTagSingleVillageNotSameTag() async {
+        let a = VillageProfile(
+            name: "A",
+            accountSnapshot: makeSnapshot(tag: "#ABC"),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+        let clipboard: String? = ##"{"tag":"#abc","buildings":[]}"##
+        let model = makeModel(villages: [a]) { clipboard }
+        let aID = model.villages[0].id
+
+        let result = model.prepareQuickImport(for: aID)
+
+        guard case .success(let preview) = result else {
+            return XCTFail("单档案小写变体不应被拦截: \(result)")
+        }
+        XCTAssertEqual(preview.targetVillageID, aID)
+        XCTAssertFalse(preview.replacesSameTag,
+                       "replacesSameTag 必须保持大小写敏感（与 applyImportedSnapshot 契约一致）")
+        XCTAssertTrue(preview.destinationDescription.contains("Tag 变化被重置"),
+                      "大小写变体应按 Tag 变化分支描述: \(preview.destinationDescription)")
+    }
+
+    /// 锁定（Issue #61 修复）：目标已有快照 + JSON 无 tag → 成功，描述走独立的
+    /// 「Tag 缺失」分支（区分「缺失」与「变化」——缺失 ≠ 变化，文案不得混用）。
+    @MainActor
+    func testPrepareNoTagWhenTargetHasSnapshotDescription() async {
+        let a = VillageProfile(
+            name: "A",
+            accountSnapshot: makeSnapshot(tag: "#OLD"),
+            officialAPIState: OfficialAPIState(status: .success),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+        let clipboard: String? = ##"{"buildings":[]}"##
+        let model = makeModel(villages: [a]) { clipboard }
+        let aID = model.villages[0].id
+
+        let result = model.prepareQuickImport(for: aID)
+
+        guard case .success(let preview) = result else {
+            return XCTFail("无 tag JSON 应成功: \(result)")
+        }
+        XCTAssertEqual(preview.targetVillageID, aID)
+        XCTAssertFalse(preview.replacesSameTag)
+        XCTAssertTrue(preview.destinationDescription.contains("未提供账号 Tag"),
+                      "无 tag 分支应说明 Tag 缺失: \(preview.destinationDescription)")
+        XCTAssertTrue(preview.destinationDescription.contains("按当前目标处理"),
+                      "无 tag 分支应说明按当前目标处理: \(preview.destinationDescription)")
     }
 
     /// apply 只更新目标村庄：A 的快照 tag 更新、B 完全不变、updatedAt 更新。
@@ -453,7 +553,8 @@ final class AppModelQuickImportTests: XCTestCase {
                 let hasSnapshot = rng.bool()
                 let tag: String?
                 if hasSnapshot {
-                    tag = rng.unit(from: ["#V\(i)", " #V\(i) ", "", "#DUP"])
+                    // 含大小写/缺 # 变体：拦截比较必须归一后才判定（Issue #61 修复）。
+                    tag = rng.unit(from: ["#V\(i)", " #V\(i) ", "", "#DUP", "#abc", "ABC"])
                 } else {
                     tag = nil
                 }
@@ -473,7 +574,8 @@ final class AppModelQuickImportTests: XCTestCase {
             case 1:
                 clipboard = rng.unit(from: ["not json", "[1,2]", "{", ##"{"tag":"#X","buildings":["##])
             case 2:
-                let tag = rng.unit(from: [nil, "#V\(rng.int(in: 0...(count - 1)))", "#FRESH", "#  #V0"])
+                // 含大小写/缺 # 变体：剪贴板非 canonical tag 同样必须被拦截（Issue #61 修复）。
+                let tag = rng.unit(from: [nil, "#V\(rng.int(in: 0...(count - 1)))", "#FRESH", "#  #V0", "#abc", "ABC"])
                 clipboard = tag.map { ##"{"tag":"\##($0)","buildings":[]}"## } ?? ##"{"tag":null,"buildings":[]}"##
             default:
                 clipboard = ##"{"buildings":[]}"##

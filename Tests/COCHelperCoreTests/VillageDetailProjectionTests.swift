@@ -47,6 +47,39 @@ final class VillageDetailProjectionTests: XCTestCase {
         (c.knownCount, c.completedCount, c.unknownCount)
     }
 
+    /// 直接构造「计时已结束待重新导入」形态（`item()` helper 的 timer 字段由
+    /// isUpgrading 硬编码无法表达：timerSeconds 非 nil + remainingSeconds == 0 + status 任意）。
+    private func needsReimportRow(
+        level: Int,
+        maxLevel: Int,
+        count: Int,
+        status: VillageItemStatus
+    ) -> VillageItemState {
+        VillageItemState(
+            id: "agg:buildings:0",
+            section: "buildings",
+            dataID: 1_000_008,
+            base: .home,
+            name: "加农炮",
+            category: .buildings,
+            currentLevel: level,
+            count: count,
+            timerSeconds: 3600,
+            remainingSeconds: 0,
+            nextLevel: nil,
+            nextLevelDurationSeconds: nil,
+            maxLevel: maxLevel,
+            status: status,
+            missingReason: nil,
+            icon: nil,
+            levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
+            isNested: false,
+            displayCategory: nil
+        )
+    }
+
     // MARK: - 分组
 
     func testGroupsPreserveOrderAndItems() {
@@ -259,6 +292,43 @@ final class VillageDetailProjectionTests: XCTestCase {
         ]
         let total = VillageDetailProjection.totalCompletion(from: items)
         XCTAssertTrue(stat(total) == (2, 2, 0), "got \(stat(total))")
+    }
+
+    func testNeedsReimportAggregatedRowWeightsIntoKnownNotCompleted() {
+        // 聚合行形态：计时已结束（timerSeconds != nil、remainingSeconds == 0）记录在
+        // 真实导出中携带的是升级前旧等级（3 < maxLevel 10）→ status .complete。
+        // 按实例权重计入分母（known 6）但不计完成（completed 0）——
+        // #16/#17 既有语义，本测试锁定加权后的行为。
+        let needsReimport = needsReimportRow(level: 3, maxLevel: 10, count: 6, status: .complete)
+        XCTAssertTrue(needsReimport.needsReimport, "前置：构造形态确为待重新导入")
+        let total = VillageDetailProjection.totalCompletion(from: [needsReimport])
+        XCTAssertTrue(stat(total) == (6, 0, 0), "got \(stat(total))")
+    }
+
+    func testNeedsReimportRowAtMaxLevelCountsMaxed() {
+        // 防御性/不可达组合的文档化：快照等级即满级（10 == maxLevel 10）的计时
+        // 结束记录。该组合真实导出不可达（升级中导出的是升级前旧等级 < maxLevel），
+        // 但快照等级即满级时按等级判定为 maxed 是观察正确的语义，刻意锁定。
+        let needsReimportMaxed = needsReimportRow(level: 10, maxLevel: 10, count: 6, status: .maxed)
+        XCTAssertTrue(needsReimportMaxed.needsReimport, "前置：构造形态确为待重新导入")
+        let total = VillageDetailProjection.totalCompletion(from: [needsReimportMaxed])
+        XCTAssertTrue(stat(total) == (6, 6, 0), "got \(stat(total))")
+    }
+
+    func testInstanceCountSaturatesAtIntMax() {
+        // 恶意/损坏快照可含 cnt == Int.max：普通求和会在 debug 构建 SIGTRAP 崩溃、
+        // release 回绕成负数（本 PR 引入的溢出路径）。饱和加法 clamp 到 Int.max：
+        // 不崩溃、不产生垃圾负数。注：本测试对旧实现（无饱和）会崩溃整个测试进程，
+        // 故测试与修复同 commit，运行验证以新实现无崩溃且饱和为准。
+        let items = [
+            item(id: "huge1", status: .maxed, count: Int.max),
+            item(id: "huge2", status: .maxed, count: Int.max),
+        ]
+        XCTAssertEqual(VillageDetailProjection.instanceCount(of: items), Int.max,
+                       "溢出必须饱和到 Int.max（不得崩溃或回绕为负数）")
+        // 全链路一致：totalCompletion 的 known/completed 同样饱和、unknown 守恒不溢出。
+        let total = VillageDetailProjection.totalCompletion(from: items)
+        XCTAssertTrue(stat(total) == (Int.max, Int.max, 0), "got \(stat(total))")
     }
 
     func testUpgradingAndIdleAggregatedNoDoubleCount() {

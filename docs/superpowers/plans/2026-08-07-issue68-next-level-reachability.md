@@ -85,7 +85,7 @@ else:                               // 可升级
 
  - [x] `testNextUpgradeAvailableBelowStageMax`：加农炮 level 1、TH 12 → `.available(level: 2, duration: 300)`
  - [x] `testNextUpgradeRealNextLevelNonContiguous`：非连续目录 levels [1,2,3,5,7]、level 3、gate 全满足 → `.available(level: 5, ...)` 且 `nextLevelDurationSeconds` 为 5 级时长（非 nil）
- - [x] `testNextUpgradeRequiresWhenStageMaxed`：野蛮人 level 2（=stageMax，lab gate）、TH 12 → `.requires(nextLevel: 3, requirements: [.laboratory(level: 1)], ...)`
+ - [x] `testNextUpgradeRequiresWhenStageMaxed`：野蛮人 level 2（=stageMax，lab gate）、TH 12 → `.requires(nextLevel: 3, requirements: [.laboratory(level: 2)], ...)`
  - [x] `testNextUpgradeHeroHallGateRequires`：英雄 level 8（=stageMax，tavern 10 gate）、heroHall 8 → `.requires` 含 `.heroHall(level: 10)`、referenceDuration 为 9 级时长
  - [x] `testNextUpgradeGlobalMaxed`：level == maxLevel → `.globalMaxed`；level > maxLevel（目录过时）→ `.globalMaxed`
  - [x] `testNextUpgradeInProgressFact`：升级中 → `.inProgressFact(level: current+1, durationSeconds: 目录目标级时长)`

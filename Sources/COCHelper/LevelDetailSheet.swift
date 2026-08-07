@@ -146,7 +146,7 @@ struct LevelDetailSheet: View {
                             if case .requires(let nextLevel, let requirements, _) = item.nextUpgrade {
                                 // Issue #68 验收 2：阶段满级时展示被门槛阻塞的下一级
                                 // 解锁条件（替代可操作升级时长），与 .requires 投影同口径。
-                                Text("下一级 " + String(nextLevel) + "级 需要 " + requirements.displayLabels(base: catalogItem?.base))
+                                Text("下一级 " + String(nextLevel) + "级 解锁条件：" + requirements.displayLabels(base: catalogItem?.base))
                                     .font(.caption)
                                     .foregroundStyle(.orange)
                             }

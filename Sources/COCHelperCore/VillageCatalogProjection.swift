@@ -28,6 +28,8 @@ public enum VillageNextUpgrade: Hashable, Sendable {
     /// 阶段满级且目录存在更高等级：nextLevel 是第一个超过 currentStageMax 的真实
     /// 等级，requirements 为其解锁条件；referenceDurationSeconds 是「解锁后参考」
     /// 时长，UI 不得与 available 混用（不得显示为当前可操作升级时长）。
+    /// 异常快照（currentLevel > currentStageMax 且真实下一级 < currentLevel）由
+    /// 投影层守卫降级为 .unknown（评审 F1），本 case 恒不产生倒挂的下一级。
     case requires(nextLevel: Int, requirements: [UpgradeRequirement], referenceDurationSeconds: Int64?)
     /// 全局已满级：currentLevel >= 目录 maxLevel。
     case globalMaxed
@@ -520,20 +522,29 @@ public struct VillageCatalogProjection: Sendable {
                 } else if (item.level ?? -1) >= stageMax {
                     // 阶段满级且目录存在更高等级：真实下一级被门槛阻塞。
                     if let realNext {
-                        let requirements = realNext.requirements(base: catalogItem.base)
-                        if requirements.isEmpty {
-                            // 数据异常兜底：阶段上限之上存在无门槛等级（门槛断裂）→ 该
-                            // 等级实际可达，与 stageMax 语义矛盾。按全局满级处理，不产生
-                            //「需要解锁 []」的空列表误导（Issue #68 决策）。
-                            nextUpgrade = .globalMaxed
+                        // 语义守卫（评审 F1）：异常快照下当前等级可能超过阶段上限
+                        //（如快照 10 级、阶段上限 8——版本不匹配已被 .unknown 拦截，
+                        // 此处仅损坏/过时数据可达）。此时真实下一级（9）小于当前等级
+                        //（10），会输出倒挂的「下一级 9级」；fail-closed 为 .unknown，
+                        // 不产生可操作/倒挂的下一级。
+                        if let currentLevel = item.level, realNext.level < currentLevel {
+                            nextUpgrade = .unknown
                         } else {
-                            nextUpgrade = .requires(
-                                nextLevel: realNext.level,
-                                requirements: requirements,
-                                referenceDurationSeconds: catalog?.durationToUpgradeLevel(
-                                    nextLevel: realNext.level, for: catalogItem
+                            let requirements = realNext.requirements(base: catalogItem.base)
+                            if requirements.isEmpty {
+                                // 数据异常兜底：阶段上限之上存在无门槛等级（门槛断裂）→ 该
+                                // 等级实际可达，与 stageMax 语义矛盾。按全局满级处理，不产生
+                                //「需要解锁 []」的空列表误导（Issue #68 决策）。
+                                nextUpgrade = .globalMaxed
+                            } else {
+                                nextUpgrade = .requires(
+                                    nextLevel: realNext.level,
+                                    requirements: requirements,
+                                    referenceDurationSeconds: catalog?.durationToUpgradeLevel(
+                                        nextLevel: realNext.level, for: catalogItem
+                                    )
                                 )
-                            )
+                            }
                         }
                     } else {
                         // 防御：目录无更高等级（数据异常）→ 按满级处理。

@@ -69,7 +69,7 @@ struct BuildingGroupSummaryView: View {
             return false
         }) else { return nil }
         guard case .requires(_, let requirements, _) = first.item.nextUpgrade else { return nil }
-        return "下一级需要 " + requirements.displayLabels(base: first.item.base.rawValue)
+        return "下一级解锁条件：" + requirements.displayLabels(base: first.item.base.rawValue)
     }
 
     /// 完整时长合计：按 completeness 分支（交叉评审发现的口径缺陷修复——

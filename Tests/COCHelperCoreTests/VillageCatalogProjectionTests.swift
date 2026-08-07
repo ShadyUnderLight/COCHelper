@@ -2651,6 +2651,44 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
+    /// 语义守卫（Reviewer A F1）：异常快照下当前等级可能超过阶段上限（快照 10 级、
+    /// 阶段上限 8——版本不匹配已被 .unknown 拦截，仅损坏/过时数据可达）。此时目录
+    /// 真实下一级（9）小于当前等级（10），不得输出倒挂的「下一级 9级」：
+    /// fail-closed 为 .unknown。
+    func testRequiresAnomalousLevelBeyondStageMaxIsUnknown() throws {
+        // 目录：maxLevel 15，lvl1-8 门槛 TH 1..8、lvl9 门槛 TH 9（超过 9 的等级
+        // 无需收录——守卫只需「首个超过 stageMax 的等级」）。
+        let catalogJSON = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"units","category":"troops","dataID":4000001,"base":"home","name":"异常单位","maxLevel":15,
+           "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+             {"level":2,"durationSeconds":1800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":3600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":4,"durationSeconds":5400,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":5,"durationSeconds":7200,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":5,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":6,"durationSeconds":9000,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":6,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":7,"durationSeconds":10800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":7,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":8,"durationSeconds":12600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":8,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":9,"durationSeconds":28800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":9,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        let catalog = try makeCatalog(from: catalogJSON)
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 8, path: "th")],
+            "units": [makeItem(section: "units", dataID: 4_000_001, level: 10, path: "0")],
+        ])
+        let home = project(village: village, catalog: catalog, base: .home)
+        let unit = try XCTUnwrap(home.items.first { $0.dataID == 4_000_001 })
+        XCTAssertEqual(unit.currentStageMaxLevel, 8, "TH=8 满足 lvl1-8 门槛（TH 1..8），lvl9 需 TH9 不满足")
+        XCTAssertEqual(unit.status, .maxed, "level 10 >= 阶段上限 8 → 满级（现有语义，level >= stageMax）")
+        XCTAssertNil(unit.nextLevelDurationSeconds, "已满级不推断下一级时长")
+        XCTAssertEqual(unit.nextUpgrade, .unknown,
+                       "realNext(9) < currentLevel(10) → 不得输出倒挂的 .requires，fail-closed 为 .unknown")
+    }
+
     /// 全局满级：level == maxLevel → .globalMaxed；level > maxLevel（目录过时/数据
     /// 异常）→ 同样 .globalMaxed，不得推断可升级。
     func testNextUpgradeGlobalMaxed() throws {
@@ -2689,6 +2727,40 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
         XCTAssertTrue(cannon.isUpgrading)
         XCTAssertEqual(cannon.nextUpgrade, .inProgressFact(level: 2, durationSeconds: 300))
+    }
+
+    /// 升级中 + 目标等级超过目录上限（Reviewer B minor 1，验收 7「升级中目标超过
+    /// 目录」）：加农炮 level 2 → 3，目录 maxLevel 2 无 3 级记录 → 目标等级是快照
+    /// 事实（.inProgressFact(level: 3)），但时长不得伪造（durationSeconds nil）。
+    /// 版本不匹配变体同样：事实保留、时长 nil、missingReason 标注版本不匹配。
+    func testNextUpgradeInProgressTargetBeyondCatalogMax() throws {
+        // 正常版本：目标 3 级超出目录 maxLevel 2。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 2,
+                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
+            ],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
+        XCTAssertTrue(cannon.isUpgrading)
+        XCTAssertEqual(cannon.nextUpgrade, .inProgressFact(level: 3, durationSeconds: nil),
+                       "目录无 3 级记录 → 目标事实保留但时长不得伪造")
+        XCTAssertNil(cannon.nextLevelDurationSeconds)
+
+        // 版本不匹配变体：旧目录（9.9.9）+ 目标 3 级 → 事实保留、时长 nil、原因标注。
+        let staleCatalog = try makeCatalog(from: Self.stageCatalogJSON
+            .replacingOccurrences(of: "\"gameVersion\": \"18.400.13\"", with: "\"gameVersion\": \"9.9.9\""))
+        let home2 = project(village: village, catalog: staleCatalog, base: .home)
+        let cannon2 = try XCTUnwrap(home2.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(cannon2.status, .upgrading)
+        XCTAssertEqual(cannon2.nextUpgrade, .inProgressFact(level: 3, durationSeconds: nil),
+                       "版本不匹配 → 目标事实保留、旧目录时长不得泄漏")
+        XCTAssertNil(cannon2.nextLevelDurationSeconds)
+        let reason = try XCTUnwrap(cannon2.missingReason)
+        XCTAssertTrue(reason.contains("版本不匹配"),
+                      "升级中 + 版本不匹配必须显式标注缺失原因，got: \(reason)")
     }
 
     /// 升级中 + 目录版本不匹配：目标等级事实保留，但时长不得泄漏旧目录值
@@ -2815,7 +2887,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
     /// - (a) .available 的 level 必须 ∈ 目录等级集；
     /// - (b) .requires 的 nextLevel 必须 > currentStageMaxLevel；
     /// - (c) .inProgressFact 的 level == currentLevel + 1（#14 事实契约）；
-    /// - (d) stageMax 可计算时 status == .maxed ⟺ nextUpgrade ∈ {.requires, .globalMaxed}；
+    /// - (d) stageMax 可计算时 status == .maxed ⟺ nextUpgrade ∈ {.requires, .globalMaxed}
+///   （评审 F1 倒挂守卫例外：realNext < currentLevel 的异常快照 → .maxed 配 .unknown）；
     /// - (e) nextUpgrade nil ⟺ 嵌套/unavailable/目录未命中（命中项恒非 nil）；
     /// - (f) .requires 的 requirements 恒非空（数据异常兜底为 .globalMaxed）。
     func testPropertyNextUpgradeInvariants() throws {
@@ -2895,15 +2968,29 @@ final class VillageCatalogProjectionTests: XCTestCase {
                                "迭代 \(iteration): .inProgressFact 目标 = currentLevel + 1（#14 事实）")
             }
 
-            if state.currentStageMaxLevel != nil {
+            if let stageMax = state.currentStageMaxLevel {
                 let isMaxed = state.status == .maxed
                 let nextIsMaxed: Bool
                 switch upgrade {
                 case .requires, .globalMaxed: nextIsMaxed = true
                 default: nextIsMaxed = false
                 }
-                XCTAssertEqual(isMaxed, nextIsMaxed,
-                               "迭代 \(iteration): stageMax 可计算时 status .maxed ⟺ nextUpgrade ∈ {.requires, .globalMaxed}")
+                if nextIsMaxed {
+                    // 原等价方向：.requires/.globalMaxed ⟹ status .maxed。
+                    XCTAssertTrue(isMaxed,
+                                  "迭代 \(iteration): nextUpgrade ∈ {.requires, .globalMaxed} 时 status 必须 .maxed")
+                } else if isMaxed {
+                    // 评审 F1 倒挂守卫例外：异常快照（currentLevel > stageMax 且目录
+                    // 首个超过 stageMax 的真实等级 < currentLevel）时 .maxed 合法地配
+                    // .unknown——不产生可操作/倒挂的下一级。守卫之外没有其他
+                    // .maxed + 非满级投影的组合。
+                    XCTAssertEqual(upgrade, .unknown,
+                                   "迭代 \(iteration): .maxed 且非 .requires/.globalMaxed 时必须是倒挂守卫 .unknown")
+                    let firstAboveStage = levels.sorted(by: { $0.level < $1.level })
+                        .first { $0.level > stageMax }?.level
+                    XCTAssertLessThan(firstAboveStage ?? .min, currentLevel,
+                                      "迭代 \(iteration): .maxed + .unknown 必须是 realNext < currentLevel 的倒挂场景")
+                }
             }
 
             // (e) 目录未命中项（大本营 1000001 不在自定义目录中）→ nil

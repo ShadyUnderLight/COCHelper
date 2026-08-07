@@ -96,7 +96,7 @@ struct UpgradeDisplayRow: View {
             // Issue #68 验收 2：阶段满级（.requires，仅当目录存在更高等级时产生）
             // 追加被门槛阻塞的下一级解锁条件，替代可操作升级时长。
             if case .requires(let nextLevel, let requirements, _) = item.nextUpgrade {
-                return baseLabel + " · 下一级 " + String(nextLevel) + "级需 "
+                return baseLabel + " · 下一级 " + String(nextLevel) + "级 解锁条件："
                     + requirements.displayLabels(base: item.base.rawValue)
             }
             return baseLabel

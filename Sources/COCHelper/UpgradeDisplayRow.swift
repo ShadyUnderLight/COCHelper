@@ -137,7 +137,7 @@ struct UpgradeDisplayRow: View {
 
     private var subtitle: String {
         // Issue #74a：源目录标记已废弃（历史数据，不参与当前内容）。
-        let deprecated = item.catalogItemMissingReason == "deprecated_in_source" ? " · 已废弃" : ""
+        let deprecated = item.isCatalogDeprecated ? " · 已废弃" : ""
         return (item.displayCategory?.title ?? item.category?.title ?? item.section)
             + " · #" + String(item.dataID) + " · " + catalogVersionLabel + deprecated
     }

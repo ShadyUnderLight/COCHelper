@@ -116,4 +116,5 @@ UI 定稿：
 - ✅ 测试：+8（manifest 1、兼容性 5、deprecated 透传 1、property 聚合 50 轮 1）；既有 staleCatalog 测试 4 处显式传期望版本（helper 默认改 nil 的连锁修复）
 - ✅ 验证：pytest 573 + swift test 742 全绿，0 警告
 - ⚠️ 踩坑：测试追加到文件末尾会落在 class 外（XCTest 不收集）——须插入 class 收尾前；helper 默认参数改动会连锁破坏「用自定义版本目录构造 mismatch」的既有测试（须显式传参而非依赖默认值）
+- ✅ 交叉审核修复（PR #84 双 reviewer APPROVE）：property 测试补正向覆盖（deprecated 聚合保留）；`isCatalogDeprecated`/`isUnverified`/`isUsable` 派生属性集中判定与魔数；CatalogManifest doc 更新；manifest gameVersion 交叉校验 guard；ContentView 死分支注释；测试移回正确 class；8 处缩进恢复
 - ⚠️ 未做：seasonal 生命周期（阶段日期数据源阻塞：APK 只有 specialAbility 名无日期）——PR 描述注明

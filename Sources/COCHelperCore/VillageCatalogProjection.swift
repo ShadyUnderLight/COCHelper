@@ -83,9 +83,16 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// join 语义缺失原因（目录未收录/不可用/基地不匹配等）。
     public let missingReason: String?
     /// Issue #74a：来源级标记（`CatalogItem.missingReason` 原样透传，如
-    /// `deprecated_in_source`）。与 `missingReason`（join 语义）分离——前者
-    /// 表示该条目在源目录中被标记（历史数据/已废弃），后者表示投影 join 失败。
+    /// `deprecated_in_source`；仅 base 匹配且目录命中时非 nil）。与
+    /// `missingReason`（join 语义）分离——前者表示该条目在源目录中被标记
+    /// （历史数据/已废弃），后者表示投影 join 失败。
     public let catalogItemMissingReason: String?
+
+    /// 源目录标记「已废弃」（`deprecated_in_source`）。UI 判断统一走本属性，
+    /// 禁止散落魔数（Python 侧 ITEM_MISSING_REASONS 为单一值域契约）。
+    public var isCatalogDeprecated: Bool {
+        catalogItemMissingReason == "deprecated_in_source"
+    }
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
     /// 当前等级（currentLevel）匹配的 CatalogLevel 资产（level-level，Issue #39）：
@@ -316,12 +323,8 @@ public struct VillageCatalogProjection: Sendable {
         var diagnostics: [AccountDataDiagnostic] = []
         let compatibility = CatalogCompatibility.resolve(
             catalog: catalog, expectedGameVersion: expectedGameVersion)
-        let catalogIsUsable: Bool
-        if let catalog {
-            catalogIsUsable = expectedGameVersion.map { $0 == catalog.gameVersion } ?? true
-        } else {
-            catalogIsUsable = false
-        }
+        // Issue #74a：完成度可用性由兼容性状态派生（单一判定点防漂移）。
+        let catalogIsUsable = compatibility.isUsable
         switch compatibility {
         case .unavailable:
             diagnostics.append(AccountDataDiagnostic(

@@ -659,6 +659,8 @@ private struct CatalogStatusNote: View {
         case .unavailable:
             note(text: "静态升级目录不可用，完整时长与等级上限信息缺失。")
         case .mismatch(let catalogVersion, let expectedVersion):
+            // 前瞻死代码：resolve 传 nil 时生产不可达（玩家 build 数据源不存在）；
+            // 保留为未来玩家 build 接入时的 warning 契约。
             note(text: "静态目录版本 \(catalogVersion) 与期望版本 \(expectedVersion) 不匹配，完整时长可能过时。")
         case .unverified, .verified:
             EmptyView()

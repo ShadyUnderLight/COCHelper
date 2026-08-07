@@ -50,7 +50,7 @@ struct LevelDetailSheet: View {
         if item.isNested {
             return "该项目属于内部子项目，暂不提供逐级升级数据。"
         }
-        if item.catalogItemMissingReason == "deprecated_in_source" {
+        if item.isCatalogDeprecated {
             // Issue #74a：源目录标记已废弃——历史数据仍展示，但不属于当前游戏内容。
             return "该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。"
         }

@@ -29,9 +29,9 @@ public struct CatalogGeneratedFile: Codable, Hashable, Sendable {
 
 /// 版本化静态目录 manifest 模型。
 ///
-/// 当前 `loadBundled()` 不读取 manifest（只解码 catalog.json）；此类型作为
-/// 契约保留，供后续运行时版本审计（如 UI 展示 gameVersion/buildTag/locale、
-/// 校验 generatedFiles 哈希）使用。
+/// `loadBundled()` 已读取同目录 manifest（Issue #74a），经 `GameCatalog.manifest`
+/// 暴露 buildTag/sourceFingerprint/counts；缺失或解码失败时目录仍加载、
+/// manifest 为 nil（增强信息，不阻塞）。
 public struct CatalogManifest: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let gameVersion: String
@@ -189,6 +189,22 @@ public enum CatalogCompatibility: Hashable, Sendable {
     case mismatch(catalogVersion: String, expectedVersion: String)
     /// 目录不可用（catalog == nil）。
     case unavailable
+
+    /// 是否处于「未验证」状态（UI 版本行后缀展示用；与 `isUsable` 对称）。
+    public var isUnverified: Bool {
+        if case .unverified = self { return true }
+        return false
+    }
+
+    /// 完成度可用性（与 `VillageCatalogProjection.catalogIsUsable` 同语义）：
+    /// unverified/verified 可用（玩家 build 数据源不存在，unverified 不阻断）；
+    /// mismatch/unavailable fail-closed。投影层统一用它替换手写版本比较。
+    public var isUsable: Bool {
+        switch self {
+        case .unverified, .verified: return true
+        case .mismatch, .unavailable: return false
+        }
+    }
 
     /// 领域助手：投影与 UI 共用同一判定，防三态判定散落手搓。
     public static func resolve(
@@ -448,13 +464,18 @@ public struct GameCatalog: Sendable {
             return nil
         }
         // Issue #74a：manifest 是增强信息——缺失/解码失败不阻塞目录加载（nil）。
+        // Issue #74a：manifest 是增强信息——缺失/解码失败不阻塞目录加载（nil）。
+        // 纵深防御：manifest.gameVersion 与目录不一致时视为损坏（validate 在
+        // 生成期已保证一致，此处仅防未来手工替换/版本错配）。
         let manifest: CatalogManifest?
         if let manifestURL = Bundle.module.url(
             forResource: "manifest",
             withExtension: "json",
             subdirectory: "GameCatalog/" + version
-        ), let manifestData = try? Data(contentsOf: manifestURL) {
-            manifest = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData)
+        ), let manifestData = try? Data(contentsOf: manifestURL),
+           let decoded = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData),
+           decoded.gameVersion == payload.gameVersion {
+            manifest = decoded
         } else {
             manifest = nil
         }

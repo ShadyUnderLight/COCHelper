@@ -1192,7 +1192,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             nextLevelDurationState: nil,
             maxLevel: 3,
             status: .complete,
-missingReason: nil,
+            missingReason: nil,
             catalogItemMissingReason: nil,
             icon: icon,
             levelVisual: levelVisual,
@@ -3201,23 +3201,37 @@ missingReason: nil,
     // MARK: - Issue #74a: property-based（聚合透传不变量 + 兼容性确定性）
 
     func testPropertyAggregationPreservesCatalogItemMissingReason() throws {
-        // 聚合不变量：非升级同键聚合后 catalogItemMissingReason 保留
-        //（同 (section,dataID,level) 的记录来自同一 CatalogItem，透传必须一致）。
+        // 聚合不变量：非升级同键聚合后 catalogItemMissingReason 双向保持——
+        // 正向：deprecated 标记聚合后保留；反向：普通 item 聚合后不凭空产生。
+        //（同 (section,dataID,level) 的记录来自同一 CatalogItem，透传必须一致。）
+        let json = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":"deprecated_in_source","levels":[
+            {"level":1,"durationSeconds":60,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+          ]},
+          {"section":"units","category":"troops","dataID":4000000,"base":"home","name":"野蛮人","maxLevel":3,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,"levels":[
+            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+            {"level":2,"durationSeconds":1800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+          ]}
+        ]}
+        """
+        let catalog = try makeCatalog(from: json)
         var rng = SeededRNG(seed: 42)
         for iteration in 0..<50 {
             let n = Int.random(in: 1...4, using: &rng)
-            let deprecated = Bool.random(using: &rng)
+            let useDeprecated = Bool.random(using: &rng)
+            let section = useDeprecated ? "pets" : "units"
+            let dataID: Int64 = useDeprecated ? 73_000_000 : 4_000_000
             var items: [AccountItem] = []
             for j in 0..<n {
-                items.append(makeItem(
-                    section: "units", dataID: 4_000_000, level: 2, path: String(j)))
+                items.append(makeItem(section: section, dataID: dataID, level: 2, path: String(j)))
             }
-            _ = deprecated  // 合成目录只含普通 item；断言聚合后 nil 保持
-            let village = makeVillage(objectSections: ["units": items])
-            let home = project(village: village, catalog: syntheticCatalog, base: .home)
-            let aggregated = try XCTUnwrap(home.items.first { $0.dataID == 4_000_000 })
-            XCTAssertNil(aggregated.catalogItemMissingReason,
-                         "迭代 \(iteration): 聚合不得凭空产生 catalogItemMissingReason")
+            let village = makeVillage(objectSections: [section: items])
+            let home = project(village: village, catalog: catalog, base: .home)
+            let aggregated = try XCTUnwrap(home.items.first { $0.dataID == dataID })
+            XCTAssertEqual(
+                aggregated.isCatalogDeprecated, useDeprecated,
+                "迭代 \(iteration): 聚合后 deprecated 标记必须保留（n=\(n)）")
         }
     }
 

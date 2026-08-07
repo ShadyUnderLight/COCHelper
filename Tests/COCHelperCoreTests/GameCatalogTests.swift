@@ -471,10 +471,20 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertNil(oldCounts.parseFailed)
     }
 
+
+    func testLoadBundledExposesManifest() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let manifest = try XCTUnwrap(catalog.manifest, "bundled 目录必须带 manifest")
+        XCTAssertEqual(manifest.gameVersion, "18.400.13")
+        XCTAssertEqual(manifest.buildTag, "18_400_7")
+        XCTAssertEqual(manifest.counts.timed, 2096, "manifest counts 拆分字段应已落盘")
+        XCTAssertEqual(manifest.counts.sourceMissing, 1847)
+        XCTAssertFalse(manifest.sourceFingerprint.isEmpty)
+        XCTAssertEqual(manifest.generatedFiles.first?.path, "catalog.json")
+    }
 }
 
 // MARK: - UpgradeRequirement（Issue #67）
-
 final class RequirementTests: XCTestCase {
     /// 按 base 解析 village 语义：home → townHall/laboratory/heroHall。
     func testHomeBaseRequirementsParseVillageSemantics() {
@@ -608,17 +618,4 @@ final class RequirementTests: XCTestCase {
             )
     }
 
-    func testLoadBundledExposesManifest() throws {
-        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
-        let manifest = try XCTUnwrap(catalog.manifest, "bundled 目录必须带 manifest")
-        XCTAssertEqual(manifest.gameVersion, "18.400.13")
-        XCTAssertEqual(manifest.buildTag, "18_400_7")
-        XCTAssertEqual(manifest.counts.timed, 2096, "manifest counts 拆分字段应已落盘")
-        XCTAssertEqual(manifest.counts.sourceMissing, 1847)
-        XCTAssertFalse(manifest.sourceFingerprint.isEmpty)
-        XCTAssertEqual(manifest.generatedFiles.first?.path, "catalog.json")
-    }
 }
-
-    // MARK: - Issue #74a: manifest 加载
-

@@ -206,7 +206,11 @@ public enum BuildingGroupProjection {
             // unverified（缺 prerequisite 无法验证）与 unknown（含版本不匹配，旧目录
             // 不可信）→ 不计剩余等级（fail-closed，不得把无法验证/过期的全局等级数
             // 伪装成可升级剩余；审核 G important）。
-            if instance.item.status == .unverified || instance.item.status == .unknown {
+            // Issue #68 Task 2：升级中且阶梯为空（版本不匹配/缺 prerequisite 时 steps
+            // 恒为空，即 Task-2 fail-closed 信号）→ 同样不计剩余等级：不得用旧目录
+            // 或全局 maxLevel 计剩余（与阶梯同口径，汇总与阶梯不得矛盾）。
+            if instance.item.status == .unverified || instance.item.status == .unknown
+                || (instance.item.status == .upgrading && instance.steps.isEmpty) {
                 hasPartialMissing = true
             } else if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
                 let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel

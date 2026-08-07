@@ -763,6 +763,8 @@ final class BuildingGroupProjectionTests: XCTestCase {
                        "升级状态独立于目录：版本不匹配不得降级为 unknown")
         XCTAssertTrue(instance.steps.isEmpty,
                       "版本不匹配：升级记录的旧目录阶梯不得展示（got \(instance.steps.map(\.level))）")
+        XCTAssertEqual(group.summary.remainingLevelCount, 0,
+                       "版本不匹配：升级记录剩余等级不得计入（不得用旧目录 maxLevel 计 16-5=11）")
         XCTAssertEqual(group.summary.completeness, .versionMismatch)
     }
 
@@ -786,6 +788,8 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertNil(instance.item.currentStageMaxLevel, "缺 prerequisite → 阶段上限不可计算")
         XCTAssertTrue(instance.steps.isEmpty,
                       "缺 prerequisite：升级记录阶梯 fail-closed（got \(instance.steps.map(\.level))）")
+        XCTAssertEqual(group.summary.remainingLevelCount, 0,
+                       "缺 prerequisite：升级记录剩余等级不得计入（不得回退全局 maxLevel 计 4-2=2）")
         XCTAssertEqual(group.summary.completeness, .partialMissing, "无法验证阶段上限的组降级 partialMissing")
     }
 

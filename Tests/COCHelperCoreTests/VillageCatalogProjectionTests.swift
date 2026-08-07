@@ -3034,4 +3034,72 @@ final class VillageCatalogProjectionTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Issue #74b: nextLevelDurationState 透传
+
+    func testNextLevelDurationStateTimedForReachableLevel() throws {
+        // 非升级未满级：stageCatalog 加农炮 level 1 → 真实下一级 level 2 = 300s。
+        // 数据约定（Issue #67）：村庄必须带大本营 1000001 记录，且加农炮必须用
+        // 1000002（1000001 是真实大本营 dataID，会被 PlayerUnlockLevels 误读）。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(item.nextLevelDurationState, .timed(seconds: 300))
+        XCTAssertEqual(item.nextLevelDurationSeconds, 300,
+                       "nextLevelDurationSeconds 与 state 必须同源一致")
+    }
+
+    func testNextLevelDurationStateUnknownReasonTransparent() throws {
+        // 装备目录命中但 level 时长为 nil（合成 reason no_direct_upgrade_time）：
+        // state 原样透传（防御分支），seconds 保持 nil。
+        let village = makeVillage(objectSections: [
+            "equipment": [makeItem(section: "equipment", dataID: 90_000_000, level: 2, path: "0")],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertNil(item.nextLevelDurationSeconds)
+        XCTAssertEqual(item.nextLevelDurationState, .unknownReason("no_direct_upgrade_time"))
+    }
+
+    func testNextLevelDurationStateNilForMaxedAndUnmatched() throws {
+        // 满级：无下一级，不推状态（stageCatalog 加农炮 level 2 = 满级）。
+        let villageMaxed = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 2, path: "1"),
+            ],
+        ])
+        let maxed = try XCTUnwrap(
+            project(village: villageMaxed, catalog: stageCatalog, base: .home)
+                .items.first { $0.dataID == 1_000_002 })
+        XCTAssertNil(maxed.nextLevelDurationState)
+        // 目录未命中：不推状态。
+        let villageMiss = makeVillage(objectSections: [
+            "units": [makeItem(section: "units", dataID: 3_999_999_999, level: 2, path: "0")],
+        ])
+        let miss = try XCTUnwrap(
+            project(village: villageMiss, catalog: syntheticCatalog, base: .home).items.first)
+        XCTAssertNil(miss.nextLevelDurationState)
+    }
+
+    func testNextLevelDurationStateNilWhenVersionMismatch() throws {
+        // 版本不匹配（catalogIsUsable == false）：不得泄漏旧目录时长/状态。
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let home = project(village: village, catalog: stageCatalog,
+                           expectedGameVersion: "99.0.0", base: .home)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertNil(item.nextLevelDurationSeconds)
+        XCTAssertNil(item.nextLevelDurationState)
+    }
+
 }

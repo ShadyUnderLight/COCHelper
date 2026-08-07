@@ -101,7 +101,7 @@ struct UpgradeDisplayRow: View {
             }
             return baseLabel
         }
-        guard let duration = item.nextLevelDurationSeconds else { return "暂无目录数据" }
+        guard let state = item.nextLevelDurationState else { return "暂无目录数据" }
         let prefix: String
         if item.isUpgrading {
             // 升级行：levelLabel 已显示「当前 → 目标」，时长不加前缀。
@@ -114,11 +114,18 @@ struct UpgradeDisplayRow: View {
         } else {
             prefix = "完整时长："
         }
-        if duration > 0 {
-            return prefix + AccountDurationFormatter.label(duration)
+        // Issue #74b：缺失类状态（initialLevel/notApplicable/sourceMissing/
+        // parseFailed/unknownReason）直接显示原因文案，**不带 prefix**——
+        // 避免「下一级：N级 · 完整时长：目录缺失」怪句。
+        switch state {
+        case .timed(let seconds):
+            return prefix + AccountDurationFormatter.label(seconds)
+        case .instant:
+            // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
+            return prefix + "即时"
+        default:
+            return state.durationLabel
         }
-        // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
-        return prefix + "即时"
     }
 
     // MARK: - 副标题

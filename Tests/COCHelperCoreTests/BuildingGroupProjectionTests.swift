@@ -18,6 +18,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
         var durationSeconds: Int64?
         var upgradeResource: String?
         var upgradeCost: Int64?
+        var missingReason: String? = nil
     }
 
     private struct SpecItem: Encodable {
@@ -854,4 +855,36 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertEqual(group.summary.remainingLevelCount, 0, "unverified 不计剩余等级")
         XCTAssertEqual(group.summary.completeness, .partialMissing, "unverified 组降级 partialMissing")
     }
+
+    // MARK: - Issue #74b: step 时长缺失原因透传
+
+    func testStepTransparentlyCarriesMissingReason() throws {
+        // level 6 时长缺失（reason=time_missing）→ step.missingReason 透传；
+        // 正常 step 的 missingReason 为 nil。
+        let catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "加农炮", maxLevel: 8,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeResource: "Elixir", upgradeCost: 200),
+                    SpecLevel(level: 3, durationSeconds: 180, upgradeResource: "Elixir", upgradeCost: 300),
+                    SpecLevel(level: 4, durationSeconds: 240, upgradeResource: "Elixir", upgradeCost: 400),
+                    SpecLevel(level: 5, durationSeconds: 300, upgradeResource: "Elixir", upgradeCost: 500),
+                    SpecLevel(level: 6, durationSeconds: nil, upgradeResource: "Elixir", upgradeCost: 600, missingReason: "time_missing"),
+                    SpecLevel(level: 7, durationSeconds: 420, upgradeResource: "Elixir", upgradeCost: 700),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 5, path: "0")],
+        ])
+        let group = try XCTUnwrap(project(village: village, catalog: catalog, base: .home).first)
+        let steps = try XCTUnwrap(group.instances.first?.steps)
+        let level6 = try XCTUnwrap(steps.first { $0.level == 6 })
+        XCTAssertEqual(level6.missingReason, "time_missing")
+        let level7 = try XCTUnwrap(steps.first { $0.level == 7 })
+        XCTAssertNil(level7.missingReason)
+    }
+
 }

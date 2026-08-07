@@ -62,6 +62,12 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 值匹配、非连续目录安全（Issue #68）），目录未命中、已满级或时长缺失时 nil。
     /// 注意 nextLevel 字段仍只在升级中推断（#14 契约），duration 与其解耦。
     public let nextLevelDurationSeconds: Int64?
+    /// Issue #74b：`nextLevelDurationSeconds` 的伴随语义（与时长来自同一
+    /// CatalogLevel 单一查表，见 `GameCatalog.catalogLevel(toUpgrade:for:)`）。
+    /// nil = 无目录/未命中/超范围/满级/版本不匹配（UI 兜底「暂无目录数据」）；
+    /// 非 nil 时 UI 按状态分支展示——缺失类（initialLevel/notApplicable/
+    /// sourceMissing/parseFailed）不再统一显示「暂无目录数据」。
+    public let nextLevelDurationState: CatalogDurationState?
     public let maxLevel: Int?
     /// 当前玩家解锁等级下的阶段上限（Issue #67）：目录允许的最高等级受解锁建筑
     ///（大本营/实验室/英雄殿堂/建筑大师大本营/星空实验室）门槛约束。
@@ -163,6 +169,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         remainingSeconds: Int64?,
         nextLevel: Int?,
         nextLevelDurationSeconds: Int64?,
+        nextLevelDurationState: CatalogDurationState? = nil,
         maxLevel: Int?,
         currentStageMaxLevel: Int? = nil,
         nextUpgrade: VillageNextUpgrade? = nil,
@@ -188,6 +195,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.remainingSeconds = remainingSeconds
         self.nextLevel = nextLevel
         self.nextLevelDurationSeconds = nextLevelDurationSeconds
+        self.nextLevelDurationState = nextLevelDurationState
         self.maxLevel = maxLevel
         self.currentStageMaxLevel = currentStageMaxLevel
         self.nextUpgrade = nextUpgrade
@@ -404,6 +412,7 @@ public struct VillageCatalogProjection: Sendable {
                 remainingSeconds: remainingSeconds,
                 nextLevel: nil,
                 nextLevelDurationSeconds: nil,
+                nextLevelDurationState: nil,
                 maxLevel: nil,
                 status: .unavailable,
                 missingReason: "该类别不参与升级追踪（\(item.section)）。",
@@ -473,23 +482,32 @@ public struct VillageCatalogProjection: Sendable {
         // 进行中升级的事实，与阶段上限无关。目录版本不匹配（catalogIsUsable == false）
         // → 一律不推断（旧目录时长不可信）。
         let nextLevelDuration: Int64?
+        let nextLevelDurationState: CatalogDurationState?
         if baseMatches, let catalogItem, catalogIsUsable, (stageMax != nil || isUpgrading) {
             if let nextLevel {
                 // 升级中：目标等级 = 当前 + 1（显式推断，#14 契约）。
-                nextLevelDuration = catalog?.durationToUpgradeLevel(nextLevel: nextLevel, for: catalogItem)
+                // Issue #74b：单一查表——同一 CatalogLevel 同时取秒数与状态，
+                // 避免 durationToUpgradeLevel 二次查表漂移。
+                let target = catalog?.catalogLevel(toUpgrade: nextLevel, for: catalogItem)
+                nextLevelDuration = target?.durationSeconds
+                nextLevelDurationState = target?.durationState
             } else if let level = item.level, level < (stageMax ?? catalogItem.maxLevel) {
                 // 非升级且未满级（issue #16 列表规则：普通建筑显示下一等级时间）：
                 // 下一级 = 目录真实下一级（Issue #68：修复非连续目录下 level + 1 推
                 // 时长恒 nil）；nextLevel 字段保持 nil（#14：目标等级只允许升级中
                 // 显式推断）。已满级（level >= effectiveMax）不推。
-                nextLevelDuration = realNext.flatMap {
-                    catalog?.durationToUpgradeLevel(nextLevel: $0.level, for: catalogItem)
+                let target = realNext.flatMap {
+                    catalog?.catalogLevel(toUpgrade: $0.level, for: catalogItem)
                 }
+                nextLevelDuration = target?.durationSeconds
+                nextLevelDurationState = target?.durationState
             } else {
                 nextLevelDuration = nil
+                nextLevelDurationState = nil
             }
         } else {
             nextLevelDuration = nil
+            nextLevelDurationState = nil
         }
 
         // Issue #68：下一等级可达性投影（fail-closed，与 status 同口径）。
@@ -656,6 +674,7 @@ public struct VillageCatalogProjection: Sendable {
             remainingSeconds: remainingSeconds,
             nextLevel: nextLevel,
             nextLevelDurationSeconds: nextLevelDuration,
+            nextLevelDurationState: nextLevelDurationState,
             maxLevel: baseMatches ? catalogItem?.maxLevel : nil,
             currentStageMaxLevel: stageMax,
             nextUpgrade: nextUpgrade,
@@ -785,6 +804,7 @@ public struct VillageCatalogProjection: Sendable {
                 remainingSeconds: groupHasFinishedTimer ? 0 : nil,
                 nextLevel: nil,
                 nextLevelDurationSeconds: first.nextLevelDurationSeconds,
+                nextLevelDurationState: first.nextLevelDurationState,
                 maxLevel: first.maxLevel,
                 currentStageMaxLevel: first.currentStageMaxLevel,
                 nextUpgrade: first.nextUpgrade,

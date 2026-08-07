@@ -106,6 +106,13 @@ struct BuildingGroupSummaryView: View {
         if !steps.isEmpty && steps.allSatisfy(\.hasDuration) {
             return "即时"
         }
+        // Issue #74b：阶梯非空但全部时长缺失（目录命中、源字段缺失）→
+        // 明确「目录无时长数据」，与「无目录/未收录」的「暂无目录数据」区分；
+        // 部分缺失（seconds == 0 且阶梯混合）保持「暂无目录数据」（有数值时
+        // 已走 seconds > 0 分支并带 partialMissing 橙标）。
+        if !steps.isEmpty && steps.allSatisfy({ $0.durationSeconds == nil }) {
+            return "目录无时长数据"
+        }
         return "暂无目录数据"
     }
 

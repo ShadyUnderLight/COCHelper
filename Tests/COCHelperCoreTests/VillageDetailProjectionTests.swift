@@ -15,7 +15,8 @@ final class VillageDetailProjectionTests: XCTestCase {
         maxLevel: Int? = 10,
         count: Int? = 1,
         isUpgrading: Bool = false,
-        nextLevel: Int? = nil
+        nextLevel: Int? = nil,
+        currentStageMaxLevel: Int? = nil
     ) -> VillageItemState {
         let effectiveNext = nextLevel ?? (isUpgrading ? level.map { $0 + 1 } : nil)
         return VillageItemState(
@@ -32,6 +33,7 @@ final class VillageDetailProjectionTests: XCTestCase {
             nextLevel: effectiveNext,
             nextLevelDurationSeconds: isUpgrading ? 3600 : nil,
             maxLevel: maxLevel,
+            currentStageMaxLevel: currentStageMaxLevel,
             status: status,
             missingReason: nil,
             icon: nil,
@@ -1324,6 +1326,36 @@ final class VillageDetailProjectionTests: XCTestCase {
             return false // 版本不匹配：目录可能过时，不纳入可确认完成度
         }
         return true
+    }
+
+    // MARK: - Issue #67：阶段满级（currentStageMaxLevel）完成度联动
+
+    func testStageMaxedCountsAsCompleted() {
+        // 阶段满级（status == .maxed 且 currentStageMaxLevel < maxLevel）必须计入
+        // completed：12 本玩家加农炮 stageMax=12 < 全局 maxLevel=14 → (1, 1, 0)。
+        // 投影层（VillageCatalogProjection L423-432）对阶段满级与全局满级同报
+        // .maxed，完成度统计按 status 判定，天然计入——本测试锁定该联动。
+        let item = item(id: "a", category: .buildings, status: .maxed,
+                        level: 12, maxLevel: 14, currentStageMaxLevel: 12)
+        let total = VillageDetailProjection.totalCompletion(from: [item])
+        XCTAssertEqual(total.knownCount, 1)
+        XCTAssertEqual(total.completedCount, 1)
+        XCTAssertEqual(total.unknownCount, 0)
+        XCTAssertEqual(total.completionRatio ?? -1, 1.0, accuracy: 0.0001)
+    }
+
+    func testStageMaxedBelowGlobalIsNotFullyMaxed() {
+        // 阶段满级但全局未满（currentStageMaxLevel=12 < maxLevel=14）：
+        // totalCompletion 层面 completed==known → isFullyMaxed 按计数判定为 true
+        //（VillageCategoryCompletion.isFullyMaxed 只看计数，不看阶段字段）。
+        // 此测试只断言计数层面行为（completedCount==1）：全局剩余信息由 UI
+        // 消费 currentStageMaxLevel，不在完成度计数层区分（Issue #67 边界：
+        // #70 才拆三指标）。
+        let item = item(id: "a", category: .buildings, status: .maxed,
+                        level: 12, maxLevel: 14, currentStageMaxLevel: 12)
+        let total = VillageDetailProjection.totalCompletion(from: [item])
+        XCTAssertEqual(total.completedCount, 1)
+        XCTAssertEqual(total.isFullyMaxed, true, "计数层 completed==known → 判满级")
     }
 }
 

@@ -48,8 +48,12 @@ struct BuildingGroupSummaryView: View {
     /// 不能只看 remainingLevelCount == 0 就报「已达目录上限」）：
     /// - versionMismatch（目录过时，如大本营 Lv19 > 目录 max 18）：一律显示
     ///   「暂无目录数据」，不得把旧目录汇总当成确定事实（Issue #45 契约）；
-    /// - complete 且剩余等级 0：真满级 →「已达目录上限」（参照
-    ///   `UpgradeDisplayRow.durationLabel` 的 isMaxed 分支先例）；
+    /// - complete 且剩余等级 0：
+    ///   - 任一实例阶段上限低于全局上限（`currentStageMaxLevel < maxLevel`，
+    ///     Issue #67）→「已达当前阶段上限」（全局更高等级未解锁，与行级
+    ///     「当前阶段已满级（全局尚有 N 级）」文案一致，审核 D important）；
+    ///   - 否则真满级 →「已达目录上限」（参照 `UpgradeDisplayRow.durationLabel`
+    ///     的 isMaxed 分支先例）；
     /// - partialMissing 且剩余等级 0（如 currentLevel == nil，剩余等级不可确定）：
     ///   「暂无目录数据」，不误报已满级；
     /// - 剩余等级 > 0：`AccountDurationFormatter.label`（完整升级耗时，不得写成
@@ -64,7 +68,12 @@ struct BuildingGroupSummaryView: View {
         }
         if group.summary.remainingLevelCount == 0 {
             if group.summary.completeness == .complete {
-                return "已达目录上限"
+                let anyStageCapped = group.instances.contains { instance in
+                    guard let stage = instance.item.currentStageMaxLevel,
+                          let max = instance.item.maxLevel else { return false }
+                    return stage < max
+                }
+                return anyStageCapped ? "已达当前阶段上限" : "已达目录上限"
             }
             return "暂无目录数据"
         }

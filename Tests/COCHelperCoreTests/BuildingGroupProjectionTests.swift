@@ -625,4 +625,132 @@ final class BuildingGroupProjectionTests: XCTestCase {
         )
         XCTAssertEqual(groups.first?.summary.completeness, .complete)
     }
+
+    // MARK: - Issue #67: 阶段感知（审核 C important）
+
+    /// TH=2 的村庄：阶段上限 = 2（lvl3 需 TH3）→ 阶梯只到 level 2，汇总剩余 0 级
+    ///（不是全局剩余 2 级）；阶段满级实例 steps 空且不降级。
+    func testT16StageMaxCapsLadderAndSummary() throws {
+        // 带 TH 门槛的目录（lvl1 无、lvl2 TH2、lvl3 TH3、lvl4 TH4），加农炮 dataID 1000002。
+        let gateJSON = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":4,
+           "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":2,"durationSeconds":120,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":180,"upgradeResource":"Elixir","upgradeCost":300,"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":4,"durationSeconds":240,"upgradeResource":"Elixir","upgradeCost":400,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
+        let payload = try JSONDecoder().decode(Payload.self, from: Data(gateJSON.utf8))
+        let gated = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "th"),  // 大本营 TH=2
+                makeItem(section: "buildings", dataID: 1_000_002, level: 2, path: "0"),   // 加农炮 lvl2
+            ],
+        ])
+
+        let groups = BuildingGroupProjection.project(
+            village: village, catalog: gated, base: .home
+        )
+        let group = try XCTUnwrap(groups.first { $0.dataID == 1_000_002 }, "加农炮组（大本营 1000001 不在目录）")
+        let instance = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(instance.item.currentStageMaxLevel, 2, "TH=2 → 阶段上限 2")
+        XCTAssertEqual(instance.item.status, .maxed, "阶段满级")
+        XCTAssertTrue(instance.steps.isEmpty, "阶段满级：阶梯只到阶段上限，不显示全局更高等级")
+        XCTAssertEqual(group.summary.remainingLevelCount, 0, "阶段满级 → 剩余 0 级（非全局剩余 2 级）")
+        XCTAssertEqual(group.summary.completeness, .complete, "阶段满级不降级")
+    }
+
+    // MARK: - Issue #67 P1-2 复审：组卡→详情链路版本不匹配同口径（审核 F important）
+
+    /// 版本不匹配时，组卡实例 status 必须与列表行同口径降级（unknown），
+    /// 不得消费旧目录判 maxed——组卡点击进详情与列表进详情行为一致。
+    func testT17VersionMismatchDowngradesGroupInstanceStatus() throws {
+        let catalog = try makeCatalog(items: Self.syntheticCatalogItems, gameVersion: "18.400.12")
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 16, path: "0")],
+        ])
+
+        let groups = BuildingGroupProjection.project(
+            village: village, catalog: catalog, base: .home,
+            expectedGameVersion: "18.400.13"
+        )
+        let group = try XCTUnwrap(groups.first)
+        let instance = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(instance.item.status, .unknown,
+                       "版本不匹配 → 组卡实例行状态降级 unknown（与列表行同口径，P1-2）")
+        XCTAssertEqual(instance.item.maxLevel, 16, "旧目录 maxLevel 保留供展示")
+        XCTAssertNil(instance.item.currentStageMaxLevel, "版本不匹配 → 不计算阶段上限")
+        XCTAssertEqual(group.summary.completeness, .versionMismatch, "组卡汇总降级")
+    }
+
+    /// 版本不匹配 + currentLevel < maxLevel（旧目录阶梯本非空）：steps 必须为空、
+    /// remaining 必须为 0——旧目录阶梯/剩余等级不得展示（审核 G important，
+    /// 与行级 nil 时长、视图「暂无目录数据」一致）。
+    func testT17bVersionMismatchNoStaleLadderOrRemaining() throws {
+        let catalog = try makeCatalog(items: Self.syntheticCatalogItems, gameVersion: "18.400.12")
+        // 加农炮 lvl 5 < 旧目录 maxLevel 16：若消费旧目录，阶梯 6..16 非空、remaining 11。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 5, path: "0")],
+        ])
+
+        let groups = BuildingGroupProjection.project(
+            village: village, catalog: catalog, base: .home,
+            expectedGameVersion: "18.400.13"
+        )
+        let group = try XCTUnwrap(groups.first)
+        let instance = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(instance.item.status, .unknown)
+        XCTAssertTrue(instance.steps.isEmpty,
+                      "版本不匹配：旧目录阶梯不得展示（got \(instance.steps.map(\.level))）")
+        XCTAssertEqual(group.summary.remainingLevelCount, 0,
+                       "版本不匹配：旧目录剩余等级不得展示（got \(group.summary.remainingLevelCount)）")
+        XCTAssertEqual(group.summary.totalDurationSeconds, 0,
+                       "版本不匹配：旧目录时长不得计入汇总")
+        XCTAssertTrue(group.summary.costByResource.isEmpty,
+                      "版本不匹配：旧目录费用不得计入汇总")
+        XCTAssertEqual(group.summary.completeness, .versionMismatch)
+    }
+
+    /// 缺 prerequisite（无大本营）→ 组卡实例 status unverified、steps 空、partialMissing。
+    func testT18MissingPrerequisiteGroupInstanceUnverified() throws {
+        // syntheticCatalogItems 无 TH 门槛（standardLevels 无 requiredTownHallLevel），
+        // 需要带门槛目录：用 T16 的 gateJSON 目录。
+        let gateJSON = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":4,
+           "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":2,"durationSeconds":120,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":180,"upgradeResource":"Elixir","upgradeCost":300,"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":4,"durationSeconds":240,"upgradeResource":"Elixir","upgradeCost":400,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
+        let payload = try JSONDecoder().decode(Payload.self, from: Data(gateJSON.utf8))
+        let gated = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+
+        // 村庄只有加农炮（无大本营）→ 缺 prerequisite
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_002, level: 2, path: "0")],
+        ])
+        let groups = BuildingGroupProjection.project(
+            village: village, catalog: gated, base: .home
+        )
+        let group = try XCTUnwrap(groups.first)
+        let instance = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(instance.item.status, .unverified,
+                       "缺 prerequisite → 组卡实例 unverified（fail-closed，P1-1）")
+        XCTAssertTrue(instance.steps.isEmpty, "unverified 不生成可升级阶梯")
+        XCTAssertEqual(group.summary.remainingLevelCount, 0, "unverified 不计剩余等级")
+        XCTAssertEqual(group.summary.completeness, .partialMissing, "unverified 组降级 partialMissing")
+    }
 }

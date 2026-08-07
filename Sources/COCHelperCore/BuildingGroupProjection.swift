@@ -87,18 +87,22 @@ public enum BuildingGroupProjection {
         // 注意区分两种降级（Issue #45 契约第 5 节）：目录不可用（catalog == nil）
         // 是「缺失态」→ partialMissing（UI 橙标 + 诊断）；目录存在但版本不匹配
         // 是「不得输出权威汇总」→ versionMismatch（UI 红标诊断）。
-        let hasGlobalVersionMismatch: Bool
-        if let catalog, let expectedGameVersion {
-            hasGlobalVersionMismatch = catalog.gameVersion != expectedGameVersion
+        let catalogIsUsable: Bool
+        if let catalog {
+            catalogIsUsable = expectedGameVersion.map { $0 == catalog.gameVersion } ?? true
         } else {
-            hasGlobalVersionMismatch = false
+            catalogIsUsable = false
         }
         // 原始记录层（聚合前）：只取 buildings/buildings2 的非嵌套项。
+        // catalogIsUsable 必须显式传入（Issue #67 P1-2）：版本不匹配时行状态
+        // 不得消费旧目录判 maxed/complete——组卡→详情链路与列表行同口径。
         let records = VillageCatalogProjection.records(
             from: snapshot,
             catalog: catalog,
             base: base,
-            now: now
+            now: now,
+            unlocks: PlayerUnlockLevels(snapshot: snapshot),
+            catalogIsUsable: catalogIsUsable
         ).filter { !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2") }
 
         // 按 (base, section, dataID) 分组，组按首现顺序输出（字典 + 有序键数组）。
@@ -121,26 +125,34 @@ public enum BuildingGroupProjection {
                 dataID: first.dataID,
                 name: first.name,
                 instances: instances,
-                summary: summary(for: instances, hasGlobalVersionMismatch: hasGlobalVersionMismatch),
+                summary: summary(for: instances, catalogIsUsable: catalogIsUsable, catalogIsNil: catalog == nil),
                 displayCategory: first.displayCategory,
                 category: first.category
             )
         }
     }
 
-    /// 阶梯：目录 levels 中 `level ∈ (currentLevel, maxLevel]` 的条目，按 level 升序。
+    /// 阶梯：目录 levels 中 `level ∈ (currentLevel, effectiveMax]` 的条目，按 level 升序。
     /// 目录等级可能不连续，必须过滤目录 levels 而非生成连续整数。
+    /// `effectiveMax` = 阶段上限（issue #67）优先，不可计算时回退全局 maxLevel——
+    /// 与行级 `.maxed` 判定同口径，保证组卡与列表行不矛盾（审核 C important）。
     /// currentLevel 为 nil、目录未命中或 base 不匹配（maxLevel == nil）→ 空数组。
+    /// unverified（缺 prerequisite 无法验证阶段上限，Issue #67 fail-closed）
+    /// → 空数组：不得把无法验证的全局等级展示为可升级阶梯。
+    /// unknown（含版本不匹配，Issue #67 P1-2 fail-closed）→ 空数组：旧目录
+    /// 阶梯不得展示（maxLevel 仅保留供展示，不产生可升级阶梯，审核 G important）。
     private static func steps(
         for item: VillageItemState,
         catalog: GameCatalog?
     ) -> [BuildingUpgradeStep] {
-        guard let maxLevel = item.maxLevel,
+        guard item.status != .unverified, item.status != .unknown,
+              let maxLevel = item.maxLevel,
               let catalogItem = catalog?.item(section: item.section, dataID: item.dataID)
         else { return [] }
+        let effectiveMax = item.currentStageMaxLevel ?? maxLevel
         let currentLevel = item.currentLevel
         return catalogItem.levels
-            .filter { $0.level > (currentLevel ?? .max) && $0.level <= maxLevel }
+            .filter { $0.level > (currentLevel ?? .max) && $0.level <= effectiveMax }
             .sorted { $0.level < $1.level }
             .map {
                 BuildingUpgradeStep(
@@ -152,7 +164,7 @@ public enum BuildingGroupProjection {
             }
     }
 
-    private static func summary(for instances: [BuildingInstance], hasGlobalVersionMismatch: Bool) -> BuildingGroupSummary {
+    private static func summary(for instances: [BuildingInstance], catalogIsUsable: Bool, catalogIsNil: Bool) -> BuildingGroupSummary {
         var instanceCount = 0
         var remainingLevelCount = 0
         var totalDurationSeconds: Int64 = 0
@@ -174,8 +186,15 @@ public enum BuildingGroupProjection {
                 hasVersionMismatch = true
             }
             // 仅目录命中且 currentLevel 存在的实例计入剩余等级数（max(0, …) 防御目录过时）。
-            if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
-                let levelDifference = SaturatingArithmetic.subtract(maxLevel, currentLevel)
+            // 上限 = 阶段上限优先（issue #67，与阶梯/行级满级同口径）；不可计算回退全局。
+            // unverified（缺 prerequisite 无法验证）与 unknown（含版本不匹配，旧目录
+            // 不可信）→ 不计剩余等级（fail-closed，不得把无法验证/过期的全局等级数
+            // 伪装成可升级剩余；审核 G important）。
+            if instance.item.status == .unverified || instance.item.status == .unknown {
+                hasPartialMissing = true
+            } else if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
+                let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
+                let levelDifference = SaturatingArithmetic.subtract(effectiveMax, currentLevel)
                 saturated = saturated || levelDifference.overflowed
                 let remainingLevels = max(0, levelDifference.value)
                 let weightedRemainingLevels = SaturatingArithmetic.multiply(remainingLevels, count)
@@ -189,9 +208,12 @@ public enum BuildingGroupProjection {
             }
             // 无法生成阶梯的实例降级：目录未命中（或 base 不匹配，maxLevel == nil）；
             // 或目录命中但 currentLevel 缺失 / 未满级却 steps 为空。已满级
-            // （currentLevel >= maxLevel）steps 为空是正常状态，不降级。
-            if let maxLevel = instance.item.maxLevel {
-                let maxed = instance.item.currentLevel.map { $0 >= maxLevel } ?? false
+            // （currentLevel >= effectiveMax，阶段或全局，issue #67）steps 为空是
+            // 正常状态，不降级。unverified/unknown 在上面已置位 partialMissing（fail-closed）。
+            if let maxLevel = instance.item.maxLevel,
+               instance.item.status != .unverified, instance.item.status != .unknown {
+                let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
+                let maxed = instance.item.currentLevel.map { $0 >= effectiveMax } ?? false
                 if instance.item.currentLevel == nil || (instance.steps.isEmpty && !maxed) {
                     hasPartialMissing = true
                 }
@@ -237,9 +259,11 @@ public enum BuildingGroupProjection {
                 .sorted { $0.key < $1.key }
                 .map { BuildingResourceTotal(resource: $0.key, totalCost: $0.value) },
             saturated: saturated,
-            // 全局版本不匹配优先级最高（旧目录不得支撑权威汇总，Issue #45 契约）；
-            // 其次实例级目录过时；再其次数据缺失。
-            completeness: hasGlobalVersionMismatch ? .versionMismatch
+            // 目录缺失（catalogIsNil）是「缺失态」→ partialMissing（Issue #45 契约）；
+            // 目录存在但版本不匹配（!catalogIsUsable）→ versionMismatch（旧目录不得支撑
+            // 权威汇总）；其次实例级目录过时；再其次数据缺失。
+            completeness: catalogIsNil ? .partialMissing
+                : !catalogIsUsable ? .versionMismatch
                 : hasVersionMismatch ? .versionMismatch
                 : hasPartialMissing ? .partialMissing
                 : .complete

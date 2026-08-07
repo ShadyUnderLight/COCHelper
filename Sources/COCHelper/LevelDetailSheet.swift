@@ -30,9 +30,17 @@ struct LevelDetailSheet: View {
     private var statusLabel: String {
         switch item.status {
         case .upgrading: "正在升级"
-        case .maxed: "已满级"
+        case .maxed:
+            // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分，
+            // 但都不当作当前可升级项。
+            if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
+                "当前阶段已满级（全局尚有 \(max - stage) 级）"
+            } else {
+                "已满级"
+            }
         case .complete: "已记录"
         case .unknown: "目录未收录"
+        case .unverified: "无法验证当前阶段上限"
         case .unavailable: "不参与升级追踪"
         case .available: "目录中可用"
         }
@@ -41,6 +49,18 @@ struct LevelDetailSheet: View {
     private var missingNote: String? {
         if item.isNested {
             return "该项目属于内部子项目，暂不提供逐级升级数据。"
+        }
+        if item.status == .unverified {
+            // Issue #67 fail-closed：缺 prerequisite 无法验证阶段上限，展示原因
+            //（不伪装成可升级/未满级）。
+            return item.missingReason ?? "快照缺少 prerequisite 解锁建筑记录，无法验证当前阶段上限。"
+        }
+        if item.status == .unknown {
+            // Issue #67 P1-2 fail-closed：unknown 含版本不匹配/base 不匹配——
+            // catalogItem 存在时旧目录 join 数据仍可用，但不得展示为可操作
+            // 等级阶梯（旧目录等级/时长/费用）。有 missingReason 就展示原因，
+            // 让 body 走提示分支而非「全部等级」列表（审核 P1：详情页旧目录泄漏）。
+            return item.missingReason ?? "该项目暂无逐级升级数据。"
         }
         if catalogItem == nil {
             return item.missingReason ?? "该项目暂无逐级升级数据。"
@@ -54,10 +74,21 @@ struct LevelDetailSheet: View {
         return "即时"
     }
 
-    private func unlockLabel(_ level: CatalogLevel) -> String {
+    /// 逐级解锁条件（Issue #67）：按 item.base 解析 village 语义，与
+    /// `CatalogLevel.requirements(base:)` 共用同一分支规则防漂移。
+    /// builder：requiredTownHallLevel → 建筑大师大本营、requiredLaboratoryLevel → 星空实验室；
+    /// home/其他：requiredTownHallLevel → 大本营、requiredLaboratoryLevel → 实验室、
+    /// requiredHeroTavernLevel（>0）→ 英雄殿堂。
+    private func unlockLabel(_ level: CatalogLevel, base: String?) -> String {
         var parts: [String] = []
-        if let th = level.requiredTownHallLevel { parts.append("所需大本营等级 " + String(th) + "级") }
-        if let lab = level.requiredLaboratoryLevel { parts.append("所需实验室等级 " + String(lab) + "级") }
+        if base == "builder" {
+            if let bh = level.requiredTownHallLevel { parts.append("所需建筑大师大本营等级 " + String(bh) + "级") }
+            if let sl = level.requiredLaboratoryLevel { parts.append("所需星空实验室等级 " + String(sl) + "级") }
+        } else {
+            if let th = level.requiredTownHallLevel { parts.append("所需大本营等级 " + String(th) + "级") }
+            if let lab = level.requiredLaboratoryLevel { parts.append("所需实验室等级 " + String(lab) + "级") }
+            if let ht = level.requiredHeroTavernLevel, ht > 0 { parts.append("所需英雄殿堂等级 " + String(ht) + "级") }
+        }
         return parts.isEmpty ? "无解锁条件" : parts.joined(separator: " · ")
     }
 
@@ -168,7 +199,20 @@ struct LevelDetailSheet: View {
         let isCurrent = item.currentLevel == level.level
         // 升级中：item.nextLevel（投影显式推断）；非升级未满级：currentLevel + 1
         // （与 UpgradeDisplayRow.durationLabel 的「下一级：N级」推导同规则）。
-        let effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })
+        // Issue #67：阶段满级（currentLevel >= currentStageMaxLevel）时下一级
+        // 超出当前阶段上限，不标「下一级」——避免与「当前阶段已满级」文案矛盾
+        //（审核 C important：验收「不把全局更高等级当作当前可升级项」）。
+        // unverified（缺 prerequisite 无法验证）与 unknown（版本不匹配/base 不匹配，
+        // 旧目录不可信）同样不标「下一级」（fail-closed，P1-2 审核：不得从旧目录
+        // 推断可操作的下一级）。
+        let effectiveNext: Int?
+        if item.status == .unverified || item.status == .unknown {
+            effectiveNext = nil
+        } else if let stage = item.currentStageMaxLevel, item.currentLevel ?? -1 >= stage {
+            effectiveNext = nil
+        } else {
+            effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })
+        }
         let isNext = effectiveNext == level.level
         return HStack(spacing: 12) {
             Group {
@@ -216,7 +260,7 @@ struct LevelDetailSheet: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(costLabel(level))
                     .font(.caption)
-                Text(unlockLabel(level))
+                Text(unlockLabel(level, base: catalogItem?.base))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

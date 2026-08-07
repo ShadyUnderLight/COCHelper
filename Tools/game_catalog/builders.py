@@ -25,6 +25,7 @@ class _ParsedRow:
     cost: int | None
     town_hall: int | None
     laboratory: int | None
+    hero_tavern: int | None
 
 
 def _asset_ref(container: str | None, export_name: str | None,
@@ -80,6 +81,7 @@ def _parse_row(row: dict[str, str], spec: TableSpec) -> _ParsedRow:
     cost = parse_optional_int(row.get(spec.cost_column, "")) if spec.cost_column else None
     th = parse_optional_int(row.get(spec.town_hall_column, "")) if spec.town_hall_column else None
     lab = parse_optional_int(row.get(spec.laboratory_column, "")) if spec.laboratory_column else None
+    tavern = parse_optional_int(row.get(spec.hero_tavern_column, "")) if spec.hero_tavern_column else None
 
     return _ParsedRow(
         level=level,
@@ -91,6 +93,7 @@ def _parse_row(row: dict[str, str], spec: TableSpec) -> _ParsedRow:
         cost=cost,
         town_hall=th,
         laboratory=lab,
+        hero_tavern=tavern,
     )
 
 
@@ -116,6 +119,7 @@ def _level_from_row(rec: _ParsedRow) -> CatalogLevel:
         requiredLaboratoryLevel=rec.laboratory,
         icon=rec.icon,
         levelVisual=rec.level_visual,
+        requiredHeroTavernLevel=rec.hero_tavern,
     )
 
 
@@ -131,6 +135,7 @@ def _level_initial(level: int, own: _ParsedRow | None) -> CatalogLevel:
         requiredLaboratoryLevel=None,
         icon=own.icon if own else None,
         levelVisual=own.level_visual if own else None,
+        requiredHeroTavernLevel=None,
     )
 
 
@@ -167,6 +172,7 @@ def _build_levels(records: list[_ParsedRow], spec: TableSpec) -> list[CatalogLev
                 requiredLaboratoryLevel=src.laboratory,
                 icon=own.icon,
                 levelVisual=own.level_visual,
+                requiredHeroTavernLevel=src.hero_tavern,
             ))
         return levels
     return [_level_from_row(rec) for rec in uniq]

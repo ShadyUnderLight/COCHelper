@@ -356,3 +356,100 @@ final class GameCatalogTests: XCTestCase {
                       "URL 应包含版本段（\(defaultURL.path)）")
     }
 }
+
+// MARK: - UpgradeRequirement（Issue #67）
+
+final class RequirementTests: XCTestCase {
+    /// 按 base 解析 village 语义：home → townHall/laboratory/heroHall。
+    func testHomeBaseRequirementsParseVillageSemantics() {
+        let item = makeRequirementItem(base: "home",
+            th: 12, lab: nil, tavern: 8)
+        XCTAssertEqual(item.requirements, [
+            .townHall(level: 12), .heroHall(level: 8)
+        ])
+    }
+
+    /// builder → builderHall/starLaboratory（数据源字段复用但语义不同）。
+    func testBuilderBaseRequirementsParseBuilderSemantics() {
+        let item = makeRequirementItem(base: "builder",
+            th: 10, lab: 8, tavern: nil)
+        XCTAssertEqual(item.requirements, [
+            .builderHall(level: 10), .starLaboratory(level: 8)
+        ])
+    }
+
+    /// 无 requirement 的 item（equipment 等）→ 空数组。
+    func testNoRequirementsYieldsEmpty() {
+        let item = makeRequirementItem(base: "home", th: nil, lab: nil, tavern: nil)
+        XCTAssertEqual(item.requirements, [])
+    }
+
+    /// 旧目录（无 requiredHeroTavernLevel 键）仍可解码（Codable 向后兼容）。
+    func testLegacyLevelDecodesWithoutHeroTavernField() throws {
+        let json = """
+        {"gameVersion":"v","items":[
+          {"section":"heroes","category":"heroes","dataID":28000000,"base":"home",
+           "name":"野蛮人之王","maxLevel":2,"icon":null,"levelVisual":null,
+           "baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,
+              "requiredTownHallLevel":4,"requiredLaboratoryLevel":null,
+              "icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"}
+           ]}
+        ]}
+        """
+        let payload = try JSONDecoder().decode(Payload.self, from: Data(json.utf8))
+        XCTAssertNil(payload.items[0].levels[0].requiredHeroTavernLevel)
+        XCTAssertEqual(payload.items[0].requirements, [.townHall(level: 4)])
+    }
+
+    /// tavern == 0（heroes2 建筑大师基地英雄源数据）→ 不产生 heroHall requirement（0 级门槛恒满足）。
+    func testZeroTavernYieldsNoHeroHallRequirement() {
+        let item = makeRequirementItem(base: "home", th: 12, lab: nil, tavern: 0)
+        XCTAssertEqual(item.requirements, [.townHall(level: 12)])
+    }
+
+    private struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
+
+    private func makeRequirementItem(base: String?, th: Int?, lab: Int?, tavern: Int?) -> CatalogItem {
+        CatalogItem(
+            section: "heroes", category: "heroes", dataID: 1, base: base,
+            baseMissingReason: nil, name: "测试", maxLevel: 2, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 2, durationSeconds: nil, upgradeResource: nil, upgradeCost: nil,
+                requiredTownHallLevel: th, requiredLaboratoryLevel: lab,
+                requiredHeroTavernLevel: tavern, icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+    }
+
+    // MARK: - 真实目录阶段上限锚点（Issue #67 契约硬化）
+
+    /// 真实 bundled 目录：12 本玩家加农炮阶段上限 15（全局 17）——目录升级时锚点
+    /// 主动红，防「阶段上限被全局上限替代」回归（审核 B important-2）。
+    func testBundledCannonStageMaxAtTH12() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let cannon = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_002))
+        let unlocks = PlayerUnlockLevels(townHall: 12)
+        XCTAssertEqual(cannon.maxLevel, 17, "全局上限锚点")
+        XCTAssertEqual(
+            VillageCatalogProjection.currentStageMaxLevel(for: cannon, unlocks: unlocks),
+            15,
+            "TH=12 时加农炮阶段上限应为 15（lvl16 需 TH14）"
+        )
+    }
+
+    /// 真实 bundled 目录：野蛮人之王 TH18 + 英雄殿堂 8 → 阶段上限 86（全局 110）。
+    /// 英雄殿堂门槛（tavern）真实生效锚点。
+    func testBundledKingStageMaxAtTH18Tavern8() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let king = try XCTUnwrap(catalog.item(section: "heroes", dataID: 28_000_000))
+        let unlocks = PlayerUnlockLevels(townHall: 18, heroHall: 8)
+        XCTAssertEqual(king.maxLevel, 110, "全局上限锚点")
+        XCTAssertEqual(
+            VillageCatalogProjection.currentStageMaxLevel(for: king, unlocks: unlocks),
+            86,
+            "tavern=8 时英雄阶段上限应为 86（tavern 门槛 9+ 不满足）"
+        )
+    }
+}

@@ -32,7 +32,7 @@ def _doc_rows(spec) -> str:
     cols.append(spec.level_column)
     for c in (
         spec.resource_column, spec.cost_column, spec.town_hall_column,
-        spec.laboratory_column,
+        spec.laboratory_column, spec.hero_tavern_column,
     ):
         if c:
             cols.append(c)
@@ -41,7 +41,7 @@ def _doc_rows(spec) -> str:
     header = ",".join(cols)
     doc = ",".join("String" if c == "Name" else "int" if c in (
         spec.level_column, spec.cost_column, spec.town_hall_column,
-        spec.laboratory_column, *spec.time_columns,
+        spec.laboratory_column, spec.hero_tavern_column, *spec.time_columns,
     ) else "String" for c in cols)
     return header + "\n" + doc + "\n"
 

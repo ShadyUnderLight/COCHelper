@@ -257,6 +257,27 @@ def test_time_columns_not_inherited_to_next():
     # 行3 的 2h 属于不存在的 level 4 → 丢弃（levels 只到 3）
 
 
+def test_heroes_tavern_level_extracted():
+    """heroes 表 RequiredHeroTavernLevel 列（Issue #67）：to_next 语义下行 N 的
+    升级门槛属于 level N+1；level 1 = 初始等级无门槛。"""
+    rows = [
+        {"Name": "String", "VisualLevel": "int", "TID": "String",
+         "UpgradeTimeH": "int", "VillageType": "String",
+         "RequiredTownHallLevel": "int", "RequiredHeroTavernLevel": "int"},
+        {"Name": "Barbarian King", "VisualLevel": "1", "TID": "TID_BK",
+         "UpgradeTimeH": "0", "VillageType": "",
+         "RequiredTownHallLevel": "4", "RequiredHeroTavernLevel": "1"},
+        {"Name": "", "VisualLevel": "2", "TID": "", "UpgradeTimeH": "",
+         "VillageType": "", "RequiredTownHallLevel": "", "RequiredHeroTavernLevel": ""},
+    ]
+    items = build_items(rows, spec_for_table("heroes.csv"), {})
+    # level 2 ← 行1：升级到 2 级需要英雄殿堂 1 级 + 大本营 4 级
+    assert items[0].levels[1].requiredHeroTavernLevel == 1
+    assert items[0].levels[1].requiredTownHallLevel == 4
+    # level 1 = 初始等级，无升级门槛
+    assert items[0].levels[0].requiredHeroTavernLevel is None
+
+
 def test_offset_levels_preserved_to_next():
     """to_next 表保留原始等级号（Super Barbarian 样式：VisualLevel 5..7，解锁即 5 级）。
 

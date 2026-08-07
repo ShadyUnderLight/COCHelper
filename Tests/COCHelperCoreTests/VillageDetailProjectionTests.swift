@@ -1110,7 +1110,7 @@ final class VillageDetailProjectionTests: XCTestCase {
             .siegeMachines, .heroes, .equipment, .pets, .guardians, nil]
         return (0..<count).map { i in
             let status = statuses[Int(rng.next() % UInt64(statuses.count))]
-            let instanceCount = counts[Int(rng.next() % UInt64(counts.count))]
+            let itemCount = counts[Int(rng.next() % UInt64(counts.count))]
             // 投影层可达约束（同 randomItems）：unknown/unavailable 目录未命中
             // → maxLevel 必 nil；其余状态目录命中 → level/maxLevel 非 nil。
             // 再混入少量防御性不可达组合（满级缺上限、升级缺上限/缺等级）。
@@ -1137,13 +1137,13 @@ final class VillageDetailProjectionTests: XCTestCase {
                 }
                 nextLevel = l + 1
             default:
-                maxLevel = isCatalogHit ? Int(rng.next() % 21) : nil
+                maxLevel = nil                          // unknown/unavailable：目录未命中 → maxLevel 必 nil
                 nextLevel = nil
             }
             return item(id: "w\(i)",
                         category: cats[Int(rng.next() % UInt64(cats.count))],
                         status: status, level: level, maxLevel: maxLevel,
-                        count: instanceCount,
+                        count: itemCount,
                         isUpgrading: status == .upgrading, nextLevel: nextLevel)
         }
     }

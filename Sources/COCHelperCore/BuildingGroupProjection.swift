@@ -139,11 +139,13 @@ public enum BuildingGroupProjection {
     /// currentLevel 为 nil、目录未命中或 base 不匹配（maxLevel == nil）→ 空数组。
     /// unverified（缺 prerequisite 无法验证阶段上限，Issue #67 fail-closed）
     /// → 空数组：不得把无法验证的全局等级展示为可升级阶梯。
+    /// unknown（含版本不匹配，Issue #67 P1-2 fail-closed）→ 空数组：旧目录
+    /// 阶梯不得展示（maxLevel 仅保留供展示，不产生可升级阶梯，审核 G important）。
     private static func steps(
         for item: VillageItemState,
         catalog: GameCatalog?
     ) -> [BuildingUpgradeStep] {
-        guard item.status != .unverified,
+        guard item.status != .unverified, item.status != .unknown,
               let maxLevel = item.maxLevel,
               let catalogItem = catalog?.item(section: item.section, dataID: item.dataID)
         else { return [] }
@@ -185,9 +187,10 @@ public enum BuildingGroupProjection {
             }
             // 仅目录命中且 currentLevel 存在的实例计入剩余等级数（max(0, …) 防御目录过时）。
             // 上限 = 阶段上限优先（issue #67，与阶梯/行级满级同口径）；不可计算回退全局。
-            // unverified（缺 prerequisite 无法验证）→ 不计剩余等级（fail-closed，
-            // 不得把无法验证的全局等级数伪装成可升级剩余）。
-            if instance.item.status == .unverified {
+            // unverified（缺 prerequisite 无法验证）与 unknown（含版本不匹配，旧目录
+            // 不可信）→ 不计剩余等级（fail-closed，不得把无法验证/过期的全局等级数
+            // 伪装成可升级剩余；审核 G important）。
+            if instance.item.status == .unverified || instance.item.status == .unknown {
                 hasPartialMissing = true
             } else if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
                 let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
@@ -206,8 +209,9 @@ public enum BuildingGroupProjection {
             // 无法生成阶梯的实例降级：目录未命中（或 base 不匹配，maxLevel == nil）；
             // 或目录命中但 currentLevel 缺失 / 未满级却 steps 为空。已满级
             // （currentLevel >= effectiveMax，阶段或全局，issue #67）steps 为空是
-            // 正常状态，不降级。unverified 在上面已置位 partialMissing（fail-closed）。
-            if let maxLevel = instance.item.maxLevel, instance.item.status != .unverified {
+            // 正常状态，不降级。unverified/unknown 在上面已置位 partialMissing（fail-closed）。
+            if let maxLevel = instance.item.maxLevel,
+               instance.item.status != .unverified, instance.item.status != .unknown {
                 let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
                 let maxed = instance.item.currentLevel.map { $0 >= effectiveMax } ?? false
                 if instance.item.currentLevel == nil || (instance.steps.isEmpty && !maxed) {

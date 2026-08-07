@@ -690,6 +690,34 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertEqual(group.summary.completeness, .versionMismatch, "组卡汇总降级")
     }
 
+    /// 版本不匹配 + currentLevel < maxLevel（旧目录阶梯本非空）：steps 必须为空、
+    /// remaining 必须为 0——旧目录阶梯/剩余等级不得展示（审核 G important，
+    /// 与行级 nil 时长、视图「暂无目录数据」一致）。
+    func testT17bVersionMismatchNoStaleLadderOrRemaining() throws {
+        let catalog = try makeCatalog(items: Self.syntheticCatalogItems, gameVersion: "18.400.12")
+        // 加农炮 lvl 5 < 旧目录 maxLevel 16：若消费旧目录，阶梯 6..16 非空、remaining 11。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 5, path: "0")],
+        ])
+
+        let groups = BuildingGroupProjection.project(
+            village: village, catalog: catalog, base: .home,
+            expectedGameVersion: "18.400.13"
+        )
+        let group = try XCTUnwrap(groups.first)
+        let instance = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(instance.item.status, .unknown)
+        XCTAssertTrue(instance.steps.isEmpty,
+                      "版本不匹配：旧目录阶梯不得展示（got \(instance.steps.map(\.level))）")
+        XCTAssertEqual(group.summary.remainingLevelCount, 0,
+                       "版本不匹配：旧目录剩余等级不得展示（got \(group.summary.remainingLevelCount)）")
+        XCTAssertEqual(group.summary.totalDurationSeconds, 0,
+                       "版本不匹配：旧目录时长不得计入汇总")
+        XCTAssertTrue(group.summary.costByResource.isEmpty,
+                      "版本不匹配：旧目录费用不得计入汇总")
+        XCTAssertEqual(group.summary.completeness, .versionMismatch)
+    }
+
     /// 缺 prerequisite（无大本营）→ 组卡实例 status unverified、steps 空、partialMissing。
     func testT18MissingPrerequisiteGroupInstanceUnverified() throws {
         // syntheticCatalogItems 无 TH 门槛（standardLevels 无 requiredTownHallLevel），

@@ -22,13 +22,16 @@ final class ClanCombatSummaryPropertyTests: XCTestCase {
     }
 
     /// 随机攻击数组：长度 0-10；每字段 25% 概率缺失；摧毁率值域 [0, 150]。
+    /// 缺失判定用 `g.int(in: 0...3) == 0`（mod-4 周期无系统偏差），不用 `g.bool()`——
+    /// 本 LCG（a、c 均奇）的 LSB 严格交替，bool 会固定隔次为真，叠加固定抽签顺序后
+    /// destructionPercentage 的 nil 路径实测 0% 覆盖。
     private func randomAttacks(_ g: inout SeededGenerator) -> [ClanWarAttack] {
         (0..<g.int(in: 0...10)).map { order in
             ClanWarAttack(
-                order: g.bool() ? nil : order + 1,
+                order: g.int(in: 0...3) == 0 ? nil : order + 1,
                 attackerTag: nil, defenderTag: nil,
-                stars: g.bool() ? nil : g.int(in: 0...3),
-                destructionPercentage: g.bool() ? nil : g.double(in: 0...150),
+                stars: g.int(in: 0...3) == 0 ? nil : g.int(in: 0...3),
+                destructionPercentage: g.int(in: 0...3) == 0 ? nil : g.double(in: 0...150),
                 duration: nil
             )
         }
@@ -37,12 +40,12 @@ final class ClanCombatSummaryPropertyTests: XCTestCase {
     private func randomDistricts(_ g: inout SeededGenerator) -> [CapitalRaidDistrict] {
         (0..<g.int(in: 0...10)).map { i in
             CapitalRaidDistrict(
-                name: g.bool() ? nil : "D\(i)",
+                name: g.int(in: 0...3) == 0 ? nil : "D\(i)",
                 id: nil, districtHallLevel: nil,
-                stars: g.bool() ? nil : g.int(in: 0...3),
-                destructionPercent: g.bool() ? nil : g.double(in: 0...150),
-                attackCount: g.bool() ? nil : g.int(in: 1...8),
-                totalLooted: g.bool() ? nil : g.int(in: 0...50000)
+                stars: g.int(in: 0...3) == 0 ? nil : g.int(in: 0...3),
+                destructionPercent: g.int(in: 0...3) == 0 ? nil : g.double(in: 0...150),
+                attackCount: g.int(in: 0...3) == 0 ? nil : g.int(in: 1...8),
+                totalLooted: g.int(in: 0...3) == 0 ? nil : g.int(in: 0...50000)
             )
         }
     }

@@ -464,7 +464,6 @@ public struct GameCatalog: Sendable {
             return nil
         }
         // Issue #74a：manifest 是增强信息——缺失/解码失败不阻塞目录加载（nil）。
-        // Issue #74a：manifest 是增强信息——缺失/解码失败不阻塞目录加载（nil）。
         // 纵深防御：manifest.gameVersion 与目录不一致时视为损坏（validate 在
         // 生成期已保证一致，此处仅防未来手工替换/版本错配）。
         let manifest: CatalogManifest?

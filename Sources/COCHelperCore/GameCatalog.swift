@@ -118,9 +118,38 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
     public let upgradeCost: Int64?
     public let requiredTownHallLevel: Int?
     public let requiredLaboratoryLevel: Int?
+    /// 英雄殿堂门槛（issue #67，home 英雄 tavern 门槛 1-12；heroes2 源数据为
+    /// 0 = 无门槛，恒满足）。缺键解码为 nil（旧目录向后兼容）。
+    public let requiredHeroTavernLevel: Int?
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
     public let missingReason: String?
+
+    /// 显式 memberwise init：`requiredHeroTavernLevel` 带默认值 nil，
+    /// 保持既有调用点（不传该参数）与 Codable 合成解码（缺键 → nil）兼容。
+    public init(
+        level: Int,
+        durationSeconds: Int64?,
+        upgradeResource: String?,
+        upgradeCost: Int64?,
+        requiredTownHallLevel: Int?,
+        requiredLaboratoryLevel: Int?,
+        requiredHeroTavernLevel: Int? = nil,
+        icon: CatalogAssetRef?,
+        levelVisual: CatalogAssetRef?,
+        missingReason: String?
+    ) {
+        self.level = level
+        self.durationSeconds = durationSeconds
+        self.upgradeResource = upgradeResource
+        self.upgradeCost = upgradeCost
+        self.requiredTownHallLevel = requiredTownHallLevel
+        self.requiredLaboratoryLevel = requiredLaboratoryLevel
+        self.requiredHeroTavernLevel = requiredHeroTavernLevel
+        self.icon = icon
+        self.levelVisual = levelVisual
+        self.missingReason = missingReason
+    }
 
     /// 逐级视觉资产候选 URL（levelVisual → icon，运行时文件存在性过滤）；
     /// 与 `VillageItemState.preferredAssetURLs` 共用 `availableURLs` 实现，
@@ -130,6 +159,46 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var id: String { String(level) }
+}
+
+// MARK: - UpgradeRequirement（Issue #67）
+
+/// 升级前置条件。village 语义在投影/展示层按 item.base 解析
+///（home: townHall/laboratory/heroHall；builder: builderHall/starLaboratory）。
+public enum UpgradeRequirement: Hashable, Sendable {
+    case townHall(level: Int)
+    case builderHall(level: Int)
+    case laboratory(level: Int)
+    case starLaboratory(level: Int)
+    case heroHall(level: Int)
+}
+
+extension CatalogItem {
+    /// 本 item 各级升级前置条件的 village 语义列表（按 item.base 解析）。
+    /// 无 requirement 的 item（equipment/guardians/capital 等）→ 空数组。
+    /// base == nil（capital）→ 空数组（capital 无大本营门槛语义）。
+    /// tavern == 0 视为无英雄殿堂门槛（heroes2 源数据），不产生 .heroHall。
+    public var requirements: [UpgradeRequirement] {
+        switch base {
+        case "home":
+            levels.flatMap { level in
+                var out: [UpgradeRequirement] = []
+                if let th = level.requiredTownHallLevel { out.append(.townHall(level: th)) }
+                if let lab = level.requiredLaboratoryLevel { out.append(.laboratory(level: lab)) }
+                if let ht = level.requiredHeroTavernLevel, ht > 0 { out.append(.heroHall(level: ht)) }
+                return out
+            }
+        case "builder":
+            levels.flatMap { level in
+                var out: [UpgradeRequirement] = []
+                if let th = level.requiredTownHallLevel { out.append(.builderHall(level: th)) }
+                if let lab = level.requiredLaboratoryLevel { out.append(.starLaboratory(level: lab)) }
+                return out
+            }
+        default:
+            []
+        }
+    }
 }
 
 // MARK: - GameCatalog

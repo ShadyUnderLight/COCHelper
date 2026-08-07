@@ -887,4 +887,31 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertNil(level7.missingReason)
     }
 
+
+    // MARK: - Issue #74b: step durationState 映射（与 CatalogLevel 同一映射点）
+
+    func testStepDurationStateMapping() {
+        // 有值 / 0 秒即时 / 缺失类 / nil reason
+        XCTAssertEqual(
+            BuildingUpgradeStep(level: 1, upgradeCost: nil, upgradeResource: nil, durationSeconds: 3600).durationState,
+            .timed(seconds: 3600))
+        XCTAssertEqual(
+            BuildingUpgradeStep(level: 2, upgradeCost: nil, upgradeResource: nil, durationSeconds: 0).durationState,
+            .instant)
+        XCTAssertEqual(
+            BuildingUpgradeStep(level: 3, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil, missingReason: "time_missing").durationState,
+            .sourceMissing)
+        XCTAssertEqual(
+            BuildingUpgradeStep(level: 4, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil, missingReason: "no_time_source").durationState,
+            .notApplicable)
+        XCTAssertEqual(
+            BuildingUpgradeStep(level: 5, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil, missingReason: "min_level_initial_no_upgrade").durationState,
+            .initialLevel)
+        XCTAssertEqual(
+            BuildingUpgradeStep(level: 6, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil, missingReason: "future_reason").durationState,
+            .unknownReason("future_reason"))
+        XCTAssertNil(
+            BuildingUpgradeStep(level: 7, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil).durationState)
+    }
+
 }

@@ -31,6 +31,13 @@ public struct BuildingUpgradeStep: Hashable, Sendable {
     public var hasCost: Bool { upgradeCost != nil }
     public var hasDuration: Bool { durationSeconds != nil }
     public var isInstant: Bool { durationSeconds == 0 }
+
+    /// Issue #74b：时长语义映射（与 `CatalogLevel.durationState` 同一单一
+    /// 映射点 `CatalogDurationState.state`，防双实现漂移）。nil = 双 nil
+    /// 未知场景（UI 兜底「暂无目录数据」）。
+    public var durationState: CatalogDurationState? {
+        CatalogDurationState.state(durationSeconds: durationSeconds, missingReason: missingReason)
+    }
 }
 
 /// 一条原始快照记录 + 其升级阶梯（可追溯）。

@@ -7,7 +7,8 @@ import COCHelperCore
 /// 且界内；**每组实例只传该记录自己的阶梯，不得跨实例合并**——不同等级记录
 /// 的阶梯各自显示，避免把当前等级画成待升级项）。固定三列 LazyVGrid
 /// 单元格展示 Lv / 费用 / 完整时长，单元格语义与 `LevelDetailSheet` 逐级行
-/// 一致：durationSeconds == 0 显示「即时」、nil 显示「暂无目录数据」、
+/// 一致：durationSeconds == 0 显示「即时」、缺失类按原因区分显示（Issue
+/// #74b：time_missing 等显示「目录缺失」而非「暂无目录数据」）、
 /// 费用 nil 显示「无费用数据」。阶梯为空（满级或不可 join）时显示占位
 /// 「无剩余等级」。
 ///
@@ -32,11 +33,12 @@ struct BuildingUpgradeStepGrid: View {
         return ClanDisplayFormat.resourceLabel(step.upgradeResource) + " " + BuildingCostFormatter.label(cost)
     }
 
-    /// 时长文案：0 = 有效即时升级 →「即时」；nil = 缺失 →「暂无目录数据」。
+    /// 时长文案：Issue #74b 走 `CatalogDurationState.durationLabel`（与详情页/
+    /// 列表行共用同一文案源，防漂移）——0 = 有效即时升级 →「即时」；缺失类
+    /// （time_missing/no_time_source/initialLevel/parseFailed）按原因区分；
+    /// 双 nil 未知场景 →「暂无目录数据」。
     private func durationLabel(_ step: BuildingUpgradeStep) -> String {
-        if step.isInstant { return "即时" }
-        guard let seconds = step.durationSeconds else { return "暂无目录数据" }
-        return AccountDurationFormatter.label(seconds)
+        step.durationState?.durationLabel ?? "暂无目录数据"
     }
 
     private func stepCell(_ step: BuildingUpgradeStep) -> some View {

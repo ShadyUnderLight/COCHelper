@@ -121,15 +121,15 @@ public enum CatalogDurationState: Hashable, Sendable {
     case parseFailed
     /// 未知 reason（防御：值域契约外或合成数据）。
     case unknownReason(String)
-}
 
-extension CatalogLevel {
-    /// 时长语义唯一映射点（UI/投影共用防漂移，Issue #74b）。
-    /// nil = durationSeconds 为 nil 且 reason 为 nil（未知场景，UI 兜底
-    /// 「暂无目录数据」）；unknownReason = 目录记录存在但 reason 在契约外，
-    /// 或 durationSeconds 为负（防御分支：生成层已拒绝负数，仅解码旧/损坏
-    /// 数据可达）。
-    public var durationState: CatalogDurationState? {
+    /// 时长语义唯一映射点（`CatalogLevel`/`BuildingUpgradeStep` 共用防漂移，
+    /// Issue #74b）。nil = durationSeconds 与 reason 双 nil（未知场景，UI 兜底
+    /// 「暂无目录数据」）；unknownReason = reason 在契约外，或 durationSeconds
+    /// 为负（防御分支：生成层已拒绝负数，仅解码旧/损坏数据可达）。
+    public static func state(
+        durationSeconds: Int64?,
+        missingReason: String?
+    ) -> CatalogDurationState? {
         if let seconds = durationSeconds {
             if seconds > 0 { return .timed(seconds: seconds) }
             if seconds == 0 { return .instant }
@@ -143,6 +143,17 @@ extension CatalogLevel {
         case let reason?: return .unknownReason(reason)
         case nil: return nil
         }
+    }
+}
+
+extension CatalogLevel {
+    /// 时长语义映射（单一映射点 `CatalogDurationState.state` 的便捷包装）。
+    /// nil = durationSeconds 为 nil 且 reason 为 nil（未知场景，UI 兜底
+    /// 「暂无目录数据」）；unknownReason = 目录记录存在但 reason 在契约外，
+    /// 或 durationSeconds 为负（防御分支：生成层已拒绝负数，仅解码旧/损坏
+    /// 数据可达）。
+    public var durationState: CatalogDurationState? {
+        CatalogDurationState.state(durationSeconds: durationSeconds, missingReason: missingReason)
     }
 }
 

@@ -13,7 +13,7 @@ from .builders import build_items, build_guardians
 from .durations import classify_duration
 from .errors import CatalogError
 from .fingerprint import sha256_bytes, sha256_file
-from .model import Catalog, catalog_to_dict
+from .model import Catalog, CatalogItem, catalog_to_dict
 from .tables import TABLES
 
 

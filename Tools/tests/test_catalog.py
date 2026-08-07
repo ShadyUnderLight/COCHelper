@@ -188,3 +188,12 @@ def test_generate_manifest_counts_include_duration_buckets(full_minimal_apk, tmp
     assert c["instant"] == 1
     assert c["missingTime"] == 0
     assert c["timed"] + c["instant"] + c["missingTime"] == c["levels"]
+
+
+def test_counts_for_annotations_evaluable():
+    """P1 回归：counts_for 的类型注解必须可立即求值（Python 3.11 模块导入即
+    求值注解；3.14 PEP 649 延迟掩盖了 NameError——get_type_hints 强制求值）。"""
+    import typing
+    from game_catalog import catalog as catalog_mod
+    hints = typing.get_type_hints(catalog_mod.counts_for)
+    assert "items" in hints

@@ -1,12 +1,16 @@
 {
   "buildTag": "18_400_7",
   "counts": {
-    "blockedIcons": 11,
     "items": 683,
     "levels": 5479,
-    "missingIcons": 0,
     "missingTime": 3308,
-    "renderedIcons": 1264
+    "missingIcons": 0,
+    "timed": 2096,
+    "instant": 75,
+    "notApplicable": 1032,
+    "initialLevel": 429,
+    "sourceMissing": 1847,
+    "parseFailed": 0
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [

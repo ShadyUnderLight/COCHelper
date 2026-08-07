@@ -62,6 +62,13 @@ struct LevelDetailSheet: View {
             // 让 body 走提示分支而非「全部等级」列表（审核 P1：详情页旧目录泄漏）。
             return item.missingReason ?? "该项目暂无逐级升级数据。"
         }
+        if item.isUpgrading, let reason = item.missingReason {
+            // Issue #68：升级中记录的 status 恒为 .upgrading（独立于目录），旧逻辑
+            // 会穿过 unverified/unknown 守卫落入目录等级列表——升级中 + 版本不匹配
+            //（Task 1 保证 missingReason 含「版本不匹配」文案）时旧目录时长/阶梯泄漏。
+            // 此处必须接管：有 missingReason 就展示原因，不渲染旧目录等级列表。
+            return reason
+        }
         if catalogItem == nil {
             return item.missingReason ?? "该项目暂无逐级升级数据。"
         }
@@ -74,22 +81,15 @@ struct LevelDetailSheet: View {
         return "即时"
     }
 
-    /// 逐级解锁条件（Issue #67）：按 item.base 解析 village 语义，与
-    /// `CatalogLevel.requirements(base:)` 共用同一分支规则防漂移。
+    /// 逐级解锁条件（Issue #68）：统一走 `CatalogLevel.requirements(base:)` +
+    /// `UpgradeRequirement.displayLabels(base:)`，与列表行/组卡共用同一文案
+    /// 防漂移（删除手写分支）。
     /// builder：requiredTownHallLevel → 建筑大师大本营、requiredLaboratoryLevel → 星空实验室；
     /// home/其他：requiredTownHallLevel → 大本营、requiredLaboratoryLevel → 实验室、
-    /// requiredHeroTavernLevel（>0）→ 英雄殿堂。
+    /// requiredHeroTavernLevel（>0）→ 英雄殿堂。空条件显示「无解锁条件」。
     private func unlockLabel(_ level: CatalogLevel, base: String?) -> String {
-        var parts: [String] = []
-        if base == "builder" {
-            if let bh = level.requiredTownHallLevel { parts.append("所需建筑大师大本营等级 " + String(bh) + "级") }
-            if let sl = level.requiredLaboratoryLevel { parts.append("所需星空实验室等级 " + String(sl) + "级") }
-        } else {
-            if let th = level.requiredTownHallLevel { parts.append("所需大本营等级 " + String(th) + "级") }
-            if let lab = level.requiredLaboratoryLevel { parts.append("所需实验室等级 " + String(lab) + "级") }
-            if let ht = level.requiredHeroTavernLevel, ht > 0 { parts.append("所需英雄殿堂等级 " + String(ht) + "级") }
-        }
-        return parts.isEmpty ? "无解锁条件" : parts.joined(separator: " · ")
+        let requirements = level.requirements(base: base)
+        return requirements.isEmpty ? "无解锁条件" : requirements.displayLabels(base: base)
     }
 
     private func costLabel(_ level: CatalogLevel) -> String {
@@ -143,6 +143,13 @@ struct LevelDetailSheet: View {
                             Text(statusLabel)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(item.status == .maxed ? .green : (item.isUpgrading ? .orange : .secondary))
+                            if case .requires(let nextLevel, let requirements, _) = item.nextUpgrade {
+                                // Issue #68 验收 2：阶段满级时展示被门槛阻塞的下一级
+                                // 解锁条件（替代可操作升级时长），与 .requires 投影同口径。
+                                Text("下一级 " + String(nextLevel) + "级 需要 " + requirements.displayLabels(base: catalogItem?.base))
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                         }
                     }
 
@@ -197,21 +204,19 @@ struct LevelDetailSheet: View {
 
     private func levelRow(_ level: CatalogLevel) -> some View {
         let isCurrent = item.currentLevel == level.level
-        // 升级中：item.nextLevel（投影显式推断）；非升级未满级：currentLevel + 1
-        // （与 UpgradeDisplayRow.durationLabel 的「下一级：N级」推导同规则）。
-        // Issue #67：阶段满级（currentLevel >= currentStageMaxLevel）时下一级
-        // 超出当前阶段上限，不标「下一级」——避免与「当前阶段已满级」文案矛盾
-        //（审核 C important：验收「不把全局更高等级当作当前可升级项」）。
-        // unverified（缺 prerequisite 无法验证）与 unknown（版本不匹配/base 不匹配，
-        // 旧目录不可信）同样不标「下一级」（fail-closed，P1-2 审核：不得从旧目录
-        // 推断可操作的下一级）。
+        // Issue #68：下一级徽标只消费 nextUpgrade 投影（UI 三处统一，禁止各自
+        // currentLevel + 1 推导）。.available = 可操作下一级（目录真实等级，非连续
+        // 目录安全）；.inProgressFact = 升级中目标等级（快照事实，仅当等级列表可见
+        // 时渲染——升级中 + 版本不匹配/目录未收录时 missingNote 分支接管，不泄漏
+        // 旧目录阶梯）。.requires/.globalMaxed/.unverified/.unknown 一律不标
+        // 「下一级」（fail-closed：阶段满级/无法验证/版本不匹配不得伪装可升级，
+        // 与投影同口径）。
         let effectiveNext: Int?
-        if item.status == .unverified || item.status == .unknown {
+        switch item.nextUpgrade {
+        case .available(let level, _), .inProgressFact(let level, _):
+            effectiveNext = level
+        default:
             effectiveNext = nil
-        } else if let stage = item.currentStageMaxLevel, item.currentLevel ?? -1 >= stage {
-            effectiveNext = nil
-        } else {
-            effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })
         }
         let isNext = effectiveNext == level.level
         return HStack(spacing: 12) {

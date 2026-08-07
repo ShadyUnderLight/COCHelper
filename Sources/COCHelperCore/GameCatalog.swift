@@ -182,6 +182,44 @@ public enum UpgradeRequirement: Hashable, Sendable {
     }
 }
 
+// MARK: - UpgradeRequirement 展示文案（Issue #68 Task 3）
+
+extension UpgradeRequirement {
+    /// 中文展示文案（Issue #68，UI 三处共用防漂移）。base 语义与
+    /// `requirements(base:)` 一致：home → 大本营/实验室/英雄殿堂；
+    /// builder → 建筑大师大本营/星空实验室。
+    ///
+    /// 与旧 LevelDetailSheet.unlockLabel 分支逐字一致：
+    /// - builder base：`.townHall` → 建筑大师大本营、`.laboratory` → 星空实验室
+    ///   （数据源字段复用，village 语义按 base 解析）；
+    /// - 其他 base：`.townHall` → 大本营、`.laboratory` → 实验室；
+    /// - `.builderHall`/`.starLaboratory`/`.heroHall` 自身语义固定，不随 base 变。
+    public func displayLabel(base: String?) -> String {
+        let name: String
+        switch self {
+        case .townHall:
+            name = base == "builder" ? "建筑大师大本营" : "大本营"
+        case .builderHall:
+            name = "建筑大师大本营"
+        case .laboratory:
+            name = base == "builder" ? "星空实验室" : "实验室"
+        case .starLaboratory:
+            name = "星空实验室"
+        case .heroHall:
+            name = "英雄殿堂"
+        }
+        return "所需" + name + "等级 " + String(requiredLevel) + "级"
+    }
+}
+
+extension Array where Element == UpgradeRequirement {
+    /// 「A · B」连接（与旧 unlockLabel 措辞一致）；空数组 → 空串（调用方自行
+    /// 处理「无解锁条件」文案）。
+    public func displayLabels(base: String?) -> String {
+        map { $0.displayLabel(base: base) }.joined(separator: " · ")
+    }
+}
+
 extension CatalogLevel {
     /// 单级升级前置条件（Issue #67 Task 3）：按 item.base 解析 village 语义，
     /// 与 `CatalogItem.requirements`（item 级 flatMap）共用同一分支规则，防双实现漂移。

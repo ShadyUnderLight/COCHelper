@@ -87,20 +87,30 @@ struct UpgradeDisplayRow: View {
         if item.status == .maxed {
             // 已满级：目录无下一级，显示上限（避免误导的「暂无目录数据」）。
             // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分。
+            let baseLabel: String
             if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
-                return "当前阶段已满级（全局尚有 " + String(max - stage) + "级）"
+                baseLabel = "当前阶段已满级（全局尚有 " + String(max - stage) + "级）"
+            } else {
+                baseLabel = "已达到目录最高等级 " + String(item.maxLevel ?? 0) + "级"
             }
-            return "已达到目录最高等级 " + String(item.maxLevel ?? 0) + "级"
+            // Issue #68 验收 2：阶段满级（.requires，仅当目录存在更高等级时产生）
+            // 追加被门槛阻塞的下一级解锁条件，替代可操作升级时长。
+            if case .requires(let nextLevel, let requirements, _) = item.nextUpgrade {
+                return baseLabel + " · 下一级 " + String(nextLevel) + "级需 "
+                    + requirements.displayLabels(base: item.base.rawValue)
+            }
+            return baseLabel
         }
         guard let duration = item.nextLevelDurationSeconds else { return "暂无目录数据" }
         let prefix: String
         if item.isUpgrading {
             // 升级行：levelLabel 已显示「当前 → 目标」，时长不加前缀。
             prefix = "完整时长："
-        } else if let currentLevel = item.currentLevel, let maxLevel = item.maxLevel, currentLevel < maxLevel {
-            // 非升级未满级（投影层已推下一级时长）：issue 列表规则要求显示下一等级。
-            // 编号由当前 + 1 推导（与投影层 nextLevel 推断同规则），时长来自目录。
-            prefix = "下一级：" + String(currentLevel + 1) + "级 · 完整时长："
+        } else if case .available(let level, _) = item.nextUpgrade {
+            // 非升级未满级（issue 列表规则要求显示下一等级）：编号来自
+            // nextUpgrade 投影（Issue #68，禁止 currentLevel + 1 推导），
+            // 时长来自目录。
+            prefix = "下一级：" + String(level) + "级 · 完整时长："
         } else {
             prefix = "完整时长："
         }

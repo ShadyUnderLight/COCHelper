@@ -409,6 +409,45 @@ final class RequirementTests: XCTestCase {
         XCTAssertEqual(item.requirements, [.townHall(level: 12)])
     }
 
+    // MARK: - displayLabel / displayLabels（Issue #68 Task 3）
+
+    /// home/其他 base：townHall → 大本营、laboratory → 实验室、heroHall → 英雄殿堂；
+    /// builderHall/starLaboratory 自身语义恒为建筑大师大本营/星空实验室。
+    /// 与 LevelDetailSheet.unlockLabel 措辞逐字一致。
+    func testRequirementDisplayLabelHome() {
+        XCTAssertEqual(UpgradeRequirement.townHall(level: 12).displayLabel(base: "home"), "所需大本营等级 12级")
+        XCTAssertEqual(UpgradeRequirement.laboratory(level: 8).displayLabel(base: "home"), "所需实验室等级 8级")
+        XCTAssertEqual(UpgradeRequirement.heroHall(level: 10).displayLabel(base: "home"), "所需英雄殿堂等级 10级")
+        XCTAssertEqual(UpgradeRequirement.builderHall(level: 12).displayLabel(base: "home"), "所需建筑大师大本营等级 12级")
+        XCTAssertEqual(UpgradeRequirement.starLaboratory(level: 8).displayLabel(base: "home"), "所需星空实验室等级 8级")
+    }
+
+    /// builder base：townHall 语义映射到建筑大师大本营、laboratory 映射到星空实验室
+    ///（与 unlockLabel 的 builder 分支逐字一致：requiredTownHallLevel →
+    /// 建筑大师大本营、requiredLaboratoryLevel → 星空实验室）。
+    func testRequirementDisplayLabelBuilderBase() {
+        XCTAssertEqual(UpgradeRequirement.townHall(level: 12).displayLabel(base: "builder"), "所需建筑大师大本营等级 12级")
+        XCTAssertEqual(UpgradeRequirement.laboratory(level: 8).displayLabel(base: "builder"), "所需星空实验室等级 8级")
+        XCTAssertEqual(UpgradeRequirement.builderHall(level: 12).displayLabel(base: "builder"), "所需建筑大师大本营等级 12级")
+        XCTAssertEqual(UpgradeRequirement.starLaboratory(level: 8).displayLabel(base: "builder"), "所需星空实验室等级 8级")
+        XCTAssertEqual(UpgradeRequirement.heroHall(level: 10).displayLabel(base: "builder"), "所需英雄殿堂等级 10级")
+    }
+
+    /// 多条件数组 → 「A · B」连接（与 unlockLabel 措辞一致）；空数组 → 空串；
+    /// nil base 走 home 语义。
+    func testRequirementDisplayLabelsJoin() {
+        XCTAssertEqual(
+            [UpgradeRequirement.townHall(level: 12), .laboratory(level: 8)].displayLabels(base: "home"),
+            "所需大本营等级 12级 · 所需实验室等级 8级"
+        )
+        XCTAssertEqual(
+            [UpgradeRequirement.builderHall(level: 10), .starLaboratory(level: 8)].displayLabels(base: "builder"),
+            "所需建筑大师大本营等级 10级 · 所需星空实验室等级 8级"
+        )
+        XCTAssertEqual([UpgradeRequirement]().displayLabels(base: "home"), "")
+        XCTAssertEqual(UpgradeRequirement.townHall(level: 12).displayLabel(base: nil), "所需大本营等级 12级")
+    }
+
     private struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
 
     private func makeRequirementItem(base: String?, th: Int?, lab: Int?, tavern: Int?) -> CatalogItem {

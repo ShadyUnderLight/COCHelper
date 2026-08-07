@@ -522,12 +522,14 @@ public struct VillageCatalogProjection: Sendable {
                 } else if (item.level ?? -1) >= stageMax {
                     // 阶段满级且目录存在更高等级：真实下一级被门槛阻塞。
                     if let realNext {
-                        // 语义守卫（评审 F1）：异常快照下当前等级可能超过阶段上限
+                        // 语义守卫（评审 F1）：异常快照下当前等级可能达到或超过阶段上限
                         //（如快照 10 级、阶段上限 8——版本不匹配已被 .unknown 拦截，
-                        // 此处仅损坏/过时数据可达）。此时真实下一级（9）小于当前等级
-                        //（10），会输出倒挂的「下一级 9级」；fail-closed 为 .unknown，
-                        // 不产生可操作/倒挂的下一级。
-                        if let currentLevel = item.level, realNext.level < currentLevel {
+                        // 此处仅损坏/过时数据可达）。此时真实下一级（9）不大于当前等级
+                        //（10），会输出倒挂/重复的「下一级 9级」；fail-closed 为
+                        // .unknown，不产生可操作/倒挂的下一级。正常阶段满级
+                        //（currentLevel == stageMax）时 realNext 恒 > currentLevel，
+                        // 不受本守卫影响。
+                        if let currentLevel = item.level, realNext.level <= currentLevel {
                             nextUpgrade = .unknown
                         } else {
                             let requirements = realNext.requirements(base: catalogItem.base)

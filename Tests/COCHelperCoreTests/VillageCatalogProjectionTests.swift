@@ -2888,7 +2888,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
     /// - (b) .requires 的 nextLevel 必须 > currentStageMaxLevel；
     /// - (c) .inProgressFact 的 level == currentLevel + 1（#14 事实契约）；
     /// - (d) stageMax 可计算时 status == .maxed ⟺ nextUpgrade ∈ {.requires, .globalMaxed}
-///   （评审 F1 倒挂守卫例外：realNext < currentLevel 的异常快照 → .maxed 配 .unknown）；
+///   （评审 F1 倒挂守卫例外：realNext ≤ currentLevel 的异常快照 → .maxed 配 .unknown）；
     /// - (e) nextUpgrade nil ⟺ 嵌套/unavailable/目录未命中（命中项恒非 nil）；
     /// - (f) .requires 的 requirements 恒非空（数据异常兜底为 .globalMaxed）。
     func testPropertyNextUpgradeInvariants() throws {
@@ -2988,7 +2988,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
                                    "迭代 \(iteration): .maxed 且非 .requires/.globalMaxed 时必须是倒挂守卫 .unknown")
                     let firstAboveStage = levels.sorted(by: { $0.level < $1.level })
                         .first { $0.level > stageMax }?.level
-                    XCTAssertLessThan(firstAboveStage ?? .min, currentLevel,
+                    XCTAssertLessThanOrEqual(firstAboveStage ?? .min, currentLevel,
                                       "迭代 \(iteration): .maxed + .unknown 必须是 realNext < currentLevel 的倒挂场景")
                 }
             }

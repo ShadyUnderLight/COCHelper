@@ -1112,10 +1112,21 @@ private struct VillageNameEditor: View {
     }
 }
 
-private struct AccountSnapshotSummaryView: View {
+struct AccountSnapshotSummaryView: View {
     @EnvironmentObject private var model: AppModel
     let snapshot: AccountSnapshot
     let isPending: Bool
+    // Issue #61：快捷导入（村庄详情页「粘贴并更新」）复用本组件时的注入参数。
+    // 全部可选：非 nil 时覆盖账号数据页默认文案与动作，绕过 AppModel 的
+    // pendingAccountSnapshot 状态；nil（默认）时行为与账号数据页完全一致。
+    /// 目的地描述（默认取 model.pendingAccountSnapshotDestinationDescription）。
+    var destinationDescription: String? = nil
+    /// 确认按钮标题（默认取 pendingAccountSnapshotActionTitle ?? "应用快照"）。
+    var confirmTitle: String? = nil
+    /// 确认动作（默认 model.applyPendingAccountSnapshot()）。
+    var onConfirm: (() -> Void)? = nil
+    /// 放弃动作（默认 model.discardPendingAccountSnapshot()）。
+    var onCancel: (() -> Void)? = nil
 
     private var snapshotTitle: String {
         isPending ? "待确认的账号快照" : "当前账号快照"
@@ -1227,7 +1238,8 @@ private struct AccountSnapshotSummaryView: View {
                 }
 
                 if isPending {
-                    if let destination = model.pendingAccountSnapshotDestinationDescription {
+                    if let destination = destinationDescription
+                        ?? model.pendingAccountSnapshotDestinationDescription {
                         Text(destination)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Color.cocAccent)
@@ -1235,11 +1247,19 @@ private struct AccountSnapshotSummaryView: View {
                     HStack {
                         Spacer()
                         Button("放弃") {
-                            model.discardPendingAccountSnapshot()
+                            if let onCancel {
+                                onCancel()
+                            } else {
+                                model.discardPendingAccountSnapshot()
+                            }
                         }
                         .buttonStyle(.bordered)
-                        Button(model.pendingAccountSnapshotActionTitle ?? "应用快照") {
-                            model.applyPendingAccountSnapshot()
+                        Button(confirmTitle ?? model.pendingAccountSnapshotActionTitle ?? "应用快照") {
+                            if let onConfirm {
+                                onConfirm()
+                            } else {
+                                model.applyPendingAccountSnapshot()
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.cocAccent)

@@ -15,6 +15,10 @@ struct VillageDetailView: View {
     @State private var selectedBase: TrackerBase = .home
     @State private var selectedFilter: CategoryFilter = .all
     @State private var selectedItem: VillageItemState?
+    // Issue #61：快捷「粘贴并更新」的确认 sheet 与失败提示载体。
+    // prepareQuickImport 是纯函数（不写状态），结果分派到这两个载体之一。
+    @State private var quickImportPreview: QuickImportPreview?
+    @State private var quickImportError: QuickImportError?
 
     private var village: VillageProfile? {
         model.villages.first(where: { $0.id == villageID })
@@ -39,6 +43,34 @@ struct VillageDetailView: View {
         .background(Color.cocBackground)
         .sheet(item: $selectedItem) { item in
             LevelDetailSheet(item: item, catalog: catalog)
+        }
+        // Issue #61：快捷「粘贴并更新」预览确认 sheet（复用账号数据页的
+        // AccountSnapshotSummaryView，经注入参数展示快捷导入的目标与文案）。
+        .sheet(item: $quickImportPreview) { preview in
+            QuickImportSheet(
+                preview: preview,
+                onConfirm: {
+                    model.applyQuickImport(preview)
+                    quickImportPreview = nil
+                },
+                onCancel: {
+                    quickImportPreview = nil
+                }
+            )
+        }
+        // Issue #61：快捷导入失败提示（剪贴板空 / 解析失败 / 村庄缺失 /
+        // 误覆盖拦截），错误文案由 QuickImportError（LocalizedError）提供。
+        .alert(
+            "粘贴并更新失败",
+            isPresented: Binding(
+                get: { quickImportError != nil },
+                set: { if !$0 { quickImportError = nil } }
+            ),
+            presenting: quickImportError
+        ) { _ in
+            Button("好", role: .cancel) {}
+        } message: { error in
+            Text(error.localizedDescription)
         }
     }
 
@@ -206,6 +238,13 @@ struct VillageDetailView: View {
                     }
                 }
                 Spacer()
+                // Issue #61：快捷「粘贴并更新」——剪贴板 JSON 直接预览并
+                // 更新当前村庄，免去「账号数据 → 粘贴 → 解析 → 确认」流程。
+                Button(action: prepareQuickImport) {
+                    Label("粘贴并更新", systemImage: "doc.on.clipboard")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.cocAccent)
                 Button(action: openImport) {
                     Label("更新快照", systemImage: "arrow.triangle.2.circlepath")
                 }
@@ -214,6 +253,21 @@ struct VillageDetailView: View {
             }
 
             diagnosticsNote(projection)
+        }
+    }
+
+    // MARK: - 快捷导入（Issue #61）
+
+    /// Issue #61：从剪贴板解析并预览针对当前村庄的快捷导入。
+    /// 成功 → 弹出确认 sheet（quickImportPreview）；失败 → alert
+    /// （quickImportError）。prepareQuickImport 是纯函数（数据层无副作用），
+    /// 本方法只做结果分派，不额外读写模型状态。
+    private func prepareQuickImport() {
+        switch model.prepareQuickImport(for: villageID) {
+        case .success(let preview):
+            quickImportPreview = preview
+        case .failure(let error):
+            quickImportError = error
         }
     }
 
@@ -598,5 +652,46 @@ struct VillageDetailView: View {
         case display(TrackerDisplayCategory)
         case category(TrackerCategory)
         case other
+    }
+}
+
+/// Issue #61：快捷「粘贴并更新」的确认 sheet。
+///
+/// 复用账号数据页的 `AccountSnapshotSummaryView`（同一预览组件、同一视觉）：
+/// 通过注入参数展示快捷导入的目的地描述、确认标题与确认/放弃动作。
+/// 快捷导入直接写入目标村庄，不经过 AppModel 的 pendingAccountSnapshot
+/// 待确认流程——注入的 onConfirm 由 VillageDetailView 负责执行
+/// `applyQuickImport` 并关闭 sheet。`model` 经 @EnvironmentObject 从
+/// VillageDetailView 环境继承（AppModel 在根部注入）。
+private struct QuickImportSheet: View {
+    /// 快捷导入预览（目标村庄、解析结果、目的地描述）。
+    let preview: QuickImportPreview
+    /// 确认按钮动作（外部负责 applyQuickImport 并关闭 sheet）。
+    let onConfirm: () -> Void
+    /// 放弃按钮动作（外部负责关闭 sheet）。
+    let onCancel: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("粘贴并更新")
+                    .font(.title2.weight(.bold))
+                AccountSnapshotSummaryView(
+                    snapshot: preview.snapshot,
+                    isPending: true,
+                    destinationDescription: preview.destinationDescription,
+                    confirmTitle: preview.confirmationTitle,
+                    onConfirm: onConfirm,
+                    onCancel: onCancel
+                )
+            }
+            .padding(24)
+            // 宽度上限 560pt：预览内容较窄时自适应，不撑满整个窗口
+            //（与 LevelDetailSheet 的固定 minWidth 520 同一量级）。
+            .frame(maxWidth: 560, alignment: .leading)
+        }
+        .background(Color.cocBackground)
+        // macOS sheet 需显式最小尺寸（与 LevelDetailSheet 同一量级）。
+        .frame(minWidth: 480, minHeight: 420)
     }
 }

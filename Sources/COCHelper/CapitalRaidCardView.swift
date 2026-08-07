@@ -386,7 +386,7 @@ struct CapitalRaidCardView: View {
                 .lineLimit(1)
             Spacer()
             Text([district.stars.map { "⭐\(min(max($0, 0), 3))" },
-                  district.destructionPercent.map { "摧毁率 \(Self.percent(ClanCombatSummary.clampedPercent($0)))%" },
+                  district.destructionPercent.flatMap(ClanCombatSummary.displayDestructionPercent).map { "摧毁率 \(Self.percent($0))%" },
                   district.attackCount.map { "\($0) 次进攻" },
                   district.totalLooted.map { "掠夺 \(Self.formatted($0)) 都城金币" }]
                 .compactMap { $0 }

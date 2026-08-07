@@ -109,9 +109,10 @@ final class ClanCombatSummaryTests: XCTestCase {
         XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
             districtsDestroyed: nil,
             districts: [district(name: "A", destruction: 100), district(name: "B", destruction: 100), district(name: "C", destruction: 40)]), 2)
-        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
+        // 任一未知（nil）→ 无法确定精确数，fail-closed 省略
+        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
             districtsDestroyed: nil,
-            districts: [district(name: "A", destruction: 100), district(name: "B", destruction: nil)]), 1)
+            districts: [district(name: "A", destruction: 100), district(name: "B", destruction: nil)]))
         // 浮点噪声容忍：100.0001 也算摧毁
         XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
             districtsDestroyed: nil,
@@ -136,12 +137,31 @@ final class ClanCombatSummaryTests: XCTestCase {
             districtsDestroyed: nil, districts: [district(name: "A", destruction: 0), district(name: "B", destruction: 99.9)]), 0)
     }
 
-    func testDestroyedCountInfAndNaNNotCountedAsDestroyed() {
-        // Inf/NaN 经 clampedPercent → 0，不算摧毁（与渲染端一致）
-        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
-            districtsDestroyed: nil, districts: [district(name: "A", destruction: Double.infinity)]), 0)
-        XCTAssertEqual(ClanCombatSummary.destroyedDistrictCount(
-            districtsDestroyed: nil, districts: [district(name: "A", destruction: Double.nan)]), 0)
+    func testDestroyedCountNonFiniteIsUnknown() {
+        // NaN/Inf 视为未知摧毁率 → 无法确定精确数 → nil（与 P2 显示端一致）
+        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: Double.infinity)]))
+        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: Double.nan)]))
+        XCTAssertNil(ClanCombatSummary.destroyedDistrictCount(
+            districtsDestroyed: nil, districts: [district(name: "A", destruction: 100), district(name: "B", destruction: Double.nan)]))
+    }
+
+    // MARK: - displayDestructionPercent
+
+    func testDisplayDestructionPercentUnknownForMissingOrNonFinite() {
+        XCTAssertNil(ClanCombatSummary.displayDestructionPercent(nil))
+        XCTAssertNil(ClanCombatSummary.displayDestructionPercent(Double.nan))
+        XCTAssertNil(ClanCombatSummary.displayDestructionPercent(Double.infinity))
+        XCTAssertNil(ClanCombatSummary.displayDestructionPercent(-Double.infinity))
+    }
+
+    func testDisplayDestructionPercentClampsFinite() {
+        XCTAssertEqual(ClanCombatSummary.displayDestructionPercent(0), 0)
+        XCTAssertEqual(ClanCombatSummary.displayDestructionPercent(100), 100)
+        XCTAssertEqual(ClanCombatSummary.displayDestructionPercent(50.5), 50.5)
+        XCTAssertEqual(ClanCombatSummary.displayDestructionPercent(-5), 0)
+        XCTAssertEqual(ClanCombatSummary.displayDestructionPercent(150), 100)
     }
 
     // MARK: - clampedPercent

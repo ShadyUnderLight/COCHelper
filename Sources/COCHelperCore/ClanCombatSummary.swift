@@ -78,23 +78,32 @@ public struct CapitalRaidDistrictSummary: Hashable, Sendable {
 /// 核心契约：百分比字段（destructionPercentage / destructionPercent）**永不累加**，
 /// 一律逐行保留；仅星数、金币、次数这类可加总量参与聚合。
 public enum ClanCombatSummary {
-    /// 将百分比夹在 [0, 100]；非有限值（NaN/Inf）防御为 0。
+    /// 数值兜底：将百分比夹在 [0, 100]；非有限值（NaN/Inf）→ 0。
+    /// 仅供算术兜底，**不得直接用于渲染**——显示层必须走 `displayDestructionPercent`，
+    /// 否则 NaN/Inf 会被伪装成 0%。
     public static func clampedPercent(_ value: Double) -> Double {
         guard value.isFinite else { return 0 }
         return min(max(value, 0), 100)
     }
 
-    /// 已摧毁子城数：官方字段优先（0 也是官方事实）；缺失时从子城明细推导
-    /// （摧毁率经 clampedPercent 钳制后 ≥ 100 视为已摧毁）。
-    /// 全部子城摧毁率已知 → 返回确切计数（含 0）；存在未知摧毁率且无明确摧毁 → nil（调用方省略分句）。
+    /// 摧毁率展示值：nil 或非有限（NaN/±Inf）→ nil（未知，调用方显示"摧毁率未知"/省略）；
+    /// 有限值钳制到 [0, 100]。显示层一律走本函数，禁止直接用 clampedPercent 渲染。
+    public static func displayDestructionPercent(_ value: Double?) -> Double? {
+        guard let value, value.isFinite else { return nil }
+        return min(max(value, 0), 100)
+    }
+
+    /// 已摧毁子城数：官方字段优先（0 也是官方事实）；缺失时从子城明细推导。
+    /// 只有全部子城摧毁率已知（有限）才返回确切计数（含 0）；
+    /// 任一子城摧毁率未知（nil/NaN/Inf）→ nil（调用方省略分句，绝不编造或低估）。
     public static func destroyedDistrictCount(
         districtsDestroyed: Int?, districts: [CapitalRaidDistrict]
     ) -> Int? {
         if let districtsDestroyed { return districtsDestroyed }
         guard !districts.isEmpty else { return nil }
-        let destroyed = districts.filter { Self.clampedPercent($0.destructionPercent ?? 0) >= 100 }.count
-        if destroyed == 0, districts.contains(where: { $0.destructionPercent == nil }) { return nil }
-        return destroyed
+        let percents = districts.map { displayDestructionPercent($0.destructionPercent) }
+        guard percents.allSatisfy({ $0 != nil }) else { return nil }
+        return percents.compactMap { $0 }.filter { $0 >= 100 }.count
     }
 
     /// 聚合成员战争攻击：逐次攻击明细原样保留，星数求和。

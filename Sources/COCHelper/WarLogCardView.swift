@@ -277,8 +277,8 @@ struct WarLogCardView: View {
                     Text("⭐ \(stars)")
                         .font(.callout.weight(.semibold))
                 }
-                if let destruction = entry.clan?.destructionPercentage {
-                        Text("摧毁率 \(Self.percent(ClanCombatSummary.clampedPercent(destruction)))%")
+                if let destruction = entry.clan?.destructionPercentage.flatMap(ClanCombatSummary.displayDestructionPercent) {
+                        Text("摧毁率 \(Self.percent(destruction))%")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -345,7 +345,7 @@ struct WarLogCardView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Spacer()
-            Text(line.destructionPercentage.map { "摧毁率 \(Self.percent(ClanCombatSummary.clampedPercent($0)))%" } ?? "摧毁率未知")
+            Text(ClanCombatSummary.displayDestructionPercent(line.destructionPercentage).map { "摧毁率 \(Self.percent($0))%" } ?? "摧毁率未知")
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
         }

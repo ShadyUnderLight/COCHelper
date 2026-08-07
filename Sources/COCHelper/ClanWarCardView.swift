@@ -256,7 +256,7 @@ struct ClanWarCardView: View {
                 }
                 if let stars {
                     Text("⭐ \(stars) 星" + (attacks.map { " · \($0) 次攻击" } ?? "")
-                        + (destruction.map { " · 摧毁率 \(Self.percent(ClanCombatSummary.clampedPercent($0)))%" } ?? ""))
+                        + (destruction.flatMap(ClanCombatSummary.displayDestructionPercent).map { " · 摧毁率 \(Self.percent($0))%" } ?? ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -346,7 +346,7 @@ struct ClanWarCardView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Spacer()
-            Text(line.destructionPercentage.map { "摧毁率 \(Self.percent(ClanCombatSummary.clampedPercent($0)))%" } ?? "摧毁率未知")
+            Text(ClanCombatSummary.displayDestructionPercent(line.destructionPercentage).map { "摧毁率 \(Self.percent($0))%" } ?? "摧毁率未知")
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
         }

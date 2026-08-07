@@ -166,6 +166,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
 
         let group = try XCTUnwrap(project(village: village, catalog: syntheticCatalog, base: .home).first)
         XCTAssertEqual(group.instances.count, 1, "count 是数量属性，不得伪造实例")
+        XCTAssertEqual(group.summary.instanceCount, 325)
         let instance = try XCTUnwrap(group.instances.first)
         XCTAssertEqual(instance.steps.count, 7)
         XCTAssertEqual(instance.steps.first?.level, 6)
@@ -173,6 +174,60 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertEqual(group.summary.remainingLevelCount, 7 * 325)
         XCTAssertEqual(group.summary.totalDurationSeconds, 1_228_500, "3780s × 325")
         XCTAssertEqual(group.summary.costByResource, [BuildingResourceTotal(resource: "Elixir", totalCost: 2_047_500)])
+    }
+
+    // MARK: - Issue #78: count normalization and saturating group totals
+
+    func testIssue78NormalizesNilZeroAndNegativeCounts() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 5, count: nil, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 5, count: 0, path: "1"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 5, count: -3, path: "2"),
+            ],
+        ])
+
+        let group = try XCTUnwrap(project(village: village, catalog: syntheticCatalog, base: .home).first)
+        XCTAssertEqual(group.summary.instanceCount, 3,
+                       "nil/0/负数 count 必须按 instanceWeight=1 计入")
+        XCTAssertFalse(group.summary.saturated)
+        XCTAssertEqual(group.summary.remainingLevelCount, 33,
+                       "三条 level 5 记录各有 11 个剩余等级")
+        XCTAssertEqual(group.summary.totalDurationSeconds, 21_780,
+                       "nil/0/负数 count 的三条记录都必须按 1 计入时长")
+        XCTAssertEqual(group.summary.costByResource, [
+            BuildingResourceTotal(resource: "Elixir", totalCost: 36_300),
+        ], "nil/0/负数 count 的三条记录都必须按 1 计入费用")
+    }
+
+    func testIssue78SaturatesEveryGroupTotalWithoutCrashing() throws {
+        let catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "极端计数测试", maxLevel: 3,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: Int64.max, upgradeResource: "Elixir", upgradeCost: Int64.max),
+                    SpecLevel(level: 2, durationSeconds: Int64.max, upgradeResource: "Elixir", upgradeCost: Int64.max),
+                    SpecLevel(level: 3, durationSeconds: Int64.max, upgradeResource: "Elixir", upgradeCost: Int64.max),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "1"),
+            ],
+        ])
+
+        let group = try XCTUnwrap(project(village: village, catalog: catalog, base: .home).first)
+        XCTAssertEqual(group.summary.instanceCount, Int.max)
+        XCTAssertEqual(group.summary.remainingLevelCount, Int.max)
+        XCTAssertEqual(group.summary.totalDurationSeconds, Int64.max)
+        XCTAssertEqual(group.summary.costByResource, [
+            BuildingResourceTotal(resource: "Elixir", totalCost: Int64.max),
+        ])
+        XCTAssertTrue(group.summary.saturated,
+                      "实例数、剩余等级、时长或费用任一发生饱和都必须传播状态")
     }
 
     // MARK: - T4: 多等级记录各自阶梯

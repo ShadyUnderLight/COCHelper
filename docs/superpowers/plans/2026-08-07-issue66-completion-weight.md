@@ -79,7 +79,7 @@ public static func totalCompletion(from items: [VillageItemState], catalogIsUsab
 - [ ] `count == nil` 按 1
 - [ ] 升级中单条 + 已聚合空闲并存不重复不丢失
 - [ ] 分类完成度之和 == 总完成度（守恒）
-- [ ] 未知/版本不匹配/缺失等级/待重新导入按实例权重计入未知
+- [ ] 未知/版本不匹配/缺失等级按实例权重计入未知；待重新导入（needsReimport）按实例权重计入分母（known）但不计完成，且绝不误判满级（`isKnown` 语义保持不变，issue #16 契约）
 - [ ] UI 保留单行 ×N，分母改为实例数
 - [ ] 投影层 + UI 消费侧（全链路）回归测试
 - [ ] `swift test` 通过

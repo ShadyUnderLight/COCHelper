@@ -201,8 +201,10 @@ public enum VillageDetailProjection {
         return count
     }
 
-    /// 按实例权重求和（供 UI chip 计数与统计复用，单一口径，issue #66）。
-    /// 聚合行（count > 1，如 6 门 21 级加农炮）按 count 计入，避免把行数当实例数。
+    /// 按实例权重求和（单一口径，issue #66）。统计函数内部使用；
+    /// UI 分类 chip 计数经 completionStats 的 known+unknown 派生（见 VillageDetailView），
+    /// 不直接调用本函数。聚合行（count > 1，如 6 门 21 级加农炮）按 count 计入，
+    /// 避免把行数当实例数。
     public static func instanceCount(of items: [VillageItemState]) -> Int {
         items.reduce(0) { $0 + Self.weight($1) }
     }

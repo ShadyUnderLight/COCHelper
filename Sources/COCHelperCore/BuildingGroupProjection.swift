@@ -4,14 +4,16 @@ import Foundation
 public struct BuildingUpgradeStep: Hashable, Sendable {
     /// 目标等级（升序）。
     public let level: Int
-    /// 目录费用；nil = 缺失。
-    public let upgradeCost: Int64?
-    /// 费用资源类型；nil = 缺失（仅当 cost 存在时可能）。
-    public let upgradeResource: String?
+    /// 多资源升级费用（透传 `CatalogLevel.upgradeCosts`，Issue #73）。
+    /// nil = 无费用数据；非空数组即存在费用数据（含全 parseFailed——此时 UI
+    /// 展示 raw 原文）。元素语义见 `CatalogUpgradeCost`。
+    public let upgradeCosts: [CatalogUpgradeCost]?
     /// 完整升级时长；nil = 缺失，0 = 有效即时升级。
     public let durationSeconds: Int64?
 
-    public var hasCost: Bool { upgradeCost != nil }
+    /// 是否存在费用数据：`upgradeCosts` 非空即存在（全 parseFailed 也返回 true，
+    /// 此时 UI 展示 raw 原文；`ClanDisplayFormat.upgradeCostLabel` 三分支）。
+    public var hasCost: Bool { upgradeCosts?.isEmpty == false }
     public var hasDuration: Bool { durationSeconds != nil }
     public var isInstant: Bool { durationSeconds == 0 }
 }
@@ -49,6 +51,8 @@ public struct BuildingGroupSummary: Hashable, Sendable {
     /// 所有已知等级完整升级时间之和（×count ?? 1，秒）。
     public let totalDurationSeconds: Int64
     /// 按资源类型汇总的费用（×count ?? 1；按 resource 字典序）。
+    /// 只累加成功项（!parseFailed && amount != nil）；parseFailed 项金额不可信
+    /// 不进入汇总（任一失败项 → completeness 降级，UI 另显 raw 原文）。
     public let costByResource: [BuildingResourceTotal]
     public let completeness: BuildingGroupCompleteness
 }
@@ -128,9 +132,9 @@ public enum BuildingGroupProjection {
     /// 目录等级可能不连续，必须过滤目录 levels 而非生成连续整数。
     /// currentLevel 为 nil、目录未命中或 base 不匹配（maxLevel == nil）→ 空数组。
     ///
-    /// Issue #73 最小兼容（Task 2）：CatalogLevel 费用改为多资源 `upgradeCosts`，
-    /// 此处从「首个成功项」（parseFailed == false 且 amount != nil）派生单资源
-    /// 阶梯字段；多资源分组/parseFailed 降级语义在 Task 3 投影层处理。
+    /// Issue #73：`BuildingUpgradeStep.upgradeCosts` 直接透传 `CatalogLevel.upgradeCosts`
+    /// （多资源数组，含 parseFailed 项与 raw 原文）；汇总分桶/降级语义在
+    /// `summary(for:)` 处理。
     private static func steps(
         for item: VillageItemState,
         catalog: GameCatalog?
@@ -143,12 +147,9 @@ public enum BuildingGroupProjection {
             .filter { $0.level > (currentLevel ?? .max) && $0.level <= maxLevel }
             .sorted { $0.level < $1.level }
             .map { level in
-                let firstCost = level.upgradeCosts?
-                    .first(where: { !$0.parseFailed && $0.amount != nil })
-                return BuildingUpgradeStep(
+                BuildingUpgradeStep(
                     level: level.level,
-                    upgradeCost: firstCost?.amount,
-                    upgradeResource: firstCost?.resource,
+                    upgradeCosts: level.upgradeCosts,
                     durationSeconds: level.durationSeconds
                 )
             }
@@ -185,16 +186,23 @@ public enum BuildingGroupProjection {
             }
             for step in instance.steps {
                 // 任一阶梯费用或时长缺失 → 降级（0 是有效即时升级，不降级）。
-                if step.upgradeCost == nil || step.durationSeconds == nil {
+                // 费用缺失 = upgradeCosts 为 nil 或空数组（Python 侧不产出空数组，防御语义）。
+                if step.upgradeCosts?.isEmpty != false || step.durationSeconds == nil {
                     hasPartialMissing = true
                 }
                 if let duration = step.durationSeconds {
                     totalDurationSeconds += duration * Int64(count)
                 }
-                if let cost = step.upgradeCost {
-                    // 资源缺失但费用存在 → 归入「未知资源」桶（不丢弃费用）。
-                    let resource = step.upgradeResource ?? "未知资源"
-                    costByResource[resource, default: 0] += cost * Int64(count)
+                for cost in step.upgradeCosts ?? [] {
+                    // 任一费用项解析失败 → 降级（汇总不完整；raw 原文由 UI 展示，
+                    // 见 ClanDisplayFormat.upgradeCostLabel）。
+                    guard !cost.parseFailed, let amount = cost.amount else {
+                        hasPartialMissing = true
+                        continue
+                    }
+                    // 成功项按 resource 原值分桶（显示层再本地化，桶序不受本地化影响）；
+                    // 0 是真实费用，照常累加（不视为缺失）。
+                    costByResource[cost.resource, default: 0] += amount * Int64(count)
                 }
             }
         }

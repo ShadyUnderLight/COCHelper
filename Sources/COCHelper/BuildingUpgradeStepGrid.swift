@@ -25,11 +25,12 @@ struct BuildingUpgradeStepGrid: View {
         Array(repeating: GridItem(.fixed(Self.columnWidth), spacing: 8), count: 3)
     }
 
-    /// 费用文案：千分位；费用缺失 →「无费用数据」；资源缺失归「未知资源」
-    /// （与投影汇总 `BuildingGroupProjection.summary` 同规则，不丢弃费用）。
+    /// 费用文案（Issue #73 Task 3）：多资源三分支共用 helper
+    /// `ClanDisplayFormat.upgradeCostLabel`（upgradeCosts 为 nil/空 →
+    /// 「无费用数据」；全成功 → 多资源 " · " 连接；含 parseFailed →
+    /// 成功项 + raw 原文警示；0 是真实费用照常显示）。
     private func costLabel(_ step: BuildingUpgradeStep) -> String {
-        guard let cost = step.upgradeCost else { return "无费用数据" }
-        return ClanDisplayFormat.resourceLabel(step.upgradeResource) + " " + BuildingCostFormatter.label(cost)
+        ClanDisplayFormat.upgradeCostLabel(step.upgradeCosts)
     }
 
     /// 时长文案：0 = 有效即时升级 →「即时」；nil = 缺失 →「暂无目录数据」。

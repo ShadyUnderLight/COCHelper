@@ -28,10 +28,16 @@ final class BuildingGroupProjectionTests: XCTestCase {
         var upgradeCosts: [SpecCost]?
     }
 
-    /// 单个成功费用项；parseFailed 项用 `cost(resource, nil)` 表达（金额缺失 → 解析失败）。
+    /// 单个费用项：amount == nil 表达解析失败（rawAmount 缺省，防御路径）。
     private static func cost(_ resource: String, _ amount: Int64?) -> SpecCost {
         SpecCost(resource: resource, amount: amount, rawResource: resource,
                  rawAmount: nil, parseFailed: amount == nil)
+    }
+
+    /// parseFailed 项（金额非数字 → amount=nil、rawAmount=原串，与 Python 不变量一致）。
+    private static func failedCost(_ resource: String, rawAmount: String) -> SpecCost {
+        SpecCost(resource: resource, amount: nil, rawResource: resource,
+                 rawAmount: rawAmount, parseFailed: true)
     }
 
     private struct SpecItem: Encodable {
@@ -360,12 +366,12 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertEqual(group.summary.completeness, .complete, "即时升级不降级")
     }
 
-    // MARK: - T11: 多资源费用取「首个成功项」（Issue #73 派生语义）
+    // MARK: - T11: 多资源费用透传 + 汇总分桶（Issue #73 Task 3）
 
-    func testT11MultiResourceTakesFirstSuccessfulEntry() throws {
-        // 旧格式「资源缺失但费用存在 → 未知资源桶」在新模型下不可表达（resource 恒非空，
-        // validate.py 不变量），"未知资源" 兜底保留为防御代码（Task 3 投影层重审）。
-        // 新语义：阶梯费用从 upgradeCosts 首个成功项（parseFailed == false 且 amount != nil）派生。
+    func testT11MultiResourceCostsPassThroughAndBucketSuccesses() throws {
+        // Task 3 语义：阶梯直接透传 upgradeCosts（不再派生「首个成功项」）；
+        // 汇总按 resource 分桶，只累加成功项（!parseFailed && amount != nil）；
+        // 任一失败项 → partialMissing（汇总不完整），失败项不进入汇总桶。
         let t11Catalog = try makeCatalog(items: [
             SpecItem(
                 section: "buildings", category: "buildings", dataID: 1_000_001,
@@ -373,8 +379,8 @@ final class BuildingGroupProjectionTests: XCTestCase {
                 levels: [
                     SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
                     SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.cost("Elixir", 100)]),
-                    SpecLevel(level: 3, durationSeconds: 180, upgradeCosts: [Self.cost("Gold", nil), Self.cost("Elixir", 200)]),
-                    SpecLevel(level: 4, durationSeconds: 240, upgradeCosts: [Self.cost("RareOre", nil), Self.cost("Gold", nil), Self.cost("Elixir", 300)]),
+                    SpecLevel(level: 3, durationSeconds: 180, upgradeCosts: [Self.cost("Gold", 500), Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 4, durationSeconds: 240, upgradeCosts: [Self.failedCost("RareOre", rawAmount: "forty"), Self.cost("Gold", 300)]),
                 ]
             ),
         ])
@@ -384,14 +390,103 @@ final class BuildingGroupProjectionTests: XCTestCase {
 
         let group = try XCTUnwrap(project(village: village, catalog: t11Catalog, base: .home).first)
         let steps = try XCTUnwrap(group.instances.first?.steps)
-        XCTAssertEqual(steps[1].upgradeCost, 200, "level 3：跳过 parseFailed Gold 取首个成功项 Elixir 200")
-        XCTAssertEqual(steps[1].upgradeResource, "Elixir")
-        XCTAssertEqual(steps[2].upgradeCost, 300, "level 4：跳过两个 parseFailed 项取 Elixir 300")
+        XCTAssertEqual(steps.count, 3)
+        // 阶梯从 currentLevel + 1 = level 2 起：steps[1] = level 3、steps[2] = level 4。
+        // 透传：step.upgradeCosts 与目录等级费用数组一致（失败项不丢弃、保留 raw 原文）。
+        XCTAssertEqual(steps[1].upgradeCosts?.count, 2, "level 3：两个成功项原样透传")
+        XCTAssertTrue(steps[1].upgradeCosts?.allSatisfy { !$0.parseFailed } == true)
+        XCTAssertEqual(steps[2].upgradeCosts?.count, 2, "level 4：失败项也原样透传")
+        XCTAssertTrue(steps[2].upgradeCosts?.contains { $0.parseFailed } == true)
+        XCTAssertEqual(steps[2].upgradeCosts?.first?.rawAmount, "forty", "失败项保留 raw 原文供 UI 展示")
+        // 汇总：成功项分桶累加（Elixir 100+200=300；Gold 500+300=800）；
+        // parseFailed RareOre 不进桶；任一失败项 → partialMissing。
         XCTAssertEqual(group.summary.costByResource, [
-            BuildingResourceTotal(resource: "Elixir", totalCost: 600),
-        ], "仅首个成功项计入汇总")
-        XCTAssertEqual(group.summary.completeness, .complete,
-                       "parseFailed 项静默跳过（Task 2 兼容语义，不影响完整性；Task 3 重审）")
+            BuildingResourceTotal(resource: "Elixir", totalCost: 300),
+            BuildingResourceTotal(resource: "Gold", totalCost: 800),
+        ], "仅成功项进入汇总桶，按 resource 字典序")
+        XCTAssertEqual(group.summary.completeness, .partialMissing,
+                       "任一 parseFailed 项 → 汇总不完整")
+    }
+
+    // MARK: - T16: 多资源两个成功项 → 两个桶各累加（不合并）
+
+    func testT16TwoSuccessItemsCreateTwoBuckets() throws {
+        let t16Catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "加农炮", maxLevel: 2,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.cost("CommonOre", 120), Self.cost("RareOre", 40)]),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+
+        let group = try XCTUnwrap(project(village: village, catalog: t16Catalog, base: .home).first)
+        XCTAssertEqual(group.summary.costByResource, [
+            BuildingResourceTotal(resource: "CommonOre", totalCost: 120),
+            BuildingResourceTotal(resource: "RareOre", totalCost: 40),
+        ], "一个阶梯的两个成功项各归各桶（本地化显示层再处理）")
+        XCTAssertEqual(group.summary.completeness, .complete, "无失败项 → 完整")
+    }
+
+    // MARK: - T17: 全 parseFailed → hasCost 仍为 true（有 raw 可展示），汇总空桶 + partialMissing
+
+    func testT17AllFailedCostsKeepStepWithRawButEmptyBuckets() throws {
+        // 定义（Task 3）：hasCost = upgradeCosts 非空（含全失败——UI 展示 raw 原文，
+        // 见 ClanDisplayFormat.upgradeCostLabel）；但汇总层金额不可信 → 不进桶，
+        // 且全失败 = 费用数据不完整 → partialMissing。
+        let t17Catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "加农炮", maxLevel: 2,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 240, upgradeCosts: [
+                        Self.failedCost("CommonOre", rawAmount: "abc"),
+                        Self.failedCost("RareOre", rawAmount: ""),
+                    ]),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+
+        let group = try XCTUnwrap(project(village: village, catalog: t17Catalog, base: .home).first)
+        let step = try XCTUnwrap(group.instances.first?.steps.first)
+        XCTAssertEqual(step.level, 2)
+        XCTAssertTrue(step.hasCost, "非空数组（含全失败）→ 存在费用数据可展示（raw 原文）")
+        XCTAssertEqual(step.upgradeCosts?.count, 2)
+        XCTAssertTrue(group.summary.costByResource.isEmpty, "全失败 → 无可信金额，汇总桶为空")
+        XCTAssertEqual(group.summary.completeness, .partialMissing, "全失败 = 费用缺失 → 降级")
+    }
+
+    // MARK: - T18: 空数组视为无费用数据（hasCost false + partialMissing）
+
+    func testT18EmptyUpgradeCostsArrayTreatedAsNoCost() throws {
+        let t18Catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "加农炮", maxLevel: 2,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 240, upgradeCosts: []),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+
+        let group = try XCTUnwrap(project(village: village, catalog: t18Catalog, base: .home).first)
+        let step = try XCTUnwrap(group.instances.first?.steps.first)
+        XCTAssertEqual(step.level, 2)
+        XCTAssertFalse(step.hasCost, "空数组 = 无费用数据（Python 侧不产出，防御语义）")
+        XCTAssertEqual(group.summary.completeness, .partialMissing)
     }
 
     // MARK: - T12: currentLevel > maxLevel（目录过时）→ versionMismatch

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // MARK: - Manifest
@@ -40,6 +41,47 @@ public struct CatalogManifest: Codable, Hashable, Sendable {
     public let sourceFingerprint: String
     public let generatedFiles: [CatalogGeneratedFile]
     public let counts: CatalogCounts
+
+    /// Issue #74（可信度验收）：运行时完整性校验。
+    ///
+    /// 校验两件事：① counts 与目录内容重算一致（items/levels/missingTime 必查；
+    /// timed/instant/缺失类四桶等拆分字段存在才查——旧 manifest 缺键跳过）；
+    /// ② `generatedFiles` 中 catalog.json 声明的 sha256 与真实文件一致
+    ///（声明缺失时跳过，向后兼容）。返回 false = 漂移/篡改，调用方应
+    /// fail-closed（manifest 视为无效，不进入「已验证」状态）。
+    /// 不校验 icons 哈希（展示资源，不影响统计可信度）与 sourceFingerprint
+    ///（APK hash，运行时无 APK 可比）。
+    public func validate(against items: [CatalogItem], catalogData: Data) -> Bool {
+        let levels = items.flatMap(\.levels)
+        guard counts.items == items.count,
+              counts.levels == levels.count else { return false }
+        if let missingTime = counts.missingTime,
+           missingTime != levels.filter({ $0.durationSeconds == nil }).count {
+            return false
+        }
+        // 拆分字段（存在才校验；映射走 CatalogDurationState.state 单一映射点，
+        // 与 Python classify_duration 同语义）
+        if let timed = counts.timed,
+           timed != levels.filter({ ($0.durationSeconds ?? 0) > 0 }).count { return false }
+        if let instant = counts.instant,
+           instant != levels.filter({ $0.durationSeconds == 0 }).count { return false }
+        if let notApplicable = counts.notApplicable,
+           notApplicable != levels.filter({ $0.durationState == .notApplicable }).count { return false }
+        if let initialLevel = counts.initialLevel,
+           initialLevel != levels.filter({ $0.durationState == .initialLevel }).count { return false }
+        if let sourceMissing = counts.sourceMissing,
+           sourceMissing != levels.filter({ $0.durationState == .sourceMissing }).count { return false }
+        if let parseFailed = counts.parseFailed,
+           parseFailed != levels.filter({ $0.durationState == .parseFailed }).count { return false }
+        // catalog.json sha256（声明缺失跳过）
+        if let entry = generatedFiles.first(where: { $0.path == "catalog.json" }),
+           let declared = entry.sha256, declared.hasPrefix("sha256:") {
+            let actual = SHA256.hash(data: catalogData)
+                .map { String(format: "%02x", $0) }.joined()
+            guard declared.dropFirst("sha256:".count) == actual else { return false }
+        }
+        return true
+    }
 }
 
 // MARK: - Assets
@@ -473,7 +515,8 @@ public struct GameCatalog: Sendable {
             subdirectory: "GameCatalog/" + version
         ), let manifestData = try? Data(contentsOf: manifestURL),
            let decoded = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData),
-           decoded.gameVersion == payload.gameVersion {
+           decoded.gameVersion == payload.gameVersion,
+           decoded.validate(against: payload.items, catalogData: data) {
             manifest = decoded
         } else {
             manifest = nil

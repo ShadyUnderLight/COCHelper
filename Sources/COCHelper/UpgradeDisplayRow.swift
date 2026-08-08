@@ -13,6 +13,10 @@ enum UpgradeDisplayLayout {
     static let nestedIndent: CGFloat = 24
     static let detailHeaderIconSize: CGFloat = 52
     static let detailLevelIconSize: CGFloat = 36
+    /// Issue #70：村庄详情页三指标卡行布局（metricsBar/metricRow）。
+    static let metricRowTitleWidth: CGFloat = 96
+    static let metricProgressMaxWidth: CGFloat = 180
+    static let metricPercentWidth: CGFloat = 44
 }
 
 /// Issue #15：升级总览 / 村庄详情共用的升级行组件。

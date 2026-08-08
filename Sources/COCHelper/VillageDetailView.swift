@@ -327,7 +327,7 @@ struct VillageDetailView: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 96, alignment: .leading)
+                .frame(width: UpgradeDisplayLayout.metricRowTitleWidth, alignment: .leading)
             if metric.saturated {
                 Text("数据异常（超出可表示范围）")
                     .font(.caption)
@@ -336,11 +336,11 @@ struct VillageDetailView: View {
                 ProgressView(value: ratio)
                     .progressViewStyle(.linear)
                     .tint(Color.cocAccent)
-                    .frame(maxWidth: 180)
+                    .frame(maxWidth: UpgradeDisplayLayout.metricProgressMaxWidth)
                 Text(String(Int((ratio * 100).rounded())) + "%")
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(Color.cocAccent)
-                    .frame(width: 44, alignment: .trailing)
+                    .frame(width: UpgradeDisplayLayout.metricPercentWidth, alignment: .trailing)
                 Text(String(metric.numerator) + " / " + String(metric.denominator) + " " + metric.units)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -349,7 +349,9 @@ struct VillageDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if let reason = metric.degradedReason, metric.ratio != nil {
+            // saturated 时 ratio 恒 nil，但 partial 的降级原因（如「N 项未知」）
+            // 不得被吞——与「数据异常」并存展示，信息不丢失。
+            if let reason = metric.degradedReason, (metric.ratio != nil || metric.saturated) {
                 Text(reason)
                     .font(.caption2)
                     .foregroundStyle(.orange)
@@ -358,15 +360,14 @@ struct VillageDetailView: View {
     }
 
     /// 不可计算状态文案（unknown/unavailable；saturated 已在 metricRow 提前处理）。
+    /// 单一来源：直接复用 Core 的 degradedReason（unavailable/unknown 时恒非 nil），
+    /// 避免 UI 手写文案与 Core 漂移（曾漏句号）；?? 兜底仅防御不可达组合。
     private func degradedText(for metric: ProgressMetric) -> String {
         switch metric.state {
-        case .unavailable: return "目录不可用或版本不匹配，暂无法计算该指标"
-        case .unknown:
-            if metric.kind == .snapshotCoverage, metric.denominator == 0 {
-                return "尚未导入快照"
-            }
-            return "无可确认项目，暂无法计算"
+        // ready/partial 时 ratio 非 nil，UI 走 ratio 分支，本分支不可达；
+        // 防御性兜底。
         case .ready, .partial: return "—"
+        case .unavailable, .unknown: return metric.degradedReason ?? "暂无法计算该指标"
         }
     }
 

@@ -5,12 +5,29 @@ import XCTest
 
 /// 联赛/段位展示格式化（Issue #71 Task 3）：playerLeagueTierLabel 新逻辑 +
 /// 现有 league 标签迁移到 LeagueTierCatalog 后的回归保护。
+/// 注意：catalog 数据为官方最新简中术语（铜杯联赛3 等），
+/// 旧手写字典的「青铜联赛 III / 传奇联赛 / 泰坦联赛 I」等映射已按官方
+/// 静态数据修正（44000013=石头联赛2、85000006=银杯联赛1、105000028=飞龙联赛28）。
 final class ClanDisplayFormatTests: XCTestCase {
     // MARK: - playerLeagueTierLabel（排位段位，2026 新增）
 
-    func testPlayerLeagueTierLabelKnownID() {
-        let tier = PlayerLeague(id: 29000022, name: "Champion League II", iconUrls: nil)
-        XCTAssertEqual(ClanDisplayFormat.playerLeagueTierLabel(tier), "传奇联赛")
+    func testPlayerLeagueTierLabelKnownIDs() {
+        XCTAssertEqual(
+            ClanDisplayFormat.playerLeagueTierLabel(PlayerLeague(id: 105000036, name: "Legend League", iconUrls: nil)),
+            "传奇杯1"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.playerLeagueTierLabel(PlayerLeague(id: 105000034, name: "Legend League", iconUrls: nil)),
+            "传奇杯3"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.playerLeagueTierLabel(PlayerLeague(id: 105000028, name: "Dragon League 28", iconUrls: nil)),
+            "飞龙联赛28"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.playerLeagueTierLabel(PlayerLeague(id: 105000001, name: "Skeleton League 1", iconUrls: nil)),
+            "骷髅兵联赛1"
+        )
     }
 
     func testPlayerLeagueTierLabelNil() {
@@ -22,15 +39,23 @@ final class ClanDisplayFormatTests: XCTestCase {
         )
     }
 
-    func testPlayerLeagueTierLabelUnknownID() {
-        // 2026 新增段位 ID（超出已审计目录）：降级文案，不显示英文名。
+    func testPlayerLeagueTierLabelUnknownIDPreservesOfficialName() {
+        // 未知 ID 必须保留官方原始 name（可审计），不伪造中文（Issue #71）。
         // 注意：29000023 是"未知段位"样例（目录外）。若官方目录后续收录
-        // 29000023（如传奇杯 1/2/3 真身），本测试须同步改为断言中文名。
+        // 该 ID，本测试须同步改为断言中文名。
         let tier = PlayerLeague(id: 29000023, name: "Legend League III", iconUrls: nil)
-        XCTAssertEqual(ClanDisplayFormat.playerLeagueTierLabel(tier), "待本地化（ID: 29000023）")
+        XCTAssertEqual(
+            ClanDisplayFormat.playerLeagueTierLabel(tier),
+            "待本地化（ID: 29000023, Legend League III）"
+        )
+        // name 缺失时仍显示 ID
+        XCTAssertEqual(
+            ClanDisplayFormat.playerLeagueTierLabel(PlayerLeague(id: 29000023, name: nil, iconUrls: nil)),
+            "待本地化（ID: 29000023）"
+        )
     }
 
-    // MARK: - 迁移回归保护（手写字典 → LeagueTierCatalog，输出不得漂移）
+    // MARK: - 迁移回归保护（catalog 数据与官方静态数据一致）
 
     func testPlayerLeagueLabelRegression() {
         XCTAssertEqual(
@@ -38,57 +63,86 @@ final class ClanDisplayFormatTests: XCTestCase {
             "未定级"
         )
         XCTAssertEqual(
-            ClanDisplayFormat.playerLeagueLabel(PlayerLeague(id: 29000010, name: "Crystal League III", iconUrls: nil)),
-            "水晶联赛 III"
+            ClanDisplayFormat.playerLeagueLabel(PlayerLeague(id: 29000001, name: "Bronze League III", iconUrls: nil)),
+            "铜杯联赛3"
         )
         XCTAssertEqual(
-            ClanDisplayFormat.playerLeagueLabel(PlayerLeague(id: 29000022, name: "Champion League II", iconUrls: nil)),
-            "传奇联赛"
+            ClanDisplayFormat.playerLeagueLabel(PlayerLeague(id: 29000010, name: "Crystal League III", iconUrls: nil)),
+            "水晶杯联赛3"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.playerLeagueLabel(PlayerLeague(id: 29000022, name: "Legend League", iconUrls: nil)),
+            "传奇杯联赛"
         )
         XCTAssertNil(ClanDisplayFormat.playerLeagueLabel(nil))
     }
 
     func testBuilderBaseLeagueLabelRegression() {
         XCTAssertEqual(
-            ClanDisplayFormat.builderBaseLeagueLabel(PlayerLeague(id: 44000013, name: "Legend League", iconUrls: nil)),
-            "传奇联赛"
+            ClanDisplayFormat.builderBaseLeagueLabel(PlayerLeague(id: 44000000, name: "Wood League V", iconUrls: nil)),
+            "木头联赛5"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.builderBaseLeagueLabel(PlayerLeague(id: 44000013, name: "Stone League II", iconUrls: nil)),
+            "石头联赛2"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.builderBaseLeagueLabel(PlayerLeague(id: 44000041, name: "Diamond League", iconUrls: nil)),
+            "钻石联赛"
         )
         XCTAssertNil(ClanDisplayFormat.builderBaseLeagueLabel(nil))
     }
 
     func testCapitalLeagueLabelRegression() {
         XCTAssertEqual(
-            ClanDisplayFormat.capitalLeagueLabel(ClanLeague(id: 85000006, name: "Titan League I")),
-            "泰坦联赛 I"
+            ClanDisplayFormat.capitalLeagueLabel(ClanLeague(id: 85000000, name: "Unranked")),
+            "未排名"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.capitalLeagueLabel(ClanLeague(id: 85000006, name: "Silver League I")),
+            "银杯联赛1"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.capitalLeagueLabel(ClanLeague(id: 85000022, name: "Legend League")),
+            "传奇杯联赛"
         )
         XCTAssertNil(ClanDisplayFormat.capitalLeagueLabel(nil))
     }
 
     func testRequiredLeagueTierLabelRegression() {
         XCTAssertEqual(
-            ClanDisplayFormat.requiredLeagueTierLabel(ClanLeagueTier(id: 105000028, name: "Titan League I")),
-            "泰坦联赛 I"
+            ClanDisplayFormat.requiredLeagueTierLabel(ClanLeagueTier(id: 105000028, name: "Dragon League 28")),
+            "飞龙联赛28"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.requiredLeagueTierLabel(ClanLeagueTier(id: 105000034, name: "Legend League")),
+            "传奇杯3"
         )
         XCTAssertNil(ClanDisplayFormat.requiredLeagueTierLabel(nil))
     }
 
-    // MARK: - 未知 ID 降级文案
+    // MARK: - 未知 ID 降级文案（保留官方 name，可审计）
 
     func testUnknownIDFallbackText() {
         XCTAssertEqual(
-            ClanDisplayFormat.playerLeagueLabel(PlayerLeague(id: 99999999, name: "x", iconUrls: nil)),
-            "未本地化联赛（ID: 99999999）"
+            ClanDisplayFormat.playerLeagueLabel(PlayerLeague(id: 99999999, name: "Mystery League", iconUrls: nil)),
+            "未本地化联赛（ID: 99999999, Mystery League）"
         )
         XCTAssertEqual(
-            ClanDisplayFormat.builderBaseLeagueLabel(PlayerLeague(id: 99999999, name: "x", iconUrls: nil)),
-            "未本地化联赛（ID: 99999999）"
+            ClanDisplayFormat.builderBaseLeagueLabel(PlayerLeague(id: 99999999, name: "Mystery League", iconUrls: nil)),
+            "未本地化联赛（ID: 99999999, Mystery League）"
         )
         XCTAssertEqual(
-            ClanDisplayFormat.capitalLeagueLabel(ClanLeague(id: 99999999, name: "x")),
-            "未本地化联赛（ID: 99999999）"
+            ClanDisplayFormat.capitalLeagueLabel(ClanLeague(id: 99999999, name: "Mystery League")),
+            "未本地化联赛（ID: 99999999, Mystery League）"
         )
         XCTAssertEqual(
-            ClanDisplayFormat.requiredLeagueTierLabel(ClanLeagueTier(id: 99999999, name: "x")),
+            ClanDisplayFormat.requiredLeagueTierLabel(ClanLeagueTier(id: 99999999, name: "Mystery League")),
+            "未本地化联赛（ID: 99999999, Mystery League）"
+        )
+        // name 缺失时只显示 ID
+        XCTAssertEqual(
+            ClanDisplayFormat.playerLeagueLabel(PlayerLeague(id: 99999999, name: nil, iconUrls: nil)),
             "未本地化联赛（ID: 99999999）"
         )
     }

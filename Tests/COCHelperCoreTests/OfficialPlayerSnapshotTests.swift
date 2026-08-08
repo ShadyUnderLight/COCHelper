@@ -181,8 +181,9 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
     func testDecodesLeagueTierFromFullFixture() throws {
         let snapshot = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: fullFixtureData)
         let tier = try XCTUnwrap(snapshot.leagueTier)
-        XCTAssertEqual(tier.id, 29000023)
-        XCTAssertEqual(tier.name, "Legend League III")
+        // fixture 使用真实段位 ID：105000036 = 传奇杯1（官方静态数据 2026-08）
+        XCTAssertEqual(tier.id, 105000036)
+        XCTAssertEqual(tier.name, "Legend League")
         XCTAssertEqual(tier.iconUrls?.count, 3)
         XCTAssertEqual(tier.iconUrls?["medium"], "https://api-assets.clashofclans.com/leagues/288/anon.png")
     }
@@ -224,8 +225,8 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
         )
         XCTAssertEqual(restored, original)
         XCTAssertEqual(restored.leagueTier, original.leagueTier)
-        XCTAssertEqual(restored.leagueTier?.id, 29000023)
-        XCTAssertEqual(restored.leagueTier?.name, "Legend League III")
+        XCTAssertEqual(restored.leagueTier?.id, 105000036)
+        XCTAssertEqual(restored.leagueTier?.name, "Legend League")
     }
 
     // MARK: - Codable round-trip（持久化可编码）

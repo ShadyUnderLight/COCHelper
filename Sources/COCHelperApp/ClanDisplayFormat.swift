@@ -42,22 +42,22 @@ public enum ClanDisplayFormat {
 
     /// 玩家主村联赛：按稳定 API ID 本地化，不依赖官方返回的英文 name。
     public static func playerLeagueLabel(_ league: PlayerLeague?) -> String? {
-        leagueLabel(id: league?.id, kind: .home)
+        leagueLabel(id: league?.id, name: league?.name, kind: .home)
     }
 
     /// 建筑大师基地联赛：按稳定 API ID 本地化。
     public static func builderBaseLeagueLabel(_ league: PlayerLeague?) -> String? {
-        leagueLabel(id: league?.id, kind: .builderBase)
+        leagueLabel(id: league?.id, name: league?.name, kind: .builderBase)
     }
 
     /// 部落都城联赛：按稳定 API ID 本地化。
     public static func capitalLeagueLabel(_ league: ClanLeague?) -> String? {
-        leagueLabel(id: league?.id, kind: .capital)
+        leagueLabel(id: league?.id, name: league?.name, kind: .capital)
     }
 
     /// 入会所需联赛等级：按稳定 API ID 本地化。
     public static func requiredLeagueTierLabel(_ tier: ClanLeagueTier?) -> String? {
-        leagueLabel(id: tier?.id, kind: .requiredTier)
+        leagueLabel(id: tier?.id, name: tier?.name, kind: .requiredTier)
     }
 
     /// 目录资源标识 → 官方简中资源名。未知值不直接泄漏英文标识。
@@ -95,14 +95,17 @@ public enum ClanDisplayFormat {
         return parts.joined(separator: " · ")
     }
 
-    /// 排位段位（leagueTier，2026 新增字段）：按稳定 API ID 查 home context 本地化。
+    /// 排位段位（leagueTier，2026 新增字段）：按稳定 API ID 查 leagueTier
+    /// context（105xxxxxx 排位段位表，与 requiredLeagueTier 同一 ID 表）。
     /// - nil → nil（字段缺失不显示）。
-    /// - 未知 ID → "待本地化（ID: x）"：leagueTier 是 2026 新增字段，未知 ID
-    ///   说明官方新增了段位，语义是「待后续补充」；与 league 的「未本地化联赛」
-    ///   降级文案区分（league 目录已全量审计，未知即异常）。
+    /// - 未知 ID → "待本地化（ID: x, name）"：保留官方原始 name 可审计
+    ///   （Issue #71：未知新 ID 不丢失官方 name/id，不伪造中文名）。
     public static func playerLeagueTierLabel(_ tier: PlayerLeague?) -> String? {
         guard let id = tier?.id else { return nil }
-        return leagueTierCatalog?.name(forID: id, context: .home) ?? "待本地化（ID: \(id)）"
+        guard let name = leagueTierCatalog?.name(forID: id, context: .leagueTier) else {
+            return tierNameFallback("待本地化", id: id, officialName: tier?.name)
+        }
+        return name
     }
 
     private enum LeagueKind {
@@ -116,16 +119,27 @@ public enum ClanDisplayFormat {
     /// 目录缺失/malformed 时所有查询走降级文案，UI 不崩溃。
     private static let leagueTierCatalog = LeagueTierCatalog.loadBundled()
 
-    private static func leagueLabel(id: Int?, kind: LeagueKind) -> String? {
+    private static func leagueLabel(id: Int?, name: String?, kind: LeagueKind) -> String? {
         guard let id else { return nil }
         let context: LeagueTierContext
         switch kind {
         case .home: context = .home
         case .builderBase: context = .builderBase
         case .capital: context = .capital
-        case .requiredTier: context = .requiredTier
+        case .requiredTier: context = .leagueTier
         }
-        return leagueTierCatalog?.name(forID: id, context: context) ?? "未本地化联赛（ID: \(id)）"
+        guard let localized = leagueTierCatalog?.name(forID: id, context: context) else {
+            return tierNameFallback("未本地化联赛", id: id, officialName: name)
+        }
+        return localized
+    }
+
+    /// 未知 ID 降级文案：保留官方原始 name（可审计），name 缺失时只显示 ID。
+    private static func tierNameFallback(_ prefix: String, id: Int, officialName: String?) -> String {
+        if let officialName, !officialName.isEmpty {
+            return "\(prefix)（ID: \(id), \(officialName)）"
+        }
+        return "\(prefix)（ID: \(id)）"
     }
 
     /// 战争记录概览："胜-负" 或 "胜-负-平"；无数据返回 nil。

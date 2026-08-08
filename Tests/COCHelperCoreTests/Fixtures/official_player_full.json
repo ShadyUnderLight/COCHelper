@@ -14,10 +14,26 @@
   "versusBattleWins": 600,
   "legendStatistics": {
     "legendTrophies": 0,
-    "bestSeason": { "id": "2024-06", "rank": 9000, "trophies": 5021 },
-    "previousSeason": { "id": "2024-05", "rank": 12000, "trophies": 4890 },
-    "bestVersusSeason": { "id": "2024-06", "rank": 6000, "trophies": 3100 },
-    "currentSeason": { "id": "2024-07", "rank": 0, "trophies": 4200 }
+    "bestSeason": {
+      "id": "2024-06",
+      "rank": 9000,
+      "trophies": 5021
+    },
+    "previousSeason": {
+      "id": "2024-05",
+      "rank": 12000,
+      "trophies": 4890
+    },
+    "bestVersusSeason": {
+      "id": "2024-06",
+      "rank": 6000,
+      "trophies": 3100
+    },
+    "currentSeason": {
+      "id": "2024-07",
+      "rank": 0,
+      "trophies": 4200
+    }
   },
   "clan": {
     "tag": "#CLANANON",
@@ -53,8 +69,8 @@
     }
   },
   "leagueTier": {
-    "id": 29000023,
-    "name": "Legend League III",
+    "id": 105000036,
+    "name": "Legend League",
     "iconUrls": {
       "small": "https://api-assets.clashofclans.com/leagues/72/anon.png",
       "tiny": "https://api-assets.clashofclans.com/leagues/36/anon.png",
@@ -92,26 +108,72 @@
   ],
   "playerHouse": {
     "elements": [
-      { "id": 59000000, "type": "ground", "level": 1 },
-      { "id": 59000001, "type": "ground", "level": 2 }
+      {
+        "id": 59000000,
+        "type": "ground",
+        "level": 1
+      },
+      {
+        "id": 59000001,
+        "type": "ground",
+        "level": 2
+      }
     ]
   },
   "troops": [
-    { "name": "Barbarian", "level": 10, "maxLevel": 11, "village": "home" },
-    { "name": "Archer", "level": 11, "maxLevel": 12, "village": "home" },
-    { "name": "Super Barbarian", "level": 1, "maxLevel": 1, "village": "home", "superTroopIsActive": true }
+    {
+      "name": "Barbarian",
+      "level": 10,
+      "maxLevel": 11,
+      "village": "home"
+    },
+    {
+      "name": "Archer",
+      "level": 11,
+      "maxLevel": 12,
+      "village": "home"
+    },
+    {
+      "name": "Super Barbarian",
+      "level": 1,
+      "maxLevel": 1,
+      "village": "home",
+      "superTroopIsActive": true
+    }
   ],
   "heroes": [
-    { "name": "Barbarian King", "level": 75, "maxLevel": 80, "village": "home" },
-    { "name": "Battle Machine", "level": 30, "maxLevel": 30, "village": "builderBase" }
+    {
+      "name": "Barbarian King",
+      "level": 75,
+      "maxLevel": 80,
+      "village": "home"
+    },
+    {
+      "name": "Battle Machine",
+      "level": 30,
+      "maxLevel": 30,
+      "village": "builderBase"
+    }
   ],
   "spells": [
-    { "name": "Lightning Spell", "level": 9, "maxLevel": 10, "village": "home" }
+    {
+      "name": "Lightning Spell",
+      "level": 9,
+      "maxLevel": 10,
+      "village": "home"
+    }
   ],
   "heroEquipment": [
-    { "name": "Eternal Tome", "level": 18, "maxLevel": 27, "village": "home" }
+    {
+      "name": "Eternal Tome",
+      "level": 18,
+      "maxLevel": 27,
+      "village": "home"
+    }
   ],
   "versusTrophies": 3200,
   "bestVersusTrophies": 3400,
-  "futureUnknownField": { "nested": true }
+  "futureUnknownField": {
+    "nested": true
+  }
 }

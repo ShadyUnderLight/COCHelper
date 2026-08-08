@@ -552,6 +552,22 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertFalse(manifest.validate(against: [item], catalogData: catalogData))
     }
 
+    func testManifestValidationRejectsTimedBucketMismatch() {
+        // 拆分桶声明与目录重算不一致 → 漂移，fail-closed。
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, timed: 0, instant: 0)
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsMalformedShaPrefix() {
+        // 非 nil 但无 sha256: 前缀 → 格式异常 fail-closed（生成器恒写前缀）。
+        let item = makeValidationItem()
+        let manifest = makeManifest(
+            items: 1, levels: 1, missingTime: 0,
+            sha256: String(repeating: "0", count: 64))
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
     func testManifestValidationSkipsShaWhenDeclaredNil() {
         // 旧 manifest 无 sha256 声明 → 跳过哈希校验（向后兼容）。
         let item = makeValidationItem()

@@ -44,8 +44,8 @@ public struct CatalogManifest: Codable, Hashable, Sendable {
 
     /// Issue #74（可信度验收）：运行时完整性校验。
     ///
-    /// 校验两件事：① counts 与目录内容重算一致（items/levels/missingTime 必查；
-    /// timed/instant/缺失类四桶等拆分字段存在才查——旧 manifest 缺键跳过）；
+    /// 校验两件事：① counts 与目录内容重算一致（items/levels 必查；
+    /// missingTime/timed/instant/缺失类四桶等拆分字段存在才查——旧 manifest 缺键跳过）；
     /// ② `generatedFiles` 中 catalog.json 声明的 sha256 与真实文件一致
     ///（声明缺失时跳过，向后兼容）。返回 false = 漂移/篡改，调用方应
     /// fail-closed（manifest 视为无效，不进入「已验证」状态）。
@@ -73,9 +73,11 @@ public struct CatalogManifest: Codable, Hashable, Sendable {
            sourceMissing != levels.filter({ $0.durationState == .sourceMissing }).count { return false }
         if let parseFailed = counts.parseFailed,
            parseFailed != levels.filter({ $0.durationState == .parseFailed }).count { return false }
-        // catalog.json sha256（声明缺失跳过）
+        // catalog.json sha256：声明缺失跳过（向后兼容）；声明存在但格式异常
+        //（无 sha256: 前缀）→ 数据异常 fail-closed（生成器恒写前缀）。
         if let entry = generatedFiles.first(where: { $0.path == "catalog.json" }),
-           let declared = entry.sha256, declared.hasPrefix("sha256:") {
+           let declared = entry.sha256 {
+            guard declared.hasPrefix("sha256:") else { return false }
             let actual = SHA256.hash(data: catalogData)
                 .map { String(format: "%02x", $0) }.joined()
             guard declared.dropFirst("sha256:".count) == actual else { return false }

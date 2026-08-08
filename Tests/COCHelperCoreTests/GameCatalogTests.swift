@@ -620,6 +620,28 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertEqual(manifest.generatedFiles.first?.path, "catalog.json")
     }
 
+    func testManifestProvenanceLabel() {
+        // Issue #73 P1-2：费用可信度来源标注（「参考升级费用」+ buildTag +
+        // sourceFingerprint），UI 详情/诊断可追溯。
+        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0)
+        XCTAssertEqual(
+            manifest.provenanceLabel,
+            "参考升级费用 · 来源：目录 v18.400.13 / buildTag 18_400_7")
+        XCTAssertEqual(
+            manifest.sourceFingerprintLabel,
+            "来源指纹 sha256:aaaa…aaaa")
+    }
+
+    func testBundledManifestProvenanceAgainstRealData() throws {
+        // 真实 bundle：fingerprint 非空且格式 sha256:64hex（validate 已保证），
+        // 标注文案可完整拼出（UI 直接消费）。
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let manifest = try XCTUnwrap(catalog.manifest)
+        XCTAssertFalse(manifest.provenanceLabel.isEmpty)
+        XCTAssertTrue(manifest.sourceFingerprintLabel.hasPrefix("来源指纹 sha256:"))
+        XCTAssertEqual(manifest.sourceFingerprintLabel.count, 21, "前缀12+头4+…+尾4")
+    }
+
     // MARK: - Issue #74: manifest 运行时完整性校验
 
     private func makeManifest(
@@ -709,6 +731,138 @@ final class GameCatalogTests: XCTestCase {
         let item = makeValidationItem()
         let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, sha256: nil)
         XCTAssertTrue(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    // MARK: - Issue #73 交叉审核 P1：运行时 manifest 完整性校验增强
+
+    func testManifestValidationRejectsUnsupportedSchemaVersion() {
+        // schemaVersion 超出支持范围（1...2）→ fail-closed（评审 P1）。
+        let item = makeValidationItem()
+        var manifest = makeManifest(items: 1, levels: 1, missingTime: 0, sha256: nil)
+        manifest = CatalogManifest(
+            schemaVersion: 99, gameVersion: manifest.gameVersion,
+            buildTag: manifest.buildTag, locale: manifest.locale,
+            sourceFingerprint: manifest.sourceFingerprint,
+            generatedFiles: manifest.generatedFiles, counts: manifest.counts)
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsMalformedSourceFingerprint() {
+        // sourceFingerprint 缺 sha256: 前缀 → fail-closed（评审 P1）。
+        let item = makeValidationItem()
+        let manifest = CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
+            locale: "zh-CN", sourceFingerprint: "md5:deadbeef",
+            generatedFiles: [CatalogGeneratedFile(
+                path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil)],
+            counts: CatalogCounts(
+                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
+                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil))
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsMissingGeneratedFile() {
+        // generatedFiles 声明的 PNG 在 bundle 中不存在 → fail-closed（评审 P1）。
+        let item = makeValidationItem()
+        let manifest = CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
+            locale: "zh-CN",
+            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [
+                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
+                CatalogGeneratedFile(path: "icons/buildings/missing.png", sha256: nil, size: 100, kind: nil, entries: nil),
+            ],
+            counts: CatalogCounts(
+                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
+                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil))
+        let fileCheck: (String, Int?) -> Bool = { path, size in
+            if path == "icons/buildings/missing.png" { return false }
+            return true
+        }
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data(), fileCheck: fileCheck))
+    }
+
+    func testManifestValidationRejectsSizeMismatch() {
+        // generatedFiles 声明的 size 与磁盘不符 → fail-closed（评审 P1）。
+        let item = makeValidationItem()
+        let manifest = CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
+            locale: "zh-CN",
+            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [
+                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
+                CatalogGeneratedFile(path: "icons/buildings/tower.png", sha256: nil, size: 100, kind: nil, entries: nil),
+            ],
+            counts: CatalogCounts(
+                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
+                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil))
+        let fileCheck: (String, Int?) -> Bool = { _, size in
+            // 文件存在但 size 不符（磁盘 200 vs 声明 100）
+            size != 100
+        }
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data(), fileCheck: fileCheck))
+    }
+
+    func testManifestValidationRejectsMissingIconFile() {
+        // catalog 引用的 renderedPath 文件不存在 → fail-closed（评审 P1）。
+        let item = CatalogItem(
+            section: "units", category: "troops", dataID: 1, base: "home",
+            baseMissingReason: nil, name: "x", maxLevel: 1,
+            icon: CatalogAssetRef(
+                container: "sc/ui.sc", exportName: "icon_x",
+                renderedPath: "icons/ui/icon_x.png", missingReason: nil),
+            levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: 3600, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil)])
+        let manifest = CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
+            locale: "zh-CN",
+            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [
+                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
+            ],
+            counts: CatalogCounts(
+                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
+                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil))
+        let fileCheck: (String, Int?) -> Bool = { path, _ in
+            path != "icons/ui/icon_x.png"
+        }
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data(), fileCheck: fileCheck))
+    }
+
+    func testManifestValidationPassesWithAllFilesPresent() {
+        // 所有 generatedFiles + 图标引用均存在、size 匹配 → 通过（评审 P1）。
+        let item = CatalogItem(
+            section: "units", category: "troops", dataID: 1, base: "home",
+            baseMissingReason: nil, name: "x", maxLevel: 1,
+            icon: CatalogAssetRef(
+                container: "sc/ui.sc", exportName: "icon_x",
+                renderedPath: "icons/ui/icon_x.png", missingReason: nil),
+            levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: 3600, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil)])
+        let manifest = CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
+            locale: "zh-CN",
+            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [
+                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
+                CatalogGeneratedFile(path: "icons/ui/icon_x.png", sha256: nil, size: 50, kind: nil, entries: nil),
+            ],
+            counts: CatalogCounts(
+                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
+                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil))
+        let fileCheck: (String, Int?) -> Bool = { _, _ in true }
+        XCTAssertTrue(manifest.validate(against: [item], catalogData: Data(), fileCheck: fileCheck))
     }
 
 

@@ -178,9 +178,22 @@ struct LevelDetailSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                     } else {
-                        Text("全部等级（目录 v" + (catalog?.gameVersion ?? "?") + "）")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("全部等级（目录 v" + (catalog?.gameVersion ?? "?") + "）")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            // Issue #73 P1-2：费用为静态目录参考值，非玩家实测价格；
+                            // 来源（版本/buildTag/APK 指纹）随 manifest 可追溯。
+                            if let manifest = catalog?.manifest {
+                                Text(manifest.provenanceLabel)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                Text(manifest.sourceFingerprintLabel)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .textSelection(.enabled)
+                            }
+                        }
 
                         VStack(spacing: 0) {
                             ForEach(levelRows) { level in

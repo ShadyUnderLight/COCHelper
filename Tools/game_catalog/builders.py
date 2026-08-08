@@ -26,15 +26,18 @@ def parse_upgrade_costs(resources_raw: str, costs_raw: str,
         输出 None（金额丢弃），现改为 parseFailed 项保留原串，是所有表共性
         的输出变化）
     多值表（separator 非 None）：
-      - 按 separator split 后逐段 strip；空段/空白段过滤
-      - 资源全空 → None（金额忽略）
+      - **资源串**按 separator split 后逐段 strip，空段/空白段过滤（空资源
+        无意义，不变量 6 恒非空）；资源全空 → None（金额忽略）
+      - **金额串**按 separator split 后逐段 strip，**保留空段位置**（不静默
+        过滤压缩——否则 `A;B` + `1;;3` 会错位成 A=1、B=3，交叉审核 P2）。
+        空金额段 = 该位置资源金额缺失 → 该项 parseFailed（rawAmount=""）
       - 按序配对：金额 isdigit → parseFailed=False；否则 parseFailed=True
-      - 资源多余：多余项 parseFailed=True（amount=None, rawAmount=""，
+      - 金额多余（含多余空段）：parseFailed=True（amount=None,
+        rawAmount=金额原串或 ""，resource=最后一个资源段）
+      - 资源多余：parseFailed=True（amount=None, rawAmount=""，
         满足不变量 4：rawAmount != None）
-      - 金额多余：多余项 parseFailed=True（amount=None, rawAmount=金额原串，
-        resource=最后一个资源段）
-      - **多值表金额空段不视为免费**（与单值表不对称，避免猜测未来数据
-        语义）：空段被过滤后资源项变成 parseFailed=True。真实 18.400.13
+      - **多值表空金额段不视为免费**（与单值表不对称，避免猜测未来数据
+        语义）：空段按位置配对该资源 → parseFailed。真实 18.400.13
         数据 0 实例（源 CSV 339 条多资源行 → 生成后 385 个多资源等级，全部完整配对），
         纯防御语义。
 
@@ -61,19 +64,23 @@ def parse_upgrade_costs(resources_raw: str, costs_raw: str,
     resources = [s.strip() for s in resources_raw.split(separator) if s.strip()]
     if not resources:
         return None
-    costs = [s.strip() for s in costs_raw.split(separator) if s.strip()]
-    result = [
-        UpgradeCost(resource=res, amount=int(cost) if cost.isdigit() else None,
-                    rawResource=res,
-                    rawAmount=None if cost.isdigit() else cost,
-                    parseFailed=not cost.isdigit())
-        for res, cost in zip(resources, costs)
-    ]
-    # 资源多余（无对应金额）：rawAmount="" 满足不变量 4（!= None）
-    for res in resources[len(costs):]:
-        result.append(UpgradeCost(resource=res, amount=None, rawResource=res,
-                                  rawAmount="", parseFailed=True))
-    # 金额多余：resource 复用最后一个资源段（保证不变量 6 非空）
+    # 金额串保留空段位置（不静默过滤）：空金额段 = 该资源金额缺失 → parseFailed。
+    # 若过滤空段再 zip，`A;B` + `1;;3` 会错位成 A=1、B=3（交叉审核 P2）。
+    costs = [s.strip() for s in costs_raw.split(separator)]
+    result = []
+    for i, res in enumerate(resources):
+        cost = costs[i] if i < len(costs) else ""
+        if cost == "":
+            # 金额缺失（原空段）：该位置资源 parseFailed，rawAmount="" 满足不变量 4
+            result.append(UpgradeCost(resource=res, amount=None, rawResource=res,
+                                      rawAmount="", parseFailed=True))
+        elif cost.isdigit():
+            result.append(UpgradeCost(resource=res, amount=int(cost), rawResource=res,
+                                      rawAmount=None, parseFailed=False))
+        else:
+            result.append(UpgradeCost(resource=res, amount=None, rawResource=res,
+                                      rawAmount=cost, parseFailed=True))
+    # 金额多余（含多余空段）：resource 复用最后一个资源段（保证不变量 6 非空）
     for cost in costs[len(resources):]:
         result.append(UpgradeCost(resource=resources[-1], amount=None,
                                   rawResource=resources[-1], rawAmount=cost,

@@ -201,12 +201,43 @@ def test_parse_upgrade_costs_multi_resource_empty_all_segments_returns_none():
 
 
 def test_parse_upgrade_costs_multi_resource_empty_segments_skipped():
-    """多值表空段/空白段被过滤后配对，不产生非法空 resource 项。"""
-    assert parse_upgrade_costs("CommonOre; ; RareOre", "120; ; 40", ";") == [
+    """多值表**资源串**空段/空白段被过滤（空 resource 无意义，不变量 6 非空）；
+    金额串空段**保留位置**（见下），此处只验证资源侧过滤。"""
+    assert parse_upgrade_costs("CommonOre; ; RareOre", "120; 40", ";") == [
         UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
                     rawAmount=None, parseFailed=False),
         UpgradeCost(resource="RareOre", amount=40, rawResource="RareOre",
                     rawAmount=None, parseFailed=False)]
+
+
+def test_parse_upgrade_costs_multi_resource_middle_empty_cost_preserves_position():
+    """交叉审核 P2：金额串中间空段**不得静默过滤后 zip**（否则 `A;B` + `1;;3`
+    会错位成 A=1, B=3）。空金额段按位置与资源配对 → 该资源 parseFailed。"""
+    assert parse_upgrade_costs("CommonOre; RareOre", "120; ; 40", ";") == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="RareOre", amount=None, rawResource="RareOre",
+                    rawAmount="", parseFailed=True),
+        UpgradeCost(resource="RareOre", amount=None, rawResource="RareOre",
+                    rawAmount="40", parseFailed=True)]
+
+
+def test_parse_upgrade_costs_multi_resource_leading_empty_cost_fails_first():
+    """交叉审核 P2：金额串首段空 → 第一个资源 parseFailed（而非错位给第二资源）。"""
+    assert parse_upgrade_costs("CommonOre; RareOre", "; 40", ";") == [
+        UpgradeCost(resource="CommonOre", amount=None, rawResource="CommonOre",
+                    rawAmount="", parseFailed=True),
+        UpgradeCost(resource="RareOre", amount=40, rawResource="RareOre",
+                    rawAmount=None, parseFailed=False)]
+
+
+def test_parse_upgrade_costs_multi_resource_trailing_empty_cost_failed_item():
+    """交叉审核 P2：金额串尾空段 → 多余空段作为 parseFailed 项（不静默丢弃）。"""
+    assert parse_upgrade_costs("CommonOre", "120; ", ";") == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="CommonOre", amount=None, rawResource="CommonOre",
+                    rawAmount="", parseFailed=True)]
 
 
 def test_equipment_multi_resource_costs():

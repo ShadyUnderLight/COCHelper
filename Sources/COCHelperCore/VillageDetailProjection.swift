@@ -251,8 +251,9 @@ public enum VillageDetailProjection {
         return (count, didOverflow)
     }
 
-    /// 计入完成度分母的条件（见类型 doc comment）。
-    private static func isKnown(_ item: VillageItemState) -> Bool {
+    /// 计入完成度分母的条件（见类型 doc comment）。internal 供
+    /// `VillageProgressProjection` 直接复用（issue #70，防 known 规则双份漂移）。
+    internal static func isKnown(_ item: VillageItemState) -> Bool {
         // unknown/unavailable/available：目录未命中/类别不支持；available：目录存在但快照
         // 无记录（投影层不产出）；unverified：缺 prerequisite 无法验证（Issue #67
         // fail-closed，不计入 known，全部进 unknown 侧）。四者均不计入可确认完成度，

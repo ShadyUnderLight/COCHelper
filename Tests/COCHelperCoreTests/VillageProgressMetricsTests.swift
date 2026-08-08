@@ -13,7 +13,8 @@ final class VillageProgressMetricsTests: XCTestCase {
         stageMax: Int? = 6,
         count: Int? = 1,
         isUpgrading: Bool = false,
-        nextLevel: Int? = nil
+        nextLevel: Int? = nil,
+        countOverflowed: Bool = false
     ) -> VillageItemState {
         let effectiveNext = nextLevel ?? (isUpgrading ? level.map { $0 + 1 } : nil)
         return VillageItemState(
@@ -41,13 +42,14 @@ final class VillageProgressMetricsTests: XCTestCase {
             currentLevelIcon: nil,
             currentLevelVisual: nil,
             isNested: false,
-            displayCategory: nil
+            displayCategory: nil,
+            countOverflowed: countOverflowed
         )
     }
 
     private func metrics(_ items: [VillageItemState],
                          usable: Bool = true,
-                         compatibility: CatalogCompatibility? = nil) -> VillageProgressMetrics {
+                         compatibility: CatalogCompatibility? = .verified(gameVersion: "18.400.13")) -> VillageProgressMetrics {
         VillageProgressProjection.metrics(from: items, catalogIsUsable: usable, compatibility: compatibility)
     }
 
@@ -234,5 +236,77 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertTrue(m.currentStageProgress.saturated)
         XCTAssertTrue(m.globalProgress.saturated)
         XCTAssertTrue(m.snapshotCoverage.saturated)
+    }
+
+    // MARK: - countOverflowed 传播（评审修复）
+
+    func testCountOverflowedPropagatesToSaturated() {
+        // 聚合行 countOverflowed=true 且 value 贡献 1×Int.max 无算术溢出（1×Int.max
+        // 恰好 Int.max），但原始多条记录权重和已超上限——必须由链路标志补位上报
+        // 饱和（#66 第 7 轮契约），否则分母 Int.max 会展示出假精度。
+        let items = [item(id: "a", level: 1, maxLevel: 1, stageMax: 1, count: Int.max, countOverflowed: true)]
+        let m = metrics(items)
+        XCTAssertTrue(m.currentStageProgress.saturated)
+        XCTAssertTrue(m.globalProgress.saturated)
+        XCTAssertNil(m.currentStageProgress.ratio)
+        XCTAssertNil(m.globalProgress.ratio)
+    }
+
+    // MARK: - 负等级防御（评审修复）
+
+    func testNegativeLevelContributesZero() {
+        // level -5 → max(0, -5)=0 → 分子贡献 0，ratio ≥ 0 恒成立
+        let m = metrics([item(id: "a", level: -5, maxLevel: 10, stageMax: 6)])
+        XCTAssertEqual(m.currentStageProgress.numerator, 0)
+        XCTAssertEqual(m.currentStageProgress.denominator, 6)
+        XCTAssertEqual(m.currentStageProgress.ratio ?? -1, 0.0, accuracy: 1e-9)
+        XCTAssertEqual(m.globalProgress.numerator, 0)
+        XCTAssertEqual(m.globalProgress.denominator, 10)
+        XCTAssertEqual(m.globalProgress.ratio ?? -1, 0.0, accuracy: 1e-9)
+    }
+
+    // MARK: - 降级文案（评审补测）
+
+    func testUnavailableMetricsAllNilRatioWithReason() {
+        let m = metrics([item(id: "a", level: 3, maxLevel: 10, stageMax: 6)], usable: false)
+        XCTAssertNil(m.currentStageProgress.ratio)
+        XCTAssertNil(m.globalProgress.ratio)
+        XCTAssertNil(m.snapshotCoverage.ratio)
+        for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
+            XCTAssertEqual(metric.degradedReason, "目录不可用或版本不匹配，暂无法计算该指标。")
+        }
+    }
+
+    func testUnknownDegradedReasonText() {
+        let m = metrics([])
+        XCTAssertEqual(m.currentStageProgress.degradedReason, "无可确认项目，暂无法计算")
+        XCTAssertEqual(m.globalProgress.degradedReason, "无可确认项目，暂无法计算")
+        XCTAssertEqual(m.snapshotCoverage.degradedReason, "尚未导入快照")
+    }
+
+    func testDegradedReasonsConcatenatedWhenUnknownAndUnverified() {
+        // 未知项权重 > 0 与未验证目录并存 → 两条原因拼接展示
+        let items = [
+            item(id: "a", level: 3, maxLevel: 10, stageMax: 6),
+            item(id: "u", status: .unknown, level: nil, maxLevel: nil, stageMax: nil),
+        ]
+        let m = metrics(items, compatibility: .unverified(gameVersion: "18.400.13")).currentStageProgress
+        XCTAssertEqual(m.state, .partial)
+        let reason = m.degradedReason!
+        XCTAssertTrue(reason.contains("1 项未知，结果仅为已观测项目。"), reason)
+        XCTAssertTrue(reason.contains("目录与玩家版本未验证，百分比可能过时。"), reason)
+    }
+
+    func testSaturatedAndPartialKeepsStatePartialRatioNil() {
+        // 1 条 count=Int.max 的 known 项（stage 乘法溢出饱和）+ 1 条 unknown 项 →
+        // state 仍 .partial（饱和不改变 state，UI 层饱和优先），ratio 恒 nil
+        let items = [
+            item(id: "a", level: 3, maxLevel: 10, stageMax: 6, count: Int.max),
+            item(id: "u", status: .unknown, level: nil, maxLevel: nil, stageMax: nil),
+        ]
+        let m = metrics(items).currentStageProgress
+        XCTAssertEqual(m.state, .partial)
+        XCTAssertTrue(m.saturated)
+        XCTAssertNil(m.ratio)
     }
 }

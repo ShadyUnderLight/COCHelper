@@ -76,8 +76,8 @@ public struct VillageProgressMetrics: Hashable, Sendable {
 
 // MARK: - 投影
 
-/// Issue #70：三指标投影。纯函数，输入与 `VillageDetailProjection.totalCompletion`
-/// 同口径（调用方已过滤 status == .unavailable 的 trackedItems）。
+/// Issue #70：三指标投影。纯函数，known 判定与 `VillageDetailProjection.totalCompletion`
+/// 同规则（单一来源：`VillageDetailProjection.isKnown`）。
 ///
 /// 指标语义：
 /// - currentStageProgress：`Σmin(level, currentStageMaxLevel) / ΣcurrentStageMaxLevel`，
@@ -101,28 +101,28 @@ public enum VillageProgressProjection {
     public static func metrics(
         from items: [VillageItemState],
         catalogIsUsable: Bool,
-        compatibility: CatalogCompatibility? = nil
+        compatibility: CatalogCompatibility?
     ) -> VillageProgressMetrics {
         guard catalogIsUsable else {
             return unavailableMetrics()
         }
-        // 与 VillageDetailProjection.isKnown 同一规则（private 不可跨类型调用，逐字复制）。
-        let known = items.filter { isKnown($0) }
+        // known 判定单一来源：VillageDetailProjection.isKnown（internal，防漂移）。
+        let known = items.filter { VillageDetailProjection.isKnown($0) }
         // 未知实例权重（独立求和，饱和不丢失；溢出标志并入 unknownWeightInfo）
-        let unknownWeightInfo = VillageDetailProjection.instanceCountAndOverflow(of: items.filter { !isKnown($0) })
+        let unknownWeightInfo = VillageDetailProjection.instanceCountAndOverflow(of: items.filter { !VillageDetailProjection.isKnown($0) })
 
         // 阶段进度：分母 = Σ(stageMax × weight)，分子 = Σ(min(level, stageMax) × weight)
         let stageEligible = known.filter { $0.currentStageMaxLevel != nil }
         let stageDen = weightedCappedSum(stageEligible) { $0.currentStageMaxLevel ?? 0 }
         let stageNum = weightedCappedSum(stageEligible) {
-            min($0.currentLevel ?? 0, $0.currentStageMaxLevel ?? 0)
+            min(max(0, $0.currentLevel ?? 0), $0.currentStageMaxLevel ?? 0)
         }
 
         // 全局进度：分母 = Σ(maxLevel × weight)，分子 = Σ(min(level, maxLevel) × weight)
         let globalEligible = known
         let globalDen = weightedCappedSum(globalEligible) { $0.maxLevel ?? 0 }
         let globalNum = weightedCappedSum(globalEligible) {
-            min($0.currentLevel ?? 0, $0.maxLevel ?? 0)
+            min(max(0, $0.currentLevel ?? 0), $0.maxLevel ?? 0)
         }
 
         // 覆盖率：分母 = 全部观测实例权重，分子 = known 实例权重（饱和信息保留）
@@ -217,30 +217,20 @@ public enum VillageProgressProjection {
         )
     }
 
-    /// 计入指标分母的条件（与 VillageDetailProjection.isKnown 逐字同规则）：
-    /// unknown/unavailable/available/unverified 不计；maxLevel/currentLevel 缺失
-    /// 不计；upgrading 且 nextLevel > maxLevel（版本不匹配）不计。
-    private static func isKnown(_ item: VillageItemState) -> Bool {
-        guard item.status != .unknown, item.status != .unavailable,
-              item.status != .available, item.status != .unverified else { return false }
-        guard item.maxLevel != nil, item.currentLevel != nil else { return false }
-        if item.isUpgrading,
-           let nextLevel = item.nextLevel,
-           let maxLevel = item.maxLevel,
-           nextLevel > maxLevel {
-            return false
-        }
-        return true
-    }
-
     /// 等级式公式的实例加权饱和求和：`value(item) × instanceWeight` 累加，
     /// 乘法/加法任一溢出饱和到 Int.max 并置位（issue #66 fail-closed）。
+    /// 聚合行 `countOverflowed` 标志补位上报（与 `instanceCountAndOverflow`
+    /// 同契约）：单行 count=Int.max 且 value 贡献 1 时 `1 × Int.max` 无算术
+    /// 溢出，但原始多条记录权重和已超 Int.max——饱和信息不得在链路前端丢失。
     private static func weightedCappedSum(
         _ items: [VillageItemState],
         value: (VillageItemState) -> Int
     ) -> (value: Int, saturated: Bool) {
         var saturated = false
         let total = items.reduce(0) { acc, item in
+            if item.countOverflowed {
+                saturated = true
+            }
             let (scaled, mulOverflow) = value(item).multipliedReportingOverflow(by: item.instanceWeight)
             let (sum, addOverflow) = acc.addingReportingOverflow(scaled)
             if mulOverflow || addOverflow {

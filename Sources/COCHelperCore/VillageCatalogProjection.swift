@@ -310,6 +310,15 @@ public struct VillageCatalogProjection: Sendable {
     public let compatibility: CatalogCompatibility
     public let items: [VillageItemState]
     public let diagnostics: [AccountDataDiagnostic]
+    /// Issue #70 阶段 2：宇宙是否完整可用——base == .home 且目录可用
+    ///（catalogIsUsable，评审 I1：版本不匹配/不可用时差集项基于不可信目录
+    /// 的 maxLevel/count 会污染投影）且目录含宇宙数据（instanceCounts）且
+    /// 快照已知大本营等级。true → 调用方可将 `VillageProgressProjection.metrics`
+    /// 的 completeDenominator 置 true（stage/global 分母 = known ∪ available
+    /// 宇宙差集，ready 可达）；false → 阶段 1 语义（partial + 「分母为已观测
+    /// 项目」文案）。
+    /// BB base 恒 false（决策 5：BB 数据源不可靠，不做宇宙）。
+    public let universeComplete: Bool
 
     /// 核心入口。投影规则见本类型 doc comment。
     ///
@@ -357,12 +366,31 @@ public struct VillageCatalogProjection: Sendable {
 
         // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
         let unlocks = PlayerUnlockLevels(snapshot: village.accountSnapshot)
+        // Issue #70 阶段 2：宇宙完整判定（评审 I1：必须含 catalogIsUsable——
+        // 目录不可用/版本不匹配时合成差集项会基于不可信目录的 maxLevel/count
+        // 污染投影，与 map() 的 fail-closed 对齐；catalogIsUsable 已在
+        // compatibility 解析后算出，此处直接复用）。BB 恒 false（决策 5）。
+        // 评审 B-1/I2：TH 超出宇宙表范围（> universeTownHallCount，如 TH19
+        // 上线后旧目录窗口期）时 universeCount 越界返回 nil → 完整分母建立在
+        // 空宇宙上、降级文案消失——TH 范围守卫与 universeCount 同源 fail-closed。
+        let universeComplete = base == .home
+            && catalogIsUsable
+            && catalog?.hasUniverseData == true
+            && unlocks.townHall.map { (1...GameCatalog.universeTownHallCount).contains($0) } ?? false
         let states = village.accountSnapshot.map { snapshot in
+            // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
+            // universeComplete 守卫 = universeSupplement 的唯一生产入口门禁
+            //（目录不可信 / TH 未知或越界 / 旧目录 / BB → 不产出）。
             aggregate(records(
                 from: snapshot, catalog: catalog, base: base, now: now,
                 unlocks: unlocks, catalogIsUsable: catalogIsUsable,
                 seasonalPhases: seasonalPhases
-            ))
+            )) + (universeComplete ? Self.universeSupplement(
+                snapshot: snapshot,
+                catalog: catalog,
+                unlocks: unlocks,  // 复用 project 已推导的解锁等级（评审 B-4）
+                base: base
+            ) : [])
         } ?? []
 
         return VillageCatalogProjection(
@@ -373,7 +401,8 @@ public struct VillageCatalogProjection: Sendable {
             catalogIsUsable: catalogIsUsable,
             compatibility: compatibility,
             items: states,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            universeComplete: universeComplete
         )
     }
 
@@ -791,6 +820,152 @@ public struct VillageCatalogProjection: Sendable {
             highest = level.level
         }
         return highest
+    }
+
+    // MARK: - Issue #70 阶段 2：宇宙差集（.available 合成项）
+
+    /// 宇宙差集合成：宇宙表在指定 TH 下可建造（count > 0）、快照未满配的
+    /// 数量型 home 项 → `status == .available` 的合成项（currentLevel 0、
+    /// count = 差集实例数、maxLevel/currentStageMaxLevel 从目录 join）。
+    ///
+    /// 规则（设计决策 2/5 + 不变量 + 审核 B1 实例级差集 + 外部评审 P1-2 超配）：
+    /// - base != .home、townHallLevel nil（快照缺大本营）、目录无宇宙数据
+    ///   （旧目录）→ 恒返回 []（行为与阶段 1 完全一致）；
+    /// - **调用方门禁**（评审 I1）：目录不可用/版本不匹配（catalogIsUsable
+    ///   false）时不得合成——生产唯一入口 `project()` 已由 universeComplete
+    ///   守卫（含 catalogIsUsable 与 TH 范围条件），本函数不重复检查该入参；
+    /// - 宇宙键 section 以 "2" 结尾（BB 段）→ 跳过（决策 5：BB 不做宇宙）；
+    /// - 宇宙 count <= 0（该 TH 不可建造）→ 跳过不产出（不变量）；
+    /// - **实例级差集（审核 B1）**：快照观测权重 = Σ 实例数（count nil/≤0 按 1，
+    ///   与 `VillageItemState.instanceWeight` 契约同源，饱和求和防溢出）。
+    ///   同一 key 三态互斥（外部评审 P1-2：超配不得静默吞掉）：
+    ///   - diff = 宇宙 C - 观测 > 0 → 差集项（.available，count = diff）：
+    ///     未观测 → C（全部未建造）；部分建造（如城墙 200/300）→ C - 观测
+    ///     （未建造实例不得消失——最常见用户场景：城墙/陷阱/资源建筑普遍不建满）；
+    ///   - diff < 0（超配，观测 > 宇宙）→ **.unknown 异常项**（count = -diff）：
+    ///     数据异常（可能含已拆除建筑或宇宙数据过时），不得静默吞掉——进入
+    ///     未知侧触发降级（P1-2）；差额实例没有对应观测等级（原始记录已计
+    ///     known），currentLevel 置 nil 防误入 known；
+    ///   - diff == 0（满配）→ 不产出。
+    /// - 目录 join 失败（宇宙键无目录 item，数据异常）→ 防御跳过（init 完整
+    ///   性校验后该场景不可达，纵深防御）；
+    /// - 解锁型（units/heroes 等）无宇宙键 → 天然不产出（决策 2）。
+    ///
+    /// 合成项不参与 aggregate（project 内直接追加，观测行与差集行分离），
+    /// 不参与升级追踪（nextUpgrade nil）——仅供完整分母与覆盖率口径消费，
+    /// UI 详情列表过滤 .available（决策 3，Task 4 接线）；.unknown 超配项
+    /// 与普通未知项同样由 unknownWeight 降级（isKnown 排除）。
+    static func universeSupplement(
+        snapshot: AccountSnapshot,
+        catalog: GameCatalog?,
+        unlocks: PlayerUnlockLevels,  // project 已推导，复用防重复构造（评审 B-4）
+        base: TrackerBase
+    ) -> [VillageItemState] {
+        guard base == .home, let townHallLevel = unlocks.townHall,
+              let catalog, catalog.hasUniverseData else { return [] }
+
+        // 快照观测实例权重：(section:dataID) → Σ 实例数（审核 B1）。只统计该
+        // base 的段（home：非 "2" 后缀；BB 段记录不参与 home 差集）。
+        // 与 instanceWeight 契约同源：count nil/≤0 按 1（一条记录 = 至少一个
+        // 实例）；恶意快照（多条 count == Int.max）饱和求和防溢出崩溃。
+        var observedWeights: [String: Int] = [:]
+        for section in snapshot.objectSections.keys where !section.hasSuffix("2") {
+            for record in snapshot.objectSections[section] ?? [] {
+                let key = "\(section):\(record.dataID)"
+                let weight = max(record.count ?? 1, 1)
+                let (sum, overflow) = (observedWeights[key] ?? 0).addingReportingOverflow(weight)
+                observedWeights[key] = overflow ? Int.max : sum
+            }
+        }
+
+        return catalog.universeKeys.compactMap { key in
+            // 只做 home 段（宇宙键全是 home 数量型；BB 后缀键防御跳过）。
+            guard !key.section.hasSuffix("2") else { return nil }
+            guard let universeCount = catalog.universeCount(
+                section: key.section, dataID: key.dataID, townHallLevel: townHallLevel
+            ), universeCount > 0 else { return nil }
+            let itemKey = "\(key.section):\(key.dataID)"
+            // 实例级差集三态（外部评审 P1-2）：diff > 0 差集、diff < 0 超配
+            // 异常、diff == 0 满配不产。
+            let observed = observedWeights[itemKey] ?? 0
+            let diffCount = universeCount - observed
+            guard diffCount != 0 else { return nil }
+            // 防御：宇宙键无目录 item（数据异常/合成目录缺项）→ 跳过不产出
+            //（init 完整性校验后不可达，纵深防御）。
+            guard let catalogItem = catalog.item(section: key.section, dataID: key.dataID) else {
+                return nil
+            }
+            let category = TrackerCategory.from(section: key.section)
+            let displayCategory = BuildingDisplayCategoryRules.displayCategory(
+                section: key.section, dataID: key.dataID, base: .home,
+                rootParentDataID: nil
+            )
+            let stageMax = currentStageMaxLevel(for: catalogItem, unlocks: unlocks)
+            if diffCount > 0 {
+                // 差集项：未建造实例（level 0、.available）。
+                return VillageItemState(
+                    id: "universe:" + itemKey,
+                    section: key.section,
+                    dataID: key.dataID,
+                    base: .home,
+                    name: catalogItem.name,
+                    category: category,
+                    currentLevel: 0,
+                    count: diffCount,
+                    timerSeconds: nil,
+                    remainingSeconds: nil,
+                    nextLevel: nil,
+                    nextLevelDurationSeconds: nil,
+                    nextLevelDurationState: nil,
+                    maxLevel: catalogItem.maxLevel,
+                    currentStageMaxLevel: stageMax,
+                    nextUpgrade: nil,  // 差集项不参与升级追踪
+                    status: .available,
+                    missingReason: nil,
+                    catalogItemMissingReason: catalogItem.missingReason,
+                    availability: .unconfigured,  // 差集项不做季节性判定（无快照记录）
+                    icon: catalogItem.icon,
+                    levelVisual: catalogItem.levelVisual,
+                    currentLevelIcon: nil,   // level 0 无匹配等级资产
+                    currentLevelVisual: nil,
+                    isNested: false,
+                    displayCategory: displayCategory
+                )
+            } else {
+                // 超配异常项（观测 > 宇宙，P1-2）：不得静默吞掉——.unknown 进
+                // 未知侧触发降级。currentLevel nil：差额实例没有对应观测等级
+                //（原始记录已计 known），防误入 known。id 与差集项同前缀但
+                // 三态互斥（diff == 0 不产），不会冲突。
+                return VillageItemState(
+                    id: "universe:" + itemKey,
+                    section: key.section,
+                    dataID: key.dataID,
+                    base: .home,
+                    name: catalogItem.name,
+                    category: category,
+                    currentLevel: nil,
+                    count: -diffCount,
+                    timerSeconds: nil,
+                    remainingSeconds: nil,
+                    nextLevel: nil,
+                    nextLevelDurationSeconds: nil,
+                    nextLevelDurationState: nil,
+                    maxLevel: catalogItem.maxLevel,
+                    currentStageMaxLevel: stageMax,
+                    nextUpgrade: nil,  // 异常项不参与升级追踪
+                    status: .unknown,
+                    missingReason: "观测实例数超过宇宙上限（数据异常，可能为已拆除建筑或目录过时）。",
+                    catalogItemMissingReason: catalogItem.missingReason,
+                    availability: .unconfigured,
+                    icon: catalogItem.icon,
+                    levelVisual: catalogItem.levelVisual,
+                    currentLevelIcon: nil,
+                    currentLevelVisual: nil,
+                    isNested: false,
+                    displayCategory: displayCategory
+                )
+            }
+        }
     }
 
     // MARK: - Aggregation

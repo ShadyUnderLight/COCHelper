@@ -1093,10 +1093,13 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let defenseGroup = try XCTUnwrap(
             VillageDetailProjection.groups(from: home.items).first { $0.displayCategory == .defense }
         )
+        // 同 testFullChainCompletionWeightedByCount：宇宙差集 .available 项
+        // 不参与完成度统计，守恒只针对组内观测项。
+        let defenseObserved = defenseGroup.items.filter { $0.status != .available }
         XCTAssertEqual(
             defense.knownCount + defense.unknownCount,
-            VillageDetailProjection.instanceCount(of: defenseGroup.items),
-            "防御组三列守恒：known + unknown == 该组 Σweight"
+            VillageDetailProjection.instanceCount(of: defenseObserved),
+            "防御组三列守恒：known + unknown == 该组 Σweight（宇宙差集项不参与完成度统计）"
         )
     }
 
@@ -1160,10 +1163,14 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let defenseGroup = try XCTUnwrap(
             VillageDetailProjection.groups(from: home.items).first { $0.displayCategory == .defense }
         )
+        // Issue #70 阶段 2：宇宙差集 .available 项会进防御组（TH18 全宇宙），
+        // 但完成度统计（isKnown）显式排除差集项——守恒只针对观测项
+        //（known + unknown == 组内非差集 Σweight）。
+        let defenseObserved = defenseGroup.items.filter { $0.status != .available }
         XCTAssertEqual(
             defense.knownCount + defense.unknownCount,
-            VillageDetailProjection.instanceCount(of: defenseGroup.items),
-            "防御组三列守恒：known + unknown == 该组 Σweight"
+            VillageDetailProjection.instanceCount(of: defenseObserved),
+            "防御组三列守恒：known + unknown == 该组 Σweight（宇宙差集项不参与完成度统计）"
         )
     }
 
@@ -3370,6 +3377,306 @@ final class VillageCatalogProjectionTests: XCTestCase {
                 XCTFail("迭代 \(iteration): 阶段命中条目聚合后必须是 seasonal")
             }
         }
+    }
+
+    // MARK: - Issue #70 阶段 2：宇宙差集（.available 合成项）
+
+    /// 圣水收集器（buildings:1000002，Elixir Collector；审核 B-6 更正：真加农炮
+    /// 是 buildings:1000008）18 个大本营等级的实例数量（index = TH-1，值来自
+    /// 真实 bundled 目录 18.400.13：TH1=1、TH18=7）。
+    private let cannonUniverseCounts = [1, 2, 3, 4, 5, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+    /// 陷阱（traps:12000000）宇宙：TH1 不可建造（count 0）→ 差集不产出；
+    /// TH18 count=2。
+    private let trapUniverseCounts = [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2]
+
+    /// 宇宙目录 fixture：圣水收集器（数量型 buildings:1000002）+ 炸弹（数量型
+    /// traps:12000000）+ 野蛮人（解锁型 units:4000000，宇宙表无 units 键）。
+    /// manifest 必须非 nil（外部评审 P1-1：hasUniverseData 的完整性信任标记）。
+    /// 注意：init 键存在性校验（P1-1）要求每个宇宙键都有目录 item——本 fixture
+    /// 全部满足；「宇宙键无目录 item」场景由 GameCatalogTests 的拒绝测试覆盖，
+    /// universeSupplement 的对应防御分支是纵深防御（init 后不可达）。
+    private func makeUniverseCatalog() -> GameCatalog {
+        func levels(_ max: Int) -> [CatalogLevel] {
+            (1...max).map {
+                CatalogLevel(
+                    level: $0, durationSeconds: nil, upgradeCosts: nil,
+                    requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                    icon: nil, levelVisual: nil, missingReason: nil
+                )
+            }
+        }
+        let collector = CatalogItem(
+            section: "buildings", category: "buildings", dataID: 1_000_002, base: "home",
+            baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
+            levels: levels(17)
+        )
+        let trap = CatalogItem(
+            section: "traps", category: "traps", dataID: 12_000_000, base: "home",
+            baseMissingReason: nil, name: "炸弹", maxLevel: 3, icon: nil, levelVisual: nil,
+            levels: levels(3)
+        )
+        let barbarian = CatalogItem(
+            section: "units", category: "troops", dataID: 4_000_000, base: "home",
+            baseMissingReason: nil, name: "野蛮人", maxLevel: 3, icon: nil, levelVisual: nil,
+            levels: levels(3)
+        )
+        return GameCatalog(
+            gameVersion: "18.400.13",
+            items: [collector, trap, barbarian],
+            manifest: makeUniverseManifestStub(),
+            instanceCounts: [
+                "buildings:1000002": cannonUniverseCounts,
+                "traps:12000000": trapUniverseCounts,
+            ]
+        )
+    }
+
+    /// 宇宙目录的 manifest 信任标记 stub（外部评审 P1-1 残留修复：hasUniverseData
+    /// 要求 catalog.json 条目 + sha256 声明——validate 对缺失声明跳过比对，
+    /// 信任门必须显式要求；测试注入路径不调用 validate，值任意合法格式即可）。
+    private func makeUniverseManifestStub() -> CatalogManifest {
+        CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "test",
+            locale: "zh-CN",
+            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [
+                CatalogGeneratedFile(
+                    path: "catalog.json",
+                    sha256: "sha256:" + String(repeating: "b", count: 64),
+                    size: nil, kind: nil, entries: nil
+                ),
+            ],
+            counts: CatalogCounts(
+                items: 3, levels: 23, missingIcons: nil, missingTime: nil,
+                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil
+            )
+        )
+    }
+
+    /// universeComplete：TH 已知 + 目录有宇宙 → true；TH 缺失 / 目录无宇宙 /
+    /// BB base → false（决策 5：BB 不做宇宙）。
+    func testUniverseCompleteRequiresTHAndUniverseData() throws {
+        let withTH = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+        ])
+        XCTAssertTrue(project(village: withTH, catalog: makeUniverseCatalog(), base: .home).universeComplete,
+                      "TH 已知 + 宇宙目录 → universeComplete true")
+        // TH 缺失（快照无大本营记录）→ false
+        let noTH = makeVillage(objectSections: [:])
+        XCTAssertFalse(project(village: noTH, catalog: makeUniverseCatalog(), base: .home).universeComplete)
+        // 旧目录（无 instanceCounts）→ false（即使 TH 已知）
+        XCTAssertFalse(project(village: withTH, catalog: stageCatalog, base: .home).universeComplete)
+        // BB base 恒 false
+        XCTAssertFalse(project(village: withTH, catalog: makeUniverseCatalog(), base: .builder).universeComplete)
+    }
+
+    /// .available 产出：快照无圣水收集器 + TH18 宇宙 count 7 → 合成项
+    /// id = "universe:buildings:1000002"、currentLevel 0、count 7、status .available、
+    /// maxLevel/currentStageMaxLevel 从目录 join；解锁型（units）不产出；
+    /// 宇宙键无目录 item → 防御跳过。
+    func testUniverseSupplementProducesAvailableItems() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+        ])
+        let home = project(village: village, catalog: makeUniverseCatalog(), base: .home)
+        XCTAssertTrue(home.universeComplete)
+
+        let collector = try XCTUnwrap(home.items.first { $0.id == "universe:buildings:1000002" })
+        XCTAssertEqual(collector.status, .available)
+        XCTAssertEqual(collector.currentLevel, 0, "宇宙差集项恒为 level 0（未观测）")
+        XCTAssertEqual(collector.count, 7, "TH18 圣水收集器宇宙 count")
+        XCTAssertEqual(collector.maxLevel, 17, "maxLevel 从目录 join")
+        XCTAssertEqual(collector.currentStageMaxLevel, 17, "无 requirement → 阶段上限 == 全局上限")
+        XCTAssertNil(collector.nextLevel)
+        XCTAssertNil(collector.nextLevelDurationSeconds)
+        XCTAssertNil(collector.missingReason)
+        XCTAssertFalse(collector.isNested)
+
+        // 陷阱 TH18 count=2 → 同样产出
+        let trap = try XCTUnwrap(home.items.first { $0.id == "universe:traps:12000000" })
+        XCTAssertEqual(trap.status, .available)
+        XCTAssertEqual(trap.count, 2)
+
+        // 解锁型（units 段无宇宙键）→ 不产出
+        XCTAssertNil(home.items.first { $0.id == "universe:units:4000000" })
+    }
+
+    /// 宇宙 count == 0（该 TH 不可建造）不产出；实例级差集（审核 B1）：
+    /// 已观测未满配 → 产出 C - 观测；已满配（C ≤ 观测）→ 无差集。
+    func testUniverseSupplementSkipsZeroCountAndObserved() throws {
+        // TH=1：圣水收集器 count=1（产出）、陷阱 count=0（不产出）
+        let villageTH1 = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "th")],
+        ])
+        let home1 = project(village: villageTH1, catalog: makeUniverseCatalog(), base: .home)
+        XCTAssertNotNil(home1.items.first { $0.id == "universe:buildings:1000002" },
+                        "TH1 圣水收集器宇宙 count=1 → 产出")
+        XCTAssertNil(home1.items.first { $0.id == "universe:traps:12000000" },
+                     "TH1 陷阱宇宙 count=0（不可建造）→ 不产出")
+
+        // 实例级差集：快照 1 门（count nil → 权重 1）+ TH18 宇宙 7 → 差集 6
+        //（审核 B1：部分建造不得静默消失）
+        let villagePartial = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 5, path: "collector"),
+            ],
+        ])
+        let home2 = project(village: villagePartial, catalog: makeUniverseCatalog(), base: .home)
+        let partialDiff = try XCTUnwrap(home2.items.first { $0.id == "universe:buildings:1000002" })
+        XCTAssertEqual(partialDiff.count, 6, "已观测 1 个 + 宇宙 7 → 差集 6（部分建造补差）")
+
+        // 已满配（快照 count 7 == 宇宙 7）→ 无差集
+        let villageFull = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 5, count: 7, path: "collector"),
+            ],
+        ])
+        let home3 = project(village: villageFull, catalog: makeUniverseCatalog(), base: .home)
+        XCTAssertNil(home3.items.first { $0.id == "universe:buildings:1000002" },
+                     "已满配（C ≤ 观测）→ 无差集")
+    }
+
+    /// 实例级差集（审核 B1）：城墙部分建造 200/300（真实 bundled TH13 宇宙
+    /// = 300）→ 差集 100 个未建造实例不得消失。
+    /// 注：审核示例「200/250」为示意值，真实 18.400.13 城墙 TH13=300。
+    func testPartialBuildUniverseDiff() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        XCTAssertEqual(
+            catalog.universeCount(section: "buildings", dataID: 1_000_010, townHallLevel: 13), 300,
+            "bundled 目录已升级：城墙 TH13 宇宙应为 300，请更新本用例锚点"
+        )
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 13, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_010, level: 19, count: 200, path: "wall"),
+            ],
+        ])
+        let home = project(village: village, catalog: catalog, base: .home)
+        XCTAssertTrue(home.universeComplete)
+        let wallDiff = try XCTUnwrap(home.items.first { $0.id == "universe:buildings:1000010" },
+                                     "城墙部分建造应产出差集项")
+        XCTAssertEqual(wallDiff.status, .available)
+        XCTAssertEqual(wallDiff.count, 100, "城墙 200/300 → 差集 100（审核 B1 实例级）")
+    }
+
+    /// metrics 完整分母（审核 B1）：观测 200 + 差集 100（TH13 城墙宇宙 300）→
+    /// stage ratio = 200/300 正确（差集实例计入分母、分子贡献 0）。
+    /// cap 用目录真实阶段上限（城墙 levels 带 TH 门槛，TH13 非 19）——动态读取
+    /// 同时验证差集项 stageMax 与观测项同规则。
+    func testPartialBuildMetricsCompleteDenominator() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 13, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_010, level: 19, count: 200, path: "wall"),
+            ],
+        ])
+        let home = project(village: village, catalog: catalog, base: .home)
+        // 只对城墙口径计算（TH 记录与其它差集项不参与本断言）。
+        let wallItems = home.items.filter { $0.dataID == 1_000_010 }
+        let wallItem = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_010))
+        let stageMax = try XCTUnwrap(
+            VillageCatalogProjection.currentStageMaxLevel(
+                for: wallItem, unlocks: PlayerUnlockLevels(townHall: 13)
+            ),
+            "TH13 城墙阶段上限应可计算（门槛逐级单调）"
+        )
+        let metrics = VillageProgressProjection.metrics(
+            from: wallItems,
+            catalogIsUsable: home.catalogIsUsable,
+            compatibility: home.compatibility,
+            completeDenominator: true
+        )
+        XCTAssertEqual(metrics.currentStageProgress.denominator, 300 * stageMax,
+                       "分母 = (观测 200 + 差集 100) × cap \(stageMax)")
+        XCTAssertEqual(metrics.currentStageProgress.numerator, 200 * stageMax)
+        XCTAssertEqual(metrics.currentStageProgress.ratio ?? -1, 200.0 / 300.0, accuracy: 1e-9)
+    }
+
+    /// TH 超出宇宙表范围（评审 B-1/I2：TH19 上线后旧目录窗口期）→
+    /// universeComplete false、无差集（完整分母不得建立在空宇宙上）。
+    func testUniverseCompleteOffWhenTHBeyondRange() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 19, path: "th")],
+        ])
+        let home = project(village: village, catalog: makeUniverseCatalog(), base: .home)
+        XCTAssertFalse(home.universeComplete, "TH=19 超出宇宙表范围（1...18）→ 不得声称宇宙完整")
+        XCTAssertTrue(home.items.allSatisfy { $0.status != .available },
+                      "TH 越界不得产出宇宙差集项")
+    }
+
+    /// 超配（观测 > 宇宙，外部评审 P1-2）：不得静默吞掉——产 .unknown 异常项
+    /// 进入未知侧触发降级（快照 8 个 / 宇宙 7 → .unknown 项 count 1、
+    /// currentLevel nil 防误入 known、无 .available 差集项）。
+    func testUniverseSupplementOvercapacityProducesUnknown() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 5, count: 8, path: "collector"),
+            ],
+        ])
+        let home = project(village: village, catalog: makeUniverseCatalog(), base: .home)
+        XCTAssertTrue(home.universeComplete)
+
+        // 超配项：.unknown、count = 8 - 7 = 1、level nil、missingReason 明确
+        let overcapacity = try XCTUnwrap(home.items.first { $0.id == "universe:buildings:1000002" },
+                                         "超配应产出 .unknown 异常项")
+        XCTAssertEqual(overcapacity.status, .unknown)
+        XCTAssertEqual(overcapacity.count, 1, "超配差额 = 观测 8 - 宇宙 7")
+        XCTAssertNil(overcapacity.currentLevel, "差额实例无对应观测等级，防误入 known")
+        XCTAssertEqual(overcapacity.maxLevel, 17, "maxLevel 从目录 join")
+        XCTAssertTrue(overcapacity.missingReason?.contains("超过宇宙上限") == true,
+                      overcapacity.missingReason ?? "nil")
+
+        // 同 key 不产 .available 差集项（三态互斥）
+        XCTAssertNil(home.items.first { $0.id == "universe:buildings:1000002" && $0.status == .available })
+
+        // metrics：超配项进未知侧 → partial + 降级文案（完整分母下不得伪装 ready）
+        let metrics = VillageProgressProjection.metrics(
+            from: home.items.filter { $0.status != .unavailable },
+            catalogIsUsable: home.catalogIsUsable,
+            compatibility: home.compatibility,
+            completeDenominator: home.universeComplete
+        )
+        XCTAssertEqual(metrics.currentStageProgress.state, .partial)
+        XCTAssertTrue(
+            metrics.currentStageProgress.degradedReason?.contains("未知或待重新导入") == true
+                || metrics.currentStageProgress.degradedReason?.contains("宇宙差集") == true,
+            metrics.currentStageProgress.degradedReason ?? "nil"
+        )
+    }
+
+    /// 旧目录（无 instanceCounts）→ 行为与阶段 1 完全一致：不产出 .available、
+    /// universeComplete false。
+    func testUniverseSupplementOffForLegacyCatalog() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        XCTAssertFalse(home.universeComplete)
+        XCTAssertTrue(home.items.allSatisfy { $0.status != .available },
+                      "旧目录不得产出宇宙差集项")
+    }
+
+    /// 目录版本不匹配（catalogIsUsable false）+ 有宇宙数据 → universeComplete
+    /// false、不产出 .available（评审 I1：差集项基于不可信目录的
+    /// maxLevel/count 会污染投影，与 map() 的 fail-closed 对齐）。
+    func testUniverseSupplementOffWhenCatalogMismatch() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+        ])
+        let home = project(
+            village: village, catalog: makeUniverseCatalog(),
+            expectedGameVersion: "99.0.0", base: .home
+        )
+        XCTAssertFalse(home.catalogIsUsable, "版本不匹配 → 目录不可用")
+        XCTAssertFalse(home.universeComplete,
+                       "目录不可信时不得宣称宇宙完整")
+        XCTAssertTrue(home.items.allSatisfy { $0.status != .available },
+                      "目录不可信时不得合成宇宙差集项")
     }
 
 }

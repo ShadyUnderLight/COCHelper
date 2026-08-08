@@ -1107,6 +1107,316 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500)))
     }
 
+    // MARK: - 实例数量宇宙（Issue #70 阶段 2）
+
+    /// 圣水收集器（buildings:1000002，Elixir Collector；审核 B-6 更正：真加农炮
+    /// 是 buildings:1000008）18 个大本营等级的实例数量（index = TH-1，
+    /// 值来自真实 bundled 目录 18.400.13：TH1=1、TH18=7）。
+    private let cannonUniverseCounts = [1, 2, 3, 4, 5, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+
+    /// 合成最小目录（圣水收集器 item + 可选 instanceCounts）：init 是测试注入入口
+    ///（设计评审 N2：instanceCounts 带默认值 nil，不破坏既有构造）。
+    /// manifest 必须带 catalog.json 的 sha256 声明（外部评审 P1-1 残留修复：
+    /// hasUniverseData 的信任门要求）——宇宙 fixture 一律传合法声明。
+    private func makeUniverseCatalog(instanceCounts: [String: [Int]]?) -> GameCatalog {
+        let collector = CatalogItem(
+            section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
+            baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: nil, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+        return GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: instanceCounts
+        )
+    }
+
+    /// 宇宙 fixture 的 catalog.json sha256 声明（合法格式 stub；init 不校验
+    /// manifest 内容——信任标记语义，hasUniverseData 只查声明存在）。
+    private let universeManifestSHA = "sha256:" + String(repeating: "b", count: 64)
+
+    func testUniverseCountHit() throws {
+        // 目录含宇宙：buildings:1000002（圣水收集器）TH18 = 7、TH1 = 1。
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        XCTAssertEqual(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18), 7)
+        XCTAssertEqual(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 1), 1)
+    }
+
+    func testUniverseCountMissingAndOutOfRange() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        // 不在宇宙表（解锁型 units 无宇宙数据，决策 2 只做数量型）→ nil
+        XCTAssertNil(catalog.universeCount(section: "units", dataID: 4_000_000, townHallLevel: 18))
+        // TH 越界 → nil（fail-closed）
+        XCTAssertNil(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 0))
+        XCTAssertNil(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 19))
+    }
+
+    func testUniverseInvalidLengthTreatedAsMissing() throws {
+        // 宇宙数组长度 ≠ 18 → 解码时校验失败，视为无宇宙（fail-closed 不 crash）
+        let short = makeUniverseCatalog(instanceCounts: ["buildings:1000002": [1, 2]])
+        XCTAssertFalse(short.hasUniverseData)
+        XCTAssertNil(short.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+        // 值含负数同样校验失败 → 视为无宇宙
+        let negative = makeUniverseCatalog(
+            instanceCounts: ["buildings:1000002": Array(repeating: -1, count: 18)])
+        XCTAssertFalse(negative.hasUniverseData)
+        XCTAssertNil(negative.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+    }
+
+    func testHasUniverseData() throws {
+        // 有宇宙数据 → true
+        let withUniverse = makeUniverseCatalog(instanceCounts: ["buildings:1000002": cannonUniverseCounts])
+        XCTAssertTrue(withUniverse.hasUniverseData)
+        XCTAssertEqual(withUniverse.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18), 7)
+        // 旧目录（无 instanceCounts 字段）→ false，查询恒 nil
+        let legacy = makeUniverseCatalog(instanceCounts: nil)
+        XCTAssertFalse(legacy.hasUniverseData)
+        XCTAssertNil(legacy.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+    }
+
+    /// 空 {} 宇宙字典（评审 B-2）：无任何宇宙键，不得声称完整分母——
+    /// hasUniverseData false（init 校验对空字典通过，hasUniverseData 单独非空判断）。
+    func testEmptyUniverseDataIsFalse() {
+        let empty = makeUniverseCatalog(instanceCounts: [:])
+        XCTAssertFalse(empty.hasUniverseData, "空宇宙字典不得声称有宇宙数据")
+        XCTAssertNil(empty.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+        XCTAssertTrue(empty.universeKeys.isEmpty)
+    }
+
+    /// 宇宙键不在 items 中（外部评审 P1-1 键存在性）→ 整个宇宙无效（fail-closed）。
+    func testUniverseKeyNotInItemsRejected() {
+        // instanceCounts 键 buildings:9999999 无对应目录 item → init 拒绝
+        let orphan = makeUniverseCatalog(
+            instanceCounts: ["buildings:9999999": Array(repeating: 3, count: 18)])
+        XCTAssertFalse(orphan.hasUniverseData, "宇宙键无目录 item → 无宇宙")
+        XCTAssertTrue(orphan.universeKeys.isEmpty)
+        XCTAssertNil(orphan.universeCount(section: "buildings", dataID: 9_999_999, townHallLevel: 18))
+    }
+
+    /// 畸形宇宙键（外部评审 P1-1 键格式）→ 无宇宙（fail-closed）。
+    func testMalformedUniverseKeyRejected() {
+        // 无冒号键
+        let noColon = makeUniverseCatalog(
+            instanceCounts: ["buildings1000002": cannonUniverseCounts])
+        XCTAssertFalse(noColon.hasUniverseData, "无冒号键 → 无宇宙")
+        // dataID 非数字键
+        let badDataID = makeUniverseCatalog(
+            instanceCounts: ["buildings:abc": cannonUniverseCounts])
+        XCTAssertFalse(badDataID.hasUniverseData, "dataID 非数字键 → 无宇宙")
+    }
+
+    /// 全 0 宇宙键（外部评审 P1-1：数量型建筑不可能全 TH 0，手工篡改）→ 无宇宙。
+    func testAllZeroUniverseKeyRejected() {
+        let allZero = makeUniverseCatalog(
+            instanceCounts: ["buildings:1000002": Array(repeating: 0, count: 18)])
+        XCTAssertFalse(allZero.hasUniverseData, "全 0 宇宙键 → 无宇宙")
+        XCTAssertTrue(allZero.universeKeys.isEmpty)
+    }
+
+    /// instanceCounts 有效但 manifest nil（外部评审 P1-1 信任标记）→
+    /// hasUniverseData false——手工裁剪/篡改 catalog.json 后无 manifest 背书
+    /// 不得声称宇宙完整。
+    func testUniverseDataRequiresManifestTrust() {
+        let collector = CatalogItem(
+            section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
+            baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: nil, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+        // 无 manifest → hasUniverseData false（即使 instanceCounts 完整有效）
+        let untrusted = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: nil,
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertFalse(untrusted.hasUniverseData, "无 manifest 信任标记 → 无宇宙")
+        XCTAssertTrue(untrusted.universeKeys.isEmpty)
+        // 有 manifest（含 catalog.json sha256 声明）→ true（信任标记生效）
+        let trusted = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertTrue(trusted.hasUniverseData)
+    }
+
+    /// manifest 的 generatedFiles 无 catalog.json 条目或条目 sha256 nil
+    ///（外部评审 P1-1 残留修复）：validate 对缺失声明的条目跳过比对，partial
+    /// key set 可带非空 manifest 通过——信任门必须要求显式 sha256 声明。
+    func testManifestWithoutCatalogSHARejectsUniverse() {
+        let collector = CatalogItem(
+            section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
+            baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: nil, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+        func manifest(generatedFiles: [CatalogGeneratedFile]) -> CatalogManifest {
+            CatalogManifest(
+                schemaVersion: 1, gameVersion: "18.400.13", buildTag: "test",
+                locale: "zh-CN",
+                sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+                generatedFiles: generatedFiles,
+                counts: CatalogCounts(
+                    items: 1, levels: 1, missingIcons: nil, missingTime: nil,
+                    timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                    sourceMissing: nil, parseFailed: nil
+                )
+            )
+        }
+        // 无 catalog.json 条目
+        let noEntry = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: manifest(generatedFiles: []),
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertFalse(noEntry.hasUniverseData, "manifest 无 catalog.json 条目 → 无宇宙")
+        // 有条目但 sha256 nil（validate 会跳过比对）
+        let nilSHA = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: manifest(generatedFiles: [
+                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
+            ]),
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertFalse(nilSHA.hasUniverseData, "manifest catalog.json sha256 nil → 无宇宙")
+        // 有条目 + 合法 sha256 声明 → 通过信任门
+        let valid = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: manifest(generatedFiles: [
+                CatalogGeneratedFile(path: "catalog.json", sha256: universeManifestSHA, size: nil, kind: nil, entries: nil),
+            ]),
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertTrue(valid.hasUniverseData)
+    }
+
+    /// 正向完整 key 契约（外部评审 P1-1 残留修复 2）：items 的 home 数量型
+    ///（buildings/traps，排除列表外）必须全部被宇宙覆盖——部分 instanceCounts
+    ///（如 10/52）只做反向键存在性校验时无法检测。
+    func testPartialUniverseKeysRejectedByForwardCheck() {
+        func level(_ n: Int) -> CatalogLevel {
+            CatalogLevel(level: n, durationSeconds: nil, upgradeCosts: nil,
+                         requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                         icon: nil, levelVisual: nil, missingReason: nil)
+        }
+        // items 含兵营（1000000，home buildings，非排除）与圣水收集器（1000002）
+        let items = [
+            CatalogItem(section: "buildings", category: "buildings", dataID: 1_000_000,
+                        base: "home", baseMissingReason: nil, name: "兵营", maxLevel: 1,
+                        icon: nil, levelVisual: nil, levels: [level(1)]),
+            CatalogItem(section: "buildings", category: "defense", dataID: 1_000_002,
+                        base: "home", baseMissingReason: nil, name: "圣水收集器", maxLevel: 17,
+                        icon: nil, levelVisual: nil, levels: (1...17).map(level)),
+        ]
+        // instanceCounts 只覆盖 1000002 → 1000000 无宇宙键 → 拒绝
+        let partial = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertFalse(partial.hasUniverseData, "home 数量型 item 无宇宙键 → 部分宇宙 → 拒绝")
+        // 补齐 1000000 键 → 通过
+        let complete = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: [
+                "buildings:1000000": cannonUniverseCounts,
+                "buildings:1000002": cannonUniverseCounts,
+            ]
+        )
+        XCTAssertTrue(complete.hasUniverseData)
+    }
+
+    /// 非 canonical 键（外部评审 P1-1 残留修复 3）：`Int64("+0000002") == 2`
+    /// 被接受但原始键非规范——universeCount 按规范键查不到，键静默无效 → 拒绝。
+    func testNonCanonicalKeyRejected() {
+        // "+0000002" 有对应 item（1000002）但重序列化 "buildings:2" != 原始键
+        let nonCanonical = makeUniverseCatalog(
+            instanceCounts: ["buildings:+0000002": cannonUniverseCounts])
+        XCTAssertFalse(nonCanonical.hasUniverseData, "非 canonical 键（+0000002）→ 拒绝")
+        XCTAssertTrue(nonCanonical.universeKeys.isEmpty)
+        // 前导零同属非 canonical
+        let leadingZero = makeUniverseCatalog(
+            instanceCounts: ["buildings:0000002": cannonUniverseCounts])
+        XCTAssertFalse(leadingZero.hasUniverseData, "前导零键 → 拒绝")
+    }
+
+    /// 宇宙表全部键（section, dataID）——投影层合成差集项的枚举来源
+    ///（Issue #70 阶段 2）。排序：section 升序、同 section 按 dataID 升序。
+    /// 键存在性校验（外部评审 P1-1）要求每个宇宙键都有目录 item——本测试
+    /// 构造 3 个 item 覆盖 3 个键。
+    func testUniverseKeysEnumeratesAllKeysSorted() {
+        func level(_ n: Int) -> CatalogLevel {
+            CatalogLevel(level: n, durationSeconds: nil, upgradeCosts: nil,
+                         requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                         icon: nil, levelVisual: nil, missingReason: nil)
+        }
+        let items = [
+            CatalogItem(section: "buildings", category: "buildings", dataID: 1_000_000,
+                        base: "home", baseMissingReason: nil, name: "兵营", maxLevel: 1,
+                        icon: nil, levelVisual: nil, levels: [level(1)]),
+            CatalogItem(section: "buildings", category: "defense", dataID: 1_000_002,
+                        base: "home", baseMissingReason: nil, name: "圣水收集器", maxLevel: 17,
+                        icon: nil, levelVisual: nil, levels: (1...17).map(level)),
+            CatalogItem(section: "traps", category: "traps", dataID: 12_000_000,
+                        base: "home", baseMissingReason: nil, name: "炸弹", maxLevel: 3,
+                        icon: nil, levelVisual: nil, levels: (1...3).map(level)),
+        ]
+        let catalog = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: [
+                "traps:12000000": Array(repeating: 1, count: 18),
+                "buildings:1000002": cannonUniverseCounts,
+                "buildings:1000000": cannonUniverseCounts,
+            ]
+        )
+        XCTAssertEqual(
+            catalog.universeKeys.map { "\($0.section):\($0.dataID)" },
+            ["buildings:1000000", "buildings:1000002", "traps:12000000"],
+            "宇宙键应按 section 升序、同 section 按 dataID 升序枚举"
+        )
+        // 旧目录（无宇宙）→ 空数组
+        let legacy = makeUniverseCatalog(instanceCounts: nil)
+        XCTAssertTrue(legacy.universeKeys.isEmpty)
+    }
+
+    /// 旧格式目录（无 instanceCounts 键）loadBundled 的 decode 路径不失败
+    ///（Task 2 评审 nit 2）：Payload 缺键 → nil → hasUniverseData false，
+    /// 向后兼容，不阻塞目录加载。
+    func testLegacyPayloadDecodesWithoutInstanceCountsKey() throws {
+        let json = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"buildings","category":"buildings","dataID":1000002,"base":"home",
+           "name":"加农炮","maxLevel":2,"icon":null,"levelVisual":null,
+           "baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":200,
+              "requiredTownHallLevel":null,"requiredLaboratoryLevel":null,
+              "icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        struct LegacyPayload: Decodable {
+            let gameVersion: String
+            let items: [CatalogItem]
+        }
+        // 无 instanceCounts 键 → 解码成功（缺键容忍）
+        let payload = try JSONDecoder().decode(LegacyPayload.self, from: Data(json.utf8))
+        let catalog = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+        XCTAssertFalse(catalog.hasUniverseData, "旧格式目录应视为无宇宙（hasUniverseData false）")
+        XCTAssertNil(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+    }
 
 }
 

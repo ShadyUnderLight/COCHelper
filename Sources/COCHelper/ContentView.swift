@@ -766,7 +766,7 @@ private struct TrackerMetricsView: View {
                 TrackerMetricCard(
                     title: "观测数据完整性",
                     value: coverage,
-                    detail: "已观测项目 · 全部村庄",
+                    detail: "已观测实例 · 全部村庄",
                     systemImage: "checkmark.seal.fill",
                     tint: .blue
                 )

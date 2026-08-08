@@ -690,9 +690,28 @@ public struct GameCatalog: Sendable {
 
     private let itemsBySection: [String: [CatalogItem]]
     private let index: [String: CatalogItem]
+    /// 实例数量宇宙（Issue #70 阶段 2）："section:dataID" → 每大本营等级
+    /// （index = TH-1，恒 `universeTownHallCount` 个元素）的可建造实例数。
+    /// nil = 旧目录无宇宙数据或解码校验失败（长度 ≠ 18 / 含负值 → fail-closed
+    /// 视为无宇宙，不 crash）。
+    private let instanceCounts: [String: [Int]]?
+
+    /// 大本营等级上限（实例数量宇宙数组长度契约，Task 2 评审 nit 3：
+    /// 魔法数字 18 单点化，init 校验与 universeCount 越界共用）。
+    /// internal（评审 B-1：投影层 universeComplete 的 TH 范围守卫与
+    /// universeCount 同源，防 TH19 窗口期 fail-open）。
+    static let universeTownHallCount = 18
 
     /// 测试注入入口；`loadBundled` 只是其便捷包装。
-    public init(gameVersion: String, items: [CatalogItem], manifest: CatalogManifest? = nil) {
+    /// `instanceCounts` 带默认值 nil（设计评审 N2：不破坏既有构造调用点）；
+    /// 校验在 init 内完成（见 `validatedInstanceCounts`），任一失败存 nil
+    ///（无宇宙，fail-closed，不 crash）。
+    public init(
+        gameVersion: String,
+        items: [CatalogItem],
+        manifest: CatalogManifest? = nil,
+        instanceCounts: [String: [Int]]? = nil
+    ) {
         self.gameVersion = gameVersion
         self.manifest = manifest
         var bySection: [String: [CatalogItem]] = [:]
@@ -703,7 +722,84 @@ public struct GameCatalog: Sendable {
         }
         self.itemsBySection = bySection
         self.index = byKey
+        // 宇宙完整性校验需要 items 索引（键存在性），故在 index 构建后执行。
+        self.instanceCounts = Self.validatedInstanceCounts(instanceCounts, index: byKey)
     }
+
+    /// 宇宙数据完整性校验（Issue #70 阶段 2 外部评审 P1-1 + 残留修复）：任一
+    /// 失败 → nil（无宇宙，fail-closed——部分/畸形宇宙不得被标记为完整）：
+    /// 1. 数组长度恒 `universeTownHallCount` 且值非负（原有契约）；
+    /// 2. 键格式 "section:dataID"（split ":" 恰好 2 段、section 非空、
+    ///    dataID 可解析 Int64）且 **canonical 重序列化一致**（修复 3：
+    ///    `Int64("+0000002") == 2` 会被 Int64 接受但原始键非规范——归一化后
+    ///    universeCount 查不到，键静默无效，拒绝）——畸形/非 canonical 键 → 拒绝；
+    /// 3. 键存在性：每个宇宙键的 (section, dataID) 必须在 items 中存在
+    ///    （手工裁剪/错配 → 拒绝）；
+    /// 4. 全 0 键：数量型建筑不可能全 TH 0（手工篡改 → 拒绝）；
+    /// 5. **正向完整 key 契约**（修复 2）：items 的 home 数量型（buildings/traps、
+    ///    排除列表外，与 validate.py `_NON_COUNTABLE_DATA_IDS` 同源）必须全部
+    ///    被宇宙覆盖——部分 instanceCounts（如 10/52）无法检测（只做反向
+    ///    键存在性时裁剪不可见）。
+    private static func validatedInstanceCounts(
+        _ raw: [String: [Int]]?,
+        index: [String: CatalogItem]
+    ) -> [String: [Int]]? {
+        guard let raw else { return nil }
+        guard raw.allSatisfy({
+            $0.value.count == Self.universeTownHallCount && $0.value.allSatisfy { $0 >= 0 }
+        }) else { return nil }
+        for values in raw.values where values.allSatisfy({ $0 == 0 }) {
+            return nil  // 全 0 键（数量型建筑不可能全 TH 0）
+        }
+        var validKeys = Set<String>()
+        for key in raw.keys {
+            let parts = key.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, !parts[0].isEmpty,
+                  let dataID = Int64(parts[1]) else {
+                return nil  // 畸形键
+            }
+            let section = String(parts[0])
+            // canonical 重序列化（修复 3）：拒绝 "+0000002"/前导零等非规范格式
+            guard key == "\(section):\(dataID)" else { return nil }
+            guard index[Self.key(section: section, dataID: dataID)] != nil else {
+                return nil  // 键不存在于 items（反向）
+            }
+            validKeys.insert(Self.key(section: section, dataID: dataID))
+        }
+        // 正向完整 key 契约（修复 2）：home 数量型（排除列表外）必须全部覆盖
+        for item in index.values where !Self.nonCountableDataIDs.contains(item.dataID) {
+            guard item.section == "buildings" || item.section == "traps" else { continue }
+            guard item.base == "home" else { continue }
+            guard validKeys.contains(Self.key(section: item.section, dataID: item.dataID)) else {
+                return nil  // 数量型 item 无宇宙键（部分 instanceCounts）
+            }
+        }
+        return raw
+    }
+
+    /// 数量型但不计入宇宙的 dataID（与 Tools/game_catalog/validate.py 的
+    /// `_NON_COUNTABLE_DATA_IDS` 同源，逐项抄录，18.400.13 实证 37 项：
+    /// 大本营/英雄神坛/哥布林单人内容/不祥洞窟/教学未使用事件变体/
+    /// 笼子装饰/全空列事件陷阱等）。双端同步：validate 生成期 + 本校验运行时
+    /// 双保险——任一端登记新非数量型项，另一端必须同步，否则 fail-closed
+    /// 拒绝宇宙（正向契约防数量型静默丢失）。
+    private static let nonCountableDataIDs: Set<Int64> = [
+        // 大本营
+        1_000_001, 1_000_103, 1_000_104,
+        // 英雄神坛
+        1_000_022, 1_000_025, 1_000_030, 1_000_066,
+        // 哥布林/单人战役
+        1_000_016, 1_000_017, 1_000_018, 1_000_061, 1_000_069,
+        // 不祥洞窟（单人）
+        1_000_062, 1_000_074, 1_000_076,
+        // 教学/未使用/事件加农炮变体
+        1_000_060, 1_000_087, 1_000_088, 1_000_094, 1_000_095, 1_000_096,
+        // 笼子/装饰/事件建筑
+        1_000_073, 1_000_075, 1_000_083, 1_000_090, 1_000_091, 1_000_092,
+        1_000_098, 1_000_099, 1_000_100, 1_000_101,
+        // 全空列事件陷阱 + 单机陷阱变体
+        12_000_003, 12_000_004, 12_000_007, 12_000_017, 12_000_018, 12_000_019,
+    ]
 
     /// 从 Bundle 加载指定版本目录；目录缺失或解码失败返回 nil（调用方输出诊断，不崩溃）。
     public static func loadBundled(version: String = defaultBundledVersion) -> GameCatalog? {
@@ -742,7 +838,12 @@ public struct GameCatalog: Sendable {
         } else {
             manifest = nil
         }
-        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items, manifest: manifest)
+        return GameCatalog(
+            gameVersion: payload.gameVersion,
+            items: payload.items,
+            manifest: manifest,
+            instanceCounts: payload.instanceCounts
+        )
     }
 
     /// Bundle 内文件存在性 + size 校验（Issue #73 P1：运行时完整性）。
@@ -794,6 +895,51 @@ public struct GameCatalog: Sendable {
         catalogLevel(toUpgrade: nextLevel, for: item)?.durationSeconds
     }
 
+    // MARK: - 实例数量宇宙（Issue #70 阶段 2）
+
+    /// 目录是否携带可用宇宙数据：instanceCounts 非 nil 且非空（init 完整性
+    /// 校验通过：长度/非负/键格式/canonical/键存在性/正向覆盖/非全 0）
+    /// **且 manifest 非 nil 且 manifest 显式声明 catalog.json 的 sha256**。
+    /// manifest 是宇宙完整性信任标记（Issue #70 阶段 2 外部评审 P1-1）：
+    /// `loadBundled` 的 manifest sha256/fileCheck 校验保证 catalog.json（含
+    /// instanceCounts）未被手工裁剪/篡改；注入路径显式传 manifest 表示数据
+    /// 已通过生成管线完整性保证。**catalog.json sha256 声明要求**（P1-1 残留
+    /// 修复）：`CatalogManifest.validate` 对 generatedFiles 无 catalog.json
+    /// 条目或 sha256 nil 时跳过比对——条目存在 + sha256 格式合法时
+    /// loadBundled 的 validate 必然执行了比对（manifest 非 nil = 比对通过），
+    /// 否则 partial key set 可带非空 manifest 通过信任门。false = 旧目录 /
+    /// 校验失败 / 无 manifest / 无 sha256 声明，调用方应走「已观测实例」
+    /// 语义（无完整分母）。
+    public var hasUniverseData: Bool {
+        guard let instanceCounts, !instanceCounts.isEmpty else { return false }
+        guard let manifest else { return false }
+        let catalogEntry = manifest.generatedFiles.first { $0.path == "catalog.json" }
+        return catalogEntry?.sha256?.hasPrefix("sha256:") == true
+    }
+
+    /// 宇宙查询：该 dataID 在指定大本营等级的可建造实例数。
+    /// 目录无宇宙数据（hasUniverseData false）、dataID 不在宇宙表、TH 越界
+    ///（< 1 或 > `universeTownHallCount`）→ nil（fail-closed）。
+    public func universeCount(section: String, dataID: Int64, townHallLevel: Int) -> Int? {
+        guard hasUniverseData,
+              (1...Self.universeTownHallCount).contains(townHallLevel) else { return nil }
+        return instanceCounts?[Self.key(section: section, dataID: dataID)]?[townHallLevel - 1]
+    }
+
+    /// 宇宙表全部键（section, dataID）——投影层合成差集项用（Issue #70 阶段 2）。
+    /// 按 section 升序、同 section 按 dataID 升序（产出顺序确定，测试/UI 可预测）。
+    /// 与 `hasUniverseData` 同一信任门（外部评审 P1-1）：旧目录 / 校验失败 /
+    /// 无 manifest → 空数组（不可信宇宙的键不得暴露为可用数据）。
+    public var universeKeys: [(section: String, dataID: Int64)] {
+        guard hasUniverseData else { return [] }
+        return (instanceCounts ?? [:]).keys.compactMap { key in
+            let parts = key.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, let dataID = Int64(parts[1]) else { return nil }
+            return (String(parts[0]), dataID)
+        }
+        .sorted { $0.section == $1.section ? $0.dataID < $1.dataID : $0.section < $1.section }
+    }
+
     private static func key(section: String, dataID: Int64) -> String {
         section + ":" + String(dataID)
     }
@@ -801,5 +947,7 @@ public struct GameCatalog: Sendable {
     private struct Payload: Decodable {
         let gameVersion: String
         let items: [CatalogItem]
+        /// Issue #70 阶段 2：旧目录缺键 → nil（向后兼容，解码不失败）。
+        let instanceCounts: [String: [Int]]?
     }
 }

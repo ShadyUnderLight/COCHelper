@@ -255,9 +255,10 @@ public enum VillageDetailProjection {
     /// `VillageProgressProjection` 直接复用（issue #70，防 known 规则双份漂移）。
     internal static func isKnown(_ item: VillageItemState) -> Bool {
         // unknown/unavailable/available：目录未命中/类别不支持；available：目录存在但快照
-        // 无记录（投影层不产出）；unverified：缺 prerequisite 无法验证（Issue #67
-        // fail-closed，不计入 known，全部进 unknown 侧）。四者均不计入可确认完成度，
-        // 显式排除使不可达组合（如测试构造的 unknown + maxLevel）也归入 unknown。
+        // 无记录（Issue #70 阶段 2 起由投影层宇宙差集合成产出）；unverified：缺
+        // prerequisite 无法验证（Issue #67 fail-closed，不计入 known，全部进
+        // unknown 侧）。四者均不计入可确认完成度，显式排除使不可达组合
+        //（如测试构造的 unknown + maxLevel）也归入 unknown。
         guard item.status != .unknown, item.status != .unavailable,
               item.status != .available, item.status != .unverified else { return false }
         guard item.maxLevel != nil, item.currentLevel != nil else { return false }

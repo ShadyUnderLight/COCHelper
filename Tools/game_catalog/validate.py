@@ -23,6 +23,85 @@ _HEX = frozenset(string.hexdigits)
 # PNG 文件魔数（前 8 字节）：\x89PNG\r\n\x1a\n（Issue #30 Task 8 内容校验用）
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
+# 非数量型主村 buildings/traps 项（合法无宇宙项；18.400.13 数据源实证：
+# townhall_levels 无对应数量列）。分类：大本营（含 TH17 升级中/TH18 预告
+# 变体）、英雄神坛、哥布林/单人战役、不祥洞窟、教学/未使用/事件加农炮
+# 变体、笼子/装饰/事件建筑、全空列事件陷阱（Halloweenbomb/Slowbomb/
+# SantaTrap）、单机陷阱变体。新版本新增非数量型项 → 在此登记（fail loud
+# 拒绝未知项，防数量型静默丢失）。
+_NON_COUNTABLE_DATA_IDS = frozenset({
+    # 大本营
+    1000001, 1000103, 1000104,
+    # 英雄神坛
+    1000022, 1000025, 1000030, 1000066,
+    # 哥布林/单人战役
+    1000016, 1000017, 1000018, 1000061, 1000069,
+    # 不祥洞窟（单人）
+    1000062, 1000074, 1000076,
+    # 教学/未使用/事件加农炮变体
+    1000060, 1000087, 1000088, 1000094, 1000095, 1000096,
+    # 笼子/装饰/事件建筑
+    1000073, 1000075, 1000083, 1000090, 1000091, 1000092,
+    1000098, 1000099, 1000100, 1000101,
+    # 全空列事件陷阱 + 单机陷阱变体
+    12000003, 12000004, 12000007, 12000017, 12000018, 12000019,
+})
+
+
+def _check_instance_counts(errors: list[str], ic: dict, catalog) -> None:
+    """instanceCounts 宇宙不变量（Issue #70 阶段 2）。
+
+    - 键 "section:dataID"（section ∈ {buildings, traps}，dataID 可解析 int）；
+    - 值列表长度恒 18（index = TH-1）、每值 ≥ 0 整数（bool 非法）；
+    - 反向 join：每个键对应的 (section, dataID) 必须存在于 items；
+    - 正向完整性：数量型 home buildings/traps 项必须有宇宙项（排除列表外的）；
+    - 值全 0 → 问题项（数量型建筑不可能全 TH 都是 0）。
+    """
+    item_keys = {(i.section, i.dataID) for i in catalog.items}
+    ic_keys: set[tuple[str, int]] = set()
+    for key, vals in ic.items():
+        if not isinstance(key, str) or ":" not in key:
+            errors.append(f"instanceCounts 键格式非法: {key!r}")
+            continue
+        section, _, dataid_s = key.partition(":")
+        if section not in ("buildings", "traps"):
+            errors.append(f"instanceCounts 未知 section: {key}")
+            continue
+        try:
+            data_id = int(dataid_s)
+        except ValueError:
+            errors.append(f"instanceCounts dataID 不可解析: {key}")
+            continue
+        ic_keys.add((section, data_id))
+        if (section, data_id) not in item_keys:
+            errors.append(f"instanceCounts 键不在 items: {key}")
+            continue
+        if not isinstance(vals, list) or len(vals) != 18:
+            errors.append(
+                f"instanceCounts {key} 长度 != 18: "
+                f"{len(vals) if isinstance(vals, list) else type(vals).__name__}")
+            continue
+        bad = False
+        all_zero = True
+        for v in vals:
+            if isinstance(v, bool) or not isinstance(v, int):
+                errors.append(f"instanceCounts {key} 值类型非法: {v!r}（应为整数）")
+                bad = True
+            elif v < 0:
+                errors.append(f"instanceCounts {key} 值为负: {v}")
+                bad = True
+            elif v != 0:
+                all_zero = False
+        if not bad and all_zero:
+            errors.append(f"instanceCounts {key} 全 0（数量型建筑不可能全 TH 为 0）")
+    # 正向完整性：主村数量型（home buildings/traps）必须都有宇宙项；
+    # 已知非数量型（排除列表）免查，buildings2/traps2（BB）不做宇宙（决策 5）。
+    for i in catalog.items:
+        if (i.section in ("buildings", "traps") and i.base == "home"
+                and i.dataID not in _NON_COUNTABLE_DATA_IDS
+                and (i.section, i.dataID) not in ic_keys):
+            errors.append(f"instanceCounts 缺少宇宙项: {i.section}:{i.dataID} ({i.name})")
+
 
 def _check_rendered_path(
     errors: list[str],
@@ -94,7 +173,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         return ["manifest.json 顶层必须是对象"]
 
     try:
-        catalog = catalog_from_dict(json.loads(catalog_path.read_text(encoding="utf-8")))
+        raw_catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog = catalog_from_dict(raw_catalog)
     except (json.JSONDecodeError, OSError, KeyError, ValueError, TypeError, AttributeError) as exc:
         return [f"catalog.json 解析失败: {exc}"]
 
@@ -290,6 +370,15 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         if bi is not None and (not isinstance(bi, int)
                                or isinstance(bi, bool) or bi < 0):
             errors.append(f"counts.blockedIcons 非法: {bi!r}")
+
+    # ---- instanceCounts 宇宙（Issue #70 阶段 2）----
+    # 旧产物缺字段不报错（向后兼容）；存在时必须通过全部不变量（_check_instance_counts）
+    raw_ic = raw_catalog.get("instanceCounts")
+    if raw_ic is not None:
+        if not isinstance(raw_ic, dict):
+            errors.append(f"instanceCounts 类型非法: {type(raw_ic).__name__}（应为 dict）")
+        else:
+            _check_instance_counts(errors, raw_ic, catalog)
 
     return errors
 

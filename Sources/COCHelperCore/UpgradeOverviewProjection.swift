@@ -158,7 +158,9 @@ public enum UpgradeOverviewProjection {
     ///
     /// `status == .unavailable` 的项（helpers/decos/obstacles 等 category == nil 的
     /// 不支持类别）在此过滤：等价旧层 UpgradeTracker.supportedSections 白名单行为，
-    /// 保证 sidebar 计数（旧层）与总览（新层）一致。
+    /// 保证 sidebar 计数（旧层）与总览（新层）一致。Issue #70 阶段 2：
+    /// `status == .available` 的宇宙差集项同样不进记录（差集项无升级计时），
+    /// 只供指标的完整分母消费。
     private static func allRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
@@ -174,27 +176,32 @@ public enum UpgradeOverviewProjection {
                     base: base,
                     now: now
                 )
+                // Issue #70 阶段 2：消费拆分——records 只含「已观测项」
+                //（排除宇宙差集 .available：差集项无升级计时，进总览列表无意义）；
+                // 指标消费 tracked（含 .available），completeDenominator 按
+                // universeComplete 置位（完整分母/完整覆盖率）。
+                let tracked = projection.items.filter { $0.status != .unavailable }
+                let displayRecords = tracked.filter { $0.status != .available }
                 // Issue #70 实现要求 6：同 village×base 的指标只算一次，全部
-                // record 共享（trackedItems 口径 = 排除 .unavailable，与详情页一致）。
+                // record 共享（口径与详情页一致：排除 .unavailable + 完整分母）。
                 let metrics = VillageProgressProjection.metrics(
-                    from: projection.items.filter { $0.status != .unavailable },
+                    from: tracked,
                     catalogIsUsable: projection.catalogIsUsable,
-                    compatibility: projection.compatibility
+                    compatibility: projection.compatibility,
+                    completeDenominator: projection.universeComplete
                 )
-                return projection.items
-                    .filter { $0.status != .unavailable }
-                    .map { item in
-                        UpgradeDisplayRecord(
-                            id: village.id.uuidString + ":" + base.rawValue + ":" + item.id,
-                            villageID: village.id,
-                            villageName: village.name,
-                            villageTag: village.tag,
-                            base: base,
-                            item: item,
-                            catalogVersion: projection.catalogVersion,
-                            villageMetrics: metrics
-                        )
-                    }
+                return displayRecords.map { item in
+                    UpgradeDisplayRecord(
+                        id: village.id.uuidString + ":" + base.rawValue + ":" + item.id,
+                        villageID: village.id,
+                        villageName: village.name,
+                        villageTag: village.tag,
+                        base: base,
+                        item: item,
+                        catalogVersion: projection.catalogVersion,
+                        villageMetrics: metrics
+                    )
+                }
             }
         }
     }

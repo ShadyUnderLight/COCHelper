@@ -1180,3 +1180,152 @@ def test_validate_counts_sum_invariant(tmp_path):
     _write(d, manifest=m)
     errors = validate_catalog(d)
     assert any("不变量" in e for e in errors)
+
+
+# ---- instanceCounts 宇宙（Issue #70 阶段 2）----
+
+
+def _valid_dir_with_universe(tmp_path: Path) -> Path:
+    """_valid_dir + 数量型 buildings 项 + 合法 instanceCounts（宇宙校验正例基底）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    item = json.loads(json.dumps(c["items"][0]))
+    item["section"] = "buildings"
+    item["dataID"] = 1000008  # Cannon（数量型，不在排除列表）
+    c["items"].append(item)
+    c["instanceCounts"] = {"buildings:1000008": [1] * 18}
+    _write_with_hash(d, catalog=c)
+    m = _load_manifest(d)
+    m["counts"] = {"items": 2, "levels": 2, "missingTime": 0, "missingIcons": 0}
+    _write(d, manifest=m)
+    return d
+
+
+def test_validate_instance_counts_ok(tmp_path):
+    """合法 instanceCounts（键在 items、长度 18、非负、非全 0）→ 通过。"""
+    assert validate_catalog(_valid_dir_with_universe(tmp_path)) == []
+
+
+def test_validate_instance_counts_missing_ok(tmp_path):
+    """旧产物无 instanceCounts → 不报错（向后兼容）。"""
+    assert validate_catalog(_valid_dir(tmp_path)) == []
+
+
+def test_validate_instance_counts_wrong_length_rejected(tmp_path):
+    """值长度 != 18 → 拒绝。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"]["buildings:1000008"] = [1] * 17
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("instanceCounts" in e and "长度" in e for e in errors)
+
+
+def test_validate_instance_counts_negative_rejected(tmp_path):
+    """负值 → 拒绝。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    vals = [1] * 18
+    vals[5] = -1
+    c["instanceCounts"]["buildings:1000008"] = vals
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("instanceCounts" in e and "负" in e for e in errors)
+
+
+def test_validate_instance_counts_key_not_in_items_rejected(tmp_path):
+    """反向 join：宇宙键 (section,dataID) 不在 items → 拒绝。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"]["buildings:999999"] = [1] * 18
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("不在 items" in e and "999999" in e for e in errors)
+
+
+def test_validate_instance_counts_all_zero_rejected(tmp_path):
+    """值全 0 → 拒绝（数量型建筑不可能全 TH 都是 0）。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"]["buildings:1000008"] = [0] * 18
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("全 0" in e for e in errors)
+
+
+def test_validate_instance_counts_unknown_section_rejected(tmp_path):
+    """键 section 不在词表（buildings/traps）→ 拒绝。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"]["units:4000000"] = [1] * 18  # 存在但 section 非数量型
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("未知 section" in e for e in errors)
+
+
+def test_validate_instance_counts_unparseable_dataid_rejected(tmp_path):
+    """键 dataID 不可解析 → 拒绝。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"]["buildings:abc"] = [1] * 18
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("dataID" in e for e in errors)
+
+
+def test_validate_instance_counts_value_type_rejected(tmp_path):
+    """值非 int（str/bool）→ 拒绝。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"]["buildings:1000008"] = ["1"] * 18
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("值类型非法" in e for e in errors)
+    c["instanceCounts"]["buildings:1000008"] = [True] + [1] * 17
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("值类型非法" in e for e in errors)
+
+
+def test_validate_instance_counts_home_item_without_universe_rejected(tmp_path):
+    """正向完整性：数量型 home 项必须有宇宙项。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    del c["instanceCounts"]["buildings:1000008"]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("缺少宇宙项" in e and "1000008" in e for e in errors)
+
+
+def test_validate_instance_counts_non_countable_item_ok(tmp_path):
+    """排除列表项（大本营变体等非数量型）无宇宙项 → 通过。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    item = json.loads(json.dumps(c["items"][1]))
+    item["dataID"] = 1000104  # 大本营变体（非数量型排除列表）
+    c["items"].append(item)
+    _write_with_hash(d, catalog=c)
+    m = _load_manifest(d)
+    m["counts"] = {"items": 3, "levels": 3, "missingTime": 0, "missingIcons": 0}
+    _write(d, manifest=m)
+    assert validate_catalog(d) == []
+
+
+def test_validate_instance_counts_top_level_type_rejected(tmp_path):
+    """顶层 instanceCounts 非 dict（list）→ 拒绝（防御分支）。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"] = [1, 2]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("instanceCounts 类型非法" in e for e in errors)
+
+
+def test_validate_instance_counts_key_without_colon_rejected(tmp_path):
+    """键不含 ':' → 拒绝（防御分支）。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"]["badkey"] = [1] * 18
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("键格式非法" in e and "badkey" in e for e in errors)

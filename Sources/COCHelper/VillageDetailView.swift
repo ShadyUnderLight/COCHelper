@@ -91,23 +91,30 @@ struct VillageDetailView: View {
         // 与升级总览（UpgradeOverviewProjection.allRecords）口径一致：
         // decos/helpers/obstacles 等不参与升级追踪的类别不展示、不计入完成度。
         let trackedItems = projection.items.filter { $0.status != .unavailable }
-        let groups = VillageDetailProjection.groups(from: trackedItems)
+        // Issue #70 阶段 2：消费拆分——列表/筛选/组卡用「已观测项」（排除
+        // 宇宙差集 .available，保持 UI 只显示快照中存在的项目）；三指标
+        // 消费「含宇宙差集」数组（完整分母/完整覆盖率）。
+        let displayItems = trackedItems.filter { $0.status != .available }
+        let groups = VillageDetailProjection.groups(from: displayItems)
         // 目录不可用或版本不匹配时（projection.catalogIsUsable == false）：
         // issue #16「不纳入可确认完成度」——完成度全部归未知，不显示百分比。
         let total = VillageDetailProjection.totalCompletion(
-            from: trackedItems,
+            from: displayItems,
             catalogIsUsable: projection.catalogIsUsable
         )
         // Issue #70：三指标（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
-        // 与 totalCompletion 同数据源（trackedItems），known 判定同规则。
+        // 消费 trackedItems（含宇宙差集 .available），completeDenominator 按
+        // universeComplete 置位——宇宙完整时 stage/global 分母 = known ∪ 差集、
+        // 覆盖率为完整覆盖率；列表口径（displayItems）与指标口径分离（决策 3）。
         let progressMetrics = VillageProgressProjection.metrics(
             from: trackedItems,
             catalogIsUsable: projection.catalogIsUsable,
-            compatibility: projection.compatibility
+            compatibility: projection.compatibility,
+            completeDenominator: projection.universeComplete
         )
         let statsByKey = Dictionary(
             uniqueKeysWithValues: VillageDetailProjection.completionStats(
-                from: trackedItems,
+                from: displayItems,
                 catalogIsUsable: projection.catalogIsUsable
             )
                 .map { ($0.id, $0) }
@@ -145,7 +152,7 @@ struct VillageDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, now: now)
                 officialAPISection()
-                metricsBar(metrics: progressMetrics)
+                metricsBar(metrics: progressMetrics, completeDenominator: projection.universeComplete)
                 basePicker()
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
 
@@ -313,14 +320,23 @@ struct VillageDetailView: View {
     /// Issue #70：三指标卡（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
     /// 每个指标显示名称、百分比、分子/分母（带单位）与降级文案；saturated
     /// 优先于 state 文案（fail-closed，数值不权威时显示异常而非百分比）。
-    private func metricsBar(metrics: VillageProgressMetrics) -> some View {
+    /// `completeDenominator` = 投影的 universeComplete：决定覆盖率 help 文案口径
+    ///（完整分母 vs 已观测分母，Task 4 评审 nit 1）。
+    private func metricsBar(metrics: VillageProgressMetrics, completeDenominator: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // 外部评审方案 A：标题明确「已观测」范围（阶段 1 分母为已观测项目，
-            // completeDenominator 恒 false → stage/global 恒 partial）。
-            metricRow(metrics.currentStageProgress, title: "已观测阶段进度")
-            metricRow(metrics.globalProgress, title: "已观测全局进度")
+            // 决策 7 标题回退：阶段 2 接入 completeDenominator（完整分母）后，
+            // stage/global 分母 = known ∪ 宇宙差集，不再是「已观测」口径——
+            // 标题回退为「当前阶段进度/全局养成进度」；覆盖率仍为观测口径，
+            // 第三行「观测数据完整性」不变。
+            metricRow(metrics.currentStageProgress, title: "当前阶段进度")
+            metricRow(metrics.globalProgress, title: "全局养成进度")
+            // 覆盖率分母随宇宙完整性变化：completeDenominator=true 时含宇宙差集
+            // 实例（已观测占全部可建造），false 时只有已观测实例——help 文案
+            // 必须跟随口径，否则误导（Task 4 评审 nit 1）。
             metricRow(metrics.snapshotCoverage, title: "观测数据完整性")
-                .help("分母为已观测实例，非全部可能建筑")
+                .help(completeDenominator
+                    ? "已观测实例占村庄全部可建造数量"
+                    : "分母为已观测实例，非全部可能建筑")
         }
         .padding(12)
         .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))

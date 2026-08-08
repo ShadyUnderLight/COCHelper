@@ -18,11 +18,13 @@ final class BattleModifierTests: XCTestCase {
         XCTAssertEqual(BattleModifierText.localizedText(for: "minusThree"), "传奇杯 III")
     }
 
-    /// nil、"none" 与空串（均无规则信息）→ nil：UI 不渲染占位。
+    /// nil、"none" 与空串/纯空白（均无规则信息）→ nil：UI 不渲染占位。
     func testLocalizedTextEmptyNoneAndNilAreHidden() {
         XCTAssertNil(BattleModifierText.localizedText(for: nil))
         XCTAssertNil(BattleModifierText.localizedText(for: "none"))
         XCTAssertNil(BattleModifierText.localizedText(for: ""), "空串携带零信息，归 nil 无损失")
+        XCTAssertNil(BattleModifierText.localizedText(for: " "), "纯空白串归 nil，避免空「规则：」行")
+        XCTAssertNil(BattleModifierText.localizedText(for: "\n\t "))
     }
 
     /// 未知非空值 → 原样返回（可审计 fallback，不做猜测映射）。
@@ -103,6 +105,20 @@ final class BattleModifierTests: XCTestCase {
         )
         XCTAssertEqual(roundTripped.items[0].battleModifier, "hardMode")
         XCTAssertEqual(roundTripped, page)
+
+        // 编码护栏：nil battleModifier 的条目不输出该键（合成 Codable 契约）。
+        // 注意：合成 Codable 的键输出顺序不是语言保证（swiftc 与 swift 解释器
+        // 产物顺序都不同），断言必须不依赖键顺序 → 用 JSONSerialization 解析。
+        let encoded = try JSONEncoder().encode(page)
+        let jsonObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        let items = try XCTUnwrap(jsonObject["items"] as? [[String: Any]])
+        XCTAssertEqual(
+            items[0]["battleModifier"] as? String, "hardMode",
+            "有值条目应编码 battleModifier"
+        )
+        XCTAssertNil(items[1]["battleModifier"], "nil 条目不应编码 battleModifier")
     }
 }
 

@@ -78,9 +78,28 @@ TDD 顺序（每个先 RED 再 GREEN）：
 
 ## 验证
 
-- `swift test` 全量通过（基线 589 → 新增约 10+ 测试）
+- `swift test` 全量通过（基线 589 → 598，新增 9 个测试）
 - round-trip 等值断言覆盖 known/unknown/null 分支
 - fuzz 迭代内 `unrecognizedKeys` 为空（battleModifier 是 known key）
+
+## parserVersion bump（解析范围变化，评审补充）
+
+按项目成文惯例（ce26c50「成员级解析范围变化递增 parserVersion (Issue #20)」），
+本次给 `OfficialClanWarSnapshot` 与 `OfficialWarLogEntry` 都新增了解析字段：
+
+- `clan-war-0.2 → clan-war-0.3`（`OfficialEndpointState.swift`，注释同步）
+- `clan-war-log-0.3 → clan-war-log-0.4`（`ClanPaginationModels.swift`，注释同步）
+
+理由：`AppModel.loadMoreWarLog` 的 `needsRebuild = current.parserVersion != parserVersion`
+依赖版本号变化触发累计页重建；若不 bump，旧页条目（battleModifier == nil）与新页条目
+（有值）在 Equatable 不相等时会出现合并残留重复，防御机制静默失效。
+
+升级影响：所有用户的既有持久化状态被标记旧版——currentwar 旧 lastGood 保留不丢弃
+（新字段缺失仅规则行不显示，刷新后恢复）；warlog 旧累计页首次 load-more 时重建
+（与 Issue #20 ce26c50 升级行为一致）。
+
+测试断言同步：`GenericEndpointStateTests`（两处）、`AppModelTests` L426（升级到
+当前版本断言）。旧版本 fixture（`"clan-war-log-0.2"`、`"clan-war-0.1"`）保持不动。
 
 ## 非目标 / 边界
 
@@ -88,3 +107,11 @@ TDD 顺序（每个先 RED 再 GREEN）：
 - 不修改战争分页或成员攻击层级
 - 不做 Legend 值之外的猜测映射；未知值 raw 兜底即可
 - 不新建 UI 测试 target、不动 `.build`/依赖
+
+## 修订记录
+
+- 2026-08-09 初版（SDD 类型契约 + 任务分解）
+- 2026-08-09 评审修复：补充 parserVersion bump 章节（code review 发现）；
+  格式化层 `""`/纯空白 → nil（交叉审核 A 发现）；fuzz 增加 decode 侧 expected 断言；
+  测试复用既有 LCG；warlog 编码护栏断言不依赖 JSON 键顺序（交叉审核 A 发现，
+  合成 Codable 键顺序非语言契约——swiftc 与 swift 解释器产物顺序不同）

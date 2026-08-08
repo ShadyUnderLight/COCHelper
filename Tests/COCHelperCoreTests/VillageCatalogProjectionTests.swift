@@ -3269,7 +3269,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     func testAvailabilitySeasonalActiveWithInjectedNow() throws {
-        // 阶段表命中 + now 在活动期 → seasonal(isActive: true)。
+        // 阶段表命中 + now 在活动期 → seasonal(status: .active)。
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
         ])
@@ -3283,7 +3283,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     func testAvailabilitySeasonalEndedWithInjectedNow() throws {
-        // now 在结束期后 → seasonal(isActive: false)——历史存在、当前不可用。
+        // now 在结束期后 → seasonal(status: .ended)——历史存在、当前不可用。
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
         ])

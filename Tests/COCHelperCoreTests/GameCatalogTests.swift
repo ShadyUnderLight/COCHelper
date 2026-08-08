@@ -643,6 +643,22 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertEqual(CatalogAvailability.unconfigured.displayLabel, "阶段信息未配置")
     }
 
+    func testSeasonalPhaseTableRoundTripDecode() throws {
+        // 日期编码契约：JSONDecoder 默认 .deferredToDate（2001-01-01 起秒数）。
+        // 编码→解码 round-trip 锚定该契约，防未来改 ISO8601 时 decoder 未同步。
+        let phase = SeasonalPhase(
+            phaseID: "p", name: "阶段", 
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+            itemKeys: ["a:1"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [phase])
+        let data = try JSONEncoder().encode(table)
+        let decoded = try JSONDecoder().decode(SeasonalPhaseTable.self, from: data)
+        XCTAssertEqual(decoded.phases.count, 1)
+        XCTAssertEqual(decoded.phases[0].phaseID, "p")
+        XCTAssertEqual(decoded.phases[0].from, Date(timeIntervalSince1970: 1_000))
+        XCTAssertEqual(decoded.phases[0].until, Date(timeIntervalSince1970: 2_000))
+    }
+
     func testSeasonalPhaseTableMalformedDataNeverHits() {
         // from > until（异常数据）与空 itemKeys：永不命中 → unconfigured 域。
         let bad = SeasonalPhase(

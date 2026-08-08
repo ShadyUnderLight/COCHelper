@@ -423,7 +423,7 @@ extension AppModelTests {
         XCTAssertFalse(queries[0].contains("after="), "跨版本重建必须请求第一页（无游标）: \(queries[0])")
         // 结果 = 新首页（fixture 2 条），解析器版本升级，游标为首页 after
         let state = model.currentWarLogState
-        XCTAssertEqual(state?.parserVersion, "clan-war-log-0.3", "状态升级到当前解析器版本")
+        XCTAssertEqual(state?.parserVersion, "clan-war-log-0.4", "状态升级到当前解析器版本")
         XCTAssertEqual(state?.lastGood?.items.count, 2, "重建后为完整首页（不残留旧条目）")
         XCTAssertEqual(state?.lastGood?.after, "CURSORAFTER1", "游标取首页值")
         XCTAssertTrue(model.currentWarLogHasMore, "首页有 after → 可继续加载更多")

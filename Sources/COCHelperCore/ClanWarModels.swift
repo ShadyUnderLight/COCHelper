@@ -111,11 +111,11 @@ public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
 /// 格式化层：battleModifier 的稳定中文映射（放 Core：currentwar 与 warlog
 /// 两张卡片共用 + 可测；UI target 是 executable，无法被测试依赖）。
 public enum BattleModifierText {
-    /// nil / "none" → nil（UI 不显示）；hardMode→困难模式；minusOne→传奇杯 I；
+    /// nil / "none" / 空串 → nil（UI 不显示）；hardMode→困难模式；minusOne→传奇杯 I；
     /// minusTwo→传奇杯 II；minusThree→传奇杯 III；未知非空 → 原样返回（可审计 fallback）。
     public static func localizedText(for raw: String?) -> String? {
         switch raw {
-        case nil, "none":
+        case "", nil, "none":
             return nil
         case "hardMode":
             return "困难模式"

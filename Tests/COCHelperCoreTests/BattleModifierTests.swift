@@ -3,22 +3,11 @@ import XCTest
 @testable import COCHelperCore
 
 /// battleModifier 的格式化映射 + 编解码契约（Issue #72）。
-/// - 映射表与 fuzz 均为确定性（fixed seed）测试。
+/// - 映射表与 fuzz 均为确定性（fixed seed）测试，复用共享 `LCG`
+///   （见 ClanAPIStateTests.swift，同 target 可见）。
 /// - currentwar 分支（fixture/未知/null/round-trip）在 ClanWarDecodeTests 覆盖，
 ///   这里补充 fuzz 与 warlog 条目分支。
 final class BattleModifierTests: XCTestCase {
-    private struct Rand {
-        var state: UInt64
-        mutating func next() -> UInt64 {
-            state = state &* 6364136223846793005 &+ 1442695040888963407
-            return state
-        }
-        mutating func bool(_ p: Int = 50) -> Bool { next() % 100 < UInt64(p) }
-        mutating func pick(_ array: [String]) -> String {
-            array[Int(next() % UInt64(array.count))]
-        }
-    }
-
     // MARK: - 稳定中文映射表
 
     /// 官方已知值域 → 稳定中文映射（表格驱动全分支）。
@@ -29,29 +18,31 @@ final class BattleModifierTests: XCTestCase {
         XCTAssertEqual(BattleModifierText.localizedText(for: "minusThree"), "传奇杯 III")
     }
 
-    /// nil 与 "none"（无规则）→ nil：UI 不渲染占位。
-    func testLocalizedTextNoneAndNilAreHidden() {
+    /// nil、"none" 与空串（均无规则信息）→ nil：UI 不渲染占位。
+    func testLocalizedTextEmptyNoneAndNilAreHidden() {
         XCTAssertNil(BattleModifierText.localizedText(for: nil))
         XCTAssertNil(BattleModifierText.localizedText(for: "none"))
+        XCTAssertNil(BattleModifierText.localizedText(for: ""), "空串携带零信息，归 nil 无损失")
     }
 
     /// 未知非空值 → 原样返回（可审计 fallback，不做猜测映射）。
     func testLocalizedTextUnknownRawFallback() {
         XCTAssertEqual(BattleModifierText.localizedText(for: "futureX"), "futureX")
-        XCTAssertEqual(BattleModifierText.localizedText(for: ""), "")
     }
 
     // MARK: - currentwar fuzz（property-based）
 
     /// Property-based fuzz：battleModifier 随机形态（缺失/null/known/unknown/empty/长串）
-    /// + 其他字段随机缺失 + 随机未知键，decode→encode→decode round-trip 必须等值、
-    /// 值保持、battleModifier 不进 unrecognizedKeys。
+    /// + 其他字段随机缺失 + 随机未知键。断言：
+    /// - 解码值必须等于输入期望（防 decode 侧丢字段回归，如改回 always-nil）
+    /// - decode→encode→decode round-trip 必须等值、battleModifier 不进 unrecognizedKeys
     func testBattleModifierFuzzRoundTrip() throws {
         let valuePool = ["hardMode", "minusOne", "minusTwo", "minusThree", "none", "futureX"]
         let unknownPool = ["newOfficialField", "futureField", "extra"]
-        var r = Rand(state: 0xB47_71E_0000_0000) // "battle" 的字母序 seed
+        var r = LCG(seed: 0xB47_71E_0000_0000) // "battle" 的字母序 seed
         for i in 0..<200 {
             var json: [String: Any] = [:]
+            var expected: String? = nil // 本次迭代 battleModifier 的期望解码值（缺失/null → nil）
             json["state"] = r.pick(["notInWar", "preparation", "inWar", "warEnded"])
             if !r.bool(20) { json["teamSize"] = 1 + Int(r.next() % 50) }
             if !r.bool(20) { json["attacksPerMember"] = 1 + Int(r.next() % 2) }
@@ -62,11 +53,13 @@ final class BattleModifierTests: XCTestCase {
             // battleModifier 随机形态：50% 缺失、50% 出现（null / known / unknown / empty / 长串）
             if r.bool(50) {
                 switch Int(r.next() % 5) {
-                case 0: json["battleModifier"] = NSNull() // 显式 null → nil
-                case 1: json["battleModifier"] = r.pick(valuePool)
-                case 2: json["battleModifier"] = "hardMode"
-                case 3: json["battleModifier"] = ""
-                default: json["battleModifier"] = String(repeating: "x", count: 1 + Int(r.next() % 30))
+                case 0: json["battleModifier"] = NSNull(); expected = nil // 显式 null → nil
+                case 1: let v = r.pick(valuePool); json["battleModifier"] = v; expected = v
+                case 2: json["battleModifier"] = "hardMode"; expected = "hardMode"
+                case 3: json["battleModifier"] = ""; expected = ""
+                default:
+                    let v = String(repeating: "x", count: 1 + Int(r.next() % 30))
+                    json["battleModifier"] = v; expected = v
                 }
             }
             // 随机未知键：battleModifier 必须不在 unrecognizedKeys 内
@@ -79,6 +72,10 @@ final class BattleModifierTests: XCTestCase {
                 from: try JSONEncoder().encode(decoded)
             )
             XCTAssertEqual(decoded, roundTripped, "iteration \(i): round-trip 必须等值")
+            XCTAssertEqual(
+                decoded.battleModifier, expected,
+                "iteration \(i): 解码值必须等于输入期望（防 decode 侧丢字段回归）"
+            )
             XCTAssertEqual(
                 decoded.battleModifier, roundTripped.battleModifier,
                 "iteration \(i): battleModifier 编解码后保持"
@@ -106,5 +103,14 @@ final class BattleModifierTests: XCTestCase {
         )
         XCTAssertEqual(roundTripped.items[0].battleModifier, "hardMode")
         XCTAssertEqual(roundTripped, page)
+    }
+}
+
+// MARK: - 共享 LCG 便捷方法（bool/pick：与既有 fixed-seed 测试同构，避免各文件重复实现）
+
+extension LCG {
+    mutating func bool(_ p: Int = 50) -> Bool { next() % 100 < UInt64(p) }
+    mutating func pick(_ array: [String]) -> String {
+        array[Int(next() % UInt64(array.count))]
     }
 }

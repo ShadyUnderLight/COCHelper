@@ -3329,6 +3329,27 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        "畸形阶段必须被过滤，不得标 notStarted/ended")
     }
 
+    func testAvailabilityStatusBoundariesDeterministic() throws {
+        // 状态级边界锚定（确定性，不依赖随机命中）：阶段 1000..<2000，
+        // now = 999/1000/1999/2000 四点 → notStarted/active/active/ended。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+        ])
+        let cases: [(Double, SeasonalStatus)] = [
+            (999, .notStarted), (1_000, .active), (1_999, .active), (2_000, .ended),
+        ]
+        for (seconds, expected) in cases {
+            let home = projectWithAvailability(
+                village, table: makeAvailabilityPhases(),
+                now: Date(timeIntervalSince1970: seconds))
+            let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+            XCTAssertEqual(
+                item.availability,
+                .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: expected),
+                "now=\(seconds) 状态必须确定")
+        }
+    }
+
     func testPropertyAvailabilityPreservedThroughAggregation() throws {
         // 聚合不变量：availability 同组透传一致（同 dataID → 同阶段判定）。
         var rng = SeededRNG(seed: 7)

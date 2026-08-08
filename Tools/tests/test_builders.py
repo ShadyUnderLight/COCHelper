@@ -182,7 +182,8 @@ def test_parse_upgrade_costs_multi_resource_empty_cost_not_free():
     """多值表金额空串**不视为免费**（与单值表不对称，交叉审核 I-1 锁定防御语义）：
     空金额被过滤后资源项 parseFailed=True（rawAmount=''），而不是 amount=0。
 
-    真实 18.400.13 数据 0 实例（339 条多资源行全部完整配对），此为纯防御
+    真实 18.400.13 数据 0 实例（源 CSV 339 条多资源行 → 生成后 385 个多资源等级，
+    全部完整配对），此为纯防御
     行为——若未来 Supercell 在装备表引入免费升级（空金额段），需先明确语义
     再决定是否对称处理。"""
     assert parse_upgrade_costs("CommonOre; RareOre", "", ";") == [

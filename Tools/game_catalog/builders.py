@@ -35,7 +35,8 @@ def parse_upgrade_costs(resources_raw: str, costs_raw: str,
         resource=最后一个资源段）
       - **多值表金额空段不视为免费**（与单值表不对称，避免猜测未来数据
         语义）：空段被过滤后资源项变成 parseFailed=True。真实 18.400.13
-        数据 0 实例（339 条多资源行全部完整配对），纯防御语义。
+        数据 0 实例（源 CSV 339 条多资源行 → 生成后 385 个多资源等级，全部完整配对），
+        纯防御语义。
 
     不变量（validate.py 强制）：parseFailed=False ⟹ amount 非 None 且 >= 0 且
     rawAmount=None；parseFailed=True ⟹ amount=None 且 rawAmount != None；

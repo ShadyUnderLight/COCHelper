@@ -1,5 +1,11 @@
 # Issue #72：保存并展示部落对战 battleModifier
 
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 保存并展示官方 `battleModifier`（Hard Mode / 传奇杯战争规则）：模型保存原始值、round-trip 不丢、已知键不进审计、UI 显示"规则：…"（nil 不渲染占位），currentwar 与 warlog 共用同一格式化层。不把 modifier 用作结果推导来源。
+
+**Architecture:** `OfficialClanWarSnapshot` 手写 Codable 各加一处 decode/encode；`OfficialWarLogEntry` 合成 Codable 加字段 + init 参数；格式化层 `BattleModifierText` 放 Core（executable UI target 不可测）。parserVersion 随解析范围递增（`clan-war-0.2→0.3`、`clan-war-log-0.3→0.4`）。
+
 日期：2026-08-09 · 分支：`issue-72-battle-modifier`
 
 ## 背景（评审结论摘要）

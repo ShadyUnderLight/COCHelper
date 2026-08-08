@@ -27,7 +27,7 @@ def _valid_dir(tmp_path: Path) -> Path:
             icon=None, levelVisual=None,
         )],
     )
-    catalog = Catalog(schemaVersion=1, gameVersion="18.400.13", locale="zh-CN",
+    catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
                       items=[item])
     d = tmp_path / "cat"
     d.mkdir()
@@ -35,7 +35,7 @@ def _valid_dir(tmp_path: Path) -> Path:
     (d / "catalog.json").write_bytes(catalog_bytes)
     (d / "icons").mkdir()
     (d / "manifest.json").write_text(json.dumps({
-        "schemaVersion": 1, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
         "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
         "generatedFiles": [
             {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
@@ -192,7 +192,7 @@ def test_validate_locale_mismatch(tmp_path):
 def test_validate_schema_version_mismatch_manifest(tmp_path):
     d = _valid_dir(tmp_path)
     m = _load_manifest(d)
-    m["schemaVersion"] = 2
+    m["schemaVersion"] = 3
     _write(d, manifest=m)
     errors = validate_catalog(d)
     assert any("schemaVersion" in e for e in errors)
@@ -201,7 +201,7 @@ def test_validate_schema_version_mismatch_manifest(tmp_path):
 def test_validate_schema_version_mismatch_catalog(tmp_path):
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
-    c["schemaVersion"] = 2
+    c["schemaVersion"] = 3
     _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("schemaVersion" in e for e in errors)

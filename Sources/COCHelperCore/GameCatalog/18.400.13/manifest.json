@@ -6,17 +6,17 @@
     "levels": 5479,
     "missingIcons": 0,
     "missingTime": 3308,
-    "renderedIcons": 1258
+    "renderedIcons": 1264
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [
     {
       "path": "catalog.json",
-      "sha256": "sha256:724fc4dbc0c851271072c60a7e4232525fd9df3f868db3708f6c2deb7f9e4d2d",
+      "sha256": "sha256:a748ef7b0aded73437c168cc2915bd81f6d74deaca5415e5f8d9b5efdb85168b",
       "size": 3814199
     },
     {
-      "entries": 1258,
+      "entries": 1264,
       "kind": "directory",
       "path": "icons/"
     },
@@ -534,6 +534,11 @@
       "path": "icons/buildings/bomp_trap_lvl9_setup.png",
       "sha256": "sha256:6b7e75a7ca8374c8ea75c0ce5b6237738ac800652e11deb7b3b83c7f1cd9927b",
       "size": 5437
+    },
+    {
+      "path": "icons/buildings/cake_thrower_lvl1.png",
+      "sha256": "sha256:eb2f20a1634edd42b19c02296bd102c63d8b99482d4c5af53758eff90c7d1527",
+      "size": 49746
     },
     {
       "path": "icons/buildings/candy_cage_3x3.png",
@@ -1761,6 +1766,11 @@
       "size": 19429
     },
     {
+      "path": "icons/buildings/headhunter_tower_lvl1.png",
+      "sha256": "sha256:47a58ab81a65bcc636d4a118240bb9cf41ad2abdc85fe4221b5b56844b860319",
+      "size": 24558
+    },
+    {
       "path": "icons/buildings/hero_inn_lvl1.png",
       "sha256": "sha256:b4eefdd0144cce614f3eca952b8ca7b4584dd6bc52834a5f0f78b827a6696417",
       "size": 53621
@@ -1874,6 +1884,11 @@
       "path": "icons/buildings/ice_breaker_lvl7.png",
       "sha256": "sha256:0631743d104c69281295b2d625cdffcf12086dff7ac4f3ff1c515dc0fde9d197",
       "size": 32169
+    },
+    {
+      "path": "icons/buildings/inferno_candle_tower_lvl1.png",
+      "sha256": "sha256:6dd6d1ddd9b93647632e378fbf666e6c60390c9f71aeade4594b5d598f0095ec",
+      "size": 26478
     },
     {
       "path": "icons/buildings/laboratory_lvl1.png",
@@ -6309,6 +6324,21 @@
       "path": "icons/ui/icon_unit_zappywagon.png",
       "sha256": "sha256:bddcad8475000ae548e61978eda78eb765104a93ce4a2c676587ad181eb5b50b",
       "size": 62063
+    },
+    {
+      "path": "icons/ui/info_icon_damage.png",
+      "sha256": "sha256:c728011dc490bfc58a34ca351d7ce3ae73cad3cec5d0f1f2f03ef7450df50d68",
+      "size": 2631
+    },
+    {
+      "path": "icons/ui/info_icon_hp.png",
+      "sha256": "sha256:07fcaa24837c3c13499ce9d5333c445b63ffc25ef729bdbc28d8987013c11f3d",
+      "size": 2209
+    },
+    {
+      "path": "icons/ui/info_icon_time_boosted.png",
+      "sha256": "sha256:037177389fa82fa03628769da02d73a0e888beb7e97f7a5adf7bcaa9e9f39557",
+      "size": 2793
     }
   ],
   "locale": "zh-CN",

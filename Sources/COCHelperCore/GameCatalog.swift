@@ -133,10 +133,10 @@ extension CatalogManifest {
         "参考升级费用 · 来源：目录 v\(gameVersion) / buildTag \(buildTag)"
     }
 
-    /// 来源指纹标注（sourceFingerprint 为 APK sha256，头尾各 4 位缩略展示）。
+    /// 来源指纹标注（sourceFingerprint 为 APK sha256，完整展示以便
+    /// 与 manifest.json 对账、跨会话追溯；UI 侧 textSelection 可复制）。
     public var sourceFingerprintLabel: String {
-        let hex = sourceFingerprint.dropFirst("sha256:".count)
-        return "来源指纹 sha256:" + hex.prefix(4) + "…" + hex.suffix(4)
+        "来源指纹 " + sourceFingerprint
     }
 }
 

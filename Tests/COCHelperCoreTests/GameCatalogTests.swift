@@ -629,7 +629,7 @@ final class GameCatalogTests: XCTestCase {
             "参考升级费用 · 来源：目录 v18.400.13 / buildTag 18_400_7")
         XCTAssertEqual(
             manifest.sourceFingerprintLabel,
-            "来源指纹 sha256:aaaa…aaaa")
+            "来源指纹 sha256:" + String(repeating: "a", count: 64))
     }
 
     func testBundledManifestProvenanceAgainstRealData() throws {
@@ -639,7 +639,7 @@ final class GameCatalogTests: XCTestCase {
         let manifest = try XCTUnwrap(catalog.manifest)
         XCTAssertFalse(manifest.provenanceLabel.isEmpty)
         XCTAssertTrue(manifest.sourceFingerprintLabel.hasPrefix("来源指纹 sha256:"))
-        XCTAssertEqual(manifest.sourceFingerprintLabel.count, 21, "前缀12+头4+…+尾4")
+        XCTAssertEqual(manifest.sourceFingerprintLabel.count, 76, "前缀12+完整64 hex")
     }
 
     // MARK: - Issue #74: manifest 运行时完整性校验

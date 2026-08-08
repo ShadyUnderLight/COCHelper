@@ -195,7 +195,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
     private func project(
         village: VillageProfile,
         catalog: GameCatalog?,
-        expectedGameVersion: String? = GameCatalog.defaultBundledVersion,
+        expectedGameVersion: String? = nil,  // Issue #74a：默认不自我比较（unverified）
         base: TrackerBase,
         // 默认 now == importedAt（elapsed = 0）：计时记录保持原样，不被快照年龄消耗。
         now: Date = Date(timeIntervalSince1970: 1_700_000_000)
@@ -450,7 +450,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0")],
         ])
-        let projection = project(village: village, catalog: staleCatalog, base: .home)
+        let projection = project(village: village, catalog: staleCatalog,
+                           expectedGameVersion: GameCatalog.defaultBundledVersion, base: .home)
         XCTAssertFalse(projection.catalogIsUsable)
         XCTAssertTrue(projection.diagnostics.contains { $0.severity == .warning })
         // maxLevel 仍保留供 UI 展示（旧目录 join 数据）
@@ -1192,6 +1193,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             maxLevel: 3,
             status: .complete,
             missingReason: nil,
+            catalogItemMissingReason: nil,
             icon: icon,
             levelVisual: levelVisual,
             currentLevelIcon: currentLevelIcon,
@@ -2787,7 +2789,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
         // 版本不匹配变体：旧目录（9.9.9）+ 目标 3 级 → 事实保留、时长 nil、原因标注。
         let staleCatalog = try makeCatalog(from: Self.stageCatalogJSON
             .replacingOccurrences(of: "\"gameVersion\": \"18.400.13\"", with: "\"gameVersion\": \"9.9.9\""))
-        let home2 = project(village: village, catalog: staleCatalog, base: .home)
+        let home2 = project(village: village, catalog: staleCatalog,
+                             expectedGameVersion: GameCatalog.defaultBundledVersion, base: .home)
         let cannon2 = try XCTUnwrap(home2.items.first { $0.dataID == 1_000_002 })
         XCTAssertEqual(cannon2.status, .upgrading)
         XCTAssertEqual(cannon2.nextUpgrade, .inProgressFact(level: 3, durationSeconds: nil),
@@ -2810,7 +2813,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
                          timerSeconds: 600, remainingSeconds: 300, path: "1"),
             ],
         ])
-        let home = project(village: village, catalog: staleCatalog, base: .home)
+        let home = project(village: village, catalog: staleCatalog,
+                           expectedGameVersion: GameCatalog.defaultBundledVersion, base: .home)
         let cannon = try XCTUnwrap(home.items.first { $0.dataID == 1_000_002 })
         XCTAssertEqual(cannon.status, .upgrading)
         XCTAssertEqual(cannon.nextUpgrade, .inProgressFact(level: 2, durationSeconds: nil),
@@ -2857,7 +2861,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_002, level: 1, path: "0")],
         ])
-        let home = project(village: village, catalog: staleCatalog, base: .home)
+        let home = project(village: village, catalog: staleCatalog,
+                           expectedGameVersion: GameCatalog.defaultBundledVersion, base: .home)
         let cannon = try XCTUnwrap(home.items.first)
         XCTAssertEqual(cannon.status, .unknown)
         XCTAssertEqual(cannon.nextUpgrade, .unknown)
@@ -3101,6 +3106,133 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let item = try XCTUnwrap(home.items.first)
         XCTAssertNil(item.nextLevelDurationSeconds)
         XCTAssertNil(item.nextLevelDurationState)
+    }
+
+
+    // MARK: - Issue #74a: 兼容性状态 + deprecated 透传
+
+    func testCompatibilityUnverifiedByDefault() throws {
+        // 默认（无玩家 build）：显式 unverified，不得伪装已匹配。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        XCTAssertEqual(home.compatibility, .unverified(gameVersion: "18.400.13"))
+        XCTAssertTrue(home.catalogIsUsable, "unverified 不阻断完成度（玩家 build 数据源不存在）")
+        // info 级诊断明确「未验证」
+        XCTAssertTrue(home.diagnostics.contains {
+            $0.severity == .info && $0.message.contains("未验证")
+        }, "默认路径必须有未验证诊断")
+    }
+
+    func testCompatibilityVerifiedWhenExplicitlyMatched() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog,
+                           expectedGameVersion: "18.400.13", base: .home)
+        XCTAssertEqual(home.compatibility, .verified(gameVersion: "18.400.13"))
+        XCTAssertTrue(home.catalogIsUsable)
+        XCTAssertFalse(home.diagnostics.contains { $0.message.contains("未验证") })
+    }
+
+    func testCompatibilityMismatchBlocksCompleteness() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog,
+                           expectedGameVersion: "99.0.0", base: .home)
+        XCTAssertEqual(home.compatibility, .mismatch(catalogVersion: "18.400.13", expectedVersion: "99.0.0"))
+        XCTAssertFalse(home.catalogIsUsable, "mismatch 必须阻断完成度（fail-closed）")
+        XCTAssertTrue(home.diagnostics.contains { $0.severity == .warning && $0.message.contains("不匹配") })
+    }
+
+    func testCompatibilityUnavailableWhenCatalogNil() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let home = project(village: village, catalog: nil, base: .home)
+        XCTAssertEqual(home.compatibility, .unavailable)
+        XCTAssertFalse(home.catalogIsUsable)
+    }
+
+    func testResolveHelperFourStates() {
+        let catalog = syntheticCatalog
+        XCTAssertEqual(
+            CatalogCompatibility.resolve(catalog: catalog, expectedGameVersion: nil),
+            .unverified(gameVersion: "18.400.13"))
+        XCTAssertEqual(
+            CatalogCompatibility.resolve(catalog: catalog, expectedGameVersion: "18.400.13"),
+            .verified(gameVersion: "18.400.13"))
+        XCTAssertEqual(
+            CatalogCompatibility.resolve(catalog: catalog, expectedGameVersion: "99.0.0"),
+            .mismatch(catalogVersion: "18.400.13", expectedVersion: "99.0.0"))
+        XCTAssertEqual(
+            CatalogCompatibility.resolve(catalog: nil, expectedGameVersion: nil),
+            .unavailable)
+    }
+
+    func testCatalogItemMissingReasonTransparent() throws {
+        // 合成目录加 deprecated item：catalogItemMissingReason 透传；普通 item nil。
+        let json = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":"deprecated_in_source","levels":[
+            {"level":1,"durationSeconds":60,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+          ]},
+          {"section":"units","category":"troops","dataID":4000000,"base":"home","name":"野蛮人","maxLevel":3,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,"levels":[
+            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+            {"level":2,"durationSeconds":1800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+          ]}
+        ]}
+        """
+        let catalog = try makeCatalog(from: json)
+        let village = makeVillage(objectSections: [
+            "pets": [makeItem(section: "pets", dataID: 73_000_000, level: 1, path: "0")],
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 1, path: "1")],
+        ])
+        let home = project(village: village, catalog: catalog, base: .home)
+        let deprecated = try XCTUnwrap(home.items.first { $0.dataID == 73_000_000 })
+        XCTAssertEqual(deprecated.catalogItemMissingReason, "deprecated_in_source")
+        XCTAssertNil(deprecated.missingReason, "join 语义 missingReason 不受影响")
+        let normal = try XCTUnwrap(home.items.first { $0.dataID == 4_000_000 })
+        XCTAssertNil(normal.catalogItemMissingReason)
+    }
+
+    // MARK: - Issue #74a: property-based（聚合透传不变量 + 兼容性确定性）
+
+    func testPropertyAggregationPreservesCatalogItemMissingReason() throws {
+        // 聚合不变量：非升级同键聚合后 catalogItemMissingReason 双向保持——
+        // 正向：deprecated 标记聚合后保留；反向：普通 item 聚合后不凭空产生。
+        //（同 (section,dataID,level) 的记录来自同一 CatalogItem，透传必须一致。）
+        let json = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":"deprecated_in_source","levels":[
+            {"level":1,"durationSeconds":60,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+          ]},
+          {"section":"units","category":"troops","dataID":4000000,"base":"home","name":"野蛮人","maxLevel":3,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,"levels":[
+            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+            {"level":2,"durationSeconds":1800,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+          ]}
+        ]}
+        """
+        let catalog = try makeCatalog(from: json)
+        var rng = SeededRNG(seed: 42)
+        for iteration in 0..<50 {
+            let n = Int.random(in: 1...4, using: &rng)
+            let useDeprecated = Bool.random(using: &rng)
+            let section = useDeprecated ? "pets" : "units"
+            let dataID: Int64 = useDeprecated ? 73_000_000 : 4_000_000
+            var items: [AccountItem] = []
+            for j in 0..<n {
+                items.append(makeItem(section: section, dataID: dataID, level: 2, path: String(j)))
+            }
+            let village = makeVillage(objectSections: [section: items])
+            let home = project(village: village, catalog: catalog, base: .home)
+            let aggregated = try XCTUnwrap(home.items.first { $0.dataID == dataID })
+            XCTAssertEqual(
+                aggregated.isCatalogDeprecated, useDeprecated,
+                "迭代 \(iteration): 聚合后 deprecated 标记必须保留（n=\(n)）")
+        }
     }
 
 }

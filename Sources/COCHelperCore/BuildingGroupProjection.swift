@@ -102,7 +102,7 @@ public enum BuildingGroupProjection {
         village: VillageProfile,
         catalog: GameCatalog?,
         base: TrackerBase,
-        expectedGameVersion: String? = GameCatalog.defaultBundledVersion,
+        expectedGameVersion: String? = nil,  // Issue #74a：默认不自我比较（unverified）
         now: Date = Date()
     ) -> [BuildingGroup] {
         guard let snapshot = village.accountSnapshot else { return [] }
@@ -111,12 +111,10 @@ public enum BuildingGroupProjection {
         // 注意区分两种降级（Issue #45 契约第 5 节）：目录不可用（catalog == nil）
         // 是「缺失态」→ partialMissing（UI 橙标 + 诊断）；目录存在但版本不匹配
         // 是「不得输出权威汇总」→ versionMismatch（UI 红标诊断）。
-        let catalogIsUsable: Bool
-        if let catalog {
-            catalogIsUsable = expectedGameVersion.map { $0 == catalog.gameVersion } ?? true
-        } else {
-            catalogIsUsable = false
-        }
+        // Issue #74a：完成度可用性由兼容性状态派生（与 VillageCatalogProjection
+        // 同一判定点，防手写版本比较漂移）。
+        let catalogIsUsable = CatalogCompatibility.resolve(
+            catalog: catalog, expectedGameVersion: expectedGameVersion).isUsable
         // 原始记录层（聚合前）：只取 buildings/buildings2 的非嵌套项。
         // catalogIsUsable 必须显式传入（Issue #67 P1-2）：版本不匹配时行状态
         // 不得消费旧目录判 maxed/complete——组卡→详情链路与列表行同口径。

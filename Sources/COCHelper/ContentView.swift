@@ -652,12 +652,18 @@ private struct CatalogStatusNote: View {
     let catalog: GameCatalog?
 
     var body: some View {
-        if let catalog {
-            if catalog.gameVersion != GameCatalog.defaultBundledVersion {
-                note(text: "静态目录版本 \(catalog.gameVersion) 与期望版本 \(GameCatalog.defaultBundledVersion) 不匹配，完整时长可能过时。")
-            }
-        } else {
+        // Issue #74a：基于显式兼容性状态（不再自我比较）——mismatch/unavailable
+        // 是 warning 异常；unverified 是常态（玩家 build 数据源不存在），不渲染
+        // 避免常驻噪音，未验证信息由村庄详情页版本行 + info 诊断承担。
+        switch CatalogCompatibility.resolve(catalog: catalog, expectedGameVersion: nil) {
+        case .unavailable:
             note(text: "静态升级目录不可用，完整时长与等级上限信息缺失。")
+        case .mismatch(let catalogVersion, let expectedVersion):
+            // 前瞻死代码：resolve 传 nil 时生产不可达（玩家 build 数据源不存在）；
+            // 保留为未来玩家 build 接入时的 warning 契约。
+            note(text: "静态目录版本 \(catalogVersion) 与期望版本 \(expectedVersion) 不匹配，完整时长可能过时。")
+        case .unverified, .verified:
+            EmptyView()
         }
     }
 

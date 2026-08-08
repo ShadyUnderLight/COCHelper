@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import COCHelperCore
 
@@ -471,10 +472,111 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertNil(oldCounts.parseFailed)
     }
 
+
+    func testLoadBundledExposesManifest() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let manifest = try XCTUnwrap(catalog.manifest, "bundled 目录必须带 manifest")
+        XCTAssertEqual(manifest.gameVersion, "18.400.13")
+        XCTAssertEqual(manifest.buildTag, "18_400_7")
+        XCTAssertEqual(manifest.counts.timed, 2096, "manifest counts 拆分字段应已落盘")
+        XCTAssertEqual(manifest.counts.sourceMissing, 1847)
+        XCTAssertFalse(manifest.sourceFingerprint.isEmpty)
+        XCTAssertEqual(manifest.generatedFiles.first?.path, "catalog.json")
+    }
+
+    // MARK: - Issue #74: manifest 运行时完整性校验
+
+    private func makeManifest(
+        items: Int = 1, levels: Int = 1, missingTime: Int = 0,
+        timed: Int? = 1, instant: Int? = 0,
+        sha256: String? = nil
+    ) -> CatalogManifest {
+        CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
+            locale: "zh-CN", sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [
+                CatalogGeneratedFile(path: "catalog.json", sha256: sha256, size: nil, kind: nil, entries: nil),
+            ],
+            counts: CatalogCounts(
+                items: items, levels: levels, missingIcons: nil, missingTime: missingTime,
+                timed: timed, instant: instant, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil
+            )
+        )
+    }
+
+    private func makeValidationItem() -> CatalogItem {
+        CatalogItem(
+            section: "units", category: "troops", dataID: 1, base: "home",
+            baseMissingReason: nil, name: "x", maxLevel: 1, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: 3600, upgradeResource: nil, upgradeCost: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+    }
+
+    func testManifestValidationPassesOnConsistentData() throws {
+        // counts 与目录一致、sha256 与数据一致 → 通过。
+        //（bundled 真实数据通过由 testLoadBundledExposesManifest 间接覆盖：
+        //  loadBundled 内部 validate 失败会使 manifest 为 nil。）
+        let item = makeValidationItem()
+        let catalogData = Data("consistent-catalog".utf8)
+        let sha = CryptoKit.SHA256.hash(data: catalogData)
+            .map { String(format: "%02x", $0) }.joined()
+        let manifest = makeManifest(
+            items: 1, levels: 1, missingTime: 0, sha256: "sha256:" + sha)
+        XCTAssertTrue(manifest.validate(against: [item], catalogData: catalogData))
+    }
+
+    func testManifestValidationRejectsCountsMismatch() {
+        // counts 与目录重算不一致 → 漂移，校验失败（fail-closed）。
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 999, levels: 999, missingTime: 0)
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsMissingTimeMismatch() {
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 1, levels: 1, missingTime: 5)
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsSha256Mismatch() throws {
+        let item = makeValidationItem()
+        let catalogData = Data("tampered".utf8)
+        let manifest = makeManifest(
+            items: 1, levels: 1, missingTime: 0,
+            sha256: "sha256:" + String(repeating: "0", count: 64))
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: catalogData))
+    }
+
+    func testManifestValidationRejectsTimedBucketMismatch() {
+        // 拆分桶声明与目录重算不一致 → 漂移，fail-closed。
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, timed: 0, instant: 0)
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsMalformedShaPrefix() {
+        // 非 nil 但无 sha256: 前缀 → 格式异常 fail-closed（生成器恒写前缀）。
+        let item = makeValidationItem()
+        let manifest = makeManifest(
+            items: 1, levels: 1, missingTime: 0,
+            sha256: String(repeating: "0", count: 64))
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationSkipsShaWhenDeclaredNil() {
+        // 旧 manifest 无 sha256 声明 → 跳过哈希校验（向后兼容）。
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, sha256: nil)
+        XCTAssertTrue(manifest.validate(against: [item], catalogData: Data()))
+    }
 }
 
 // MARK: - UpgradeRequirement（Issue #67）
-
 final class RequirementTests: XCTestCase {
     /// 按 base 解析 village 语义：home → townHall/laboratory/heroHall。
     func testHomeBaseRequirementsParseVillageSemantics() {
@@ -607,4 +709,5 @@ final class RequirementTests: XCTestCase {
                 "tavern=8 时英雄阶段上限应为 86（tavern 门槛 9+ 不满足）"
             )
     }
+
 }

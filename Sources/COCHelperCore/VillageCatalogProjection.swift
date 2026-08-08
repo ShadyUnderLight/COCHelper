@@ -80,7 +80,19 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     ///（与 nextLevelDurationSeconds 的 nil 场景一致，不参与升级追踪）。
     public let nextUpgrade: VillageNextUpgrade?
     public let status: VillageItemStatus
+    /// join 语义缺失原因（目录未收录/不可用/基地不匹配等）。
     public let missingReason: String?
+    /// Issue #74a：来源级标记（`CatalogItem.missingReason` 原样透传，如
+    /// `deprecated_in_source`；仅 base 匹配且目录命中时非 nil）。与
+    /// `missingReason`（join 语义）分离——前者表示该条目在源目录中被标记
+    /// （历史数据/已废弃），后者表示投影 join 失败。
+    public let catalogItemMissingReason: String?
+
+    /// 源目录标记「已废弃」（`deprecated_in_source`）。UI 判断统一走本属性，
+    /// 禁止散落魔数（Python 侧 ITEM_MISSING_REASONS 为单一值域契约）。
+    public var isCatalogDeprecated: Bool {
+        catalogItemMissingReason == "deprecated_in_source"
+    }
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
     /// 当前等级（currentLevel）匹配的 CatalogLevel 资产（level-level，Issue #39）：
@@ -176,6 +188,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         nextUpgrade: VillageNextUpgrade? = nil,
         status: VillageItemStatus,
         missingReason: String?,
+        catalogItemMissingReason: String?,
         icon: CatalogAssetRef?,
         levelVisual: CatalogAssetRef?,
         currentLevelIcon: CatalogAssetRef?,
@@ -202,6 +215,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.nextUpgrade = nextUpgrade
         self.status = status
         self.missingReason = missingReason
+        self.catalogItemMissingReason = catalogItemMissingReason
         self.icon = icon
         self.levelVisual = levelVisual
         self.currentLevelIcon = currentLevelIcon
@@ -286,36 +300,53 @@ public struct VillageCatalogProjection: Sendable {
     /// 或版本不匹配时，完成度不得产生可确认分母——旧目录的 maxLevel 仍用于
     /// 展示（行状态/徽标），但不得支撑看似权威的百分比。
     public let catalogIsUsable: Bool
+    /// Issue #74a：目录与玩家 build 兼容性状态（展示语义，与 catalogIsUsable
+    /// 分离——后者阻断完成度、前者供 UI 展示「未验证/已匹配/不匹配」）。
+    public let compatibility: CatalogCompatibility
     public let items: [VillageItemState]
     public let diagnostics: [AccountDataDiagnostic]
 
     /// 核心入口。投影规则见本类型 doc comment。
+    ///
+    /// Issue #74a：`expectedGameVersion` 默认 nil——**不再自我比较**
+    ///（评审定稿：不能把目录与自身比较的结果伪装成「已验证」）。默认路径产出
+    /// `.unverified`（info 诊断明确「与玩家版本未验证」）；显式传入玩家 build
+    /// 才可能 `.verified`/`.mismatch`。`catalogIsUsable` 语义不变：unverified
+    /// 不阻断完成度（玩家 build 数据源不存在），mismatch 才 fail-closed。
     public static func project(
         village: VillageProfile,
         catalog: GameCatalog?,
-        expectedGameVersion: String? = GameCatalog.defaultBundledVersion,
+        expectedGameVersion: String? = nil,
         base: TrackerBase,
         now: Date = Date()
     ) -> VillageCatalogProjection {
         var diagnostics: [AccountDataDiagnostic] = []
-        let catalogIsUsable: Bool
-        if let catalog {
-            catalogIsUsable = expectedGameVersion.map { $0 == catalog.gameVersion } ?? true
-        } else {
-            catalogIsUsable = false
-        }
-        if catalog == nil {
+        let compatibility = CatalogCompatibility.resolve(
+            catalog: catalog, expectedGameVersion: expectedGameVersion)
+        // Issue #74a：完成度可用性由兼容性状态派生（单一判定点防漂移）。
+        let catalogIsUsable = compatibility.isUsable
+        switch compatibility {
+        case .unavailable:
             diagnostics.append(AccountDataDiagnostic(
                 severity: .warning,
                 path: "GameCatalog/" + base.rawValue,
                 message: "静态升级目录不可用，等级上限与完整时长信息将缺失。"
             ))
-        } else if let expectedGameVersion, catalog?.gameVersion != expectedGameVersion {
+        case .unverified(let gameVersion):
+            // Issue #74a：无玩家 build 时明确「未验证」，不得伪装「已匹配」。
+            diagnostics.append(AccountDataDiagnostic(
+                severity: .info,
+                path: "GameCatalog/" + base.rawValue,
+                message: "静态目录版本 \(gameVersion)；与玩家版本未验证。"
+            ))
+        case .mismatch(let catalogVersion, let expectedVersion):
             diagnostics.append(AccountDataDiagnostic(
                 severity: .warning,
                 path: "GameCatalog/" + base.rawValue,
-                message: "静态目录版本 \(catalog?.gameVersion ?? "?") 与期望版本 \(expectedGameVersion) 不匹配，完整时长与上限信息可能过时。"
+                message: "静态目录版本 \(catalogVersion) 与期望版本 \(expectedVersion) 不匹配，完整时长与上限信息可能过时。"
             ))
+        case .verified:
+            break
         }
 
         // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
@@ -333,6 +364,7 @@ public struct VillageCatalogProjection: Sendable {
             base: base,
             catalogVersion: catalog?.gameVersion,
             catalogIsUsable: catalogIsUsable,
+            compatibility: compatibility,
             items: states,
             diagnostics: diagnostics
         )
@@ -417,6 +449,7 @@ public struct VillageCatalogProjection: Sendable {
                 maxLevel: nil,
                 status: .unavailable,
                 missingReason: "该类别不参与升级追踪（\(item.section)）。",
+                catalogItemMissingReason: nil,
                 icon: nil,
                 levelVisual: nil,
                 currentLevelIcon: nil,
@@ -681,6 +714,7 @@ public struct VillageCatalogProjection: Sendable {
             nextUpgrade: nextUpgrade,
             status: status,
             missingReason: missingReason,
+            catalogItemMissingReason: baseMatches ? catalogItem?.missingReason : nil,
             icon: baseMatches ? catalogItem?.icon : nil,
             levelVisual: baseMatches ? catalogItem?.levelVisual : nil,
             currentLevelIcon: currentLevelAssets.icon,
@@ -811,6 +845,7 @@ public struct VillageCatalogProjection: Sendable {
                 nextUpgrade: first.nextUpgrade,
                 status: first.status,
                 missingReason: first.missingReason,
+                catalogItemMissingReason: first.catalogItemMissingReason,
                 icon: first.icon,
                 levelVisual: first.levelVisual,
                 currentLevelIcon: first.currentLevelIcon,

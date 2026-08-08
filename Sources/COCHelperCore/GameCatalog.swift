@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // MARK: - Manifest
@@ -29,9 +30,9 @@ public struct CatalogGeneratedFile: Codable, Hashable, Sendable {
 
 /// 版本化静态目录 manifest 模型。
 ///
-/// 当前 `loadBundled()` 不读取 manifest（只解码 catalog.json）；此类型作为
-/// 契约保留，供后续运行时版本审计（如 UI 展示 gameVersion/buildTag/locale、
-/// 校验 generatedFiles 哈希）使用。
+/// `loadBundled()` 已读取同目录 manifest（Issue #74a），经 `GameCatalog.manifest`
+/// 暴露 buildTag/sourceFingerprint/counts；缺失或解码失败时目录仍加载、
+/// manifest 为 nil（增强信息，不阻塞）。
 public struct CatalogManifest: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let gameVersion: String
@@ -40,6 +41,49 @@ public struct CatalogManifest: Codable, Hashable, Sendable {
     public let sourceFingerprint: String
     public let generatedFiles: [CatalogGeneratedFile]
     public let counts: CatalogCounts
+
+    /// Issue #74（可信度验收）：运行时完整性校验。
+    ///
+    /// 校验两件事：① counts 与目录内容重算一致（items/levels 必查；
+    /// missingTime/timed/instant/缺失类四桶等拆分字段存在才查——旧 manifest 缺键跳过）；
+    /// ② `generatedFiles` 中 catalog.json 声明的 sha256 与真实文件一致
+    ///（声明缺失时跳过，向后兼容）。返回 false = 漂移/篡改，调用方应
+    /// fail-closed（manifest 视为无效，不进入「已验证」状态）。
+    /// 不校验 icons 哈希（展示资源，不影响统计可信度）与 sourceFingerprint
+    ///（APK hash，运行时无 APK 可比）。
+    public func validate(against items: [CatalogItem], catalogData: Data) -> Bool {
+        let levels = items.flatMap(\.levels)
+        guard counts.items == items.count,
+              counts.levels == levels.count else { return false }
+        if let missingTime = counts.missingTime,
+           missingTime != levels.filter({ $0.durationSeconds == nil }).count {
+            return false
+        }
+        // 拆分字段（存在才校验；映射走 CatalogDurationState.state 单一映射点，
+        // 与 Python classify_duration 同语义）
+        if let timed = counts.timed,
+           timed != levels.filter({ ($0.durationSeconds ?? 0) > 0 }).count { return false }
+        if let instant = counts.instant,
+           instant != levels.filter({ $0.durationSeconds == 0 }).count { return false }
+        if let notApplicable = counts.notApplicable,
+           notApplicable != levels.filter({ $0.durationState == .notApplicable }).count { return false }
+        if let initialLevel = counts.initialLevel,
+           initialLevel != levels.filter({ $0.durationState == .initialLevel }).count { return false }
+        if let sourceMissing = counts.sourceMissing,
+           sourceMissing != levels.filter({ $0.durationState == .sourceMissing }).count { return false }
+        if let parseFailed = counts.parseFailed,
+           parseFailed != levels.filter({ $0.durationState == .parseFailed }).count { return false }
+        // catalog.json sha256：声明缺失跳过（向后兼容）；声明存在但格式异常
+        //（无 sha256: 前缀）→ 数据异常 fail-closed（生成器恒写前缀）。
+        if let entry = generatedFiles.first(where: { $0.path == "catalog.json" }),
+           let declared = entry.sha256 {
+            guard declared.hasPrefix("sha256:") else { return false }
+            let actual = SHA256.hash(data: catalogData)
+                .map { String(format: "%02x", $0) }.joined()
+            guard declared.dropFirst("sha256:".count) == actual else { return false }
+        }
+        return true
+    }
 }
 
 // MARK: - Assets
@@ -170,6 +214,55 @@ extension CatalogDurationState {
         case .parseFailed: return "目录解析失败"
         case .unknownReason: return "暂无目录数据"
         }
+    }
+}
+
+// MARK: - Compatibility (Issue #74a)
+
+/// 目录与玩家客户端 build 的兼容性状态。
+///
+/// 玩家真实 build 数据源当前不存在（官方 CoC API 不返回客户端 build）；
+/// 生产路径恒为 `.unverified`——UI 必须明确「未验证」，不得把目录自我比较
+/// 伪装成「已验证」。`.verified`/`.mismatch` 仅在显式传入玩家 build 时产生。
+public enum CatalogCompatibility: Hashable, Sendable {
+    /// 无玩家 build 输入：目录可用但未验证。
+    case unverified(gameVersion: String)
+    /// 玩家 build == catalog.gameVersion。
+    case verified(gameVersion: String)
+    /// 玩家 build != catalog.gameVersion：`catalogIsUsable` 必须 false（fail-closed）。
+    case mismatch(catalogVersion: String, expectedVersion: String)
+    /// 目录不可用（catalog == nil）。
+    case unavailable
+
+    /// 是否处于「未验证」状态（UI 版本行后缀展示用；与 `isUsable` 对称）。
+    public var isUnverified: Bool {
+        if case .unverified = self { return true }
+        return false
+    }
+
+    /// 完成度可用性（与 `VillageCatalogProjection.catalogIsUsable` 同语义）：
+    /// unverified/verified 可用（玩家 build 数据源不存在，unverified 不阻断）；
+    /// mismatch/unavailable fail-closed。投影层统一用它替换手写版本比较。
+    public var isUsable: Bool {
+        switch self {
+        case .unverified, .verified: return true
+        case .mismatch, .unavailable: return false
+        }
+    }
+
+    /// 领域助手：投影与 UI 共用同一判定，防三态判定散落手搓。
+    public static func resolve(
+        catalog: GameCatalog?,
+        expectedGameVersion: String?
+    ) -> CatalogCompatibility {
+        guard let catalog else { return .unavailable }
+        guard let expectedGameVersion else {
+            return .unverified(gameVersion: catalog.gameVersion)
+        }
+        if expectedGameVersion == catalog.gameVersion {
+            return .verified(gameVersion: catalog.gameVersion)
+        }
+        return .mismatch(catalogVersion: catalog.gameVersion, expectedVersion: expectedGameVersion)
     }
 }
 
@@ -381,13 +474,17 @@ public struct GameCatalog: Sendable {
     public static let defaultBundledVersion = "18.400.13"
 
     public let gameVersion: String
+    /// Issue #74a：同版本 manifest（buildTag/sourceFingerprint/counts 等）；
+    /// 测试注入或 manifest 缺失/损坏时 nil（增强信息，不阻塞目录加载）。
+    public let manifest: CatalogManifest?
 
     private let itemsBySection: [String: [CatalogItem]]
     private let index: [String: CatalogItem]
 
     /// 测试注入入口；`loadBundled` 只是其便捷包装。
-    public init(gameVersion: String, items: [CatalogItem]) {
+    public init(gameVersion: String, items: [CatalogItem], manifest: CatalogManifest? = nil) {
         self.gameVersion = gameVersion
+        self.manifest = manifest
         var bySection: [String: [CatalogItem]] = [:]
         var byKey: [String: CatalogItem] = [:]
         for item in items {
@@ -410,7 +507,23 @@ public struct GameCatalog: Sendable {
         else {
             return nil
         }
-        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+        // Issue #74a：manifest 是增强信息——缺失/解码失败不阻塞目录加载（nil）。
+        // 纵深防御：manifest.gameVersion 与目录不一致时视为损坏（validate 在
+        // 生成期已保证一致，此处仅防未来手工替换/版本错配）。
+        let manifest: CatalogManifest?
+        if let manifestURL = Bundle.module.url(
+            forResource: "manifest",
+            withExtension: "json",
+            subdirectory: "GameCatalog/" + version
+        ), let manifestData = try? Data(contentsOf: manifestURL),
+           let decoded = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData),
+           decoded.gameVersion == payload.gameVersion,
+           decoded.validate(against: payload.items, catalogData: data) {
+            manifest = decoded
+        } else {
+            manifest = nil
+        }
+        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items, manifest: manifest)
     }
 
     /// 主查询：`(section, dataID)` 精确匹配（catalog.section 与快照 section 同源）。

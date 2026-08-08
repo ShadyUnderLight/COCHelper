@@ -39,6 +39,9 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
     // MARK: 联赛与成就
     public let league: PlayerLeague?
     public let builderBaseLeague: PlayerLeague?
+    /// 2026 排位体系新增段位：官方 `/v1/players/{tag}` 响应 `leagueTier` 对象
+    /// （形状与 `league` 相同：id/name/iconUrls）。旧响应无此键时解码为 nil。
+    public let leagueTier: PlayerLeague?
     public let achievements: [PlayerAchievement]?
     public let labels: [PlayerLabel]?
     public let playerHouse: PlayerHouse?
@@ -59,7 +62,8 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         builderBaseTrophies: Int?, versusBattleWins: Int?, legendStatistics: LegendStatistics?,
         clan: PlayerClan?, role: String?, warPreference: String?, donations: Int?,
         donationsReceived: Int?, clanCapitalContributions: Int?,
-        league: PlayerLeague?, builderBaseLeague: PlayerLeague?, achievements: [PlayerAchievement]?,
+        league: PlayerLeague?, builderBaseLeague: PlayerLeague?, leagueTier: PlayerLeague? = nil,
+        achievements: [PlayerAchievement]?,
         labels: [PlayerLabel]?, playerHouse: PlayerHouse?,
         troops: [PlayerItemLevel]?, heroes: [PlayerItemLevel]?, spells: [PlayerItemLevel]?,
         heroEquipment: [PlayerItemLevel]?,
@@ -87,6 +91,7 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         self.clanCapitalContributions = clanCapitalContributions
         self.league = league
         self.builderBaseLeague = builderBaseLeague
+        self.leagueTier = leagueTier
         self.achievements = achievements
         self.labels = labels
         self.playerHouse = playerHouse
@@ -104,7 +109,7 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         "trophies", "bestTrophies", "warStars", "attackWins", "defenseWins",
         "builderBaseTrophies", "versusBattleWins", "legendStatistics",
         "clan", "role", "warPreference", "donations", "donationsReceived", "clanCapitalContributions",
-        "league", "builderBaseLeague", "achievements", "labels", "playerHouse",
+        "league", "builderBaseLeague", "leagueTier", "achievements", "labels", "playerHouse",
         "troops", "heroes", "spells", "heroEquipment",
         "unrecognizedKeys",
     ]
@@ -134,6 +139,7 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         clanCapitalContributions = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "clanCapitalContributions")!)
         league = try container.decodeIfPresent(PlayerLeague.self, forKey: .init(stringValue: "league")!)
         builderBaseLeague = try container.decodeIfPresent(PlayerLeague.self, forKey: .init(stringValue: "builderBaseLeague")!)
+        leagueTier = try container.decodeIfPresent(PlayerLeague.self, forKey: .init(stringValue: "leagueTier")!)
         achievements = try container.decodeIfPresent([PlayerAchievement].self, forKey: .init(stringValue: "achievements")!)
         labels = try container.decodeIfPresent([PlayerLabel].self, forKey: .init(stringValue: "labels")!)
         playerHouse = try container.decodeIfPresent(PlayerHouse.self, forKey: .init(stringValue: "playerHouse")!)
@@ -178,6 +184,7 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         try container.encodeIfPresent(clanCapitalContributions, forKey: key("clanCapitalContributions"))
         try container.encodeIfPresent(league, forKey: key("league"))
         try container.encodeIfPresent(builderBaseLeague, forKey: key("builderBaseLeague"))
+        try container.encodeIfPresent(leagueTier, forKey: key("leagueTier"))
         try container.encodeIfPresent(achievements, forKey: key("achievements"))
         try container.encodeIfPresent(labels, forKey: key("labels"))
         try container.encodeIfPresent(playerHouse, forKey: key("playerHouse"))

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import COCHelperCore
+import COCHelperApp
 
 /// Issue #16：项目逐级升级详情 sheet。
 ///

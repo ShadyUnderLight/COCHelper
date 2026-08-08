@@ -93,7 +93,7 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
         OfficialClanWarSnapshot(
             state: state, teamSize: nil, attacksPerMember: nil,
             preparationStartTime: nil, startTime: nil, endTime: nil,
-            warStartTime: nil, clan: nil, opponent: nil, unrecognizedKeys: []
+            warStartTime: nil, battleModifier: nil, clan: nil, opponent: nil, unrecognizedKeys: []
         )
     }
 

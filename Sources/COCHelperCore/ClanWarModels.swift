@@ -23,6 +23,10 @@ public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
     public let endTime: String?
     /// warEnded 状态下提供。
     public let warStartTime: String?
+    /// 官方 battleModifier：hardMode / minusOne / minusTwo / minusThree / none / null。
+    /// 保存原始值（不做本地枚举映射，与 state/result 契约一致）；
+    /// "none" 与缺失均视为无规则（显示层见 `BattleModifierText`）。
+    public let battleModifier: String?
     public let clan: ClanWarParticipant?
     public let opponent: ClanWarParticipant?
 
@@ -32,7 +36,7 @@ public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
     public init(
         state: String?, teamSize: Int?, attacksPerMember: Int?,
         preparationStartTime: String?, startTime: String?, endTime: String?,
-        warStartTime: String?,
+        warStartTime: String?, battleModifier: String?,
         clan: ClanWarParticipant?, opponent: ClanWarParticipant?,
         unrecognizedKeys: [String]
     ) {
@@ -43,6 +47,7 @@ public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
         self.startTime = startTime
         self.endTime = endTime
         self.warStartTime = warStartTime
+        self.battleModifier = battleModifier
         self.clan = clan
         self.opponent = opponent
         self.unrecognizedKeys = unrecognizedKeys
@@ -52,8 +57,7 @@ public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
 
     /// 官方 schema 中已知的顶层键。
     /// 注意 `battleModifier`：官方字段（Hard Mode 战争时为 "hardMode"，
-    /// 否则 null），已知但首期 deferred——不设属性（首期只做摘要展示），
-    /// 列入 knownKeys 避免有效响应被误报为"未识别字段"。
+    /// 否则 null/缺失），列入 knownKeys 避免有效响应被误报为"未识别字段"。
     private static let knownKeys: Set<String> = [
         "state", "teamSize", "attacksPerMember",
         "preparationStartTime", "startTime", "endTime", "warStartTime",
@@ -72,6 +76,7 @@ public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
         startTime = try container.decodeIfPresent(String.self, forKey: .init(stringValue: "startTime")!)
         endTime = try container.decodeIfPresent(String.self, forKey: .init(stringValue: "endTime")!)
         warStartTime = try container.decodeIfPresent(String.self, forKey: .init(stringValue: "warStartTime")!)
+        battleModifier = try container.decodeIfPresent(String.self, forKey: .init(stringValue: "battleModifier")!)
         clan = try container.decodeIfPresent(ClanWarParticipant.self, forKey: .init(stringValue: "clan")!)
         opponent = try container.decodeIfPresent(ClanWarParticipant.self, forKey: .init(stringValue: "opponent")!)
 
@@ -96,9 +101,33 @@ public struct OfficialClanWarSnapshot: Codable, Hashable, Sendable {
         try container.encodeIfPresent(startTime, forKey: key("startTime"))
         try container.encodeIfPresent(endTime, forKey: key("endTime"))
         try container.encodeIfPresent(warStartTime, forKey: key("warStartTime"))
+        try container.encodeIfPresent(battleModifier, forKey: key("battleModifier"))
         try container.encodeIfPresent(clan, forKey: key("clan"))
         try container.encodeIfPresent(opponent, forKey: key("opponent"))
         try container.encodeIfPresent(unrecognizedKeys, forKey: key("unrecognizedKeys"))
+    }
+}
+
+/// 格式化层：battleModifier 的稳定中文映射（放 Core：currentwar 与 warlog
+/// 两张卡片共用 + 可测；UI target 是 executable，无法被测试依赖）。
+public enum BattleModifierText {
+    /// nil / "none" → nil（UI 不显示）；hardMode→困难模式；minusOne→传奇杯 I；
+    /// minusTwo→传奇杯 II；minusThree→传奇杯 III；未知非空 → 原样返回（可审计 fallback）。
+    public static func localizedText(for raw: String?) -> String? {
+        switch raw {
+        case nil, "none":
+            return nil
+        case "hardMode":
+            return "困难模式"
+        case "minusOne":
+            return "传奇杯 I"
+        case "minusTwo":
+            return "传奇杯 II"
+        case "minusThree":
+            return "传奇杯 III"
+        default:
+            return raw
+        }
     }
 }
 

@@ -63,7 +63,7 @@ final class OfficialAPISourceLabelingTests: XCTestCase {
         let war = OfficialClanWarSnapshot(
             state: "inWar", teamSize: nil, attacksPerMember: nil,
             preparationStartTime: nil, startTime: nil, endTime: nil,
-            warStartTime: nil, clan: nil, opponent: nil, unrecognizedKeys: []
+            warStartTime: nil, battleModifier: nil, clan: nil, opponent: nil, unrecognizedKeys: []
         )
         let success = ClanWarAPIState(status: .success, clanTag: "#A", lastGood: war)
         let failedWithGood = ClanWarAPIState(status: .failed, clanTag: "#A", lastGood: war)

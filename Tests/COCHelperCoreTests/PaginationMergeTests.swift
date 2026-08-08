@@ -9,6 +9,7 @@ final class PaginationMergeTests: XCTestCase {
     private func entry(_ id: String) -> Entry {
         Entry(
             result: "win", endTime: "2026\(id)", teamSize: nil, attacksPerMember: nil,
+            battleModifier: nil,
             clan: nil, opponent: nil
         )
     }

@@ -151,17 +151,22 @@ public struct OfficialWarLogEntry: Codable, Hashable, Sendable {
     public let endTime: String?
     public let teamSize: Int?
     public let attacksPerMember: Int?
+    /// 官方 battleModifier（warlog 条目同样返回；Hard Mode/传奇杯战争），
+    /// 保存原始值；"none" 与缺失视为无规则。
+    public let battleModifier: String?
     public let clan: ClanWarParticipant?
     public let opponent: ClanWarParticipant?
 
     public init(
         result: String?, endTime: String?, teamSize: Int?, attacksPerMember: Int?,
+        battleModifier: String?,
         clan: ClanWarParticipant?, opponent: ClanWarParticipant?
     ) {
         self.result = result
         self.endTime = endTime
         self.teamSize = teamSize
         self.attacksPerMember = attacksPerMember
+        self.battleModifier = battleModifier
         self.clan = clan
         self.opponent = opponent
     }

@@ -20,7 +20,7 @@ final class GenericEndpointStateTests: XCTestCase {
         OfficialClanWarSnapshot(
             state: "notInWar", teamSize: nil, attacksPerMember: nil,
             preparationStartTime: nil, startTime: nil, endTime: nil,
-            warStartTime: nil, clan: nil, opponent: nil, unrecognizedKeys: []
+            warStartTime: nil, battleModifier: nil, clan: nil, opponent: nil, unrecognizedKeys: []
         )
     }
 

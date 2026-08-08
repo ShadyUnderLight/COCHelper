@@ -38,16 +38,43 @@ final class ClanWarDecodeTests: XCTestCase {
         XCTAssertEqual(war.unrecognizedKeys, ["newOfficialField"])
     }
 
-    /// battleModifier（Hard Mode 战争的官方字段）是已知但 deferred：
-    /// 不得进入 unrecognizedKeys，避免有效 Hard Mode 响应误报"未识别字段"。
-    func testBattleModifierIsKnownButDeferred() throws {
+    /// battleModifier（Hard Mode 战争的官方字段）解码保存原始值，
+    /// 且不得进入 unrecognizedKeys（known key 审计豁免）。
+    func testBattleModifierDecodesFromFullFixture() throws {
         let war = try decode(fullClanWarFixtureData())
+        XCTAssertEqual(war.battleModifier, "hardMode", "fixture 带 hardMode，应保存原始值")
         XCTAssertFalse(war.unrecognizedKeys.contains("battleModifier"),
-                       "battleModifier 是官方已知字段（deferred），不应作为未知键上报")
+                       "battleModifier 是官方已知字段，不应作为未知键上报")
+    }
 
-        // 单独验证：battleModifier 单独出现时也不进审计
-        let minimal = try decode(Data(#"{"state":"inWar","battleModifier":"hardMode"}"#.utf8))
-        XCTAssertTrue(minimal.unrecognizedKeys.isEmpty)
+    /// 未知非空 battleModifier（未来官方值域）必须容错：解码成功、保留原始值、
+    /// 不进 unrecognizedKeys（known key 审计豁免）。
+    func testDecodeUnknownBattleModifierPreserved() throws {
+        let war = try decode(Data(#"{"state":"inWar","battleModifier":"futureX"}"#.utf8))
+        XCTAssertEqual(war.state, "inWar")
+        XCTAssertEqual(war.battleModifier, "futureX", "未知值原样保留（可审计 fallback）")
+        XCTAssertTrue(war.unrecognizedKeys.isEmpty)
+    }
+
+    /// battleModifier 缺失或显式 null 都是合法响应：解码为 nil（非战争/普通战争）。
+    func testDecodeMissingOrNullBattleModifierYieldsNil() throws {
+        let missing = try decode(Data(#"{"state":"inWar"}"#.utf8))
+        XCTAssertNil(missing.battleModifier)
+
+        let explicitNull = try decode(Data(#"{"state":"inWar","battleModifier":null}"#.utf8))
+        XCTAssertNil(explicitNull.battleModifier, "显式 null 与缺失等价")
+        XCTAssertTrue(explicitNull.unrecognizedKeys.isEmpty)
+    }
+
+    /// 编码契约：battleModifier 为 nil 时不输出该键（持久化体积不膨胀）。
+    func testEncodeOmitsNilBattleModifier() throws {
+        let war = OfficialClanWarSnapshot(
+            state: "inWar", teamSize: nil, attacksPerMember: nil,
+            preparationStartTime: nil, startTime: nil, endTime: nil, warStartTime: nil,
+            battleModifier: nil, clan: nil, opponent: nil, unrecognizedKeys: []
+        )
+        let json = String(data: try JSONEncoder().encode(war), encoding: .utf8)!
+        XCTAssertFalse(json.contains("battleModifier"), "nil battleModifier 不应编码")
     }
 
     /// notInWar 是合法的成功响应（空状态，不是失败）。
@@ -137,6 +164,7 @@ final class ClanWarDecodeTests: XCTestCase {
         let war = OfficialClanWarSnapshot(
             state: "inWar", teamSize: nil, attacksPerMember: nil,
             preparationStartTime: nil, startTime: nil, endTime: nil, warStartTime: nil,
+            battleModifier: nil,
             clan: ClanWarParticipant(
                 tag: "#A", name: nil, badgeUrls: nil, clanLevel: nil,
                 attacks: nil, stars: nil, destructionPercentage: nil,
@@ -162,5 +190,15 @@ final class ClanWarDecodeTests: XCTestCase {
 
         XCTAssertEqual(decoded, original)
         XCTAssertEqual(decoded.unrecognizedKeys, ["newOfficialField"])
+    }
+
+    /// Round-trip：full fixture 的 battleModifier 编解码后保持（不再静默丢弃）。
+    func testRoundTripPreservesBattleModifier() throws {
+        let original = try decode(fullClanWarFixtureData())
+        XCTAssertEqual(original.battleModifier, "hardMode")
+
+        let decoded = try decode(try JSONEncoder().encode(original))
+        XCTAssertEqual(decoded.battleModifier, "hardMode")
+        XCTAssertEqual(decoded, original)
     }
 }

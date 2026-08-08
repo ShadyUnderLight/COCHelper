@@ -379,6 +379,7 @@ extension AppModelTests {
         // 旧解析器形态条目——无成员明细）。
         let oldEntry = OfficialWarLogEntry(
             result: "win", endTime: "20260730T100000.000Z", teamSize: 30, attacksPerMember: 2,
+            battleModifier: nil,
             clan: ClanWarParticipant(
                 tag: "#CLANANONYMIZED", name: "anonymized-clan", badgeUrls: nil, clanLevel: 12,
                 attacks: 60, stars: 95, destructionPercentage: 100.0, members: nil

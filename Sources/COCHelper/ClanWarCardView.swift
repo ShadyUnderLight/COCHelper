@@ -184,6 +184,12 @@ struct ClanWarCardView: View {
 
     private func scoreRow(_ snapshot: OfficialClanWarSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            // 战争规则（Hard Mode / 传奇杯）：无规则（nil/"none"）时不渲染占位
+            if let rule = BattleModifierText.localizedText(for: snapshot.battleModifier) {
+                Text("规则：\(rule)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if let teamSize = snapshot.teamSize {
                 Text("对战规模：\(teamSize) 人")
                     .font(.caption)

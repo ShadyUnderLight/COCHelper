@@ -47,6 +47,47 @@ final class VillageProgressMetricsTests: XCTestCase {
         )
     }
 
+    /// 直接构造「计时已结束待重新导入」形态（`item()` 的 timer 由 isUpgrading
+    /// 硬编码无法表达 timerSeconds 非 nil + remainingSeconds == 0），仿
+    /// VillageDetailProjectionTests.needsReimportRow：status .upgrading 但
+    /// remainingSeconds == 0 → isUpgrading false → isKnown 放行（旧逻辑误入
+    /// known 的形态），needsReimport 谓词为 true。
+    private func needsReimportItem(
+        id: String = "id",
+        level: Int = 3,
+        maxLevel: Int = 10,
+        stageMax: Int? = 6,
+        count: Int? = 1
+    ) -> VillageItemState {
+        VillageItemState(
+            id: id,
+            section: "buildings",
+            dataID: 1,
+            base: .home,
+            name: "item-" + id,
+            category: .buildings,
+            currentLevel: level,
+            count: count,
+            timerSeconds: 3600,
+            remainingSeconds: 0,
+            nextLevel: level + 1,
+            nextLevelDurationSeconds: 3600,
+            nextLevelDurationState: .timed(seconds: 3600),
+            maxLevel: maxLevel,
+            currentStageMaxLevel: stageMax,
+            status: .upgrading,
+            missingReason: nil,
+            catalogItemMissingReason: nil,
+            availability: .unconfigured,
+            icon: nil,
+            levelVisual: nil,
+            currentLevelIcon: nil,
+            currentLevelVisual: nil,
+            isNested: false,
+            displayCategory: nil
+        )
+    }
+
     private func metrics(_ items: [VillageItemState],
                          usable: Bool = true,
                          compatibility: CatalogCompatibility? = .verified(gameVersion: "18.400.13")) -> VillageProgressMetrics {
@@ -308,5 +349,43 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertEqual(m.state, .partial)
         XCTAssertTrue(m.saturated)
         XCTAssertNil(m.ratio)
+    }
+
+    // MARK: - needsReimport（实现要求 4：降级而非假精度）
+
+    func testNeedsReimportExcludedFromKnownAndDegrades() {
+        // 计时结束待重新导入：等级为最后记录值，不得计入 known 分母（#70 实现要求 4）
+        let items = [
+            item(id: "a", level: 3, maxLevel: 10, stageMax: 6),
+            needsReimportItem(id: "r", level: 4, maxLevel: 10, stageMax: 6),
+        ]
+        let m = metrics(items)
+        XCTAssertEqual(m.currentStageProgress.denominator, 6) // 只含 known 项
+        XCTAssertEqual(m.globalProgress.denominator, 10)
+        XCTAssertEqual(m.snapshotCoverage.numerator, 1)
+        XCTAssertEqual(m.currentStageProgress.state, .partial)
+        XCTAssertNotNil(m.currentStageProgress.degradedReason)
+    }
+
+    func testNeedsReimportAllItemsUnknown() {
+        let m = metrics([needsReimportItem(id: "r", level: 4, maxLevel: 10, stageMax: 6)])
+        XCTAssertEqual(m.currentStageProgress.state, .unknown)
+        XCTAssertEqual(m.snapshotCoverage.numerator, 0)
+        XCTAssertEqual(m.snapshotCoverage.denominator, 1)
+    }
+
+    // MARK: - 跨基地隔离（验收标准 6）
+
+    func testCrossBaseIsolation() {
+        // 不同基地的投影各自独立：同一输入重复计算幂等，不同基地互不污染
+        let homeItems = [item(id: "h", level: 3, maxLevel: 10, stageMax: 6)]
+        let builderItems = [item(id: "b", level: 8, maxLevel: 12, stageMax: 8)]
+        let homeOnce = metrics(homeItems)
+        let homeTwice = metrics(homeItems)
+        let builder = metrics(builderItems)
+        XCTAssertEqual(homeOnce.currentStageProgress, homeTwice.currentStageProgress) // 幂等
+        XCTAssertNotEqual(homeOnce.currentStageProgress, builder.currentStageProgress) // 无串扰
+        XCTAssertEqual(homeOnce.currentStageProgress.numerator, 3)
+        XCTAssertEqual(builder.currentStageProgress.numerator, 8)
     }
 }

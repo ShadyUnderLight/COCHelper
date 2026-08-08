@@ -91,7 +91,7 @@ public struct VillageProgressMetrics: Hashable, Sendable {
 /// - `catalogIsUsable == false` → 三指标全部 `.unavailable`（目录不可用/版本不匹配，
 ///   fail-closed，禁止假精度）；
 /// - 分母 == 0 → `.unknown`（无快照或无可确认实例）；
-/// - 未知实例权重 > 0 → `.partial`；
+/// - 未知实例权重 > 0（含 needsReimport 项归未知侧，实现要求 4）→ `.partial`；
 /// - `compatibility == .unverified` → 可计算指标强制 `.partial`（未验证目录不伪装
 ///   ready），degradedReason 说明；
 /// - 其余 → `.ready`。
@@ -107,9 +107,13 @@ public enum VillageProgressProjection {
             return unavailableMetrics()
         }
         // known 判定单一来源：VillageDetailProjection.isKnown（internal，防漂移）。
-        let known = items.filter { VillageDetailProjection.isKnown($0) }
+        // 计时结束待重新导入（needsReimport）的实例等级为最后记录值、可能已过期，
+        // 不计入 known（issue #70 实现要求 4：降级而非假精度）；该信号与目录无关。
+        let known = items.filter { VillageDetailProjection.isKnown($0) && !$0.needsReimport }
         // 未知实例权重（独立求和，饱和不丢失；溢出标志并入 unknownWeightInfo）
-        let unknownWeightInfo = VillageDetailProjection.instanceCountAndOverflow(of: items.filter { !VillageDetailProjection.isKnown($0) })
+        let unknownWeightInfo = VillageDetailProjection.instanceCountAndOverflow(
+            of: items.filter { !VillageDetailProjection.isKnown($0) || $0.needsReimport }
+        )
 
         // 阶段进度：分母 = Σ(stageMax × weight)，分子 = Σ(min(level, stageMax) × weight)
         let stageEligible = known.filter { $0.currentStageMaxLevel != nil }

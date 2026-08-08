@@ -2,6 +2,7 @@ import pytest
 
 from game_catalog.builders import build_guardians
 from game_catalog.errors import CatalogError
+from game_catalog.model import UpgradeCost
 from game_catalog.tables import spec_for_table
 
 
@@ -41,14 +42,16 @@ def test_guardian_join_hit_and_miss():
     # level 1 = 初始等级：无升级数据
     assert item.levels[0].durationSeconds is None
     assert item.levels[0].missingReason == "min_level_initial_no_upgrade"
-    assert item.levels[0].upgradeCost is None
+    assert item.levels[0].upgradeCosts is None
     # level 2 ← GuardianGeneral L1 = 7 天
     assert item.levels[1].durationSeconds == 7 * 86400
-    assert item.levels[1].upgradeCost == 18000000
+    assert item.levels[1].upgradeCosts == [
+        UpgradeCost(resource="Elixir", amount=18000000, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
     # level 5 ← L4（不存在，GG 只有 1-2 级）→ upgrade_data_missing
     assert item.levels[2].durationSeconds is None
     assert item.levels[2].missingReason == "upgrade_data_missing"
-    assert item.levels[2].upgradeCost is None
+    assert item.levels[2].upgradeCosts is None
 
 
 def _upgrade_rows_order_132():
@@ -84,9 +87,13 @@ def test_guardian_join_out_of_order_upgrade_levels():
     assert [lv.level for lv in item.levels] == [1, 2, 3]
     assert item.levels[0].missingReason == "min_level_initial_no_upgrade"
     assert item.levels[1].durationSeconds == 7 * 86400
-    assert item.levels[1].upgradeCost == 18000000
+    assert item.levels[1].upgradeCosts == [
+        UpgradeCost(resource="Elixir", amount=18000000, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
     assert item.levels[2].durationSeconds == 9 * 86400
-    assert item.levels[2].upgradeCost == 22000000
+    assert item.levels[2].upgradeCosts == [
+        UpgradeCost(resource="Elixir", amount=22000000, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
 
 
 def test_guardian_duplicate_upgrade_key():

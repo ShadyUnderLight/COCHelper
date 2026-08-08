@@ -4,13 +4,67 @@ from dataclasses import dataclass
 
 from .durations import parse_duration, parse_optional_int
 from .errors import CatalogError
-from .model import AssetRef, CatalogLevel, CatalogItem
+from .model import AssetRef, CatalogLevel, CatalogItem, UpgradeCost
 from .names import display_name
 from .tables import TABLES, TableSpec, group_blocks, ffill_columns, section_for
 
 SIEGE_PRODUCTION = "Siege Workshop"
 
 INITIAL_LEVEL_REASON = "min_level_initial_no_upgrade"
+
+
+def parse_upgrade_costs(resources_raw: str, costs_raw: str,
+                        separator: str | None) -> list[UpgradeCost] | None:
+    """解析升级费用列 → UpgradeCost 数组；None = 无费用数据（表无费用列/资源串空）。
+
+    单值表（separator=None）：
+      - 资源串空 → None（金额忽略）
+      - 否则单元素数组；金额非纯数字 → parseFailed=True（amount=None，
+        rawAmount=原串，不 strip——保持旧表行为与 parse_optional_int 一致）
+    多值表（separator 非 None）：
+      - 按 separator split 后逐段 strip；空段/空白段过滤
+      - 资源全空 → None（金额忽略）
+      - 按序配对：金额 isdigit → parseFailed=False；否则 parseFailed=True
+      - 资源多余：多余项 parseFailed=True（amount=None, rawAmount=""，
+        满足不变量 4：rawAmount != None）
+      - 金额多余：多余项 parseFailed=True（amount=None, rawAmount=金额原串，
+        resource=最后一个资源段）
+
+    不变量（validate.py 强制）：parseFailed=False ⟹ amount 非 None 且 >= 0 且
+    rawAmount=None；parseFailed=True ⟹ amount=None 且 rawAmount != None；
+    resource/rawResource 恒非空。
+    """
+    if separator is None:
+        if not resources_raw:
+            return None
+        if costs_raw.isdigit():
+            return [UpgradeCost(resource=resources_raw, amount=int(costs_raw),
+                                rawResource=resources_raw, rawAmount=None,
+                                parseFailed=False)]
+        return [UpgradeCost(resource=resources_raw, amount=None,
+                            rawResource=resources_raw, rawAmount=costs_raw,
+                            parseFailed=True)]
+    resources = [s.strip() for s in resources_raw.split(separator) if s.strip()]
+    if not resources:
+        return None
+    costs = [s.strip() for s in costs_raw.split(separator) if s.strip()]
+    result = [
+        UpgradeCost(resource=res, amount=int(cost) if cost.isdigit() else None,
+                    rawResource=res,
+                    rawAmount=None if cost.isdigit() else cost,
+                    parseFailed=not cost.isdigit())
+        for res, cost in zip(resources, costs)
+    ]
+    # 资源多余（无对应金额）：rawAmount="" 满足不变量 4（!= None）
+    for res in resources[len(costs):]:
+        result.append(UpgradeCost(resource=res, amount=None, rawResource=res,
+                                  rawAmount="", parseFailed=True))
+    # 金额多余：resource 复用最后一个资源段（保证不变量 6 非空）
+    for cost in costs[len(resources):]:
+        result.append(UpgradeCost(resource=resources[-1], amount=None,
+                                  rawResource=resources[-1], rawAmount=cost,
+                                  parseFailed=True))
+    return result
 
 
 @dataclass
@@ -21,8 +75,7 @@ class _ParsedRow:
     level_visual: AssetRef | None
     duration: int | None
     missing: str | None
-    resource: str | None
-    cost: int | None
+    upgrade_costs: list[UpgradeCost] | None
     town_hall: int | None
     laboratory: int | None
 
@@ -76,8 +129,12 @@ def _parse_row(row: dict[str, str], spec: TableSpec) -> _ParsedRow:
     else:
         duration, missing = parse_duration(row, spec.time_columns)
 
-    resource = row.get(spec.resource_column, "") if spec.resource_column else ""
-    cost = parse_optional_int(row.get(spec.cost_column, "")) if spec.cost_column else None
+    if spec.resource_column:
+        resources_raw = row.get(spec.resource_column, "")
+        costs_raw = row.get(spec.cost_column, "") if spec.cost_column else ""
+        upgrade_costs = parse_upgrade_costs(resources_raw, costs_raw, spec.list_separator)
+    else:
+        upgrade_costs = None  # 表无费用列 → 无费用数据
     th = parse_optional_int(row.get(spec.town_hall_column, "")) if spec.town_hall_column else None
     lab = parse_optional_int(row.get(spec.laboratory_column, "")) if spec.laboratory_column else None
 
@@ -87,8 +144,7 @@ def _parse_row(row: dict[str, str], spec: TableSpec) -> _ParsedRow:
         level_visual=_visual_ref(row, spec),
         duration=duration,
         missing=missing,
-        resource=resource or None,
-        cost=cost,
+        upgrade_costs=upgrade_costs,
         town_hall=th,
         laboratory=lab,
     )
@@ -110,8 +166,7 @@ def _level_from_row(rec: _ParsedRow) -> CatalogLevel:
         level=rec.level,
         durationSeconds=rec.duration,
         missingReason=rec.missing,
-        upgradeResource=rec.resource,
-        upgradeCost=rec.cost,
+        upgradeCosts=rec.upgrade_costs,
         requiredTownHallLevel=rec.town_hall,
         requiredLaboratoryLevel=rec.laboratory,
         icon=rec.icon,
@@ -125,8 +180,7 @@ def _level_initial(level: int, own: _ParsedRow | None) -> CatalogLevel:
         level=level,
         durationSeconds=None,
         missingReason=INITIAL_LEVEL_REASON,
-        upgradeResource=None,
-        upgradeCost=None,
+        upgradeCosts=None,
         requiredTownHallLevel=None,
         requiredLaboratoryLevel=None,
         icon=own.icon if own else None,
@@ -161,8 +215,7 @@ def _build_levels(records: list[_ParsedRow], spec: TableSpec) -> list[CatalogLev
                 level=own.level,
                 durationSeconds=src.duration,
                 missingReason=src.missing,
-                upgradeResource=src.resource,
-                upgradeCost=src.cost,
+                upgradeCosts=src.upgrade_costs,
                 requiredTownHallLevel=src.town_hall,
                 requiredLaboratoryLevel=src.laboratory,
                 icon=own.icon,
@@ -287,20 +340,20 @@ def build_guardians(
             if level.level == 1:
                 level.durationSeconds = None
                 level.missingReason = INITIAL_LEVEL_REASON
-                level.upgradeResource = None
-                level.upgradeCost = None
+                level.upgradeCosts = None
                 continue
             hit = index.get((join_key, level.level - 1))
             if hit is None:
                 level.durationSeconds = None
                 level.missingReason = "upgrade_data_missing"
-                level.upgradeResource = None
-                level.upgradeCost = None
+                level.upgradeCosts = None
                 continue
             duration, missing = parse_duration(hit, ("UpgradeTimeDays", "UpgradeTimeHours",
                                                       "UpgradeTimeMinutes", "UpgradeTimeSeconds"))
             level.durationSeconds = duration
             level.missingReason = missing
-            level.upgradeResource = hit.get("UpgradeResource") or hit.get("AltUpgradeResource") or None
-            level.upgradeCost = parse_optional_int(hit.get("UpgradeCost", ""))
+            # 单值语义：UpgradeResource/AltUpgradeResource + UpgradeCost → 单元素数组；
+            # 资源串空（join 行无资源值）→ None
+            res_raw = hit.get("UpgradeResource") or hit.get("AltUpgradeResource") or ""
+            level.upgradeCosts = parse_upgrade_costs(res_raw, hit.get("UpgradeCost", ""), None)
     return items

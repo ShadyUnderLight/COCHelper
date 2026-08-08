@@ -16,7 +16,7 @@ from . import (
     LEVEL_MISSING_REASONS,
 )
 from .contract import check_rendered_path_contract, rendered_path_format_ok
-from .model import AssetRef, catalog_from_dict
+from .model import AssetRef, UpgradeCost, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
 # PNG 文件魔数（前 8 字节）：\x89PNG\r\n\x1a\n（Issue #30 Task 8 内容校验用）
@@ -180,6 +180,37 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                     errors.append(f"{key} level {lv.level}: 未知 missingReason {lv.missingReason!r}")
                 if lv.durationSeconds is not None and lv.durationSeconds < 0:
                     errors.append(f"{key} level {lv.level}: durationSeconds 为负")
+                # ---- upgradeCosts 不变量（Issue #73 Task 1）----
+                # None = 无费用数据；非 None 必须非空；每项满足
+                # parseFailed ⟺ (amount=None ∧ rawAmount!=None)；resource/rawResource 恒非空。
+                ucs = lv.upgradeCosts
+                if ucs is not None:
+                    if not isinstance(ucs, list) or not ucs:
+                        errors.append(f"{key} level {lv.level}: upgradeCosts 为空或非法（应为非空数组或 null）")
+                    else:
+                        for i, uc in enumerate(ucs):
+                            prefix = f"{key} level {lv.level} upgradeCosts[{i}]"
+                            if not isinstance(uc, UpgradeCost):
+                                errors.append(f"{prefix}: 类型非法 {type(uc).__name__}")
+                                continue
+                            if uc.parseFailed:
+                                if uc.amount is not None:
+                                    errors.append(f"{prefix}: parseFailed=true 但 amount={uc.amount!r}")
+                                if uc.rawAmount is None:
+                                    errors.append(f"{prefix}: parseFailed=true 但 rawAmount 缺失")
+                            else:
+                                if uc.amount is None:
+                                    errors.append(f"{prefix}: parseFailed=false 但 amount 缺失")
+                                elif isinstance(uc.amount, bool) or not isinstance(uc.amount, int):
+                                    errors.append(f"{prefix}: amount 类型非法 {type(uc.amount).__name__}")
+                                elif uc.amount < 0:
+                                    errors.append(f"{prefix}: amount 为负 {uc.amount}")
+                                if uc.rawAmount is not None:
+                                    errors.append(f"{prefix}: parseFailed=false 但 rawAmount={uc.rawAmount!r}")
+                            if not uc.rawResource:
+                                errors.append(f"{prefix}: rawResource 为空")
+                            if not uc.resource:
+                                errors.append(f"{prefix}: resource 为空")
                 for ref, ref_name in ((lv.icon, "icon"), (lv.levelVisual, "levelVisual")):
                     if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                         errors.append(f"{key} level {lv.level}: {ref_name}.missingReason 未知 {ref.missingReason!r}")

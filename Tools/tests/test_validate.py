@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from game_catalog.model import catalog_to_dict, Catalog, CatalogItem, CatalogLevel
+from game_catalog.model import (
+    catalog_to_dict, Catalog, CatalogItem, CatalogLevel, UpgradeCost,
+)
 from game_catalog.validate import validate_catalog
 
 
@@ -18,7 +20,9 @@ def _valid_dir(tmp_path: Path) -> Path:
         icon=None, levelVisual=None, missingReason=None,
         levels=[CatalogLevel(
             level=1, durationSeconds=0, missingReason=None,
-            upgradeResource="Elixir", upgradeCost=100,
+            upgradeCosts=[UpgradeCost(resource="Elixir", amount=100,
+                                      rawResource="Elixir", rawAmount=None,
+                                      parseFailed=False)],
             requiredTownHallLevel=None, requiredLaboratoryLevel=None,
             icon=None, levelVisual=None,
         )],
@@ -285,7 +289,7 @@ def test_validate_duration_null_requires_reason(tmp_path):
     c = _load_catalog(d)
     c["items"][0]["levels"] = [{
         "level": 1, "durationSeconds": None, "missingReason": None,
-        "upgradeResource": None, "upgradeCost": None,
+        "upgradeCosts": None,
         "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
         "icon": None, "levelVisual": None,
     }]
@@ -371,6 +375,151 @@ def test_validate_negative_duration(tmp_path):
     assert any("负" in e for e in errors)
 
 
+# ---- upgradeCosts 不变量（Issue #73 Task 1）----
+
+
+def _cost_dict(*, resource="Elixir", amount=100, raw_resource="Elixir",
+               raw_amount=None, failed=False):
+    return {"resource": resource, "amount": amount, "rawResource": raw_resource,
+            "rawAmount": raw_amount, "parseFailed": failed}
+
+
+def test_validate_upgrade_costs_ok(tmp_path):
+    """合法 upgradeCosts（含 parseFailed=True 项）→ 通过。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [
+        _cost_dict(),  # parseFailed=False：amount 有值、rawAmount=None
+        _cost_dict(amount=None, raw_amount="oops", failed=True),
+        _cost_dict(amount=None, raw_amount="", failed=True),  # 多余资源项
+    ]
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []
+
+
+def test_validate_upgrade_costs_none_ok(tmp_path):
+    """upgradeCosts=None（无费用数据）→ 通过。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = None
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []
+
+
+def test_validate_upgrade_costs_empty_array_rejected(tmp_path):
+    """不变量 2：非 None 必须非空，[] 非法。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = []
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("upgradeCosts" in e and "空" in e for e in errors)
+
+
+def test_validate_upgrade_costs_failed_with_amount_rejected(tmp_path):
+    """不变量 4：parseFailed=True ⟹ amount=None。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [
+        _cost_dict(amount=10, raw_amount="x", failed=True)]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("parseFailed" in e and "amount" in e for e in errors)
+
+
+def test_validate_upgrade_costs_failed_missing_raw_amount_rejected(tmp_path):
+    """不变量 4：parseFailed=True ⟹ rawAmount != None。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [
+        _cost_dict(amount=None, raw_amount=None, failed=True)]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("parseFailed" in e and "rawAmount" in e for e in errors)
+
+
+def test_validate_upgrade_costs_ok_failed_with_raw_amount_ok(tmp_path):
+    """parseFailed=True + rawAmount=''（多余资源项）→ 通过（'' 满足 != None）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [
+        _cost_dict(amount=None, raw_amount="", failed=True)]
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []
+
+
+def test_validate_upgrade_costs_ok_missing_amount_rejected(tmp_path):
+    """不变量 3：parseFailed=False ⟹ amount != None。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [
+        _cost_dict(amount=None)]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("parseFailed" in e and "amount" in e for e in errors)
+
+
+def test_validate_upgrade_costs_raw_amount_without_failed_rejected(tmp_path):
+    """不变量 3：parseFailed=False ⟹ rawAmount == None。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [
+        _cost_dict(amount=100, raw_amount="100")]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("parseFailed" in e and "rawAmount" in e for e in errors)
+
+
+def test_validate_upgrade_costs_negative_amount_rejected(tmp_path):
+    """不变量 3：parseFailed=False ⟹ amount >= 0。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [_cost_dict(amount=-1)]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("负" in e for e in errors)
+
+
+def test_validate_upgrade_costs_bool_amount_rejected(tmp_path):
+    """amount=True（bool 是 int 子类）→ 类型非法。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [_cost_dict(amount=True)]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("amount" in e and "类型" in e for e in errors)
+
+
+def test_validate_upgrade_costs_raw_resource_empty_rejected(tmp_path):
+    """不变量 5：rawResource 恒非空。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [_cost_dict(raw_resource="")]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("rawResource" in e and "空" in e for e in errors)
+
+
+def test_validate_upgrade_costs_resource_empty_rejected(tmp_path):
+    """不变量 6：resource 恒非空。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [_cost_dict(resource="")]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("resource" in e and "空" in e for e in errors)
+
+
+def test_validate_upgrade_costs_wrong_type_rejected(tmp_path):
+    """upgradeCosts 非 list（dict）→ 解析失败（from_dict 拒绝）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = {"resource": "Elixir"}
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert errors and "解析失败" in errors[0]
+
+
 # ---- base ⟺ baseMissingReason（capital 表）----
 
 def test_validate_base_null_requires_reason(tmp_path):
@@ -432,7 +581,7 @@ def test_validate_counts_missingtime_mismatch(tmp_path):
     c = _load_catalog(d)
     c["items"][0]["levels"] = [{
         "level": 1, "durationSeconds": None, "missingReason": "time_missing",
-        "upgradeResource": None, "upgradeCost": None,
+        "upgradeCosts": None,
         "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
         "icon": None, "levelVisual": None,
     }]
@@ -518,7 +667,7 @@ def test_validate_generated_files_hash_mismatch_detected(tmp_path):
     c = _load_catalog(d)
     c["items"][0]["levels"] = [{
         "level": 1, "durationSeconds": 999999, "missingReason": None,
-        "upgradeResource": None, "upgradeCost": None,
+        "upgradeCosts": None,
         "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
         "icon": None, "levelVisual": None,
     }]

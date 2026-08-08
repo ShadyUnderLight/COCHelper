@@ -76,6 +76,7 @@ class TableSpec:
     time_columns: tuple[str, ...] = ()
     resource_column: str | None = None
     cost_column: str | None = None
+    list_separator: str | None = None     # 资源/成本列的分号分隔符（多资源表如 equipment）
     town_hall_column: str | None = None
     laboratory_column: str | None = None
     icon_columns: tuple[str, ...] = ()          # (IconSWF, IconExportName) 或 (Icon,)
@@ -170,6 +171,7 @@ TABLES: tuple[TableSpec, ...] = (
         table="character_items.csv", section="equipment", category="equipment",
         level_column="Level", time_columns=(),  # 无时间列 → no_time_source
         resource_column="UpgradeResources", cost_column="UpgradeCosts",
+        list_separator=";",  # 多资源费用：UpgradeResources="CommonOre; RareOre" 配对
         icon_columns=("IconSWF", "IconExportName"),
         fill_columns=("TID", "IconSWF", "IconExportName", "UpgradeResources", "UpgradeCosts",
                       "Deprecated"),

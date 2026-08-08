@@ -1,7 +1,8 @@
 import pytest
 
-from game_catalog.builders import build_items
+from game_catalog.builders import build_items, parse_upgrade_costs
 from game_catalog.errors import CatalogError
+from game_catalog.model import UpgradeCost
 from game_catalog.tables import spec_for_table
 
 
@@ -34,7 +35,9 @@ def test_buildings_item_section_and_levels():
     assert [lv.level for lv in item.levels] == [1, 2]
     assert item.levels[0].durationSeconds == 0          # 0 是真实值
     assert item.levels[1].durationSeconds == 86400      # 1 天
-    assert item.levels[1].upgradeCost == 1000000
+    assert item.levels[1].upgradeCosts == [
+        UpgradeCost(resource="Gold", amount=1000000, rawResource="Gold",
+                    rawAmount=None, parseFailed=False)]
     assert item.levels[1].requiredTownHallLevel == 1
     assert item.levelVisual is not None
     assert item.levelVisual.exportName == "town_hall_lvl1"   # 首行继承
@@ -98,9 +101,120 @@ def test_equipment_no_time_source():
     for lv in item.levels:
         assert lv.durationSeconds is None
         assert lv.missingReason == "no_time_source"
-    assert item.levels[0].upgradeResource == "CommonOre"
-    assert item.levels[0].upgradeCost == 120
-    assert item.levels[1].upgradeCost == 500
+    assert item.levels[0].upgradeCosts == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False)]
+    assert item.levels[1].upgradeCosts == [
+        UpgradeCost(resource="CommonOre", amount=500, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False)]
+
+
+# ---- parse_upgrade_costs（Issue #73 Task 1）----
+
+
+def test_parse_upgrade_costs_single_value_table_ok():
+    """单值表（separator=None）：资源非空 + 金额数字 → 单元素数组，parseFailed=False。"""
+    assert parse_upgrade_costs("Elixir", "60000", None) == [
+        UpgradeCost(resource="Elixir", amount=60000, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
+
+
+def test_parse_upgrade_costs_single_value_empty_resource_returns_none():
+    """单值表资源串为空 → None（金额忽略）。"""
+    assert parse_upgrade_costs("", "60000", None) is None
+
+
+def test_parse_upgrade_costs_single_value_non_digit_cost():
+    """单值表金额非纯数字 → parseFailed=True，rawAmount 保留原串。"""
+    assert parse_upgrade_costs("Elixir", "12a", None) == [
+        UpgradeCost(resource="Elixir", amount=None, rawResource="Elixir",
+                    rawAmount="12a", parseFailed=True)]
+    assert parse_upgrade_costs("Elixir", "", None) == [
+        UpgradeCost(resource="Elixir", amount=None, rawResource="Elixir",
+                    rawAmount="", parseFailed=True)]
+
+
+def test_parse_upgrade_costs_multi_resource_pair_ok():
+    """多值表配对成功：CommonOre; RareOre + 120; 40 → 2 项 parseFailed=False。"""
+    assert parse_upgrade_costs("CommonOre; RareOre", "120; 40", ";") == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="RareOre", amount=40, rawResource="RareOre",
+                    rawAmount=None, parseFailed=False)]
+
+
+def test_parse_upgrade_costs_multi_resource_extra_resource_failed():
+    """资源多金额少：多余资源项 parseFailed=True（amount=None, rawAmount=''）。"""
+    assert parse_upgrade_costs("CommonOre; RareOre", "120", ";") == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="RareOre", amount=None, rawResource="RareOre",
+                    rawAmount="", parseFailed=True)]
+
+
+def test_parse_upgrade_costs_multi_resource_extra_cost_failed():
+    """金额多资源少：多余金额项 parseFailed=True（resource=最后资源段）。"""
+    assert parse_upgrade_costs("CommonOre", "120; 40", ";") == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="CommonOre", amount=None, rawResource="CommonOre",
+                    rawAmount="40", parseFailed=True)]
+
+
+def test_parse_upgrade_costs_multi_resource_non_digit_cost():
+    """多值表金额非数字 → 该项 parseFailed=True，rawAmount 保留原串。"""
+    assert parse_upgrade_costs("CommonOre; RareOre", "120; abc", ";") == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="RareOre", amount=None, rawResource="RareOre",
+                    rawAmount="abc", parseFailed=True)]
+
+
+def test_parse_upgrade_costs_multi_resource_empty_all_segments_returns_none():
+    """多值表资源串全空（空串/纯分隔符/空白段）→ None。"""
+    assert parse_upgrade_costs("", "120; 40", ";") is None
+    assert parse_upgrade_costs(";;", "120; 40", ";") is None
+    assert parse_upgrade_costs("  ;  ", "120; 40", ";") is None
+
+
+def test_parse_upgrade_costs_multi_resource_empty_segments_skipped():
+    """多值表空段/空白段被过滤后配对，不产生非法空 resource 项。"""
+    assert parse_upgrade_costs("CommonOre; ; RareOre", "120; ; 40", ";") == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="RareOre", amount=40, rawResource="RareOre",
+                    rawAmount=None, parseFailed=False)]
+
+
+def test_equipment_multi_resource_costs():
+    """character_items.csv 多资源升级费用端到端（to_level 语义：行 N → level N）。"""
+    rows = [
+        {"Name": "String", "Level": "int", "TID": "String",
+         "IconSWF": "String", "IconExportName": "String",
+         "UpgradeResources": "String", "UpgradeCosts": "String"},
+        {"Name": "Magic Mirror", "Level": "1", "TID": "TID_MM",
+         "IconSWF": "sc/ui.sc", "IconExportName": "icon_equip_mm",
+         "UpgradeResources": "CommonOre; RareOre", "UpgradeCosts": "120; 40"},
+        {"Name": "", "Level": "2", "TID": "", "IconSWF": "", "IconExportName": "",
+         "UpgradeResources": "", "UpgradeCosts": "500"},
+    ]
+    items = build_items(rows, spec_for_table("character_items.csv"), {})
+    item = items[0]
+    assert [lv.level for lv in item.levels] == [1, 2]
+    assert item.levels[0].upgradeCosts == [
+        UpgradeCost(resource="CommonOre", amount=120, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="RareOre", amount=40, rawResource="RareOre",
+                    rawAmount=None, parseFailed=False),
+    ]
+    # 行2 资源列 fill 继承行1 的多资源值，金额只有单段 → 资源多余 → 第二项 parseFailed
+    # （真实数据行 2+ 通常不重复填 UpgradeResources）
+    assert item.levels[1].upgradeCosts == [
+        UpgradeCost(resource="CommonOre", amount=500, rawResource="CommonOre",
+                    rawAmount=None, parseFailed=False),
+        UpgradeCost(resource="RareOre", amount=None, rawResource="RareOre",
+                    rawAmount="", parseFailed=True),
+    ]
 
 
 def _pets_rows():
@@ -175,7 +289,9 @@ def test_duplicate_level_rows_deduplicated():
     assert item.levels[0].durationSeconds is None
     assert item.levels[0].missingReason == "min_level_initial_no_upgrade"
     assert item.levels[1].durationSeconds == 0
-    assert item.levels[1].upgradeCost == 10
+    assert item.levels[1].upgradeCosts == [
+        UpgradeCost(resource="Elixir", amount=10, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
     assert item.levels[2].durationSeconds is None
     assert item.levels[2].missingReason == "time_missing"
 
@@ -209,16 +325,21 @@ def test_characters_to_next_level_mapping():
     # level 1 = 初始等级：无升级属性，保留自身图标
     assert lv1.durationSeconds is None
     assert lv1.missingReason == "min_level_initial_no_upgrade"
-    assert lv1.upgradeResource is None and lv1.upgradeCost is None
+    assert lv1.upgradeCosts is None
     assert lv1.requiredLaboratoryLevel is None
     assert lv1.icon is not None and lv1.icon.exportName == "icon_a1"
     # level 2 ← 行1：5h30m = 19800s
     assert lv2.durationSeconds == 5 * 3600 + 30 * 60
-    assert lv2.upgradeResource == "Elixir" and lv2.upgradeCost == 60000
+    assert lv2.upgradeCosts == [
+        UpgradeCost(resource="Elixir", amount=60000, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
     assert lv2.requiredLaboratoryLevel == 2
-    # level 3 ← 行2：8h = 28800s（UpTimeM='' 不继承行1的 30m）
+    # level 3 ← 行2：8h = 28800s（UpTimeM='' 不继承行1的 30m）；资源列 fill 继承
+    # 行1 的 Elixir、金额 120000 → 单元素数组
     assert lv3.durationSeconds == 8 * 3600
-    assert lv3.upgradeCost == 120000
+    assert lv3.upgradeCosts == [
+        UpgradeCost(resource="Elixir", amount=120000, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
     assert lv3.requiredLaboratoryLevel == 3
     # 外观跟随自己的行：lv2 用行2的 icon_a2，lv3 用行3的 icon_a3
     assert lv2.icon.exportName == "icon_a2"
@@ -289,14 +410,18 @@ def test_offset_levels_preserved_to_next():
     # level 5 = 初始等级：无升级属性，外观取自身行
     assert lv5.durationSeconds is None
     assert lv5.missingReason == "min_level_initial_no_upgrade"
-    assert lv5.upgradeResource is None and lv5.upgradeCost is None
+    assert lv5.upgradeCosts is None
     assert lv5.icon is not None and lv5.icon.exportName == "icon_sb5"
     # level 6 ← 行5：2h = 7200s
     assert lv6.durationSeconds == 2 * 3600
-    assert lv6.upgradeResource == "Elixir" and lv6.upgradeCost == 100000
+    assert lv6.upgradeCosts == [
+        UpgradeCost(resource="Elixir", amount=100000, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
     assert lv6.requiredLaboratoryLevel == 11
     assert lv6.icon.exportName == "icon_sb6"          # 外观跟随自己的行
-    # level 7 ← 行6：3h = 10800s；行7 的 4h 属于不存在的 level 8 → 丢弃
+    # level 7 ← 行6：3h = 10800s；行6 资源列 fill 继承 Elixir、金额 200000
     assert lv7.durationSeconds == 3 * 3600
-    assert lv7.upgradeCost == 200000
+    assert lv7.upgradeCosts == [
+        UpgradeCost(resource="Elixir", amount=200000, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
     assert lv7.icon.exportName == "icon_sb7"

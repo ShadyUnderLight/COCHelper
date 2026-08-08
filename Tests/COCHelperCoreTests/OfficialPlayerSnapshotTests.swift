@@ -176,6 +176,58 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.playerHouse?.elements?.first?.type, "ground")
     }
 
+    // MARK: - leagueTier（2026 排位段位，Issue #71）
+
+    func testDecodesLeagueTierFromFullFixture() throws {
+        let snapshot = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: fullFixtureData)
+        let tier = try XCTUnwrap(snapshot.leagueTier)
+        XCTAssertEqual(tier.id, 29000023)
+        XCTAssertEqual(tier.name, "Legend League III")
+        XCTAssertEqual(tier.iconUrls?.count, 3)
+        XCTAssertEqual(tier.iconUrls?["medium"], "https://api-assets.clashofclans.com/leagues/288/anon.png")
+    }
+
+    func testLeagueTierNotCollectedAsUnrecognized() throws {
+        // leagueTier 是已知键：加入 fixture 后不得再被收集进 unrecognizedKeys。
+        let snapshot = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: fullFixtureData)
+        XCTAssertFalse(snapshot.unrecognizedKeys.contains("leagueTier"))
+        // 注意：unrecognizedKeys 的精确集合是故意 pin 的 canary——fixture 新增
+        // 未知键或建模 bestVersusTrophies/versusTrophies/futureUnknownField 时
+        // 此断言会碎，届时须同步更新（双向防回归：既防合法字段漏收，也防
+        // 未知字段误收）。
+        XCTAssertEqual(
+            snapshot.unrecognizedKeys.sorted(),
+            ["bestVersusTrophies", "futureUnknownField", "versusTrophies"]
+        )
+    }
+
+    func testSnapshotWithoutLeagueTierDecodesToNil() throws {
+        // 旧 JSON（无 leagueTier 键）兼容：解码成功且 leagueTier == nil。
+        let json = """
+        {
+          "tag": "#OLDTIER",
+          "league": { "id": 29000022, "name": "Champion League II" }
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: json)
+        XCTAssertEqual(snapshot.league?.id, 29000022)
+        XCTAssertNil(snapshot.leagueTier)
+        XCTAssertEqual(snapshot.unrecognizedKeys, [])
+    }
+
+    func testLeagueTierCodableRoundTrip() throws {
+        let original = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: fullFixtureData)
+        let restored = try JSONDecoder().decode(
+            OfficialPlayerSnapshot.self,
+            from: try JSONEncoder().encode(original)
+        )
+        XCTAssertEqual(restored, original)
+        XCTAssertEqual(restored.leagueTier, original.leagueTier)
+        XCTAssertEqual(restored.leagueTier?.id, 29000023)
+        XCTAssertEqual(restored.leagueTier?.name, "Legend League III")
+    }
+
     // MARK: - Codable round-trip（持久化可编码）
 
     func testSnapshotCodableRoundTrip() throws {

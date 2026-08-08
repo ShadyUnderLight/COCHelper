@@ -52,6 +52,15 @@
       "medium": "https://api-assets.clashofclans.com/leagues/288/anon.png"
     }
   },
+  "leagueTier": {
+    "id": 29000023,
+    "name": "Legend League III",
+    "iconUrls": {
+      "small": "https://api-assets.clashofclans.com/leagues/72/anon.png",
+      "tiny": "https://api-assets.clashofclans.com/leagues/36/anon.png",
+      "medium": "https://api-assets.clashofclans.com/leagues/288/anon.png"
+    }
+  },
   "achievements": [
     {
       "name": "Nice and Tidy",

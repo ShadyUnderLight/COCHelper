@@ -220,6 +220,7 @@ struct OfficialPlayerCardView: View {
                     ("部落标签", snapshot.clan?.tag),
                     ("部落角色", roleLabel(snapshot.role)),
                     ("当前联赛", ClanDisplayFormat.playerLeagueLabel(snapshot.league)),
+                    ("排位段位", ClanDisplayFormat.playerLeagueTierLabel(snapshot.leagueTier)),
                     ("建筑大师联赛", ClanDisplayFormat.builderBaseLeagueLabel(snapshot.builderBaseLeague)),
                     ("参战偏好", warPreferenceLabel(snapshot.warPreference)),
                 ]

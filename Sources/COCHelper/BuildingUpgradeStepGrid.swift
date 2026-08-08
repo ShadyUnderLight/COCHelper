@@ -1,5 +1,6 @@
 import SwiftUI
 import COCHelperCore
+import COCHelperApp
 
 /// Issue #45：建筑组卡实例行内逐级升级阶梯网格（per-record）。
 ///

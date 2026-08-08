@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "18.400.13",
+  "locale": "zh-CN",
+  "source": "audited-from-existing-code-2026-08",
+  "contexts": [
+    {
+      "context": "home",
+      "tiers": [
+        { "id": 29000000, "name": "未定级" },
+        { "id": 29000001, "name": "青铜联赛 III" },
+        { "id": 29000002, "name": "青铜联赛 II" },
+        { "id": 29000003, "name": "青铜联赛 I" },
+        { "id": 29000004, "name": "白银联赛 III" },
+        { "id": 29000005, "name": "白银联赛 II" },
+        { "id": 29000006, "name": "白银联赛 I" },
+        { "id": 29000007, "name": "黄金联赛 III" },
+        { "id": 29000008, "name": "黄金联赛 II" },
+        { "id": 29000009, "name": "黄金联赛 I" },
+        { "id": 29000010, "name": "水晶联赛 III" },
+        { "id": 29000011, "name": "水晶联赛 II" },
+        { "id": 29000012, "name": "水晶联赛 I" },
+        { "id": 29000013, "name": "大师联赛 III" },
+        { "id": 29000014, "name": "大师联赛 II" },
+        { "id": 29000015, "name": "大师联赛 I" },
+        { "id": 29000016, "name": "冠军联赛 III" },
+        { "id": 29000017, "name": "冠军联赛 II" },
+        { "id": 29000018, "name": "冠军联赛 I" },
+        { "id": 29000019, "name": "泰坦联赛 III" },
+        { "id": 29000020, "name": "泰坦联赛 II" },
+        { "id": 29000021, "name": "泰坦联赛 I" },
+        { "id": 29000022, "name": "传奇联赛" }
+      ]
+    },
+    {
+      "context": "builderBase",
+      "tiers": [
+        { "id": 44000013, "name": "传奇联赛" }
+      ]
+    },
+    {
+      "context": "capital",
+      "tiers": [
+        { "id": 85000006, "name": "泰坦联赛 I" }
+      ]
+    },
+    {
+      "context": "requiredTier",
+      "tiers": [
+        { "id": 105000028, "name": "泰坦联赛 I" }
+      ]
+    }
+  ]
+}

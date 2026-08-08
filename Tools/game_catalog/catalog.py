@@ -13,6 +13,7 @@ from .builders import build_items, build_guardians
 from .durations import classify_duration
 from .errors import CatalogError
 from .fingerprint import sha256_bytes, sha256_file
+from .instance_counts import build_instance_counts
 from .model import Catalog, CatalogItem, catalog_to_dict
 from .tables import TABLES
 
@@ -136,6 +137,13 @@ def generate(
             effective_version = game_version or _infer_game_version(build_tag)
             localized = localization(archive)
             items = _build_catalog_items(archive, localized, require_all_tables=require_all_tables)
+            # Issue #70 阶段 2：townhall_levels → instanceCounts 宇宙
+            # （先 build items：缺表/缺列错误优先报，再读宇宙表）
+            instance_counts = build_instance_counts(
+                rows(archive, "townhall_levels.csv"),
+                rows(archive, "buildings.csv"),
+                rows(archive, "traps.csv"),
+            )
     except zipfile.BadZipFile as exc:
         raise CatalogError(f"APK 不是有效 zip: {apk}") from exc
 
@@ -143,7 +151,10 @@ def generate(
                       locale=locale, items=items)
     counts = counts_for(items)
 
-    catalog_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False,
+    # instanceCounts 恒输出（空 dict 也写 {}，字段恒存在契约）
+    payload = catalog_to_dict(catalog)
+    payload["instanceCounts"] = instance_counts
+    catalog_bytes = json.dumps(payload, ensure_ascii=False,
                                indent=2, sort_keys=True).encode("utf-8") + b"\n"
     manifest = {
         "schemaVersion": SCHEMA_VERSION,

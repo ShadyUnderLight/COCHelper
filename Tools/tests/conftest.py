@@ -61,6 +61,11 @@ UPGRADE_DATA_CSV = (
     "String,int,String,int,int,int,int,String,String,int,int\n"
 )
 
+# 最小 townhall_levels：仅 Name 列 + 18 个 TH 行（无数量列 → instanceCounts = {}）
+TOWNHALL_LEVELS_CSV = (
+    "Name\nString\n" + "".join(f'"{i}"\n' for i in range(1, 19))
+)
+
 
 @pytest.fixture
 def full_minimal_apk(tmp_path: Path) -> Path:
@@ -74,5 +79,6 @@ def full_minimal_apk(tmp_path: Path) -> Path:
                 continue  # 单独写带数据行的版本
             z.writestr("assets/logic/" + spec.table, _packed(_doc_rows(spec)))
         z.writestr("assets/logic/upgrade_data.csv", _packed(UPGRADE_DATA_CSV))
+        z.writestr("assets/logic/townhall_levels.csv", _packed(TOWNHALL_LEVELS_CSV))
         z.writestr("assets/logic/buildings.csv", _packed(TOWN_HALL_CSV))
     return apk

@@ -480,6 +480,16 @@ def test_validate_upgrade_costs_negative_amount_rejected(tmp_path):
     assert any("负" in e for e in errors)
 
 
+def test_validate_upgrade_costs_parse_failed_type_rejected(tmp_path):
+    """parseFailed=1（非 bool，int）→ 类型非法。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [_cost_dict(failed=1)]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("parseFailed" in e and "类型" in e for e in errors)
+
+
 def test_validate_upgrade_costs_bool_amount_rejected(tmp_path):
     """amount=True（bool 是 int 子类）→ 类型非法。"""
     d = _valid_dir(tmp_path)

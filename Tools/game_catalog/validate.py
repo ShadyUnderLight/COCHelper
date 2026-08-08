@@ -193,6 +193,9 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                             if not isinstance(uc, UpgradeCost):
                                 errors.append(f"{prefix}: 类型非法 {type(uc).__name__}")
                                 continue
+                            if not isinstance(uc.parseFailed, bool):
+                                errors.append(f"{prefix}: parseFailed 类型非法 {type(uc.parseFailed).__name__}")
+                                continue
                             if uc.parseFailed:
                                 if uc.amount is not None:
                                     errors.append(f"{prefix}: parseFailed=true 但 amount={uc.amount!r}")

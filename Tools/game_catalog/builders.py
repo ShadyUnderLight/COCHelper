@@ -20,7 +20,9 @@ def parse_upgrade_costs(resources_raw: str, costs_raw: str,
     单值表（separator=None）：
       - 资源串空 → None（金额忽略）
       - 否则单元素数组；金额非纯数字 → parseFailed=True（amount=None，
-        rawAmount=原串，不 strip——保持旧表行为与 parse_optional_int 一致）
+        rawAmount=原串，不 strip——与 parse_optional_int 同一 isdigit 判据；
+        注意：旧格式在此输出 None（金额丢弃），现改为 parseFailed 项保留原串，
+        是所有表共性的输出变化）
     多值表（separator 非 None）：
       - 按 separator split 后逐段 strip；空段/空白段过滤
       - 资源全空 → None（金额忽略）

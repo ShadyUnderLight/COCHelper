@@ -80,6 +80,8 @@ class CatalogLevel:
             "level": self.level,
             "durationSeconds": self.durationSeconds,
             "missingReason": self.missingReason,
+            # 契约「非 None 必须非空（[] 非法）」：空列表归一为 None（与
+            # from_dict 的 None 语义对称，空列表不进入 JSON）
             "upgradeCosts": [c.to_dict() for c in self.upgradeCosts] if self.upgradeCosts else None,
             "requiredTownHallLevel": self.requiredTownHallLevel,
             "requiredLaboratoryLevel": self.requiredLaboratoryLevel,
@@ -92,7 +94,8 @@ class CatalogLevel:
         if not isinstance(d, dict):
             raise ValueError(f"CatalogLevel 需要 dict，实际 {type(d).__name__}: {d!r}")
         raw = d.get("upgradeCosts")
-        # 旧格式 JSON（无 upgradeCosts 键，upgradeResource/upgradeCost）→ None（兼容）
+        # 旧格式 JSON（无 upgradeCosts 键，upgradeResource/upgradeCost）→ None（兼容）；
+        # 手写 JSON 含 []（契约非法值）保持原样，由 validate 拦截（"[] 非法"）
         return cls(
             level=d["level"], durationSeconds=d.get("durationSeconds"),
             missingReason=d.get("missingReason"),

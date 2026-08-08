@@ -88,6 +88,19 @@ def test_catalog_level_roundtrip_with_upgrade_costs():
     assert CatalogLevel.from_dict(lv.to_dict()) == lv
 
 
+def test_catalog_level_to_dict_empty_upgrade_costs_normalized_to_none():
+    """契约「非 None 必须非空（[] 非法）」：upgradeCosts=[] → 序列化为 None。
+
+    与 from_dict 的 None 语义对称：空列表不会进入 JSON。
+    """
+    lv = CatalogLevel(
+        level=1, durationSeconds=None, missingReason="time_missing",
+        upgradeCosts=[], requiredTownHallLevel=None, requiredLaboratoryLevel=None,
+        icon=None, levelVisual=None,
+    )
+    assert lv.to_dict()["upgradeCosts"] is None
+
+
 def test_catalog_level_from_dict_legacy_without_upgrade_costs():
     """旧格式 JSON（无 upgradeCosts 键，upgradeResource/upgradeCost）→ None。"""
     d = {"level": 1, "durationSeconds": 0, "missingReason": None,

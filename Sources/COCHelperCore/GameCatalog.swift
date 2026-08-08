@@ -698,7 +698,9 @@ public struct GameCatalog: Sendable {
 
     /// 大本营等级上限（实例数量宇宙数组长度契约，Task 2 评审 nit 3：
     /// 魔法数字 18 单点化，init 校验与 universeCount 越界共用）。
-    private static let universeTownHallCount = 18
+    /// internal（评审 B-1：投影层 universeComplete 的 TH 范围守卫与
+    /// universeCount 同源，防 TH19 窗口期 fail-open）。
+    static let universeTownHallCount = 18
 
     /// 测试注入入口；`loadBundled` 只是其便捷包装。
     /// `instanceCounts` 带默认值 nil（设计评审 N2：不破坏既有构造调用点）；
@@ -825,11 +827,14 @@ public struct GameCatalog: Sendable {
 
     // MARK: - 实例数量宇宙（Issue #70 阶段 2）
 
-    /// 目录是否携带可用宇宙数据：instanceCounts 非 nil（init 解码时已校验：
-    /// 所有数组长度 == 18 且值非负，校验失败视为无宇宙，fail-closed 不 crash）。
+    /// 目录是否携带可用宇宙数据：instanceCounts 非 nil **且非空**（init 解码时
+    /// 已校验：所有数组长度 == `universeTownHallCount` 且值非负，校验失败视为
+    /// 无宇宙，fail-closed 不 crash；空字典 {} 校验通过但无任何宇宙键，同样
+    /// 视为无宇宙——评审 B-2：空宇宙不得声称完整分母）。
     /// false = 旧目录或校验失败，调用方应走「已观测实例」语义（无完整分母）。
     public var hasUniverseData: Bool {
-        instanceCounts != nil
+        guard let instanceCounts else { return false }
+        return !instanceCounts.isEmpty
     }
 
     /// 宇宙查询：该 dataID 在指定大本营等级的可建造实例数。

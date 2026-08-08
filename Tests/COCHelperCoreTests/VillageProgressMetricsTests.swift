@@ -693,8 +693,13 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertEqual(m.globalProgress.denominator, 10)
         XCTAssertEqual(m.currentStageProgress.state, .partial)  // 已观测文案
         XCTAssertEqual(m.snapshotCoverage.denominator, 5)      // 1 + 4
-        XCTAssertTrue(m.currentStageProgress.degradedReason!.contains("分母为已观测项目"),
-                      m.currentStageProgress.degradedReason!)
+        let reason = m.currentStageProgress.degradedReason!
+        XCTAssertTrue(reason.contains("分母为已观测项目"),
+                      "completeDenominator=false 必须走已观测分母文案")
+        // 审核 B-7 否定断言：availableWeight 只在 completeDenominator=true 时
+        // 参与降级——false 时不得出现「宇宙差集」文案（available 不进 eligible）。
+        XCTAssertFalse(reason.contains("宇宙差集"),
+                       "completeDenominator=false 时不得出现宇宙差集降级文案")
     }
 
     func testCompleteDenominatorFiltersAvailableLikeKnown() {

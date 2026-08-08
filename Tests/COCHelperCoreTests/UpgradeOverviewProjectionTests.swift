@@ -884,10 +884,11 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
 
     // MARK: - Issue #70 阶段 2：宇宙差集（records 排除 .available，指标含完整分母）
 
-    /// 宇宙目录 fixture（JSON 形态）：加农炮（buildings:1000002，数量型、宇宙键
-    /// TH1=1…TH18=7）+ 野蛮人（units:4000000，解锁型无宇宙键）；TH（buildings:
-    /// 1000001）故意不在目录——与 VillageCatalogProjectionTests.makeUniverseCatalog
-    /// 同构（TH 只作解锁信号，不参与 join）。
+    /// 宇宙目录 fixture（JSON 形态）：圣水收集器（buildings:1000002，数量型、宇宙键
+    /// TH1=1…TH18=7；审核 B-6 更正：真加农炮是 1000008）+ 野蛮人（units:4000000，
+    /// 解锁型无宇宙键）；TH（buildings:1000001）故意不在目录——与
+    /// VillageCatalogProjectionTests.makeUniverseCatalog 同构（TH 只作解锁信号，
+    /// 不参与 join）。
     private static let universeCatalogJSON = """
     {
       "gameVersion": "18.400.13",
@@ -895,7 +896,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         "buildings:1000002": [1,2,3,4,5,6,6,6,7,7,7,7,7,7,7,7,7,7]
       },
       "items": [
-        {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":2,
+        {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"圣水收集器","maxLevel":2,
          "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
          "levels":[
            {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
@@ -916,7 +917,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
     /// 升级计时，进总览无意义），而 record.villageMetrics 消费完整分母
     ///（stage/global 分母含差集权重，覆盖率分母含差集实例数）。
     func testUniverseDiffExcludedFromRecordsIncludedInMetrics() throws {
-        // TH18 + 野蛮人升级中 + 快照无加农炮 → 宇宙差集产出 .available 加农炮
+        // TH18 + 野蛮人升级中 + 快照无圣水收集器 → 宇宙差集产出 .available
         //（count 7）；解锁型（units）无宇宙键不产出。
         let village = makeVillage(name: "宇宙村", objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
@@ -943,7 +944,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         XCTAssertTrue(projection.universeComplete)
         let diff = try XCTUnwrap(projection.items.first { $0.id == "universe:buildings:1000002" })
         XCTAssertEqual(diff.status, .available)
-        XCTAssertEqual(diff.count, 7, "TH18 加农炮宇宙 count")
+        XCTAssertEqual(diff.count, 7, "TH18 圣水收集器宇宙 count")
 
         // 指标层：完整分母——stage/global = 野蛮人 3 级 + 差集 7×2 级 = 17；
         // 覆盖率分母 = TH(1) + 野蛮人(1) + 差集(7) = 9。

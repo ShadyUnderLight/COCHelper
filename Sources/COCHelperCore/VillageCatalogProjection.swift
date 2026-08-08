@@ -370,14 +370,17 @@ public struct VillageCatalogProjection: Sendable {
         // 目录不可用/版本不匹配时合成差集项会基于不可信目录的 maxLevel/count
         // 污染投影，与 map() 的 fail-closed 对齐；catalogIsUsable 已在
         // compatibility 解析后算出，此处直接复用）。BB 恒 false（决策 5）。
+        // 评审 B-1/I2：TH 超出宇宙表范围（> universeTownHallCount，如 TH19
+        // 上线后旧目录窗口期）时 universeCount 越界返回 nil → 完整分母建立在
+        // 空宇宙上、降级文案消失——TH 范围守卫与 universeCount 同源 fail-closed。
         let universeComplete = base == .home
             && catalogIsUsable
             && catalog?.hasUniverseData == true
-            && unlocks.townHall != nil
+            && unlocks.townHall.map { (1...GameCatalog.universeTownHallCount).contains($0) } ?? false
         let states = village.accountSnapshot.map { snapshot in
             // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
             // universeComplete 守卫 = universeSupplement 的唯一生产入口门禁
-            //（目录不可信 / TH 未知 / 旧目录 / BB → 不产出）。
+            //（目录不可信 / TH 未知或越界 / 旧目录 / BB → 不产出）。
             aggregate(records(
                 from: snapshot, catalog: catalog, base: base, now: now,
                 unlocks: unlocks, catalogIsUsable: catalogIsUsable,
@@ -385,7 +388,7 @@ public struct VillageCatalogProjection: Sendable {
             )) + (universeComplete ? Self.universeSupplement(
                 snapshot: snapshot,
                 catalog: catalog,
-                townHallLevel: unlocks.townHall,  // nil → 不产出（TH 未知）
+                unlocks: unlocks,  // 复用 project 已推导的解锁等级（评审 B-4）
                 base: base
             ) : [])
         } ?? []
@@ -821,19 +824,26 @@ public struct VillageCatalogProjection: Sendable {
 
     // MARK: - Issue #70 阶段 2：宇宙差集（.available 合成项）
 
-    /// 宇宙差集合成：快照未观测、但宇宙表在指定 TH 下可建造（count > 0）的
+    /// 宇宙差集合成：宇宙表在指定 TH 下可建造（count > 0）、快照未满配的
     /// 数量型 home 项 → `status == .available` 的合成项（currentLevel 0、
-    /// count = 宇宙数、maxLevel/currentStageMaxLevel 从目录 join）。
+    /// count = 差集实例数、maxLevel/currentStageMaxLevel 从目录 join）。
     ///
-    /// 规则（设计决策 2/5 + 不变量）：
+    /// 规则（设计决策 2/5 + 不变量 + 审核 B1 实例级差集）：
     /// - base != .home、townHallLevel nil（快照缺大本营）、目录无宇宙数据
     ///   （旧目录）→ 恒返回 []（行为与阶段 1 完全一致）；
     /// - **调用方门禁**（评审 I1）：目录不可用/版本不匹配（catalogIsUsable
     ///   false）时不得合成——生产唯一入口 `project()` 已由 universeComplete
-    ///   守卫（含 catalogIsUsable 条件），本函数不重复检查该入参；
+    ///   守卫（含 catalogIsUsable 与 TH 范围条件），本函数不重复检查该入参；
     /// - 宇宙键 section 以 "2" 结尾（BB 段）→ 跳过（决策 5：BB 不做宇宙）；
     /// - 宇宙 count <= 0（该 TH 不可建造）→ 跳过不产出（不变量）；
-    /// - 快照已观测的 (section, dataID) → 跳过（已观测不是差集）；
+    /// - **实例级差集（审核 B1）**：快照观测权重 = Σ 实例数（count nil/≤0 按 1，
+    ///   与 `VillageItemState.instanceWeight` 契约同源，饱和求和防溢出）。差集
+    ///   count = max(0, 宇宙 C - 观测权重)：
+    ///   - 键未观测 → 差集 = C（全部未建造，如城墙 0/250 → 差集 250）；
+    ///   - 部分建造（C > 观测）→ 差集 = C - 观测（如城墙 200/250 → 差集 50，
+    ///     50 个未建造实例不得消失——最常见用户场景：城墙/陷阱/资源建筑
+    ///     普遍不建满）；
+    ///   - 已满配或超配（C ≤ 观测）→ 无差集（防御不产负差集）。
     /// - 目录 join 失败（宇宙键无目录 item，数据异常）→ 防御跳过；
     /// - 解锁型（units/heroes 等）无宇宙键 → 天然不产出（决策 2）。
     ///
@@ -843,33 +853,37 @@ public struct VillageCatalogProjection: Sendable {
     static func universeSupplement(
         snapshot: AccountSnapshot,
         catalog: GameCatalog?,
-        townHallLevel: Int?,
+        unlocks: PlayerUnlockLevels,  // project 已推导，复用防重复构造（评审 B-4）
         base: TrackerBase
     ) -> [VillageItemState] {
-        guard base == .home, let townHallLevel,
+        guard base == .home, let townHallLevel = unlocks.townHall,
               let catalog, catalog.hasUniverseData else { return [] }
 
-        // 已观测 (section, dataID)：差集排除快照已有记录的数据点。
-        // 与 PlayerUnlockLevels.init(snapshot:) 同源的 objectSections 用法。
-        var observedKeys = Set<String>()
-        for sectionItems in snapshot.objectSections.values {
-            for item in sectionItems {
-                observedKeys.insert("\(item.section):\(item.dataID)")
+        // 快照观测实例权重：(section:dataID) → Σ 实例数（审核 B1）。只统计该
+        // base 的段（home：非 "2" 后缀；BB 段记录不参与 home 差集）。
+        // 与 instanceWeight 契约同源：count nil/≤0 按 1（一条记录 = 至少一个
+        // 实例）；恶意快照（多条 count == Int.max）饱和求和防溢出崩溃。
+        var observedWeights: [String: Int] = [:]
+        for section in snapshot.objectSections.keys where !section.hasSuffix("2") {
+            for record in snapshot.objectSections[section] ?? [] {
+                let key = "\(section):\(record.dataID)"
+                let weight = max(record.count ?? 1, 1)
+                let (sum, overflow) = (observedWeights[key] ?? 0).addingReportingOverflow(weight)
+                observedWeights[key] = overflow ? Int.max : sum
             }
         }
-
-        // 阶段上限需要解锁建筑等级（合成项 stageMax 与观测行同规则）；
-        // TH 已知时其余解锁建筑按快照读取，缺失 → stageMax nil（fail-safe）。
-        let unlocks = PlayerUnlockLevels(snapshot: snapshot)
 
         return catalog.universeKeys.compactMap { key in
             // 只做 home 段（宇宙键全是 home 数量型；BB 后缀键防御跳过）。
             guard !key.section.hasSuffix("2") else { return nil }
-            guard let count = catalog.universeCount(
+            guard let universeCount = catalog.universeCount(
                 section: key.section, dataID: key.dataID, townHallLevel: townHallLevel
-            ), count > 0 else { return nil }
+            ), universeCount > 0 else { return nil }
             let itemKey = "\(key.section):\(key.dataID)"
-            guard !observedKeys.contains(itemKey) else { return nil }
+            // 实例级差集：已满配/超配（C ≤ 观测）→ 无差集（防御不产负差集）。
+            let observed = observedWeights[itemKey] ?? 0
+            let diffCount = universeCount - observed
+            guard diffCount > 0 else { return nil }
             // 防御：宇宙键无目录 item（数据异常/合成目录缺项）→ 跳过不产出。
             guard let catalogItem = catalog.item(section: key.section, dataID: key.dataID) else {
                 return nil
@@ -883,7 +897,7 @@ public struct VillageCatalogProjection: Sendable {
                 name: catalogItem.name,
                 category: category,
                 currentLevel: 0,
-                count: count,
+                count: diffCount,
                 timerSeconds: nil,
                 remainingSeconds: nil,
                 nextLevel: nil,

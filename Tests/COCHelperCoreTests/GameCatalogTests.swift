@@ -1109,16 +1109,17 @@ final class GameCatalogTests: XCTestCase {
 
     // MARK: - 实例数量宇宙（Issue #70 阶段 2）
 
-    /// 加农炮（buildings:1000002）18 个大本营等级的实例数量（index = TH-1，
+    /// 圣水收集器（buildings:1000002，Elixir Collector；审核 B-6 更正：真加农炮
+    /// 是 buildings:1000008）18 个大本营等级的实例数量（index = TH-1，
     /// 值来自真实 bundled 目录 18.400.13：TH1=1、TH18=7）。
     private let cannonUniverseCounts = [1, 2, 3, 4, 5, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
 
-    /// 合成最小目录（加农炮 item + 可选 instanceCounts）：init 是测试注入入口
+    /// 合成最小目录（圣水收集器 item + 可选 instanceCounts）：init 是测试注入入口
     ///（设计评审 N2：instanceCounts 带默认值 nil，不破坏既有构造）。
     private func makeUniverseCatalog(instanceCounts: [String: [Int]]?) -> GameCatalog {
-        let cannon = CatalogItem(
+        let collector = CatalogItem(
             section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
-            baseMissingReason: nil, name: "加农炮", maxLevel: 17, icon: nil, levelVisual: nil,
+            baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
             levels: [CatalogLevel(
                 level: 1, durationSeconds: nil, upgradeCosts: nil,
                 requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
@@ -1126,13 +1127,13 @@ final class GameCatalogTests: XCTestCase {
             )]
         )
         return GameCatalog(
-            gameVersion: "18.400.13", items: [cannon],
+            gameVersion: "18.400.13", items: [collector],
             instanceCounts: instanceCounts
         )
     }
 
     func testUniverseCountHit() throws {
-        // 目录含宇宙：buildings:1000002（加农炮）TH18 = 7、TH1 = 1。
+        // 目录含宇宙：buildings:1000002（圣水收集器）TH18 = 7、TH1 = 1。
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         XCTAssertEqual(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18), 7)
         XCTAssertEqual(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 1), 1)
@@ -1168,6 +1169,15 @@ final class GameCatalogTests: XCTestCase {
         let legacy = makeUniverseCatalog(instanceCounts: nil)
         XCTAssertFalse(legacy.hasUniverseData)
         XCTAssertNil(legacy.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+    }
+
+    /// 空 {} 宇宙字典（评审 B-2）：无任何宇宙键，不得声称完整分母——
+    /// hasUniverseData false（init 校验对空字典通过，hasUniverseData 单独非空判断）。
+    func testEmptyUniverseDataIsFalse() {
+        let empty = makeUniverseCatalog(instanceCounts: [:])
+        XCTAssertFalse(empty.hasUniverseData, "空宇宙字典不得声称有宇宙数据")
+        XCTAssertNil(empty.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+        XCTAssertTrue(empty.universeKeys.isEmpty)
     }
 
     /// 宇宙表全部键（section, dataID）——投影层合成差集项的枚举来源

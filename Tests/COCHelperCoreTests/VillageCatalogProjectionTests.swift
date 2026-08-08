@@ -3390,8 +3390,11 @@ final class VillageCatalogProjectionTests: XCTestCase {
     private let trapUniverseCounts = [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2]
 
     /// 宇宙目录 fixture：圣水收集器（数量型 buildings:1000002）+ 炸弹（数量型
-    /// traps:12000000）+ 野蛮人（解锁型 units:4000000，宇宙表无 units 键）；
-    /// 另含一个宇宙键无目录 item 的防御键（traps:12999999）。
+    /// traps:12000000）+ 野蛮人（解锁型 units:4000000，宇宙表无 units 键）。
+    /// manifest 必须非 nil（外部评审 P1-1：hasUniverseData 的完整性信任标记）。
+    /// 注意：init 键存在性校验（P1-1）要求每个宇宙键都有目录 item——本 fixture
+    /// 全部满足；「宇宙键无目录 item」场景由 GameCatalogTests 的拒绝测试覆盖，
+    /// universeSupplement 的对应防御分支是纵深防御（init 后不可达）。
     private func makeUniverseCatalog() -> GameCatalog {
         func levels(_ max: Int) -> [CatalogLevel] {
             (1...max).map {
@@ -3420,11 +3423,27 @@ final class VillageCatalogProjectionTests: XCTestCase {
         return GameCatalog(
             gameVersion: "18.400.13",
             items: [collector, trap, barbarian],
+            manifest: makeUniverseManifestStub(),
             instanceCounts: [
                 "buildings:1000002": cannonUniverseCounts,
                 "traps:12000000": trapUniverseCounts,
-                "traps:12999999": Array(repeating: 5, count: 18),  // 宇宙键无目录 item（防御）
             ]
+        )
+    }
+
+    /// 宇宙目录的 manifest 信任标记 stub（外部评审 P1-1：hasUniverseData
+    /// 要求 manifest 非 nil；测试注入路径不调用 validate，stub 只需合法构造）。
+    private func makeUniverseManifestStub() -> CatalogManifest {
+        CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "test",
+            locale: "zh-CN",
+            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [],
+            counts: CatalogCounts(
+                items: 3, levels: 23, missingIcons: nil, missingTime: nil,
+                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil
+            )
         )
     }
 
@@ -3474,8 +3493,6 @@ final class VillageCatalogProjectionTests: XCTestCase {
 
         // 解锁型（units 段无宇宙键）→ 不产出
         XCTAssertNil(home.items.first { $0.id == "universe:units:4000000" })
-        // 防御：宇宙键无目录 item → 跳过不产出
-        XCTAssertNil(home.items.first { $0.id == "universe:traps:12999999" })
     }
 
     /// 宇宙 count == 0（该 TH 不可建造）不产出；实例级差集（审核 B1）：
@@ -3582,6 +3599,47 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertFalse(home.universeComplete, "TH=19 超出宇宙表范围（1...18）→ 不得声称宇宙完整")
         XCTAssertTrue(home.items.allSatisfy { $0.status != .available },
                       "TH 越界不得产出宇宙差集项")
+    }
+
+    /// 超配（观测 > 宇宙，外部评审 P1-2）：不得静默吞掉——产 .unknown 异常项
+    /// 进入未知侧触发降级（快照 8 个 / 宇宙 7 → .unknown 项 count 1、
+    /// currentLevel nil 防误入 known、无 .available 差集项）。
+    func testUniverseSupplementOvercapacityProducesUnknown() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+                makeItem(section: "buildings", dataID: 1_000_002, level: 5, count: 8, path: "collector"),
+            ],
+        ])
+        let home = project(village: village, catalog: makeUniverseCatalog(), base: .home)
+        XCTAssertTrue(home.universeComplete)
+
+        // 超配项：.unknown、count = 8 - 7 = 1、level nil、missingReason 明确
+        let overcapacity = try XCTUnwrap(home.items.first { $0.id == "universe:buildings:1000002" },
+                                         "超配应产出 .unknown 异常项")
+        XCTAssertEqual(overcapacity.status, .unknown)
+        XCTAssertEqual(overcapacity.count, 1, "超配差额 = 观测 8 - 宇宙 7")
+        XCTAssertNil(overcapacity.currentLevel, "差额实例无对应观测等级，防误入 known")
+        XCTAssertEqual(overcapacity.maxLevel, 17, "maxLevel 从目录 join")
+        XCTAssertTrue(overcapacity.missingReason?.contains("超过宇宙上限") == true,
+                      overcapacity.missingReason ?? "nil")
+
+        // 同 key 不产 .available 差集项（三态互斥）
+        XCTAssertNil(home.items.first { $0.id == "universe:buildings:1000002" && $0.status == .available })
+
+        // metrics：超配项进未知侧 → partial + 降级文案（完整分母下不得伪装 ready）
+        let metrics = VillageProgressProjection.metrics(
+            from: home.items.filter { $0.status != .unavailable },
+            catalogIsUsable: home.catalogIsUsable,
+            compatibility: home.compatibility,
+            completeDenominator: home.universeComplete
+        )
+        XCTAssertEqual(metrics.currentStageProgress.state, .partial)
+        XCTAssertTrue(
+            metrics.currentStageProgress.degradedReason?.contains("未知或待重新导入") == true
+                || metrics.currentStageProgress.degradedReason?.contains("宇宙差集") == true,
+            metrics.currentStageProgress.degradedReason ?? "nil"
+        )
     }
 
     /// 旧目录（无 instanceCounts）→ 行为与阶段 1 完全一致：不产出 .available、

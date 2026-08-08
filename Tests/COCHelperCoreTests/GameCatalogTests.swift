@@ -1116,6 +1116,8 @@ final class GameCatalogTests: XCTestCase {
 
     /// 合成最小目录（圣水收集器 item + 可选 instanceCounts）：init 是测试注入入口
     ///（设计评审 N2：instanceCounts 带默认值 nil，不破坏既有构造）。
+    /// manifest 必须非 nil（外部评审 P1-1：hasUniverseData 的完整性信任标记）——
+    /// 宇宙 fixture 一律传 stub。
     private func makeUniverseCatalog(instanceCounts: [String: [Int]]?) -> GameCatalog {
         let collector = CatalogItem(
             section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
@@ -1128,6 +1130,7 @@ final class GameCatalogTests: XCTestCase {
         )
         return GameCatalog(
             gameVersion: "18.400.13", items: [collector],
+            manifest: makeManifest(),
             instanceCounts: instanceCounts
         )
     }
@@ -1180,14 +1183,96 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertTrue(empty.universeKeys.isEmpty)
     }
 
+    /// 宇宙键不在 items 中（外部评审 P1-1 键存在性）→ 整个宇宙无效（fail-closed）。
+    func testUniverseKeyNotInItemsRejected() {
+        // instanceCounts 键 buildings:9999999 无对应目录 item → init 拒绝
+        let orphan = makeUniverseCatalog(
+            instanceCounts: ["buildings:9999999": Array(repeating: 3, count: 18)])
+        XCTAssertFalse(orphan.hasUniverseData, "宇宙键无目录 item → 无宇宙")
+        XCTAssertTrue(orphan.universeKeys.isEmpty)
+        XCTAssertNil(orphan.universeCount(section: "buildings", dataID: 9_999_999, townHallLevel: 18))
+    }
+
+    /// 畸形宇宙键（外部评审 P1-1 键格式）→ 无宇宙（fail-closed）。
+    func testMalformedUniverseKeyRejected() {
+        // 无冒号键
+        let noColon = makeUniverseCatalog(
+            instanceCounts: ["buildings1000002": cannonUniverseCounts])
+        XCTAssertFalse(noColon.hasUniverseData, "无冒号键 → 无宇宙")
+        // dataID 非数字键
+        let badDataID = makeUniverseCatalog(
+            instanceCounts: ["buildings:abc": cannonUniverseCounts])
+        XCTAssertFalse(badDataID.hasUniverseData, "dataID 非数字键 → 无宇宙")
+    }
+
+    /// 全 0 宇宙键（外部评审 P1-1：数量型建筑不可能全 TH 0，手工篡改）→ 无宇宙。
+    func testAllZeroUniverseKeyRejected() {
+        let allZero = makeUniverseCatalog(
+            instanceCounts: ["buildings:1000002": Array(repeating: 0, count: 18)])
+        XCTAssertFalse(allZero.hasUniverseData, "全 0 宇宙键 → 无宇宙")
+        XCTAssertTrue(allZero.universeKeys.isEmpty)
+    }
+
+    /// instanceCounts 有效但 manifest nil（外部评审 P1-1 信任标记）→
+    /// hasUniverseData false——手工裁剪/篡改 catalog.json 后无 manifest 背书
+    /// 不得声称宇宙完整。
+    func testUniverseDataRequiresManifestTrust() {
+        let collector = CatalogItem(
+            section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
+            baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: nil, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+        // 无 manifest → hasUniverseData false（即使 instanceCounts 完整有效）
+        let untrusted = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: nil,
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertFalse(untrusted.hasUniverseData, "无 manifest 信任标记 → 无宇宙")
+        XCTAssertTrue(untrusted.universeKeys.isEmpty)
+        // 有 manifest → true（信任标记生效）
+        let trusted = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: makeManifest(),
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertTrue(trusted.hasUniverseData)
+    }
+
     /// 宇宙表全部键（section, dataID）——投影层合成差集项的枚举来源
     ///（Issue #70 阶段 2）。排序：section 升序、同 section 按 dataID 升序。
+    /// 键存在性校验（外部评审 P1-1）要求每个宇宙键都有目录 item——本测试
+    /// 构造 3 个 item 覆盖 3 个键。
     func testUniverseKeysEnumeratesAllKeysSorted() {
-        let catalog = makeUniverseCatalog(instanceCounts: [
-            "traps:12000000": Array(repeating: 1, count: 18),
-            "buildings:1000002": cannonUniverseCounts,
-            "buildings:1000000": cannonUniverseCounts,
-        ])
+        func level(_ n: Int) -> CatalogLevel {
+            CatalogLevel(level: n, durationSeconds: nil, upgradeCosts: nil,
+                         requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                         icon: nil, levelVisual: nil, missingReason: nil)
+        }
+        let items = [
+            CatalogItem(section: "buildings", category: "buildings", dataID: 1_000_000,
+                        base: "home", baseMissingReason: nil, name: "兵营", maxLevel: 1,
+                        icon: nil, levelVisual: nil, levels: [level(1)]),
+            CatalogItem(section: "buildings", category: "defense", dataID: 1_000_002,
+                        base: "home", baseMissingReason: nil, name: "圣水收集器", maxLevel: 17,
+                        icon: nil, levelVisual: nil, levels: (1...17).map(level)),
+            CatalogItem(section: "traps", category: "traps", dataID: 12_000_000,
+                        base: "home", baseMissingReason: nil, name: "炸弹", maxLevel: 3,
+                        icon: nil, levelVisual: nil, levels: (1...3).map(level)),
+        ]
+        let catalog = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(),
+            instanceCounts: [
+                "traps:12000000": Array(repeating: 1, count: 18),
+                "buildings:1000002": cannonUniverseCounts,
+                "buildings:1000000": cannonUniverseCounts,
+            ]
+        )
         XCTAssertEqual(
             catalog.universeKeys.map { "\($0.section):\($0.dataID)" },
             ["buildings:1000000", "buildings:1000002", "traps:12000000"],

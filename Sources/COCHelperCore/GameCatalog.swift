@@ -704,7 +704,8 @@ public struct GameCatalog: Sendable {
 
     /// 测试注入入口；`loadBundled` 只是其便捷包装。
     /// `instanceCounts` 带默认值 nil（设计评审 N2：不破坏既有构造调用点）；
-    /// 校验在 init 内完成（长度恒 `universeTownHallCount` 且值非负），失败存 nil。
+    /// 校验在 init 内完成（见 `validatedInstanceCounts`），任一失败存 nil
+    ///（无宇宙，fail-closed，不 crash）。
     public init(
         gameVersion: String,
         items: [CatalogItem],
@@ -713,14 +714,6 @@ public struct GameCatalog: Sendable {
     ) {
         self.gameVersion = gameVersion
         self.manifest = manifest
-        if let raw = instanceCounts,
-           raw.allSatisfy({
-               $0.value.count == Self.universeTownHallCount && $0.value.allSatisfy { $0 >= 0 }
-           }) {
-            self.instanceCounts = raw
-        } else {
-            self.instanceCounts = nil
-        }
         var bySection: [String: [CatalogItem]] = [:]
         var byKey: [String: CatalogItem] = [:]
         for item in items {
@@ -729,6 +722,38 @@ public struct GameCatalog: Sendable {
         }
         self.itemsBySection = bySection
         self.index = byKey
+        // 宇宙完整性校验需要 items 索引（键存在性），故在 index 构建后执行。
+        self.instanceCounts = Self.validatedInstanceCounts(instanceCounts, index: byKey)
+    }
+
+    /// 宇宙数据完整性校验（Issue #70 阶段 2 外部评审 P1-1）：任一失败 → nil
+    ///（无宇宙，fail-closed——部分/畸形宇宙不得被标记为完整）：
+    /// 1. 数组长度恒 `universeTownHallCount` 且值非负（原有契约）；
+    /// 2. 键格式 "section:dataID"（split ":" 恰好 2 段、section 非空、
+    ///    dataID 可解析 Int64）——畸形键 → 拒绝；
+    /// 3. 键存在性：每个宇宙键的 (section, dataID) 必须在 items 中存在
+    ///    （手工裁剪/错配 → 拒绝）；
+    /// 4. 全 0 键：数量型建筑不可能全 TH 0（手工篡改 → 拒绝）。
+    private static func validatedInstanceCounts(
+        _ raw: [String: [Int]]?,
+        index: [String: CatalogItem]
+    ) -> [String: [Int]]? {
+        guard let raw else { return nil }
+        guard raw.allSatisfy({
+            $0.value.count == Self.universeTownHallCount && $0.value.allSatisfy { $0 >= 0 }
+        }) else { return nil }
+        for (key, values) in raw where values.allSatisfy({ $0 == 0 }) {
+            return nil  // 全 0 键（数量型建筑不可能全 TH 0）
+        }
+        for key in raw.keys {
+            let parts = key.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, !parts[0].isEmpty,
+                  let dataID = Int64(parts[1]),
+                  index[Self.key(section: String(parts[0]), dataID: dataID)] != nil else {
+                return nil  // 畸形键 / 键不存在于 items
+            }
+        }
+        return raw
     }
 
     /// 从 Bundle 加载指定版本目录；目录缺失或解码失败返回 nil（调用方输出诊断，不崩溃）。
@@ -827,14 +852,16 @@ public struct GameCatalog: Sendable {
 
     // MARK: - 实例数量宇宙（Issue #70 阶段 2）
 
-    /// 目录是否携带可用宇宙数据：instanceCounts 非 nil **且非空**（init 解码时
-    /// 已校验：所有数组长度 == `universeTownHallCount` 且值非负，校验失败视为
-    /// 无宇宙，fail-closed 不 crash；空字典 {} 校验通过但无任何宇宙键，同样
-    /// 视为无宇宙——评审 B-2：空宇宙不得声称完整分母）。
-    /// false = 旧目录或校验失败，调用方应走「已观测实例」语义（无完整分母）。
+    /// 目录是否携带可用宇宙数据：instanceCounts 非 nil 且非空（init 完整性
+    /// 校验通过：长度/非负/键格式/键存在性/非全 0）**且 manifest 非 nil**。
+    /// manifest 是宇宙完整性信任标记（Issue #70 阶段 2 外部评审 P1-1）：
+    /// `loadBundled` 的 manifest sha256/fileCheck 校验保证 catalog.json（含
+    /// instanceCounts）未被手工裁剪/篡改；注入路径显式传 manifest 表示数据
+    /// 已通过生成管线完整性保证。false = 旧目录 / 校验失败 / 无 manifest，
+    /// 调用方应走「已观测实例」语义（无完整分母）。
     public var hasUniverseData: Bool {
-        guard let instanceCounts else { return false }
-        return !instanceCounts.isEmpty
+        guard let instanceCounts, !instanceCounts.isEmpty else { return false }
+        return manifest != nil
     }
 
     /// 宇宙查询：该 dataID 在指定大本营等级的可建造实例数。
@@ -848,9 +875,11 @@ public struct GameCatalog: Sendable {
 
     /// 宇宙表全部键（section, dataID）——投影层合成差集项用（Issue #70 阶段 2）。
     /// 按 section 升序、同 section 按 dataID 升序（产出顺序确定，测试/UI 可预测）。
-    /// 旧目录（hasUniverseData false）→ 空数组。
+    /// 与 `hasUniverseData` 同一信任门（外部评审 P1-1）：旧目录 / 校验失败 /
+    /// 无 manifest → 空数组（不可信宇宙的键不得暴露为可用数据）。
     public var universeKeys: [(section: String, dataID: Int64)] {
-        (instanceCounts ?? [:]).keys.compactMap { key in
+        guard hasUniverseData else { return [] }
+        return (instanceCounts ?? [:]).keys.compactMap { key in
             let parts = key.split(separator: ":", maxSplits: 1)
             guard parts.count == 2, let dataID = Int64(parts[1]) else { return nil }
             return (String(parts[0]), dataID)

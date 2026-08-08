@@ -51,7 +51,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
     }
     """
 
-    private func makeCatalog(from json: String) throws -> GameCatalog {
+    private func makeCatalog(from json: String, manifest: CatalogManifest? = nil) throws -> GameCatalog {
         let data = Data(json.utf8)
         struct Payload: Decodable {
             let gameVersion: String
@@ -64,6 +64,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         return GameCatalog(
             gameVersion: payload.gameVersion,
             items: payload.items,
+            manifest: manifest,  // 宇宙 fixture 需 manifest 信任标记（外部评审 P1-1）
             instanceCounts: payload.instanceCounts
         )
     }
@@ -913,6 +914,22 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
     }
     """
 
+    /// 宇宙目录的 manifest 信任标记 stub（外部评审 P1-1：hasUniverseData
+    /// 要求 manifest 非 nil；测试注入路径不调用 validate，stub 只需合法构造）。
+    private func makeUniverseManifestStub() -> CatalogManifest {
+        CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "test",
+            locale: "zh-CN",
+            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [],
+            counts: CatalogCounts(
+                items: 2, levels: 5, missingIcons: nil, missingTime: nil,
+                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil
+            )
+        )
+    }
+
     /// 接线验收（决策 3）：宇宙完整时 records 排除 .available 差集项（差集项无
     /// 升级计时，进总览无意义），而 record.villageMetrics 消费完整分母
     ///（stage/global 分母含差集权重，覆盖率分母含差集实例数）。
@@ -924,7 +941,10 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
                                timerSeconds: 3600, remainingSeconds: 1800, path: "0")],
         ])
-        let catalog = try makeCatalog(from: Self.universeCatalogJSON)
+        let catalog = try makeCatalog(
+            from: Self.universeCatalogJSON,
+            manifest: makeUniverseManifestStub()
+        )
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let combined = UpgradeOverviewProjection.overviewRecords(
             from: [village], catalog: catalog, at: now

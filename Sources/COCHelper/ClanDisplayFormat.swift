@@ -58,17 +58,37 @@ enum ClanDisplayFormat {
     }
 
     /// 目录资源标识 → 官方简中资源名。未知值不直接泄漏英文标识。
+    /// 委托 Core 的 `CatalogResourceLocalization`（纯函数，可单元测试；
+    /// 矿石映射 CommonOre/RareOre/EpicOre → 官方简中，Issue #73 Task 3）。
     static func resourceLabel(_ raw: String?) -> String {
-        guard let raw else { return "未知资源" }
-        return switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "gold": "金币"
-        case "elixir": "圣水"
-        case "darkelixir", "dark_elixir": "暗黑重油"
-        case "capitalresource", "capitalgold", "raidcapitalgold": "都城金币"
-        case "buildergold", "builderbasegold": "建筑大师基地金币"
-        case "builderelixir", "builderbaseelixir": "建筑大师基地圣水"
-        default: "未知资源"
+        CatalogResourceLocalization.label(raw)
+    }
+
+    /// 多资源升级费用展示（Issue #73 Task 3 三分支，LevelDetailSheet 与
+    /// BuildingUpgradeStepGrid 共用，单一来源）：
+    /// - `upgradeCosts` 为 nil 或空 → "无费用数据"
+    /// - 全部成功 → 每项「资源 千分位金额」，多项用 " · " 连接
+    ///   （如 "闪亮矿石 120 · 璀璨矿石 40"）
+    /// - 含 parseFailed → 成功项正常显示；失败项显示 raw 原文
+    ///   （如 "金币（金额: "forty"）"），整段前缀「已知费用：」作警示语义
+    ///   （与 BuildingGroupSummaryView 的 partialMissing 前缀同规则）
+    /// 金额 0 是真实费用，正常显示（0 不视为缺失）。
+    static func upgradeCostLabel(_ costs: [CatalogUpgradeCost]?) -> String {
+        guard let costs, !costs.isEmpty else { return "无费用数据" }
+        var parts: [String] = []
+        var hasFailed = false
+        for cost in costs {
+            if let amount = cost.amount, !cost.parseFailed {
+                parts.append(resourceLabel(cost.resource) + " " + BuildingCostFormatter.label(amount))
+            } else {
+                hasFailed = true
+                let raw = cost.rawAmount ?? ""
+                let rawText = raw.isEmpty ? "金额缺失" : "金额: \"" + raw + "\""
+                parts.append(resourceLabel(cost.resource) + "（" + rawText + "）")
+            }
         }
+        if hasFailed { return "已知费用：" + parts.joined(separator: " · ") }
+        return parts.joined(separator: " · ")
     }
 
     private enum LeagueKind {

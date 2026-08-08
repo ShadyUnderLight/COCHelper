@@ -136,7 +136,7 @@ def _level(seconds, reason):
     from game_catalog.model import CatalogLevel
     return CatalogLevel(
         level=1, durationSeconds=seconds, missingReason=reason,
-        upgradeResource=None, upgradeCost=None,
+        upgradeCosts=None,
         requiredTownHallLevel=None, requiredLaboratoryLevel=None,
         icon=None, levelVisual=None,
     )

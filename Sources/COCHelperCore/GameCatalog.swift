@@ -42,16 +42,35 @@ public struct CatalogManifest: Codable, Hashable, Sendable {
     public let generatedFiles: [CatalogGeneratedFile]
     public let counts: CatalogCounts
 
-    /// Issue #74（可信度验收）：运行时完整性校验。
+    /// Issue #74（可信度验收）+ Issue #73 交叉审核 P1：运行时完整性校验。
     ///
-    /// 校验两件事：① counts 与目录内容重算一致（items/levels 必查；
-    /// missingTime/timed/instant/缺失类四桶等拆分字段存在才查——旧 manifest 缺键跳过）；
+    /// 校验：① counts 与目录内容重算一致（items/levels 必查；missingTime/
+    /// timed/instant/缺失类四桶等拆分字段存在才查——旧 manifest 缺键跳过）；
     /// ② `generatedFiles` 中 catalog.json 声明的 sha256 与真实文件一致
-    ///（声明缺失时跳过，向后兼容）。返回 false = 漂移/篡改，调用方应
-    /// fail-closed（manifest 视为无效，不进入「已验证」状态）。
-    /// 不校验 icons 哈希（展示资源，不影响统计可信度）与 sourceFingerprint
-    ///（APK hash，运行时无 APK 可比）。
-    public func validate(against items: [CatalogItem], catalogData: Data) -> Bool {
+    ///（声明缺失时跳过，向后兼容）；③ schemaVersion 在支持范围（1...2，
+    /// 未来版本扩展时在此收紧）；④ sourceFingerprint 格式合法（sha256: 前缀
+    /// + 64 hex）；⑤ `fileCheck` 注入时校验 generatedFiles 全部条目文件存在
+    /// 且 size 匹配、以及目录引用的全部图标（renderedPath）文件存在。
+    /// 返回 false = 漂移/篡改，调用方应 fail-closed（manifest 视为无效，
+    /// 不进入「已验证」状态）。
+    /// 不校验 icons 哈希（展示资源，不影响统计可信度，size/存在性已由 ⑤
+    /// 覆盖）与 sourceFingerprint 内容（APK hash，运行时无 APK 可比）。
+    /// fileCheck 保持注入式（纯函数可测）：调用方 `loadBundled` 提供基于
+    /// Bundle 的实现。
+    public func validate(
+        against items: [CatalogItem],
+        catalogData: Data,
+        fileCheck: ((String, Int?) -> Bool)? = nil
+    ) -> Bool {
+        // ③ schemaVersion 支持范围（fail-closed：未知 schema 不进入已验证态）
+        guard (1...2).contains(schemaVersion) else { return false }
+        // ④ sourceFingerprint 格式：sha256: + 64 hex（生成器恒写该格式）
+        let fp = sourceFingerprint
+        guard fp.hasPrefix("sha256:"),
+              fp.dropFirst("sha256:".count).count == 64,
+              fp.dropFirst("sha256:".count).allSatisfy({ $0.isHexDigit }) else {
+            return false
+        }
         let levels = items.flatMap(\.levels)
         guard counts.items == items.count,
               counts.levels == levels.count else { return false }
@@ -82,7 +101,42 @@ public struct CatalogManifest: Codable, Hashable, Sendable {
                 .map { String(format: "%02x", $0) }.joined()
             guard declared.dropFirst("sha256:".count) == actual else { return false }
         }
+        // ⑤ 文件级完整性：generatedFiles 全部条目（catalog.json 已单独校验
+        // sha256，此处仅查存在性/其它条目 size）+ 目录引用的图标文件存在性。
+        // fileCheck 为 nil（旧调用方/旧 manifest 路径）→ 跳过文件级校验，
+        // 保持向后兼容；loadBundled 恒注入。
+        if let fileCheck {
+            for file in generatedFiles where file.kind != "directory" {
+                guard fileCheck(file.path, file.size) else { return false }
+            }
+            // 目录引用的全部图标：item 级 + 每级（icon / levelVisual），
+            // renderedPath 非 nil 即校验存在性（size 声明缺失 → 只查存在）。
+            let iconRefs = items.flatMap { item -> [CatalogAssetRef?] in
+                [item.icon, item.levelVisual] + item.levels.flatMap { [$0.icon, $0.levelVisual] }
+            }
+            for ref in iconRefs {
+                if let renderedPath = ref?.renderedPath {
+                    guard fileCheck(renderedPath, nil) else { return false }
+                }
+            }
+        }
         return true
+    }
+}
+
+// MARK: - 来源可信度标注（Issue #73 P1-2）
+
+extension CatalogManifest {
+    /// 升级费用来源标注：静态 APK 目录数值为参考值，不是对全体玩家绝对有效。
+    /// UI 详情/诊断展示用（LevelDetailSheet 等），与 Python 生成期口径一致。
+    public var provenanceLabel: String {
+        "参考升级费用 · 来源：目录 v\(gameVersion) / buildTag \(buildTag)"
+    }
+
+    /// 来源指纹标注（sourceFingerprint 为 APK sha256，完整展示以便
+    /// 与 manifest.json 对账、跨会话追溯；UI 侧 textSelection 可复制）。
+    public var sourceFingerprintLabel: String {
+        "来源指纹 " + sourceFingerprint
     }
 }
 
@@ -460,13 +514,29 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
     public var id: String { "\(section):\(dataID)" }
 }
 
+/// 单项升级费用（Issue #73：多资源升级费用）。
+///
+/// - resource: 资源标识 = 源表原始值（不做枚举映射，保留原始值）
+/// - amount: 金额；解析失败为 nil（0 是真实费用）
+/// - rawResource: 源 CSV 原始资源值，恒保留（审计/重解析）
+/// - rawAmount: 源 CSV 原始金额串；正常解析时为 nil
+/// - parseFailed: 该项解析失败（金额非数字 或 资源/金额配对缺失）
+public struct CatalogUpgradeCost: Codable, Hashable, Sendable {
+    public let resource: String
+    public let amount: Int64?
+    public let rawResource: String?
+    public let rawAmount: String?
+    public let parseFailed: Bool
+}
+
 public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
     /// 源表原始等级号（可能不连续，如战斗直升机 15..35），查表必须按值匹配。
     public let level: Int
     /// 表语义见 `CatalogDurationSemantics`；缺失为 nil，不填 0。
     public let durationSeconds: Int64?
-    public let upgradeResource: String?
-    public let upgradeCost: Int64?
+    /// 升级费用（多资源，Issue #73）。Python 侧无费用时输出 null；旧格式目录
+    /// （无 upgradeCosts 键，upgradeResource/upgradeCost）兼容解码为 nil。
+    public let upgradeCosts: [CatalogUpgradeCost]?
     public let requiredTownHallLevel: Int?
     public let requiredLaboratoryLevel: Int?
     /// 英雄殿堂门槛（issue #67，home 英雄 tavern 门槛 1-12；heroes2 源数据为
@@ -481,8 +551,7 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
     public init(
         level: Int,
         durationSeconds: Int64?,
-        upgradeResource: String?,
-        upgradeCost: Int64?,
+        upgradeCosts: [CatalogUpgradeCost]?,
         requiredTownHallLevel: Int?,
         requiredLaboratoryLevel: Int?,
         requiredHeroTavernLevel: Int? = nil,
@@ -492,8 +561,7 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
     ) {
         self.level = level
         self.durationSeconds = durationSeconds
-        self.upgradeResource = upgradeResource
-        self.upgradeCost = upgradeCost
+        self.upgradeCosts = upgradeCosts
         self.requiredTownHallLevel = requiredTownHallLevel
         self.requiredLaboratoryLevel = requiredLaboratoryLevel
         self.requiredHeroTavernLevel = requiredHeroTavernLevel
@@ -652,6 +720,8 @@ public struct GameCatalog: Sendable {
         // Issue #74a：manifest 是增强信息——缺失/解码失败不阻塞目录加载（nil）。
         // 纵深防御：manifest.gameVersion 与目录不一致时视为损坏（validate 在
         // 生成期已保证一致，此处仅防未来手工替换/版本错配）。
+        // Issue #73 P1：fileCheck 校验 generatedFiles 全量存在性/size 与
+        // 图标文件存在性（Bundle 内真实文件）。
         let manifest: CatalogManifest?
         if let manifestURL = Bundle.module.url(
             forResource: "manifest",
@@ -660,12 +730,43 @@ public struct GameCatalog: Sendable {
         ), let manifestData = try? Data(contentsOf: manifestURL),
            let decoded = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData),
            decoded.gameVersion == payload.gameVersion,
-           decoded.validate(against: payload.items, catalogData: data) {
+           decoded.validate(
+               against: payload.items,
+               catalogData: data,
+               fileCheck: { relativePath, declaredSize in
+                   Self.bundledFileExists(version: version, relativePath: relativePath,
+                                          declaredSize: declaredSize)
+               }
+           ) {
             manifest = decoded
         } else {
             manifest = nil
         }
         return GameCatalog(gameVersion: payload.gameVersion, items: payload.items, manifest: manifest)
+    }
+
+    /// Bundle 内文件存在性 + size 校验（Issue #73 P1：运行时完整性）。
+    ///
+    /// relativePath 形如 "icons/buildings/x.png" 或 "catalog.json"（manifest
+    /// generatedFiles.path / renderedPath 同格式）。文件缺失或 size 与声明
+    /// 不符 → false（fail-closed）。size 声明为 nil（图标引用场景）→ 只查存在。
+    static func bundledFileExists(version: String, relativePath: String,
+                                  declaredSize: Int?) -> Bool {
+        let nsPath = relativePath as NSString
+        let subdirectory = "GameCatalog/" + version + "/" + nsPath.deletingLastPathComponent
+        let last = nsPath.lastPathComponent as NSString
+        guard let url = Bundle.module.url(
+            forResource: last.deletingPathExtension,
+            withExtension: last.pathExtension,
+            subdirectory: subdirectory
+        ) else { return false }
+        guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize else {
+            return false
+        }
+        if let declaredSize, declaredSize != size {
+            return false
+        }
+        return true
     }
 
     /// 主查询：`(section, dataID)` 精确匹配（catalog.section 与快照 section 同源）。

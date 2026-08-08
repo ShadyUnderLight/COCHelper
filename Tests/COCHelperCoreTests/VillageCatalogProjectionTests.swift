@@ -1578,12 +1578,10 @@ final class VillageCatalogProjectionTests: XCTestCase {
             base: "home", baseMissingReason: nil, name: "加农炮", maxLevel: 2,
             icon: nil, levelVisual: nil,
             levels: [
-                CatalogLevel(level: 1, durationSeconds: 60, upgradeResource: nil,
-                             upgradeCost: nil, requiredTownHallLevel: nil,
+                CatalogLevel(level: 1, durationSeconds: 60, upgradeCosts: nil, requiredTownHallLevel: nil,
                              requiredLaboratoryLevel: nil,
                              icon: nil, levelVisual: level1Visual, missingReason: nil),
-                CatalogLevel(level: 2, durationSeconds: 300, upgradeResource: nil,
-                             upgradeCost: nil, requiredTownHallLevel: nil,
+                CatalogLevel(level: 2, durationSeconds: 300, upgradeCosts: nil, requiredTownHallLevel: nil,
                              requiredLaboratoryLevel: nil,
                              icon: nil, levelVisual: level2Visual, missingReason: nil),
             ]
@@ -1654,16 +1652,13 @@ final class VillageCatalogProjectionTests: XCTestCase {
             base: "home", baseMissingReason: nil, name: "不连续等级", maxLevel: 9,
             icon: nil, levelVisual: nil,
             levels: [
-                CatalogLevel(level: 1, durationSeconds: 60, upgradeResource: nil,
-                             upgradeCost: nil, requiredTownHallLevel: nil,
+                CatalogLevel(level: 1, durationSeconds: 60, upgradeCosts: nil, requiredTownHallLevel: nil,
                              requiredLaboratoryLevel: nil, icon: nil,
                              levelVisual: makeRef(0), missingReason: nil),
-                CatalogLevel(level: 5, durationSeconds: 300, upgradeResource: nil,
-                             upgradeCost: nil, requiredTownHallLevel: nil,
+                CatalogLevel(level: 5, durationSeconds: 300, upgradeCosts: nil, requiredTownHallLevel: nil,
                              requiredLaboratoryLevel: nil, icon: nil,
                              levelVisual: makeRef(1), missingReason: nil),
-                CatalogLevel(level: 9, durationSeconds: 600, upgradeResource: nil,
-                             upgradeCost: nil, requiredTownHallLevel: nil,
+                CatalogLevel(level: 9, durationSeconds: 600, upgradeCosts: nil, requiredTownHallLevel: nil,
                              requiredLaboratoryLevel: nil, icon: nil,
                              levelVisual: makeRef(2), missingReason: nil),
             ]
@@ -1696,8 +1691,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             base: "builder", baseMissingReason: nil, name: "错基地建筑", maxLevel: 2,
             icon: nil, levelVisual: nil,
             levels: [
-                CatalogLevel(level: 1, durationSeconds: 60, upgradeResource: nil,
-                             upgradeCost: nil, requiredTownHallLevel: nil,
+                CatalogLevel(level: 1, durationSeconds: 60, upgradeCosts: nil, requiredTownHallLevel: nil,
                              requiredLaboratoryLevel: nil,
                              icon: nil, levelVisual: level1Visual, missingReason: nil),
             ]
@@ -1736,12 +1730,10 @@ final class VillageCatalogProjectionTests: XCTestCase {
             base: "home", baseMissingReason: nil, name: "加农炮", maxLevel: 2,
             icon: nil, levelVisual: nil,
             levels: [
-                CatalogLevel(level: 1, durationSeconds: 60, upgradeResource: nil,
-                             upgradeCost: nil, requiredTownHallLevel: nil,
+                CatalogLevel(level: 1, durationSeconds: 60, upgradeCosts: nil, requiredTownHallLevel: nil,
                              requiredLaboratoryLevel: nil,
                              icon: nil, levelVisual: level1Visual, missingReason: nil),
-                CatalogLevel(level: 2, durationSeconds: 300, upgradeResource: nil,
-                             upgradeCost: nil, requiredTownHallLevel: nil,
+                CatalogLevel(level: 2, durationSeconds: 300, upgradeCosts: nil, requiredTownHallLevel: nil,
                              requiredLaboratoryLevel: nil,
                              icon: nil, levelVisual: level2Visual, missingReason: nil),
             ]
@@ -2505,8 +2497,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
                 levels.append(CatalogLevel(
                     level: level,
                     durationSeconds: nil,
-                    upgradeResource: nil,
-                    upgradeCost: nil,
+                    upgradeCosts: nil,
                     requiredTownHallLevel: level == 1 ? nil : thGate, // level 1 初始无门槛
                     requiredLaboratoryLevel: nil,
                     icon: nil,
@@ -2950,8 +2941,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
                 levels.append(CatalogLevel(
                     level: nextLevel,
                     durationSeconds: Int64(nextLevel * 60),
-                    upgradeResource: nil,
-                    upgradeCost: nil,
+                    upgradeCosts: nil,
                     requiredTownHallLevel: index == 0 ? nil : thGate,
                     requiredLaboratoryLevel: nil,
                     icon: nil,

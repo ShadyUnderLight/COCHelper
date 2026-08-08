@@ -29,12 +29,47 @@ class AssetRef:
 
 
 @dataclass
+class UpgradeCost:
+    """单项升级费用（Issue #73：多资源升级费用）。
+
+    - resource: 资源标识 = raw 原值（不做资源枚举映射，保留原始值）
+    - amount: 金额；解析失败 = None（0 是真实值）
+    - rawResource: 源 CSV 原始资源值，恒保留
+    - rawAmount: 源 CSV 原始金额串；正常解析时 None
+    - parseFailed: 该项是否解析失败（金额非数字 或 配对缺失）
+    """
+    resource: str
+    amount: int | None
+    rawResource: str
+    rawAmount: str | None
+    parseFailed: bool
+
+    def to_dict(self) -> dict:
+        return {
+            "resource": self.resource,
+            "amount": self.amount,
+            "rawResource": self.rawResource,
+            "rawAmount": self.rawAmount,
+            "parseFailed": self.parseFailed,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "UpgradeCost":
+        if not isinstance(d, dict):
+            raise ValueError(f"UpgradeCost 需要 dict，实际 {type(d).__name__}: {d!r}")
+        return cls(
+            resource=d["resource"], amount=d.get("amount"),
+            rawResource=d["rawResource"], rawAmount=d.get("rawAmount"),
+            parseFailed=d.get("parseFailed", False),
+        )
+
+
+@dataclass
 class CatalogLevel:
     level: int
     durationSeconds: int | None
     missingReason: str | None
-    upgradeResource: str | None
-    upgradeCost: int | None
+    upgradeCosts: list[UpgradeCost] | None
     requiredTownHallLevel: int | None
     requiredLaboratoryLevel: int | None
     icon: AssetRef | None
@@ -46,8 +81,9 @@ class CatalogLevel:
             "level": self.level,
             "durationSeconds": self.durationSeconds,
             "missingReason": self.missingReason,
-            "upgradeResource": self.upgradeResource,
-            "upgradeCost": self.upgradeCost,
+            # 契约「非 None 必须非空（[] 非法）」：空列表归一为 None（与
+            # from_dict 的 None 语义对称，空列表不进入 JSON）
+            "upgradeCosts": [c.to_dict() for c in self.upgradeCosts] if self.upgradeCosts else None,
             "requiredTownHallLevel": self.requiredTownHallLevel,
             "requiredLaboratoryLevel": self.requiredLaboratoryLevel,
             "icon": self.icon.to_dict() if self.icon else None,
@@ -59,10 +95,13 @@ class CatalogLevel:
     def from_dict(cls, d: dict) -> "CatalogLevel":
         if not isinstance(d, dict):
             raise ValueError(f"CatalogLevel 需要 dict，实际 {type(d).__name__}: {d!r}")
+        raw = d.get("upgradeCosts")
+        # 旧格式 JSON（无 upgradeCosts 键，upgradeResource/upgradeCost）→ None（兼容）；
+        # 手写 JSON 含 []（契约非法值）保持原样，由 validate 拦截（"[] 非法"）
         return cls(
             level=d["level"], durationSeconds=d.get("durationSeconds"),
             missingReason=d.get("missingReason"),
-            upgradeResource=d.get("upgradeResource"), upgradeCost=d.get("upgradeCost"),
+            upgradeCosts=None if raw is None else [UpgradeCost.from_dict(x) for x in raw],
             requiredTownHallLevel=d.get("requiredTownHallLevel"),
             requiredLaboratoryLevel=d.get("requiredLaboratoryLevel"),
             icon=AssetRef.from_dict(d["icon"]) if d.get("icon") else None,

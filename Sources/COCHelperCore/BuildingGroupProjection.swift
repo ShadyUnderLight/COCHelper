@@ -4,10 +4,10 @@ import Foundation
 public struct BuildingUpgradeStep: Hashable, Sendable {
     /// 目标等级（升序）。
     public let level: Int
-    /// 目录费用；nil = 缺失。
-    public let upgradeCost: Int64?
-    /// 费用资源类型；nil = 缺失（仅当 cost 存在时可能）。
-    public let upgradeResource: String?
+    /// 多资源升级费用（透传 `CatalogLevel.upgradeCosts`，Issue #73）。
+    /// nil = 无费用数据；非空数组即存在费用数据（含全 parseFailed——此时 UI
+    /// 展示 raw 原文）。元素语义见 `CatalogUpgradeCost`。
+    public let upgradeCosts: [CatalogUpgradeCost]?
     /// 完整升级时长；nil = 缺失，0 = 有效即时升级。
     public let durationSeconds: Int64?
     /// Issue #74b：目录缺失原因（CatalogLevel.missingReason 透传；组卡据此
@@ -16,19 +16,19 @@ public struct BuildingUpgradeStep: Hashable, Sendable {
 
     public init(
         level: Int,
-        upgradeCost: Int64?,
-        upgradeResource: String?,
+        upgradeCosts: [CatalogUpgradeCost]?,
         durationSeconds: Int64?,
         missingReason: String? = nil
     ) {
         self.level = level
-        self.upgradeCost = upgradeCost
-        self.upgradeResource = upgradeResource
+        self.upgradeCosts = upgradeCosts
         self.durationSeconds = durationSeconds
         self.missingReason = missingReason
     }
 
-    public var hasCost: Bool { upgradeCost != nil }
+    /// 是否存在费用数据：`upgradeCosts` 非空即存在（全 parseFailed 也返回 true，
+    /// 此时 UI 展示 raw 原文；`ClanDisplayFormat.upgradeCostLabel` 三分支）。
+    public var hasCost: Bool { upgradeCosts?.isEmpty == false }
     public var hasDuration: Bool { durationSeconds != nil }
     public var isInstant: Bool { durationSeconds == 0 }
 
@@ -75,6 +75,8 @@ public struct BuildingGroupSummary: Hashable, Sendable {
     /// 所有已知等级完整升级时间之和（×instanceWeight，秒）。
     public let totalDurationSeconds: Int64
     /// 按资源类型汇总的费用（×instanceWeight；按 resource 字典序）。
+    /// 只累加成功项（!parseFailed && amount != nil）；parseFailed 项金额不可信
+    /// 不进入汇总（任一失败项 → completeness 降级，UI 另显 raw 原文）。
     public let costByResource: [BuildingResourceTotal]
     /// 任一汇总字段发生饱和。为 true 时数值仅是可表示上界，不应作为精确业务数据展示。
     public let saturated: Bool
@@ -165,6 +167,10 @@ public enum BuildingGroupProjection {
     /// `effectiveMax` = 阶段上限（issue #67）优先，不可计算时回退全局 maxLevel——
     /// 与行级 `.maxed` 判定同口径，保证组卡与列表行不矛盾（审核 C important）。
     /// currentLevel 为 nil、目录未命中或 base 不匹配（maxLevel == nil）→ 空数组。
+    ///
+    /// Issue #73：`BuildingUpgradeStep.upgradeCosts` 直接透传 `CatalogLevel.upgradeCosts`
+    /// （多资源数组，含 parseFailed 项与 raw 原文）；汇总分桶/降级语义在
+    /// `summary(for:)` 处理。
     /// unverified（缺 prerequisite 无法验证阶段上限，Issue #67 fail-closed）
     /// → 空数组：不得把无法验证的全局等级展示为可升级阶梯。
     /// unknown（含版本不匹配，Issue #67 P1-2 fail-closed）→ 空数组：旧目录
@@ -194,13 +200,12 @@ public enum BuildingGroupProjection {
         return catalogItem.levels
             .filter { $0.level > (currentLevel ?? .max) && $0.level <= effectiveMax }
             .sorted { $0.level < $1.level }
-            .map {
+            .map { level in
                 BuildingUpgradeStep(
-                    level: $0.level,
-                    upgradeCost: $0.upgradeCost,
-                    upgradeResource: $0.upgradeResource,
-                    durationSeconds: $0.durationSeconds,
-                    missingReason: $0.missingReason
+                    level: level.level,
+                    upgradeCosts: level.upgradeCosts,
+                    durationSeconds: level.durationSeconds,
+                    missingReason: level.missingReason
                 )
             }
     }
@@ -267,7 +272,8 @@ public enum BuildingGroupProjection {
             }
             for step in instance.steps {
                 // 任一阶梯费用或时长缺失 → 降级（0 是有效即时升级，不降级）。
-                if step.upgradeCost == nil || step.durationSeconds == nil {
+                // 费用缺失 = upgradeCosts 为 nil 或空数组（Python 侧不产出空数组，防御语义）。
+                if step.upgradeCosts?.isEmpty != false || step.durationSeconds == nil {
                     hasPartialMissing = true
                 }
                 if let duration = step.durationSeconds {
@@ -280,16 +286,22 @@ public enum BuildingGroupProjection {
                     totalDurationSeconds = durationTotal.value
                     saturated = saturated || durationTotal.overflowed
                 }
-                if let cost = step.upgradeCost {
-                    // 资源缺失但费用存在 → 归入「未知资源」桶（不丢弃费用）。
-                    let resource = step.upgradeResource ?? "未知资源"
-                    let weightedCost = SaturatingArithmetic.multiply(cost, Int64(count))
+                for cost in step.upgradeCosts ?? [] {
+                    // 任一费用项解析失败 → 降级（汇总不完整；raw 原文由 UI 展示，
+                    // 见 ClanDisplayFormat.upgradeCostLabel）。
+                    guard !cost.parseFailed, let amount = cost.amount else {
+                        hasPartialMissing = true
+                        continue
+                    }
+                    // 成功项按 resource 原值分桶（显示层再本地化，桶序不受本地化影响）；
+                    // 0 是真实费用，照常累加（不视为缺失）。
+                    let weightedCost = SaturatingArithmetic.multiply(amount, Int64(count))
                     saturated = saturated || weightedCost.overflowed
                     let costTotal = SaturatingArithmetic.add(
-                        costByResource[resource, default: 0],
+                        costByResource[cost.resource, default: 0],
                         weightedCost.value
                     )
-                    costByResource[resource] = costTotal.value
+                    costByResource[cost.resource] = costTotal.value
                     saturated = saturated || costTotal.overflowed
                 }
             }

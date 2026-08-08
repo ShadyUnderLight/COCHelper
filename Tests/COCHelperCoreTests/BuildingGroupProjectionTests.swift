@@ -13,12 +13,32 @@ final class BuildingGroupProjectionTests: XCTestCase {
     }
 
     /// 目录 JSON 载荷的最小编码形态（缺失字段在 CatalogItem/CatalogLevel 解码时按 Optional 缺省）。
+    /// Issue #73：升级费用改为多资源数组 upgradeCosts（旧 upgradeResource/upgradeCost 键已从模型移除）。
+    private struct SpecCost: Encodable {
+        var resource: String
+        var amount: Int64?
+        var rawResource: String?
+        var rawAmount: String?
+        var parseFailed: Bool
+    }
+
     private struct SpecLevel: Encodable {
         var level: Int
         var durationSeconds: Int64?
-        var upgradeResource: String?
-        var upgradeCost: Int64?
+        var upgradeCosts: [SpecCost]?
         var missingReason: String? = nil
+    }
+
+    /// 单个费用项：amount == nil 表达解析失败（rawAmount 缺省，防御路径）。
+    private static func cost(_ resource: String, _ amount: Int64?) -> SpecCost {
+        SpecCost(resource: resource, amount: amount, rawResource: resource,
+                 rawAmount: nil, parseFailed: amount == nil)
+    }
+
+    /// parseFailed 项（金额非数字 → amount=nil、rawAmount=原串，与 Python 不变量一致）。
+    private static func failedCost(_ resource: String, rawAmount: String) -> SpecCost {
+        SpecCost(resource: resource, amount: nil, rawResource: resource,
+                 rawAmount: rawAmount, parseFailed: true)
     }
 
     private struct SpecItem: Encodable {
@@ -34,7 +54,8 @@ final class BuildingGroupProjectionTests: XCTestCase {
     /// 1...maxLevel 每级：duration = level × 60、cost = level × 100、默认资源 Elixir。
     private static func standardLevels(_ maxLevel: Int, resource: String? = "Elixir") -> [SpecLevel] {
         (1...maxLevel).map {
-            SpecLevel(level: $0, durationSeconds: Int64($0 * 60), upgradeResource: resource, upgradeCost: Int64($0 * 100))
+            SpecLevel(level: $0, durationSeconds: Int64($0 * 60),
+                      upgradeCosts: [Self.cost(resource ?? "未知资源", Int64($0 * 100))])
         }
     }
 
@@ -207,9 +228,9 @@ final class BuildingGroupProjectionTests: XCTestCase {
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "极端计数测试", maxLevel: 3,
                 levels: [
-                    SpecLevel(level: 1, durationSeconds: Int64.max, upgradeResource: "Elixir", upgradeCost: Int64.max),
-                    SpecLevel(level: 2, durationSeconds: Int64.max, upgradeResource: "Elixir", upgradeCost: Int64.max),
-                    SpecLevel(level: 3, durationSeconds: Int64.max, upgradeResource: "Elixir", upgradeCost: Int64.max),
+                    SpecLevel(level: 1, durationSeconds: Int64.max, upgradeCosts: [Self.cost("Elixir", Int64.max)]),
+                    SpecLevel(level: 2, durationSeconds: Int64.max, upgradeCosts: [Self.cost("Elixir", Int64.max)]),
+                    SpecLevel(level: 3, durationSeconds: Int64.max, upgradeCosts: [Self.cost("Elixir", Int64.max)]),
                 ]
             ),
         ])
@@ -349,14 +370,14 @@ final class BuildingGroupProjectionTests: XCTestCase {
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "加农炮", maxLevel: 8,
                 levels: [
-                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 2, durationSeconds: 120, upgradeResource: "Elixir", upgradeCost: 200),
-                    SpecLevel(level: 3, durationSeconds: 180, upgradeResource: "Elixir", upgradeCost: 300),
-                    SpecLevel(level: 4, durationSeconds: 240, upgradeResource: "Elixir", upgradeCost: 400),
-                    SpecLevel(level: 5, durationSeconds: 300, upgradeResource: "Elixir", upgradeCost: 500),
-                    SpecLevel(level: 6, durationSeconds: nil, upgradeResource: "Elixir", upgradeCost: 600),
-                    SpecLevel(level: 7, durationSeconds: 420, upgradeResource: "Elixir", upgradeCost: nil),
-                    SpecLevel(level: 8, durationSeconds: 480, upgradeResource: "Elixir", upgradeCost: 800),
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 3, durationSeconds: 180, upgradeCosts: [Self.cost("Elixir", 300)]),
+                    SpecLevel(level: 4, durationSeconds: 240, upgradeCosts: [Self.cost("Elixir", 400)]),
+                    SpecLevel(level: 5, durationSeconds: 300, upgradeCosts: [Self.cost("Elixir", 500)]),
+                    SpecLevel(level: 6, durationSeconds: nil, upgradeCosts: [Self.cost("Elixir", 600)]),
+                    SpecLevel(level: 7, durationSeconds: 420, upgradeCosts: nil),
+                    SpecLevel(level: 8, durationSeconds: 480, upgradeCosts: [Self.cost("Elixir", 800)]),
                 ]
             ),
         ])
@@ -381,9 +402,9 @@ final class BuildingGroupProjectionTests: XCTestCase {
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "加农炮", maxLevel: 3,
                 levels: [
-                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 2, durationSeconds: 0, upgradeResource: "Elixir", upgradeCost: 200),
-                    SpecLevel(level: 3, durationSeconds: 300, upgradeResource: "Elixir", upgradeCost: 300),
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 0, upgradeCosts: [Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 3, durationSeconds: 300, upgradeCosts: [Self.cost("Elixir", 300)]),
                 ]
             ),
         ])
@@ -401,19 +422,21 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertEqual(group.summary.completeness, .complete, "即时升级不降级")
     }
 
-    // MARK: - T11: resource nil 但 cost 存在 → "未知资源"桶
+    // MARK: - T11: 多资源费用透传 + 汇总分桶（Issue #73 Task 3）
 
-    func testT11NilResourceWithCostGoesToUnknownResourceBucket() throws {
-        // 自定义目录：level 2 Elixir 100、level 3/4 资源缺失但费用存在（200/300）。
+    func testT11MultiResourceCostsPassThroughAndBucketSuccesses() throws {
+        // Task 3 语义：阶梯直接透传 upgradeCosts（不再派生「首个成功项」）；
+        // 汇总按 resource 分桶，只累加成功项（!parseFailed && amount != nil）；
+        // 任一失败项 → partialMissing（汇总不完整），失败项不进入汇总桶。
         let t11Catalog = try makeCatalog(items: [
             SpecItem(
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "加农炮", maxLevel: 4,
                 levels: [
-                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 2, durationSeconds: 120, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 3, durationSeconds: 180, upgradeResource: nil, upgradeCost: 200),
-                    SpecLevel(level: 4, durationSeconds: 240, upgradeResource: nil, upgradeCost: 300),
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 3, durationSeconds: 180, upgradeCosts: [Self.cost("Gold", 500), Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 4, durationSeconds: 240, upgradeCosts: [Self.failedCost("RareOre", rawAmount: "forty"), Self.cost("Gold", 300)]),
                 ]
             ),
         ])
@@ -422,10 +445,104 @@ final class BuildingGroupProjectionTests: XCTestCase {
         ])
 
         let group = try XCTUnwrap(project(village: village, catalog: t11Catalog, base: .home).first)
+        let steps = try XCTUnwrap(group.instances.first?.steps)
+        XCTAssertEqual(steps.count, 3)
+        // 阶梯从 currentLevel + 1 = level 2 起：steps[1] = level 3、steps[2] = level 4。
+        // 透传：step.upgradeCosts 与目录等级费用数组一致（失败项不丢弃、保留 raw 原文）。
+        XCTAssertEqual(steps[1].upgradeCosts?.count, 2, "level 3：两个成功项原样透传")
+        XCTAssertTrue(steps[1].upgradeCosts?.allSatisfy { !$0.parseFailed } == true)
+        XCTAssertEqual(steps[2].upgradeCosts?.count, 2, "level 4：失败项也原样透传")
+        XCTAssertTrue(steps[2].upgradeCosts?.contains { $0.parseFailed } == true)
+        XCTAssertEqual(steps[2].upgradeCosts?.first?.rawAmount, "forty", "失败项保留 raw 原文供 UI 展示")
+        // 汇总：成功项分桶累加（Elixir 100+200=300；Gold 500+300=800）；
+        // parseFailed RareOre 不进桶；任一失败项 → partialMissing。
         XCTAssertEqual(group.summary.costByResource, [
-            BuildingResourceTotal(resource: "Elixir", totalCost: 100),
-            BuildingResourceTotal(resource: "未知资源", totalCost: 500),
-        ], "资源缺失但费用存在的升级必须归入「未知资源」桶且按字典序")
+            BuildingResourceTotal(resource: "Elixir", totalCost: 300),
+            BuildingResourceTotal(resource: "Gold", totalCost: 800),
+        ], "仅成功项进入汇总桶，按 resource 字典序")
+        XCTAssertEqual(group.summary.completeness, .partialMissing,
+                       "任一 parseFailed 项 → 汇总不完整")
+    }
+
+    // MARK: - T16: 多资源两个成功项 → 两个桶各累加（不合并）
+
+    func testT16TwoSuccessItemsCreateTwoBuckets() throws {
+        let t16Catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "加农炮", maxLevel: 2,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.cost("CommonOre", 120), Self.cost("RareOre", 40)]),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+
+        let group = try XCTUnwrap(project(village: village, catalog: t16Catalog, base: .home).first)
+        XCTAssertEqual(group.summary.costByResource, [
+            BuildingResourceTotal(resource: "CommonOre", totalCost: 120),
+            BuildingResourceTotal(resource: "RareOre", totalCost: 40),
+        ], "一个阶梯的两个成功项各归各桶（本地化显示层再处理）")
+        XCTAssertEqual(group.summary.completeness, .complete, "无失败项 → 完整")
+    }
+
+    // MARK: - T17: 全 parseFailed → hasCost 仍为 true（有 raw 可展示），汇总空桶 + partialMissing
+
+    func testT17AllFailedCostsKeepStepWithRawButEmptyBuckets() throws {
+        // 定义（Task 3）：hasCost = upgradeCosts 非空（含全失败——UI 展示 raw 原文，
+        // 见 ClanDisplayFormat.upgradeCostLabel）；但汇总层金额不可信 → 不进桶，
+        // 且全失败 = 费用数据不完整 → partialMissing。
+        let t17Catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "加农炮", maxLevel: 2,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 240, upgradeCosts: [
+                        Self.failedCost("CommonOre", rawAmount: "abc"),
+                        Self.failedCost("RareOre", rawAmount: ""),
+                    ]),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+
+        let group = try XCTUnwrap(project(village: village, catalog: t17Catalog, base: .home).first)
+        let step = try XCTUnwrap(group.instances.first?.steps.first)
+        XCTAssertEqual(step.level, 2)
+        XCTAssertTrue(step.hasCost, "非空数组（含全失败）→ 存在费用数据可展示（raw 原文）")
+        XCTAssertEqual(step.upgradeCosts?.count, 2)
+        XCTAssertTrue(group.summary.costByResource.isEmpty, "全失败 → 无可信金额，汇总桶为空")
+        XCTAssertEqual(group.summary.completeness, .partialMissing, "全失败 = 费用缺失 → 降级")
+    }
+
+    // MARK: - T18: 空数组视为无费用数据（hasCost false + partialMissing）
+
+    func testT18EmptyUpgradeCostsArrayTreatedAsNoCost() throws {
+        let t18Catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "加农炮", maxLevel: 2,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 240, upgradeCosts: []),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+
+        let group = try XCTUnwrap(project(village: village, catalog: t18Catalog, base: .home).first)
+        let step = try XCTUnwrap(group.instances.first?.steps.first)
+        XCTAssertEqual(step.level, 2)
+        XCTAssertFalse(step.hasCost, "空数组 = 无费用数据（Python 侧不产出，防御语义）")
+        XCTAssertEqual(group.summary.completeness, .partialMissing)
     }
 
     // MARK: - T12: currentLevel > maxLevel（目录过时）→ versionMismatch
@@ -468,8 +585,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
             SpecLevel(
                 level: level,
                 durationSeconds: Int64(level * 60),
-                upgradeResource: level <= 8 ? "Elixir" : "Gold",
-                upgradeCost: Int64(level * 100)
+                upgradeCosts: [Self.cost(level <= 8 ? "Elixir" : "Gold", Int64(level * 100))]
             )
         }
         return try makeCatalog(items: [
@@ -560,7 +676,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
             let catalogLevels = (1...maxLevel).compactMap { level -> SpecLevel? in
                 guard Bool.random(using: &rng) else { return nil }
                 return SpecLevel(level: level, durationSeconds: Int64(level * 60),
-                                 upgradeResource: "Elixir", upgradeCost: Int64(level * 100))
+                                 upgradeCosts: [Self.cost("Elixir", Int64(level * 100))])
             }
             let catalog = try makeCatalog(items: [
                 SpecItem(section: "buildings", category: "buildings", dataID: 1_000_001,
@@ -638,10 +754,10 @@ final class BuildingGroupProjectionTests: XCTestCase {
           {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":4,
            "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
            "levels":[
-             {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":2,"durationSeconds":120,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":3,"durationSeconds":180,"upgradeResource":"Elixir","upgradeCost":300,"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":4,"durationSeconds":240,"upgradeResource":"Elixir","upgradeCost":400,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+             {"level":1,"durationSeconds":60,"upgradeCosts":[{"resource":"Elixir","amount":100,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":2,"durationSeconds":120,"upgradeCosts":[{"resource":"Elixir","amount":200,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":180,"upgradeCosts":[{"resource":"Elixir","amount":300,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":4,"durationSeconds":240,"upgradeCosts":[{"resource":"Elixir","amount":400,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
            ]}
         ]}
         """
@@ -728,10 +844,10 @@ final class BuildingGroupProjectionTests: XCTestCase {
           {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":4,
            "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
            "levels":[
-             {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":2,"durationSeconds":120,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":3,"durationSeconds":180,"upgradeResource":"Elixir","upgradeCost":300,"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":4,"durationSeconds":240,"upgradeResource":"Elixir","upgradeCost":400,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+             {"level":1,"durationSeconds":60,"upgradeCosts":[{"resource":"Elixir","amount":100,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":2,"durationSeconds":120,"upgradeCosts":[{"resource":"Elixir","amount":200,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":180,"upgradeCosts":[{"resource":"Elixir","amount":300,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":4,"durationSeconds":240,"upgradeCosts":[{"resource":"Elixir","amount":400,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
            ]}
         ]}
         """
@@ -829,10 +945,10 @@ final class BuildingGroupProjectionTests: XCTestCase {
           {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":4,
            "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
            "levels":[
-             {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":100,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":2,"durationSeconds":120,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":3,"durationSeconds":180,"upgradeResource":"Elixir","upgradeCost":300,"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
-             {"level":4,"durationSeconds":240,"upgradeResource":"Elixir","upgradeCost":400,"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+             {"level":1,"durationSeconds":60,"upgradeCosts":[{"resource":"Elixir","amount":100,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":2,"durationSeconds":120,"upgradeCosts":[{"resource":"Elixir","amount":200,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":3,"durationSeconds":180,"upgradeCosts":[{"resource":"Elixir","amount":300,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":3,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+             {"level":4,"durationSeconds":240,"upgradeCosts":[{"resource":"Elixir","amount":400,"rawResource":"Elixir","rawAmount":null,"parseFailed":false}],"requiredTownHallLevel":4,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
            ]}
         ]}
         """
@@ -866,13 +982,13 @@ final class BuildingGroupProjectionTests: XCTestCase {
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "加农炮", maxLevel: 8,
                 levels: [
-                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 2, durationSeconds: 120, upgradeResource: "Elixir", upgradeCost: 200),
-                    SpecLevel(level: 3, durationSeconds: 180, upgradeResource: "Elixir", upgradeCost: 300),
-                    SpecLevel(level: 4, durationSeconds: 240, upgradeResource: "Elixir", upgradeCost: 400),
-                    SpecLevel(level: 5, durationSeconds: 300, upgradeResource: "Elixir", upgradeCost: 500),
-                    SpecLevel(level: 6, durationSeconds: nil, upgradeResource: "Elixir", upgradeCost: 600, missingReason: "time_missing"),
-                    SpecLevel(level: 7, durationSeconds: 420, upgradeResource: "Elixir", upgradeCost: 700),
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 3, durationSeconds: 180, upgradeCosts: [Self.cost("Elixir", 300)]),
+                    SpecLevel(level: 4, durationSeconds: 240, upgradeCosts: [Self.cost("Elixir", 400)]),
+                    SpecLevel(level: 5, durationSeconds: 300, upgradeCosts: [Self.cost("Elixir", 500)]),
+                    SpecLevel(level: 6, durationSeconds: nil, upgradeCosts: [Self.cost("Elixir", 600)], missingReason: "time_missing"),
+                    SpecLevel(level: 7, durationSeconds: 420, upgradeCosts: [Self.cost("Elixir", 700)]),
                 ]
             ),
         ])
@@ -892,25 +1008,25 @@ final class BuildingGroupProjectionTests: XCTestCase {
     func testStepDurationStateMapping() {
         // 有值 / 0 秒即时 / 缺失类 / nil reason
         XCTAssertEqual(
-            BuildingUpgradeStep(level: 1, upgradeCost: nil, upgradeResource: nil, durationSeconds: 3600).durationState,
+            BuildingUpgradeStep(level: 1, upgradeCosts: nil, durationSeconds: 3600).durationState,
             .timed(seconds: 3600))
         XCTAssertEqual(
-            BuildingUpgradeStep(level: 2, upgradeCost: nil, upgradeResource: nil, durationSeconds: 0).durationState,
+            BuildingUpgradeStep(level: 2, upgradeCosts: nil, durationSeconds: 0).durationState,
             .instant)
         XCTAssertEqual(
-            BuildingUpgradeStep(level: 3, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil, missingReason: "time_missing").durationState,
+            BuildingUpgradeStep(level: 3, upgradeCosts: nil, durationSeconds: nil, missingReason: "time_missing").durationState,
             .sourceMissing)
         XCTAssertEqual(
-            BuildingUpgradeStep(level: 4, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil, missingReason: "no_time_source").durationState,
+            BuildingUpgradeStep(level: 4, upgradeCosts: nil, durationSeconds: nil, missingReason: "no_time_source").durationState,
             .notApplicable)
         XCTAssertEqual(
-            BuildingUpgradeStep(level: 5, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil, missingReason: "min_level_initial_no_upgrade").durationState,
+            BuildingUpgradeStep(level: 5, upgradeCosts: nil, durationSeconds: nil, missingReason: "min_level_initial_no_upgrade").durationState,
             .initialLevel)
         XCTAssertEqual(
-            BuildingUpgradeStep(level: 6, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil, missingReason: "future_reason").durationState,
+            BuildingUpgradeStep(level: 6, upgradeCosts: nil, durationSeconds: nil, missingReason: "future_reason").durationState,
             .unknownReason("future_reason"))
         XCTAssertNil(
-            BuildingUpgradeStep(level: 7, upgradeCost: nil, upgradeResource: nil, durationSeconds: nil).durationState)
+            BuildingUpgradeStep(level: 7, upgradeCosts: nil, durationSeconds: nil).durationState)
     }
 
 }

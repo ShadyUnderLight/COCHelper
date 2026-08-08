@@ -7,6 +7,7 @@ Name 之前的行会抛 CatalogError（孤儿行）。因此策略中**每块首
 
 from hypothesis import given, strategies as st
 
+from game_catalog.builders import parse_upgrade_costs
 from game_catalog.tables import group_blocks, ffill_columns
 from game_catalog.durations import parse_duration
 
@@ -90,3 +91,38 @@ def test_parse_duration_single_field_roundtrip(total):
     cells = {"H": str(total), "M": ""}
     seconds, reason = parse_duration(cells, ("H", "M"))
     assert seconds == total * 3600
+
+
+# ---- parse_upgrade_costs 不变量（Issue #73 Task 1）----
+# 生成策略覆盖：空串、非数字金额、数量不匹配、前后空格、空段。
+
+_SEG_EMPTY = st.just("")
+_SEG_RES = st.text(alphabet="ab AB", min_size=1, max_size=4)     # 资源段（含空格）
+_SEG_NUM = st.text(alphabet="0123456789", min_size=1, max_size=5)
+_SEG_BAD = st.sampled_from(["x", "12a", " 3"])                    # 非数字金额
+
+
+@st.composite
+def _semicolon_pair(draw):
+    res_segs = draw(st.lists(
+        st.one_of(_SEG_EMPTY, _SEG_RES), min_size=0, max_size=5))
+    cost_segs = draw(st.lists(
+        st.one_of(_SEG_EMPTY, _SEG_NUM, _SEG_BAD), min_size=0, max_size=5))
+    return ";".join(res_segs), ";".join(cost_segs)
+
+
+@given(_semicolon_pair())
+def test_parse_upgrade_costs_holds_invariants(pair):
+    resources_raw, costs_raw = pair
+    result = parse_upgrade_costs(resources_raw, costs_raw, ";")
+    if result is None:
+        return  # 不变量 1：无费用数据
+    assert result  # 不变量 2：非 None 必须非空
+    for uc in result:
+        assert uc.rawResource and uc.resource  # 不变量 5/6：恒非空
+        if uc.parseFailed:                    # 不变量 4
+            assert uc.amount is None
+            assert uc.rawAmount is not None
+        else:                                 # 不变量 3
+            assert uc.amount is not None and uc.amount >= 0
+            assert uc.rawAmount is None

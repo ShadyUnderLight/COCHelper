@@ -49,7 +49,7 @@ def test_generate_catalog_content(full_minimal_apk, tmp_path):
     out = tmp_path / "o"
     generate(apk, "18.400.13", out)
     data = json.loads((out / "catalog.json").read_text())
-    assert data["schemaVersion"] == 1
+    assert data["schemaVersion"] == 2
     item = data["items"][0]
     assert item["section"] == "buildings"
     assert item["dataID"] == 1000001

@@ -96,7 +96,7 @@ def _fail_verdict(container: str, export: str, reason: str) -> dict:
 def _mini_catalog() -> dict:
     """迷你 catalog：命中/未命中引用混合（item 级 + level 级）。"""
     return {
-        "schemaVersion": 1, "gameVersion": "18.400.13", "locale": "zh-CN",
+        "schemaVersion": 2, "gameVersion": "18.400.13", "locale": "zh-CN",
         "items": [
             {
                 "section": "units", "dataID": 4000000, "name": "野蛮人",
@@ -183,7 +183,7 @@ def _sample_verdicts() -> list[dict]:
 def _mini_manifest() -> str:
     """迷你 manifest.json（陈旧 hash/counts——refresh 会刷新，此处只保证可解析）。"""
     return json.dumps({
-        "schemaVersion": 1, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
         "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
         "generatedFiles": [
             {"path": "catalog.json", "sha256": "sha256:" + "b" * 64, "size": 1},

@@ -4,13 +4,88 @@ from dataclasses import dataclass
 
 from .durations import parse_duration, parse_optional_int
 from .errors import CatalogError
-from .model import AssetRef, CatalogLevel, CatalogItem
+from .model import AssetRef, CatalogLevel, CatalogItem, UpgradeCost
 from .names import display_name
 from .tables import TABLES, TableSpec, group_blocks, ffill_columns, section_for
 
 SIEGE_PRODUCTION = "Siege Workshop"
 
 INITIAL_LEVEL_REASON = "min_level_initial_no_upgrade"
+
+
+def parse_upgrade_costs(resources_raw: str, costs_raw: str,
+                        separator: str | None) -> list[UpgradeCost] | None:
+    """解析升级费用列 → UpgradeCost 数组；None = 无费用数据（表无费用列/资源串空）。
+
+    单值表（separator=None）：
+      - 资源串空 → None（金额忽略）
+      - 金额空串 → 免费（源 CSV 语义）：amount=0 是真实值，parseFailed=False
+      - 金额纯数字 → 正常解析
+      - 金额非纯数字 → parseFailed=True（amount=None，rawAmount=原串，
+        不 strip——与 parse_optional_int 同一 isdigit 判据；注意：旧格式在此
+        输出 None（金额丢弃），现改为 parseFailed 项保留原串，是所有表共性
+        的输出变化）
+    多值表（separator 非 None）：
+      - **资源串**按 separator split 后逐段 strip，空段/空白段过滤（空资源
+        无意义，不变量 6 恒非空）；资源全空 → None（金额忽略）
+      - **金额串**按 separator split 后逐段 strip，**保留空段位置**（不静默
+        过滤压缩——否则 `A;B` + `1;;3` 会错位成 A=1、B=3，交叉审核 P2）。
+        空金额段 = 该位置资源金额缺失 → 该项 parseFailed（rawAmount=""）
+      - 按序配对：金额 isdigit → parseFailed=False；否则 parseFailed=True
+      - 金额多余（含多余空段）：parseFailed=True（amount=None,
+        rawAmount=金额原串或 ""，resource=最后一个资源段）
+      - 资源多余：parseFailed=True（amount=None, rawAmount=""，
+        满足不变量 4：rawAmount != None）
+      - **多值表空金额段不视为免费**（与单值表不对称，避免猜测未来数据
+        语义）：空段按位置配对该资源 → parseFailed。真实 18.400.13
+        数据 0 实例（源 CSV 339 条多资源行 → 生成后 385 个多资源等级，全部完整配对），
+        纯防御语义。
+
+    不变量（validate.py 强制）：parseFailed=False ⟹ amount 非 None 且 >= 0 且
+    rawAmount=None；parseFailed=True ⟹ amount=None 且 rawAmount != None；
+    resource/rawResource 恒非空。
+    """
+    if separator is None:
+        if not resources_raw:
+            return None
+        if not costs_raw:
+            # 金额空串 = 免费（源 CSV 语义，如圣诞奇袭等免费升级变体）：
+            # amount=0 是真实值，不是解析失败（parseFailed=False）。
+            return [UpgradeCost(resource=resources_raw, amount=0,
+                                rawResource=resources_raw, rawAmount=None,
+                                parseFailed=False)]
+        if costs_raw.isdigit():
+            return [UpgradeCost(resource=resources_raw, amount=int(costs_raw),
+                                rawResource=resources_raw, rawAmount=None,
+                                parseFailed=False)]
+        return [UpgradeCost(resource=resources_raw, amount=None,
+                            rawResource=resources_raw, rawAmount=costs_raw,
+                            parseFailed=True)]
+    resources = [s.strip() for s in resources_raw.split(separator) if s.strip()]
+    if not resources:
+        return None
+    # 金额串保留空段位置（不静默过滤）：空金额段 = 该资源金额缺失 → parseFailed。
+    # 若过滤空段再 zip，`A;B` + `1;;3` 会错位成 A=1、B=3（交叉审核 P2）。
+    costs = [s.strip() for s in costs_raw.split(separator)]
+    result = []
+    for i, res in enumerate(resources):
+        cost = costs[i] if i < len(costs) else ""
+        if cost == "":
+            # 金额缺失（原空段）：该位置资源 parseFailed，rawAmount="" 满足不变量 4
+            result.append(UpgradeCost(resource=res, amount=None, rawResource=res,
+                                      rawAmount="", parseFailed=True))
+        elif cost.isdigit():
+            result.append(UpgradeCost(resource=res, amount=int(cost), rawResource=res,
+                                      rawAmount=None, parseFailed=False))
+        else:
+            result.append(UpgradeCost(resource=res, amount=None, rawResource=res,
+                                      rawAmount=cost, parseFailed=True))
+    # 金额多余（含多余空段）：resource 复用最后一个资源段（保证不变量 6 非空）
+    for cost in costs[len(resources):]:
+        result.append(UpgradeCost(resource=resources[-1], amount=None,
+                                  rawResource=resources[-1], rawAmount=cost,
+                                  parseFailed=True))
+    return result
 
 
 @dataclass
@@ -21,8 +96,7 @@ class _ParsedRow:
     level_visual: AssetRef | None
     duration: int | None
     missing: str | None
-    resource: str | None
-    cost: int | None
+    upgrade_costs: list[UpgradeCost] | None
     town_hall: int | None
     laboratory: int | None
     hero_tavern: int | None
@@ -77,8 +151,12 @@ def _parse_row(row: dict[str, str], spec: TableSpec) -> _ParsedRow:
     else:
         duration, missing = parse_duration(row, spec.time_columns)
 
-    resource = row.get(spec.resource_column, "") if spec.resource_column else ""
-    cost = parse_optional_int(row.get(spec.cost_column, "")) if spec.cost_column else None
+    if spec.resource_column:
+        resources_raw = row.get(spec.resource_column, "")
+        costs_raw = row.get(spec.cost_column, "") if spec.cost_column else ""
+        upgrade_costs = parse_upgrade_costs(resources_raw, costs_raw, spec.list_separator)
+    else:
+        upgrade_costs = None  # 表无费用列 → 无费用数据
     th = parse_optional_int(row.get(spec.town_hall_column, "")) if spec.town_hall_column else None
     lab = parse_optional_int(row.get(spec.laboratory_column, "")) if spec.laboratory_column else None
     tavern = parse_optional_int(row.get(spec.hero_tavern_column, "")) if spec.hero_tavern_column else None
@@ -89,8 +167,7 @@ def _parse_row(row: dict[str, str], spec: TableSpec) -> _ParsedRow:
         level_visual=_visual_ref(row, spec),
         duration=duration,
         missing=missing,
-        resource=resource or None,
-        cost=cost,
+        upgrade_costs=upgrade_costs,
         town_hall=th,
         laboratory=lab,
         hero_tavern=tavern,
@@ -113,8 +190,7 @@ def _level_from_row(rec: _ParsedRow) -> CatalogLevel:
         level=rec.level,
         durationSeconds=rec.duration,
         missingReason=rec.missing,
-        upgradeResource=rec.resource,
-        upgradeCost=rec.cost,
+        upgradeCosts=rec.upgrade_costs,
         requiredTownHallLevel=rec.town_hall,
         requiredLaboratoryLevel=rec.laboratory,
         icon=rec.icon,
@@ -129,8 +205,7 @@ def _level_initial(level: int, own: _ParsedRow | None) -> CatalogLevel:
         level=level,
         durationSeconds=None,
         missingReason=INITIAL_LEVEL_REASON,
-        upgradeResource=None,
-        upgradeCost=None,
+        upgradeCosts=None,
         requiredTownHallLevel=None,
         requiredLaboratoryLevel=None,
         icon=own.icon if own else None,
@@ -166,8 +241,7 @@ def _build_levels(records: list[_ParsedRow], spec: TableSpec) -> list[CatalogLev
                 level=own.level,
                 durationSeconds=src.duration,
                 missingReason=src.missing,
-                upgradeResource=src.resource,
-                upgradeCost=src.cost,
+                upgradeCosts=src.upgrade_costs,
                 requiredTownHallLevel=src.town_hall,
                 requiredLaboratoryLevel=src.laboratory,
                 icon=own.icon,
@@ -293,20 +367,20 @@ def build_guardians(
             if level.level == 1:
                 level.durationSeconds = None
                 level.missingReason = INITIAL_LEVEL_REASON
-                level.upgradeResource = None
-                level.upgradeCost = None
+                level.upgradeCosts = None
                 continue
             hit = index.get((join_key, level.level - 1))
             if hit is None:
                 level.durationSeconds = None
                 level.missingReason = "upgrade_data_missing"
-                level.upgradeResource = None
-                level.upgradeCost = None
+                level.upgradeCosts = None
                 continue
             duration, missing = parse_duration(hit, ("UpgradeTimeDays", "UpgradeTimeHours",
                                                       "UpgradeTimeMinutes", "UpgradeTimeSeconds"))
             level.durationSeconds = duration
             level.missingReason = missing
-            level.upgradeResource = hit.get("UpgradeResource") or hit.get("AltUpgradeResource") or None
-            level.upgradeCost = parse_optional_int(hit.get("UpgradeCost", ""))
+            # 单值语义：UpgradeResource/AltUpgradeResource + UpgradeCost → 单元素数组；
+            # 资源串空（join 行无资源值）→ None
+            res_raw = hit.get("UpgradeResource") or hit.get("AltUpgradeResource") or ""
+            level.upgradeCosts = parse_upgrade_costs(res_raw, hit.get("UpgradeCost", ""), None)
     return items

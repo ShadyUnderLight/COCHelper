@@ -1,6 +1,7 @@
 """APK 静态游戏目录生成管线（issue #13）。"""
 
-SCHEMA_VERSION = 1
+# v2: CatalogLevel 多资源升级费用（upgradeCosts 数组替代 upgradeResource/upgradeCost 键，issue #73）
+SCHEMA_VERSION = 2
 
 # 按字段域拆分的 missingReason 词表：level / base / item / asset 各域互不混用，
 # 校验时用分域词表拒绝跨域污染（如 level 上写 "capital_has_no_base"）。

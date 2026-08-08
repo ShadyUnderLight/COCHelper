@@ -1,7 +1,9 @@
 import json
 
+import pytest
+
 from game_catalog.model import (
-    AssetRef, CatalogLevel, CatalogItem, Catalog,
+    AssetRef, CatalogLevel, CatalogItem, Catalog, UpgradeCost,
     item_to_dict, catalog_to_dict, catalog_from_dict,
 )
 
@@ -15,7 +17,9 @@ def _sample_item() -> CatalogItem:
         levelVisual=None, missingReason=None,
         levels=[CatalogLevel(
             level=13, durationSeconds=1_081_800, missingReason=None,
-            upgradeResource="Elixir", upgradeCost=24_000_000,
+            upgradeCosts=[UpgradeCost(
+                resource="Elixir", amount=24_000_000, rawResource="Elixir",
+                rawAmount=None, parseFailed=False)],
             requiredTownHallLevel=None, requiredLaboratoryLevel=16,
             icon=None, levelVisual=None,
         )],
@@ -32,6 +36,7 @@ def test_item_dict_has_all_keys_even_null():
     assert d["baseMissingReason"] is None
     assert d["levelVisual"] is None
     assert d["levels"][0]["requiredTownHallLevel"] is None
+    assert d["levels"][0]["upgradeCosts"][0]["rawAmount"] is None
 
 
 def test_catalog_roundtrip_through_json():
@@ -47,3 +52,63 @@ def test_catalog_dict_deterministic_key_order():
     d1 = json.dumps(catalog_to_dict(cat), ensure_ascii=False, sort_keys=True)
     d2 = json.dumps(catalog_to_dict(cat), ensure_ascii=False, sort_keys=True)
     assert d1 == d2
+
+
+# ---- UpgradeCost / upgradeCosts（Issue #73 Task 1）----
+
+
+def test_upgrade_cost_dict_roundtrip():
+    for uc in (
+        UpgradeCost("Elixir", 100, "Elixir", None, False),
+        UpgradeCost("RareOre", None, "RareOre", "abc", True),
+        UpgradeCost("RareOre", None, "RareOre", "", True),
+    ):
+        assert UpgradeCost.from_dict(uc.to_dict()) == uc
+
+
+def test_upgrade_cost_dict_has_all_keys_even_null():
+    d = UpgradeCost("Elixir", 100, "Elixir", None, False).to_dict()
+    assert set(d) == {"resource", "amount", "rawResource", "rawAmount", "parseFailed"}
+    assert d["rawAmount"] is None
+    assert d["amount"] == 100
+
+
+def test_upgrade_cost_from_dict_bad_type_raises():
+    with pytest.raises(ValueError):
+        UpgradeCost.from_dict("x")
+
+
+def test_catalog_level_roundtrip_with_upgrade_costs():
+    lv = CatalogLevel(
+        level=1, durationSeconds=None, missingReason="time_missing",
+        upgradeCosts=[UpgradeCost("RareOre", None, "RareOre", "oops", True)],
+        requiredTownHallLevel=None, requiredLaboratoryLevel=None,
+        icon=None, levelVisual=None,
+    )
+    assert CatalogLevel.from_dict(lv.to_dict()) == lv
+
+
+def test_catalog_level_to_dict_empty_upgrade_costs_normalized_to_none():
+    """契约「非 None 必须非空（[] 非法）」：upgradeCosts=[] → 序列化为 None。
+
+    与 from_dict 的 None 语义对称：空列表不会进入 JSON。
+    """
+    lv = CatalogLevel(
+        level=1, durationSeconds=None, missingReason="time_missing",
+        upgradeCosts=[], requiredTownHallLevel=None, requiredLaboratoryLevel=None,
+        icon=None, levelVisual=None,
+    )
+    assert lv.to_dict()["upgradeCosts"] is None
+
+
+def test_catalog_level_from_dict_legacy_without_upgrade_costs():
+    """旧格式 JSON（无 upgradeCosts 键，upgradeResource/upgradeCost）→ None。"""
+    d = {"level": 1, "durationSeconds": 0, "missingReason": None,
+         "upgradeResource": "Elixir", "upgradeCost": 100,
+         "requiredTownHallLevel": None, "requiredLaboratoryLevel": None,
+         "icon": None, "levelVisual": None}
+    lv = CatalogLevel.from_dict(d)
+    assert lv.upgradeCosts is None
+    out = lv.to_dict()
+    assert "upgradeCosts" in out and out["upgradeCosts"] is None
+    assert "upgradeResource" not in out and "upgradeCost" not in out

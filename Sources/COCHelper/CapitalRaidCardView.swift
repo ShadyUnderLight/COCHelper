@@ -290,39 +290,111 @@ struct CapitalRaidCardView: View {
         }
     }
 
+    @ViewBuilder
     private func raidLogRow(_ entry: CapitalRaidAttackLogEntry) -> some View {
-        HStack {
-            Text("对阵 " + (entry.defender?.name ?? "未知部落"))
-                .font(.caption).lineLimit(1)
-            Spacer()
-            Text([entry.attackCount.map { "\($0) 次进攻" },
-                  entry.districtsDestroyed.map { "摧毁 \($0) 座子城" },
-                  districtSummary(entry.districts)]
-                .compactMap { $0 }.joined(separator: " · "))
-                .font(.caption2.monospaced()).foregroundStyle(.secondary)
-        }
+        logEntryRow(
+            opponentName: entry.defender?.name,
+            attackCount: entry.attackCount,
+            districtsDestroyed: entry.districtsDestroyed,
+            districts: entry.districts
+        )
     }
 
+    @ViewBuilder
     private func defenseLogRow(_ entry: CapitalRaidDefenseLogEntry) -> some View {
-        HStack {
-            Text("对阵 " + (entry.attacker?.name ?? "未知部落"))
-                .font(.caption).lineLimit(1)
-            Spacer()
-            Text([entry.attackCount.map { "\($0) 次进攻" },
-                  entry.districtsDestroyed.map { "摧毁 \($0) 座子城" },
-                  districtSummary(entry.districts)]
-                .compactMap { $0 }.joined(separator: " · "))
-                .font(.caption2.monospaced()).foregroundStyle(.secondary)
+        logEntryRow(
+            opponentName: entry.attacker?.name,
+            attackCount: entry.attackCount,
+            districtsDestroyed: entry.districtsDestroyed,
+            districts: entry.districts
+        )
+    }
+
+    /// 攻防日志条目行：有子城明细时可展开逐子城；摘要只显示可加/计数信息，
+    /// 摧毁率永不累加（issue #69）。
+    @ViewBuilder
+    private func logEntryRow(
+        opponentName: String?, attackCount: Int?,
+        districtsDestroyed: Int?, districts: [CapitalRaidDistrict]?
+    ) -> some View {
+        if let districts, !districts.isEmpty {
+            let summary = ClanCombatSummary.raidDistricts(districts)
+            DisclosureGroup {
+                districtRows(summary)
+                    .padding(.vertical, 4)
+            } label: {
+                logEntryLabel(
+                    opponentName: opponentName,
+                    summaryText: logEntrySummaryText(
+                        attackCount: attackCount,
+                        destroyed: ClanCombatSummary.destroyedDistrictCount(
+                            districtsDestroyed: districtsDestroyed, districts: districts
+                        ),
+                        looted: summary.totalLooted
+                    )
+                )
+            }
+            .font(.caption)
+        } else {
+            logEntryLabel(
+                opponentName: opponentName,
+                summaryText: logEntrySummaryText(
+                    attackCount: attackCount,
+                    destroyed: ClanCombatSummary.destroyedDistrictCount(
+                        districtsDestroyed: districtsDestroyed, districts: []
+                    ),
+                    looted: nil
+                )
+            )
         }
     }
 
-    /// 子城概要：摧毁 X% · 掠夺 Y 都城金币（districts 聚合；官方无顶层 looted）。
-    private func districtSummary(_ districts: [CapitalRaidDistrict]?) -> String? {
-        guard let districts, !districts.isEmpty else { return nil }
-        let destruction = districts.reduce(0.0) { $0 + ($1.destructionPercent ?? 0) }
-        let loot = districts.reduce(0) { $0 + ($1.totalLooted ?? 0) }
-        let parts = ["摧毁率 \(Self.percent(destruction))%", "掠夺 \(Self.formatted(loot)) 都城金币"]
-        return parts.joined(separator: " · ")
+    private func logEntryLabel(opponentName: String?, summaryText: String) -> some View {
+        HStack {
+            Text("对阵 " + (opponentName ?? "未知部落"))
+                .font(.caption)
+                .lineLimit(1)
+            Spacer()
+            Text(summaryText)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 摘要文案：N 次进攻 · 摧毁 M 座子城 · 掠夺 X 都城金币（金币为 nil 时省略分句，缺失记 0 时显示 0）。
+    private func logEntrySummaryText(attackCount: Int?, destroyed: Int?, looted: Int?) -> String {
+        [attackCount.map { "\($0) 次进攻" },
+         destroyed.map { "摧毁 \($0) 座子城" },
+         looted.map { "掠夺 \(Self.formatted($0)) 都城金币" }]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    private func districtRows(_ summary: CapitalRaidDistrictSummary) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(summary.districts.enumerated()), id: \.offset) { _, district in
+                districtRow(district)
+            }
+        }
+    }
+
+    /// 逐子城明细行：名称 + ⭐星数 · 摧毁率 X% · N 次进攻 · 掠夺 Y 金币（缺失项省略）。
+    private func districtRow(_ district: CapitalRaidDistrictLine) -> some View {
+        HStack {
+            Text(district.name ?? "未知子城")
+                .font(.caption)
+                .lineLimit(1)
+            Spacer()
+            Text([district.stars.map { "⭐\(min(max($0, 0), 3))" },
+                  district.destructionPercent.flatMap(ClanCombatSummary.displayDestructionPercent).map { "摧毁率 \(Self.percent($0))%" },
+                  district.attackCount.map { "\($0) 次进攻" },
+                  district.totalLooted.map { "掠夺 \(Self.formatted($0)) 都城金币" }]
+                .compactMap { $0 }
+                .joined(separator: " · "))
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 1)
     }
 
     private static func percent(_ value: Double) -> String {

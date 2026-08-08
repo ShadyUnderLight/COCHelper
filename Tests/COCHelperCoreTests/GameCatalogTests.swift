@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import COCHelperCore
 
@@ -492,4 +493,601 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertEqual(decoded, original)
         XCTAssertEqual(decoded.upgradeCosts, original.upgradeCosts)
     }
+    // MARK: - Issue #74b: duration state 语义
+
+    // MARK 段测试用 Payload（GameCatalogTests 私有；RequirementTests 另有同名
+    // private struct，词法作用域隔离，互不冲突）。
+    private struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
+
+    private let durationStateCatalogJSON = """
+    {"gameVersion":"18.400.13","items":[
+      {"section":"units","category":"troops","dataID":1,"base":"home","name":"a","maxLevel":8,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,"levels":[
+        {"level":1,"durationSeconds":3600,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+        {"level":2,"durationSeconds":0,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+        {"level":3,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+        {"level":4,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_time_source"},
+        {"level":5,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"time_invalid"},
+        {"level":6,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"time_missing"},
+        {"level":7,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"upgrade_data_missing"},
+        {"level":8,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+        {"level":9,"durationSeconds":-1,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+        {"level":10,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"future_reason"}
+      ]}
+    ]}
+    """
+
+    func testDurationStateMappingAllBuckets() throws {
+            let data = Data(durationStateCatalogJSON.utf8)
+            let payload = try JSONDecoder().decode(Payload.self, from: data)
+            let catalog = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+            let item = try XCTUnwrap(catalog.item(section: "units", dataID: 1))
+            let states = Dictionary(uniqueKeysWithValues: item.levels.map { ($0.level, $0.durationState) })
+            XCTAssertEqual(states[1], .timed(seconds: 3600))
+            XCTAssertEqual(states[2], .instant)
+            XCTAssertEqual(states[3], .initialLevel)
+            XCTAssertEqual(states[4], .notApplicable)
+            XCTAssertEqual(states[5], .parseFailed)
+            XCTAssertEqual(states[6], .sourceMissing)
+            XCTAssertEqual(states[7], .sourceMissing, "upgrade_data_missing 归入 sourceMissing")
+            // nil duration + nil reason → nil（UI 兜底「暂无目录数据」，未知场景）。
+            // 注意 states 字典值本身是 Optional，需 flatMap 拍平后再断言。
+            XCTAssertNil(states[8].flatMap { $0 })
+            // 负数防御（生成层已拒绝，解码旧/损坏数据可达）：映射不崩溃、归未知
+            XCTAssertEqual(states[9], .unknownReason("negative_duration"))
+            // 契约外 reason（词表校验拒绝，但防御分支必须存在）：原样透传
+            XCTAssertEqual(states[10], .unknownReason("future_reason"))
+    }
+
+    func testDurationStateRealCatalog() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        // 单位系 level 1 = 初始等级
+        let barbarian = try XCTUnwrap(catalog.item(section: "units", dataID: 4_000_000))
+        XCTAssertEqual(barbarian.levels.first { $0.level == 1 }?.durationState, .initialLevel)
+        XCTAssertEqual(barbarian.levels.first { $0.level == 2 }?.durationState, .timed(seconds: 1800))
+        // 装备：no_time_source → notApplicable（1032 个 level）
+        let equipment = try XCTUnwrap(catalog.item(section: "equipment", dataID: 90_000_000))
+        XCTAssertEqual(equipment.levels.first?.durationState, .notApplicable)
+        // 真实目录存在 0 秒即时升级（城墙 buildings:1000010 level 1）
+        let walls = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_010))
+        XCTAssertEqual(walls.levels.first { $0.level == 1 }?.durationState, .instant)
+        // 真实目录存在 time_missing（units 系 843 个 level）
+        let anySourceMissing = catalog.items(in: "units").contains {
+            $0.levels.contains { $0.missingReason == "time_missing" }
+    }
+    XCTAssertTrue(anySourceMissing, "真实目录应存在 time_missing 锚点")
+    }
+
+    func testDurationStateLabel() {
+    XCTAssertEqual(CatalogDurationState.timed(seconds: 3600).durationLabel, "1小时 0分钟")
+    XCTAssertEqual(CatalogDurationState.instant.durationLabel, "即时")
+    XCTAssertEqual(CatalogDurationState.initialLevel.durationLabel, "初始等级，无升级时长")
+    XCTAssertEqual(CatalogDurationState.notApplicable.durationLabel, "该类别无时长数据")
+    XCTAssertEqual(CatalogDurationState.sourceMissing.durationLabel, "目录缺失")
+    XCTAssertEqual(CatalogDurationState.parseFailed.durationLabel, "目录解析失败")
+    XCTAssertEqual(CatalogDurationState.unknownReason("future").durationLabel, "暂无目录数据")
+    }
+
+    func testCatalogItemMissingReasonDecodes() throws {
+        // 有字段：deprecated_in_source 保留
+        let withReason = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":"deprecated_in_source","levels":[
+            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"}
+          ]}
+        ]}
+        """
+        let payload = try JSONDecoder().decode(Payload.self, from: Data(withReason.utf8))
+        let item = try XCTUnwrap(payload.items.first)
+        XCTAssertEqual(item.missingReason, "deprecated_in_source")
+        // 无字段：旧目录向后兼容
+        let withoutReason = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"pets","category":"pets","dataID":73000000,"base":"home","name":"a","maxLevel":1,"icon":null,"levelVisual":null,"baseMissingReason":null,"levels":[
+            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+          ]}
+        ]}
+        """
+        let payload2 = try JSONDecoder().decode(Payload.self, from: Data(withoutReason.utf8))
+        let oldItem = try XCTUnwrap(payload2.items.first)
+        XCTAssertNil(oldItem.missingReason)
+    }
+
+    func testCatalogCountsDecodesNewFields() throws {
+        let withNew = """
+        {"items":1,"levels":1,"missingIcons":0,"missingTime":0,"timed":1,"instant":0,"notApplicable":0,"initialLevel":0,"sourceMissing":0,"parseFailed":0}
+        """
+        let counts = try JSONDecoder().decode(CatalogCounts.self, from: Data(withNew.utf8))
+        XCTAssertEqual(counts.timed, 1)
+        XCTAssertEqual(counts.instant, 0)
+        // 旧 manifest：新字段缺键 → nil（向后兼容）
+        let old = """
+        {"items":1,"levels":1,"missingIcons":0,"missingTime":0}
+        """
+        let oldCounts = try JSONDecoder().decode(CatalogCounts.self, from: Data(old.utf8))
+        XCTAssertNil(oldCounts.timed)
+        XCTAssertNil(oldCounts.parseFailed)
+    }
+
+
+    func testLoadBundledExposesManifest() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let manifest = try XCTUnwrap(catalog.manifest, "bundled 目录必须带 manifest")
+        XCTAssertEqual(manifest.gameVersion, "18.400.13")
+        XCTAssertEqual(manifest.buildTag, "18_400_7")
+        XCTAssertEqual(manifest.counts.timed, 2096, "manifest counts 拆分字段应已落盘")
+        XCTAssertEqual(manifest.counts.sourceMissing, 1847)
+        XCTAssertFalse(manifest.sourceFingerprint.isEmpty)
+        XCTAssertEqual(manifest.generatedFiles.first?.path, "catalog.json")
+    }
+
+    // MARK: - Issue #74: manifest 运行时完整性校验
+
+    private func makeManifest(
+        items: Int = 1, levels: Int = 1, missingTime: Int = 0,
+        timed: Int? = 1, instant: Int? = 0,
+        sha256: String? = nil
+    ) -> CatalogManifest {
+        CatalogManifest(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
+            locale: "zh-CN", sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+            generatedFiles: [
+                CatalogGeneratedFile(path: "catalog.json", sha256: sha256, size: nil, kind: nil, entries: nil),
+            ],
+            counts: CatalogCounts(
+                items: items, levels: levels, missingIcons: nil, missingTime: missingTime,
+                timed: timed, instant: instant, notApplicable: nil, initialLevel: nil,
+                sourceMissing: nil, parseFailed: nil
+            )
+        )
+    }
+
+    private func makeValidationItem() -> CatalogItem {
+        CatalogItem(
+            section: "units", category: "troops", dataID: 1, base: "home",
+            baseMissingReason: nil, name: "x", maxLevel: 1, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: 3600, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+    }
+
+    func testManifestValidationPassesOnConsistentData() throws {
+        // counts 与目录一致、sha256 与数据一致 → 通过。
+        //（bundled 真实数据通过由 testLoadBundledExposesManifest 间接覆盖：
+        //  loadBundled 内部 validate 失败会使 manifest 为 nil。）
+        let item = makeValidationItem()
+        let catalogData = Data("consistent-catalog".utf8)
+        let sha = CryptoKit.SHA256.hash(data: catalogData)
+            .map { String(format: "%02x", $0) }.joined()
+        let manifest = makeManifest(
+            items: 1, levels: 1, missingTime: 0, sha256: "sha256:" + sha)
+        XCTAssertTrue(manifest.validate(against: [item], catalogData: catalogData))
+    }
+
+    func testManifestValidationRejectsCountsMismatch() {
+        // counts 与目录重算不一致 → 漂移，校验失败（fail-closed）。
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 999, levels: 999, missingTime: 0)
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsMissingTimeMismatch() {
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 1, levels: 1, missingTime: 5)
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsSha256Mismatch() throws {
+        let item = makeValidationItem()
+        let catalogData = Data("tampered".utf8)
+        let manifest = makeManifest(
+            items: 1, levels: 1, missingTime: 0,
+            sha256: "sha256:" + String(repeating: "0", count: 64))
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: catalogData))
+    }
+
+    func testManifestValidationRejectsTimedBucketMismatch() {
+        // 拆分桶声明与目录重算不一致 → 漂移，fail-closed。
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, timed: 0, instant: 0)
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationRejectsMalformedShaPrefix() {
+        // 非 nil 但无 sha256: 前缀 → 格式异常 fail-closed（生成器恒写前缀）。
+        let item = makeValidationItem()
+        let manifest = makeManifest(
+            items: 1, levels: 1, missingTime: 0,
+            sha256: String(repeating: "0", count: 64))
+        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+    func testManifestValidationSkipsShaWhenDeclaredNil() {
+        // 旧 manifest 无 sha256 声明 → 跳过哈希校验（向后兼容）。
+        let item = makeValidationItem()
+        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, sha256: nil)
+        XCTAssertTrue(manifest.validate(against: [item], catalogData: Data()))
+    }
+
+
+    // MARK: - Issue #74 seasonal: 阶段表契约 + 可用性状态
+
+    func testSeasonalPhaseTableEmptyDefault() {
+        // 空表（默认）：任何条目都无阶段信息 → unconfigured 域。
+        XCTAssertTrue(SeasonalPhaseTable.empty.phases.isEmpty)
+        XCTAssertNil(SeasonalPhaseTable.empty.phase(
+            forItemKey: "buildings:103000000", at: Date(timeIntervalSince1970: 1_000)))
+    }
+
+    func testSeasonalPhaseTableActiveHitAndMiss() {
+        let phase = SeasonalPhase(
+            phaseID: "crafted-defenses-1", name: "精制防御第一季",
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+            itemKeys: ["buildings:103000000", "buildings:103000001"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [phase])
+        let now = Date(timeIntervalSince1970: 1_500)
+        XCTAssertEqual(table.phase(forItemKey: "buildings:103000000", at: now)?.phaseID, "crafted-defenses-1")
+        XCTAssertNil(table.phase(forItemKey: "buildings:999999999", at: now), "未配置条目 → nil")
+    }
+
+    func testSeasonalPhaseTableBoundaries() {
+        // from 含、until 不含：999 未开始、1000 开始、1999 活动、2000 结束。
+        let phase = SeasonalPhase(
+            phaseID: "p", name: nil,
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+            itemKeys: ["a:1"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [phase])
+        // phase() 对唯一有效阶段在四点均返回（活动/未开始/已结束均展示）；
+        // 活动边界 from<=now<until 的三态判定由投影层测试锚定（property 50 轮）。
+        for seconds in [999.0, 1_000.0, 1_999.0, 2_000.0] {
+            XCTAssertEqual(
+                table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: seconds))?.phaseID,
+                "p",
+                "now=\(seconds): 唯一有效阶段必须被解析")
+        }
+    }
+
+    func testSeasonalPhaseTableMultipleHitsTakesLatestFrom() {
+        // 同一条目多阶段（异常数据）：取 from 最晚者（确定性）。
+        let p1 = SeasonalPhase(
+            phaseID: "p1", name: nil,
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 3_000),
+            itemKeys: ["a:1"])
+        let p2 = SeasonalPhase(
+            phaseID: "p2", name: nil,
+            from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 3_000),
+            itemKeys: ["a:1"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [p1, p2])
+        XCTAssertEqual(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500))?.phaseID, "p2")
+    }
+
+    func testSeasonalPhaseTableLoadsBundledOfficialPhase() throws {
+        // 18.400.13 随目录人工维护官方公告阶段；日期使用 .deferredToDate，
+        // 官方“April 1-July 30”按 UTC 日边界编码为 [Apr 1, Jul 31)。
+        let table = SeasonalPhaseTable.loadBundled(version: GameCatalog.defaultBundledVersion)
+        XCTAssertEqual(table.schemaVersion, 1)
+        XCTAssertEqual(table.phases.count, 1)
+        let phase = try XCTUnwrap(table.phases.first)
+        XCTAssertEqual(phase.phaseID, "crafted-defenses-2026-04-sound-of-clash")
+        XCTAssertEqual(phase.from, Date(timeIntervalSinceReferenceDate: 796_694_400))
+        XCTAssertEqual(phase.until, Date(timeIntervalSinceReferenceDate: 807_148_800))
+        XCTAssertEqual(phase.itemKeys.count, 12, "3 座精工防御 + 9 个模组")
+        XCTAssertTrue(phase.itemKeys.contains("buildings:103000009"), "Air Bombs")
+        XCTAssertTrue(phase.itemKeys.contains("buildings:102000026"), "Roaster 模组")
+        XCTAssertEqual(
+            phase.sourceURL,
+            "https://supercell.com/en/games/clashofclans/blog/news/its-the-sound-of-clash/"
+        )
+
+        let craftCatalog = try XCTUnwrap(CraftTableCatalog.loadBundled())
+        let expectedKeys = Set(
+            craftCatalog.defenses
+                .filter { [103_000_009, 103_000_010, 103_000_008].contains($0.dataID) }
+                .flatMap { defense in
+                    ["buildings:\(defense.dataID)"]
+                        + defense.moduleIDs.map { "buildings:\($0)" }
+                }
+        )
+        XCTAssertEqual(Set(phase.itemKeys), expectedKeys, "阶段键必须与版本化精制台目录对拍")
+    }
+
+    func testSeasonalPhaseTableMissingVersionReturnsEmpty() {
+        let table = SeasonalPhaseTable.loadBundled(version: "missing-version")
+        XCTAssertTrue(table.phases.isEmpty, "文件缺失仍 fail-safe 为未配置空表")
+    }
+
+    func testAvailabilityDisplayLabel() {
+        XCTAssertNil(CatalogAvailability.permanent.displayLabel)
+        XCTAssertEqual(
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: "精制防御第一季", status: .active).displayLabel,
+            "限时内容：精制防御第一季（活动）")
+        XCTAssertEqual(
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: nil, status: .notStarted).displayLabel,
+            "限时内容：p（未开始）")
+        XCTAssertEqual(
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: nil, status: .ended).displayLabel,
+            "限时内容：p（已结束，仅历史数据）")
+        XCTAssertEqual(CatalogAvailability.unconfigured.displayLabel, "阶段信息未配置")
+    }
+
+    func testSeasonalAvailabilityUsesSharedBoundaryMapping() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "p", name: "阶段",
+                from: Date(timeIntervalSince1970: 1_000),
+                until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["a:1"]
+            ),
+        ])
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", at: Date(timeIntervalSince1970: 999)),
+            .seasonal(phaseID: "p", phaseName: "阶段", status: .notStarted)
+        )
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", at: Date(timeIntervalSince1970: 1_000)),
+            .seasonal(phaseID: "p", phaseName: "阶段", status: .active)
+        )
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_000)),
+            .seasonal(phaseID: "p", phaseName: "阶段", status: .ended)
+        )
+        XCTAssertEqual(
+            table.availability(forItemKey: "missing", at: Date(timeIntervalSince1970: 1_500)),
+            .unconfigured
+        )
+    }
+
+    func testSeasonalPhaseTablePhaseResolvesNearestFuture() {
+        // 多未来阶段：取最近即将开始（最小 from），而非最远。
+        let phases = [
+            SeasonalPhase(phaseID: "p1", name: nil,
+                          from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000), itemKeys: ["a:1"]),
+            SeasonalPhase(phaseID: "p2", name: nil,
+                          from: Date(timeIntervalSince1970: 3_000), until: Date(timeIntervalSince1970: 4_000), itemKeys: ["a:1"]),
+            SeasonalPhase(phaseID: "p3", name: nil,
+                          from: Date(timeIntervalSince1970: 5_000), until: Date(timeIntervalSince1970: 6_000), itemKeys: ["a:1"]),
+        ]
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: phases)
+        XCTAssertEqual(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500))?.phaseID, "p2")
+    }
+
+    func testSeasonalPhaseTablePhaseResolvesRecentEnded() {
+        // 全部已结束：取最近结束（最大 until）。
+        let phases = [
+            SeasonalPhase(phaseID: "p1", name: nil,
+                          from: Date(timeIntervalSince1970: 0), until: Date(timeIntervalSince1970: 1_000), itemKeys: ["a:1"]),
+            SeasonalPhase(phaseID: "p2", name: nil,
+                          from: Date(timeIntervalSince1970: 500), until: Date(timeIntervalSince1970: 2_000), itemKeys: ["a:1"]),
+        ]
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: phases)
+        XCTAssertEqual(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500))?.phaseID, "p2")
+    }
+
+    func testSeasonalPhaseTablePhaseFiltersMalformed() {
+        // from >= until 的畸形阶段：统一解析入口过滤 → nil（unconfigured 域）。
+        let bad = SeasonalPhase(
+            phaseID: "bad", name: nil,
+            from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 1_000),
+            itemKeys: ["a:1"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [bad])
+        XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 1_500)))
+        XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500)))
+    }
+
+    func testPropertyPhaseResolutionSemantics() throws {
+        // property：随机阶段集（含畸形）+ 随机 now → phase() 语义不变量：
+        // ① 返回阶段必有效（from < until）；② 有活动取 from 最大；
+        // ③ 无活动有未来取 from 最小；④ 无活动无未来取 until 最大；
+        // ⑤ 全畸形/未命中 → nil。
+        var rng = SeededRNG(seed: 99)
+        for iteration in 0..<100 {
+            let n = Int.random(in: 0...5, using: &rng)
+            var phases: [SeasonalPhase] = []
+            for j in 0..<n {
+                let from = Double(Int.random(in: 0...9_000, using: &rng))
+                let until = from + Double(Int.random(in: -2_000...4_000, using: &rng))
+                phases.append(SeasonalPhase(
+                    phaseID: "p\(j)", name: nil,
+                    from: Date(timeIntervalSince1970: from),
+                    until: Date(timeIntervalSince1970: until),
+                    itemKeys: ["a:1"]))  // 含 from>=until 畸形
+            }
+            let table = SeasonalPhaseTable(schemaVersion: 1, phases: phases)
+            let now = Date(timeIntervalSince1970: Double(Int.random(in: 0...9_000, using: &rng)))
+            let resolved = table.phase(forItemKey: "a:1", at: now)
+
+            let valid = phases.filter { $0.from < $0.until }
+            let active = valid.filter { $0.from <= now && now < $0.until }
+            let future = valid.filter { $0.from > now }
+
+            if valid.isEmpty {
+                XCTAssertNil(resolved, "迭代 \(iteration): 无有效阶段 → nil")
+                continue
+            }
+            let p = try XCTUnwrap(resolved, "迭代 \(iteration): 有有效阶段必须解析")
+            XCTAssertLessThan(p.from, p.until, "迭代 \(iteration): 返回阶段必须有效")
+            if let latestActive = active.max(by: { $0.from < $1.from }) {
+                XCTAssertEqual(p.phaseID, latestActive.phaseID,
+                               "迭代 \(iteration): 有活动必须取 from 最大（活动 \(active.count) 个）")
+            } else if let nearestFuture = future.min(by: { $0.from < $1.from }) {
+                XCTAssertEqual(p.phaseID, nearestFuture.phaseID,
+                               "迭代 \(iteration): 无活动有未来必须取 from 最小")
+            } else {
+                XCTAssertEqual(p.phaseID, valid.max(by: { $0.until < $1.until })?.phaseID,
+                               "迭代 \(iteration): 全已结束必须取 until 最大")
+            }
+        }
+    }
+
+    func testSeasonalPhaseTableRoundTripDecode() throws {
+        // 日期编码契约：JSONDecoder 默认 .deferredToDate（2001-01-01 起秒数）。
+        // 编码→解码 round-trip 锚定该契约，防未来改 ISO8601 时 decoder 未同步。
+        let phase = SeasonalPhase(
+            phaseID: "p", name: "阶段",
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+            itemKeys: ["a:1"], sourceURL: "https://example.com/official")
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [phase])
+        let data = try JSONEncoder().encode(table)
+        let decoded = try JSONDecoder().decode(SeasonalPhaseTable.self, from: data)
+        XCTAssertEqual(decoded.phases.count, 1)
+        XCTAssertEqual(decoded.phases[0].phaseID, "p")
+        XCTAssertEqual(decoded.phases[0].from, Date(timeIntervalSince1970: 1_000))
+        XCTAssertEqual(decoded.phases[0].until, Date(timeIntervalSince1970: 2_000))
+        XCTAssertEqual(decoded.phases[0].sourceURL, "https://example.com/official")
+    }
+
+    func testSeasonalPhaseTableMalformedDataNeverHits() {
+        // from > until（异常数据）与空 itemKeys：永不命中 → unconfigured 域。
+        let bad = SeasonalPhase(
+            phaseID: "bad", name: nil,
+            from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 1_000),
+            itemKeys: ["a:1"])
+        let emptyKeys = SeasonalPhase(
+            phaseID: "ek", name: nil,
+            from: Date(timeIntervalSince1970: 0), until: Date(timeIntervalSince1970: 9_999),
+            itemKeys: [])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [bad, emptyKeys])
+        XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 1_500)))
+        XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500)))
+    }
+
+
+}
+
+// MARK: - UpgradeRequirement（Issue #67）
+final class RequirementTests: XCTestCase {
+    /// 按 base 解析 village 语义：home → townHall/laboratory/heroHall。
+    func testHomeBaseRequirementsParseVillageSemantics() {
+        let item = makeRequirementItem(base: "home",
+            th: 12, lab: nil, tavern: 8)
+        XCTAssertEqual(item.requirements, [
+            .townHall(level: 12), .heroHall(level: 8)
+        ])
+    }
+
+    /// builder → builderHall/starLaboratory（数据源字段复用但语义不同）。
+    func testBuilderBaseRequirementsParseBuilderSemantics() {
+        let item = makeRequirementItem(base: "builder",
+            th: 10, lab: 8, tavern: nil)
+        XCTAssertEqual(item.requirements, [
+            .builderHall(level: 10), .starLaboratory(level: 8)
+        ])
+    }
+
+    /// 无 requirement 的 item（equipment 等）→ 空数组。
+    func testNoRequirementsYieldsEmpty() {
+        let item = makeRequirementItem(base: "home", th: nil, lab: nil, tavern: nil)
+        XCTAssertEqual(item.requirements, [])
+    }
+
+    /// 旧目录（无 requiredHeroTavernLevel 键）仍可解码（Codable 向后兼容）。
+    func testLegacyLevelDecodesWithoutHeroTavernField() throws {
+            let json = """
+            {"gameVersion":"v","items":[
+              {"section":"heroes","category":"heroes","dataID":28000000,"base":"home",
+               "name":"野蛮人之王","maxLevel":2,"icon":null,"levelVisual":null,
+               "baseMissingReason":null,"missingReason":null,
+               "levels":[
+                 {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,
+                  "requiredTownHallLevel":4,"requiredLaboratoryLevel":null,
+                  "icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"}
+               ]}
+            ]}
+            """
+            let payload = try JSONDecoder().decode(Payload.self, from: Data(json.utf8))
+            XCTAssertNil(payload.items[0].levels[0].requiredHeroTavernLevel)
+            XCTAssertEqual(payload.items[0].requirements, [.townHall(level: 4)])
+    }
+
+    /// tavern == 0（heroes2 建筑大师基地英雄源数据）→ 不产生 heroHall requirement（0 级门槛恒满足）。
+    func testZeroTavernYieldsNoHeroHallRequirement() {
+        let item = makeRequirementItem(base: "home", th: 12, lab: nil, tavern: 0)
+        XCTAssertEqual(item.requirements, [.townHall(level: 12)])
+    }
+
+    // MARK: - displayLabel / displayLabels（Issue #68 Task 3）
+
+    /// home/其他 base：townHall → 大本营、laboratory → 实验室、heroHall → 英雄殿堂；
+    /// builderHall/starLaboratory 自身语义恒为建筑大师大本营/星空实验室。
+    /// 与 LevelDetailSheet.unlockLabel 措辞逐字一致。
+    func testRequirementDisplayLabelHome() {
+        XCTAssertEqual(UpgradeRequirement.townHall(level: 12).displayLabel(base: "home"), "所需大本营等级 12级")
+        XCTAssertEqual(UpgradeRequirement.laboratory(level: 8).displayLabel(base: "home"), "所需实验室等级 8级")
+        XCTAssertEqual(UpgradeRequirement.heroHall(level: 10).displayLabel(base: "home"), "所需英雄殿堂等级 10级")
+        XCTAssertEqual(UpgradeRequirement.builderHall(level: 12).displayLabel(base: "home"), "所需建筑大师大本营等级 12级")
+        XCTAssertEqual(UpgradeRequirement.starLaboratory(level: 8).displayLabel(base: "home"), "所需星空实验室等级 8级")
+    }
+
+    /// builder base：townHall 语义映射到建筑大师大本营、laboratory 映射到星空实验室
+    ///（与 unlockLabel 的 builder 分支逐字一致：requiredTownHallLevel →
+    /// 建筑大师大本营、requiredLaboratoryLevel → 星空实验室）。
+    func testRequirementDisplayLabelBuilderBase() {
+        XCTAssertEqual(UpgradeRequirement.townHall(level: 12).displayLabel(base: "builder"), "所需建筑大师大本营等级 12级")
+        XCTAssertEqual(UpgradeRequirement.laboratory(level: 8).displayLabel(base: "builder"), "所需星空实验室等级 8级")
+        XCTAssertEqual(UpgradeRequirement.builderHall(level: 12).displayLabel(base: "builder"), "所需建筑大师大本营等级 12级")
+        XCTAssertEqual(UpgradeRequirement.starLaboratory(level: 8).displayLabel(base: "builder"), "所需星空实验室等级 8级")
+        XCTAssertEqual(UpgradeRequirement.heroHall(level: 10).displayLabel(base: "builder"), "所需英雄殿堂等级 10级")
+    }
+
+    /// 多条件数组 → 「A · B」连接（与 unlockLabel 措辞一致）；空数组 → 空串；
+    /// nil base 走 home 语义。
+    func testRequirementDisplayLabelsJoin() {
+        XCTAssertEqual(
+            [UpgradeRequirement.townHall(level: 12), .laboratory(level: 8)].displayLabels(base: "home"),
+            "所需大本营等级 12级 · 所需实验室等级 8级"
+        )
+        XCTAssertEqual(
+            [UpgradeRequirement.builderHall(level: 10), .starLaboratory(level: 8)].displayLabels(base: "builder"),
+            "所需建筑大师大本营等级 10级 · 所需星空实验室等级 8级"
+        )
+        XCTAssertEqual([UpgradeRequirement]().displayLabels(base: "home"), "")
+        XCTAssertEqual(UpgradeRequirement.townHall(level: 12).displayLabel(base: nil), "所需大本营等级 12级")
+    }
+
+    private struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
+
+    private func makeRequirementItem(base: String?, th: Int?, lab: Int?, tavern: Int?) -> CatalogItem {
+        CatalogItem(
+            section: "heroes", category: "heroes", dataID: 1, base: base,
+            baseMissingReason: nil, name: "测试", maxLevel: 2, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 2, durationSeconds: nil, upgradeCosts: nil,
+                requiredTownHallLevel: th, requiredLaboratoryLevel: lab,
+                requiredHeroTavernLevel: tavern, icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+    }
+
+    // MARK: - 真实目录阶段上限锚点（Issue #67 契约硬化）
+
+    /// 真实 bundled 目录：12 本玩家加农炮阶段上限 15（全局 17）——目录升级时锚点
+    /// 主动红，防「阶段上限被全局上限替代」回归（审核 B important-2）。
+    func testBundledCannonStageMaxAtTH12() throws {
+            let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+            let cannon = try XCTUnwrap(catalog.item(section: "buildings", dataID: 1_000_002))
+            let unlocks = PlayerUnlockLevels(townHall: 12)
+            XCTAssertEqual(cannon.maxLevel, 17, "全局上限锚点")
+            XCTAssertEqual(
+                VillageCatalogProjection.currentStageMaxLevel(for: cannon, unlocks: unlocks),
+                15,
+                "TH=12 时加农炮阶段上限应为 15（lvl16 需 TH14）"
+            )
+    }
+
+    /// 真实 bundled 目录：野蛮人之王 TH18 + 英雄殿堂 8 → 阶段上限 86（全局 110）。
+    /// 英雄殿堂门槛（tavern）真实生效锚点。
+    func testBundledKingStageMaxAtTH18Tavern8() throws {
+            let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+            let king = try XCTUnwrap(catalog.item(section: "heroes", dataID: 28_000_000))
+            let unlocks = PlayerUnlockLevels(townHall: 18, heroHall: 8)
+            XCTAssertEqual(king.maxLevel, 110, "全局上限锚点")
+            XCTAssertEqual(
+                VillageCatalogProjection.currentStageMaxLevel(for: king, unlocks: unlocks),
+                86,
+                "tavern=8 时英雄阶段上限应为 86（tavern 门槛 9+ 不满足）"
+            )
+    }
+
 }

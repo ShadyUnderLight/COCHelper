@@ -30,9 +30,17 @@ struct LevelDetailSheet: View {
     private var statusLabel: String {
         switch item.status {
         case .upgrading: "正在升级"
-        case .maxed: "已满级"
+        case .maxed:
+            // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分，
+            // 但都不当作当前可升级项。
+            if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
+                "当前阶段已满级（全局尚有 \(max - stage) 级）"
+            } else {
+                "已满级"
+            }
         case .complete: "已记录"
         case .unknown: "目录未收录"
+        case .unverified: "无法验证当前阶段上限"
         case .unavailable: "不参与升级追踪"
         case .available: "目录中可用"
         }
@@ -42,6 +50,29 @@ struct LevelDetailSheet: View {
         if item.isNested {
             return "该项目属于内部子项目，暂不提供逐级升级数据。"
         }
+        if item.isCatalogDeprecated {
+            // Issue #74a：源目录标记已废弃——历史数据仍展示，但不属于当前游戏内容。
+            return "该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。"
+        }
+        if item.status == .unverified {
+            // Issue #67 fail-closed：缺 prerequisite 无法验证阶段上限，展示原因
+            //（不伪装成可升级/未满级）。
+            return item.missingReason ?? "快照缺少 prerequisite 解锁建筑记录，无法验证当前阶段上限。"
+        }
+        if item.status == .unknown {
+            // Issue #67 P1-2 fail-closed：unknown 含版本不匹配/base 不匹配——
+            // catalogItem 存在时旧目录 join 数据仍可用，但不得展示为可操作
+            // 等级阶梯（旧目录等级/时长/费用）。有 missingReason 就展示原因，
+            // 让 body 走提示分支而非「全部等级」列表（审核 P1：详情页旧目录泄漏）。
+            return item.missingReason ?? "该项目暂无逐级升级数据。"
+        }
+        if item.isUpgrading, let reason = item.missingReason {
+            // Issue #68：升级中记录的 status 恒为 .upgrading（独立于目录），旧逻辑
+            // 会穿过 unverified/unknown 守卫落入目录等级列表——升级中 + 版本不匹配
+            //（Task 1 保证 missingReason 含「版本不匹配」文案）时旧目录时长/阶梯泄漏。
+            // 此处必须接管：有 missingReason 就展示原因，不渲染旧目录等级列表。
+            return reason
+        }
         if catalogItem == nil {
             return item.missingReason ?? "该项目暂无逐级升级数据。"
         }
@@ -49,16 +80,22 @@ struct LevelDetailSheet: View {
     }
 
     private func durationLabel(_ level: CatalogLevel) -> String {
-        guard let seconds = level.durationSeconds else { return "暂无目录数据" }
-        if seconds > 0 { return AccountDurationFormatter.label(seconds) }
-        return "即时"
+        // Issue #74b：时长语义状态化——缺失类（初始等级/装备无时长/目录缺失/
+        // 解析失败）不再统一显示「暂无目录数据」；文案与列表行共用
+        // CatalogDurationState.durationLabel 防漂移。nil = 无目录记录/未知
+        // 场景（UI 兜底）。
+        level.durationState?.durationLabel ?? "暂无目录数据"
     }
 
-    private func unlockLabel(_ level: CatalogLevel) -> String {
-        var parts: [String] = []
-        if let th = level.requiredTownHallLevel { parts.append("所需大本营等级 " + String(th) + "级") }
-        if let lab = level.requiredLaboratoryLevel { parts.append("所需实验室等级 " + String(lab) + "级") }
-        return parts.isEmpty ? "无解锁条件" : parts.joined(separator: " · ")
+    /// 逐级解锁条件（Issue #68）：统一走 `CatalogLevel.requirements(base:)` +
+    /// `UpgradeRequirement.displayLabels(base:)`，与列表行/组卡共用同一文案
+    /// 防漂移（删除手写分支）。
+    /// builder：requiredTownHallLevel → 建筑大师大本营、requiredLaboratoryLevel → 星空实验室；
+    /// home/其他：requiredTownHallLevel → 大本营、requiredLaboratoryLevel → 实验室、
+    /// requiredHeroTavernLevel（>0）→ 英雄殿堂。空条件显示「无解锁条件」。
+    private func unlockLabel(_ level: CatalogLevel, base: String?) -> String {
+        let requirements = level.requirements(base: base)
+        return requirements.isEmpty ? "无解锁条件" : requirements.displayLabels(base: base)
     }
 
     /// 费用展示（Issue #73 Task 3）：多资源三分支共用 helper
@@ -114,7 +151,22 @@ struct LevelDetailSheet: View {
                             Text(statusLabel)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(item.status == .maxed ? .green : (item.isUpgrading ? .orange : .secondary))
+                            if case .requires(let nextLevel, let requirements, _) = item.nextUpgrade {
+                                // Issue #68 验收 2：阶段满级时展示被门槛阻塞的下一级
+                                // 解锁条件（替代可操作升级时长），与 .requires 投影同口径。
+                                Text("下一级 " + String(nextLevel) + "级 解锁条件：" + requirements.displayLabels(base: catalogItem?.base))
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                         }
+                    }
+
+                    // Issue #74 seasonal：可用性标记（permanent 不显示避免噪音；
+                    // unconfigured = 阶段信息未配置；seasonal 显示活动/已结束）。
+                    if let availabilityLabel = item.availability.displayLabel {
+                        Text(availabilityLabel)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
 
                     if let missingNote {
@@ -168,9 +220,20 @@ struct LevelDetailSheet: View {
 
     private func levelRow(_ level: CatalogLevel) -> some View {
         let isCurrent = item.currentLevel == level.level
-        // 升级中：item.nextLevel（投影显式推断）；非升级未满级：currentLevel + 1
-        // （与 UpgradeDisplayRow.durationLabel 的「下一级：N级」推导同规则）。
-        let effectiveNext = item.nextLevel ?? (item.currentLevel.map { $0 + 1 })
+        // Issue #68：下一级徽标只消费 nextUpgrade 投影（UI 三处统一，禁止各自
+        // currentLevel + 1 推导）。.available = 可操作下一级（目录真实等级，非连续
+        // 目录安全）；.inProgressFact = 升级中目标等级（快照事实，仅当等级列表可见
+        // 时渲染——升级中 + 版本不匹配/目录未收录时 missingNote 分支接管，不泄漏
+        // 旧目录阶梯）。.requires/.globalMaxed/.unverified/.unknown 一律不标
+        // 「下一级」（fail-closed：阶段满级/无法验证/版本不匹配不得伪装可升级，
+        // 与投影同口径）。
+        let effectiveNext: Int?
+        switch item.nextUpgrade {
+        case .available(let level, _), .inProgressFact(let level, _):
+            effectiveNext = level
+        default:
+            effectiveNext = nil
+        }
         let isNext = effectiveNext == level.level
         return HStack(spacing: 12) {
             Group {
@@ -218,7 +281,7 @@ struct LevelDetailSheet: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(costLabel(level))
                     .font(.caption)
-                Text(unlockLabel(level))
+                Text(unlockLabel(level, base: catalogItem?.base))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

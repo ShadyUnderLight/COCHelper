@@ -10,9 +10,10 @@ from pathlib import Path
 from . import SCHEMA_VERSION
 from .apk import rows, read_build_tag, localization
 from .builders import build_items, build_guardians
+from .durations import classify_duration
 from .errors import CatalogError
 from .fingerprint import sha256_bytes, sha256_file
-from .model import Catalog, catalog_to_dict
+from .model import Catalog, CatalogItem, catalog_to_dict
 from .tables import TABLES
 
 
@@ -80,6 +81,36 @@ def _build_catalog_items(
     return items
 
 
+def counts_for(items: list[CatalogItem]) -> dict:
+    """目录计数（含时长语义拆分，Issue #74b）。catalog.py 生成与 validate.py
+    重算共用同一实现，防双实现漂移。
+
+    - missingTime 语义保持：全部 durationSeconds is None（含 unknown 桶）；
+    - 拆分桶：timed / instant / notApplicable / initialLevel / sourceMissing /
+      parseFailed（语义见 durations.classify_duration）；
+    - 不变量：timed + instant + missingTime == levels。
+    """
+    levels = [lv for item in items for lv in item.levels]
+    buckets: dict[str, int] = {}
+    for lv in levels:
+        bucket = classify_duration(lv.durationSeconds, lv.missingReason)
+        buckets[bucket] = buckets.get(bucket, 0) + 1
+    return {
+        "items": len(items),
+        "levels": len(levels),
+        "missingTime": buckets.get("unknown", 0) + buckets.get("initialLevel", 0)
+            + buckets.get("notApplicable", 0) + buckets.get("sourceMissing", 0)
+            + buckets.get("parseFailed", 0),
+        "missingIcons": sum(1 for lv in levels if lv.icon and lv.icon.renderedPath is None),
+        "timed": buckets.get("timed", 0),
+        "instant": buckets.get("instant", 0),
+        "notApplicable": buckets.get("notApplicable", 0),
+        "initialLevel": buckets.get("initialLevel", 0),
+        "sourceMissing": buckets.get("sourceMissing", 0),
+        "parseFailed": buckets.get("parseFailed", 0),
+    }
+
+
 def generate(
     apk: Path,
     game_version: str | None,
@@ -110,12 +141,7 @@ def generate(
 
     catalog = Catalog(schemaVersion=SCHEMA_VERSION, gameVersion=effective_version,
                       locale=locale, items=items)
-    counts = {
-        "items": len(items),
-        "levels": sum(len(i.levels) for i in items),
-        "missingTime": sum(1 for i in items for lv in i.levels if lv.durationSeconds is None),
-        "missingIcons": sum(1 for i in items for lv in i.levels if lv.icon and lv.icon.renderedPath is None),
-    }
+    counts = counts_for(items)
 
     catalog_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False,
                                indent=2, sort_keys=True).encode("utf-8") + b"\n"

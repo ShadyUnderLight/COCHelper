@@ -79,6 +79,7 @@ class TableSpec:
     list_separator: str | None = None     # 资源/成本列的分号分隔符（多资源表如 equipment）
     town_hall_column: str | None = None
     laboratory_column: str | None = None
+    hero_tavern_column: str | None = None        # 英雄殿堂门槛（17 本引入，heroes.csv）
     icon_columns: tuple[str, ...] = ()          # (IconSWF, IconExportName) 或 (Icon,)
     visual_columns: tuple[str, ...] = ()        # (SWF, ExportName)
     village_type_column: str | None = None
@@ -147,10 +148,12 @@ TABLES: tuple[TableSpec, ...] = (
         time_columns=("UpgradeTimeH",),
         resource_column="UpgradeResource", cost_column="UpgradeCost",
         town_hall_column="RequiredTownHallLevel",
+        hero_tavern_column="RequiredHeroTavernLevel",
         icon_columns=("IconSWF", "IconExportName"),
         village_type_column="VillageType",
         fill_columns=("TID", "VillageType", "IconSWF", "IconExportName",
-                      "UpgradeResource", "UpgradeCost", "RequiredTownHallLevel"),
+                      "UpgradeResource", "UpgradeCost", "RequiredTownHallLevel",
+                      "RequiredHeroTavernLevel"),
         upgrade_semantics="to_next_level",
         id_base=28_000_000,
     ),

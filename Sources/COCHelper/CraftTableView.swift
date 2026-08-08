@@ -55,6 +55,12 @@ struct CraftTableView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let availabilityLabel = defense.availability.displayLabel {
+                    Text(availabilityLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(width: 180, alignment: .leading)
 

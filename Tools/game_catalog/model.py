@@ -74,6 +74,7 @@ class CatalogLevel:
     requiredLaboratoryLevel: int | None
     icon: AssetRef | None
     levelVisual: AssetRef | None
+    requiredHeroTavernLevel: int | None = None  # Issue #67：英雄殿堂门槛（17 本引入），全 optional
 
     def to_dict(self) -> dict:
         return {
@@ -87,6 +88,7 @@ class CatalogLevel:
             "requiredLaboratoryLevel": self.requiredLaboratoryLevel,
             "icon": self.icon.to_dict() if self.icon else None,
             "levelVisual": self.levelVisual.to_dict() if self.levelVisual else None,
+            "requiredHeroTavernLevel": self.requiredHeroTavernLevel,
         }
 
     @classmethod
@@ -104,6 +106,7 @@ class CatalogLevel:
             requiredLaboratoryLevel=d.get("requiredLaboratoryLevel"),
             icon=AssetRef.from_dict(d["icon"]) if d.get("icon") else None,
             levelVisual=AssetRef.from_dict(d["levelVisual"]) if d.get("levelVisual") else None,
+            requiredHeroTavernLevel=d.get("requiredHeroTavernLevel"),
         )
 
 

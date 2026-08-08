@@ -15,13 +15,18 @@ struct VillageDetailView: View {
     @State private var selectedBase: TrackerBase = .home
     @State private var selectedFilter: CategoryFilter = .all
     @State private var selectedItem: VillageItemState?
+    // Issue #61：快捷「粘贴并更新」的确认 sheet 与失败提示载体。
+    // prepareQuickImport 是纯函数（不写状态），结果分派到这两个载体之一。
+    @State private var quickImportPreview: QuickImportPreview?
+    @State private var quickImportError: QuickImportError?
 
     private var village: VillageProfile? {
         model.villages.first(where: { $0.id == villageID })
     }
 
     private var catalog: GameCatalog? { model.gameCatalog }
-    private var craftTableCatalog: CraftTableCatalog? { model.craftTableCatalog }
+     private var seasonalPhases: SeasonalPhaseTable { model.seasonalPhases }
+     private var craftTableCatalog: CraftTableCatalog? { model.craftTableCatalog }
 
     var body: some View {
         Group {
@@ -41,6 +46,34 @@ struct VillageDetailView: View {
         .sheet(item: $selectedItem) { item in
             LevelDetailSheet(item: item, catalog: catalog)
         }
+        // Issue #61：快捷「粘贴并更新」预览确认 sheet（复用账号数据页的
+        // AccountSnapshotSummaryView，经注入参数展示快捷导入的目标与文案）。
+        .sheet(item: $quickImportPreview) { preview in
+            QuickImportSheet(
+                preview: preview,
+                onConfirm: {
+                    model.applyQuickImport(preview)
+                    quickImportPreview = nil
+                },
+                onCancel: {
+                    quickImportPreview = nil
+                }
+            )
+        }
+        // Issue #61：快捷导入失败提示（剪贴板空 / 解析失败 / 村庄缺失 /
+        // 误覆盖拦截），错误文案由 QuickImportError（LocalizedError）提供。
+        .alert(
+            "粘贴并更新失败",
+            isPresented: Binding(
+                get: { quickImportError != nil },
+                set: { if !$0 { quickImportError = nil } }
+            ),
+            presenting: quickImportError
+        ) { _ in
+            Button("好", role: .cancel) {}
+        } message: { error in
+            Text(error.localizedDescription)
+        }
     }
 
     /// Issue #49 验收阅读顺序：首屏自上而下为「玩家昵称与身份（header）→
@@ -51,6 +84,7 @@ struct VillageDetailView: View {
         let projection = VillageCatalogProjection.project(
             village: village,
             catalog: catalog,
+            seasonalPhases: seasonalPhases,
             base: selectedBase,
             now: now
         )
@@ -79,10 +113,18 @@ struct VillageDetailView: View {
         // 与 VillageCatalogProjection.project 并行调用：聚合层（agg: 前缀记录）
         // 继续供完成度/诊断/筛选使用，组卡基于原始记录层，两者语义互不影响。
         let buildingGroups = BuildingGroupProjection.project(
-            village: village, catalog: catalog, base: selectedBase, now: now
+            village: village,
+            catalog: catalog,
+            base: selectedBase,
+            seasonalPhases: seasonalPhases,
+            now: now
         )
         let craftTable = CraftTableProjection.project(
-            village: village, catalog: craftTableCatalog, base: selectedBase, now: now
+            village: village,
+            catalog: craftTableCatalog,
+            base: selectedBase,
+            seasonalPhases: seasonalPhases,
+            now: now
         )
         // 原始快照记录 id → 组。BuildingInstance.id 与 VillageItemState.id 同源
         //（同一条快照记录），但聚合层记录 id 带 agg: 前缀，查找键需归一化
@@ -204,13 +246,22 @@ struct VillageDetailView: View {
                     HStack(spacing: 10) {
                         snapshotTimeLabel(village)
                         if let version = projection.catalogVersion {
-                            Text("目录 v" + version)
+                            // Issue #74a：无玩家 build 时明确「未验证」，不得伪装已匹配。
+                            Text("目录 v" + version
+                                + (projection.compatibility.isUnverified ? " · 未验证" : ""))
                                 .font(.caption2.monospaced())
                                 .foregroundStyle(.tertiary)
                         }
                     }
                 }
                 Spacer()
+                // Issue #61：快捷「粘贴并更新」——剪贴板 JSON 直接预览并
+                // 更新当前村庄，免去「账号数据 → 粘贴 → 解析 → 确认」流程。
+                Button(action: prepareQuickImport) {
+                    Label("粘贴并更新", systemImage: "doc.on.clipboard")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.cocAccent)
                 Button(action: openImport) {
                     Label("更新快照", systemImage: "arrow.triangle.2.circlepath")
                 }
@@ -219,6 +270,21 @@ struct VillageDetailView: View {
             }
 
             diagnosticsNote(projection)
+        }
+    }
+
+    // MARK: - 快捷导入（Issue #61）
+
+    /// Issue #61：从剪贴板解析并预览针对当前村庄的快捷导入。
+    /// 成功 → 弹出确认 sheet（quickImportPreview）；失败 → alert
+    /// （quickImportError）。prepareQuickImport 是纯函数（数据层无副作用），
+    /// 本方法只做结果分派，不额外读写模型状态。
+    private func prepareQuickImport() {
+        switch model.prepareQuickImport(for: villageID) {
+        case .success(let preview):
+            quickImportPreview = preview
+        case .failure(let error):
+            quickImportError = error
         }
     }
 
@@ -253,7 +319,9 @@ struct VillageDetailView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                Text("无可确认项目")
+                // 第 7 轮：ratio == nil 时区分饱和（数据超出可表示范围，非业务上的
+                // 不可确认）与正常无已知项——饱和时数值不完整，明示异常而非误导。
+                Text(total.saturated ? "数据异常（超出可表示范围）" : "无可确认项目")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -310,6 +378,13 @@ struct VillageDetailView: View {
     /// category 组按原分类匹配；category 为 nil 的项归「其他」。
     /// issue #53：满级判定复用 completion 统计（key = completion.id），
     /// 与分组桶键天然一致；空分类（count 0）无 stats → 不显示勾。
+    /// issue #66：chip 数字为实例权重数（聚合行按 count 计入，如 300 块城墙
+    /// 显示 300 而非 1 行），由 completionStats 派生：known + unknown（守恒
+    /// → 实例权重数，catalogIsUsable=false 时同样成立），不重复手写分组谓词。
+    /// 「其他」chip 的 `otherCount > 0` 显隐判断依赖权重 ≥ 1 不变量（非空组
+    /// 实例数 ≥ 1）；勿改回行数 `items.count`。
+    /// 独立饱和后 known + unknown 可能溢出（两条 Int.max 相加），计数经
+    /// `chipInstanceCount` 饱和加法兜底（issue #66 边界 3：UI 不崩溃）。
     private func categoryFilterBar(
         groups: [VillageDetailGroup],
         total: VillageCategoryCompletion,
@@ -319,12 +394,12 @@ struct VillageDetailView: View {
             HStack(spacing: 8) {
                 filterChip(
                     title: "全部",
-                    count: groups.reduce(0) { $0 + $1.items.count },
+                    count: chipInstanceCount(total),
                     filter: .all,
                     isFullyMaxed: total.isFullyMaxed
                 )
                 ForEach(TrackerDisplayCategory.allCases) { display in
-                    let count = groups.first(where: { $0.displayCategory == display })?.items.count ?? 0
+                    let count = chipInstanceCount(statsByKey[display.rawValue])
                     filterChip(
                         title: display.title,
                         count: count,
@@ -333,7 +408,7 @@ struct VillageDetailView: View {
                     )
                 }
                 ForEach(TrackerCategory.allCases) { category in
-                    let count = groups.first(where: { $0.displayCategory == nil && $0.category == category })?.items.count ?? 0
+                    let count = chipInstanceCount(statsByKey[category.rawValue])
                     filterChip(
                         title: category.title,
                         count: count,
@@ -341,7 +416,7 @@ struct VillageDetailView: View {
                         isFullyMaxed: statsByKey[category.rawValue]?.isFullyMaxed ?? false
                     )
                 }
-                let otherCount = groups.first(where: { $0.displayCategory == nil && $0.category == nil })?.items.count ?? 0
+                let otherCount = chipInstanceCount(statsByKey["other"])
                 if otherCount > 0 {
                     filterChip(
                         title: "其他",
@@ -352,6 +427,13 @@ struct VillageDetailView: View {
                 }
             }
         }
+    }
+
+    /// chip 实例数 = known + unknown；独立饱和后可能溢出，用饱和加法兜底（issue #66）。
+    private func chipInstanceCount(_ stats: VillageCategoryCompletion?) -> Int {
+        guard let stats else { return 0 }
+        let (sum, overflow) = stats.knownCount.addingReportingOverflow(stats.unknownCount)
+        return overflow ? Int.max : sum
     }
 
     /// issue #53：全部满级（isFullyMaxed）的 chip 以绿色 + 勾选图标呈现；
@@ -590,5 +672,49 @@ struct VillageDetailView: View {
         case display(TrackerDisplayCategory)
         case category(TrackerCategory)
         case other
+    }
+}
+
+/// Issue #61：快捷「粘贴并更新」的确认 sheet。
+///
+/// 复用账号数据页的 `AccountSnapshotSummaryView`（同一预览组件、同一视觉）：
+/// 通过注入参数展示快捷导入的目的地描述、确认标题与确认/放弃动作。
+/// 快捷导入直接写入目标村庄，不经过 AppModel 的 pendingAccountSnapshot
+/// 待确认流程——注入的 onConfirm 由 VillageDetailView 负责执行
+/// `applyQuickImport` 并关闭 sheet。`model` 经 @EnvironmentObject 从
+/// VillageDetailView 环境继承（AppModel 在根部注入）。
+private struct QuickImportSheet: View {
+    /// 快捷导入预览（目标村庄、解析结果、目的地描述）。
+    let preview: QuickImportPreview
+    /// 确认按钮动作（外部负责 applyQuickImport 并关闭 sheet）。
+    let onConfirm: () -> Void
+    /// 放弃按钮动作（外部负责关闭 sheet）。
+    let onCancel: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("粘贴并更新")
+                    .font(.title2.weight(.bold))
+                AccountSnapshotSummaryView(
+                    snapshot: preview.snapshot,
+                    isPending: true,
+                    destinationDescription: preview.destinationDescription,
+                    confirmTitle: preview.confirmationTitle,
+                    onConfirm: onConfirm,
+                    onCancel: onCancel,
+                    targetVillageName: preview.targetVillageName,
+                    targetVillageTag: preview.targetVillageTag,
+                    targetVillageHasSnapshot: preview.targetVillageHasSnapshot
+                )
+            }
+            .padding(24)
+            // 宽度上限 560pt：预览内容较窄时自适应，不撑满整个窗口
+            //（与 LevelDetailSheet 的固定 minWidth 520 同一量级）。
+            .frame(maxWidth: 560, alignment: .leading)
+        }
+        .background(Color.cocBackground)
+        // macOS sheet 需显式最小尺寸（与 LevelDetailSheet 同一量级）。
+        .frame(minWidth: 480, minHeight: 420)
     }
 }

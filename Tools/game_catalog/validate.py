@@ -15,6 +15,7 @@ from . import (
     ITEM_MISSING_REASONS,
     LEVEL_MISSING_REASONS,
 )
+from .catalog import counts_for
 from .contract import check_rendered_path_contract, rendered_path_format_ok
 from .model import AssetRef, UpgradeCost, catalog_from_dict
 
@@ -240,12 +241,7 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         return [f"catalog 内容非法: {exc}"]
 
     # ---- counts 与目录内容重算一致 ----
-    counts = {
-        "items": len(catalog.items),
-        "levels": sum(len(i.levels) for i in catalog.items),
-        "missingTime": sum(1 for i in catalog.items for lv in i.levels if lv.durationSeconds is None),
-        "missingIcons": sum(1 for i in catalog.items for lv in i.levels if lv.icon and lv.icon.renderedPath is None),
-    }
+    counts = counts_for(catalog.items)
     manifest_counts = manifest.get("counts")
     if not isinstance(manifest_counts, dict):
         errors.append("manifest 缺少 counts")
@@ -253,6 +249,28 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         for field in ("items", "levels", "missingTime", "missingIcons"):
             if manifest_counts.get(field) != counts[field]:
                 errors.append(f"counts.{field} 不一致: manifest={manifest_counts.get(field)} 重算={counts[field]}")
+        # Issue #74b：时长语义拆分桶（可选字段，旧 manifest 缺失不报错；存在必校验）
+        for field in ("timed", "instant", "notApplicable", "initialLevel",
+                      "sourceMissing", "parseFailed"):
+            if field in manifest_counts and manifest_counts[field] != counts[field]:
+                errors.append(f"counts.{field} 不一致: manifest={manifest_counts[field]} 重算={counts[field]}")
+        # Issue #74b：拆分桶 sum 不变量（六桶之和 == missingTime；
+        # timed + instant + missingTime == levels）。旧 manifest 缺新字段时跳过。
+        if all(f in manifest_counts for f in
+               ("timed", "instant", "notApplicable", "initialLevel",
+                "sourceMissing", "parseFailed")):
+            bucket_sum = sum(manifest_counts[f] for f in
+                             ("notApplicable", "initialLevel", "sourceMissing", "parseFailed"))
+            if bucket_sum != manifest_counts.get("missingTime"):
+                errors.append(
+                    f"counts 不变量被破坏: 缺失类四桶之和 {bucket_sum} != missingTime "
+                    f"{manifest_counts.get('missingTime')}")
+            if (manifest_counts.get("timed", 0) + manifest_counts.get("instant", 0)
+                    + manifest_counts.get("missingTime", 0)) != manifest_counts.get("levels"):
+                errors.append(
+                    f"counts 不变量被破坏: timed + instant + missingTime != levels "
+                    f"({manifest_counts.get('timed')} + {manifest_counts.get('instant')} "
+                    f"+ {manifest_counts.get('missingTime')} != {manifest_counts.get('levels')})")
         # ---- R6.2 optional 字段（旧 manifest 缺失不报错）----
         # renderedIcons：渲染成功且落盘的 PNG 数，必须 == generatedFiles PNG
         # 条目数（可重算断言）；generatedFiles 缺失时只校验类型不比对

@@ -64,9 +64,15 @@ public enum UpgradeOverviewProjection {
     public static func overviewRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable = .empty,
         at now: Date = Date()
     ) -> (active: [UpgradeDisplayRecord], pending: [UpgradeDisplayRecord]) {
-        let records = allRecords(from: villages, catalog: catalog, at: now)
+        let records = allRecords(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            at: now
+        )
         return (
             active: records.filter(\.item.isUpgrading).sorted(by: activeOrder),
             pending: records.filter(\.item.needsReimport).sorted(by: pendingOrder)
@@ -84,9 +90,15 @@ public enum UpgradeOverviewProjection {
     public static func activeRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable = .empty,
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
-        overviewRecords(from: villages, catalog: catalog, at: now).active
+        overviewRecords(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            at: now
+        ).active
     }
 
     /// 全部村庄 × 全部 base 中「计时已结束」的项目（待重新导入确认等级）。
@@ -103,9 +115,15 @@ public enum UpgradeOverviewProjection {
     public static func pendingReimportRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable = .empty,
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
-        overviewRecords(from: villages, catalog: catalog, at: now).pending
+        overviewRecords(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            at: now
+        ).pending
     }
 
     /// active 排序键：剩余时间升序（nil 视为最大排最后）→ villageName → base → id。
@@ -138,6 +156,7 @@ public enum UpgradeOverviewProjection {
     private static func allRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable,
         at now: Date
     ) -> [UpgradeDisplayRecord] {
         villages.flatMap { village in
@@ -145,6 +164,7 @@ public enum UpgradeOverviewProjection {
                 let projection = VillageCatalogProjection.project(
                     village: village,
                     catalog: catalog,
+                    seasonalPhases: seasonalPhases,
                     base: base,
                     now: now
                 )

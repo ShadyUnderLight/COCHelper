@@ -72,30 +72,61 @@ struct UpgradeDisplayRow: View {
 
     private var isMaxed: Bool { item.status == .maxed }
 
+    /// 阶段满级（Issue #67）：currentStageMaxLevel 存在且低于全局 maxLevel——
+    /// 当前大本营阶段已达目录上限，但目录全局仍有更高等级。仅用于 maxed
+    /// 分支内的文案区分；`hasVersionMismatch` 保持全局语义（升级中 nextLevel
+    /// 超过阶段上限属正常升级，不是目录过时，不参与版本不匹配判定）。
+    private var isStageMaxed: Bool {
+        guard let stage = item.currentStageMaxLevel, let max = item.maxLevel else { return false }
+        return stage < max
+    }
+
     // MARK: - 完整时长
 
     private var durationLabel: String {
         if item.status == .maxed {
             // 已满级：目录无下一级，显示上限（避免误导的「暂无目录数据」）。
-            return "已达到目录最高等级 " + String(item.maxLevel ?? 0) + "级"
+            // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分。
+            let baseLabel: String
+            if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
+                baseLabel = "当前阶段已满级（全局尚有 " + String(max - stage) + "级）"
+            } else {
+                baseLabel = "已达到目录最高等级 " + String(item.maxLevel ?? 0) + "级"
+            }
+            // Issue #68 验收 2：阶段满级（.requires，仅当目录存在更高等级时产生）
+            // 追加被门槛阻塞的下一级解锁条件，替代可操作升级时长。
+            if case .requires(let nextLevel, let requirements, _) = item.nextUpgrade {
+                return baseLabel + " · 下一级 " + String(nextLevel) + "级 解锁条件："
+                    + requirements.displayLabels(base: item.base.rawValue)
+            }
+            return baseLabel
         }
-        guard let duration = item.nextLevelDurationSeconds else { return "暂无目录数据" }
+        guard let state = item.nextLevelDurationState else { return "暂无目录数据" }
         let prefix: String
         if item.isUpgrading {
-            // 升级行：levelLabel 已显示「当前 → 目标」，时长不加前缀。
+            // 升级行：levelLabel 已显示「当前 → 目标」；时长行仍带「完整时长：」
+            // 前缀（与旧实现一致，明确这是完整耗时而非完成时刻）。
             prefix = "完整时长："
-        } else if let currentLevel = item.currentLevel, let maxLevel = item.maxLevel, currentLevel < maxLevel {
-            // 非升级未满级（投影层已推下一级时长）：issue 列表规则要求显示下一等级。
-            // 编号由当前 + 1 推导（与投影层 nextLevel 推断同规则），时长来自目录。
-            prefix = "下一级：" + String(currentLevel + 1) + "级 · 完整时长："
+        } else if case .available(let level, _) = item.nextUpgrade {
+            // 非升级未满级（issue 列表规则要求显示下一等级）：编号来自
+            // nextUpgrade 投影（Issue #68，禁止 currentLevel + 1 推导），
+            // 时长来自目录。
+            prefix = "下一级：" + String(level) + "级 · 完整时长："
         } else {
             prefix = "完整时长："
         }
-        if duration > 0 {
-            return prefix + AccountDurationFormatter.label(duration)
+        // Issue #74b：缺失类状态（initialLevel/notApplicable/sourceMissing/
+        // parseFailed/unknownReason）直接显示原因文案，**不带 prefix**——
+        // 避免「下一级：N级 · 完整时长：目录缺失」怪句。
+        switch state {
+        case .timed(let seconds):
+            return prefix + AccountDurationFormatter.label(seconds)
+        case .instant:
+            // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
+            return prefix + "即时"
+        default:
+            return state.durationLabel
         }
-        // duration == 0：真实目录中城墙等即时升级（75 个 level 的 durationSeconds == 0）。
-        return prefix + "即时"
     }
 
     // MARK: - 副标题
@@ -105,7 +136,10 @@ struct UpgradeDisplayRow: View {
     }
 
     private var subtitle: String {
-        (item.displayCategory?.title ?? item.category?.title ?? item.section) + " · #" + String(item.dataID) + " · " + catalogVersionLabel
+        // Issue #74a：源目录标记已废弃（历史数据，不参与当前内容）。
+        let deprecated = item.isCatalogDeprecated ? " · 已废弃" : ""
+        return (item.displayCategory?.title ?? item.category?.title ?? item.section)
+            + " · #" + String(item.dataID) + " · " + catalogVersionLabel + deprecated
     }
 
     // MARK: - 进度
@@ -265,8 +299,10 @@ struct UpgradeDisplayRow: View {
                     StatusBadge(text: "待重新导入确认", tint: .orange)
                 }
                 if isMaxed {
-                    StatusBadge(text: "已满级", tint: .green)
-                        .help("当前目录最高等级")
+                    StatusBadge(text: isStageMaxed ? "当前阶段已满级" : "已满级", tint: .green)
+                        .help(isStageMaxed
+                            ? "全局尚有 " + String(item.maxLevel! - item.currentStageMaxLevel!) + "级"
+                            : "当前目录最高等级")
                 }
             }
             .frame(width: 130, alignment: .trailing)
@@ -304,8 +340,13 @@ struct UpgradeDisplayRow: View {
                     Text("目录未收录")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
+                } else if item.status == .unverified {
+                    // Issue #67 fail-closed：缺 prerequisite 无法验证阶段上限。
+                    Text("无法验证阶段上限")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
                 } else {
-                    Text(isMaxed ? "已满级" : "已记录")
+                    Text(isMaxed ? (isStageMaxed ? "当前阶段已满级" : "已满级") : "已记录")
                         .font(.caption)
                         .foregroundStyle(.green)
                 }

@@ -11,7 +11,7 @@ import COCHelperCore
 ///   NSImage 依次加载，全部失败回退 SF Symbol（displayCategory → category →
 ///   hammer.fill）。版本参数固定 `GameCatalog.defaultBundledVersion`：本组件
 ///   不接收 catalog，UI 层如需真实版本后续再接入。
-/// - 组名 + 实例数量合计（count ?? 1 求和，> 1 显示 ×N 胶囊）
+/// - 组名 + 实例数量合计（Core 层按 instanceWeight 饱和求和，> 1 显示 ×N 胶囊）
 /// - 剩余等级数（remainingLevelCount，monospacedDigit）
 /// - 费用汇总（costByResource，千分位；无费用时显示「无费用数据」）
 /// - 完整时长合计（totalDurationSeconds，前缀必须注明是完整升级耗时而非完成日期）
@@ -25,16 +25,15 @@ struct BuildingGroupSummaryView: View {
     /// 组内第一个实例（图标来源；与列表行共用 `preferredAssetURLs` 防漂移）。
     private var firstInstance: BuildingInstance? { group.instances.first }
 
-    /// 实例数量合计（count ?? 1 求和；> 1 显示 ×N 胶囊，== 1 不显示）。
-    private var totalCount: Int {
-        group.instances.reduce(0) { $0 + ($1.item.count ?? 1) }
-    }
+    /// 实例数量合计（Core 层已按 instanceWeight 饱和求和；> 1 显示 ×N 胶囊）。
+    private var totalCount: Int { group.summary.instanceCount }
 
     /// 费用汇总：每项「资源 千分位数量」，按投影字典序（确定性）；
     /// 无任何费用数据时兜底「无费用数据」。
     /// Review 反馈 P1-1：部分目录数据缺失（partialMissing）时加「已知费用：」
     /// 前缀，明确只汇总了已知部分，不得被误读为完整总额。
     private var costSummaryLabel: String {
+        if group.summary.saturated { return "数据异常（超出可表示范围）" }
         let parts = group.summary.costByResource.map {
             ClanDisplayFormat.resourceLabel($0.resource) + " " + BuildingCostFormatter.label($0.totalCost)
         }
@@ -45,24 +44,59 @@ struct BuildingGroupSummaryView: View {
         return parts.joined(separator: " · ")
     }
 
+    /// 组内是否存在阶段满级实例（`currentStageMaxLevel < maxLevel`，Issue #67）：
+    /// 与行级「当前阶段已满级（全局尚有 N 级）」文案同口径，汇总「已达当前阶段
+    /// 上限」判定与组卡摘要共用，防双实现漂移。
+    private var hasStageCappedInstance: Bool {
+        group.instances.contains { instance in
+            guard let stage = instance.item.currentStageMaxLevel,
+                  let max = instance.item.maxLevel else { return false }
+            return stage < max
+        }
+    }
+
+    /// 阶段满级阻塞条件摘要（Issue #68 验收 2，组卡侧）：仅当汇总实际显示
+    /// 「已达当前阶段上限」且组内至少一个实例 `.requires` 时，展示第一个
+    /// .requires 实例的下一级解锁条件（与详情 sheet 头部 caption 同文案来源
+    /// `displayLabels`）。其余情况 nil（不打扰用户）。
+    private var stageGateSummary: String? {
+        let showsStageCappedText = group.summary.remainingLevelCount == 0
+            && group.summary.completeness == .complete
+            && hasStageCappedInstance
+        guard showsStageCappedText else { return nil }
+        guard let first = group.instances.first(where: {
+            if case .requires = $0.item.nextUpgrade { return true }
+            return false
+        }) else { return nil }
+        guard case .requires(_, let requirements, _) = first.item.nextUpgrade else { return nil }
+        return "下一级解锁条件：" + requirements.displayLabels(base: first.item.base.rawValue)
+    }
+
     /// 完整时长合计：按 completeness 分支（交叉评审发现的口径缺陷修复——
     /// 不能只看 remainingLevelCount == 0 就报「已达目录上限」）：
     /// - versionMismatch（目录过时，如大本营 Lv19 > 目录 max 18）：一律显示
     ///   「暂无目录数据」，不得把旧目录汇总当成确定事实（Issue #45 契约）；
-    /// - complete 且剩余等级 0：真满级 →「已达目录上限」（参照
-    ///   `UpgradeDisplayRow.durationLabel` 的 isMaxed 分支先例）；
+    /// - complete 且剩余等级 0：
+    ///   - 任一实例阶段上限低于全局上限（`currentStageMaxLevel < maxLevel`，
+    ///     Issue #67）→「已达当前阶段上限」（全局更高等级未解锁，与行级
+    ///     「当前阶段已满级（全局尚有 N 级）」文案一致，审核 D important）；
+    ///   - 否则真满级 →「已达目录上限」（参照 `UpgradeDisplayRow.durationLabel`
+    ///     的 isMaxed 分支先例）；
     /// - partialMissing 且剩余等级 0（如 currentLevel == nil，剩余等级不可确定）：
     ///   「暂无目录数据」，不误报已满级；
     /// - 剩余等级 > 0：`AccountDurationFormatter.label`（完整升级耗时，不得写成
     ///   完成日期）；== 0 秒且阶梯非空且全部时长已知（如城墙 durationSeconds == 0
     ///   计入 0 秒）显示「即时」；其余（阶梯部分缺失）显示「暂无目录数据」。
     private var totalDurationLabel: String {
+        if group.summary.saturated {
+            return "数据异常（超出可表示范围）"
+        }
         if group.summary.completeness == .versionMismatch {
             return "暂无目录数据"
         }
         if group.summary.remainingLevelCount == 0 {
             if group.summary.completeness == .complete {
-                return "已达目录上限"
+                return hasStageCappedInstance ? "已达当前阶段上限" : "已达目录上限"
             }
             return "暂无目录数据"
         }
@@ -72,6 +106,13 @@ struct BuildingGroupSummaryView: View {
         if !steps.isEmpty && steps.allSatisfy(\.hasDuration) {
             return "即时"
         }
+        // Issue #74b：阶梯非空但全部时长缺失（目录命中、源字段缺失）→
+        // 明确「目录无时长数据」，与「无目录/未收录」的「暂无目录数据」区分；
+        // 部分缺失（seconds == 0 且阶梯混合）保持「暂无目录数据」（有数值时
+        // 已走 seconds > 0 分支并带 partialMissing 橙标）。
+        if !steps.isEmpty && steps.allSatisfy({ $0.durationSeconds == nil }) {
+            return "目录无时长数据"
+        }
         return "暂无目录数据"
     }
 
@@ -79,17 +120,23 @@ struct BuildingGroupSummaryView: View {
     /// complete 不显示（满级与正常组不打扰用户）。
     @ViewBuilder
     private var completenessLabel: some View {
-        switch group.summary.completeness {
-        case .partialMissing:
-            Text("部分目录数据缺失")
+        if group.summary.saturated {
+            Text("数据异常（超出可表示范围）")
                 .font(.caption2)
                 .foregroundStyle(.orange)
-        case .versionMismatch:
-            Text("目录版本不匹配")
-                .font(.caption2)
-                .foregroundStyle(.red)
-        case .complete:
-            EmptyView()
+        } else {
+            switch group.summary.completeness {
+            case .partialMissing:
+                Text("部分目录数据缺失")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            case .versionMismatch:
+                Text("目录版本不匹配")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            case .complete:
+                EmptyView()
+            }
         }
     }
 
@@ -152,7 +199,7 @@ struct BuildingGroupSummaryView: View {
                 Text(group.name)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                if totalCount > 1 {
+                if !group.summary.saturated && totalCount > 1 {
                     Text("×" + String(totalCount))
                         .font(.caption2.weight(.semibold).monospacedDigit())
                         .foregroundStyle(.secondary)
@@ -162,19 +209,30 @@ struct BuildingGroupSummaryView: View {
                 }
             }
 
-            Text("剩余等级 " + String(group.summary.remainingLevelCount))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            if !group.summary.saturated {
+                Text("剩余等级 " + String(group.summary.remainingLevelCount))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
 
-            Text(costSummaryLabel)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(costSummaryLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Text(durationPrefix + totalDurationLabel)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(durationPrefix + totalDurationLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let stageGateSummary {
+                    // Issue #68 验收 2：阶段满级（「已达当前阶段上限」）下补充
+                    // 具体阻塞 Requirement（仅当组内存在 .requires 实例）。
+                    Text(stageGateSummary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
             completenessLabel
         }

@@ -1120,3 +1120,53 @@ def test_rendered_path_dotdot_inside_catalog_rejected(tmp_path):
     _write_with_hash(d, catalog=c)
     errors = validate_catalog(d)
     assert any("格式非法" in e for e in errors)
+
+
+# ---- Issue #74b：counts 时长语义拆分校验 ----
+
+_NEW_COUNTS = {
+    "items": 1, "levels": 1, "missingTime": 0, "missingIcons": 0,
+    "timed": 0, "instant": 1, "notApplicable": 0, "initialLevel": 0,
+    "sourceMissing": 0, "parseFailed": 0,
+}
+
+
+def test_validate_counts_duration_buckets_consistent(tmp_path):
+    """新字段与目录重算一致 → 无错误。"""
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"] = _NEW_COUNTS
+    _write(d, manifest=m)
+    assert validate_catalog(d) == []
+
+
+def test_validate_counts_duration_bucket_mismatch_rejected(tmp_path):
+    """任一拆分桶与重算不一致 → 报错。"""
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"] = dict(_NEW_COUNTS, instant=0)  # 重算为 1
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("counts.instant" in e for e in errors)
+
+
+def test_validate_old_manifest_without_new_fields_ok(tmp_path):
+    """旧 manifest 无拆分字段 → 不报错（向后兼容）。"""
+    d = _valid_dir(tmp_path)  # _valid_dir 的 counts 只有 4 个旧字段
+    assert validate_catalog(d) == []
+
+
+def test_validate_counts_sum_invariant(tmp_path):
+    """缺失类四桶之和 == missingTime 是 unknown 泄漏哨兵。
+
+    字段级校验 + counts_for 定义保证下，纯「字段一致但不变量违反」无法构造；
+    不变量校验防御 classify_duration 回归（新 reason 误映射 unknown 时，
+    生成与重算共用同一坏实现，字段级同坏不可发现）。此处以手工篡改
+    missingTime 验证哨兵错误信息确实会触发。
+    """
+    d = _valid_dir(tmp_path)
+    m = _load_manifest(d)
+    m["counts"] = dict(_NEW_COUNTS, missingTime=1)  # 重算 missingTime=0
+    _write(d, manifest=m)
+    errors = validate_catalog(d)
+    assert any("不变量" in e for e in errors)

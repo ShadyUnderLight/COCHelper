@@ -14,6 +14,9 @@ struct SeededGenerator {
     mutating func int(in range: ClosedRange<Int>) -> Int {
         Int(next() % UInt32(range.count)) + range.lowerBound
     }
+    mutating func double(in range: ClosedRange<Double>) -> Double {
+        Double(next()) / Double(UInt32.max) * (range.upperBound - range.lowerBound) + range.lowerBound
+    }
     mutating func bool() -> Bool { next() & 1 == 1 }
     mutating func element(from chars: [Character]) -> Character {
         chars[Int(next() % UInt32(chars.count))]

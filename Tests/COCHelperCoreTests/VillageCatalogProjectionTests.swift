@@ -3311,6 +3311,24 @@ final class VillageCatalogProjectionTests: XCTestCase {
                        .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .ended))
     }
 
+    func testAvailabilityMalformedPhaseIsUnconfigured() throws {
+        // P2-1 对抗测试：from >= until 的畸形阶段不得进入投影（→ unconfigured）。
+        let bad = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "bad", name: nil,
+                from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 1_000),
+                itemKeys: ["buildings:103000000"]),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+        ])
+        let home = projectWithAvailability(
+            village, table: bad, now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+        XCTAssertEqual(item.availability, .unconfigured,
+                       "畸形阶段必须被过滤，不得标 notStarted/ended")
+    }
+
     func testPropertyAvailabilityPreservedThroughAggregation() throws {
         // 聚合不变量：availability 同组透传一致（同 dataID → 同阶段判定）。
         var rng = SeededRNG(seed: 7)

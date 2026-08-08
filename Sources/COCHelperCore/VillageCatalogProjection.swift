@@ -424,17 +424,18 @@ public struct VillageCatalogProjection: Sendable {
         // itemKey = "section:dataID"（嵌套项同规则；空表恒 unconfigured）。
         let availability: CatalogAvailability
         let itemKey = "\(item.section):\(item.dataID)"
-        // 阶段表命中的条目：三态判定（活动/未开始/已结束），不编造当前可用。
-        // 活动分支用 activePhase 返回值做展示阶段（from 最晚的活动阶段，
-        // 阶段名与状态同源）；非活动为补集（now<from → 未开始；now>=until →
-        // 已结束），展示阶段取 from 最晚者（多阶段交叉时自洽）。
-        if let active = seasonalPhases.activePhase(forItemKey: itemKey, at: now) {
-            availability = .seasonal(
-                phaseID: active.phaseID, phaseName: active.name, status: .active)
-        } else if let phase = seasonalPhases.phases
-            .filter({ $0.itemKeys.contains(itemKey) })
-            .max(by: { $0.from < $1.from }) {
-            let status: SeasonalStatus = now < phase.from ? .notStarted : .ended
+        // 阶段表命中的条目：统一解析入口 `phase(forItemKey:at:)` 选择最相关
+        // 阶段（活动最新 from / 未来最近 min from / 已结束最近 max until /
+        // 畸形过滤），再按 now 与阶段区间关系判定三态——不编造当前可用。
+        if let phase = seasonalPhases.phase(forItemKey: itemKey, at: now) {
+            let status: SeasonalStatus
+            if now < phase.from {
+                status = .notStarted
+            } else if now < phase.until {
+                status = .active
+            } else {
+                status = .ended
+            }
             availability = .seasonal(
                 phaseID: phase.phaseID, phaseName: phase.name, status: status)
         } else {

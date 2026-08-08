@@ -246,14 +246,25 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
 
     public static let empty = SeasonalPhaseTable(schemaVersion: 1, phases: [])
 
-    /// 查条目在当前时刻的活动阶段。
-    /// - itemKeys 命中且 `from <= date < until` → 该阶段；
-    /// - 多条目同键多阶段命中（异常数据）→ 取 `from` 最晚者（确定性）；
-    /// - 无命中 → nil。
-    public func activePhase(forItemKey key: String, at date: Date) -> SeasonalPhase? {
-        phases
-            .filter { $0.itemKeys.contains(key) && $0.from <= date && date < $0.until }
-            .max { $0.from < $1.from }
+    /// 解析条目最相关阶段（统一入口，投影/UI 共用防漂移）：
+    /// 1. 先过滤非法区间（from >= until）——畸形数据不得进入判定；
+    /// 2. 活动阶段（from <= now < until）→ 取 from 最晚者；
+    /// 3. 无活动且存在未来阶段（from > now）→ 取最近即将开始（from 最小）；
+    /// 4. 全部已结束 → 取最近结束（until 最大）；
+    /// 5. 无有效阶段 → nil（unconfigured 域）。
+    public func phase(forItemKey key: String, at date: Date) -> SeasonalPhase? {
+        let valid = phases.filter { $0.itemKeys.contains(key) && $0.from < $0.until }
+        if let active = valid
+            .filter({ $0.from <= date && date < $0.until })
+            .max(by: { $0.from < $1.from }) {
+            return active
+        }
+        if let future = valid
+            .filter({ $0.from > date })
+            .min(by: { $0.from < $1.from }) {
+            return future
+        }
+        return valid.max(by: { $0.until < $1.until })
     }
 
     /// bundled 加载：`GameCatalog/<version>/seasonal_phases.json`；

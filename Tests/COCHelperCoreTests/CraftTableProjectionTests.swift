@@ -19,6 +19,58 @@ final class CraftTableProjectionTests: XCTestCase {
         XCTAssertEqual(defenses.first?.modules.map(\.dataID), [102_000_033, 102_000_034, 102_000_035])
         XCTAssertTrue(defenses.flatMap(\.modules).allSatisfy { $0.maxLevel == 10 })
         XCTAssertTrue(defenses.flatMap(\.modules).allSatisfy { $0.status == .recorded })
+        XCTAssertTrue(
+            defenses.allSatisfy { $0.availability == .unconfigured },
+            "当前 103000011...013 未获官方精确日期，不得推断为活动"
+        )
+    }
+
+    func testOfficialBundledPhaseMarksHistoricalDefenseEnded() throws {
+        let defense = AccountItem(
+            id: "buildings:0.types.0",
+            section: "buildings",
+            dataID: 103_000_009
+        )
+        let root = AccountItem(
+            id: "buildings:0",
+            section: "buildings",
+            dataID: BuildingDisplayCategoryRules.craftTableDataID,
+            types: [defense]
+        )
+        let village = VillageProfile(
+            name: "历史快照",
+            accountSnapshot: AccountSnapshot(
+                tag: "#HISTORY",
+                capturedAt: nil,
+                importedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                ageSeconds: nil,
+                originalText: "",
+                objectSections: ["buildings": [root]],
+                numericSections: [:],
+                boosts: [:],
+                unknownTopLevelKeys: [],
+                diagnostics: []
+            )
+        )
+        let catalog = try XCTUnwrap(CraftTableCatalog.loadBundled())
+        let phases = SeasonalPhaseTable.loadBundled(version: GameCatalog.defaultBundledVersion)
+
+        let projected = CraftTableProjection.project(
+            village: village,
+            catalog: catalog,
+            base: .home,
+            seasonalPhases: phases,
+            now: Date(timeIntervalSince1970: 1_785_600_000)
+        )
+
+        XCTAssertEqual(
+            projected.first?.availability,
+            .seasonal(
+                phaseID: "crafted-defenses-2026-04-sound-of-clash",
+                phaseName: "Crafted Defenses: Builder Base Goes Metal",
+                status: .ended
+            )
+        )
     }
 
     func testObservedOrderIsPreservedAndMissingExpectedModuleIsMarkedUnknown() throws {

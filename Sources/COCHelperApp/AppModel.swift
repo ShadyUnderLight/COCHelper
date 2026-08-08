@@ -87,6 +87,12 @@ public final class AppModel: ObservableObject {
     /// 防御未来目录体积增长），首次访问（升级总览渲染）时才加载，启动路径保持纯净。
     /// `loadBundled` 失败返回 nil 是合法路径——UI 显示「目录不可用」，不允许崩溃。
     public private(set) lazy var gameCatalog: GameCatalog? = GameCatalog.loadBundled()
+    /// 官方公告人工维护的限时内容阶段表。版本与实际加载目录绑定；目录加载失败时
+    /// 回退默认 bundled 版本，仍可为旧快照提供历史阶段标记。
+    public private(set) lazy var seasonalPhases: SeasonalPhaseTable = {
+        let version = gameCatalog?.gameVersion ?? GameCatalog.defaultBundledVersion
+        return SeasonalPhaseTable.loadBundled(version: version)
+    }()
     /// 精制台 Defense/Module 目录独立于普通升级目录；缺失时只降级为未知状态。
     public private(set) lazy var craftTableCatalog: CraftTableCatalog? = CraftTableCatalog.loadBundled()
 

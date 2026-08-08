@@ -12,6 +12,7 @@
 - 根据快照时间扣除导入时的年龄，并在本地继续显示进行中倒计时；计时结束后提示重新导入确认等级。
 - 内置中文名称目录；未知 ID 仍保留 `#dataID` 以便核对。
 - 内置版本化静态升级目录（`GameCatalog/18.400.13`，683 项 / 5479 条逐级记录）：提供中文名称、等级上限、每级完整时长与图标/外观资源引用；目录缺失或版本不匹配时给出诊断，不崩溃、不编造时长。
+- 随目录人工维护 `seasonal_phases.json`：阶段日期只采用 Supercell 官方公告；当前收录 2026-04-01 至 2026-07-30 的 Crafted Defenses 阶段，旧快照可显示“已结束，仅历史数据”，未获官方精确日期的阶段保持“未配置”。
 - 村庄投影层（`VillageCatalogProjection`）：把账号快照与静态目录 join，按等级聚合重复建筑/墙，进行中记录同时携带目录完整时长与实时剩余时间；`upgrading / complete / maxed / unknown / unavailable` 状态机 + 缺失原因。
 - 多村庄档案：每个账号独立保存 JSON 快照；按账号标签 `tag` 重复导入时自动更新对应档案。
 - 村庄详情页「粘贴并更新」快捷导入：读取剪贴板 JSON 直接预览并按当前村庄更新，免去“账号数据”页的完整流程（详见下文「快捷导入」一节）。
@@ -135,6 +136,10 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
   不改 Swift。
 - **校验器**：`validate_game_catalog.py` 除结构/语义不变量外，还重算 `generatedFiles` 中
   catalog.json 的 sha256/size 并检查 `icons/` 目录存在（篡改检出）。
+- **限时阶段表**：`seasonal_phases.json` 是独立的人工维护增强数据，不从 APK 名称推断日期。
+  日期采用 Swift `JSONDecoder` 默认 `.deferredToDate`（2001-01-01 00:00:00 UTC 起秒数）；
+  官方仅给出日期而未给出时刻时，按 UTC 日边界编码，公告末日按包含语义转成次日 00:00 的
+  `until`（模型区间恒为 `from <= now < until`）。每条阶段保留官方 `sourceURL` 供审计。
 - **集成测试**：真实 APK 集成测试默认用 `/Users/lmz/Downloads/base.apk.1`；其他机器可通过环境变量
   `COC_APK_PATH` 指定，未设置且路径不存在时自动 skip。
 - **已知问题（SwiftPM 资源）**：SPM `.process("Resources")` 会把资源目录**拍平**到 bundle 根部

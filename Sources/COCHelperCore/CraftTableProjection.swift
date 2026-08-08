@@ -71,6 +71,7 @@ public struct CraftTableDefenseState: Identifiable, Codable, Hashable, Sendable 
     public let dataID: Int64
     public let name: String
     public let currentLevel: Int?
+    public let availability: CatalogAvailability
     public let modules: [CraftTableModuleState]
 
     public init(
@@ -78,12 +79,14 @@ public struct CraftTableDefenseState: Identifiable, Codable, Hashable, Sendable 
         dataID: Int64,
         name: String,
         currentLevel: Int? = nil,
+        availability: CatalogAvailability = .unconfigured,
         modules: [CraftTableModuleState]
     ) {
         self.id = id
         self.dataID = dataID
         self.name = name
         self.currentLevel = currentLevel
+        self.availability = availability
         self.modules = modules
     }
 }
@@ -98,6 +101,7 @@ public enum CraftTableProjection {
         village: VillageProfile,
         catalog: CraftTableCatalog?,
         base: TrackerBase,
+        seasonalPhases: SeasonalPhaseTable = .empty,
         now: Date = Date()
     ) -> [CraftTableDefenseState] {
         guard base == .home,
@@ -134,6 +138,10 @@ public enum CraftTableProjection {
                 dataID: defense.dataID,
                 name: defenseSpec?.name ?? defense.nameLabel,
                 currentLevel: defense.level,
+                availability: seasonalPhases.availability(
+                    forItemKey: "buildings:\(defense.dataID)",
+                    at: now
+                ),
                 modules: modules
             )
         }

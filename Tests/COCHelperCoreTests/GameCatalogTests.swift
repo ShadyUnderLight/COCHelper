@@ -627,10 +627,39 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertEqual(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500))?.phaseID, "p2")
     }
 
-    func testSeasonalPhaseTableLoadBundledMissingReturnsEmpty() {
-        // bundle 无 seasonal_phases.json（当前状态）→ 空表，不报错。
+    func testSeasonalPhaseTableLoadsBundledOfficialPhase() throws {
+        // 18.400.13 随目录人工维护官方公告阶段；日期使用 .deferredToDate，
+        // 官方“April 1-July 30”按 UTC 日边界编码为 [Apr 1, Jul 31)。
         let table = SeasonalPhaseTable.loadBundled(version: GameCatalog.defaultBundledVersion)
-        XCTAssertTrue(table.phases.isEmpty, "缺失 = 未配置（空表）")
+        XCTAssertEqual(table.schemaVersion, 1)
+        XCTAssertEqual(table.phases.count, 1)
+        let phase = try XCTUnwrap(table.phases.first)
+        XCTAssertEqual(phase.phaseID, "crafted-defenses-2026-04-sound-of-clash")
+        XCTAssertEqual(phase.from, Date(timeIntervalSinceReferenceDate: 796_694_400))
+        XCTAssertEqual(phase.until, Date(timeIntervalSinceReferenceDate: 807_148_800))
+        XCTAssertEqual(phase.itemKeys.count, 12, "3 座精工防御 + 9 个模组")
+        XCTAssertTrue(phase.itemKeys.contains("buildings:103000009"), "Air Bombs")
+        XCTAssertTrue(phase.itemKeys.contains("buildings:102000026"), "Roaster 模组")
+        XCTAssertEqual(
+            phase.sourceURL,
+            "https://supercell.com/en/games/clashofclans/blog/news/its-the-sound-of-clash/"
+        )
+
+        let craftCatalog = try XCTUnwrap(CraftTableCatalog.loadBundled())
+        let expectedKeys = Set(
+            craftCatalog.defenses
+                .filter { [103_000_009, 103_000_010, 103_000_008].contains($0.dataID) }
+                .flatMap { defense in
+                    ["buildings:\(defense.dataID)"]
+                        + defense.moduleIDs.map { "buildings:\($0)" }
+                }
+        )
+        XCTAssertEqual(Set(phase.itemKeys), expectedKeys, "阶段键必须与版本化精制台目录对拍")
+    }
+
+    func testSeasonalPhaseTableMissingVersionReturnsEmpty() {
+        let table = SeasonalPhaseTable.loadBundled(version: "missing-version")
+        XCTAssertTrue(table.phases.isEmpty, "文件缺失仍 fail-safe 为未配置空表")
     }
 
     func testAvailabilityDisplayLabel() {
@@ -645,6 +674,33 @@ final class GameCatalogTests: XCTestCase {
             CatalogAvailability.seasonal(phaseID: "p", phaseName: nil, status: .ended).displayLabel,
             "限时内容：p（已结束，仅历史数据）")
         XCTAssertEqual(CatalogAvailability.unconfigured.displayLabel, "阶段信息未配置")
+    }
+
+    func testSeasonalAvailabilityUsesSharedBoundaryMapping() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "p", name: "阶段",
+                from: Date(timeIntervalSince1970: 1_000),
+                until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["a:1"]
+            ),
+        ])
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", at: Date(timeIntervalSince1970: 999)),
+            .seasonal(phaseID: "p", phaseName: "阶段", status: .notStarted)
+        )
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", at: Date(timeIntervalSince1970: 1_000)),
+            .seasonal(phaseID: "p", phaseName: "阶段", status: .active)
+        )
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_000)),
+            .seasonal(phaseID: "p", phaseName: "阶段", status: .ended)
+        )
+        XCTAssertEqual(
+            table.availability(forItemKey: "missing", at: Date(timeIntervalSince1970: 1_500)),
+            .unconfigured
+        )
     }
 
     func testSeasonalPhaseTablePhaseResolvesNearestFuture() {
@@ -735,7 +791,7 @@ final class GameCatalogTests: XCTestCase {
         let phase = SeasonalPhase(
             phaseID: "p", name: "阶段",
             from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
-            itemKeys: ["a:1"])
+            itemKeys: ["a:1"], sourceURL: "https://example.com/official")
         let table = SeasonalPhaseTable(schemaVersion: 1, phases: [phase])
         let data = try JSONEncoder().encode(table)
         let decoded = try JSONDecoder().decode(SeasonalPhaseTable.self, from: data)
@@ -743,6 +799,7 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertEqual(decoded.phases[0].phaseID, "p")
         XCTAssertEqual(decoded.phases[0].from, Date(timeIntervalSince1970: 1_000))
         XCTAssertEqual(decoded.phases[0].until, Date(timeIntervalSince1970: 2_000))
+        XCTAssertEqual(decoded.phases[0].sourceURL, "https://example.com/official")
     }
 
     func testSeasonalPhaseTableMalformedDataNeverHits() {

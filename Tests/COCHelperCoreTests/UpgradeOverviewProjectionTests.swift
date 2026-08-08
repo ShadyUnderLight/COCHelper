@@ -168,6 +168,37 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
 
     // MARK: - Filtering
 
+    func testOverviewPropagatesSeasonalPhaseTable() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 300, path: "0"),
+            ],
+        ])
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "production-wire", name: "生产接线",
+                from: now.addingTimeInterval(-60),
+                until: now.addingTimeInterval(60),
+                itemKeys: ["buildings:1000001"]
+            ),
+        ])
+
+        let combined = UpgradeOverviewProjection.overviewRecords(
+            from: [village],
+            catalog: syntheticCatalog,
+            seasonalPhases: table,
+            at: now
+        )
+
+        let item = try XCTUnwrap(combined.active.first?.item)
+        XCTAssertEqual(
+            item.availability,
+            .seasonal(phaseID: "production-wire", phaseName: "生产接线", status: .active)
+        )
+    }
+
     func testFiltersOutNonUpgradingItems() throws {
         let village = makeVillage(objectSections: [
             "buildings": [

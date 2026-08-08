@@ -25,6 +25,7 @@ struct VillageDetailView: View {
     }
 
     private var catalog: GameCatalog? { model.gameCatalog }
+    private var seasonalPhases: SeasonalPhaseTable { model.seasonalPhases }
     private var craftTableCatalog: CraftTableCatalog? { model.craftTableCatalog }
 
     var body: some View {
@@ -83,6 +84,7 @@ struct VillageDetailView: View {
         let projection = VillageCatalogProjection.project(
             village: village,
             catalog: catalog,
+            seasonalPhases: seasonalPhases,
             base: selectedBase,
             now: now
         )
@@ -111,10 +113,18 @@ struct VillageDetailView: View {
         // 与 VillageCatalogProjection.project 并行调用：聚合层（agg: 前缀记录）
         // 继续供完成度/诊断/筛选使用，组卡基于原始记录层，两者语义互不影响。
         let buildingGroups = BuildingGroupProjection.project(
-            village: village, catalog: catalog, base: selectedBase, now: now
+            village: village,
+            catalog: catalog,
+            base: selectedBase,
+            seasonalPhases: seasonalPhases,
+            now: now
         )
         let craftTable = CraftTableProjection.project(
-            village: village, catalog: craftTableCatalog, base: selectedBase, now: now
+            village: village,
+            catalog: craftTableCatalog,
+            base: selectedBase,
+            seasonalPhases: seasonalPhases,
+            now: now
         )
         // 原始快照记录 id → 组。BuildingInstance.id 与 VillageItemState.id 同源
         //（同一条快照记录），但聚合层记录 id 带 agg: 前缀，查找键需归一化

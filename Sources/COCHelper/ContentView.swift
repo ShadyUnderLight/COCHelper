@@ -522,6 +522,7 @@ struct UpgradeTrackerView: View {
                         TrackerOverviewContent(
                             villages: [village],
                             catalog: model.gameCatalog,
+                            seasonalPhases: model.seasonalPhases,
                             scopeLabel: "当前村庄",
                             panelTitle: village.name + " · 正在升级",
                             now: context.date
@@ -532,6 +533,7 @@ struct UpgradeTrackerView: View {
                         TrackerOverviewContent(
                             villages: model.villages,
                             catalog: model.gameCatalog,
+                            seasonalPhases: model.seasonalPhases,
                             scopeLabel: "全部村庄",
                             panelTitle: "全部村庄 · 正在升级",
                             now: context.date
@@ -617,13 +619,19 @@ private struct TrackerHeaderView: View {
 private struct TrackerOverviewContent: View {
     let villages: [VillageProfile]
     let catalog: GameCatalog?
+    let seasonalPhases: SeasonalPhaseTable
     let scopeLabel: String
     let panelTitle: String
     let now: Date
 
     var body: some View {
         // 单趟投影：active + pending 一次算出，避免 60s tick 双倍投影（review fix）。
-        let combined = UpgradeOverviewProjection.overviewRecords(from: villages, catalog: catalog, at: now)
+        let combined = UpgradeOverviewProjection.overviewRecords(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            at: now
+        )
 
         VStack(alignment: .leading, spacing: 18) {
             TrackerMetricsView(

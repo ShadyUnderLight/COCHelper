@@ -422,25 +422,10 @@ public struct VillageCatalogProjection: Sendable {
         // Issue #74 seasonal：可用性由阶段表驱动（不推断、不编造；必须在
         // category guard 之前计算——unavailable 分支也携带 availability）。
         // itemKey = "section:dataID"（嵌套项同规则；空表恒 unconfigured）。
-        let availability: CatalogAvailability
         let itemKey = "\(item.section):\(item.dataID)"
-        // 阶段表命中的条目：统一解析入口 `phase(forItemKey:at:)` 选择最相关
-        // 阶段（活动最新 from / 未来最近 min from / 已结束最近 max until /
-        // 畸形过滤），再按 now 与阶段区间关系判定三态——不编造当前可用。
-        if let phase = seasonalPhases.phase(forItemKey: itemKey, at: now) {
-            let status: SeasonalStatus
-            if now < phase.from {
-                status = .notStarted
-            } else if now < phase.until {
-                status = .active
-            } else {
-                status = .ended
-            }
-            availability = .seasonal(
-                phaseID: phase.phaseID, phaseName: phase.name, status: status)
-        } else {
-            availability = .unconfigured
-        }
+        // 阶段选择 + 状态边界集中在阶段表单一入口，供普通投影与精制台专用
+        // 投影共用；畸形/未配置数据 fail-safe 为 unconfigured。
+        let availability = seasonalPhases.availability(forItemKey: itemKey, at: now)
 
         let remainingSeconds = liveRemainingSeconds(
             for: item,

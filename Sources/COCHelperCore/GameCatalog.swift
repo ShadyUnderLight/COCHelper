@@ -221,8 +221,8 @@ extension CatalogDurationState {
 
 /// 限时内容阶段配置（阶段表契约）。
 ///
-/// 数据源待定（官方公告 → 随目录人工维护，或未来 APK 提取）；当前不提交
-/// 任何阶段数据（空表 = bundle 无 seasonal_phases.json，缺失 → 空表）。
+/// 数据源为 Supercell 官方公告，随版本化目录人工维护；APK 只用于校验条目
+/// dataID，不从名称或发布时间推断阶段边界。空表表示该目录版本尚未配置阶段数据。
 /// 判定不依赖 `specialAbility` 名称（不得从命名推断 seasonal）。
 public struct SeasonalPhase: Codable, Hashable, Sendable {
     /// 日期编码契约：bundled JSON 走默认 JSONDecoder 日期策略
@@ -237,6 +237,24 @@ public struct SeasonalPhase: Codable, Hashable, Sendable {
     public let until: Date
     /// 涉及条目键："section:dataID"（与 `CatalogItem.id` / 投影查询键同格式）。
     public let itemKeys: [String]
+    /// 阶段日期的官方公告来源；nil 兼容旧表/测试注入。
+    public let sourceURL: String?
+
+    public init(
+        phaseID: String,
+        name: String?,
+        from: Date,
+        until: Date,
+        itemKeys: [String],
+        sourceURL: String? = nil
+    ) {
+        self.phaseID = phaseID
+        self.name = name
+        self.from = from
+        self.until = until
+        self.itemKeys = itemKeys
+        self.sourceURL = sourceURL
+    }
 }
 
 /// 阶段表（空表起步；schemaVersion 预留迁移）。
@@ -267,6 +285,23 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
         return valid.max(by: { $0.until < $1.until })
     }
 
+    /// 条目可用性的单一映射入口。阶段选择与活动边界必须由同一张注入表和
+    /// 同一个 `date` 决定，普通投影与精制台专用投影都复用此方法。
+    public func availability(forItemKey key: String, at date: Date) -> CatalogAvailability {
+        guard let phase = phase(forItemKey: key, at: date) else {
+            return .unconfigured
+        }
+        let status: SeasonalStatus
+        if date < phase.from {
+            status = .notStarted
+        } else if date < phase.until {
+            status = .active
+        } else {
+            status = .ended
+        }
+        return .seasonal(phaseID: phase.phaseID, phaseName: phase.name, status: status)
+    }
+
     /// bundled 加载：`GameCatalog/<version>/seasonal_phases.json`；
     /// 文件缺失或解码失败 → 空表（不报错——阶段信息是增强数据，缺失 = 未配置）。
     public static func loadBundled(version: String) -> SeasonalPhaseTable {
@@ -275,7 +310,8 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
             withExtension: "json",
             subdirectory: "GameCatalog/" + version
         ), let data = try? Data(contentsOf: url),
-           let table = try? JSONDecoder().decode(SeasonalPhaseTable.self, from: data) else {
+           let table = try? JSONDecoder().decode(SeasonalPhaseTable.self, from: data),
+           table.schemaVersion == 1 else {
             return .empty
         }
         return table
@@ -283,7 +319,7 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
 }
 
 /// 阶段状态（由注入 clock 判定：`from <= now < until` 为活动）。
-public enum SeasonalStatus: Hashable, Sendable {
+public enum SeasonalStatus: String, Codable, Hashable, Sendable {
     /// 活动期（from <= now < until）。
     case active
     /// 未开始（now < from）。
@@ -297,7 +333,7 @@ public enum SeasonalStatus: Hashable, Sendable {
 /// 与 `VillageItemState.isCatalogDeprecated`（源目录标记）是**独立维度**：
 /// deprecated 来自 `CatalogItem.missingReason`，availability 来自阶段表。
 /// seasonal 判定完全由阶段表驱动——不配置不推断、不编造当前可用。
-public enum CatalogAvailability: Hashable, Sendable {
+public enum CatalogAvailability: Codable, Hashable, Sendable {
     /// 非限时内容。
     case permanent
     /// 阶段表命中：状态由注入 clock 判定（活动/未开始/已结束）。

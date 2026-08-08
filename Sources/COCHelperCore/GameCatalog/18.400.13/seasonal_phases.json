@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "phases": [
+    {
+      "phaseID": "crafted-defenses-2026-04-sound-of-clash",
+      "name": "Crafted Defenses: Builder Base Goes Metal",
+      "from": 796694400,
+      "until": 807148800,
+      "itemKeys": [
+        "buildings:103000009",
+        "buildings:102000027",
+        "buildings:102000028",
+        "buildings:102000029",
+        "buildings:103000010",
+        "buildings:102000030",
+        "buildings:102000031",
+        "buildings:102000032",
+        "buildings:103000008",
+        "buildings:102000024",
+        "buildings:102000025",
+        "buildings:102000026"
+      ],
+      "sourceURL": "https://supercell.com/en/games/clashofclans/blog/news/its-the-sound-of-clash/"
+    }
+  ]
+}

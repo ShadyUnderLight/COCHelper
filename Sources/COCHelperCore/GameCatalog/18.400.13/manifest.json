@@ -6,69 +6,19 @@
     "levels": 5479,
     "missingIcons": 0,
     "missingTime": 3308,
-    "renderedIcons": 1264
+    "renderedIcons": 1258
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [
     {
       "path": "catalog.json",
-      "sha256": "sha256:e68f7b132f106acab6181adf2906e3cb1e7c735f9a817e405228c010e0bff146",
-      "size": 3031427
+      "sha256": "sha256:724fc4dbc0c851271072c60a7e4232525fd9df3f868db3708f6c2deb7f9e4d2d",
+      "size": 3814199
     },
     {
-      "entries": 1264,
+      "entries": 1258,
       "kind": "directory",
       "path": "icons/"
-    },
-    {
-      "path": "icons/buildings/cake_thrower_lvl1.png",
-      "sha256": "sha256:eb2f20a1634edd42b19c02296bd102c63d8b99482d4c5af53758eff90c7d1527",
-      "size": 49746
-    },
-    {
-      "path": "icons/buildings/headhunter_tower_lvl1.png",
-      "sha256": "sha256:47a58ab81a65bcc636d4a118240bb9cf41ad2abdc85fe4221b5b56844b860319",
-      "size": 24558
-    },
-    {
-      "path": "icons/buildings/inferno_candle_tower_lvl1.png",
-      "sha256": "sha256:6dd6d1ddd9b93647632e378fbf666e6c60390c9f71aeade4594b5d598f0095ec",
-      "size": 26478
-    },
-    {
-      "path": "icons/ui/info_icon_damage.png",
-      "sha256": "sha256:c728011dc490bfc58a34ca351d7ce3ae73cad3cec5d0f1f2f03ef7450df50d68",
-      "size": 2631
-    },
-    {
-      "path": "icons/ui/info_icon_hp.png",
-      "sha256": "sha256:07fcaa24837c3c13499ce9d5333c445b63ffc25ef729bdbc28d8987013c11f3d",
-      "size": 2209
-    },
-    {
-      "path": "icons/ui/info_icon_time_boosted.png",
-      "sha256": "sha256:037177389fa82fa03628769da02d73a0e888beb7e97f7a5adf7bcaa9e9f39557",
-      "size": 2793
-    },
-    {
-      "path": "icons/buildings/blacksmith_lvl1.png",
-      "sha256": "sha256:c0267061eaebf235af8f3f7c726026853b2b2b8b3aeed92b662f82048a69a48c",
-      "size": 26695
-    },
-    {
-      "path": "icons/buildings/fireplace_lvl1.png",
-      "sha256": "sha256:255865189e95164c9ee5add62ebd137adddf6e5194bb7e4772e6451c90c49e30",
-      "size": 13539
-    },
-    {
-      "path": "icons/ui/icon_spell_rage.png",
-      "sha256": "sha256:e131c806b760519fa2e239544e54b39ffa7f0d5a27af0221843e29e504de98cb",
-      "size": 79083
-    },
-    {
-      "path": "icons/ui/icon_unit_barbarian.png",
-      "sha256": "sha256:57f32ae33df8980c79cc7eea59277376e04babcbc3cfb408cebb23da20e45e2a",
-      "size": 64039
     },
     {
       "path": "icons/buildings/BB_xbow_lvl1.png",
@@ -451,6 +401,11 @@
       "size": 17205
     },
     {
+      "path": "icons/buildings/blacksmith_lvl1.png",
+      "sha256": "sha256:c0267061eaebf235af8f3f7c726026853b2b2b8b3aeed92b662f82048a69a48c",
+      "size": 26695
+    },
+    {
       "path": "icons/buildings/blacksmith_lvl2.png",
       "sha256": "sha256:eaef248bcc9ef72868094326ae8b7427ba1ac76163a4ee10bd92e5f227b93bd8",
       "size": 27921
@@ -546,6 +501,41 @@
       "size": 6376
     },
     {
+      "path": "icons/buildings/bomp_trap_lvl10_setup.png",
+      "sha256": "sha256:2fb555d39ec9ef19940bfc4f6cc99b585102ca6ce01371dd7c71bd8fa2fd7345",
+      "size": 5486
+    },
+    {
+      "path": "icons/buildings/bomp_trap_lvl11_setup.png",
+      "sha256": "sha256:2c3bb7c16aedaf3debfffe6ead57fb58e8b22ce565e88cc4789e93926e0d67c7",
+      "size": 7479
+    },
+    {
+      "path": "icons/buildings/bomp_trap_lvl1_setup.png",
+      "sha256": "sha256:2671577df17f272b67d5c875de704f05211ab5fb19ae8941479dc754b48ff84d",
+      "size": 2760
+    },
+    {
+      "path": "icons/buildings/bomp_trap_lvl3_setup.png",
+      "sha256": "sha256:3be9b1e426f8ece16236171be28346278865f705238724a04127998f6001c0cc",
+      "size": 4103
+    },
+    {
+      "path": "icons/buildings/bomp_trap_lvl5_setup.png",
+      "sha256": "sha256:b352c53f554f51d458322a26ef8db5ea4ab0f595d2ef66e66830f7eaa0faa68e",
+      "size": 4820
+    },
+    {
+      "path": "icons/buildings/bomp_trap_lvl7_setup.png",
+      "sha256": "sha256:18ede80323a53cd05a56c8633cd80e315a026a44055e079be496717963355d8c",
+      "size": 4766
+    },
+    {
+      "path": "icons/buildings/bomp_trap_lvl9_setup.png",
+      "sha256": "sha256:6b7e75a7ca8374c8ea75c0ce5b6237738ac800652e11deb7b3b83c7f1cd9927b",
+      "size": 5437
+    },
+    {
       "path": "icons/buildings/candy_cage_3x3.png",
       "sha256": "sha256:f1049c60bc5b7d71bc1129bf7196be0e85ba52845df0f7451e8b91fa0c9bf78f",
       "size": 71335
@@ -579,6 +569,11 @@
       "path": "icons/buildings/clashmas24_enemyspawn_1x1.png",
       "sha256": "sha256:eb474f49f4e0106f1725aaf770e9268026890b821a20787890ea7f9d80bcf3de",
       "size": 8568
+    },
+    {
+      "path": "icons/buildings/clashmas24_spellcage_present_2x2_idle.png",
+      "sha256": "sha256:afe8a298e3e36df44d7495489879b790dc5d881be00884cf5ae7ed3db998ed09",
+      "size": 50219
     },
     {
       "path": "icons/buildings/comm_mast_lvl1.png",
@@ -1301,6 +1296,11 @@
       "size": 11953
     },
     {
+      "path": "icons/buildings/fireplace_lvl1.png",
+      "sha256": "sha256:255865189e95164c9ee5add62ebd137adddf6e5194bb7e4772e6451c90c49e30",
+      "size": 13539
+    },
+    {
       "path": "icons/buildings/fireplace_lvl10.png",
       "sha256": "sha256:9ddd3c40e0ff5149aed86c296d02656706f09855609a1c5c2a88f61e4115a10f",
       "size": 40629
@@ -1459,6 +1459,36 @@
       "path": "icons/buildings/fireworks_tower_lvl9.png",
       "sha256": "sha256:e12f924b0b0089c513e790d3b8761080bf60e777f80eb83485f119978d4763e8",
       "size": 22726
+    },
+    {
+      "path": "icons/buildings/giant_bomb_setup.png",
+      "sha256": "sha256:81d63f99572d3fddced75d3b6bb6eabb0229b433cea67c34ae4b06dd64f846d8",
+      "size": 19232
+    },
+    {
+      "path": "icons/buildings/giant_bomb_setup_lvl3.png",
+      "sha256": "sha256:655f1145b86f302fba90153a2ae38c5e8656daa50ce6a0b533c8c21ddde773be",
+      "size": 20003
+    },
+    {
+      "path": "icons/buildings/giant_bomb_setup_lvl5.png",
+      "sha256": "sha256:5b17130a59ffabdce8d47e2dd9a1dc01580bad556a78a13bc5067cef43a68d2d",
+      "size": 20718
+    },
+    {
+      "path": "icons/buildings/giant_bomb_setup_lvl6.png",
+      "sha256": "sha256:3e5443d87c3e709e2cc170f226019cd3617c52461eb8aa4c84f5640cf54d9ab3",
+      "size": 20800
+    },
+    {
+      "path": "icons/buildings/giant_bomb_setup_lvl7.png",
+      "sha256": "sha256:9c4b4e299ebbffd044aa324be3edd0c894aba5f285c1cb992bd5124676a607af",
+      "size": 23910
+    },
+    {
+      "path": "icons/buildings/giant_bomb_setup_lvl8.png",
+      "sha256": "sha256:22cb92f46a57e23a935b83d28c5c5540d962bbe108e82d9f8666943f38806da0",
+      "size": 20663
     },
     {
       "path": "icons/buildings/giga_bomb_lvl1_setup.png",
@@ -2291,6 +2321,46 @@
       "size": 33411
     },
     {
+      "path": "icons/buildings/siegeWorkshop_lvl2.png",
+      "sha256": "sha256:6286aab2027288edef6f317e5b1d8c429b4adade0e1a2d12b26fee6d6936fd97",
+      "size": 41438
+    },
+    {
+      "path": "icons/buildings/siegeWorkshop_lvl3.png",
+      "sha256": "sha256:fc8e3900b8f2fcf4527b1033fc36f6dd3c24c7b27bea000c47220ad644834b44",
+      "size": 45115
+    },
+    {
+      "path": "icons/buildings/siegeWorkshop_lvl4.png",
+      "sha256": "sha256:8670f961bcf7355f77b6addea47f5b25476fa180dbc896c54037cc23f5f891a7",
+      "size": 45673
+    },
+    {
+      "path": "icons/buildings/siegeWorkshop_lvl5.png",
+      "sha256": "sha256:fad1acb567f61b3169e78e7f5b9567c4d9a2805a38254b5efccdcf896ff4c514",
+      "size": 45358
+    },
+    {
+      "path": "icons/buildings/siegeWorkshop_lvl6.png",
+      "sha256": "sha256:e95e0428a68b4153cb2ca5f7e8a62f3c58264c22c551dc927b05c57d1304d646",
+      "size": 44695
+    },
+    {
+      "path": "icons/buildings/siegeWorkshop_lvl7.png",
+      "sha256": "sha256:e8ce7e9f79d36ffeb8a95ad50707bf883d9611d49287ef4b4faeee00841d243d",
+      "size": 44392
+    },
+    {
+      "path": "icons/buildings/siegeWorkshop_lvl8.png",
+      "sha256": "sha256:58a8dcd6bfb0887c506396f9acede1cb88cf6e13f9e8376edf872d3d9b343897",
+      "size": 46548
+    },
+    {
+      "path": "icons/buildings/siegeWorkshop_lvl9.png",
+      "sha256": "sha256:4ff1412b4b34c8d7ecef27057fa918d16140611fc257c4166d26361ace77dde7",
+      "size": 44761
+    },
+    {
       "path": "icons/buildings/sour_elixir_cauldron_01.png",
       "sha256": "sha256:c8c769f9a1ad59e23a25886005577cecefc87c75bc17eb1b7c82abcd8bf59c6c",
       "size": 25214
@@ -2341,9 +2411,24 @@
       "size": 33863
     },
     {
+      "path": "icons/buildings/spell_tower_lvl1.png",
+      "sha256": "sha256:8adb7cc2f5eb468469ca9a3ce0ee8b254882a03c2c9da3eac9e74eebe4380ec4",
+      "size": 24761
+    },
+    {
+      "path": "icons/buildings/spell_tower_lvl2_rage.png",
+      "sha256": "sha256:fe1fc8b7febb8244d963d172bfa4c07bfbb697d757fd699abbed4ada8ac8bd1f",
+      "size": 25085
+    },
+    {
       "path": "icons/buildings/spell_tower_lvl3_rage.png",
       "sha256": "sha256:d4ef011fbfb1346d0d9465e15733ecd13164fb116c48fd0a375afa4d93a46649",
       "size": 25215
+    },
+    {
+      "path": "icons/buildings/spell_tower_lvl4_earthquake.png",
+      "sha256": "sha256:27ac680de6f071a84f16b197219848f000419ef19fb16940ba267f5825a9afba",
+      "size": 23958
     },
     {
       "path": "icons/buildings/teslatower_lvl10_setup.png",
@@ -3214,6 +3299,11 @@
       "path": "icons/buildings2/adv_training_camp_lvl11.png",
       "sha256": "sha256:c3114164bf6fdb909235a8b96d709596518131c5ff9026f3fcfc8703306857bc",
       "size": 46623
+    },
+    {
+      "path": "icons/buildings2/adv_training_camp_lvl12.png",
+      "sha256": "sha256:20bc3340a0e33da234bd546fbb6f7e6493b011eb641e733f95d350df85562fe2",
+      "size": 56554
     },
     {
       "path": "icons/buildings2/adv_training_camp_lvl2.png",
@@ -4586,6 +4676,31 @@
       "size": 38983
     },
     {
+      "path": "icons/buildings_cc/spellfactory_frost_lvl01.png",
+      "sha256": "sha256:00311549c0b4760ef75873ce4863b6d0e23fdc74e54b3ec65ed3daff00583eb0",
+      "size": 31556
+    },
+    {
+      "path": "icons/buildings_cc/spellfactory_frost_lvl02.png",
+      "sha256": "sha256:a758416e314174ef2d0b43763bac4596c08c2fd56f29019b307973978aee42b1",
+      "size": 32922
+    },
+    {
+      "path": "icons/buildings_cc/spellfactory_frost_lvl03.png",
+      "sha256": "sha256:64252bfadea7703fed760cca46ea9735f83d301c546c3a5b9caa77a8cb3ce1f0",
+      "size": 32540
+    },
+    {
+      "path": "icons/buildings_cc/spellfactory_frost_lvl04.png",
+      "sha256": "sha256:2a99fb7d913d2f0c65e26a0452012fa03166d7b2d6a4ba61e97604a00a16a5a2",
+      "size": 32335
+    },
+    {
+      "path": "icons/buildings_cc/spellfactory_frost_lvl05.png",
+      "sha256": "sha256:fdcd069af0fd9746e613dc6b85ffbcf61e8ce97ec07f88d103c8115e3712033a",
+      "size": 32458
+    },
+    {
       "path": "icons/buildings_cc/spellfactory_heal_lvl01.png",
       "sha256": "sha256:0890e8132ed116df00dec71434893b12e60e506cec179f8d242031d4e9415824",
       "size": 30827
@@ -5116,6 +5231,26 @@
       "size": 31340
     },
     {
+      "path": "icons/buildings_cc/troop_barrack_zappy_barracks_lvl1.png",
+      "sha256": "sha256:2b046e980aef256f5cee80562832c60e41d8e11f18042909ec4e7a0051a648c3",
+      "size": 72128
+    },
+    {
+      "path": "icons/buildings_cc/troop_barrack_zappy_barracks_lvl2.png",
+      "sha256": "sha256:9fd9a7c79811c2d48a9f0ef4e0dbe577585ab494ef3f6d4ff09297802137cb96",
+      "size": 72314
+    },
+    {
+      "path": "icons/buildings_cc/troop_barrack_zappy_barracks_lvl3.png",
+      "sha256": "sha256:7d7fac2e484ccdffdaa6a740d6e7753344157928551333db3b4a3a606c409e83",
+      "size": 79537
+    },
+    {
+      "path": "icons/buildings_cc/troop_barrack_zappy_barracks_lvl4.png",
+      "sha256": "sha256:1a3f25dc91d82ff6f1bc8fdfea681d633b09e98aaeec81bf94bbc159f531bbf2",
+      "size": 80106
+    },
+    {
       "path": "icons/ui/icon_gear_AQ_ArcherDoll.png",
       "sha256": "sha256:1098afc4898368efae1dae2f5644c4e31fb95c5e13e305d8bad66021a06595f9",
       "size": 49373
@@ -5476,6 +5611,11 @@
       "size": 71477
     },
     {
+      "path": "icons/ui/icon_spell_rage.png",
+      "sha256": "sha256:e131c806b760519fa2e239544e54b39ffa7f0d5a27af0221843e29e504de98cb",
+      "size": 79083
+    },
+    {
       "path": "icons/ui/icon_spell_recall.png",
       "sha256": "sha256:c966b28519307788caba4c7809a221d6e2a23dc5abdb30a2e50df7c0500f6a07",
       "size": 63326
@@ -5554,6 +5694,11 @@
       "path": "icons/ui/icon_unit_balloon.png",
       "sha256": "sha256:183e920156e7fe1202efd2fbd7b6e6950bd69ae6b1a0fd7cd03086bd1d157a30",
       "size": 67562
+    },
+    {
+      "path": "icons/ui/icon_unit_barbarian.png",
+      "sha256": "sha256:57f32ae33df8980c79cc7eea59277376e04babcbc3cfb408cebb23da20e45e2a",
+      "size": 64039
     },
     {
       "path": "icons/ui/icon_unit_barcher.png",
@@ -6164,184 +6309,9 @@
       "path": "icons/ui/icon_unit_zappywagon.png",
       "sha256": "sha256:bddcad8475000ae548e61978eda78eb765104a93ce4a2c676587ad181eb5b50b",
       "size": 62063
-    },
-    {
-      "path": "icons/buildings/clashmas24_spellcage_present_2x2_idle.png",
-      "sha256": "sha256:afe8a298e3e36df44d7495489879b790dc5d881be00884cf5ae7ed3db998ed09",
-      "size": 50219
-    },
-    {
-      "path": "icons/buildings/siegeWorkshop_lvl2.png",
-      "sha256": "sha256:6286aab2027288edef6f317e5b1d8c429b4adade0e1a2d12b26fee6d6936fd97",
-      "size": 41438
-    },
-    {
-      "path": "icons/buildings/siegeWorkshop_lvl3.png",
-      "sha256": "sha256:fc8e3900b8f2fcf4527b1033fc36f6dd3c24c7b27bea000c47220ad644834b44",
-      "size": 45115
-    },
-    {
-      "path": "icons/buildings/siegeWorkshop_lvl4.png",
-      "sha256": "sha256:8670f961bcf7355f77b6addea47f5b25476fa180dbc896c54037cc23f5f891a7",
-      "size": 45673
-    },
-    {
-      "path": "icons/buildings/siegeWorkshop_lvl5.png",
-      "sha256": "sha256:fad1acb567f61b3169e78e7f5b9567c4d9a2805a38254b5efccdcf896ff4c514",
-      "size": 45358
-    },
-    {
-      "path": "icons/buildings/siegeWorkshop_lvl6.png",
-      "sha256": "sha256:e95e0428a68b4153cb2ca5f7e8a62f3c58264c22c551dc927b05c57d1304d646",
-      "size": 44695
-    },
-    {
-      "path": "icons/buildings/siegeWorkshop_lvl7.png",
-      "sha256": "sha256:e8ce7e9f79d36ffeb8a95ad50707bf883d9611d49287ef4b4faeee00841d243d",
-      "size": 44392
-    },
-    {
-      "path": "icons/buildings/siegeWorkshop_lvl8.png",
-      "sha256": "sha256:58a8dcd6bfb0887c506396f9acede1cb88cf6e13f9e8376edf872d3d9b343897",
-      "size": 46548
-    },
-    {
-      "path": "icons/buildings/siegeWorkshop_lvl9.png",
-      "sha256": "sha256:4ff1412b4b34c8d7ecef27057fa918d16140611fc257c4166d26361ace77dde7",
-      "size": 44761
-    },
-    {
-      "path": "icons/buildings/spell_tower_lvl1.png",
-      "sha256": "sha256:8adb7cc2f5eb468469ca9a3ce0ee8b254882a03c2c9da3eac9e74eebe4380ec4",
-      "size": 24761
-    },
-    {
-      "path": "icons/buildings/spell_tower_lvl2_rage.png",
-      "sha256": "sha256:fe1fc8b7febb8244d963d172bfa4c07bfbb697d757fd699abbed4ada8ac8bd1f",
-      "size": 25085
-    },
-    {
-      "path": "icons/buildings/spell_tower_lvl4_earthquake.png",
-      "sha256": "sha256:27ac680de6f071a84f16b197219848f000419ef19fb16940ba267f5825a9afba",
-      "size": 23958
-    },
-    {
-      "path": "icons/buildings/bomp_trap_lvl10_setup.png",
-      "sha256": "sha256:2fb555d39ec9ef19940bfc4f6cc99b585102ca6ce01371dd7c71bd8fa2fd7345",
-      "size": 5486
-    },
-    {
-      "path": "icons/buildings/bomp_trap_lvl11_setup.png",
-      "sha256": "sha256:2c3bb7c16aedaf3debfffe6ead57fb58e8b22ce565e88cc4789e93926e0d67c7",
-      "size": 7479
-    },
-    {
-      "path": "icons/buildings/bomp_trap_lvl1_setup.png",
-      "sha256": "sha256:2671577df17f272b67d5c875de704f05211ab5fb19ae8941479dc754b48ff84d",
-      "size": 2760
-    },
-    {
-      "path": "icons/buildings/bomp_trap_lvl3_setup.png",
-      "sha256": "sha256:3be9b1e426f8ece16236171be28346278865f705238724a04127998f6001c0cc",
-      "size": 4103
-    },
-    {
-      "path": "icons/buildings/bomp_trap_lvl5_setup.png",
-      "sha256": "sha256:b352c53f554f51d458322a26ef8db5ea4ab0f595d2ef66e66830f7eaa0faa68e",
-      "size": 4820
-    },
-    {
-      "path": "icons/buildings/bomp_trap_lvl7_setup.png",
-      "sha256": "sha256:18ede80323a53cd05a56c8633cd80e315a026a44055e079be496717963355d8c",
-      "size": 4766
-    },
-    {
-      "path": "icons/buildings/bomp_trap_lvl9_setup.png",
-      "sha256": "sha256:6b7e75a7ca8374c8ea75c0ce5b6237738ac800652e11deb7b3b83c7f1cd9927b",
-      "size": 5437
-    },
-    {
-      "path": "icons/buildings/giant_bomb_setup.png",
-      "sha256": "sha256:81d63f99572d3fddced75d3b6bb6eabb0229b433cea67c34ae4b06dd64f846d8",
-      "size": 19232
-    },
-    {
-      "path": "icons/buildings/giant_bomb_setup_lvl3.png",
-      "sha256": "sha256:655f1145b86f302fba90153a2ae38c5e8656daa50ce6a0b533c8c21ddde773be",
-      "size": 20003
-    },
-    {
-      "path": "icons/buildings/giant_bomb_setup_lvl5.png",
-      "sha256": "sha256:5b17130a59ffabdce8d47e2dd9a1dc01580bad556a78a13bc5067cef43a68d2d",
-      "size": 20718
-    },
-    {
-      "path": "icons/buildings/giant_bomb_setup_lvl6.png",
-      "sha256": "sha256:3e5443d87c3e709e2cc170f226019cd3617c52461eb8aa4c84f5640cf54d9ab3",
-      "size": 20800
-    },
-    {
-      "path": "icons/buildings/giant_bomb_setup_lvl7.png",
-      "sha256": "sha256:9c4b4e299ebbffd044aa324be3edd0c894aba5f285c1cb992bd5124676a607af",
-      "size": 23910
-    },
-    {
-      "path": "icons/buildings/giant_bomb_setup_lvl8.png",
-      "sha256": "sha256:22cb92f46a57e23a935b83d28c5c5540d962bbe108e82d9f8666943f38806da0",
-      "size": 20663
-    },
-    {
-      "path": "icons/buildings2/adv_training_camp_lvl12.png",
-      "sha256": "sha256:20bc3340a0e33da234bd546fbb6f7e6493b011eb641e733f95d350df85562fe2",
-      "size": 56554
-    },
-    {
-      "path": "icons/buildings_cc/spellfactory_frost_lvl01.png",
-      "sha256": "sha256:00311549c0b4760ef75873ce4863b6d0e23fdc74e54b3ec65ed3daff00583eb0",
-      "size": 31556
-    },
-    {
-      "path": "icons/buildings_cc/spellfactory_frost_lvl02.png",
-      "sha256": "sha256:a758416e314174ef2d0b43763bac4596c08c2fd56f29019b307973978aee42b1",
-      "size": 32922
-    },
-    {
-      "path": "icons/buildings_cc/spellfactory_frost_lvl03.png",
-      "sha256": "sha256:64252bfadea7703fed760cca46ea9735f83d301c546c3a5b9caa77a8cb3ce1f0",
-      "size": 32540
-    },
-    {
-      "path": "icons/buildings_cc/spellfactory_frost_lvl04.png",
-      "sha256": "sha256:2a99fb7d913d2f0c65e26a0452012fa03166d7b2d6a4ba61e97604a00a16a5a2",
-      "size": 32335
-    },
-    {
-      "path": "icons/buildings_cc/spellfactory_frost_lvl05.png",
-      "sha256": "sha256:fdcd069af0fd9746e613dc6b85ffbcf61e8ce97ec07f88d103c8115e3712033a",
-      "size": 32458
-    },
-    {
-      "path": "icons/buildings_cc/troop_barrack_zappy_barracks_lvl1.png",
-      "sha256": "sha256:2b046e980aef256f5cee80562832c60e41d8e11f18042909ec4e7a0051a648c3",
-      "size": 72128
-    },
-    {
-      "path": "icons/buildings_cc/troop_barrack_zappy_barracks_lvl2.png",
-      "sha256": "sha256:9fd9a7c79811c2d48a9f0ef4e0dbe577585ab494ef3f6d4ff09297802137cb96",
-      "size": 72314
-    },
-    {
-      "path": "icons/buildings_cc/troop_barrack_zappy_barracks_lvl3.png",
-      "sha256": "sha256:7d7fac2e484ccdffdaa6a740d6e7753344157928551333db3b4a3a606c409e83",
-      "size": 79537
-    },
-    {
-      "path": "icons/buildings_cc/troop_barrack_zappy_barracks_lvl4.png",
-      "sha256": "sha256:1a3f25dc91d82ff6f1bc8fdfea681d633b09e98aaeec81bf94bbc159f531bbf2",
-      "size": 80106
     }
   ],
   "locale": "zh-CN",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "sourceFingerprint": "sha256:30be1e6b9ee7456e35262c04249b2d5ef20021b5eb795e40d1a1dcfee7300c6f"
 }

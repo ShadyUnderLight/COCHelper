@@ -188,6 +188,47 @@ def test_non_integer_value_fails_loud():
         _counts({"Cannon": {3: "abc"}}, buildings=[("Cannon", 1000008)])
 
 
+def test_negative_value_fails_loud():
+    """负数量（'-1'）→ CatalogError（isdigit 门槛拒绝 +/-，不静默接受）。"""
+    with pytest.raises(CatalogError, match="含非整数值"):
+        _counts({"Cannon": {3: "-1"}}, buildings=[("Cannon", 1000008)])
+
+
+def test_plus_signed_value_fails_loud():
+    """带 + 号（'+5'）→ CatalogError（同 isdigit 门槛）。"""
+    with pytest.raises(CatalogError, match="含非整数值"):
+        _counts({"Cannon": {3: "+5"}}, buildings=[("Cannon", 1000008)])
+
+
+def test_non_numeric_global_id_fails_loud():
+    """buildings/traps 的 GlobalID 非数字 → CatalogError（含表名+Name，不裸抛）。"""
+    buildings = (
+        "Name,GlobalID,BuildingLevel,VillageType\n"
+        "String,int,int,String\n"
+        "Cannon,oops,1,home\n"
+    )
+    with pytest.raises(CatalogError, match="buildings.csv.*Cannon"):
+        build_instance_counts(
+            _rows(_townhall_csv({"Cannon": {1: "1"}})), _rows(buildings), [])
+
+
+def test_future_th_row_fails_loud():
+    """未来 TH 行（'19'）→ CatalogError（提示超出 1..18，不静默忽略）。"""
+    townhall = "Name,Cannon\nString,int\n" + "".join(f"{i},1\n" for i in range(1, 20))
+    with pytest.raises(CatalogError, match="19"):
+        build_instance_counts(_rows(townhall),
+                              _rows(_named_csv([("Cannon", 1000008)])), [])
+
+
+def test_duplicate_th_row_name_raises():
+    """'2' 出现两次 + '18' 缺失（总数仍 18）→ CatalogError（唯一性校验）。"""
+    townhall = ("Name,Cannon\nString,int\n"
+                + "".join(f"{i},1\n" for i in [1, 2, 2] + list(range(3, 18))))
+    with pytest.raises(CatalogError, match="大本营行数"):
+        build_instance_counts(_rows(townhall),
+                              _rows(_named_csv([("Cannon", 1000008)])), [])
+
+
 # ---- 集成（真实 APK，锚点验证）----
 
 

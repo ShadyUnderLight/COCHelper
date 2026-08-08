@@ -1309,3 +1309,23 @@ def test_validate_instance_counts_non_countable_item_ok(tmp_path):
     m["counts"] = {"items": 3, "levels": 3, "missingTime": 0, "missingIcons": 0}
     _write(d, manifest=m)
     assert validate_catalog(d) == []
+
+
+def test_validate_instance_counts_top_level_type_rejected(tmp_path):
+    """顶层 instanceCounts 非 dict（list）→ 拒绝（防御分支）。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"] = [1, 2]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("instanceCounts 类型非法" in e for e in errors)
+
+
+def test_validate_instance_counts_key_without_colon_rejected(tmp_path):
+    """键不含 ':' → 拒绝（防御分支）。"""
+    d = _valid_dir_with_universe(tmp_path)
+    c = _load_catalog(d)
+    c["instanceCounts"]["badkey"] = [1] * 18
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("键格式非法" in e and "badkey" in e for e in errors)

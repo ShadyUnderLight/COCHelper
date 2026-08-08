@@ -47,10 +47,12 @@ _TH_LEVELS = range(1, 19)  # TH1..TH18
 _TH_NAMES = frozenset(str(i) for i in _TH_LEVELS)
 
 
-def _name_to_global_id(rows: list[dict[str, str]]) -> dict[str, int]:
+def _name_to_global_id(rows: list[dict[str, str]], table: str) -> dict[str, int]:
     """Name → GlobalID 映射（取该 Name 首个出现行的 GlobalID；跳过类型行）。
 
     buildings.csv/traps.csv 每 Name 多等级行共享同一 GlobalID，首个出现行即可。
+    GlobalID 非数字 → CatalogError（消息含表名 + Name），不裸抛 ValueError
+    （builders.py 同风格）。
     """
     mapping: dict[str, int] = {}
     for row in rows:
@@ -58,8 +60,11 @@ def _name_to_global_id(rows: list[dict[str, str]]) -> dict[str, int]:
         if not name or name == "String":  # 类型行（Name='String'）
             continue
         gid = row.get("GlobalID", "")
-        if gid and name not in mapping:
-            mapping[name] = int(gid)
+        if not gid or name in mapping:
+            continue
+        if not gid.isdigit():
+            raise CatalogError(f"{table}: Name={name!r} 的 GlobalID 非数字: {gid!r}")
+        mapping[name] = int(gid)
     return mapping
 
 
@@ -71,20 +76,31 @@ def build_instance_counts(
     """townhall_levels 主村列 → {"section:dataID": [TH1..TH18 数量]}。
 
     契约：
-    - TH 行 = Name ∈ {"1".."18"}，恒 18 行（缺行/多行 → CatalogError）；
+    - TH 行 = Name ∈ {"1".."18"}，恒 18 行且无重复（缺行/多行/重复/越界 →
+      CatalogError；纯数字但 ∉ 1..18 的行 = 未来 TH，同样 fail loud）；
     - 列跳过：CONFIG_COLUMNS、"BB " 前缀、TH 行全空（'' 或 '0'）、非整数值
-      （类型行不计入判定；非空非整数 → CatalogError 而非跳过，fail loud）；
+      （类型行不计入判定；非空非数字 → CatalogError 而非跳过，fail loud；
+      isdigit 门槛拒绝 +/- 号，负数量不静默接受）；
     - 列名 join buildings.csv.Name（→ "buildings"）与 traps.csv.Name（→ "traps"）
-      的 GlobalID；任一非空数量列 join 失败 → CatalogError（消息含列名，fail loud）；
+      的 GlobalID，**同名冲突时 buildings 优先**（先查 buildings 再查 traps）；
+      任一非空数量列 join 失败 → CatalogError（消息含列名，fail loud）；
     - 输出键 "section:dataID" 排序，值长度恒 18（index = TH-1）。
     """
+    # 越界纯数字行（如未来 TH19）→ fail loud，不静默过滤（提示更新 _TH_LEVELS）
+    for row in townhall_rows:
+        name = row.get("Name", "")
+        if name.isdigit() and name not in _TH_NAMES:
+            raise CatalogError(
+                f"townhall_levels 出现未知大本营行 Name={name!r}（超出 1..18，"
+                f"需更新 _TH_LEVELS）")
     th_rows = [r for r in townhall_rows if r.get("Name") in _TH_NAMES]
-    if len(th_rows) != 18:
+    if len(th_rows) != 18 or {r["Name"] for r in th_rows} != _TH_NAMES:
         raise CatalogError(
-            f"townhall_levels 大本营行数 != 18: {len(th_rows)}（行 Name 应为 1..18）")
+            f"townhall_levels 大本营行数 != 18 或 Name 缺失/重复: "
+            f"{len(th_rows)} 行（行 Name 应为 1..18 各一行）")
 
-    buildings_ids = _name_to_global_id(buildings_rows)
-    traps_ids = _name_to_global_id(traps_rows)
+    buildings_ids = _name_to_global_id(buildings_rows, "buildings.csv")
+    traps_ids = _name_to_global_id(traps_rows, "traps.csv")
 
     counts: dict[str, list[int]] = {}
     for col in townhall_rows[0].keys():
@@ -99,11 +115,12 @@ def build_instance_counts(
             if v == "":
                 values.append(previous)
             else:
-                try:
-                    previous = int(v)
-                except ValueError:
+                # isdigit 门槛：拒绝 +/- 号、小数点、空白等（'' 已走沿用分支，
+                # '0' 是真实值；与 durations.py 解析风格一致）
+                if not v.isdigit():
                     raise CatalogError(
-                        f"townhall_levels 列 {col!r} 含非整数值: {v!r}") from None
+                        f"townhall_levels 列 {col!r} 含非整数值: {v!r}")
+                previous = int(v)
                 values.append(previous)
         if col in buildings_ids:
             section, data_id = "buildings", buildings_ids[col]

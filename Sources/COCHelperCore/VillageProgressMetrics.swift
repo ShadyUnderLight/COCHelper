@@ -81,7 +81,10 @@ public struct VillageProgressMetrics: Hashable, Sendable {
 ///
 /// 指标语义：
 /// - currentStageProgress：`Σmin(level, currentStageMaxLevel) / ΣcurrentStageMaxLevel`，
-///   分母只含 known 且阶段上限可计算的实例（#67 保证 known ⇒ stageMax 非 nil）；
+///   分母只含 known 且阶段上限可计算的实例。非升级 known 项 stageMax 非 nil；
+///   升级中项可能 stageMax == nil（快照缺解锁建筑记录，投影 isUpgrading 分支先于
+///   stageMax 检查）——该形态计入阶段指标专用缺失权重触发降级，不静默丢分母
+///   （实现要求 5）。cap 先 max(0,·) 钳制，恶意目录负 cap 不产生负贡献（F1）；
 /// - globalProgress：`Σmin(level, maxLevel) / ΣmaxLevel`，同样只含 known 实例；
 /// - snapshotCoverage：`known 实例权重 / 全部追踪类别观测实例权重`——观测数据
 ///   完整性（已知/未知比例），不是村庄实例宇宙的完整覆盖率（目录侧缺失项
@@ -116,17 +119,25 @@ public enum VillageProgressProjection {
         )
 
         // 阶段进度：分母 = Σ(stageMax × weight)，分子 = Σ(min(level, stageMax) × weight)
+        // 升级中且快照缺解锁建筑记录（stageMax == nil）的 known 项：#67 的 stageMax
+        // 前提只对非升级项成立；该形态真实可达（投影 isUpgrading 分支先于 stageMax
+        // 检查）。不得静默丢分母——计入阶段指标专用缺失权重触发降级（实现要求 5）。
+        let stageMissingWeightInfo = VillageDetailProjection.instanceCountAndOverflow(
+            of: known.filter { $0.currentStageMaxLevel == nil }
+        )
         let stageEligible = known.filter { $0.currentStageMaxLevel != nil }
-        let stageDen = weightedCappedSum(stageEligible) { $0.currentStageMaxLevel ?? 0 }
+        // cap 先 max(0,·) 再参与 min：恶意目录 cap 为负不得产生负分子/负分母
+        // （交叉审核 F1，fail-closed 禁止假精度与负 ratio）。
+        let stageDen = weightedCappedSum(stageEligible) { max(0, $0.currentStageMaxLevel ?? 0) }
         let stageNum = weightedCappedSum(stageEligible) {
-            min(max(0, $0.currentLevel ?? 0), $0.currentStageMaxLevel ?? 0)
+            min(max(0, $0.currentLevel ?? 0), max(0, $0.currentStageMaxLevel ?? 0))
         }
 
         // 全局进度：分母 = Σ(maxLevel × weight)，分子 = Σ(min(level, maxLevel) × weight)
         let globalEligible = known
-        let globalDen = weightedCappedSum(globalEligible) { $0.maxLevel ?? 0 }
+        let globalDen = weightedCappedSum(globalEligible) { max(0, $0.maxLevel ?? 0) }
         let globalNum = weightedCappedSum(globalEligible) {
-            min(max(0, $0.currentLevel ?? 0), $0.maxLevel ?? 0)
+            min(max(0, $0.currentLevel ?? 0), max(0, $0.maxLevel ?? 0))
         }
 
         // 覆盖率：分母 = 全部观测实例权重，分子 = known 实例权重（饱和信息保留）
@@ -144,7 +155,10 @@ public enum VillageProgressProjection {
                 unknownWeight: unknownWeightInfo.count,
                 unverifiedCatalog: unverifiedCatalog,
                 units: "级",
-                emptyReason: "无可确认项目，暂无法计算"
+                emptyReason: "无可确认项目，暂无法计算",
+                extraReason: stageMissingWeightInfo.count > 0
+                    ? String(stageMissingWeightInfo.count) + " 项缺少阶段上限，未计入阶段进度。"
+                    : nil
             ),
             globalProgress: makeMetric(
                 kind: .globalProgress,
@@ -194,7 +208,8 @@ public enum VillageProgressProjection {
         unknownWeight: Int,
         unverifiedCatalog: Bool,
         units: String,
-        emptyReason: String
+        emptyReason: String,
+        extraReason: String? = nil
     ) -> ProgressMetric {
         let state: ProgressMetricState
         var reasons: [String] = []
@@ -203,7 +218,10 @@ public enum VillageProgressProjection {
             reasons.append(emptyReason)
         } else {
             if unknownWeight > 0 {
-                reasons.append(String(unknownWeight) + " 项未知，结果仅为已观测项目。")
+                reasons.append(String(unknownWeight) + " 项未知或待重新导入，结果仅为已观测项目。")
+            }
+            if let extraReason {
+                reasons.append(extraReason)
             }
             if unverifiedCatalog {
                 reasons.append("目录与玩家版本未验证，百分比可能过时。")

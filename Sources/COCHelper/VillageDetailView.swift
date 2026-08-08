@@ -317,6 +317,7 @@ struct VillageDetailView: View {
             metricRow(metrics.currentStageProgress, title: "当前阶段进度")
             metricRow(metrics.globalProgress, title: "全局养成进度")
             metricRow(metrics.snapshotCoverage, title: "观测数据完整性")
+                .help("分母为已观测实例，非全部可能建筑")
         }
         .padding(12)
         .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -694,7 +695,7 @@ struct VillageDetailView: View {
             return Text("无可确认完成度").font(.caption2).foregroundStyle(.tertiary)
         }
         let summary = String(stats.completedCount) + "/" + String(stats.knownCount)
-            + " · " + String(Int((ratio * 100).rounded())) + "%"
+            + " 已满级 · " + String(Int((ratio * 100).rounded())) + "%"
         // issue #53：满级判定改用严格谓词 isFullyMaxed——known 全满但
         // unknownCount > 0（存在未知/未观测项）时不再标绿，与 chip 一致。
         let tint: Color = stats.isFullyMaxed ? .green : .secondary

@@ -334,7 +334,7 @@ final class VillageProgressMetricsTests: XCTestCase {
         let m = metrics(items, compatibility: .unverified(gameVersion: "18.400.13")).currentStageProgress
         XCTAssertEqual(m.state, .partial)
         let reason = m.degradedReason!
-        XCTAssertTrue(reason.contains("1 项未知，结果仅为已观测项目。"), reason)
+        XCTAssertTrue(reason.contains("1 项未知或待重新导入，结果仅为已观测项目。"), reason)
         XCTAssertTrue(reason.contains("目录与玩家版本未验证，百分比可能过时。"), reason)
     }
 
@@ -376,7 +376,7 @@ final class VillageProgressMetricsTests: XCTestCase {
 
     // MARK: - 跨基地隔离（验收标准 6）
 
-    func testCrossBaseIsolation() {
+    func testMetricsArePureAndIsolated() {
         // 不同基地的投影各自独立：同一输入重复计算幂等，不同基地互不污染
         let homeItems = [item(id: "h", level: 3, maxLevel: 10, stageMax: 6)]
         let builderItems = [item(id: "b", level: 8, maxLevel: 12, stageMax: 8)]
@@ -387,5 +387,41 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertNotEqual(homeOnce.currentStageProgress, builder.currentStageProgress) // 无串扰
         XCTAssertEqual(homeOnce.currentStageProgress.numerator, 3)
         XCTAssertEqual(builder.currentStageProgress.numerator, 8)
+    }
+
+    // MARK: - 负 cap 钳制（交叉审核 F1：fail-closed）
+
+    func testNegativeCapContributesZero() {
+        // 恶意目录：cap 为负 → 贡献 0，不产生负 ratio（审核 B F1）
+        let m = metrics([item(id: "a", level: 3, maxLevel: -5, stageMax: -5)])
+        XCTAssertEqual(m.currentStageProgress.numerator, 0)
+        XCTAssertEqual(m.currentStageProgress.denominator, 0)
+        XCTAssertEqual(m.globalProgress.numerator, 0)
+        XCTAssertEqual(m.globalProgress.denominator, 0)
+        XCTAssertNil(m.currentStageProgress.ratio)
+    }
+
+    func testNegativeCapWithMaxIntCountDoesNotCrash() {
+        // 审核 B F1 崩溃复现路径：cap=-1 + count=Int.max → UI Int(ratio*100) 不得 SIGTRAP
+        let items = [item(id: "a", level: 3, maxLevel: -1, stageMax: -1, count: Int.max)]
+        let m = metrics(items)
+        XCTAssertNil(m.currentStageProgress.ratio)  // den==0 → unknown
+        XCTAssertNotEqual(m.currentStageProgress.state, .ready)
+    }
+
+    // MARK: - 升级中缺阶段上限（交叉审核 A-1/F3：不静默丢分母）
+
+    func testStageMissingMaxLevelDegradesWhenUpgrading() {
+        // 升级中 + 快照缺解锁记录（stageMax nil）：不得静默丢分母（审核 A 漏洞 1）
+        let items = [
+            item(id: "a", level: 3, maxLevel: 10, stageMax: 6),
+            item(id: "u", status: .upgrading, level: 4, maxLevel: 10, stageMax: nil, isUpgrading: true),
+        ]
+        let m = metrics(items, compatibility: .verified(gameVersion: "18.400.13"))
+        XCTAssertEqual(m.currentStageProgress.denominator, 6) // 只含可算项
+        XCTAssertEqual(m.currentStageProgress.state, .partial)
+        XCTAssertNotNil(m.currentStageProgress.degradedReason)
+        // global 不受影响（maxLevel 非 nil 即可算）
+        XCTAssertEqual(m.globalProgress.denominator, 20)
     }
 }

@@ -119,7 +119,7 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
   （无时间戳，重复生成字节一致）。
 - **缺表 fail loud**：APK 缺任何注册表或 `upgrade_data.csv` 时生成直接失败（不产出部分/空目录）；
   输出目录非空也拒绝（不自动清理）。
-- **行语义**：建筑/陷阱表行 N = "升级到 N 级"；单位/法术/英雄/宠物/守护者表行 N = "从 N 升到
+- **行语义**：建筑/陷阱表行 N = "升级到 N 级"；单位/法术/英雄/宠物/守卫表行 N = "从 N 升到
   N+1"，升级属性映射到下一等级（最低等级 = 初始，`durationSeconds` null +
   `min_level_initial_no_upgrade`）。等级号保留源表原始值（战斗直升机 15..35、超级野蛮人 5..13）。
   时间列空值 = 0，不做 forward-fill（只有标识列继承）。

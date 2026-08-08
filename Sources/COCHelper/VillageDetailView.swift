@@ -77,7 +77,7 @@ struct VillageDetailView: View {
     }
 
     /// Issue #49 验收阅读顺序：首屏自上而下为「玩家昵称与身份（header）→
-    /// 玩家信息（officialAPISection）→ 完成度/升级列表（completionBar →
+    /// 玩家信息（officialAPISection）→ 完成度/升级列表（metricsBar →
     /// basePicker → 分类筛选 → 分组列表）」。完成度条位于官方玩家信息之后、
     /// 基地选择之前。
     private func detailContent(village: VillageProfile, now: Date) -> some View {
@@ -97,6 +97,13 @@ struct VillageDetailView: View {
         let total = VillageDetailProjection.totalCompletion(
             from: trackedItems,
             catalogIsUsable: projection.catalogIsUsable
+        )
+        // Issue #70：三指标（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
+        // 与 totalCompletion 同数据源（trackedItems），known 判定同规则。
+        let progressMetrics = VillageProgressProjection.metrics(
+            from: trackedItems,
+            catalogIsUsable: projection.catalogIsUsable,
+            compatibility: projection.compatibility
         )
         let statsByKey = Dictionary(
             uniqueKeysWithValues: VillageDetailProjection.completionStats(
@@ -138,7 +145,7 @@ struct VillageDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, now: now)
                 officialAPISection()
-                completionBar(total: total)
+                metricsBar(metrics: progressMetrics)
                 basePicker()
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
 
@@ -302,37 +309,65 @@ struct VillageDetailView: View {
             .foregroundStyle(.tertiary)
     }
 
-    private func completionBar(total: VillageCategoryCompletion) -> some View {
-        HStack(spacing: 12) {
-            Text("完成度")
+    /// Issue #70：三指标卡（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
+    /// 每个指标显示名称、百分比、分子/分母（带单位）与降级文案；saturated
+    /// 优先于 state 文案（fail-closed，数值不权威时显示异常而非百分比）。
+    private func metricsBar(metrics: VillageProgressMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            metricRow(metrics.currentStageProgress, title: "当前阶段进度")
+            metricRow(metrics.globalProgress, title: "全局养成进度")
+            metricRow(metrics.snapshotCoverage, title: "观测数据完整性")
+        }
+        .padding(12)
+        .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func metricRow(_ metric: ProgressMetric, title: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            if let ratio = total.completionRatio {
+                .frame(width: 96, alignment: .leading)
+            if metric.saturated {
+                Text("数据异常（超出可表示范围）")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if let ratio = metric.ratio {
                 ProgressView(value: ratio)
                     .progressViewStyle(.linear)
                     .tint(Color.cocAccent)
-                    .frame(maxWidth: 260)
+                    .frame(maxWidth: 180)
                 Text(String(Int((ratio * 100).rounded())) + "%")
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(Color.cocAccent)
-                Text(String(total.completedCount) + " / " + String(total.knownCount) + " 已满级")
+                    .frame(width: 44, alignment: .trailing)
+                Text(String(metric.numerator) + " / " + String(metric.denominator) + " " + metric.units)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                // 第 7 轮：ratio == nil 时区分饱和（数据超出可表示范围，非业务上的
-                // 不可确认）与正常无已知项——饱和时数值不完整，明示异常而非误导。
-                Text(total.saturated ? "数据异常（超出可表示范围）" : "无可确认项目")
+                Text(degradedText(for: metric))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if total.unknownCount > 0 {
-                Text(String(total.unknownCount) + " 项未知")
+            if let reason = metric.degradedReason, metric.ratio != nil {
+                Text(reason)
                     .font(.caption2)
                     .foregroundStyle(.orange)
             }
         }
-        .padding(12)
-        .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// 不可计算状态文案（unknown/unavailable；saturated 已在 metricRow 提前处理）。
+    private func degradedText(for metric: ProgressMetric) -> String {
+        switch metric.state {
+        case .unavailable: return "目录不可用或版本不匹配，暂无法计算该指标"
+        case .unknown:
+            if metric.kind == .snapshotCoverage, metric.denominator == 0 {
+                return "尚未导入快照"
+            }
+            return "无可确认项目，暂无法计算"
+        case .ready, .partial: return "—"
+        }
     }
 
     private func diagnosticsNote(_ projection: VillageCatalogProjection) -> some View {

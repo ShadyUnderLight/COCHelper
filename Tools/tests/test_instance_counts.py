@@ -93,6 +93,50 @@ def test_zero_before_first_value():
     assert vals[17] == 50
 
 
+def test_mid_sequence_zero_resets_carry():
+    """中段 '0' 是真实值不是沿用标记：TH3='0' 会重置后续沿用到 0。
+
+    模式 {TH1:'1', TH3:'0', TH5:'2'} → [1,1,0,0,2,2,...]（审核 B-9 路径 1）。
+    """
+    counts = _counts({"Cannon": {1: "1", 3: "0", 5: "2"}},
+                     buildings=[("Cannon", 1000008)])
+    vals = counts["buildings:1000008"]
+    assert vals[0] == 1        # TH1
+    assert vals[1] == 1        # TH2 空 → 沿用 TH1
+    assert vals[2] == 0        # TH3 '0' 真实值
+    assert vals[3] == 0        # TH4 空 → 沿用 TH3 的 0
+    assert vals[4] == 2        # TH5
+    assert vals[5] == 2        # TH6 空 → 沿用 TH5
+    assert vals[17] == 2
+
+
+def test_garbage_name_rows_ignored():
+    """Name='Foo'（非纯数字非 'String'）的行静默忽略（审核 B-9 路径 2）。
+
+    18 行 TH 判定只看纯数字行；垃圾行的列值不进任何 TH 数组。
+    """
+    townhall = (
+        "Name,Cannon\n"
+        "String,int\n"
+        "Foo,99\n"                       # 垃圾行：值 99 不得进入数组
+        "1,1\n2,2\n3,2\n4,2\n5,2\n6,2\n7,2\n8,2\n9,2\n"
+        "10,2\n11,2\n12,2\n13,2\n14,2\n15,2\n16,2\n17,2\n18,2\n"
+    )
+    counts = build_instance_counts(
+        _rows(townhall), _rows(_named_csv([("Cannon", 1000008)])), [])
+    assert list(counts) == ["buildings:1000008"]
+    assert counts["buildings:1000008"][0] == 1  # TH1 = 行 "1"
+    assert counts["buildings:1000008"][17] == 2  # TH18 = 行 "18"，未受 Foo 行影响
+
+
+def test_same_name_buildings_priority():
+    """buildings.csv 与 traps.csv 同 Name → join 取 buildings（审核 B-9 路径 3）。"""
+    counts = _counts({"Cannon": {1: "1"}},
+                     buildings=[("Cannon", 1000008)],
+                     traps=[("Cannon", 12000001)])
+    assert list(counts) == ["buildings:1000008"]
+
+
 def test_buildings_and_traps_dual_section_join():
     """buildings + traps 双 section join，输出键按 "section:dataID" 排序。"""
     counts = _counts({"Cannon": {1: "1"}, "Air Bomb": {5: "2"}},

@@ -90,6 +90,58 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         for iteration in 0..<rounds { body(iteration, &g) }
     }
 
+    /// 宇宙差集项生成器（Issue #70 阶段 2）：每个候选键随机 TH（1...18）与
+    /// 宇宙 count（0...10，模拟宇宙表 [TH-1] 取值）；count == 0 不产出
+    ///（该 TH 不可建造，与 universeSupplement 语义一致）。产出项形态与投影
+    /// 合成一致：status .available、currentLevel 0、count = 宇宙数、
+    /// maxLevel/currentStageMaxLevel 随机（目录 join 值）。
+    private func randomUniverseDiff(_ g: inout SeededGenerator, keyCount: Int) -> [VillageItemState] {
+        var items: [VillageItemState] = []
+        for index in 0..<keyCount {
+            let townHall = g.int(in: 1...18)
+            let universeCount = g.int(in: 0...10)
+            guard universeCount > 0 else { continue }
+            let maxLevel = g.int(in: 1...20)
+            let stageMax = g.int(in: 1...maxLevel)
+            items.append(VillageItemState(
+                id: "u\(townHall).\(index)",
+                section: "buildings",
+                dataID: 2,
+                base: .home,
+                name: "universe",
+                category: .buildings,
+                currentLevel: 0,
+                count: universeCount,
+                timerSeconds: nil,
+                remainingSeconds: nil,
+                nextLevel: nil,
+                nextLevelDurationSeconds: nil,
+                nextLevelDurationState: nil,
+                maxLevel: maxLevel,
+                currentStageMaxLevel: stageMax,
+                status: .available,
+                missingReason: nil,
+                catalogItemMissingReason: nil,
+                availability: .unconfigured,
+                icon: nil,
+                levelVisual: nil,
+                currentLevelIcon: nil,
+                currentLevelVisual: nil,
+                isNested: false,
+                displayCategory: nil
+            ))
+        }
+        return items
+    }
+
+    /// 差集权重（独立计算，供守恒断言对照实现口径——ProgressMetric 不暴露
+    /// 该字段，只折叠进 degradedReason）。
+    private func availableWeight(of items: [VillageItemState]) -> Int {
+        VillageDetailProjection.instanceCountAndOverflow(
+            of: items.filter { $0.status == .available }
+        ).count
+    }
+
     // MARK: - Properties
 
     func testRatioWithinZeroOne() {
@@ -213,6 +265,133 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
                              "metric \(metric.kind.rawValue) not saturated", context: context)
                 assertOrFail(metric.ratio == nil,
                              "metric \(metric.kind.rawValue) ratio \(String(describing: metric.ratio)) != nil", context: context)
+            }
+        }
+    }
+
+    // MARK: - Issue #70 阶段 2：宇宙差集（.available）混入
+
+    /// 性质 1（含差集）：ratio 恒在 [0,1]——available 项 level 0 分子贡献恒 0，
+    /// 只撑大分母，任何计数/上限组合不得产出越界 ratio；numerator/denominator 非负。
+    func testRatioWithinZeroOneWithUniverseDiff() {
+        run { iteration, g in
+            let observed = (0..<g.int(in: 0...15)).map { _ in randomItem(&g) }
+            let diff = randomUniverseDiff(&g, keyCount: g.int(in: 0...8))
+            let items = observed + diff
+            let context = "seed=70 iteration=\(iteration) \(itemsSummary(items)) diff=\(diff.count)"
+            let m = VillageProgressProjection.metrics(
+                from: items, catalogIsUsable: true,
+                compatibility: .verified(gameVersion: "18.400.13"),
+                completeDenominator: g.bool()
+            )
+            for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
+                if let ratio = metric.ratio {
+                    assertOrFail(ratio >= 0 && ratio <= 1, "ratio \(ratio) out of [0,1]", context: context)
+                }
+                assertOrFail(metric.numerator >= 0, "numerator \(metric.numerator) < 0", context: context)
+                assertOrFail(metric.denominator >= 0, "denominator \(metric.denominator) < 0", context: context)
+            }
+        }
+    }
+
+    /// 性质 2（覆盖守恒，含差集）：known + unknown(非差集) + available(差集) ==
+    /// 全部实例权重——差集项与 unknown 各自独立计入分母（各自独立降级文案），
+    /// 互不混算、不遗漏（无饱和时）。
+    func testCoverageConservationWithUniverseDiff() {
+        run { iteration, g in
+            let observed = (0..<g.int(in: 0...15)).map { _ in randomItem(&g) }
+            let diff = randomUniverseDiff(&g, keyCount: g.int(in: 0...8))
+            let items = observed + diff
+            let context = "seed=70 iteration=\(iteration) \(itemsSummary(items)) diff=\(diff.count)"
+            let m = VillageProgressProjection.metrics(
+                from: items, catalogIsUsable: true,
+                compatibility: .verified(gameVersion: "18.400.13"),
+                completeDenominator: g.bool()
+            )
+            let coverage = m.snapshotCoverage
+            guard !coverage.saturated else { return }
+            let total = items.reduce(0) { $0 + $1.instanceWeight }
+            let unknownWeight = VillageDetailProjection.instanceCountAndOverflow(
+                of: items.filter { $0.status != .available && !VillageDetailProjection.isKnown($0) }
+            ).count
+            let diffWeight = availableWeight(of: items)
+            assertOrFail(coverage.denominator == total,
+                         "coverage denominator \(coverage.denominator) != total \(total)",
+                         context: context)
+            assertOrFail(coverage.numerator <= total,
+                         "coverage numerator \(coverage.numerator) > total \(total)",
+                         context: context)
+            assertOrFail(coverage.numerator + unknownWeight + diffWeight == total,
+                         "coverage \(coverage.numerator) + unknown \(unknownWeight) + diff \(diffWeight) != total \(total)",
+                         context: context)
+        }
+    }
+
+    /// 性质 3（验收 2/决策 5）：completeDenominator=true 时 stage/global 只有
+    /// 覆盖率 100%（无 unknown、无宇宙差集）才可达 ready；任一未观测/差集存在
+    /// → 覆盖率 < 100% 且 stage/global 保守 partial（快照可能不全，不得伪装
+    /// 全村庄进度）。反向：覆盖率 100% 时必然无 unknown 无 available。
+    func testReadyOnlyWhenCoverageComplete() {
+        run { iteration, g in
+            let observed = (0..<g.int(in: 0...15)).map { _ in randomItem(&g) }
+            let diff = randomUniverseDiff(&g, keyCount: g.int(in: 0...8))
+            let items = observed + diff
+            let context = "seed=70 iteration=\(iteration) \(itemsSummary(items)) diff=\(diff.count)"
+            let m = VillageProgressProjection.metrics(
+                from: items, catalogIsUsable: true,
+                compatibility: .verified(gameVersion: "18.400.13"),
+                completeDenominator: true
+            )
+            guard let coverageRatio = m.snapshotCoverage.ratio else { return }  // 空集/饱和：无可断言
+            let hasUnknown = items.contains { $0.status != .available && !VillageDetailProjection.isKnown($0) }
+            let hasDiff = items.contains { $0.status == .available }
+            if !hasUnknown && !hasDiff {
+                assertOrFail(coverageRatio == 1.0, "coverage \(coverageRatio) != 1 但无 unknown/差集", context: context)
+                assertOrFail(m.currentStageProgress.state == .ready,
+                             "stage \(m.currentStageProgress.state) != .ready 当覆盖率 100%", context: context)
+                assertOrFail(m.globalProgress.state == .ready,
+                             "global \(m.globalProgress.state) != .ready 当覆盖率 100%", context: context)
+            } else {
+                assertOrFail(coverageRatio < 1.0, "coverage \(coverageRatio) 未随 unknown/差集下降", context: context)
+                // 覆盖不全 → 不得伪装 ready：有可计算分母时为 partial（unknown/
+                // 差集降级文案），全 unknown 无分母时为 unknown（空 denominator）。
+                assertOrFail(m.currentStageProgress.state != .ready,
+                             "stage \(m.currentStageProgress.state) == .ready 当覆盖率 < 100%", context: context)
+                assertOrFail(m.globalProgress.state != .ready,
+                             "global \(m.globalProgress.state) == .ready 当覆盖率 < 100%", context: context)
+            }
+        }
+    }
+
+    /// 性质 4（阶段 1 数值一致性）：completeDenominator=false 时 available 不进
+    /// stage/global 分母——数值必须与「去掉差集项后的完整口径计算」完全一致
+    ///（对照纯 known/unknown 计算；state 允许不同：incomplete 强制 partial）。
+    func testIncompleteDenominatorIgnoresAvailableNumerics() {
+        run { iteration, g in
+            let observed = (0..<g.int(in: 0...15)).map { _ in randomItem(&g) }
+            let diff = randomUniverseDiff(&g, keyCount: g.int(in: 0...8))
+            let items = observed + diff
+            let context = "seed=70 iteration=\(iteration) \(itemsSummary(items)) diff=\(diff.count)"
+            let incomplete = VillageProgressProjection.metrics(
+                from: items, catalogIsUsable: true,
+                compatibility: .verified(gameVersion: "18.400.13"),
+                completeDenominator: false
+            )
+            let knownOnly = items.filter { $0.status != .available }
+            let completeKnownOnly = VillageProgressProjection.metrics(
+                from: knownOnly, catalogIsUsable: true,
+                compatibility: .verified(gameVersion: "18.400.13"),
+                completeDenominator: true
+            )
+            for (name, lhs, rhs) in [
+                ("stage", incomplete.currentStageProgress, completeKnownOnly.currentStageProgress),
+                ("global", incomplete.globalProgress, completeKnownOnly.globalProgress),
+            ] {
+                if lhs.saturated || rhs.saturated { continue }
+                assertOrFail(lhs.numerator == rhs.numerator,
+                             "\(name) numerator \(lhs.numerator) != 去差集计算 \(rhs.numerator)", context: context)
+                assertOrFail(lhs.denominator == rhs.denominator,
+                             "\(name) denominator \(lhs.denominator) != 去差集计算 \(rhs.denominator)", context: context)
             }
         }
     }

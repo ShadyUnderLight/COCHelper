@@ -152,7 +152,7 @@ struct VillageDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, now: now)
                 officialAPISection()
-                metricsBar(metrics: progressMetrics)
+                metricsBar(metrics: progressMetrics, completeDenominator: projection.universeComplete)
                 basePicker()
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
 
@@ -320,7 +320,9 @@ struct VillageDetailView: View {
     /// Issue #70：三指标卡（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
     /// 每个指标显示名称、百分比、分子/分母（带单位）与降级文案；saturated
     /// 优先于 state 文案（fail-closed，数值不权威时显示异常而非百分比）。
-    private func metricsBar(metrics: VillageProgressMetrics) -> some View {
+    /// `completeDenominator` = 投影的 universeComplete：决定覆盖率 help 文案口径
+    ///（完整分母 vs 已观测分母，Task 4 评审 nit 1）。
+    private func metricsBar(metrics: VillageProgressMetrics, completeDenominator: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // 决策 7 标题回退：阶段 2 接入 completeDenominator（完整分母）后，
             // stage/global 分母 = known ∪ 宇宙差集，不再是「已观测」口径——
@@ -328,8 +330,13 @@ struct VillageDetailView: View {
             // 第三行「观测数据完整性」不变。
             metricRow(metrics.currentStageProgress, title: "当前阶段进度")
             metricRow(metrics.globalProgress, title: "全局养成进度")
+            // 覆盖率分母随宇宙完整性变化：completeDenominator=true 时含宇宙差集
+            // 实例（已观测占全部可建造），false 时只有已观测实例——help 文案
+            // 必须跟随口径，否则误导（Task 4 评审 nit 1）。
             metricRow(metrics.snapshotCoverage, title: "观测数据完整性")
-                .help("分母为已观测实例，非全部可能建筑")
+                .help(completeDenominator
+                    ? "已观测实例占村庄全部可建造数量"
+                    : "分母为已观测实例，非全部可能建筑")
         }
         .padding(12)
         .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))

@@ -152,6 +152,10 @@ public enum VillageProgressProjection {
             : []
         let stageEligible = known.filter { ($0.currentStageMaxLevel ?? 0) > 0 }
             + available.filter { ($0.currentStageMaxLevel ?? 0) > 0 }
+        // 缺失侧只统计 known（评审 nit 1）：available 差集项的 stageMax == nil/≤0
+        //（目录异常）由 eligible 过滤剔除后**不**计入本缺失侧——差集项已由
+        // availableWeight 独立降级文案承担（全部 available 权重，含 cap 异常项），
+        // 混入会与「缺少阶段上限」文案重复降级。
         let stageMissingWeightInfo = VillageDetailProjection.instanceCountAndOverflow(
             of: known.filter { ($0.currentStageMaxLevel ?? 0) <= 0 }
         )
@@ -238,9 +242,13 @@ public enum VillageProgressProjection {
     }
 
     /// 升级总览「观测数据完整性」卡的聚合：全部已导入村庄 × 全部基地的
-    /// snapshotCoverage 实例权重汇总（Σknown/Σobserved）。任一村庄基地的
-    /// coverage 饱和或累加溢出 → 返回 nil（fail-closed：整体不展示假精度，
-    /// 不得静默跳过饱和项让分母变小——外部评审 P1-2 复审）。
+    /// snapshotCoverage 实例权重汇总（Σknown/Σobserved）。coverage 分母天然
+    /// 含宇宙差集 .available 实例（合成项恒在投影 items 中——universeComplete
+    /// 的 home 投影合成时；completeDenominator 只影响 stage/global 的 eligible
+    /// 与 partial 判定，不影响 coverage 口径）——聚合值语义 = 已观测实例占
+    /// 全部可建造数量（UI detail 文案「已观测实例 · 全部村庄」准确，决策 8）。
+    /// 任一村庄基地的 coverage 饱和或累加溢出 → 返回 nil（fail-closed：整体
+    /// 不展示假精度，不得静默跳过饱和项让分母变小——外部评审 P1-2 复审）。
     /// 无已导入村庄或观测总数为 0 → nil（UI 不渲染该卡）。
     public static func aggregateCoverage(
         from villages: [VillageProfile],

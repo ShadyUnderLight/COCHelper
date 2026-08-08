@@ -122,10 +122,12 @@ public enum VillageProgressProjection {
         // 升级中且快照缺解锁建筑记录（stageMax == nil）的 known 项：#67 的 stageMax
         // 前提只对非升级项成立；该形态真实可达（投影 isUpgrading 分支先于 stageMax
         // 检查）。不得静默丢分母——计入阶段指标专用缺失权重触发降级（实现要求 5）。
+        // nil 与 ≤0 cap（恶意目录，钳为 0 贡献）统一归缺失侧，防与正常项混合时
+        // 无降级说明（交叉审核 nit 1，与漏洞 1 同构）。
+        let stageEligible = known.filter { ($0.currentStageMaxLevel ?? 0) > 0 }
         let stageMissingWeightInfo = VillageDetailProjection.instanceCountAndOverflow(
-            of: known.filter { $0.currentStageMaxLevel == nil }
+            of: known.filter { ($0.currentStageMaxLevel ?? 0) <= 0 }
         )
-        let stageEligible = known.filter { $0.currentStageMaxLevel != nil }
         // cap 先 max(0,·) 再参与 min：恶意目录 cap 为负不得产生负分子/负分母
         // （交叉审核 F1，fail-closed 禁止假精度与负 ratio）。
         let stageDen = weightedCappedSum(stageEligible) { max(0, $0.currentStageMaxLevel ?? 0) }
@@ -216,6 +218,11 @@ public enum VillageProgressProjection {
         if denominator == 0 {
             state = .unknown
             reasons.append(emptyReason)
+            // 唯一 known 项是升级中+缺 stageMax 时：emptyReason 不足以解释
+            // 分母为 0 的成因，extraReason 拼接保留（交叉审核 A-2/B-F7）。
+            if let extraReason {
+                reasons.append(extraReason)
+            }
         } else {
             if unknownWeight > 0 {
                 reasons.append(String(unknownWeight) + " 项未知或待重新导入，结果仅为已观测项目。")

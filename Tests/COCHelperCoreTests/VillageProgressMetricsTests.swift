@@ -424,4 +424,16 @@ final class VillageProgressMetricsTests: XCTestCase {
         // global 不受影响（maxLevel 非 nil 即可算）
         XCTAssertEqual(m.globalProgress.denominator, 20)
     }
+
+    func testNegativeCapItemWithNormalItemDegradesStage() {
+        // 恶意目录负 cap 项不得静默归 0 贡献：与正常项混合时 stage 必须 partial（审核 A nit）
+        let items = [
+            item(id: "a", level: 3, maxLevel: 10, stageMax: 6),
+            item(id: "m", level: 9, maxLevel: -1, stageMax: -5),
+        ]
+        let m = metrics(items, compatibility: .verified(gameVersion: "18.400.13"))
+        XCTAssertEqual(m.currentStageProgress.denominator, 6) // 只有正常项
+        XCTAssertEqual(m.currentStageProgress.state, .partial)
+        XCTAssertNotNil(m.currentStageProgress.degradedReason)
+    }
 }

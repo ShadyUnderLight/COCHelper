@@ -748,7 +748,7 @@ public struct GameCatalog: Sendable {
         guard raw.allSatisfy({
             $0.value.count == Self.universeTownHallCount && $0.value.allSatisfy { $0 >= 0 }
         }) else { return nil }
-        for (key, values) in raw where values.allSatisfy({ $0 == 0 }) {
+        for values in raw.values where values.allSatisfy({ $0 == 0 }) {
             return nil  // 全 0 键（数量型建筑不可能全 TH 0）
         }
         var validKeys = Set<String>()

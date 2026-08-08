@@ -355,4 +355,141 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertTrue(defaultURL.path.contains(GameCatalog.defaultBundledVersion),
                       "URL 应包含版本段（\(defaultURL.path)）")
     }
+
+    // MARK: - UpgradeCosts（Issue #73：多资源升级费用）
+
+    /// 新格式 JSON：upgradeCosts 数组完整解码（多资源、rawAmount=null）。
+    func testUpgradeCostsNewFormatDecodesMultiResource() throws {
+        let json = """
+        {
+          "level": 2,
+          "durationSeconds": null,
+          "missingReason": "no_time_source",
+          "upgradeCosts": [
+            {"resource": "CommonOre", "amount": 120, "rawResource": "CommonOre", "rawAmount": null, "parseFailed": false},
+            {"resource": "RareOre", "amount": 40, "rawResource": "RareOre", "rawAmount": null, "parseFailed": false}
+          ],
+          "requiredTownHallLevel": null,
+          "requiredLaboratoryLevel": null,
+          "icon": null,
+          "levelVisual": null
+        }
+        """
+        let level = try JSONDecoder().decode(CatalogLevel.self, from: Data(json.utf8))
+        XCTAssertEqual(level.level, 2)
+        let costs = try XCTUnwrap(level.upgradeCosts)
+        XCTAssertEqual(costs.count, 2)
+        XCTAssertEqual(costs[0].resource, "CommonOre")
+        XCTAssertEqual(costs[0].amount, 120)
+        XCTAssertEqual(costs[0].rawResource, "CommonOre")
+        XCTAssertNil(costs[0].rawAmount)
+        XCTAssertFalse(costs[0].parseFailed)
+        XCTAssertEqual(costs[1].resource, "RareOre")
+        XCTAssertEqual(costs[1].amount, 40)
+        XCTAssertFalse(costs[1].parseFailed)
+    }
+
+    /// parseFailed 项：amount=nil（0 是真实费用，nil 才是失败）、rawAmount 保留原始串。
+    func testUpgradeCostsParseFailedEntryKeepsRawAmount() throws {
+        let json = """
+        {
+          "level": 3,
+          "durationSeconds": null,
+          "missingReason": null,
+          "upgradeCosts": [
+            {"resource": "Gold", "amount": null, "rawResource": "Gold", "rawAmount": "1,000,000+", "parseFailed": true},
+            {"resource": "Elixir", "amount": 200, "rawResource": "Elixir", "rawAmount": null, "parseFailed": false}
+          ],
+          "requiredTownHallLevel": null,
+          "requiredLaboratoryLevel": null,
+          "icon": null,
+          "levelVisual": null
+        }
+        """
+        let level = try JSONDecoder().decode(CatalogLevel.self, from: Data(json.utf8))
+        let costs = try XCTUnwrap(level.upgradeCosts)
+        XCTAssertEqual(costs.count, 2)
+        XCTAssertTrue(costs[0].parseFailed)
+        XCTAssertNil(costs[0].amount, "解析失败金额必须为 nil（0 是真实费用）")
+        XCTAssertEqual(costs[0].rawAmount, "1,000,000+", "rawAmount 保留源 CSV 原始串供审计/重解析")
+        XCTAssertEqual(costs[0].rawResource, "Gold")
+        XCTAssertFalse(costs[1].parseFailed)
+        XCTAssertEqual(costs[1].amount, 200)
+    }
+
+    /// upgradeCosts 为 null → nil（Python to_dict 对无费用等级输出 null 而非缺键）。
+    func testUpgradeCostsNullValueDecodesAsNil() throws {
+        let json = """
+        {
+          "level": 1,
+          "durationSeconds": 60,
+          "missingReason": null,
+          "upgradeCosts": null,
+          "requiredTownHallLevel": null,
+          "requiredLaboratoryLevel": null,
+          "icon": null,
+          "levelVisual": null
+        }
+        """
+        let level = try JSONDecoder().decode(CatalogLevel.self, from: Data(json.utf8))
+        XCTAssertNil(level.upgradeCosts)
+        XCTAssertEqual(level.durationSeconds, 60)
+    }
+
+    /// 兼容红线：旧格式 JSON（无 upgradeCosts 键，仅 upgradeResource/upgradeCost）必须解码成功 → nil。
+    func testUpgradeCostsMissingKeyInOldFormatDecodesAsNil() throws {
+        let json = """
+        {"level": 1, "durationSeconds": 60, "upgradeResource": "Elixir", "upgradeCost": 200,
+         "requiredTownHallLevel": 1, "requiredLaboratoryLevel": null,
+         "icon": null, "levelVisual": null, "missingReason": null}
+        """
+        let level = try JSONDecoder().decode(CatalogLevel.self, from: Data(json.utf8))
+        XCTAssertNil(level.upgradeCosts, "旧格式无 upgradeCosts 键 → nil（兼容红线，不崩溃）")
+        XCTAssertEqual(level.durationSeconds, 60)
+        XCTAssertEqual(level.level, 1)
+    }
+
+    /// 空数组 [] → 空数组（validate 在 Python 侧拦截 []，Swift 只要求解码不崩）。
+    func testUpgradeCostsEmptyArrayDecodesToEmpty() throws {
+        let json = """
+        {
+          "level": 2,
+          "durationSeconds": 300,
+          "missingReason": null,
+          "upgradeCosts": [],
+          "requiredTownHallLevel": null,
+          "requiredLaboratoryLevel": null,
+          "icon": null,
+          "levelVisual": null
+        }
+        """
+        let level = try JSONDecoder().decode(CatalogLevel.self, from: Data(json.utf8))
+        XCTAssertNotNil(level.upgradeCosts)
+        XCTAssertEqual(level.upgradeCosts, [])
+    }
+
+    /// CatalogLevel 全字段 round-trip：Encode → Decode 后值相等（含 parseFailed 项）。
+    func testCatalogLevelRoundTripWithUpgradeCosts() throws {
+        let icon = CatalogAssetRef(
+            container: nil, exportName: nil,
+            renderedPath: "icons/buildings/cannon_lvl1.png", missingReason: nil
+        )
+        let original = CatalogLevel(
+            level: 4,
+            durationSeconds: 300,
+            upgradeCosts: [
+                CatalogUpgradeCost(resource: "Gold", amount: 500, rawResource: "Gold", rawAmount: nil, parseFailed: false),
+                CatalogUpgradeCost(resource: "Elixir", amount: nil, rawResource: "Elixir", rawAmount: "1.5M", parseFailed: true),
+            ],
+            requiredTownHallLevel: 5,
+            requiredLaboratoryLevel: nil,
+            icon: icon,
+            levelVisual: nil,
+            missingReason: nil
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(CatalogLevel.self, from: data)
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.upgradeCosts, original.upgradeCosts)
+    }
 }

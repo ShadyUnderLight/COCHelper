@@ -127,6 +127,10 @@ public enum BuildingGroupProjection {
     /// 阶梯：目录 levels 中 `level ∈ (currentLevel, maxLevel]` 的条目，按 level 升序。
     /// 目录等级可能不连续，必须过滤目录 levels 而非生成连续整数。
     /// currentLevel 为 nil、目录未命中或 base 不匹配（maxLevel == nil）→ 空数组。
+    ///
+    /// Issue #73 最小兼容（Task 2）：CatalogLevel 费用改为多资源 `upgradeCosts`，
+    /// 此处从「首个成功项」（parseFailed == false 且 amount != nil）派生单资源
+    /// 阶梯字段；多资源分组/parseFailed 降级语义在 Task 3 投影层处理。
     private static func steps(
         for item: VillageItemState,
         catalog: GameCatalog?
@@ -138,12 +142,14 @@ public enum BuildingGroupProjection {
         return catalogItem.levels
             .filter { $0.level > (currentLevel ?? .max) && $0.level <= maxLevel }
             .sorted { $0.level < $1.level }
-            .map {
-                BuildingUpgradeStep(
-                    level: $0.level,
-                    upgradeCost: $0.upgradeCost,
-                    upgradeResource: $0.upgradeResource,
-                    durationSeconds: $0.durationSeconds
+            .map { level in
+                let firstCost = level.upgradeCosts?
+                    .first(where: { !$0.parseFailed && $0.amount != nil })
+                return BuildingUpgradeStep(
+                    level: level.level,
+                    upgradeCost: firstCost?.amount,
+                    upgradeResource: firstCost?.resource,
+                    durationSeconds: level.durationSeconds
                 )
             }
     }

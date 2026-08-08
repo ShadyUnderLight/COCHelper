@@ -13,11 +13,25 @@ final class BuildingGroupProjectionTests: XCTestCase {
     }
 
     /// 目录 JSON 载荷的最小编码形态（缺失字段在 CatalogItem/CatalogLevel 解码时按 Optional 缺省）。
+    /// Issue #73：升级费用改为多资源数组 upgradeCosts（旧 upgradeResource/upgradeCost 键已从模型移除）。
+    private struct SpecCost: Encodable {
+        var resource: String
+        var amount: Int64?
+        var rawResource: String?
+        var rawAmount: String?
+        var parseFailed: Bool
+    }
+
     private struct SpecLevel: Encodable {
         var level: Int
         var durationSeconds: Int64?
-        var upgradeResource: String?
-        var upgradeCost: Int64?
+        var upgradeCosts: [SpecCost]?
+    }
+
+    /// 单个成功费用项；parseFailed 项用 `cost(resource, nil)` 表达（金额缺失 → 解析失败）。
+    private static func cost(_ resource: String, _ amount: Int64?) -> SpecCost {
+        SpecCost(resource: resource, amount: amount, rawResource: resource,
+                 rawAmount: nil, parseFailed: amount == nil)
     }
 
     private struct SpecItem: Encodable {
@@ -31,9 +45,10 @@ final class BuildingGroupProjectionTests: XCTestCase {
     }
 
     /// 1...maxLevel 每级：duration = level × 60、cost = level × 100、默认资源 Elixir。
-    private static func standardLevels(_ maxLevel: Int, resource: String? = "Elixir") -> [SpecLevel] {
+    private static func standardLevels(_ maxLevel: Int, resource: String = "Elixir") -> [SpecLevel] {
         (1...maxLevel).map {
-            SpecLevel(level: $0, durationSeconds: Int64($0 * 60), upgradeResource: resource, upgradeCost: Int64($0 * 100))
+            SpecLevel(level: $0, durationSeconds: Int64($0 * 60),
+                      upgradeCosts: [Self.cost(resource, Int64($0 * 100))])
         }
     }
 
@@ -293,14 +308,14 @@ final class BuildingGroupProjectionTests: XCTestCase {
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "加农炮", maxLevel: 8,
                 levels: [
-                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 2, durationSeconds: 120, upgradeResource: "Elixir", upgradeCost: 200),
-                    SpecLevel(level: 3, durationSeconds: 180, upgradeResource: "Elixir", upgradeCost: 300),
-                    SpecLevel(level: 4, durationSeconds: 240, upgradeResource: "Elixir", upgradeCost: 400),
-                    SpecLevel(level: 5, durationSeconds: 300, upgradeResource: "Elixir", upgradeCost: 500),
-                    SpecLevel(level: 6, durationSeconds: nil, upgradeResource: "Elixir", upgradeCost: 600),
-                    SpecLevel(level: 7, durationSeconds: 420, upgradeResource: "Elixir", upgradeCost: nil),
-                    SpecLevel(level: 8, durationSeconds: 480, upgradeResource: "Elixir", upgradeCost: 800),
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 3, durationSeconds: 180, upgradeCosts: [Self.cost("Elixir", 300)]),
+                    SpecLevel(level: 4, durationSeconds: 240, upgradeCosts: [Self.cost("Elixir", 400)]),
+                    SpecLevel(level: 5, durationSeconds: 300, upgradeCosts: [Self.cost("Elixir", 500)]),
+                    SpecLevel(level: 6, durationSeconds: nil, upgradeCosts: [Self.cost("Elixir", 600)]),
+                    SpecLevel(level: 7, durationSeconds: 420, upgradeCosts: nil),
+                    SpecLevel(level: 8, durationSeconds: 480, upgradeCosts: [Self.cost("Elixir", 800)]),
                 ]
             ),
         ])
@@ -325,9 +340,9 @@ final class BuildingGroupProjectionTests: XCTestCase {
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "加农炮", maxLevel: 3,
                 levels: [
-                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 2, durationSeconds: 0, upgradeResource: "Elixir", upgradeCost: 200),
-                    SpecLevel(level: 3, durationSeconds: 300, upgradeResource: "Elixir", upgradeCost: 300),
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 0, upgradeCosts: [Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 3, durationSeconds: 300, upgradeCosts: [Self.cost("Elixir", 300)]),
                 ]
             ),
         ])
@@ -345,19 +360,21 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertEqual(group.summary.completeness, .complete, "即时升级不降级")
     }
 
-    // MARK: - T11: resource nil 但 cost 存在 → "未知资源"桶
+    // MARK: - T11: 多资源费用取「首个成功项」（Issue #73 派生语义）
 
-    func testT11NilResourceWithCostGoesToUnknownResourceBucket() throws {
-        // 自定义目录：level 2 Elixir 100、level 3/4 资源缺失但费用存在（200/300）。
+    func testT11MultiResourceTakesFirstSuccessfulEntry() throws {
+        // 旧格式「资源缺失但费用存在 → 未知资源桶」在新模型下不可表达（resource 恒非空，
+        // validate.py 不变量），"未知资源" 兜底保留为防御代码（Task 3 投影层重审）。
+        // 新语义：阶梯费用从 upgradeCosts 首个成功项（parseFailed == false 且 amount != nil）派生。
         let t11Catalog = try makeCatalog(items: [
             SpecItem(
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "加农炮", maxLevel: 4,
                 levels: [
-                    SpecLevel(level: 1, durationSeconds: 60, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 2, durationSeconds: 120, upgradeResource: "Elixir", upgradeCost: 100),
-                    SpecLevel(level: 3, durationSeconds: 180, upgradeResource: nil, upgradeCost: 200),
-                    SpecLevel(level: 4, durationSeconds: 240, upgradeResource: nil, upgradeCost: 300),
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 3, durationSeconds: 180, upgradeCosts: [Self.cost("Gold", nil), Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 4, durationSeconds: 240, upgradeCosts: [Self.cost("RareOre", nil), Self.cost("Gold", nil), Self.cost("Elixir", 300)]),
                 ]
             ),
         ])
@@ -366,10 +383,15 @@ final class BuildingGroupProjectionTests: XCTestCase {
         ])
 
         let group = try XCTUnwrap(project(village: village, catalog: t11Catalog, base: .home).first)
+        let steps = try XCTUnwrap(group.instances.first?.steps)
+        XCTAssertEqual(steps[1].upgradeCost, 200, "level 3：跳过 parseFailed Gold 取首个成功项 Elixir 200")
+        XCTAssertEqual(steps[1].upgradeResource, "Elixir")
+        XCTAssertEqual(steps[2].upgradeCost, 300, "level 4：跳过两个 parseFailed 项取 Elixir 300")
         XCTAssertEqual(group.summary.costByResource, [
-            BuildingResourceTotal(resource: "Elixir", totalCost: 100),
-            BuildingResourceTotal(resource: "未知资源", totalCost: 500),
-        ], "资源缺失但费用存在的升级必须归入「未知资源」桶且按字典序")
+            BuildingResourceTotal(resource: "Elixir", totalCost: 600),
+        ], "仅首个成功项计入汇总")
+        XCTAssertEqual(group.summary.completeness, .complete,
+                       "parseFailed 项静默跳过（Task 2 兼容语义，不影响完整性；Task 3 重审）")
     }
 
     // MARK: - T12: currentLevel > maxLevel（目录过时）→ versionMismatch
@@ -409,11 +431,11 @@ final class BuildingGroupProjectionTests: XCTestCase {
     /// 1...8 级 Elixir、9...16 级 Gold 的混合资源目录（费用/时长逐级递增）。
     private func mixedResourceCatalog() throws -> GameCatalog {
         let levels = (1...16).map { level -> SpecLevel in
-            SpecLevel(
+            let resource = level <= 8 ? "Elixir" : "Gold"
+            return SpecLevel(
                 level: level,
                 durationSeconds: Int64(level * 60),
-                upgradeResource: level <= 8 ? "Elixir" : "Gold",
-                upgradeCost: Int64(level * 100)
+                upgradeCosts: [Self.cost(resource, Int64(level * 100))]
             )
         }
         return try makeCatalog(items: [
@@ -504,7 +526,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
             let catalogLevels = (1...maxLevel).compactMap { level -> SpecLevel? in
                 guard Bool.random(using: &rng) else { return nil }
                 return SpecLevel(level: level, durationSeconds: Int64(level * 60),
-                                 upgradeResource: "Elixir", upgradeCost: Int64(level * 100))
+                                 upgradeCosts: [Self.cost("Elixir", Int64(level * 100))])
             }
             let catalog = try makeCatalog(items: [
                 SpecItem(section: "buildings", category: "buildings", dataID: 1_000_001,

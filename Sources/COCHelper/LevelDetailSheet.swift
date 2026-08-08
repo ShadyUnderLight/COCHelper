@@ -61,9 +61,12 @@ struct LevelDetailSheet: View {
         return parts.isEmpty ? "无解锁条件" : parts.joined(separator: " · ")
     }
 
+    /// 费用展示（Issue #73 最小兼容）：取 upgradeCosts 首个成功项；多资源
+    /// 合并展示由 Task 3+ UI 迭代处理。
     private func costLabel(_ level: CatalogLevel) -> String {
-        guard let cost = level.upgradeCost else { return "无费用数据" }
-        return ClanDisplayFormat.resourceLabel(level.upgradeResource) + " " + String(cost)
+        guard let first = level.upgradeCosts?.first(where: { !$0.parseFailed && $0.amount != nil }),
+              let amount = first.amount else { return "无费用数据" }
+        return ClanDisplayFormat.resourceLabel(first.resource) + " " + String(amount)
     }
 
     /// 资产解析的目录版本：优先当前 catalog 的 gameVersion，缺失时回落

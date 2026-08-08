@@ -109,13 +109,29 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
     public var id: String { "\(section):\(dataID)" }
 }
 
+/// 单项升级费用（Issue #73：多资源升级费用）。
+///
+/// - resource: 资源标识 = 源表原始值（不做枚举映射，保留原始值）
+/// - amount: 金额；解析失败为 nil（0 是真实费用）
+/// - rawResource: 源 CSV 原始资源值，恒保留（审计/重解析）
+/// - rawAmount: 源 CSV 原始金额串；正常解析时为 nil
+/// - parseFailed: 该项解析失败（金额非数字 或 资源/金额配对缺失）
+public struct CatalogUpgradeCost: Codable, Hashable, Sendable {
+    public let resource: String
+    public let amount: Int64?
+    public let rawResource: String?
+    public let rawAmount: String?
+    public let parseFailed: Bool
+}
+
 public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
     /// 源表原始等级号（可能不连续，如战斗直升机 15..35），查表必须按值匹配。
     public let level: Int
     /// 表语义见 `CatalogDurationSemantics`；缺失为 nil，不填 0。
     public let durationSeconds: Int64?
-    public let upgradeResource: String?
-    public let upgradeCost: Int64?
+    /// 升级费用（多资源，Issue #73）。Python 侧无费用时输出 null；旧格式目录
+    /// （无 upgradeCosts 键，upgradeResource/upgradeCost）兼容解码为 nil。
+    public let upgradeCosts: [CatalogUpgradeCost]?
     public let requiredTownHallLevel: Int?
     public let requiredLaboratoryLevel: Int?
     public let icon: CatalogAssetRef?

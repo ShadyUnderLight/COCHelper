@@ -56,9 +56,16 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         struct Payload: Decodable {
             let gameVersion: String
             let items: [CatalogItem]
+            // Issue #70 阶段 2：实例数量宇宙（可选——既有 fixture 不带该键时
+            // 与旧目录行为一致；校验在 GameCatalog init 内完成）。
+            let instanceCounts: [String: [Int]]?
         }
         let payload = try JSONDecoder().decode(Payload.self, from: data)
-        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+        return GameCatalog(
+            gameVersion: payload.gameVersion,
+            items: payload.items,
+            instanceCounts: payload.instanceCounts
+        )
     }
 
     private func makeVillage(
@@ -861,7 +868,8 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         let expected = VillageProgressProjection.metrics(
             from: projection.items.filter { $0.status != .unavailable },
             catalogIsUsable: projection.catalogIsUsable,
-            compatibility: projection.compatibility
+            compatibility: projection.compatibility,
+            completeDenominator: projection.universeComplete
         )
         for record in records {
             XCTAssertEqual(record.villageMetrics, expected,
@@ -872,5 +880,105 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         for record in records {
             XCTAssertEqual(record.villageMetrics, first)
         }
+    }
+
+    // MARK: - Issue #70 阶段 2：宇宙差集（records 排除 .available，指标含完整分母）
+
+    /// 宇宙目录 fixture（JSON 形态）：加农炮（buildings:1000002，数量型、宇宙键
+    /// TH1=1…TH18=7）+ 野蛮人（units:4000000，解锁型无宇宙键）；TH（buildings:
+    /// 1000001）故意不在目录——与 VillageCatalogProjectionTests.makeUniverseCatalog
+    /// 同构（TH 只作解锁信号，不参与 join）。
+    private static let universeCatalogJSON = """
+    {
+      "gameVersion": "18.400.13",
+      "instanceCounts": {
+        "buildings:1000002": [1,2,3,4,5,6,6,6,7,7,7,7,7,7,7,7,7,7]
+      },
+      "items": [
+        {"section":"buildings","category":"buildings","dataID":1000002,"base":"home","name":"加农炮","maxLevel":2,
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":2,"durationSeconds":300,"upgradeResource":"Elixir","upgradeCost":2000,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+         ]},
+        {"section":"units","category":"troops","dataID":4000000,"base":"home","name":"野蛮人","maxLevel":3,
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+           {"level":2,"durationSeconds":1800,"upgradeResource":"Elixir","upgradeCost":250,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":3,"durationSeconds":3600,"upgradeResource":"Elixir","upgradeCost":500,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+         ]}
+      ]
+    }
+    """
+
+    /// 接线验收（决策 3）：宇宙完整时 records 排除 .available 差集项（差集项无
+    /// 升级计时，进总览无意义），而 record.villageMetrics 消费完整分母
+    ///（stage/global 分母含差集权重，覆盖率分母含差集实例数）。
+    func testUniverseDiffExcludedFromRecordsIncludedInMetrics() throws {
+        // TH18 + 野蛮人升级中 + 快照无加农炮 → 宇宙差集产出 .available 加农炮
+        //（count 7）；解锁型（units）无宇宙键不产出。
+        let village = makeVillage(name: "宇宙村", objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 3600, remainingSeconds: 1800, path: "0")],
+        ])
+        let catalog = try makeCatalog(from: Self.universeCatalogJSON)
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let combined = UpgradeOverviewProjection.overviewRecords(
+            from: [village], catalog: catalog, at: now
+        )
+
+        // 记录层：只含野蛮人；.available 差集项不得产出记录。
+        XCTAssertEqual(combined.active.map(\.item.id), ["units:0"])
+        XCTAssertTrue(combined.pending.isEmpty)
+        XCTAssertTrue((combined.active + combined.pending).allSatisfy {
+            $0.item.status != .available
+        }, "宇宙差集项不得进入升级总览记录")
+
+        // 前置：宇宙差集确实产出（否则本测试失去意义）。
+        let projection = VillageCatalogProjection.project(
+            village: village, catalog: catalog, base: .home, now: now
+        )
+        XCTAssertTrue(projection.universeComplete)
+        let diff = try XCTUnwrap(projection.items.first { $0.id == "universe:buildings:1000002" })
+        XCTAssertEqual(diff.status, .available)
+        XCTAssertEqual(diff.count, 7, "TH18 加农炮宇宙 count")
+
+        // 指标层：完整分母——stage/global = 野蛮人 3 级 + 差集 7×2 级 = 17；
+        // 覆盖率分母 = TH(1) + 野蛮人(1) + 差集(7) = 9。
+        let metrics = try XCTUnwrap(combined.active.first?.villageMetrics)
+        XCTAssertEqual(metrics.currentStageProgress.denominator, 17)
+        XCTAssertEqual(metrics.globalProgress.denominator, 17)
+        XCTAssertEqual(metrics.snapshotCoverage.denominator, 9)
+        // 与独立投影同参数调用等价（record 携带完整分母指标）。
+        let expected = VillageProgressProjection.metrics(
+            from: projection.items.filter { $0.status != .unavailable },
+            catalogIsUsable: projection.catalogIsUsable,
+            compatibility: projection.compatibility,
+            completeDenominator: projection.universeComplete
+        )
+        XCTAssertEqual(metrics, expected)
+    }
+
+    /// 旧目录（无 instanceCounts）：universeComplete false → completeDenominator
+    /// false → 记录与指标行为与阶段 1 完全一致（.available 不存在）。
+    func testLegacyCatalogKeepsPhase1Semantics() throws {
+        let village = makeVillage(name: "旧目录村", objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2,
+                               timerSeconds: 3600, remainingSeconds: 1800, path: "0")],
+        ])
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let combined = UpgradeOverviewProjection.overviewRecords(
+            from: [village], catalog: syntheticCatalog, at: now
+        )
+        XCTAssertEqual(combined.active.map(\.item.id), ["units:0"])
+        let projection = VillageCatalogProjection.project(
+            village: village, catalog: syntheticCatalog, base: .home, now: now
+        )
+        XCTAssertFalse(projection.universeComplete)
+        XCTAssertTrue(projection.items.allSatisfy { $0.status != .available },
+                      "旧目录不得产出宇宙差集项")
     }
 }

@@ -310,6 +310,13 @@ public struct VillageCatalogProjection: Sendable {
     public let compatibility: CatalogCompatibility
     public let items: [VillageItemState]
     public let diagnostics: [AccountDataDiagnostic]
+    /// Issue #70 阶段 2：宇宙是否完整可用——base == .home 且目录含宇宙数据
+    ///（instanceCounts）且快照已知大本营等级。true → 调用方可将
+    /// `VillageProgressProjection.metrics` 的 completeDenominator 置 true
+    ///（stage/global 分母 = known ∪ available 宇宙差集，ready 可达）；
+    /// false → 阶段 1 语义（partial + 「分母为已观测项目」文案）。
+    /// BB base 恒 false（决策 5：BB 数据源不可靠，不做宇宙）。
+    public let universeComplete: Bool
 
     /// 核心入口。投影规则见本类型 doc comment。
     ///
@@ -357,12 +364,22 @@ public struct VillageCatalogProjection: Sendable {
 
         // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
         let unlocks = PlayerUnlockLevels(snapshot: village.accountSnapshot)
+        // Issue #70 阶段 2：宇宙完整判定（BB 恒 false，决策 5）。
+        let universeComplete = base == .home
+            && catalog?.hasUniverseData == true
+            && unlocks.townHall != nil
         let states = village.accountSnapshot.map { snapshot in
+            // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
             aggregate(records(
                 from: snapshot, catalog: catalog, base: base, now: now,
                 unlocks: unlocks, catalogIsUsable: catalogIsUsable,
                 seasonalPhases: seasonalPhases
-            ))
+            )) + Self.universeSupplement(
+                snapshot: snapshot,
+                catalog: catalog,
+                townHallLevel: unlocks.townHall,  // nil → 不产出（TH 未知）
+                base: base
+            )
         } ?? []
 
         return VillageCatalogProjection(
@@ -373,7 +390,8 @@ public struct VillageCatalogProjection: Sendable {
             catalogIsUsable: catalogIsUsable,
             compatibility: compatibility,
             items: states,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            universeComplete: universeComplete
         )
     }
 
@@ -791,6 +809,93 @@ public struct VillageCatalogProjection: Sendable {
             highest = level.level
         }
         return highest
+    }
+
+    // MARK: - Issue #70 阶段 2：宇宙差集（.available 合成项）
+
+    /// 宇宙差集合成：快照未观测、但宇宙表在指定 TH 下可建造（count > 0）的
+    /// 数量型 home 项 → `status == .available` 的合成项（currentLevel 0、
+    /// count = 宇宙数、maxLevel/currentStageMaxLevel 从目录 join）。
+    ///
+    /// 规则（设计决策 2/5 + 不变量）：
+    /// - base != .home、townHallLevel nil（快照缺大本营）、目录无宇宙数据
+    ///   （旧目录）→ 恒返回 []（行为与阶段 1 完全一致）；
+    /// - 宇宙键 section 以 "2" 结尾（BB 段）→ 跳过（决策 5：BB 不做宇宙）；
+    /// - 宇宙 count <= 0（该 TH 不可建造）→ 跳过不产出（不变量）；
+    /// - 快照已观测的 (section, dataID) → 跳过（已观测不是差集）；
+    /// - 目录 join 失败（宇宙键无目录 item，数据异常）→ 防御跳过；
+    /// - 解锁型（units/heroes 等）无宇宙键 → 天然不产出（决策 2）。
+    ///
+    /// 合成项不参与 aggregate（project 内直接追加，观测行与差集行分离），
+    /// 不参与升级追踪（nextUpgrade nil）——仅供完整分母与覆盖率口径消费，
+    /// UI 详情列表过滤 .available（决策 3，Task 4 接线）。
+    static func universeSupplement(
+        snapshot: AccountSnapshot,
+        catalog: GameCatalog?,
+        townHallLevel: Int?,
+        base: TrackerBase
+    ) -> [VillageItemState] {
+        guard base == .home, let townHallLevel,
+              let catalog, catalog.hasUniverseData else { return [] }
+
+        // 已观测 (section, dataID)：差集排除快照已有记录的数据点。
+        // 与 PlayerUnlockLevels.init(snapshot:) 同源的 objectSections 用法。
+        var observedKeys = Set<String>()
+        for sectionItems in snapshot.objectSections.values {
+            for item in sectionItems {
+                observedKeys.insert("\(item.section):\(item.dataID)")
+            }
+        }
+
+        // 阶段上限需要解锁建筑等级（合成项 stageMax 与观测行同规则）；
+        // TH 已知时其余解锁建筑按快照读取，缺失 → stageMax nil（fail-safe）。
+        let unlocks = PlayerUnlockLevels(snapshot: snapshot)
+
+        return catalog.universeKeys.compactMap { key in
+            // 只做 home 段（宇宙键全是 home 数量型；BB 后缀键防御跳过）。
+            guard !key.section.hasSuffix("2") else { return nil }
+            guard let count = catalog.universeCount(
+                section: key.section, dataID: key.dataID, townHallLevel: townHallLevel
+            ), count > 0 else { return nil }
+            let itemKey = "\(key.section):\(key.dataID)"
+            guard !observedKeys.contains(itemKey) else { return nil }
+            // 防御：宇宙键无目录 item（数据异常/合成目录缺项）→ 跳过不产出。
+            guard let catalogItem = catalog.item(section: key.section, dataID: key.dataID) else {
+                return nil
+            }
+            let category = TrackerCategory.from(section: key.section)
+            return VillageItemState(
+                id: "universe:" + itemKey,
+                section: key.section,
+                dataID: key.dataID,
+                base: .home,
+                name: catalogItem.name,
+                category: category,
+                currentLevel: 0,
+                count: count,
+                timerSeconds: nil,
+                remainingSeconds: nil,
+                nextLevel: nil,
+                nextLevelDurationSeconds: nil,
+                nextLevelDurationState: nil,
+                maxLevel: catalogItem.maxLevel,
+                currentStageMaxLevel: currentStageMaxLevel(for: catalogItem, unlocks: unlocks),
+                nextUpgrade: nil,  // 差集项不参与升级追踪
+                status: .available,
+                missingReason: nil,
+                catalogItemMissingReason: catalogItem.missingReason,
+                availability: .unconfigured,  // 差集项不做季节性判定（无快照记录）
+                icon: catalogItem.icon,
+                levelVisual: catalogItem.levelVisual,
+                currentLevelIcon: nil,   // level 0 无匹配等级资产
+                currentLevelVisual: nil,
+                isNested: false,
+                displayCategory: BuildingDisplayCategoryRules.displayCategory(
+                    section: key.section, dataID: key.dataID, base: .home,
+                    rootParentDataID: nil
+                )
+            )
+        }
     }
 
     // MARK: - Aggregation

@@ -610,4 +610,102 @@ final class VillageProgressMetricsTests: XCTestCase {
             from: [saturatedVillage], catalog: catalog, seasonalPhases: .empty
         ))
     }
+
+    // MARK: - Issue #70 阶段 2：完整分母（known ∪ available 宇宙差集）
+
+    /// 宇宙差集项 fixture：level 0、count 4（投影层合成的 .available 形态）。
+    private func availableItem(
+        id: String = "av",
+        maxLevel: Int? = 10,
+        stageMax: Int? = 6,
+        count: Int? = 4
+    ) -> VillageItemState {
+        item(id: id, status: .available, level: 0, maxLevel: maxLevel,
+             stageMax: stageMax, count: count)
+    }
+
+    func testCompleteDenominatorIncludesAvailableInStageGlobal() {
+        // known：level 3/6；available：level 0/6、count 4（宇宙差集）
+        // stage 分母 = 6 + 6×4 = 30，分子 = 3（available level 0 贡献 0）
+        // global 分母 = 10 + 10×4 = 50，分子 = 3
+        let items = [
+            item(id: "k", level: 3, maxLevel: 10, stageMax: 6),
+            availableItem(id: "a", count: 4),
+        ]
+        let m = metrics(items)  // completeDenominator: true
+        XCTAssertEqual(m.currentStageProgress.denominator, 30)
+        XCTAssertEqual(m.currentStageProgress.numerator, 3)
+        XCTAssertEqual(m.globalProgress.denominator, 50)
+        XCTAssertEqual(m.globalProgress.numerator, 3)
+        XCTAssertEqual(m.currentStageProgress.ratio ?? -1, 3.0 / 30.0, accuracy: 1e-9)
+    }
+
+    func testCoverageIncludesAvailableInDenominator() {
+        // known 1 + unknown 1 + available count 4 → 覆盖率 = 1/6
+        let items = [
+            item(id: "k", level: 3, maxLevel: 10, stageMax: 6),
+            item(id: "u", status: .unknown, level: nil, maxLevel: nil, stageMax: nil),
+            availableItem(id: "a", count: 4),
+        ]
+        let m = metrics(items).snapshotCoverage
+        XCTAssertEqual(m.numerator, 1)
+        XCTAssertEqual(m.denominator, 6)
+        XCTAssertEqual(m.ratio ?? -1, 1.0 / 6.0, accuracy: 1e-9)
+    }
+
+    func testAvailableForcesPartialWhenCompleteDenominator() {
+        // 无 unknown、只有 available → stage/global 仍 partial（覆盖率 < 100%
+        // 保守：快照可能不全，不得伪装 ready）
+        let items = [
+            item(id: "k", level: 3, maxLevel: 10, stageMax: 6),
+            availableItem(id: "a", count: 4),
+        ]
+        let m = metrics(items)
+        XCTAssertEqual(m.currentStageProgress.state, .partial)
+        XCTAssertEqual(m.globalProgress.state, .partial)
+        let reason = m.currentStageProgress.degradedReason!
+        XCTAssertTrue(reason.contains("宇宙差集"), reason)
+        // 差集项是已知存在（非「目录未命中」）→ 不得误报「未知或待重新导入」
+        XCTAssertFalse(reason.contains("未知或待重新导入"), reason)
+        // 数值仍可展示（保守 partial 而非 unknown）
+        XCTAssertEqual(m.currentStageProgress.ratio ?? -1, 3.0 / 30.0, accuracy: 1e-9)
+    }
+
+    func testCompleteDenominatorReadyWhenNoUnknownNoAvailable() {
+        // 全宇宙观测（无 unknown 无 available）→ completeDenominator=true 可达 ready
+        let m = metrics([item(id: "a", level: 3, maxLevel: 10, stageMax: 6)])
+        XCTAssertEqual(m.currentStageProgress.state, .ready)
+        XCTAssertEqual(m.globalProgress.state, .ready)
+        XCTAssertEqual(m.snapshotCoverage.state, .ready)
+        XCTAssertEqual(m.currentStageProgress.ratio, 0.5)
+    }
+
+    func testIncompleteDenominatorIgnoresAvailable() {
+        // completeDenominator=false（TH 缺失/目录无宇宙）：available 不进
+        // stage/global 分母（阶段 1 语义，eligible = known），coverage 仍含
+        // available（覆盖率天然是观测+宇宙差集口径）。
+        let items = [
+            item(id: "k", level: 3, maxLevel: 10, stageMax: 6),
+            availableItem(id: "a", count: 4),
+        ]
+        let m = metrics(items, completeDenominator: false)
+        XCTAssertEqual(m.currentStageProgress.denominator, 6)
+        XCTAssertEqual(m.globalProgress.denominator, 10)
+        XCTAssertEqual(m.currentStageProgress.state, .partial)  // 已观测文案
+        XCTAssertEqual(m.snapshotCoverage.denominator, 5)      // 1 + 4
+        XCTAssertTrue(m.currentStageProgress.degradedReason!.contains("分母为已观测项目"),
+                      m.currentStageProgress.degradedReason!)
+    }
+
+    func testCompleteDenominatorFiltersAvailableLikeKnown() {
+        // available 的 cap 过滤与 known 同规则：stageMax=0（恶意/不可算）→ 不进
+        // stage 分母；maxLevel>0 → 仍进 global 分母。
+        let items = [
+            item(id: "k", level: 3, maxLevel: 10, stageMax: 6),
+            availableItem(id: "a", maxLevel: 10, stageMax: 0, count: 4),
+        ]
+        let m = metrics(items)
+        XCTAssertEqual(m.currentStageProgress.denominator, 6)
+        XCTAssertEqual(m.globalProgress.denominator, 50)
+    }
 }

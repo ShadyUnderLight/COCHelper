@@ -691,13 +691,18 @@ public struct GameCatalog: Sendable {
     private let itemsBySection: [String: [CatalogItem]]
     private let index: [String: CatalogItem]
     /// 实例数量宇宙（Issue #70 阶段 2）："section:dataID" → 每大本营等级
-    /// （index = TH-1，恒 18 个元素）的可建造实例数。nil = 旧目录无宇宙数据
-    /// 或解码校验失败（长度 ≠ 18 / 含负值 → fail-closed 视为无宇宙，不 crash）。
+    /// （index = TH-1，恒 `universeTownHallCount` 个元素）的可建造实例数。
+    /// nil = 旧目录无宇宙数据或解码校验失败（长度 ≠ 18 / 含负值 → fail-closed
+    /// 视为无宇宙，不 crash）。
     private let instanceCounts: [String: [Int]]?
+
+    /// 大本营等级上限（实例数量宇宙数组长度契约，Task 2 评审 nit 3：
+    /// 魔法数字 18 单点化，init 校验与 universeCount 越界共用）。
+    private static let universeTownHallCount = 18
 
     /// 测试注入入口；`loadBundled` 只是其便捷包装。
     /// `instanceCounts` 带默认值 nil（设计评审 N2：不破坏既有构造调用点）；
-    /// 校验在 init 内完成（长度恒 18 且值非负），失败存 nil。
+    /// 校验在 init 内完成（长度恒 `universeTownHallCount` 且值非负），失败存 nil。
     public init(
         gameVersion: String,
         items: [CatalogItem],
@@ -707,7 +712,9 @@ public struct GameCatalog: Sendable {
         self.gameVersion = gameVersion
         self.manifest = manifest
         if let raw = instanceCounts,
-           raw.allSatisfy({ $0.value.count == 18 && $0.value.allSatisfy { $0 >= 0 } }) {
+           raw.allSatisfy({
+               $0.value.count == Self.universeTownHallCount && $0.value.allSatisfy { $0 >= 0 }
+           }) {
             self.instanceCounts = raw
         } else {
             self.instanceCounts = nil
@@ -827,10 +834,23 @@ public struct GameCatalog: Sendable {
 
     /// 宇宙查询：该 dataID 在指定大本营等级的可建造实例数。
     /// 目录无宇宙数据（hasUniverseData false）、dataID 不在宇宙表、TH 越界
-    ///（< 1 或 > 18）→ nil（fail-closed）。索引映射：数组 index = TH-1。
+    ///（< 1 或 > `universeTownHallCount`）→ nil（fail-closed）。
     public func universeCount(section: String, dataID: Int64, townHallLevel: Int) -> Int? {
-        guard hasUniverseData, (1...18).contains(townHallLevel) else { return nil }
+        guard hasUniverseData,
+              (1...Self.universeTownHallCount).contains(townHallLevel) else { return nil }
         return instanceCounts?[Self.key(section: section, dataID: dataID)]?[townHallLevel - 1]
+    }
+
+    /// 宇宙表全部键（section, dataID）——投影层合成差集项用（Issue #70 阶段 2）。
+    /// 按 section 升序、同 section 按 dataID 升序（产出顺序确定，测试/UI 可预测）。
+    /// 旧目录（hasUniverseData false）→ 空数组。
+    public var universeKeys: [(section: String, dataID: Int64)] {
+        (instanceCounts ?? [:]).keys.compactMap { key in
+            let parts = key.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, let dataID = Int64(parts[1]) else { return nil }
+            return (String(parts[0]), dataID)
+        }
+        .sorted { $0.section == $1.section ? $0.dataID < $1.dataID : $0.section < $1.section }
     }
 
     private static func key(section: String, dataID: Int64) -> String {

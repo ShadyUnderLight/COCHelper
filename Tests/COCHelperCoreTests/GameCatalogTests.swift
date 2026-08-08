@@ -1170,6 +1170,51 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertNil(legacy.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
     }
 
+    /// 宇宙表全部键（section, dataID）——投影层合成差集项的枚举来源
+    ///（Issue #70 阶段 2）。排序：section 升序、同 section 按 dataID 升序。
+    func testUniverseKeysEnumeratesAllKeysSorted() {
+        let catalog = makeUniverseCatalog(instanceCounts: [
+            "traps:12000000": Array(repeating: 1, count: 18),
+            "buildings:1000002": cannonUniverseCounts,
+            "buildings:1000000": cannonUniverseCounts,
+        ])
+        XCTAssertEqual(
+            catalog.universeKeys.map { "\($0.section):\($0.dataID)" },
+            ["buildings:1000000", "buildings:1000002", "traps:12000000"],
+            "宇宙键应按 section 升序、同 section 按 dataID 升序枚举"
+        )
+        // 旧目录（无宇宙）→ 空数组
+        let legacy = makeUniverseCatalog(instanceCounts: nil)
+        XCTAssertTrue(legacy.universeKeys.isEmpty)
+    }
+
+    /// 旧格式目录（无 instanceCounts 键）loadBundled 的 decode 路径不失败
+    ///（Task 2 评审 nit 2）：Payload 缺键 → nil → hasUniverseData false，
+    /// 向后兼容，不阻塞目录加载。
+    func testLegacyPayloadDecodesWithoutInstanceCountsKey() throws {
+        let json = """
+        {"gameVersion":"18.400.13","items":[
+          {"section":"buildings","category":"buildings","dataID":1000002,"base":"home",
+           "name":"加农炮","maxLevel":2,"icon":null,"levelVisual":null,
+           "baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":200,
+              "requiredTownHallLevel":null,"requiredLaboratoryLevel":null,
+              "icon":null,"levelVisual":null,"missingReason":null}
+           ]}
+        ]}
+        """
+        struct LegacyPayload: Decodable {
+            let gameVersion: String
+            let items: [CatalogItem]
+        }
+        // 无 instanceCounts 键 → 解码成功（缺键容忍）
+        let payload = try JSONDecoder().decode(LegacyPayload.self, from: Data(json.utf8))
+        let catalog = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+        XCTAssertFalse(catalog.hasUniverseData, "旧格式目录应视为无宇宙（hasUniverseData false）")
+        XCTAssertNil(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+    }
+
 }
 
 // MARK: - UpgradeRequirement（Issue #67）

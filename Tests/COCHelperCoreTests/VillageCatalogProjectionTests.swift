@@ -3513,4 +3513,22 @@ final class VillageCatalogProjectionTests: XCTestCase {
                       "旧目录不得产出宇宙差集项")
     }
 
+    /// 目录版本不匹配（catalogIsUsable false）+ 有宇宙数据 → universeComplete
+    /// false、不产出 .available（评审 I1：差集项基于不可信目录的
+    /// maxLevel/count 会污染投影，与 map() 的 fail-closed 对齐）。
+    func testUniverseSupplementOffWhenCatalogMismatch() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+        ])
+        let home = project(
+            village: village, catalog: makeUniverseCatalog(),
+            expectedGameVersion: "99.0.0", base: .home
+        )
+        XCTAssertFalse(home.catalogIsUsable, "版本不匹配 → 目录不可用")
+        XCTAssertFalse(home.universeComplete,
+                       "目录不可信时不得宣称宇宙完整")
+        XCTAssertTrue(home.items.allSatisfy { $0.status != .available },
+                      "目录不可信时不得合成宇宙差集项")
+    }
+
 }

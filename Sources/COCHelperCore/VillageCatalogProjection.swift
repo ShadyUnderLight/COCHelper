@@ -310,11 +310,13 @@ public struct VillageCatalogProjection: Sendable {
     public let compatibility: CatalogCompatibility
     public let items: [VillageItemState]
     public let diagnostics: [AccountDataDiagnostic]
-    /// Issue #70 阶段 2：宇宙是否完整可用——base == .home 且目录含宇宙数据
-    ///（instanceCounts）且快照已知大本营等级。true → 调用方可将
-    /// `VillageProgressProjection.metrics` 的 completeDenominator 置 true
-    ///（stage/global 分母 = known ∪ available 宇宙差集，ready 可达）；
-    /// false → 阶段 1 语义（partial + 「分母为已观测项目」文案）。
+    /// Issue #70 阶段 2：宇宙是否完整可用——base == .home 且目录可用
+    ///（catalogIsUsable，评审 I1：版本不匹配/不可用时差集项基于不可信目录
+    /// 的 maxLevel/count 会污染投影）且目录含宇宙数据（instanceCounts）且
+    /// 快照已知大本营等级。true → 调用方可将 `VillageProgressProjection.metrics`
+    /// 的 completeDenominator 置 true（stage/global 分母 = known ∪ available
+    /// 宇宙差集，ready 可达）；false → 阶段 1 语义（partial + 「分母为已观测
+    /// 项目」文案）。
     /// BB base 恒 false（决策 5：BB 数据源不可靠，不做宇宙）。
     public let universeComplete: Bool
 
@@ -364,22 +366,28 @@ public struct VillageCatalogProjection: Sendable {
 
         // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
         let unlocks = PlayerUnlockLevels(snapshot: village.accountSnapshot)
-        // Issue #70 阶段 2：宇宙完整判定（BB 恒 false，决策 5）。
+        // Issue #70 阶段 2：宇宙完整判定（评审 I1：必须含 catalogIsUsable——
+        // 目录不可用/版本不匹配时合成差集项会基于不可信目录的 maxLevel/count
+        // 污染投影，与 map() 的 fail-closed 对齐；catalogIsUsable 已在
+        // compatibility 解析后算出，此处直接复用）。BB 恒 false（决策 5）。
         let universeComplete = base == .home
+            && catalogIsUsable
             && catalog?.hasUniverseData == true
             && unlocks.townHall != nil
         let states = village.accountSnapshot.map { snapshot in
             // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
+            // universeComplete 守卫 = universeSupplement 的唯一生产入口门禁
+            //（目录不可信 / TH 未知 / 旧目录 / BB → 不产出）。
             aggregate(records(
                 from: snapshot, catalog: catalog, base: base, now: now,
                 unlocks: unlocks, catalogIsUsable: catalogIsUsable,
                 seasonalPhases: seasonalPhases
-            )) + Self.universeSupplement(
+            )) + (universeComplete ? Self.universeSupplement(
                 snapshot: snapshot,
                 catalog: catalog,
                 townHallLevel: unlocks.townHall,  // nil → 不产出（TH 未知）
                 base: base
-            )
+            ) : [])
         } ?? []
 
         return VillageCatalogProjection(
@@ -820,6 +828,9 @@ public struct VillageCatalogProjection: Sendable {
     /// 规则（设计决策 2/5 + 不变量）：
     /// - base != .home、townHallLevel nil（快照缺大本营）、目录无宇宙数据
     ///   （旧目录）→ 恒返回 []（行为与阶段 1 完全一致）；
+    /// - **调用方门禁**（评审 I1）：目录不可用/版本不匹配（catalogIsUsable
+    ///   false）时不得合成——生产唯一入口 `project()` 已由 universeComplete
+    ///   守卫（含 catalogIsUsable 条件），本函数不重复检查该入参；
     /// - 宇宙键 section 以 "2" 结尾（BB 段）→ 跳过（决策 5：BB 不做宇宙）；
     /// - 宇宙 count <= 0（该 TH 不可建造）→ 跳过不产出（不变量）；
     /// - 快照已观测的 (section, dataID) → 跳过（已观测不是差集）；

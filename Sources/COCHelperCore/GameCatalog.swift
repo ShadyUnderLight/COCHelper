@@ -217,6 +217,85 @@ extension CatalogDurationState {
     }
 }
 
+// MARK: - Availability (Issue #74 seasonal)
+
+/// 限时内容阶段配置（阶段表契约）。
+///
+/// 数据源待定（官方公告 → 随目录人工维护，或未来 APK 提取）；当前不提交
+/// 任何阶段数据（空表 = bundle 无 seasonal_phases.json，缺失 → 空表）。
+/// 判定不依赖 `specialAbility` 名称（不得从命名推断 seasonal）。
+public struct SeasonalPhase: Codable, Hashable, Sendable {
+    public let phaseID: String
+    /// 展示名（官方公告名）；nil 时 UI 回退 phaseID。
+    public let name: String?
+    /// 活动区间：`from <= now < until` 视为活动（from 含、until 不含）。
+    public let from: Date
+    public let until: Date
+    /// 涉及条目键："section:dataID"（与 `CatalogItem.id` / 投影查询键同格式）。
+    public let itemKeys: [String]
+}
+
+/// 阶段表（空表起步；schemaVersion 预留迁移）。
+public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
+    public let schemaVersion: Int
+    public let phases: [SeasonalPhase]
+
+    public static let empty = SeasonalPhaseTable(schemaVersion: 1, phases: [])
+
+    /// 查条目在当前时刻的活动阶段。
+    /// - itemKeys 命中且 `from <= date < until` → 该阶段；
+    /// - 多条目同键多阶段命中（异常数据）→ 取 `from` 最晚者（确定性）；
+    /// - 无命中 → nil。
+    public func activePhase(forItemKey key: String, at date: Date) -> SeasonalPhase? {
+        phases
+            .filter { $0.itemKeys.contains(key) && $0.from <= date && date < $0.until }
+            .max { $0.from < $1.from }
+    }
+
+    /// bundled 加载：`GameCatalog/<version>/seasonal_phases.json`；
+    /// 文件缺失或解码失败 → 空表（不报错——阶段信息是增强数据，缺失 = 未配置）。
+    public static func loadBundled(version: String) -> SeasonalPhaseTable {
+        guard let url = Bundle.module.url(
+            forResource: "seasonal_phases",
+            withExtension: "json",
+            subdirectory: "GameCatalog/" + version
+        ), let data = try? Data(contentsOf: url),
+           let table = try? JSONDecoder().decode(SeasonalPhaseTable.self, from: data) else {
+            return .empty
+        }
+        return table
+    }
+}
+
+/// 条目可用性状态（历史存在 vs 当前可用）。
+///
+/// 与 `VillageItemState.isCatalogDeprecated`（源目录标记）是**独立维度**：
+/// deprecated 来自 `CatalogItem.missingReason`，availability 来自阶段表。
+/// seasonal 判定完全由阶段表驱动——不配置不推断、不编造当前可用。
+public enum CatalogAvailability: Hashable, Sendable {
+    /// 非限时内容。
+    case permanent
+    /// 阶段表命中：`isActive` 由注入 clock 判定（活动/已结束）。
+    case seasonal(phaseID: String, phaseName: String?, isActive: Bool)
+    /// 无阶段信息（UI：「阶段信息未配置」）。
+    case unconfigured
+}
+
+extension CatalogAvailability {
+    /// 详情页展示文案；nil = 不显示（permanent 无标记，避免噪音）。
+    public var displayLabel: String? {
+        switch self {
+        case .permanent: return nil
+        case .seasonal(let phaseID, let phaseName, let isActive):
+            let name = phaseName ?? phaseID
+            return isActive
+                ? "限时内容：\(name)（活动）"
+                : "限时内容：\(name)（已结束，仅历史数据）"
+        case .unconfigured: return "阶段信息未配置"
+        }
+    }
+}
+
 // MARK: - Compatibility (Issue #74a)
 
 /// 目录与玩家客户端 build 的兼容性状态。

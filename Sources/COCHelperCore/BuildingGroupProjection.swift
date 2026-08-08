@@ -124,7 +124,9 @@ public enum BuildingGroupProjection {
             base: base,
             now: now,
             unlocks: PlayerUnlockLevels(snapshot: snapshot),
-            catalogIsUsable: catalogIsUsable
+            catalogIsUsable: catalogIsUsable,
+            // Issue #74 seasonal：组卡投影暂不消费阶段表（空表默认）。
+            seasonalPhases: .empty
         ).filter { !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2") }
 
         // 按 (base, section, dataID) 分组，组按首现顺序输出（字典 + 有序键数组）。

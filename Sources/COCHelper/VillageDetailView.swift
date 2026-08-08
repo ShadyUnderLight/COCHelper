@@ -77,7 +77,7 @@ struct VillageDetailView: View {
     }
 
     /// Issue #49 验收阅读顺序：首屏自上而下为「玩家昵称与身份（header）→
-    /// 玩家信息（officialAPISection）→ 完成度/升级列表（completionBar →
+    /// 玩家信息（officialAPISection）→ 完成度/升级列表（metricsBar →
     /// basePicker → 分类筛选 → 分组列表）」。完成度条位于官方玩家信息之后、
     /// 基地选择之前。
     private func detailContent(village: VillageProfile, now: Date) -> some View {
@@ -97,6 +97,13 @@ struct VillageDetailView: View {
         let total = VillageDetailProjection.totalCompletion(
             from: trackedItems,
             catalogIsUsable: projection.catalogIsUsable
+        )
+        // Issue #70：三指标（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
+        // 与 totalCompletion 同数据源（trackedItems），known 判定同规则。
+        let progressMetrics = VillageProgressProjection.metrics(
+            from: trackedItems,
+            catalogIsUsable: projection.catalogIsUsable,
+            compatibility: projection.compatibility
         )
         let statsByKey = Dictionary(
             uniqueKeysWithValues: VillageDetailProjection.completionStats(
@@ -138,7 +145,7 @@ struct VillageDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, now: now)
                 officialAPISection()
-                completionBar(total: total)
+                metricsBar(metrics: progressMetrics)
                 basePicker()
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
 
@@ -161,7 +168,8 @@ struct VillageDetailView: View {
                             stats: statsByKey[group.id],
                             village: village,
                             groupByInstanceID: groupByInstanceID,
-                            craftTable: craftTable
+                            craftTable: craftTable,
+                            metrics: progressMetrics
                         )
                     }
                 }
@@ -302,37 +310,69 @@ struct VillageDetailView: View {
             .foregroundStyle(.tertiary)
     }
 
-    private func completionBar(total: VillageCategoryCompletion) -> some View {
-        HStack(spacing: 12) {
-            Text("完成度")
+    /// Issue #70：三指标卡（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
+    /// 每个指标显示名称、百分比、分子/分母（带单位）与降级文案；saturated
+    /// 优先于 state 文案（fail-closed，数值不权威时显示异常而非百分比）。
+    private func metricsBar(metrics: VillageProgressMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 外部评审方案 A：标题明确「已观测」范围（阶段 1 分母为已观测项目，
+            // completeDenominator 恒 false → stage/global 恒 partial）。
+            metricRow(metrics.currentStageProgress, title: "已观测阶段进度")
+            metricRow(metrics.globalProgress, title: "已观测全局进度")
+            metricRow(metrics.snapshotCoverage, title: "观测数据完整性")
+                .help("分母为已观测实例，非全部可能建筑")
+        }
+        .padding(12)
+        .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func metricRow(_ metric: ProgressMetric, title: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            if let ratio = total.completionRatio {
+                .frame(width: UpgradeDisplayLayout.metricRowTitleWidth, alignment: .leading)
+            if metric.saturated {
+                Text("数据异常（超出可表示范围）")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if let ratio = metric.ratio {
                 ProgressView(value: ratio)
                     .progressViewStyle(.linear)
                     .tint(Color.cocAccent)
-                    .frame(maxWidth: 260)
+                    .frame(maxWidth: UpgradeDisplayLayout.metricProgressMaxWidth)
                 Text(String(Int((ratio * 100).rounded())) + "%")
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(Color.cocAccent)
-                Text(String(total.completedCount) + " / " + String(total.knownCount) + " 已满级")
+                    .frame(width: UpgradeDisplayLayout.metricPercentWidth, alignment: .trailing)
+                Text(String(metric.numerator) + " / " + String(metric.denominator) + " " + metric.units)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                // 第 7 轮：ratio == nil 时区分饱和（数据超出可表示范围，非业务上的
-                // 不可确认）与正常无已知项——饱和时数值不完整，明示异常而非误导。
-                Text(total.saturated ? "数据异常（超出可表示范围）" : "无可确认项目")
+                Text(degradedText(for: metric))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if total.unknownCount > 0 {
-                Text(String(total.unknownCount) + " 项未知")
+            // saturated 时 ratio 恒 nil，但 partial 的降级原因（如「N 项未知」）
+            // 不得被吞——与「数据异常」并存展示，信息不丢失。
+            if let reason = metric.degradedReason, (metric.ratio != nil || metric.saturated) {
+                Text(reason)
                     .font(.caption2)
                     .foregroundStyle(.orange)
             }
         }
-        .padding(12)
-        .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// 不可计算状态文案（unknown/unavailable；saturated 已在 metricRow 提前处理）。
+    /// 单一来源：直接复用 Core 的 degradedReason（unavailable/unknown 时恒非 nil），
+    /// 避免 UI 手写文案与 Core 漂移（曾漏句号）；?? 兜底仅防御不可达组合。
+    private func degradedText(for metric: ProgressMetric) -> String {
+        switch metric.state {
+        // ready/partial 时 ratio 非 nil，UI 走 ratio 分支，本分支不可达；
+        // 防御性兜底。
+        case .ready, .partial: return "—"
+        case .unavailable, .unknown: return metric.degradedReason ?? "暂无法计算该指标"
+        }
     }
 
     private func diagnosticsNote(_ projection: VillageCatalogProjection) -> some View {
@@ -512,7 +552,8 @@ struct VillageDetailView: View {
         stats: VillageCategoryCompletion?,
         village: VillageProfile,
         groupByInstanceID: [String: BuildingGroup],
-        craftTable: [CraftTableDefenseState]
+        craftTable: [CraftTableDefenseState],
+        metrics: VillageProgressMetrics
     ) -> some View {
         Panel {
             VStack(alignment: .leading, spacing: 10) {
@@ -537,7 +578,8 @@ struct VillageDetailView: View {
                         group: group,
                         groupByInstanceID: groupByInstanceID,
                         now: now,
-                        village: village
+                        village: village,
+                        metrics: metrics
                     )
                 }
             }
@@ -553,6 +595,7 @@ struct VillageDetailView: View {
         group: VillageDetailGroup,
         now: Date,
         village: VillageProfile,
+        metrics: VillageProgressMetrics,
         indented: Bool = false
     ) -> some View {
         let rowID = villageID.uuidString + ":" + selectedBase.rawValue + ":" + item.id
@@ -563,7 +606,8 @@ struct VillageDetailView: View {
             villageTag: village.tag,
             base: selectedBase,
             item: item,
-            catalogVersion: catalog?.gameVersion
+            catalogVersion: catalog?.gameVersion,
+            villageMetrics: metrics
         )
         return Button {
             selectedItem = item
@@ -590,7 +634,8 @@ struct VillageDetailView: View {
         group: VillageDetailGroup,
         groupByInstanceID: [String: BuildingGroup],
         now: Date,
-        village: VillageProfile
+        village: VillageProfile,
+        metrics: VillageProgressMetrics
     ) -> some View {
         var orderedGroups: [BuildingGroup] = []
         var seenGroupIDs = Set<String>()
@@ -613,7 +658,7 @@ struct VillageDetailView: View {
                 }
             }
             if !fallbackItems.isEmpty {
-                legacyRows(items: fallbackItems, group: group, now: now, village: village)
+                legacyRows(items: fallbackItems, group: group, now: now, village: village, metrics: metrics)
             }
         }
     }
@@ -623,17 +668,18 @@ struct VillageDetailView: View {
         items: [VillageItemState],
         group: VillageDetailGroup,
         now: Date,
-        village: VillageProfile
+        village: VillageProfile,
+        metrics: VillageProgressMetrics
     ) -> some View {
         LazyVStack(spacing: 0) {
             // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
             // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
             let rows = VillageDetailProjection.parentedRows(from: items)
             ForEach(rows) { row in
-                itemRow(row.item, group: group, now: now, village: village)
+                itemRow(row.item, group: group, now: now, village: village, metrics: metrics)
                 ForEach(row.children) { child in
                     Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
-                    itemRow(child, group: group, now: now, village: village, indented: true)
+                    itemRow(child, group: group, now: now, village: village, metrics: metrics, indented: true)
                 }
                 if row.id != rows.last?.id {
                     Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
@@ -658,7 +704,7 @@ struct VillageDetailView: View {
             return Text("无可确认完成度").font(.caption2).foregroundStyle(.tertiary)
         }
         let summary = String(stats.completedCount) + "/" + String(stats.knownCount)
-            + " · " + String(Int((ratio * 100).rounded())) + "%"
+            + " 已满级 · " + String(Int((ratio * 100).rounded())) + "%"
         // issue #53：满级判定改用严格谓词 isFullyMaxed——known 全满但
         // unknownCount > 0（存在未知/未观测项）时不再标绿，与 chip 一致。
         let tint: Color = stats.isFullyMaxed ? .green : .secondary

@@ -116,7 +116,12 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             villageTag: nil,
             base: .home,
             item: makeItemState(remainingSeconds: remainingSeconds),
-            catalogVersion: nil
+            catalogVersion: nil,
+            villageMetrics: VillageProgressProjection.metrics(
+                from: [],
+                catalogIsUsable: true,
+                compatibility: .verified(gameVersion: "18.400.13")
+            )
         )
     }
 
@@ -830,6 +835,42 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             let records = activeRecords(villages, catalog: syntheticCatalog)
             let ids = records.map(\.id)
             XCTAssertEqual(Set(ids).count, ids.count, "性质 4：输出 id 必须全局唯一")
+        }
+    }
+
+    // MARK: - Issue #70 实现要求 6：record 携带三指标
+
+    func testRecordCarriesVillageMetrics() {
+        // allRecords 产出的 record.villageMetrics 必须与独立调用同输入同输出
+        // （消费同一个 VillageProgressProjection，实现要求 6）。
+        // now 与测试 helper 一致：== importedAt（elapsed = 0，计时记录保持原样）。
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let village = makeVillage(name: "指标村", objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 3600, remainingSeconds: 1800),
+            ],
+        ])
+        let records = UpgradeOverviewProjection.overviewRecords(
+            from: [village], catalog: syntheticCatalog, at: now
+        ).active
+        XCTAssertFalse(records.isEmpty, "前置：加农炮 level 1 升级中应产出 active 记录")
+        let projection = VillageCatalogProjection.project(
+            village: village, catalog: syntheticCatalog, base: .home, now: now
+        )
+        let expected = VillageProgressProjection.metrics(
+            from: projection.items.filter { $0.status != .unavailable },
+            catalogIsUsable: projection.catalogIsUsable,
+            compatibility: projection.compatibility
+        )
+        for record in records {
+            XCTAssertEqual(record.villageMetrics, expected,
+                           "record(\(record.id)) 的 villageMetrics 与独立投影不一致")
+        }
+        // 同 village+base 全部 record 共享同一 metrics 实例（去重语义锚点）。
+        let first = records[0].villageMetrics
+        for record in records {
+            XCTAssertEqual(record.villageMetrics, first)
         }
     }
 }

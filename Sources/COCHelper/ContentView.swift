@@ -637,7 +637,10 @@ private struct TrackerOverviewContent: View {
             TrackerMetricsView(
                 villages: villages,
                 records: combined.active,
-                scopeLabel: scopeLabel
+                scopeLabel: scopeLabel,
+                catalog: catalog,
+                seasonalPhases: seasonalPhases,
+                now: now
             )
             CatalogStatusNote(catalog: catalog)
             ActiveUpgradesPanel(
@@ -698,6 +701,9 @@ private struct TrackerMetricsView: View {
     let villages: [VillageProfile]
     let records: [UpgradeDisplayRecord]
     let scopeLabel: String
+    let catalog: GameCatalog?
+    let seasonalPhases: SeasonalPhaseTable
+    let now: Date
 
     private var importedVillageCount: Int {
         villages.filter(\.hasImportedData).count
@@ -710,6 +716,20 @@ private struct TrackerMetricsView: View {
     private var nearestCompletion: String {
         guard let remainingSeconds = records.first?.remainingSeconds else { return "--" }
         return AccountDurationFormatter.label(remainingSeconds, zeroLabel: "已完成")
+    }
+
+    /// 全部已导入村庄 × 全部基地的观测数据完整性聚合。
+    /// 消费与详情页同一个 `VillageProgressProjection` 投影（实现要求 6）；
+    /// 逻辑下沉 Core（fail-closed：任一 coverage 饱和或累加溢出 → nil，
+    /// 不展示假精度），此处只做展示格式化。
+    private var aggregateCoverage: String? {
+        guard let (known, observed) = VillageProgressProjection.aggregateCoverage(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            now: now
+        ) else { return nil }
+        return String(Int((Double(known) / Double(observed) * 100).rounded())) + "%"
     }
 
     var body: some View {
@@ -742,6 +762,15 @@ private struct TrackerMetricsView: View {
                 systemImage: "clock.fill",
                 tint: .blue
             )
+            if let coverage = aggregateCoverage {
+                TrackerMetricCard(
+                    title: "观测数据完整性",
+                    value: coverage,
+                    detail: "已观测项目 · 全部村庄",
+                    systemImage: "checkmark.seal.fill",
+                    tint: .blue
+                )
+            }
         }
     }
 }

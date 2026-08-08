@@ -1107,6 +1107,68 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500)))
     }
 
+    // MARK: - 实例数量宇宙（Issue #70 阶段 2）
+
+    /// 加农炮（buildings:1000002）18 个大本营等级的实例数量（index = TH-1，
+    /// 值来自真实 bundled 目录 18.400.13：TH1=1、TH18=7）。
+    private let cannonUniverseCounts = [1, 2, 3, 4, 5, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+
+    /// 合成最小目录（加农炮 item + 可选 instanceCounts）：init 是测试注入入口
+    ///（设计评审 N2：instanceCounts 带默认值 nil，不破坏既有构造）。
+    private func makeUniverseCatalog(instanceCounts: [String: [Int]]?) -> GameCatalog {
+        let cannon = CatalogItem(
+            section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
+            baseMissingReason: nil, name: "加农炮", maxLevel: 17, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: nil, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+        return GameCatalog(
+            gameVersion: "18.400.13", items: [cannon],
+            instanceCounts: instanceCounts
+        )
+    }
+
+    func testUniverseCountHit() throws {
+        // 目录含宇宙：buildings:1000002（加农炮）TH18 = 7、TH1 = 1。
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        XCTAssertEqual(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18), 7)
+        XCTAssertEqual(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 1), 1)
+    }
+
+    func testUniverseCountMissingAndOutOfRange() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        // 不在宇宙表（解锁型 units 无宇宙数据，决策 2 只做数量型）→ nil
+        XCTAssertNil(catalog.universeCount(section: "units", dataID: 4_000_000, townHallLevel: 18))
+        // TH 越界 → nil（fail-closed）
+        XCTAssertNil(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 0))
+        XCTAssertNil(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 19))
+    }
+
+    func testUniverseInvalidLengthTreatedAsMissing() throws {
+        // 宇宙数组长度 ≠ 18 → 解码时校验失败，视为无宇宙（fail-closed 不 crash）
+        let short = makeUniverseCatalog(instanceCounts: ["buildings:1000002": [1, 2]])
+        XCTAssertFalse(short.hasUniverseData)
+        XCTAssertNil(short.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+        // 值含负数同样校验失败 → 视为无宇宙
+        let negative = makeUniverseCatalog(
+            instanceCounts: ["buildings:1000002": Array(repeating: -1, count: 18)])
+        XCTAssertFalse(negative.hasUniverseData)
+        XCTAssertNil(negative.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+    }
+
+    func testHasUniverseData() throws {
+        // 有宇宙数据 → true
+        let withUniverse = makeUniverseCatalog(instanceCounts: ["buildings:1000002": cannonUniverseCounts])
+        XCTAssertTrue(withUniverse.hasUniverseData)
+        XCTAssertEqual(withUniverse.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18), 7)
+        // 旧目录（无 instanceCounts 字段）→ false，查询恒 nil
+        let legacy = makeUniverseCatalog(instanceCounts: nil)
+        XCTAssertFalse(legacy.hasUniverseData)
+        XCTAssertNil(legacy.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+    }
 
 }
 

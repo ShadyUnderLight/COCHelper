@@ -690,11 +690,28 @@ public struct GameCatalog: Sendable {
 
     private let itemsBySection: [String: [CatalogItem]]
     private let index: [String: CatalogItem]
+    /// 实例数量宇宙（Issue #70 阶段 2）："section:dataID" → 每大本营等级
+    /// （index = TH-1，恒 18 个元素）的可建造实例数。nil = 旧目录无宇宙数据
+    /// 或解码校验失败（长度 ≠ 18 / 含负值 → fail-closed 视为无宇宙，不 crash）。
+    private let instanceCounts: [String: [Int]]?
 
     /// 测试注入入口；`loadBundled` 只是其便捷包装。
-    public init(gameVersion: String, items: [CatalogItem], manifest: CatalogManifest? = nil) {
+    /// `instanceCounts` 带默认值 nil（设计评审 N2：不破坏既有构造调用点）；
+    /// 校验在 init 内完成（长度恒 18 且值非负），失败存 nil。
+    public init(
+        gameVersion: String,
+        items: [CatalogItem],
+        manifest: CatalogManifest? = nil,
+        instanceCounts: [String: [Int]]? = nil
+    ) {
         self.gameVersion = gameVersion
         self.manifest = manifest
+        if let raw = instanceCounts,
+           raw.allSatisfy({ $0.value.count == 18 && $0.value.allSatisfy { $0 >= 0 } }) {
+            self.instanceCounts = raw
+        } else {
+            self.instanceCounts = nil
+        }
         var bySection: [String: [CatalogItem]] = [:]
         var byKey: [String: CatalogItem] = [:]
         for item in items {
@@ -742,7 +759,12 @@ public struct GameCatalog: Sendable {
         } else {
             manifest = nil
         }
-        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items, manifest: manifest)
+        return GameCatalog(
+            gameVersion: payload.gameVersion,
+            items: payload.items,
+            manifest: manifest,
+            instanceCounts: payload.instanceCounts
+        )
     }
 
     /// Bundle 内文件存在性 + size 校验（Issue #73 P1：运行时完整性）。
@@ -794,6 +816,23 @@ public struct GameCatalog: Sendable {
         catalogLevel(toUpgrade: nextLevel, for: item)?.durationSeconds
     }
 
+    // MARK: - 实例数量宇宙（Issue #70 阶段 2）
+
+    /// 目录是否携带可用宇宙数据：instanceCounts 非 nil（init 解码时已校验：
+    /// 所有数组长度 == 18 且值非负，校验失败视为无宇宙，fail-closed 不 crash）。
+    /// false = 旧目录或校验失败，调用方应走「已观测实例」语义（无完整分母）。
+    public var hasUniverseData: Bool {
+        instanceCounts != nil
+    }
+
+    /// 宇宙查询：该 dataID 在指定大本营等级的可建造实例数。
+    /// 目录无宇宙数据（hasUniverseData false）、dataID 不在宇宙表、TH 越界
+    ///（< 1 或 > 18）→ nil（fail-closed）。索引映射：数组 index = TH-1。
+    public func universeCount(section: String, dataID: Int64, townHallLevel: Int) -> Int? {
+        guard hasUniverseData, (1...18).contains(townHallLevel) else { return nil }
+        return instanceCounts?[Self.key(section: section, dataID: dataID)]?[townHallLevel - 1]
+    }
+
     private static func key(section: String, dataID: Int64) -> String {
         section + ":" + String(dataID)
     }
@@ -801,5 +840,7 @@ public struct GameCatalog: Sendable {
     private struct Payload: Decodable {
         let gameVersion: String
         let items: [CatalogItem]
+        /// Issue #70 阶段 2：旧目录缺键 → nil（向后兼容，解码不失败）。
+        let instanceCounts: [String: [Int]]?
     }
 }

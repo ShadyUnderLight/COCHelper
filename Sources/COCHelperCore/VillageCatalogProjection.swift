@@ -93,6 +93,9 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public var isCatalogDeprecated: Bool {
         catalogItemMissingReason == "deprecated_in_source"
     }
+    /// Issue #74 seasonal：条目可用性（阶段表驱动，`now` 注入判定）。
+    /// 与 `isCatalogDeprecated` 独立维度；空表（默认）恒为 `.unconfigured`。
+    public let availability: CatalogAvailability
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
     /// 当前等级（currentLevel）匹配的 CatalogLevel 资产（level-level，Issue #39）：
@@ -189,6 +192,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         status: VillageItemStatus,
         missingReason: String?,
         catalogItemMissingReason: String?,
+        availability: CatalogAvailability,
         icon: CatalogAssetRef?,
         levelVisual: CatalogAssetRef?,
         currentLevelIcon: CatalogAssetRef?,
@@ -216,6 +220,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.status = status
         self.missingReason = missingReason
         self.catalogItemMissingReason = catalogItemMissingReason
+        self.availability = availability
         self.icon = icon
         self.levelVisual = levelVisual
         self.currentLevelIcon = currentLevelIcon
@@ -317,6 +322,7 @@ public struct VillageCatalogProjection: Sendable {
         village: VillageProfile,
         catalog: GameCatalog?,
         expectedGameVersion: String? = nil,
+        seasonalPhases: SeasonalPhaseTable = .empty,
         base: TrackerBase,
         now: Date = Date()
     ) -> VillageCatalogProjection {
@@ -354,7 +360,8 @@ public struct VillageCatalogProjection: Sendable {
         let states = village.accountSnapshot.map { snapshot in
             aggregate(records(
                 from: snapshot, catalog: catalog, base: base, now: now,
-                unlocks: unlocks, catalogIsUsable: catalogIsUsable
+                unlocks: unlocks, catalogIsUsable: catalogIsUsable,
+                seasonalPhases: seasonalPhases
             ))
         } ?? []
 
@@ -378,7 +385,8 @@ public struct VillageCatalogProjection: Sendable {
         base: TrackerBase,
         now: Date,
         unlocks: PlayerUnlockLevels,
-        catalogIsUsable: Bool
+        catalogIsUsable: Bool,
+        seasonalPhases: SeasonalPhaseTable
     ) -> [VillageItemState] {
         // Issue #37：第一遍扫描构建「根父 id → dataID」映射。快照 id 是数组索引路径
         //（如 buildings:6.types.0），嵌套项归属精制台必须回查根父的 dataID。
@@ -389,7 +397,7 @@ public struct VillageCatalogProjection: Sendable {
         return snapshot.allObjectItems.compactMap { item in
             map(item, in: snapshot, catalog: catalog, base: base, now: now,
                 rootParentDataIDs: rootParentDataIDs, unlocks: unlocks,
-                catalogIsUsable: catalogIsUsable)
+                catalogIsUsable: catalogIsUsable, seasonalPhases: seasonalPhases)
         }
     }
 
@@ -405,10 +413,34 @@ public struct VillageCatalogProjection: Sendable {
         now: Date,
         rootParentDataIDs: [String: Int64],
         unlocks: PlayerUnlockLevels,
-        catalogIsUsable: Bool
+        catalogIsUsable: Bool,
+        seasonalPhases: SeasonalPhaseTable
     ) -> VillageItemState? {
         let isBuilderSection = item.section.hasSuffix("2")
         guard isBuilderSection == (base == .builder) else { return nil }
+
+        // Issue #74 seasonal：可用性由阶段表驱动（不推断、不编造；必须在
+        // category guard 之前计算——unavailable 分支也携带 availability）。
+        // itemKey = "section:dataID"（嵌套项同规则；空表恒 unconfigured）。
+        let availability: CatalogAvailability
+        let itemKey = "\(item.section):\(item.dataID)"
+        // 阶段表命中的条目：统一解析入口 `phase(forItemKey:at:)` 选择最相关
+        // 阶段（活动最新 from / 未来最近 min from / 已结束最近 max until /
+        // 畸形过滤），再按 now 与阶段区间关系判定三态——不编造当前可用。
+        if let phase = seasonalPhases.phase(forItemKey: itemKey, at: now) {
+            let status: SeasonalStatus
+            if now < phase.from {
+                status = .notStarted
+            } else if now < phase.until {
+                status = .active
+            } else {
+                status = .ended
+            }
+            availability = .seasonal(
+                phaseID: phase.phaseID, phaseName: phase.name, status: status)
+        } else {
+            availability = .unconfigured
+        }
 
         let remainingSeconds = liveRemainingSeconds(
             for: item,
@@ -450,6 +482,7 @@ public struct VillageCatalogProjection: Sendable {
                 status: .unavailable,
                 missingReason: "该类别不参与升级追踪（\(item.section)）。",
                 catalogItemMissingReason: nil,
+                availability: availability,
                 icon: nil,
                 levelVisual: nil,
                 currentLevelIcon: nil,
@@ -715,6 +748,7 @@ public struct VillageCatalogProjection: Sendable {
             status: status,
             missingReason: missingReason,
             catalogItemMissingReason: baseMatches ? catalogItem?.missingReason : nil,
+            availability: availability,
             icon: baseMatches ? catalogItem?.icon : nil,
             levelVisual: baseMatches ? catalogItem?.levelVisual : nil,
             currentLevelIcon: currentLevelAssets.icon,
@@ -846,6 +880,7 @@ public struct VillageCatalogProjection: Sendable {
                 status: first.status,
                 missingReason: first.missingReason,
                 catalogItemMissingReason: first.catalogItemMissingReason,
+                availability: first.availability,
                 icon: first.icon,
                 levelVisual: first.levelVisual,
                 currentLevelIcon: first.currentLevelIcon,

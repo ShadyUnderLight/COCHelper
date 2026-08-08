@@ -1194,6 +1194,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             status: .complete,
             missingReason: nil,
             catalogItemMissingReason: nil,
+            availability: .unconfigured,
             icon: icon,
             levelVisual: levelVisual,
             currentLevelIcon: currentLevelIcon,
@@ -3232,6 +3233,152 @@ final class VillageCatalogProjectionTests: XCTestCase {
             XCTAssertEqual(
                 aggregated.isCatalogDeprecated, useDeprecated,
                 "迭代 \(iteration): 聚合后 deprecated 标记必须保留（n=\(n)）")
+        }
+    }
+
+
+    // MARK: - Issue #74 seasonal: availability 投影
+
+    private func makeAvailabilityPhases() -> SeasonalPhaseTable {
+        SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "crafted-defenses-1", name: "精制防御第一季",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["buildings:103000000"]),
+        ])
+    }
+
+    private func projectWithAvailability(
+        _ village: VillageProfile,
+        table: SeasonalPhaseTable,
+        now: Date
+    ) -> VillageCatalogProjection {
+        VillageCatalogProjection.project(
+            village: village, catalog: syntheticCatalog,
+            seasonalPhases: table, base: .home, now: now)
+    }
+
+    func testAvailabilityUnconfiguredByDefault() throws {
+        // 空表（默认）：全部条目 unconfigured——不推断、不编造。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let home = project(village: village, catalog: syntheticCatalog, base: .home)
+        let item = try XCTUnwrap(home.items.first)
+        XCTAssertEqual(item.availability, .unconfigured)
+    }
+
+    func testAvailabilitySeasonalActiveWithInjectedNow() throws {
+        // 阶段表命中 + now 在活动期 → seasonal(status: .active)。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+        ])
+        let home = projectWithAvailability(
+            village, table: makeAvailabilityPhases(),
+            now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+        XCTAssertEqual(
+            item.availability,
+            .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .active))
+    }
+
+    func testAvailabilitySeasonalEndedWithInjectedNow() throws {
+        // now 在结束期后 → seasonal(status: .ended)——历史存在、当前不可用。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+        ])
+        let home = projectWithAvailability(
+            village, table: makeAvailabilityPhases(),
+            now: Date(timeIntervalSince1970: 3_000))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+        XCTAssertEqual(
+            item.availability,
+            .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .ended))
+    }
+
+    func testAvailabilityDeterministicWithInjectedNow() throws {
+        // 同一输入不同 now → 结果确定（无 Date() 隐式依赖）。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+        ])
+        let active = projectWithAvailability(
+            village, table: makeAvailabilityPhases(), now: Date(timeIntervalSince1970: 1_500))
+        let ended = projectWithAvailability(
+            village, table: makeAvailabilityPhases(), now: Date(timeIntervalSince1970: 3_000))
+        XCTAssertEqual(active.items.first { $0.dataID == 103_000_000 }?.availability,
+                       .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .active))
+        XCTAssertEqual(ended.items.first { $0.dataID == 103_000_000 }?.availability,
+                       .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .ended))
+    }
+
+    func testAvailabilityMalformedPhaseIsUnconfigured() throws {
+        // P2-1 对抗测试：from >= until 的畸形阶段不得进入投影（→ unconfigured）。
+        let bad = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "bad", name: nil,
+                from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 1_000),
+                itemKeys: ["buildings:103000000"]),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+        ])
+        let home = projectWithAvailability(
+            village, table: bad, now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+        XCTAssertEqual(item.availability, .unconfigured,
+                       "畸形阶段必须被过滤，不得标 notStarted/ended")
+    }
+
+    func testAvailabilityStatusBoundariesDeterministic() throws {
+        // 状态级边界锚定（确定性，不依赖随机命中）：阶段 1000..<2000，
+        // now = 999/1000/1999/2000 四点 → notStarted/active/active/ended。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+        ])
+        let cases: [(Double, SeasonalStatus)] = [
+            (999, .notStarted), (1_000, .active), (1_999, .active), (2_000, .ended),
+        ]
+        for (seconds, expected) in cases {
+            let home = projectWithAvailability(
+                village, table: makeAvailabilityPhases(),
+                now: Date(timeIntervalSince1970: seconds))
+            let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+            XCTAssertEqual(
+                item.availability,
+                .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: expected),
+                "now=\(seconds) 状态必须确定")
+        }
+    }
+
+    func testPropertyAvailabilityPreservedThroughAggregation() throws {
+        // 聚合不变量：availability 同组透传一致（同 dataID → 同阶段判定）。
+        var rng = SeededRNG(seed: 7)
+        for iteration in 0..<50 {
+            let n = Int.random(in: 1...4, using: &rng)
+            let now = Date(timeIntervalSince1970: Double(Int.random(in: 500...3_500, using: &rng)))
+            var items: [AccountItem] = []
+            for j in 0..<n {
+                items.append(makeItem(
+                    section: "buildings", dataID: 103_000_000, level: 1, path: String(j)))
+            }
+            let village = makeVillage(objectSections: ["buildings": items])
+            let home = projectWithAvailability(village, table: makeAvailabilityPhases(), now: now)
+            let aggregated = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+            // 三态期望：<1000 未开始、<2000 活动、>=2000 已结束（阶段 1000..<2000）。
+            let expectedStatus: SeasonalStatus
+            if now < Date(timeIntervalSince1970: 1_000) {
+                expectedStatus = .notStarted
+            } else if now < Date(timeIntervalSince1970: 2_000) {
+                expectedStatus = .active
+            } else {
+                expectedStatus = .ended
+            }
+            if case .seasonal(_, _, let status) = aggregated.availability {
+                XCTAssertEqual(status, expectedStatus,
+                               "迭代 \(iteration): 聚合后状态必须与注入 now 一致（n=\(n)）")
+            } else {
+                XCTFail("迭代 \(iteration): 阶段命中条目聚合后必须是 seasonal")
+            }
         }
     }
 

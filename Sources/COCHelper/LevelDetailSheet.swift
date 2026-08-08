@@ -159,6 +159,14 @@ struct LevelDetailSheet: View {
                         }
                     }
 
+                    // Issue #74 seasonal：可用性标记（permanent 不显示避免噪音；
+                    // unconfigured = 阶段信息未配置；seasonal 显示活动/已结束）。
+                    if let availabilityLabel = item.availability.displayLabel {
+                        Text(availabilityLabel)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
                     if let missingNote {
                         Label(missingNote, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)

@@ -574,6 +574,193 @@ final class GameCatalogTests: XCTestCase {
         let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, sha256: nil)
         XCTAssertTrue(manifest.validate(against: [item], catalogData: Data()))
     }
+
+
+    // MARK: - Issue #74 seasonal: 阶段表契约 + 可用性状态
+
+    func testSeasonalPhaseTableEmptyDefault() {
+        // 空表（默认）：任何条目都无阶段信息 → unconfigured 域。
+        XCTAssertTrue(SeasonalPhaseTable.empty.phases.isEmpty)
+        XCTAssertNil(SeasonalPhaseTable.empty.phase(
+            forItemKey: "buildings:103000000", at: Date(timeIntervalSince1970: 1_000)))
+    }
+
+    func testSeasonalPhaseTableActiveHitAndMiss() {
+        let phase = SeasonalPhase(
+            phaseID: "crafted-defenses-1", name: "精制防御第一季",
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+            itemKeys: ["buildings:103000000", "buildings:103000001"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [phase])
+        let now = Date(timeIntervalSince1970: 1_500)
+        XCTAssertEqual(table.phase(forItemKey: "buildings:103000000", at: now)?.phaseID, "crafted-defenses-1")
+        XCTAssertNil(table.phase(forItemKey: "buildings:999999999", at: now), "未配置条目 → nil")
+    }
+
+    func testSeasonalPhaseTableBoundaries() {
+        // from 含、until 不含：999 未开始、1000 开始、1999 活动、2000 结束。
+        let phase = SeasonalPhase(
+            phaseID: "p", name: nil,
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+            itemKeys: ["a:1"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [phase])
+        // phase() 对唯一有效阶段在四点均返回（活动/未开始/已结束均展示）；
+        // 活动边界 from<=now<until 的三态判定由投影层测试锚定（property 50 轮）。
+        for seconds in [999.0, 1_000.0, 1_999.0, 2_000.0] {
+            XCTAssertEqual(
+                table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: seconds))?.phaseID,
+                "p",
+                "now=\(seconds): 唯一有效阶段必须被解析")
+        }
+    }
+
+    func testSeasonalPhaseTableMultipleHitsTakesLatestFrom() {
+        // 同一条目多阶段（异常数据）：取 from 最晚者（确定性）。
+        let p1 = SeasonalPhase(
+            phaseID: "p1", name: nil,
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 3_000),
+            itemKeys: ["a:1"])
+        let p2 = SeasonalPhase(
+            phaseID: "p2", name: nil,
+            from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 3_000),
+            itemKeys: ["a:1"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [p1, p2])
+        XCTAssertEqual(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500))?.phaseID, "p2")
+    }
+
+    func testSeasonalPhaseTableLoadBundledMissingReturnsEmpty() {
+        // bundle 无 seasonal_phases.json（当前状态）→ 空表，不报错。
+        let table = SeasonalPhaseTable.loadBundled(version: GameCatalog.defaultBundledVersion)
+        XCTAssertTrue(table.phases.isEmpty, "缺失 = 未配置（空表）")
+    }
+
+    func testAvailabilityDisplayLabel() {
+        XCTAssertNil(CatalogAvailability.permanent.displayLabel)
+        XCTAssertEqual(
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: "精制防御第一季", status: .active).displayLabel,
+            "限时内容：精制防御第一季（活动）")
+        XCTAssertEqual(
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: nil, status: .notStarted).displayLabel,
+            "限时内容：p（未开始）")
+        XCTAssertEqual(
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: nil, status: .ended).displayLabel,
+            "限时内容：p（已结束，仅历史数据）")
+        XCTAssertEqual(CatalogAvailability.unconfigured.displayLabel, "阶段信息未配置")
+    }
+
+    func testSeasonalPhaseTablePhaseResolvesNearestFuture() {
+        // 多未来阶段：取最近即将开始（最小 from），而非最远。
+        let phases = [
+            SeasonalPhase(phaseID: "p1", name: nil,
+                          from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000), itemKeys: ["a:1"]),
+            SeasonalPhase(phaseID: "p2", name: nil,
+                          from: Date(timeIntervalSince1970: 3_000), until: Date(timeIntervalSince1970: 4_000), itemKeys: ["a:1"]),
+            SeasonalPhase(phaseID: "p3", name: nil,
+                          from: Date(timeIntervalSince1970: 5_000), until: Date(timeIntervalSince1970: 6_000), itemKeys: ["a:1"]),
+        ]
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: phases)
+        XCTAssertEqual(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500))?.phaseID, "p2")
+    }
+
+    func testSeasonalPhaseTablePhaseResolvesRecentEnded() {
+        // 全部已结束：取最近结束（最大 until）。
+        let phases = [
+            SeasonalPhase(phaseID: "p1", name: nil,
+                          from: Date(timeIntervalSince1970: 0), until: Date(timeIntervalSince1970: 1_000), itemKeys: ["a:1"]),
+            SeasonalPhase(phaseID: "p2", name: nil,
+                          from: Date(timeIntervalSince1970: 500), until: Date(timeIntervalSince1970: 2_000), itemKeys: ["a:1"]),
+        ]
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: phases)
+        XCTAssertEqual(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500))?.phaseID, "p2")
+    }
+
+    func testSeasonalPhaseTablePhaseFiltersMalformed() {
+        // from >= until 的畸形阶段：统一解析入口过滤 → nil（unconfigured 域）。
+        let bad = SeasonalPhase(
+            phaseID: "bad", name: nil,
+            from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 1_000),
+            itemKeys: ["a:1"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [bad])
+        XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 1_500)))
+        XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500)))
+    }
+
+    func testPropertyPhaseResolutionSemantics() throws {
+        // property：随机阶段集（含畸形）+ 随机 now → phase() 语义不变量：
+        // ① 返回阶段必有效（from < until）；② 有活动取 from 最大；
+        // ③ 无活动有未来取 from 最小；④ 无活动无未来取 until 最大；
+        // ⑤ 全畸形/未命中 → nil。
+        var rng = SeededRNG(seed: 99)
+        for iteration in 0..<100 {
+            let n = Int.random(in: 0...5, using: &rng)
+            var phases: [SeasonalPhase] = []
+            for j in 0..<n {
+                let from = Double(Int.random(in: 0...9_000, using: &rng))
+                let until = from + Double(Int.random(in: -2_000...4_000, using: &rng))
+                phases.append(SeasonalPhase(
+                    phaseID: "p\(j)", name: nil,
+                    from: Date(timeIntervalSince1970: from),
+                    until: Date(timeIntervalSince1970: until),
+                    itemKeys: ["a:1"]))  // 含 from>=until 畸形
+            }
+            let table = SeasonalPhaseTable(schemaVersion: 1, phases: phases)
+            let now = Date(timeIntervalSince1970: Double(Int.random(in: 0...9_000, using: &rng)))
+            let resolved = table.phase(forItemKey: "a:1", at: now)
+
+            let valid = phases.filter { $0.from < $0.until }
+            let active = valid.filter { $0.from <= now && now < $0.until }
+            let future = valid.filter { $0.from > now }
+
+            if valid.isEmpty {
+                XCTAssertNil(resolved, "迭代 \(iteration): 无有效阶段 → nil")
+                continue
+            }
+            let p = try XCTUnwrap(resolved, "迭代 \(iteration): 有有效阶段必须解析")
+            XCTAssertLessThan(p.from, p.until, "迭代 \(iteration): 返回阶段必须有效")
+            if let latestActive = active.max(by: { $0.from < $1.from }) {
+                XCTAssertEqual(p.phaseID, latestActive.phaseID,
+                               "迭代 \(iteration): 有活动必须取 from 最大（活动 \(active.count) 个）")
+            } else if let nearestFuture = future.min(by: { $0.from < $1.from }) {
+                XCTAssertEqual(p.phaseID, nearestFuture.phaseID,
+                               "迭代 \(iteration): 无活动有未来必须取 from 最小")
+            } else {
+                XCTAssertEqual(p.phaseID, valid.max(by: { $0.until < $1.until })?.phaseID,
+                               "迭代 \(iteration): 全已结束必须取 until 最大")
+            }
+        }
+    }
+
+    func testSeasonalPhaseTableRoundTripDecode() throws {
+        // 日期编码契约：JSONDecoder 默认 .deferredToDate（2001-01-01 起秒数）。
+        // 编码→解码 round-trip 锚定该契约，防未来改 ISO8601 时 decoder 未同步。
+        let phase = SeasonalPhase(
+            phaseID: "p", name: "阶段",
+            from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+            itemKeys: ["a:1"])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [phase])
+        let data = try JSONEncoder().encode(table)
+        let decoded = try JSONDecoder().decode(SeasonalPhaseTable.self, from: data)
+        XCTAssertEqual(decoded.phases.count, 1)
+        XCTAssertEqual(decoded.phases[0].phaseID, "p")
+        XCTAssertEqual(decoded.phases[0].from, Date(timeIntervalSince1970: 1_000))
+        XCTAssertEqual(decoded.phases[0].until, Date(timeIntervalSince1970: 2_000))
+    }
+
+    func testSeasonalPhaseTableMalformedDataNeverHits() {
+        // from > until（异常数据）与空 itemKeys：永不命中 → unconfigured 域。
+        let bad = SeasonalPhase(
+            phaseID: "bad", name: nil,
+            from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 1_000),
+            itemKeys: ["a:1"])
+        let emptyKeys = SeasonalPhase(
+            phaseID: "ek", name: nil,
+            from: Date(timeIntervalSince1970: 0), until: Date(timeIntervalSince1970: 9_999),
+            itemKeys: [])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [bad, emptyKeys])
+        XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 1_500)))
+        XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500)))
+    }
+
+
 }
 
 // MARK: - UpgradeRequirement（Issue #67）

@@ -718,44 +718,17 @@ private struct TrackerMetricsView: View {
         return AccountDurationFormatter.label(remainingSeconds, zeroLabel: "已完成")
     }
 
-    /// 全部已导入村庄 × 全部基地的观测覆盖率聚合（Σknown/Σobserved）。
+    /// 全部已导入村庄 × 全部基地的观测数据完整性聚合。
     /// 消费与详情页同一个 `VillageProgressProjection` 投影（实现要求 6）；
-    /// 这里是独立投影（区别于 overviewRecords 的记录投影）——为正确覆盖
-    /// 「无升级活动但已导入」的村庄，60s tick 下对典型快照数据量小（< 几 ms）
-    /// 双倍投影可接受；村庄数大增时再缓存 per village×base 结果。
-    /// 聚合饱和（任一 coverage 溢出或累加溢出）→ 整体 nil，不展示假精度。
+    /// 逻辑下沉 Core（fail-closed：任一 coverage 饱和或累加溢出 → nil，
+    /// 不展示假精度），此处只做展示格式化。
     private var aggregateCoverage: String? {
-        var known = 0
-        var observed = 0
-        var overflowed = false
-        for village in villages where village.hasImportedData {
-            for base in TrackerBase.allCases {
-                let projection = VillageCatalogProjection.project(
-                    village: village,
-                    catalog: catalog,
-                    seasonalPhases: seasonalPhases,
-                    base: base,
-                    now: now
-                )
-                let metrics = VillageProgressProjection.metrics(
-                    from: projection.items.filter { $0.status != .unavailable },
-                    catalogIsUsable: projection.catalogIsUsable,
-                    compatibility: projection.compatibility
-                )
-                let coverage = metrics.snapshotCoverage
-                guard !coverage.saturated else { continue }
-                let (k, kOver) = known.addingReportingOverflow(coverage.numerator)
-                let (o, oOver) = observed.addingReportingOverflow(coverage.denominator)
-                if kOver || oOver {
-                    overflowed = true
-                    break
-                }
-                known = k
-                observed = o
-            }
-            if overflowed { break }
-        }
-        guard !overflowed, observed > 0 else { return nil }
+        guard let (known, observed) = VillageProgressProjection.aggregateCoverage(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            now: now
+        ) else { return nil }
         return String(Int((Double(known) / Double(observed) * 100).rounded())) + "%"
     }
 
@@ -791,7 +764,7 @@ private struct TrackerMetricsView: View {
             )
             if let coverage = aggregateCoverage {
                 TrackerMetricCard(
-                    title: "观测覆盖率",
+                    title: "观测数据完整性",
                     value: coverage,
                     detail: "已观测项目 · 全部村庄",
                     systemImage: "checkmark.seal.fill",

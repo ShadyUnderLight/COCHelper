@@ -479,4 +479,135 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertEqual(m.globalProgress.state, .partial)
         XCTAssertNotNil(m.globalProgress.degradedReason)
     }
+
+    // MARK: - aggregateCoverage（升级总览消费同一投影，复审修复）
+
+    /// 村庄 fixture（参考 UpgradeOverviewProjectionTests.makeVillage 惯例）。
+    private func makeVillage(
+        name: String = "测试村庄",
+        tag: String? = "#TEST",
+        objectSections: [String: [AccountItem]] = [:]
+    ) -> VillageProfile {
+        VillageProfile(
+            name: name,
+            accountSnapshot: AccountSnapshot(
+                tag: tag,
+                capturedAt: nil,
+                importedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                ageSeconds: nil,
+                originalText: "",
+                objectSections: objectSections,
+                numericSections: [:],
+                boosts: [:],
+                unknownTopLevelKeys: [],
+                diagnostics: []
+            )
+        )
+    }
+
+    private func makeItem(
+        section: String,
+        dataID: Int64,
+        level: Int? = nil,
+        count: Int? = nil,
+        path: String = "0"
+    ) -> AccountItem {
+        AccountItem(
+            id: section + ":" + path,
+            section: section,
+            dataID: dataID,
+            level: level,
+            count: count,
+            timerSeconds: nil,
+            remainingSeconds: nil,
+            types: [],
+            modules: []
+        )
+    }
+
+    /// 最小合成目录：加农炮（buildings，无 requirement）+ 野蛮人（units）。
+    private func makeCatalog() throws -> GameCatalog {
+        let json = """
+        {
+          "gameVersion": "18.400.13",
+          "items": [
+            {"section":"buildings","category":"buildings","dataID":1000001,"base":"home","name":"加农炮","maxLevel":2,
+             "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+             "levels":[
+               {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+               {"level":2,"durationSeconds":300,"upgradeResource":"Elixir","upgradeCost":2000,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+             ]},
+            {"section":"units","category":"troops","dataID":4000000,"base":"home","name":"野蛮人","maxLevel":3,
+             "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+             "levels":[
+               {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"min_level_initial_no_upgrade"},
+               {"level":2,"durationSeconds":1800,"upgradeResource":"Elixir","upgradeCost":250,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null},
+               {"level":3,"durationSeconds":3600,"upgradeResource":"Elixir","upgradeCost":500,"requiredTownHallLevel":null,"requiredLaboratoryLevel":1,"icon":null,"levelVisual":null,"missingReason":null}
+             ]}
+          ]
+        }
+        """
+        struct Payload: Decodable {
+            let gameVersion: String
+            let items: [CatalogItem]
+        }
+        let payload = try JSONDecoder().decode(Payload.self, from: Data(json.utf8))
+        return GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+    }
+
+    func testAggregateCoverageAcrossVillagesAndBases() throws {
+        let catalog = try makeCatalog()
+        // 村庄 A（home）：加农炮 level 1 → known，coverage 1/1
+        let villageA = makeVillage(name: "A村", objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1)],
+        ])
+        // 村庄 B（home）：加农炮 level 1（known）+ 目录未收录项（unknown）→ coverage 1/2
+        let villageB = makeVillage(name: "B村", objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0"),
+                makeItem(section: "buildings", dataID: 999_999_999, level: 3, path: "1"),
+            ],
+        ])
+        let result = try XCTUnwrap(
+            VillageProgressProjection.aggregateCoverage(
+                from: [villageA, villageB], catalog: catalog, seasonalPhases: .empty
+            )
+        )
+        XCTAssertEqual(result.known, 2)
+        XCTAssertEqual(result.observed, 3)
+    }
+
+    func testAggregateCoverageEmptyOrNoSnapshotReturnsNil() throws {
+        let catalog = try makeCatalog()
+        XCTAssertNil(VillageProgressProjection.aggregateCoverage(
+            from: [], catalog: catalog, seasonalPhases: .empty
+        ))
+        // 无快照村庄（hasImportedData false）→ 无可观测实例 → nil
+        let bareVillage = makeVillage(name: "空村")
+        let bare = VillageProfile(
+            name: "空村",
+            accountSnapshot: nil
+        )
+        XCTAssertNil(VillageProgressProjection.aggregateCoverage(
+            from: [bare], catalog: catalog, seasonalPhases: .empty
+        ))
+        XCTAssertNil(VillageProgressProjection.aggregateCoverage(
+            from: [bareVillage], catalog: catalog, seasonalPhases: .empty
+        ))
+    }
+
+    func testAggregateCoverageSaturatedFailsClosed() throws {
+        // 同键两条 count=Int.max 记录：聚合层饱和（countOverflowed 传播）→
+        // coverage saturated → 聚合整体 nil（fail-closed，不静默跳过饱和项）
+        let catalog = try makeCatalog()
+        let saturatedVillage = makeVillage(name: "饱和村", objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "1"),
+            ],
+        ])
+        XCTAssertNil(VillageProgressProjection.aggregateCoverage(
+            from: [saturatedVillage], catalog: catalog, seasonalPhases: .empty
+        ))
+    }
 }

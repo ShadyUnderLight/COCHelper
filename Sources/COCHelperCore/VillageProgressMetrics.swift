@@ -200,6 +200,46 @@ public enum VillageProgressProjection {
         )
     }
 
+    /// 升级总览「观测数据完整性」卡的聚合：全部已导入村庄 × 全部基地的
+    /// snapshotCoverage 实例权重汇总（Σknown/Σobserved）。任一村庄基地的
+    /// coverage 饱和或累加溢出 → 返回 nil（fail-closed：整体不展示假精度，
+    /// 不得静默跳过饱和项让分母变小——外部评审 P1-2 复审）。
+    /// 无已导入村庄或观测总数为 0 → nil（UI 不渲染该卡）。
+    public static func aggregateCoverage(
+        from villages: [VillageProfile],
+        catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable,
+        now: Date = Date()
+    ) -> (known: Int, observed: Int)? {
+        var known = 0
+        var observed = 0
+        for village in villages where village.hasImportedData {
+            for base in TrackerBase.allCases {
+                let projection = VillageCatalogProjection.project(
+                    village: village,
+                    catalog: catalog,
+                    seasonalPhases: seasonalPhases,
+                    base: base,
+                    now: now
+                )
+                let metrics = VillageProgressProjection.metrics(
+                    from: projection.items.filter { $0.status != .unavailable },
+                    catalogIsUsable: projection.catalogIsUsable,
+                    compatibility: projection.compatibility
+                )
+                let coverage = metrics.snapshotCoverage
+                if coverage.saturated { return nil } // fail-closed
+                let (k, kOver) = known.addingReportingOverflow(coverage.numerator)
+                let (o, oOver) = observed.addingReportingOverflow(coverage.denominator)
+                if kOver || oOver { return nil } // 累加溢出 fail-closed
+                known = k
+                observed = o
+            }
+        }
+        guard observed > 0 else { return nil }
+        return (known, observed)
+    }
+
     // MARK: - Helpers
 
     private static func unavailableMetrics() -> VillageProgressMetrics {

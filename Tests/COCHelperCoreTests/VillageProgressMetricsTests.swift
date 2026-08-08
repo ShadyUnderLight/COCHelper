@@ -708,4 +708,29 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertEqual(m.currentStageProgress.denominator, 6)
         XCTAssertEqual(m.globalProgress.denominator, 50)
     }
+
+    /// 评审 A 守卫（VillageProgressMetrics 缺失侧注释语义）：available 差集项的
+    /// stageMax == 0（cap 异常）由 eligible 过滤剔除后**不**计入
+    /// stageMissingWeightInfo——差集项由 availableWeight 独立差集文案承担，
+    /// 混入缺失侧会与「缺少阶段上限」文案重复降级（计数虚增）。
+    /// 判别结构：known 正常项（撑出分母，使差集文案可达）+ known 缺失项
+    ///（count 2，合法计入缺失侧）+ available 差集项（stageMax 0、count 7，
+    /// 不得计入缺失侧——若混入，缺失计数会从 2 虚增为 9）。
+    func testAvailableStageCapAbnormalExcludedFromMissingSide() throws {
+        let items = [
+            item(id: "k", level: 3, maxLevel: 10, stageMax: 6),
+            item(id: "kBad", level: 1, maxLevel: 10, stageMax: 0, count: 2),
+            availableItem(id: "a", maxLevel: 10, stageMax: 0, count: 7),
+        ]
+        let m = metrics(items)
+        let stage = m.currentStageProgress
+        XCTAssertEqual(stage.denominator, 6, "cap 异常项（known 缺失 + 差集）均不进 stage 分母")
+        XCTAssertEqual(stage.state, .partial, "差集权重 > 0 → 保守 partial")
+        let reason = try XCTUnwrap(stage.degradedReason)
+        XCTAssertTrue(reason.contains("宇宙差集"),
+                      "差集项应有独立差集文案: \(reason)")
+        XCTAssertTrue(reason.contains("2 项缺少阶段上限"),
+                      "缺失侧只统计 known 缺失项（2 实例），差集混入会虚增为 9 项: \(reason)")
+        XCTAssertFalse(reason.contains("9 项"), reason)
+    }
 }

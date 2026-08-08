@@ -40,11 +40,25 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
     /// level 允许 overhang（1...maxLevel+5，即 level 可超出 stageMax/maxLevel cap）：
     /// 专门探索实现里的 `min(level, cap)` 钳制路径（鉴别力来源）——无钳制实现会在
     /// level > cap 时产出 > 1 的 ratio 而被本测试捕获。
-    private func randomItem(_ g: inout SeededGenerator, levelLimitedToStage: Bool = false) -> VillageItemState {
+    /// `allowsNeedsReimport == false` 时已知侧 upgrading 项固定为进行中形态
+    ///（性质 3「ready ⟺ 覆盖率 100%」用：该性质依赖 unknown/available 与
+    /// unknownWeight 的一一对应，needsReimport 项会破坏判别，见性质 3 注释）。
+    private func randomItem(
+        _ g: inout SeededGenerator,
+        levelLimitedToStage: Bool = false,
+        allowsNeedsReimport: Bool = true
+    ) -> VillageItemState {
         let isKnownSide = g.bool()
         let status = isKnownSide
             ? Self.knownStatuses[g.int(in: 0...(Self.knownStatuses.count - 1))]
             : Self.unknownStatuses[g.int(in: 0...(Self.unknownStatuses.count - 1))]
+        // 评审 B：小概率（~15%）把 known 侧 upgrading 项改为 needsReimport 形态
+        //（timer 存在 + remaining 0，计时结束待重新导入）。该形态 isKnown 为
+        // true（status/maxLevel/level 均满足）但实现按 !needsReimport 过滤归
+        // unknown 侧（VillageProgressMetrics known 过滤）——生成器必须覆盖，
+        // 否则该过滤在 property 套件无守卫。
+        let isNeedsReimport = allowsNeedsReimport && isKnownSide && status == .upgrading
+            && g.double(in: 0...1) < 0.15
         let maxLevel = g.int(in: 1...20)
         let stageMax = g.int(in: 1...maxLevel)
         let level: Int?
@@ -65,7 +79,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             currentLevel: level,
             count: count,
             timerSeconds: status == .upgrading ? 3600 : nil,
-            remainingSeconds: status == .upgrading ? 1800 : nil,
+            remainingSeconds: status == .upgrading ? (isNeedsReimport ? 0 : 1800) : nil,
             nextLevel: status == .upgrading ? level.map { $0 + 1 } : nil,
             nextLevelDurationSeconds: status == .upgrading ? 3600 : nil,
             nextLevelDurationState: status == .upgrading ? .timed(seconds: 3600) : nil,
@@ -165,10 +179,12 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
             let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
             // 覆盖指标守恒（无饱和时）：已知 + 未知 == 观测总数。
+            // unknown 口径与实现一致：!isKnown **或** needsReimport（needsReimport
+            // 项 isKnown 为 true 但实现归 unknown 侧，VillageProgressMetrics 过滤）。
             if !m.snapshotCoverage.saturated {
                 let total = items.reduce(0) { $0 + ($1.instanceWeight) }
                 let unknownWeight = VillageDetailProjection.instanceCountAndOverflow(
-                    of: items.filter { !VillageDetailProjection.isKnown($0) }
+                    of: items.filter { !VillageDetailProjection.isKnown($0) || $0.needsReimport }
                 ).count
                 assertOrFail(m.snapshotCoverage.denominator == total,
                              "coverage denominator \(m.snapshotCoverage.denominator) != total \(total)",
@@ -311,8 +327,13 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             let coverage = m.snapshotCoverage
             guard !coverage.saturated else { return }
             let total = items.reduce(0) { $0 + $1.instanceWeight }
+            // 口径与实现一致：!isKnown || needsReimport（needsReimport 项 isKnown
+            // 为 true 但实现归 unknown 侧）——差集项（.available）单独计入。
             let unknownWeight = VillageDetailProjection.instanceCountAndOverflow(
-                of: items.filter { $0.status != .available && !VillageDetailProjection.isKnown($0) }
+                of: items.filter {
+                    $0.status != .available
+                        && (!VillageDetailProjection.isKnown($0) || $0.needsReimport)
+                }
             ).count
             let diffWeight = availableWeight(of: items)
             assertOrFail(coverage.denominator == total,
@@ -329,11 +350,16 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
 
     /// 性质 3（验收 2/决策 5）：completeDenominator=true 时 stage/global 只有
     /// 覆盖率 100%（无 unknown、无宇宙差集）才可达 ready；任一未观测/差集存在
-    /// → 覆盖率 < 100% 且 stage/global 保守 partial（快照可能不全，不得伪装
-    /// 全村庄进度）。反向：覆盖率 100% 时必然无 unknown 无 available。
+    /// → 覆盖率 < 100% 且 stage/global 不伪装 ready（partial 或 unknown）。
+    /// 反向：覆盖率 100% 时必然无 unknown 无 available。
+    /// 生成器固定不产 needsReimport（allowsNeedsReimport: false）：needsReimport
+    /// 项 isKnown 为 true 但实现归 unknown 侧（unknownWeight > 0 → partial）——
+    /// 若混入，测试的「无 unknown 无 available」判别会与实现口径错位（无 unknown
+    /// 无 available 却 partial），性质 3 的 ready ⟺ 100% 判别失效。needsReimport
+    /// 的降级语义由性质 2 守恒断言与单元测试 testNeedsReimportExcludedFromKnownAndDegrades 覆盖。
     func testReadyOnlyWhenCoverageComplete() {
         run { iteration, g in
-            let observed = (0..<g.int(in: 0...15)).map { _ in randomItem(&g) }
+            let observed = (0..<g.int(in: 0...15)).map { _ in randomItem(&g, allowsNeedsReimport: false) }
             let diff = randomUniverseDiff(&g, keyCount: g.int(in: 0...8))
             let items = observed + diff
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items)) diff=\(diff.count)"

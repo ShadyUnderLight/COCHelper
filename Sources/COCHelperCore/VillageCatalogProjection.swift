@@ -424,17 +424,20 @@ public struct VillageCatalogProjection: Sendable {
         // itemKey = "section:dataID"（嵌套项同规则；空表恒 unconfigured）。
         let availability: CatalogAvailability
         let itemKey = "\(item.section):\(item.dataID)"
-        if let phase = seasonalPhases.activePhase(forItemKey: itemKey, at: now) {
-            availability = .seasonal(
-                phaseID: phase.phaseID, phaseName: phase.name,
-                isActive: true)  // activePhase 已保证活动期
-        } else if let phase = seasonalPhases.phases
+        // 阶段表命中的条目：三态判定（活动/未开始/已结束），不编造当前可用。
+        if let phase = seasonalPhases.phases
             .filter({ $0.itemKeys.contains(itemKey) })
             .max(by: { $0.from < $1.from }) {
-            // 阶段表有该条目但当前不活动（未开始/已结束）→ 历史存在、当前不可用。
+            let status: SeasonalStatus
+            if now < phase.from {
+                status = .notStarted
+            } else if now < phase.until {
+                status = .active
+            } else {
+                status = .ended
+            }
             availability = .seasonal(
-                phaseID: phase.phaseID, phaseName: phase.name,
-                isActive: false)
+                phaseID: phase.phaseID, phaseName: phase.name, status: status)
         } else {
             availability = .unconfigured
         }

@@ -3279,7 +3279,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
         XCTAssertEqual(
             item.availability,
-            .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", isActive: true))
+            .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .active))
     }
 
     func testAvailabilitySeasonalEndedWithInjectedNow() throws {
@@ -3293,7 +3293,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
         XCTAssertEqual(
             item.availability,
-            .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", isActive: false))
+            .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .ended))
     }
 
     func testAvailabilityDeterministicWithInjectedNow() throws {
@@ -3306,9 +3306,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
         let ended = projectWithAvailability(
             village, table: makeAvailabilityPhases(), now: Date(timeIntervalSince1970: 3_000))
         XCTAssertEqual(active.items.first { $0.dataID == 103_000_000 }?.availability,
-                       .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", isActive: true))
+                       .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .active))
         XCTAssertEqual(ended.items.first { $0.dataID == 103_000_000 }?.availability,
-                       .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", isActive: false))
+                       .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .ended))
     }
 
     func testPropertyAvailabilityPreservedThroughAggregation() throws {
@@ -3325,10 +3325,18 @@ final class VillageCatalogProjectionTests: XCTestCase {
             let village = makeVillage(objectSections: ["buildings": items])
             let home = projectWithAvailability(village, table: makeAvailabilityPhases(), now: now)
             let aggregated = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
-            let expectedIsActive = (1_000...1_999).contains(Int(now.timeIntervalSince1970))
-            if case .seasonal(_, _, let isActive) = aggregated.availability {
-                XCTAssertEqual(isActive, expectedIsActive,
-                               "迭代 \(iteration): 聚合后 isActive 必须与注入 now 一致（n=\(n)）")
+            // 三态期望：<1000 未开始、<2000 活动、>=2000 已结束（阶段 1000..<2000）。
+            let expectedStatus: SeasonalStatus
+            if now < Date(timeIntervalSince1970: 1_000) {
+                expectedStatus = .notStarted
+            } else if now < Date(timeIntervalSince1970: 2_000) {
+                expectedStatus = .active
+            } else {
+                expectedStatus = .ended
+            }
+            if case .seasonal(_, _, let status) = aggregated.availability {
+                XCTAssertEqual(status, expectedStatus,
+                               "迭代 \(iteration): 聚合后状态必须与注入 now 一致（n=\(n)）")
             } else {
                 XCTFail("迭代 \(iteration): 阶段命中条目聚合后必须是 seasonal")
             }

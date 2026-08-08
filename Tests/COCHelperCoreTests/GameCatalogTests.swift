@@ -632,12 +632,30 @@ final class GameCatalogTests: XCTestCase {
     func testAvailabilityDisplayLabel() {
         XCTAssertNil(CatalogAvailability.permanent.displayLabel)
         XCTAssertEqual(
-            CatalogAvailability.seasonal(phaseID: "p", phaseName: "精制防御第一季", isActive: true).displayLabel,
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: "精制防御第一季", status: .active).displayLabel,
             "限时内容：精制防御第一季（活动）")
         XCTAssertEqual(
-            CatalogAvailability.seasonal(phaseID: "p", phaseName: nil, isActive: false).displayLabel,
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: nil, status: .notStarted).displayLabel,
+            "限时内容：p（未开始）")
+        XCTAssertEqual(
+            CatalogAvailability.seasonal(phaseID: "p", phaseName: nil, status: .ended).displayLabel,
             "限时内容：p（已结束，仅历史数据）")
         XCTAssertEqual(CatalogAvailability.unconfigured.displayLabel, "阶段信息未配置")
+    }
+
+    func testSeasonalPhaseTableMalformedDataNeverHits() {
+        // from > until（异常数据）与空 itemKeys：永不命中 → unconfigured 域。
+        let bad = SeasonalPhase(
+            phaseID: "bad", name: nil,
+            from: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 1_000),
+            itemKeys: ["a:1"])
+        let emptyKeys = SeasonalPhase(
+            phaseID: "ek", name: nil,
+            from: Date(timeIntervalSince1970: 0), until: Date(timeIntervalSince1970: 9_999),
+            itemKeys: [])
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [bad, emptyKeys])
+        XCTAssertNil(table.activePhase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 1_500)))
+        XCTAssertNil(table.activePhase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500)))
     }
 
 

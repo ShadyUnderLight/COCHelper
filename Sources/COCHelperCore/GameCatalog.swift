@@ -225,6 +225,10 @@ extension CatalogDurationState {
 /// 任何阶段数据（空表 = bundle 无 seasonal_phases.json，缺失 → 空表）。
 /// 判定不依赖 `specialAbility` 名称（不得从命名推断 seasonal）。
 public struct SeasonalPhase: Codable, Hashable, Sendable {
+    /// 日期编码契约：bundled JSON 走默认 JSONDecoder 日期策略
+    ///（`.deferredToDate`，2001-01-01 起秒数）。人工维护/未来 APK 提取
+    /// 若改用 ISO8601 字符串，`loadBundled` 的 decoder 必须同步配置
+    ///（当前缺失 → 解码失败 → 空表 fail-safe）。
     public let phaseID: String
     /// 展示名（官方公告名）；nil 时 UI 回退 phaseID。
     public let name: String?
@@ -267,6 +271,16 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
     }
 }
 
+/// 阶段状态（由注入 clock 判定：`from <= now < until` 为活动）。
+public enum SeasonalStatus: Hashable, Sendable {
+    /// 活动期（from <= now < until）。
+    case active
+    /// 未开始（now < from）。
+    case notStarted
+    /// 已结束（now >= until）。
+    case ended
+}
+
 /// 条目可用性状态（历史存在 vs 当前可用）。
 ///
 /// 与 `VillageItemState.isCatalogDeprecated`（源目录标记）是**独立维度**：
@@ -275,8 +289,8 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
 public enum CatalogAvailability: Hashable, Sendable {
     /// 非限时内容。
     case permanent
-    /// 阶段表命中：`isActive` 由注入 clock 判定（活动/已结束）。
-    case seasonal(phaseID: String, phaseName: String?, isActive: Bool)
+    /// 阶段表命中：状态由注入 clock 判定（活动/未开始/已结束）。
+    case seasonal(phaseID: String, phaseName: String?, status: SeasonalStatus)
     /// 无阶段信息（UI：「阶段信息未配置」）。
     case unconfigured
 }
@@ -286,11 +300,13 @@ extension CatalogAvailability {
     public var displayLabel: String? {
         switch self {
         case .permanent: return nil
-        case .seasonal(let phaseID, let phaseName, let isActive):
+        case .seasonal(let phaseID, let phaseName, let status):
             let name = phaseName ?? phaseID
-            return isActive
-                ? "限时内容：\(name)（活动）"
-                : "限时内容：\(name)（已结束，仅历史数据）"
+            switch status {
+            case .active: return "限时内容：\(name)（活动）"
+            case .notStarted: return "限时内容：\(name)（未开始）"
+            case .ended: return "限时内容：\(name)（已结束，仅历史数据）"
+            }
         case .unconfigured: return "阶段信息未配置"
         }
     }

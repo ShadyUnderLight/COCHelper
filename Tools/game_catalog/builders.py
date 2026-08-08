@@ -19,10 +19,12 @@ def parse_upgrade_costs(resources_raw: str, costs_raw: str,
 
     单值表（separator=None）：
       - 资源串空 → None（金额忽略）
-      - 否则单元素数组；金额非纯数字 → parseFailed=True（amount=None，
-        rawAmount=原串，不 strip——与 parse_optional_int 同一 isdigit 判据；
-        注意：旧格式在此输出 None（金额丢弃），现改为 parseFailed 项保留原串，
-        是所有表共性的输出变化）
+      - 金额空串 → 免费（源 CSV 语义）：amount=0 是真实值，parseFailed=False
+      - 金额纯数字 → 正常解析
+      - 金额非纯数字 → parseFailed=True（amount=None，rawAmount=原串，
+        不 strip——与 parse_optional_int 同一 isdigit 判据；注意：旧格式在此
+        输出 None（金额丢弃），现改为 parseFailed 项保留原串，是所有表共性
+        的输出变化）
     多值表（separator 非 None）：
       - 按 separator split 后逐段 strip；空段/空白段过滤
       - 资源全空 → None（金额忽略）
@@ -39,6 +41,12 @@ def parse_upgrade_costs(resources_raw: str, costs_raw: str,
     if separator is None:
         if not resources_raw:
             return None
+        if not costs_raw:
+            # 金额空串 = 免费（源 CSV 语义，如圣诞奇袭等免费升级变体）：
+            # amount=0 是真实值，不是解析失败（parseFailed=False）。
+            return [UpgradeCost(resource=resources_raw, amount=0,
+                                rawResource=resources_raw, rawAmount=None,
+                                parseFailed=False)]
         if costs_raw.isdigit():
             return [UpgradeCost(resource=resources_raw, amount=int(costs_raw),
                                 rawResource=resources_raw, rawAmount=None,

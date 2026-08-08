@@ -129,9 +129,14 @@ def test_parse_upgrade_costs_single_value_non_digit_cost():
     assert parse_upgrade_costs("Elixir", "12a", None) == [
         UpgradeCost(resource="Elixir", amount=None, rawResource="Elixir",
                     rawAmount="12a", parseFailed=True)]
+
+
+def test_parse_upgrade_costs_single_value_empty_cost_means_free():
+    """单值表资源非空 + 金额空串 → 免费（源 CSV 语义）：amount=0 是真实值，
+    parseFailed=False（避免 672 条免费升级被误判为「金额缺失」UI 噪音）。"""
     assert parse_upgrade_costs("Elixir", "", None) == [
-        UpgradeCost(resource="Elixir", amount=None, rawResource="Elixir",
-                    rawAmount="", parseFailed=True)]
+        UpgradeCost(resource="Elixir", amount=0, rawResource="Elixir",
+                    rawAmount=None, parseFailed=False)]
 
 
 def test_parse_upgrade_costs_multi_resource_pair_ok():

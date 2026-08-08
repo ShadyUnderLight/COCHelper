@@ -35,10 +35,20 @@ final class CatalogResourceLocalizationTests: XCTestCase {
         XCTAssertEqual(CatalogResourceLocalization.label("BuilderBaseElixir"), "建筑大师基地圣水")
     }
 
+    // MARK: - 交叉审核补充：真实 bundle 使用的资源键（此前映射从未命中）
+
+    func testActualBundleResourceKeysLocalize() {
+        // 18.400.13 目录实际使用 Gold2/Elixir2（建筑大师基地，502 条）与
+        // Diamonds（宝石，2 条）——旧映射只有 buildergold 等未命中键，导致
+        // builder base 费用一直显示「未知资源」（交叉审核 O-1）。
+        XCTAssertEqual(CatalogResourceLocalization.label("Gold2"), "建筑大师基地金币")
+        XCTAssertEqual(CatalogResourceLocalization.label("Elixir2"), "建筑大师基地圣水")
+        XCTAssertEqual(CatalogResourceLocalization.label("Diamonds"), "宝石")
+    }
+
     // MARK: - 未知值兜底（不泄漏英文标识到 UI 主文本）
 
     func testUnknownResourceFallsBackToUnknownLabel() {
-        XCTAssertEqual(CatalogResourceLocalization.label("Diamonds"), "未知资源")
         XCTAssertEqual(CatalogResourceLocalization.label("StarOre"), "未知资源")
         XCTAssertEqual(CatalogResourceLocalization.label(""), "未知资源")
         XCTAssertEqual(CatalogResourceLocalization.label("   "), "未知资源")

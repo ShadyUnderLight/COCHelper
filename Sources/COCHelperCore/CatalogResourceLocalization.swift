@@ -19,8 +19,9 @@ public enum CatalogResourceLocalization {
         case "elixir": "圣水"
         case "darkelixir", "dark_elixir": "暗黑重油"
         case "capitalresource", "capitalgold", "raidcapitalgold": "都城金币"
-        case "buildergold", "builderbasegold": "建筑大师基地金币"
-        case "builderelixir", "builderbaseelixir": "建筑大师基地圣水"
+        case "buildergold", "builderbasegold", "gold2": "建筑大师基地金币"
+        case "builderelixir", "builderbaseelixir", "elixir2": "建筑大师基地圣水"
+        case "diamonds": "宝石"
         // Issue #73 Task 3：装备升级矿石（官方简中）。
         case "commonore": "闪亮矿石"
         case "rareore": "璀璨矿石"

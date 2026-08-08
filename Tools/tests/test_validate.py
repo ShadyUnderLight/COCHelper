@@ -480,6 +480,16 @@ def test_validate_upgrade_costs_negative_amount_rejected(tmp_path):
     assert any("负" in e for e in errors)
 
 
+def test_validate_upgrade_costs_amount_over_int64_rejected(tmp_path):
+    """amount 超出 Int64 上界（2^63-1）→ 拒绝（Swift Int64 解码会失败，交叉审核 M-2）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["upgradeCosts"] = [_cost_dict(amount=2**63)]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("Int64" in e for e in errors)
+
+
 def test_validate_upgrade_costs_parse_failed_type_rejected(tmp_path):
     """parseFailed=1（非 bool，int）→ 类型非法。"""
     d = _valid_dir(tmp_path)

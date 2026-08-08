@@ -209,6 +209,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                                     errors.append(f"{prefix}: amount 类型非法 {type(uc.amount).__name__}")
                                 elif uc.amount < 0:
                                     errors.append(f"{prefix}: amount 为负 {uc.amount}")
+                                elif uc.amount > 2**63 - 1:
+                                    errors.append(f"{prefix}: amount 超出 Int64 上界 {uc.amount}")
                                 if uc.rawAmount is not None:
                                     errors.append(f"{prefix}: parseFailed=false 但 rawAmount={uc.rawAmount!r}")
                             if not uc.rawResource:

@@ -25,8 +25,8 @@ struct VillageDetailView: View {
     }
 
     private var catalog: GameCatalog? { model.gameCatalog }
-     private var seasonalPhases: SeasonalPhaseTable { model.seasonalPhases }
-     private var craftTableCatalog: CraftTableCatalog? { model.craftTableCatalog }
+    private var seasonalPhases: SeasonalPhaseTable { model.seasonalPhases }
+    private var craftTableCatalog: CraftTableCatalog? { model.craftTableCatalog }
 
     var body: some View {
         Group {

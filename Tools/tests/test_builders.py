@@ -133,7 +133,10 @@ def test_parse_upgrade_costs_single_value_non_digit_cost():
 
 def test_parse_upgrade_costs_single_value_empty_cost_means_free():
     """单值表资源非空 + 金额空串 → 免费（源 CSV 语义）：amount=0 是真实值，
-    parseFailed=False（避免 672 条免费升级被误判为「金额缺失」UI 噪音）。"""
+    parseFailed=False（避免免费升级被误判为「金额缺失」UI 噪音）。
+
+    18.400.13 实测：672 条「空金额串」记录被改为免费（此变更数）；目录中
+    amount=0 总数为 692（另含 20 条源表金额显式 '0' 的初始行）。"""
     assert parse_upgrade_costs("Elixir", "", None) == [
         UpgradeCost(resource="Elixir", amount=0, rawResource="Elixir",
                     rawAmount=None, parseFailed=False)]
@@ -173,6 +176,20 @@ def test_parse_upgrade_costs_multi_resource_non_digit_cost():
                     rawAmount=None, parseFailed=False),
         UpgradeCost(resource="RareOre", amount=None, rawResource="RareOre",
                     rawAmount="abc", parseFailed=True)]
+
+
+def test_parse_upgrade_costs_multi_resource_empty_cost_not_free():
+    """多值表金额空串**不视为免费**（与单值表不对称，交叉审核 I-1 锁定防御语义）：
+    空金额被过滤后资源项 parseFailed=True（rawAmount=''），而不是 amount=0。
+
+    真实 18.400.13 数据 0 实例（339 条多资源行全部完整配对），此为纯防御
+    行为——若未来 Supercell 在装备表引入免费升级（空金额段），需先明确语义
+    再决定是否对称处理。"""
+    assert parse_upgrade_costs("CommonOre; RareOre", "", ";") == [
+        UpgradeCost(resource="CommonOre", amount=None, rawResource="CommonOre",
+                    rawAmount="", parseFailed=True),
+        UpgradeCost(resource="RareOre", amount=None, rawResource="RareOre",
+                    rawAmount="", parseFailed=True)]
 
 
 def test_parse_upgrade_costs_multi_resource_empty_all_segments_returns_none():

@@ -97,6 +97,9 @@ public struct VillageProgressMetrics: Hashable, Sendable {
 /// - 未知实例权重 > 0（含 needsReimport 项归未知侧，实现要求 4）→ `.partial`；
 /// - `compatibility == .unverified` → 可计算指标强制 `.partial`（未验证目录不伪装
 ///   ready），degradedReason 说明；
+/// - `completeDenominator == false`（阶段 1 无实例宇宙数据源，生产恒 false）且
+///   可计算 → 强制 `.partial`：分母为已观测项目，非村庄全部实例，不得误称
+///   全村庄进度（验收 3）；阶段 2 实例宇宙接入后传 true；
 /// - 其余 → `.ready`。
 /// 饱和（issue #66 fail-closed）：分子/分母各自饱和求和，任一饱和 →
 /// `saturated = true` → ratio 恒 nil；饱和不改变 state（UI 层饱和优先）。
@@ -104,7 +107,8 @@ public enum VillageProgressProjection {
     public static func metrics(
         from items: [VillageItemState],
         catalogIsUsable: Bool,
-        compatibility: CatalogCompatibility?
+        compatibility: CatalogCompatibility?,
+        completeDenominator: Bool = false
     ) -> VillageProgressMetrics {
         guard catalogIsUsable else {
             return unavailableMetrics()
@@ -136,7 +140,12 @@ public enum VillageProgressProjection {
         }
 
         // 全局进度：分母 = Σ(maxLevel × weight)，分子 = Σ(min(level, maxLevel) × weight)
-        let globalEligible = known
+        // 与 stage 对称：nil/≤0 的非法 maxLevel 计入缺失权重降级（外部评审 P2-2），
+        // 不静默 0 贡献。
+        let globalEligible = known.filter { ($0.maxLevel ?? 0) > 0 }
+        let globalMissingWeightInfo = VillageDetailProjection.instanceCountAndOverflow(
+            of: known.filter { ($0.maxLevel ?? 0) <= 0 }
+        )
         let globalDen = weightedCappedSum(globalEligible) { max(0, $0.maxLevel ?? 0) }
         let globalNum = weightedCappedSum(globalEligible) {
             min(max(0, $0.currentLevel ?? 0), max(0, $0.maxLevel ?? 0))
@@ -156,6 +165,7 @@ public enum VillageProgressProjection {
                 saturated: stageNum.saturated || stageDen.saturated,
                 unknownWeight: unknownWeightInfo.count,
                 unverifiedCatalog: unverifiedCatalog,
+                denominatorIsComplete: completeDenominator,
                 units: "级",
                 emptyReason: "无可确认项目，暂无法计算",
                 extraReason: stageMissingWeightInfo.count > 0
@@ -169,8 +179,12 @@ public enum VillageProgressProjection {
                 saturated: globalNum.saturated || globalDen.saturated,
                 unknownWeight: unknownWeightInfo.count,
                 unverifiedCatalog: unverifiedCatalog,
+                denominatorIsComplete: completeDenominator,
                 units: "级",
-                emptyReason: "无可确认项目，暂无法计算"
+                emptyReason: "无可确认项目，暂无法计算",
+                extraReason: globalMissingWeightInfo.count > 0
+                    ? String(globalMissingWeightInfo.count) + " 项缺少或异常全局上限，未计入全局进度。"
+                    : nil
             ),
             snapshotCoverage: makeMetric(
                 kind: .snapshotCoverage,
@@ -179,6 +193,7 @@ public enum VillageProgressProjection {
                 saturated: coverageNum.didOverflow || coverageDen.didOverflow,
                 unknownWeight: unknownWeightInfo.count,
                 unverifiedCatalog: unverifiedCatalog,
+                denominatorIsComplete: true, // 覆盖率语义天然是观测范围，不受完整分母影响
                 units: "实例",
                 emptyReason: "尚未导入快照"
             )
@@ -209,6 +224,7 @@ public enum VillageProgressProjection {
         saturated: Bool,
         unknownWeight: Int,
         unverifiedCatalog: Bool,
+        denominatorIsComplete: Bool,
         units: String,
         emptyReason: String,
         extraReason: String? = nil
@@ -224,6 +240,9 @@ public enum VillageProgressProjection {
                 reasons.append(extraReason)
             }
         } else {
+            if !denominatorIsComplete {
+                reasons.append("分母为已观测项目，非村庄全部实例，无法计算完整村庄进度。")
+            }
             if unknownWeight > 0 {
                 reasons.append(String(unknownWeight) + " 项未知或待重新导入，结果仅为已观测项目。")
             }

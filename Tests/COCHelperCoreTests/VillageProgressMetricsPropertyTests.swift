@@ -96,7 +96,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         run { iteration, g in
             let items = (0..<g.int(in: 0...20)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"))
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 if let ratio = metric.ratio {
                     assertOrFail(ratio >= 0 && ratio <= 1, "ratio \(ratio) out of [0,1]", context: context)
@@ -111,7 +111,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         run { iteration, g in
             let items = (0..<g.int(in: 0...20)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"))
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
             // 覆盖指标守恒（无饱和时）：已知 + 未知 == 观测总数。
             if !m.snapshotCoverage.saturated {
                 let total = items.reduce(0) { $0 + ($1.instanceWeight) }
@@ -137,7 +137,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         run { iteration, g in
             let items = (0..<g.int(in: 1...10)).map { _ in randomItem(&g, levelLimitedToStage: true) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"))
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
             if !m.currentStageProgress.saturated && !m.globalProgress.saturated,
                let stage = m.currentStageProgress.ratio, let global = m.globalProgress.ratio {
                 assertOrFail(stage >= global, "stage \(stage) < global \(global)", context: context)
@@ -149,7 +149,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         run { iteration, g in
             let items = (0..<g.int(in: 0...20)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: false, compatibility: .unverified(gameVersion: "18.400.13"))
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: false, compatibility: .unverified(gameVersion: "18.400.13"), completeDenominator: g.bool())
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 assertOrFail(metric.state == .unavailable, "state \(metric.state) != .unavailable", context: context)
                 assertOrFail(metric.ratio == nil, "ratio \(String(describing: metric.ratio)) != nil", context: context)
@@ -162,7 +162,8 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             let items = (0..<g.int(in: 0...20)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
             let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: g.bool(),
-                                                      compatibility: g.bool() ? .verified(gameVersion: "x") : .unverified(gameVersion: "x"))
+                                                      compatibility: g.bool() ? .verified(gameVersion: "x") : .unverified(gameVersion: "x"),
+                                                      completeDenominator: g.bool())
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 assertOrFail(ProgressMetricState.allCases.contains(metric.state),
                              "state \(metric.state) not in allCases", context: context)
@@ -205,7 +206,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             }
             let items = malicious + (0..<g.int(in: 0...3)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"))
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
             // fail-closed：饱和 → ratio 恒 nil，UI 显示异常而非假精度。
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 assertOrFail(metric.saturated,

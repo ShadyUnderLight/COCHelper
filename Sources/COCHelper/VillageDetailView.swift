@@ -168,7 +168,8 @@ struct VillageDetailView: View {
                             stats: statsByKey[group.id],
                             village: village,
                             groupByInstanceID: groupByInstanceID,
-                            craftTable: craftTable
+                            craftTable: craftTable,
+                            metrics: progressMetrics
                         )
                     }
                 }
@@ -314,8 +315,10 @@ struct VillageDetailView: View {
     /// 优先于 state 文案（fail-closed，数值不权威时显示异常而非百分比）。
     private func metricsBar(metrics: VillageProgressMetrics) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            metricRow(metrics.currentStageProgress, title: "当前阶段进度")
-            metricRow(metrics.globalProgress, title: "全局养成进度")
+            // 外部评审方案 A：标题明确「已观测」范围（阶段 1 分母为已观测项目，
+            // completeDenominator 恒 false → stage/global 恒 partial）。
+            metricRow(metrics.currentStageProgress, title: "已观测阶段进度")
+            metricRow(metrics.globalProgress, title: "已观测全局进度")
             metricRow(metrics.snapshotCoverage, title: "观测数据完整性")
                 .help("分母为已观测实例，非全部可能建筑")
         }
@@ -549,7 +552,8 @@ struct VillageDetailView: View {
         stats: VillageCategoryCompletion?,
         village: VillageProfile,
         groupByInstanceID: [String: BuildingGroup],
-        craftTable: [CraftTableDefenseState]
+        craftTable: [CraftTableDefenseState],
+        metrics: VillageProgressMetrics
     ) -> some View {
         Panel {
             VStack(alignment: .leading, spacing: 10) {
@@ -574,7 +578,8 @@ struct VillageDetailView: View {
                         group: group,
                         groupByInstanceID: groupByInstanceID,
                         now: now,
-                        village: village
+                        village: village,
+                        metrics: metrics
                     )
                 }
             }
@@ -590,6 +595,7 @@ struct VillageDetailView: View {
         group: VillageDetailGroup,
         now: Date,
         village: VillageProfile,
+        metrics: VillageProgressMetrics,
         indented: Bool = false
     ) -> some View {
         let rowID = villageID.uuidString + ":" + selectedBase.rawValue + ":" + item.id
@@ -600,7 +606,8 @@ struct VillageDetailView: View {
             villageTag: village.tag,
             base: selectedBase,
             item: item,
-            catalogVersion: catalog?.gameVersion
+            catalogVersion: catalog?.gameVersion,
+            villageMetrics: metrics
         )
         return Button {
             selectedItem = item
@@ -627,7 +634,8 @@ struct VillageDetailView: View {
         group: VillageDetailGroup,
         groupByInstanceID: [String: BuildingGroup],
         now: Date,
-        village: VillageProfile
+        village: VillageProfile,
+        metrics: VillageProgressMetrics
     ) -> some View {
         var orderedGroups: [BuildingGroup] = []
         var seenGroupIDs = Set<String>()
@@ -650,7 +658,7 @@ struct VillageDetailView: View {
                 }
             }
             if !fallbackItems.isEmpty {
-                legacyRows(items: fallbackItems, group: group, now: now, village: village)
+                legacyRows(items: fallbackItems, group: group, now: now, village: village, metrics: metrics)
             }
         }
     }
@@ -660,17 +668,18 @@ struct VillageDetailView: View {
         items: [VillageItemState],
         group: VillageDetailGroup,
         now: Date,
-        village: VillageProfile
+        village: VillageProfile,
+        metrics: VillageProgressMetrics
     ) -> some View {
         LazyVStack(spacing: 0) {
             // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
             // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
             let rows = VillageDetailProjection.parentedRows(from: items)
             ForEach(rows) { row in
-                itemRow(row.item, group: group, now: now, village: village)
+                itemRow(row.item, group: group, now: now, village: village, metrics: metrics)
                 ForEach(row.children) { child in
                     Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
-                    itemRow(child, group: group, now: now, village: village, indented: true)
+                    itemRow(child, group: group, now: now, village: village, metrics: metrics, indented: true)
                 }
                 if row.id != rows.last?.id {
                     Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)

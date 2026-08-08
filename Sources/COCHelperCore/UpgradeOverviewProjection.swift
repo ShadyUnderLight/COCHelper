@@ -17,6 +17,10 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
     public let item: VillageItemState
     /// 目录版本；目录不可用时 nil。
     public let catalogVersion: String?
+    /// Issue #70 实现要求 6：该村庄×基地的三指标投影。同 village+base 的
+    /// 记录共享同一实例（allRecords 内计算一次）；与详情页消费同一个
+    /// `VillageProgressProjection`，供升级总览 UI 聚合覆盖率等使用。
+    public let villageMetrics: VillageProgressMetrics
 
     /// 显式 public init（隐式 memberwise 为 internal，UI 层（COCHelper target）
     /// 无法跨模块构造；参数与 memberwise 完全一致，不破坏现有调用）。
@@ -27,7 +31,8 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
         villageTag: String?,
         base: TrackerBase,
         item: VillageItemState,
-        catalogVersion: String?
+        catalogVersion: String?,
+        villageMetrics: VillageProgressMetrics
     ) {
         self.id = id
         self.villageID = villageID
@@ -36,6 +41,7 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
         self.base = base
         self.item = item
         self.catalogVersion = catalogVersion
+        self.villageMetrics = villageMetrics
     }
 
     public var remainingSeconds: Int64? { item.remainingSeconds }
@@ -168,6 +174,13 @@ public enum UpgradeOverviewProjection {
                     base: base,
                     now: now
                 )
+                // Issue #70 实现要求 6：同 village×base 的指标只算一次，全部
+                // record 共享（trackedItems 口径 = 排除 .unavailable，与详情页一致）。
+                let metrics = VillageProgressProjection.metrics(
+                    from: projection.items.filter { $0.status != .unavailable },
+                    catalogIsUsable: projection.catalogIsUsable,
+                    compatibility: projection.compatibility
+                )
                 return projection.items
                     .filter { $0.status != .unavailable }
                     .map { item in
@@ -178,7 +191,8 @@ public enum UpgradeOverviewProjection {
                             villageTag: village.tag,
                             base: base,
                             item: item,
-                            catalogVersion: projection.catalogVersion
+                            catalogVersion: projection.catalogVersion,
+                            villageMetrics: metrics
                         )
                     }
             }

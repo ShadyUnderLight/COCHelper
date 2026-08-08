@@ -90,8 +90,14 @@ final class VillageProgressMetricsTests: XCTestCase {
 
     private func metrics(_ items: [VillageItemState],
                          usable: Bool = true,
-                         compatibility: CatalogCompatibility? = .verified(gameVersion: "18.400.13")) -> VillageProgressMetrics {
-        VillageProgressProjection.metrics(from: items, catalogIsUsable: usable, compatibility: compatibility)
+                         compatibility: CatalogCompatibility? = .verified(gameVersion: "18.400.13"),
+                         completeDenominator: Bool = true) -> VillageProgressMetrics {
+        VillageProgressProjection.metrics(
+            from: items,
+            catalogIsUsable: usable,
+            compatibility: compatibility,
+            completeDenominator: completeDenominator
+        )
     }
 
     // MARK: - currentStageProgress
@@ -435,5 +441,42 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertEqual(m.currentStageProgress.denominator, 6) // 只有正常项
         XCTAssertEqual(m.currentStageProgress.state, .partial)
         XCTAssertNotNil(m.currentStageProgress.degradedReason)
+    }
+
+    // MARK: - 已观测分母（外部评审 P1-1：验收 3）
+
+    func testIncompleteDenominatorForcesPartial() {
+        // 无实例宇宙数据（completeDenominator false）：全 known 也无 unknown 项 →
+        // stage/global 仍 partial（验收 3，不得误称全村庄进度）
+        let items = [
+            item(id: "a", level: 3, maxLevel: 10, stageMax: 6),
+            item(id: "b", level: 5, maxLevel: 10, stageMax: 6),
+        ]
+        let m = metrics(items, completeDenominator: false)
+        XCTAssertEqual(m.currentStageProgress.state, .partial)
+        XCTAssertEqual(m.globalProgress.state, .partial)
+        XCTAssertNotNil(m.currentStageProgress.degradedReason)
+        XCTAssertEqual(m.snapshotCoverage.state, .ready) // 覆盖率不受影响
+        XCTAssertEqual(m.currentStageProgress.ratio, 8.0 / 12.0) // 数值仍可展示
+    }
+
+    func testIncompleteDenominatorReasonText() {
+        let m = metrics([item(id: "a", level: 3, maxLevel: 10, stageMax: 6)], completeDenominator: false)
+        let reason = m.currentStageProgress.degradedReason!
+        XCTAssertTrue(reason.contains("分母为已观测项目，非村庄全部实例，无法计算完整村庄进度。"), reason)
+    }
+
+    // MARK: - 全局非法上限（外部评审 P2-2）
+
+    func testGlobalNegativeMaxLevelDegrades() {
+        // 恶意目录负 maxLevel 项 → global 降级 partial（P2-2 对称处理）
+        let items = [
+            item(id: "a", level: 3, maxLevel: 10, stageMax: 6),
+            item(id: "m", level: 9, maxLevel: -1, stageMax: 6),
+        ]
+        let m = metrics(items)
+        XCTAssertEqual(m.globalProgress.denominator, 10) // 只含正常项
+        XCTAssertEqual(m.globalProgress.state, .partial)
+        XCTAssertNotNil(m.globalProgress.degradedReason)
     }
 }

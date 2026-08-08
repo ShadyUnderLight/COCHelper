@@ -99,8 +99,8 @@ public struct OfficialWarLogPage: Codable, Hashable, Sendable, EndpointParserVer
         self.page = page
     }
 
-    /// 0.3：成员级攻防日志解析范围（Issue #20，Task 2）。
-    public static var currentParserVersion: String { "clan-war-log-0.3" }
+    /// 0.4：成员级攻防日志解析范围（0.3）+ battleModifier 解析（Issue #72）。
+    public static var currentParserVersion: String { "clan-war-log-0.4" }
 
     public var items: [OfficialWarLogEntry] { page.items }
     public var after: String? { page.after }
@@ -151,17 +151,22 @@ public struct OfficialWarLogEntry: Codable, Hashable, Sendable {
     public let endTime: String?
     public let teamSize: Int?
     public let attacksPerMember: Int?
+    /// 官方 battleModifier（warlog 条目同样返回；Hard Mode/传奇杯战争），
+    /// 保存原始值；"none" 与缺失视为无规则。
+    public let battleModifier: String?
     public let clan: ClanWarParticipant?
     public let opponent: ClanWarParticipant?
 
     public init(
         result: String?, endTime: String?, teamSize: Int?, attacksPerMember: Int?,
+        battleModifier: String?,
         clan: ClanWarParticipant?, opponent: ClanWarParticipant?
     ) {
         self.result = result
         self.endTime = endTime
         self.teamSize = teamSize
         self.attacksPerMember = attacksPerMember
+        self.battleModifier = battleModifier
         self.clan = clan
         self.opponent = opponent
     }

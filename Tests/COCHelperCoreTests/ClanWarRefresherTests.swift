@@ -49,7 +49,7 @@ final class ClanWarRefresherTests: XCTestCase {
             lastGood: OfficialClanWarSnapshot(
                 state: state, teamSize: 30, attacksPerMember: 2,
                 preparationStartTime: nil, startTime: nil, endTime: nil,
-                warStartTime: nil, clan: nil, opponent: nil, unrecognizedKeys: []
+                warStartTime: nil, battleModifier: nil, clan: nil, opponent: nil, unrecognizedKeys: []
             )
         )
     }

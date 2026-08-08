@@ -270,6 +270,12 @@ struct WarLogCardView: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
                 }
+                // 战争规则（Hard Mode / 传奇杯）：复用 Core 格式化层，无规则时不渲染
+                if let rule = BattleModifierText.localizedText(for: entry.battleModifier) {
+                    Text("规则：\(rule)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {

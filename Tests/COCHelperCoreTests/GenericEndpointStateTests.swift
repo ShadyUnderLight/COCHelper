@@ -20,7 +20,7 @@ final class GenericEndpointStateTests: XCTestCase {
         OfficialClanWarSnapshot(
             state: "notInWar", teamSize: nil, attacksPerMember: nil,
             preparationStartTime: nil, startTime: nil, endTime: nil,
-            warStartTime: nil, clan: nil, opponent: nil, unrecognizedKeys: []
+            warStartTime: nil, battleModifier: nil, clan: nil, opponent: nil, unrecognizedKeys: []
         )
     }
 
@@ -90,10 +90,10 @@ final class GenericEndpointStateTests: XCTestCase {
         XCTAssertEqual(clan.parserVersion, "clan-snapshot-0.3")
 
         let war = ClanWarAPIState(status: .never, clanTag: "#A")
-        XCTAssertEqual(war.parserVersion, "clan-war-0.2")
+        XCTAssertEqual(war.parserVersion, "clan-war-0.3")
 
         let warLog = ClanWarLogAPIState(status: .never, clanTag: "#A")
-        XCTAssertEqual(warLog.parserVersion, "clan-war-log-0.3")
+        XCTAssertEqual(warLog.parserVersion, "clan-war-log-0.4")
 
         let capital = ClanCapitalAPIState(status: .never, clanTag: "#A")
         XCTAssertEqual(capital.parserVersion, "clan-capital-0.3")

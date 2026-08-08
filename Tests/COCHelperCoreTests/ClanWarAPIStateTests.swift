@@ -18,7 +18,7 @@ final class ClanWarAPIStateTests: XCTestCase {
             lastGood: OfficialClanWarSnapshot(
                 state: "inWar", teamSize: nil, attacksPerMember: nil,
                 preparationStartTime: nil, startTime: nil, endTime: nil,
-                warStartTime: nil, clan: nil, opponent: nil, unrecognizedKeys: []
+                warStartTime: nil, battleModifier: nil, clan: nil, opponent: nil, unrecognizedKeys: []
             )
         )
         XCTAssertEqual(state.displayStatus, .failed)
@@ -50,7 +50,7 @@ final class ClanWarAPIStateTests: XCTestCase {
         let notInWar = OfficialClanWarSnapshot(
             state: "notInWar", teamSize: nil, attacksPerMember: nil,
             preparationStartTime: nil, startTime: nil, endTime: nil,
-            warStartTime: nil, clan: nil, opponent: nil, unrecognizedKeys: []
+            warStartTime: nil, battleModifier: nil, clan: nil, opponent: nil, unrecognizedKeys: []
         )
         let state = ClanWarAPIState(status: .success, clanTag: "#CLAN", lastGood: notInWar)
 
@@ -113,7 +113,9 @@ final class ClanWarAPIStateTests: XCTestCase {
                     state: ["notInWar", "preparation", "inWar", "warEnded"].randomElement(using: &rng),
                     teamSize: Int.random(in: 1...50, using: &rng), attacksPerMember: Int.random(in: 1...2, using: &rng),
                     preparationStartTime: nil, startTime: nil, endTime: nil,
-                    warStartTime: nil, clan: nil, opponent: nil,
+                    warStartTime: nil,
+                    battleModifier: Bool.random(using: &rng) ? "hardMode" : nil,
+                    clan: nil, opponent: nil,
                     unrecognizedKeys: Bool.random(using: &rng) ? ["futureField"] : []
                 ) : nil,
                 unrecognizedKeys: Bool.random(using: &rng) ? ["a", "b"] : []

@@ -480,11 +480,16 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
     /// `deprecated_in_source`）。旧目录缺键 → nil（向后兼容）；此前该字段
     /// 在 Swift 模型缺失，解码时被静默丢弃。
     public let missingReason: String?
+    /// Issue #75 工作流 C：home 建筑展示分类（"defense"/"military"/"craftTable"，
+    /// 非 home 恒 null）。catalog 数据唯一事实源（Python 侧 validate 闭枚举），
+    /// Swift 侧无白名单。旧目录缺键 → nil（向后兼容）→ UI 走「建筑与防御」兜底。
+    public let displayCategory: String?
     public let levels: [CatalogLevel]
 
     /// 显式 memberwise init：`missingReason` 带默认值 nil（既有调用点不传该
     /// 参数保持兼容——与 `CatalogLevel.requiredHeroTavernLevel` 同先例；
     /// 注意 Swift 合成 init 对「let 带默认值」显式传参会报错，故必须显式写）。
+    /// `displayCategory` 同带默认值 nil（Issue #75 工作流 C，旧目录/旧调用点零改动）。
     public init(
         section: String,
         category: String,
@@ -496,6 +501,7 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
         icon: CatalogAssetRef?,
         levelVisual: CatalogAssetRef?,
         missingReason: String? = nil,
+        displayCategory: String? = nil,
         levels: [CatalogLevel]
     ) {
         self.section = section
@@ -508,6 +514,7 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
         self.icon = icon
         self.levelVisual = levelVisual
         self.missingReason = missingReason
+        self.displayCategory = displayCategory
         self.levels = levels
     }
 

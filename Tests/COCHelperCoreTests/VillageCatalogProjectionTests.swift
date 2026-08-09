@@ -55,6 +55,24 @@ final class VillageCatalogProjectionTests: XCTestCase {
            {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
            {"level":2,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
            {"level":3,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"}
+         ]},
+        {"section":"buildings","category":"buildings","dataID":1000008,"base":"home","name":"加农炮","maxLevel":2,"displayCategory":"defense",
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":2,"durationSeconds":300,"upgradeResource":"Elixir","upgradeCost":2000,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+         ]},
+        {"section":"buildings","category":"buildings","dataID":1000000,"base":"home","name":"兵营","maxLevel":2,"displayCategory":"military",
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":60,"upgradeResource":"Elixir","upgradeCost":200,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":2,"durationSeconds":300,"upgradeResource":"Elixir","upgradeCost":2000,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
+         ]},
+        {"section":"buildings","category":"buildings","dataID":1000013,"base":"home","name":"迫击炮","maxLevel":2,"displayCategory":"defense",
+         "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
+         "levels":[
+           {"level":1,"durationSeconds":60,"upgradeResource":"Gold","upgradeCost":200,"requiredTownHallLevel":1,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null},
+           {"level":2,"durationSeconds":300,"upgradeResource":"Gold","upgradeCost":2000,"requiredTownHallLevel":2,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":null}
          ]}
       ]
     }
@@ -1080,7 +1098,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertFalse(total.isFullyMaxed, "1 条未满级实例 → 不得判满级")
 
         // 全链路防御组（审核 B）：加农炮 1000008 投影后 displayCategory == .defense
-        //（实测验证：#37 白名单 1000008 ∈ defenseDataIDs，section buildings + base home），
+        //（Issue #75 工作流 C：catalog displayCategory 字段标注 defense，
+        // section buildings + base home），
         // 组统计与总统计同口径 (7, 6, 0)，且 known + unknown == 该组 Σweight（守恒）。
         let stats = VillageDetailProjection.completionStats(from: targetItems)
         let defense = try XCTUnwrap(
@@ -1150,8 +1169,8 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(total.completionRatio ?? -1, 300.0 / 325.0, accuracy: 0.0001)
 
         // 全链路防御组（审核 B）：城墙 1000010 投影后 displayCategory == .defense
-        //（实测验证：#37 白名单 1000010 ∈ defenseDataIDs），组统计 == (325, 300, 0)，
-        // 且 known + unknown == 该组 Σweight（守恒）。
+        //（Issue #75 工作流 C：catalog displayCategory 字段标注 defense），
+        // 组统计 == (325, 300, 0)，且 known + unknown == 该组 Σweight（守恒）。
         let stats = VillageDetailProjection.completionStats(from: targetItems)
         let defense = try XCTUnwrap(
             stats.first { $0.displayCategory == .defense },

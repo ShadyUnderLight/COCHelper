@@ -465,15 +465,18 @@ public struct VillageCatalogProjection: Sendable {
         let category = TrackerCategory.from(section: item.section)
         let isNested = item.id.contains(".types.") || item.id.contains(".modules.")
 
-        // Issue #37：展示分类。嵌套项按根父归属（回查第一遍扫描的根父 dataID），
-        // 平铺项按自身 dataID 白名单；非 buildings/非 home 一律 nil（走原分类兜底）。
+        // Issue #37 + #75 工作流 C：展示分类。嵌套项按根父归属（回查第一遍扫描的
+        // 根父 dataID），平铺项按自身 dataID；分类读 catalog displayCategory 字段
+        //（唯一事实源，Swift 无白名单）；catalog 为 nil/字段缺失 → nil（UI 走原
+        // 分类兜底）；非 buildings/非 home 一律 nil。
         let displayCategory = BuildingDisplayCategoryRules.displayCategory(
             section: item.section,
             dataID: item.dataID,
             base: base,
             rootParentDataID: isNested
                 ? rootParentDataIDs[BuildingDisplayCategoryRules.rootID(of: item.id)]
-                : nil
+                : nil,
+            catalog: catalog
         )
 
         // 1. 类别不支持（helpers/decos/obstacles/…）。
@@ -898,7 +901,7 @@ public struct VillageCatalogProjection: Sendable {
             let category = TrackerCategory.from(section: key.section)
             let displayCategory = BuildingDisplayCategoryRules.displayCategory(
                 section: key.section, dataID: key.dataID, base: .home,
-                rootParentDataID: nil
+                rootParentDataID: nil, catalog: catalog
             )
             let stageMax = currentStageMaxLevel(for: catalogItem, unlocks: unlocks)
             if diffCount > 0 {

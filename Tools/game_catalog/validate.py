@@ -17,6 +17,11 @@ from . import (
 )
 from .catalog import counts_for
 from .contract import check_rendered_path_contract, rendered_path_format_ok
+from .display_categories import (
+    DISPLAY_CATEGORIES,
+    INTENTIONAL_FALLBACK_DATA_IDS,
+    apply_display_categories,
+)
 from .model import AssetRef, UpgradeCost, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
@@ -101,6 +106,22 @@ def _check_instance_counts(errors: list[str], ic: dict, catalog) -> None:
                 and i.dataID not in _NON_COUNTABLE_DATA_IDS
                 and (i.section, i.dataID) not in ic_keys):
             errors.append(f"instanceCounts 缺少宇宙项: {i.section}:{i.dataID} ({i.name})")
+
+
+def _check_display_category_registry(errors: list[str], items) -> None:
+    """displayCategory 全量重算比对（Issue #75 工作流 C 评审补强）。
+
+    apply_display_categories 从注册表（display_categories.py，分类知识唯一事实源）
+    派生每个 item 的期望分类，与 catalog 实际值全量逐 item 比对。任何差异即
+    登记表内错标（如 1000008→military）、兜底项被标分类、非 home 被标、
+    1000097 非 craftTable——统一报错。独立 1000097 检查已删除（本比对覆盖，
+    避免同一错误双报）。apply 返回新列表且保持顺序，zip 逐对即可。
+    """
+    for item, expected in zip(items, apply_display_categories(items)):
+        if item.displayCategory != expected.displayCategory:
+            errors.append(
+                f"displayCategory 与注册表不一致: {item.section}:{item.dataID} "
+                f"{item.name} 期望={expected.displayCategory} 实际={item.displayCategory!r}")
 
 
 def _check_rendered_path(
@@ -312,6 +333,23 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                 errors.append(f"{key}: base={item.base} 却有 baseMissingReason")
             if item.baseMissingReason and item.baseMissingReason not in BASE_MISSING_REASONS:
                 errors.append(f"{key}: 未知 baseMissingReason {item.baseMissingReason!r}")
+            # ---- displayCategory（Issue #75 工作流 C）----
+            # 闭枚举 / 域（仅 home buildings 可携带）/ 未分类 fail-loud。
+            # 分类知识唯一事实源 display_categories.py。登记表内错标/兜底项被标
+            # 分类由循环后的全量重算比对（_check_display_category_registry）统一覆盖。
+            dc = item.displayCategory
+            if dc is not None and dc not in DISPLAY_CATEGORIES:
+                errors.append(f"{key}: displayCategory 未知值 {dc!r}")
+            if (item.section, item.base) != ("buildings", "home") and dc is not None:
+                errors.append(f"{key}: 非 home buildings 却有 displayCategory={dc!r}")
+            if item.section == "buildings" and item.base == "home":
+                if dc is None and item.dataID not in INTENTIONAL_FALLBACK_DATA_IDS:
+                    # P1-B（评审修复）：防漏机制不放行旧产物（严格性不变），
+                    # 错误消息自解释补救路径
+                    errors.append(
+                        f"新增建筑未分类: {item.dataID} {item.name}"
+                        f"（旧产物缺少 displayCategory 字段，"
+                        f"请用 annotate_display_categories.py 重新标注）")
             for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
                 if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
@@ -321,6 +359,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                                          catalog_path.parent, registered)
     except (TypeError, ValueError, AttributeError) as exc:
         return [f"catalog 内容非法: {exc}"]
+
+    _check_display_category_registry(errors, catalog.items)
 
     # ---- counts 与目录内容重算一致 ----
     counts = counts_for(catalog.items)
@@ -370,6 +410,18 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         if bi is not None and (not isinstance(bi, int)
                                or isinstance(bi, bool) or bi < 0):
             errors.append(f"counts.blockedIcons 非法: {bi!r}")
+        # ---- displayCategories（Issue #75 工作流 C，optional 字段）----
+        # 旧 manifest 缺失不报错；存在必与 catalog 实际分布一致（防标注/生成遗漏）
+        dc_counts = manifest_counts.get("displayCategories")
+        if dc_counts is not None:
+            if not isinstance(dc_counts, dict):
+                errors.append(f"counts.displayCategories 非法: {dc_counts!r}")
+            else:
+                for k, v in counts["displayCategories"].items():
+                    if dc_counts.get(k) != v:
+                        errors.append(
+                            f"counts.displayCategories.{k} 不一致: "
+                            f"manifest={dc_counts.get(k)} 重算={v}")
 
     # ---- instanceCounts 宇宙（Issue #70 阶段 2）----
     # 旧产物缺字段不报错（向后兼容）；存在时必须通过全部不变量（_check_instance_counts）

@@ -123,6 +123,9 @@ class CatalogItem:
     levelVisual: AssetRef | None
     missingReason: str | None
     levels: list[CatalogLevel]
+    # Issue #75 工作流 C：建筑展示分类（defense/military/craftTable），
+    # home buildings 之外恒 None。旧格式 JSON 缺键 → None（向后兼容）。
+    displayCategory: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -137,6 +140,7 @@ class CatalogItem:
             "levelVisual": self.levelVisual.to_dict() if self.levelVisual else None,
             "missingReason": self.missingReason,
             "levels": [lv.to_dict() for lv in self.levels],
+            "displayCategory": self.displayCategory,
         }
 
     @classmethod
@@ -151,6 +155,7 @@ class CatalogItem:
             levelVisual=AssetRef.from_dict(d["levelVisual"]) if d.get("levelVisual") else None,
             missingReason=d.get("missingReason"),
             levels=[CatalogLevel.from_dict(x) for x in d["levels"]],
+            displayCategory=d.get("displayCategory"),
         )
 
 

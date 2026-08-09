@@ -112,3 +112,25 @@ def test_catalog_level_from_dict_legacy_without_upgrade_costs():
     out = lv.to_dict()
     assert "upgradeCosts" in out and out["upgradeCosts"] is None
     assert "upgradeResource" not in out and "upgradeCost" not in out
+
+
+# ---- Issue #75 工作流 C：displayCategory ----
+
+def test_catalog_item_display_category_roundtrip():
+    item = _sample_item()
+    item.displayCategory = "defense"
+    d = item_to_dict(item)
+    assert d["displayCategory"] == "defense"
+    assert CatalogItem.from_dict(d) == item
+
+
+def test_catalog_item_to_dict_writes_display_category_null():
+    d = item_to_dict(_sample_item())
+    assert d["displayCategory"] is None
+
+
+def test_catalog_item_from_dict_missing_display_category_defaults_none():
+    """旧格式 JSON（无 displayCategory 键）→ None，不抛错。"""
+    d = item_to_dict(_sample_item())
+    del d["displayCategory"]
+    assert CatalogItem.from_dict(d).displayCategory is None

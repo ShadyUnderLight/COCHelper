@@ -32,25 +32,19 @@ public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Ide
     }
 }
 
-/// Issue #37：主世界建筑展示分类的集中式规则表（稳定 dataID，不依赖本地化名称）。
-/// 规则：section == "buildings" 且 base == .home 才细分；精制台按根父归属；
-/// 其余（资源/大本营/活动/未知）返回 nil → UI 走原「建筑与防御」兜底，项目不丢失。
+/// Issue #37 + #75 工作流 C：主世界建筑展示分类。数据源 = catalog 的
+/// `displayCategory` 字段（**唯一事实源**，Python 侧 validate 闭枚举保证
+/// "defense"/"military"/"craftTable"/null；Swift 侧白名单已随数据化删除）。
+/// 规则：section == "buildings" 且 base == .home 才细分（按根父 dataID 查
+/// catalog）；catalog 为 nil、目录 item 缺失或字段缺失 → nil → UI 走原
+/// 「建筑与防御」兜底，项目不丢失（安全回退）——**精制台除外**（身份常量
+/// 最小回退，见 displayCategory 内注释）。
 public enum BuildingDisplayCategoryRules {
+    /// 精制台 dataID。**快照查询锚点**（CraftTableProjection 定位精制台槽位），
+    /// 非分类白名单——分类由 catalog displayCategory 驱动（#65 落地后评估
+    /// 数据化）；validate.py 已强制 catalog 中 1000097.displayCategory ==
+    /// "craftTable"（双源一致性，此处常量与目录数据互证）。
     public static let craftTableDataID: Int64 = 1000097
-
-    /// 已确认的主世界普通防御建筑（issue #37 定义 + 2026-08-06 三 agent 投票）。
-    static let defenseDataIDs: Set<Int64> = [
-        1000008, 1000009, 1000010, 1000011, 1000012, 1000013,
-        1000019, 1000021, 1000027, 1000028, 1000031, 1000032,
-        1000067, 1000072, 1000077, 1000079, 1000084, 1000085,
-        1000086, 1000089, 1000102,
-    ]
-
-    /// 已确认的军事/作战支持设施（issue #37 定义 + 2026-08-06 三 agent 投票）。
-    static let militaryDataIDs: Set<Int64> = [
-        1000000, 1000006, 1000007, 1000014, 1000020, 1000026,
-        1000029, 1000059, 1000068, 1000070, 1000071,
-    ]
 
     /// 平铺 id 的根父段：`"buildings:6.types.0.modules.2"` → `"buildings:6"`；
     /// 无嵌套段时返回原 id。
@@ -58,24 +52,37 @@ public enum BuildingDisplayCategoryRules {
         id.split(separator: ".").first.map(String.init) ?? id
     }
 
-    /// 展示分类判定。嵌套项必须传 `rootParentDataID`（其自身 dataID 是 types/modules 段，
-    /// 不在任何白名单内）；平铺项传 nil。`rootParentDataID` 非 nil 时按根父自身归类
-    /// （嵌套项继承根父展示分类，避免父子跨组分裂），平铺项仍按自身 `dataID` 白名单判定。
+    /// 展示分类判定。嵌套项必须传 `rootParentDataID`（其自身 dataID 是
+    /// types/modules 段，不在目录内）；平铺项传 nil。
+    /// `rootParentDataID` 非 nil 时按根父自身 dataID 查 catalog 归类
+    /// （嵌套项继承根父展示分类，避免父子跨组分裂），平铺项按自身 dataID 查。
+    /// catalog 为 nil 或查不到 item/字段缺失 → 精制台回退 .craftTable、
+    /// 其他建筑 nil（安全回退，UI 走兜底组）；未知 raw 值（契约外字符串）→
+    /// nil（防御性兜底，catalog 数据已由 validate 闭枚举保证，此处仅纵深防御）。
+    ///
+    /// **精制台最小分类回退（评审 P2）**：主 catalog 不可用时分类全 nil 会让
+    /// 精制台专属视图（#65 CraftTableView，门控 displayCategory == .craftTable）
+    /// 丢失——旧白名单实现在 catalog nil 时仍分类。精制台身份是稳定常量
+    /// （#37 已论证 dataID 稳定，craftTableDataID 为快照查询锚点），validate
+    /// 双源互证合规目录中 1000097.displayCategory 恒为 "craftTable"，回退仅
+    /// 覆盖 catalog 不可用/旧目录（字段缺失）场景，**不恢复 defense/military
+    /// 白名单**；有值但未知 raw（契约外）仍 nil，不回退。
     public static func displayCategory(
         section: String,
         dataID: Int64,
         base: TrackerBase,
-        rootParentDataID: Int64?
+        rootParentDataID: Int64?,
+        catalog: GameCatalog?
     ) -> TrackerDisplayCategory? {
         guard section == "buildings", base == .home else { return nil }
-        if let rootParentDataID {
-            // 嵌套项：继承根父展示分类（根父自身归类；精制台 1000097 → .craftTable，
-            // 防御/军事白名单父建筑的后代跟随父项，避免跨组父子分裂）。
-            return displayCategory(section: section, dataID: rootParentDataID, base: base, rootParentDataID: nil)
+        // 嵌套继承：按根父 dataID 查 catalog（根父自身归类；平铺项即自身 dataID）。
+        let effectiveDataID = rootParentDataID ?? dataID
+        if let raw = catalog?.item(section: "buildings", dataID: effectiveDataID)?.displayCategory {
+            return TrackerDisplayCategory(rawValue: raw)
         }
-        if dataID == craftTableDataID { return .craftTable }
-        if defenseDataIDs.contains(dataID) { return .defense }
-        if militaryDataIDs.contains(dataID) { return .military }
+        if effectiveDataID == craftTableDataID {
+            return .craftTable
+        }
         return nil
     }
 }

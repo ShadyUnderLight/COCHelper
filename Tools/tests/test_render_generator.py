@@ -121,6 +121,7 @@ def _mini_catalog() -> dict:
                 "section": "buildings", "dataID": 1000070, "name": "铁匠铺",
                 "maxLevel": 2, "category": "buildings",
                 "icon": None,
+                "displayCategory": "military",  # Issue #75 工作流 C：真实分类
                 "levelVisual": {"container": "sc/buildings.sc",
                                 "exportName": "blacksmith_lvl1",
                                 "renderedPath": None,

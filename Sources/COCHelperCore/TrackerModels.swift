@@ -44,7 +44,7 @@ public enum TrackerCategory: String, CaseIterable, Codable, Hashable, Identifiab
         case .heroes: "英雄"
         case .equipment: "装备"
         case .pets: "战宠"
-        case .guardians: "守护者"
+        case .guardians: "守卫"
         }
     }
 

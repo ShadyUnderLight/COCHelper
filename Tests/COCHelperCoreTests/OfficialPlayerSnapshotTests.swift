@@ -270,20 +270,20 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
         XCTAssertEqual(missing.townHallWeaponLevelDisplayState, .notProvided)
     }
 
-    /// S2 旧缓存兼容：旧版产物 JSON 无 marker 键 → presence 默认 true。
-    /// 判别：旧版产物恒含 `unrecognizedKeys` 键（本模型 encode 恒写），
-    /// 官方原始 JSON 永不含该键——两者由此区分。
-    func testLegacyCacheWithoutMarkerDefaultsToPresent() throws {
+    /// 无 marker（旧 0.1 缓存 / 官方原始 JSON）时采用保守 presence：
+    /// 按武器键真实存在性判定，不把"键缺失"推断为"API 显式 null"（评审 P1）。
+    func testLegacyCacheWithoutMarkerUsesConservativePresence() throws {
         // 旧版产物（无 marker 键 + 有 unrecognizedKeys 键）：有武器等级 → 视为 API 显式提供。
         let withWeapon = try decodeSnapshot(#"{"townHallWeaponLevel": 5, "unrecognizedKeys": []}"#)
         XCTAssertEqual(withWeapon.townHallWeaponLevelKeyPresent, true)
         XCTAssertEqual(withWeapon.townHallWeaponLevelDisplayState, .level(5))
 
-        // 旧版产物（无 marker 键 + 无武器键 + 有 unrecognizedKeys 键）→ presence 默认 true →
-        // notApplicable。升级零过渡噪音：刷新前隐藏而非"未提供"（旧缓存视为 API 显式 null 语义）。
+        // 旧版产物（无 marker 键 + 无武器键）→ presence=false → .notProvided：
+        // 旧缓存的"键缺失"无法区分来自 API null 还是缺失，保守显示"未提供"，
+        // 不推断"不适用"（刷新后 API 返回 null 才变隐藏）。
         let noWeapon = try decodeSnapshot(##"{"tag": "#LEGACY", "unrecognizedKeys": []}"##)
-        XCTAssertEqual(noWeapon.townHallWeaponLevelKeyPresent, true)
-        XCTAssertEqual(noWeapon.townHallWeaponLevelDisplayState, .notApplicable)
+        XCTAssertEqual(noWeapon.townHallWeaponLevelKeyPresent, false)
+        XCTAssertEqual(noWeapon.townHallWeaponLevelDisplayState, .notProvided)
     }
 
     /// 核心契约：显式 null 与键缺失在持久化（encode → decode）中必须保持区分。
@@ -337,13 +337,46 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
     /// marker 键是 known key：直接解码官方样式 JSON（无 unrecognizedKeys 键）时
     /// 不得被收集进 unrecognizedKeys——真实命中 knownKeys 过滤路径
     /// （round-trip 场景会走 storedKeys 分支直接读存储值，绕过该路径，故不可用）。
+    /// 输入须为 marker 与武器键存在性一致的合法组合。
     func testPresenceKeyNotCollectedAsUnrecognized() throws {
         let snapshot = try JSONDecoder().decode(
             OfficialPlayerSnapshot.self,
-            from: Data(#"{"townHallWeaponLevelKeyPresent": true}"#.utf8)
+            from: Data(#"{"townHallWeaponLevelKeyPresent": true, "townHallWeaponLevel": null}"#.utf8)
         )
         XCTAssertTrue(snapshot.unrecognizedKeys.isEmpty)
         XCTAssertEqual(snapshot.townHallWeaponLevelKeyPresent, true)
+    }
+
+    /// marker 键矛盾/malformed 必须 fail-closed（评审 P2）：
+    /// 1. marker 键存在但值非 Bool（null 或类型错误）→ 拒绝；
+    /// 2. marker 与武器键存在性矛盾（marker=true 无武器键 / marker=false 有武器键）→ 拒绝。
+    /// 自有 encode 永不产生这些组合（presence=true+nil → 写 null 键；presence=false → 不写键），
+    /// 矛盾只来自手改/损坏数据。
+    func testMalformedOrContradictoryMarkerFailsClosed() {
+        // marker 键存在但值为 null（类型错误）→ throw
+        XCTAssertThrowsError(
+            try decodeSnapshot(#"{"townHallWeaponLevelKeyPresent": null}"#)
+        ) { error in
+            guard case DecodingError.typeMismatch = error else {
+                return XCTFail("期望 typeMismatch，实际: \(error)")
+            }
+        }
+        // marker=true 但武器键缺失 → 矛盾 → throw
+        XCTAssertThrowsError(
+            try decodeSnapshot(#"{"townHallWeaponLevelKeyPresent": true}"#)
+        ) { error in
+            guard case DecodingError.dataCorrupted = error else {
+                return XCTFail("期望 dataCorrupted，实际: \(error)")
+            }
+        }
+        // marker=false 但武器键存在（有值）→ 矛盾 → throw
+        XCTAssertThrowsError(
+            try decodeSnapshot(#"{"townHallWeaponLevelKeyPresent": false, "townHallWeaponLevel": 5}"#)
+        ) { error in
+            guard case DecodingError.dataCorrupted = error else {
+                return XCTFail("期望 dataCorrupted，实际: \(error)")
+            }
+        }
     }
 
     /// parserVersion 递增：0.2 = 开始跟踪 townHallWeaponLevel 键存在性（schema 审计）。

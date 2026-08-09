@@ -131,19 +131,38 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         tag = try container.decodeIfPresent(String.self, forKey: .init(stringValue: "tag")!)
         name = try container.decodeIfPresent(String.self, forKey: .init(stringValue: "name")!)
         townHallLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "townHallLevel")!)
-        townHallWeaponLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "townHallWeaponLevel")!)
-        // 三态键存在性（Issue #75 工作流 B）：
-        // 1. 有 marker 键（本模型 0.2+ 编码产物）→ 直接采用；
-        // 2. 无 marker 但有 unrecognizedKeys 键（旧版 0.1 编码产物恒写该键）→
-        //    S2 策略：默认 true，旧 nil 还原为"API 显式 null"语义（升级零过渡噪音）；
-        // 3. 其余为官方原始 JSON → presence = 武器键是否真实存在于响应
-        //    （数据驱动，不做任何按大本营等级的推断）。
-        if let marker = try container.decodeIfPresent(Bool.self, forKey: .init(stringValue: "townHallWeaponLevelKeyPresent")!) {
+        let weaponKey = SnapshotCodingKey(stringValue: "townHallWeaponLevel")!
+        townHallWeaponLevel = try container.decodeIfPresent(Int.self, forKey: weaponKey)
+        // 三态键存在性（Issue #75 工作流 B，评审 P1/P2 修复）：
+        // - 有 marker 键（本模型 0.2+ 编码产物）→ 必须为 Bool 且与武器键存在性
+        //   一致（矛盾 = 手改/损坏数据 → fail-closed 拒绝）；marker 值非 Bool
+        //   （null/类型错误）同样拒绝（与项目其他字段类型错误 fail-fast 一致）。
+        // - 无 marker（旧 0.1 缓存 / 官方原始 JSON）→ 按武器键真实存在性判定，
+        //   保守不推断：旧缓存"键缺失"无法区分来自 API null 还是缺失，显示
+        //   "未提供"而非"不适用"（刷新后 API 返回 null 才变隐藏）。
+        //   不做任何按大本营等级的推断。
+        let markerKey = SnapshotCodingKey(stringValue: "townHallWeaponLevelKeyPresent")!
+        if container.contains(markerKey) {
+            guard let marker = try container.decodeIfPresent(Bool.self, forKey: markerKey) else {
+                throw DecodingError.typeMismatch(
+                    Bool.self,
+                    DecodingError.Context(
+                        codingPath: decoder.codingPath + [markerKey as CodingKey],
+                        debugDescription: "townHallWeaponLevelKeyPresent 必须是布尔值"
+                    )
+                )
+            }
+            guard marker == container.contains(weaponKey) else {
+                throw DecodingError.dataCorrupted(
+                    DecodingError.Context(
+                        codingPath: decoder.codingPath + [markerKey as CodingKey],
+                        debugDescription: "townHallWeaponLevelKeyPresent 与 townHallWeaponLevel 键存在性矛盾"
+                    )
+                )
+            }
             townHallWeaponLevelKeyPresent = marker
-        } else if container.contains(.init(stringValue: "unrecognizedKeys")!) {
-            townHallWeaponLevelKeyPresent = true
         } else {
-            townHallWeaponLevelKeyPresent = container.contains(.init(stringValue: "townHallWeaponLevel")!)
+            townHallWeaponLevelKeyPresent = container.contains(weaponKey)
         }
         builderHallLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "builderHallLevel")!)
         expLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "expLevel")!)

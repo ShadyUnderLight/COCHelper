@@ -164,6 +164,29 @@ def test_validate_craft_table_data_id_must_be_crafttable(tmp_path):
     assert any("1000097" in e and "craftTable" in e for e in errors)
 
 
+# ---- 错标分类（评审补强：全量重算比对）----
+
+def test_validate_mislabeled_defense_rejected(tmp_path):
+    """登记表内 ID 错标分类 → error（1000008 注册表 defense，实际 military）。"""
+    d = _write_dir(tmp_path, [_item(1000008, dc="military")])
+    errors = validate_catalog(d)
+    assert any("displayCategory 与注册表不一致" in e and "1000008" in e for e in errors)
+
+
+def test_validate_fallback_item_labeled_classified_rejected(tmp_path):
+    """兜底登记表内 ID 被标分类 → error（1000002 注册表 None，实际 defense）。"""
+    d = _write_dir(tmp_path, [_item(1000002, dc="defense")])
+    errors = validate_catalog(d)
+    assert any("displayCategory 与注册表不一致" in e and "1000002" in e for e in errors)
+
+
+def test_validate_mislabeled_craft_table_rejected(tmp_path):
+    """防御建筑错标 craftTable → error（1000008 注册表 defense，实际 craftTable）。"""
+    d = _write_dir(tmp_path, [_item(1000008, dc="craftTable")])
+    errors = validate_catalog(d)
+    assert any("displayCategory 与注册表不一致" in e and "1000008" in e for e in errors)
+
+
 def test_validate_counts_display_categories_recomputed(tmp_path):
     d = _write_dir(tmp_path, [_item(1000008, dc="defense"), _item(1000002, dc=None)])
     m = json.loads((d / "manifest.json").read_text())

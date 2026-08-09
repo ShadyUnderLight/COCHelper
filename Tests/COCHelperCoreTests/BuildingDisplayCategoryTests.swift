@@ -245,6 +245,39 @@ final class BuildingDisplayCategoryTests: XCTestCase {
         ))
     }
 
+    /// 防漏机制（已分类端，评审补强）：bundled 目录 home buildings 中
+    /// displayCategory 非 nil 的 dataID 必须 == 本测试硬编码的 33 项已分类集合
+    /// （21 defense + 11 military + 1 craftTable，与 Python
+    /// display_categories 注册表一致），按值分三个子集合精确断言。与
+    /// testBundledCatalogClassificationMatchesIntentionalFallback（未分类端）互补，
+    /// 双端锁死：登记表内错标分类（如 1000008→military）在此必红。
+    func testBundledCatalogClassifiedSetsMatchIntentionalClassifications() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let classified = catalog.items(in: "buildings")
+            .filter { $0.base == "home" && $0.displayCategory != nil }
+        let defense = Set(classified.filter { $0.displayCategory == "defense" }.map(\.dataID))
+        let military = Set(classified.filter { $0.displayCategory == "military" }.map(\.dataID))
+        let craftTable = Set(classified.filter { $0.displayCategory == "craftTable" }.map(\.dataID))
+        let expectedDefense: Set<Int64> = [
+            1000008, 1000009, 1000010, 1000011, 1000012, 1000013, 1000019,
+            1000021, 1000027, 1000028, 1000031, 1000032, 1000067, 1000072,
+            1000077, 1000079, 1000084, 1000085, 1000086, 1000089, 1000102,
+        ]
+        let expectedMilitary: Set<Int64> = [
+            1000000, 1000006, 1000007, 1000014, 1000020, 1000026, 1000029,
+            1000059, 1000068, 1000070, 1000071,
+        ]
+        let expectedCraftTable: Set<Int64> = [1000097]
+        XCTAssertEqual(defense, expectedDefense,
+                       "defense 集合不一致：新增 \(defense.subtracting(expectedDefense))，移除 \(expectedDefense.subtracting(defense))")
+        XCTAssertEqual(military, expectedMilitary,
+                       "military 集合不一致：新增 \(military.subtracting(expectedMilitary))，移除 \(expectedMilitary.subtracting(military))")
+        XCTAssertEqual(craftTable, expectedCraftTable,
+                       "craftTable 集合不一致：\(craftTable)")
+        // 三子集互斥 + 全覆盖 = 33 已分类项（73 home − 40 兜底）
+        XCTAssertEqual(defense.count + military.count + craftTable.count, 33)
+    }
+
     // MARK: - rootID 解析
 
     func testRootIDParsing() {

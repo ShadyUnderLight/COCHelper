@@ -251,9 +251,12 @@ def test_validate_duplicate_section_key(tmp_path):
     """同 dataID 不同 section 不算重复主键（(section, dataID) 复合键）。"""
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
+    # 同 dataID=1000008 双 item：units（非 buildings 不查分类）+ buildings（防御）
+    c["items"][0]["dataID"] = 1000008
     dup = json.loads(json.dumps(c["items"][0]))
     dup["section"] = "buildings"
-    # Issue #75 工作流 C：home buildings 必须分类或登记兜底（fail-loud 契约）
+    dup["name"] = "加农炮"
+    # Issue #75 工作流 C：home buildings 必须与注册表一致（defense）——全量比对锁定
     dup["displayCategory"] = "defense"
     c["items"].append(dup)
     _write_with_hash(d, catalog=c)
@@ -1306,6 +1309,7 @@ def test_validate_instance_counts_non_countable_item_ok(tmp_path):
     c = _load_catalog(d)
     item = json.loads(json.dumps(c["items"][1]))
     item["dataID"] = 1000104  # 大本营变体（非数量型排除列表）
+    item["displayCategory"] = None  # Issue #75 工作流 C：兜底项不得带分类（注册表比对）
     c["items"].append(item)
     _write_with_hash(d, catalog=c)
     m = _load_manifest(d)

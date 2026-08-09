@@ -18,9 +18,9 @@ from . import (
 from .catalog import counts_for
 from .contract import check_rendered_path_contract, rendered_path_format_ok
 from .display_categories import (
-    CRAFT_TABLE_DATA_ID,
     DISPLAY_CATEGORIES,
     INTENTIONAL_FALLBACK_DATA_IDS,
+    apply_display_categories,
 )
 from .model import AssetRef, UpgradeCost, catalog_from_dict
 
@@ -106,6 +106,22 @@ def _check_instance_counts(errors: list[str], ic: dict, catalog) -> None:
                 and i.dataID not in _NON_COUNTABLE_DATA_IDS
                 and (i.section, i.dataID) not in ic_keys):
             errors.append(f"instanceCounts 缺少宇宙项: {i.section}:{i.dataID} ({i.name})")
+
+
+def _check_display_category_registry(errors: list[str], items) -> None:
+    """displayCategory 全量重算比对（Issue #75 工作流 C 评审补强）。
+
+    apply_display_categories 从注册表（display_categories.py，分类知识唯一事实源）
+    派生每个 item 的期望分类，与 catalog 实际值全量逐 item 比对。任何差异即
+    登记表内错标（如 1000008→military）、兜底项被标分类、非 home 被标、
+    1000097 非 craftTable——统一报错。独立 1000097 检查已删除（本比对覆盖，
+    避免同一错误双报）。apply 返回新列表且保持顺序，zip 逐对即可。
+    """
+    for item, expected in zip(items, apply_display_categories(items)):
+        if item.displayCategory != expected.displayCategory:
+            errors.append(
+                f"displayCategory 与注册表不一致: {item.section}:{item.dataID} "
+                f"{item.name} 期望={expected.displayCategory} 实际={item.displayCategory!r}")
 
 
 def _check_rendered_path(
@@ -318,8 +334,9 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
             if item.baseMissingReason and item.baseMissingReason not in BASE_MISSING_REASONS:
                 errors.append(f"{key}: 未知 baseMissingReason {item.baseMissingReason!r}")
             # ---- displayCategory（Issue #75 工作流 C）----
-            # 闭枚举 / 域（仅 home buildings 可携带）/ 未分类 fail-loud /
-            # 精制台双源一致性。分类知识唯一事实源 display_categories.py。
+            # 闭枚举 / 域（仅 home buildings 可携带）/ 未分类 fail-loud。
+            # 分类知识唯一事实源 display_categories.py。登记表内错标/兜底项被标
+            # 分类由循环后的全量重算比对（_check_display_category_registry）统一覆盖。
             dc = item.displayCategory
             if dc is not None and dc not in DISPLAY_CATEGORIES:
                 errors.append(f"{key}: displayCategory 未知值 {dc!r}")
@@ -328,10 +345,6 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
             if item.section == "buildings" and item.base == "home":
                 if dc is None and item.dataID not in INTENTIONAL_FALLBACK_DATA_IDS:
                     errors.append(f"新增建筑未分类: {item.dataID} {item.name}")
-                if item.dataID == CRAFT_TABLE_DATA_ID and dc != "craftTable":
-                    errors.append(
-                        f"{key}: 精制台（{CRAFT_TABLE_DATA_ID}）displayCategory 应为 "
-                        f"craftTable，实际 {dc!r}")
             for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
                 if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
@@ -341,6 +354,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                                          catalog_path.parent, registered)
     except (TypeError, ValueError, AttributeError) as exc:
         return [f"catalog 内容非法: {exc}"]
+
+    _check_display_category_registry(errors, catalog.items)
 
     # ---- counts 与目录内容重算一致 ----
     counts = counts_for(catalog.items)

@@ -59,7 +59,8 @@ public struct OfficialAPIState: Codable, Hashable, Sendable {
     public var unrecognizedKeys: [String]
 
     /// 当前实现版本；schema 变更时递增。
-    public static let currentParserVersion = "player-snapshot-0.1"
+    /// 0.2 = 开始跟踪 `townHallWeaponLevel` 键存在性（Issue #75 工作流 B）。
+    public static let currentParserVersion = "player-snapshot-0.2"
 
     /// 超过该时长视为 stale（不自动刷新，仅展示提示）。
     public static let staleThreshold: TimeInterval = 24 * 3600

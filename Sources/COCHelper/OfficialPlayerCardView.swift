@@ -186,13 +186,7 @@ struct OfficialPlayerCardView: View {
                 title: "进度",
                 icon: .progress,
                 fallbackSystemImage: "building.columns.fill",
-                items: [
-                    ("大本营等级", snapshot.townHallLevel.map { "\($0)级" }),
-                    // 武器未建造时官方返回 nil：显示 "—"（issue：缺失显示未知/未提供，不推断、不隐藏）。
-                    ("大本营武器等级", snapshot.townHallWeaponLevel.map { "\($0)级" }),
-                    ("建筑大师大本营", snapshot.builderHallLevel.map { "\($0)级" }),
-                    ("经验等级", snapshot.expLevel.map { "\($0)" }),
-                ]
+                items: progressItems(snapshot: snapshot)
             )
 
             summarySection(
@@ -250,6 +244,31 @@ struct OfficialPlayerCardView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// 进度组动态项（Issue #75 工作流 B）：武器行按三态显示契约决定是否加入。
+    /// 武器行固定插入 index 1（大本营等级之后、建筑大师大本营之前），保持原布局顺序
+    /// `[大本营等级, 大本营武器等级, 建筑大师大本营, 经验等级]` 不因三态切换漂移。
+    /// - `.level`：显示具体等级；
+    /// - `.notApplicable`：官方显式 null（无武器等级维度，如 12–15 本移除等级后
+    ///   武器仍保留）→ 隐藏整行，不显示"未建造/不适用"文案；
+    /// - `.notProvided`：官方未提供该字段 → 显示"未提供"。
+    /// 不做任何按大本营等级（townHallLevel）的推断。
+    private func progressItems(snapshot: OfficialPlayerSnapshot) -> [(String, String?)] {
+        var items: [(String, String?)] = [
+            ("大本营等级", snapshot.townHallLevel.map { "\($0)级" }),
+            ("建筑大师大本营", snapshot.builderHallLevel.map { "\($0)级" }),
+            ("经验等级", snapshot.expLevel.map { "\($0)" }),
+        ]
+        switch snapshot.townHallWeaponLevelDisplayState {
+        case .level(let level):
+            items.insert(("大本营武器等级", "\(level)级"), at: 1)
+        case .notApplicable:
+            break
+        case .notProvided:
+            items.insert(("大本营武器等级", "未提供"), at: 1)
+        }
+        return items
     }
 
     /// 分组区块：次级标题 + 一行均分网格（列数 = 项数，无尾部空白）。

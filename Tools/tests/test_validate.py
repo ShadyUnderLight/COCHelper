@@ -253,6 +253,8 @@ def test_validate_duplicate_section_key(tmp_path):
     c = _load_catalog(d)
     dup = json.loads(json.dumps(c["items"][0]))
     dup["section"] = "buildings"
+    # Issue #75 工作流 C：home buildings 必须分类或登记兜底（fail-loud 契约）
+    dup["displayCategory"] = "defense"
     c["items"].append(dup)
     _write_with_hash(d, catalog=c)
     m = _load_manifest(d)
@@ -1192,6 +1194,7 @@ def _valid_dir_with_universe(tmp_path: Path) -> Path:
     item = json.loads(json.dumps(c["items"][0]))
     item["section"] = "buildings"
     item["dataID"] = 1000008  # Cannon（数量型，不在排除列表）
+    item["displayCategory"] = "defense"  # Issue #75 工作流 C：真实分类
     c["items"].append(item)
     c["instanceCounts"] = {"buildings:1000008": [1] * 18}
     _write_with_hash(d, catalog=c)

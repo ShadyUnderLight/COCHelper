@@ -17,6 +17,11 @@ from . import (
 )
 from .catalog import counts_for
 from .contract import check_rendered_path_contract, rendered_path_format_ok
+from .display_categories import (
+    CRAFT_TABLE_DATA_ID,
+    DISPLAY_CATEGORIES,
+    INTENTIONAL_FALLBACK_DATA_IDS,
+)
 from .model import AssetRef, UpgradeCost, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
@@ -312,6 +317,21 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                 errors.append(f"{key}: base={item.base} 却有 baseMissingReason")
             if item.baseMissingReason and item.baseMissingReason not in BASE_MISSING_REASONS:
                 errors.append(f"{key}: 未知 baseMissingReason {item.baseMissingReason!r}")
+            # ---- displayCategory（Issue #75 工作流 C）----
+            # 闭枚举 / 域（仅 home buildings 可携带）/ 未分类 fail-loud /
+            # 精制台双源一致性。分类知识唯一事实源 display_categories.py。
+            dc = item.displayCategory
+            if dc is not None and dc not in DISPLAY_CATEGORIES:
+                errors.append(f"{key}: displayCategory 未知值 {dc!r}")
+            if (item.section, item.base) != ("buildings", "home") and dc is not None:
+                errors.append(f"{key}: 非 home buildings 却有 displayCategory={dc!r}")
+            if item.section == "buildings" and item.base == "home":
+                if dc is None and item.dataID not in INTENTIONAL_FALLBACK_DATA_IDS:
+                    errors.append(f"新增建筑未分类: {item.dataID} {item.name}")
+                if item.dataID == CRAFT_TABLE_DATA_ID and dc != "craftTable":
+                    errors.append(
+                        f"{key}: 精制台（{CRAFT_TABLE_DATA_ID}）displayCategory 应为 "
+                        f"craftTable，实际 {dc!r}")
             for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
                 if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
@@ -370,6 +390,18 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         if bi is not None and (not isinstance(bi, int)
                                or isinstance(bi, bool) or bi < 0):
             errors.append(f"counts.blockedIcons 非法: {bi!r}")
+        # ---- displayCategories（Issue #75 工作流 C，optional 字段）----
+        # 旧 manifest 缺失不报错；存在必与 catalog 实际分布一致（防标注/生成遗漏）
+        dc_counts = manifest_counts.get("displayCategories")
+        if dc_counts is not None:
+            if not isinstance(dc_counts, dict):
+                errors.append(f"counts.displayCategories 非法: {dc_counts!r}")
+            else:
+                for k, v in counts["displayCategories"].items():
+                    if dc_counts.get(k) != v:
+                        errors.append(
+                            f"counts.displayCategories.{k} 不一致: "
+                            f"manifest={dc_counts.get(k)} 重算={v}")
 
     # ---- instanceCounts 宇宙（Issue #70 阶段 2）----
     # 旧产物缺字段不报错（向后兼容）；存在时必须通过全部不变量（_check_instance_counts）

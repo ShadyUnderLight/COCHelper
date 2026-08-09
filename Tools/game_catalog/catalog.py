@@ -10,6 +10,7 @@ from pathlib import Path
 from . import SCHEMA_VERSION
 from .apk import rows, read_build_tag, localization
 from .builders import build_items, build_guardians
+from .display_categories import apply_display_categories
 from .durations import classify_duration
 from .errors import CatalogError
 from .fingerprint import sha256_bytes, sha256_file
@@ -109,6 +110,19 @@ def counts_for(items: list[CatalogItem]) -> dict:
         "initialLevel": buckets.get("initialLevel", 0),
         "sourceMissing": buckets.get("sourceMissing", 0),
         "parseFailed": buckets.get("parseFailed", 0),
+        # Issue #75 工作流 C：展示分类分布（只统计 home buildings）
+        "displayCategories": {
+            "defense": sum(1 for i in items if i.section == "buildings"
+                           and i.base == "home" and i.displayCategory == "defense"),
+            "military": sum(1 for i in items if i.section == "buildings"
+                            and i.base == "home" and i.displayCategory == "military"),
+            "craftTable": sum(1 for i in items if i.section == "buildings"
+                              and i.base == "home" and i.displayCategory == "craftTable"),
+            "uncategorizedBuildings": sum(1 for i in items
+                                          if i.section == "buildings"
+                                          and i.base == "home"
+                                          and i.displayCategory is None),
+        },
     }
 
 
@@ -137,6 +151,8 @@ def generate(
             effective_version = game_version or _infer_game_version(build_tag)
             localized = localization(archive)
             items = _build_catalog_items(archive, localized, require_all_tables=require_all_tables)
+            # Issue #75 工作流 C：展示分类数据化（分类知识唯一事实源 display_categories.py）
+            items = apply_display_categories(items)
             # Issue #70 阶段 2：townhall_levels → instanceCounts 宇宙
             # （先 build items：缺表/缺列错误优先报，再读宇宙表）
             instance_counts = build_instance_counts(

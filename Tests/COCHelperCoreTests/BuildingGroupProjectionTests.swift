@@ -48,6 +48,8 @@ final class BuildingGroupProjectionTests: XCTestCase {
         var base: String
         var name: String
         var maxLevel: Int
+        /// Issue #75 工作流 C：展示分类改读 catalog displayCategory（nil → 编码为 null）。
+        var displayCategory: String? = nil
         var levels: [SpecLevel]
     }
 
@@ -66,7 +68,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
         SpecItem(section: "buildings", category: "buildings", dataID: 1_000_008, base: "home", name: "城墙", maxLevel: 12, levels: standardLevels(12)),
         SpecItem(section: "buildings", category: "buildings", dataID: 1_000_013, base: "home", name: "防空火箭", maxLevel: 16, levels: standardLevels(16, resource: "Gold")),
         SpecItem(section: "buildings2", category: "buildings", dataID: 1_000_033, base: "builder", name: "建筑工人小屋", maxLevel: 10, levels: standardLevels(10)),
-        SpecItem(section: "buildings", category: "buildings", dataID: 1_000_097, base: "home", name: "精制台", maxLevel: 9, levels: standardLevels(9)),
+        SpecItem(section: "buildings", category: "buildings", dataID: 1_000_097, base: "home", name: "精制台", maxLevel: 9, displayCategory: "craftTable", levels: standardLevels(9)),
     ]
 
     private func makeCatalog(items: [SpecItem], gameVersion: String = "18.400.13") throws -> GameCatalog {

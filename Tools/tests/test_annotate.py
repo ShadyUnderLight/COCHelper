@@ -6,8 +6,11 @@
 import hashlib
 import json
 
+import pytest
+
 from annotate_display_categories import annotate_directory
 from game_catalog.catalog import counts_for
+from game_catalog.errors import CatalogError
 from game_catalog.model import Catalog, CatalogItem, CatalogLevel, catalog_to_dict
 
 
@@ -116,3 +119,67 @@ def test_annotate_result_passes_validate(tmp_path):
     d = _make_dir(tmp_path)
     annotate_directory(d)
     assert validate_catalog(d) == []
+
+
+# ---- P1-A（评审修复）：未登记新建筑 fail-closed，写回前中止且不落盘 ----
+
+def test_annotate_fails_closed_on_unregistered_new_building(tmp_path):
+    """目录含未登记新建筑（不在兜底登记表）→ 抛错，catalog.json/manifest.json 零改动。"""
+    d = _make_dir(tmp_path)
+    data = json.loads((d / "catalog.json").read_text())
+    data["items"].append({
+        "section": "buildings", "dataID": 999999, "category": "buildings",
+        "base": "home", "baseMissingReason": None, "name": "新建筑", "maxLevel": 1,
+        "icon": None, "levelVisual": None, "missingReason": None,
+        "levels": [{"level": 1, "durationSeconds": 0, "missingReason": None,
+                    "upgradeCosts": None, "requiredTownHallLevel": None,
+                    "requiredLaboratoryLevel": None, "icon": None,
+                    "levelVisual": None, "requiredHeroTavernLevel": None}],
+    })
+    (d / "catalog.json").write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    cat_before = (d / "catalog.json").read_bytes()
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="999999"):
+        annotate_directory(d)
+    assert (d / "catalog.json").read_bytes() == cat_before
+    assert (d / "manifest.json").read_bytes() == man_before
+
+
+def test_annotate_fail_closed_error_limits_listing_and_counts(tmp_path):
+    """错误消息列未登记项（最多 10 个）+ 总数。"""
+    d = _make_dir(tmp_path)
+    data = json.loads((d / "catalog.json").read_text())
+    for i in range(12):
+        data["items"].append({
+            "section": "buildings", "dataID": 900000 + i, "category": "buildings",
+            "base": "home", "baseMissingReason": None, "name": f"新建筑{i}",
+            "maxLevel": 1, "icon": None, "levelVisual": None, "missingReason": None,
+            "levels": [{"level": 1}],
+        })
+    (d / "catalog.json").write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    with pytest.raises(CatalogError) as excinfo:
+        annotate_directory(d)
+    msg = str(excinfo.value)
+    assert "12 个未登记" in msg
+    assert msg.count("新建筑") == 10  # 最多列 10 个
+    # 文件未被写
+    assert len((d / "catalog.json").read_text()) > 0
+
+
+def test_annotate_ok_with_registered_fallback_buildings(tmp_path):
+    """对照：兜底登记表内的未分类项（1000001 大本营）不触发 fail-closed。"""
+    d = _make_dir(tmp_path)
+    data = json.loads((d / "catalog.json").read_text())
+    data["items"].append({
+        "section": "buildings", "dataID": 1000001, "category": "buildings",
+        "base": "home", "baseMissingReason": None, "name": "大本营", "maxLevel": 1,
+        "icon": None, "levelVisual": None, "missingReason": None,
+        "levels": [{"level": 1}],
+    })
+    (d / "catalog.json").write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    annotate_directory(d)  # 不抛错
+    out = json.loads((d / "catalog.json").read_text())
+    assert next(i for i in out["items"] if i["dataID"] == 1000001)["displayCategory"] is None

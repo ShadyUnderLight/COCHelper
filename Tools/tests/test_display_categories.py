@@ -156,6 +156,8 @@ def test_validate_uncategorized_new_building_fails_loud(tmp_path):
     d = _write_dir(tmp_path, [_item(data_id=999999, dc=None)])
     errors = validate_catalog(d)
     assert any("新增建筑未分类" in e and "999999" in e for e in errors)
+    # P1-B（评审修复）：错误消息自解释——旧产物（无 displayCategory 字段）如何补救
+    assert any("annotate_display_categories.py" in e for e in errors)
 
 
 def test_validate_craft_table_data_id_must_be_crafttable(tmp_path):

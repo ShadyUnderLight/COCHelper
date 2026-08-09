@@ -161,16 +161,59 @@ final class BuildingDisplayCategoryTests: XCTestCase {
     // MARK: - 安全回退（catalog 缺失 / 未知 raw / 旧目录）
 
     func testCatalogNilFallsBackToNil() {
-        // catalog == nil → 全 nil（UI 兜底「建筑与防御」，项目不丢失）
+        // catalog == nil → 除精制台身份回退外全 nil（UI 兜底「建筑与防御」，项目不丢失）
         XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
             section: "buildings", dataID: 1000008, base: .home, rootParentDataID: nil, catalog: nil
         ))
         XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
-            section: "buildings", dataID: 1000097, base: .home, rootParentDataID: nil, catalog: nil
-        ))
-        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
             section: "buildings", dataID: 103000011, base: .home,
             rootParentDataID: 1000008, catalog: nil
+        ))
+    }
+
+    // MARK: - 精制台最小分类回退（评审 P2）
+
+    func testCraftTableFallsBackWhenCatalogMissing() {
+        // 主 catalog 不可用时精制台仍分类（#65 CraftTableView 门控依赖）——
+        // 身份常量最小回退，不恢复 defense/military 白名单。
+        XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings", dataID: 1000097, base: .home, rootParentDataID: nil, catalog: nil
+        ), .craftTable)
+    }
+
+    func testCraftTableFallsBackWhenFieldMissingInCatalog() {
+        // 旧目录：1000097 item 存在但 displayCategory 字段缺失（init 默认 nil）→ 回退
+        let item = CatalogItem(
+            section: "buildings", category: "buildings", dataID: 1_000_097,
+            base: "home", baseMissingReason: nil, name: "精制台", maxLevel: 1,
+            icon: nil, levelVisual: nil, levels: []
+        )
+        let legacy = GameCatalog(gameVersion: "old", items: [item])
+        XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings", dataID: 1000097, base: .home, rootParentDataID: nil, catalog: legacy
+        ), .craftTable)
+    }
+
+    func testCraftTableFallbackNotAppliedToOtherIDs() {
+        // 对照组：非精制台 dataID catalog nil → 不回退
+        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings", dataID: 1000008, base: .home, rootParentDataID: nil, catalog: nil
+        ))
+        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings", dataID: 1000000, base: .home, rootParentDataID: nil, catalog: nil
+        ))
+    }
+
+    func testCraftTableUnknownRawValueStillFallsBackToNil() {
+        // 有值但未知 raw（契约外）→ 仍 nil（纵深防御，不回退——错标由 validate 拦截）
+        let item = CatalogItem(
+            section: "buildings", category: "buildings", dataID: 1_000_097,
+            base: "home", baseMissingReason: nil, name: "精制台", maxLevel: 1,
+            icon: nil, levelVisual: nil, displayCategory: "unknownRaw", levels: []
+        )
+        let catalog = GameCatalog(gameVersion: "test", items: [item])
+        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings", dataID: 1000097, base: .home, rootParentDataID: nil, catalog: catalog
         ))
     }
 
@@ -183,7 +226,8 @@ final class BuildingDisplayCategoryTests: XCTestCase {
     }
 
     func testLegacyCatalogWithoutDisplayCategoryFallsBackToNil() {
-        // 旧目录：CatalogItem 无 displayCategory 字段（init 默认 nil）→ 全 nil（安全回退）
+        // 旧目录：CatalogItem 无 displayCategory 字段（init 默认 nil）→
+        // 非精制台全 nil（安全回退）；精制台 1000097 身份回退 .craftTable（评审 P2）。
         let item = CatalogItem(
             section: "buildings", category: "buildings", dataID: 1_000_008,
             base: "home", baseMissingReason: nil, name: "加农炮", maxLevel: 1,
@@ -193,9 +237,10 @@ final class BuildingDisplayCategoryTests: XCTestCase {
         XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
             section: "buildings", dataID: 1000008, base: .home, rootParentDataID: nil, catalog: legacy
         ))
-        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
+        // 1000097 不在旧目录（item 缺失）→ 身份常量最小回退
+        XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
             section: "buildings", dataID: 1000097, base: .home, rootParentDataID: nil, catalog: legacy
-        ))
+        ), .craftTable)
     }
 
     // MARK: - bundled 目录防漏（唯一事实源 = catalog）

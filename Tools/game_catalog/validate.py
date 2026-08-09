@@ -344,7 +344,12 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                 errors.append(f"{key}: 非 home buildings 却有 displayCategory={dc!r}")
             if item.section == "buildings" and item.base == "home":
                 if dc is None and item.dataID not in INTENTIONAL_FALLBACK_DATA_IDS:
-                    errors.append(f"新增建筑未分类: {item.dataID} {item.name}")
+                    # P1-B（评审修复）：防漏机制不放行旧产物（严格性不变），
+                    # 错误消息自解释补救路径
+                    errors.append(
+                        f"新增建筑未分类: {item.dataID} {item.name}"
+                        f"（旧产物缺少 displayCategory 字段，"
+                        f"请用 annotate_display_categories.py 重新标注）")
             for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
                 if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")

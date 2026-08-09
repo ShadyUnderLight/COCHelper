@@ -334,15 +334,16 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
         }
     }
 
-    /// marker 键是 known key：round-trip 后不得被收集进 unrecognizedKeys。
+    /// marker 键是 known key：直接解码官方样式 JSON（无 unrecognizedKeys 键）时
+    /// 不得被收集进 unrecognizedKeys——真实命中 knownKeys 过滤路径
+    /// （round-trip 场景会走 storedKeys 分支直接读存储值，绕过该路径，故不可用）。
     func testPresenceKeyNotCollectedAsUnrecognized() throws {
-        let original = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: fullFixtureData)
-        let restored = try JSONDecoder().decode(
+        let snapshot = try JSONDecoder().decode(
             OfficialPlayerSnapshot.self,
-            from: try JSONEncoder().encode(original)
+            from: Data(#"{"townHallWeaponLevelKeyPresent": true}"#.utf8)
         )
-        XCTAssertFalse(restored.unrecognizedKeys.contains("townHallWeaponLevelKeyPresent"))
-        XCTAssertEqual(restored, original)
+        XCTAssertTrue(snapshot.unrecognizedKeys.isEmpty)
+        XCTAssertEqual(snapshot.townHallWeaponLevelKeyPresent, true)
     }
 
     /// parserVersion 递增：0.2 = 开始跟踪 townHallWeaponLevel 键存在性（schema 审计）。

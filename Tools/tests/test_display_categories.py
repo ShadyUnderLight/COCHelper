@@ -9,8 +9,6 @@ import hashlib
 import json
 from pathlib import Path
 
-import pytest
-
 from game_catalog.catalog import counts_for
 from game_catalog.display_categories import (
     CRAFT_TABLE_DATA_ID,

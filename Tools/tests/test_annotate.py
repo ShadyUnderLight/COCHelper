@@ -5,9 +5,6 @@
 
 import hashlib
 import json
-from pathlib import Path
-
-import pytest
 
 from annotate_display_categories import annotate_directory
 from game_catalog.catalog import counts_for

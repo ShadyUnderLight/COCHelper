@@ -238,4 +238,133 @@ final class OfficialPlayerSnapshotTests: XCTestCase {
         XCTAssertEqual(restored, original)
         XCTAssertEqual(restored.unrecognizedKeys.sorted(), original.unrecognizedKeys.sorted())
     }
+
+    // MARK: - 大本营武器等级三态显示契约（Issue #75 工作流 B）
+
+    private func decodeSnapshot(_ json: String) throws -> OfficialPlayerSnapshot {
+        try JSONDecoder().decode(
+            OfficialPlayerSnapshot.self,
+            from: Data(json.utf8)
+        )
+    }
+
+    /// 官方 `townHallWeaponLevel` 三态（值 / 显式 null / 键缺失）必须可区分。
+    func testWeaponLevelThreeStatesDecode() throws {
+        // 1) 官方提供有效等级
+        let level = try decodeSnapshot(#"{"townHallWeaponLevel": 5}"#)
+        XCTAssertEqual(level.townHallWeaponLevel, 5)
+        XCTAssertEqual(level.townHallWeaponLevelKeyPresent, true)
+        XCTAssertEqual(level.townHallWeaponLevelDisplayState, .level(5))
+
+        // 2) 官方显式 null：武器保留但无等级维度（12–15 本移除等级后官方返回 null，
+        //    不能推断为"未建造"——UI 隐藏整行）。
+        let explicitNull = try decodeSnapshot(#"{"townHallWeaponLevel": null}"#)
+        XCTAssertNil(explicitNull.townHallWeaponLevel)
+        XCTAssertEqual(explicitNull.townHallWeaponLevelKeyPresent, true)
+        XCTAssertEqual(explicitNull.townHallWeaponLevelDisplayState, .notApplicable)
+
+        // 3) 官方未提供该字段（键缺失）：区别于显式 null。
+        let missing = try decodeSnapshot(##"{"tag": "#X"}"##)
+        XCTAssertNil(missing.townHallWeaponLevel)
+        XCTAssertEqual(missing.townHallWeaponLevelKeyPresent, false)
+        XCTAssertEqual(missing.townHallWeaponLevelDisplayState, .notProvided)
+    }
+
+    /// S2 旧缓存兼容：旧版产物 JSON 无 marker 键 → presence 默认 true。
+    /// 判别：旧版产物恒含 `unrecognizedKeys` 键（本模型 encode 恒写），
+    /// 官方原始 JSON 永不含该键——两者由此区分。
+    func testLegacyCacheWithoutMarkerDefaultsToPresent() throws {
+        // 旧版产物（无 marker 键 + 有 unrecognizedKeys 键）：有武器等级 → 视为 API 显式提供。
+        let withWeapon = try decodeSnapshot(#"{"townHallWeaponLevel": 5, "unrecognizedKeys": []}"#)
+        XCTAssertEqual(withWeapon.townHallWeaponLevelKeyPresent, true)
+        XCTAssertEqual(withWeapon.townHallWeaponLevelDisplayState, .level(5))
+
+        // 旧版产物（无 marker 键 + 无武器键 + 有 unrecognizedKeys 键）→ presence 默认 true →
+        // notApplicable。升级零过渡噪音：刷新前隐藏而非"未提供"（旧缓存视为 API 显式 null 语义）。
+        let noWeapon = try decodeSnapshot(##"{"tag": "#LEGACY", "unrecognizedKeys": []}"##)
+        XCTAssertEqual(noWeapon.townHallWeaponLevelKeyPresent, true)
+        XCTAssertEqual(noWeapon.townHallWeaponLevelDisplayState, .notApplicable)
+    }
+
+    /// 核心契约：显式 null 与键缺失在持久化（encode → decode）中必须保持区分。
+    func testWeaponPresenceRoundTripProperty() throws {
+        var rng = SeededRNG(seed: 0x7E_15_B0)
+        for iteration in 0..<500 {
+            let presence = Bool.random(using: &rng)
+            // presence=true 时 value 随机 nil 或 0..<10；presence=false 时 value 恒 nil。
+            let value: Int? = presence && Bool.random(using: &rng) ? Int(rng.next() % 10) : nil
+
+            let original = makeWeaponSnapshot(weaponLevel: value, keyPresent: presence)
+            let data = try JSONEncoder().encode(original)
+            let restored = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: data)
+
+            XCTAssertEqual(
+                restored,
+                original,
+                "round-trip 不等 (iter=\(iteration) presence=\(presence) value=\(String(describing: value)))"
+            )
+
+            // JSON 层验证：marker 恒写；武器键三态与 presence/value 一致。
+            let json = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: data) as? [String: Any],
+                "iter=\(iteration): encode 输出应可解析为字典"
+            )
+            XCTAssertEqual(
+                json["townHallWeaponLevelKeyPresent"] as? Bool,
+                presence,
+                "iter=\(iteration): marker 键应恒写且等于 presence"
+            )
+            if presence, let value {
+                XCTAssertEqual(
+                    json["townHallWeaponLevel"] as? Int,
+                    value,
+                    "iter=\(iteration): presence=true 且 value 非 nil 时键应为数字"
+                )
+            } else if presence {
+                XCTAssertTrue(
+                    json["townHallWeaponLevel"] is NSNull,
+                    "iter=\(iteration): presence=true 且 value nil 时键应存在且为显式 null"
+                )
+            } else {
+                XCTAssertNil(
+                    json["townHallWeaponLevel"],
+                    "iter=\(iteration): presence=false 时不应写武器键"
+                )
+            }
+        }
+    }
+
+    /// marker 键是 known key：round-trip 后不得被收集进 unrecognizedKeys。
+    func testPresenceKeyNotCollectedAsUnrecognized() throws {
+        let original = try JSONDecoder().decode(OfficialPlayerSnapshot.self, from: fullFixtureData)
+        let restored = try JSONDecoder().decode(
+            OfficialPlayerSnapshot.self,
+            from: try JSONEncoder().encode(original)
+        )
+        XCTAssertFalse(restored.unrecognizedKeys.contains("townHallWeaponLevelKeyPresent"))
+        XCTAssertEqual(restored, original)
+    }
+
+    /// parserVersion 递增：0.2 = 开始跟踪 townHallWeaponLevel 键存在性（schema 审计）。
+    func testCurrentParserVersionTracksWeaponPresenceTracking() {
+        XCTAssertEqual(OfficialAPIState.currentParserVersion, "player-snapshot-0.2")
+    }
+
+    /// 构造最小快照（仅武器相关字段参与三态契约）。
+    private func makeWeaponSnapshot(weaponLevel: Int?, keyPresent: Bool) -> OfficialPlayerSnapshot {
+        OfficialPlayerSnapshot(
+            tag: "#W", name: "w",
+            townHallLevel: 1, townHallWeaponLevel: weaponLevel,
+            townHallWeaponLevelKeyPresent: keyPresent,
+            builderHallLevel: 1, expLevel: 1,
+            trophies: nil, bestTrophies: nil, warStars: nil, attackWins: nil, defenseWins: nil,
+            builderBaseTrophies: nil, versusBattleWins: nil, legendStatistics: nil,
+            clan: nil, role: nil, warPreference: nil, donations: nil,
+            donationsReceived: nil, clanCapitalContributions: nil,
+            league: nil, builderBaseLeague: nil,
+            achievements: nil, labels: nil, playerHouse: nil,
+            troops: nil, heroes: nil, spells: nil, heroEquipment: nil,
+            unrecognizedKeys: []
+        )
+    }
 }

@@ -14,6 +14,14 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
     public let name: String?
     public let townHallLevel: Int?
     public let townHallWeaponLevel: Int?
+    /// 官方响应中 `townHallWeaponLevel` 键是否存在（Issue #75 工作流 B）。
+    ///
+    /// `decodeIfPresent` 无法区分"键缺失"与"显式 null"，此标记在持久化时
+    /// 保留该区分：true = 官方写了该键（值为 null 表示官方显式声明无武器等级
+    /// 维度，如 12–15 本移除等级后）；false = 官方未提供该字段。
+    /// 注意：**不做任何按大本营等级推断"未建造/不适用"的逻辑**——12–15 本
+    /// 武器保留但等级被官方移除，nil ≠ 未建造。
+    public let townHallWeaponLevelKeyPresent: Bool
     public let builderHallLevel: Int?
     public let expLevel: Int?
 
@@ -57,7 +65,8 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
 
     public init(
         tag: String?, name: String?,
-        townHallLevel: Int?, townHallWeaponLevel: Int?, builderHallLevel: Int?, expLevel: Int?,
+        townHallLevel: Int?, townHallWeaponLevel: Int?,
+        townHallWeaponLevelKeyPresent: Bool = true, builderHallLevel: Int?, expLevel: Int?,
         trophies: Int?, bestTrophies: Int?, warStars: Int?, attackWins: Int?, defenseWins: Int?,
         builderBaseTrophies: Int?, versusBattleWins: Int?, legendStatistics: LegendStatistics?,
         clan: PlayerClan?, role: String?, warPreference: String?, donations: Int?,
@@ -73,6 +82,7 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         self.name = name
         self.townHallLevel = townHallLevel
         self.townHallWeaponLevel = townHallWeaponLevel
+        self.townHallWeaponLevelKeyPresent = townHallWeaponLevelKeyPresent
         self.builderHallLevel = builderHallLevel
         self.expLevel = expLevel
         self.trophies = trophies
@@ -105,7 +115,8 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
     // MARK: - Codable
 
     private static let knownKeys: Set<String> = [
-        "tag", "name", "townHallLevel", "townHallWeaponLevel", "builderHallLevel", "expLevel",
+        "tag", "name", "townHallLevel", "townHallWeaponLevel",
+        "townHallWeaponLevelKeyPresent", "builderHallLevel", "expLevel",
         "trophies", "bestTrophies", "warStars", "attackWins", "defenseWins",
         "builderBaseTrophies", "versusBattleWins", "legendStatistics",
         "clan", "role", "warPreference", "donations", "donationsReceived", "clanCapitalContributions",
@@ -121,6 +132,19 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         name = try container.decodeIfPresent(String.self, forKey: .init(stringValue: "name")!)
         townHallLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "townHallLevel")!)
         townHallWeaponLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "townHallWeaponLevel")!)
+        // 三态键存在性（Issue #75 工作流 B）：
+        // 1. 有 marker 键（本模型 0.2+ 编码产物）→ 直接采用；
+        // 2. 无 marker 但有 unrecognizedKeys 键（旧版 0.1 编码产物恒写该键）→
+        //    S2 策略：默认 true，旧 nil 还原为"API 显式 null"语义（升级零过渡噪音）；
+        // 3. 其余为官方原始 JSON → presence = 武器键是否真实存在于响应
+        //    （数据驱动，不做任何按大本营等级的推断）。
+        if let marker = try container.decodeIfPresent(Bool.self, forKey: .init(stringValue: "townHallWeaponLevelKeyPresent")!) {
+            townHallWeaponLevelKeyPresent = marker
+        } else if container.contains(.init(stringValue: "unrecognizedKeys")!) {
+            townHallWeaponLevelKeyPresent = true
+        } else {
+            townHallWeaponLevelKeyPresent = container.contains(.init(stringValue: "townHallWeaponLevel")!)
+        }
         builderHallLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "builderHallLevel")!)
         expLevel = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "expLevel")!)
         trophies = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "trophies")!)
@@ -165,7 +189,18 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         try container.encodeIfPresent(tag, forKey: key("tag"))
         try container.encodeIfPresent(name, forKey: key("name"))
         try container.encodeIfPresent(townHallLevel, forKey: key("townHallLevel"))
-        try container.encodeIfPresent(townHallWeaponLevel, forKey: key("townHallWeaponLevel"))
+        // marker 恒写（Issue #75 工作流 B 核心契约）：
+        // - presence=true 且 value 非 nil → 写等级
+        // - presence=true 且 value nil → 写显式 null（保留官方语义）
+        // - presence=false → 不写武器键（保持缺失）
+        try container.encode(townHallWeaponLevelKeyPresent, forKey: key("townHallWeaponLevelKeyPresent"))
+        if townHallWeaponLevelKeyPresent {
+            if let townHallWeaponLevel {
+                try container.encode(townHallWeaponLevel, forKey: key("townHallWeaponLevel"))
+            } else {
+                try container.encodeNil(forKey: key("townHallWeaponLevel"))
+            }
+        }
         try container.encodeIfPresent(builderHallLevel, forKey: key("builderHallLevel"))
         try container.encodeIfPresent(expLevel, forKey: key("expLevel"))
         try container.encodeIfPresent(trophies, forKey: key("trophies"))
@@ -193,6 +228,27 @@ public struct OfficialPlayerSnapshot: Codable, Hashable, Sendable {
         try container.encodeIfPresent(spells, forKey: key("spells"))
         try container.encodeIfPresent(heroEquipment, forKey: key("heroEquipment"))
         try container.encodeIfPresent(unrecognizedKeys, forKey: key("unrecognizedKeys"))
+    }
+}
+
+/// 大本营武器等级的显示三态（Issue #75 工作流 B）。
+///
+/// 数据驱动，**不做任何按大本营等级（townHallLevel）的推断**：12–15 本武器
+/// 保留但等级被官方移除（API 返回 null）≠ 未建造，因此不在此处产生
+/// "未建造/不适用"文案——UI 对 `notApplicable` 的处理是隐藏整行。
+public enum TownHallWeaponLevelDisplayState: Equatable, Hashable, Sendable {
+    /// 官方提供有效等级。
+    case level(Int)
+    /// 官方显式 null：无武器等级维度（UI 隐藏整行）。
+    case notApplicable
+    /// 官方未提供该字段（键缺失）。
+    case notProvided
+}
+
+extension OfficialPlayerSnapshot {
+    public var townHallWeaponLevelDisplayState: TownHallWeaponLevelDisplayState {
+        if let townHallWeaponLevel { return .level(townHallWeaponLevel) }
+        return townHallWeaponLevelKeyPresent ? .notApplicable : .notProvided
     }
 }
 

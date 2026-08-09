@@ -247,6 +247,8 @@ struct OfficialPlayerCardView: View {
     }
 
     /// 进度组动态项（Issue #75 工作流 B）：武器行按三态显示契约决定是否加入。
+    /// 武器行固定插入 index 1（大本营等级之后、建筑大师大本营之前），保持原布局顺序
+    /// `[大本营等级, 大本营武器等级, 建筑大师大本营, 经验等级]` 不因三态切换漂移。
     /// - `.level`：显示具体等级；
     /// - `.notApplicable`：官方显式 null（无武器等级维度，如 12–15 本移除等级后
     ///   武器仍保留）→ 隐藏整行，不显示"未建造/不适用"文案；
@@ -260,11 +262,11 @@ struct OfficialPlayerCardView: View {
         ]
         switch snapshot.townHallWeaponLevelDisplayState {
         case .level(let level):
-            items.append(("大本营武器等级", "\(level)级"))
+            items.insert(("大本营武器等级", "\(level)级"), at: 1)
         case .notApplicable:
             break
         case .notProvided:
-            items.append(("大本营武器等级", "未提供"))
+            items.insert(("大本营武器等级", "未提供"), at: 1)
         }
         return items
     }

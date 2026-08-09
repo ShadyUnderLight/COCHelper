@@ -1,25 +1,31 @@
 {
   "buildTag": "18_400_7",
   "counts": {
+    "blockedIcons": 11,
+    "displayCategories": {
+      "craftTable": 1,
+      "defense": 21,
+      "military": 11,
+      "uncategorizedBuildings": 40
+    },
+    "initialLevel": 429,
+    "instant": 75,
     "items": 683,
     "levels": 5479,
-    "missingTime": 3308,
     "missingIcons": 0,
-    "timed": 2096,
-    "instant": 75,
+    "missingTime": 3308,
     "notApplicable": 1032,
-    "initialLevel": 429,
-    "sourceMissing": 1847,
     "parseFailed": 0,
-    "blockedIcons": 11,
-    "renderedIcons": 1264
+    "renderedIcons": 1264,
+    "sourceMissing": 1847,
+    "timed": 2096
   },
   "gameVersion": "18.400.13",
   "generatedFiles": [
     {
       "path": "catalog.json",
-      "sha256": "sha256:c037b67678ff84b680be3f4c15621ee18681c068b3c294dd01edc5c29297e86f",
-      "size": 4058488
+      "sha256": "sha256:2da5135888addd60837fca88dd2b9e99ad09b9557a78272637adc645d111954c",
+      "size": 4079840
     },
     {
       "entries": 1264,

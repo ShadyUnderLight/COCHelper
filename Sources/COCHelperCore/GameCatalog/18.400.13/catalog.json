@@ -1048,6 +1048,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000000,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -1403,6 +1404,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000001,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -1854,6 +1856,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000002,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -2281,6 +2284,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000003,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -2756,6 +2760,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000004,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -3183,6 +3188,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000005,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -3658,6 +3664,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000006,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -4133,6 +4140,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000007,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -4536,6 +4544,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000008,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -5059,6 +5068,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000009,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -5582,6 +5592,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000010,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -6057,6 +6068,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000011,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -6484,6 +6496,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000012,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -6887,6 +6900,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000013,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -7338,6 +7352,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000014,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -7693,6 +7708,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000015,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -7904,6 +7920,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000016,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -7947,6 +7964,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000017,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -8014,6 +8032,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000018,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -8057,6 +8076,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000019,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -8484,6 +8504,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000020,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -8719,6 +8740,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000021,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -9050,6 +9072,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000022,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -9093,6 +9116,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000023,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -9376,6 +9400,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000024,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -9707,6 +9732,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000025,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -9750,6 +9776,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000026,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -10081,6 +10108,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000027,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -10388,6 +10416,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000028,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -10575,6 +10604,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000029,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -10786,6 +10816,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000030,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -10829,6 +10860,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000031,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -11016,6 +11048,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000032,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -11347,6 +11380,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000059,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -11582,6 +11616,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000060,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -11625,6 +11660,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000061,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -11668,6 +11704,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000062,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -11711,6 +11748,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000064,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -11754,6 +11792,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000066,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -11797,6 +11836,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000067,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -11984,6 +12024,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000068,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -12291,6 +12332,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000069,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -12334,6 +12376,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000070,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -12593,6 +12636,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000071,
+      "displayCategory": "military",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -12900,6 +12944,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000072,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13015,6 +13060,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000073,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13058,6 +13104,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000074,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13101,6 +13148,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000075,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13144,6 +13192,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000076,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13187,6 +13236,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000077,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13326,6 +13376,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000079,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13417,6 +13468,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000083,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13460,6 +13512,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000084,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13575,6 +13628,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000085,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13690,6 +13744,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000086,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13757,6 +13812,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000087,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13800,6 +13856,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000088,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13843,6 +13900,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000089,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13934,6 +13992,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000090,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -13977,6 +14036,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000091,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14020,6 +14080,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000092,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14063,6 +14124,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000093,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14106,6 +14168,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000094,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14149,6 +14212,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000095,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14192,6 +14256,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000096,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14235,6 +14300,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000097,
+      "displayCategory": "craftTable",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14278,6 +14344,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000098,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14321,6 +14388,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000099,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14364,6 +14432,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000100,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14407,6 +14476,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000101,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14450,6 +14520,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000102,
+      "displayCategory": "defense",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14517,6 +14588,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000103,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14560,6 +14632,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000104,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -14603,6 +14676,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000033,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -14862,6 +14936,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000034,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -15121,6 +15196,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000035,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -15380,6 +15456,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000036,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -15639,6 +15716,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000037,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -15898,6 +15976,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000038,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -16157,6 +16236,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000039,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -16416,6 +16496,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000040,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -16723,6 +16804,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000041,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -16982,6 +17064,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000042,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -17025,6 +17108,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000043,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -17284,6 +17368,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000044,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -17543,6 +17628,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000045,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -17802,6 +17888,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000046,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -18061,6 +18148,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000047,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -18104,6 +18192,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000048,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -18363,6 +18452,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000049,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -18406,6 +18496,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000050,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -18665,6 +18756,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000051,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -18924,6 +19016,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000052,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -19183,6 +19276,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000053,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -19226,6 +19320,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000054,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -19485,6 +19580,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000055,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -19744,6 +19840,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000056,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -20003,6 +20100,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000057,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -20262,6 +20360,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000058,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -20521,6 +20620,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000063,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -20780,6 +20880,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000065,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -20919,6 +21020,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000078,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -21178,6 +21280,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000080,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -21221,6 +21324,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000081,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -21360,6 +21464,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000082,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -21523,6 +21628,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000000,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -21782,6 +21888,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000001,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -21921,6 +22028,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000002,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -22060,6 +22168,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000003,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -22103,6 +22212,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000004,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -22242,6 +22352,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000005,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -22381,6 +22492,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000006,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -22520,6 +22632,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000007,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -22659,6 +22772,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000008,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -22798,6 +22912,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000009,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -22937,6 +23052,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000010,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -23076,6 +23192,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000011,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -23215,6 +23332,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000012,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -23354,6 +23472,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000013,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -23493,6 +23612,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000014,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -23632,6 +23752,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000015,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -23771,6 +23892,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000016,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -23910,6 +24032,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000017,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -24049,6 +24172,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000018,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -24188,6 +24312,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000019,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -24327,6 +24452,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000020,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -24466,6 +24592,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000021,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -24605,6 +24732,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000022,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -24744,6 +24872,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000023,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -24883,6 +25012,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000024,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -25022,6 +25152,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000025,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -25161,6 +25292,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000026,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -25300,6 +25432,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000027,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -25439,6 +25572,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000028,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -25578,6 +25712,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000029,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -25717,6 +25852,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000030,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -25856,6 +25992,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000031,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -25995,6 +26132,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000032,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -26134,6 +26272,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000033,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -26273,6 +26412,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000034,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -26412,6 +26552,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000035,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -26551,6 +26692,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000036,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -26690,6 +26832,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000037,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -26829,6 +26972,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000038,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -26968,6 +27112,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000039,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27107,6 +27252,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000040,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27246,6 +27392,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000041,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27385,6 +27532,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000042,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27524,6 +27672,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000043,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27567,6 +27716,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000044,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27610,6 +27760,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000045,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27653,6 +27804,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000046,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27696,6 +27848,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000047,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27739,6 +27892,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000048,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27782,6 +27936,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000049,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27825,6 +27980,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000050,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27868,6 +28024,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000051,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -27983,6 +28140,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000052,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28098,6 +28256,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000053,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28213,6 +28372,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000054,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28328,6 +28488,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000055,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28443,6 +28604,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000056,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28558,6 +28720,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000057,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28673,6 +28836,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000058,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28788,6 +28952,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000059,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28831,6 +28996,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000060,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28874,6 +29040,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalBuildings",
       "dataID": 110000061,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings_cc.sc",
@@ -28917,6 +29084,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000000,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_barbarian_group_cc",
@@ -29016,6 +29184,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000001,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_barbarian",
@@ -29115,6 +29284,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000002,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_stealthy_archer_group_cc",
@@ -29214,6 +29384,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000003,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_stealthy_archer",
@@ -29313,6 +29484,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000004,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_giant_cc",
@@ -29412,6 +29584,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000005,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_giant",
@@ -29511,6 +29684,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000006,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_battleram_cc",
@@ -29610,6 +29784,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000007,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -29709,6 +29884,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000008,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_minion_horde_cc",
@@ -29808,6 +29984,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000009,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_gargoyle",
@@ -29907,6 +30084,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000010,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_wizard_cc",
@@ -30006,6 +30184,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000011,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_wizard",
@@ -30105,6 +30284,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000012,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_balloon_cc",
@@ -30204,6 +30384,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000013,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_balloon",
@@ -30303,6 +30484,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000014,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_skeletonBarrel_cc",
@@ -30402,6 +30584,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000015,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_skeletonBarrel",
@@ -30501,6 +30684,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000016,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_flyingFortress_cc",
@@ -30600,6 +30784,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000017,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -30669,6 +30854,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000018,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -30694,6 +30880,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000019,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siegeCart_cc",
@@ -30793,6 +30980,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000020,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_movingCannon",
@@ -30892,6 +31080,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000021,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -30961,6 +31150,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000022,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_electric_pekka",
@@ -31060,6 +31250,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000023,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_hog_raiders_cc",
@@ -31159,6 +31350,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000024,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_hog_glider",
@@ -31258,6 +31450,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000025,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_boarRider",
@@ -31357,6 +31550,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000026,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_dragon",
@@ -31456,6 +31650,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000027,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_king_golem_cc",
@@ -31555,6 +31750,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000028,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_infernodragon",
@@ -31638,6 +31834,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000029,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_gargoyle",
@@ -31673,6 +31870,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000030,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -31698,6 +31896,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000031,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_miner",
@@ -31781,6 +31980,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000032,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_zappywagon",
@@ -31864,6 +32064,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000033,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_goblin",
@@ -31947,6 +32148,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000034,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golem",
@@ -31982,6 +32184,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000035,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_dragon",
@@ -32081,6 +32284,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000036,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golem",
@@ -32116,6 +32320,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000037,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golem",
@@ -32151,6 +32356,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000038,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golem",
@@ -32186,6 +32392,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000039,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golem",
@@ -32221,6 +32428,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTroops",
       "dataID": 112000040,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golem",
@@ -32256,6 +32464,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000000,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_cc_heal",
@@ -32355,6 +32564,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000001,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_cc_jump",
@@ -32454,6 +32664,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000002,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_cc_lightning",
@@ -32553,6 +32764,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000003,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_cc_frost",
@@ -32652,6 +32864,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000004,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_cc_rage",
@@ -32751,6 +32964,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000005,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -32776,6 +32990,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000006,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -32801,6 +33016,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000007,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -32870,6 +33086,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000008,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -32939,6 +33156,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000009,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -32964,6 +33182,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000010,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -32989,6 +33208,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000011,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_cc_graveyard",
@@ -33072,6 +33292,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000012,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_cc_speed",
@@ -33155,6 +33376,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000013,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -33180,6 +33402,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000014,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -33205,6 +33428,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalSpells",
       "dataID": 113000015,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -33230,6 +33454,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTraps",
       "dataID": 111000000,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -33339,6 +33564,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTraps",
       "dataID": 111000001,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -33448,6 +33674,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTraps",
       "dataID": 111000002,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -33557,6 +33784,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTraps",
       "dataID": 111000003,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -33666,6 +33894,7 @@
       "baseMissingReason": "capital_has_no_base",
       "category": "capitalTraps",
       "dataID": 111000004,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -33756,6 +33985,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000000,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_BarbDoll",
@@ -34256,6 +34486,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000001,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_RageVial",
@@ -34756,6 +34987,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000002,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_ArcherDoll",
@@ -35256,6 +35488,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000003,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_InvisVial",
@@ -35756,6 +35989,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000004,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_GW_EternalTome",
@@ -36256,6 +36490,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000005,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_GW_HealGem",
@@ -36756,6 +36991,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000006,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_RC_SeekingShield",
@@ -37256,6 +37492,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000007,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_RC_LifeGem",
@@ -37756,6 +37993,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000008,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_StompBoots",
@@ -38256,6 +38494,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000009,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_RC_HogRiderDoll",
@@ -38756,6 +38995,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000010,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_GiantGauntlet",
@@ -39549,6 +39789,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000011,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_VampStache",
@@ -40049,6 +40290,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000012,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_RC_HasteVial",
@@ -40549,6 +40791,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000013,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_RC_RocketSpear",
@@ -41342,6 +41585,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000014,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_Football",
@@ -42135,6 +42379,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000015,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_FreezeArrow",
@@ -42928,6 +43173,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000016,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_MonolithArrow",
@@ -43721,6 +43967,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000017,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_MagicArrow",
@@ -44221,6 +44468,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000018,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_freeze",
@@ -45014,6 +45262,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000019,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_Torch",
@@ -45807,6 +46056,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000020,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_HealerDoll",
@@ -46307,6 +46557,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000021,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -46342,6 +46593,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000022,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_GW_FireSack",
@@ -47135,6 +47387,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000023,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -47170,6 +47423,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000024,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_GW_RageGem",
@@ -47670,6 +47924,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000025,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -47705,6 +47960,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000026,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -47740,6 +47996,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000027,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -47775,6 +48032,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000028,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -47810,6 +48068,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000029,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -47845,6 +48104,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000030,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -47888,6 +48148,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000031,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -47923,6 +48184,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000032,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_SnakeBracelet",
@@ -48716,6 +48978,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000033,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -48751,6 +49014,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000034,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_GW_HeartTome",
@@ -49251,6 +49515,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000035,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_MP_DarkCrown",
@@ -50044,6 +50309,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000036,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_b",
@@ -50087,6 +50353,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000037,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_c",
@@ -50130,6 +50397,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000038,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_phoenix",
@@ -50923,6 +51191,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000039,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_Mirror",
@@ -51716,6 +51985,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000040,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_RC_ElectroBoots",
@@ -52509,6 +52779,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000041,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_GW_LavaloonPuppet",
@@ -53302,6 +53573,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000042,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_MP_BouncerKeychain",
@@ -53802,6 +54074,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000043,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_MP_DarkOrb",
@@ -54302,6 +54575,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000044,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_MP_MetalPants",
@@ -54802,6 +55076,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000045,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_electrowl",
@@ -55302,6 +55577,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000046,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_MagicArrow",
@@ -56095,6 +56371,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000047,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_MP_PowerPump",
@@ -56595,6 +56872,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000048,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_AQ_WWEGiantSummon",
@@ -57388,6 +57666,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000049,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_MP_Meteor",
@@ -58181,6 +58460,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000050,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_RC_FrostShuriken",
@@ -58974,6 +59254,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000051,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_BK_StickFireHorse",
@@ -59767,6 +60048,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000052,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_DD_FireHeart",
@@ -60267,6 +60549,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000053,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_DD_DeadlyDash",
@@ -61060,6 +61343,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000054,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_DD_DeadlyDash",
@@ -61103,6 +61387,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000055,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_DD_DeadlyDash",
@@ -61146,6 +61431,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000056,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_DD_StunBlast",
@@ -61646,6 +61932,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000057,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_DD_FlameBreath",
@@ -62146,6 +62433,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000058,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_GW_FireSack",
@@ -62189,6 +62477,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000059,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_DD_ElectroDentures",
@@ -62689,6 +62978,7 @@
       "baseMissingReason": null,
       "category": "equipment",
       "dataID": 90000060,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_gear_DD_DraconicCounter",
@@ -63482,6 +63772,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000000,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_guardian_ranged",
@@ -63613,6 +63904,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000001,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_guardian_melee",
@@ -63744,6 +64036,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000002,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_thrower",
@@ -63779,6 +64072,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000003,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_furnace",
@@ -63814,6 +64108,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000004,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_headhunter",
@@ -63849,6 +64144,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000005,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_healer",
@@ -63884,6 +64180,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000006,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_headhunter",
@@ -63919,6 +64216,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000007,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_healer",
@@ -63954,6 +64252,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000008,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_guardian_logger",
@@ -64085,6 +64384,7 @@
       "baseMissingReason": null,
       "category": "guardians",
       "dataID": 107000009,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_headhunter",
@@ -64120,6 +64420,7 @@
       "baseMissingReason": null,
       "category": "heroes",
       "dataID": 28000000,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_hero_barbarianKing",
@@ -66771,6 +67072,7 @@
       "baseMissingReason": null,
       "category": "heroes",
       "dataID": 28000001,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_hero_archerQueen",
@@ -69422,6 +69724,7 @@
       "baseMissingReason": null,
       "category": "heroes",
       "dataID": 28000002,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_hero_grandwarden",
@@ -71473,6 +71776,7 @@
       "baseMissingReason": null,
       "category": "heroes",
       "dataID": 28000004,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_hero_warriorPrincess",
@@ -72804,6 +73108,7 @@
       "baseMissingReason": null,
       "category": "heroes",
       "dataID": 28000006,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_hero_minionprince",
@@ -75095,6 +75400,7 @@
       "baseMissingReason": null,
       "category": "heroes",
       "dataID": 28000007,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_hero_dragonDuke",
@@ -75706,6 +76012,7 @@
       "baseMissingReason": null,
       "category": "heroes",
       "dataID": 28000003,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_hero_warmachine",
@@ -76557,6 +76864,7 @@
       "baseMissingReason": null,
       "category": "heroes",
       "dataID": 28000005,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_hero_battlecopter",
@@ -77072,6 +77380,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000000,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_barksy",
@@ -77443,6 +77752,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000001,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_bulldozer",
@@ -77814,6 +78124,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000002,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_electrowl",
@@ -78185,6 +78496,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000003,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_unipony",
@@ -78556,6 +78868,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000004,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_phoenix",
@@ -78807,6 +79120,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000005,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_phoenix",
@@ -79058,6 +79372,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000006,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_tiny",
@@ -79093,6 +79408,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000007,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_poison_lizard",
@@ -79464,6 +79780,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000008,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_diggy",
@@ -79715,6 +80032,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000009,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_frosty",
@@ -80086,6 +80404,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000010,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_phasefennec",
@@ -80337,6 +80656,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000011,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_rage_jelly",
@@ -80588,6 +80908,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000012,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_slimesnail",
@@ -80623,6 +80944,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000013,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_hastespirit",
@@ -80658,6 +80980,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000014,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_spiritjellyfish",
@@ -80693,6 +81016,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000015,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_spiritjellyfish",
@@ -80728,6 +81052,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000016,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_sneezy",
@@ -80979,6 +81304,7 @@
       "baseMissingReason": null,
       "category": "pets",
       "dataID": 73000017,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_raven",
@@ -81230,6 +81556,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000051,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_ram",
@@ -81385,6 +81712,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000052,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_flyer",
@@ -81540,6 +81868,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000062,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_balloon",
@@ -81695,6 +82024,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000075,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_carrier",
@@ -81850,6 +82180,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000087,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_LogLauncher",
@@ -82005,6 +82336,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000091,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_catapult",
@@ -82136,6 +82468,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000092,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_BattleDrill",
@@ -82291,6 +82624,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000135,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_commandtower",
@@ -82398,6 +82732,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000188,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_AirTroopLauncher",
@@ -82505,6 +82840,7 @@
       "baseMissingReason": null,
       "category": "siegeMachines",
       "dataID": 4000189,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_siege_machine_ram",
@@ -82540,6 +82876,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000000,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_lightning",
@@ -82863,6 +83200,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000001,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_healing",
@@ -83162,6 +83500,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000002,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_rage",
@@ -83341,6 +83680,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000003,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_jump",
@@ -83472,6 +83812,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000004,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_xmas",
@@ -83507,6 +83848,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000005,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_freeze",
@@ -83710,6 +84052,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000006,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_xmas",
@@ -84033,6 +84376,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000007,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -84077,6 +84421,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000008,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -84121,6 +84466,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000009,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_toxic",
@@ -84420,6 +84766,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000010,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_earthquake",
@@ -84623,6 +84970,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000011,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_speedup",
@@ -84802,6 +85150,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000012,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -85014,6 +85363,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000013,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -85105,6 +85455,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000014,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -85196,6 +85547,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000015,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -85221,6 +85573,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000016,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_clone",
@@ -85448,6 +85801,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000017,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_skeleton",
@@ -85651,6 +86005,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000018,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -85676,6 +86031,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000019,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -85800,6 +86156,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000020,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -85913,6 +86270,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000021,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -85938,6 +86296,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000022,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_birthday",
@@ -85973,6 +86332,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000023,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86086,6 +86446,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000024,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86232,6 +86593,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000025,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86279,6 +86641,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000026,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86304,6 +86667,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000027,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_lightning",
@@ -86435,6 +86799,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000028,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_bats",
@@ -86638,6 +87003,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000029,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86718,6 +87084,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000030,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86809,6 +87176,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000031,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86834,6 +87202,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000032,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86859,6 +87228,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000033,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86928,6 +87298,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000034,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -86953,6 +87324,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000035,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_invisibility",
@@ -87060,6 +87432,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000036,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87118,6 +87491,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000037,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87143,6 +87517,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000038,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87212,6 +87587,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000039,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87259,6 +87635,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000040,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87306,6 +87683,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000041,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87331,6 +87709,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000042,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87356,6 +87735,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000043,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87381,6 +87761,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000044,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_toxic",
@@ -87416,6 +87797,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000045,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87562,6 +87944,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000046,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_rage",
@@ -87597,6 +87980,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000047,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87743,6 +88127,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000048,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_invisibility",
@@ -87778,6 +88163,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000049,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87935,6 +88321,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000050,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87960,6 +88347,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000051,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -87985,6 +88373,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000052,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88010,6 +88399,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000053,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_recall",
@@ -88189,6 +88579,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000054,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88214,6 +88605,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000055,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88272,6 +88664,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000056,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88297,6 +88690,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000057,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88421,6 +88815,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000058,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88446,6 +88841,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000059,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88515,6 +88911,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000060,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88584,6 +88981,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000061,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88642,6 +89040,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000062,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88711,6 +89110,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000063,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88813,6 +89213,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000064,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88871,6 +89272,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000065,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88896,6 +89298,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000066,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88921,6 +89324,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000067,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -88990,6 +89394,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000068,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -89015,6 +89420,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000069,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -89040,6 +89446,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000070,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_overgrowth",
@@ -89171,6 +89578,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000071,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -89295,6 +89703,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000072,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_cc_frost",
@@ -89330,6 +89739,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000073,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_frostmitebag",
@@ -89653,6 +90063,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000074,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -89678,6 +90089,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000075,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -89835,6 +90247,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000076,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -89992,6 +90405,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000077,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90083,6 +90497,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000078,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90108,6 +90523,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000079,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90199,6 +90615,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000080,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90224,6 +90641,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000081,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90249,6 +90667,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000082,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90274,6 +90693,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000083,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90365,6 +90785,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000084,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_suspension",
@@ -90400,6 +90821,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000085,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90524,6 +90946,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000086,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_healing",
@@ -90559,6 +90982,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000087,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90683,6 +91107,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000088,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90818,6 +91243,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000089,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90854,6 +91280,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000090,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90879,6 +91306,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000091,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90937,6 +91365,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000092,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90962,6 +91391,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000093,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -90987,6 +91417,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000094,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -91022,6 +91453,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000095,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_b",
@@ -91057,6 +91489,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000096,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -91115,6 +91548,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000097,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_phoenix",
@@ -91150,6 +91584,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000098,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_hero_revive",
@@ -91281,6 +91716,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000099,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -91306,6 +91742,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000100,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -91430,6 +91867,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000101,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_earthquake",
@@ -91465,6 +91903,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000102,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_toxic",
@@ -91500,6 +91939,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000103,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -91525,6 +91965,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000104,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -91550,6 +91991,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000105,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -91740,6 +92182,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000106,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -91919,6 +92362,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000107,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -92109,6 +92553,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000108,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -92299,6 +92744,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000109,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_ice_block",
@@ -92454,6 +92900,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000110,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -92578,6 +93025,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000111,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -92603,6 +93051,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000112,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -92804,6 +93253,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000113,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -92829,6 +93279,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000114,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_toxic",
@@ -92864,6 +93315,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000115,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -92889,6 +93341,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000116,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -92914,6 +93367,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000117,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -93038,6 +93492,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000118,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -93162,6 +93617,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000119,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_a",
@@ -93197,6 +93653,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000120,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_meteor_tower",
@@ -93304,6 +93761,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000121,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -93386,6 +93844,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000122,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pet_phoenix",
@@ -93421,6 +93880,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000123,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_brainwash",
@@ -93528,6 +93988,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000124,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -93553,6 +94014,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000125,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -93578,6 +94040,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000126,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -93790,6 +94253,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000127,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94002,6 +94466,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000128,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94214,6 +94679,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000129,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94338,6 +94804,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000130,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_spell_earthquake",
@@ -94373,6 +94840,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000131,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94497,6 +94965,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000132,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94522,6 +94991,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000133,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94613,6 +95083,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000134,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94704,6 +95175,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000135,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94795,6 +95267,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000136,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94820,6 +95293,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000137,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -94845,6 +95319,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000138,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -95057,6 +95532,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000139,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -95269,6 +95745,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000140,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -95294,6 +95771,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000141,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -95352,6 +95830,7 @@
       "baseMissingReason": null,
       "category": "spells",
       "dataID": 26000142,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -95476,6 +95955,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000000,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -95831,6 +96311,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000001,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -96162,6 +96643,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000002,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -96469,6 +96951,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000003,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -96512,6 +96995,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000004,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -96555,6 +97039,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000005,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -96886,6 +97371,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000006,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97097,6 +97583,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000007,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97140,6 +97627,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000008,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97279,6 +97767,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000009,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97322,6 +97811,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000015,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97365,6 +97855,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000016,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97456,6 +97947,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000017,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97499,6 +97991,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000018,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97542,6 +98035,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000019,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97585,6 +98079,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000020,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97700,6 +98195,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000010,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -97839,6 +98335,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000011,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -98098,6 +98595,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000012,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",
@@ -98141,6 +98639,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000013,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -98400,6 +98899,7 @@
       "baseMissingReason": null,
       "category": "traps",
       "dataID": 12000014,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings2.sc",
@@ -98659,6 +99159,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000000,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -98982,6 +99483,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000001,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_archer",
@@ -99329,6 +99831,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000002,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_goblin",
@@ -99580,6 +100083,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000003,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_giant",
@@ -99927,6 +100431,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000004,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_wallbreaker",
@@ -100274,6 +100779,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000005,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_balloon",
@@ -100597,6 +101103,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000006,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_wizard",
@@ -100944,6 +101451,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000007,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_healer",
@@ -101219,6 +101727,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000008,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_dragon",
@@ -101542,6 +102051,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000009,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pekka",
@@ -101865,6 +102375,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000010,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_gargoyle",
@@ -102212,6 +102723,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000011,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_boarRider",
@@ -102583,6 +103095,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000012,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_warriorGirl",
@@ -102882,6 +103395,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000013,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golem",
@@ -103253,6 +103767,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000014,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golem",
@@ -103512,6 +104027,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000015,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_witch",
@@ -103715,6 +104231,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000016,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -103751,6 +104268,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000017,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_tiny",
@@ -103954,6 +104472,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000018,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -103979,6 +104498,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000019,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -104015,6 +104535,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000020,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -104040,6 +104561,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000021,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -104076,6 +104598,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000022,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_troll",
@@ -104327,6 +104850,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000023,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_babydragon",
@@ -104626,6 +105150,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000024,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_miner",
@@ -104925,6 +105450,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000025,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_miner",
@@ -105200,6 +105726,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000026,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_barbarian",
@@ -105427,6 +105954,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000027,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_archer",
@@ -105678,6 +106206,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000028,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_wallbreaker",
@@ -105929,6 +106458,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000029,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_giant",
@@ -106180,6 +106710,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000030,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_icewizard",
@@ -106503,6 +107034,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000039,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_goblin",
@@ -106538,6 +107070,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000045,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_battleram_cc",
@@ -106861,6 +107394,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000046,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -107088,6 +107622,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000047,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_royale_ghost",
@@ -107411,6 +107946,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000048,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_pumpkin_barbarian",
@@ -107734,6 +108270,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000049,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -107961,6 +108498,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000050,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_giant_skeleton",
@@ -108284,6 +108822,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000053,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_yeti",
@@ -108487,6 +109026,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000054,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -108589,6 +109129,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000055,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_goblin",
@@ -108744,6 +109285,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000056,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_miner",
@@ -109043,6 +109585,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000057,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_balloon",
@@ -109270,6 +109813,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000058,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_iceGolem",
@@ -109497,6 +110041,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000059,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_lightningDragon",
@@ -109724,6 +110269,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000060,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_golddragon",
@@ -109759,6 +110305,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000061,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_skeletonBarrel",
@@ -110082,6 +110629,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000063,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_infernodragon",
@@ -110381,6 +110929,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000064,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_valkyrie",
@@ -110680,6 +111229,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000065,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_dragon_rider",
@@ -110835,6 +111385,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000066,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_witch",
@@ -111038,6 +111589,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000067,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_mecha",
@@ -111361,6 +111913,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000068,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -111386,6 +111939,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000069,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_iceGolem",
@@ -111549,6 +112103,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000072,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_partyWizard",
@@ -111872,6 +112427,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000073,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -111897,6 +112453,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000074,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -111922,6 +112479,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000076,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_icehound",
@@ -112125,6 +112683,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000077,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_tiny",
@@ -112272,6 +112831,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000078,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -112297,6 +112857,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000079,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -112399,6 +112960,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000080,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_bowler",
@@ -112650,6 +113212,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000081,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_dragon",
@@ -112925,6 +113488,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000082,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_headhunter",
@@ -113032,6 +113596,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000083,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_wizard",
@@ -113283,6 +113848,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000084,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_minion",
@@ -113558,6 +114124,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000085,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -113583,6 +114150,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000086,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -113718,6 +114286,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000088,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -113809,6 +114378,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000089,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -113844,6 +114414,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000090,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_electric_pekka",
@@ -113879,6 +114450,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000093,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -113914,6 +114486,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000094,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_cookie_ramrider",
@@ -114237,6 +114810,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000095,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_electrotitan",
@@ -114368,6 +114942,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000096,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -114393,6 +114968,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000097,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_apprentice",
@@ -114500,6 +115076,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000098,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_hogrider",
@@ -114799,6 +115376,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000099,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -115033,6 +115611,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000100,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -115267,6 +115846,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000101,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barcher",
@@ -115590,6 +116170,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000102,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_gravegolem",
@@ -115913,6 +116494,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000103,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_hogwizard",
@@ -116236,6 +116818,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000104,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_lavaloon",
@@ -116559,6 +117142,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000108,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -116716,6 +117300,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000109,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_ruinwitch",
@@ -116823,6 +117408,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000110,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_root_rider",
@@ -116930,6 +117516,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000111,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -116965,6 +117552,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000112,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -117000,6 +117588,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000113,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -117025,6 +117614,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000114,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -117060,6 +117650,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000115,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -117095,6 +117686,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000116,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -117120,6 +117712,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000117,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -117277,6 +117870,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000118,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_cookie_pekka",
@@ -117600,6 +118194,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000119,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_firecracker",
@@ -117923,6 +118518,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000120,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_lny_dragon",
@@ -118246,6 +118842,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000121,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_footballbarbarian2026",
@@ -118569,6 +119166,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000122,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_footballgiant",
@@ -118892,6 +119490,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000123,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_druid_bear",
@@ -119047,6 +119646,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000124,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -119127,6 +119727,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000125,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_majo",
@@ -119450,6 +120051,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000126,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -119607,6 +120209,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000127,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -119665,6 +120268,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000128,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_lavaloon",
@@ -119940,6 +120544,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000129,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -120075,6 +120680,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000130,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_ice_minion",
@@ -120398,6 +121004,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000131,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -120433,6 +121040,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000132,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_thrower",
@@ -120540,6 +121148,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000133,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -120575,6 +121184,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000134,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -120610,6 +121220,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000136,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_goblin_tax_collector",
@@ -120933,6 +121544,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000137,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -120968,6 +121580,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000138,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -121003,6 +121616,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000139,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -121038,6 +121652,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000140,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -121073,6 +121688,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000141,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -121197,6 +121813,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000142,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_lny_snake_barrel",
@@ -121520,6 +122137,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000143,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -121545,6 +122163,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000144,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -121669,6 +122288,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000145,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_cookie_pekka",
@@ -121704,6 +122324,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000146,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_gargoyle",
@@ -121883,6 +122504,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000147,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elite_yeti",
@@ -122086,6 +122708,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000148,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -122188,6 +122811,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000149,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_firespirit",
@@ -122287,6 +122911,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000150,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_furnace",
@@ -122394,6 +123019,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000151,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -122452,6 +123078,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000152,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_firespirit",
@@ -122535,6 +123162,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000153,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -122570,6 +123198,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000154,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -122605,6 +123234,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000155,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -122640,6 +123270,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000156,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_giant",
@@ -123035,6 +123666,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000157,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_pekka",
@@ -123430,6 +124062,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000158,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_valkyrie",
@@ -123753,6 +124386,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000159,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_thrower",
@@ -124148,6 +124782,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000160,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -124183,6 +124818,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000161,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -124218,6 +124854,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000162,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_pekka",
@@ -124613,6 +125250,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000163,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_thrower",
@@ -125008,6 +125646,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000164,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_thrower",
@@ -125403,6 +126042,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000165,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_valkyrie",
@@ -125726,6 +126366,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000166,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_april25_thrower",
@@ -126097,6 +126738,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000167,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_splitgolem",
@@ -126420,6 +127062,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000168,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_splitgolem_small",
@@ -126647,6 +127290,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000169,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -126748,6 +127392,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000170,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -126849,6 +127494,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000171,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -126874,6 +127520,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000172,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -126899,6 +127546,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000173,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -126924,6 +127572,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000174,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -126949,6 +127598,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000175,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -127007,6 +127657,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000176,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -127042,6 +127693,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000177,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_splitgolem",
@@ -127125,6 +127777,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000178,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_splitgolem_small",
@@ -127192,6 +127845,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000179,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_splitgolem",
@@ -127259,6 +127913,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000180,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_splitgolem_small",
@@ -127326,6 +127981,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000181,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -127351,6 +128007,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000182,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -127376,6 +128033,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000183,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -127477,6 +128135,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000184,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -127502,6 +128161,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000185,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elephant_rider",
@@ -127945,6 +128605,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000186,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -128293,6 +128954,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000187,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_elephant_rider",
@@ -128736,6 +129398,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000190,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -128771,6 +129434,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000191,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_barbarian",
@@ -128806,6 +129470,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000192,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -128864,6 +129529,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000031,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_raged_barbarian",
@@ -129355,6 +130021,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000032,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_stealthy_archer",
@@ -129846,6 +130513,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000033,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_glowing_minion",
@@ -130289,6 +130957,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000034,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_boxergiant",
@@ -130732,6 +131401,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000035,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_bomber",
@@ -131127,6 +131797,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000036,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_electric_pekka",
@@ -131330,6 +132001,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000037,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_moving_cannon_mortar_a",
@@ -131677,6 +132349,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000038,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_skeletonBalloon",
@@ -131928,6 +132601,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000040,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -131953,6 +132627,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000041,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_babydragon",
@@ -132348,6 +133023,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000042,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_nightwitch",
@@ -132647,6 +133323,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000043,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -132672,6 +133349,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000044,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_movingCannon",
@@ -132979,6 +133657,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000070,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_hog_glider",
@@ -133134,6 +133813,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000071,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_boarRider",
@@ -133249,6 +133929,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000105,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [
@@ -133274,6 +133955,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000106,
+      "displayCategory": null,
       "icon": {
         "container": "sc/ui.sc",
         "exportName": "icon_unit_electrofire_wizard_fire",
@@ -133381,6 +134063,7 @@
       "baseMissingReason": null,
       "category": "troops",
       "dataID": 4000107,
+      "displayCategory": null,
       "icon": null,
       "levelVisual": null,
       "levels": [

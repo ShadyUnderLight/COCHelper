@@ -604,10 +604,16 @@ def test_validate_unknown_base_missing_reason(tmp_path):
 
 
 def _equipment_dir(tmp_path: Path) -> Path:
-    """_valid_dir + 唯一 item 改为 equipment（BS 域校验基底）。"""
+    """_valid_dir + 唯一 item 改为 equipment（BS 域校验基底）。
+
+    Issue #98 F3：lifecycle 校验要求目录条目必须与声明一致——equipment
+    key 用真实声明内的 90000000（弓箭手木偶，声明=permanent）。
+    """
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["section"] = "equipment"
+    c["items"][0]["dataID"] = 90_000_000
+    c["items"][0]["lifecycle"] = "permanent"
     _write_with_hash(d, catalog=c)
     return d
 

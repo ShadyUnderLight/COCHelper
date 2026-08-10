@@ -63,6 +63,9 @@ def _equipment_item(data_id: int, name: str, levels: list[int],
             upgradeCosts=None, requiredTownHallLevel=None,
             requiredLaboratoryLevel=None, icon=None, levelVisual=None)
             for lvl in levels],
+        # Issue #98 F3：目录条目 lifecycle 必须与声明一致（90000000-90000005
+        # 均为真实 equipment 条目，声明=permanent）
+        lifecycle="permanent",
     )
 
 
@@ -75,6 +78,8 @@ def _units_item() -> CatalogItem:
         levels=[CatalogLevel(level=1, durationSeconds=0, missingReason=None,
                              upgradeCosts=None, requiredTownHallLevel=None,
                              requiredLaboratoryLevel=None, icon=None, levelVisual=None)],
+        # Issue #98 F3：units:4000000 在真实声明中（permanent）
+        lifecycle="permanent",
     )
 
 

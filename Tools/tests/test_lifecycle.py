@@ -406,6 +406,14 @@ def test_validate_rejects_structurally_invalid_craft(tmp_path):
     ("modules", 0, "levels", [{"level": 1, "durationSeconds": 2 ** 63}]),
     ("modules", 0, "levels", [{"level": 1, "upgradeResource": 123}]),
     ("modules", 0, "levels", [{"level": 1, "requiredTownHallLevel": "9"}]),
+    # 复审 R9：schemaVersion=true 绕过（Python True == 1）+ Int/Int64 范围镜像
+    ("top", None, "schemaVersion", True),
+    ("defenses", 0, "dataID", 2 ** 63),
+    ("defenses", 0, "dataID", -(2 ** 63) - 1),
+    ("modules", 0, "dataID", 2 ** 63),
+    ("modules", 0, "maxLevel", 2 ** 63),
+    ("modules", 0, "levels", [{"level": 2 ** 63}]),
+    ("modules", 0, "levels", [{"level": 1, "requiredTownHallLevel": 2 ** 63}]),
 ])
 def test_validate_rejects_craft_scalar_type_mismatch(tmp_path, mutate):
     """craft 标量字段类型与 Swift Codable 契约不符 → 报错（审核 D 补强：

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+import game_catalog.lifecycle as lifecycle_module
 from game_catalog.catalog import generate
 from game_catalog.errors import CatalogError
 from game_catalog.lifecycle import (
@@ -121,6 +122,36 @@ def test_lifecycle_for_known_and_unknown():
     assert lifecycle_for("buildings", 103000008) == "seasonalCandidate"
     with pytest.raises(CatalogError):
         lifecycle_for("buildings", 9_999_999)
+
+
+@pytest.mark.parametrize(
+    ("content", "message_fragment"),
+    [
+        # 文件缺失（临时目录下不存在）
+        (None, "声明文件缺失"),
+        # schemaVersion != 1
+        ({"schemaVersion": 2, "items": {}}, "schemaVersion"),
+        # items 键缺失
+        ({"schemaVersion": 1}, "缺少 items"),
+        # 条目值非法（非 dict / lifecycle 非字符串）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": 123}}}, "条目非法"),
+        ({"schemaVersion": 1, "items": {"a:1": "permanent"}}, "条目非法"),
+        # lifecycle 未知值（闭枚举外）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "other"}}}, "未知值"),
+    ],
+)
+def test_load_declarations_failure_paths(monkeypatch, tmp_path, content, message_fragment):
+    """load_declarations 失败路径全部 fail loud → CatalogError（消息含具体原因）；
+    成功路径不受 monkeypatch 影响（其余测试用真实声明文件）。"""
+    if content is None:
+        path = tmp_path / "missing_lifecycle_declarations.json"  # 不存在
+    else:
+        path = tmp_path / "declarations.json"
+        path.write_text(json.dumps(content), encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
+    with pytest.raises(CatalogError) as ei:
+        load_declarations()
+    assert message_fragment in str(ei.value)
 
 
 # ---- validate：闭枚举 / 声明一致性 ----

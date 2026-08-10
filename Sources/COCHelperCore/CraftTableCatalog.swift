@@ -68,6 +68,10 @@ public struct CraftTableDefenseSpec: Codable, Hashable, Sendable, Identifiable {
     public let specialAbility: String
     public let moduleIDs: [Int64]
     public let totalModuleLevelThresholds: [Int]
+    /// Issue #98：生命周期声明（permanent / seasonalCandidate；nil = 旧数据未标注）。
+    /// 合成 memberwise init 自动带默认值 nil（现有调用点零改动）；
+    /// Codable 合成解码缺键 → nil（旧 craft_table_catalog.json 兼容）。
+    public let lifecycle: CatalogLifecycle?
 
     public var id: Int64 { dataID }
 }

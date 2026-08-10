@@ -339,9 +339,13 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
         return valid.max(by: { $0.until < $1.until })
     }
 
-    /// 条目可用性的单一映射入口。阶段选择与活动边界必须由同一张注入表和
-    /// 同一个 `date` 决定，普通投影与精制台专用投影都复用此方法。
-    public func availability(forItemKey key: String, at date: Date) -> CatalogAvailability {
+    /// Issue #98 三态映射唯一入口（两投影共用防漂移）：
+    /// permanent 声明 → .permanent（声明优先，与阶段表矛盾时声明赢）；
+    /// 其余（seasonalCandidate / nil / 未知）→ 查阶段表：命中 .seasonal / 未命中 .unconfigured。
+    /// 注意：阶段表命中覆盖 nil——精工防御嵌套模组主目录不 join（lifecycle 恒 nil）仍显示 seasonal。
+    /// 阶段选择与活动边界必须由同一张注入表和同一个 `date` 决定。
+    public func availability(forItemKey key: String, lifecycle: CatalogLifecycle?, at date: Date) -> CatalogAvailability {
+        if lifecycle == .permanent { return .permanent }
         guard let phase = phase(forItemKey: key, at: date) else {
             return .unconfigured
         }
@@ -354,6 +358,12 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
             status = .ended
         }
         return .seasonal(phaseID: phase.phaseID, phaseName: phase.name, status: status)
+    }
+
+    /// Issue #74 兼容签名：等价于 `availability(forItemKey:lifecycle:at:)` 传 nil——
+    /// 委托新方法保持单一实现防漂移（语义不变：阶段表命中 → seasonal / 未命中 → unconfigured）。
+    public func availability(forItemKey key: String, at date: Date) -> CatalogAvailability {
+        availability(forItemKey: key, lifecycle: nil, at: date)
     }
 
     /// bundled 加载：`GameCatalog/<version>/seasonal_phases.json`；
@@ -380,6 +390,15 @@ public enum SeasonalStatus: String, Codable, Hashable, Sendable {
     case notStarted
     /// 已结束（now >= until）。
     case ended
+}
+
+/// Issue #98：条目生命周期声明（目录事实；来源 = Tools/game_catalog/lifecycle_declarations.json）。
+/// nil = 旧目录/未标注（保守降级 unconfigured）。
+public enum CatalogLifecycle: String, Codable, Hashable, Sendable {
+    /// 永久内容（详情页不显示阶段标记）。
+    case permanent
+    /// 已知限时内容（阶段表登记日期后才有 seasonal；未登记 → unconfigured）。
+    case seasonalCandidate
 }
 
 /// 条目可用性状态（历史存在 vs 当前可用）。
@@ -484,12 +503,16 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
     /// 非 home 恒 null）。catalog 数据唯一事实源（Python 侧 validate 闭枚举），
     /// Swift 侧无白名单。旧目录缺键 → nil（向后兼容）→ UI 走「建筑与防御」兜底。
     public let displayCategory: String?
+    /// Issue #98：条目生命周期声明（permanent / seasonalCandidate；nil = 旧目录/未标注）。
+    /// 三态判定唯一入口 = `SeasonalPhaseTable.availability(forItemKey:lifecycle:at:)`。
+    public let lifecycle: CatalogLifecycle?
     public let levels: [CatalogLevel]
 
     /// 显式 memberwise init：`missingReason` 带默认值 nil（既有调用点不传该
     /// 参数保持兼容——与 `CatalogLevel.requiredHeroTavernLevel` 同先例；
     /// 注意 Swift 合成 init 对「let 带默认值」显式传参会报错，故必须显式写）。
-    /// `displayCategory` 同带默认值 nil（Issue #75 工作流 C，旧目录/旧调用点零改动）。
+    /// `displayCategory`/`lifecycle` 同带默认值 nil（Issue #75 工作流 C /
+    /// Issue #98，旧目录/旧调用点零改动）。
     public init(
         section: String,
         category: String,
@@ -502,6 +525,7 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
         levelVisual: CatalogAssetRef?,
         missingReason: String? = nil,
         displayCategory: String? = nil,
+        lifecycle: CatalogLifecycle? = nil,
         levels: [CatalogLevel]
     ) {
         self.section = section
@@ -515,6 +539,7 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
         self.levelVisual = levelVisual
         self.missingReason = missingReason
         self.displayCategory = displayCategory
+        self.lifecycle = lifecycle
         self.levels = levels
     }
 

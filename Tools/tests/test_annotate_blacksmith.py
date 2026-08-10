@@ -436,3 +436,32 @@ def test_annotate_rolls_back_on_first_replace_failure(tmp_path, monkeypatch):
     assert (d / "catalog.json").read_bytes() == cat_before
     assert (d / "manifest.json").read_bytes() == man_before
     assert not list(d.glob("*.tmp"))
+
+
+def test_annotate_rollback_failure_cleans_rollback_tmp(tmp_path, monkeypatch):
+    """P2 极端分支：回滚自身的 os.replace 也失败（第 2、3 次 replace 均失败）
+    → 错误消息含「回滚失败」清单，且 .rollback.tmp 被清理（不残留）。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    calls = {"n": 0}
+    real_replace = os.replace
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] in (2, 3):  # 第 2 次 = manifest replace 失败；第 3 次 = 回滚 replace 失败
+            raise OSError("注入: replace 失败")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", flaky_replace)
+    cat_before = (d / "catalog.json").read_bytes()
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="回滚失败"):
+        annotate_directory(apk, d)
+    # 回滚 replace 也失败 → catalog 保持写入后的新内容（回滚未执行成功），
+    # manifest 保持旧内容；.rollback.tmp 被清理不残留（fail-closed 兜底：
+    # validator 哈希比对会检出 catalog 新/manifest 旧，重跑幂等修复）。
+    assert (d / "catalog.json").read_bytes() != cat_before
+    assert (d / "catalog.json").read_bytes() != man_before
+    assert (d / "manifest.json").read_bytes() == man_before
+    # 不残留任何临时文件（含 .rollback.tmp）
+    assert not list(d.glob("*.tmp"))
+    assert not list(d.glob("*.rollback.tmp"))

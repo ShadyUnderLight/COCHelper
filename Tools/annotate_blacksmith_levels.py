@@ -245,7 +245,13 @@ def annotate_directory(apk: str | Path, dir_path: str | Path) -> dict:
                 tmp.write_bytes(old)
                 os.replace(tmp, target)
             except OSError:
+                # 回滚失败：清理可能残留的 .rollback.tmp（unlink 也失败则
+                # 留给 validator fail-closed 兜底，不掩盖原始错误）
                 rollback_failed.append(target.name)
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
         suffix = f"；回滚失败: {rollback_failed}" if rollback_failed else ""
         raise CatalogError(f"写入 catalog/manifest 失败: {exc}{suffix}") from exc
 

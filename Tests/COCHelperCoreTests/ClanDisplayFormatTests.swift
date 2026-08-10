@@ -137,15 +137,20 @@ final class ClanDisplayFormatTests: XCTestCase {
         XCTAssertNil(ClanDisplayFormat.clanLevelLabel(nil))
     }
 
-    /// Property-based：任意非 nil Int，文案恒为「部落等级 \(n)」，
-    /// 永不包含"大本营"字样（固定 seed SplitMix64，可复现）。
+    /// Property-based：任意非 nil Int（含异常负值/极值），文案恒为
+    /// 「部落等级 \(n)」，永不包含"大本营"字样（固定 seed SplitMix64，
+    /// 可复现）。负值原样格式化：API 脏数据不钳制，保留可审计信号。
     func testClanLevelLabelPropertyNeverTownHall() {
         var rng = SplitMix64Generator(seed: 0x95_95)
+        let extremeValues: [Int] = [Int.min, -1, 0, 1, Int.max]
+        for level in extremeValues {
+            XCTAssertEqual(ClanDisplayFormat.clanLevelLabel(level), "部落等级 \(level)")
+        }
         for _ in 0..<500 {
-            let level = Int.random(in: 1...100, using: &rng)
+            let level = Int.random(in: -5...100, using: &rng)
             let label = ClanDisplayFormat.clanLevelLabel(level)
             XCTAssertEqual(label, "部落等级 \(level)")
-            XCTAssertFalse(label!.contains("大本营"))
+            XCTAssertFalse(label?.contains("大本营") ?? false)
         }
     }
 

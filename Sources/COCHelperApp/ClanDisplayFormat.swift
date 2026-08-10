@@ -156,7 +156,8 @@ public enum ClanDisplayFormat {
 
     /// 部落等级（ClanWarParticipant.clanLevel / Clan.clanLevel 语义）：
     /// - nil → nil（字段缺失不渲染占位）
-    /// - 非 nil → "部落等级 \(n)"
+    /// - 非 nil → "部落等级 \(n)"，任何 Int 值原样格式化（含异常负值
+    ///   不钳制：纯字符串插值无崩溃路径，保留 API 原始信号可审计）
     ///
     /// Issue #95：此前战争卡片把 clanLevel 传入无上下文的 `level` 参数并
     /// 渲染为"X级大本营"，本函数将部落等级文案语义固定于此，禁止与

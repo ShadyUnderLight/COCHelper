@@ -427,7 +427,7 @@ private struct AddTrackedClanSheet: View {
                     previewRow("部落都城联赛", capitalLeague)
                 }
                 if let warLeague = ClanDisplayFormat.warLeagueLabel(snapshot.warLeague) {
-                    previewRow("部落联赛", warLeague)
+                    previewRow("部落对战联赛", warLeague)
                 }
                 if let capital = snapshot.clanCapital?.capitalHallLevel {
                     previewRow("都城大本营", "\(capital)级")

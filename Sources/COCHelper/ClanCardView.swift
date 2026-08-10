@@ -240,7 +240,7 @@ struct ClanCardView: View {
                 }
                 if let warLeague = ClanDisplayFormat.warLeagueLabel(snapshot.warLeague) {
                     GridRow {
-                        metric("部落联赛", warLeague)
+                        metric("部落对战联赛", warLeague)
                         metric("", nil)
                         metric("", nil)
                     }

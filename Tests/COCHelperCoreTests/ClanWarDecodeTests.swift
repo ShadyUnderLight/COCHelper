@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import COCHelperApp
 @testable import COCHelperCore
 
 /// 读取完整战争 fixture（free function，避免被 @Sendable closure 捕获 self）。
@@ -36,6 +37,19 @@ final class ClanWarDecodeTests: XCTestCase {
         XCTAssertEqual(war.opponent?.stars, 82)
         // 官方新增字段进入审计
         XCTAssertEqual(war.unrecognizedKeys, ["newOfficialField"])
+    }
+
+    /// Issue #95 验收标准第 3 条闭环：战争 fixture 的 clanLevel（我方 12 /
+    /// 对方 11）经 ClanDisplayFormat.clanLevelLabel 必须输出部落等级文案，
+    /// 而非"X级大本营"。本测试把 fixture → 解码 → 文案连成一条链路：
+    /// fixture 值变更或格式化回归都会在此失败（此前 fixture 解码断言与
+    /// 格式化断言相互独立，未验证两者连接）。
+    func testWarFixtureClanLevelRendersAsClanLevelLabel() throws {
+        let war = try decode(fullClanWarFixtureData())
+        XCTAssertEqual(ClanDisplayFormat.clanLevelLabel(war.clan?.clanLevel), "部落等级 12")
+        XCTAssertEqual(ClanDisplayFormat.clanLevelLabel(war.opponent?.clanLevel), "部落等级 11")
+        // nil 缺失契约：participantRow 的 if-let 渲染分支依赖 label 返回 nil
+        XCTAssertNil(ClanDisplayFormat.clanLevelLabel(nil))
     }
 
     /// battleModifier（Hard Mode 战争的官方字段）解码保存原始值，

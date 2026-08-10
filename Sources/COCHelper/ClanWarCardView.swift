@@ -199,7 +199,7 @@ struct ClanWarCardView: View {
                 participantRow(
                     name: clan.name,
                     tag: clan.tag,
-                    level: clan.clanLevel,
+                    clanLevel: clan.clanLevel,
                     attacks: clan.attacks,
                     stars: clan.stars,
                     destruction: clan.destructionPercentage,
@@ -211,7 +211,7 @@ struct ClanWarCardView: View {
                 participantRow(
                     name: opponent.name,
                     tag: opponent.tag,
-                    level: opponent.clanLevel,
+                    clanLevel: opponent.clanLevel,
                     attacks: opponent.attacks,
                     stars: opponent.stars,
                     destruction: opponent.destructionPercentage,
@@ -237,8 +237,10 @@ struct ClanWarCardView: View {
         }
     }
 
+    /// 战争参与方摘要行。`clanLevel` 参数名为部落等级（ClanWarParticipant
+    /// 语义），不得传入 townHallLevel 等大本营等级（Issue #95）。
     private func participantRow(
-        name: String?, tag: String?, level: Int?,
+        name: String?, tag: String?, clanLevel: Int?,
         attacks: Int?, stars: Int?, destruction: Double?, isClan: Bool
     ) -> some View {
         HStack(spacing: 10) {
@@ -249,8 +251,8 @@ struct ClanWarCardView: View {
                 HStack(spacing: 6) {
                     Text(name ?? (isClan ? "我方" : "对方"))
                         .font(.subheadline.weight(.semibold))
-                    if let level {
-                        Text("\(level)级大本营")
+                    if let clanLabel = ClanDisplayFormat.clanLevelLabel(clanLevel) {
+                        Text(clanLabel)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

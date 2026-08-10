@@ -121,6 +121,39 @@ final class ClanDisplayFormatTests: XCTestCase {
         XCTAssertNil(ClanDisplayFormat.requiredLeagueTierLabel(nil))
     }
 
+    // MARK: - clanLevelLabel（Issue #95：部落等级语义，禁止显示为"X级大本营"）
+
+    /// Issue #95 复现值：clanLevel=20 曾渲染为"20级大本营"。
+    /// 修复后必须显示部落等级语义。0 是真实值（不视为缺失，同
+    /// upgradeCostLabel 的 "0 不视为缺失" 原则）。
+    func testClanLevelLabelFormats() {
+        XCTAssertEqual(ClanDisplayFormat.clanLevelLabel(20), "部落等级 20")
+        XCTAssertEqual(ClanDisplayFormat.clanLevelLabel(17), "部落等级 17")
+        XCTAssertEqual(ClanDisplayFormat.clanLevelLabel(0), "部落等级 0")
+    }
+
+    /// 缺失（nil）→ nil：UI 不渲染虚假等级占位（验收标准第 3 条）。
+    func testClanLevelLabelNil() {
+        XCTAssertNil(ClanDisplayFormat.clanLevelLabel(nil))
+    }
+
+    /// Property-based：任意非 nil Int（含异常负值/极值），文案恒为
+    /// 「部落等级 \(n)」，永不包含"大本营"字样（固定 seed SplitMix64，
+    /// 可复现）。负值原样格式化：API 脏数据不钳制，保留可审计信号。
+    func testClanLevelLabelPropertyNeverTownHall() {
+        var rng = SplitMix64Generator(seed: 0x95_95)
+        let extremeValues: [Int] = [Int.min, -1, 0, 1, Int.max]
+        for level in extremeValues {
+            XCTAssertEqual(ClanDisplayFormat.clanLevelLabel(level), "部落等级 \(level)")
+        }
+        for _ in 0..<500 {
+            let level = Int.random(in: -5...100, using: &rng)
+            let label = ClanDisplayFormat.clanLevelLabel(level)
+            XCTAssertEqual(label, "部落等级 \(level)")
+            XCTAssertFalse(label?.contains("大本营") ?? false)
+        }
+    }
+
     // MARK: - 未知 ID 降级文案（保留官方 name，可审计）
 
     func testUnknownIDFallbackText() {

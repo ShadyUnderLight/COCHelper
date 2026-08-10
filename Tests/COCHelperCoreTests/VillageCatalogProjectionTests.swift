@@ -2810,6 +2810,24 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
+    /// 铁匠铺门槛：野蛮人木偶 level 2 == 阶段上限 2（铁匠铺=2，lvl3 需 BS3 不满足）
+    /// → .requires(nextLevel: 3, requirements: [.blacksmith(level: 3)],
+    /// referenceDurationSeconds: nil)（equipment 无时间列 → 参考时长 nil）。
+    func testNextUpgradeBlacksmithGateRequires() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_070, level: 2, path: "0")],  // 铁匠铺
+            "equipment": [makeItem(section: "equipment", dataID: 90_000_000, level: 2, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let puppet = try XCTUnwrap(home.items.first { $0.dataID == 90_000_000 })
+        XCTAssertEqual(puppet.currentStageMaxLevel, 2)
+        XCTAssertEqual(puppet.status, .maxed)
+        XCTAssertEqual(
+            puppet.nextUpgrade,
+            .requires(nextLevel: 3, requirements: [.blacksmith(level: 3)], referenceDurationSeconds: nil)
+        )
+    }
+
     /// 语义守卫（Reviewer A F1）：异常快照下当前等级可能超过阶段上限（快照 10 级、
     /// 阶段上限 8——版本不匹配已被 .unknown 拦截，仅损坏/过时数据可达）。此时目录
     /// 真实下一级（9）小于当前等级（10），不得输出倒挂的「下一级 9级」：

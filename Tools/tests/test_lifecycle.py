@@ -226,3 +226,20 @@ def test_validate_consistency_mismatch(tmp_path):
     errors = validate_catalog(d)
     assert any("lifecycle 与声明不一致" in e and "buildings:1000001" in e
                and "'seasonalCandidate'" in e and "'permanent'" in e for e in errors)
+
+
+def test_validate_rejects_undeclared_item(tmp_path):
+    """目录条目不在声明中（无论 lifecycle 值）→ 报声明缺失（与生成器 fail loud 同口径）。"""
+    item = CatalogItem(
+        section="units", dataID=9_999_999, category="troops", base="home",
+        baseMissingReason=None, name="未声明条目", maxLevel=1,
+        icon=None, levelVisual=None, missingReason=None,
+        levels=[CatalogLevel(
+            level=1, durationSeconds=0, missingReason=None,
+            upgradeCosts=None, requiredTownHallLevel=None,
+            requiredLaboratoryLevel=None, icon=None, levelVisual=None)],
+        lifecycle="permanent",
+    )
+    d = _valid_dir(tmp_path, item)
+    errors = validate_catalog(d)
+    assert any("lifecycle 声明缺失" in e and "units:9999999" in e for e in errors)

@@ -3600,6 +3600,87 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(unmodeled, [.troops, .spells, .siegeMachines, .heroes, .equipment, .pets, .guardians])
     }
 
+    /// 边界：TH=1 与 TH=18（宇宙表闭区间端点）→ 覆盖判定不受影响。
+    func testProgressCoverageAtTownHallBoundaries() throws {
+        let sections: [String: [AccountItem]] = [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "th")],
+            "traps": [], "units": [], "spells": [], "siege_machines": [],
+            "heroes": [], "equipment": [], "pets": [], "guardians": [],
+        ]
+        let th1 = makeVillage(objectSections: sections)
+        XCTAssertEqual(project(village: th1, catalog: makeCompleteUniverseCatalog(), base: .home).progressCoverage, .complete,
+                       "TH=1 闭区间端点 → 宇宙可用")
+        let th18 = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "traps": [], "units": [], "spells": [], "siege_machines": [],
+            "heroes": [], "equipment": [], "pets": [], "guardians": [],
+        ])
+        XCTAssertEqual(project(village: th18, catalog: makeCompleteUniverseCatalog(), base: .home).progressCoverage, .complete,
+                       "TH=18 闭区间端点 → 宇宙可用")
+    }
+
+    /// 突变守护：宇宙键含 BB 段（"buildings2" 等）→ home 形态过滤生效，
+    /// 不得把「仅 BB 建模」误判为 home 类别已建模（Issue #96 评审修复项）。
+    func testProgressCoverageIgnoresBuilderUniverseSections() throws {
+        // 目录宇宙键 = home traps + BB buildings2（BB 段不贡献 home 建模）；
+        // 快照 9 section 全 → 过滤后只认 traps → unmodeled 8 类（含 buildings）。
+        // 若 "2" 后缀过滤失效，buildings2 会被 TrackerCategory.from dropLast
+        // 映射成 .buildings → unmodeled 变 7 类且不含 buildings，两条断言都红。
+        func levels(_ max: Int) -> [CatalogLevel] {
+            (1...max).map {
+                CatalogLevel(level: $0, durationSeconds: nil, upgradeCosts: nil,
+                             requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                             icon: nil, levelVisual: nil, missingReason: nil)
+            }
+        }
+        let builderArmyCamp = CatalogItem(
+            section: "buildings2", category: "buildings", dataID: 1_000_100, base: "builder",
+            baseMissingReason: nil, name: "建筑大师兵营", maxLevel: 10, icon: nil, levelVisual: nil,
+            levels: levels(10)
+        )
+        let trap = CatalogItem(
+            section: "traps", category: "traps", dataID: 12_000_000, base: "home",
+            baseMissingReason: nil, name: "炸弹", maxLevel: 3, icon: nil, levelVisual: nil,
+            levels: levels(3)
+        )
+        let catalog = GameCatalog(
+            gameVersion: "18.400.13",
+            items: [builderArmyCamp, trap],
+            manifest: makeUniverseManifestStub(),
+            instanceCounts: [
+                "traps:12000000": cannonUniverseCounts,
+                "buildings2:1000100": Array(repeating: 1, count: 18),
+            ]
+        )
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "traps": [], "units": [], "spells": [], "siege_machines": [],
+            "heroes": [], "equipment": [], "pets": [], "guardians": [],
+        ])
+        let coverage = project(village: village, catalog: catalog, base: .home).progressCoverage
+        guard case .partial(_, let unmodeled) = coverage else {
+            return XCTFail("BB 宇宙不应使 home 覆盖变 complete，实际 \(coverage)")
+        }
+        XCTAssertTrue(unmodeled.contains(.buildings),
+                      "buildings2（BB 段）不得被当作 home buildings 已建模")
+        XCTAssertEqual(unmodeled.count, 8, "只有 home traps 建模 → 其余 8 类未建模")
+    }
+
+    /// 快照含 BB 段（units2 等）不满足 home 的 units 缺失——home 检查只看
+    /// home 形态键（progressSections 无 "2" 后缀）。
+    func testProgressCoverageHomeMissingIgnoresBuilderSections() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "units2": [makeItem(section: "units2", dataID: 4_000_000, level: 2, path: "0")],
+        ])
+        let coverage = project(village: village, catalog: makeCompleteUniverseCatalog(), base: .home).progressCoverage
+        guard case .partial(let missing, _) = coverage else {
+            return XCTFail("期望 .partial（缺 home 追踪 section），实际 \(coverage)")
+        }
+        XCTAssertTrue(missing.contains("units"), "BB 段 units2 不能补 home 的 units 缺失")
+        XCTAssertFalse(missing.contains("buildings"), "buildings 存在（TH）→ 不缺失")
+    }
+
     /// .available 产出：快照无圣水收集器 + TH18 宇宙 count 7 → 合成项
     /// id = "universe:buildings:1000002"、currentLevel 0、count 7、status .available、
     /// maxLevel/currentStageMaxLevel 从目录 join；解锁型（units）不产出；

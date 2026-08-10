@@ -344,18 +344,24 @@ struct VillageDetailView: View {
     }
 
     /// Issue #96：覆盖率行 help 文案按覆盖状态三分支——complete 才宣称
-    ///「村庄全部可建造数量」；partial 时覆盖率分母 = 已观测 ∪ 建筑/陷阱宇宙
-    /// 差集（合成门禁 buildingUniverseAvailable，与 stage/global 完整分母门禁
-    /// 解耦）→ 准确表述为「已建模可建造」；unavailable（无宇宙/TH 未知/BB）
-    /// 无差集 → 纯已观测口径。
+    ///「村庄全部可建造数量」；partial 两种成因（快照缺数据 / 目录未建模）分别
+    /// 表述（分母均为已观测 ∪ 建筑/陷阱差集）；unavailable 无差集 → 纯已观测。
     private func helpText(for coverage: ProgressUniverseCoverage) -> String {
         switch coverage {
         case .complete:
-            "已观测实例占村庄全部可建造数量"
-        case .partial:
-            "已观测实例占已建模可建造数量（当前仅建筑/陷阱），其余类别未完整建模"
+            return "已观测实例占村庄全部可建造数量"
+        case .partial(let missing, let unmodeled):
+            if !missing.isEmpty && !unmodeled.isEmpty {
+                return "快照缺少类别数据且目录未完整建模，已观测实例占已建模（建筑/陷阱）可建造数量"
+            }
+            if !unmodeled.isEmpty {
+                return "已观测实例占已建模可建造数量（当前仅建筑/陷阱），其余类别未完整建模"
+            }
+            // 不变量：partial 至少一个集合非空——missing 非空且 unmodeled 为空
+            // 才走到这里（成因 b：快照缺数据，目录可能已全类别建模）。
+            return "快照缺少类别数据（缺失段不计入分母），已观测实例占已建模可建造数量"
         case .unavailable:
-            "分母为已观测实例，非全部可能建筑"
+            return "分母为已观测实例，非全部可能建筑"
         }
     }
 

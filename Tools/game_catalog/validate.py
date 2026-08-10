@@ -69,6 +69,10 @@ def _check_instance_counts(errors: list[str], ic: dict, catalog) -> None:
             errors.append(f"instanceCounts 键格式非法: {key!r}")
             continue
         section, _, dataid_s = key.partition(":")
+        # Issue #96 契约不对称声明：Swift 侧 .complete 要求 9 类全建模宇宙，
+        # 但本白名单目前只接受 buildings/traps——未来目录扩充其他类别宇宙时，
+        # 必须同步放开本白名单（并更新 Swift 侧 validatedInstanceCounts 正向
+        # 契约与对应测试），否则新类别宇宙键会被本检查误拒。
         if section not in ("buildings", "traps"):
             errors.append(f"instanceCounts 未知 section: {key}")
             continue

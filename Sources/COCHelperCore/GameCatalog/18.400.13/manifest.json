@@ -24,8 +24,8 @@
   "generatedFiles": [
     {
       "path": "catalog.json",
-      "sha256": "sha256:17dd43b31a6326da3bd39c0e47fa17257778979afd889bd9f1c81f5a41af9e9e",
-      "size": 4312359
+      "sha256": "sha256:ca9f88c9a91d37039dfd667d388acb07201b2b502e4c840ead58f7f7035754f6",
+      "size": 4334759
     },
     {
       "entries": 1264,
@@ -6351,6 +6351,11 @@
       "path": "icons/ui/info_icon_time_boosted.png",
       "sha256": "sha256:037177389fa82fa03628769da02d73a0e888beb7e97f7a5adf7bcaa9e9f39557",
       "size": 2793
+    },
+    {
+      "path": "craft_table_catalog.json",
+      "sha256": "sha256:f94679cd955a2d8037313197ac1d9c22ce4d47d580fd87942a8b32881942d09b",
+      "size": 99856
     }
   ],
   "locale": "zh-CN",

@@ -15,6 +15,7 @@ from .durations import classify_duration
 from .errors import CatalogError
 from .fingerprint import sha256_bytes, sha256_file
 from .instance_counts import build_instance_counts
+from .lifecycle import apply_lifecycle
 from .model import Catalog, CatalogItem, catalog_to_dict
 from .tables import TABLES
 
@@ -153,6 +154,8 @@ def generate(
             items = _build_catalog_items(archive, localized, require_all_tables=require_all_tables)
             # Issue #75 工作流 C：展示分类数据化（分类知识唯一事实源 display_categories.py）
             items = apply_display_categories(items)
+            # Issue #98：生命周期事实（声明文件唯一事实源 lifecycle.py，fail loud）
+            items = apply_lifecycle(items)
             # Issue #70 阶段 2：townhall_levels → instanceCounts 宇宙
             # （先 build items：缺表/缺列错误优先报，再读宇宙表）
             instance_counts = build_instance_counts(

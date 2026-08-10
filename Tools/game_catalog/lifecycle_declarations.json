@@ -1,0 +1,2794 @@
+{
+  "items": {
+    "buildings2:1000033": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000034": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000035": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000036": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000037": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000038": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000039": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000040": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000041": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000042": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000043": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000044": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000045": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000046": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000047": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000048": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000049": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000050": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000051": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000052": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000053": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000054": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000055": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000056": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000057": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000058": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000063": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000065": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000078": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000080": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000081": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings2:1000082": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000009": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000012": {
+      "lifecycle": "permanent",
+      "note": "防空火箭，levelVisual exportName 含 firework(s) 属命名撞词，常驻建筑（人工判定，待复核）"
+    },
+    "buildings:1000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000014": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000015": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000016": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000017": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000018": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000019": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000020": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000021": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000022": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000023": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000024": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000025": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000026": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000027": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000028": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000029": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000030": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000031": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000032": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000059": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000060": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000061": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000062": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000064": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000066": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000067": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000068": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000069": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000070": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000071": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000072": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000073": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（糖果笼，活动结束后移除；Supercell 官方活动公告确认限时）"
+    },
+    "buildings:1000074": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000075": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clashmas 2024 节日装饰（法术惊喜；levelVisual clashmas24 资产家族，与已标糖果笼/糖果拐杖/节日烟花同活动）"
+    },
+    "buildings:1000076": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000077": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000079": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000083": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时资源建筑（酸腐圣水坩埚；官方维基 Temporary Resource Buildings 列表证实，中置信）"
+    },
+    "buildings:1000084": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000085": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000086": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000087": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000088": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000089": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000090": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（糖果笼，活动结束后移除；Supercell 官方活动公告确认限时）"
+    },
+    "buildings:1000091": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（糖果拐杖，活动结束后移除；Supercell 官方活动公告确认限时）"
+    },
+    "buildings:1000092": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（节日烟花，活动结束后移除；Supercell 官方活动公告确认限时）"
+    },
+    "buildings:1000093": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000094": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000095": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000096": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000097": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000098": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000099": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000100": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000101": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（盛放烟花，活动结束后移除；Supercell 官方活动公告确认限时）"
+    },
+    "buildings:1000102": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000103": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:1000104": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000008": {
+      "lifecycle": "seasonalCandidate",
+      "note": "精工防御（2026-04 官方公告限时，阶段表 crafted-defenses-2026-04-sound-of-clash）"
+    },
+    "buildings:103000009": {
+      "lifecycle": "seasonalCandidate",
+      "note": "精工防御（2026-04 官方公告限时，阶段表 crafted-defenses-2026-04-sound-of-clash）"
+    },
+    "buildings:103000010": {
+      "lifecycle": "seasonalCandidate",
+      "note": "精工防御（2026-04 官方公告限时，阶段表 crafted-defenses-2026-04-sound-of-clash）"
+    },
+    "buildings:103000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000012": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "buildings:103000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000009": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000012": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000014": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000015": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000016": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000017": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000018": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000019": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000020": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000021": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000022": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000023": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000024": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000025": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000026": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000027": {
+      "lifecycle": "permanent",
+      "note": "防空火箭，icon exportName 含 firecracker 属命名撞词，常驻建筑（人工判定，待复核）"
+    },
+    "capital_buildings:110000028": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000029": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000030": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000031": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000032": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000033": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000034": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000035": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000036": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000037": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000038": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000039": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000040": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000041": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000042": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000043": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000044": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000045": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000046": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000047": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000048": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000049": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000050": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000051": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000052": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000053": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000054": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000055": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000056": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000057": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000058": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000059": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000060": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_buildings:110000061": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000009": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000012": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000014": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000015": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000016": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000017": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000018": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000019": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000020": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000021": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000022": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000023": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000024": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000025": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000026": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000027": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000028": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000029": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000030": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000031": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000032": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000033": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000034": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000035": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000036": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000037": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000038": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000039": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_characters:112000040": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000009": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000012": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000014": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_spells:113000015": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_traps:111000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_traps:111000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_traps:111000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_traps:111000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "capital_traps:111000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000009": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000012": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000014": {
+      "lifecycle": "permanent",
+      "note": "活动引入装备（尖刺足球），但装备进入常驻装备池可继续升级——按永久内容声明（2026-08 人工判定，待复核）"
+    },
+    "equipment:90000015": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000016": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000017": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000018": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000019": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000020": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000021": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000022": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000023": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000024": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000025": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000026": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000027": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000028": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000029": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000030": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000031": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000032": {
+      "lifecycle": "permanent",
+      "note": "活动引入装备（灵蛇手镯），装备进入常驻装备池可继续升级——按永久内容声明（人工判定，待复核）"
+    },
+    "equipment:90000033": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000034": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000035": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000036": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000037": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000038": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000039": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000040": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000041": {
+      "lifecycle": "permanent",
+      "note": "活动引入装备（熔岩气球玩偶），装备进入常驻装备池可继续升级——按永久内容声明（人工判定，待复核）"
+    },
+    "equipment:90000042": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000043": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000044": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000045": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000046": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000047": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000048": {
+      "lifecycle": "permanent",
+      "note": "活动引入装备（动作人偶，WWE 联名），装备进入常驻装备池可继续升级——按永久内容声明（人工判定，待复核）"
+    },
+    "equipment:90000049": {
+      "lifecycle": "permanent",
+      "note": "陨石法杖，icon exportName 含 meteor 属装备名（Meteor 装备，常驻装备池）——白名单留痕（人工判定，待复核）"
+    },
+    "equipment:90000050": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000051": {
+      "lifecycle": "permanent",
+      "note": "活动引入装备（木棍马驹，LNY 2026），装备进入常驻装备池可继续升级——按永久内容声明（人工判定，待复核）"
+    },
+    "equipment:90000052": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000053": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000054": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000055": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000056": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000057": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000058": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000059": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "equipment:90000060": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "guardians:107000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "guardians:107000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "guardians:107000002": {
+      "lifecycle": "permanent",
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
+    },
+    "guardians:107000003": {
+      "lifecycle": "permanent",
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
+    },
+    "guardians:107000004": {
+      "lifecycle": "permanent",
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
+    },
+    "guardians:107000005": {
+      "lifecycle": "permanent",
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
+    },
+    "guardians:107000006": {
+      "lifecycle": "permanent",
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
+    },
+    "guardians:107000007": {
+      "lifecycle": "permanent",
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
+    },
+    "guardians:107000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "guardians:107000009": {
+      "lifecycle": "permanent",
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
+    },
+    "heroes2:28000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "heroes2:28000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "heroes:28000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "heroes:28000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "heroes:28000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "heroes:28000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "heroes:28000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "heroes:28000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000006": {
+      "lifecycle": "seasonalCandidate",
+      "note": "疑似限时活动宠物（独角；deprecated_in_source=已被游戏移除 + 单级 stub，与已标活动宠物 73000012-15 同族特征——保守安全侧，待外部核实）"
+    },
+    "pets:73000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000009": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000012": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动宠物（史莱姆蜗牛莱希；Clash Games 2025 活动限定，catalog deprecated_in_source=已被游戏移除——限时内容铁证）"
+    },
+    "pets:73000013": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动宠物（急速精灵闪枭；Clash Games 2025 活动限定，catalog deprecated_in_source=已被游戏移除）"
+    },
+    "pets:73000014": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动宠物（灵魂水母莱希；Clash Games 2025 活动限定，catalog deprecated_in_source=已被游戏移除）"
+    },
+    "pets:73000015": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动宠物（灵魂水母闪枭；Clash Games 2025 活动限定，catalog deprecated_in_source=已被游戏移除）"
+    },
+    "pets:73000016": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "pets:73000017": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000051": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000052": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000062": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000075": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000087": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000091": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000092": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000135": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000188": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "siege_machines:4000189": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000004": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动法术（圣诞奇袭；Supercell 官方活动公告确认限时）"
+    },
+    "spells:26000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000006": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动法术（圣诞奇袭；Supercell 官方活动公告确认限时）"
+    },
+    "spells:26000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000009": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000012": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000014": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000015": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000016": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000017": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000018": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000019": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000020": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000021": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000022": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时生日活动法术（生日大爆炸；Supercell 官方活动公告确认限时）"
+    },
+    "spells:26000023": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000024": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000025": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000026": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000027": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000028": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000029": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000030": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000031": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000032": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000033": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000034": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000035": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000036": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000037": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000038": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000039": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000040": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000041": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000042": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000043": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000044": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000045": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000046": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000047": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000048": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000049": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000050": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000051": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000052": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000053": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000054": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000055": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000056": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000057": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000058": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000059": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000060": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000061": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000062": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000063": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000064": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000065": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000066": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000067": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000068": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000069": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000070": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000071": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000072": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000073": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时法术（袋装小冰怪；官方维基 Temporary Spells 证实，currently not available）"
+    },
+    "spells:26000074": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000075": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000076": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000077": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000078": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000079": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000080": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000081": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000082": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000083": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000084": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时世界杯活动法术（黄牌法术；官方维基 Temporary Spells 证实）"
+    },
+    "spells:26000085": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000086": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000087": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000088": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000089": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000090": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000091": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000092": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000093": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000094": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000095": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000096": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000097": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000098": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000099": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000100": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000101": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000102": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000103": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000104": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000105": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000106": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000107": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000108": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000109": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000110": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000111": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000112": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000113": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000114": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000115": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000116": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000117": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000118": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000119": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000120": {
+      "lifecycle": "permanent",
+      "note": "图腾法术，icon exportName 含 meteor（meteor_tower=流星塔常驻建筑法术）属命名撞词——白名单留痕（人工判定，待复核）"
+    },
+    "spells:26000121": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000122": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000123": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000124": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000125": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000126": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000127": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000128": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000129": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000130": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000131": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000132": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000133": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000134": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000135": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000136": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000137": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000138": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000139": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000140": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000141": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "spells:26000142": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps2:12000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps2:12000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps2:12000012": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps2:12000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps2:12000014": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000003": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节活动陷阱（南瓜炸弹；Supercell 官方活动公告确认限时）"
+    },
+    "traps:12000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000007": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动陷阱（圣诞奇袭；Supercell 官方活动公告确认限时）"
+    },
+    "traps:12000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000009": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时陷阱（冰冻陷阱；官方维基 Temporary Traps 证实，cannot be upgraded）"
+    },
+    "traps:12000015": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时陷阱（玲珑陷阱；官方维基 Temporary Traps 列表第 4 条——与已标冰冻陷阱同列表，Partially Available / cannot be upgraded）"
+    },
+    "traps:12000016": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000017": {
+      "lifecycle": "permanent",
+      "note": "哥布林玲珑陷阱，levelVisual exportName 含 shrink（Shrink_trap_armed）属哥布林战役常驻变体撞词——白名单留痕（人工判定，待复核）"
+    },
+    "traps:12000018": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000019": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "traps:12000020": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000031": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000032": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000033": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000034": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000035": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000036": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000037": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000038": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000040": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000041": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000042": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000043": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000044": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000070": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000071": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000105": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000106": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units2:4000107": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000000": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000001": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000002": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000003": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000004": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000005": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000006": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000007": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000008": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000009": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000010": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000011": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000012": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000013": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000014": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000015": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000016": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000017": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000018": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000019": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000020": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000021": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000022": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000023": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000024": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000025": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000026": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000027": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000028": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000029": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000030": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时冬季/圣诞临时兵种（寒冰法师；Clash of Clans 官方维基 TemporaryTroop 证实，2016-2025 多次回归）"
+    },
+    "units:4000039": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000045": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clashiversary 活动临时兵种（野蛮人攻城槌；官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000046": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000047": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节临时兵种（皇家幽灵；Clash-O-Ween 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000048": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节临时兵种（南瓜野蛮人；Halloween 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000049": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000050": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节临时兵种（骷髅巨人；Halloween 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000053": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000054": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000055": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000056": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000057": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000058": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000059": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000060": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时兵种（金飞龙；官方维基 Golden Dragon 页 Temporary Troop Partially Available——单人战役 Boss 兼限时兵种；修正此前常驻留痕误判）"
+    },
+    "units:4000061": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节临时兵种（骷髅飞桶；官方维基 TemporaryTroop 证实，从未转正）"
+    },
+    "units:4000063": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000064": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000065": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000066": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000067": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clashiversary 活动临时兵种（机甲超人；官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000068": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000069": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000072": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时兵种（派对法师；官方维基 TemporaryTroop 证实，2026 Sound of Clash 活动——与精工防御同活动；修正此前常驻误判）"
+    },
+    "units:4000073": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000074": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000076": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000077": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000078": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000079": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000080": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000081": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000082": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000083": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000084": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000085": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000086": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000088": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000089": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000090": {
+      "lifecycle": "permanent",
+      "note": "雷霆皮卡（home 单级 stub 无成本无时长）——数据特征更像跨 section 重复条目而非限时内容（BB units2:4000036 与 Capital 112000022 为同名常驻）；暂按永久内容声明，待外部核实"
+    },
+    "units:4000093": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000094": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动兵种（蛮羊骑士；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000095": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000096": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000097": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000098": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000099": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000100": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000101": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（野蛮箭手；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000102": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（女巫戈仑；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000103": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（野猪法师；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000104": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（熔岩气球；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000108": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（迷你熔岩气球犬；Mashup Madness 衍生，与熔岩气球同活动）"
+    },
+    "units:4000109": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000110": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000111": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000112": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000113": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000114": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000115": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000116": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000117": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000118": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动兵种（饼干皮卡；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000119": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时新年活动兵种（烟花炮手；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000120": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时农历新年活动兵种（驭水青龙；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000121": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时世界杯活动兵种（任意球野蛮人；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000122": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时世界杯活动兵种（边线球巨人；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000123": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000124": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000125": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（扫帚女巫；icon majo 强活动特征，保守标限时——错标安全侧为显示阶段未配置）"
+    },
+    "units:4000126": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clash-o-Ween 临时兵种（女巫精灵；扫帚女巫组件，官方维基证实）"
+    },
+    "units:4000127": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000128": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（熔岩气球变体；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000129": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（迷你熔岩气球犬变体；Mashup Madness 衍生）"
+    },
+    "units:4000130": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clash-o-Ween 2024 临时兵种（寒冰亡灵；官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000131": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000132": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000133": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000134": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000136": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（收债哥布林；Dark Deal 活动，官方维基 TemporaryTroop 证实）"
+    },
+    "units:4000137": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000138": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000139": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000140": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000141": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000142": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时农历新年活动兵种（灵蛇飞桶；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000143": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时农历新年临时兵种（灵蛇；LNY 2025 活动，与灵蛇飞桶 4000142 同活动——此前声明分裂已修正）"
+    },
+    "units:4000144": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时农历新年临时兵种（灵蛇变体；LNY 2025 活动）"
+    },
+    "units:4000145": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动兵种（饼干皮卡变体；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000146": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000147": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000148": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000149": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000150": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000151": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000152": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000153": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000154": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000155": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000156": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（霸天巨人；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000157": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（皮卡凯恩；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000158": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（铁臂终结者；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000159": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（战吼狂人；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000160": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000161": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000162": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（皮卡凯恩变体；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000163": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（部族小队；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000164": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（战吼狂人变体；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000165": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（铁臂终结者变体；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000166": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（部族小队变体；Supercell 官方活动公告确认限时）"
+    },
+    "units:4000167": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Cosmic Rock 活动变体（陨石戈仑；官方维基 Meteor Golem 页：2025-10-10 限时加入 12 级，2025-11-01 移除，TH18 以 3 级常驻回归——13 级全 0 成本无时长即活动变体特征）"
+    },
+    "units:4000168": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Cosmic Rock 活动变体（小陨石戈仑；同 4000167，活动变体特征）"
+    },
+    "units:4000169": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000170": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000171": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000172": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000173": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000174": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000175": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000176": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000177": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000178": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动变体（小陨石戈仑；3 级无成本无时长——2026-07 Mass Troops 活动临时版，与 4000180 孪生；中置信，保守安全侧）"
+    },
+    "units:4000179": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动变体（陨石戈仑；3 级无成本无时长——2026-07 Mass Troops 活动临时版，中置信，保守安全侧）"
+    },
+    "units:4000180": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动变体（小陨石戈仑；3 级无成本无时长——2026-07 Mass Troops 活动临时版，中置信，保守安全侧）"
+    },
+    "units:4000181": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000182": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000183": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000184": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000185": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（大象骑士；Supercell Make 2026 活动，官方维基 TemporaryTroop 列表证实）"
+    },
+    "units:4000186": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（大象；Supercell Make 2026 活动，官方维基 TemporaryTroop 列表证实）"
+    },
+    "units:4000187": {
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（骑士；Supercell Make 2026 活动，官方维基 TemporaryTroop 列表证实）"
+    },
+    "units:4000190": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000191": {
+      "lifecycle": "permanent",
+      "note": null
+    },
+    "units:4000192": {
+      "lifecycle": "permanent",
+      "note": null
+    }
+  },
+  "schemaVersion": 1,
+  "source": "人工维护目录生命周期事实；键 = \"section:dataID\""
+}

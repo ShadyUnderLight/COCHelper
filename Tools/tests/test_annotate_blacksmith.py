@@ -63,6 +63,9 @@ def _equipment_item(data_id: int, name: str, levels: list[int],
             upgradeCosts=None, requiredTownHallLevel=None,
             requiredLaboratoryLevel=None, icon=None, levelVisual=None)
             for lvl in levels],
+        # Issue #98 F3：目录条目 lifecycle 必须与声明一致（90000000-90000005
+        # 均为真实 equipment 条目，声明=permanent）
+        lifecycle="permanent",
     )
 
 
@@ -75,6 +78,8 @@ def _units_item() -> CatalogItem:
         levels=[CatalogLevel(level=1, durationSeconds=0, missingReason=None,
                              upgradeCosts=None, requiredTownHallLevel=None,
                              requiredLaboratoryLevel=None, icon=None, levelVisual=None)],
+        # Issue #98 F3：units:4000000 在真实声明中（permanent）
+        lifecycle="permanent",
     )
 
 
@@ -94,6 +99,9 @@ def _make_dir_and_apk(tmp_path: Path) -> tuple[Path, Path]:
                                indent=2, sort_keys=True).encode("utf-8") + b"\n"
     (d / "catalog.json").write_bytes(catalog_bytes)
     (d / "icons").mkdir()
+    # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
         "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
         "locale": "zh-CN", "sourceFingerprint": sha256_file(apk),
@@ -102,6 +110,9 @@ def _make_dir_and_apk(tmp_path: Path) -> tuple[Path, Path]:
              "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
              "size": len(catalog_bytes)},
             {"path": "icons/", "kind": "directory"},
+            {"path": "craft_table_catalog.json",
+             "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+             "size": len(craft_bytes)},
         ],
         "counts": counts_for(items),
     }))

@@ -1107,6 +1107,130 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertNil(table.phase(forItemKey: "a:1", at: Date(timeIntervalSince1970: 2_500)))
     }
 
+    // MARK: - Issue #98: 条目生命周期声明 + 三态共享判定
+
+    /// CatalogLifecycle 两个 case 编码/解码 round-trip（Codable 契约：rawValue 落盘）。
+    func testCatalogLifecycleRoundTrip() throws {
+        for value in [CatalogLifecycle.permanent, .seasonalCandidate] {
+            let data = try JSONEncoder().encode(value)
+            XCTAssertEqual(try JSONDecoder().decode(CatalogLifecycle.self, from: data), value)
+        }
+    }
+
+    /// 旧目录 JSON 无 lifecycle 键 → 解码成功且 lifecycle == nil（向后兼容）。
+    func testCatalogItemDecodesMissingLifecycleAsNil() throws {
+        let json = """
+        {"section":"buildings","category":"buildings","dataID":1000001,"base":"home",
+         "baseMissingReason":null,"name":"Town Hall","maxLevel":1,
+         "icon":null,"levelVisual":null,"missingReason":null,
+         "levels":[{"level":1,"durationSeconds":0,"upgradeResource":null,"upgradeCost":null,
+                    "requiredTownHallLevel":null,"requiredLaboratoryLevel":null,
+                    "icon":null,"levelVisual":null,"missingReason":null}]}
+        """
+        let item = try JSONDecoder().decode(CatalogItem.self, from: Data(json.utf8))
+        XCTAssertNil(item.lifecycle)
+    }
+
+    /// lifecycle 键显式值 → 正确解码；未知值（如 "other"）→ 解码失败（枚举严格性）。
+    func testCatalogItemDecodesLifecycleValue() throws {
+        let base = """
+        {"section":"buildings","category":"buildings","dataID":1000001,"base":"home",
+         "baseMissingReason":null,"name":"Town Hall","maxLevel":1,
+         "icon":null,"levelVisual":null,"missingReason":null,
+         "levels":[{"level":1,"durationSeconds":0,"upgradeResource":null,"upgradeCost":null,
+                    "requiredTownHallLevel":null,"requiredLaboratoryLevel":null,
+                    "icon":null,"levelVisual":null,"missingReason":null}]
+        """
+        let permanent = try JSONDecoder().decode(
+            CatalogItem.self, from: Data((base + ",\"lifecycle\":\"permanent\"}").utf8))
+        XCTAssertEqual(permanent.lifecycle, .permanent)
+        let candidate = try JSONDecoder().decode(
+            CatalogItem.self, from: Data((base + ",\"lifecycle\":\"seasonalCandidate\"}").utf8))
+        XCTAssertEqual(candidate.lifecycle, .seasonalCandidate)
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(CatalogItem.self, from: Data((base + ",\"lifecycle\":\"other\"}").utf8)),
+            "未知 lifecycle 值必须解码失败（枚举严格性）")
+    }
+
+    /// 共享判定：permanent 声明优先——条目在阶段表活动期也返回 .permanent（数据矛盾时声明赢）。
+    func testAvailabilityPermanentWinsOverPhase() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "p", name: "阶段",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["a:1"]),
+        ])
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", lifecycle: .permanent, at: Date(timeIntervalSince1970: 1_500)),
+            .permanent)
+    }
+
+    /// permanent + 阶段表未命中 → .permanent（不因表缺失降级）。
+    func testAvailabilityPermanentAnyDate() {
+        XCTAssertEqual(
+            SeasonalPhaseTable.empty.availability(
+                forItemKey: "a:1", lifecycle: .permanent, at: Date(timeIntervalSince1970: 1_500)),
+            .permanent)
+    }
+
+    /// lifecycle=nil + 阶段表命中 → .seasonal（嵌套模组主目录不 join、lifecycle 恒 nil 仍显示限时）。
+    func testAvailabilityNilWithPhaseHitReturnsSeasonal() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "p", name: "阶段",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["a:1"]),
+        ])
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", lifecycle: nil, at: Date(timeIntervalSince1970: 1_500)),
+            .seasonal(phaseID: "p", phaseName: "阶段", status: .active))
+    }
+
+    /// lifecycle=nil + 表未命中 → .unconfigured（旧目录保守降级）。
+    func testAvailabilityNilMissReturnsUnconfigured() {
+        XCTAssertEqual(
+            SeasonalPhaseTable.empty.availability(forItemKey: "a:1", lifecycle: nil, at: Date(timeIntervalSince1970: 1_500)),
+            .unconfigured)
+    }
+
+    /// seasonalCandidate + 阶段表命中 → .seasonal。
+    func testAvailabilitySeasonalCandidateHitReturnsSeasonal() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "p", name: "阶段",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["a:1"]),
+        ])
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", lifecycle: .seasonalCandidate, at: Date(timeIntervalSince1970: 1_500)),
+            .seasonal(phaseID: "p", phaseName: "阶段", status: .active))
+    }
+
+    /// seasonalCandidate + 表未命中 → .unconfigured（已知限时但数据缺失，不误报永久）。
+    func testAvailabilitySeasonalCandidateMissReturnsUnconfigured() {
+        XCTAssertEqual(
+            SeasonalPhaseTable.empty.availability(
+                forItemKey: "a:1", lifecycle: .seasonalCandidate, at: Date(timeIntervalSince1970: 1_500)),
+            .unconfigured)
+    }
+
+    /// 旧签名方法 == 新方法传 nil（委托关系防漂移：两投影将来只能走新方法）。
+    func testLegacyAvailabilityDelegatesToLifecycleMethod() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "p", name: "阶段",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["a:1"]),
+        ])
+        let date = Date(timeIntervalSince1970: 1_500)
+        for key in ["a:1", "missing"] {
+            XCTAssertEqual(
+                table.availability(forItemKey: key, at: date),
+                table.availability(forItemKey: key, lifecycle: nil, at: date),
+                "旧签名必须与新方法传 nil 行为一致（key=\(key)）")
+        }
+    }
+
     // MARK: - 实例数量宇宙（Issue #70 阶段 2）
 
     /// 圣水收集器（buildings:1000002，Elixir Collector；审核 B-6 更正：真加农炮

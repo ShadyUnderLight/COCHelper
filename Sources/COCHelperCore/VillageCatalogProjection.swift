@@ -364,6 +364,7 @@ public struct VillageCatalogProjection: Sendable {
         catalog: GameCatalog?,
         expectedGameVersion: String? = nil,
         seasonalPhases: SeasonalPhaseTable = .empty,
+        craftTableCatalog: CraftTableCatalog? = nil,
         base: TrackerBase,
         now: Date = Date()
     ) -> VillageCatalogProjection {
@@ -446,7 +447,8 @@ public struct VillageCatalogProjection: Sendable {
             aggregate(records(
                 from: snapshot, catalog: catalog, base: base, now: now,
                 unlocks: unlocks, catalogIsUsable: catalogIsUsable,
-                seasonalPhases: seasonalPhases
+                seasonalPhases: seasonalPhases,
+                craftTableCatalog: craftTableCatalog
             )) + (buildingUniverseAvailable ? Self.universeSupplement(
                 snapshot: snapshot,
                 catalog: catalog,
@@ -477,7 +479,8 @@ public struct VillageCatalogProjection: Sendable {
         now: Date,
         unlocks: PlayerUnlockLevels,
         catalogIsUsable: Bool,
-        seasonalPhases: SeasonalPhaseTable
+        seasonalPhases: SeasonalPhaseTable,
+        craftTableCatalog: CraftTableCatalog?
     ) -> [VillageItemState] {
         // Issue #37：第一遍扫描构建「根父 id → dataID」映射。快照 id 是数组索引路径
         //（如 buildings:6.types.0），嵌套项归属精制台必须回查根父的 dataID。
@@ -488,7 +491,8 @@ public struct VillageCatalogProjection: Sendable {
         return snapshot.allObjectItems.compactMap { item in
             map(item, in: snapshot, catalog: catalog, base: base, now: now,
                 rootParentDataIDs: rootParentDataIDs, unlocks: unlocks,
-                catalogIsUsable: catalogIsUsable, seasonalPhases: seasonalPhases)
+                catalogIsUsable: catalogIsUsable, seasonalPhases: seasonalPhases,
+                craftTableCatalog: craftTableCatalog)
         }
     }
 
@@ -505,18 +509,39 @@ public struct VillageCatalogProjection: Sendable {
         rootParentDataIDs: [String: Int64],
         unlocks: PlayerUnlockLevels,
         catalogIsUsable: Bool,
-        seasonalPhases: SeasonalPhaseTable
+        seasonalPhases: SeasonalPhaseTable,
+        craftTableCatalog: CraftTableCatalog?
     ) -> VillageItemState? {
         let isBuilderSection = item.section.hasSuffix("2")
         guard isBuilderSection == (base == .builder) else { return nil }
 
-        // Issue #74 seasonal：可用性由阶段表驱动（不推断、不编造；必须在
-        // category guard 之前计算——unavailable 分支也携带 availability）。
-        // itemKey = "section:dataID"（嵌套项同规则；空表恒 unconfigured）。
+        // 嵌套判定提前（Issue #98：catalog join 需要它；仅依赖 item.id 无副作用）。
+        let isNested = isNestedItem(item)
+
+        // Issue #74 + #98 seasonal：可用性由阶段表 + 目录 lifecycle 声明驱动
+        //（不推断、不编造；必须在 category guard 之前计算——unavailable 分支
+        // 也携带 availability）。itemKey = "section:dataID"（嵌套项同规则）。
         let itemKey = "\(item.section):\(item.dataID)"
+        // Issue #98：catalog join 提前——lifecycle 来自目录条目声明（仅依赖
+        // item/catalog/isNested，无副作用，提前计算不改其余逻辑）。嵌套项不
+        // join 主目录 → nil（阶段表命中仍可 seasonal，见 SeasonalPhaseTable.availability）。
+        let catalogItem = isNested ? nil : catalog?.item(section: item.section, dataID: item.dataID)
+        // Issue #98 审核 F1：嵌套防御（103M 段，主目录不 join）回查精制台目录的
+        // lifecycle 声明——与 CraftTableProjection 同口径，防同一防御两投影漂移
+        //（验收 6：主投影详情页不得显示「阶段信息未配置」而精制台显示 permanent）。
+        // 模组（102M 段）dataID 不在 defense 列表 → 回查 nil → 纯阶段表驱动。
+        let lifecycle: CatalogLifecycle?
+        if let catalogItem {
+            lifecycle = catalogItem.lifecycle
+        } else if isNested, let craftSpec = craftTableCatalog?.defense(dataID: item.dataID) {
+            lifecycle = craftSpec.lifecycle
+        } else {
+            lifecycle = nil
+        }
         // 阶段选择 + 状态边界集中在阶段表单一入口，供普通投影与精制台专用
         // 投影共用；畸形/未配置数据 fail-safe 为 unconfigured。
-        let availability = seasonalPhases.availability(forItemKey: itemKey, at: now)
+        let availability = seasonalPhases.availability(
+            forItemKey: itemKey, lifecycle: lifecycle, at: now)
 
         let remainingSeconds = liveRemainingSeconds(
             for: item,
@@ -525,7 +550,6 @@ public struct VillageCatalogProjection: Sendable {
         )
         let isUpgrading = (remainingSeconds ?? 0) > 0
         let category = TrackerCategory.from(section: item.section)
-        let isNested = item.id.contains(".types.") || item.id.contains(".modules.")
 
         // Issue #37 + #75 工作流 C：展示分类。嵌套项按根父归属（回查第一遍扫描的
         // 根父 dataID），平铺项按自身 dataID；分类读 catalog displayCategory 字段
@@ -574,7 +598,8 @@ public struct VillageCatalogProjection: Sendable {
         // 2. join 目录：(section, dataID) + base 防御校验。
         // 嵌套 types/modules 复用父 section（解析器行为），其 dataID 段（102M/103M）不属于
         // 任何目录 section；为避免未来 dataID 碰撞误命中父类目录物品，嵌套项一律不参与 join。
-        let catalogItem = isNested ? nil : catalog?.item(section: item.section, dataID: item.dataID)
+        //（catalogItem 已在 availability 判定处提前计算——Issue #98 lifecycle
+        // 需要它；此处直接复用，不再重复声明。）
         let baseMatches = catalogItem.map { item in
             switch item.base {
             case "home": return base == .home

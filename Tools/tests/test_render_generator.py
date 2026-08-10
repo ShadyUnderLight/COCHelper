@@ -101,6 +101,7 @@ def _mini_catalog() -> dict:
             {
                 "section": "units", "dataID": 4000000, "name": "野蛮人",
                 "maxLevel": 1, "category": "units",
+                "lifecycle": "permanent",  # Issue #98：units:4000000 在声明中
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_unit_barbarian",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
                 "levelVisual": None, "base": "home", "baseMissingReason": None,
@@ -122,6 +123,7 @@ def _mini_catalog() -> dict:
                 "maxLevel": 2, "category": "buildings",
                 "icon": None,
                 "displayCategory": "military",  # Issue #75 工作流 C：真实分类
+                "lifecycle": "permanent",  # Issue #98：buildings:1000070 在声明中
                 "levelVisual": {"container": "sc/buildings.sc",
                                 "exportName": "blacksmith_lvl1",
                                 "renderedPath": None,
@@ -146,6 +148,7 @@ def _mini_catalog() -> dict:
             {
                 "section": "spells", "dataID": 26000002, "name": "狂暴法术",
                 "maxLevel": 0, "category": "spells",
+                "lifecycle": "permanent",  # Issue #98：spells:26000002 在声明中
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_spell_rage",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
                 "levelVisual": None, "base": "home", "baseMissingReason": None,
@@ -153,8 +156,9 @@ def _mini_catalog() -> dict:
                 "levels": [],
             },
             {
-                "section": "heroes", "dataID": 999, "name": "无关条目",
+                "section": "heroes", "dataID": 28000000, "name": "无关条目",
                 "maxLevel": 0, "category": "heroes",
+                "lifecycle": "permanent",  # Issue #98：heroes:28000000 在声明中（F3 后目录条目必须声明内 key）
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_unit_king",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
                 "levelVisual": None, "base": "home", "baseMissingReason": None,
@@ -189,6 +193,10 @@ def _mini_manifest() -> str:
         "generatedFiles": [
             {"path": "catalog.json", "sha256": "sha256:" + "b" * 64, "size": 1},
             {"path": "icons/", "kind": "directory"},
+            {"path": "craft_table_catalog.json",
+             "sha256": "sha256:" + hashlib.sha256(
+                 b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n').hexdigest(),
+             "size": len(b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n')},
         ],
         "counts": {"items": 0, "levels": 0, "missingTime": 0, "missingIcons": 0},
     }, ensure_ascii=False) + "\n"
@@ -204,6 +212,9 @@ def _mini_dir(tmp_path: Path) -> Path:
                    sort_keys=True) + "\n", encoding="utf-8")
     (d / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
     (d / "icons").mkdir()
+    # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     return d
 
 

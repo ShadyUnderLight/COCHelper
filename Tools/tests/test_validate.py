@@ -26,6 +26,8 @@ def _valid_dir(tmp_path: Path) -> Path:
             requiredTownHallLevel=None, requiredLaboratoryLevel=None,
             icon=None, levelVisual=None,
         )],
+        # Issue #98：units:4000000 在真实声明文件中（permanent）
+        lifecycle="permanent",
     )
     catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
                       items=[item])
@@ -34,6 +36,9 @@ def _valid_dir(tmp_path: Path) -> Path:
     catalog_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False).encode("utf-8")
     (d / "catalog.json").write_bytes(catalog_bytes)
     (d / "icons").mkdir()
+    # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
         "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
         "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
@@ -41,6 +46,9 @@ def _valid_dir(tmp_path: Path) -> Path:
             {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
              "size": len(catalog_bytes)},
             {"path": "icons/", "kind": "directory"},
+            {"path": "craft_table_catalog.json",
+             "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+             "size": len(craft_bytes)},
         ],
         "counts": {"items": 1, "levels": 1, "missingTime": 0, "missingIcons": 0},
     }))
@@ -251,19 +259,23 @@ def test_validate_duplicate_section_key(tmp_path):
     """同 dataID 不同 section 不算重复主键（(section, dataID) 复合键）。"""
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
-    # 同 dataID=1000008 双 item：units（非 buildings 不查分类）+ buildings（防御）
-    c["items"][0]["dataID"] = 1000008
+    # 同 dataID=4000000 双 item：units（声明内 key + permanent）+ traps（防御）。
+    # 注意：units:4000000 是真实声明 key（permanent）；traps:4000000 是合成 key
+    #（真实声明只覆盖 traps 12M 段位）——F3 完整性对称后必然报「lifecycle
+    # 声明缺失」，属预期错误（与 dup 语义无关），断言显式锁定该 F3 行为。
     dup = json.loads(json.dumps(c["items"][0]))
-    dup["section"] = "buildings"
-    dup["name"] = "加农炮"
-    # Issue #75 工作流 C：home buildings 必须与注册表一致（defense）——全量比对锁定
-    dup["displayCategory"] = "defense"
+    dup["section"] = "traps"
+    dup["name"] = "弹簧陷阱"
     c["items"].append(dup)
     _write_with_hash(d, catalog=c)
     m = _load_manifest(d)
     m["counts"] = {"items": 2, "levels": 2, "missingTime": 0, "missingIcons": 0}
     _write(d, manifest=m)
-    assert validate_catalog(d) == []
+    errors = validate_catalog(d)
+    # dup 主键断言：同 dataID 跨 section 不得报「重复主键」
+    assert not any("重复主键" in e for e in errors), errors
+    # F3：traps:4000000 无声明 → 声明缺失错误（合成 key 预期）
+    assert any("lifecycle 声明缺失" in e and "traps:4000000" in e for e in errors)
 
 
 def test_validate_levels_not_strictly_ascending(tmp_path):
@@ -575,6 +587,10 @@ def test_validate_capital_item_ok(tmp_path):
     item["category"] = "capitalBuildings"
     item["base"] = None
     item["baseMissingReason"] = "capital_has_no_base"
+    # Issue #98（F3 后目录条目必须声明内 key）：capital_buildings:110000000
+    # 在声明中（permanent）——真实 capital 段位，非旧 fixture 的 4000000
+    item["dataID"] = 110000000
+    item["lifecycle"] = "permanent"
     _write_with_hash(d, catalog=c)
     assert validate_catalog(d) == []
 
@@ -594,10 +610,16 @@ def test_validate_unknown_base_missing_reason(tmp_path):
 
 
 def _equipment_dir(tmp_path: Path) -> Path:
-    """_valid_dir + 唯一 item 改为 equipment（BS 域校验基底）。"""
+    """_valid_dir + 唯一 item 改为 equipment（BS 域校验基底）。
+
+    Issue #98 F3：lifecycle 校验要求目录条目必须与声明一致——equipment
+    key 用真实声明内的 90000000（弓箭手木偶，声明=permanent）。
+    """
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
     c["items"][0]["section"] = "equipment"
+    c["items"][0]["dataID"] = 90_000_000
+    c["items"][0]["lifecycle"] = "permanent"
     _write_with_hash(d, catalog=c)
     return d
 
@@ -783,9 +805,12 @@ def test_validate_generated_files_sha256_correct_passes(tmp_path):
     d = _valid_dir(tmp_path)
     m = _load_manifest(d)
     data = (d / "catalog.json").read_bytes()
+    craft_entry = next(e for e in m["generatedFiles"]
+                       if e.get("path") == "craft_table_catalog.json")
     m["generatedFiles"] = [
         {"path": "catalog.json", "sha256": "sha256:" + hashlib.sha256(data).hexdigest(), "size": len(data)},
         {"path": "icons/", "kind": "directory"},
+        craft_entry,
     ]
     _write(d, manifest=m)
     assert validate_catalog(d) == []

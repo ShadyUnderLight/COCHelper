@@ -37,6 +37,8 @@ def _item(data_id=1000008, name="x", section="buildings", base="home", dc=None):
             upgradeCosts=None, requiredTownHallLevel=None,
             requiredLaboratoryLevel=None, icon=None, levelVisual=None)],
         displayCategory=dc,
+        # Issue #98：构造用 dataID 均在真实声明文件中（permanent）
+        lifecycle="permanent",
     )
 
 
@@ -119,6 +121,9 @@ def _write_dir(tmp_path, items):
                                ensure_ascii=False).encode("utf-8")
     (d / "catalog.json").write_bytes(catalog_bytes)
     (d / "icons").mkdir()
+    # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
         "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
         "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
@@ -127,6 +132,9 @@ def _write_dir(tmp_path, items):
              "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
              "size": len(catalog_bytes)},
             {"path": "icons/", "kind": "directory"},
+            {"path": "craft_table_catalog.json",
+             "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+             "size": len(craft_bytes)},
         ],
         "counts": counts_for(items),
     }))

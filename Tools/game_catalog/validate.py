@@ -24,6 +24,8 @@ from .display_categories import (
     INTENTIONAL_FALLBACK_DATA_IDS,
     apply_display_categories,
 )
+from .errors import CatalogError
+from .lifecycle import LIFECYCLE_VALUES, load_declarations
 from .model import AssetRef, UpgradeCost, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
@@ -136,6 +138,39 @@ def _check_display_category_registry(errors: list[str], items) -> None:
                 f"{item.name} 期望={expected.displayCategory} 实际={item.displayCategory!r}")
 
 
+def _check_lifecycle_declarations(errors: list[str], items) -> None:
+    """lifecycle 声明一致性（Issue #98）。
+
+    目录条目 lifecycle 必须与声明文件（lifecycle_declarations.json，唯一事实源）
+    逐条一致；声明文件加载失败 → 报错并跳过比对（无法核对不算通过）。
+    **完整性对称（审核 M1）**：目录条目 key 不在声明中 → 报「lifecycle 声明缺失」
+    （无论条目 lifecycle 值——生成器/校验器同口径，防新增条目漏标注）。
+    None 且有声明 → 报「缺少 lifecycle 字段」（旧产物）。声明文件多余条目不报错
+    （人工清单允许前瞻登记）。
+    """
+    try:
+        decl = load_declarations()
+    except CatalogError as exc:
+        errors.append(f"lifecycle 声明加载失败: {exc}")
+        return
+    for item in items:
+        key = f"{item.section}:{item.dataID}"
+        declared = decl.get(key)
+        if declared is None:
+            # 完整性对称（M1）：目录条目必须可溯源到声明，无论其 lifecycle 值。
+            errors.append(f"{key}: lifecycle 声明缺失（请更新 lifecycle_declarations.json）")
+        elif declared != item.lifecycle:
+            if item.lifecycle is None:
+                # P1-B 风格：防漏机制不放行旧产物，错误消息自解释补救路径
+                errors.append(
+                    f"{key}: 缺少 lifecycle 字段"
+                    f"（请用 lifecycle_declarations.json 重新生成标注）")
+            else:
+                errors.append(
+                    f"{key}: lifecycle 与声明不一致: "
+                    f"目录={item.lifecycle!r} 声明={declared!r}")
+
+
 def _check_rendered_path(
     errors: list[str],
     ref: AssetRef,
@@ -186,8 +221,158 @@ def _check_rendered_path(
             errors.append(f"renderedPath 指向的文件不是合法 PNG: {rp} ({context})")
 
 
-def validate_catalog(dir_path: str | Path) -> list[str]:
-    """校验目录。返回 error 列表（空=通过）。"""
+def _check_craft_catalog_structure(errors: list[str], raw: object,
+                                   manifest_game_version: object) -> None:
+    """craft_table_catalog.json 内容结构校验（复审 P1：Swift 解码契约镜像）。
+
+    hash/size 一致但内容非法时（如缺 buildTag/locale/source 字段）Swift
+    `CraftTableCatalog` Codable 解码失败 → loadBundled 返回 nil → 精制台
+    运行时不可用——"validator 绿色但运行时不可用"仍会发生，必须在此拦截。
+    镜像 CraftTableDefenseSpec/CraftTableModuleSpec/CraftTableLevelSpec 的
+    Codable 必填契约（Swift 侧 Optional 字段不在此强制）。
+    """
+    if not isinstance(raw, dict):
+        errors.append("craft_table_catalog.json 顶层必须是对象")
+        return
+    for key in ("schemaVersion", "gameVersion", "buildTag", "locale",
+                "source", "defenses", "modules"):
+        if key not in raw:
+            errors.append(f"craft_table_catalog.json 缺少必填字段 {key!r}（Swift 解码将失败）")
+    for key in ("gameVersion", "buildTag", "locale", "source"):
+        if key in raw and not isinstance(raw[key], str):
+            errors.append(f"craft_table_catalog.json {key} 必须是字符串（Swift 解码将失败）")
+    sv = raw.get("schemaVersion")
+    if isinstance(sv, bool) or not isinstance(sv, int) or sv != 1:
+        # bool 是 int 子类且 True == 1——必须先排除 bool，否则 JSON true
+        # 会绕过比较、Swift Codable Int 解码拒绝
+        errors.append(f"craft_table_catalog.json schemaVersion 必须是整数 1: {sv!r}")
+    if manifest_game_version is not None and raw.get("gameVersion") != manifest_game_version:
+        errors.append(f"craft_table_catalog.json gameVersion 与 manifest 不一致: "
+                      f"{raw.get('gameVersion')!r} vs {manifest_game_version!r}")
+    for list_key in ("defenses", "modules"):
+        if list_key in raw and not isinstance(raw[list_key], list):
+            errors.append(f"craft_table_catalog.json {list_key} 必须是数组")
+    # CraftTableDefenseSpec 必填字段
+    defenses = raw.get("defenses")
+    if isinstance(defenses, list):
+        for i, d in enumerate(defenses):
+            if not isinstance(d, dict):
+                errors.append(f"craft_table_catalog.json defenses[{i}] 必须是对象")
+                continue
+            for key in ("dataID", "name", "sourceName", "specialAbility",
+                        "moduleIDs", "totalModuleLevelThresholds"):
+                if key not in d:
+                    errors.append(f"craft_table_catalog.json defenses[{i}] 缺少 {key!r}")
+            # 标量类型（Swift Codable Int64/String 契约——类型错则解码失败，
+            # 与缺字段同属"validator 绿但运行时不可用"）
+            did = d.get("dataID")
+            if isinstance(did, bool) or not isinstance(did, int) \
+                    or not -(2**63) <= did <= 2**63 - 1:
+                errors.append(
+                    f"craft_table_catalog.json defenses[{i}] dataID 必须是 Int64 整数"
+                    "（-2^63...2^63-1，Swift 解码域）")
+            for key in ("name", "sourceName", "specialAbility"):
+                if key in d and not isinstance(d[key], str):
+                    errors.append(f"craft_table_catalog.json defenses[{i}] {key} 必须是字符串")
+            if "lifecycle" in d and d["lifecycle"] is not None \
+                    and d["lifecycle"] not in ("permanent", "seasonalCandidate"):
+                errors.append(
+                    f"craft_table_catalog.json defenses[{i}] lifecycle 未知值 {d['lifecycle']!r}"
+                    "（闭枚举 permanent/seasonalCandidate，Swift 解码将失败）")
+            if not isinstance(d.get("moduleIDs"), list) or not all(
+                    isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 2**63 - 1
+                    for x in d.get("moduleIDs") or []):
+                errors.append(
+                    f"craft_table_catalog.json defenses[{i}] moduleIDs 必须是 Int64 整数数组"
+                    "（0...2^63-1）")
+            if not isinstance(d.get("totalModuleLevelThresholds"), list) or not all(
+                    isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 2**63 - 1
+                    for x in d.get("totalModuleLevelThresholds") or []):
+                errors.append(
+                    f"craft_table_catalog.json defenses[{i}] totalModuleLevelThresholds "
+                    "必须是 Int64 整数数组（0...2^63-1）")
+    # CraftTableModuleSpec 必填字段
+    modules = raw.get("modules")
+    if isinstance(modules, list):
+        for i, mod in enumerate(modules):
+            if not isinstance(mod, dict):
+                errors.append(f"craft_table_catalog.json modules[{i}] 必须是对象")
+                continue
+            for key in ("dataID", "name", "sourceName", "specialAbility",
+                        "statTypes", "displayTitles", "maxLevel", "levels"):
+                if key not in mod:
+                    errors.append(f"craft_table_catalog.json modules[{i}] 缺少 {key!r}")
+            mdid = mod.get("dataID")
+            if isinstance(mdid, bool) or not isinstance(mdid, int) \
+                    or not -(2**63) <= mdid <= 2**63 - 1:
+                errors.append(
+                    f"craft_table_catalog.json modules[{i}] dataID 必须是 Int64 整数"
+                    "（-2^63...2^63-1，Swift 解码域）")
+            for key in ("name", "sourceName", "specialAbility"):
+                if key in mod and not isinstance(mod[key], str):
+                    errors.append(f"craft_table_catalog.json modules[{i}] {key} 必须是字符串")
+            ml = mod.get("maxLevel")
+            if isinstance(ml, bool) or not isinstance(ml, int) \
+                    or not -(2**63) <= ml <= 2**63 - 1:
+                errors.append(
+                    f"craft_table_catalog.json modules[{i}] maxLevel 必须是 Int 整数"
+                    "（-2^63...2^63-1，Swift 解码域）")
+            if not isinstance(mod.get("statTypes"), list) or not all(
+                    isinstance(x, str) for x in mod.get("statTypes") or []):
+                errors.append(f"craft_table_catalog.json modules[{i}] statTypes 必须是字符串数组")
+            if not isinstance(mod.get("displayTitles"), list) or not all(
+                    isinstance(x, str) for x in mod.get("displayTitles") or []):
+                errors.append(f"craft_table_catalog.json modules[{i}] displayTitles 必须是字符串数组")
+            # CraftTableLevelSpec 必填字段（level 必填且 Int；其余 Swift 侧 Optional）
+            levels = mod.get("levels")
+            if not isinstance(levels, list):
+                errors.append(f"craft_table_catalog.json modules[{i}] levels 必须是数组")
+            else:
+                for j, lv in enumerate(levels):
+                    if not isinstance(lv, dict) or "level" not in lv:
+                        errors.append(f"craft_table_catalog.json modules[{i}] levels[{j}] 缺少 level")
+                        continue
+                    lv_level = lv["level"]
+                    if isinstance(lv_level, bool) or not isinstance(lv_level, int) \
+                            or not -(2**63) <= lv_level <= 2**63 - 1:
+                        errors.append(
+                            f"craft_table_catalog.json modules[{i}] levels[{j}] level "
+                            "必须是 Int 整数（-2^63...2^63-1，Swift 解码域）")
+                    # Swift 侧 Optional 字段存在时必须类型正确（终审：漏检会导致
+                    # validator 绿但 Swift 解码失败）
+                    for opt_key in ("durationSeconds", "upgradeCost"):
+                        if opt_key in lv and lv[opt_key] is not None and (
+                                isinstance(lv[opt_key], bool)
+                                or not isinstance(lv[opt_key], int)
+                                or not 0 <= lv[opt_key] <= 2**63 - 1):
+                            errors.append(
+                                f"craft_table_catalog.json modules[{i}] levels[{j}] {opt_key} "
+                                "必须是 Int64 整数（0...2^63-1）或 null")
+                    if "upgradeResource" in lv and lv["upgradeResource"] is not None \
+                            and not isinstance(lv["upgradeResource"], str):
+                        errors.append(
+                            f"craft_table_catalog.json modules[{i}] levels[{j}] upgradeResource "
+                            "必须是字符串或 null")
+                    rthl = lv.get("requiredTownHallLevel")
+                    if rthl is not None and (isinstance(rthl, bool)
+                                             or not isinstance(rthl, int)
+                                             or not -(2**63) <= rthl <= 2**63 - 1):
+                        errors.append(
+                            f"craft_table_catalog.json modules[{i}] levels[{j}] "
+                            "requiredTownHallLevel 必须是 Int 整数（-2^63...2^63-1）或 null")
+
+
+def validate_catalog(dir_path: str | Path,
+                     require_craft_entry: bool = True) -> list[str]:
+    """校验目录。返回 error 列表（空=通过）。
+
+    require_craft_entry：是否强制 manifest 含 craft_table_catalog.json 条目
+    （Issue #98 复审 P1）。默认 True（独立校验/CI 必须强制——缺条目时 App
+    运行时 fail-closed 精制台不可用，"validator 绿色但运行时不可用"的三方
+    不一致不允许放行）。**两步生成链例外**：generate_game_catalog.py 的自检
+    传 False——craft 表是独立生成器（generate_craft_table_catalog.py）的
+    产物，主生成器运行时条目尚未登记（登记由 craft 生成器幂等补写）。
+    """
     errors: list[str] = []
     d = Path(dir_path)
     manifest_path = d / "manifest.json"
@@ -212,10 +397,15 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         return [f"catalog.json 解析失败: {exc}"]
 
     # ---- 版本/语言一致性 ----
-    if manifest.get("schemaVersion") != SCHEMA_VERSION:
-        errors.append(f"manifest schemaVersion={manifest.get('schemaVersion')} != {SCHEMA_VERSION}")
-    if catalog.schemaVersion != SCHEMA_VERSION:
-        errors.append(f"catalog schemaVersion={catalog.schemaVersion} != {SCHEMA_VERSION}")
+    # bool 排除：True == 1 会绕过 != 比较（与 craft schemaVersion 同类，R9 复审
+    # 防御性补强——当前 SCHEMA_VERSION=2 靠值巧合不被绕过，未来改回 1 会复发）
+    ms = manifest.get("schemaVersion")
+    if isinstance(ms, bool) or not isinstance(ms, int) or ms != SCHEMA_VERSION:
+        errors.append(f"manifest schemaVersion 必须是整数 {SCHEMA_VERSION}: {ms!r}")
+    if isinstance(catalog.schemaVersion, bool) \
+            or not isinstance(catalog.schemaVersion, int) \
+            or catalog.schemaVersion != SCHEMA_VERSION:
+        errors.append(f"catalog schemaVersion 必须是整数 {SCHEMA_VERSION}: {catalog.schemaVersion!r}")
     if manifest.get("gameVersion") != catalog.gameVersion:
         errors.append(f"gameVersion 不一致: manifest={manifest.get('gameVersion')} catalog={catalog.gameVersion}")
     if manifest.get("locale") != catalog.locale:
@@ -234,6 +424,19 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
     if not isinstance(gen, list):
         errors.append("manifest 缺少 generatedFiles")
     else:
+        # Issue #98 复审 P1：craft 目录条目必须存在——CraftTableCatalog.
+        # loadBundled 运行时对账该条目的 sha256/size（缺失 → fail-closed 返回
+        # nil → 精制台不可用）。validator 若放行"无 craft 条目"的 manifest，
+        # 会出现"生成成功 / validator 绿色 / 运行时不可用"的三方不一致。
+        # 强制恰好一个有效条目（fail loud 前置，旧产物缺失时推动重新生成）。
+        # require_craft_entry=False 仅用于主生成器自检（两步生成链中间态）。
+        if require_craft_entry:
+            craft_entries = [e for e in gen
+                             if isinstance(e, dict) and e.get("path") == "craft_table_catalog.json"]
+            if len(craft_entries) != 1:
+                errors.append(
+                    "manifest 必须恰好包含一个 craft_table_catalog.json 条目"
+                    "（缺失或重复：CraftTableCatalog.loadBundled 将 fail-closed）")
         seen_files = set()
         registered = set()
         for entry in gen:
@@ -383,6 +586,11 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                         f"新增建筑未分类: {item.dataID} {item.name}"
                         f"（旧产物缺少 displayCategory 字段，"
                         f"请用 annotate_display_categories.py 重新标注）")
+            # ---- lifecycle（Issue #98）：闭枚举（None 由声明一致性检查统一报）----
+            # 声明文件一致性在循环后的 _check_lifecycle_declarations 全量比对。
+            lc = item.lifecycle
+            if lc is not None and lc not in LIFECYCLE_VALUES:
+                errors.append(f"{key}: lifecycle 未知值 {lc!r}")
             for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
                 if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
@@ -394,6 +602,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         return [f"catalog 内容非法: {exc}"]
 
     _check_display_category_registry(errors, catalog.items)
+    # ---- lifecycle 声明一致性（Issue #98）----
+    _check_lifecycle_declarations(errors, catalog.items)
 
     # ---- counts 与目录内容重算一致 ----
     counts = counts_for(catalog.items)
@@ -464,6 +674,19 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
             errors.append(f"instanceCounts 类型非法: {type(raw_ic).__name__}（应为 dict）")
         else:
             _check_instance_counts(errors, raw_ic, catalog)
+
+    # ---- craft 目录内容结构（复审 P1：hash/size 一致但 Swift 解码失败）----
+    # hash/size 对账只证明文件未被篡改；内容缺字段（buildTag/locale/source 等）
+    # 时 Swift CraftTableCatalog Codable 解码失败 → 运行时 fail-closed 精制台
+    # 不可用——validator 必须在此 fail loud。文件缺失时 generatedFiles 循环已报。
+    craft_path = catalog_path.parent / "craft_table_catalog.json"
+    if craft_path.is_file():
+        try:
+            raw_craft = json.loads(craft_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            errors.append(f"craft_table_catalog.json 解析失败: {exc}")
+        else:
+            _check_craft_catalog_structure(errors, raw_craft, manifest.get("gameVersion"))
 
     return errors
 

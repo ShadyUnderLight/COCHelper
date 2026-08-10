@@ -128,7 +128,9 @@ public enum BuildingGroupProjection {
             now: now,
             unlocks: PlayerUnlockLevels(snapshot: snapshot),
             catalogIsUsable: catalogIsUsable,
-            seasonalPhases: seasonalPhases
+            seasonalPhases: seasonalPhases,
+            // 组卡过滤非嵌套项，嵌套防御回查无意义；显式 nil 保持语义不变。
+            craftTableCatalog: nil
         ).filter { !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2") }
 
         // 按 (base, section, dataID) 分组，组按首现顺序输出（字典 + 有序键数组）。

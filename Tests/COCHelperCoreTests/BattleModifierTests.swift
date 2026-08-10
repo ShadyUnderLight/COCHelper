@@ -97,6 +97,7 @@ final class BattleModifierTests: XCTestCase {
         XCTAssertEqual(BattleModifierText.localizedText(for: "\nminusOne\t"), "传奇杯1")
         XCTAssertEqual(BattleModifierText.localizedText(for: " minusTwo\t"), "传奇杯2")
         XCTAssertEqual(BattleModifierText.localizedText(for: "\tminusThree\n"), "传奇杯3")
+        XCTAssertNil(BattleModifierText.localizedText(for: " none "), "带空白的 none 必须与 none 同样隐藏")
     }
 
     /// 未知非空值带空白时：回退返回 trim 后的原样值（可审计、规范化一致），
@@ -118,21 +119,21 @@ final class BattleModifierTests: XCTestCase {
             ("minusThree", "传奇杯 III"),
         ]
         var r = LCG(seed: 0xB47_71E_0000_0100) // "issue100" 变体 seed，与既有 seed 不重复
-        for _ in 0..<100 {
+        for i in 0..<100 {
             let prefix = r.pick(whitespacePool)
             let suffix = r.pick(whitespacePool)
             for (raw, expected) in knownCases {
                 XCTAssertEqual(
                     BattleModifierText.localizedText(for: prefix + raw + suffix),
                     expected,
-                    "known key 带任意空白必须命中同一映射"
+                    "iteration \(i): known key \(raw) 带任意空白（prefix=\(prefix.debugDescription), suffix=\(suffix.debugDescription)）必须命中同一映射"
                 )
             }
             let unknown = "v" + String(repeating: "x", count: 1 + Int(r.next() % 8))
             XCTAssertEqual(
                 BattleModifierText.localizedText(for: prefix + unknown + suffix),
                 unknown,
-                "未知非空值必须回退 trim 后原样，不得被空白影响"
+                "iteration \(i): 未知值 \(unknown) 必须回退 trim 后原样（prefix=\(prefix.debugDescription), suffix=\(suffix.debugDescription)），不得被空白影响"
             )
         }
     }

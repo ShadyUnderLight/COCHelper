@@ -37,10 +37,10 @@ public struct AggregateCoverage: Hashable, Sendable {
 
 ### 合并规则（`mergedCoverage(of:)`，Core 纯函数，可单独 property 测试）
 
-1. 全部 home 对 `.complete` → `.complete`（无诊断）
-2. 存在任一 `.partial` 对 → `.partial`，missingSections / unmodeledCategories 取并集（missing 先 subtract unmodeled 去重）
-3. 无任何 partial/complete 对（全 `.unavailable`）→ `.unavailable`（无差集，纯已观测口径）
-4. 空 home 对列表（无已导入村庄）→ 由调用方 `observed == 0` → nil 路径覆盖
+1. 存在任一 `.partial` 对 → `.partial`，missingSections / unmodeledCategories 取并集（missing 先 subtract unmodeled 去重）
+2. 无 `.partial` 但 `.complete` 与 `.unavailable` 混合 → `.partial`（明细空，诊断由 unavailableHomeCount 计数生成）——unavailable 村庄不得被静默成 `.complete`（Reflexion 663fb99 修复，property 反向属性锁定）
+3. 无任何 partial/unavailable 且存在 `.complete` → `.complete`（无诊断）
+4. 全 `.unavailable` 或空列表 → `.unavailable`（无差集，纯已观测口径；调用方 `observed == 0` → nil 路径兜底）
 
 ### 诊断（partial 专属，复用 detail 页 `coverageDiagnostic(for:)` 措辞风格）
 
@@ -53,8 +53,9 @@ public struct AggregateCoverage: Hashable, Sendable {
 | 文件 | 改动 |
 |---|---|
 | `Sources/COCHelperCore/VillageProgressMetrics.swift` | ① snapshotCoverage 构造补传 `coverageDiagnostic`；② `aggregateCoverage()` 返回 `AggregateCoverage?`，收集 home 对 coverage 并合并；③ 新增 `AggregateCoverage` 类型 + `mergedCoverage(of:)` + 聚合诊断生成 |
-| `Sources/COCHelper/VillageDetailView.swift` | `metricsBar` 标题按 coverage 分支：complete → 「观测数据完整性」，否则 → 「已观测数据关联率」 |
-| `Sources/COCHelper/ContentView.swift` | `TrackerMetricsView.aggregateCoverage` 消费 `AggregateCoverage`；tint 按 coverage 三分支（blue/orange/orange）；`.help()` tooltip 展示 scope 措辞 + 诊断 |
+| `Sources/COCHelperCore/VillageCatalogProjection.swift` | `ProgressUniverseCoverage.helpText` 提取（三分支措辞单一来源，详情页与聚合卡共用防漂移） |
+| `Sources/COCHelper/VillageDetailView.swift` | `metricsBar` 标题按 coverage 分支：complete → 「观测数据完整性」，否则 → 「已观测数据关联率」；消费共享 `helpText` |
+| `Sources/COCHelper/ContentView.swift` | `TrackerMetricsView.aggregateCoverage` 消费 `AggregateCoverage`；tint 按 coverage 三分支（blue/orange/orange）+ 标题同详情页口径；`.help()` tooltip 展示 scope 措辞 + 诊断 |
 | `Tests/COCHelperCoreTests/VillageProgressMetricsTests.swift` | 翻转 L460 断言 + 新增回归（见下） |
 
 不动：三指标公式、实例权重、coverageDen 口径、fail-closed（饱和/溢出/observed==0 → nil）。
@@ -71,10 +72,12 @@ public struct AggregateCoverage: Hashable, Sendable {
 8. 新增 property 测试：`mergedCoverage` 交换律 / 结合律 / 幂等 / 全 complete 恒等（项目 SeededGenerator LCG 惯例）
 9. 现有 fail-closed 测试保持通过（饱和 → nil）
 
-## 5. Reflexion 自查清单
+## 5. Reflexion 自查清单（完成于终审）
 
-- [ ] `swift test` 全量通过（基线 999 + 新增）
-- [ ] `git diff --check` 干净
-- [ ] 验收 1-5 逐条对照
-- [ ] 生产目录恒 partial 前提下聚合卡行为验证（恒 partial + 诊断，不 fail-useless）
-- [ ] 数值口径与修复前逐位一致（回归）
+- [x] `swift test` 全量通过（1013/1013：基线 999 + 新增 14）
+- [x] `git diff --check` 干净（含跨 commit 检查）
+- [x] 验收 1-6 逐条对照（双独立交叉审核员 APPROVE）
+- [x] 生产目录恒 partial 前提下聚合卡行为验证（恒 partial + 诊断，不 fail-useless）
+- [x] 数值口径与修复前逐位一致（回归）
+- [x] Reflexion 发现混合 complete+unavailable 村庄 bug → 修复（663fb99）+ 反向属性锁定
+- [x] 评审 important 修复：property 测试复用 SeededGenerator（75c1c5a）、聚合卡标题同详情页口径（终审 I1）

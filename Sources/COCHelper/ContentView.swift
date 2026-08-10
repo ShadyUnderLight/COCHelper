@@ -741,7 +741,10 @@ private struct TrackerMetricsView: View {
     private func aggregateCoverageCard(_ result: AggregateCoverage) -> some View {
         let percent = String(Int((Double(result.numerator) / Double(result.denominator) * 100).rounded())) + "%"
         TrackerMetricCard(
-            title: "观测数据完整性",
+            // Issue #110：与详情页同口径——coverage.isComplete 才可宣称
+            //「观测数据完整性」，partial/unavailable 为「已观测数据关联率」
+            //（交叉审核 I1：同一指标两个视图不得对同一状态有两种名字）。
+            title: result.coverage.isComplete ? "观测数据完整性" : "已观测数据关联率",
             value: percent,
             detail: "已观测实例 · 全部村庄",
             systemImage: "checkmark.seal.fill",

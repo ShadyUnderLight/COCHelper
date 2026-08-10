@@ -941,7 +941,7 @@ final class VillageProgressMetricsTests: XCTestCase {
             )
         )
         // 数值口径（仅 home 对）：圣水收集器 known 1 + TH(1000001 目录未收录
-        // → unknown) 1 + 建筑差集 7-1 + 陷阱差集 3 = 12；BB 对 0/0 不贡献。
+        // → unknown) 1 + 建筑差集 7-1 + 陷阱差集 3 = 11；BB 对 0/0 不贡献。
         // 差集数耦合宇宙表数值，不锁具体分母（数值口径已由
         // testAggregateCoverageReturnsScopeObject 锁定 2/3）。
         XCTAssertEqual(result.numerator, 1)
@@ -1320,4 +1320,3 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertFalse(reason.contains("9 项"), reason)
     }
 }
-

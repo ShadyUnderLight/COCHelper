@@ -253,23 +253,23 @@ def test_validate_duplicate_section_key(tmp_path):
     """同 dataID 不同 section 不算重复主键（(section, dataID) 复合键）。"""
     d = _valid_dir(tmp_path)
     c = _load_catalog(d)
-    # 同 dataID=1000008 双 item：units（非 buildings 不查分类）+ buildings（防御）
-    c["items"][0]["dataID"] = 1000008
-    # Issue #98：units:1000008 无声明 → 无标注不报；dup（buildings:1000008）
-    # 在声明中 → 显式 permanent
-    c["items"][0]["lifecycle"] = None
+    # 同 dataID=4000000 双 item：units（声明内 key + permanent）+ traps（防御）。
+    # 注意：units:4000000 是真实声明 key（permanent）；traps:4000000 是合成 key
+    #（真实声明只覆盖 traps 12M 段位）——F3 完整性对称后必然报「lifecycle
+    # 声明缺失」，属预期错误（与 dup 语义无关），断言显式锁定该 F3 行为。
     dup = json.loads(json.dumps(c["items"][0]))
-    dup["section"] = "buildings"
-    dup["name"] = "加农炮"
-    # Issue #75 工作流 C：home buildings 必须与注册表一致（defense）——全量比对锁定
-    dup["displayCategory"] = "defense"
-    dup["lifecycle"] = "permanent"
+    dup["section"] = "traps"
+    dup["name"] = "弹簧陷阱"
     c["items"].append(dup)
     _write_with_hash(d, catalog=c)
     m = _load_manifest(d)
     m["counts"] = {"items": 2, "levels": 2, "missingTime": 0, "missingIcons": 0}
     _write(d, manifest=m)
-    assert validate_catalog(d) == []
+    errors = validate_catalog(d)
+    # dup 主键断言：同 dataID 跨 section 不得报「重复主键」
+    assert not any("重复主键" in e for e in errors), errors
+    # F3：traps:4000000 无声明 → 声明缺失错误（合成 key 预期）
+    assert any("lifecycle 声明缺失" in e and "traps:4000000" in e for e in errors)
 
 
 def test_validate_levels_not_strictly_ascending(tmp_path):
@@ -581,8 +581,10 @@ def test_validate_capital_item_ok(tmp_path):
     item["category"] = "capitalBuildings"
     item["base"] = None
     item["baseMissingReason"] = "capital_has_no_base"
-    # Issue #98：capital_buildings:4000000 无声明 → 无标注不报
-    item["lifecycle"] = None
+    # Issue #98（F3 后目录条目必须声明内 key）：capital_buildings:110000000
+    # 在声明中（permanent）——真实 capital 段位，非旧 fixture 的 4000000
+    item["dataID"] = 110000000
+    item["lifecycle"] = "permanent"
     _write_with_hash(d, catalog=c)
     assert validate_catalog(d) == []
 

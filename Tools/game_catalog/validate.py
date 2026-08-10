@@ -143,7 +143,10 @@ def _check_lifecycle_declarations(errors: list[str], items) -> None:
 
     目录条目 lifecycle 必须与声明文件（lifecycle_declarations.json，唯一事实源）
     逐条一致；声明文件加载失败 → 报错并跳过比对（无法核对不算通过）。
-    声明文件多余条目不报错（人工清单允许前瞻登记）。
+    **完整性对称（审核 M1）**：目录条目 key 不在声明中 → 报「lifecycle 声明缺失」
+    （无论条目 lifecycle 值——生成器/校验器同口径，防新增条目漏标注）。
+    None 且有声明 → 报「缺少 lifecycle 字段」（旧产物）。声明文件多余条目不报错
+    （人工清单允许前瞻登记）。
     """
     try:
         decl = load_declarations()
@@ -153,7 +156,10 @@ def _check_lifecycle_declarations(errors: list[str], items) -> None:
     for item in items:
         key = f"{item.section}:{item.dataID}"
         declared = decl.get(key)
-        if declared != item.lifecycle:
+        if declared is None:
+            # 完整性对称（M1）：目录条目必须可溯源到声明，无论其 lifecycle 值。
+            errors.append(f"{key}: lifecycle 声明缺失（请更新 lifecycle_declarations.json）")
+        elif declared != item.lifecycle:
             if item.lifecycle is None:
                 # P1-B 风格：防漏机制不放行旧产物，错误消息自解释补救路径
                 errors.append(

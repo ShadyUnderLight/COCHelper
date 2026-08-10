@@ -52,7 +52,9 @@ def test_declarations_cover_main_catalog():
 
 
 def test_declarations_cover_craft_table():
-    """14 个防御全部有声明；3 条精工防御 seasonalCandidate，其余 11 条 permanent。"""
+    """14 个防御全部有声明；3 条精工防御 seasonalCandidate，其余 11 条 permanent；
+    craft_table_catalog.json 落盘 lifecycle 与声明逐条一致（审核 F2：声明只查
+    JSON 文件不查落盘值的历史盲区，此处锁定）。"""
     decl = load_declarations()
     raw = json.loads((CATALOG_DIR / "craft_table_catalog.json").read_text(encoding="utf-8"))
     defenses = raw["defenses"]
@@ -60,6 +62,9 @@ def test_declarations_cover_craft_table():
     for d in defenses:
         key = f"buildings:{d['dataID']}"
         assert key in decl, key
+        # 审核 F2：落盘 lifecycle 必须 == 声明值（validate 只锁 catalog.json 的
+        # 一致性，craft JSON 落盘值此前无测试锁定——两处声明源不得漂移）。
+        assert d.get("lifecycle") == decl[key], f"{d['dataID']}"
     seasonal = {d["dataID"] for d in defenses
                 if decl[f"buildings:{d['dataID']}"] == "seasonalCandidate"}
     assert seasonal == set(SEASONAL_DEFENSE_IDS)

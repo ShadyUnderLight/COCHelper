@@ -156,9 +156,9 @@ def _mini_catalog() -> dict:
                 "levels": [],
             },
             {
-                "section": "heroes", "dataID": 999, "name": "无关条目",
+                "section": "heroes", "dataID": 28000000, "name": "无关条目",
                 "maxLevel": 0, "category": "heroes",
-                "lifecycle": None,  # Issue #98：heroes:999 无声明 → 无标注不报
+                "lifecycle": "permanent",  # Issue #98：heroes:28000000 在声明中（F3 后目录条目必须声明内 key）
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_unit_king",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
                 "levelVisual": None, "base": "home", "baseMissingReason": None,

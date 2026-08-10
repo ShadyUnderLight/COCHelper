@@ -2653,8 +2653,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
                     requiredTownHallLevel: nil,
                     requiredLaboratoryLevel: nil,
                     requiredHeroTavernLevel: nil,
-                    // 真实数据形状：level 1 起即带 BS 门槛（实测全部装备 lvl1 BS=1），
-                    // 与「初始等级无门槛」的 TH 语义不同——BS 门槛覆盖所有等级。
+                    // 真实数据形状：level 1 起即带 BS 门槛（实测 61 件装备 lvl1
+                    // 门槛 ≥1，48 件 =1、13 件 >1 如雷电獠牙=10），与「初始等级
+                    // 无门槛」的 TH 语义不同——BS 门槛覆盖所有等级。
                     requiredBlacksmithLevel: bsGate,
                     icon: nil,
                     levelVisual: nil,

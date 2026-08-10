@@ -715,10 +715,11 @@ public struct VillageCatalogProjection: Sendable {
         } else if let catalogItem, baseMatches {
             if stageMax == nil {
                 // Issue #67 fail-closed：有 prerequisite requirement 但快照缺对应
-                // 解锁建筑记录（如英雄殿堂/实验室/铁匠铺）→ 无法验证当前阶段上限。
+                // 解锁建筑记录（如英雄殿堂/实验室/铁匠铺），或解锁等级低于首级
+                // 门槛（如装备 lvl1 门槛 >1 的 13 件装备）→ 无法验证当前阶段上限。
                 // 不判 maxed/complete、不计入完成度 known、不推断下一级。
                 status = .unverified
-                missingReason = "快照缺少 prerequisite 解锁建筑记录（大本营/实验室/英雄殿堂/铁匠铺等），无法验证当前阶段上限。"
+                missingReason = "快照缺少 prerequisite 解锁建筑记录（或等级不足：大本营/实验室/英雄殿堂/铁匠铺等），无法验证当前阶段上限。"
             } else {
                 // 阶段上限优先（可计算时恒非 nil：无 requirement 时 = maxLevel）。
                 // 阶段满级（stage < maxLevel）与全局满级同报 .maxed——完成度口径：

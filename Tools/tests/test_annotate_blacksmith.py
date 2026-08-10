@@ -351,3 +351,13 @@ def test_annotate_manifest_missing_fingerprint_rejected(tmp_path):
     with pytest.raises(CatalogError, match="sourceFingerprint"):
         annotate_directory(apk, d)
     assert (d / "catalog.json").read_bytes() == cat_before
+
+
+def test_annotate_catalog_malformed_rejected(tmp_path):
+    """畸形 catalog.json：在写任何文件之前拒绝（与 manifest 同规格的 fail-loud）。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    (d / "catalog.json").write_text("{broken catalog")
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="catalog.json 解析失败"):
+        annotate_directory(apk, d)
+    assert (d / "manifest.json").read_bytes() == man_before

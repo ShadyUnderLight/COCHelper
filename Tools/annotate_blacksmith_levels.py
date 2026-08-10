@@ -176,8 +176,11 @@ def annotate_directory(apk: str | Path, dir_path: str | Path) -> dict:
             f"APK SHA-256 与 manifest sourceFingerprint 不一致"
             f"（请使用生成目录时的原 APK 文件）")
 
-    raw = json.loads(catalog_path.read_text(encoding="utf-8"))
-    catalog = catalog_from_dict(raw)
+    try:
+        raw = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog = catalog_from_dict(raw)
+    except (json.JSONDecodeError, OSError, ValueError, TypeError) as exc:
+        raise CatalogError(f"catalog.json 解析失败: {exc}") from exc
 
     # 回填：仅 equipment；查不到 → fail loud（防 dataID 错位静默）。
     annotated_items = 0

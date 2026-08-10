@@ -59,15 +59,20 @@ final class BattleModifierTests: XCTestCase {
                     "已知术语不得为空白"
                 )
             case 1: // 未知非空 → 恒等回退
+                // 注意 " hardMode"：trim 仅用于判空，switch 匹配原始串 → 不中已知 case，恒等回退（契约如此）。
                 let v = r.pick(unknownPool)
                 XCTAssertEqual(BattleModifierText.localizedText(for: v), v, "未知非空必须恒等回退")
-            case 2: // 随机可见 ASCII 串（排除已知 key 与 "none"，避免偶然落入保留域）
+            case 2: // 随机可见 ASCII 串（排除全空白 / "none" / 已知 key：全空白归 nil
+                    // 属隐藏规则、不在恒等回退断言域；"none" 与已知 key 同理）
                 let len = 1 + Int(r.next() % 30)
                 var s = ""
                 for _ in 0..<len {
                     s.append(Character(UnicodeScalar(0x20 + Int(r.next() % 0x5F))!))
                 }
-                if s == "none" || knownKeys.contains(s) { continue }
+                if s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || s == "none" || knownKeys.contains(s) {
+                    continue
+                }
                 XCTAssertEqual(BattleModifierText.localizedText(for: s), s, "未知串必须恒等回退")
             case 3: // nil / "none" → nil
                 XCTAssertNil(BattleModifierText.localizedText(for: nil))

@@ -75,6 +75,7 @@ class CatalogLevel:
     icon: AssetRef | None
     levelVisual: AssetRef | None
     requiredHeroTavernLevel: int | None = None  # Issue #67：英雄殿堂门槛（17 本引入），全 optional
+    requiredBlacksmithLevel: int | None = None  # Issue #97：铁匠铺门槛（character_items.csv），全 optional
 
     def to_dict(self) -> dict:
         return {
@@ -89,6 +90,7 @@ class CatalogLevel:
             "icon": self.icon.to_dict() if self.icon else None,
             "levelVisual": self.levelVisual.to_dict() if self.levelVisual else None,
             "requiredHeroTavernLevel": self.requiredHeroTavernLevel,
+            "requiredBlacksmithLevel": self.requiredBlacksmithLevel,
         }
 
     @classmethod
@@ -107,6 +109,7 @@ class CatalogLevel:
             icon=AssetRef.from_dict(d["icon"]) if d.get("icon") else None,
             levelVisual=AssetRef.from_dict(d["levelVisual"]) if d.get("levelVisual") else None,
             requiredHeroTavernLevel=d.get("requiredHeroTavernLevel"),
+            requiredBlacksmithLevel=d.get("requiredBlacksmithLevel"),
         )
 
 

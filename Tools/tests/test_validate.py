@@ -590,6 +590,67 @@ def test_validate_unknown_base_missing_reason(tmp_path):
     assert any("baseMissingReason" in e for e in errors)
 
 
+# ---- requiredBlacksmithLevel 域校验（Issue #97：equipment 铁匠铺门槛）----
+
+
+def _equipment_dir(tmp_path: Path) -> Path:
+    """_valid_dir + 唯一 item 改为 equipment（BS 域校验基底）。"""
+    d = _valid_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["section"] = "equipment"
+    _write_with_hash(d, catalog=c)
+    return d
+
+
+def test_validate_equipment_blacksmith_ok(tmp_path):
+    """equipment level BS=5（合法域 1...10）→ 无 BS 相关错误。"""
+    d = _equipment_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["requiredBlacksmithLevel"] = 5
+    _write_with_hash(d, catalog=c)
+    assert validate_catalog(d) == []
+
+
+def test_validate_equipment_blacksmith_missing_rejected(tmp_path):
+    """equipment level 缺 requiredBlacksmithLevel 键（旧产物）→ 报错提示回填。"""
+    d = _equipment_dir(tmp_path)
+    c = _load_catalog(d)
+    del c["items"][0]["levels"][0]["requiredBlacksmithLevel"]
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("缺少 requiredBlacksmithLevel" in e for e in errors)
+
+
+def test_validate_equipment_blacksmith_out_of_domain_rejected(tmp_path):
+    """BS=11 超出合法域 1...10 → 报错（含具体值）。"""
+    d = _equipment_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["requiredBlacksmithLevel"] = 11
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("超出合法域" in e and "11" in e for e in errors)
+
+
+def test_validate_equipment_blacksmith_bool_type_rejected(tmp_path):
+    """BS=true（bool 是 int 子类，JSON true）→ 类型非法。"""
+    d = _equipment_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["requiredBlacksmithLevel"] = True
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("requiredBlacksmithLevel" in e and "类型非法" in e for e in errors)
+
+
+def test_validate_equipment_blacksmith_str_type_rejected(tmp_path):
+    """BS="5"（字符串）→ 类型非法（生成器不产生，防御手写/旧产物污染）。"""
+    d = _equipment_dir(tmp_path)
+    c = _load_catalog(d)
+    c["items"][0]["levels"][0]["requiredBlacksmithLevel"] = "5"
+    _write_with_hash(d, catalog=c)
+    errors = validate_catalog(d)
+    assert any("requiredBlacksmithLevel" in e and "类型非法" in e for e in errors)
+
+
 # ---- counts 与内容重算一致 ----
 
 def test_validate_counts_items_mismatch(tmp_path):

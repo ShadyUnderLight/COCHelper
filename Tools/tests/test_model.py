@@ -134,3 +134,49 @@ def test_catalog_item_from_dict_missing_display_category_defaults_none():
     d = item_to_dict(_sample_item())
     del d["displayCategory"]
     assert CatalogItem.from_dict(d).displayCategory is None
+
+
+# ---- Issue #97：requiredBlacksmithLevel（铁匠铺门槛）----
+
+def test_catalog_level_to_dict_writes_blacksmith_level():
+    lv = CatalogLevel(
+        level=1, durationSeconds=None, missingReason="no_time_source",
+        upgradeCosts=None, requiredTownHallLevel=None,
+        requiredLaboratoryLevel=None, icon=None, levelVisual=None,
+        requiredBlacksmithLevel=3,
+    )
+    d = lv.to_dict()
+    assert d["requiredBlacksmithLevel"] == 3
+
+
+def test_catalog_level_to_dict_writes_blacksmith_null():
+    """恒写键：null 也写（与 requiredHeroTavernLevel 同构）。"""
+    lv = CatalogLevel(
+        level=1, durationSeconds=None, missingReason="no_time_source",
+        upgradeCosts=None, requiredTownHallLevel=None,
+        requiredLaboratoryLevel=None, icon=None, levelVisual=None,
+    )
+    d = lv.to_dict()
+    assert "requiredBlacksmithLevel" in d and d["requiredBlacksmithLevel"] is None
+
+
+def test_catalog_level_from_dict_missing_blacksmith_defaults_none():
+    """旧格式 JSON（无 requiredBlacksmithLevel 键）→ None，不抛错（向后兼容）。"""
+    lv = CatalogLevel(
+        level=1, durationSeconds=None, missingReason="no_time_source",
+        upgradeCosts=None, requiredTownHallLevel=None,
+        requiredLaboratoryLevel=None, icon=None, levelVisual=None,
+    )
+    d = lv.to_dict()
+    del d["requiredBlacksmithLevel"]
+    assert CatalogLevel.from_dict(d).requiredBlacksmithLevel is None
+
+
+def test_catalog_level_blacksmith_roundtrip():
+    lv = CatalogLevel(
+        level=1, durationSeconds=None, missingReason="no_time_source",
+        upgradeCosts=None, requiredTownHallLevel=None,
+        requiredLaboratoryLevel=None, icon=None, levelVisual=None,
+        requiredBlacksmithLevel=5,
+    )
+    assert CatalogLevel.from_dict(lv.to_dict()) == lv

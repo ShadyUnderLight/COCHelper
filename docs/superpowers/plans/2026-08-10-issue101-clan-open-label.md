@@ -97,7 +97,7 @@ Swift 标准库无 property-based 框架，遵循项目「少依赖」原则不�
 
 ## 风险和边界
 
-- 只改 1 行生产代码；新增 1 个测试 target + 1 个测试文件
-- 测试 target 不复制 Fixtures 资源（不需要）
-- 新 test target 命名遵循现有 `COCHelperCoreTests` 风格
+- 只改 1 行生产代码；在现有测试文件追加 3 个测试（+48 行）
+- 零 Package.swift 改动、零新增测试 target、零第三方依赖
+- 测试生成器复用文件内既有 SplitMix64Generator 风格（固定 seed 可复现）
 - 不顺手改其他文案 / 不重构 / 不修 issue 中写错的路径描述

@@ -392,6 +392,42 @@ def test_validate_rejects_structurally_invalid_craft(tmp_path):
     assert any("craft_table_catalog.json 缺少必填字段" in e and "buildTag" in e for e in errors)
 
 
+@pytest.mark.parametrize("mutate", [
+    # 审核 D：标量类型错 → Swift Codable 解码失败，validator 必须拦截
+    ("defenses", 0, "dataID", "not-an-int"),
+    ("defenses", 0, "name", 123),
+    ("defenses", 0, "lifecycle", "unknown"),
+    ("defenses", 0, "moduleIDs", [2 ** 63]),  # 超出 Int64 上界
+    ("modules", 0, "maxLevel", "13"),
+    ("modules", 0, "levels", [{"level": "1"}]),
+])
+def test_validate_rejects_craft_scalar_type_mismatch(tmp_path, mutate):
+    """craft 标量字段类型与 Swift Codable 契约不符 → 报错（审核 D 补强：
+    与缺字段同失败类别——validator 绿但运行时解码失败）。"""
+    list_key, index, field, value = mutate
+    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
+    raw = json.loads((d / "craft_table_catalog.json").read_text(encoding="utf-8"))
+    if list_key == "defenses":
+        raw["defenses"] = [{"dataID": 1, "name": "n", "sourceName": "s",
+                            "specialAbility": "a", "moduleIDs": [], "totalModuleLevelThresholds": []}]
+    else:
+        raw["modules"] = [{"dataID": 1, "name": "n", "sourceName": "s",
+                           "specialAbility": "a", "statTypes": [], "displayTitles": [],
+                           "maxLevel": 1, "levels": [{"level": 1}]}]
+    raw[list_key][index][field] = value
+    craft_bytes = json.dumps(raw, ensure_ascii=False).encode("utf-8") + b"\n"
+    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
+    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    for e in m["generatedFiles"]:
+        if e.get("path") == "craft_table_catalog.json":
+            e["sha256"] = "sha256:" + hashlib.sha256(craft_bytes).hexdigest()
+            e["size"] = len(craft_bytes)
+    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
+    errors = validate_catalog(d)
+    assert errors, f"craft {list_key}[{index}].{field}={value!r} 类型错未被拦截"
+    assert any("craft_table_catalog.json" in e for e in errors)
+
+
 def test_validate_rejects_missing_craft_entry(tmp_path):
     """manifest 缺 craft_table_catalog.json 条目 → 报错（复审 P1 负例：validator
     不得放行"生成成功但运行时不可用"的三方不一致；缺条目时 App fail-closed

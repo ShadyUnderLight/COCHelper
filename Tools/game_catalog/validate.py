@@ -257,10 +257,24 @@ def _check_craft_catalog_structure(errors: list[str], raw: object,
                         "moduleIDs", "totalModuleLevelThresholds"):
                 if key not in d:
                     errors.append(f"craft_table_catalog.json defenses[{i}] 缺少 {key!r}")
+            # 标量类型（Swift Codable Int64/String 契约——类型错则解码失败，
+            # 与缺字段同属"validator 绿但运行时不可用"）
+            if isinstance(d.get("dataID"), bool) or not isinstance(d.get("dataID"), int):
+                errors.append(f"craft_table_catalog.json defenses[{i}] dataID 必须是整数")
+            for key in ("name", "sourceName", "specialAbility"):
+                if key in d and not isinstance(d[key], str):
+                    errors.append(f"craft_table_catalog.json defenses[{i}] {key} 必须是字符串")
+            if "lifecycle" in d and d["lifecycle"] is not None \
+                    and d["lifecycle"] not in ("permanent", "seasonalCandidate"):
+                errors.append(
+                    f"craft_table_catalog.json defenses[{i}] lifecycle 未知值 {d['lifecycle']!r}"
+                    "（闭枚举 permanent/seasonalCandidate，Swift 解码将失败）")
             if not isinstance(d.get("moduleIDs"), list) or not all(
-                    isinstance(x, int) and not isinstance(x, bool)
+                    isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 2**63 - 1
                     for x in d.get("moduleIDs") or []):
-                errors.append(f"craft_table_catalog.json defenses[{i}] moduleIDs 必须是整数数组")
+                errors.append(
+                    f"craft_table_catalog.json defenses[{i}] moduleIDs 必须是 Int64 整数数组"
+                    "（0...2^63-1）")
             if not isinstance(d.get("totalModuleLevelThresholds"), list) or not all(
                     isinstance(x, int) and not isinstance(x, bool)
                     for x in d.get("totalModuleLevelThresholds") or []):
@@ -277,13 +291,20 @@ def _check_craft_catalog_structure(errors: list[str], raw: object,
                         "statTypes", "displayTitles", "maxLevel", "levels"):
                 if key not in mod:
                     errors.append(f"craft_table_catalog.json modules[{i}] 缺少 {key!r}")
+            if isinstance(mod.get("dataID"), bool) or not isinstance(mod.get("dataID"), int):
+                errors.append(f"craft_table_catalog.json modules[{i}] dataID 必须是整数")
+            for key in ("name", "sourceName", "specialAbility"):
+                if key in mod and not isinstance(mod[key], str):
+                    errors.append(f"craft_table_catalog.json modules[{i}] {key} 必须是字符串")
+            if isinstance(mod.get("maxLevel"), bool) or not isinstance(mod.get("maxLevel"), int):
+                errors.append(f"craft_table_catalog.json modules[{i}] maxLevel 必须是整数")
             if not isinstance(mod.get("statTypes"), list) or not all(
                     isinstance(x, str) for x in mod.get("statTypes") or []):
                 errors.append(f"craft_table_catalog.json modules[{i}] statTypes 必须是字符串数组")
             if not isinstance(mod.get("displayTitles"), list) or not all(
                     isinstance(x, str) for x in mod.get("displayTitles") or []):
                 errors.append(f"craft_table_catalog.json modules[{i}] displayTitles 必须是字符串数组")
-            # CraftTableLevelSpec 必填字段（level 必填；其余 Swift 侧 Optional）
+            # CraftTableLevelSpec 必填字段（level 必填且 Int；其余 Swift 侧 Optional）
             levels = mod.get("levels")
             if not isinstance(levels, list):
                 errors.append(f"craft_table_catalog.json modules[{i}] levels 必须是数组")
@@ -291,6 +312,9 @@ def _check_craft_catalog_structure(errors: list[str], raw: object,
                 for j, lv in enumerate(levels):
                     if not isinstance(lv, dict) or "level" not in lv:
                         errors.append(f"craft_table_catalog.json modules[{i}] levels[{j}] 缺少 level")
+                    elif isinstance(lv["level"], bool) or not isinstance(lv["level"], int):
+                        errors.append(
+                            f"craft_table_catalog.json modules[{i}] levels[{j}] level 必须是整数")
 
 
 def validate_catalog(dir_path: str | Path,

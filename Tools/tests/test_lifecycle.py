@@ -295,7 +295,7 @@ def _valid_dir(tmp_path, item) -> Path:
     (d / "catalog.json").write_bytes(catalog_bytes)
     (d / "icons").mkdir()
     # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
-    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n'
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
         "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
@@ -376,6 +376,22 @@ def test_validate_accepts_matching_craft_entry(tmp_path):
     assert validate_catalog(d) == []
 
 
+def test_validate_rejects_structurally_invalid_craft(tmp_path):
+    """复审 P1 负例：craft 文件 hash/size 一致但缺必填字段（Swift Codable 解码
+    失败 → 运行时精制台不可用）→ validator 必须 fail loud。"""
+    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
+    invalid = b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n'  # 缺 buildTag/locale/source
+    (d / "craft_table_catalog.json").write_bytes(invalid)
+    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    for e in m["generatedFiles"]:
+        if e.get("path") == "craft_table_catalog.json":
+            e["sha256"] = "sha256:" + hashlib.sha256(invalid).hexdigest()
+            e["size"] = len(invalid)
+    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
+    errors = validate_catalog(d)
+    assert any("craft_table_catalog.json 缺少必填字段" in e and "buildTag" in e for e in errors)
+
+
 def test_validate_rejects_missing_craft_entry(tmp_path):
     """manifest 缺 craft_table_catalog.json 条目 → 报错（复审 P1 负例：validator
     不得放行"生成成功但运行时不可用"的三方不一致；缺条目时 App fail-closed
@@ -440,11 +456,27 @@ def test_update_manifest_craft_entry_idempotent(tmp_path):
 
 def test_generate_main_fails_loud_without_manifest(tmp_path):
     """复审 P1 负例：craft 生成器在 manifest 缺失时非零退出且不写 craft 文件
-    （不留下"生成成功但运行时不可用"的产物）。"""
+    （不留下"生成成功但运行时不可用"的产物）。合成 APK 含两张 seasonal 表 +
+    localization，确保 build_catalog 成功、失败精确落在 manifest 登记分支。"""
+    import lzma
+    import zipfile
+
     import generate_craft_table_catalog as g
 
+    def _packed(text: str) -> bytes:
+        data = text.encode("utf-8-sig")
+        compressed = lzma.compress(data, format=lzma.FORMAT_ALONE)
+        return compressed[:5] + len(data).to_bytes(4, "little") + compressed[13:]
+
+    apk = tmp_path / "fake.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/build.tag", "18_400_7")
+        z.writestr("assets/localization/cn.csv", _packed("TID,CN\nTID_A,测试\n"))
+        z.writestr("assets/localization/texts_patch.csv", _packed("TID,CN\n"))
+        z.writestr("assets/logic/seasonal_defense_archetypes.csv", _packed("Name\nString\n"))
+        z.writestr("assets/logic/seasonal_defense_modules.csv", _packed("Name\nString\n"))
     out = tmp_path / "cat" / "craft_table_catalog.json"
-    rc = g.main(["--apk", str(tmp_path / "fake.apk"), "--game-version", "18.400.13",
+    rc = g.main(["--apk", str(apk), "--game-version", "18.400.13",
                  "--output", str(out)])
     assert rc == 1
     assert not out.exists(), "登记失败时不得留下 craft 产物"

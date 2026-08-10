@@ -195,8 +195,8 @@ def _mini_manifest() -> str:
             {"path": "icons/", "kind": "directory"},
             {"path": "craft_table_catalog.json",
              "sha256": "sha256:" + hashlib.sha256(
-                 b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n').hexdigest(),
-             "size": len(b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n')},
+                 b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n').hexdigest(),
+             "size": len(b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n')},
         ],
         "counts": {"items": 0, "levels": 0, "missingTime": 0, "missingIcons": 0},
     }, ensure_ascii=False) + "\n"
@@ -213,7 +213,7 @@ def _mini_dir(tmp_path: Path) -> Path:
     (d / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
     (d / "icons").mkdir()
     # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
-    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n'
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     return d
 

@@ -157,7 +157,6 @@ def _update_manifest_craft_entry(output_dir: Path, craft_bytes: bytes) -> None:
         raise CatalogError(f"manifest.json 损坏（无法登记 craft 条目）: {manifest_path}: {exc}")
     if not isinstance(manifest, dict) or not isinstance(manifest.get("generatedFiles"), list):
         raise CatalogError(f"manifest.json 结构非法（无法登记 craft 条目）: {manifest_path}")
-        return
     entry = {
         "path": "craft_table_catalog.json",
         "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),

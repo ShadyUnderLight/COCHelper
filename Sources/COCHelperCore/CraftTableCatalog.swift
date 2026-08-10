@@ -23,8 +23,14 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
     /// 独立加载的 bundle 文件、validate.py 不校验其内容，必须在此自证——
     /// 篡改或过期数据不得静默把季节内容判为 permanent。
     static func integrityOK(manifestData: Data, craftData: Data) -> Bool {
-        guard let manifest = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData),
-              let entry = manifest.generatedFiles.first(where: { $0.path == "craft_table_catalog.json" }),
+        guard let manifest = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData) else {
+            return false
+        }
+        // 复审 P2：与 validator「恰好一个」契约一致——重复条目（Python 侧会
+        // fail）不得在运行时被 first(where:) 放行。
+        let craftEntries = manifest.generatedFiles.filter { $0.path == "craft_table_catalog.json" }
+        guard craftEntries.count == 1,
+              let entry = craftEntries.first,
               let declared = entry.sha256, declared.hasPrefix("sha256:"),
               let declaredSize = entry.size,
               declaredSize == craftData.count else {

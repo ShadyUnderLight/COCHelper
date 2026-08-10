@@ -66,13 +66,19 @@ open .build/COCHelper.app
 落库于 `Sources/COCHelperCore/GameCatalog/<版本>/`（SwiftPM 用 `.copy` 保留版本目录结构）。生成与校验均零第三方运行时依赖
 （Python stdlib），测试用 pytest + hypothesis。
 
-生成（输出目录必须为空，非空报错不自动清理）：
+生成（输出目录必须为空，非空报错不自动清理）。**两步生成链**：主目录生成后必须再跑
+精制台目录生成器——它幂等登记 `craft_table_catalog.json` 到 manifest（缺失登记时
+validator 与 App 运行时都会 fail-closed，精制台不可用）：
 
 ```bash
 python3 Tools/generate_game_catalog.py \
   --apk /Users/lmz/Downloads/base.apk.1 \
   --game-version 18.400.13 \
   --output Sources/COCHelperCore/GameCatalog/18.400.13
+python3 Tools/generate_craft_table_catalog.py \
+  --apk /Users/lmz/Downloads/base.apk.1 \
+  --game-version 18.400.13 \
+  --output Sources/COCHelperCore/GameCatalog/18.400.13/craft_table_catalog.json
 ```
 
 校验与全量测试：

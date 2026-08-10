@@ -64,7 +64,7 @@ def test_validate_cli_success(full_minimal_apk, tmp_path):
     # 手工模拟 craft 生成器登记（写 craft 文件 + manifest 条目）——CLI validator
     # 默认强制 craft 条目存在，完整链产物必须配套。
     import hashlib, json
-    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n'
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
     mp = out / "manifest.json"
     m = json.loads(mp.read_text(encoding="utf-8"))

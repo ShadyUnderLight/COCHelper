@@ -131,4 +131,25 @@ final class CraftTableCatalogTests: XCTestCase {
         let truncated = craftData.dropLast()
         XCTAssertFalse(CraftTableCatalog.integrityOK(manifestData: manifestData, craftData: truncated))
     }
+
+    /// 复审 P2 负例：manifest 含重复 craft 条目 → 不通过（与 validator
+    /// 「恰好一个」契约一致，不得被 first(where:) 放行）。
+    func testIntegrityOKFailsForDuplicateCraftEntries() throws {
+        let version = GameCatalog.defaultBundledVersion
+        let resources = try XCTUnwrap(CraftTableCatalog.bundledResourceData(version: version))
+        let manifest = try JSONDecoder().decode(
+            CatalogManifest.self, from: resources.manifest)
+        var entries = manifest.generatedFiles
+        entries.append(entries.first { $0.path == "craft_table_catalog.json" }!)
+        let encoder = JSONEncoder()
+        let entriesJSON = String(data: try encoder.encode(entries), encoding: .utf8)!
+        let duplicateManifest = """
+        {"schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+         "locale": "zh-CN", "sourceFingerprint": "sha256:\(String(repeating: "a", count: 64))",
+         "generatedFiles": \(entriesJSON),
+         "counts": {"items": 0, "levels": 0}}
+        """
+        XCTAssertFalse(CraftTableCatalog.integrityOK(
+            manifestData: Data(duplicateManifest.utf8), craftData: resources.craft))
+    }
 }

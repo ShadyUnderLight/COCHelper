@@ -39,7 +39,7 @@ def _make_dir(tmp_path):
     (d / "catalog.json").write_bytes(catalog_bytes)
     (d / "icons").mkdir()
     # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
-    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n'
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
         "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",

@@ -397,10 +397,15 @@ def validate_catalog(dir_path: str | Path,
         return [f"catalog.json 解析失败: {exc}"]
 
     # ---- 版本/语言一致性 ----
-    if manifest.get("schemaVersion") != SCHEMA_VERSION:
-        errors.append(f"manifest schemaVersion={manifest.get('schemaVersion')} != {SCHEMA_VERSION}")
-    if catalog.schemaVersion != SCHEMA_VERSION:
-        errors.append(f"catalog schemaVersion={catalog.schemaVersion} != {SCHEMA_VERSION}")
+    # bool 排除：True == 1 会绕过 != 比较（与 craft schemaVersion 同类，R9 复审
+    # 防御性补强——当前 SCHEMA_VERSION=2 靠值巧合不被绕过，未来改回 1 会复发）
+    ms = manifest.get("schemaVersion")
+    if isinstance(ms, bool) or not isinstance(ms, int) or ms != SCHEMA_VERSION:
+        errors.append(f"manifest schemaVersion 必须是整数 {SCHEMA_VERSION}: {ms!r}")
+    if isinstance(catalog.schemaVersion, bool) \
+            or not isinstance(catalog.schemaVersion, int) \
+            or catalog.schemaVersion != SCHEMA_VERSION:
+        errors.append(f"catalog schemaVersion 必须是整数 {SCHEMA_VERSION}: {catalog.schemaVersion!r}")
     if manifest.get("gameVersion") != catalog.gameVersion:
         errors.append(f"gameVersion 不一致: manifest={manifest.get('gameVersion')} catalog={catalog.gameVersion}")
     if manifest.get("locale") != catalog.locale:

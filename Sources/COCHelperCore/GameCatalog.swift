@@ -743,10 +743,13 @@ public struct GameCatalog: Sendable {
     /// 3. 键存在性：每个宇宙键的 (section, dataID) 必须在 items 中存在
     ///    （手工裁剪/错配 → 拒绝）；
     /// 4. 全 0 键：数量型建筑不可能全 TH 0（手工篡改 → 拒绝）；
-    /// 5. **正向完整 key 契约**（修复 2）：items 的 home 数量型（buildings/traps、
-    ///    排除列表外，与 validate.py `_NON_COUNTABLE_DATA_IDS` 同源）必须全部
-    ///    被宇宙覆盖——部分 instanceCounts（如 10/52）无法检测（只做反向
-    ///    键存在性时裁剪不可见）。
+    /// 5. **正向完整 key 契约**（修复 2 + Issue #96 P2 类别内完整性门禁）：
+    ///    buildings/traps 的 home 数量型（排除列表外，与 validate.py
+    ///    `_NON_COUNTABLE_DATA_IDS` 同源）必须全部被宇宙覆盖——部分
+    ///    instanceCounts（如 10/52）无法检测（只做反向键存在性时裁剪不可见）；
+    ///    **任何**有宇宙键的 section 必须全量覆盖其 home items（部分建模 →
+    ///    `universeSections` 误判该类别已建模 → 投影 `.complete` 建立在残缺
+    ///    宇宙上，拒绝整个宇宙，fail-closed）。
     private static func validatedInstanceCounts(
         _ raw: [String: [Int]]?,
         index: [String: CatalogItem]
@@ -773,12 +776,27 @@ public struct GameCatalog: Sendable {
             }
             validKeys.insert(Self.key(section: section, dataID: dataID))
         }
-        // 正向完整 key 契约（修复 2）：home 数量型（排除列表外）必须全部覆盖
-        for item in index.values where !Self.nonCountableDataIDs.contains(item.dataID) {
-            guard item.section == "buildings" || item.section == "traps" else { continue }
+        // 正向完整 key 契约（修复 2 + Issue #96 P2 类别内完整性门禁）：
+        // - 基线（修复 2）：buildings/traps 的 home 数量型（排除列表外）必须
+        //   全部被宇宙覆盖——部分 instanceCounts（如 10/52）无法检测（只做
+        //   反向键存在性时裁剪不可见）；raw 全空时也拒绝（fail-closed）；
+        // - 扩展（P2）：**任何**有宇宙键的 section 必须全量覆盖其 home items
+        //   （排除列表外）——部分建模（如未来某类别只补 1 个键）会破坏
+        //   `universeSections` 的「任一键即该类别已建模」语义，导致投影层
+        //   `.complete` 误报（完整分母建立在残缺宇宙上），fail-closed 拒绝
+        //   整个宇宙。与 validate.py 正向完整性同源（双端同步）。
+        let sectionsWithUniverseKeys = Set(
+            validKeys.compactMap { $0.split(separator: ":").first.map(String.init) }
+        )
+        for item in index.values {
+            let isCoreSection = item.section == "buildings" || item.section == "traps"
+            guard isCoreSection || sectionsWithUniverseKeys.contains(item.section) else {
+                continue
+            }
             guard item.base == "home" else { continue }
+            guard !Self.nonCountableDataIDs.contains(item.dataID) else { continue }
             guard validKeys.contains(Self.key(section: item.section, dataID: item.dataID)) else {
-                return nil  // 数量型 item 无宇宙键（部分 instanceCounts）
+                return nil  // 有宇宙键的 section 存在未覆盖的 home item（部分建模）
             }
         }
         return raw

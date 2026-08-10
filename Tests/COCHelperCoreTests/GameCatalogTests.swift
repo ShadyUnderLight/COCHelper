@@ -1337,6 +1337,52 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertTrue(complete.hasUniverseData)
     }
 
+    /// 类别内完整性门禁（Issue #96 P2）：任何有宇宙键的 section 必须全量覆盖
+    /// 其 home items——部分建模（如未来 units 只补 1 个键）会让 universeSections
+    /// 误判「该类别已建模」→ 投影 .complete 误报，fail-closed 拒绝整个宇宙。
+    func testPartialSectionUniverseRejectedByPerSectionForwardCheck() {
+        func level(_ n: Int) -> CatalogLevel {
+            CatalogLevel(level: n, durationSeconds: nil, upgradeCosts: nil,
+                         requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                         icon: nil, levelVisual: nil, missingReason: nil)
+        }
+        // units 两个 home item + buildings 一个（宇宙主体键齐全）
+        let items = [
+            CatalogItem(section: "buildings", category: "buildings", dataID: 1_000_002,
+                        base: "home", baseMissingReason: nil, name: "圣水收集器", maxLevel: 17,
+                        icon: nil, levelVisual: nil, levels: (1...17).map(level)),
+            CatalogItem(section: "units", category: "troops", dataID: 4_000_000,
+                        base: "home", baseMissingReason: nil, name: "野蛮人", maxLevel: 3,
+                        icon: nil, levelVisual: nil, levels: (1...3).map(level)),
+            CatalogItem(section: "units", category: "troops", dataID: 4_000_001,
+                        base: "home", baseMissingReason: nil, name: "弓箭手", maxLevel: 3,
+                        icon: nil, levelVisual: nil, levels: (1...3).map(level)),
+        ]
+        // units 只补 1 个键（4000000）→ 4000001 无键 → 部分建模 → 拒绝
+        let partial = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: [
+                "buildings:1000002": cannonUniverseCounts,
+                "units:4000000": cannonUniverseCounts,
+            ]
+        )
+        XCTAssertFalse(partial.hasUniverseData, "units 部分建模 → 类别内完整性门禁拒绝")
+        XCTAssertTrue(partial.universeKeys.isEmpty, "拒绝后不得暴露宇宙键")
+        // 全量覆盖 → 通过
+        let complete = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: [
+                "buildings:1000002": cannonUniverseCounts,
+                "units:4000000": cannonUniverseCounts,
+                "units:4000001": cannonUniverseCounts,
+            ]
+        )
+        XCTAssertTrue(complete.hasUniverseData)
+        XCTAssertEqual(complete.universeSections, ["buildings", "units"])
+    }
+
     /// 非 canonical 键（外部评审 P1-1 残留修复 3）：`Int64("+0000002") == 2`
     /// 被接受但原始键非规范——universeCount 按规范键查不到，键静默无效 → 拒绝。
     func testNonCanonicalKeyRejected() {

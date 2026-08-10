@@ -343,25 +343,19 @@ struct VillageDetailView: View {
         .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    /// Issue #96：覆盖率行 help 文案按覆盖状态分支——complete 才宣称
-    ///「村庄全部可建造数量」；partial 两种成因（快照缺数据 / 目录未建模）分别
-    /// 表述：分母 = 已观测 ∪ 有宇宙键类别的差集（缺失类别的观测权重为 0 →
-    /// 差集补全宇宙量，即「已建模可建造」）；unavailable 无差集 → 纯已观测。
+    /// Issue #96：覆盖率行 help 文案按覆盖状态分支，**文案必须与覆盖率分母
+    /// 公式一致**（P1 交叉审核契约，见 `VillageProgressProjection.metrics` 的
+    /// coverageDen 口径）：
+    /// - complete：分母 = 全类别宇宙全量（观测 ∪ 全类别差集）→「村庄全部可建造数量」；
+    /// - partial：分母 = 全部追踪类别已观测 ∪ 建筑/陷阱宇宙差集（未建模类别
+    ///   无差集、只计观测）→ 不得宣称「已建模可建造」（成因明细在 degradedReason）；
+    /// - unavailable：无差集 → 纯已观测。
     private func helpText(for coverage: ProgressUniverseCoverage) -> String {
         switch coverage {
         case .complete:
             return "已观测实例占村庄全部可建造数量"
-        case .partial(let missing, let unmodeled):
-            if !missing.isEmpty && !unmodeled.isEmpty {
-                return "快照缺少类别数据且目录未完整建模，已观测实例占已建模（建筑/陷阱）可建造数量"
-            }
-            if !unmodeled.isEmpty {
-                return "已观测实例占已建模可建造数量（当前仅建筑/陷阱），其余类别未完整建模"
-            }
-            // 不变量：partial 至少一个集合非空——missing 非空且 unmodeled 为空
-            // 才走到这里（成因 b：快照缺数据，目录可能已全类别建模；缺失类别
-            // 的差集补全宇宙量 → 分母 = 已建模可建造数量）。
-            return "快照缺少类别数据，已观测实例占已建模可建造数量"
+        case .partial:
+            return "分母为已观测实例与建筑/陷阱宇宙差集合计，非村庄全部可建造"
         case .unavailable:
             return "分母为已观测实例，非全部可能建筑"
         }

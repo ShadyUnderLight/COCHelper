@@ -188,11 +188,16 @@ public enum VillageProgressProjection {
             min(max(0, $0.currentLevel ?? 0), max(0, $0.maxLevel ?? 0))
         }
 
-        // 覆盖率：分母 = 全部观测实例权重 + 宇宙差集权重（完整覆盖率口径，
-        // Issue #70 阶段 2：known / (known + unknown + available)）；
-        // 分子 = known 实例权重（饱和信息保留）。
+        // 覆盖率：分母 = 全部追踪类别观测实例权重 + 已建模类别（有宇宙键）的
+        // 宇宙差集权重（Issue #70 阶段 2 + #96 口径契约：known / (known +
+        // unknown + available)）。
+        // **口径契约（P1 交叉审核）**：complete（全类别建模）时分母 = 全类别
+        // 宇宙全量；partial（仅建筑/陷阱建模）时分母 = 全部类别已观测 ∪
+        // 建筑/陷阱差集——未建模类别（units 等）只计观测、无差集补充。
+        // UI help 文案必须与之一致（VillageDetailView.helpText），不得宣称
+        //「已建模可建造数量」（该称谓要求分母只含已建模类别的宇宙量）。
         // 现状 coverageDen = instanceCountAndOverflow(of: items) 已含 available
-        //（合成项直接进 items）→ 自动完整，无需额外改动。
+        //（合成项直接进 items）→ 自动符合契约，无需额外改动。
         let coverageDen = VillageDetailProjection.instanceCountAndOverflow(of: items)
         let coverageNum = VillageDetailProjection.instanceCountAndOverflow(of: known)
 

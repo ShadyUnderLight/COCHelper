@@ -495,6 +495,23 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertTrue(m.globalProgress.degradedReason?.contains("英雄") == true)
     }
 
+    /// Issue #96 P1 契约：覆盖率分母 = 全部追踪类别观测实例 ∪ 已建模类别
+    ///（建筑/陷阱）宇宙差集——未建模类别（units 等）只计观测、无差集补充。
+    /// UI help 文案必须与之一致（不得宣称「已建模可建造数量」，该称谓要求
+    /// 分母只含已建模类别的宇宙量）。
+    func testCoverageDenominatorMixesAllObservedWithBuildingsTrapsDiff() {
+        let observedBuilding = item(id: "b", level: 18, maxLevel: 18, stageMax: 18, count: 1)
+        let observedUnit = item(id: "u", level: 3, maxLevel: 10, stageMax: 6, count: 2)
+        let diff = item(id: "universe:buildings:1000002", status: .available,
+                        level: nil, maxLevel: 1, stageMax: nil, count: 7)
+        let m = metrics([observedBuilding, observedUnit, diff],
+                        coverage: .partial(missingSections: [], unmodeledCategories: [.troops]))
+        // 分母 = 观测(1 + 2) + 建筑差集(7) = 10；分子 = known(1 + 2) = 3。
+        // 若分母只含「已建模可建造」（建筑宇宙），值应为 8——契约锁定现状。
+        XCTAssertEqual(m.snapshotCoverage.denominator, 10)
+        XCTAssertEqual(m.snapshotCoverage.numerator, 3)
+    }
+
     func testUnknownStateCarriesCoverageDiagnostic() {
         // 分母为 0（无可确认项目）+ partial 覆盖 → unknown 态也透出覆盖诊断
         //（Task 3 行为回归锁：makeMetric unknown 分支同样拼接 coverageDiagnostic，

@@ -988,7 +988,9 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         XCTAssertEqual(diff.count, 7, "TH18 圣水收集器宇宙 count")
 
         // 指标层（Issue #96）：partial → stage/global 只计已观测（野蛮人 3 级）；
-        // 覆盖率分母 = TH(1) + 野蛮人(1) + 差集(7) = 9（覆盖率行含差集）。
+        // 覆盖率分母 = 全部追踪类别观测（TH 1 + 野蛮人 1）+ 建筑差集（7）= 9——
+        // P1 契约：未建模类别（units 野蛮人）只计观测、无差集补充，分母不是
+        //「已建模可建造数量」（UI help 文案与之一致）。
         let metrics = try XCTUnwrap(combined.active.first?.villageMetrics)
         XCTAssertEqual(metrics.currentStageProgress.denominator, 3)
         XCTAssertEqual(metrics.globalProgress.denominator, 3)

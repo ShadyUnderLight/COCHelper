@@ -179,4 +179,52 @@ final class ClanDisplayFormatTests: XCTestCase {
             "未本地化联赛（ID: 99999999）"
         )
     }
+
+    // MARK: - typeLabel（Issue #101：open → 任何人都可加入）
+
+    /// 已知三值穷举（P1）+ 未知值。官方 raw value 精确匹配。
+    /// open 文案为 Issue #101 唯一改动点：任何人可加入。
+    func testTypeLabelKnownValues() {
+        XCTAssertEqual(ClanDisplayFormat.typeLabel("open"), "任何人都可加入")
+        XCTAssertEqual(ClanDisplayFormat.typeLabel("inviteOnly"), "只有被批准才能加入")
+        XCTAssertEqual(ClanDisplayFormat.typeLabel("closed"), "不可加入")
+        XCTAssertEqual(ClanDisplayFormat.typeLabel("unknown_raw_value"), "未知")
+        // P3：返回值永不等于输入 raw value（不泄漏英文）
+        XCTAssertNotEqual(ClanDisplayFormat.typeLabel("open"), "open")
+        XCTAssertNotEqual(ClanDisplayFormat.typeLabel("inviteOnly"), "inviteOnly")
+        XCTAssertNotEqual(ClanDisplayFormat.typeLabel("closed"), "closed")
+    }
+
+    /// 类 raw 值（大小写变体、首尾空白、分隔符变体、空串）不得命中
+    /// 精确匹配 → 全部「未知」（不做修剪/归一化，官方 raw 三值恒等匹配）。
+    func testTypeLabelExactMatchNoNormalization() {
+        let nearMisses = ["Open", "OPEN", " OPEN ", "open\n", "invite_only", "InviteOnly", "closed\n", "CLOSED", ""]
+        for raw in nearMisses {
+            XCTAssertEqual(ClanDisplayFormat.typeLabel(raw), "未知", "raw: \(raw.debugDescription)")
+            XCTAssertNotEqual(ClanDisplayFormat.typeLabel(raw), raw)
+        }
+    }
+
+    /// Property-based（固定 seed SplitMix64，可复现，同 clanLevelLabel 风格）：
+    /// 任意 ASCII 字符串（大小写/数字/符号/空白/空串，长度 0-12）输出恒为
+    /// 「未知」（P2）且不等于输入（P3，字母表纯 ASCII 不会生成 CJK「未知」）；
+    /// 已知三值 + 生成值全部输出均属于四态集合（P4）。
+    func testTypeLabelPropertyUnknownForArbitraryStrings() {
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-.\n\t")
+        let known = Set(["open", "inviteOnly", "closed"])
+        let fourStates = Set(["任何人都可加入", "只有被批准才能加入", "不可加入", "未知"])
+        var rng = SplitMix64Generator(seed: 0x01_01)
+        var asserted = 0
+        for _ in 0..<600 {
+            let count = Int.random(in: 0...12, using: &rng)
+            let raw = String((0..<count).map { _ in alphabet[Int.random(in: 0..<alphabet.count, using: &rng)] })
+            if known.contains(raw) { continue } // 已知三值由穷举断言覆盖（P1），避免重复
+            let label = ClanDisplayFormat.typeLabel(raw)
+            XCTAssertEqual(label, "未知") // P2
+            XCTAssertNotEqual(label, raw) // P3：不泄漏英文 raw
+            XCTAssertTrue(fourStates.contains(label), "输出不在四态集合: \(label.debugDescription)") // P4
+            asserted += 1
+        }
+        XCTAssertGreaterThanOrEqual(asserted, 500)
+    }
 }

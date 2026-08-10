@@ -24,7 +24,7 @@ public enum ClanDisplayFormat {
     /// 部落类型中文（官方字符串 open / inviteOnly / closed → 官方简中语义）。
     public static func typeLabel(_ raw: String) -> String {
         switch raw {
-        case "open": "所有人均可加入"
+        case "open": "任何人都可加入"
         case "inviteOnly": "只有被批准才能加入"
         case "closed": "不可加入"
         default: "未知"

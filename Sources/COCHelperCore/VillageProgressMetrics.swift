@@ -341,14 +341,15 @@ public enum VillageProgressProjection {
     }
 
     /// 合并多村庄 home 对的 coverage（Issue #110，纯函数，供 property 测试）：
-    /// - 全部 .complete → .complete（无诊断）；
     /// - 存在任一 .partial → .partial——missingSections / unmodeledCategories
     ///   取并集，missing 先按类别映射 subtract unmodeled 去重（同一类别既
     ///   缺失又未建模只报一次，防诊断重复；未映射到类别的 section 保底保留）；
-    /// - 无任何 partial/complete 对（全 .unavailable，或空列表）→ .unavailable
-    ///   （无差集，纯已观测口径）。
-    /// 空列表返回 .unavailable：与「无已观测」语义一致（调用方
-    /// observed == 0 → nil 路径兜底）。
+    /// - 无 .partial 但含 .unavailable 与 .complete 混合 → .partial（明细空，
+    ///   诊断由 unavailableHomeCount 计数生成）——unavailable 村庄（TH 未知/
+    ///   目录无宇宙）不得被静默成 .complete（Reflexion 自查修复）；
+    /// - 无任何 partial/unavailable 且存在 .complete → .complete（无诊断）；
+    /// - 全 .unavailable 或空列表 → .unavailable（无差集，纯已观测口径；
+    ///   调用方 observed == 0 → nil 路径兜底）。
     static func mergedCoverage(
         of coverages: [ProgressUniverseCoverage]
     ) -> ProgressUniverseCoverage {
@@ -356,6 +357,7 @@ public enum VillageProgressProjection {
         var unmodeled = Set<TrackerCategory>()
         var sawComplete = false
         var sawPartial = false
+        var sawUnavailable = false
         for coverage in coverages {
             switch coverage {
             case .complete:
@@ -365,7 +367,7 @@ public enum VillageProgressProjection {
                 missing.formUnion(sections)
                 unmodeled.formUnion(categories)
             case .unavailable:
-                continue
+                sawUnavailable = true
             }
         }
         if sawPartial {
@@ -377,8 +379,11 @@ public enum VillageProgressProjection {
             }
             return .partial(missingSections: deduped, unmodeledCategories: unmodeled)
         }
-        if sawComplete { return .complete }
-        return .unavailable
+        if !sawComplete { return .unavailable }
+        if sawUnavailable {
+            return .partial(missingSections: [], unmodeledCategories: [])
+        }
+        return .complete
     }
 
     /// 聚合覆盖诊断（Issue #110，partial 专属；merged 非 partial → []）。

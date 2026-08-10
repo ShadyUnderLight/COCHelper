@@ -1005,6 +1005,40 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertTrue(result.denominator > 0, "聚合必须有观测实例")
     }
 
+    /// 混合村庄（Reflexion 自查补）：一个 home 对 .complete + 一个 home 对
+    /// .unavailable（无 TH，差集能力不可用）→ 聚合不得宣称 .complete；
+    /// 必须 .partial（空明细）+ 「1 个村庄覆盖状态不可用」诊断——unavailable
+    /// 村庄的数值照旧计入，但 scope 如实降级。
+    func testAggregateCoverageMixedCompleteAndUnavailableVillage() throws {
+        let catalog = try makeFullUniverseCatalog()
+        var fullSections = Self.fullSections
+        fullSections["buildings"] = [
+            makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+        ]
+        let result = try XCTUnwrap(
+            VillageProgressProjection.aggregateCoverage(
+                from: [
+                    makeVillage(name: "完整村", objectSections: fullSections),
+                    // 无 buildings → TH 未知 → home 对 .unavailable
+                    makeVillage(name: "无TH村", objectSections: [
+                        "units": [makeItem(section: "units", dataID: 4_000_000, level: 2)],
+                    ]),
+                ],
+                catalog: catalog, seasonalPhases: .empty
+            )
+        )
+        guard case .partial(let missing, let unmodeled) = result.coverage else {
+            return XCTFail("混合 complete+unavailable 必须 .partial，实际 \(result.coverage)")
+        }
+        // 无 partial 输入 → 明细空，诊断由 unavailable 计数生成
+        XCTAssertTrue(missing.isEmpty)
+        XCTAssertTrue(unmodeled.isEmpty)
+        XCTAssertTrue(
+            result.diagnostics.contains("1 个村庄覆盖状态不可用，无法确认完整村庄进度。"),
+            result.diagnostics.joined(separator: " ")
+        )
+    }
+
     /// mergedCoverage 纯函数：两村庄不同 missing section → 并集；
     /// missing∩unmodeled 去重——同一类别既缺失又未建模只报一次
     ///（units → .troops 同时出现在另一村庄的 unmodeled 侧 → 从 missing 移除，
@@ -1017,6 +1051,27 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertEqual(
             merged,
             .partial(missingSections: ["spells"], unmodeledCategories: [.troops])
+        )
+    }
+
+    /// 合并语义回归（Reflexion 自查发现）：存在 unavailable home 对（TH 未知/
+    /// 目录无宇宙的村庄）时不得宣称 .complete——否则改村庄的数值被计入但 scope
+    /// 却声称「覆盖完整」（诊断也会为空），UI 显示蓝色裸完整。混合 ⨯（complete,
+    /// unavailable）→ 必须 .partial + 「N 个村庄覆盖状态不可用」诊断。
+    func testMixedCompleteAndUnavailableIsPartialWithCountDiagnostic() {
+        // 1) mergedCoverage 纯函数：complete + unavailable → partial（空明细，
+        //    诊断由 unavailableHomeCount 计数生成）
+        let merged = VillageProgressProjection.mergedCoverage(of: [
+            .complete, .unavailable,
+        ])
+        XCTAssertEqual(merged, .partial(missingSections: [], unmodeledCategories: []))
+        // 2) 聚合诊断生成：partial + 1 个 unavailable home 对 → 计数诊断
+        let diagnostics = VillageProgressProjection.aggregateCoverageDiagnostics(
+            merged: merged, unavailableHomeCount: 1
+        )
+        XCTAssertEqual(
+            diagnostics,
+            ["1 个村庄覆盖状态不可用，无法确认完整村庄进度。"]
         )
     }
 
@@ -1072,6 +1127,24 @@ final class VillageProgressMetricsTests: XCTestCase {
                 VillageProgressProjection.mergedCoverage(of: coverages),
                 .complete
             )
+        }
+    }
+
+    /// 反向属性（Reflexion 自查补）：只要存在任一非 complete 输入
+    ///（unavailable 或 partial）→ 结果不得为 .complete。complete 是
+    ///「全部 home 对完整」的强合取，unavailable 村庄不得被静默。
+    func testMergedCoverageCompleteOnlyWhenAllComplete() {
+        var generator = Issue110LCG(seed: 2026)
+        for _ in 0..<100 {
+            let count = generator.int(in: 2...8)
+            var coverages = (0..<count).map { _ in randomCoverage(&generator) }
+            // 强制插入一个非 complete 输入（保证本轮有反例）
+            let nonComplete: ProgressUniverseCoverage = generator.bool()
+                ? .unavailable
+                : .partial(missingSections: ["units"], unmodeledCategories: [.troops])
+            coverages.append(nonComplete)
+            let merged = VillageProgressProjection.mergedCoverage(of: coverages)
+            XCTAssertNotEqual(merged, .complete, "含非 complete 输入时不得宣称 .complete: \(coverages)")
         }
     }
 

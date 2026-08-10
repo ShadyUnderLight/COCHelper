@@ -227,7 +227,7 @@ final class AppModelClanResolveTests: XCTestCase {
         XCTAssertEqual(state.status, .success)
         XCTAssertNotNil(state.fetchedAt)
         XCTAssertEqual(state.lastGood?.name, "anonymized-clan")
-        XCTAssertEqual(state.parserVersion, "clan-snapshot-0.3")
+        XCTAssertEqual(state.parserVersion, "clan-snapshot-0.4")
         XCTAssertEqual(state.unrecognizedKeys, ["newOfficialField"])
     }
 

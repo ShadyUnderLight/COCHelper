@@ -121,6 +121,77 @@ final class ClanDisplayFormatTests: XCTestCase {
         XCTAssertNil(ClanDisplayFormat.requiredLeagueTierLabel(nil))
     }
 
+    // MARK: - warLeagueLabel（部落 CWL 联赛，Issue #111）
+
+    func testWarLeagueLabelKnownIDs() {
+        XCTAssertEqual(
+            ClanDisplayFormat.warLeagueLabel(ClanLeague(id: 48000010, name: "Crystal League III")),
+            "水晶杯联赛3"
+        )
+        XCTAssertEqual(
+            ClanDisplayFormat.warLeagueLabel(ClanLeague(id: 48000022, name: "Legend League")),
+            "传奇杯联赛"
+        )
+    }
+
+    func testWarLeagueLabelNil() {
+        XCTAssertNil(ClanDisplayFormat.warLeagueLabel(nil))
+    }
+
+    func testWarLeagueLabelUnknownIDFallback() {
+        XCTAssertEqual(
+            ClanDisplayFormat.warLeagueLabel(ClanLeague(id: 99999999, name: "Mystery League")),
+            "未本地化联赛（ID: 99999999, Mystery League）"
+        )
+        // name 缺失时只显示 ID
+        XCTAssertEqual(
+            ClanDisplayFormat.warLeagueLabel(ClanLeague(id: 99999999, name: nil)),
+            "未本地化联赛（ID: 99999999）"
+        )
+    }
+
+    /// Property-based（固定 seed SplitMix64，可复现）：任意 Int ID（含
+    /// Int.min/Int.max/负数/0/已知 ID 附近）+ 可选 name fuzz `warLeagueLabel`：
+    /// - 输出恒非空（nil 输入 → nil 由 testWarLeagueLabelNil 单独覆盖）；
+    /// - 永不包含"都城"字样（与 capital 语义隔离，UI 文案不得互相回显）；
+    /// - 输出要么等于 catalog war context 中文名，要么为
+    ///   "未本地化联赛（ID: x[, name]）" fallback 格式（未知 ID 保留官方 name 可审计）。
+    func testWarLeagueLabelPropertyIsolatedFromCapital() throws {
+        let catalog = try XCTUnwrap(LeagueTierCatalog.loadBundled())
+        var rng = SplitMix64Generator(seed: 0x96_96)
+        // 显式极值 + 已知 ID（含 48000010=Crystal League III）
+        let fixedIDs: [Int] = [Int.min, -1, 0, 1, Int.max, 48000000, 48000001, 48000010, 48000013, 48000019, 48000022]
+        var asserted = 0
+        for id in fixedIDs {
+            let label = ClanDisplayFormat.warLeagueLabel(ClanLeague(id: id, name: "Official Name"))
+            XCTAssertNotNil(label, "ID \(id) 输出必须非空")
+            XCTAssertFalse(label?.contains("都城") ?? false, "ID \(id) 输出不得包含'都城'（与 capital 语义隔离）")
+            if let localized = catalog.name(forID: id, context: .war) {
+                XCTAssertEqual(label, localized, "ID \(id) 已知 ID 必须输出 catalog 中文名")
+            } else {
+                XCTAssertEqual(label, "未本地化联赛（ID: \(id), Official Name）", "ID \(id) 未知 ID 必须走 fallback 格式")
+            }
+            asserted += 1
+        }
+        for _ in 0..<500 {
+            let id = Int(bitPattern: rng.next())
+            // 随机决定 name 是否缺失，覆盖两种 fallback 分支
+            let name: String? = rng.next() % 2 == 0 ? "Official Name" : nil
+            let label = ClanDisplayFormat.warLeagueLabel(ClanLeague(id: id, name: name))
+            XCTAssertNotNil(label, "ID \(id) 输出必须非空")
+            XCTAssertFalse(label?.contains("都城") ?? false, "ID \(id) 输出不得包含'都城'（与 capital 语义隔离）")
+            if let localized = catalog.name(forID: id, context: .war) {
+                XCTAssertEqual(label, localized, "ID \(id) 已知 ID 必须输出 catalog 中文名")
+            } else if let name {
+                XCTAssertEqual(label, "未本地化联赛（ID: \(id), \(name)）", "ID \(id) 未知 ID 必须走 fallback 格式")
+            } else {
+                XCTAssertEqual(label, "未本地化联赛（ID: \(id)）", "ID \(id) name 缺失 fallback 格式")
+            }
+            asserted += 1
+        }
+        XCTAssertGreaterThanOrEqual(asserted, 500)
+    }
+
     // MARK: - clanLevelLabel（Issue #95：部落等级语义，禁止显示为"X级大本营"）
 
     /// Issue #95 复现值：clanLevel=20 曾渲染为"20级大本营"。

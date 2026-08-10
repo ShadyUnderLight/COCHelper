@@ -3450,6 +3450,45 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
+    /// Issue #96 正例 fixture：9 个追踪类别每类至少一个宇宙键 + 对应目录 item。
+    /// 生产目录当前只有 buildings/traps 宇宙——本 fixture 表达「未来目录全类别
+    /// 建模」形态（解锁型类别的宇宙 count 仅为存在性标记，语义不深究）。
+    private func makeCompleteUniverseCatalog() -> GameCatalog {
+        func levels(_ max: Int) -> [CatalogLevel] {
+            (1...max).map {
+                CatalogLevel(level: $0, durationSeconds: nil, upgradeCosts: nil,
+                             requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                             icon: nil, levelVisual: nil, missingReason: nil)
+            }
+        }
+        let specs: [(section: String, category: String, dataID: Int64, name: String)] = [
+            ("buildings", "buildings", 1_000_002, "圣水收集器"),
+            ("traps", "traps", 12_000_000, "炸弹"),
+            ("units", "troops", 4_000_000, "野蛮人"),
+            ("spells", "spells", 4_000_001, "闪电法术"),
+            ("siege_machines", "siegeMachines", 4_000_010, "攻城战车"),
+            ("heroes", "heroes", 4_000_100, "野蛮人之王"),
+            ("equipment", "equipment", 4_001_000, "狂暴药水瓶"),
+            ("pets", "pets", 4_000_200, "独角兽"),
+            ("guardians", "guardians", 4_000_300, "守护者"),
+        ]
+        let items = specs.map { spec in
+            CatalogItem(section: spec.section, category: spec.category, dataID: spec.dataID,
+                        base: "home", baseMissingReason: nil, name: spec.name, maxLevel: 5,
+                        icon: nil, levelVisual: nil, levels: levels(5))
+        }
+        var instanceCounts: [String: [Int]] = [:]
+        for spec in specs {
+            instanceCounts["\(spec.section):\(spec.dataID)"] = Array(repeating: 1, count: 18)
+        }
+        return GameCatalog(
+            gameVersion: "18.400.13",
+            items: items,
+            manifest: makeUniverseManifestStub(),
+            instanceCounts: instanceCounts
+        )
+    }
+
     /// 宇宙目录的 manifest 信任标记 stub（外部评审 P1-1 残留修复：hasUniverseData
     /// 要求 catalog.json 条目 + sha256 声明——validate 对缺失声明跳过比对，
     /// 信任门必须显式要求；测试注入路径不调用 validate，值任意合法格式即可）。
@@ -3473,21 +3512,92 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
-    /// universeComplete：TH 已知 + 目录有宇宙 → true；TH 缺失 / 目录无宇宙 /
-    /// BB base → false（决策 5：BB 不做宇宙）。
-    func testUniverseCompleteRequiresTHAndUniverseData() throws {
+    // MARK: - Issue #96：progressCoverage（覆盖契约）
+
+    /// 四态之一：unavailable——TH 缺失 / 旧目录 / BB / TH 越界（与旧 universeComplete
+    /// false 的四种原因一一对应）。
+    func testProgressCoverageUnavailableStates() throws {
+        let noTH = makeVillage(objectSections: [:])
+        XCTAssertEqual(project(village: noTH, catalog: makeUniverseCatalog(), base: .home).progressCoverage, .unavailable)
         let withTH = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
         ])
-        XCTAssertTrue(project(village: withTH, catalog: makeUniverseCatalog(), base: .home).universeComplete,
-                      "TH 已知 + 宇宙目录 → universeComplete true")
-        // TH 缺失（快照无大本营记录）→ false
-        let noTH = makeVillage(objectSections: [:])
-        XCTAssertFalse(project(village: noTH, catalog: makeUniverseCatalog(), base: .home).universeComplete)
-        // 旧目录（无 instanceCounts）→ false（即使 TH 已知）
-        XCTAssertFalse(project(village: withTH, catalog: stageCatalog, base: .home).universeComplete)
-        // BB base 恒 false
-        XCTAssertFalse(project(village: withTH, catalog: makeUniverseCatalog(), base: .builder).universeComplete)
+        XCTAssertEqual(project(village: withTH, catalog: stageCatalog, base: .home).progressCoverage, .unavailable,
+                       "旧目录（无宇宙）→ unavailable")
+        XCTAssertEqual(project(village: withTH, catalog: makeUniverseCatalog(), base: .builder).progressCoverage, .unavailable,
+                       "BB 恒 unavailable（决策 5）")
+        let th19 = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 19, path: "th")],
+        ])
+        XCTAssertEqual(project(village: th19, catalog: makeUniverseCatalog(), base: .home).progressCoverage, .unavailable,
+                       "TH=19 超出宇宙表范围（1...18）→ unavailable")
+    }
+
+    /// 四态之二：partial(missingSections)——快照缺失追踪 section（键不存在；
+    /// 空数组不算缺失）。
+    func testProgressCoveragePartialWhenSectionsMissing() throws {
+        // 只有 buildings（TH）+ units：缺 traps/spells/siege_machines/heroes/
+        // equipment/pets/guardians 七个 section
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2, path: "0")],
+        ])
+        let coverage = project(village: village, catalog: makeCompleteUniverseCatalog(), base: .home).progressCoverage
+        guard case .partial(let missing, let unmodeled) = coverage else {
+            return XCTFail("期望 .partial，实际 \(coverage)")
+        }
+        XCTAssertEqual(missing, ["traps", "spells", "siege_machines", "heroes", "equipment", "pets", "guardians"])
+        XCTAssertTrue(unmodeled.isEmpty, "全类别宇宙 fixture → unmodeled 为空")
+    }
+
+    /// 四态之三：空数组 section 不算缺失（键存在即 present）。
+    func testProgressCoverageEmptyArraySectionIsPresent() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "traps": [], "units": [], "spells": [], "siege_machines": [],
+            "heroes": [], "equipment": [], "pets": [], "guardians": [],
+        ])
+        XCTAssertEqual(project(village: village, catalog: makeCompleteUniverseCatalog(), base: .home).progressCoverage, .complete,
+                       "空数组键存在 → present，不产生 missingSections")
+    }
+
+    /// 四态之四：partial(unmodeledCategories)——目录对追踪类别无宇宙数据
+    ///（生产目录形态：仅 buildings/traps 有宇宙）。
+    func testProgressCoveragePartialWhenCategoriesUnmodeled() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "traps": [], "units": [], "spells": [], "siege_machines": [],
+            "heroes": [], "equipment": [], "pets": [], "guardians": [],
+        ])
+        let coverage = project(village: village, catalog: makeUniverseCatalog(), base: .home).progressCoverage
+        guard case .partial(let missing, let unmodeled) = coverage else {
+            return XCTFail("期望 .partial，实际 \(coverage)")
+        }
+        XCTAssertTrue(missing.isEmpty, "快照 section 全 → missing 为空")
+        XCTAssertEqual(unmodeled, [.troops, .spells, .siegeMachines, .heroes, .equipment, .pets, .guardians])
+    }
+
+    /// 正例：9 个追踪 section 全 + 9 类别宇宙全 → .complete（isComplete true）。
+    func testProgressCoverageCompleteRequiresAllSectionsAndAllCategoryUniverses() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
+            "traps": [], "units": [], "spells": [], "siege_machines": [],
+            "heroes": [], "equipment": [], "pets": [], "guardians": [],
+        ])
+        let projection = project(village: village, catalog: makeCompleteUniverseCatalog(), base: .home)
+        XCTAssertEqual(projection.progressCoverage, .complete)
+        XCTAssertTrue(projection.progressCoverage.isComplete)
+    }
+
+    /// 真实 fixture（section 全）+ 生产 bundled 目录 → partial（7 类未建模）。
+    func testProgressCoverageRealFixtureWithBundledCatalogIsPartial() throws {
+        let sections = try loadRealFixture()
+        let village = makeVillage(objectSections: sections)
+        let coverage = project(village: village, catalog: GameCatalog.loadBundled(), base: .home).progressCoverage
+        guard case .partial(_, let unmodeled) = coverage else {
+            return XCTFail("生产目录 + 真实快照期望 .partial，实际 \(coverage)")
+        }
+        XCTAssertEqual(unmodeled, [.troops, .spells, .siegeMachines, .heroes, .equipment, .pets, .guardians])
     }
 
     /// .available 产出：快照无圣水收集器 + TH18 宇宙 count 7 → 合成项
@@ -3499,7 +3609,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
         ])
         let home = project(village: village, catalog: makeUniverseCatalog(), base: .home)
-        XCTAssertTrue(home.universeComplete)
+        XCTAssertNotEqual(home.progressCoverage, .unavailable, "宇宙可用（合成门禁 buildingUniverseAvailable 打开）")
 
         let collector = try XCTUnwrap(home.items.first { $0.id == "universe:buildings:1000002" })
         XCTAssertEqual(collector.status, .available)
@@ -3574,7 +3684,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             ],
         ])
         let home = project(village: village, catalog: catalog, base: .home)
-        XCTAssertTrue(home.universeComplete)
+        XCTAssertNotEqual(home.progressCoverage, .unavailable, "宇宙可用（合成门禁 buildingUniverseAvailable 打开）")
         let wallDiff = try XCTUnwrap(home.items.first { $0.id == "universe:buildings:1000010" },
                                      "城墙部分建造应产出差集项")
         XCTAssertEqual(wallDiff.status, .available)
@@ -3616,13 +3726,13 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     /// TH 超出宇宙表范围（评审 B-1/I2：TH19 上线后旧目录窗口期）→
-    /// universeComplete false、无差集（完整分母不得建立在空宇宙上）。
+    /// progressCoverage .unavailable、无差集（完整分母不得建立在空宇宙上）。
     func testUniverseCompleteOffWhenTHBeyondRange() throws {
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 19, path: "th")],
         ])
         let home = project(village: village, catalog: makeUniverseCatalog(), base: .home)
-        XCTAssertFalse(home.universeComplete, "TH=19 超出宇宙表范围（1...18）→ 不得声称宇宙完整")
+        XCTAssertEqual(home.progressCoverage, .unavailable, "TH=19 超出宇宙表范围（1...18）→ 不得声称宇宙完整")
         XCTAssertTrue(home.items.allSatisfy { $0.status != .available },
                       "TH 越界不得产出宇宙差集项")
     }
@@ -3638,7 +3748,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             ],
         ])
         let home = project(village: village, catalog: makeUniverseCatalog(), base: .home)
-        XCTAssertTrue(home.universeComplete)
+        XCTAssertNotEqual(home.progressCoverage, .unavailable, "宇宙可用（合成门禁 buildingUniverseAvailable 打开）")
 
         // 超配项：.unknown、count = 8 - 7 = 1、level nil、missingReason 明确
         let overcapacity = try XCTUnwrap(home.items.first { $0.id == "universe:buildings:1000002" },
@@ -3658,7 +3768,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             from: home.items.filter { $0.status != .unavailable },
             catalogIsUsable: home.catalogIsUsable,
             compatibility: home.compatibility,
-            completeDenominator: home.universeComplete
+            completeDenominator: home.progressCoverage.isComplete
         )
         XCTAssertEqual(metrics.currentStageProgress.state, .partial)
         XCTAssertTrue(
@@ -3669,19 +3779,19 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     /// 旧目录（无 instanceCounts）→ 行为与阶段 1 完全一致：不产出 .available、
-    /// universeComplete false。
+    /// progressCoverage .unavailable。
     func testUniverseSupplementOffForLegacyCatalog() throws {
         let village = makeVillage(objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
         ])
         let home = project(village: village, catalog: stageCatalog, base: .home)
-        XCTAssertFalse(home.universeComplete)
+        XCTAssertEqual(home.progressCoverage, .unavailable)
         XCTAssertTrue(home.items.allSatisfy { $0.status != .available },
                       "旧目录不得产出宇宙差集项")
     }
 
-    /// 目录版本不匹配（catalogIsUsable false）+ 有宇宙数据 → universeComplete
-    /// false、不产出 .available（评审 I1：差集项基于不可信目录的
+    /// 目录版本不匹配（catalogIsUsable false）+ 有宇宙数据 → progressCoverage
+    /// .unavailable、不产出 .available（评审 I1：差集项基于不可信目录的
     /// maxLevel/count 会污染投影，与 map() 的 fail-closed 对齐）。
     func testUniverseSupplementOffWhenCatalogMismatch() throws {
         let village = makeVillage(objectSections: [
@@ -3692,7 +3802,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             expectedGameVersion: "99.0.0", base: .home
         )
         XCTAssertFalse(home.catalogIsUsable, "版本不匹配 → 目录不可用")
-        XCTAssertFalse(home.universeComplete,
+        XCTAssertEqual(home.progressCoverage, .unavailable,
                        "目录不可信时不得宣称宇宙完整")
         XCTAssertTrue(home.items.allSatisfy { $0.status != .available },
                       "目录不可信时不得合成宇宙差集项")

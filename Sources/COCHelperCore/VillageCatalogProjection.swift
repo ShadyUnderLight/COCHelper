@@ -293,8 +293,37 @@ public struct PlayerUnlockLevels: Sendable {
     }
 }
 
+/// 全村庄进度覆盖状态（Issue #96）。拆分布局：建筑/陷阱实例宇宙可用
+///（`buildingUniverseAvailable`，universeSupplement 合成门禁）只证明 buildings/traps
+/// 的差集能力；全村庄完整分母必须「所有追踪类别建模 + 快照 section 完整」。
+/// 生产目录现状（仅 buildings/traps 有宇宙）→ 恒 partial + 诊断（fail-closed）。
+/// 与旧 `universeComplete` 的对应：旧字段把「建筑/陷阱宇宙可用」直接当作
+/// 「全村庄完整宇宙」证据（#96 病根）——本类型拆开两层语义。
+public enum ProgressUniverseCoverage: Hashable, Sendable {
+    /// 建筑/陷阱实例宇宙不可用：目录不可用 / 无宇宙数据 / TH 未知或越界 / 非 home。
+    case unavailable
+    /// 建筑/陷阱宇宙可用，但全村庄完整分母不成立。
+    /// missingSections：快照缺失的追踪 section（home 形态键；键存在即 present，
+    /// 空数组不算缺失——真实导出会输出空数组 key）。unmodeledCategories：
+    /// 目录无宇宙数据的追踪类别（TrackerCategory.from 映射，复用现有映射防漂移）。
+    case partial(missingSections: Set<String>, unmodeledCategories: Set<TrackerCategory>)
+    /// 全部追踪类别具备明确宇宙且快照 section 完整：允许完整分母。
+    case complete
+
+    /// 完整分母许可：仅 .complete 为 true（metrics/UI 唯一判定入口，防各自解释）。
+    public var isComplete: Bool { self == .complete }
+}
+
 /// 一个村庄、一个基地的完整投影。
 public struct VillageCatalogProjection: Sendable {
+    /// 全村庄进度追踪的 home section 集合（Issue #96 快照完整性契约）。
+    /// 与 TrackerCategory 九类别一一对应；BB（"2" 后缀）由决策 5 恒
+    /// unavailable，不参与检查（避免 BB 诊断噪音）。
+    private static let progressSections: Set<String> = [
+        "buildings", "traps", "units", "spells", "siege_machines",
+        "heroes", "equipment", "pets", "guardians",
+    ]
+
     public let villageID: UUID
     public let villageName: String
     public let base: TrackerBase
@@ -310,15 +339,11 @@ public struct VillageCatalogProjection: Sendable {
     public let compatibility: CatalogCompatibility
     public let items: [VillageItemState]
     public let diagnostics: [AccountDataDiagnostic]
-    /// Issue #70 阶段 2：宇宙是否完整可用——base == .home 且目录可用
-    ///（catalogIsUsable，评审 I1：版本不匹配/不可用时差集项基于不可信目录
-    /// 的 maxLevel/count 会污染投影）且目录含宇宙数据（instanceCounts）且
-    /// 快照已知大本营等级。true → 调用方可将 `VillageProgressProjection.metrics`
-    /// 的 completeDenominator 置 true（stage/global 分母 = known ∪ available
-    /// 宇宙差集，ready 可达）；false → 阶段 1 语义（partial + 「分母为已观测
-    /// 项目」文案）。
-    /// BB base 恒 false（决策 5：BB 数据源不可靠，不做宇宙）。
-    public let universeComplete: Bool
+    /// Issue #96：全村庄进度覆盖状态（唯一覆盖判定点）。生产门禁与判定逻辑见
+    /// `project()`；`universeSupplement` 合成门禁使用内部 `buildingUniverseAvailable`
+    ///（本字段的布尔前提），stage/global 完整分母用 `progressCoverage.isComplete`。
+    /// BB base 恒 .unavailable（决策 5：BB 数据源不可靠，不做宇宙）。
+    public let progressCoverage: ProgressUniverseCoverage
 
     /// 核心入口。投影规则见本类型 doc comment。
     ///
@@ -366,26 +391,46 @@ public struct VillageCatalogProjection: Sendable {
 
         // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
         let unlocks = PlayerUnlockLevels(snapshot: village.accountSnapshot)
-        // Issue #70 阶段 2：宇宙完整判定（评审 I1：必须含 catalogIsUsable——
-        // 目录不可用/版本不匹配时合成差集项会基于不可信目录的 maxLevel/count
-        // 污染投影，与 map() 的 fail-closed 对齐；catalogIsUsable 已在
-        // compatibility 解析后算出，此处直接复用）。BB 恒 false（决策 5）。
-        // 评审 B-1/I2：TH 超出宇宙表范围（> universeTownHallCount，如 TH19
-        // 上线后旧目录窗口期）时 universeCount 越界返回 nil → 完整分母建立在
-        // 空宇宙上、降级文案消失——TH 范围守卫与 universeCount 同源 fail-closed。
-        let universeComplete = base == .home
+        // Issue #96：拆分布局（原 Issue #70 阶段 2 的 universeComplete 判定）：
+        // 1) buildingUniverseAvailable —— 建筑/陷阱实例宇宙门禁（universeSupplement
+        //    唯一生产入口；含 catalogIsUsable 与 TH 范围守卫，同旧判定，BB 恒 false）；
+        // 2) progressCoverage —— 全村庄覆盖状态：在宇宙可用基础上，再要求
+        //    快照 9 个追踪 section 完整（键存在即 present，空数组不算缺失）且
+        //    目录对全部追踪类别建模了宇宙。生产目录（仅 buildings/traps 宇宙）
+        //    → 恒 .partial(unmodeledCategories) —— 诚实 fail-closed，不得宣称
+        //    「全村庄完整宇宙」（验收 1/2）。
+        let buildingUniverseAvailable = base == .home
             && catalogIsUsable
             && catalog?.hasUniverseData == true
             && unlocks.townHall.map { (1...GameCatalog.universeTownHallCount).contains($0) } ?? false
+        let progressCoverage: ProgressUniverseCoverage
+        if !buildingUniverseAvailable {
+            progressCoverage = .unavailable
+        } else if let snapshot = village.accountSnapshot {
+            let missingSections = Self.progressSections.subtracting(snapshot.objectSections.keys)
+            let unmodeledCategories = Set(TrackerCategory.allCases)
+                .subtracting(Set((catalog?.universeSections ?? []).compactMap(TrackerCategory.from)))
+            if missingSections.isEmpty && unmodeledCategories.isEmpty {
+                progressCoverage = .complete
+            } else {
+                progressCoverage = .partial(
+                    missingSections: missingSections,
+                    unmodeledCategories: unmodeledCategories
+                )
+            }
+        } else {
+            // 无快照 → TH 未知 → 宇宙不可用（与旧判定一致，fail-closed）。
+            progressCoverage = .unavailable
+        }
         let states = village.accountSnapshot.map { snapshot in
             // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
-            // universeComplete 守卫 = universeSupplement 的唯一生产入口门禁
-            //（目录不可信 / TH 未知或越界 / 旧目录 / BB → 不产出）。
+            // buildingUniverseAvailable 守卫 = universeSupplement 的唯一生产
+            // 入口门禁（目录不可信 / TH 未知或越界 / 旧目录 / BB → 不产出）。
             aggregate(records(
                 from: snapshot, catalog: catalog, base: base, now: now,
                 unlocks: unlocks, catalogIsUsable: catalogIsUsable,
                 seasonalPhases: seasonalPhases
-            )) + (universeComplete ? Self.universeSupplement(
+            )) + (buildingUniverseAvailable ? Self.universeSupplement(
                 snapshot: snapshot,
                 catalog: catalog,
                 unlocks: unlocks,  // 复用 project 已推导的解锁等级（评审 B-4）
@@ -402,7 +447,7 @@ public struct VillageCatalogProjection: Sendable {
             compatibility: compatibility,
             items: states,
             diagnostics: diagnostics,
-            universeComplete: universeComplete
+            progressCoverage: progressCoverage
         )
     }
 
@@ -835,7 +880,7 @@ public struct VillageCatalogProjection: Sendable {
     /// - base != .home、townHallLevel nil（快照缺大本营）、目录无宇宙数据
     ///   （旧目录）→ 恒返回 []（行为与阶段 1 完全一致）；
     /// - **调用方门禁**（评审 I1）：目录不可用/版本不匹配（catalogIsUsable
-    ///   false）时不得合成——生产唯一入口 `project()` 已由 universeComplete
+    ///   false）时不得合成——生产唯一入口 `project()` 已由 buildingUniverseAvailable
     ///   守卫（含 catalogIsUsable 与 TH 范围条件），本函数不重复检查该入参；
     /// - 宇宙键 section 以 "2" 结尾（BB 段）→ 跳过（决策 5：BB 不做宇宙）；
     /// - 宇宙 count <= 0（该 TH 不可建造）→ 跳过不产出（不变量）；

@@ -103,14 +103,16 @@ struct VillageDetailView: View {
             catalogIsUsable: projection.catalogIsUsable
         )
         // Issue #70：三指标（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
-        // 消费 trackedItems（含宇宙差集 .available），completeDenominator 按
-        // universeComplete 置位——宇宙完整时 stage/global 分母 = known ∪ 差集、
-        // 覆盖率为完整覆盖率；列表口径（displayItems）与指标口径分离（决策 3）。
+        // Issue #96：消费 trackedItems（含宇宙差集 .available），
+        // completeDenominator 按 progressCoverage.isComplete 置位——仅 .complete
+        // 时 stage/global 分母 = known ∪ 差集（完整分母）；partial/unavailable
+        // → 已观测口径；覆盖率为完整覆盖率；列表口径（displayItems）与指标
+        // 口径分离（决策 3）。
         let progressMetrics = VillageProgressProjection.metrics(
             from: trackedItems,
             catalogIsUsable: projection.catalogIsUsable,
             compatibility: projection.compatibility,
-            completeDenominator: projection.universeComplete
+            completeDenominator: projection.progressCoverage.isComplete
         )
         let statsByKey = Dictionary(
             uniqueKeysWithValues: VillageDetailProjection.completionStats(
@@ -152,7 +154,7 @@ struct VillageDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, now: now)
                 officialAPISection()
-                metricsBar(metrics: progressMetrics, completeDenominator: projection.universeComplete)
+                metricsBar(metrics: progressMetrics, completeDenominator: projection.progressCoverage.isComplete)
                 basePicker()
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
 

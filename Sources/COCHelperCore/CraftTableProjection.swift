@@ -140,6 +140,7 @@ public enum CraftTableProjection {
                 currentLevel: defense.level,
                 availability: seasonalPhases.availability(
                     forItemKey: "buildings:\(defense.dataID)",
+                    lifecycle: defenseSpec?.lifecycle,  // Issue #98：目录声明；无声明 nil → 查表/未配置
                     at: now
                 ),
                 modules: modules

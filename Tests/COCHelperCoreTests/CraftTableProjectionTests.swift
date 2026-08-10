@@ -20,8 +20,8 @@ final class CraftTableProjectionTests: XCTestCase {
         XCTAssertTrue(defenses.flatMap(\.modules).allSatisfy { $0.maxLevel == 10 })
         XCTAssertTrue(defenses.flatMap(\.modules).allSatisfy { $0.status == .recorded })
         XCTAssertTrue(
-            defenses.allSatisfy { $0.availability == .unconfigured },
-            "当前 103000011...013 未获官方精确日期，不得推断为活动"
+            defenses.allSatisfy { $0.availability == .permanent },
+            "103000011...013 在 lifecycle 声明中为 permanent，接线后不得推断为未配置"
         )
     }
 
@@ -238,6 +238,98 @@ final class CraftTableProjectionTests: XCTestCase {
         XCTAssertEqual(finished.remainingSeconds, 0)
         XCTAssertFalse(finished.isUpgrading)
         XCTAssertTrue(finished.needsReimport)
+    }
+
+    // MARK: - Issue #98 lifecycle: availability 接线
+
+    /// 精工防御快照（单防御，无模组）：dataID 用 103000008（bundled 声明
+    /// seasonalCandidate；测试目录自行声明 lifecycle，不依赖 bundled 数据）。
+    private func makeDefenseVillage(defense dataID: Int64) -> VillageProfile {
+        let defense = AccountItem(
+            id: "buildings:0.types.0",
+            section: "buildings",
+            dataID: dataID
+        )
+        let root = AccountItem(
+            id: "buildings:0",
+            section: "buildings",
+            dataID: BuildingDisplayCategoryRules.craftTableDataID,
+            types: [defense]
+        )
+        return VillageProfile(
+            name: "测试村庄",
+            accountSnapshot: AccountSnapshot(
+                tag: "#TEST",
+                capturedAt: nil,
+                importedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                ageSeconds: nil,
+                originalText: "",
+                objectSections: ["buildings": [root]],
+                numericSections: [:],
+                boosts: [:],
+                unknownTopLevelKeys: [],
+                diagnostics: []
+            )
+        )
+    }
+
+    /// 单防御测试目录（lifecycle 由用例注入；显式 init 是 Task 3 前置修复——
+    /// 合成 memberwise init 对 let 默认值省略参数，无法显式传 lifecycle）。
+    private func makeDefenseCatalog(lifecycle: CatalogLifecycle?) -> CraftTableCatalog {
+        CraftTableCatalog(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "test",
+            defenses: [CraftTableDefenseSpec(
+                dataID: 103_000_008, name: "测试防御", sourceName: "test",
+                specialAbility: "", moduleIDs: [], totalModuleLevelThresholds: [],
+                lifecycle: lifecycle
+            )],
+            modules: []
+        )
+    }
+
+    /// 验收 5：普通防御（catalog 声明 permanent）→ .permanent（空表也不降级）。
+    func testDefensePermanentLifecycle() {
+        let projected = CraftTableProjection.project(
+            village: makeDefenseVillage(defense: 103_000_008),
+            catalog: makeDefenseCatalog(lifecycle: .permanent),
+            base: .home,
+            seasonalPhases: .empty,
+            now: Date(timeIntervalSince1970: 1_500)
+        )
+        XCTAssertEqual(projected.first?.availability, .permanent)
+    }
+
+    /// 验收：seasonalCandidate + 阶段表命中 + now 注入活动期 → .seasonal(status: .active)。
+    func testDefenseSeasonalCandidatePhaseHit() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "crafted-defenses-test", name: "测试季",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["buildings:103000008"]),
+        ])
+        let projected = CraftTableProjection.project(
+            village: makeDefenseVillage(defense: 103_000_008),
+            catalog: makeDefenseCatalog(lifecycle: .seasonalCandidate),
+            base: .home,
+            seasonalPhases: table,
+            now: Date(timeIntervalSince1970: 1_500)
+        )
+        XCTAssertEqual(
+            projected.first?.availability,
+            .seasonal(phaseID: "crafted-defenses-test", phaseName: "测试季", status: .active))
+    }
+
+    /// 验收 6：lifecycle nil（旧目录）+ 阶段表未命中 → .unconfigured
+    ///（与 VillageCatalogProjection 的 lifecycle nil 语义一致，不漂移）。
+    func testDefenseWithoutLifecycleMissReturnsUnconfigured() {
+        let projected = CraftTableProjection.project(
+            village: makeDefenseVillage(defense: 103_000_008),
+            catalog: makeDefenseCatalog(lifecycle: nil),
+            base: .home,
+            seasonalPhases: .empty,
+            now: Date(timeIntervalSince1970: 1_500)
+        )
+        XCTAssertEqual(projected.first?.availability, .unconfigured)
     }
 
     private func fixtureVillage() throws -> VillageProfile {

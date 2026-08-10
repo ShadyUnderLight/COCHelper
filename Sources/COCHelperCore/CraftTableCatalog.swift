@@ -69,9 +69,29 @@ public struct CraftTableDefenseSpec: Codable, Hashable, Sendable, Identifiable {
     public let moduleIDs: [Int64]
     public let totalModuleLevelThresholds: [Int]
     /// Issue #98：生命周期声明（permanent / seasonalCandidate；nil = 旧数据未标注）。
-    /// 合成 memberwise init 自动带默认值 nil（现有调用点零改动）；
-    /// Codable 合成解码缺键 → nil（旧 craft_table_catalog.json 兼容）。
+    /// 显式 memberwise init：`lifecycle` 带默认值 nil（既有调用点零改动）——注意
+    /// Swift 合成 init 对「let 带默认值」的属性会省略参数（可省略但不可显式传），
+    /// 测试需要构造带 .seasonalCandidate 的 spec，故必须显式写（仿 CatalogItem
+    /// 模式）。Codable 合成解码缺键 → nil（旧 craft_table_catalog.json 兼容）。
     public let lifecycle: CatalogLifecycle?
+
+    public init(
+        dataID: Int64,
+        name: String,
+        sourceName: String,
+        specialAbility: String,
+        moduleIDs: [Int64],
+        totalModuleLevelThresholds: [Int],
+        lifecycle: CatalogLifecycle? = nil
+    ) {
+        self.dataID = dataID
+        self.name = name
+        self.sourceName = sourceName
+        self.specialAbility = specialAbility
+        self.moduleIDs = moduleIDs
+        self.totalModuleLevelThresholds = totalModuleLevelThresholds
+        self.lifecycle = lifecycle
+    }
 
     public var id: Int64 { dataID }
 }

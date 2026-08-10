@@ -3426,8 +3426,18 @@ final class VillageCatalogProjectionTests: XCTestCase {
         table: SeasonalPhaseTable,
         now: Date
     ) -> VillageCatalogProjection {
+        projectWithAvailability(village, catalog: syntheticCatalog, table: table, now: now)
+    }
+
+    /// Issue #98：指定目录的 availability 投影（lifecycle 用例注入带声明的目录）。
+    private func projectWithAvailability(
+        _ village: VillageProfile,
+        catalog: GameCatalog?,
+        table: SeasonalPhaseTable,
+        now: Date
+    ) -> VillageCatalogProjection {
         VillageCatalogProjection.project(
-            village: village, catalog: syntheticCatalog,
+            village: village, catalog: catalog,
             seasonalPhases: table, base: .home, now: now)
     }
 
@@ -3553,6 +3563,135 @@ final class VillageCatalogProjectionTests: XCTestCase {
                 XCTFail("迭代 \(iteration): 阶段命中条目聚合后必须是 seasonal")
             }
         }
+    }
+
+    // MARK: - Issue #98 lifecycle: availability 投影接线
+
+    /// Issue #98：带 lifecycle 声明的合成目录。syntheticCatalogJSON 无 lifecycle 键
+    ///（默认 nil = 旧目录语义，既有用例不变）；本 helper 供生命周期用例显式声明。
+    private func makeLifecycleCatalog(items: [CatalogItem]) -> GameCatalog {
+        GameCatalog(gameVersion: "18.400.13", items: items)
+    }
+
+    /// 单条目生命周期目录 item（home 建筑语义；dataID 避开 1000001 大本营读表冲突）。
+    private func makeLifecycleItem(
+        section: String,
+        dataID: Int64,
+        lifecycle: CatalogLifecycle?
+    ) -> CatalogItem {
+        CatalogItem(
+            section: section, category: "buildings", dataID: dataID, base: "home",
+            baseMissingReason: nil, name: "测试条目", maxLevel: 1,
+            icon: nil, levelVisual: nil, missingReason: nil,
+            lifecycle: lifecycle,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: 60, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+    }
+
+    /// 验收 1：目录条目声明 permanent → 空表也返回 .permanent（不因阶段表缺失降级）。
+    func testAvailabilityPermanentItemReturnsPermanent() throws {
+        let catalog = makeLifecycleCatalog(items: [
+            makeLifecycleItem(section: "buildings", dataID: 7_700_000, lifecycle: .permanent),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 7_700_000, level: 1, path: "0")],
+        ])
+        let home = projectWithAvailability(
+            village, catalog: catalog, table: .empty, now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 7_700_000 })
+        XCTAssertEqual(item.availability, .permanent)
+    }
+
+    /// 验收：permanent 声明优先——条目在阶段表活动期也返回 .permanent（声明赢）。
+    func testAvailabilityPermanentWinsOverPhaseHit() throws {
+        let catalog = makeLifecycleCatalog(items: [
+            makeLifecycleItem(section: "buildings", dataID: 103_000_000, lifecycle: .permanent),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+        ])
+        // makeAvailabilityPhases：阶段 1000..<2000 活动期，now=1500 命中。
+        let home = projectWithAvailability(
+            village, catalog: catalog, table: makeAvailabilityPhases(),
+            now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+        XCTAssertEqual(item.availability, .permanent,
+                       "阶段表命中不得覆盖 permanent 声明")
+    }
+
+    /// 验收 2：seasonalCandidate + 阶段命中 → 三态边界
+    ///（复用 makeAvailabilityPhases：1000..<2000，now=999/1500/3000 → notStarted/active/ended）。
+    func testAvailabilitySeasonalCandidateThreeBoundaries() throws {
+        let catalog = makeLifecycleCatalog(items: [
+            makeLifecycleItem(section: "buildings", dataID: 103_000_000, lifecycle: .seasonalCandidate),
+        ])
+        let cases: [(Double, SeasonalStatus)] = [
+            (999, .notStarted), (1_500, .active), (3_000, .ended),
+        ]
+        for (seconds, expected) in cases {
+            let village = makeVillage(objectSections: [
+                "buildings": [makeItem(section: "buildings", dataID: 103_000_000, level: 1, path: "0")],
+            ])
+            let home = projectWithAvailability(
+                village, catalog: catalog, table: makeAvailabilityPhases(),
+                now: Date(timeIntervalSince1970: seconds))
+            let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+            guard case .seasonal(let phaseID, _, let status) = item.availability else {
+                XCTFail("now=\(seconds): seasonalCandidate 命中阶段必须是 seasonal")
+                continue
+            }
+            XCTAssertEqual(phaseID, "crafted-defenses-1", "now=\(seconds)")
+            XCTAssertEqual(status, expected, "now=\(seconds)")
+        }
+    }
+
+    /// 验收 3：seasonalCandidate + 阶段表未命中 → .unconfigured（已知限时但数据缺失，
+    /// 不得误报永久）。
+    func testAvailabilitySeasonalCandidatePhaseMissingReturnsUnconfigured() throws {
+        let catalog = makeLifecycleCatalog(items: [
+            makeLifecycleItem(section: "buildings", dataID: 7_700_001, lifecycle: .seasonalCandidate),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 7_700_001, level: 1, path: "0")],
+        ])
+        let home = projectWithAvailability(
+            village, catalog: catalog, table: makeAvailabilityPhases(),
+            now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 7_700_001 })
+        XCTAssertEqual(item.availability, .unconfigured)
+    }
+
+    /// 回归保护：嵌套模组（.types. 路径）不参与目录 join → lifecycle nil；阶段表
+    /// 命中其 itemKey → .seasonal（主目录不 join 不得丢失限时标注）。
+    func testAvailabilityNestedModulePhaseHitReturnsSeasonal() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings", dataID: 103_000_000, level: 1, path: "0.types.0")],
+        ])
+        let home = projectWithAvailability(
+            village, table: makeAvailabilityPhases(), now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+        XCTAssertEqual(
+            item.availability,
+            .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .active),
+            "嵌套项不 join（lifecycle nil），阶段命中仍必须 seasonal")
+    }
+
+    /// 验收 4：旧目录（lifecycle nil）+ 阶段表未命中 → .unconfigured（保守降级，
+    /// 与 testAvailabilityUnconfiguredByDefault 同语义、显式标注 lifecycle nil 路径）。
+    func testAvailabilityLegacyCatalogWithoutLifecycleReturnsUnconfigured() throws {
+        // syntheticCatalog 条目全部无 lifecycle 声明（旧目录语义）。
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "0")],
+        ])
+        let home = projectWithAvailability(
+            village, table: .empty, now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 1_000_001 })
+        XCTAssertEqual(item.availability, .unconfigured)
     }
 
     // MARK: - Issue #70 阶段 2：宇宙差集（.available 合成项）

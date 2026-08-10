@@ -138,6 +138,10 @@ def test_lifecycle_for_known_and_unknown():
         ({"schemaVersion": 1, "items": {"a:1": "permanent"}}, "条目非法"),
         # lifecycle 未知值（闭枚举外）
         ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "other"}}}, "未知值"),
+        # JSON 语法错误（原始串，非 json.dumps 产物）→ CatalogError
+        ("{not json", "解析失败"),
+        # 顶层非 dict（如列表）→ CatalogError
+        ([1, 2], "schemaVersion"),
     ],
 )
 def test_load_declarations_failure_paths(monkeypatch, tmp_path, content, message_fragment):
@@ -147,7 +151,11 @@ def test_load_declarations_failure_paths(monkeypatch, tmp_path, content, message
         path = tmp_path / "missing_lifecycle_declarations.json"  # 不存在
     else:
         path = tmp_path / "declarations.json"
-        path.write_text(json.dumps(content), encoding="utf-8")
+        if isinstance(content, str):
+            # JSON 语法错误用例：原始内容直接写入（不经过 json.dumps）
+            path.write_text(content, encoding="utf-8")
+        else:
+            path.write_text(json.dumps(content), encoding="utf-8")
     monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
     with pytest.raises(CatalogError) as ei:
         load_declarations()

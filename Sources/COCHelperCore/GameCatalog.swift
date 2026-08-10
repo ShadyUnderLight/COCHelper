@@ -393,7 +393,7 @@ public enum SeasonalStatus: String, Codable, Hashable, Sendable {
 }
 
 /// Issue #98：条目生命周期声明（目录事实；来源 = Tools/game_catalog/lifecycle_declarations.json）。
-/// nil = 旧目录/未标注（保守降级 unconfigured）。
+/// nil = 旧目录/未标注（阶段表命中仍可 seasonal；未命中 → unconfigured）。
 public enum CatalogLifecycle: String, Codable, Hashable, Sendable {
     /// 永久内容（详情页不显示阶段标记）。
     case permanent

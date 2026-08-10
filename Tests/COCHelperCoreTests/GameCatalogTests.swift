@@ -1169,7 +1169,7 @@ final class GameCatalogTests: XCTestCase {
     func testAvailabilityPermanentAnyDate() {
         XCTAssertEqual(
             SeasonalPhaseTable.empty.availability(
-                forItemKey: "a:1", lifecycle: .permanent, at: Date()),
+                forItemKey: "a:1", lifecycle: .permanent, at: Date(timeIntervalSince1970: 1_500)),
             .permanent)
     }
 
@@ -1189,7 +1189,7 @@ final class GameCatalogTests: XCTestCase {
     /// lifecycle=nil + 表未命中 → .unconfigured（旧目录保守降级）。
     func testAvailabilityNilMissReturnsUnconfigured() {
         XCTAssertEqual(
-            SeasonalPhaseTable.empty.availability(forItemKey: "a:1", lifecycle: nil, at: Date()),
+            SeasonalPhaseTable.empty.availability(forItemKey: "a:1", lifecycle: nil, at: Date(timeIntervalSince1970: 1_500)),
             .unconfigured)
     }
 

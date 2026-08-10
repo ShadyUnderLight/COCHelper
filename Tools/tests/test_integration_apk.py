@@ -41,6 +41,13 @@ def _run_generate(out: Path) -> None:
                         "--game-version", "18.400.13"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+    # Issue #98 复审 P1：完整两步生成链——craft 表生成器登记 manifest 条目
+    #（validator 强制条目存在；主生成器自检豁免，独立校验强制）
+    r = subprocess.run([sys.executable, str(TOOLS / "generate_craft_table_catalog.py"),
+                        "--apk", str(APK), "--game-version", "18.400.13",
+                        "--output", str(out / "craft_table_catalog.json")],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
 
 
 @pytest.fixture(scope="module")

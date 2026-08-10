@@ -287,6 +287,13 @@ def real_instance_counts():
          "--apk", str(APK), "--output", str(out), "--game-version", "18.400.13"],
         capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+    # Issue #98 复审 P1：完整两步生成链（craft 生成器登记 manifest 条目）
+    r = subprocess.run(
+        [sys.executable, str(TOOLS / "generate_craft_table_catalog.py"),
+         "--apk", str(APK), "--game-version", "18.400.13",
+         "--output", str(out / "craft_table_catalog.json")],
+        capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
     from game_catalog.validate import validate_catalog
     assert validate_catalog(out) == [], "真实 APK 生成结果未通过 validate"
     data = json.loads((out / "catalog.json").read_text(encoding="utf-8"))

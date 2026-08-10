@@ -60,6 +60,18 @@ def test_validate_cli_success(full_minimal_apk, tmp_path):
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
+    # Issue #98 复审 P1：合成 APK 无 seasonal_defense 表（craft 生成器不可跑），
+    # 手工模拟 craft 生成器登记（写 craft 文件 + manifest 条目）——CLI validator
+    # 默认强制 craft 条目存在，完整链产物必须配套。
+    import hashlib, json
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     r = _run([str(TOOLS / "validate_game_catalog.py"), "--catalog", str(out)])
     assert r.returncode == 0, r.stderr
     assert "verdict: OK" in r.stdout

@@ -134,30 +134,29 @@ def build_catalog(apk: Path, game_version: str) -> dict[str, object]:
 
 
 def _update_manifest_craft_entry(output_dir: Path, craft_bytes: bytes) -> None:
-    """把 craft_table_catalog.json 条目写入同目录 manifest（幂等）。
+    """把 craft_table_catalog.json 条目写入同目录 manifest（幂等，fail loud）。
 
-    Issue #98 审核 P1-2：CraftTableCatalog.loadBundled 运行时对账 manifest 中
-    craft 条目的 sha256/size（fail-closed）；manifest 缺该条目即视为目录不可用。
-    生成器写盘后必须同步登记，否则重新生成后的 bundle 会精制台不可用。
-    manifest 缺失/损坏时静默跳过（由 validate 在生成后自检兜底）。
+    Issue #98 审核 P1-2 + 复审 P1：CraftTableCatalog.loadBundled 运行时对账
+    manifest 中 craft 条目的 sha256/size（缺条目 → fail-closed 目录不可用）。
+    因此登记失败（manifest 缺失/损坏/结构非法）必须 raise 而非告警继续——
+    "生成成功但运行时不可用"的三方不一致由生成器前置拦截：main 在登记成功前
+    不写 craft 文件（先登记后写盘，失败不留成功状态产物）。
     """
     import hashlib
 
+    from game_catalog.errors import CatalogError
+
     manifest_path = output_dir / "manifest.json"
     if not manifest_path.is_file():
-        print("warning: manifest.json 不存在，无法登记 craft_table_catalog.json"
-              "（CraftTableCatalog.loadBundled 将 fail-closed 视为目录不可用）",
-              file=sys.stderr)
-        return
+        raise CatalogError(
+            f"manifest.json 不存在（无法登记 craft 条目；"
+            f"请先运行 generate_game_catalog.py 生成目录）: {manifest_path}")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, ValueError):
-        print("warning: manifest.json 损坏，跳过 craft 条目登记"
-              "（CraftTableCatalog.loadBundled 将 fail-closed 视为目录不可用）",
-              file=sys.stderr)
-        return
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        raise CatalogError(f"manifest.json 损坏（无法登记 craft 条目）: {manifest_path}: {exc}")
     if not isinstance(manifest, dict) or not isinstance(manifest.get("generatedFiles"), list):
-        print("warning: manifest.json 结构非法，跳过 craft 条目登记", file=sys.stderr)
+        raise CatalogError(f"manifest.json 结构非法（无法登记 craft 条目）: {manifest_path}")
         return
     entry = {
         "path": "craft_table_catalog.json",
@@ -185,12 +184,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
 
-    payload = build_catalog(args.apk, args.game_version)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    craft_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
-    args.output.write_bytes(craft_bytes)
-    # Issue #98 审核 P1-2：同目录 manifest 登记 craft 条目（幂等，缺 manifest 跳过）
-    _update_manifest_craft_entry(args.output.parent, craft_bytes)
+    from game_catalog.errors import CatalogError
+
+    try:
+        payload = build_catalog(args.apk, args.game_version)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        craft_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+        # Issue #98 复审 P1：先登记 manifest 再写 craft 文件——登记失败（manifest
+        # 缺失/损坏）时非零退出且不留下"成功状态产物"（craft 文件未写入）。
+        _update_manifest_craft_entry(args.output.parent, craft_bytes)
+        args.output.write_bytes(craft_bytes)
+    except CatalogError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     print(
         "wrote",
         len(payload["defenses"]),

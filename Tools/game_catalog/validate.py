@@ -221,8 +221,17 @@ def _check_rendered_path(
             errors.append(f"renderedPath 指向的文件不是合法 PNG: {rp} ({context})")
 
 
-def validate_catalog(dir_path: str | Path) -> list[str]:
-    """校验目录。返回 error 列表（空=通过）。"""
+def validate_catalog(dir_path: str | Path,
+                     require_craft_entry: bool = True) -> list[str]:
+    """校验目录。返回 error 列表（空=通过）。
+
+    require_craft_entry：是否强制 manifest 含 craft_table_catalog.json 条目
+    （Issue #98 复审 P1）。默认 True（独立校验/CI 必须强制——缺条目时 App
+    运行时 fail-closed 精制台不可用，"validator 绿色但运行时不可用"的三方
+    不一致不允许放行）。**两步生成链例外**：generate_game_catalog.py 的自检
+    传 False——craft 表是独立生成器（generate_craft_table_catalog.py）的
+    产物，主生成器运行时条目尚未登记（登记由 craft 生成器幂等补写）。
+    """
     errors: list[str] = []
     d = Path(dir_path)
     manifest_path = d / "manifest.json"
@@ -269,6 +278,19 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
     if not isinstance(gen, list):
         errors.append("manifest 缺少 generatedFiles")
     else:
+        # Issue #98 复审 P1：craft 目录条目必须存在——CraftTableCatalog.
+        # loadBundled 运行时对账该条目的 sha256/size（缺失 → fail-closed 返回
+        # nil → 精制台不可用）。validator 若放行"无 craft 条目"的 manifest，
+        # 会出现"生成成功 / validator 绿色 / 运行时不可用"的三方不一致。
+        # 强制恰好一个有效条目（fail loud 前置，旧产物缺失时推动重新生成）。
+        # require_craft_entry=False 仅用于主生成器自检（两步生成链中间态）。
+        if require_craft_entry:
+            craft_entries = [e for e in gen
+                             if isinstance(e, dict) and e.get("path") == "craft_table_catalog.json"]
+            if len(craft_entries) != 1:
+                errors.append(
+                    "manifest 必须恰好包含一个 craft_table_catalog.json 条目"
+                    "（缺失或重复：CraftTableCatalog.loadBundled 将 fail-closed）")
         seen_files = set()
         registered = set()
         for entry in gen:

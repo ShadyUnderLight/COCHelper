@@ -115,10 +115,10 @@ public enum BattleModifierText {
     /// Issue #99）；minusOne→传奇杯1；minusTwo→传奇杯2；minusThree→传奇杯3（官方简中
     /// 数字写法，与 league_tier_catalog 静态数据一致）；未知非空 → 原样返回（可审计 fallback）。
     public static func localizedText(for raw: String?) -> String? {
-        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        switch raw {
+        guard let raw else { return nil }
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        switch normalized {
         case "none":
             return nil
         case "hardMode":
@@ -130,7 +130,7 @@ public enum BattleModifierText {
         case "minusThree":
             return "传奇杯3"
         default:
-            return raw
+            return normalized
         }
     }
 }

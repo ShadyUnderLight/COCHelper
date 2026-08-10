@@ -334,7 +334,8 @@ struct VillageDetailView: View {
             metricRow(metrics.globalProgress, title: "全局养成进度")
             // Issue #96：覆盖率分母随覆盖状态三分支变化——complete 时含宇宙
             // 差集（已观测占全部可建造）；partial 时差集仅覆盖建筑/陷阱
-            //（分母 = 已观测 ∪ 建筑/陷阱差集，即「已建模可建造」）；unavailable
+            //（分母 = 全部类别已观测 ∪ 建筑/陷阱差集；未建模类别只计观测，
+            // 不得称为「已建模可建造」——P1 口径契约，见 helpText）；unavailable
             // 无差集（纯已观测）——help 文案必须跟随口径，否则误导（验收 3）。
             metricRow(metrics.snapshotCoverage, title: "观测数据完整性")
                 .help(helpText(for: coverage))

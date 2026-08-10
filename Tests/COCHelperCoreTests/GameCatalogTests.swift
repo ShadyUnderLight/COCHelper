@@ -1471,6 +1471,46 @@ final class RequirementTests: XCTestCase {
         XCTAssertEqual(item.requirements, [.townHall(level: 12)])
     }
 
+    // MARK: - 铁匠铺门槛（Issue #97）
+
+    /// blacksmith requirement 的 requiredLevel 直通门槛等级。
+    func testBlacksmithRequiredLevel() {
+        XCTAssertEqual(UpgradeRequirement.blacksmith(level: 3).requiredLevel, 3)
+    }
+
+    /// equipment + requiredBlacksmithLevel > 0 → .blacksmith requirement；
+    /// == 0（源数据无门槛）→ 不产生 requirement（仿 heroHall ht > 0 防御）。
+    func testEquipmentBlacksmithRequirements() {
+        let item = makeRequirementItem(
+            section: "equipment", base: "home", th: nil, lab: nil, tavern: nil, blacksmith: 3
+        )
+        XCTAssertEqual(item.requirements, [.blacksmith(level: 3)])
+        let noGate = makeRequirementItem(
+            section: "equipment", base: "home", th: nil, lab: nil, tavern: nil, blacksmith: 0
+        )
+        XCTAssertEqual(noGate.requirements, [])
+    }
+
+    /// 旧目录（无 requiredBlacksmithLevel 键）仍可解码（Codable 向后兼容），
+    /// 缺键 → nil → equipment 无 requirement。
+    func testLegacyLevelDecodesWithoutBlacksmithField() throws {
+        let json = """
+        {"gameVersion":"v","items":[
+          {"section":"equipment","category":"equipment","dataID":90000000,"base":"home",
+           "name":"野蛮人木偶","maxLevel":1,"icon":null,"levelVisual":null,
+           "baseMissingReason":null,"missingReason":null,
+           "levels":[
+             {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,
+              "requiredTownHallLevel":null,"requiredLaboratoryLevel":null,
+              "icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"}
+           ]}
+        ]}
+        """
+        let payload = try JSONDecoder().decode(Payload.self, from: Data(json.utf8))
+        XCTAssertNil(payload.items[0].levels[0].requiredBlacksmithLevel)
+        XCTAssertEqual(payload.items[0].requirements, [])
+    }
+
     // MARK: - displayLabel / displayLabels（Issue #68 Task 3）
 
     /// home/其他 base：townHall → 大本营、laboratory → 实验室、heroHall → 英雄殿堂；
@@ -1510,16 +1550,31 @@ final class RequirementTests: XCTestCase {
         XCTAssertEqual(UpgradeRequirement.townHall(level: 12).displayLabel(base: nil), "所需大本营等级 12级")
     }
 
+    /// 铁匠铺语义固定，不随 base 变（与 heroHall 同先例）。
+    func testBlacksmithDisplayLabel() {
+        XCTAssertEqual(UpgradeRequirement.blacksmith(level: 7).displayLabel(base: "home"), "所需铁匠铺等级 7级")
+        XCTAssertEqual(UpgradeRequirement.blacksmith(level: 7).displayLabel(base: "builder"), "所需铁匠铺等级 7级")
+        XCTAssertEqual(UpgradeRequirement.blacksmith(level: 7).displayLabel(base: nil), "所需铁匠铺等级 7级")
+    }
+
     private struct Payload: Decodable { let gameVersion: String; let items: [CatalogItem] }
 
-    private func makeRequirementItem(base: String?, th: Int?, lab: Int?, tavern: Int?) -> CatalogItem {
+    private func makeRequirementItem(
+        section: String = "heroes",
+        base: String?,
+        th: Int?,
+        lab: Int?,
+        tavern: Int?,
+        blacksmith: Int? = nil
+    ) -> CatalogItem {
         CatalogItem(
-            section: "heroes", category: "heroes", dataID: 1, base: base,
+            section: section, category: "heroes", dataID: 1, base: base,
             baseMissingReason: nil, name: "测试", maxLevel: 2, icon: nil, levelVisual: nil,
             levels: [CatalogLevel(
                 level: 2, durationSeconds: nil, upgradeCosts: nil,
                 requiredTownHallLevel: th, requiredLaboratoryLevel: lab,
-                requiredHeroTavernLevel: tavern, icon: nil, levelVisual: nil, missingReason: nil
+                requiredHeroTavernLevel: tavern, requiredBlacksmithLevel: blacksmith,
+                icon: nil, levelVisual: nil, missingReason: nil
             )]
         )
     }
@@ -1552,6 +1607,29 @@ final class RequirementTests: XCTestCase {
                 86,
                 "tavern=8 时英雄阶段上限应为 86（tavern 门槛 9+ 不满足）"
             )
+    }
+
+    /// 真实 bundled 目录：野蛮人木偶（equipment 90000000）铁匠铺门槛真实锚点——
+    /// BS=1 → 阶段上限 9（lvl10 需 BS3）；BS=7 满足全部门槛（lvl16-18 需 BS7）→
+    /// 全局满级 18。目录升级时锚点主动红，防「BS 门槛被忽略 → 误判全局满级」回归。
+    func testBundledEquipmentBlacksmithAnchor() throws {
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let puppet = try XCTUnwrap(catalog.item(section: "equipment", dataID: 90_000_000))
+        XCTAssertEqual(puppet.maxLevel, 18, "全局上限锚点")
+        XCTAssertEqual(
+            VillageCatalogProjection.currentStageMaxLevel(
+                for: puppet, unlocks: PlayerUnlockLevels(blacksmith: 1)
+            ),
+            9,
+            "BS=1 时装备阶段上限应为 9（lvl10 需 BS3 不满足）"
+        )
+        XCTAssertEqual(
+            VillageCatalogProjection.currentStageMaxLevel(
+                for: puppet, unlocks: PlayerUnlockLevels(blacksmith: 7)
+            ),
+            18,
+            "BS=7 满足全部门槛（lvl16-18 需 BS7）→ 阶段上限 == 全局上限"
+        )
     }
 
 }

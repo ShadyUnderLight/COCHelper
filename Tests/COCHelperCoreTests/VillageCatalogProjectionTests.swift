@@ -110,9 +110,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
         {"section":"equipment","category":"equipment","dataID":90000000,"base":"home","name":"野蛮人木偶","maxLevel":3,
          "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
          "levels":[
-           {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
-           {"level":2,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
-           {"level":3,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"}
+           {"level":1,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredBlacksmithLevel":1,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
+           {"level":2,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredBlacksmithLevel":2,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"},
+           {"level":3,"durationSeconds":null,"upgradeResource":null,"upgradeCost":null,"requiredTownHallLevel":null,"requiredLaboratoryLevel":null,"requiredBlacksmithLevel":3,"icon":null,"levelVisual":null,"missingReason":"no_direct_upgrade_time"}
          ]},
         {"section":"heroes","category":"heroes","dataID":28000000,"base":"home","name":"野蛮人之王","maxLevel":10,
          "icon":null,"levelVisual":null,"baseMissingReason":null,"missingReason":null,
@@ -886,8 +886,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
         var rng = SeededRNG(seed: 99)
         let sections = ["units", "buildings", "helpers", "traps2", "equipment"]
         // 加农炮用 1000002（stageCatalog）：pool 不含任何解锁建筑（1000001/1000007/
-        // 1000071/1000034/1000046）→ 所有 requirement 型 item 阶段上限不可计算 →
-        // 回退全局 maxLevel，oracle 保持 level >= maxLevel 判定（见 stageCatalogJSON 注释）。
+        // 1000071/1000034/1000046/1000070）→ 所有 requirement 型 item（含 Issue #97
+        // 起带 .blacksmith 门槛的 equipment）阶段上限不可计算 → 回退全局 maxLevel，
+        // oracle 保持 level >= maxLevel 判定（见 stageCatalogJSON 注释）。
         let pool: [Int64] = [4_000_000, 1_000_002, 93_000_000, 12_000_010, 90_000_000]
         // stageCatalog 收录键（section, dataID, base）：oracle 独立于输出状态计算。
         // stageCatalog 有 6 项，pool 涉及 4 项：units 4000000(home)、buildings 1000002(home)、
@@ -922,7 +923,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
                     } else if item.currentStageMaxLevel == nil {
                         // pool 不含解锁建筑 → 有 requirement 的 item 阶段上限不可计算
                         // → unverified（Issue #67 fail-closed，取代旧的「回退全局」语义）。
-                        // equipment 等无 requirement item 的 stageMax == maxLevel（可计算）。
+                        // equipment 自 Issue #97 起带 .blacksmith 门槛 → 同样不可计算。
                         expected = .unverified
                     } else if item.currentLevel ?? -1 >= (item.currentStageMaxLevel ?? .max) {
                         expected = .maxed
@@ -2400,6 +2401,61 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(cannon.status, .unverified, "缺 BH 记录 → unverified，主村大本营不替代")
     }
 
+    // MARK: - 铁匠铺门槛（Issue #97）
+
+    /// 铁匠铺门槛（requiredBlacksmithLevel）：BS=2 → 阶段上限 = 2（lvl3 需 BS3 不满足）；
+    /// 装备 2 级 == 阶段上限 → 阶段满级（maxLevel 3 全局未满）。
+    func testStageMaxLevelHonorsBlacksmithGate() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_070, level: 2, path: "0")],  // 铁匠铺
+            "equipment": [makeItem(section: "equipment", dataID: 90_000_000, level: 2, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let puppet = try XCTUnwrap(home.items.first { $0.dataID == 90_000_000 })
+        XCTAssertEqual(puppet.currentStageMaxLevel, 2, "lvl1 需 BS1/lvl2 需 BS2 满足；lvl3 需 BS3 不满足")
+        XCTAssertEqual(puppet.maxLevel, 3)
+        XCTAssertEqual(puppet.status, .maxed)
+        XCTAssertLessThan(puppet.currentStageMaxLevel ?? .max, puppet.maxLevel ?? .min)
+    }
+
+    /// 快照无铁匠铺 → 装备阶段上限不可计算 → unverified（fail-closed，
+    /// 不得把装备判成全局满级或未满级，Issue #97 验收「缺失不伪推」）。
+    func testMissingBlacksmithBecomesUnverified() throws {
+        let village = makeVillage(objectSections: [
+            "equipment": [makeItem(section: "equipment", dataID: 90_000_000, level: 2, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let puppet = try XCTUnwrap(home.items.first)
+        XCTAssertNil(puppet.currentStageMaxLevel)
+        XCTAssertEqual(puppet.status, .unverified)
+    }
+
+    /// 铁匠铺 3 级满足全部门槛（lvl3 需 BS3）→ stage == 3 == 全局 maxLevel。
+    func testHighBlacksmithStageEqualsGlobalMax() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_070, level: 3, path: "0")],  // 铁匠铺
+            "equipment": [makeItem(section: "equipment", dataID: 90_000_000, level: 3, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let puppet = try XCTUnwrap(home.items.first { $0.dataID == 90_000_000 })
+        XCTAssertEqual(puppet.currentStageMaxLevel, 3)
+        XCTAssertEqual(puppet.maxLevel, 3)
+        XCTAssertEqual(puppet.status, .maxed)
+    }
+
+    /// 跨建筑不替代：主村大本营 12 级不能替代铁匠铺（blacksmith 解锁缺失
+    /// → 装备阶段上限不可计算 → unverified，fail-closed）。
+    func testHomeTownHallDoesNotSatisfyBlacksmith() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 12, path: "0")],
+            "equipment": [makeItem(section: "equipment", dataID: 90_000_000, level: 2, path: "0")],
+        ])
+        let home = project(village: village, catalog: stageCatalog, base: .home)
+        let puppet = try XCTUnwrap(home.items.first { $0.dataID == 90_000_000 })
+        XCTAssertNil(puppet.currentStageMaxLevel)
+        XCTAssertEqual(puppet.status, .unverified, "缺铁匠铺记录 → unverified，大本营不替代")
+    }
+
     /// 聚合传播：同键非升级记录聚合后 currentStageMaxLevel 保留 first 值（Task 4 会
     /// 在 VillageDetailProjectionTests 加专项测试，这里先锁定字段不丢）。
     func testAggregatedStatePreservesStageMaxLevel() throws {
@@ -2569,6 +2625,78 @@ final class VillageCatalogProjectionTests: XCTestCase {
             let higherMax = VillageCatalogProjection.currentStageMaxLevel(for: item, unlocks: higherUnlocks)
             if let higherMax {
                 XCTAssertGreaterThanOrEqual(higherMax, unwrapped, "解锁提升 → 阶段上限不减")
+            }
+        }
+    }
+
+    /// Property：装备 currentStageMaxLevel 铁匠铺不变量（固定种子 SeededRNG，零依赖）。
+    /// - 1) 可计算时 currentStageMaxLevel <= maxLevel；
+    /// - 2) 铁匠铺 >= 各级最大 BS 门槛 → currentStageMaxLevel == maxLevel；
+    /// - 3) 存在 BS 门槛（> 0）且铁匠铺缺失 → nil（不可计算）；
+    /// - 4) 铁匠铺等级单调不减提升 → 阶段上限不减。
+    func testPropertyBlacksmithStageMaxInvariants() {
+        var rng = SeededRNG(seed: 10_202_608)
+        for _ in 0..<200 {
+            // 随机 levels：升序 level 1...N（目录契约），BS 门槛单调不减，随机 maxLevel。
+            let levelCount = Int.random(in: 2...12, using: &rng)
+            var bsGate = 0
+            var levels: [CatalogLevel] = []
+            for level in 1...levelCount {
+                // 门槛单调：30% 概率提升 1-3 级
+                if Int.random(in: 0..<10, using: &rng) < 3 {
+                    bsGate += Int.random(in: 1...3, using: &rng)
+                }
+                levels.append(CatalogLevel(
+                    level: level,
+                    durationSeconds: nil,
+                    upgradeCosts: nil,
+                    requiredTownHallLevel: nil,
+                    requiredLaboratoryLevel: nil,
+                    requiredHeroTavernLevel: nil,
+                    requiredBlacksmithLevel: level == 1 ? nil : bsGate,  // level 1 初始无门槛
+                    icon: nil,
+                    levelVisual: nil,
+                    missingReason: nil
+                ))
+            }
+            let item = CatalogItem(
+                section: "equipment", category: "equipment", dataID: 90_000_000,
+                base: "home", baseMissingReason: nil, name: "随机装备", maxLevel: levelCount,
+                icon: nil, levelVisual: nil, levels: levels
+            )
+            let maxGate = levels.map { $0.requiredBlacksmithLevel ?? 0 }.max() ?? 0
+
+            // 随机铁匠铺等级：0（缺失）或 1...maxGate+5
+            let bs = Int.random(in: 0...(maxGate + 5), using: &rng)
+            let unlocks = PlayerUnlockLevels(
+                townHall: nil, builderHall: nil, laboratory: nil, starLaboratory: nil, heroHall: nil,
+                blacksmith: bs == 0 ? nil : bs
+            )
+
+            let stageMax = VillageCatalogProjection.currentStageMaxLevel(for: item, unlocks: unlocks)
+
+            if bs == 0 {
+                // 不变量 3：存在 BS 门槛（> 0）且铁匠铺缺失 → nil
+                if levels.contains(where: { ($0.requiredBlacksmithLevel ?? 0) > 0 }) {
+                    XCTAssertNil(stageMax, "存在门槛但铁匠铺缺失 → 不可计算")
+                }
+                continue
+            }
+            let unwrapped = try! XCTUnwrap(stageMax)
+            // 不变量 1
+            XCTAssertLessThanOrEqual(unwrapped, item.maxLevel, "阶段上限不得超过全局上限")
+            // 不变量 2
+            if bs >= maxGate {
+                XCTAssertEqual(unwrapped, item.maxLevel, "门槛全满足 → 阶段上限 == 全局上限")
+            }
+            // 不变量 4：BS+1 → 阶段上限不减（对 bs < maxGate 且 bs > 0 的情形）
+            let higherUnlocks = PlayerUnlockLevels(
+                townHall: nil, builderHall: nil, laboratory: nil, starLaboratory: nil, heroHall: nil,
+                blacksmith: bs + 1
+            )
+            let higherMax = VillageCatalogProjection.currentStageMaxLevel(for: item, unlocks: higherUnlocks)
+            if let higherMax {
+                XCTAssertGreaterThanOrEqual(higherMax, unwrapped, "铁匠铺提升 → 阶段上限不减")
             }
         }
     }

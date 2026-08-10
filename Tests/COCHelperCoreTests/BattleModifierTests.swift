@@ -37,13 +37,16 @@ final class BattleModifierTests: XCTestCase {
     /// Property-based fuzz：localizedText 显示层不变式（确定性 fixed seed）。
     /// 断言四类契约：
     /// - 已知 key → 官方简中术语（防文案回退到旧术语）
-    /// - 未知非空 → 恒等回退（可审计 fallback）
+    /// - 未知非空（无首尾空白）→ 恒等回退（可审计 fallback）
     /// - nil / "none" / 空白变体 → nil（UI 隐藏）
     /// - 输出卫生：非 nil 输出必为非空白串
+    /// 注：带首尾空白的未知值回退为 trim 后原样（Issue #100 语义），
+    /// 不属于本 fuzz 的恒等断言域，由 testLocalizedTextUnknownTrimmedFallback
+    /// 与 testLocalizedTextPropertyRandomWhitespace 覆盖。
     func testLocalizedTextPropertiesFuzz() {
         let knownKeys = ["hardMode", "minusOne", "minusTwo", "minusThree"]
         let knownTerms = ["锦标赛模式", "传奇杯1", "传奇杯2", "传奇杯3"]
-        let unknownPool = ["futureX", "tournament", "unknownRule", "MINUS_ONE", "hardmode", " hardMode"]
+        let unknownPool = ["futureX", "tournament", "unknownRule", "MINUS_ONE", "hardmode"]
         let whitespacePool = ["", " ", "\t", "\n", " \n\t ", "\r\n"]
         var r = LCG(seed: 0x5EED_0B5E_0000_0000) // "seed"（与 #72 的 battle seed 区分）
         for _ in 0..<500 {
@@ -59,18 +62,19 @@ final class BattleModifierTests: XCTestCase {
                     "已知术语不得为空白"
                 )
             case 1: // 未知非空 → 恒等回退
-                // 注意 " hardMode"：trim 仅用于判空，switch 匹配原始串 → 不中已知 case，恒等回退（契约如此）。
                 let v = r.pick(unknownPool)
                 XCTAssertEqual(BattleModifierText.localizedText(for: v), v, "未知非空必须恒等回退")
-            case 2: // 随机可见 ASCII 串（排除全空白 / "none" / 已知 key：全空白归 nil
-                    // 属隐藏规则、不在恒等回退断言域；"none" 与已知 key 同理）
+            case 2: // 随机可见 ASCII 串（排除全空白 / "none" / 已知 key / 首尾空白：
+                    // 全空白归 nil 属隐藏规则；"none" 与已知 key 同理；带首尾空白的
+                    // 未知串在 #100 语义下回退为 trim 后原样，不在恒等断言域）
                 let len = 1 + Int(r.next() % 30)
                 var s = ""
                 for _ in 0..<len {
                     s.append(Character(UnicodeScalar(0x20 + Int(r.next() % 0x5F))!))
                 }
                 if s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    || s == "none" || knownKeys.contains(s) {
+                    || s == "none" || knownKeys.contains(s)
+                    || s != s.trimmingCharacters(in: .whitespacesAndNewlines) {
                     continue
                 }
                 XCTAssertEqual(BattleModifierText.localizedText(for: s), s, "未知串必须恒等回退")
@@ -81,6 +85,25 @@ final class BattleModifierTests: XCTestCase {
                 XCTAssertNil(BattleModifierText.localizedText(for: r.pick(whitespacePool)))
             }
         }
+    }
+
+    // MARK: - 空白规范化（Issue #100）
+
+    /// 带首尾空白/换行的已知 key 必须与无空白输入得到同一显示
+    /// （修复前 guard 用 trim、switch 用 raw 的不一致；" hardMode " 会走
+    /// default 原样返回）。
+    func testLocalizedTextTrimsWhitespaceAroundKnownValues() {
+        XCTAssertEqual(BattleModifierText.localizedText(for: " hardMode "), "锦标赛模式")
+        XCTAssertEqual(BattleModifierText.localizedText(for: "\nminusOne\t"), "传奇杯1")
+        XCTAssertEqual(BattleModifierText.localizedText(for: " minusTwo\t"), "传奇杯2")
+        XCTAssertEqual(BattleModifierText.localizedText(for: "\tminusThree\n"), "传奇杯3")
+    }
+
+    /// 未知非空值带空白时：回退返回 trim 后的原样值（可审计、规范化一致），
+    /// 不得因带空白而猜成已知模式，也不得把空白带回显示层。
+    func testLocalizedTextUnknownTrimmedFallback() {
+        XCTAssertEqual(BattleModifierText.localizedText(for: " futureX "), "futureX")
+        XCTAssertEqual(BattleModifierText.localizedText(for: "\nunknownRule\t"), "unknownRule")
     }
 
     // MARK: - currentwar fuzz（property-based）

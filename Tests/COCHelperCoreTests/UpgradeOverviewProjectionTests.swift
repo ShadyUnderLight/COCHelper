@@ -870,7 +870,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             from: projection.items.filter { $0.status != .unavailable },
             catalogIsUsable: projection.catalogIsUsable,
             compatibility: projection.compatibility,
-            completeDenominator: projection.progressCoverage.isComplete
+            coverage: projection.progressCoverage
         )
         for record in records {
             XCTAssertEqual(record.villageMetrics, expected,
@@ -998,13 +998,13 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             from: projection.items.filter { $0.status != .unavailable },
             catalogIsUsable: projection.catalogIsUsable,
             compatibility: projection.compatibility,
-            completeDenominator: projection.progressCoverage.isComplete
+            coverage: projection.progressCoverage
         )
         XCTAssertEqual(metrics, expected)
     }
 
-    /// 旧目录（无 instanceCounts）：progressCoverage .unavailable →
-    /// completeDenominator false → 记录与指标行为与阶段 1 完全一致（.available 不存在）。
+    /// 旧目录（无 instanceCounts）：progressCoverage .unavailable → 已观测分母
+    /// → 记录与指标行为与阶段 1 完全一致（.available 不存在）。
     func testLegacyCatalogKeepsPhase1Semantics() throws {
         let village = makeVillage(name: "旧目录村", objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],

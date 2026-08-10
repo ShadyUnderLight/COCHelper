@@ -3717,7 +3717,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             from: wallItems,
             catalogIsUsable: home.catalogIsUsable,
             compatibility: home.compatibility,
-            completeDenominator: true
+            coverage: .complete
         )
         XCTAssertEqual(metrics.currentStageProgress.denominator, 300 * stageMax,
                        "分母 = (观测 200 + 差集 100) × cap \(stageMax)")
@@ -3768,7 +3768,7 @@ final class VillageCatalogProjectionTests: XCTestCase {
             from: home.items.filter { $0.status != .unavailable },
             catalogIsUsable: home.catalogIsUsable,
             compatibility: home.compatibility,
-            completeDenominator: home.progressCoverage.isComplete
+            coverage: home.progressCoverage
         )
         XCTAssertEqual(metrics.currentStageProgress.state, .partial)
         XCTAssertTrue(

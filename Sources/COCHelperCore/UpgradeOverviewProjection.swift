@@ -178,9 +178,9 @@ public enum UpgradeOverviewProjection {
                 )
                 // Issue #70 阶段 2：消费拆分——records 只含「已观测项」
                 //（排除宇宙差集 .available：差集项无升级计时，进总览列表无意义）；
-                // 指标消费 tracked（含 .available），completeDenominator 按
-                // progressCoverage.isComplete 置位（Issue #96：仅 .complete 时
-                // stage/global 用完整分母；partial/unavailable → 已观测口径）。
+                // 指标消费 tracked（含 .available），coverage 按投影
+                // progressCoverage 传参（Issue #96：仅 .complete 时 stage/global
+                // 用完整分母；partial/unavailable → 已观测口径 + 覆盖诊断）。
                 let tracked = projection.items.filter { $0.status != .unavailable }
                 let displayRecords = tracked.filter { $0.status != .available }
                 // Issue #70 实现要求 6：同 village×base 的指标只算一次，全部
@@ -189,7 +189,7 @@ public enum UpgradeOverviewProjection {
                     from: tracked,
                     catalogIsUsable: projection.catalogIsUsable,
                     compatibility: projection.compatibility,
-                    completeDenominator: projection.progressCoverage.isComplete
+                    coverage: projection.progressCoverage
                 )
                 return displayRecords.map { item in
                     UpgradeDisplayRecord(

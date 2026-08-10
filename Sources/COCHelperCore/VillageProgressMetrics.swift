@@ -85,26 +85,29 @@ public struct VillageProgressMetrics: Hashable, Sendable {
 ///   升级中项可能 stageMax == nil（快照缺解锁建筑记录，投影 isUpgrading 分支先于
 ///   stageMax 检查）——该形态计入阶段指标专用缺失权重触发降级，不静默丢分母
 ///   （实现要求 5）。cap 先 max(0,·) 钳制，恶意目录负 cap 不产生负贡献（F1）；
-///   **阶段 2（completeDenominator == true）**：分母扩展到 known ∪ available
-///   宇宙差集（差集项 currentLevel == 0 → 分子贡献 0，cap 过滤与 known 同规则）；
+///   **完整分母（`coverage.isComplete`，Issue #96）**：分母扩展到 known ∪
+///   available 宇宙差集（差集项 currentLevel == 0 → 分子贡献 0，cap 过滤与
+///   known 同规则）；
 /// - globalProgress：`Σmin(level, maxLevel) / ΣmaxLevel`，同样只含 known 实例；
-///   阶段 2 分母同样并入 available 差集项；
+///   完整分母下同样并入 available 差集项；
 /// - snapshotCoverage：`known 实例权重 / 全部追踪类别观测实例权重`——观测数据
-///   完整性（已知/未知比例）。**阶段 2**：分母含宇宙差集项权重，成为完整覆盖率
+///   完整性（已知/未知比例）。分母含宇宙差集项权重，成为完整覆盖率
 ///   `known / (known + unknown + available)`（100% ⟺ 快照覆盖全部宇宙项）。
 ///
-/// 状态判定（决策 2/3/5 + 阶段 2）：
+/// 状态判定（决策 2/3/5 + Issue #96）：
 /// - `catalogIsUsable == false` → 三指标全部 `.unavailable`（目录不可用/版本不匹配，
 ///   fail-closed，禁止假精度）；
 /// - 分母 == 0 → `.unknown`（无快照或无可确认实例）；
 /// - 未知实例权重 > 0（含 needsReimport 项归未知侧，实现要求 4）→ `.partial`；
-/// - **阶段 2**：completeDenominator == true 且宇宙差集权重 > 0 → `.partial`
+/// - 完整分母（`coverage.isComplete`）且宇宙差集权重 > 0 → `.partial`
 ///   （覆盖率 < 100% 保守：快照可能不全，不得伪装 ready）；
 /// - `compatibility == .unverified` → 可计算指标强制 `.partial`（未验证目录不伪装
 ///   ready），degradedReason 说明；
-/// - `completeDenominator == false`（阶段 1 语义：TH 缺失/目录无宇宙/BB base，
-///   UI 层按 `projection.universeComplete` 传参）→ 可计算且无其余降级 → `.partial`
+/// - `coverage.isComplete == false`（Issue #96：partial/unavailable——TH 缺失/
+///   目录无宇宙/BB base/快照缺 section 等）→ 可计算且无其余降级 → `.partial`
 ///   强制（分母为已观测项目，非村庄全部实例，不得误称全村庄进度——验收 3）；
+///   partial 的缺失 section / 未建模类别明细拼入降级文案（覆盖诊断），
+///   unavailable（目录/TH/BB 侧）由「分母为已观测项目」文案覆盖；
 /// - 其余 → `.ready`。
 /// 饱和（issue #66 fail-closed）：分子/分母各自饱和求和，任一饱和 →
 /// `saturated = true` → ratio 恒 nil；饱和不改变 state（UI 层饱和优先）。
@@ -113,7 +116,7 @@ public enum VillageProgressProjection {
         from items: [VillageItemState],
         catalogIsUsable: Bool,
         compatibility: CatalogCompatibility?,
-        completeDenominator: Bool = false
+        coverage: ProgressUniverseCoverage = .unavailable
     ) -> VillageProgressMetrics {
         guard catalogIsUsable else {
             return unavailableMetrics()
@@ -140,13 +143,19 @@ public enum VillageProgressProjection {
         // 检查）。不得静默丢分母——计入阶段指标专用缺失权重触发降级（实现要求 5）。
         // nil 与 ≤0 cap（恶意目录，钳为 0 贡献）统一归缺失侧，防与正常项混合时
         // 无降级说明（交叉审核 nit 1，与漏洞 1 同构）。
-        //
-        // Issue #70 阶段 2（completeDenominator == true）：eligible = known ∪
-        // available 宇宙差集。差集项 currentLevel == 0 → 分子贡献恒 0（现有
-        // min(max(0, 0), cap) = 0 天然处理）；cap 过滤与 known 同规则
-        //（stageMax > 0 / maxLevel > 0，任务书「available 过滤同 known 规则」）。
-        // completeDenominator == false（阶段 1）→ available 不进 eligible
-        //（isKnown 显式排除 .available，现有 known 过滤自动正确）。
+        // Issue #96：完整分母许可 = 覆盖契约 .complete（三消费者唯一判定点，
+        // 不各自解释旧 universeComplete）。partial/unavailable → 阶段 1 语义
+        //（差集不进 eligible，分母为已观测项目 + 覆盖诊断）。
+        let completeDenominator = coverage.isComplete
+        // 覆盖诊断（partial 专属）：缺失 section / 未建模类别，透传给降级文案。
+        let coverageDiagnostic = Self.coverageDiagnostic(for: coverage)
+
+        // eligible = known ∪（完整分母时）available 宇宙差集。差集项
+        // currentLevel == 0 → 分子贡献恒 0（现有 min(max(0, 0), cap) = 0 天然
+        // 处理）；cap 过滤与 known 同规则（stageMax > 0 / maxLevel > 0，
+        // 任务书「available 过滤同 known 规则」）。
+        // 非完整分母（Issue #96：coverage.isComplete == false）→ available 不进
+        // eligible（isKnown 显式排除 .available，现有 known 过滤自动正确）。
         let available = completeDenominator
             ? items.filter { $0.status == .available }
             : []
@@ -168,7 +177,7 @@ public enum VillageProgressProjection {
 
         // 全局进度：分母 = Σ(maxLevel × weight)，分子 = Σ(min(level, maxLevel) × weight)
         // 与 stage 对称：nil/≤0 的非法 maxLevel 计入缺失权重降级（外部评审 P2-2），
-        // 不静默 0 贡献。available 差集项同样并入（completeDenominator 时）。
+        // 不静默 0 贡献。available 差集项同样并入（coverage.isComplete 时）。
         let globalEligible = known.filter { ($0.maxLevel ?? 0) > 0 }
             + available.filter { ($0.maxLevel ?? 0) > 0 }
         let globalMissingWeightInfo = VillageDetailProjection.instanceCountAndOverflow(
@@ -187,7 +196,7 @@ public enum VillageProgressProjection {
         let coverageDen = VillageDetailProjection.instanceCountAndOverflow(of: items)
         let coverageNum = VillageDetailProjection.instanceCountAndOverflow(of: known)
 
-        // 宇宙差集权重（仅 completeDenominator 时纳入 partial 判定：存在差集项
+        // 宇宙差集权重（仅 coverage.isComplete 时纳入 partial 判定：存在差集项
         // → 覆盖率 < 100%，保守 partial，不得伪装 ready）。
         let availableWeightInfo = completeDenominator
             ? VillageDetailProjection.instanceCountAndOverflow(of: available)
@@ -209,7 +218,8 @@ public enum VillageProgressProjection {
                 emptyReason: "无可确认项目，暂无法计算",
                 extraReason: stageMissingWeightInfo.count > 0
                     ? String(stageMissingWeightInfo.count) + " 项缺少阶段上限，未计入阶段进度。"
-                    : nil
+                    : nil,
+                coverageDiagnostic: coverageDiagnostic
             ),
             globalProgress: makeMetric(
                 kind: .globalProgress,
@@ -224,7 +234,8 @@ public enum VillageProgressProjection {
                 emptyReason: "无可确认项目，暂无法计算",
                 extraReason: globalMissingWeightInfo.count > 0
                     ? String(globalMissingWeightInfo.count) + " 项缺少或异常全局上限，未计入全局进度。"
-                    : nil
+                    : nil,
+                coverageDiagnostic: coverageDiagnostic
             ),
             snapshotCoverage: makeMetric(
                 kind: .snapshotCoverage,
@@ -242,10 +253,10 @@ public enum VillageProgressProjection {
     }
 
     /// 升级总览「观测数据完整性」卡的聚合：全部已导入村庄 × 全部基地的
-    /// snapshotCoverage 实例权重汇总（Σknown/Σobserved）。coverage 分母天然
-    /// 含宇宙差集 .available 实例（合成项恒在投影 items 中——universeComplete
-    /// 的 home 投影合成时；completeDenominator 只影响 stage/global 的 eligible
-    /// 与 partial 判定，不影响 coverage 口径）——聚合值语义 = 已观测实例占
+    /// snapshotCoverage 实例权重汇总（Σknown/Σobserved）。该指标分母天然
+    /// 含宇宙差集 .available 实例（合成项恒在投影 items 中——progressCoverage
+    /// 的 home 投影合成时；coverage 参数只影响 stage/global 的 eligible
+    /// 与 partial 判定，不影响覆盖率口径）——聚合值语义 = 已观测实例占
     /// 全部可建造数量（UI detail 文案「已观测实例 · 全部村庄」准确，决策 8）。
     /// 任一村庄基地的 coverage 饱和或累加溢出 → 返回 nil（fail-closed：整体
     /// 不展示假精度，不得静默跳过饱和项让分母变小——外部评审 P1-2 复审）。
@@ -287,6 +298,20 @@ public enum VillageProgressProjection {
 
     // MARK: - Helpers
 
+    /// Issue #96：覆盖诊断文案（partial 专属）。unavailable（目录/TH/BB 侧）
+    /// 由既有「分母为已观测项目」文案覆盖；complete 无诊断。
+    private static func coverageDiagnostic(for coverage: ProgressUniverseCoverage) -> String? {
+        guard case .partial(let missing, let unmodeled) = coverage else { return nil }
+        var parts: [String] = []
+        if !missing.isEmpty {
+            parts.append("快照缺少类别数据（" + missing.sorted().joined(separator: "、") + "），无法确认完整村庄进度。")
+        }
+        if !unmodeled.isEmpty {
+            parts.append("目录未对" + unmodeled.map(\.title).sorted().joined(separator: "、") + "建模实例数量，无法确认完整村庄进度。")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
     private static func unavailableMetrics() -> VillageProgressMetrics {
         let reason = "目录不可用或版本不匹配，暂无法计算该指标。"
         return VillageProgressMetrics(
@@ -313,7 +338,8 @@ public enum VillageProgressProjection {
         denominatorIsComplete: Bool,
         units: String,
         emptyReason: String,
-        extraReason: String? = nil
+        extraReason: String? = nil,
+        coverageDiagnostic: String? = nil
     ) -> ProgressMetric {
         let state: ProgressMetricState
         var reasons: [String] = []
@@ -325,6 +351,9 @@ public enum VillageProgressProjection {
             if let extraReason {
                 reasons.append(extraReason)
             }
+            if let coverageDiagnostic {
+                reasons.append(coverageDiagnostic)
+            }
         } else {
             if !denominatorIsComplete {
                 reasons.append("分母为已观测项目，非村庄全部实例，无法计算完整村庄进度。")
@@ -332,7 +361,7 @@ public enum VillageProgressProjection {
             if unknownWeight > 0 {
                 reasons.append(String(unknownWeight) + " 项未知或待重新导入，结果仅为已观测项目。")
             }
-            // Issue #70 阶段 2：完整分母下存在宇宙差集（可建造未观测）→ 覆盖率
+            // Issue #96：完整分母下存在宇宙差集（可建造未观测）→ 覆盖率
             // < 100%，保守 partial（快照可能不全，不得伪装 ready）。权重 0
             //（差集项 count 恒 > 0，理论不可达）不产生文案。
             if availableWeight > 0 {
@@ -340,6 +369,9 @@ public enum VillageProgressProjection {
             }
             if let extraReason {
                 reasons.append(extraReason)
+            }
+            if let coverageDiagnostic {
+                reasons.append(coverageDiagnostic)
             }
             if unverifiedCatalog {
                 reasons.append("目录与玩家版本未验证，百分比可能过时。")

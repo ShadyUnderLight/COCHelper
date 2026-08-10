@@ -361,3 +361,28 @@ def test_annotate_catalog_malformed_rejected(tmp_path):
     with pytest.raises(CatalogError, match="catalog.json 解析失败"):
         annotate_directory(apk, d)
     assert (d / "manifest.json").read_bytes() == man_before
+
+
+def test_annotate_catalog_missing_key_rejected_cleanly(tmp_path):
+    """畸形 catalog（item 缺 section 键，from_dict 下标抛 KeyError）→ 干净
+    CatalogError（不泄漏裸 traceback），且不落盘（验证 agent 发现的泄漏修复）。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    data = json.loads((d / "catalog.json").read_text())
+    del data["items"][0]["section"]
+    (d / "catalog.json").write_text(json.dumps(data))
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="catalog.json 解析失败"):
+        annotate_directory(apk, d)
+    assert (d / "manifest.json").read_bytes() == man_before
+
+
+def test_annotate_manifest_counts_not_dict_rejected_cleanly(tmp_path):
+    """manifest counts 为非法类型（如 string）→ 干净 CatalogError，不落盘。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    m = json.loads((d / "manifest.json").read_text())
+    m["counts"] = "not-a-dict"
+    (d / "manifest.json").write_text(json.dumps(m))
+    cat_before = (d / "catalog.json").read_bytes()
+    with pytest.raises(CatalogError, match="counts"):
+        annotate_directory(apk, d)
+    assert (d / "catalog.json").read_bytes() == cat_before

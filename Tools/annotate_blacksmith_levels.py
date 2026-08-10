@@ -179,7 +179,8 @@ def annotate_directory(apk: str | Path, dir_path: str | Path) -> dict:
     try:
         raw = json.loads(catalog_path.read_text(encoding="utf-8"))
         catalog = catalog_from_dict(raw)
-    except (json.JSONDecodeError, OSError, ValueError, TypeError) as exc:
+    except (json.JSONDecodeError, OSError, ValueError, TypeError,
+            KeyError, AttributeError) as exc:
         raise CatalogError(f"catalog.json 解析失败: {exc}") from exc
 
     # 回填：仅 equipment；查不到 → fail loud（防 dataID 错位静默）。
@@ -209,7 +210,10 @@ def annotate_directory(apk: str | Path, dir_path: str | Path) -> dict:
             entry["sha256"] = sha256_bytes(catalog_bytes)
             entry["size"] = len(catalog_bytes)
     counts = counts_for(catalog.items)
-    manifest.setdefault("counts", {}).update(counts)
+    try:
+        manifest.setdefault("counts", {}).update(counts)
+    except (AttributeError, TypeError) as exc:
+        raise CatalogError(f"manifest.json counts 字段非法: {exc}") from exc
     manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2,
                                 sort_keys=True).encode("utf-8") + b"\n"
 

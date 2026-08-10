@@ -129,6 +129,9 @@ class CatalogItem:
     # Issue #75 工作流 C：建筑展示分类（defense/military/craftTable），
     # home buildings 之外恒 None。旧格式 JSON 缺键 → None（向后兼容）。
     displayCategory: str | None = None
+    # Issue #98：生命周期事实（"permanent" / "seasonalCandidate"），来源 =
+    # lifecycle_declarations.json，生成器机械写入。旧格式 JSON 缺键 → None。
+    lifecycle: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -144,6 +147,7 @@ class CatalogItem:
             "missingReason": self.missingReason,
             "levels": [lv.to_dict() for lv in self.levels],
             "displayCategory": self.displayCategory,
+            "lifecycle": self.lifecycle,  # 键恒存在契约（null 也写）
         }
 
     @classmethod
@@ -159,6 +163,7 @@ class CatalogItem:
             missingReason=d.get("missingReason"),
             levels=[CatalogLevel.from_dict(x) for x in d["levels"]],
             displayCategory=d.get("displayCategory"),
+            lifecycle=d.get("lifecycle"),
         )
 
 

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from game_catalog.apk import localization, read_build_tag, rows
 from game_catalog.durations import parse_duration, parse_optional_int
+from game_catalog.lifecycle import lifecycle_for
 from game_catalog.tables import ffill_columns, group_blocks
 from generate_account_name_catalog import seasonal_name
 
@@ -107,6 +108,8 @@ def build_catalog(apk: Path, game_version: str) -> dict[str, object]:
             defenses.append(
                 {
                     "dataID": 103_000_000 + ordinal,
+                    # Issue #98：生命周期事实（声明文件唯一事实源，fail loud）
+                    "lifecycle": lifecycle_for("buildings", 103_000_000 + ordinal),
                     "name": seasonal_name(row, "seasonal_defense_archetypes.csv", localized),
                     "sourceName": block.name,
                     "specialAbility": row.get("SpecialAbility", ""),

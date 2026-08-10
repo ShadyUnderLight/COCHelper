@@ -26,6 +26,8 @@ def _valid_dir(tmp_path: Path) -> Path:
             requiredTownHallLevel=None, requiredLaboratoryLevel=None,
             icon=None, levelVisual=None,
         )],
+        # Issue #98：units:4000000 在真实声明文件中（permanent）
+        lifecycle="permanent",
     )
     catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
                       items=[item])
@@ -253,11 +255,15 @@ def test_validate_duplicate_section_key(tmp_path):
     c = _load_catalog(d)
     # 同 dataID=1000008 双 item：units（非 buildings 不查分类）+ buildings（防御）
     c["items"][0]["dataID"] = 1000008
+    # Issue #98：units:1000008 无声明 → 无标注不报；dup（buildings:1000008）
+    # 在声明中 → 显式 permanent
+    c["items"][0]["lifecycle"] = None
     dup = json.loads(json.dumps(c["items"][0]))
     dup["section"] = "buildings"
     dup["name"] = "加农炮"
     # Issue #75 工作流 C：home buildings 必须与注册表一致（defense）——全量比对锁定
     dup["displayCategory"] = "defense"
+    dup["lifecycle"] = "permanent"
     c["items"].append(dup)
     _write_with_hash(d, catalog=c)
     m = _load_manifest(d)
@@ -575,6 +581,8 @@ def test_validate_capital_item_ok(tmp_path):
     item["category"] = "capitalBuildings"
     item["base"] = None
     item["baseMissingReason"] = "capital_has_no_base"
+    # Issue #98：capital_buildings:4000000 无声明 → 无标注不报
+    item["lifecycle"] = None
     _write_with_hash(d, catalog=c)
     assert validate_catalog(d) == []
 

@@ -101,6 +101,7 @@ def _mini_catalog() -> dict:
             {
                 "section": "units", "dataID": 4000000, "name": "野蛮人",
                 "maxLevel": 1, "category": "units",
+                "lifecycle": "permanent",  # Issue #98：units:4000000 在声明中
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_unit_barbarian",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
                 "levelVisual": None, "base": "home", "baseMissingReason": None,
@@ -122,6 +123,7 @@ def _mini_catalog() -> dict:
                 "maxLevel": 2, "category": "buildings",
                 "icon": None,
                 "displayCategory": "military",  # Issue #75 工作流 C：真实分类
+                "lifecycle": "permanent",  # Issue #98：buildings:1000070 在声明中
                 "levelVisual": {"container": "sc/buildings.sc",
                                 "exportName": "blacksmith_lvl1",
                                 "renderedPath": None,
@@ -146,6 +148,7 @@ def _mini_catalog() -> dict:
             {
                 "section": "spells", "dataID": 26000002, "name": "狂暴法术",
                 "maxLevel": 0, "category": "spells",
+                "lifecycle": "permanent",  # Issue #98：spells:26000002 在声明中
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_spell_rage",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
                 "levelVisual": None, "base": "home", "baseMissingReason": None,
@@ -155,6 +158,7 @@ def _mini_catalog() -> dict:
             {
                 "section": "heroes", "dataID": 999, "name": "无关条目",
                 "maxLevel": 0, "category": "heroes",
+                "lifecycle": None,  # Issue #98：heroes:999 无声明 → 无标注不报
                 "icon": {"container": "sc/ui.sc", "exportName": "icon_unit_king",
                          "renderedPath": None, "missingReason": "icons_not_rendered"},
                 "levelVisual": None, "base": "home", "baseMissingReason": None,

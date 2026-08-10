@@ -24,6 +24,8 @@ from .display_categories import (
     INTENTIONAL_FALLBACK_DATA_IDS,
     apply_display_categories,
 )
+from .errors import CatalogError
+from .lifecycle import LIFECYCLE_VALUES, load_declarations
 from .model import AssetRef, UpgradeCost, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
@@ -134,6 +136,33 @@ def _check_display_category_registry(errors: list[str], items) -> None:
             errors.append(
                 f"displayCategory 与注册表不一致: {item.section}:{item.dataID} "
                 f"{item.name} 期望={expected.displayCategory} 实际={item.displayCategory!r}")
+
+
+def _check_lifecycle_declarations(errors: list[str], items) -> None:
+    """lifecycle 声明一致性（Issue #98）。
+
+    目录条目 lifecycle 必须与声明文件（lifecycle_declarations.json，唯一事实源）
+    逐条一致；声明文件加载失败 → 报错并跳过比对（无法核对不算通过）。
+    声明文件多余条目不报错（人工清单允许前瞻登记）。
+    """
+    try:
+        decl = load_declarations()
+    except CatalogError as exc:
+        errors.append(f"lifecycle 声明加载失败: {exc}")
+        return
+    for item in items:
+        key = f"{item.section}:{item.dataID}"
+        declared = decl.get(key)
+        if declared != item.lifecycle:
+            if item.lifecycle is None:
+                # P1-B 风格：防漏机制不放行旧产物，错误消息自解释补救路径
+                errors.append(
+                    f"{key}: 缺少 lifecycle 字段"
+                    f"（请用 lifecycle_declarations.json 重新生成标注）")
+            else:
+                errors.append(
+                    f"{key}: lifecycle 与声明不一致: "
+                    f"目录={item.lifecycle!r} 声明={declared!r}")
 
 
 def _check_rendered_path(
@@ -383,6 +412,11 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                         f"新增建筑未分类: {item.dataID} {item.name}"
                         f"（旧产物缺少 displayCategory 字段，"
                         f"请用 annotate_display_categories.py 重新标注）")
+            # ---- lifecycle（Issue #98）：闭枚举（None 由声明一致性检查统一报）----
+            # 声明文件一致性在循环后的 _check_lifecycle_declarations 全量比对。
+            lc = item.lifecycle
+            if lc is not None and lc not in LIFECYCLE_VALUES:
+                errors.append(f"{key}: lifecycle 未知值 {lc!r}")
             for ref, ref_name in ((item.icon, "icon"), (item.levelVisual, "levelVisual")):
                 if ref and ref.missingReason is not None and ref.missingReason not in ASSET_MISSING_REASONS:
                     errors.append(f"{key}: {ref_name}.missingReason 未知 {ref.missingReason!r}")
@@ -394,6 +428,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         return [f"catalog 内容非法: {exc}"]
 
     _check_display_category_registry(errors, catalog.items)
+    # ---- lifecycle 声明一致性（Issue #98）----
+    _check_lifecycle_declarations(errors, catalog.items)
 
     # ---- counts 与目录内容重算一致 ----
     counts = counts_for(catalog.items)

@@ -1408,6 +1408,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "兵营",
@@ -1878,6 +1879,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "大本营",
@@ -2323,6 +2325,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 17,
       "missingReason": null,
       "name": "圣水收集器",
@@ -2818,6 +2821,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 19,
       "missingReason": null,
       "name": "圣水瓶",
@@ -3263,6 +3267,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 17,
       "missingReason": null,
       "name": "金矿",
@@ -3758,6 +3763,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 19,
       "missingReason": null,
       "name": "储金罐",
@@ -4253,6 +4259,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 19,
       "missingReason": null,
       "name": "训练营",
@@ -4673,6 +4680,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "实验室",
@@ -5218,6 +5226,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 21,
       "missingReason": null,
       "name": "加农炮",
@@ -5763,6 +5772,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 21,
       "missingReason": null,
       "name": "箭塔",
@@ -6258,6 +6268,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 19,
       "missingReason": null,
       "name": "城墙",
@@ -6703,6 +6714,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 17,
       "missingReason": null,
       "name": "法师塔",
@@ -7123,6 +7135,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "防空火箭",
@@ -7593,6 +7606,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "迫击炮",
@@ -7963,6 +7977,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "部落城堡",
@@ -8183,6 +8198,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "建筑工人小屋",
@@ -8228,6 +8244,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林小屋",
@@ -8298,6 +8315,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "哥布林大本营",
@@ -8343,6 +8361,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林小屋",
@@ -8788,6 +8807,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 17,
       "missingReason": null,
       "name": "特斯拉电磁塔",
@@ -9033,6 +9053,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 9,
       "missingReason": null,
       "name": "法术工厂",
@@ -9378,6 +9399,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "十字连弩",
@@ -9423,6 +9445,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人之王",
@@ -9718,6 +9741,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 11,
       "missingReason": null,
       "name": "暗黑重油钻井",
@@ -10063,6 +10087,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "暗黑重油罐",
@@ -10108,6 +10133,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "弓箭女皇",
@@ -10453,6 +10479,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "暗黑训练营",
@@ -10773,6 +10800,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "地狱之塔",
@@ -10968,6 +10996,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "空气炮",
@@ -11188,6 +11217,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "暗黑法术工厂",
@@ -11233,6 +11263,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "大守护者",
@@ -11428,6 +11459,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "天鹰火炮",
@@ -11773,6 +11805,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "炸弹塔",
@@ -12018,6 +12051,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 9,
       "missingReason": null,
       "name": "攻城机器工坊",
@@ -12063,6 +12097,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "加农炮",
@@ -12108,6 +12143,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林城堡",
@@ -12153,6 +12189,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "不祥洞窟",
@@ -12198,6 +12235,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "小博木屋",
@@ -12243,6 +12281,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "飞盾战神",
@@ -12438,6 +12477,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "投石炮",
@@ -12758,6 +12798,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "战宠小屋",
@@ -12803,6 +12844,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林大本营",
@@ -13073,6 +13115,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "铁匠铺",
@@ -13393,6 +13436,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "英雄殿堂",
@@ -13513,6 +13557,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "法术塔",
@@ -13558,6 +13603,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "糖果笼",
@@ -13603,6 +13649,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "不祥洞窟",
@@ -13648,6 +13695,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "法术惊喜",
@@ -13693,6 +13741,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "不祥洞窟",
@@ -13838,6 +13887,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "擎天巨柱",
@@ -13933,6 +13983,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "复合机械塔",
@@ -13978,6 +14029,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "酸腐圣水坩埚",
@@ -14098,6 +14150,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "多人箭塔",
@@ -14218,6 +14271,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "跳弹加农炮",
@@ -14288,6 +14342,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "反击之塔",
@@ -14333,6 +14388,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "加农炮",
@@ -14378,6 +14434,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "加农炮",
@@ -14473,6 +14530,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "火焰喷射器",
@@ -14518,6 +14576,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "糖果笼",
@@ -14563,6 +14622,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "糖果拐杖",
@@ -14608,6 +14668,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "节日烟花",
@@ -14653,6 +14714,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "帮手小屋",
@@ -14698,6 +14760,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "加农炮",
@@ -14743,6 +14806,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "加农炮",
@@ -14788,6 +14852,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "加农炮",
@@ -14833,6 +14898,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "精制台",
@@ -14878,6 +14944,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "法术坩埚",
@@ -14923,6 +14990,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "部队营地",
@@ -14968,6 +15036,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "敌方据点",
@@ -15013,6 +15082,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "盛放烟花",
@@ -15083,6 +15153,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "超级法师塔",
@@ -15128,6 +15199,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "大本营",
@@ -15173,6 +15245,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "大本营",
@@ -15443,6 +15516,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "城墙",
@@ -15713,6 +15787,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "建筑大师大本营",
@@ -15983,6 +16058,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "圣水收集器",
@@ -16253,6 +16329,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "圣水瓶",
@@ -16523,6 +16600,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "金矿",
@@ -16793,6 +16871,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "储金罐",
@@ -17063,6 +17142,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "时光钟楼",
@@ -17383,6 +17463,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "建筑大师训练营",
@@ -17653,6 +17734,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "双管加农炮",
@@ -17698,6 +17780,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "兵营",
@@ -17968,6 +18051,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "特斯拉电磁塔",
@@ -18238,6 +18322,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "加农炮",
@@ -18508,6 +18593,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "多管迫击炮",
@@ -18778,6 +18864,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "星空实验室",
@@ -18823,6 +18910,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "博仔棚屋",
@@ -19093,6 +19181,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "箭塔",
@@ -19138,6 +19227,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "预备营",
@@ -19408,6 +19498,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "防空火炮",
@@ -19678,6 +19769,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "守卫岗哨",
@@ -19948,6 +20040,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "超级特斯拉电磁塔",
@@ -19993,6 +20086,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "战争机器",
@@ -20263,6 +20357,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "空中炸弹发射器",
@@ -20533,6 +20628,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "撼地巨石",
@@ -20803,6 +20899,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "熔岩火炮",
@@ -21073,6 +21170,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "巨型加农炮",
@@ -21343,6 +21441,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "宝石矿井",
@@ -21613,6 +21712,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "熔岩发射器",
@@ -21758,6 +21858,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "小博控制室",
@@ -22028,6 +22129,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "奥仔哨站",
@@ -22073,6 +22175,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "战斗直升机",
@@ -22218,6 +22321,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "十字连弩",
@@ -22388,6 +22492,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "治疗小屋",
@@ -22658,6 +22763,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "都城大本营",
@@ -22803,6 +22909,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "子城大本营",
@@ -22948,6 +23055,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "城墙",
@@ -22993,6 +23101,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "部落营房",
@@ -23138,6 +23247,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "兵营",
@@ -23283,6 +23393,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "法术仓库",
@@ -23428,6 +23539,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级野蛮人训练营",
@@ -23573,6 +23685,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "隐秘弓箭手训练营",
@@ -23718,6 +23831,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级巨人训练营",
@@ -23863,6 +23977,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "野蛮人攻城槌训练营",
@@ -24008,6 +24123,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "亡灵训练营",
@@ -24153,6 +24269,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级法师训练营",
@@ -24298,6 +24415,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "火箭气球兵训练营",
@@ -24443,6 +24561,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "骷髅飞桶训练营",
@@ -24588,6 +24707,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "飞行堡垒工坊",
@@ -24733,6 +24853,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "突袭炮车训练营",
@@ -24878,6 +24999,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "雷霆皮卡训练营",
@@ -25023,6 +25145,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "野猪突袭队训练营",
@@ -25168,6 +25291,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级飞龙训练营",
@@ -25313,6 +25437,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "高山戈仑石场",
@@ -25458,6 +25583,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "疗伤法术工厂",
@@ -25603,6 +25729,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "弹跳法术工厂",
@@ -25748,6 +25875,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "雷电法术工厂",
@@ -25893,6 +26021,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "狂暴法术工厂",
@@ -26038,6 +26167,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "冰霜法术工厂",
@@ -26183,6 +26313,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "加农炮",
@@ -26328,6 +26459,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "投矛器",
@@ -26473,6 +26605,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "防空火箭",
@@ -26618,6 +26751,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "多管加农炮",
@@ -26763,6 +26897,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "炸弹塔",
@@ -26908,6 +27043,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "多管迫击炮",
@@ -27053,6 +27189,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级法师塔",
@@ -27198,6 +27335,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "空中炸弹发射器",
@@ -27343,6 +27481,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "疾速火箭",
@@ -27488,6 +27627,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "撼地巨石",
@@ -27633,6 +27773,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级特斯拉电磁塔",
@@ -27778,6 +27919,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "巨型加农炮",
@@ -27923,6 +28065,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "火箭炮",
@@ -28068,6 +28211,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "地狱之塔",
@@ -28213,6 +28357,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "爆炸强弩",
@@ -28358,6 +28503,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级巨人岗哨",
@@ -28503,6 +28649,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "突袭炮车岗哨",
@@ -28648,6 +28795,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级飞龙岗哨",
@@ -28693,6 +28841,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "平顶屋",
@@ -28738,6 +28887,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "小屋",
@@ -28783,6 +28933,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "斜顶屋",
@@ -28828,6 +28979,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "稻草屋",
@@ -28873,6 +29025,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "木屋",
@@ -28918,6 +29071,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "平顶木屋",
@@ -28963,6 +29117,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "巨人之家",
@@ -29008,6 +29163,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "大房子",
@@ -29128,6 +29284,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "迷你亡灵巢",
@@ -29248,6 +29405,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "地狱飞龙训练营",
@@ -29368,6 +29526,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "骷髅召唤法术工厂",
@@ -29488,6 +29647,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "反弹机",
@@ -29608,6 +29768,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "哥布林发射器",
@@ -29728,6 +29889,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "超级电磁炮工坊",
@@ -29848,6 +30010,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "超级矿工训练营",
@@ -29968,6 +30131,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "永恒急速法术工厂",
@@ -30013,6 +30177,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林小屋",
@@ -30058,6 +30223,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林前哨基地",
@@ -30103,6 +30269,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林大本营",
@@ -30208,6 +30375,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级野蛮人",
@@ -30313,6 +30481,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级野蛮人",
@@ -30418,6 +30587,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "隐秘弓箭手",
@@ -30523,6 +30693,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "隐秘弓箭手",
@@ -30628,6 +30799,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级巨人",
@@ -30733,6 +30905,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级巨人",
@@ -30838,6 +31011,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "野蛮人攻城槌",
@@ -30943,6 +31117,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "野蛮人",
@@ -31048,6 +31223,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "亡灵大军",
@@ -31153,6 +31329,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "亡灵",
@@ -31258,6 +31435,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级法师",
@@ -31363,6 +31541,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级法师",
@@ -31468,6 +31647,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "火箭气球兵",
@@ -31573,6 +31753,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "火箭气球兵",
@@ -31678,6 +31859,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "骷髅飞桶",
@@ -31783,6 +31965,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "骷髅飞桶",
@@ -31888,6 +32071,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "飞行堡垒",
@@ -31963,6 +32147,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "骷髅飞骑",
@@ -31990,6 +32175,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "骷髅兵",
@@ -32095,6 +32281,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "突袭炮车",
@@ -32200,6 +32387,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "攻城炮车",
@@ -32275,6 +32463,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "加农炮战车",
@@ -32380,6 +32569,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "雷霆皮卡",
@@ -32485,6 +32675,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "野猪突袭队",
@@ -32590,6 +32781,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "野猪飞骑",
@@ -32695,6 +32887,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "野猪骑士",
@@ -32800,6 +32993,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级飞龙",
@@ -32905,6 +33099,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "高山戈仑",
@@ -32993,6 +33188,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "地狱飞龙",
@@ -33030,6 +33226,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "骷髅兵",
@@ -33057,6 +33254,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "骷髅兵",
@@ -33145,6 +33343,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "超级矿工",
@@ -33233,6 +33432,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "超级电磁炮",
@@ -33321,6 +33521,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "哥布林投矛手",
@@ -33358,6 +33559,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -33463,6 +33665,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "超级飞龙",
@@ -33500,6 +33703,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -33537,6 +33741,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -33574,6 +33779,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -33611,6 +33817,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -33648,6 +33855,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -33753,6 +33961,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "疗伤法术",
@@ -33858,6 +34067,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "弹跳法术",
@@ -33963,6 +34173,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "雷电法术",
@@ -34068,6 +34279,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "冰霜法术",
@@ -34173,6 +34385,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "狂暴法术",
@@ -34200,6 +34413,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TroopRage",
@@ -34227,6 +34441,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TroopHaste",
@@ -34302,6 +34517,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "Blast Bow Strike",
@@ -34377,6 +34593,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "CapitalFortressSpawner",
@@ -34404,6 +34621,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "DestroyWalls",
@@ -34431,6 +34649,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused1",
@@ -34519,6 +34738,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "骷髅召唤法术",
@@ -34607,6 +34827,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "永恒急速法术",
@@ -34634,6 +34855,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused2",
@@ -34661,6 +34883,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused3",
@@ -34688,6 +34911,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused4",
@@ -34803,6 +35027,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "地雷",
@@ -34918,6 +35143,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "巨型地雷",
@@ -35033,6 +35259,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "滚木陷阱",
@@ -35148,6 +35375,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "电击陷阱",
@@ -35243,6 +35471,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "投矛陷阱",
@@ -35762,6 +35991,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "野蛮人木偶",
@@ -36281,6 +36511,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "狂暴药水瓶",
@@ -36800,6 +37031,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "弓箭手木偶",
@@ -37319,6 +37551,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "隐形药水瓶",
@@ -37838,6 +38071,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "永恒书卷",
@@ -38357,6 +38591,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "生命宝石",
@@ -38876,6 +39111,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "寻踪飞盾",
@@ -39395,6 +39631,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "皇家宝石",
@@ -39914,6 +40151,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "地震金靴",
@@ -40433,6 +40671,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "野猪骑士木偶",
@@ -41254,6 +41493,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "巨型手套",
@@ -41773,6 +42013,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "治疗胡须",
@@ -42292,6 +42533,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "急速药水瓶",
@@ -43113,6 +43355,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "火箭飞矛",
@@ -43934,6 +44177,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "尖刺足球",
@@ -44755,6 +44999,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "冰封箭矢",
@@ -45576,6 +45821,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "擎天箭矢",
@@ -46095,6 +46341,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "巨型箭矢",
@@ -46916,6 +47163,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": "deprecated_in_source",
       "name": "巨型箭矢",
@@ -47737,6 +47985,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "英雄火炬",
@@ -48256,6 +48505,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "天使木偶",
@@ -48293,6 +48543,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -49114,6 +49365,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "巨大火球",
@@ -49151,6 +49403,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -49670,6 +49923,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "狂暴宝石",
@@ -49707,6 +49961,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -49744,6 +49999,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -49781,6 +50037,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -49818,6 +50075,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -49855,6 +50113,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -49900,6 +50159,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野猪骑士木偶",
@@ -49937,6 +50197,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -50758,6 +51019,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "灵蛇手镯",
@@ -50795,6 +51057,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -51314,6 +51577,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "治疗书卷",
@@ -52135,6 +52399,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "暗黑皇冠",
@@ -52180,6 +52445,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -52225,6 +52491,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -53046,6 +53313,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人木偶",
@@ -53867,6 +54135,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "克隆魔镜",
@@ -54688,6 +54957,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "雷电战靴",
@@ -55509,6 +55779,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "熔岩气球玩偶",
@@ -56028,6 +56299,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "护卫玩偶",
@@ -56547,6 +56819,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "暗黑魔球",
@@ -57066,6 +57339,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "铁甲短裤",
@@ -57585,6 +57859,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": "deprecated_in_source",
       "name": "MP Trap Shield",
@@ -58406,6 +58681,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": "deprecated_in_source",
       "name": "克隆魔镜",
@@ -58925,6 +59201,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "贵族哑铃",
@@ -59746,6 +60023,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "动作人偶",
@@ -60567,6 +60845,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "陨石法杖",
@@ -61388,6 +61667,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "冷冽冰晶",
@@ -62209,6 +62489,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "木棍马驹",
@@ -62728,6 +63009,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "烈焰之心",
@@ -63549,6 +63831,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "火箭背包",
@@ -63594,6 +63877,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "火箭背包",
@@ -63639,6 +63923,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "火箭背包",
@@ -64158,6 +64443,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "爆震器",
@@ -64677,6 +64963,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "助燃器",
@@ -64722,6 +65009,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "爆震器",
@@ -65241,6 +65529,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "雷电獠牙",
@@ -66062,6 +66351,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 27,
       "missingReason": null,
       "name": "反击卡组",
@@ -66199,6 +66489,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "远袭者",
@@ -66336,6 +66627,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "粉碎者",
@@ -66373,6 +66665,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "Eagle",
@@ -66410,6 +66703,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "GigaInferno",
@@ -66447,6 +66741,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "Assassins",
@@ -66484,6 +66779,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "Reviver",
@@ -66521,6 +66817,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "Sniffer",
@@ -66558,6 +66855,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "Builder",
@@ -66695,6 +66993,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "滚木手",
@@ -66732,6 +67031,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "Returner",
@@ -69494,6 +69794,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 110,
       "missingReason": null,
       "name": "野蛮人之王",
@@ -72256,6 +72557,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 110,
       "missingReason": null,
       "name": "弓箭女皇",
@@ -74393,6 +74695,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 85,
       "missingReason": null,
       "name": "大守护者",
@@ -75780,6 +76083,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 55,
       "missingReason": null,
       "name": "飞盾战神",
@@ -78167,6 +78471,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 95,
       "missingReason": null,
       "name": "亡灵王子",
@@ -78804,6 +79109,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 25,
       "missingReason": null,
       "name": "飞龙公爵",
@@ -79691,6 +79997,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 35,
       "missingReason": null,
       "name": "战争机器",
@@ -80228,6 +80535,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 35,
       "missingReason": null,
       "name": "战斗直升机",
@@ -80615,6 +80923,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "莱希",
@@ -81002,6 +81311,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "大牦",
@@ -81389,6 +81699,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "闪枭",
@@ -81776,6 +82087,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "独角",
@@ -82038,6 +82350,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "凤凰",
@@ -82300,6 +82613,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "凤凰",
@@ -82337,6 +82651,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "独角",
@@ -82724,6 +83039,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "猛蜥",
@@ -82986,6 +83302,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "地兽",
@@ -83373,6 +83690,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "冰牙",
@@ -83635,6 +83953,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "灵狐",
@@ -83897,6 +84216,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "愤怒水母",
@@ -83934,6 +84254,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "莱希",
@@ -83971,6 +84292,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "闪枭",
@@ -84008,6 +84330,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "莱希",
@@ -84045,6 +84368,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "闪枭",
@@ -84307,6 +84631,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "阿啾",
@@ -84569,6 +84894,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "贪婪渡鸦",
@@ -84731,6 +85057,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "攻城战车",
@@ -84893,6 +85220,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "攻城飞艇",
@@ -85055,6 +85383,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "攻城气球",
@@ -85217,6 +85546,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "攻城训练营",
@@ -85379,6 +85709,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "攻城滚木车",
@@ -85516,6 +85847,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "攻城烈焰车",
@@ -85678,6 +86010,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "攻城钻机",
@@ -85790,6 +86123,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "部队发射器",
@@ -85902,6 +86236,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "空中战车",
@@ -85939,6 +86274,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "攻城战车",
@@ -86276,6 +86612,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "雷电法术",
@@ -86588,6 +86925,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "疗伤法术",
@@ -86775,6 +87113,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "狂暴法术",
@@ -86912,6 +87251,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "弹跳法术",
@@ -86949,6 +87289,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "圣诞奇袭",
@@ -87161,6 +87502,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "冰冻法术",
@@ -87498,6 +87840,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "圣诞奇袭",
@@ -87545,6 +87888,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "慢",
@@ -87592,6 +87936,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "提升防御",
@@ -87904,6 +88249,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "伤害药水法术",
@@ -88116,6 +88462,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "地震法术",
@@ -88303,6 +88650,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "急速法术",
@@ -88534,6 +88882,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "Eternal Tome Aura",
@@ -88633,6 +88982,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "Life Gem Aura",
@@ -88732,6 +89082,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "Eagle Artillery Hit Spell",
@@ -88759,6 +89110,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "MiniGrowth",
@@ -88996,6 +89348,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 9,
       "missingReason": null,
       "name": "镜像法术",
@@ -89208,6 +89561,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "骷髅法术",
@@ -89235,6 +89589,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "FreezeTrap",
@@ -89370,6 +89725,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "Lava Launcher Hit Spell",
@@ -89493,6 +89849,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 9,
       "missingReason": null,
       "name": "TroopRage",
@@ -89520,6 +89877,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "ShrinkTrap",
@@ -89557,6 +89915,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "生日大爆炸",
@@ -89680,6 +90039,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 9,
       "missingReason": null,
       "name": "IceGolemFreeze",
@@ -89839,6 +90199,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "ElectroDragonDie",
@@ -89890,6 +90251,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "Tornado Trap",
@@ -89917,6 +90279,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TroopHaste",
@@ -90054,6 +90417,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "雷电法术",
@@ -90266,6 +90630,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "蝙蝠法术",
@@ -90353,6 +90718,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "IceGolemFreeze_DEF",
@@ -90452,6 +90818,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "Scattershot Hit Spell",
@@ -90479,6 +90846,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "BatRage",
@@ -90506,6 +90874,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TH13 Frost",
@@ -90581,6 +90950,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "Electro Titan Aura",
@@ -90608,6 +90978,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "EliteValkyrieRage",
@@ -90720,6 +91091,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "隐形法术",
@@ -90783,6 +91155,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "IceHoundFreeze",
@@ -90810,6 +91183,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TH14 Poison",
@@ -90885,6 +91259,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "FireSpiritExplosion",
@@ -90936,6 +91311,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "PhoenixImmortality",
@@ -90987,6 +91363,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "TroopImmortality",
@@ -91014,6 +91391,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "AreaStun",
@@ -91041,6 +91419,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "DrillerSurfacing",
@@ -91068,6 +91447,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TH15 Poison",
@@ -91105,6 +91485,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "伤害药水法术模式",
@@ -91264,6 +91645,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "SuperHogRiderSummonHog",
@@ -91301,6 +91683,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "狂暴法术模式",
@@ -91460,6 +91843,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "SuperHogRiderSummonRider",
@@ -91497,6 +91881,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "隐形法术模式",
@@ -91668,6 +92053,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "GraveGolemSummonBigBoy",
@@ -91695,6 +92081,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "HogWizardDamageAura",
@@ -91722,6 +92109,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused1",
@@ -91749,6 +92137,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "COOKIEAura",
@@ -91936,6 +92325,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "回溯法术",
@@ -91963,6 +92353,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "GrandWardenRangeRing",
@@ -92026,6 +92417,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "PoisonLizardAttack",
@@ -92053,6 +92445,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "蛮羊冲锋！",
@@ -92188,6 +92581,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "SlowBomb",
@@ -92215,6 +92609,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "VisualRage",
@@ -92290,6 +92685,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "Baby Dragon Flaming Sneeze",
@@ -92365,6 +92761,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "Power PEKKA Overcharge",
@@ -92428,6 +92825,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "Drop Ship Skeleton Bomb",
@@ -92503,6 +92901,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "Night Witch Bat Swarm",
@@ -92614,6 +93013,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "Cannon Cart Mortar Mode Splash",
@@ -92677,6 +93077,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "Apprentice Aura",
@@ -92704,6 +93105,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "PetJump",
@@ -92731,6 +93133,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "PetSpeedUp",
@@ -92806,6 +93209,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "FireSpiritBurn",
@@ -92833,6 +93237,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TreantWallDamageAura",
@@ -92860,6 +93265,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "SiegeInvisibility",
@@ -92997,6 +93403,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "疯狂蔓生法术",
@@ -93132,6 +93539,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "Heroic Torch Aura",
@@ -93169,6 +93577,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "冰冻法术",
@@ -93506,6 +93915,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "袋装小冰怪",
@@ -93533,6 +93943,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TroopCatapultSummonTroop",
@@ -93704,6 +94115,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "LavaloonSpawnPup",
@@ -93875,6 +94287,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "Firecracker Hit Spell",
@@ -93974,6 +94387,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "地震法术",
@@ -94001,6 +94415,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Fireball Hit Spell",
@@ -94100,6 +94515,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "Rage Gem Aura",
@@ -94127,6 +94543,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "QueenFreeze",
@@ -94154,6 +94571,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "ElectrifiedShield",
@@ -94181,6 +94599,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "蛮羊冲锋！",
@@ -94280,6 +94699,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "Healing Tome Aura",
@@ -94317,6 +94737,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "黄牌法术",
@@ -94452,6 +94873,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "GWPhoenixStickSpell",
@@ -94489,6 +94911,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "疗伤法术",
@@ -94624,6 +95047,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "Electro Boots Aura",
@@ -94771,6 +95195,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 11,
       "missingReason": null,
       "name": "GWLavaloonSpawnPup",
@@ -94810,6 +95235,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "IceMinionFreeze",
@@ -94837,6 +95263,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Commander Aura",
@@ -94900,6 +95327,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "TroopCatapultSummonTroopNew",
@@ -94927,6 +95355,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TorchThrowerB",
@@ -94954,6 +95383,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Destroyer",
@@ -94991,6 +95421,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "雷电法术",
@@ -95028,6 +95459,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "地震法术",
@@ -95091,6 +95523,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "FireSpiritBurn_DEF",
@@ -95128,6 +95561,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "复苏法术",
@@ -95265,6 +95699,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "复苏法术",
@@ -95292,6 +95727,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "TH17WeaponAreaDamage",
@@ -95427,6 +95863,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "BarbKingEquipSpawn",
@@ -95464,6 +95901,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "重度摧毁",
@@ -95501,6 +95939,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "伤害药水法术",
@@ -95528,6 +95967,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused2",
@@ -95555,6 +95995,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused3",
@@ -95762,6 +96203,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "April25_TBRM_Aura",
@@ -95957,6 +96399,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "April25_TBRM_DeathSpawn",
@@ -96164,6 +96607,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "April25_RRAltProjectile_Spawn",
@@ -96371,6 +96815,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "April25_RRAltProjectile_Spawn_DEF",
@@ -96533,6 +96978,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "冰障法术",
@@ -96668,6 +97114,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "MPMeteorStaffSpell",
@@ -96695,6 +97142,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "MeteorGolemImpactSpell",
@@ -96914,6 +97362,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 17,
       "missingReason": null,
       "name": "TH18EventMeteorDeathDamage",
@@ -96941,6 +97390,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "SmasherRageArea",
@@ -96978,6 +97428,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "伤害药水法术模式",
@@ -97005,6 +97456,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "GuardianRage",
@@ -97032,6 +97484,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "GuardianReviveSpell",
@@ -97167,6 +97620,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "SeasonalDefenseHeroBoosterRageAura",
@@ -97302,6 +97756,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "SeasonalDefenseHeroBoosterHealthBoostAura",
@@ -97339,6 +97794,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "雷电法术",
@@ -97451,6 +97907,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "图腾法术",
@@ -97538,6 +97995,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "TotemSummon",
@@ -97575,6 +98033,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "疗伤法术",
@@ -97687,6 +98146,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "愤怒法术",
@@ -97714,6 +98174,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused4",
@@ -97741,6 +98202,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused5",
@@ -97972,6 +98434,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "Clashmas25FireArea",
@@ -98203,6 +98666,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "LNY26HealingArea",
@@ -98434,6 +98898,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "LNY26DeathDamage",
@@ -98569,6 +99034,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "Lava Launcher Hit Spell_Seasonal_Defense",
@@ -98606,6 +99072,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "地震法术",
@@ -98741,6 +99208,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "DragonDukeDashAura",
@@ -98768,6 +99236,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "DragonDukeRingOfFire",
@@ -98867,6 +99336,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "DragonDukeFireBlast",
@@ -98966,6 +99436,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "DragonCrownExplosion",
@@ -99065,6 +99536,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "DDBlastSpell",
@@ -99092,6 +99564,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "DragonDukeFireBlastMini",
@@ -99119,6 +99592,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "GuardianBuilderRageSpell",
@@ -99350,6 +99824,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "ElephantRiderSummonElephant",
@@ -99581,6 +100056,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "ElephantRiderSummonRider",
@@ -99608,6 +100084,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Unused9",
@@ -99671,6 +100148,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "AirTroopSummon",
@@ -99806,6 +100284,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "CakeThrowerExplosion",
@@ -100176,6 +100655,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "隐形炸弹",
@@ -100521,6 +101001,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "隐形弹簧",
@@ -100841,6 +101322,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "巨型炸弹",
@@ -100886,6 +101368,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "南瓜炸弹",
@@ -100931,6 +101414,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "隐形炸弹",
@@ -101276,6 +101760,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "空中炸弹",
@@ -101496,6 +101981,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "搜空地雷",
@@ -101541,6 +102027,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "圣诞奇袭",
@@ -101686,6 +102173,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "骷髅陷阱",
@@ -101731,6 +102219,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "冰冻陷阱",
@@ -101776,6 +102265,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "玲珑陷阱",
@@ -101871,6 +102361,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "飓风陷阱",
@@ -101916,6 +102407,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林玲珑陷阱",
@@ -101961,6 +102453,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林冰冻陷阱",
@@ -102006,6 +102499,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "骷髅陷阱",
@@ -102126,6 +102620,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "终极炸弹",
@@ -102271,6 +102766,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "隐形弹簧",
@@ -102541,6 +103037,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "弹射陷阱",
@@ -102586,6 +103083,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "空中陷阱",
@@ -102856,6 +103354,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "地雷",
@@ -103126,6 +103625,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "巨型地雷",
@@ -103463,6 +103963,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野蛮人",
@@ -103825,6 +104326,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "弓箭手",
@@ -104087,6 +104589,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "哥布林",
@@ -104449,6 +104952,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "巨人",
@@ -104811,6 +105315,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "炸弹人",
@@ -105148,6 +105653,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "气球兵",
@@ -105510,6 +106016,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "法师",
@@ -105797,6 +106304,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 11,
       "missingReason": null,
       "name": "天使",
@@ -106134,6 +106642,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "飞龙",
@@ -106471,6 +106980,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "皮卡超人",
@@ -106833,6 +107343,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "亡灵",
@@ -107220,6 +107731,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "野猪骑士",
@@ -107532,6 +108044,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "瓦基丽武神",
@@ -107919,6 +108432,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "戈仑石人",
@@ -108194,6 +108708,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "小戈仑石人",
@@ -108406,6 +108921,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "女巫",
@@ -108445,6 +108961,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "骷髅兵",
@@ -108657,6 +109174,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "熔岩猎犬",
@@ -108684,6 +109202,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "迷你熔岩犬",
@@ -108723,6 +109242,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "骷髅兵",
@@ -108750,6 +109270,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "亡灵",
@@ -108789,6 +109310,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 2,
       "missingReason": null,
       "name": "空中骷髅兵",
@@ -109051,6 +109573,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "巨石投手",
@@ -109363,6 +109886,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "飞龙宝宝",
@@ -109675,6 +110199,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "掘地矿工",
@@ -109962,6 +110487,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 11,
       "missingReason": null,
       "name": "掘地矿工",
@@ -110199,6 +110725,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "超级野蛮人",
@@ -110461,6 +110988,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "超级弓箭手",
@@ -110723,6 +111251,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "超级炸弹人",
@@ -110985,6 +111514,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "超级巨人",
@@ -111322,6 +111852,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "寒冰法师",
@@ -111359,6 +111890,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "哥布林",
@@ -111696,6 +112228,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野蛮人攻城槌",
@@ -111937,6 +112470,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野蛮人",
@@ -112274,6 +112808,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "皇家幽灵",
@@ -112611,6 +113146,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "南瓜野蛮人",
@@ -112852,6 +113388,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野蛮人",
@@ -113189,6 +113726,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "骷髅巨人",
@@ -113401,6 +113939,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "大雪怪",
@@ -113512,6 +114051,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "小雪怪",
@@ -113674,6 +114214,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "隐秘哥布林",
@@ -113986,6 +114527,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "超级矿工",
@@ -114223,6 +114765,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "火箭气球兵",
@@ -114460,6 +115003,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 9,
       "missingReason": null,
       "name": "戈仑冰人",
@@ -114697,6 +115241,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 9,
       "missingReason": null,
       "name": "雷电飞龙",
@@ -114734,6 +115279,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "飞龙",
@@ -115071,6 +115617,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "骷髅飞桶",
@@ -115383,6 +115930,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "地狱飞龙",
@@ -115695,6 +116243,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 12,
       "missingReason": null,
       "name": "超级瓦基丽武神",
@@ -115857,6 +116406,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "龙骑士",
@@ -116069,6 +116619,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "超级女巫",
@@ -116406,6 +116957,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "机甲超人",
@@ -116433,6 +116985,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "蝙蝠",
@@ -116606,6 +117159,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 9,
       "missingReason": null,
       "name": "戈仑冰人",
@@ -116943,6 +117497,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "派对法师",
@@ -116970,6 +117525,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "骷髅兵",
@@ -116997,6 +117553,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "骷髅兵",
@@ -117209,6 +117766,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "寒冰猎犬",
@@ -117365,6 +117923,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "熔岩猎犬",
@@ -117392,6 +117951,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "大宝宝",
@@ -117503,6 +118063,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "寒冰猎犬",
@@ -117765,6 +118326,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "超级巨石投手",
@@ -118052,6 +118614,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "超级飞龙",
@@ -118164,6 +118727,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "英雄猎手",
@@ -118426,6 +118990,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "超级法师",
@@ -118713,6 +119278,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "超级亡灵",
@@ -118740,6 +119306,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "迷你寒冰犬",
@@ -118887,6 +119454,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 14,
       "missingReason": null,
       "name": "超级亡灵",
@@ -118986,6 +119554,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "Defending Builder",
@@ -119023,6 +119592,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -119060,6 +119630,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "雷霆皮卡",
@@ -119097,6 +119668,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -119434,6 +120006,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "蛮羊骑士",
@@ -119571,6 +120144,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "雷霆泰坦",
@@ -119598,6 +120172,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "小冰怪",
@@ -119710,6 +120285,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "守护者学徒",
@@ -120022,6 +120598,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "超级野猪骑士",
@@ -120269,6 +120846,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "超猛野猪",
@@ -120516,6 +121094,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "超猛骑士",
@@ -120853,6 +121432,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野蛮箭手",
@@ -121190,6 +121770,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "女巫戈仑",
@@ -121527,6 +122108,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野猪法师",
@@ -121864,6 +122446,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "熔岩气球",
@@ -122035,6 +122618,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "迷你熔岩气球犬",
@@ -122147,6 +122731,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "废墟女巫",
@@ -122259,6 +122844,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "根蔓骑士",
@@ -122296,6 +122882,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -122333,6 +122920,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -122360,6 +122948,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "小冰怪",
@@ -122397,6 +122986,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -122434,6 +123024,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -122461,6 +123052,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "骷髅兵",
@@ -122632,6 +123224,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "大宝宝",
@@ -122969,6 +123562,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "饼干皮卡",
@@ -123306,6 +123900,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "烟花炮手",
@@ -123643,6 +124238,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "驭水青龙",
@@ -123980,6 +124576,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "任意球野蛮人",
@@ -124317,6 +124914,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "边线球巨人",
@@ -124479,6 +125077,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "德鲁伊",
@@ -124566,6 +125165,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 6,
       "missingReason": null,
       "name": "巨熊",
@@ -124903,6 +125503,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "扫帚女巫",
@@ -125074,6 +125675,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "女巫精灵",
@@ -125137,6 +125739,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "废墟骑士",
@@ -125424,6 +126027,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 11,
       "missingReason": null,
       "name": "熔岩气球",
@@ -125571,6 +126175,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 11,
       "missingReason": null,
       "name": "迷你熔岩气球犬",
@@ -125908,6 +126513,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "寒冰亡灵",
@@ -125945,6 +126551,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -126057,6 +126664,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "巨矛投手",
@@ -126094,6 +126702,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -126131,6 +126740,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -126468,6 +127078,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "收债哥布林",
@@ -126505,6 +127116,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -126542,6 +127154,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -126579,6 +127192,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -126616,6 +127230,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -126751,6 +127366,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "鼻涕小怪",
@@ -127088,6 +127704,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "灵蛇飞桶",
@@ -127115,6 +127732,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "灵蛇",
@@ -127250,6 +127868,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "灵蛇",
@@ -127287,6 +127906,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "饼干皮卡",
@@ -127474,6 +128094,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 7,
       "missingReason": null,
       "name": "护卫",
@@ -127686,6 +128307,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "超级大雪怪",
@@ -127797,6 +128419,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 8,
       "missingReason": null,
       "name": "雷电小雪怪",
@@ -127902,6 +128525,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "小火怪",
@@ -128014,6 +128638,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "烈焰熔炉",
@@ -128077,6 +128702,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "烈焰熔炉",
@@ -128165,6 +128791,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "小火怪",
@@ -128202,6 +128829,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -128239,6 +128867,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -128276,6 +128905,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "野蛮人",
@@ -128688,6 +129318,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "霸天巨人",
@@ -129100,6 +129731,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "皮卡凯恩",
@@ -129437,6 +130069,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "铁臂终结者",
@@ -129849,6 +130482,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "战吼狂人",
@@ -129886,6 +130520,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人",
@@ -129923,6 +130558,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人",
@@ -130335,6 +130971,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "皮卡凯恩",
@@ -130747,6 +131384,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "部族小队",
@@ -131159,6 +131797,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 16,
       "missingReason": null,
       "name": "战吼狂人",
@@ -131496,6 +132135,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "铁臂终结者",
@@ -131883,6 +132523,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 15,
       "missingReason": null,
       "name": "部族小队",
@@ -132220,6 +132861,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "陨石戈仑",
@@ -132461,6 +133103,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 13,
       "missingReason": null,
       "name": "小陨石戈仑",
@@ -132568,6 +133211,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "远袭者",
@@ -132675,6 +133319,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "粉碎者",
@@ -132702,6 +133347,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -132729,6 +133375,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -132756,6 +133403,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -132783,6 +133431,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "戈仑石人",
@@ -132846,6 +133495,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "戈仑石人",
@@ -132883,6 +133533,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人",
@@ -132970,6 +133621,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "陨石戈仑",
@@ -133041,6 +133693,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "小陨石戈仑",
@@ -133112,6 +133765,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "陨石戈仑",
@@ -133183,6 +133837,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 3,
       "missingReason": null,
       "name": "小陨石戈仑",
@@ -133210,6 +133865,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Guardian Sniffer",
@@ -133237,6 +133893,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Guardian Builder",
@@ -133344,6 +134001,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 5,
       "missingReason": null,
       "name": "滚木手",
@@ -133371,6 +134029,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "Guardian Returner",
@@ -133833,6 +134492,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "大象骑士",
@@ -134200,6 +134860,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "大象",
@@ -134662,6 +135323,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "骑士",
@@ -134699,6 +135361,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人",
@@ -134736,6 +135399,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "野蛮人",
@@ -134799,6 +135463,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 4,
       "missingReason": null,
       "name": "废墟女巫",
@@ -135311,6 +135976,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "狂暴野蛮人",
@@ -135823,6 +136489,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "隐秘弓箭手",
@@ -136285,6 +136952,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "异变亡灵",
@@ -136747,6 +137415,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "巨人拳击手",
@@ -137159,6 +137828,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "炸弹兵",
@@ -137371,6 +138041,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "雷霆皮卡",
@@ -137733,6 +138404,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "加农炮战车",
@@ -137995,6 +138667,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "骷髅气球",
@@ -138022,6 +138695,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "骷髅兵",
@@ -138434,6 +139108,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "飞龙宝宝",
@@ -138746,6 +139421,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "暗夜女巫",
@@ -138773,6 +139449,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "蝙蝠",
@@ -139099,6 +139776,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 18,
       "missingReason": null,
       "name": "加农炮战车",
@@ -139261,6 +139939,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "野猪飞骑",
@@ -139383,6 +140062,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "野猪骑士",
@@ -139410,6 +140090,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 1,
       "missingReason": null,
       "name": "蝙蝠",
@@ -139522,6 +140203,7 @@
           ]
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 20,
       "missingReason": null,
       "name": "电火法师",
@@ -139657,6 +140339,7 @@
           "upgradeCosts": null
         }
       ],
+      "lifecycle": "permanent",
       "maxLevel": 10,
       "missingReason": null,
       "name": "电击车",

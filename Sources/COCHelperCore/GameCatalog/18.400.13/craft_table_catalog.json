@@ -7,6 +7,7 @@
   "defenses": [
     {
       "dataID": 103000000,
+      "lifecycle": "permanent",
       "name": "钩索塔",
       "sourceName": "HookTower",
       "specialAbility": "SeasonalDefenseHookTower",
@@ -23,6 +24,7 @@
     },
     {
       "dataID": 103000001,
+      "lifecycle": "permanent",
       "name": "太阳光束",
       "sourceName": "SunBeam",
       "specialAbility": "SeasonalDefenseSunBeam",
@@ -39,6 +41,7 @@
     },
     {
       "dataID": 103000002,
+      "lifecycle": "permanent",
       "name": "掷木器",
       "sourceName": "LogLobber",
       "specialAbility": "SeasonalDefenseLogLobber",
@@ -55,6 +58,7 @@
     },
     {
       "dataID": 103000003,
+      "lifecycle": "permanent",
       "name": "旋转喷火器",
       "sourceName": "FlameSpinner",
       "specialAbility": "SeasonalDefenseFlameSpinner",
@@ -71,6 +75,7 @@
     },
     {
       "dataID": 103000004,
+      "lifecycle": "permanent",
       "name": "碎岩迫击炮",
       "sourceName": "CrusherMortar",
       "specialAbility": "SeasonalDefenseCrusherMortar",
@@ -87,6 +92,7 @@
     },
     {
       "dataID": 103000005,
+      "lifecycle": "permanent",
       "name": "懒惰激光",
       "sourceName": "LazyLaser",
       "specialAbility": "SeasonalDefenseLazyLaser",
@@ -103,6 +109,7 @@
     },
     {
       "dataID": 103000006,
+      "lifecycle": "permanent",
       "name": "减速塔",
       "sourceName": "SlowdownTower",
       "specialAbility": "SeasonalDefenseSlowdownTower",
@@ -119,6 +126,7 @@
     },
     {
       "dataID": 103000007,
+      "lifecycle": "permanent",
       "name": "英雄助推器",
       "sourceName": "HeroBooster",
       "specialAbility": "SeasonalDefenseHeroBooster",
@@ -135,6 +143,7 @@
     },
     {
       "dataID": 103000008,
+      "lifecycle": "seasonalCandidate",
       "name": "熔岩火炮",
       "sourceName": "SDRoaster",
       "specialAbility": "SeasonalDefenseRoaster",
@@ -157,6 +166,7 @@
     },
     {
       "dataID": 103000009,
+      "lifecycle": "seasonalCandidate",
       "name": "防空炸弹",
       "sourceName": "SDAirBombs",
       "specialAbility": "SeasonalDefenseAirBombs",
@@ -179,6 +189,7 @@
     },
     {
       "dataID": 103000010,
+      "lifecycle": "seasonalCandidate",
       "name": "熔岩发射器",
       "sourceName": "SDLavaLauncher",
       "specialAbility": "SeasonalDefenseLavaLauncher",
@@ -201,6 +212,7 @@
     },
     {
       "dataID": 103000011,
+      "lifecycle": "permanent",
       "name": "火热蜡烛",
       "sourceName": "Inferno Candle",
       "specialAbility": "SeasonalDefenseInfernoCandle",
@@ -217,6 +229,7 @@
     },
     {
       "dataID": 103000012,
+      "lifecycle": "permanent",
       "name": "英雄猎台",
       "sourceName": "Headhunter Tower",
       "specialAbility": "SeasonalDefenseHeadhunterTower",
@@ -233,6 +246,7 @@
     },
     {
       "dataID": 103000013,
+      "lifecycle": "permanent",
       "name": "蛋糕投掷器",
       "sourceName": "Cake Thrower",
       "specialAbility": "SeasonalDefenseCakeThrower",

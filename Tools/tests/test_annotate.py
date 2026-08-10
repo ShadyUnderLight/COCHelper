@@ -23,6 +23,8 @@ def _item(data_id, name="x", section="buildings", base="home"):
             level=1, durationSeconds=0, missingReason=None,
             upgradeCosts=None, requiredTownHallLevel=None,
             requiredLaboratoryLevel=None, icon=None, levelVisual=None)],
+        # Issue #98：构造用 dataID 均在真实声明文件中（permanent）
+        lifecycle="permanent",
     )
 
 

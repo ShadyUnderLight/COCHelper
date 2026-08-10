@@ -106,6 +106,37 @@ final class BattleModifierTests: XCTestCase {
         XCTAssertEqual(BattleModifierText.localizedText(for: "\nunknownRule\t"), "unknownRule")
     }
 
+    /// Property-based：对 4 个已知 key 与随机未知值施加随机空白前缀/后缀
+    /// （空格/制表/换行/空串组合），结果必须与无空白输入一致。
+    /// 固定 seed 确定性复现，复用共享 LCG 的 pick() 便捷方法。
+    func testLocalizedTextPropertyRandomWhitespace() {
+        let whitespacePool = ["", " ", "\t", "\n", " \t", "\n\t ", "  \n  "]
+        let knownCases: [(raw: String, expected: String)] = [
+            ("hardMode", "困难模式"),
+            ("minusOne", "传奇杯 I"),
+            ("minusTwo", "传奇杯 II"),
+            ("minusThree", "传奇杯 III"),
+        ]
+        var r = LCG(seed: 0xB47_71E_0000_0100) // "issue100" 变体 seed，与既有 seed 不重复
+        for _ in 0..<100 {
+            let prefix = r.pick(whitespacePool)
+            let suffix = r.pick(whitespacePool)
+            for (raw, expected) in knownCases {
+                XCTAssertEqual(
+                    BattleModifierText.localizedText(for: prefix + raw + suffix),
+                    expected,
+                    "known key 带任意空白必须命中同一映射"
+                )
+            }
+            let unknown = "v" + String(repeating: "x", count: 1 + Int(r.next() % 8))
+            XCTAssertEqual(
+                BattleModifierText.localizedText(for: prefix + unknown + suffix),
+                unknown,
+                "未知非空值必须回退 trim 后原样，不得被空白影响"
+            )
+        }
+    }
+
     // MARK: - currentwar fuzz（property-based）
 
     /// Property-based fuzz：battleModifier 随机形态（缺失/null/known/unknown/empty/长串）

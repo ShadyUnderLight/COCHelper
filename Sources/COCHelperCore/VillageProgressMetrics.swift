@@ -450,7 +450,7 @@ public enum VillageProgressProjection {
             parts.append(String(unavailableHomeCount) + " 个村庄覆盖状态不可用，无法确认完整村庄进度。")
         }
         if includesBuilderBaseData {
-            parts.append("聚合含建筑大师基地已观测数据（该基地数据源不可靠，未纳入完整宇宙口径），无法确认完整村庄进度。")
+            parts.append("聚合含建筑大师基地已观测数据（数据源不可靠，未纳入完整宇宙口径），无法确认完整村庄进度。")
         }
         return parts
     }

@@ -21,7 +21,8 @@ fail-loud（外部评审 P1 硬化）：APK 不存在 / APK build.tag 与 manife
 不一致 / APK SHA-256 与 manifest.sourceFingerprint 不一致 / manifest 畸形或缺
 generatedFiles.catalog.json 条目 / 表缺失 / 列缺失 / 等级查不到 / BS 非数字或
 越界 → CatalogError + exit 1，不写任何文件（全部校验与构建在写回前完成；
-catalog.json + manifest.json 以 tmp + os.replace 双文件原子写回）。
+catalog.json + manifest.json 以 tmp + os.replace 双文件原子写回，任一 replace
+失败自动回滚已写入文件——严格 all-or-nothing，外部评审 P2）。
 
 用法:
   python3 Tools/annotate_blacksmith_levels.py \\
@@ -217,11 +218,36 @@ def annotate_directory(apk: str | Path, dir_path: str | Path) -> dict:
     manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2,
                                 sort_keys=True).encode("utf-8") + b"\n"
 
-    for target, data in ((catalog_path, catalog_bytes),
-                         (manifest_path, manifest_bytes)):
-        tmp = target.with_name(target.name + ".tmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, target)
+    # 严格 all-or-nothing（外部评审 P2）：写回前备份两文件旧字节；任一
+    # os.replace 失败 → 回滚已写入的目标（tmp + os.replace 原子回滚），
+    # 不留「catalog 新 / manifest 旧」半状态；回滚自身失败时由 validator
+    # 的 generatedFiles 哈希比对 fail-closed 兜底（可检测，重跑幂等修复）。
+    old_bytes = {name: p.read_bytes() for name, p in
+                 (("catalog.json", catalog_path), ("manifest.json", manifest_path))}
+    written: list[tuple[Path, bytes]] = []
+    current_tmp: Path | None = None
+    try:
+        for target, data in ((catalog_path, catalog_bytes),
+                             (manifest_path, manifest_bytes)):
+            current_tmp = target.with_name(target.name + ".tmp")
+            current_tmp.write_bytes(data)
+            os.replace(current_tmp, target)
+            current_tmp = None
+            written.append((target, old_bytes[target.name]))
+    except OSError as exc:
+        # 清理 write 成功但 replace 失败残留的 .tmp
+        if current_tmp is not None:
+            current_tmp.unlink(missing_ok=True)
+        rollback_failed: list[str] = []
+        for target, old in written:
+            try:
+                tmp = target.with_name(target.name + ".rollback.tmp")
+                tmp.write_bytes(old)
+                os.replace(tmp, target)
+            except OSError:
+                rollback_failed.append(target.name)
+        suffix = f"；回滚失败: {rollback_failed}" if rollback_failed else ""
+        raise CatalogError(f"写入 catalog/manifest 失败: {exc}{suffix}") from exc
 
     looked_up = sum(1 for item in catalog.items if item.section == "equipment"
                     for _ in item.levels)

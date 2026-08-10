@@ -8,6 +8,7 @@
 import hashlib
 import json
 import lzma
+import os
 import zipfile
 from pathlib import Path
 
@@ -386,3 +387,52 @@ def test_annotate_manifest_counts_not_dict_rejected_cleanly(tmp_path):
     with pytest.raises(CatalogError, match="counts"):
         annotate_directory(apk, d)
     assert (d / "catalog.json").read_bytes() == cat_before
+
+
+def test_annotate_rolls_back_on_second_replace_failure(tmp_path, monkeypatch):
+    """P2：双文件写回 all-or-nothing——第二次 os.replace（manifest）失败时
+    必须回滚已写入的 catalog.json，不留「catalog 新 / manifest 旧」半状态，
+    且不残留 .tmp/.rollback.tmp。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    calls = {"n": 0}
+    real_replace = os.replace
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:  # 第二次 replace = manifest.json
+            raise OSError("注入: 第二次 replace 失败")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", flaky_replace)
+    cat_before = (d / "catalog.json").read_bytes()
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="写入 catalog/manifest 失败"):
+        annotate_directory(apk, d)
+    # all-or-nothing：双文件都回到旧内容
+    assert (d / "catalog.json").read_bytes() == cat_before
+    assert (d / "manifest.json").read_bytes() == man_before
+    # 无 tmp / rollback tmp 残留
+    assert not list(d.glob("*.tmp"))
+    assert not list(d.glob("*.rollback.tmp"))
+
+
+def test_annotate_rolls_back_on_first_replace_failure(tmp_path, monkeypatch):
+    """P2：第一次 os.replace（catalog.json）失败 → 无已写入文件可回滚，干净失败。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    calls = {"n": 0}
+    real_replace = os.replace
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("注入: 第一次 replace 失败")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", flaky_replace)
+    cat_before = (d / "catalog.json").read_bytes()
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="写入 catalog/manifest 失败"):
+        annotate_directory(apk, d)
+    assert (d / "catalog.json").read_bytes() == cat_before
+    assert (d / "manifest.json").read_bytes() == man_before
+    assert not list(d.glob("*.tmp"))

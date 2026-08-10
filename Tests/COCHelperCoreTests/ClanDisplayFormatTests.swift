@@ -179,4 +179,60 @@ final class ClanDisplayFormatTests: XCTestCase {
             "未本地化联赛（ID: 99999999）"
         )
     }
+
+    // MARK: - typeLabel（Issue #101：open → 任何人都可加入）
+
+    /// 已知三值穷举（P1）+ 未知值。官方 raw value 精确匹配。
+    /// open 文案为 Issue #101 唯一改动点：任何人可加入。
+    func testTypeLabelKnownValues() {
+        XCTAssertEqual(ClanDisplayFormat.typeLabel("open"), "任何人都可加入")
+        XCTAssertEqual(ClanDisplayFormat.typeLabel("inviteOnly"), "只有被批准才能加入")
+        XCTAssertEqual(ClanDisplayFormat.typeLabel("closed"), "不可加入")
+        XCTAssertEqual(ClanDisplayFormat.typeLabel("unknown_raw_value"), "未知")
+        // P3：不回显已知英文 raw（open/inviteOnly/closed 不直接显示为输出）
+        XCTAssertNotEqual(ClanDisplayFormat.typeLabel("open"), "open")
+        XCTAssertNotEqual(ClanDisplayFormat.typeLabel("inviteOnly"), "inviteOnly")
+        XCTAssertNotEqual(ClanDisplayFormat.typeLabel("closed"), "closed")
+    }
+
+    /// 类 raw 值（大小写变体、首尾空白、分隔符变体、空串）不得命中
+    /// 精确匹配 → 全部「未知」（不做修剪/归一化，官方 raw 三值恒等匹配）。
+    /// 「未知」输入刻意包含：fallback 文案与输入撞名时返回「未知」是预期行为
+    /// （P3 只约束"不回显已知英文 raw"，不做输出≠输入的绝对断言）。
+    func testTypeLabelExactMatchNoNormalization() {
+        let nearMisses = ["Open", "OPEN", " OPEN ", "open\n", "invite_only", "InviteOnly", "closed\n", "CLOSED", "", "未知"]
+        for raw in nearMisses {
+            XCTAssertEqual(ClanDisplayFormat.typeLabel(raw), "未知", "raw: \(raw.debugDescription)")
+            XCTAssertFalse(["open", "inviteOnly", "closed"].contains(ClanDisplayFormat.typeLabel(raw)), "P3: 回显已知英文 raw: \(raw.debugDescription)")
+        }
+    }
+
+    /// Property-based（固定 seed SplitMix64，可复现，同 clanLevelLabel 风格）：
+    /// 任意字符串（ASCII + CJK/emoji，长度 0-12）输出恒为「未知」（P2）；
+    /// P3 为"不回显已知英文 raw"（open/inviteOnly/closed 不直接显示为输出）；
+    /// 已知三值 + 生成值全部输出均属于四态集合（P4，联合输出域封闭）。
+    /// 字母表**包含**「未」「知」二字：生成器可能拼出"未知"输入，
+    /// 此时返回「未知」是预期行为（P2/P3 均不因撞名而失败）。
+    func testTypeLabelPropertyUnknownForArbitraryASCIIStrings() {
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-.\n\t部落大本营未知🏆🎮")
+        let known = Set(["open", "inviteOnly", "closed"])
+        let fourStates = Set(["任何人都可加入", "只有被批准才能加入", "不可加入", "未知"])
+        // P4 联合输出域：已知三值也须属于四态集合（独立于 P1 穷举的契约断言）
+        for raw in known {
+            XCTAssertTrue(fourStates.contains(ClanDisplayFormat.typeLabel(raw)), "输出不在四态集合: \(raw)")
+        }
+        var rng = SplitMix64Generator(seed: 0x01_01)
+        var asserted = 0
+        for _ in 0..<600 {
+            let count = Int.random(in: 0...12, using: &rng)
+            let raw = String((0..<count).map { _ in alphabet[Int.random(in: 0..<alphabet.count, using: &rng)] })
+            if known.contains(raw) { continue } // 已知三值由穷举断言覆盖（P1），避免重复
+            let label = ClanDisplayFormat.typeLabel(raw)
+            XCTAssertEqual(label, "未知") // P2
+            XCTAssertFalse(known.contains(label), "P3: 回显已知英文 raw: \(label.debugDescription)") // P3：不回显英文 raw
+            XCTAssertTrue(fourStates.contains(label), "输出不在四态集合: \(label.debugDescription)") // P4
+            asserted += 1
+        }
+        XCTAssertGreaterThanOrEqual(asserted, 500)
+    }
 }

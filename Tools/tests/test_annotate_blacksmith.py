@@ -16,6 +16,7 @@ import pytest
 from annotate_blacksmith_levels import annotate_directory, build_bs_mapping
 from game_catalog.catalog import counts_for
 from game_catalog.errors import CatalogError
+from game_catalog.fingerprint import sha256_file
 from game_catalog.model import Catalog, CatalogItem, CatalogLevel, catalog_to_dict
 
 # 最小 character_items.csv：3 块（第 3 块 deprecated），header + doc 行 + 数据行。
@@ -94,7 +95,7 @@ def _make_dir_and_apk(tmp_path: Path) -> tuple[Path, Path]:
     (d / "icons").mkdir()
     (d / "manifest.json").write_text(json.dumps({
         "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
-        "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
+        "locale": "zh-CN", "sourceFingerprint": sha256_file(apk),
         "generatedFiles": [
             {"path": "catalog.json",
              "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
@@ -220,6 +221,10 @@ def test_annotate_apk_missing_table(tmp_path):
     apk = tmp_path / "empty.apk"
     with zipfile.ZipFile(apk, "w") as z:
         z.writestr("assets/build.tag", "18_400_7")
+    # 同步 manifest 的 fingerprint 到该 APK（否则先触发 fingerprint 不匹配，测不到缺表）
+    m = json.loads((d / "manifest.json").read_text())
+    m["sourceFingerprint"] = sha256_file(apk)
+    (d / "manifest.json").write_text(json.dumps(m))
     cat_before = (d / "catalog.json").read_bytes()
     with pytest.raises(CatalogError, match="character_items.csv"):
         annotate_directory(apk, d)
@@ -230,6 +235,10 @@ def test_annotate_apk_missing_column(tmp_path):
     d, _ = _make_dir_and_apk(tmp_path)
     apk = _make_apk(tmp_path, CSV_TEXT.replace("RequiredBlacksmithLevel",
                                                "RequiredTownHallLevel"))
+    # 同步 manifest 的 fingerprint 到该 APK（否则先触发 fingerprint 不匹配，测不到缺列）
+    m = json.loads((d / "manifest.json").read_text())
+    m["sourceFingerprint"] = sha256_file(apk)
+    (d / "manifest.json").write_text(json.dumps(m))
     cat_before = (d / "catalog.json").read_bytes()
     with pytest.raises(CatalogError, match="RequiredBlacksmithLevel"):
         annotate_directory(apk, d)
@@ -256,3 +265,89 @@ def test_annotate_fails_loud_on_missing_level(tmp_path):
         annotate_directory(apk, d)
     assert (d / "catalog.json").read_bytes() == cat_before
     assert (d / "manifest.json").read_bytes() == man_before
+
+
+# ---- P1（外部评审）：APK 版本/来源契约校验 + manifest 校验前置 + 原子写 ----
+
+def test_annotate_apk_build_tag_mismatch_rejected(tmp_path):
+    """换用不同 build 的 APK：build.tag 与 manifest.buildTag 不一致 → fail loud，
+    不落盘（防用错版本 APK 写入错误门槛数据）。"""
+    d, _ = _make_dir_and_apk(tmp_path)
+    apk = tmp_path / "other-build.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/build.tag", "19_0_0")
+        z.writestr("assets/logic/character_items.csv", _packed(CSV_TEXT))
+    # fingerprint 同步到该 APK，隔离 buildTag 不匹配路径
+    m = json.loads((d / "manifest.json").read_text())
+    m["sourceFingerprint"] = sha256_file(apk)
+    (d / "manifest.json").write_text(json.dumps(m))
+    cat_before = (d / "catalog.json").read_bytes()
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="build.tag"):
+        annotate_directory(apk, d)
+    assert (d / "catalog.json").read_bytes() == cat_before
+    assert (d / "manifest.json").read_bytes() == man_before
+
+
+def test_annotate_apk_fingerprint_mismatch_rejected(tmp_path):
+    """同 build 但不同字节的 APK：SHA-256 与 manifest.sourceFingerprint 不一致
+    → fail loud，不落盘（目录生成时的原 APK 溯源契约）。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    m = json.loads((d / "manifest.json").read_text())
+    m["sourceFingerprint"] = "sha256:" + "b" * 64
+    (d / "manifest.json").write_text(json.dumps(m))
+    cat_before = (d / "catalog.json").read_bytes()
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="sourceFingerprint"):
+        annotate_directory(apk, d)
+    assert (d / "catalog.json").read_bytes() == cat_before
+    assert (d / "manifest.json").read_bytes() == man_before
+
+
+def test_annotate_manifest_malformed_rejected(tmp_path):
+    """畸形 manifest（非法 JSON）：在写任何文件之前拒绝，不产生半写入目录。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    (d / "manifest.json").write_text("{not valid json")
+    cat_before = (d / "catalog.json").read_bytes()
+    with pytest.raises(CatalogError, match="manifest.json 解析失败"):
+        annotate_directory(apk, d)
+    assert (d / "catalog.json").read_bytes() == cat_before
+
+
+def test_annotate_manifest_missing_catalog_entry_rejected(tmp_path):
+    """manifest 缺 generatedFiles.catalog.json 条目：无法更新哈希 → fail loud，
+    不落盘（不得静默成功留下哈希过期目录）。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    m = json.loads((d / "manifest.json").read_text())
+    m["generatedFiles"] = [e for e in m["generatedFiles"] if e.get("path") != "catalog.json"]
+    (d / "manifest.json").write_text(json.dumps(m))
+    cat_before = (d / "catalog.json").read_bytes()
+    man_before = (d / "manifest.json").read_bytes()
+    with pytest.raises(CatalogError, match="generatedFiles"):
+        annotate_directory(apk, d)
+    assert (d / "catalog.json").read_bytes() == cat_before
+    assert (d / "manifest.json").read_bytes() == man_before
+
+
+def test_annotate_manifest_missing_build_tag_rejected(tmp_path):
+    """manifest 缺 buildTag（provenance 不完整）：fail loud，不落盘。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    m = json.loads((d / "manifest.json").read_text())
+    del m["buildTag"]
+    (d / "manifest.json").write_text(json.dumps(m))
+    cat_before = (d / "catalog.json").read_bytes()
+    with pytest.raises(CatalogError, match="buildTag"):
+        annotate_directory(apk, d)
+    assert (d / "catalog.json").read_bytes() == cat_before
+
+
+def test_annotate_manifest_missing_fingerprint_rejected(tmp_path):
+    """manifest 缺 sourceFingerprint（provenance 不完整）：fail loud，不落盘。"""
+    d, apk = _make_dir_and_apk(tmp_path)
+    m = json.loads((d / "manifest.json").read_text())
+    del m["sourceFingerprint"]
+    (d / "manifest.json").write_text(json.dumps(m))
+    cat_before = (d / "catalog.json").read_bytes()
+    with pytest.raises(CatalogError, match="sourceFingerprint"):
+        annotate_directory(apk, d)
+    assert (d / "catalog.json").read_bytes() == cat_before

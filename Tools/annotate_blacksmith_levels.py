@@ -17,8 +17,11 @@ id_base 与 builders.py _make_item 的 data_id = spec.id_base + ordinal；
   - deprecated 记录同样占 ordinal；
   - 行 Level 即等级（equipment 是 to_level 语义：行 N 的门槛属于 level N）。
 
-fail-loud：APK 不存在 / 表缺失 / 列缺失 / 等级查不到 / BS 非数字或越界 →
-CatalogError + exit 1，不写任何文件（写回前完成全部检查与构建）。
+fail-loud（外部评审 P1 硬化）：APK 不存在 / APK build.tag 与 manifest.buildTag
+不一致 / APK SHA-256 与 manifest.sourceFingerprint 不一致 / manifest 畸形或缺
+generatedFiles.catalog.json 条目 / 表缺失 / 列缺失 / 等级查不到 / BS 非数字或
+越界 → CatalogError + exit 1，不写任何文件（全部校验与构建在写回前完成；
+catalog.json + manifest.json 以 tmp + os.replace 双文件原子写回）。
 
 用法:
   python3 Tools/annotate_blacksmith_levels.py \\
@@ -29,16 +32,17 @@ import argparse
 import csv
 import io
 import json
+import os
 import sys
 import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from game_catalog.apk import decode_asset
+from game_catalog.apk import decode_asset, read_build_tag
 from game_catalog.catalog import counts_for
 from game_catalog.errors import CatalogError
-from game_catalog.fingerprint import sha256_bytes
+from game_catalog.fingerprint import sha256_bytes, sha256_file
 from game_catalog.model import catalog_from_dict, catalog_to_dict
 from game_catalog.tables import TABLES, group_blocks
 from game_catalog import BLACKSMITH_LEVEL_MIN, BLACKSMITH_LEVEL_MAX
@@ -105,6 +109,18 @@ def build_bs_mapping(csv_text: str) -> dict[tuple[int, int], int]:
 def annotate_directory(apk: str | Path, dir_path: str | Path) -> dict:
     """从 APK 回填 catalog 目录的 equipment requiredBlacksmithLevel。幂等。
 
+    **写回前置校验（外部评审 P1）——任何失败都不落盘：**
+    - manifest.json 必须可解析、含 buildTag/sourceFingerprint、且
+      generatedFiles 含 catalog.json 条目（否则无法重算哈希 → fail loud）；
+    - APK 的 build.tag 必须与 manifest.buildTag 一致（换用其他版本 APK 会
+      写入错误版本的门槛数据 → fail loud）；
+    - APK 文件的 SHA-256 必须与 manifest.sourceFingerprint 一致（目录生成
+      时的原 APK 溯源契约，防同版本不同字节的 APK 数据漂移）。
+    全部校验 + 映射构建 + catalog 回填完成后，catalog.json / manifest.json
+    以「同目录 tmp + os.replace」双文件原子写回（单文件原子；两个 replace
+    之间崩溃的窗口极小，且 validator 的 generatedFiles 哈希比对可检测，
+    重跑幂等修复）。
+
     返回统计：items=回填件数、levels=回填等级数、mapping=映射总条数、
     unused=映射中未被目录消费的条数（>0 时 main 向 stderr 打 dataID 契约漂移
     提示，不阻断——目录生成时的 APK 版本不可知）。
@@ -121,13 +137,44 @@ def annotate_directory(apk: str | Path, dir_path: str | Path) -> dict:
     if not manifest_path.is_file():
         raise CatalogError(f"manifest.json 不存在: {manifest_path}")
 
+    # ---- P1-2a：写回前解析并校验 manifest（畸形 manifest 不得留下半写入目录）----
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, ValueError, TypeError) as exc:
+        raise CatalogError(f"manifest.json 解析失败: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise CatalogError("manifest.json 顶层必须是对象")
+    manifest_build_tag = manifest.get("buildTag")
+    manifest_fingerprint = manifest.get("sourceFingerprint")
+    if not manifest_build_tag:
+        raise CatalogError("manifest.json 缺少 buildTag（目录 provenance 不完整）")
+    if not manifest_fingerprint:
+        raise CatalogError("manifest.json 缺少 sourceFingerprint（目录 provenance 不完整）")
+    gen = manifest.get("generatedFiles")
+    if not isinstance(gen, list) or not any(
+            isinstance(e, dict) and e.get("path") == "catalog.json" for e in gen):
+        raise CatalogError(
+            "manifest.json 缺少 generatedFiles.catalog.json 条目（无法重算哈希）")
+
     try:
         with zipfile.ZipFile(apk_path) as archive:
+            # ---- P1-1：APK 版本/来源契约（换用不同 APK 不得静默成功）----
+            apk_build_tag = read_build_tag(archive)
+            if apk_build_tag != manifest_build_tag:
+                raise CatalogError(
+                    f"APK build.tag={apk_build_tag!r} 与 manifest buildTag="
+                    f"{manifest_build_tag!r} 不一致（请使用与目录同版本的 APK）")
             # 表缺失时 decode_asset 抛 CatalogError（"APK 缺少资源"）
             mapping = build_bs_mapping(
                 decode_asset(archive, "assets/logic/" + CHARACTER_ITEMS_TABLE))
     except zipfile.BadZipFile as exc:
         raise CatalogError(f"APK 不是有效 zip: {apk_path}") from exc
+    # APK 文件 SHA-256 溯源（zip 内容读取后、任何写盘前）
+    apk_fingerprint = sha256_file(apk_path)
+    if apk_fingerprint != manifest_fingerprint:
+        raise CatalogError(
+            f"APK SHA-256 与 manifest sourceFingerprint 不一致"
+            f"（请使用生成目录时的原 APK 文件）")
 
     raw = json.loads(catalog_path.read_text(encoding="utf-8"))
     catalog = catalog_from_dict(raw)
@@ -152,18 +199,22 @@ def annotate_directory(apk: str | Path, dir_path: str | Path) -> dict:
         payload["instanceCounts"] = raw["instanceCounts"]
     catalog_bytes = json.dumps(payload, ensure_ascii=False, indent=2,
                                sort_keys=True).encode("utf-8") + b"\n"
-    catalog_path.write_bytes(catalog_bytes)
 
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    for entry in manifest.get("generatedFiles", []):
-        if entry.get("path") == "catalog.json":
+    # ---- P1-2b：manifest 内容全部在内存中构建完成后，双文件原子写回 ----
+    for entry in manifest["generatedFiles"]:
+        if isinstance(entry, dict) and entry.get("path") == "catalog.json":
             entry["sha256"] = sha256_bytes(catalog_bytes)
             entry["size"] = len(catalog_bytes)
     counts = counts_for(catalog.items)
     manifest.setdefault("counts", {}).update(counts)
     manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2,
                                 sort_keys=True).encode("utf-8") + b"\n"
-    manifest_path.write_bytes(manifest_bytes)
+
+    for target, data in ((catalog_path, catalog_bytes),
+                         (manifest_path, manifest_bytes)):
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, target)
 
     looked_up = sum(1 for item in catalog.items if item.section == "equipment"
                     for _ in item.levels)

@@ -41,6 +41,7 @@ from game_catalog.errors import CatalogError
 from game_catalog.fingerprint import sha256_bytes
 from game_catalog.model import catalog_from_dict, catalog_to_dict
 from game_catalog.tables import TABLES, group_blocks
+from game_catalog import BLACKSMITH_LEVEL_MIN, BLACKSMITH_LEVEL_MAX
 
 CHARACTER_ITEMS_TABLE = "character_items.csv"
 # 单一事实源：dataID 基址、等级列、BS 列一律读 tables.py 的 character_items TableSpec，
@@ -53,7 +54,8 @@ if _ITEM_SPEC.blacksmith_column is None:
 EQUIPMENT_ID_BASE = _ITEM_SPEC.id_base
 LEVEL_COLUMN = _ITEM_SPEC.level_column
 BS_COLUMN = _ITEM_SPEC.blacksmith_column
-BS_MIN, BS_MAX = 1, 10  # 与 validate.py 的 equipment BS 合法域一致
+# 合法域单一事实源：game_catalog/__init__.py（validate.py 共用，防双处漂移）
+BS_MIN, BS_MAX = BLACKSMITH_LEVEL_MIN, BLACKSMITH_LEVEL_MAX
 
 
 def build_bs_mapping(csv_text: str) -> dict[tuple[int, int], int]:

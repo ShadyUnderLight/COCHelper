@@ -1072,6 +1072,73 @@ final class VillageProgressMetricsTests: XCTestCase {
         )
     }
 
+    /// 外部审核 P1 边界锁定（终审 C nit-3）：快照只有 BB 数据、home 无数据时
+    /// 聚合数值 = BB 观测（跨全部基地口径），scope .unavailable（纯已观测、
+    /// 无差集）——「已观测实例 · 全部村庄」按聚合范围口径，一致。
+    func testAggregateCoverageBuilderOnlySnapshot() throws {
+        let catalog = try makeFullUniverseCatalog()
+        let village = makeVillage(name: "仅BB村", objectSections: [
+            "buildings2": [makeItem(section: "buildings2", dataID: 1000034, level: 1)],
+        ])
+        let result = try XCTUnwrap(
+            VillageProgressProjection.aggregateCoverage(
+                from: [village], catalog: catalog, seasonalPhases: .empty
+            )
+        )
+        // 数值 = BB 观测（home 无数据 0/0，BB 有观测）
+        XCTAssertGreaterThan(result.denominator, 0)
+        XCTAssertEqual(result.coverage, .unavailable, "BB-only → 纯已观测口径")
+        XCTAssertTrue(result.diagnostics.isEmpty, "unavailable 不生成诊断")
+    }
+
+    /// 外部审核 P1 边界锁定（终审 C nit-3）：home 全 unavailable + BB 有观测 →
+    /// merged .unavailable 已是最保守口径（分母纯已观测），**不追加** BB 数据源
+    /// 诊断（unavailable 的 helpText「分母为已观测实例」已覆盖 BB 同质口径）——
+    /// 该语义与「home complete + BB 有观测 → 降级」互补，锁定不得回归。
+    func testAggregateCoverageAllUnavailableWithBBData() throws {
+        let catalog = try makeFullUniverseCatalog()
+        // home：无 buildings → TH 未知 → .unavailable；BB：有观测
+        let village = makeVillage(name: "无TH村+BB", objectSections: [
+            "units": [makeItem(section: "units", dataID: 4_000_000, level: 2)],
+            "buildings2": [makeItem(section: "buildings2", dataID: 1000034, level: 1)],
+        ])
+        let result = try XCTUnwrap(
+            VillageProgressProjection.aggregateCoverage(
+                from: [village], catalog: catalog, seasonalPhases: .empty
+            )
+        )
+        XCTAssertEqual(result.coverage, .unavailable)
+        XCTAssertTrue(result.diagnostics.isEmpty, "unavailable 口径已覆盖 BB，不得追加诊断")
+    }
+
+    /// 外部审核 P1 边界锁定（终审 C nit-3）：home partial + BB 有观测 →
+    /// 缺失类别诊断与 BB 数据源诊断**并存**（partial 分支无条件追加 BB 条）。
+    func testAggregateCoveragePartialWithBBDataBothDiagnostics() throws {
+        let catalog = try makeFullUniverseCatalog()
+        // home：缺 traps section（其余 8 类 present + TH）→ .partial(missing: [traps])
+        var sections = Self.fullSections
+        sections["buildings"] = [
+            makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+        ]
+        sections.removeValue(forKey: "traps")
+        sections["buildings2"] = [
+            makeItem(section: "buildings2", dataID: 1000034, level: 1),
+        ]
+        let village = makeVillage(name: "部分home+BB村", objectSections: sections)
+        let result = try XCTUnwrap(
+            VillageProgressProjection.aggregateCoverage(
+                from: [village], catalog: catalog, seasonalPhases: .empty
+            )
+        )
+        guard case .partial(let missing, _) = result.coverage else {
+            return XCTFail("home partial → 必须 .partial，实际 \(result.coverage)")
+        }
+        XCTAssertTrue(missing.contains("traps"))
+        let joined = result.diagnostics.joined(separator: " ")
+        XCTAssertTrue(joined.contains("快照缺少类别数据"), joined)
+        XCTAssertTrue(joined.contains("建筑大师基地"), joined)
+    }
+
     /// 外部交叉审核 P2：聚合卡 tooltip 不得复用单村庄 partial 措辞——聚合
     /// partial 是跨村庄/基地混合口径（complete 村庄全类别宇宙 + partial 村庄
     /// 观测∪建筑陷阱差集 + unavailable 村庄/BB 纯观测），单村庄「与建筑/陷阱

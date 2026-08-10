@@ -26,12 +26,20 @@
 /// 升级总览「观测数据完整性」卡的聚合结果（Issue #110）。
 /// 数值 = 全部已导入村庄 × 全部基地的 snapshotCoverage 累加（BB 数值照旧计入）；
 /// coverage = 仅合并 home 基地的 progressCoverage（决策 5：BB 恒 .unavailable，
-/// 不参与 scope 判定——否则任何已导入村庄都自带 unavailable 对，聚合恒降级）。
+/// 不参与 scope 判定——否则任何已导入村庄都自带 unavailable 对，聚合恒降级）；
+/// 但存在有观测数据的 BB 对（denominator > 0）时 merged .complete 必须降级为
+/// .partial（外部审核 P1：数值含不可靠数据源时不得静默宣称完整）。
+/// diagnostics = 聚合覆盖诊断（partial 专属，UI 层逐条展示；否则空数组）。
 public struct AggregateCoverage: Hashable, Sendable {
     public let numerator: Int
     public let denominator: Int
     public let coverage: ProgressUniverseCoverage
     public let diagnostics: [String]
+
+    /// 聚合卡 tooltip 的 scope 措辞（外部审核 P2）：complete / unavailable 分母
+    /// 构成同质，与单村庄 `helpText` 口径一致；partial 为跨村庄/基地混合口径，
+    /// 不得复用单村庄「与建筑/陷阱宇宙差集合计」措辞。
+    public var helpText: String { ... }
 }
 ```
 
@@ -47,6 +55,7 @@ public struct AggregateCoverage: Hashable, Sendable {
 - missing 非空 → 「部分村庄快照缺少类别数据（中文类别名 sorted），无法确认完整村庄进度。」
 - unmodeled 非空 → 「目录未对 X 的实例数量建模，无法确认完整村庄进度。」
 - unavailable 对计数 > 0 → 「N 个村庄覆盖状态不可用，无法确认完整村庄进度。」
+- **BB 有观测数据**（`bbHasObservations`，外部审核 P1）→ 「聚合含建筑大师基地已观测数据（数据源不可靠，未纳入完整宇宙口径），无法确认完整村庄进度。」——仅 merged == .partial 时追加（.complete 时先降级为 .partial；.unavailable 时口径已覆盖，不追加）
 
 ## 3. 改动文件
 
@@ -69,14 +78,15 @@ public struct AggregateCoverage: Hashable, Sendable {
 5. 新增 `testAggregateCoverageAllUnavailableWhenNoHomeUniverse`：全 unavailable 对 → coverage `.unavailable`
 6. 新增 `testAggregateCoverageCompleteWhenAllComplete`：全 complete → `.complete` 无诊断
 7. 新增 `testAggregateCoverageMergesMissingSectionsAndUnmodeled`：两村庄不同 missing → 并集；missing∩unmodeled 去重
-8. 新增 property 测试：`mergedCoverage` 交换律 / 结合律 / 幂等 / 全 complete 恒等（项目 SeededGenerator LCG 惯例）
+8. 新增 property 测试：`mergedCoverage` 交换律 / 结合律 / 幂等 / 全 complete 恒等（项目 SeededGenerator LCG 惯例；实现落地为交换+结合、全 complete、并集超集去重、反向属性「含任一非 complete 输入不得 complete」——幂等对非规范形 partial 输入不成立，以反向属性替代）
 9. 现有 fail-closed 测试保持通过（饱和 → nil）
+10. 外部审核 P1/P2 补充：`testAggregateCoverageBBWithObservationsMustDegradeScope`（home complete + BB 有观测 → partial + BB 诊断）、`testAggregateHelpTextIsScopeSpecific`（聚合 partial 专用措辞）、`testAggregateCoverageBuilderOnlySnapshot` / `testAggregateCoverageAllUnavailableWithBBData` / `testAggregateCoveragePartialWithBBDataBothDiagnostics`（边界锁定）
 
 ## 5. Reflexion 自查清单（完成于终审）
 
-- [x] `swift test` 全量通过（1013/1013：基线 999 + 新增 14）
+- [x] `swift test` 全量通过（1015/1015：基线 999 + 新增 16）
 - [x] `git diff --check` 干净（含跨 commit 检查）
-- [x] 验收 1-6 逐条对照（双独立交叉审核员 APPROVE）
+- [x] 验收 1-6 逐条对照（双独立交叉审核员 APPROVE + 外部审核 P1/P2 修复 + 终审 C APPROVE）
 - [x] 生产目录恒 partial 前提下聚合卡行为验证（恒 partial + 诊断，不 fail-useless）
 - [x] 数值口径与修复前逐位一致（回归）
 - [x] Reflexion 发现混合 complete+unavailable 村庄 bug → 修复（663fb99）+ 反向属性锁定

@@ -722,14 +722,16 @@ private struct TrackerMetricsView: View {
     /// 消费与详情页同一个 `VillageProgressProjection` 投影（实现要求 6）；
     /// 逻辑下沉 Core（fail-closed：任一 coverage 饱和或累加溢出 → nil，
     /// 不展示假精度），此处只做展示格式化。
+    /// Issue #110 编译适配：聚合返回 `AggregateCoverage?`（数值与旧 tuple
+    /// 逐位一致），scope/诊断的展示改造属 Task 2，本处只改解构方式。
     private var aggregateCoverage: String? {
-        guard let (known, observed) = VillageProgressProjection.aggregateCoverage(
+        guard let result = VillageProgressProjection.aggregateCoverage(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
             now: now
         ) else { return nil }
-        return String(Int((Double(known) / Double(observed) * 100).rounded())) + "%"
+        return String(Int((Double(result.numerator) / Double(result.denominator) * 100).rounded())) + "%"
     }
 
     var body: some View {

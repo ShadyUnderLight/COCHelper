@@ -77,13 +77,31 @@ public struct VillageProgressMetrics: Hashable, Sendable {
 /// 升级总览「观测数据完整性」卡的聚合结果（Issue #110）。
 /// 数值 = 全部已导入村庄 × 全部基地的 snapshotCoverage 累加（BB 数值照旧计入）；
 /// coverage = 仅合并 home 基地的 progressCoverage（决策 5：BB 恒 .unavailable，
-/// 不参与 scope 判定——否则任何已导入村庄都自带 unavailable 对，聚合恒降级）。
+/// 不参与 scope 判定——否则任何已导入村庄都自带 unavailable 对，聚合恒降级）；
+/// 但存在有观测数据的 BB 对时 merged .complete 必须降级为 .partial（外部
+/// 交叉审核 P1：数值含不可靠数据源时不得静默宣称完整）。
 /// diagnostics = 聚合覆盖诊断（partial 专属，UI 层逐条展示；否则空数组）。
 public struct AggregateCoverage: Hashable, Sendable {
     public let numerator: Int
     public let denominator: Int
     public let coverage: ProgressUniverseCoverage
     public let diagnostics: [String]
+
+    /// 聚合卡 tooltip 的 scope 措辞（外部交叉审核 P2）：complete / unavailable
+    /// 分母构成同质（全类别宇宙 / 纯已观测），与单村庄 `helpText` 口径一致；
+    /// partial 为跨村庄/基地混合口径（complete 村庄全类别宇宙 + partial 村庄
+    /// 观测∪建筑陷阱差集 + unavailable 村庄/BB 纯观测），不得复用单村庄
+    /// 「与建筑/陷阱宇宙差集合计」措辞——聚合专用文案，明细见 diagnostics。
+    public var helpText: String {
+        switch coverage {
+        case .complete:
+            return "已观测实例占村庄全部可建造数量"
+        case .partial:
+            return "聚合分母为各村庄/基地已观测实例与可用宇宙差集之和，非统一完整宇宙口径"
+        case .unavailable:
+            return "分母为已观测实例，非全部可能建筑"
+        }
+    }
 }
 
 // MARK: - 投影
@@ -290,8 +308,11 @@ public enum VillageProgressProjection {
     /// 无已导入村庄或观测总数为 0 → nil（UI 不渲染该卡）。
     /// Issue #110：返回 `AggregateCoverage?`（数值字段与旧 tuple 逐位一致）；
     /// coverage 仅合并 home 对的 progressCoverage（BB 恒 .unavailable，决策 5
-    /// ——混入会使任何已导入村庄的聚合恒降级，候选 A 否决）；diagnostics 由
-    /// `aggregateCoverageDiagnostics` 生成（partial 专属，UI 层展示）。
+    /// ——混入会使任何已导入村庄的聚合恒降级，候选 A 否决）；但**有观测数据
+    /// 的 BB 对**（denominator > 0，数值已计入聚合）必须触发 scope 降级——
+    /// BB 数据源不可靠（决策 5），home 全 .complete 时不得静默宣称「完整」
+    /// （外部交叉审核 P1）；diagnostics 由 `aggregateCoverageDiagnostics`
+    /// 生成（partial 专属，UI 层展示）。
     public static func aggregateCoverage(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
@@ -301,6 +322,7 @@ public enum VillageProgressProjection {
         var known = 0
         var observed = 0
         var homeCoverages: [ProgressUniverseCoverage] = []
+        var bbHasObservations = false
         for village in villages where village.hasImportedData {
             for base in TrackerBase.allCases {
                 let projection = VillageCatalogProjection.project(
@@ -325,17 +347,29 @@ public enum VillageProgressProjection {
                 if kOver || oOver { return nil } // 累加溢出 fail-closed
                 known = k
                 observed = o
+                // BB 对不参与 home scope 合并（决策 5 恒 .unavailable），但数值
+                // 照旧计入聚合——因此只要 BB 有观测数据（denominator > 0）就
+                // 必须反映到 scope：merged == .complete 时降为 .partial +
+                // BB 数据源诊断，不得把不可靠数据源的数值混进「完整」承诺。
+                if base != .home && coverage.denominator > 0 {
+                    bbHasObservations = true
+                }
             }
         }
         guard observed > 0 else { return nil }
-        let merged = Self.mergedCoverage(of: homeCoverages)
+        var merged = Self.mergedCoverage(of: homeCoverages)
+        if bbHasObservations && merged == .complete {
+            // 数值含 BB 观测 → 完整宇宙承诺不成立（外部交叉审核 P1）
+            merged = .partial(missingSections: [], unmodeledCategories: [])
+        }
         return AggregateCoverage(
             numerator: known,
             denominator: observed,
             coverage: merged,
             diagnostics: Self.aggregateCoverageDiagnostics(
                 merged: merged,
-                unavailableHomeCount: homeCoverages.filter { $0 == .unavailable }.count
+                unavailableHomeCount: homeCoverages.filter { $0 == .unavailable }.count,
+                includesBuilderBaseData: bbHasObservations
             )
         )
     }
@@ -393,9 +427,12 @@ public enum VillageProgressProjection {
     /// fallback 原文）。unavailableHomeCount = 合并前 home 对中 .unavailable
     /// 的个数（BB 对不参与——决策 5 只排除 BB 的 scope 参与，计数同样只算
     /// home 对，避免「任何已导入村庄都带一个 BB unavailable 对」的恒量噪音）。
+    /// includesBuilderBaseData = 存在有观测数据的 BB 对（外部交叉审核 P1：
+    /// BB 数值计入聚合后必须附加数据源诊断，不得静默）。
     static func aggregateCoverageDiagnostics(
         merged: ProgressUniverseCoverage,
-        unavailableHomeCount: Int
+        unavailableHomeCount: Int,
+        includesBuilderBaseData: Bool = false
     ) -> [String] {
         guard case .partial(let missing, let unmodeled) = merged else { return [] }
         var parts: [String] = []
@@ -411,6 +448,9 @@ public enum VillageProgressProjection {
         }
         if unavailableHomeCount > 0 {
             parts.append(String(unavailableHomeCount) + " 个村庄覆盖状态不可用，无法确认完整村庄进度。")
+        }
+        if includesBuilderBaseData {
+            parts.append("聚合含建筑大师基地已观测数据（该基地数据源不可靠，未纳入完整宇宙口径），无法确认完整村庄进度。")
         }
         return parts
     }

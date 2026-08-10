@@ -1039,6 +1039,66 @@ final class VillageProgressMetricsTests: XCTestCase {
         )
     }
 
+    /// 外部交叉审核 P1 复现：home 对 .complete + BB 对有观测数据（buildings2）→
+    /// 数值聚合跨全部基地（BB 数值照旧计入，口径不变），但 scope 只合并 home
+    /// 对——当前错误宣称 .complete 且无诊断，UI 显示蓝色「完整」。BB 数据源
+    /// 不可靠（决策 5：BB 不做宇宙），其观测数值进入聚合后 scope 必须如实
+    /// 降级（partial + BB 数据源诊断），不得静默成完整宇宙承诺。
+    func testAggregateCoverageBBWithObservationsMustDegradeScope() throws {
+        let catalog = try makeFullUniverseCatalog()
+        var sections = Self.fullSections
+        sections["buildings"] = [
+            makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th"),
+        ]
+        // BB 观测：建筑大师大本营（buildings2 section，带 "2" 后缀）
+        sections["buildings2"] = [
+            makeItem(section: "buildings2", dataID: 1000034, level: 1),
+        ]
+        let village = makeVillage(name: "完整home+BB村", objectSections: sections)
+        let result = try XCTUnwrap(
+            VillageProgressProjection.aggregateCoverage(
+                from: [village], catalog: catalog, seasonalPhases: .empty
+            )
+        )
+        // BB 观测数据必须计入数值（跨全部基地的聚合口径不变）
+        XCTAssertGreaterThan(result.denominator, 0)
+        // 但 scope 不得宣称 .complete：BB 数据源不可靠
+        guard case .partial = result.coverage else {
+            return XCTFail("home complete + BB 有观测 → 必须 .partial，实际 \(result.coverage)")
+        }
+        XCTAssertTrue(
+            result.diagnostics.joined(separator: " ").contains("建筑大师基地"),
+            result.diagnostics.joined(separator: " ")
+        )
+    }
+
+    /// 外部交叉审核 P2：聚合卡 tooltip 不得复用单村庄 partial 措辞——聚合
+    /// partial 是跨村庄/基地混合口径（complete 村庄全类别宇宙 + partial 村庄
+    /// 观测∪建筑陷阱差集 + unavailable 村庄/BB 纯观测），单村庄「与建筑/陷阱
+    /// 宇宙差集合计」文案在混合场景不真实。complete/unavailable 分母构成
+    /// 同质，可复用单村庄措辞；partial 必须聚合专用。
+    func testAggregateHelpTextIsScopeSpecific() {
+        let partial = AggregateCoverage(
+            numerator: 1, denominator: 2,
+            coverage: .partial(missingSections: [], unmodeledCategories: [.troops]),
+            diagnostics: []
+        )
+        XCTAssertEqual(
+            partial.helpText,
+            "聚合分母为各村庄/基地已观测实例与可用宇宙差集之和，非统一完整宇宙口径"
+        )
+        XCTAssertNotEqual(
+            partial.helpText,
+            ProgressUniverseCoverage.partial(missingSections: [], unmodeledCategories: []).helpText,
+            "聚合 partial 不得复用单村庄 partial 措辞（P2）"
+        )
+        // complete / unavailable 分母构成同质 → 与单村庄口径一致
+        let complete = AggregateCoverage(numerator: 1, denominator: 2, coverage: .complete, diagnostics: [])
+        XCTAssertEqual(complete.helpText, ProgressUniverseCoverage.complete.helpText)
+        let unavailable = AggregateCoverage(numerator: 1, denominator: 2, coverage: .unavailable, diagnostics: [])
+        XCTAssertEqual(unavailable.helpText, ProgressUniverseCoverage.unavailable.helpText)
+    }
+
     /// mergedCoverage 纯函数：两村庄不同 missing section → 并集；
     /// missing∩unmodeled 去重——同一类别既缺失又未建模只报一次
     ///（units → .troops 同时出现在另一村庄的 unmodeled 侧 → 从 missing 移除，

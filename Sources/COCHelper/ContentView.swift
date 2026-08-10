@@ -735,8 +735,9 @@ private struct TrackerMetricsView: View {
 
     /// 聚合卡渲染（Issue #110）：coverage 三分支——complete 保持现状（蓝色）；
     /// partial / unavailable 橙色（fail-closed 视觉提示），tooltip 说明 scope
-    /// 口径：partial = 共享 help 措辞 + 各条聚合诊断换行拼接；unavailable =
-    /// 纯已观测口径。value 百分比格式化与改造前逐位一致。
+    /// 口径：partial = 聚合专用 help 措辞（`AggregateCoverage.helpText`，外部
+    /// 交叉审核 P2：混合口径不得复用单村庄文案）+ 各条聚合诊断换行拼接；
+    /// unavailable = 纯已观测口径。value 百分比格式化与改造前逐位一致。
     @ViewBuilder
     private func aggregateCoverageCard(_ result: AggregateCoverage) -> some View {
         let percent = String(Int((Double(result.numerator) / Double(result.denominator) * 100).rounded())) + "%"
@@ -754,9 +755,10 @@ private struct TrackerMetricsView: View {
     }
 
     /// 聚合卡 tooltip（Issue #110）：complete 不渲染（现状）；partial =
-    /// scope 措辞（`ProgressUniverseCoverage.helpText`，与详情页同源防漂移）
+    /// 聚合专用 scope 措辞（`AggregateCoverage.helpText`，与详情页单村庄
+    /// 措辞分离——聚合是混合口径，不得复用「与建筑/陷阱宇宙差集合计」）
     /// + 各条聚合诊断换行拼接（诊断是跨村庄并集明细，不得丢）；unavailable
-    /// = 纯已观测口径（`helpText`）。
+    /// = 纯已观测口径。
     private func aggregateCoverageTooltip(_ result: AggregateCoverage) -> String {
         switch result.coverage {
         case .complete:
@@ -765,9 +767,9 @@ private struct TrackerMetricsView: View {
             let diagnostics = result.diagnostics.isEmpty
                 ? ""
                 : "\n" + result.diagnostics.joined(separator: "\n")
-            return result.coverage.helpText + diagnostics
+            return result.helpText + diagnostics
         case .unavailable:
-            return result.coverage.helpText
+            return result.helpText
         }
     }
 

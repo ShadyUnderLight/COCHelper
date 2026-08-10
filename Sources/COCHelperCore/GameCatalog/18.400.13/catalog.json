@@ -111852,7 +111852,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "寒冰法师",
@@ -112808,7 +112808,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "皇家幽灵",
@@ -113146,7 +113146,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "南瓜野蛮人",
@@ -113726,7 +113726,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "骷髅巨人",
@@ -117497,7 +117497,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "派对法师",
@@ -121432,7 +121432,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野蛮箭手",
@@ -121770,7 +121770,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "女巫戈仑",
@@ -122108,7 +122108,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野猪法师",
@@ -122446,7 +122446,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "熔岩气球",
@@ -122618,7 +122618,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "迷你熔岩气球犬",
@@ -125503,7 +125503,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "扫帚女巫",
@@ -126027,7 +126027,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 11,
       "missingReason": null,
       "name": "熔岩气球",
@@ -126175,7 +126175,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 11,
       "missingReason": null,
       "name": "迷你熔岩气球犬",
@@ -127078,7 +127078,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "收债哥布林",
@@ -127732,7 +127732,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "灵蛇",
@@ -127868,7 +127868,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 10,
       "missingReason": null,
       "name": "灵蛇",

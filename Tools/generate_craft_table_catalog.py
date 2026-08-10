@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import zipfile
 from pathlib import Path
 
@@ -144,12 +145,19 @@ def _update_manifest_craft_entry(output_dir: Path, craft_bytes: bytes) -> None:
 
     manifest_path = output_dir / "manifest.json"
     if not manifest_path.is_file():
+        print("warning: manifest.json 不存在，无法登记 craft_table_catalog.json"
+              "（CraftTableCatalog.loadBundled 将 fail-closed 视为目录不可用）",
+              file=sys.stderr)
         return
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, ValueError):
+        print("warning: manifest.json 损坏，跳过 craft 条目登记"
+              "（CraftTableCatalog.loadBundled 将 fail-closed 视为目录不可用）",
+              file=sys.stderr)
         return
     if not isinstance(manifest, dict) or not isinstance(manifest.get("generatedFiles"), list):
+        print("warning: manifest.json 结构非法，跳过 craft 条目登记", file=sys.stderr)
         return
     entry = {
         "path": "craft_table_catalog.json",

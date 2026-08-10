@@ -586,7 +586,7 @@
     },
     "capital_buildings:110000027": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "防空火箭，icon exportName 含 firecracker 属命名撞词，常驻建筑（人工判定，待复核）"
     },
     "capital_buildings:110000028": {
       "lifecycle": "permanent",
@@ -1102,7 +1102,7 @@
     },
     "equipment:90000032": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "活动引入装备（灵蛇手镯），装备进入常驻装备池可继续升级——按永久内容声明（人工判定，待复核）"
     },
     "equipment:90000033": {
       "lifecycle": "permanent",
@@ -1138,7 +1138,7 @@
     },
     "equipment:90000041": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "活动引入装备（熔岩气球玩偶），装备进入常驻装备池可继续升级——按永久内容声明（人工判定，待复核）"
     },
     "equipment:90000042": {
       "lifecycle": "permanent",
@@ -2249,8 +2249,8 @@
       "note": null
     },
     "units:4000030": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时冬季/圣诞临时兵种（寒冰法师；Clash of Clans 官方维基 TemporaryTroop 证实，2016-2025 多次回归）"
     },
     "units:4000039": {
       "lifecycle": "permanent",
@@ -2265,20 +2265,20 @@
       "note": null
     },
     "units:4000047": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节临时兵种（皇家幽灵；Clash-O-Ween 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000048": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节临时兵种（南瓜野蛮人；Halloween 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000049": {
       "lifecycle": "permanent",
       "note": null
     },
     "units:4000050": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节临时兵种（骷髅巨人；Halloween 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000053": {
       "lifecycle": "permanent",
@@ -2310,7 +2310,7 @@
     },
     "units:4000060": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "单人战役 Boss（金色飞龙/飞龙变体），常驻战役内容非限时活动兵种（人工判定，待复核）"
     },
     "units:4000061": {
       "lifecycle": "permanent",
@@ -2345,8 +2345,8 @@
       "note": null
     },
     "units:4000072": {
-      "lifecycle": "permanent",
-      "note": "常驻兵种（派对法师，2021 年正式引入升级链），名字含派对但非限时活动兵种（2026-08 人工判定，待复核）"
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时兵种（派对法师；官方维基 TemporaryTroop 证实，2026 Sound of Clash 活动——与精工防御同活动；修正此前常驻误判）"
     },
     "units:4000073": {
       "lifecycle": "permanent",
@@ -2445,24 +2445,24 @@
       "note": null
     },
     "units:4000101": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（野蛮箭手；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000102": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（女巫戈仑；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000103": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（野猪法师；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000104": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（熔岩气球；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000108": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（迷你熔岩气球犬；Mashup Madness 衍生，与熔岩气球同活动）"
     },
     "units:4000109": {
       "lifecycle": "permanent",
@@ -2529,8 +2529,8 @@
       "note": null
     },
     "units:4000125": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（扫帚女巫；icon majo 强活动特征，保守标限时——错标安全侧为显示阶段未配置）"
     },
     "units:4000126": {
       "lifecycle": "permanent",
@@ -2541,12 +2541,12 @@
       "note": null
     },
     "units:4000128": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（熔岩气球变体；Mashup Madness 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000129": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（迷你熔岩气球犬变体；Mashup Madness 衍生）"
     },
     "units:4000130": {
       "lifecycle": "permanent",
@@ -2569,8 +2569,8 @@
       "note": null
     },
     "units:4000136": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（收债哥布林；Dark Deal 活动，官方维基 TemporaryTroop 证实）"
     },
     "units:4000137": {
       "lifecycle": "permanent",
@@ -2597,12 +2597,12 @@
       "note": "限时农历新年活动兵种（灵蛇飞桶；Supercell 官方活动公告确认限时）"
     },
     "units:4000143": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时农历新年临时兵种（灵蛇；LNY 2025 活动，与灵蛇飞桶 4000142 同活动——此前声明分裂已修正）"
     },
     "units:4000144": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时农历新年临时兵种（灵蛇变体；LNY 2025 活动）"
     },
     "units:4000145": {
       "lifecycle": "seasonalCandidate",

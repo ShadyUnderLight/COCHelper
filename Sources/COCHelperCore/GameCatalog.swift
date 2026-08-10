@@ -947,6 +947,16 @@ public struct GameCatalog: Sendable {
         .sorted { $0.section == $1.section ? $0.dataID < $1.dataID : $0.section < $1.section }
     }
 
+    /// 有宇宙数据的 section 集合（Issue #96）：从 instanceCounts 键推导，
+    /// 与 `universeKeys` 同一信任门（旧目录 / 校验失败 / 无 manifest → 空）。
+    /// 覆盖契约输入：投影层用它判定目录对哪些追踪类别建模了实例数量。
+    public var universeSections: Set<String> {
+        guard hasUniverseData else { return [] }
+        return Set((instanceCounts ?? [:]).keys.compactMap { key in
+            key.split(separator: ":", maxSplits: 1).first.map(String.init)
+        })
+    }
+
     private static func key(section: String, dataID: Int64) -> String {
         section + ":" + String(dataID)
     }

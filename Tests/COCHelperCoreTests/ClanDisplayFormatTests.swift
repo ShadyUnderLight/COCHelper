@@ -189,7 +189,7 @@ final class ClanDisplayFormatTests: XCTestCase {
         XCTAssertEqual(ClanDisplayFormat.typeLabel("inviteOnly"), "只有被批准才能加入")
         XCTAssertEqual(ClanDisplayFormat.typeLabel("closed"), "不可加入")
         XCTAssertEqual(ClanDisplayFormat.typeLabel("unknown_raw_value"), "未知")
-        // P3：返回值永不等于输入 raw value（不泄漏英文）
+        // P3：不回显已知英文 raw（open/inviteOnly/closed 不直接显示为输出）
         XCTAssertNotEqual(ClanDisplayFormat.typeLabel("open"), "open")
         XCTAssertNotEqual(ClanDisplayFormat.typeLabel("inviteOnly"), "inviteOnly")
         XCTAssertNotEqual(ClanDisplayFormat.typeLabel("closed"), "closed")
@@ -197,22 +197,24 @@ final class ClanDisplayFormatTests: XCTestCase {
 
     /// 类 raw 值（大小写变体、首尾空白、分隔符变体、空串）不得命中
     /// 精确匹配 → 全部「未知」（不做修剪/归一化，官方 raw 三值恒等匹配）。
+    /// 「未知」输入刻意包含：fallback 文案与输入撞名时返回「未知」是预期行为
+    /// （P3 只约束"不回显已知英文 raw"，不做输出≠输入的绝对断言）。
     func testTypeLabelExactMatchNoNormalization() {
-        let nearMisses = ["Open", "OPEN", " OPEN ", "open\n", "invite_only", "InviteOnly", "closed\n", "CLOSED", ""]
+        let nearMisses = ["Open", "OPEN", " OPEN ", "open\n", "invite_only", "InviteOnly", "closed\n", "CLOSED", "", "未知"]
         for raw in nearMisses {
             XCTAssertEqual(ClanDisplayFormat.typeLabel(raw), "未知", "raw: \(raw.debugDescription)")
-            XCTAssertNotEqual(ClanDisplayFormat.typeLabel(raw), raw)
+            XCTAssertFalse(["open", "inviteOnly", "closed"].contains(ClanDisplayFormat.typeLabel(raw)), "P3: 回显已知英文 raw: \(raw.debugDescription)")
         }
     }
 
     /// Property-based（固定 seed SplitMix64，可复现，同 clanLevelLabel 风格）：
-    /// 任意 ASCII 字符串（大小写/数字/符号/空白/空串，长度 0-12）输出恒为
-    /// 「未知」（P2）且不等于输入（P3，字母表纯 ASCII 不会生成 CJK「未知」）；
+    /// 任意字符串（ASCII + CJK/emoji，长度 0-12）输出恒为「未知」（P2）；
+    /// P3 为"不回显已知英文 raw"（open/inviteOnly/closed 不直接显示为输出）；
     /// 已知三值 + 生成值全部输出均属于四态集合（P4，联合输出域封闭）。
-    /// 字母表含 CJK/emoji 代表字符（刻意排除「未」「知」两字，避免生成器
-    /// 恰好拼出"未知"触发 P3 断言失败）；CJK 输入亦须落 default →「未知」。
+    /// 字母表**包含**「未」「知」二字：生成器可能拼出"未知"输入，
+    /// 此时返回「未知」是预期行为（P2/P3 均不因撞名而失败）。
     func testTypeLabelPropertyUnknownForArbitraryASCIIStrings() {
-        let alphabet = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-.\n\t部落大本营🏆🎮")
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-.\n\t部落大本营未知🏆🎮")
         let known = Set(["open", "inviteOnly", "closed"])
         let fourStates = Set(["任何人都可加入", "只有被批准才能加入", "不可加入", "未知"])
         // P4 联合输出域：已知三值也须属于四态集合（独立于 P1 穷举的契约断言）
@@ -227,7 +229,7 @@ final class ClanDisplayFormatTests: XCTestCase {
             if known.contains(raw) { continue } // 已知三值由穷举断言覆盖（P1），避免重复
             let label = ClanDisplayFormat.typeLabel(raw)
             XCTAssertEqual(label, "未知") // P2
-            XCTAssertNotEqual(label, raw) // P3：不泄漏英文 raw
+            XCTAssertFalse(known.contains(label), "P3: 回显已知英文 raw: \(label.debugDescription)") // P3：不回显英文 raw
             XCTAssertTrue(fourStates.contains(label), "输出不在四态集合: \(label.debugDescription)") // P4
             asserted += 1
         }

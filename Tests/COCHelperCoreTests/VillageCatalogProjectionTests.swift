@@ -3430,15 +3430,18 @@ final class VillageCatalogProjectionTests: XCTestCase {
     }
 
     /// Issue #98：指定目录的 availability 投影（lifecycle 用例注入带声明的目录）。
+    /// `craftTableCatalog` 默认 nil（旧调用点零破坏）——嵌套防御回查用例显式传入。
     private func projectWithAvailability(
         _ village: VillageProfile,
         catalog: GameCatalog?,
         table: SeasonalPhaseTable,
-        now: Date
+        now: Date,
+        craftTableCatalog: CraftTableCatalog? = nil
     ) -> VillageCatalogProjection {
         VillageCatalogProjection.project(
             village: village, catalog: catalog,
-            seasonalPhases: table, base: .home, now: now)
+            seasonalPhases: table, craftTableCatalog: craftTableCatalog,
+            base: .home, now: now)
     }
 
     func testAvailabilityUnconfiguredByDefault() throws {
@@ -3679,6 +3682,78 @@ final class VillageCatalogProjectionTests: XCTestCase {
             item.availability,
             .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .active),
             "嵌套项不 join（lifecycle nil），阶段命中仍必须 seasonal")
+    }
+
+    // MARK: - Issue #98 审核 F1：嵌套防御生命周期回查精制台目录（防两投影漂移）
+
+    /// 单防御精制台目录（lifecycle 由用例注入；dataID 与主投影快照嵌套项对应）。
+    /// 显式 init：合成 memberwise init 对 let 默认值省略参数，无法显式传 lifecycle
+    ///（与 CraftTableProjectionTests.makeDefenseCatalog 同一模式）。
+    private func makeCraftDefenseCatalog(dataID: Int64, lifecycle: CatalogLifecycle?) -> CraftTableCatalog {
+        CraftTableCatalog(
+            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "test",
+            defenses: [CraftTableDefenseSpec(
+                dataID: dataID, name: "测试防御", sourceName: "test",
+                specialAbility: "", moduleIDs: [], totalModuleLevelThresholds: [],
+                lifecycle: lifecycle
+            )],
+            modules: []
+        )
+    }
+
+    /// 审核 F1：嵌套精工防御（.types. 路径）在主投影回查精制台目录 lifecycle 声明
+    /// → .permanent——与精制台投影（CraftTableProjection）同口径，同一防御不再
+    /// 两投影漂移（验收 6：主投影详情页也显示 permanent，而非「阶段信息未配置」）。
+    func testNestedDefenseLifecycleFromCraftTableCatalog() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings", dataID: 103_000_000, level: 1, path: "0.types.0")],
+        ])
+        let craft = makeCraftDefenseCatalog(dataID: 103_000_000, lifecycle: .permanent)
+        let home = projectWithAvailability(
+            village, catalog: syntheticCatalog, table: .empty,
+            now: Date(timeIntervalSince1970: 1_500), craftTableCatalog: craft)
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+        XCTAssertEqual(item.availability, .permanent,
+                       "嵌套防御须回查精制台目录声明，与精制台投影同口径")
+    }
+
+    /// 审核 F1：不传 craftTableCatalog（默认 nil = 旧调用点零破坏）→ 嵌套项
+    /// lifecycle nil → 阶段表未命中 → .unconfigured（旧行为保持）。
+    func testNestedDefenseWithoutCraftTableCatalogStaysUnconfigured() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings", dataID: 103_000_000, level: 1, path: "0.types.0")],
+        ])
+        let home = projectWithAvailability(
+            village, table: .empty, now: Date(timeIntervalSince1970: 1_500))
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
+        XCTAssertEqual(item.availability, .unconfigured)
+    }
+
+    /// 审核 F1 边界：嵌套模组（102M 段 dataID）即使传入 craftTableCatalog 也查不到
+    /// defense（defense 列表只有 103M 段）→ lifecycle nil → 阶段表命中仍 .seasonal
+    ///（模组限时标注不得被回查误伤）。
+    func testNestedModuleIgnoresCraftDefenseLookup() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings", dataID: 102_000_033, level: 1, path: "0.types.0.modules.0")],
+        ])
+        let craft = makeCraftDefenseCatalog(dataID: 103_000_000, lifecycle: .permanent)
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "crafted-defenses-1", name: "精制防御第一季",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["buildings:102000033"]),
+        ])
+        let home = projectWithAvailability(
+            village, catalog: syntheticCatalog, table: table,
+            now: Date(timeIntervalSince1970: 1_500), craftTableCatalog: craft)
+        let item = try XCTUnwrap(home.items.first { $0.dataID == 102_000_033 })
+        XCTAssertEqual(
+            item.availability,
+            .seasonal(phaseID: "crafted-defenses-1", phaseName: "精制防御第一季", status: .active),
+            "102M 模组不在 defense 列表 → 回查命中 nil → 纯阶段表驱动")
     }
 
     /// 验收 4：旧目录（lifecycle nil）+ 阶段表未命中 → .unconfigured（保守降级，

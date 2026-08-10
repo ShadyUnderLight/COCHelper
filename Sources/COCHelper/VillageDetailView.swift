@@ -85,6 +85,9 @@ struct VillageDetailView: View {
             village: village,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
+            // Issue #98 审核 F1：嵌套精工防御（主目录不 join）回查精制台目录
+            // lifecycle 声明，与精制台投影同口径（防同一防御两投影漂移）。
+            craftTableCatalog: craftTableCatalog,
             base: selectedBase,
             now: now
         )

@@ -153,4 +153,16 @@ public enum ClanDisplayFormat {
             return nil
         }
     }
+
+    /// 部落等级（ClanWarParticipant.clanLevel / Clan.clanLevel 语义）：
+    /// - nil → nil（字段缺失不渲染占位）
+    /// - 非 nil → "部落等级 \(n)"
+    ///
+    /// Issue #95：此前战争卡片把 clanLevel 传入无上下文的 `level` 参数并
+    /// 渲染为"X级大本营"，本函数将部落等级文案语义固定于此，禁止与
+    /// townHallLevel（大本营等级）文案复用同一"X级"格式。
+    public static func clanLevelLabel(_ clanLevel: Int?) -> String? {
+        guard let clanLevel else { return nil }
+        return "部落等级 \(clanLevel)"
+    }
 }

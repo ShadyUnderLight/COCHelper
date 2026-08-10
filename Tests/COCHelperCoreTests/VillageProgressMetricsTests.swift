@@ -446,8 +446,9 @@ final class VillageProgressMetricsTests: XCTestCase {
     // MARK: - 已观测分母（外部评审 P1-1：验收 3）
 
     func testIncompleteDenominatorForcesPartial() {
-        // 覆盖契约非 complete（partial，无诊断集合）：全 known 也无 unknown 项 →
-        // stage/global 仍 partial（验收 3，不得误称全村庄进度）
+        // 覆盖契约非 complete（partial，unmodeled 非空 → 覆盖诊断透传）：
+        // 全 known 也无 unknown 项 → stage/global 仍 partial（验收 3，
+        // 不得误称全村庄进度）
         let items = [
             item(id: "a", level: 3, maxLevel: 10, stageMax: 6),
             item(id: "b", level: 5, maxLevel: 10, stageMax: 6),
@@ -477,6 +478,9 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertEqual(m.globalProgress.state, .partial)
         XCTAssertTrue(m.globalProgress.degradedReason?.contains("快照缺少类别数据") == true)
         XCTAssertTrue(m.globalProgress.degradedReason?.contains("units") == true)
+        // sorted() 确定性：missing 按 Unicode 序拼接（"spells" < "units"，
+        // 非调用方传参顺序）→ 断言精确子串锁顺序，防排序回归。
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("spells、units") == true)
     }
 
     func testPartialCoverageAddsUnmodeledDiagnostic() {
@@ -487,6 +491,15 @@ final class VillageProgressMetricsTests: XCTestCase {
         XCTAssertTrue(m.globalProgress.degradedReason?.contains("目录未对") == true)
         XCTAssertTrue(m.globalProgress.degradedReason?.contains("兵种") == true)
         XCTAssertTrue(m.globalProgress.degradedReason?.contains("英雄") == true)
+    }
+
+    func testUnknownStateCarriesCoverageDiagnostic() {
+        // 分母为 0（无可确认项目）+ partial 覆盖 → unknown 态也透出覆盖诊断
+        //（Task 3 行为回归锁：makeMetric unknown 分支同样拼接 coverageDiagnostic，
+        // 不得因 unknown 无百分比可展示而静默丢失覆盖告警）。
+        let m = metrics([], coverage: .partial(missingSections: ["units"], unmodeledCategories: []))
+        XCTAssertEqual(m.globalProgress.state, .unknown)
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("快照缺少类别数据") == true)
     }
 
     func testCompleteCoverageAllowsReady() {

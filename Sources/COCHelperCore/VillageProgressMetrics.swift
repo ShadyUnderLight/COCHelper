@@ -257,7 +257,9 @@ public enum VillageProgressProjection {
     /// 含宇宙差集 .available 实例（合成项恒在投影 items 中——progressCoverage
     /// 的 home 投影合成时；coverage 参数只影响 stage/global 的 eligible
     /// 与 partial 判定，不影响覆盖率口径）——聚合值语义 = 已观测实例占
-    /// 全部可建造数量（UI detail 文案「已观测实例 · 全部村庄」准确，决策 8）。
+    ///（建筑/陷阱）宇宙建模范围内的可建造数量（Issue #96：差集仅覆盖
+    /// 建筑/陷阱，不得宣称全村庄；UI detail 文案「已观测实例 · 全部村庄」
+    /// 准确，决策 8）。
     /// 任一村庄基地的 coverage 饱和或累加溢出 → 返回 nil（fail-closed：整体
     /// 不展示假精度，不得静默跳过饱和项让分母变小——外部评审 P1-2 复审）。
     /// 无已导入村庄或观测总数为 0 → nil（UI 不渲染该卡）。
@@ -307,7 +309,7 @@ public enum VillageProgressProjection {
             parts.append("快照缺少类别数据（" + missing.sorted().joined(separator: "、") + "），无法确认完整村庄进度。")
         }
         if !unmodeled.isEmpty {
-            parts.append("目录未对" + unmodeled.map(\.title).sorted().joined(separator: "、") + "建模实例数量，无法确认完整村庄进度。")
+            parts.append("目录未对" + unmodeled.map(\.title).sorted().joined(separator: "、") + "的实例数量建模，无法确认完整村庄进度。")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }

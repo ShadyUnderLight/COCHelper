@@ -407,8 +407,9 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         }
     }
 
-    /// 性质 4（阶段 1 数值一致性）：coverage 非 complete（partial，无诊断集合）
-    /// 时 available 不进 stage/global 分母——数值必须与「去掉差集项后的完整
+    /// 性质 4（阶段 1 数值一致性）：coverage 非 complete（partial，unmodeled
+    /// 非空 → 覆盖诊断存在，但不影响本性质数值）时 available 不进
+    /// stage/global 分母——数值必须与「去掉差集项后的完整
     /// 口径计算」完全一致（对照纯 known/unknown 计算；state 允许不同：
     /// 非 complete 强制 partial）。
     func testIncompleteDenominatorIgnoresAvailableNumerics() {

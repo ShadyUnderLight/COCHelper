@@ -705,7 +705,7 @@ public struct GameCatalog: Sendable {
 
     /// 大本营等级上限（实例数量宇宙数组长度契约，Task 2 评审 nit 3：
     /// 魔法数字 18 单点化，init 校验与 universeCount 越界共用）。
-    /// internal（评审 B-1：投影层 universeComplete 的 TH 范围守卫与
+    /// internal（评审 B-1：投影层 buildingUniverseAvailable 的 TH 范围守卫与
     /// universeCount 同源，防 TH19 窗口期 fail-open）。
     static let universeTownHallCount = 18
 

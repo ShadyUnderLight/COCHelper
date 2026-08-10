@@ -322,8 +322,8 @@ struct VillageDetailView: View {
     /// Issue #70：三指标卡（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
     /// 每个指标显示名称、百分比、分子/分母（带单位）与降级文案；saturated
     /// 优先于 state 文案（fail-closed，数值不权威时显示异常而非百分比）。
-    /// `coverage` = 投影的 progressCoverage：决定覆盖率 help 文案口径
-    ///（完整分母 vs 已观测分母，Task 4 评审 nit 1；文案调整 Task 4 范围）。
+    /// Issue #96：`coverage` = 投影的 progressCoverage，决定覆盖率行 help
+    /// 文案口径——三分支（complete / partial / unavailable），见 helpText(for:)。
     private func metricsBar(metrics: VillageProgressMetrics, coverage: ProgressUniverseCoverage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // 决策 7 标题回退：完整分母（coverage.isComplete）后，
@@ -332,16 +332,31 @@ struct VillageDetailView: View {
             // 第三行「观测数据完整性」不变。
             metricRow(metrics.currentStageProgress, title: "当前阶段进度")
             metricRow(metrics.globalProgress, title: "全局养成进度")
-            // 覆盖率分母随宇宙完整性变化：coverage.isComplete 时含宇宙差集
-            // 实例（已观测占全部可建造），否则只有已观测实例——help 文案
-            // 必须跟随口径，否则误导（Task 4 评审 nit 1）。
+            // Issue #96：覆盖率分母随覆盖状态三分支变化——complete 时含宇宙
+            // 差集（已观测占全部可建造）；partial 时差集仅覆盖建筑/陷阱
+            //（分母 = 已观测 ∪ 建筑/陷阱差集，即「已建模可建造」）；unavailable
+            // 无差集（纯已观测）——help 文案必须跟随口径，否则误导（验收 3）。
             metricRow(metrics.snapshotCoverage, title: "观测数据完整性")
-                .help(coverage.isComplete
-                    ? "已观测实例占村庄全部可建造数量"
-                    : "分母为已观测实例，非全部可能建筑")
+                .help(helpText(for: coverage))
         }
         .padding(12)
         .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// Issue #96：覆盖率行 help 文案按覆盖状态三分支——complete 才宣称
+    ///「村庄全部可建造数量」；partial 时覆盖率分母 = 已观测 ∪ 建筑/陷阱宇宙
+    /// 差集（合成门禁 buildingUniverseAvailable，与 stage/global 完整分母门禁
+    /// 解耦）→ 准确表述为「已建模可建造」；unavailable（无宇宙/TH 未知/BB）
+    /// 无差集 → 纯已观测口径。
+    private func helpText(for coverage: ProgressUniverseCoverage) -> String {
+        switch coverage {
+        case .complete:
+            "已观测实例占村庄全部可建造数量"
+        case .partial:
+            "已观测实例占已建模可建造数量（当前仅建筑/陷阱），其余类别未完整建模"
+        case .unavailable:
+            "分母为已观测实例，非全部可能建筑"
+        }
     }
 
     private func metricRow(_ metric: ProgressMetric, title: String) -> some View {

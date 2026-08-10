@@ -278,11 +278,16 @@ extension CatalogDurationState {
 /// 数据源为 Supercell 官方公告，随版本化目录人工维护；APK 只用于校验条目
 /// dataID，不从名称或发布时间推断阶段边界。空表表示该目录版本尚未配置阶段数据。
 /// 判定不依赖 `specialAbility` 名称（不得从命名推断 seasonal）。
+///
+/// **日期纪元契约（Issue #98 审核 F5）**：`from`/`until` 的 bundled JSON 数值
+/// 是 **Cocoa reference date 纪元（2001-01-01 00:00:00 UTC）起的秒数**，由
+/// JSONDecoder 默认 `.deferredToDate` 策略解码（非 Unix 纪元 1970！）。
+/// Python/其他工具按此数据解析时必须用 `datetime(2001, 1, 1, tzinfo=utc)`
+/// 作为纪元基准（现有测试注释已提及该口径，此处提升为类型级契约）；若未来
+/// 改用 ISO8601 字符串，`loadBundled` 的 decoder 必须同步配置
+///（当前缺失 → 解码失败 → 空表 fail-safe，不会静默误读）。
 public struct SeasonalPhase: Codable, Hashable, Sendable {
-    /// 日期编码契约：bundled JSON 走默认 JSONDecoder 日期策略
-    ///（`.deferredToDate`，2001-01-01 起秒数）。人工维护/未来 APK 提取
-    /// 若改用 ISO8601 字符串，`loadBundled` 的 decoder 必须同步配置
-    ///（当前缺失 → 解码失败 → 空表 fail-safe）。
+    /// 阶段唯一标识。
     public let phaseID: String
     /// 展示名（官方公告名）；nil 时 UI 回退 phaseID。
     public let name: String?

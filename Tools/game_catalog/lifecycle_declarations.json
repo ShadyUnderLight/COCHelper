@@ -2737,8 +2737,8 @@
       "note": null
     },
     "units:4000178": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动变体（小陨石戈仑；3 级无成本无时长——2026-07 Mass Troops 活动临时版，与 4000180 孪生；中置信，保守安全侧）"
     },
     "units:4000179": {
       "lifecycle": "seasonalCandidate",

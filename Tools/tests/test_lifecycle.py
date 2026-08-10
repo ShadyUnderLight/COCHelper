@@ -57,7 +57,7 @@ SEASONAL_FESTIVE_KEYS = {
     "units:4000156", "units:4000157", "units:4000158", "units:4000159",
     "units:4000162", "units:4000163", "units:4000164", "units:4000165",
     "units:4000166", "units:4000167", "units:4000168",
-    "units:4000179", "units:4000180",
+    "units:4000178", "units:4000179", "units:4000180",
     "units:4000185", "units:4000186", "units:4000187",
 }
 # 名字/icon 含节日特征但人工判定为常驻内容的条目（防误标 seasonalCandidate 的

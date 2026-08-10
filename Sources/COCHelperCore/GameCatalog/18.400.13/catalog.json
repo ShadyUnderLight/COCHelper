@@ -133693,7 +133693,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 3,
       "missingReason": null,
       "name": "小陨石戈仑",

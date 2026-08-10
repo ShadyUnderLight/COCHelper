@@ -209,8 +209,10 @@ final class ClanDisplayFormatTests: XCTestCase {
     /// 任意 ASCII 字符串（大小写/数字/符号/空白/空串，长度 0-12）输出恒为
     /// 「未知」（P2）且不等于输入（P3，字母表纯 ASCII 不会生成 CJK「未知」）；
     /// 已知三值 + 生成值全部输出均属于四态集合（P4，联合输出域封闭）。
+    /// 字母表含 CJK/emoji 代表字符（刻意排除「未」「知」两字，避免生成器
+    /// 恰好拼出"未知"触发 P3 断言失败）；CJK 输入亦须落 default →「未知」。
     func testTypeLabelPropertyUnknownForArbitraryASCIIStrings() {
-        let alphabet = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-.\n\t")
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-.\n\t部落大本营🏆🎮")
         let known = Set(["open", "inviteOnly", "closed"])
         let fourStates = Set(["任何人都可加入", "只有被批准才能加入", "不可加入", "未知"])
         // P4 联合输出域：已知三值也须属于四态集合（独立于 P1 穷举的契约断言）

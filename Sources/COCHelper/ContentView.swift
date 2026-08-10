@@ -722,14 +722,55 @@ private struct TrackerMetricsView: View {
     /// 消费与详情页同一个 `VillageProgressProjection` 投影（实现要求 6）；
     /// 逻辑下沉 Core（fail-closed：任一 coverage 饱和或累加溢出 → nil，
     /// 不展示假精度），此处只做展示格式化。
-    private var aggregateCoverage: String? {
-        guard let (known, observed) = VillageProgressProjection.aggregateCoverage(
+    /// Issue #110：coverage 三分支——complete 蓝色「完整性」；partial/
+    /// unavailable 橙色 + tooltip 说明 scope 口径（不得伪装 ready）。
+    private var aggregateCoverage: AggregateCoverage? {
+        VillageProgressProjection.aggregateCoverage(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
             now: now
-        ) else { return nil }
-        return String(Int((Double(known) / Double(observed) * 100).rounded())) + "%"
+        )
+    }
+
+    /// 聚合卡渲染（Issue #110）：coverage 三分支——complete 保持现状（蓝色）；
+    /// partial / unavailable 橙色（fail-closed 视觉提示），tooltip 说明 scope
+    /// 口径：partial = 聚合专用 help 措辞（`AggregateCoverage.helpText`，外部
+    /// 交叉审核 P2：混合口径不得复用单村庄文案）+ 各条聚合诊断换行拼接；
+    /// unavailable = 纯已观测口径。value 百分比格式化与改造前逐位一致。
+    @ViewBuilder
+    private func aggregateCoverageCard(_ result: AggregateCoverage) -> some View {
+        let percent = String(Int((Double(result.numerator) / Double(result.denominator) * 100).rounded())) + "%"
+        TrackerMetricCard(
+            // Issue #110：与详情页同口径——coverage.isComplete 才可宣称
+            //「观测数据完整性」，partial/unavailable 为「已观测数据关联率」
+            //（交叉审核 I1：同一指标两个视图不得对同一状态有两种名字）。
+            title: result.coverage.isComplete ? "观测数据完整性" : "已观测数据关联率",
+            value: percent,
+            detail: "已观测实例 · 全部村庄",
+            systemImage: "checkmark.seal.fill",
+            tint: result.coverage.isComplete ? .blue : .orange
+        )
+        .help(aggregateCoverageTooltip(result))
+    }
+
+    /// 聚合卡 tooltip（Issue #110）：complete 不渲染（现状）；partial =
+    /// 聚合专用 scope 措辞（`AggregateCoverage.helpText`，与详情页单村庄
+    /// 措辞分离——聚合是混合口径，不得复用「与建筑/陷阱宇宙差集合计」）
+    /// + 各条聚合诊断换行拼接（诊断是跨村庄并集明细，不得丢）；unavailable
+    /// = 纯已观测口径。
+    private func aggregateCoverageTooltip(_ result: AggregateCoverage) -> String {
+        switch result.coverage {
+        case .complete:
+            return ""
+        case .partial:
+            let diagnostics = result.diagnostics.isEmpty
+                ? ""
+                : "\n" + result.diagnostics.joined(separator: "\n")
+            return result.helpText + diagnostics
+        case .unavailable:
+            return result.helpText
+        }
     }
 
     var body: some View {
@@ -763,13 +804,7 @@ private struct TrackerMetricsView: View {
                 tint: .blue
             )
             if let coverage = aggregateCoverage {
-                TrackerMetricCard(
-                    title: "观测数据完整性",
-                    value: coverage,
-                    detail: "已观测实例 · 全部村庄",
-                    systemImage: "checkmark.seal.fill",
-                    tint: .blue
-                )
+                aggregateCoverageCard(coverage)
             }
         }
     }

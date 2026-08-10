@@ -74,6 +74,36 @@ public struct VillageProgressMetrics: Hashable, Sendable {
     public let snapshotCoverage: ProgressMetric
 }
 
+/// 升级总览「观测数据完整性」卡的聚合结果（Issue #110）。
+/// 数值 = 全部已导入村庄 × 全部基地的 snapshotCoverage 累加（BB 数值照旧计入）；
+/// coverage = 仅合并 home 基地的 progressCoverage（决策 5：BB 恒 .unavailable，
+/// 不参与 scope 判定——否则任何已导入村庄都自带 unavailable 对，聚合恒降级）；
+/// 但存在有观测数据的 BB 对时 merged .complete 必须降级为 .partial（外部
+/// 交叉审核 P1：数值含不可靠数据源时不得静默宣称完整）。
+/// diagnostics = 聚合覆盖诊断（partial 专属，UI 层逐条展示；否则空数组）。
+public struct AggregateCoverage: Hashable, Sendable {
+    public let numerator: Int
+    public let denominator: Int
+    public let coverage: ProgressUniverseCoverage
+    public let diagnostics: [String]
+
+    /// 聚合卡 tooltip 的 scope 措辞（外部交叉审核 P2）：complete / unavailable
+    /// 分母构成同质（全类别宇宙 / 纯已观测），与单村庄 `helpText` 口径一致；
+    /// partial 为跨村庄/基地混合口径（complete 村庄全类别宇宙 + partial 村庄
+    /// 观测∪建筑陷阱差集 + unavailable 村庄/BB 纯观测），不得复用单村庄
+    /// 「与建筑/陷阱宇宙差集合计」措辞——聚合专用文案，明细见 diagnostics。
+    public var helpText: String {
+        switch coverage {
+        case .complete:
+            return "已观测实例占村庄全部可建造数量"
+        case .partial:
+            return "聚合分母为各村庄/基地已观测实例与可用宇宙差集之和，非统一完整宇宙口径"
+        case .unavailable:
+            return "分母为已观测实例，非全部可能建筑"
+        }
+    }
+}
+
 // MARK: - 投影
 
 /// Issue #70：三指标投影。纯函数，known 判定与 `VillageDetailProjection.totalCompletion`
@@ -194,7 +224,8 @@ public enum VillageProgressProjection {
         // **口径契约（P1 交叉审核）**：complete（全类别建模）时分母 = 全类别
         // 宇宙全量；partial（仅建筑/陷阱建模）时分母 = 全部类别已观测 ∪
         // 建筑/陷阱差集——未建模类别（units 等）只计观测、无差集补充。
-        // UI help 文案必须与之一致（VillageDetailView.helpText），不得宣称
+        // UI help 文案必须与之一致（`ProgressUniverseCoverage.helpText`，Issue
+        // #110 共享到 Core 防漂移），不得宣称
         //「已建模可建造数量」（该称谓要求分母只含已建模类别的宇宙量）。
         // 现状 coverageDen = instanceCountAndOverflow(of: items) 已含 available
         //（合成项直接进 items）→ 自动符合契约，无需额外改动。
@@ -250,9 +281,16 @@ public enum VillageProgressProjection {
                 unknownWeight: unknownWeightInfo.count,
                 availableWeight: availableWeightInfo.count,
                 unverifiedCatalog: unverifiedCatalog,
-                denominatorIsComplete: true, // 覆盖率语义天然是观测范围，不受完整分母影响
+                // 覆盖率分母天然是观测范围，不受完整分母影响（该参数只决定
+                // 「分母为已观测项目」文案，覆盖率不触发）。Issue #110：
+                // 覆盖诊断照常透传——partial（缺 section/未建模类别）时
+                // reasons 非空 → makeMetric 自动降级 .partial，即使
+                // numerator == denominator 也不得显示无 scope 的裸 100%
+                //（验收 3）；complete + 全 known 时 reasons 空 → .ready 不变。
+                denominatorIsComplete: true,
                 units: "实例",
-                emptyReason: "尚未导入快照"
+                emptyReason: "尚未导入快照",
+                coverageDiagnostic: coverageDiagnostic
             )
         )
     }
@@ -268,14 +306,23 @@ public enum VillageProgressProjection {
     /// 任一村庄基地的 coverage 饱和或累加溢出 → 返回 nil（fail-closed：整体
     /// 不展示假精度，不得静默跳过饱和项让分母变小——外部评审 P1-2 复审）。
     /// 无已导入村庄或观测总数为 0 → nil（UI 不渲染该卡）。
+    /// Issue #110：返回 `AggregateCoverage?`（数值字段与旧 tuple 逐位一致）；
+    /// coverage 仅合并 home 对的 progressCoverage（BB 恒 .unavailable，决策 5
+    /// ——混入会使任何已导入村庄的聚合恒降级，候选 A 否决）；但**有观测数据
+    /// 的 BB 对**（denominator > 0，数值已计入聚合）必须触发 scope 降级——
+    /// BB 数据源不可靠（决策 5），home 全 .complete 时不得静默宣称「完整」
+    /// （外部交叉审核 P1）；diagnostics 由 `aggregateCoverageDiagnostics`
+    /// 生成（partial 专属，UI 层展示）。
     public static func aggregateCoverage(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable,
         now: Date = Date()
-    ) -> (known: Int, observed: Int)? {
+    ) -> AggregateCoverage? {
         var known = 0
         var observed = 0
+        var homeCoverages: [ProgressUniverseCoverage] = []
+        var bbHasObservations = false
         for village in villages where village.hasImportedData {
             for base in TrackerBase.allCases {
                 let projection = VillageCatalogProjection.project(
@@ -285,6 +332,9 @@ public enum VillageProgressProjection {
                     base: base,
                     now: now
                 )
+                if base == .home {
+                    homeCoverages.append(projection.progressCoverage)
+                }
                 let metrics = VillageProgressProjection.metrics(
                     from: projection.items.filter { $0.status != .unavailable },
                     catalogIsUsable: projection.catalogIsUsable,
@@ -297,10 +347,112 @@ public enum VillageProgressProjection {
                 if kOver || oOver { return nil } // 累加溢出 fail-closed
                 known = k
                 observed = o
+                // BB 对不参与 home scope 合并（决策 5 恒 .unavailable），但数值
+                // 照旧计入聚合——因此只要 BB 有观测数据（denominator > 0）就
+                // 必须反映到 scope：merged == .complete 时降为 .partial +
+                // BB 数据源诊断，不得把不可靠数据源的数值混进「完整」承诺。
+                if base != .home && coverage.denominator > 0 {
+                    bbHasObservations = true
+                }
             }
         }
         guard observed > 0 else { return nil }
-        return (known, observed)
+        var merged = Self.mergedCoverage(of: homeCoverages)
+        if bbHasObservations && merged == .complete {
+            // 数值含 BB 观测 → 完整宇宙承诺不成立（外部交叉审核 P1）
+            merged = .partial(missingSections: [], unmodeledCategories: [])
+        }
+        return AggregateCoverage(
+            numerator: known,
+            denominator: observed,
+            coverage: merged,
+            diagnostics: Self.aggregateCoverageDiagnostics(
+                merged: merged,
+                unavailableHomeCount: homeCoverages.filter { $0 == .unavailable }.count,
+                includesBuilderBaseData: bbHasObservations
+            )
+        )
+    }
+
+    /// 合并多村庄 home 对的 coverage（Issue #110，纯函数，供 property 测试）：
+    /// - 存在任一 .partial → .partial——missingSections / unmodeledCategories
+    ///   取并集，missing 先按类别映射 subtract unmodeled 去重（同一类别既
+    ///   缺失又未建模只报一次，防诊断重复；未映射到类别的 section 保底保留）；
+    /// - 无 .partial 但含 .unavailable 与 .complete 混合 → .partial（明细空，
+    ///   诊断由 unavailableHomeCount 计数生成）——unavailable 村庄（TH 未知/
+    ///   目录无宇宙）不得被静默成 .complete（Reflexion 自查修复）；
+    /// - 无任何 partial/unavailable 且存在 .complete → .complete（无诊断）；
+    /// - 全 .unavailable 或空列表 → .unavailable（无差集，纯已观测口径；
+    ///   调用方 observed == 0 → nil 路径兜底）。
+    static func mergedCoverage(
+        of coverages: [ProgressUniverseCoverage]
+    ) -> ProgressUniverseCoverage {
+        var missing = Set<String>()
+        var unmodeled = Set<TrackerCategory>()
+        var sawComplete = false
+        var sawPartial = false
+        var sawUnavailable = false
+        for coverage in coverages {
+            switch coverage {
+            case .complete:
+                sawComplete = true
+            case .partial(let sections, let categories):
+                sawPartial = true
+                missing.formUnion(sections)
+                unmodeled.formUnion(categories)
+            case .unavailable:
+                sawUnavailable = true
+            }
+        }
+        if sawPartial {
+            // 去重：missing 中映射到未建模类别的 section 让位给 unmodeled 侧
+            //（同一类别只在 unmodeled 报一次）；映射不到的 section 保留（fallback）。
+            let deduped = missing.filter {
+                guard let category = TrackerCategory.from(section: $0) else { return true }
+                return !unmodeled.contains(category)
+            }
+            return .partial(missingSections: deduped, unmodeledCategories: unmodeled)
+        }
+        if !sawComplete { return .unavailable }
+        if sawUnavailable {
+            return .partial(missingSections: [], unmodeledCategories: [])
+        }
+        return .complete
+    }
+
+    /// 聚合覆盖诊断（Issue #110，partial 专属；merged 非 partial → []）。
+    /// 措辞与 detail 页 `coverageDiagnostic(for:)` 同风格，但 missing 前缀
+    /// 「部分村庄」——聚合是跨村庄并集，不得暗示所有村庄都缺同一类别；
+    /// 中文类别名映射复用 `TrackerCategory.from(section:)?.title`（同口径，
+    /// fallback 原文）。unavailableHomeCount = 合并前 home 对中 .unavailable
+    /// 的个数（BB 对不参与——决策 5 只排除 BB 的 scope 参与，计数同样只算
+    /// home 对，避免「任何已导入村庄都带一个 BB unavailable 对」的恒量噪音）。
+    /// includesBuilderBaseData = 存在有观测数据的 BB 对（外部交叉审核 P1：
+    /// BB 数值计入聚合后必须附加数据源诊断，不得静默）。
+    static func aggregateCoverageDiagnostics(
+        merged: ProgressUniverseCoverage,
+        unavailableHomeCount: Int,
+        includesBuilderBaseData: Bool = false
+    ) -> [String] {
+        guard case .partial(let missing, let unmodeled) = merged else { return [] }
+        var parts: [String] = []
+        if !missing.isEmpty {
+            let titles = missing
+                .compactMap { TrackerCategory.from(section: $0)?.title ?? $0 }
+                .sorted()
+                .joined(separator: "、")
+            parts.append("部分村庄快照缺少类别数据（" + titles + "），无法确认完整村庄进度。")
+        }
+        if !unmodeled.isEmpty {
+            parts.append("目录未对" + unmodeled.map(\.title).sorted().joined(separator: "、") + "的实例数量建模，无法确认完整村庄进度。")
+        }
+        if unavailableHomeCount > 0 {
+            parts.append(String(unavailableHomeCount) + " 个村庄覆盖状态不可用，无法确认完整村庄进度。")
+        }
+        if includesBuilderBaseData {
+            parts.append("聚合含建筑大师基地已观测数据（数据源不可靠，未纳入完整宇宙口径），无法确认完整村庄进度。")
+        }
+        return parts
     }
 
     // MARK: - Helpers

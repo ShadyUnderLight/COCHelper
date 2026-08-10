@@ -156,13 +156,31 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         ).count
     }
 
+    /// Issue #96：coverage 三态生成器。partial 随机携带一个非空诊断集合
+    ///（不变量：至少一个集合非空）。
+    private func randomCoverage(_ g: inout SeededGenerator) -> ProgressUniverseCoverage {
+        switch g.int(in: 0...2) {
+        case 0: return .unavailable
+        case 1: return .complete
+        default:
+            let missing: Set<String> = g.bool()
+                ? ["units", "spells"] : []
+            let unmodeled: Set<TrackerCategory> = g.bool()
+                ? [.troops, .heroes] : []
+            if missing.isEmpty && unmodeled.isEmpty {
+                return .partial(missingSections: ["units"], unmodeledCategories: [])
+            }
+            return .partial(missingSections: missing, unmodeledCategories: unmodeled)
+        }
+    }
+
     // MARK: - Properties
 
     func testRatioWithinZeroOne() {
         run { iteration, g in
             let items = (0..<g.int(in: 0...20)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), coverage: randomCoverage(&g))
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 if let ratio = metric.ratio {
                     assertOrFail(ratio >= 0 && ratio <= 1, "ratio \(ratio) out of [0,1]", context: context)
@@ -177,7 +195,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         run { iteration, g in
             let items = (0..<g.int(in: 0...20)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), coverage: randomCoverage(&g))
             // 覆盖指标守恒（无饱和时）：已知 + 未知 == 观测总数。
             // unknown 口径与实现一致：!isKnown **或** needsReimport（needsReimport
             // 项 isKnown 为 true 但实现归 unknown 侧，VillageProgressMetrics 过滤）。
@@ -205,7 +223,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         run { iteration, g in
             let items = (0..<g.int(in: 1...10)).map { _ in randomItem(&g, levelLimitedToStage: true) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), coverage: randomCoverage(&g))
             if !m.currentStageProgress.saturated && !m.globalProgress.saturated,
                let stage = m.currentStageProgress.ratio, let global = m.globalProgress.ratio {
                 assertOrFail(stage >= global, "stage \(stage) < global \(global)", context: context)
@@ -217,7 +235,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         run { iteration, g in
             let items = (0..<g.int(in: 0...20)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: false, compatibility: .unverified(gameVersion: "18.400.13"), completeDenominator: g.bool())
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: false, compatibility: .unverified(gameVersion: "18.400.13"), coverage: randomCoverage(&g))
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 assertOrFail(metric.state == .unavailable, "state \(metric.state) != .unavailable", context: context)
                 assertOrFail(metric.ratio == nil, "ratio \(String(describing: metric.ratio)) != nil", context: context)
@@ -231,7 +249,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
             let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: g.bool(),
                                                       compatibility: g.bool() ? .verified(gameVersion: "x") : .unverified(gameVersion: "x"),
-                                                      completeDenominator: g.bool())
+                                                      coverage: randomCoverage(&g))
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 assertOrFail(ProgressMetricState.allCases.contains(metric.state),
                              "state \(metric.state) not in allCases", context: context)
@@ -274,7 +292,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             }
             let items = malicious + (0..<g.int(in: 0...3)).map { _ in randomItem(&g) }
             let context = "seed=70 iteration=\(iteration) \(itemsSummary(items))"
-            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), completeDenominator: g.bool())
+            let m = VillageProgressProjection.metrics(from: items, catalogIsUsable: true, compatibility: .verified(gameVersion: "18.400.13"), coverage: randomCoverage(&g))
             // fail-closed：饱和 → ratio 恒 nil，UI 显示异常而非假精度。
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 assertOrFail(metric.saturated,
@@ -298,7 +316,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             let m = VillageProgressProjection.metrics(
                 from: items, catalogIsUsable: true,
                 compatibility: .verified(gameVersion: "18.400.13"),
-                completeDenominator: g.bool()
+                coverage: randomCoverage(&g)
             )
             for metric in [m.currentStageProgress, m.globalProgress, m.snapshotCoverage] {
                 if let ratio = metric.ratio {
@@ -322,7 +340,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             let m = VillageProgressProjection.metrics(
                 from: items, catalogIsUsable: true,
                 compatibility: .verified(gameVersion: "18.400.13"),
-                completeDenominator: g.bool()
+                coverage: randomCoverage(&g)
             )
             let coverage = m.snapshotCoverage
             guard !coverage.saturated else { return }
@@ -348,7 +366,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         }
     }
 
-    /// 性质 3（验收 2/决策 5）：completeDenominator=true 时 stage/global 只有
+    /// 性质 3（验收 2/决策 5）：coverage .complete 时 stage/global 只有
     /// 覆盖率 100%（无 unknown、无宇宙差集）才可达 ready；任一未观测/差集存在
     /// → 覆盖率 < 100% 且 stage/global 不伪装 ready（partial 或 unknown）。
     /// 反向：覆盖率 100% 时必然无 unknown 无 available。
@@ -366,7 +384,7 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             let m = VillageProgressProjection.metrics(
                 from: items, catalogIsUsable: true,
                 compatibility: .verified(gameVersion: "18.400.13"),
-                completeDenominator: true
+                coverage: .complete
             )
             guard let coverageRatio = m.snapshotCoverage.ratio else { return }  // 空集/饱和：无可断言
             let hasUnknown = items.contains { $0.status != .available && !VillageDetailProjection.isKnown($0) }
@@ -389,9 +407,11 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
         }
     }
 
-    /// 性质 4（阶段 1 数值一致性）：completeDenominator=false 时 available 不进
-    /// stage/global 分母——数值必须与「去掉差集项后的完整口径计算」完全一致
-    ///（对照纯 known/unknown 计算；state 允许不同：incomplete 强制 partial）。
+    /// 性质 4（阶段 1 数值一致性）：coverage 非 complete（partial，unmodeled
+    /// 非空 → 覆盖诊断存在，但不影响本性质数值）时 available 不进
+    /// stage/global 分母——数值必须与「去掉差集项后的完整
+    /// 口径计算」完全一致（对照纯 known/unknown 计算；state 允许不同：
+    /// 非 complete 强制 partial）。
     func testIncompleteDenominatorIgnoresAvailableNumerics() {
         run { iteration, g in
             let observed = (0..<g.int(in: 0...15)).map { _ in randomItem(&g) }
@@ -401,13 +421,13 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
             let incomplete = VillageProgressProjection.metrics(
                 from: items, catalogIsUsable: true,
                 compatibility: .verified(gameVersion: "18.400.13"),
-                completeDenominator: false
+                coverage: .partial(missingSections: [], unmodeledCategories: [.troops])
             )
             let knownOnly = items.filter { $0.status != .available }
             let completeKnownOnly = VillageProgressProjection.metrics(
                 from: knownOnly, catalogIsUsable: true,
                 compatibility: .verified(gameVersion: "18.400.13"),
-                completeDenominator: true
+                coverage: .complete
             )
             for (name, lhs, rhs) in [
                 ("stage", incomplete.currentStageProgress, completeKnownOnly.currentStageProgress),
@@ -418,6 +438,40 @@ final class VillageProgressMetricsPropertyTests: XCTestCase {
                              "\(name) numerator \(lhs.numerator) != 去差集计算 \(rhs.numerator)", context: context)
                 assertOrFail(lhs.denominator == rhs.denominator,
                              "\(name) denominator \(lhs.denominator) != 去差集计算 \(rhs.denominator)", context: context)
+            }
+        }
+    }
+
+    /// Issue #96 property：coverage 非 complete 时 stage/global 绝无 .ready
+    ///（分母为已观测项目 → 强制 partial；unknown/unavailable 由既有规则）。
+    func testNonCompleteCoverageNeverReady() {
+        for seed in 0..<500 {
+            var g = SeededGenerator(seed: UInt32(seed))
+            var items: [VillageItemState] = []
+            let n = g.int(in: 1...8)
+            for _ in 0..<n {
+                items.append(randomItem(&g, allowsNeedsReimport: false))
+            }
+            for coverage in [
+                ProgressUniverseCoverage.unavailable,
+                .partial(missingSections: ["units"], unmodeledCategories: []),
+                .partial(missingSections: [], unmodeledCategories: [.troops]),
+            ] {
+                let m = VillageProgressProjection.metrics(
+                    from: items, catalogIsUsable: true,
+                    compatibility: .verified(gameVersion: "18.400.13"),
+                    coverage: coverage
+                )
+                assertOrFail(
+                    m.currentStageProgress.state != .ready,
+                    "非 complete coverage 不得 ready",
+                    context: "seed=\(seed) coverage=\(coverage) \(itemsSummary(items))"
+                )
+                assertOrFail(
+                    m.globalProgress.state != .ready,
+                    "非 complete coverage 不得 ready",
+                    context: "seed=\(seed) coverage=\(coverage) \(itemsSummary(items))"
+                )
             }
         }
     }

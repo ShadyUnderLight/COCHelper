@@ -870,7 +870,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             from: projection.items.filter { $0.status != .unavailable },
             catalogIsUsable: projection.catalogIsUsable,
             compatibility: projection.compatibility,
-            completeDenominator: projection.universeComplete
+            coverage: projection.progressCoverage
         )
         for record in records {
             XCTAssertEqual(record.villageMetrics, expected,
@@ -883,7 +883,9 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         }
     }
 
-    // MARK: - Issue #70 阶段 2：宇宙差集（records 排除 .available，指标含完整分母）
+    // MARK: - Issue #70 阶段 2：宇宙差集（records 排除 .available）+ Issue #96
+    //（快照仅 buildings/units → progressCoverage .partial → stage/global 只
+    // 计已观测分母；覆盖率行仍含差集实例）
 
     /// 宇宙目录 fixture（JSON 形态）：圣水收集器（buildings:1000002，数量型、宇宙键
     /// TH1=1…TH18=7；审核 B-6 更正：真加农炮是 1000008）+ 野蛮人（units:4000000，
@@ -937,9 +939,12 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         )
     }
 
-    /// 接线验收（决策 3）：宇宙完整时 records 排除 .available 差集项（差集项无
-    /// 升级计时，进总览无意义），而 record.villageMetrics 消费完整分母
-    ///（stage/global 分母含差集权重，覆盖率分母含差集实例数）。
+    /// 接线验收（决策 3 + Issue #96）：records 排除 .available 差集项（差集项无
+    /// 升级计时，进总览无意义）；快照只有 buildings+units → progressCoverage
+    /// .partial（7 个 missing section + 8 类未建模——本目录宇宙仅 buildings 键，
+    /// 无 traps）→ record.villageMetrics 的 stage/global 只计已观测分母（差集
+    /// 不进 eligible）；覆盖率分母仍含差集实例（观测 ∪ 差集口径，与
+    /// stage/global 的完整分母门禁解耦，决策 D2）。
     func testUniverseDiffExcludedFromRecordsIncludedInMetrics() throws {
         // TH18 + 野蛮人升级中 + 快照无圣水收集器 → 宇宙差集产出 .available
         //（count 7）；解锁型（units）无宇宙键不产出。
@@ -964,33 +969,44 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
             $0.item.status != .available
         }, "宇宙差集项不得进入升级总览记录")
 
-        // 前置：宇宙差集确实产出（否则本测试失去意义）。
+        // 前置：宇宙差集确实产出（否则本测试失去意义）；合成门禁 =
+        // buildingUniverseAvailable（差集能力），不等于完整分母许可（.partial）。
         let projection = VillageCatalogProjection.project(
             village: village, catalog: catalog, base: .home, now: now
         )
-        XCTAssertTrue(projection.universeComplete)
+        XCTAssertFalse(projection.progressCoverage.isComplete,
+                       "快照仅 buildings/units → 全村庄覆盖 .partial")
+        if case .partial(let missing, let unmodeled) = projection.progressCoverage {
+            XCTAssertEqual(missing, ["traps", "spells", "siege_machines", "heroes", "equipment", "pets", "guardians"])
+            XCTAssertEqual(unmodeled, [.traps, .troops, .spells, .siegeMachines, .heroes, .equipment, .pets, .guardians],
+                           "本测试目录宇宙仅 buildings 键（JSON 无 traps item）→ traps 也属未建模")
+        } else {
+            return XCTFail("期望 .partial，实际 \(projection.progressCoverage)")
+        }
         let diff = try XCTUnwrap(projection.items.first { $0.id == "universe:buildings:1000002" })
         XCTAssertEqual(diff.status, .available)
         XCTAssertEqual(diff.count, 7, "TH18 圣水收集器宇宙 count")
 
-        // 指标层：完整分母——stage/global = 野蛮人 3 级 + 差集 7×2 级 = 17；
-        // 覆盖率分母 = TH(1) + 野蛮人(1) + 差集(7) = 9。
+        // 指标层（Issue #96）：partial → stage/global 只计已观测（野蛮人 3 级）；
+        // 覆盖率分母 = 全部追踪类别观测（TH 1 + 野蛮人 1）+ 建筑差集（7）= 9——
+        // P1 契约：未建模类别（units 野蛮人）只计观测、无差集补充，分母不是
+        //「已建模可建造数量」（UI help 文案与之一致）。
         let metrics = try XCTUnwrap(combined.active.first?.villageMetrics)
-        XCTAssertEqual(metrics.currentStageProgress.denominator, 17)
-        XCTAssertEqual(metrics.globalProgress.denominator, 17)
+        XCTAssertEqual(metrics.currentStageProgress.denominator, 3)
+        XCTAssertEqual(metrics.globalProgress.denominator, 3)
         XCTAssertEqual(metrics.snapshotCoverage.denominator, 9)
-        // 与独立投影同参数调用等价（record 携带完整分母指标）。
+        // 与独立投影同参数调用等价（record 携带同一口径指标）。
         let expected = VillageProgressProjection.metrics(
             from: projection.items.filter { $0.status != .unavailable },
             catalogIsUsable: projection.catalogIsUsable,
             compatibility: projection.compatibility,
-            completeDenominator: projection.universeComplete
+            coverage: projection.progressCoverage
         )
         XCTAssertEqual(metrics, expected)
     }
 
-    /// 旧目录（无 instanceCounts）：universeComplete false → completeDenominator
-    /// false → 记录与指标行为与阶段 1 完全一致（.available 不存在）。
+    /// 旧目录（无 instanceCounts）：progressCoverage .unavailable → 已观测分母
+    /// → 记录与指标行为与阶段 1 完全一致（.available 不存在）。
     func testLegacyCatalogKeepsPhase1Semantics() throws {
         let village = makeVillage(name: "旧目录村", objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 18, path: "th")],
@@ -1005,7 +1021,7 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         let projection = VillageCatalogProjection.project(
             village: village, catalog: syntheticCatalog, base: .home, now: now
         )
-        XCTAssertFalse(projection.universeComplete)
+        XCTAssertEqual(projection.progressCoverage, .unavailable)
         XCTAssertTrue(projection.items.allSatisfy { $0.status != .available },
                       "旧目录不得产出宇宙差集项")
     }

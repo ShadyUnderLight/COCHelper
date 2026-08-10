@@ -705,7 +705,7 @@ public struct GameCatalog: Sendable {
 
     /// 大本营等级上限（实例数量宇宙数组长度契约，Task 2 评审 nit 3：
     /// 魔法数字 18 单点化，init 校验与 universeCount 越界共用）。
-    /// internal（评审 B-1：投影层 universeComplete 的 TH 范围守卫与
+    /// internal（评审 B-1：投影层 buildingUniverseAvailable 的 TH 范围守卫与
     /// universeCount 同源，防 TH19 窗口期 fail-open）。
     static let universeTownHallCount = 18
 
@@ -743,10 +743,13 @@ public struct GameCatalog: Sendable {
     /// 3. 键存在性：每个宇宙键的 (section, dataID) 必须在 items 中存在
     ///    （手工裁剪/错配 → 拒绝）；
     /// 4. 全 0 键：数量型建筑不可能全 TH 0（手工篡改 → 拒绝）；
-    /// 5. **正向完整 key 契约**（修复 2）：items 的 home 数量型（buildings/traps、
-    ///    排除列表外，与 validate.py `_NON_COUNTABLE_DATA_IDS` 同源）必须全部
-    ///    被宇宙覆盖——部分 instanceCounts（如 10/52）无法检测（只做反向
-    ///    键存在性时裁剪不可见）。
+    /// 5. **正向完整 key 契约**（修复 2 + Issue #96 P2 类别内完整性门禁）：
+    ///    buildings/traps 的 home 数量型（排除列表外，与 validate.py
+    ///    `_NON_COUNTABLE_DATA_IDS` 同源）必须全部被宇宙覆盖——部分
+    ///    instanceCounts（如 10/52）无法检测（只做反向键存在性时裁剪不可见）；
+    ///    **任何**有宇宙键的 section 必须全量覆盖其 home items（部分建模 →
+    ///    `universeSections` 误判该类别已建模 → 投影 `.complete` 建立在残缺
+    ///    宇宙上，拒绝整个宇宙，fail-closed）。
     private static func validatedInstanceCounts(
         _ raw: [String: [Int]]?,
         index: [String: CatalogItem]
@@ -773,12 +776,27 @@ public struct GameCatalog: Sendable {
             }
             validKeys.insert(Self.key(section: section, dataID: dataID))
         }
-        // 正向完整 key 契约（修复 2）：home 数量型（排除列表外）必须全部覆盖
-        for item in index.values where !Self.nonCountableDataIDs.contains(item.dataID) {
-            guard item.section == "buildings" || item.section == "traps" else { continue }
+        // 正向完整 key 契约（修复 2 + Issue #96 P2 类别内完整性门禁）：
+        // - 基线（修复 2）：buildings/traps 的 home 数量型（排除列表外）必须
+        //   全部被宇宙覆盖——部分 instanceCounts（如 10/52）无法检测（只做
+        //   反向键存在性时裁剪不可见）；raw 全空时也拒绝（fail-closed）；
+        // - 扩展（P2）：**任何**有宇宙键的 section 必须全量覆盖其 home items
+        //   （排除列表外）——部分建模（如未来某类别只补 1 个键）会破坏
+        //   `universeSections` 的「任一键即该类别已建模」语义，导致投影层
+        //   `.complete` 误报（完整分母建立在残缺宇宙上），fail-closed 拒绝
+        //   整个宇宙。与 validate.py 正向完整性同源（双端同步）。
+        let sectionsWithUniverseKeys = Set(
+            validKeys.compactMap { $0.split(separator: ":").first.map(String.init) }
+        )
+        for item in index.values {
+            let isCoreSection = item.section == "buildings" || item.section == "traps"
+            guard isCoreSection || sectionsWithUniverseKeys.contains(item.section) else {
+                continue
+            }
             guard item.base == "home" else { continue }
+            guard !Self.nonCountableDataIDs.contains(item.dataID) else { continue }
             guard validKeys.contains(Self.key(section: item.section, dataID: item.dataID)) else {
-                return nil  // 数量型 item 无宇宙键（部分 instanceCounts）
+                return nil  // 有宇宙键的 section 存在未覆盖的 home item（部分建模）
             }
         }
         return raw
@@ -945,6 +963,16 @@ public struct GameCatalog: Sendable {
             return (String(parts[0]), dataID)
         }
         .sorted { $0.section == $1.section ? $0.dataID < $1.dataID : $0.section < $1.section }
+    }
+
+    /// 有宇宙数据的 section 集合（Issue #96）：从 instanceCounts 键推导，
+    /// 与 `universeKeys` 同一信任门（旧目录 / 校验失败 / 无 manifest → 空）。
+    /// 覆盖契约输入：投影层用它判定目录对哪些追踪类别建模了实例数量。
+    public var universeSections: Set<String> {
+        guard hasUniverseData else { return [] }
+        return Set((instanceCounts ?? [:]).keys.compactMap { key in
+            key.split(separator: ":", maxSplits: 1).first.map(String.init)
+        })
     }
 
     private static func key(section: String, dataID: Int64) -> String {

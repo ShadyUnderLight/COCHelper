@@ -1337,6 +1337,52 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertTrue(complete.hasUniverseData)
     }
 
+    /// 类别内完整性门禁（Issue #96 P2）：任何有宇宙键的 section 必须全量覆盖
+    /// 其 home items——部分建模（如未来 units 只补 1 个键）会让 universeSections
+    /// 误判「该类别已建模」→ 投影 .complete 误报，fail-closed 拒绝整个宇宙。
+    func testPartialSectionUniverseRejectedByPerSectionForwardCheck() {
+        func level(_ n: Int) -> CatalogLevel {
+            CatalogLevel(level: n, durationSeconds: nil, upgradeCosts: nil,
+                         requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                         icon: nil, levelVisual: nil, missingReason: nil)
+        }
+        // units 两个 home item + buildings 一个（宇宙主体键齐全）
+        let items = [
+            CatalogItem(section: "buildings", category: "buildings", dataID: 1_000_002,
+                        base: "home", baseMissingReason: nil, name: "圣水收集器", maxLevel: 17,
+                        icon: nil, levelVisual: nil, levels: (1...17).map(level)),
+            CatalogItem(section: "units", category: "troops", dataID: 4_000_000,
+                        base: "home", baseMissingReason: nil, name: "野蛮人", maxLevel: 3,
+                        icon: nil, levelVisual: nil, levels: (1...3).map(level)),
+            CatalogItem(section: "units", category: "troops", dataID: 4_000_001,
+                        base: "home", baseMissingReason: nil, name: "弓箭手", maxLevel: 3,
+                        icon: nil, levelVisual: nil, levels: (1...3).map(level)),
+        ]
+        // units 只补 1 个键（4000000）→ 4000001 无键 → 部分建模 → 拒绝
+        let partial = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: [
+                "buildings:1000002": cannonUniverseCounts,
+                "units:4000000": cannonUniverseCounts,
+            ]
+        )
+        XCTAssertFalse(partial.hasUniverseData, "units 部分建模 → 类别内完整性门禁拒绝")
+        XCTAssertTrue(partial.universeKeys.isEmpty, "拒绝后不得暴露宇宙键")
+        // 全量覆盖 → 通过
+        let complete = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: [
+                "buildings:1000002": cannonUniverseCounts,
+                "units:4000000": cannonUniverseCounts,
+                "units:4000001": cannonUniverseCounts,
+            ]
+        )
+        XCTAssertTrue(complete.hasUniverseData)
+        XCTAssertEqual(complete.universeSections, ["buildings", "units"])
+    }
+
     /// 非 canonical 键（外部评审 P1-1 残留修复 3）：`Int64("+0000002") == 2`
     /// 被接受但原始键非规范——universeCount 按规范键查不到，键静默无效 → 拒绝。
     func testNonCanonicalKeyRejected() {
@@ -1416,6 +1462,64 @@ final class GameCatalogTests: XCTestCase {
         let catalog = GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
         XCTAssertFalse(catalog.hasUniverseData, "旧格式目录应视为无宇宙（hasUniverseData false）")
         XCTAssertNil(catalog.universeCount(section: "buildings", dataID: 100_000_2, townHallLevel: 18))
+    }
+
+    // MARK: - Issue #96：universeSections（覆盖契约输入）
+
+    /// 有宇宙数据时，section 集合从 instanceCounts 键推导，多个键同 section
+    /// 去重（两个 buildings 键 → 单个 "buildings"）。覆盖契约输入：投影层用它
+    /// 判定目录对哪些追踪类别建模了实例数量。
+    func testUniverseSectionsDerivedFromInstanceCountsKeys() {
+        func level(_ n: Int) -> CatalogLevel {
+            CatalogLevel(level: n, durationSeconds: nil, upgradeCosts: nil,
+                         requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                         icon: nil, levelVisual: nil, missingReason: nil)
+        }
+        let items = [
+            CatalogItem(section: "buildings", category: "buildings", dataID: 1_000_000,
+                        base: "home", baseMissingReason: nil, name: "兵营", maxLevel: 1,
+                        icon: nil, levelVisual: nil, levels: [level(1)]),
+            CatalogItem(section: "buildings", category: "defense", dataID: 1_000_002,
+                        base: "home", baseMissingReason: nil, name: "圣水收集器", maxLevel: 17,
+                        icon: nil, levelVisual: nil, levels: (1...17).map(level)),
+            CatalogItem(section: "traps", category: "traps", dataID: 12_000_000,
+                        base: "home", baseMissingReason: nil, name: "炸弹", maxLevel: 3,
+                        icon: nil, levelVisual: nil, levels: (1...3).map(level)),
+        ]
+        let catalog = GameCatalog(
+            gameVersion: "18.400.13", items: items,
+            manifest: makeManifest(sha256: universeManifestSHA),
+            instanceCounts: [
+                "buildings:1000000": cannonUniverseCounts,
+                "buildings:1000002": cannonUniverseCounts,
+                "traps:12000000": Array(repeating: 1, count: 18),
+            ]
+        )
+        XCTAssertEqual(catalog.universeSections, ["buildings", "traps"])
+    }
+
+    /// 无宇宙数据（旧目录无 instanceCounts / instanceCounts 有效但无 manifest
+    /// 信任标记）→ 空集合，与 `universeKeys` 同一信任门（fail-closed）。
+    func testUniverseSectionsEmptyWithoutUniverseData() {
+        // 旧目录（无 instanceCounts、无 manifest）→ 空
+        let legacy = GameCatalog(gameVersion: "18.400.13", items: [])
+        XCTAssertTrue(legacy.universeSections.isEmpty)
+        // instanceCounts 有效但无 manifest 信任标记 → 空（同 testUniverseDataRequiresManifestTrust）
+        let collector = CatalogItem(
+            section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
+            baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
+            levels: [CatalogLevel(
+                level: 1, durationSeconds: nil, upgradeCosts: nil,
+                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
+                icon: nil, levelVisual: nil, missingReason: nil
+            )]
+        )
+        let untrusted = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: nil,
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertTrue(untrusted.universeSections.isEmpty)
     }
 
 }

@@ -69,6 +69,10 @@ def _check_instance_counts(errors: list[str], ic: dict, catalog) -> None:
             errors.append(f"instanceCounts 键格式非法: {key!r}")
             continue
         section, _, dataid_s = key.partition(":")
+        # Issue #96 契约不对称声明：Swift 侧 .complete 要求 9 类全建模宇宙，
+        # 但本白名单目前只接受 buildings/traps——未来目录扩充其他类别宇宙时，
+        # 必须同步放开本白名单（并更新 Swift 侧 validatedInstanceCounts 正向
+        # 契约与对应测试），否则新类别宇宙键会被本检查误拒。
         if section not in ("buildings", "traps"):
             errors.append(f"instanceCounts 未知 section: {key}")
             continue
@@ -99,13 +103,19 @@ def _check_instance_counts(errors: list[str], ic: dict, catalog) -> None:
                 all_zero = False
         if not bad and all_zero:
             errors.append(f"instanceCounts {key} 全 0（数量型建筑不可能全 TH 为 0）")
-    # 正向完整性：主村数量型（home buildings/traps）必须都有宇宙项；
+    # 正向完整性（Issue #70 修复 2 + #96 P2 类别内完整性门禁，与 Swift 侧
+    # validatedInstanceCounts 同源，双端同步）：
+    # - 基线：主村数量型（home buildings/traps）必须都有宇宙项（raw 全空也拒绝）；
+    # - 扩展：任何有宇宙键的 section 必须全量覆盖其 home items（部分建模 →
+    #   Swift universeSections 误判「类别已建模」→ .complete 误报，fail-closed）；
     # 已知非数量型（排除列表）免查，buildings2/traps2（BB）不做宇宙（决策 5）。
+    sections_with_ic = {s for s, _ in ic_keys}
     for i in catalog.items:
-        if (i.section in ("buildings", "traps") and i.base == "home"
-                and i.dataID not in _NON_COUNTABLE_DATA_IDS
-                and (i.section, i.dataID) not in ic_keys):
-            errors.append(f"instanceCounts 缺少宇宙项: {i.section}:{i.dataID} ({i.name})")
+        if i.base != "home" or i.dataID in _NON_COUNTABLE_DATA_IDS:
+            continue
+        if i.section in ("buildings", "traps") or i.section in sections_with_ic:
+            if (i.section, i.dataID) not in ic_keys:
+                errors.append(f"instanceCounts 缺少宇宙项: {i.section}:{i.dataID} ({i.name})")
 
 
 def _check_display_category_registry(errors: list[str], items) -> None:

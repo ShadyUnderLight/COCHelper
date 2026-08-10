@@ -91,12 +91,12 @@ final class VillageProgressMetricsTests: XCTestCase {
     private func metrics(_ items: [VillageItemState],
                          usable: Bool = true,
                          compatibility: CatalogCompatibility? = .verified(gameVersion: "18.400.13"),
-                         completeDenominator: Bool = true) -> VillageProgressMetrics {
+                         coverage: ProgressUniverseCoverage = .complete) -> VillageProgressMetrics {
         VillageProgressProjection.metrics(
             from: items,
             catalogIsUsable: usable,
             compatibility: compatibility,
-            completeDenominator: completeDenominator
+            coverage: coverage
         )
     }
 
@@ -446,13 +446,14 @@ final class VillageProgressMetricsTests: XCTestCase {
     // MARK: - 已观测分母（外部评审 P1-1：验收 3）
 
     func testIncompleteDenominatorForcesPartial() {
-        // 无实例宇宙数据（completeDenominator false）：全 known 也无 unknown 项 →
-        // stage/global 仍 partial（验收 3，不得误称全村庄进度）
+        // 覆盖契约非 complete（partial，unmodeled 非空 → 覆盖诊断透传）：
+        // 全 known 也无 unknown 项 → stage/global 仍 partial（验收 3，
+        // 不得误称全村庄进度）
         let items = [
             item(id: "a", level: 3, maxLevel: 10, stageMax: 6),
             item(id: "b", level: 5, maxLevel: 10, stageMax: 6),
         ]
-        let m = metrics(items, completeDenominator: false)
+        let m = metrics(items, coverage: .partial(missingSections: [], unmodeledCategories: [.troops]))
         XCTAssertEqual(m.currentStageProgress.state, .partial)
         XCTAssertEqual(m.globalProgress.state, .partial)
         XCTAssertNotNil(m.currentStageProgress.degradedReason)
@@ -461,9 +462,86 @@ final class VillageProgressMetricsTests: XCTestCase {
     }
 
     func testIncompleteDenominatorReasonText() {
-        let m = metrics([item(id: "a", level: 3, maxLevel: 10, stageMax: 6)], completeDenominator: false)
+        let m = metrics([item(id: "a", level: 3, maxLevel: 10, stageMax: 6)],
+                        coverage: .partial(missingSections: [], unmodeledCategories: [.troops]))
         let reason = m.currentStageProgress.degradedReason!
         XCTAssertTrue(reason.contains("分母为已观测项目，非村庄全部实例，无法计算完整村庄进度。"), reason)
+    }
+
+    // MARK: - Issue #96：coverage 参数与诊断
+
+    func testPartialCoverageAddsSectionDiagnostic() {
+        let m = metrics(
+            [item(id: "a", level: 3, maxLevel: 10, stageMax: 6)],
+            coverage: .partial(missingSections: ["units", "spells"], unmodeledCategories: [])
+        )
+        XCTAssertEqual(m.globalProgress.state, .partial)
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("快照缺少类别数据") == true)
+        // 评审修复：missing 段先映射中文类别名再排序（与 unmodeled 分支同口径，
+        // 两条诊断的类别顺序一致，避免中英混排）。
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("法术") == true)
+        // sorted() 确定性：title 序 "兵种"(U+5175) < "法术"(U+6CD5) → 兵种、法术
+        //（非调用方传参顺序）。断言精确子串锁顺序，防排序回归。
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("兵种、法术") == true)
+    }
+
+    func testPartialCoverageAddsUnmodeledDiagnostic() {
+        let m = metrics(
+            [item(id: "a", level: 3, maxLevel: 10, stageMax: 6)],
+            coverage: .partial(missingSections: [], unmodeledCategories: [.troops, .heroes])
+        )
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("目录未对") == true)
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("兵种") == true)
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("英雄") == true)
+    }
+
+    /// Issue #96 P1 契约：覆盖率分母 = 全部追踪类别观测实例 ∪ 已建模类别
+    ///（建筑/陷阱）宇宙差集——未建模类别（units 等）只计观测、无差集补充。
+    /// UI help 文案必须与之一致（不得宣称「已建模可建造数量」，该称谓要求
+    /// 分母只含已建模类别的宇宙量）。
+    func testCoverageDenominatorMixesAllObservedWithBuildingsTrapsDiff() {
+        let observedBuilding = item(id: "b", level: 18, maxLevel: 18, stageMax: 18, count: 1)
+        let observedUnit = item(id: "u", level: 3, maxLevel: 10, stageMax: 6, count: 2)
+        let diff = item(id: "universe:buildings:1000002", status: .available,
+                        level: nil, maxLevel: 1, stageMax: nil, count: 7)
+        let m = metrics([observedBuilding, observedUnit, diff],
+                        coverage: .partial(missingSections: [], unmodeledCategories: [.troops]))
+        // 分母 = 观测(1 + 2) + 建筑差集(7) = 10；分子 = known(1 + 2) = 3。
+        // 若分母只含「已建模可建造」（建筑宇宙），值应为 8——契约锁定现状。
+        XCTAssertEqual(m.snapshotCoverage.denominator, 10)
+        XCTAssertEqual(m.snapshotCoverage.numerator, 3)
+    }
+
+    func testUnknownStateCarriesCoverageDiagnostic() {
+        // 分母为 0（无可确认项目）+ partial 覆盖 → unknown 态也透出覆盖诊断
+        //（Task 3 行为回归锁：makeMetric unknown 分支同样拼接 coverageDiagnostic，
+        // 不得因 unknown 无百分比可展示而静默丢失覆盖告警）。
+        let m = metrics([], coverage: .partial(missingSections: ["units"], unmodeledCategories: []))
+        XCTAssertEqual(m.globalProgress.state, .unknown)
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("快照缺少类别数据") == true)
+    }
+
+    func testCompleteCoverageAllowsReady() {
+        let m = metrics(
+            [item(id: "a", level: 3, maxLevel: 10, stageMax: 6)],
+            coverage: .complete
+        )
+        XCTAssertEqual(m.globalProgress.state, .ready)
+        XCTAssertNil(m.globalProgress.degradedReason)
+    }
+
+    /// partial 时差集项不进 stage/global 分母（available 过滤 = coverage.isComplete）。
+    func testPartialCoverageExcludesAvailableFromEligible() {
+        // 注意：差集项必须给 maxLevel 才能进 eligible（maxLevel ?? 0 > 0 过滤），
+        // 且 eligible 贡献 = maxLevel × instanceWeight（count=7 → 权重 7）。
+        let available = item(id: "u:1", status: .available, level: nil, maxLevel: 1, stageMax: nil,
+                             count: 7)
+        let known = item(id: "a", level: 3, maxLevel: 10, stageMax: 6)
+        let partial = metrics([known, available], coverage: .partial(missingSections: ["units"], unmodeledCategories: []))
+        XCTAssertEqual(partial.globalProgress.denominator, 10, "partial → 差集不进分母")
+        XCTAssertEqual(partial.globalProgress.state, .partial)
+        let complete = metrics([known, available], coverage: .complete)
+        XCTAssertEqual(complete.globalProgress.denominator, 17, "complete → 差集进分母（10 + 1×7）")
     }
 
     // MARK: - 全局非法上限（外部评审 P2-2）
@@ -632,7 +710,7 @@ final class VillageProgressMetricsTests: XCTestCase {
             item(id: "k", level: 3, maxLevel: 10, stageMax: 6),
             availableItem(id: "a", count: 4),
         ]
-        let m = metrics(items)  // completeDenominator: true
+        let m = metrics(items)  // 默认 coverage: .complete
         XCTAssertEqual(m.currentStageProgress.denominator, 30)
         XCTAssertEqual(m.currentStageProgress.numerator, 3)
         XCTAssertEqual(m.globalProgress.denominator, 50)
@@ -672,7 +750,7 @@ final class VillageProgressMetricsTests: XCTestCase {
     }
 
     func testCompleteDenominatorReadyWhenNoUnknownNoAvailable() {
-        // 全宇宙观测（无 unknown 无 available）→ completeDenominator=true 可达 ready
+        // 全宇宙观测（无 unknown 无 available）→ coverage .complete 可达 ready
         let m = metrics([item(id: "a", level: 3, maxLevel: 10, stageMax: 6)])
         XCTAssertEqual(m.currentStageProgress.state, .ready)
         XCTAssertEqual(m.globalProgress.state, .ready)
@@ -681,25 +759,25 @@ final class VillageProgressMetricsTests: XCTestCase {
     }
 
     func testIncompleteDenominatorIgnoresAvailable() {
-        // completeDenominator=false（TH 缺失/目录无宇宙）：available 不进
+        // coverage 非 complete（TH 缺失/目录无宇宙）：available 不进
         // stage/global 分母（阶段 1 语义，eligible = known），coverage 仍含
         // available（覆盖率天然是观测+宇宙差集口径）。
         let items = [
             item(id: "k", level: 3, maxLevel: 10, stageMax: 6),
             availableItem(id: "a", count: 4),
         ]
-        let m = metrics(items, completeDenominator: false)
+        let m = metrics(items, coverage: .partial(missingSections: [], unmodeledCategories: [.troops]))
         XCTAssertEqual(m.currentStageProgress.denominator, 6)
         XCTAssertEqual(m.globalProgress.denominator, 10)
         XCTAssertEqual(m.currentStageProgress.state, .partial)  // 已观测文案
         XCTAssertEqual(m.snapshotCoverage.denominator, 5)      // 1 + 4
         let reason = m.currentStageProgress.degradedReason!
         XCTAssertTrue(reason.contains("分母为已观测项目"),
-                      "completeDenominator=false 必须走已观测分母文案")
-        // 审核 B-7 否定断言：availableWeight 只在 completeDenominator=true 时
-        // 参与降级——false 时不得出现「宇宙差集」文案（available 不进 eligible）。
+                      "coverage 非 complete 必须走已观测分母文案")
+        // 审核 B-7 否定断言：availableWeight 只在 coverage.isComplete 时
+        // 参与降级——非 complete 时不得出现「宇宙差集」文案（available 不进 eligible）。
         XCTAssertFalse(reason.contains("宇宙差集"),
-                       "completeDenominator=false 时不得出现宇宙差集降级文案")
+                       "coverage 非 complete 时不得出现宇宙差集降级文案")
     }
 
     func testCompleteDenominatorFiltersAvailableLikeKnown() {

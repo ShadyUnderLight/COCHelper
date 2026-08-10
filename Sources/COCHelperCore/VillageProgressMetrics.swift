@@ -306,11 +306,12 @@ public enum VillageProgressProjection {
         guard case .partial(let missing, let unmodeled) = coverage else { return nil }
         var parts: [String] = []
         if !missing.isEmpty {
-            // 先按 section 键排序（确定性），再映射中文类别名（与 unmodeled 分支
-            // 的 title 口径统一，避免中英混排）；progressSections 全为追踪类别，
-            // from() 恒非 nil，fallback 保底。
-            let titles = missing.sorted()
+            // 先映射中文类别名再排序（与 unmodeled 分支同口径——两条诊断的
+            // 类别顺序一致，避免中英混排与口径不一致）；progressSections 全为
+            // 追踪类别，from() 恒非 nil，fallback 保底。
+            let titles = missing
                 .compactMap { TrackerCategory.from(section: $0)?.title ?? $0 }
+                .sorted()
                 .joined(separator: "、")
             parts.append("快照缺少类别数据（" + titles + "），无法确认完整村庄进度。")
         }

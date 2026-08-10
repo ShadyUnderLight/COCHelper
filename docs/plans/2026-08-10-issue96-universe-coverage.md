@@ -687,3 +687,21 @@ Expected: 0 处（除计划/文档外全部移除或改注释）
 - 不改三指标公式；不碰 BB/Capital；不用 UI 隐藏缺失类别
 - `ContentView.aggregateCoverage`（第 4 消费点）行为不变，不传 coverage（默认 .unavailable，覆盖率口径天然不受完整分母影响）——只确认不回归，不改造
 - 回归风险：~4-8 处 #70 阶段 2 断言按新语义更新（预期行为收紧，非 bug）；`universeComplete` 全部移除，编译器强制所有调用点更新（无静默漏改）
+
+---
+
+## 实现偏差与风险登记（执行后回写，2026-08-10）
+
+### 与计划的偏差（均为评审驱动或编译必需）
+1. **Task 2 边界调整**：移除 `universeComplete` 会立即破坏 `UpgradeOverviewProjection`/`VillageDetailView` 编译 → Task 2 同步做消费点过渡（`completeDenominator: projection.progressCoverage.isComplete`）与 UpgradeOverviewProjectionTests 断言更新（分母 17→3，预期行为收紧）。
+2. **Task 2 评审修复**（commit 39389a3）：`unmodeledCategories` 推导加 `hasSuffix("2")` 过滤（防 BB 宇宙键经 `TrackerCategory.from` dropLast 映射误判 home 已建模，fail-open 方向）。
+3. **UpgradeOverviewProjectionTests unmodeled 为 8 类**（非计划说的 7 类）：该文件 `universeCatalogJSON` 只有 buildings 宇宙键（无 traps item），fixture 事实。
+4. **Task 3 偏差**：`SeededGenerator(seed: UInt32)` + `int(in: ClosedRange)`（仓库 API）；`testPartialCoverageExcludesAvailableFromEligible` 的 available 项 `maxLevel: 1`（计划草稿 nil 会被 `(maxLevel ?? 0) > 0` 过滤，断言 17 不可能成立）。
+5. **Task 4 扩展**：helpText 由计划的三分支扩为成因细分（missing/unmodeled 双缺、仅 unmodeled、仅 missing）——修复计划原 partial 单文案在 missing-only 成因下失实（交叉审核发现）。
+6. **交叉审核修复**（commit 68748ba）：诊断文案 missing 段映射中文 title（消除中英混排）；validate.py 白名单注释声明（future 契约断点）；aggregateCoverage doc「全部村庄」= 聚合范围澄清；3 个边界测试（TH=1/18、BB 宇宙键 filter 突变守护、快照 BB 段不补 home 缺失）。
+7. **交叉审核第二轮修复**（F1/N3）：missing-only help 文案删括号（缺失类别按宇宙差集计入分母，分母恒=已建模宇宙量）；诊断排序统一为 title 序（missing 与 unmodeled 顺序一致）。
+
+### 风险登记（当前接受，未来动作项）
+- **R-A（部分建模 fail-open）**：`universeSections` 粒度 =「任一宇宙键即该 section 已建模」；`validatedInstanceCounts` 正向契约只强制 buildings/traps 全覆盖。未来 validate.py 放开其他类别后，若生成器只产部分宇宙键 → Swift 校验接受 → 可能达成 `.complete` 而该类宇宙不完整。**动作项**：扩展类别宇宙时同步扩展 Swift 正向契约 + Tools/tests。
+- **R-B（validate.py 白名单）**：`_check_instance_counts` 只接受 buildings/traps section（Tools/game_catalog/validate.py:72 已注释声明）——生产目录永远无法产出 9 类宇宙，`.complete` 生产不可达（注入可达的预留分支）。当前是 issue #96 非目标（不补齐类别宇宙）的正确状态。
+- **R-C（ContentView 文案）**：升级总览卡「已观测实例 · 全部村庄」中「全部村庄」指聚合范围（跨全部已导入村庄），非分母宣称——已由 aggregateCoverage doc 澄清，UI 保留（决策 8）。

@@ -477,13 +477,12 @@ final class VillageProgressMetricsTests: XCTestCase {
         )
         XCTAssertEqual(m.globalProgress.state, .partial)
         XCTAssertTrue(m.globalProgress.degradedReason?.contains("快照缺少类别数据") == true)
-        // 评审修复：missing 段先按 section 键排序（确定性），再映射中文类别名
-        //（与 unmodeled 分支的 title 口径统一，避免中英混排）。
+        // 评审修复：missing 段先映射中文类别名再排序（与 unmodeled 分支同口径，
+        // 两条诊断的类别顺序一致，避免中英混排）。
         XCTAssertTrue(m.globalProgress.degradedReason?.contains("法术") == true)
-        // sorted() 确定性：missing 按 section 键 Unicode 序拼接（"spells" <
-        // "units"）后再映射 title → 法术、兵种（非调用方传参顺序）。
-        // 断言精确子串锁顺序，防排序回归。
-        XCTAssertTrue(m.globalProgress.degradedReason?.contains("法术、兵种") == true)
+        // sorted() 确定性：title 序 "兵种"(U+5175) < "法术"(U+6CD5) → 兵种、法术
+        //（非调用方传参顺序）。断言精确子串锁顺序，防排序回归。
+        XCTAssertTrue(m.globalProgress.degradedReason?.contains("兵种、法术") == true)
     }
 
     func testPartialCoverageAddsUnmodeledDiagnostic() {

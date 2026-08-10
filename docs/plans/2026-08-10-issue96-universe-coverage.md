@@ -587,6 +587,13 @@ git commit -m "feat(core): metrics 消费 ProgressUniverseCoverage + 覆盖诊�
 
 1c. `metricsBar`（~L325-340）：
 
+> **历史草案标注（P1 审核后修正）**：本示例的 partial 文案「已建模（当前仅建筑/陷阱）
+> 可建造」在最终实现中**被 P1 口径契约否决**——覆盖率分母 = 全部追踪类别已观测
+> ∪ 建筑/陷阱差集（未建模类别只计观测），并非「已建模可建造数量」。最终实现见
+> `VillageDetailView.helpText` 与 `VillageProgressMetrics` coverageDen 契约注释
+>（commit a66309b）：partial 文案为「分母为已观测实例与建筑/陷阱宇宙差集合计，
+> 非村庄全部可建造」。
+
 ```swift
     /// Issue #96：help 文案按覆盖状态三分支——complete 才宣称「村庄全部可建造」；
     /// partial 准确表述为「已建模（当前仅建筑/陷阱）可建造」；unavailable 为

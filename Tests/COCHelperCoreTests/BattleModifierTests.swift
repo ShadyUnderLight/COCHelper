@@ -11,11 +11,13 @@ final class BattleModifierTests: XCTestCase {
     // MARK: - 稳定中文映射表
 
     /// 官方已知值域 → 稳定中文映射（表格驱动全分支）。
+    /// 官方简中术语（Issue #99）：hardMode→锦标赛模式（官方已改名）、
+    /// minusOne/Two/Three→传奇杯1/2/3（与 league_tier_catalog 的官方静态数据一致）。
     func testLocalizedTextKnownValues() {
-        XCTAssertEqual(BattleModifierText.localizedText(for: "hardMode"), "困难模式")
-        XCTAssertEqual(BattleModifierText.localizedText(for: "minusOne"), "传奇杯 I")
-        XCTAssertEqual(BattleModifierText.localizedText(for: "minusTwo"), "传奇杯 II")
-        XCTAssertEqual(BattleModifierText.localizedText(for: "minusThree"), "传奇杯 III")
+        XCTAssertEqual(BattleModifierText.localizedText(for: "hardMode"), "锦标赛模式")
+        XCTAssertEqual(BattleModifierText.localizedText(for: "minusOne"), "传奇杯1")
+        XCTAssertEqual(BattleModifierText.localizedText(for: "minusTwo"), "传奇杯2")
+        XCTAssertEqual(BattleModifierText.localizedText(for: "minusThree"), "传奇杯3")
     }
 
     /// nil、"none" 与空串/纯空白（均无规则信息）→ nil：UI 不渲染占位。
@@ -30,6 +32,50 @@ final class BattleModifierTests: XCTestCase {
     /// 未知非空值 → 原样返回（可审计 fallback，不做猜测映射）。
     func testLocalizedTextUnknownRawFallback() {
         XCTAssertEqual(BattleModifierText.localizedText(for: "futureX"), "futureX")
+    }
+
+    /// Property-based fuzz：localizedText 显示层不变式（确定性 fixed seed）。
+    /// 断言四类契约：
+    /// - 已知 key → 官方简中术语（防文案回退到旧术语）
+    /// - 未知非空 → 恒等回退（可审计 fallback）
+    /// - nil / "none" / 空白变体 → nil（UI 隐藏）
+    /// - 输出卫生：非 nil 输出必为非空白串
+    func testLocalizedTextPropertiesFuzz() {
+        let knownKeys = ["hardMode", "minusOne", "minusTwo", "minusThree"]
+        let knownTerms = ["锦标赛模式", "传奇杯1", "传奇杯2", "传奇杯3"]
+        let unknownPool = ["futureX", "tournament", "unknownRule", "MINUS_ONE", "hardmode", " hardMode"]
+        let whitespacePool = ["", " ", "\t", "\n", " \n\t ", "\r\n"]
+        var r = LCG(seed: 0x5EED_0B5E_0000_0000) // "seed"（与 #72 的 battle seed 区分）
+        for _ in 0..<500 {
+            switch Int(r.next() % 5) {
+            case 0: // 已知 key → 官方术语
+                let idx = Int(r.next() % UInt64(knownKeys.count))
+                XCTAssertEqual(
+                    BattleModifierText.localizedText(for: knownKeys[idx]), knownTerms[idx],
+                    "已知 key \(knownKeys[idx]) 必须映射官方简中术语"
+                )
+                XCTAssertFalse(
+                    knownTerms[idx].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    "已知术语不得为空白"
+                )
+            case 1: // 未知非空 → 恒等回退
+                let v = r.pick(unknownPool)
+                XCTAssertEqual(BattleModifierText.localizedText(for: v), v, "未知非空必须恒等回退")
+            case 2: // 随机可见 ASCII 串（排除已知 key 与 "none"，避免偶然落入保留域）
+                let len = 1 + Int(r.next() % 30)
+                var s = ""
+                for _ in 0..<len {
+                    s.append(Character(UnicodeScalar(0x20 + Int(r.next() % 0x5F))!))
+                }
+                if s == "none" || knownKeys.contains(s) { continue }
+                XCTAssertEqual(BattleModifierText.localizedText(for: s), s, "未知串必须恒等回退")
+            case 3: // nil / "none" → nil
+                XCTAssertNil(BattleModifierText.localizedText(for: nil))
+                XCTAssertNil(BattleModifierText.localizedText(for: "none"))
+            default: // 空白变体 → nil（输出卫生的空白端）
+                XCTAssertNil(BattleModifierText.localizedText(for: r.pick(whitespacePool)))
+            }
+        }
     }
 
     // MARK: - currentwar fuzz（property-based）

@@ -511,7 +511,7 @@ public struct VillageCatalogProjection: Sendable {
         guard isBuilderSection == (base == .builder) else { return nil }
 
         // 嵌套判定提前（Issue #98：catalog join 需要它；仅依赖 item.id 无副作用）。
-        let isNested = item.id.contains(".types.") || item.id.contains(".modules.")
+        let isNested = isNestedItem(item)
 
         // Issue #74 + #98 seasonal：可用性由阶段表 + 目录 lifecycle 声明驱动
         //（不推断、不编造；必须在 category guard 之前计算——unavailable 分支

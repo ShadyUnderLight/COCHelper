@@ -1210,7 +1210,7 @@ final class GameCatalogTests: XCTestCase {
     func testAvailabilitySeasonalCandidateMissReturnsUnconfigured() {
         XCTAssertEqual(
             SeasonalPhaseTable.empty.availability(
-                forItemKey: "a:1", lifecycle: .seasonalCandidate, at: Date()),
+                forItemKey: "a:1", lifecycle: .seasonalCandidate, at: Date(timeIntervalSince1970: 1_500)),
             .unconfigured)
     }
 

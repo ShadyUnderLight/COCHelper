@@ -33,6 +33,26 @@ DECLARATIONS = (
 # 精工防御（2026-04 官方公告限时，阶段表 crafted-defenses-2026-04-sound-of-clash）
 SEASONAL_DEFENSE_IDS = (103000008, 103000009, 103000010)
 
+# 限时节日/活动条目（第三方评审 P1：不得声明为 permanent——availability 会
+# permanent 短路并永久隐藏阶段信息；必须保持 seasonalCandidate + 来源 note）。
+# 来源：Supercell 官方活动公告（圣诞/新年/农历新年/万圣节/生日/世界杯/愚人节）。
+SEASONAL_FESTIVE_KEYS = {
+    "buildings:1000073", "buildings:1000090", "buildings:1000091",
+    "buildings:1000092", "buildings:1000101",
+    "spells:26000004", "spells:26000006", "spells:26000022",
+    "traps:12000003", "traps:12000007",
+    "units:4000094", "units:4000118", "units:4000119", "units:4000120",
+    "units:4000121", "units:4000122", "units:4000142", "units:4000145",
+    "units:4000156", "units:4000157", "units:4000158", "units:4000159",
+    "units:4000162", "units:4000163", "units:4000164", "units:4000165",
+    "units:4000166",
+}
+# 名字含节日关键词但人工判定为常驻内容的条目（防误标 seasonalCandidate 的
+# 反向保护：这些条目标 permanent 是有意的，note 留痕）。
+PERMANENT_FESTIVE_LOOKING_KEYS = {
+    "equipment:90000014", "units:4000072",
+}
+
 
 # ---- 声明文件 vs 真实目录 ----
 
@@ -84,6 +104,26 @@ def test_seasonal_candidates_match_phase_table():
         if key in decl:
             assert decl[key] == "seasonalCandidate", (
                 f"{key} 命中阶段表但声明为 {decl[key]!r}")
+
+
+def test_festive_items_are_seasonal_candidates():
+    """第三方评审 P1：限时节日/活动条目必须声明为 seasonalCandidate 且带来源 note
+    （availability 的 permanent 短路会永久隐藏阶段信息，误标 permanent 违反保守
+    降级目标）；catalog.json 落盘值与声明一致。"""
+    decl = load_declarations()
+    raw_items = json.loads(DECLARATIONS.read_text(encoding="utf-8"))["items"]
+    catalog = json.loads((CATALOG_DIR / "catalog.json").read_text(encoding="utf-8"))
+    for key in SEASONAL_FESTIVE_KEYS:
+        assert decl[key] == "seasonalCandidate", f"{key} 被误标为永久内容"
+        assert raw_items[key].get("note"), f"{key} 缺少来源 note（限时条目必须可追溯）"
+    for key in PERMANENT_FESTIVE_LOOKING_KEYS:
+        assert decl[key] == "permanent", f"{key} 不应标 seasonalCandidate"
+        assert raw_items[key].get("note"), f"{key} 常驻判定必须留痕"
+    # catalog.json 落盘值与声明一致（防仅改声明文件不同步目录）
+    for item in catalog["items"]:
+        key = f"{item['section']}:{item['dataID']}"
+        if key in SEASONAL_FESTIVE_KEYS or key in PERMANENT_FESTIVE_LOOKING_KEYS:
+            assert item.get("lifecycle") == decl[key], f"{key} 落盘值不一致"
 
 
 # ---- apply_lifecycle：写入 / fail loud ----
@@ -243,3 +283,70 @@ def test_validate_rejects_undeclared_item(tmp_path):
     d = _valid_dir(tmp_path, item)
     errors = validate_catalog(d)
     assert any("lifecycle 声明缺失" in e and "units:9999999" in e for e in errors)
+
+
+def _craft_payload() -> tuple[bytes, dict]:
+    """最小 craft 目录负载（defenses/modules 空数组即可通过 validate 文件级校验）。"""
+    payload = {"schemaVersion": 1, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+               "locale": "zh-CN", "source": "t", "defenses": [], "modules": []}
+    data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+    return data, payload
+
+
+def _add_craft_manifest_entry(d: Path, craft_bytes: bytes, declared_sha256: str) -> None:
+    """把 craft 条目写入目录 manifest（declare 值可篡改以模拟 tampered）。"""
+    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": declared_sha256, "size": len(craft_bytes)})
+    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
+
+
+def test_validate_accepts_matching_craft_entry(tmp_path):
+    """manifest 含 craft_table_catalog.json 条目且 hash/size 一致 → validate 通过
+    （审核 P1-2 正向：craft 目录运行时完整性门禁的数据侧契约）。"""
+    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
+    craft_bytes, _ = _craft_payload()
+    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
+    _add_craft_manifest_entry(d, craft_bytes, "sha256:" + hashlib.sha256(craft_bytes).hexdigest())
+    assert validate_catalog(d) == []
+
+
+def test_validate_rejects_tampered_craft_entry(tmp_path):
+    """craft_table_catalog.json 被篡改（hash 失配）→ validate 报哈希不一致
+    （审核 P1-2 负例：篡改数据不得静默进入投影）。"""
+    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
+    craft_bytes, _ = _craft_payload()
+    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
+    _add_craft_manifest_entry(d, craft_bytes, "sha256:" + "0" * 64)
+    errors = validate_catalog(d)
+    assert any("craft_table_catalog.json" in e and "哈希不一致" in e for e in errors)
+
+
+def test_update_manifest_craft_entry_idempotent(tmp_path):
+    """生成器写盘后登记 craft 条目：幂等（两次调用只有一条）且 hash/size 正确；
+    manifest 缺失时静默跳过不炸。"""
+    import hashlib as _hashlib
+
+    from generate_craft_table_catalog import _update_manifest_craft_entry
+
+    d = tmp_path / "cat"
+    d.mkdir()
+    craft_bytes, _ = _craft_payload()
+    # 无 manifest → 不炸
+    _update_manifest_craft_entry(d, craft_bytes)
+    # 有 manifest → 追加
+    (d / "manifest.json").write_text(json.dumps(
+        {"schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+         "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
+         "generatedFiles": [], "counts": {"items": 0, "levels": 0}},
+        ensure_ascii=False), encoding="utf-8")
+    _update_manifest_craft_entry(d, craft_bytes)
+    _update_manifest_craft_entry(d, craft_bytes)  # 幂等
+    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    entries = [e for e in m["generatedFiles"] if e.get("path") == "craft_table_catalog.json"]
+    assert len(entries) == 1
+    assert entries[0]["sha256"] == "sha256:" + _hashlib.sha256(craft_bytes).hexdigest()
+    assert entries[0]["size"] == len(craft_bytes)
+    # 损坏 manifest → 静默跳过
+    (d / "manifest.json").write_text("{broken", encoding="utf-8")
+    _update_manifest_craft_entry(d, craft_bytes)

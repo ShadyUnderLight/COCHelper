@@ -132,6 +132,44 @@ def build_catalog(apk: Path, game_version: str) -> dict[str, object]:
         }
 
 
+def _update_manifest_craft_entry(output_dir: Path, craft_bytes: bytes) -> None:
+    """把 craft_table_catalog.json 条目写入同目录 manifest（幂等）。
+
+    Issue #98 审核 P1-2：CraftTableCatalog.loadBundled 运行时对账 manifest 中
+    craft 条目的 sha256/size（fail-closed）；manifest 缺该条目即视为目录不可用。
+    生成器写盘后必须同步登记，否则重新生成后的 bundle 会精制台不可用。
+    manifest 缺失/损坏时静默跳过（由 validate 在生成后自检兜底）。
+    """
+    import hashlib
+
+    manifest_path = output_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, ValueError):
+        return
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("generatedFiles"), list):
+        return
+    entry = {
+        "path": "craft_table_catalog.json",
+        "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+        "size": len(craft_bytes),
+    }
+    replaced = False
+    for i, existing in enumerate(manifest["generatedFiles"]):
+        if isinstance(existing, dict) and existing.get("path") == "craft_table_catalog.json":
+            manifest["generatedFiles"][i] = entry
+            replaced = True
+            break
+    if not replaced:
+        manifest["generatedFiles"].append(entry)
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="生成版本化精制台 Defense/Module 目录")
     parser.add_argument("--apk", type=Path, required=True)
@@ -141,10 +179,10 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = build_catalog(args.apk, args.game_version)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    craft_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+    args.output.write_bytes(craft_bytes)
+    # Issue #98 审核 P1-2：同目录 manifest 登记 craft 条目（幂等，缺 manifest 跳过）
+    _update_manifest_craft_entry(args.output.parent, craft_bytes)
     print(
         "wrote",
         len(payload["defenses"]),

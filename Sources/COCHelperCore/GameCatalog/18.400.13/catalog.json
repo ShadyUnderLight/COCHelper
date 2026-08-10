@@ -13603,7 +13603,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "糖果笼",
@@ -14576,7 +14576,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "糖果笼",
@@ -14622,7 +14622,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "糖果拐杖",
@@ -14668,7 +14668,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "节日烟花",
@@ -15082,7 +15082,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "盛放烟花",
@@ -87289,7 +87289,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "圣诞奇袭",
@@ -87840,7 +87840,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "圣诞奇袭",
@@ -89915,7 +89915,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "生日大爆炸",
@@ -101368,7 +101368,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "南瓜炸弹",
@@ -102027,7 +102027,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "圣诞奇袭",
@@ -120006,7 +120006,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "蛮羊骑士",
@@ -123562,7 +123562,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "饼干皮卡",
@@ -123900,7 +123900,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "烟花炮手",
@@ -124238,7 +124238,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "驭水青龙",
@@ -124576,7 +124576,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "任意球野蛮人",
@@ -124914,7 +124914,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "边线球巨人",
@@ -127704,7 +127704,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "灵蛇飞桶",
@@ -127906,7 +127906,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "饼干皮卡",
@@ -129318,7 +129318,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 16,
       "missingReason": null,
       "name": "霸天巨人",
@@ -129731,7 +129731,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 16,
       "missingReason": null,
       "name": "皮卡凯恩",
@@ -130069,7 +130069,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "铁臂终结者",
@@ -130482,7 +130482,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 16,
       "missingReason": null,
       "name": "战吼狂人",
@@ -130971,7 +130971,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 16,
       "missingReason": null,
       "name": "皮卡凯恩",
@@ -131384,7 +131384,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 16,
       "missingReason": null,
       "name": "部族小队",
@@ -131797,7 +131797,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 16,
       "missingReason": null,
       "name": "战吼狂人",
@@ -132135,7 +132135,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "铁臂终结者",
@@ -132523,7 +132523,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 15,
       "missingReason": null,
       "name": "部族小队",

@@ -309,8 +309,8 @@
       "note": null
     },
     "buildings:1000073": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（糖果笼，活动结束后移除；Supercell 官方活动公告确认限时）"
     },
     "buildings:1000074": {
       "lifecycle": "permanent",
@@ -361,16 +361,16 @@
       "note": null
     },
     "buildings:1000090": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（糖果笼，活动结束后移除；Supercell 官方活动公告确认限时）"
     },
     "buildings:1000091": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（糖果拐杖，活动结束后移除；Supercell 官方活动公告确认限时）"
     },
     "buildings:1000092": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（节日烟花，活动结束后移除；Supercell 官方活动公告确认限时）"
     },
     "buildings:1000093": {
       "lifecycle": "permanent",
@@ -405,8 +405,8 @@
       "note": null
     },
     "buildings:1000101": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时节日装饰建筑（盛放烟花，活动结束后移除；Supercell 官方活动公告确认限时）"
     },
     "buildings:1000102": {
       "lifecycle": "permanent",
@@ -1030,7 +1030,7 @@
     },
     "equipment:90000014": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "活动引入装备（尖刺足球），但装备进入常驻装备池可继续升级——按永久内容声明（2026-08 人工判定，待复核）"
     },
     "equipment:90000015": {
       "lifecycle": "permanent",
@@ -1417,16 +1417,16 @@
       "note": null
     },
     "spells:26000004": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动法术（圣诞奇袭；Supercell 官方活动公告确认限时）"
     },
     "spells:26000005": {
       "lifecycle": "permanent",
       "note": null
     },
     "spells:26000006": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动法术（圣诞奇袭；Supercell 官方活动公告确认限时）"
     },
     "spells:26000007": {
       "lifecycle": "permanent",
@@ -1489,8 +1489,8 @@
       "note": null
     },
     "spells:26000022": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时生日活动法术（生日大爆炸；Supercell 官方活动公告确认限时）"
     },
     "spells:26000023": {
       "lifecycle": "permanent",
@@ -2005,8 +2005,8 @@
       "note": null
     },
     "traps:12000003": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节活动陷阱（南瓜炸弹；Supercell 官方活动公告确认限时）"
     },
     "traps:12000004": {
       "lifecycle": "permanent",
@@ -2021,8 +2021,8 @@
       "note": null
     },
     "traps:12000007": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动陷阱（圣诞奇袭；Supercell 官方活动公告确认限时）"
     },
     "traps:12000008": {
       "lifecycle": "permanent",
@@ -2346,7 +2346,7 @@
     },
     "units:4000072": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "常驻兵种（派对法师，2021 年正式引入升级链），名字含派对但非限时活动兵种（2026-08 人工判定，待复核）"
     },
     "units:4000073": {
       "lifecycle": "permanent",
@@ -2417,8 +2417,8 @@
       "note": null
     },
     "units:4000094": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动兵种（蛮羊骑士；Supercell 官方活动公告确认限时）"
     },
     "units:4000095": {
       "lifecycle": "permanent",
@@ -2501,24 +2501,24 @@
       "note": null
     },
     "units:4000118": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动兵种（饼干皮卡；Supercell 官方活动公告确认限时）"
     },
     "units:4000119": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时新年活动兵种（烟花炮手；Supercell 官方活动公告确认限时）"
     },
     "units:4000120": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时农历新年活动兵种（驭水青龙；Supercell 官方活动公告确认限时）"
     },
     "units:4000121": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时世界杯活动兵种（任意球野蛮人；Supercell 官方活动公告确认限时）"
     },
     "units:4000122": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时世界杯活动兵种（边线球巨人；Supercell 官方活动公告确认限时）"
     },
     "units:4000123": {
       "lifecycle": "permanent",
@@ -2593,8 +2593,8 @@
       "note": null
     },
     "units:4000142": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时农历新年活动兵种（灵蛇飞桶；Supercell 官方活动公告确认限时）"
     },
     "units:4000143": {
       "lifecycle": "permanent",
@@ -2605,8 +2605,8 @@
       "note": null
     },
     "units:4000145": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时圣诞活动兵种（饼干皮卡变体；Supercell 官方活动公告确认限时）"
     },
     "units:4000146": {
       "lifecycle": "permanent",
@@ -2649,20 +2649,20 @@
       "note": null
     },
     "units:4000156": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（霸天巨人；Supercell 官方活动公告确认限时）"
     },
     "units:4000157": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（皮卡凯恩；Supercell 官方活动公告确认限时）"
     },
     "units:4000158": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（铁臂终结者；Supercell 官方活动公告确认限时）"
     },
     "units:4000159": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（战吼狂人；Supercell 官方活动公告确认限时）"
     },
     "units:4000160": {
       "lifecycle": "permanent",
@@ -2673,24 +2673,24 @@
       "note": null
     },
     "units:4000162": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（皮卡凯恩变体；Supercell 官方活动公告确认限时）"
     },
     "units:4000163": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（部族小队；Supercell 官方活动公告确认限时）"
     },
     "units:4000164": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（战吼狂人变体；Supercell 官方活动公告确认限时）"
     },
     "units:4000165": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（铁臂终结者变体；Supercell 官方活动公告确认限时）"
     },
     "units:4000166": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时愚人节活动兵种（部族小队变体；Supercell 官方活动公告确认限时）"
     },
     "units:4000167": {
       "lifecycle": "permanent",

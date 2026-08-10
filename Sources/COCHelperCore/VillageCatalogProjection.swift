@@ -405,11 +405,19 @@ public struct VillageCatalogProjection: Sendable {
             && unlocks.townHall.map { (1...GameCatalog.universeTownHallCount).contains($0) } ?? false
         let progressCoverage: ProgressUniverseCoverage
         if !buildingUniverseAvailable {
+            // 含无快照/TH 未知或越界/旧目录/BB——fail-closed（决策 5、评审 B-1/I2）。
             progressCoverage = .unavailable
         } else if let snapshot = village.accountSnapshot {
             let missingSections = Self.progressSections.subtracting(snapshot.objectSections.keys)
+            // 只认 home 形态 section（"2" 后缀过滤）：TrackerCategory.from 会把
+            // "units2" 这类 BB 键 dropLast 映射成 .troops——未来 instanceCounts
+            // 若含 BB 宇宙键，不过滤会把「仅 BB 建模」误判为 home 类别已建模
+            //（fail-open）。与 universeSupplement 的 "2" 后缀跳过防御对齐
+            //（决策 5：BB 不做宇宙，BB 宇宙键不参与 home 覆盖判定）。
             let unmodeledCategories = Set(TrackerCategory.allCases)
-                .subtracting(Set((catalog?.universeSections ?? []).compactMap(TrackerCategory.from)))
+                .subtracting(Set((catalog?.universeSections ?? [])
+                    .filter { !$0.hasSuffix("2") }
+                    .compactMap(TrackerCategory.from)))
             if missingSections.isEmpty && unmodeledCategories.isEmpty {
                 progressCoverage = .complete
             } else {
@@ -419,7 +427,9 @@ public struct VillageCatalogProjection: Sendable {
                 )
             }
         } else {
-            // 无快照 → TH 未知 → 宇宙不可用（与旧判定一致，fail-closed）。
+            // 无快照 → TH 未知 → buildingUniverseAvailable false，本分支实际
+            // 不可达（TH 已知 ⟹ 快照必然存在）；保留为纵深防御（fail-closed，
+            // 与旧判定一致），不引入 force-unwrap。
             progressCoverage = .unavailable
         }
         let states = village.accountSnapshot.map { snapshot in

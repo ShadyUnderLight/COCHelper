@@ -321,6 +321,28 @@ public enum ProgressUniverseCoverage: Hashable, Sendable {
     public var isComplete: Bool { self == .complete }
 }
 
+// MARK: - 文案
+
+public extension ProgressUniverseCoverage {
+    /// 覆盖率行 help 文案（三分支口径，详情页 metricsBar 与升级总览聚合卡
+    /// 共用，防漂移）。措辞必须与覆盖率分母公式一致（P1 交叉审核契约，见
+    /// `VillageProgressProjection.metrics` 的 coverageDen 口径）：
+    /// - complete：分母 = 全类别宇宙全量（观测 ∪ 全类别差集）→「村庄全部可建造数量」；
+    /// - partial：分母 = 全部追踪类别已观测 ∪ 建筑/陷阱宇宙差集（未建模类别
+    ///   无差集、只计观测）→ 不得宣称「已建模可建造」；
+    /// - unavailable：无差集 → 纯已观测。
+    var helpText: String {
+        switch self {
+        case .complete:
+            return "已观测实例占村庄全部可建造数量"
+        case .partial:
+            return "分母为已观测实例与建筑/陷阱宇宙差集合计，非村庄全部可建造"
+        case .unavailable:
+            return "分母为已观测实例，非全部可能建筑"
+        }
+    }
+}
+
 /// 一个村庄、一个基地的完整投影。
 public struct VillageCatalogProjection: Sendable {
     /// 全村庄进度追踪的 home section 集合（Issue #96 快照完整性契约）。

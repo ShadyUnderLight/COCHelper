@@ -722,16 +722,50 @@ private struct TrackerMetricsView: View {
     /// 消费与详情页同一个 `VillageProgressProjection` 投影（实现要求 6）；
     /// 逻辑下沉 Core（fail-closed：任一 coverage 饱和或累加溢出 → nil，
     /// 不展示假精度），此处只做展示格式化。
-    /// Issue #110 编译适配：聚合返回 `AggregateCoverage?`（数值与旧 tuple
-    /// 逐位一致），scope/诊断的展示改造属 Task 2，本处只改解构方式。
-    private var aggregateCoverage: String? {
-        guard let result = VillageProgressProjection.aggregateCoverage(
+    /// Issue #110：coverage 三分支——complete 蓝色「完整性」；partial/
+    /// unavailable 橙色 + tooltip 说明 scope 口径（不得伪装 ready）。
+    private var aggregateCoverage: AggregateCoverage? {
+        VillageProgressProjection.aggregateCoverage(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
             now: now
-        ) else { return nil }
-        return String(Int((Double(result.numerator) / Double(result.denominator) * 100).rounded())) + "%"
+        )
+    }
+
+    /// 聚合卡渲染（Issue #110）：coverage 三分支——complete 保持现状（蓝色）；
+    /// partial / unavailable 橙色（fail-closed 视觉提示），tooltip 说明 scope
+    /// 口径：partial = 共享 help 措辞 + 各条聚合诊断换行拼接；unavailable =
+    /// 纯已观测口径。value 百分比格式化与改造前逐位一致。
+    @ViewBuilder
+    private func aggregateCoverageCard(_ result: AggregateCoverage) -> some View {
+        let percent = String(Int((Double(result.numerator) / Double(result.denominator) * 100).rounded())) + "%"
+        TrackerMetricCard(
+            title: "观测数据完整性",
+            value: percent,
+            detail: "已观测实例 · 全部村庄",
+            systemImage: "checkmark.seal.fill",
+            tint: result.coverage.isComplete ? .blue : .orange
+        )
+        .help(aggregateCoverageTooltip(result))
+    }
+
+    /// 聚合卡 tooltip（Issue #110）：complete 不渲染（现状）；partial =
+    /// scope 措辞（`ProgressUniverseCoverage.helpText`，与详情页同源防漂移）
+    /// + 各条聚合诊断换行拼接（诊断是跨村庄并集明细，不得丢）；unavailable
+    /// = 纯已观测口径（`helpText`）。
+    private func aggregateCoverageTooltip(_ result: AggregateCoverage) -> String {
+        switch result.coverage {
+        case .complete:
+            return ""
+        case .partial:
+            let diagnostics = result.diagnostics.isEmpty
+                ? ""
+                : "\n" + result.diagnostics.joined(separator: "\n")
+            return result.coverage.helpText + diagnostics
+        case .unavailable:
+            return result.coverage.helpText
+        }
     }
 
     var body: some View {
@@ -765,13 +799,7 @@ private struct TrackerMetricsView: View {
                 tint: .blue
             )
             if let coverage = aggregateCoverage {
-                TrackerMetricCard(
-                    title: "观测数据完整性",
-                    value: coverage,
-                    detail: "已观测实例 · 全部村庄",
-                    systemImage: "checkmark.seal.fill",
-                    tint: .blue
-                )
+                aggregateCoverageCard(coverage)
             }
         }
     }

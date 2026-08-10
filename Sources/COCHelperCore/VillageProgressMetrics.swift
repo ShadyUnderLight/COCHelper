@@ -206,7 +206,8 @@ public enum VillageProgressProjection {
         // **口径契约（P1 交叉审核）**：complete（全类别建模）时分母 = 全类别
         // 宇宙全量；partial（仅建筑/陷阱建模）时分母 = 全部类别已观测 ∪
         // 建筑/陷阱差集——未建模类别（units 等）只计观测、无差集补充。
-        // UI help 文案必须与之一致（VillageDetailView.helpText），不得宣称
+        // UI help 文案必须与之一致（`ProgressUniverseCoverage.helpText`，Issue
+        // #110 共享到 Core 防漂移），不得宣称
         //「已建模可建造数量」（该称谓要求分母只含已建模类别的宇宙量）。
         // 现状 coverageDen = instanceCountAndOverflow(of: items) 已含 available
         //（合成项直接进 items）→ 自动符合契约，无需额外改动。

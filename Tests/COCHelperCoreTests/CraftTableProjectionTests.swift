@@ -67,7 +67,7 @@ final class CraftTableProjectionTests: XCTestCase {
             projected.first?.availability,
             .seasonal(
                 phaseID: "crafted-defenses-2026-04-sound-of-clash",
-                phaseName: "Crafted Defenses: Builder Base Goes Metal",
+                phaseName: "精工防御",
                 status: .ended
             )
         )

@@ -13695,7 +13695,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "法术惊喜",
@@ -14029,7 +14029,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "酸腐圣水坩埚",
@@ -84254,7 +84254,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "莱希",
@@ -84292,7 +84292,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "闪枭",
@@ -84330,7 +84330,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "莱希",
@@ -84368,7 +84368,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "闪枭",
@@ -93915,7 +93915,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "袋装小冰怪",
@@ -94737,7 +94737,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "黄牌法术",
@@ -102219,7 +102219,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "冰冻陷阱",
@@ -112228,7 +112228,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "野蛮人攻城槌",
@@ -115279,7 +115279,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "飞龙",
@@ -115617,7 +115617,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "骷髅飞桶",
@@ -116957,7 +116957,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "机甲超人",
@@ -125675,7 +125675,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "女巫精灵",
@@ -126513,7 +126513,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "寒冰亡灵",
@@ -134492,7 +134492,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 18,
       "missingReason": null,
       "name": "大象骑士",
@@ -134860,7 +134860,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 18,
       "missingReason": null,
       "name": "大象",
@@ -135323,7 +135323,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 18,
       "missingReason": null,
       "name": "骑士",

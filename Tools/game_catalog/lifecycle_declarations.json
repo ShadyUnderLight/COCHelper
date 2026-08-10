@@ -178,7 +178,7 @@
     },
     "buildings:1000012": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "防空火箭，levelVisual exportName 含 firework(s) 属命名撞词，常驻建筑（人工判定，待复核）"
     },
     "buildings:1000013": {
       "lifecycle": "permanent",
@@ -317,8 +317,8 @@
       "note": null
     },
     "buildings:1000075": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clashmas 2024 节日装饰（法术惊喜；levelVisual clashmas24 资产家族，与已标糖果笼/糖果拐杖/节日烟花同活动）"
     },
     "buildings:1000076": {
       "lifecycle": "permanent",
@@ -333,8 +333,8 @@
       "note": null
     },
     "buildings:1000083": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时资源建筑（酸腐圣水坩埚；官方维基 Temporary Resource Buildings 列表证实，中置信）"
     },
     "buildings:1000084": {
       "lifecycle": "permanent",
@@ -1166,7 +1166,7 @@
     },
     "equipment:90000048": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "活动引入装备（动作人偶，WWE 联名），装备进入常驻装备池可继续升级——按永久内容声明（人工判定，待复核）"
     },
     "equipment:90000049": {
       "lifecycle": "permanent",
@@ -1178,7 +1178,7 @@
     },
     "equipment:90000051": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "活动引入装备（木棍马驹，LNY 2026），装备进入常驻装备池可继续升级——按永久内容声明（人工判定，待复核）"
     },
     "equipment:90000052": {
       "lifecycle": "permanent",
@@ -1226,27 +1226,27 @@
     },
     "guardians:107000002": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
     },
     "guardians:107000003": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
     },
     "guardians:107000004": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
     },
     "guardians:107000005": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
     },
     "guardians:107000006": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
     },
     "guardians:107000007": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
     },
     "guardians:107000008": {
       "lifecycle": "permanent",
@@ -1254,7 +1254,7 @@
     },
     "guardians:107000009": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明"
     },
     "heroes2:28000003": {
       "lifecycle": "permanent",
@@ -1337,20 +1337,20 @@
       "note": null
     },
     "pets:73000012": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动宠物（史莱姆蜗牛莱希；Clash Games 2025 活动限定，catalog deprecated_in_source=已被游戏移除——限时内容铁证）"
     },
     "pets:73000013": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动宠物（急速精灵闪枭；Clash Games 2025 活动限定，catalog deprecated_in_source=已被游戏移除）"
     },
     "pets:73000014": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动宠物（灵魂水母莱希；Clash Games 2025 活动限定，catalog deprecated_in_source=已被游戏移除）"
     },
     "pets:73000015": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动宠物（灵魂水母闪枭；Clash Games 2025 活动限定，catalog deprecated_in_source=已被游戏移除）"
     },
     "pets:73000016": {
       "lifecycle": "permanent",
@@ -1693,8 +1693,8 @@
       "note": null
     },
     "spells:26000073": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时法术（袋装小冰怪；官方维基 Temporary Spells 证实，currently not available）"
     },
     "spells:26000074": {
       "lifecycle": "permanent",
@@ -1737,8 +1737,8 @@
       "note": null
     },
     "spells:26000084": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时世界杯活动法术（黄牌法术；官方维基 Temporary Spells 证实）"
     },
     "spells:26000085": {
       "lifecycle": "permanent",
@@ -2029,8 +2029,8 @@
       "note": null
     },
     "traps:12000009": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时陷阱（冰冻陷阱；官方维基 Temporary Traps 证实，cannot be upgraded）"
     },
     "traps:12000015": {
       "lifecycle": "permanent",
@@ -2257,8 +2257,8 @@
       "note": null
     },
     "units:4000045": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clashiversary 活动临时兵种（野蛮人攻城槌；官方维基 TemporaryTroop 证实）"
     },
     "units:4000046": {
       "lifecycle": "permanent",
@@ -2309,12 +2309,12 @@
       "note": null
     },
     "units:4000060": {
-      "lifecycle": "permanent",
-      "note": "单人战役 Boss（金色飞龙/飞龙变体），常驻战役内容非限时活动兵种（人工判定，待复核）"
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时兵种（金飞龙；官方维基 Golden Dragon 页 Temporary Troop Partially Available——单人战役 Boss 兼限时兵种；修正此前常驻留痕误判）"
     },
     "units:4000061": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时万圣节临时兵种（骷髅飞桶；官方维基 TemporaryTroop 证实，从未转正）"
     },
     "units:4000063": {
       "lifecycle": "permanent",
@@ -2333,8 +2333,8 @@
       "note": null
     },
     "units:4000067": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clashiversary 活动临时兵种（机甲超人；官方维基 TemporaryTroop 证实）"
     },
     "units:4000068": {
       "lifecycle": "permanent",
@@ -2533,8 +2533,8 @@
       "note": "限时活动临时兵种（扫帚女巫；icon majo 强活动特征，保守标限时——错标安全侧为显示阶段未配置）"
     },
     "units:4000126": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clash-o-Ween 临时兵种（女巫精灵；扫帚女巫组件，官方维基证实）"
     },
     "units:4000127": {
       "lifecycle": "permanent",
@@ -2549,8 +2549,8 @@
       "note": "限时活动临时兵种（迷你熔岩气球犬变体；Mashup Madness 衍生）"
     },
     "units:4000130": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Clash-o-Ween 2024 临时兵种（寒冰亡灵；官方维基 TemporaryTroop 证实）"
     },
     "units:4000131": {
       "lifecycle": "permanent",
@@ -2765,16 +2765,16 @@
       "note": null
     },
     "units:4000185": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（大象骑士；Supercell Make 2026 活动，官方维基 TemporaryTroop 列表证实）"
     },
     "units:4000186": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（大象；Supercell Make 2026 活动，官方维基 TemporaryTroop 列表证实）"
     },
     "units:4000187": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动临时兵种（骑士；Supercell Make 2026 活动，官方维基 TemporaryTroop 列表证实）"
     },
     "units:4000190": {
       "lifecycle": "permanent",

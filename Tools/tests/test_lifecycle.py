@@ -38,14 +38,18 @@ SEASONAL_DEFENSE_IDS = (103000008, 103000009, 103000010)
 # 来源：Supercell 官方活动公告 + Clash of Clans 官方维基 TemporaryTroop
 #（圣诞/新年/农历新年/万圣节/生日/世界杯/愚人节/Mashup/Dark Deal/Sound of Clash）。
 SEASONAL_FESTIVE_KEYS = {
-    "buildings:1000073", "buildings:1000090", "buildings:1000091",
-    "buildings:1000092", "buildings:1000101",
+    "buildings:1000073", "buildings:1000075", "buildings:1000083",
+    "buildings:1000090", "buildings:1000091", "buildings:1000092",
+    "buildings:1000101",
     "spells:26000004", "spells:26000006", "spells:26000022",
-    "traps:12000003", "traps:12000007",
-    "units:4000030", "units:4000047", "units:4000048", "units:4000050",
+    "spells:26000073", "spells:26000084",
+    "traps:12000003", "traps:12000007", "traps:12000009",
+    "pets:73000012", "pets:73000013", "pets:73000014", "pets:73000015",
+    "units:4000030", "units:4000045", "units:4000047", "units:4000048",
+    "units:4000050", "units:4000060", "units:4000061", "units:4000067",
     "units:4000072",
     "units:4000094", "units:4000101", "units:4000102", "units:4000103",
-    "units:4000104", "units:4000108",
+    "units:4000104", "units:4000108", "units:4000126", "units:4000130",
     "units:4000118", "units:4000119", "units:4000120", "units:4000121",
     "units:4000122", "units:4000125", "units:4000128", "units:4000129",
     "units:4000136", "units:4000142", "units:4000143", "units:4000144",
@@ -53,12 +57,14 @@ SEASONAL_FESTIVE_KEYS = {
     "units:4000156", "units:4000157", "units:4000158", "units:4000159",
     "units:4000162", "units:4000163", "units:4000164", "units:4000165",
     "units:4000166",
+    "units:4000185", "units:4000186", "units:4000187",
 }
 # 名字/icon 含节日特征但人工判定为常驻内容的条目（防误标 seasonalCandidate 的
 # 反向保护：这些条目标 permanent 是有意的，note 留痕待复核）。
 PERMANENT_FESTIVE_LOOKING_KEYS = {
     "equipment:90000014", "equipment:90000032", "equipment:90000041",
-    "units:4000060", "capital_buildings:110000027",
+    "equipment:90000048", "equipment:90000051",
+    "capital_buildings:110000027", "buildings:1000012",
 }
 # icon exportName 强活动特征词（全量扫描用）：命中且不在白名单 → 必须
 # seasonalCandidate（红队建议：防显式清单与数据脱钩——新增活动条目漏标时
@@ -67,6 +73,8 @@ STRONG_FESTIVE_ICON_TOKENS = (
     "xmas", "christmas", "birthday", "halloween", "lny_", "cookie", "football",
     "april", "santa", "party", "ghost", "pumpkin", "mashup", "tax", "barcher",
     "lavaloon", "snake", "firecracker", "majo",
+    "clashmas", "present", "candy", "wwe", "icewizard",
+    "slimesnail", "hastespirit", "spiritjellyfish", "firework",
 )
 
 
@@ -162,6 +170,19 @@ def test_festive_icon_items_are_not_permanent():
             assert decl[key] == "seasonalCandidate", (
                 f"{key} {item['name']} icon 含活动特征词 {tokens} 但声明为 "
                 f"{decl[key]!r}——限时条目不得标 permanent（除非移入常驻白名单并留痕）")
+
+
+def test_catalog_lifecycle_matches_declarations():
+    """catalog.json 全量落盘 lifecycle == 声明文件（红队 D1 实验缺陷：此前只查
+    「条目在声明中」，640 条落盘值零校验——声明改 seasonalCandidate 但目录未
+    同步时测试全绿；此处全量比对，任何漂移立即变红）。"""
+    decl = load_declarations()
+    catalog = json.loads((CATALOG_DIR / "catalog.json").read_text(encoding="utf-8"))
+    for item in catalog["items"]:
+        key = f"{item['section']}:{item['dataID']}"
+        assert item.get("lifecycle") == decl[key], (
+            f"{key} {item['name']} 落盘 lifecycle={item.get('lifecycle')!r} "
+            f"!= 声明 {decl[key]!r}")
 
 
 # ---- apply_lifecycle：写入 / fail loud ----

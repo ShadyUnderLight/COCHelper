@@ -108,10 +108,10 @@ final class BattleModifierTests: XCTestCase {
     }
 
     /// Property-based：对 4 个已知 key 与随机未知值施加随机空白前缀/后缀
-    /// （空格/制表/换行/空串组合），结果必须与无空白输入一致。
+    /// （空格/制表/换行/回车/不换行空格/空串组合），结果必须与无空白输入一致。
     /// 固定 seed 确定性复现，复用共享 LCG 的 pick() 便捷方法。
     func testLocalizedTextPropertyRandomWhitespace() {
-        let whitespacePool = ["", " ", "\t", "\n", " \t", "\n\t ", "  \n  "]
+        let whitespacePool = ["", " ", "\t", "\n", "\r", " \t", "\n\t ", "  \n  ", "\u{00A0}"]
         let knownCases: [(raw: String, expected: String)] = [
             ("hardMode", "困难模式"),
             ("minusOne", "传奇杯 I"),

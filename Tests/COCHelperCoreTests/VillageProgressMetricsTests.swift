@@ -1080,7 +1080,7 @@ final class VillageProgressMetricsTests: XCTestCase {
     /// 随机 coverage 生成：unavailable / complete / partial（missing 与
     /// unmodeled 各自随机子集，允许空集合——.partial([], []) 是合法输入，
     /// 合并结果仍必须保持 partial 语义）。
-    private func randomCoverage(_ generator: inout Issue110LCG) -> ProgressUniverseCoverage {
+    private func randomCoverage(_ generator: inout SeededGenerator) -> ProgressUniverseCoverage {
         switch generator.int(in: 0...2) {
         case 0: return .unavailable
         case 1: return .complete
@@ -1097,7 +1097,7 @@ final class VillageProgressMetricsTests: XCTestCase {
     /// 合并的交换律与结合律：merge(a,b) == merge(b,a)；
     /// merge(merge(a,b),c) == merge(a,merge(b,c))。
     func testMergedCoverageIsCommutativeAndAssociative() {
-        var generator = Issue110LCG(seed: 42)
+        var generator = SeededGenerator(seed: 42)
         for _ in 0..<100 {
             let a = randomCoverage(&generator)
             let b = randomCoverage(&generator)
@@ -1119,7 +1119,7 @@ final class VillageProgressMetricsTests: XCTestCase {
 
     /// 任意数量全 complete 输入 → 恒 .complete。
     func testMergedCoverageAllCompleteIsComplete() {
-        var generator = Issue110LCG(seed: 7)
+        var generator = SeededGenerator(seed: 7)
         for _ in 0..<100 {
             let count = generator.int(in: 1...10)
             let coverages = (0..<count).map { _ in ProgressUniverseCoverage.complete }
@@ -1134,7 +1134,7 @@ final class VillageProgressMetricsTests: XCTestCase {
     ///（unavailable 或 partial）→ 结果不得为 .complete。complete 是
     ///「全部 home 对完整」的强合取，unavailable 村庄不得被静默。
     func testMergedCoverageCompleteOnlyWhenAllComplete() {
-        var generator = Issue110LCG(seed: 2026)
+        var generator = SeededGenerator(seed: 2026)
         for _ in 0..<100 {
             let count = generator.int(in: 2...8)
             var coverages = (0..<count).map { _ in randomCoverage(&generator) }
@@ -1152,7 +1152,7 @@ final class VillageProgressMetricsTests: XCTestCase {
     /// partial 输入的并集超集；missing 去重精确：映射到未建模类别的 section
     /// 从结果 missing 移除（类别只在 unmodeled 侧报一次）。
     func testMergedCoverageUnionSuperset() {
-        var generator = Issue110LCG(seed: 99)
+        var generator = SeededGenerator(seed: 99)
         for _ in 0..<100 {
             let partialCount = generator.int(in: 1...3)
             var inputs: [ProgressUniverseCoverage] = []
@@ -1321,19 +1321,3 @@ final class VillageProgressMetricsTests: XCTestCase {
     }
 }
 
-/// Issue #110 property 测试专用确定性 LCG（与 CoAPIPropertyTests.SeededGenerator
-/// 同参数：m = 2^32, a = 1664525, c = 1013904223）。独立命名 + fileprivate：
-/// SeededGenerator 是同 module internal 类型，重名会编译冲突；固定种子 ⇒
-/// 属性测试可复现（同一种子重跑得到同一序列）。
-private struct Issue110LCG {
-    private var state: UInt32
-    init(seed: UInt32) { state = seed }
-    mutating func next() -> UInt32 {
-        state = 1664525 &* state &+ 1013904223
-        return state
-    }
-    mutating func int(in range: ClosedRange<Int>) -> Int {
-        Int(next() % UInt32(range.count)) + range.lowerBound
-    }
-    mutating func bool() -> Bool { next() & 1 == 1 }
-}

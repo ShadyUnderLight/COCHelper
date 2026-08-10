@@ -400,6 +400,12 @@ def test_validate_rejects_structurally_invalid_craft(tmp_path):
     ("defenses", 0, "moduleIDs", [2 ** 63]),  # 超出 Int64 上界
     ("modules", 0, "maxLevel", "13"),
     ("modules", 0, "levels", [{"level": "1"}]),
+    # 终审补强：顶层/Optional 字段类型漏检场景
+    ("top", None, "buildTag", 123),
+    ("defenses", 0, "totalModuleLevelThresholds", [2 ** 63]),
+    ("modules", 0, "levels", [{"level": 1, "durationSeconds": 2 ** 63}]),
+    ("modules", 0, "levels", [{"level": 1, "upgradeResource": 123}]),
+    ("modules", 0, "levels", [{"level": 1, "requiredTownHallLevel": "9"}]),
 ])
 def test_validate_rejects_craft_scalar_type_mismatch(tmp_path, mutate):
     """craft 标量字段类型与 Swift Codable 契约不符 → 报错（审核 D 补强：
@@ -407,14 +413,17 @@ def test_validate_rejects_craft_scalar_type_mismatch(tmp_path, mutate):
     list_key, index, field, value = mutate
     d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
     raw = json.loads((d / "craft_table_catalog.json").read_text(encoding="utf-8"))
-    if list_key == "defenses":
+    if list_key == "top":
+        raw[field] = value
+    elif list_key == "defenses":
         raw["defenses"] = [{"dataID": 1, "name": "n", "sourceName": "s",
                             "specialAbility": "a", "moduleIDs": [], "totalModuleLevelThresholds": []}]
+        raw["defenses"][index][field] = value
     else:
         raw["modules"] = [{"dataID": 1, "name": "n", "sourceName": "s",
                            "specialAbility": "a", "statTypes": [], "displayTitles": [],
                            "maxLevel": 1, "levels": [{"level": 1}]}]
-    raw[list_key][index][field] = value
+        raw["modules"][index][field] = value
     craft_bytes = json.dumps(raw, ensure_ascii=False).encode("utf-8") + b"\n"
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))

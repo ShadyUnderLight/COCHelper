@@ -238,6 +238,9 @@ def _check_craft_catalog_structure(errors: list[str], raw: object,
                 "source", "defenses", "modules"):
         if key not in raw:
             errors.append(f"craft_table_catalog.json 缺少必填字段 {key!r}（Swift 解码将失败）")
+    for key in ("gameVersion", "buildTag", "locale", "source"):
+        if key in raw and not isinstance(raw[key], str):
+            errors.append(f"craft_table_catalog.json {key} 必须是字符串（Swift 解码将失败）")
     if raw.get("schemaVersion") != 1:
         errors.append(f"craft_table_catalog.json schemaVersion != 1: {raw.get('schemaVersion')!r}")
     if manifest_game_version is not None and raw.get("gameVersion") != manifest_game_version:
@@ -276,10 +279,11 @@ def _check_craft_catalog_structure(errors: list[str], raw: object,
                     f"craft_table_catalog.json defenses[{i}] moduleIDs 必须是 Int64 整数数组"
                     "（0...2^63-1）")
             if not isinstance(d.get("totalModuleLevelThresholds"), list) or not all(
-                    isinstance(x, int) and not isinstance(x, bool)
+                    isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 2**63 - 1
                     for x in d.get("totalModuleLevelThresholds") or []):
                 errors.append(
-                    f"craft_table_catalog.json defenses[{i}] totalModuleLevelThresholds 必须是整数数组")
+                    f"craft_table_catalog.json defenses[{i}] totalModuleLevelThresholds "
+                    "必须是 Int64 整数数组（0...2^63-1）")
     # CraftTableModuleSpec 必填字段
     modules = raw.get("modules")
     if isinstance(modules, list):
@@ -312,9 +316,31 @@ def _check_craft_catalog_structure(errors: list[str], raw: object,
                 for j, lv in enumerate(levels):
                     if not isinstance(lv, dict) or "level" not in lv:
                         errors.append(f"craft_table_catalog.json modules[{i}] levels[{j}] 缺少 level")
-                    elif isinstance(lv["level"], bool) or not isinstance(lv["level"], int):
+                        continue
+                    if isinstance(lv["level"], bool) or not isinstance(lv["level"], int):
                         errors.append(
                             f"craft_table_catalog.json modules[{i}] levels[{j}] level 必须是整数")
+                    # Swift 侧 Optional 字段存在时必须类型正确（终审：漏检会导致
+                    # validator 绿但 Swift 解码失败）
+                    for opt_key in ("durationSeconds", "upgradeCost"):
+                        if opt_key in lv and lv[opt_key] is not None and (
+                                isinstance(lv[opt_key], bool)
+                                or not isinstance(lv[opt_key], int)
+                                or not 0 <= lv[opt_key] <= 2**63 - 1):
+                            errors.append(
+                                f"craft_table_catalog.json modules[{i}] levels[{j}] {opt_key} "
+                                "必须是 Int64 整数（0...2^63-1）或 null")
+                    if "upgradeResource" in lv and lv["upgradeResource"] is not None \
+                            and not isinstance(lv["upgradeResource"], str):
+                        errors.append(
+                            f"craft_table_catalog.json modules[{i}] levels[{j}] upgradeResource "
+                            "必须是字符串或 null")
+                    if "requiredTownHallLevel" in lv and lv["requiredTownHallLevel"] is not None \
+                            and (isinstance(lv["requiredTownHallLevel"], bool)
+                                 or not isinstance(lv["requiredTownHallLevel"], int)):
+                        errors.append(
+                            f"craft_table_catalog.json modules[{i}] levels[{j}] "
+                            "requiredTownHallLevel 必须是整数或 null")
 
 
 def validate_catalog(dir_path: str | Path,

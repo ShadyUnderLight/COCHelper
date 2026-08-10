@@ -715,10 +715,10 @@ public struct VillageCatalogProjection: Sendable {
         } else if let catalogItem, baseMatches {
             if stageMax == nil {
                 // Issue #67 fail-closed：有 prerequisite requirement 但快照缺对应
-                // 解锁建筑记录（如英雄殿堂/实验室）→ 无法验证当前阶段上限。
+                // 解锁建筑记录（如英雄殿堂/实验室/铁匠铺）→ 无法验证当前阶段上限。
                 // 不判 maxed/complete、不计入完成度 known、不推断下一级。
                 status = .unverified
-                missingReason = "快照缺少 prerequisite 解锁建筑记录（大本营/实验室/英雄殿堂等），无法验证当前阶段上限。"
+                missingReason = "快照缺少 prerequisite 解锁建筑记录（大本营/实验室/英雄殿堂/铁匠铺等），无法验证当前阶段上限。"
             } else {
                 // 阶段上限优先（可计算时恒非 nil：无 requirement 时 = maxLevel）。
                 // 阶段满级（stage < maxLevel）与全局满级同报 .maxed——完成度口径：
@@ -810,7 +810,8 @@ public struct VillageCatalogProjection: Sendable {
     ///   （不可计算，调用方回退全局 maxLevel，保守不误报满级）；
     /// - 否则逐级检查（目录契约 levels 升序，此处防御性 sort 保证不变量）：
     ///   该级 requirement 全部满足则作为候选；遇到第一个不满足的级即停止
-    ///   （门槛随等级单调不减，目录 validate 保证），返回最高候选。
+    ///   （门槛随等级单调不减——validate 不强制单调，由源数据实测保证），
+    ///   返回最高候选。
     static func currentStageMaxLevel(
         for item: CatalogItem,
         unlocks: PlayerUnlockLevels

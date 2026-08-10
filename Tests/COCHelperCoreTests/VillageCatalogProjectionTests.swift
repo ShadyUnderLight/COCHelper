@@ -2653,7 +2653,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
                     requiredTownHallLevel: nil,
                     requiredLaboratoryLevel: nil,
                     requiredHeroTavernLevel: nil,
-                    requiredBlacksmithLevel: level == 1 ? nil : bsGate,  // level 1 初始无门槛
+                    // 真实数据形状：level 1 起即带 BS 门槛（实测全部装备 lvl1 BS=1），
+                    // 与「初始等级无门槛」的 TH 语义不同——BS 门槛覆盖所有等级。
+                    requiredBlacksmithLevel: bsGate,
                     icon: nil,
                     levelVisual: nil,
                     missingReason: nil
@@ -2682,7 +2684,15 @@ final class VillageCatalogProjectionTests: XCTestCase {
                 }
                 continue
             }
-            let unwrapped = try! XCTUnwrap(stageMax)
+            // bs > 0：解锁存在，但 level 1 起即带门槛（真实数据形状）——若铁匠铺
+            // 等级低于第一级门槛（如 13 件装备 lvl1 门槛 > 1，雷电獠牙=10），
+            // 无任何可达等级 → stageMax nil（fail-closed，不误报满级）。
+            guard let unwrapped = stageMax else {
+                let firstGate = levels.first?.requiredBlacksmithLevel ?? 0
+                XCTAssertGreaterThan(firstGate, bs,
+                                     "stageMax nil 仅当第一级门槛高于铁匠铺等级")
+                continue
+            }
             // 不变量 1
             XCTAssertLessThanOrEqual(unwrapped, item.maxLevel, "阶段上限不得超过全局上限")
             // 不变量 2

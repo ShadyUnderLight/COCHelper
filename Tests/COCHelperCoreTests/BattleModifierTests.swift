@@ -113,10 +113,10 @@ final class BattleModifierTests: XCTestCase {
     func testLocalizedTextPropertyRandomWhitespace() {
         let whitespacePool = ["", " ", "\t", "\n", "\r", " \t", "\n\t ", "  \n  ", "\u{00A0}"]
         let knownCases: [(raw: String, expected: String)] = [
-            ("hardMode", "困难模式"),
-            ("minusOne", "传奇杯 I"),
-            ("minusTwo", "传奇杯 II"),
-            ("minusThree", "传奇杯 III"),
+            ("hardMode", "锦标赛模式"),
+            ("minusOne", "传奇杯1"),
+            ("minusTwo", "传奇杯2"),
+            ("minusThree", "传奇杯3"),
         ]
         var r = LCG(seed: 0xB47_71E_0000_0100) // "issue100" 变体 seed，与既有 seed 不重复
         for i in 0..<100 {

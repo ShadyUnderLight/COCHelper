@@ -83,12 +83,15 @@ def _character_items_rows():
     return [
         {"Name": "String", "Level": "int", "TID": "String",
          "IconSWF": "String", "IconExportName": "String",
-         "UpgradeResources": "String", "UpgradeCosts": "int"},
+         "UpgradeResources": "String", "UpgradeCosts": "int",
+         "RequiredBlacksmithLevel": "int"},
         {"Name": "Eternal Tome", "Level": "1", "TID": "TID_ET",
          "IconSWF": "sc/ui.sc", "IconExportName": "icon_equip_tome",
-         "UpgradeResources": "CommonOre", "UpgradeCosts": "120"},
+         "UpgradeResources": "CommonOre", "UpgradeCosts": "120",
+         "RequiredBlacksmithLevel": "1"},
         {"Name": "", "Level": "2", "TID": "", "IconSWF": "", "IconExportName": "",
-         "UpgradeResources": "", "UpgradeCosts": "500"},
+         "UpgradeResources": "", "UpgradeCosts": "500",
+         "RequiredBlacksmithLevel": "3"},
     ]
 
 
@@ -107,6 +110,15 @@ def test_equipment_no_time_source():
     assert item.levels[1].upgradeCosts == [
         UpgradeCost(resource="CommonOre", amount=500, rawResource="CommonOre",
                     rawAmount=None, parseFailed=False)]
+
+
+def test_equipment_blacksmith_level_extracted():
+    """character_items.csv RequiredBlacksmithLevel 列（Issue #97）：to_level 语义
+    下行 N 的门槛属于 level N，随 level 单调不减（fixture：1 → 1、2 → 3）。"""
+    items = build_items(_character_items_rows(), spec_for_table("character_items.csv"), {})
+    item = items[0]
+    assert item.levels[0].requiredBlacksmithLevel == 1
+    assert item.levels[1].requiredBlacksmithLevel == 3
 
 
 # ---- parse_upgrade_costs（Issue #73 Task 1）----

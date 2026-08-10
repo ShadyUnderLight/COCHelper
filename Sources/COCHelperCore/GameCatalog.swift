@@ -549,12 +549,15 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
     /// 英雄殿堂门槛（issue #67，home 英雄 tavern 门槛 1-12；heroes2 源数据为
     /// 0 = 无门槛，恒满足）。缺键解码为 nil（旧目录向后兼容）。
     public let requiredHeroTavernLevel: Int?
+    /// 铁匠铺门槛（Issue #97，equipment 升级前置条件，源数据 1-10）。
+    /// 缺键解码为 nil（旧目录向后兼容）。
+    public let requiredBlacksmithLevel: Int?
     public let icon: CatalogAssetRef?
     public let levelVisual: CatalogAssetRef?
     public let missingReason: String?
 
-    /// 显式 memberwise init：`requiredHeroTavernLevel` 带默认值 nil，
-    /// 保持既有调用点（不传该参数）与 Codable 合成解码（缺键 → nil）兼容。
+    /// 显式 memberwise init：`requiredHeroTavernLevel`/`requiredBlacksmithLevel`
+    /// 带默认值 nil，保持既有调用点（不传该参数）与 Codable 合成解码（缺键 → nil）兼容。
     public init(
         level: Int,
         durationSeconds: Int64?,
@@ -562,6 +565,7 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
         requiredTownHallLevel: Int?,
         requiredLaboratoryLevel: Int?,
         requiredHeroTavernLevel: Int? = nil,
+        requiredBlacksmithLevel: Int? = nil,
         icon: CatalogAssetRef?,
         levelVisual: CatalogAssetRef?,
         missingReason: String?
@@ -572,6 +576,7 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
         self.requiredTownHallLevel = requiredTownHallLevel
         self.requiredLaboratoryLevel = requiredLaboratoryLevel
         self.requiredHeroTavernLevel = requiredHeroTavernLevel
+        self.requiredBlacksmithLevel = requiredBlacksmithLevel
         self.icon = icon
         self.levelVisual = levelVisual
         self.missingReason = missingReason
@@ -590,19 +595,21 @@ public struct CatalogLevel: Codable, Identifiable, Hashable, Sendable {
 // MARK: - UpgradeRequirement（Issue #67）
 
 /// 升级前置条件。village 语义在投影/展示层按 item.base 解析
-///（home: townHall/laboratory/heroHall；builder: builderHall/starLaboratory）。
+///（home: townHall/laboratory/heroHall/blacksmith；builder: builderHall/starLaboratory）。
 public enum UpgradeRequirement: Hashable, Sendable {
     case townHall(level: Int)
     case builderHall(level: Int)
     case laboratory(level: Int)
     case starLaboratory(level: Int)
     case heroHall(level: Int)
+    /// 铁匠铺门槛（Issue #97，equipment 升级前置条件；源数据 1-10，恒在主村）。
+    case blacksmith(level: Int)
 
     /// 要求的解锁等级（如 `.townHall(level: 12)` 要求大本营 ≥ 12 级）。
     public var requiredLevel: Int {
         switch self {
         case .townHall(let level), .builderHall(let level), .laboratory(let level),
-             .starLaboratory(let level), .heroHall(let level):
+             .starLaboratory(let level), .heroHall(let level), .blacksmith(let level):
             return level
         }
     }
@@ -619,7 +626,7 @@ extension UpgradeRequirement {
     /// - builder base：`.townHall` → 建筑大师大本营、`.laboratory` → 星空实验室
     ///   （数据源字段复用，village 语义按 base 解析）；
     /// - 其他 base：`.townHall` → 大本营、`.laboratory` → 实验室；
-    /// - `.builderHall`/`.starLaboratory`/`.heroHall` 自身语义固定，不随 base 变。
+    /// - `.builderHall`/`.starLaboratory`/`.heroHall`/`.blacksmith` 自身语义固定，不随 base 变。
     public func displayLabel(base: String?) -> String {
         let name: String
         switch self {
@@ -633,6 +640,8 @@ extension UpgradeRequirement {
             name = "星空实验室"
         case .heroHall:
             name = "英雄殿堂"
+        case .blacksmith:
+            name = "铁匠铺"
         }
         return "所需" + name + "等级 " + String(requiredLevel) + "级"
     }
@@ -649,7 +658,8 @@ extension Array where Element == UpgradeRequirement {
 extension CatalogLevel {
     /// 单级升级前置条件（Issue #67 Task 3）：按 item.base 解析 village 语义，
     /// 与 `CatalogItem.requirements`（item 级 flatMap）共用同一分支规则，防双实现漂移。
-    /// tavern == 0 视为无英雄殿堂门槛（heroes2 源数据），不产生 .heroHall。
+    /// tavern == 0 视为无英雄殿堂门槛（heroes2 源数据），不产生 .heroHall；
+    /// blacksmith == 0 视为无铁匠铺门槛（Issue #97 防御，与 tavern 同先例）。
     public func requirements(base: String?) -> [UpgradeRequirement] {
         switch base {
         case "home":
@@ -657,6 +667,7 @@ extension CatalogLevel {
             if let th = requiredTownHallLevel { out.append(.townHall(level: th)) }
             if let lab = requiredLaboratoryLevel { out.append(.laboratory(level: lab)) }
             if let ht = requiredHeroTavernLevel, ht > 0 { out.append(.heroHall(level: ht)) }
+            if let bs = requiredBlacksmithLevel, bs > 0 { out.append(.blacksmith(level: bs)) }
             return out
         case "builder":
             var out: [UpgradeRequirement] = []
@@ -671,7 +682,8 @@ extension CatalogLevel {
 
 extension CatalogItem {
     /// 本 item 各级升级前置条件的 village 语义列表（按 item.base 解析）。
-    /// 无 requirement 的 item（equipment/guardians/capital 等）→ 空数组。
+    /// 无 requirement 的 item（guardians/capital 等）→ 空数组（equipment 自
+    /// Issue #97 起携带 .blacksmith 门槛，不再落入此分支）。
     /// base == nil（capital）→ 空数组（capital 无大本营门槛语义）。
     public var requirements: [UpgradeRequirement] {
         levels.flatMap { $0.requirements(base: base) }

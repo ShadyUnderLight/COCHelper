@@ -234,12 +234,14 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
 // MARK: - 解锁建筑（Issue #67 阶段上限）
 
 /// 解锁建筑的快照 dataID（真实目录契约，Task 1 落库锚定）：
-/// 主村大本营 buildings:1000001、实验室 buildings:1000007、英雄殿堂 buildings:1000071；
+/// 主村大本营 buildings:1000001、实验室 buildings:1000007、英雄殿堂 buildings:1000071、
+/// 铁匠铺 buildings:1000070（Issue #97，equipment 门槛）；
 /// 建筑大师大本营 buildings2:1000034、星空实验室 buildings2:1000046。
 enum UnlockBuildingDataID {
     static let townHall: Int64 = 1_000_001
     static let laboratory: Int64 = 1_000_007
     static let heroHall: Int64 = 1_000_071
+    static let blacksmith: Int64 = 1_000_070
     static let builderHall: Int64 = 1_000_034
     static let starLaboratory: Int64 = 1_000_046
 }
@@ -252,6 +254,7 @@ public struct PlayerUnlockLevels: Sendable {
     public let townHall: Int?
     public let laboratory: Int?
     public let heroHall: Int?
+    public let blacksmith: Int?
     public let builderHall: Int?
     public let starLaboratory: Int?
 
@@ -261,13 +264,15 @@ public struct PlayerUnlockLevels: Sendable {
         builderHall: Int? = nil,
         laboratory: Int? = nil,
         starLaboratory: Int? = nil,
-        heroHall: Int? = nil
+        heroHall: Int? = nil,
+        blacksmith: Int? = nil
     ) {
         self.townHall = townHall
         self.builderHall = builderHall
         self.laboratory = laboratory
         self.starLaboratory = starLaboratory
         self.heroHall = heroHall
+        self.blacksmith = blacksmith
     }
 
     public init(snapshot: AccountSnapshot?) {
@@ -277,6 +282,7 @@ public struct PlayerUnlockLevels: Sendable {
         townHall = firstLevel(in: "buildings", dataID: UnlockBuildingDataID.townHall)
         laboratory = firstLevel(in: "buildings", dataID: UnlockBuildingDataID.laboratory)
         heroHall = firstLevel(in: "buildings", dataID: UnlockBuildingDataID.heroHall)
+        blacksmith = firstLevel(in: "buildings", dataID: UnlockBuildingDataID.blacksmith)
         builderHall = firstLevel(in: "buildings2", dataID: UnlockBuildingDataID.builderHall)
         starLaboratory = firstLevel(in: "buildings2", dataID: UnlockBuildingDataID.starLaboratory)
     }
@@ -289,6 +295,7 @@ public struct PlayerUnlockLevels: Sendable {
         case .laboratory: return laboratory
         case .starLaboratory: return starLaboratory
         case .heroHall: return heroHall
+        case .blacksmith: return blacksmith
         }
     }
 }
@@ -586,7 +593,8 @@ public struct VillageCatalogProjection: Sendable {
         }
 
         // Issue #67：阶段上限。仅 baseMatches 且目录命中时计算。
-        // - 无 requirement（equipment/capital 等）→ 返回 maxLevel（可计算）；
+        // - 无 requirement（guardians/capital 等）→ 返回 maxLevel（可计算；
+        //   equipment 自 Issue #97 起带 .blacksmith 门槛，不再落入此分支）；
         // - 有 requirement 但快照缺对应解锁建筑 → nil（不可计算，见 status 分支）。
         // 必须在 nextLevelDuration 之前计算：unverified（nil）时禁止推断下一级时长。
         let stageMax: Int?
@@ -762,10 +770,11 @@ public struct VillageCatalogProjection: Sendable {
         } else if let catalogItem, baseMatches {
             if stageMax == nil {
                 // Issue #67 fail-closed：有 prerequisite requirement 但快照缺对应
-                // 解锁建筑记录（如英雄殿堂/实验室）→ 无法验证当前阶段上限。
+                // 解锁建筑记录（如英雄殿堂/实验室/铁匠铺），或解锁等级低于首级
+                // 门槛（如装备 lvl1 门槛 >1 的 13 件装备）→ 无法验证当前阶段上限。
                 // 不判 maxed/complete、不计入完成度 known、不推断下一级。
                 status = .unverified
-                missingReason = "快照缺少 prerequisite 解锁建筑记录（大本营/实验室/英雄殿堂等），无法验证当前阶段上限。"
+                missingReason = "快照缺少 prerequisite 解锁建筑记录（或等级不足：大本营/实验室/英雄殿堂/铁匠铺等），无法验证当前阶段上限。"
             } else {
                 // 阶段上限优先（可计算时恒非 nil：无 requirement 时 = maxLevel）。
                 // 阶段满级（stage < maxLevel）与全局满级同报 .maxed——完成度口径：
@@ -850,13 +859,15 @@ public struct VillageCatalogProjection: Sendable {
 
     /// 计算单个目录 item 的当前阶段上限（Issue #67）。
     ///
-    /// - 无 requirement（equipment/guardians/capital 等）→ `item.maxLevel`
-    ///   （无门槛，阶段上限 == 全局上限，始终可计算）；
+    /// - 无 requirement（guardians/capital 等）→ `item.maxLevel`
+    ///   （无门槛，阶段上限 == 全局上限，始终可计算；equipment 自 Issue #97
+    ///   起带 .blacksmith 门槛，不再落入此分支）；
     /// - 任一 requirement 类型对应解锁等级为 nil（快照缺该建筑记录）→ nil
     ///   （不可计算，调用方回退全局 maxLevel，保守不误报满级）；
     /// - 否则逐级检查（目录契约 levels 升序，此处防御性 sort 保证不变量）：
     ///   该级 requirement 全部满足则作为候选；遇到第一个不满足的级即停止
-    ///   （门槛随等级单调不减，目录 validate 保证），返回最高候选。
+    ///   （门槛随等级单调不减——validate 不强制单调，由源数据实测保证），
+    ///   返回最高候选。
     static func currentStageMaxLevel(
         for item: CatalogItem,
         unlocks: PlayerUnlockLevels

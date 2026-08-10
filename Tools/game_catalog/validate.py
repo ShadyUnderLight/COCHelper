@@ -10,6 +10,8 @@ from pathlib import Path
 
 from . import (
     SCHEMA_VERSION,
+    BLACKSMITH_LEVEL_MIN,
+    BLACKSMITH_LEVEL_MAX,
     ASSET_MISSING_REASONS,
     BASE_MISSING_REASONS,
     ITEM_MISSING_REASONS,
@@ -292,6 +294,27 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
                     errors.append(f"{key} level {lv.level}: 未知 missingReason {lv.missingReason!r}")
                 if lv.durationSeconds is not None and lv.durationSeconds < 0:
                     errors.append(f"{key} level {lv.level}: durationSeconds 为负")
+                # ---- requiredBlacksmithLevel 域校验（Issue #97：equipment 铁匠铺门槛）----
+                # 仅 equipment 强制：每级必须有值且 ∈ BLACKSMITH_LEVEL_MIN..MAX
+                # （fail loud，与 displayCategory P1-B「旧产物缺字段报错」先例一致，
+                # 报错提示回填路径；合法域单一事实源 __init__.py）。不做单调性校验
+                # （与 TH/Lab 对称——validate 对它们也无单调检查，单调性由数据源保证）。
+                # 类型防御：bool 是 int 子类，JSON true/false 必须报类型非法（参照
+                # _check_instance_counts 的 isinstance(v, bool) 先例）。
+                if item.section == "equipment":
+                    bs = lv.requiredBlacksmithLevel
+                    if bs is None:
+                        errors.append(
+                            f"{key} level {lv.level}: equipment 缺少 requiredBlacksmithLevel"
+                            f"（旧产物缺少该字段，请用 annotate_blacksmith_levels.py 回填）")
+                    elif isinstance(bs, bool) or not isinstance(bs, int):
+                        errors.append(
+                            f"{key} level {lv.level}: requiredBlacksmithLevel 类型非法"
+                            f" {type(bs).__name__}（应为整数）")
+                    elif not BLACKSMITH_LEVEL_MIN <= bs <= BLACKSMITH_LEVEL_MAX:
+                        errors.append(
+                            f"{key} level {lv.level}: requiredBlacksmithLevel={bs}"
+                            f" 超出合法域 {BLACKSMITH_LEVEL_MIN}...{BLACKSMITH_LEVEL_MAX}")
                 # ---- upgradeCosts 不变量（Issue #73 Task 1）----
                 # None = 无费用数据；非 None 必须非空；每项满足
                 # parseFailed ⟺ (amount=None ∧ rawAmount!=None)；resource/rawResource 恒非空。

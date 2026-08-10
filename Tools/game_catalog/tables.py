@@ -80,6 +80,7 @@ class TableSpec:
     town_hall_column: str | None = None
     laboratory_column: str | None = None
     hero_tavern_column: str | None = None        # 英雄殿堂门槛（17 本引入，heroes.csv）
+    blacksmith_column: str | None = None         # 铁匠铺门槛（character_items.csv）
     icon_columns: tuple[str, ...] = ()          # (IconSWF, IconExportName) 或 (Icon,)
     visual_columns: tuple[str, ...] = ()        # (SWF, ExportName)
     village_type_column: str | None = None
@@ -175,6 +176,7 @@ TABLES: tuple[TableSpec, ...] = (
         level_column="Level", time_columns=(),  # 无时间列 → no_time_source
         resource_column="UpgradeResources", cost_column="UpgradeCosts",
         list_separator=";",  # 多资源费用：UpgradeResources="CommonOre; RareOre" 配对
+        blacksmith_column="RequiredBlacksmithLevel",  # 每行都有值（实测 1032 行全有），不进 fill_columns
         icon_columns=("IconSWF", "IconExportName"),
         fill_columns=("TID", "IconSWF", "IconExportName", "UpgradeResources", "UpgradeCosts",
                       "Deprecated"),

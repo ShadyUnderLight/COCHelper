@@ -3,6 +3,12 @@
 # v2: CatalogLevel 多资源升级费用（upgradeCosts 数组替代 upgradeResource/upgradeCost 键，issue #73）
 SCHEMA_VERSION = 2
 
+# Issue #97：铁匠铺（Blacksmith）等级合法域。equipment 的 requiredBlacksmithLevel
+# 校验（validate.py）与回填（annotate_blacksmith_levels.py）共用单一事实源；
+# 未来版本铁匠铺等级上限变化时只需改这里（源数据实测 18.400.13：BS ∈ 1..10）。
+BLACKSMITH_LEVEL_MIN = 1
+BLACKSMITH_LEVEL_MAX = 10
+
 # 按字段域拆分的 missingReason 词表：level / base / item / asset 各域互不混用，
 # 校验时用分域词表拒绝跨域污染（如 level 上写 "capital_has_no_base"）。
 LEVEL_MISSING_REASONS = frozenset({

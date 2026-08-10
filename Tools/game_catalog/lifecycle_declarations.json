@@ -1170,7 +1170,7 @@
     },
     "equipment:90000049": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "陨石法杖，icon exportName 含 meteor 属装备名（Meteor 装备，常驻装备池）——白名单留痕（人工判定，待复核）"
     },
     "equipment:90000050": {
       "lifecycle": "permanent",
@@ -1313,8 +1313,8 @@
       "note": null
     },
     "pets:73000006": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "疑似限时活动宠物（独角；deprecated_in_source=已被游戏移除 + 单级 stub，与已标活动宠物 73000012-15 同族特征——保守安全侧，待外部核实）"
     },
     "pets:73000007": {
       "lifecycle": "permanent",
@@ -1882,7 +1882,7 @@
     },
     "spells:26000120": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "图腾法术，icon exportName 含 meteor（meteor_tower=流星塔常驻建筑法术）属命名撞词——白名单留痕（人工判定，待复核）"
     },
     "spells:26000121": {
       "lifecycle": "permanent",
@@ -2033,8 +2033,8 @@
       "note": "限时临时陷阱（冰冻陷阱；官方维基 Temporary Traps 证实，cannot be upgraded）"
     },
     "traps:12000015": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时临时陷阱（玲珑陷阱；官方维基 Temporary Traps 列表第 4 条——与已标冰冻陷阱同列表，Partially Available / cannot be upgraded）"
     },
     "traps:12000016": {
       "lifecycle": "permanent",
@@ -2042,7 +2042,7 @@
     },
     "traps:12000017": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "哥布林玲珑陷阱，levelVisual exportName 含 shrink（Shrink_trap_armed）属哥布林战役常驻变体撞词——白名单留痕（人工判定，待复核）"
     },
     "traps:12000018": {
       "lifecycle": "permanent",
@@ -2410,7 +2410,7 @@
     },
     "units:4000090": {
       "lifecycle": "permanent",
-      "note": null
+      "note": "雷霆皮卡（home 单级 stub 无成本无时长）——数据特征更像跨 section 重复条目而非限时内容（BB units2:4000036 与 Capital 112000022 为同名常驻）；暂按永久内容声明，待外部核实"
     },
     "units:4000093": {
       "lifecycle": "permanent",
@@ -2693,12 +2693,12 @@
       "note": "限时愚人节活动兵种（部族小队变体；Supercell 官方活动公告确认限时）"
     },
     "units:4000167": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Cosmic Rock 活动变体（陨石戈仑；官方维基 Meteor Golem 页：2025-10-10 限时加入 12 级，2025-11-01 移除，TH18 以 3 级常驻回归——13 级全 0 成本无时长即活动变体特征）"
     },
     "units:4000168": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时 Cosmic Rock 活动变体（小陨石戈仑；同 4000167，活动变体特征）"
     },
     "units:4000169": {
       "lifecycle": "permanent",
@@ -2741,12 +2741,12 @@
       "note": null
     },
     "units:4000179": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动变体（陨石戈仑；3 级无成本无时长——2026-07 Mass Troops 活动临时版，中置信，保守安全侧）"
     },
     "units:4000180": {
-      "lifecycle": "permanent",
-      "note": null
+      "lifecycle": "seasonalCandidate",
+      "note": "限时活动变体（小陨石戈仑；3 级无成本无时长——2026-07 Mass Troops 活动临时版，中置信，保守安全侧）"
     },
     "units:4000181": {
       "lifecycle": "permanent",

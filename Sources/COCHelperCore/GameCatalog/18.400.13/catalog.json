@@ -82651,7 +82651,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": "deprecated_in_source",
       "name": "独角",
@@ -102265,7 +102265,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 1,
       "missingReason": null,
       "name": "玲珑陷阱",
@@ -132861,7 +132861,7 @@
           ]
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "陨石戈仑",
@@ -133103,7 +133103,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 13,
       "missingReason": null,
       "name": "小陨石戈仑",
@@ -133765,7 +133765,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 3,
       "missingReason": null,
       "name": "陨石戈仑",
@@ -133837,7 +133837,7 @@
           "upgradeCosts": null
         }
       ],
-      "lifecycle": "permanent",
+      "lifecycle": "seasonalCandidate",
       "maxLevel": 3,
       "missingReason": null,
       "name": "小陨石戈仑",

@@ -43,8 +43,8 @@ SEASONAL_FESTIVE_KEYS = {
     "buildings:1000101",
     "spells:26000004", "spells:26000006", "spells:26000022",
     "spells:26000073", "spells:26000084",
-    "traps:12000003", "traps:12000007", "traps:12000009",
-    "pets:73000012", "pets:73000013", "pets:73000014", "pets:73000015",
+    "traps:12000003", "traps:12000007", "traps:12000009", "traps:12000015",
+    "pets:73000006", "pets:73000012", "pets:73000013", "pets:73000014", "pets:73000015",
     "units:4000030", "units:4000045", "units:4000047", "units:4000048",
     "units:4000050", "units:4000060", "units:4000061", "units:4000067",
     "units:4000072",
@@ -56,15 +56,17 @@ SEASONAL_FESTIVE_KEYS = {
     "units:4000145",
     "units:4000156", "units:4000157", "units:4000158", "units:4000159",
     "units:4000162", "units:4000163", "units:4000164", "units:4000165",
-    "units:4000166",
+    "units:4000166", "units:4000167", "units:4000168",
+    "units:4000179", "units:4000180",
     "units:4000185", "units:4000186", "units:4000187",
 }
 # 名字/icon 含节日特征但人工判定为常驻内容的条目（防误标 seasonalCandidate 的
 # 反向保护：这些条目标 permanent 是有意的，note 留痕待复核）。
 PERMANENT_FESTIVE_LOOKING_KEYS = {
     "equipment:90000014", "equipment:90000032", "equipment:90000041",
-    "equipment:90000048", "equipment:90000051",
+    "equipment:90000048", "equipment:90000049", "equipment:90000051",
     "capital_buildings:110000027", "buildings:1000012",
+    "spells:26000120", "traps:12000017",
 }
 # icon exportName 强活动特征词（全量扫描用）：命中且不在白名单 → 必须
 # seasonalCandidate（红队建议：防显式清单与数据脱钩——新增活动条目漏标时
@@ -75,6 +77,7 @@ STRONG_FESTIVE_ICON_TOKENS = (
     "lavaloon", "snake", "firecracker", "majo",
     "clashmas", "present", "candy", "wwe", "icewizard",
     "slimesnail", "hastespirit", "spiritjellyfish", "firework",
+    "meteor", "shrink",
 )
 
 

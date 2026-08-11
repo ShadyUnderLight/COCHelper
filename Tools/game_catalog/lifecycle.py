@@ -81,6 +81,12 @@ def load_declarations() -> dict[str, str]:
             raise CatalogError(
                 f"lifecycle 声明未知值: {key}: {entry['lifecycle']!r}")
         out[key] = entry["lifecycle"]
+    # 红队 Fix 1：phaseCoverage 良构性必须进入生成管线——load_declarations 是
+    # apply_lifecycle/lifecycle_for（→ 生成器）的唯一入口，只读文件不校验则
+    # 「声明文件是生成前置条件」对 phaseCoverage 维度落空。此处调用仅用于
+    # 校验（非法 → CatalogError），返回值丢弃：phaseCoverage 不参与
+    # load_declarations 的返回结构。
+    load_phase_coverage()
     return out
 
 
@@ -129,7 +135,7 @@ def compute_phase_coverage(
     - decl：{key: phaseCoverage}（key = "section:dataID"；值 required/unknown。
       不做 load 校验——load 由 load_phase_coverage 负责，纯函数不重复校验；
       意外值按「非 required」处理，不崩溃）；
-    - phases：阶段表 phases 数组（每项含 itemKeys 列表；缺 itemKeys 按空处理）。
+    - phases：阶段表 phases 数组（每项含 itemKeys 列表与 from/until 区间）。
 
     返回结构化统计（全部非负整数，见 test_phase_coverage.py 的不变量契约）：
     - seasonal_candidates：decl 条目总数；
@@ -137,14 +143,36 @@ def compute_phase_coverage(
       seasonal_candidates == required + unknown，well-formed 输入下成立）；
     - required_with_phase / required_missing_phase：required 命中/未命中阶段表
       （守恒：required == 二者之和；missing > 0 = 有官方日期待录入）；
-    - phase_keys：阶段表全部 itemKeys 去重数；
+    - phase_keys：阶段表全部 itemKeys 去重数（红队 Fix 2：只统计 from < until
+      的合法 phase——与 Swift phase(forItemKey:at:) 过滤语义对齐，非法区间
+      phase 的 key 不得计入命中，否则报告与运行时矛盾）；
     - phase_keys_declared / phase_keys_not_declared：阶段 key 在/不在 decl 中
-      （守恒：phase_keys == 二者之和；not_declared = 模组等非目录条目 key）。
+      （守恒：phase_keys == 二者之和；not_declared = 模组等非目录条目 key）；
+    - invalid_phases：from/until 缺失、非 int、或 from >= until 的 phase 数
+      （语义问题，供报告区分；结构问题由 coverage_report fail loud）。
+    容忍语义（红队 Fix 3）：纯函数对任意畸形输入不崩溃、不产生垃圾统计——
+    phase 非 dict → 跳过；itemKeys 非 list → 按 [] 处理（不迭代字符串/int，
+    否则字符串会被逐字符拆成幽灵 key）；from/until 非 int → 该 phase 归
+    invalid_phases。
     """
     required_keys = {key for key, value in decl.items() if value == "required"}
     unknown = sum(1 for value in decl.values() if value == "unknown")
-    phase_keys = {key for phase in phases
-                  for key in (phase.get("itemKeys") or [])}
+    phase_keys: set[str] = set()
+    invalid_phases = 0
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        item_keys = phase.get("itemKeys")
+        if not isinstance(item_keys, list):
+            item_keys = []
+        frm = phase.get("from")
+        until = phase.get("until")
+        if (isinstance(frm, int) and not isinstance(frm, bool)
+                and isinstance(until, int) and not isinstance(until, bool)
+                and frm < until):
+            phase_keys.update(item_keys)
+        else:
+            invalid_phases += 1
     return {
         "seasonal_candidates": len(decl),
         "required": len(required_keys),
@@ -154,6 +182,7 @@ def compute_phase_coverage(
         "phase_keys": len(phase_keys),
         "phase_keys_declared": len(phase_keys & set(decl)),
         "phase_keys_not_declared": len(phase_keys - set(decl)),
+        "invalid_phases": invalid_phases,
     }
 
 
@@ -170,6 +199,17 @@ def coverage_report() -> dict[str, int]:
     phases = raw.get("phases")
     if not isinstance(phases, list):
         raise CatalogError(f"阶段表文件缺少 phases: {PHASES_PATH}")
+    # 红队 Fix 3：结构校验（类型问题）fail loud——bundle 文件人工维护，错写
+    # 不得静默容忍（compute_phase_coverage 的容忍是纯函数防御，真实数据入口
+    # 必须拦截）。区间非法（from/until）是语义问题，留给 invalid_phases。
+    for i, phase in enumerate(phases):
+        if not isinstance(phase, dict):
+            raise CatalogError(
+                f"阶段表文件 phases[{i}] 非法: 非 dict: {phase!r}")
+        item_keys = phase.get("itemKeys")
+        if not isinstance(item_keys, list):
+            raise CatalogError(
+                f"阶段表文件 phases[{i}] 非法: itemKeys 非 list: {item_keys!r}")
     return compute_phase_coverage(decl, phases)
 
 

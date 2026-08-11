@@ -242,6 +242,9 @@ def test_lifecycle_for_known_and_unknown():
         ({"schemaVersion": 2, "items": {}}, "schemaVersion"),
         # schemaVersion=true（bool 是 int 子类且 True == 1，R9 绕过类）→ CatalogError
         ({"schemaVersion": True, "items": {}}, "schemaVersion"),
+        # schemaVersion=1.0（float 虽 == 1 但非 int 类型，红队 Nit 5：_load_raw
+        # 的 isinstance(sv, int) 额外拦截，方向安全——补用例锁定）→ CatalogError
+        ({"schemaVersion": 1.0, "items": {}}, "schemaVersion"),
         # items 键缺失
         ({"schemaVersion": 1}, "缺少 items"),
         # 条目值非法（非 dict / lifecycle 非字符串）
@@ -369,6 +372,38 @@ def test_load_phase_coverage_failure_paths(monkeypatch, tmp_path, content, messa
     monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
     with pytest.raises(CatalogError) as ei:
         load_phase_coverage()
+    assert message_fragment in str(ei.value)
+
+
+@pytest.mark.parametrize(
+    ("content", "message_fragment"),
+    [
+        # seasonalCandidate 缺 phaseCoverage（可追溯性缺失）→ CatalogError
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "note": "n"}}}, "phaseCoverage"),
+        # phaseCoverage 未知值（闭枚举外）→ CatalogError
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "phaseCoverage": "maybe",
+                                                "note": "n"}}}, "phaseCoverage"),
+        # permanent 条目误带 phaseCoverage → CatalogError（防误标）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
+                                                "phaseCoverage": "required",
+                                                "note": "n"}}}, "permanent"),
+    ],
+)
+def test_load_declarations_rejects_bad_phase_coverage(
+    monkeypatch, tmp_path, content, message_fragment
+):
+    """红队 Fix 1：phaseCoverage 良构校验必须进入生成管线——load_declarations
+    是 apply_lifecycle/lifecycle_for（→ 生成器）的唯一入口，若它不校验 phaseCoverage，
+    「声明文件是生成前置条件」对 phaseCoverage 维度落空（实测：删掉一条
+    phaseCoverage 后生成照常产出，只有 pytest 红）。此处锁定：非法声明文件
+    连 load_declarations 本身都 CatalogError。"""
+    path = tmp_path / "declarations.json"
+    path.write_text(json.dumps(content), encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
+    with pytest.raises(CatalogError) as ei:
+        load_declarations()
     assert message_fragment in str(ei.value)
 
 

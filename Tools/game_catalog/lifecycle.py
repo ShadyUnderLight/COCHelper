@@ -39,12 +39,17 @@ def _strict_parse_float(raw: str) -> float:
     Issue #113 审计 R3-F1：非零字面量在 Python 中 underflow 为 0.0（如
     1e-325、1e-4000）时，Swift 解码失败 → 整表变空；Python 若静默归零会把
     该 phase 当合法命中（与上溢 1e400 同构、方向相反）。规则：float 结果为
-    0.0 且字面量含非零数字 → 解析失败（Swift 对 4e-324 舍入到最小 subnormal
-    仍可解码，Python 同样舍入非零——两侧一致）。
+    0.0 且**尾数**（e/E 之前）含非零数字 → 解析失败（Swift 对 4e-324 舍入
+    到最小 subnormal 仍可解码，Python 同样舍入非零——两侧一致）。
+    R4-Minor：只查尾数——零值字面量（0e100、-0e5、0.0e-325）数值恰为 0，
+    Swift 可正常解码，不得因指数位含 1-9 被误拒。
     """
     value = float(raw)
-    if value == 0.0 and any(ch in raw for ch in "123456789"):
-        raise ValueError(f"非零数值 underflow 为 0（Swift Double 不可表示）: {raw}")
+    if value == 0.0:
+        mantissa = raw.split("e", 1)[0].split("E", 1)[0]
+        if any(ch in mantissa for ch in "123456789"):
+            raise ValueError(
+                f"非零数值 underflow 为 0（Swift Double 不可表示）: {raw}")
     return value
 
 DECLARATIONS_PATH = Path(__file__).resolve().parent / "lifecycle_declarations.json"

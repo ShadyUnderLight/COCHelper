@@ -960,6 +960,22 @@ def test_find_lifecycle_phase_conflicts_phases_failure_paths(
     assert message_fragment in str(ei.value)
 
 
+def test_strict_parse_float_zero_literals_accepted():
+    """Issue #113 审计 R4-Minor：零值指数字面量（数值恰为 0，Swift 可解码）
+    不得被误拒——underflow 检查只看尾数（e/E 之前），指数位含 1-9 不误伤。"""
+    from game_catalog.lifecycle import _strict_parse_float
+    assert _strict_parse_float("0.0") == 0.0
+    assert _strict_parse_float("-0.0") == 0.0
+    assert _strict_parse_float("0e100") == 0.0
+    assert _strict_parse_float("-0e-325") == 0.0
+    assert _strict_parse_float("0.0e-325") == 0.0
+    # 反向：非零尾数 underflow 仍必须拒绝
+    with pytest.raises(ValueError):
+        _strict_parse_float("1e-325")
+    with pytest.raises(ValueError):
+        _strict_parse_float("-1e-4000")
+
+
 @pytest.mark.parametrize(
     ("content", "message_fragment"),
     [

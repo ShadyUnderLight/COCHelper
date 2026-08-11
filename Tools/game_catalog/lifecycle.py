@@ -20,14 +20,27 @@ from .model import CatalogItem
 
 DECLARATIONS_PATH = Path(__file__).resolve().parent / "lifecycle_declarations.json"
 
-# bundled 阶段表（Issue #112 coverage 报告用）：从本文件推导 repo 根再下钻，
-# 与 test_lifecycle.py 的 CATALOG_DIR 推导方式一致（本文件位于 Tools/game_catalog/，
-# parents[2] = repo 根）。
-PHASES_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "Sources" / "COCHelperCore" / "GameCatalog" / "18.400.13"
-    / "seasonal_phases.json"
-)
+# 当前 bundled 目录版本（GameCatalog/<version>/）；coverage 报告默认用它，
+# CLI 可通过 manifest.gameVersion 绑定其他版本（评审 follow-up：多版本时
+# 不得固定 18.400.13）。
+DEFAULT_GAME_VERSION = "18.400.13"
+
+
+def _phases_path(version: str) -> Path:
+    """bundled 阶段表路径：GameCatalog/<version>/seasonal_phases.json。
+
+    与 test_lifecycle.py 的 CATALOG_DIR 推导方式一致（本文件位于
+    Tools/game_catalog/，parents[2] = repo 根）。版本由调用方注入。
+    """
+    return (
+        Path(__file__).resolve().parents[2]
+        / "Sources" / "COCHelperCore" / "GameCatalog" / version
+        / "seasonal_phases.json"
+    )
+
+
+# 默认版本路径（向后兼容：无版本参数时使用；测试 monkeypatch 此常量）
+PHASES_PATH = _phases_path(DEFAULT_GAME_VERSION)
 
 # lifecycle 闭枚举（validate 校验用）
 LIFECYCLE_VALUES: frozenset[str] = frozenset({"permanent", "seasonalCandidate"})
@@ -194,19 +207,24 @@ def compute_phase_coverage(
     }
 
 
-def coverage_report() -> dict[str, int]:
+def coverage_report(version: str | None = None) -> dict[str, int]:
     """真实数据 coverage 报告：声明 phaseCoverage vs bundled 阶段表对账统计。
 
     Issue #112。独立于 validate_catalog（errors 非空即失败，诊断文本不得
     混入 errors——评审红线）；只读声明文件 + seasonal_phases.json；文件缺失 /
     解析失败 / schemaVersion != 1 / 缺 phases → CatalogError（与
     load_phase_coverage 同口径 fail loud）。
+
+    version：bundled 目录版本（GameCatalog/<version>/seasonal_phases.json）；
+    None → DEFAULT_GAME_VERSION（CLI 从 --catalog 的 manifest.gameVersion
+    绑定，评审 follow-up：多版本时不得固定写死）。
     """
     decl = load_phase_coverage()
-    raw = _load_raw(PHASES_PATH, "阶段表文件")
+    phases_path = PHASES_PATH if version is None else _phases_path(version)
+    raw = _load_raw(phases_path, "阶段表文件")
     phases = raw.get("phases")
     if not isinstance(phases, list):
-        raise CatalogError(f"阶段表文件缺少 phases: {PHASES_PATH}")
+        raise CatalogError(f"阶段表文件缺少 phases: {phases_path}")
     # 红队 Fix 3：结构校验（类型问题）fail loud——bundle 文件人工维护，错写
     # 不得静默容忍（compute_phase_coverage 的容忍是纯函数防御，真实数据入口
     # 必须拦截）。区间非法（from/until）是语义问题，留给 invalid_phases。

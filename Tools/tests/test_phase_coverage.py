@@ -152,6 +152,33 @@ def test_coverage_report_failure_paths(monkeypatch, tmp_path, content, message_f
     assert message_fragment in str(ei.value)
 
 
+def test_coverage_report_version_parameter(monkeypatch, tmp_path):
+    """评审 follow-up：coverage_report(version=...) 必须使用该版本的 bundled
+    阶段表路径（GameCatalog/<version>/seasonal_phases.json），而不是固定
+    18.400.13。验证：monkeypatch _phases_path 后 version 参数被传递。"""
+    sentinel = tmp_path / "seasonal_phases.json"
+    sentinel.write_text(json.dumps(
+        {"schemaVersion": 1, "phases": [{"phaseID": "v99", "from": 1, "until": 2,
+                                         "itemKeys": []}]}), encoding="utf-8")
+    calls: list[str] = []
+
+    def fake_phases_path(version: str):
+        calls.append(version)
+        return sentinel
+
+    monkeypatch.setattr(lifecycle_module, "_phases_path", fake_phases_path)
+    coverage_report(version="99.99.99")
+    assert calls == ["99.99.99"], "version 参数必须传递到 _phases_path"
+
+
+def test_coverage_report_version_defaults_to_current(monkeypatch):
+    """coverage_report() 不传 version → 默认使用当前 bundled 版本路径
+    （DEFAULT_GAME_VERSION 18.400.13，真实文件存在 → 正常返回统计）。"""
+    report = coverage_report()
+    assert report["phase_keys"] == 13
+    assert report["required"] == 4
+
+
 # ---- compute_phase_coverage：纯函数退化端点（空输入 / 缺 itemKeys）----
 
 def test_compute_phase_coverage_empty_inputs():

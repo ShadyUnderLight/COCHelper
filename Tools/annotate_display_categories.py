@@ -9,7 +9,7 @@ catalog.json + manifest.json（幂等：重复运行不产生 diff）。
 
 行为:
   - catalog.json：items 逐项应用 apply_display_categories（home buildings 命中
-    defense/military/craftTable，其余 None），序列化格式与 generate() 一致
+    defense/walls/military/craftTable，其余 None），序列化格式与 generate() 一致
     （ensure_ascii=False, indent=2, sort_keys=True + "\n"）；instanceCounts 保留；
   - manifest.json：catalog.json 条目 sha256/size 重算，counts 刷新
     （counts_for 全量 + displayCategories；blockedIcons/renderedIcons 等快照

@@ -1022,8 +1022,8 @@ final class VillageDetailProjectionTests: XCTestCase {
 
     func testMatchesCategoryFilterExcludesDisplayGroups() {
         // 回归（评审 blocker）：display 组的 category 恒为 .buildings 仅作归属提示，
-        // 点「建筑与防御」chip 若按 category 匹配会误含防御/军事/精制台全部展示组，
-        // 与 chip 计数（已排除 display 组）矛盾。
+        // 点「建筑与防御」chip 若按 category 匹配会误含防御/城墙/军事/精制台全部
+        // 展示组，与 chip 计数（已排除 display 组）矛盾。
         let display = VillageDetailGroup(category: .buildings, displayCategory: .defense, items: [])
         let walls = VillageDetailGroup(category: .buildings, displayCategory: .walls, items: [])
         let fallback = VillageDetailGroup(category: .buildings, displayCategory: nil, items: [])
@@ -1246,7 +1246,7 @@ final class VillageDetailProjectionTests: XCTestCase {
             } : nil
             // 60% 概率 display 桶（category 恒 .buildings），40% 普通 category/other。
             if rng.next() % 5 < 3 {
-                let dcs: [TrackerDisplayCategory?] = [.defense, .military, .craftTable, nil]
+                let dcs: [TrackerDisplayCategory?] = [.defense, .walls, .military, .craftTable, nil]
                 let dc = dcs[Int(rng.next() % UInt64(dcs.count))]
                 return item(id: "d\(i)", category: .buildings, displayCategory: dc,
                             status: status, level: level, maxLevel: maxLevel,

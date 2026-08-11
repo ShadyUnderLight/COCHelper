@@ -227,9 +227,11 @@ public struct ClanWarParticipantSummary: Hashable, Sendable {
 /// - 仅当**双方同字段都存在且不等**才产生对应 case（官方缺失时顶部不显示
 ///   即可，无矛盾可报）；
 /// - 任一成员 `attacks == nil` 时推导总数不可得，报 `.membersIncomplete`
-///   （防止把"成员数据不完整"误报成攻击数不一致）；
+///   （防止把"成员数据不完整"误报成攻击数不一致；官方缺失时仍上报——
+///   成员不完整是独立可审计事实）；
 /// - 星数比对仅在全部攻击行星数已知时判定（部分缺失时已知和只是下限，
-///   不构成权威差异）；
+///   不构成权威差异）；比对使用成员**原始**星数的事实层求和（饱和累加），
+///   展示层 clamp 值不参与（见 `mismatches(participant:rows:)`）；
 /// - 摧毁率永不聚合 → 不存在摧毁率推导，也无摧毁率 mismatch；
 /// - associated value 同时携带官方值与推导值——「保留两套事实」是 issue 硬需求。
 public enum ClanWarSummaryMismatch: Hashable, Sendable {
@@ -556,10 +558,10 @@ public enum ClanWarDisplayProjection {
     /// - 官方 attacks 存在且 ≠ Σ 成员攻击数 → `.attackCount`；
     /// - 官方 stars 存在、全部攻击行星数已知（缺失合计 0）且 ≠ Σ 成员星数
     ///   → `.stars`（部分缺失时已知和只是下限，不构成权威差异）。
-    /// **注意**：星数比对使用逐行**原始** stars 求和（事实层），不使用
-    /// `ClanWarMemberStars.knownStars`（展示层 clamp 到 [0,3] 后的值）——
-    /// schema 违反输入（如 stars=5）下 clamp 会扭曲事实，导致"双侧一致却
-    /// 误报不一致"。
+    /// **注意**：星数比对使用逐行**原始** stars 求和（事实层，`SaturatingArithmetic`
+    /// 饱和累加防 malformed 输入崩溃），不使用 `ClanWarMemberStars.knownStars`
+    /// （展示层 clamp 到 [0,3] 后的值）——schema 违反输入（如 stars=5）下
+    /// clamp 会扭曲事实，导致"双侧一致却误报不一致"。
     public static func mismatches(participant: ClanWarParticipant, rows: [ClanWarMemberRow]) -> [ClanWarSummaryMismatch] {
         let memberAttacks = rows.compactMap { $0.lines }
         guard memberAttacks.count == rows.count else {
@@ -567,9 +569,20 @@ public enum ClanWarDisplayProjection {
             return [.membersIncomplete]
         }
         let memberAttackSum = memberAttacks.reduce(0) { $0 + $1.count }
-        // 事实层：原始 stars 求和（含 nil 记 0）与缺失计数，展示层 clamp 不参与。
-        let rawStarSum = memberAttacks.reduce(0) { $0 + $1.reduce(0) { $0 + ($1.stars ?? 0) } }
-        let starMissingCount = memberAttacks.reduce(0) { $0 + $1.reduce(0) { $0 + ($1.stars == nil ? 1 : 0) } }
+        // 事实层：原始 stars 饱和累加（含 nil 记 0）与缺失计数；展示层 clamp 不参与。
+        // 溢出饱和到 Int.max（不崩溃）：官方 stars 值域 [0,3]，饱和值必然 ≠ 官方值，
+        // 一致性判断的 fail-closed 语义保持不变。
+        var rawStarSum = 0
+        var starMissingCount = 0
+        for attacks in memberAttacks {
+            for attack in attacks {
+                if let stars = attack.stars {
+                    rawStarSum = SaturatingArithmetic.add(rawStarSum, stars).value
+                } else {
+                    starMissingCount += 1
+                }
+            }
+        }
 
         var result: [ClanWarSummaryMismatch] = []
         if let officialAttacks = participant.attacks, officialAttacks != memberAttackSum {

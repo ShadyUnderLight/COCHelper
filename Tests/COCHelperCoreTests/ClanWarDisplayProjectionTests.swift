@@ -549,6 +549,21 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
                        [.stars(official: 6, memberKnownSum: 5)])
     }
 
+    func testMismatchesExtremeStarsNeverCrash() {
+        // malformed 输入（stars = Int.max，合法 JSON 但超出官方 [0,3] 契约）：
+        // 事实层饱和累加，不崩溃（验收：malformed 数值不会崩溃或转成误导性的 0）
+        let members = [
+            member(tag: "1", attacks: [attack(stars: Int.max), attack(stars: Int.max)]),
+        ]
+        let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+        // 官方正常值域 [0,3] 不可能等于饱和和 → 报 mismatch（fail-closed），且不崩溃
+        let p = participant(attacks: 2, stars: 3, members: members)
+        let result = ClanWarDisplayProjection.mismatches(participant: p, rows: rows)
+        XCTAssertEqual(result, [.stars(official: 3, memberKnownSum: Int.max)])
+        // 展示层 memberStars 不受影响（clamp 后 6）
+        XCTAssertEqual(rows[0].stars?.knownStars, 6)
+    }
+
     func testMismatchesBothDifferencesReported() {
         let members = [
             member(tag: "1", attacks: [attack(stars: 1), attack(stars: 2)]),

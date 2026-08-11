@@ -6,7 +6,7 @@
 
 ## 1. 范围
 
-- **数据补录**：`seasonal_phases.json` 新增 Party Wizard 独立 phase（官方公告已核实：Sound of Clash Medal Event 2026-04-08 08:00 UTC ~ 2026-04-29 08:00 UTC，Party Wizard 为 temporary troop）
+- **数据补录**：`seasonal_phases.json` 新增 Party Wizard 独立 phase（官方公告名称：冲突之声奖章活动；2026-04-08 08:00 UTC ~ 2026-04-29 08:00 UTC，Party Wizard 为 temporary troop）
 - **结构化声明**：`lifecycle_declarations.json` 为每条 seasonalCandidate 增加 `phaseCoverage: "required" | "unknown"`（required = 有可靠官方日期、必须命中 phase；unknown = 暂无可靠日期、允许 `.unconfigured` fail-closed）
 - **反向对账**：required 候选必须命中 phase 表（缺 → 报告/测试失败）；保留现有 phase key → seasonalCandidate 单向校验
 - **coverage 报告**：独立 `coverage_report()`（不动 `validate_catalog()` errors 语义——`generate_game_catalog.py:45` 非空 errors 即失败）
@@ -58,7 +58,7 @@ def load_phase_coverage() -> dict[str, str]:
 ```json
 {
   "phaseID": "sound-of-clash-medal-event-2026-04",
-  "name": "Sound of Clash Medal Event",
+  "name": "冲突之声奖章活动",
   "from": 797328000,
   "until": 799142400,
   "itemKeys": ["units:4000072"],

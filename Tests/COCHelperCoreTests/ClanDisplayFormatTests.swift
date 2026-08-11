@@ -130,7 +130,7 @@ final class ClanDisplayFormatTests: XCTestCase {
         )
         XCTAssertEqual(
             ClanDisplayFormat.warLeagueLabel(ClanLeague(id: 48000022, name: "Legend League")),
-            "传奇杯联赛"
+            "传奇杯"
         )
     }
 

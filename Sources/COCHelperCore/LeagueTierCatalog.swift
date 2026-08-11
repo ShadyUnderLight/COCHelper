@@ -39,11 +39,28 @@ public struct LeagueTierCatalog: Codable, Hashable, Sendable {
         let data = try? Data(contentsOf: url),
         let catalog = try? JSONDecoder().decode(LeagueTierCatalog.self, from: data),
         catalog.schemaVersion == 1,
-        catalog.gameVersion == version
+        catalog.gameVersion == version,
+        isSemanticallyValid(catalog)
         else {
             return nil
         }
         return catalog
+    }
+
+    /// Bundled 数据必须覆盖每个已知语境，且同一语境内不得重复 ID。
+    /// 否则查询中的 `.first` 会把生成错误静默变成错误本地化结果。
+    static func isSemanticallyValid(_ catalog: LeagueTierCatalog) -> Bool {
+        let contexts = catalog.contexts.map(\.context)
+        guard Set(contexts).count == contexts.count,
+              Set(contexts) == Set(LeagueTierContext.allCases)
+        else {
+            return false
+        }
+
+        return catalog.contexts.allSatisfy { context in
+            let ids = context.tiers.map(\.id)
+            return Set(ids).count == ids.count
+        }
     }
 
     /// 按 context + ID 查中文名；未知 ID 或 context 无该 ID → nil。

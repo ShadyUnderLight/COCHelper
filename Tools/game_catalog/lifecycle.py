@@ -12,11 +12,17 @@ Issue #98。三态 `CatalogAvailability` 的 `.permanent` 生产路径修复：
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
 from pathlib import Path
 
 from .errors import CatalogError
 from .model import CatalogItem
+
+#: Swift Double 可表示上限（JSONDecoder .deferredToDate 解码 Date 的域）。
+#: 超出此范围的数值（含 Python 任意精度 int 与 1e400 → inf）在 Swift 侧
+#: 解码失败 → 整表变空；Python 不得当合法命中（两侧漂移）。
+_DOUBLE_MAX = 1.7976931348623157e308
 
 DECLARATIONS_PATH = Path(__file__).resolve().parent / "lifecycle_declarations.json"
 
@@ -185,10 +191,22 @@ def _valid_interval(frm: object, until: object) -> bool:
     Issue #113 审计 F1：Swift Date 经 JSONDecoder .deferredToDate 解码接受
     浮点时间戳（Double），Python 必须接受 int|float——严格 int 会让 float
     区间在 Python 侧漏报冲突/漏计 phase_keys（validator fail-open，门禁绕过）。
+    Issue #113 审计 R2-F1：非有限 float（Infinity/NaN）与超出 Swift Double 域
+    的数值在 Swift 侧解码失败整表空——本函数是纯函数容忍层，返回 False
+    （不算命中）而非崩溃；真实数据入口由 _load_validated_phases 前置
+    fail-loud（消息指引 Swift 解码失败根因）。
     """
-    return (isinstance(frm, (int, float)) and not isinstance(frm, bool)
-            and isinstance(until, (int, float)) and not isinstance(until, bool)
-            and frm < until)
+    if isinstance(frm, bool) or not isinstance(frm, (int, float)):
+        return False
+    if isinstance(until, bool) or not isinstance(until, (int, float)):
+        return False
+    if isinstance(frm, float) and not math.isfinite(frm):
+        return False
+    if isinstance(until, float) and not math.isfinite(until):
+        return False
+    if abs(frm) > _DOUBLE_MAX or abs(until) > _DOUBLE_MAX:
+        return False
+    return frm < until
 
 
 def compute_phase_coverage(
@@ -216,14 +234,14 @@ def compute_phase_coverage(
       phase 的 key 不得计入命中，否则报告与运行时矛盾）；
     - phase_keys_declared / phase_keys_not_declared：阶段 key 在/不在 decl 中
       （守恒：phase_keys == 二者之和；not_declared = 模组等非目录条目 key）；
-    - invalid_phases：dict 形态但 from/until 缺失、非 int、或 from >= until 的
-      phase 数（非 dict 元素跳过不计入；语义问题供报告区分，结构问题由
-      coverage_report fail loud）。
+    - invalid_phases：dict 形态但 from/until 缺失、非 int|float、非有限、
+      超出 Swift Double 域、或 from >= until 的 phase 数（非 dict 元素跳过
+      不计入；语义问题供报告区分，结构问题由 coverage_report fail loud）。
     容忍语义（红队 Fix 3 + 第二轮 Fix A）：纯函数对任意畸形 phases 输入不崩溃、
     不产生垃圾统计——phase 非 dict → 跳过；itemKeys 非 list → 按 [] 处理
     （不迭代字符串/int，否则字符串会被逐字符拆成幽灵 key）；itemKeys 元素
-    非 str → 跳过（不计入 phase_keys / 命中判定）；from/until 非 int → 该
-    phase 归 invalid_phases。
+    非 str → 跳过（不计入 phase_keys / 命中判定）；from/until 非数字或
+    非有限或超 Double 域 → 该 phase 归 invalid_phases。
     """
     required_keys = {key for key, value in decl.items() if value == "required"}
     unknown = sum(1 for value in decl.values() if value == "unknown")
@@ -259,8 +277,9 @@ def _load_validated_phases(phases_path: Path) -> list[dict]:
     Issue #113 提取：find_lifecycle_phase_conflicts 与 coverage_report 共用
     同口径校验（文件缺失/解析失败/schemaVersion != 1/缺 phases/phase 非
     dict/phaseID 非 str/name、sourceURL 存在时非 str/itemKeys 非 list 或元素
-    非 str → CatalogError），错误消息与 coverage_report 既有实现逐字节一致
-    （失败路径测试锁定消息片段）。区间非法（from/until）是语义问题，不在此
+    非 str/from、until 非数字或非有限或超出 Swift Double 域 → CatalogError），
+    错误消息与 coverage_report 既有实现逐字节一致（失败路径测试锁定消息片段）。
+    from/until 的**区间语义**（from >= until）是合法数值内的语义问题，不在此
     拦截——留给各调用点（invalid_phases / 冲突判定跳过）。
     """
     raw = _load_raw(phases_path, "阶段表文件")
@@ -286,12 +305,24 @@ def _load_validated_phases(phases_path: Path) -> list[dict]:
         # 解码失败会**整表变空**（所有 key 显示 permanent/unconfigured），
         # Python 不得静默跳过（否则同一文件两侧对冲突给出相反答案）。
         # float 合法（F1：Swift Double 解码兼容）；bool 是 int 子类先排除（R9）。
+        # Issue #113 审计 R2-F1：非有限 float（Infinity/NaN）与超出 Swift
+        # Double 域（1e400 → inf、任意精度大 int）在 Swift 侧解码失败——
+        # 与类型错误同属结构问题，fail loud 指引根因（拦截前必须修复文件，
+        # 否则报告「已覆盖/冲突」与运行时「整表空」矛盾）。
         for field in ("from", "until"):
             value = phase.get(field)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise CatalogError(
                     f"阶段表文件 phases[{i}] 非法: {field} 缺失或非数字: "
                     f"{value!r}")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise CatalogError(
+                    f"阶段表文件 phases[{i}] 非法: {field} 非有限数值: "
+                    f"{value!r}（Swift Date 解码失败 → 整表变空）")
+            if abs(value) > _DOUBLE_MAX:
+                raise CatalogError(
+                    f"阶段表文件 phases[{i}] 非法: {field} 超出 Swift Double "
+                    f"上限: {value!r}")
         for optional_field in ("name", "sourceURL"):
             value = phase.get(optional_field)
             if value is not None and not isinstance(value, str):
@@ -340,11 +371,12 @@ def find_lifecycle_phase_conflicts(
     availability 显式 .conflict fail-closed，validator 必须 blocking）——
     与 #112 coverage_report 非阻断路径严格分离。结构校验与 coverage_report
     同口径 fail loud（文件缺失/解析失败/schemaVersion != 1/缺 phases/phaseID
-    非 str/name、sourceURL 存在时非 str/itemKeys 非 list 或元素非 str →
-    CatalogError）。区间非法（from >= until 或 from/until 缺失、非 int、bool）
-    的 phase 不算命中——与 Swift phase(forItemKey:at:) 过滤语义及
-    compute_phase_coverage 的 phase_keys 口径一致。多 phase 命中 → 报告全部
-    命中（Python 是数据审计视角，与 Swift 单一确定性选择不同，spec 明确如此）。
+    非 str/name、sourceURL 存在时非 str/itemKeys 非 list 或元素非 str/from、
+    until 非数字、非有限或超出 Swift Double 域 → CatalogError）。数字类型但
+    区间非法（from >= until）的 phase 不算命中——与 Swift phase(forItemKey:at:)
+    过滤语义及 compute_phase_coverage 的 phase_keys 口径一致。多 phase 命中 →
+    报告全部命中（Python 是数据审计视角，与 Swift 单一确定性选择不同，spec
+    明确如此）。
     """
     decl = _load_declarations_from(declarations_path)
     phases = _load_validated_phases(phases_path)

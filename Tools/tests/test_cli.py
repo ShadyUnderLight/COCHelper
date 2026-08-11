@@ -318,6 +318,54 @@ def test_validate_cli_conflict_check_unavailable_does_not_fail(
     assert "conflict check: unavailable" in captured.err, captured.err
 
 
+def test_validate_cli_corrupt_phase_with_real_conflict_fails(
+    full_minimal_apk, tmp_path, monkeypatch, capsys
+):
+    """Issue #113 审计 R2-F3：阶段表**损坏**（含结构非法 phase）与真实冲突
+    共存 → fail-loud（rc=1）——只有文件**缺失**非阻断（版本未 bundled），
+    损坏文件不得静默瘫痪冲突门禁（否则坏 phase 把冲突检查降级 unavailable，
+    真实冲突漏报 fail-open，CI 假绿）。"""
+    import validate_game_catalog as vgc
+    from game_catalog import lifecycle as lifecycle_module
+
+    apk = full_minimal_apk
+    out = tmp_path / "out"
+    _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+          "--output", str(out), "--game-version", "18.400.13"])
+    import hashlib
+    import json
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+    decl = tmp_path / "lifecycle_declarations.json"
+    decl.write_text(json.dumps({"schemaVersion": 1, "items": {
+        "buildings:1000001": {"lifecycle": "permanent"}}}, ensure_ascii=False),
+        encoding="utf-8")
+    phases = tmp_path / "seasonal_phases.json"
+    phases.write_text(json.dumps({"schemaVersion": 1, "phases": [
+        # 坏 phase：from 是字符串 → F2 结构校验 fail-loud
+        {"phaseID": "bad", "from": "2026-04-01", "until": 2,
+         "itemKeys": ["buildings:1000001"]},
+        # 真实冲突 phase：合法区间命中 permanent key
+        {"phaseID": "p1", "from": 1, "until": 2,
+         "itemKeys": ["buildings:1000001"]},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", decl)
+    monkeypatch.setattr(lifecycle_module, "_phases_path", lambda version: phases)
+
+    rc = vgc.main(["--catalog", str(out)])
+    assert rc == 1, "阶段表损坏不得把冲突检查降级为 unavailable（fail-open 回归）"
+    captured = capsys.readouterr()
+    assert "from 缺失或非数字" in captured.err, captured.err
+    assert "conflict check: unavailable" not in captured.err
+
+
 def test_validate_cli_validate_and_conflict_errors_coexist(
     full_minimal_apk, tmp_path, monkeypatch, capsys
 ):

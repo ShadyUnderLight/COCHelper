@@ -68,21 +68,25 @@ def _collect_conflict_errors(catalog_dir: Path) -> list[str]:
     coverage_report/_emit_coverage_report 非阻断分支（#112 评审红线保持——
     对比：coverage 失败只打印 unavailable 且退出码不变）。版本绑定与
     _emit_coverage_report 同模式（_catalog_game_version 回退默认版本）。
-    Issue #113 审计 F3：**基础设施故障**（声明/阶段表文件缺失、解析失败等
-    CatalogError）→ 非阻断——打印 `conflict check: unavailable` 后返回空列表，
-    与 #112 coverage 非阻断先例一致（文件缺失不是数据冲突；多版本目录在
-    阶段表补录前不得硬断校验管线）。只有**数据冲突本身**才 blocking。
+    Issue #113 审计 F3 + R2-F3：**只有阶段表文件缺失**（版本未 bundled /
+    partial checkout，多版本目录在阶段表补录前不得硬断管线）→ 非阻断，打印
+    `conflict check: unavailable` 后返回空列表（与 #112 coverage 非阻断先例
+    一致）；**其余 CatalogError**（解析失败/结构校验/schema 错误/声明文件
+    缺失）→ 传播给 main 的 except → 退出码 1（fail-loud——损坏文件不得
+    静默瘫痪冲突门禁，否则坏 phase + 真实冲突共存时漏报）。
     路径从 lifecycle_module 运行期读取（测试可 monkeypatch 注入 tmp 数据）。
     """
     version = _catalog_game_version(catalog_dir)
     phases_path = lifecycle_module.phases_path_for(version)
-    try:
-        conflicts = lifecycle_module.find_lifecycle_phase_conflicts(
-            declarations_path=lifecycle_module.DECLARATIONS_PATH,
-            phases_path=phases_path)
-    except CatalogError as exc:
-        print(f"conflict check: unavailable: {exc}", file=sys.stderr)
+    if not phases_path.exists():
+        # 只有「文件不存在」是基础设施缺失（非数据错误）——镜像 coverage
+        # 非阻断先例；文件存在但损坏（解析/结构/schema）必须 fail-loud。
+        print(f"conflict check: unavailable: 阶段表文件缺失: {phases_path}",
+              file=sys.stderr)
         return []
+    conflicts = lifecycle_module.find_lifecycle_phase_conflicts(
+        declarations_path=lifecycle_module.DECLARATIONS_PATH,
+        phases_path=phases_path)
     # Issue #113 审计 F6：按 key 分组，每条 error 列出该 key 命中的全部 phase
     #（phases=[p1(名称), p2(无)]）——Python 数据审计视角报告全部，维护者修复
     # 时能看到完整候选集（Swift 运行时取单一确定性选择）。
@@ -111,7 +115,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         errors = validate_catalog(args.catalog)
         # Issue #113：冲突收集与 validate_catalog 同一 try 块——CatalogError
-        # （声明/阶段表文件异常）同样走 except → error: + 退出码 1。
+        # （阶段表文件损坏/声明文件缺失等）走 except → 先打印已收集 errors
+        # 再打印异常 → 退出码 1（阶段表文件**缺失**已在 _collect_conflict_errors
+        # 内部降级为非阻断 unavailable，见其 docstring）。
         errors += _collect_conflict_errors(args.catalog)
     except CatalogError as exc:
         # 评审修复：异常分支不得吞掉已收集的 validate errors——先逐条打印

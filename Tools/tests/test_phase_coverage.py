@@ -132,6 +132,19 @@ def test_coverage_report_summary():
         ({"schemaVersion": 1, "phases": [{"phaseID": "x", "sourceURL": ["u"],
                                           "from": 1, "until": 2,
                                           "itemKeys": ["a:1"]}]}, "sourceURL"),
+        # Issue #113 审计 F2（R2）：from/until 类型结构校验同样作用于
+        # coverage_report（共享 _load_validated_phases）——非数字 → fail loud
+        #（此前 string from 被静默计入 invalid_phases，报告与 Swift 整表空矛盾）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": "1", "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "from 缺失或非数字"),
+        # Issue #113 审计 R2-F1：非有限/超 Double 域数值 → fail loud（Swift
+        # Date 解码失败整表空，报告不得显示已覆盖）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                          "until": float("inf"),
+                                          "itemKeys": ["a:1"]}]}, "until 非有限数值"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                          "until": 10**400,
+                                          "itemKeys": ["a:1"]}]}, "until 超出 Swift Double"),
     ],
 )
 def test_coverage_report_failure_paths(monkeypatch, tmp_path, content, message_fragment):
@@ -383,11 +396,12 @@ def _phases_malformed_strategy(draw):
 
 def _valid_interval(phase: dict) -> bool:
     """oracle：与 compute_phase_coverage 的区间合法判定一致（from < until，
-    int 且排除 bool）。"""
+    int|float 且排除 bool——Issue #113 审计 F1：float 时间戳合法（Swift
+    Double 解码兼容），与产品 _valid_interval 同步）。"""
     frm = phase.get("from")
     until = phase.get("until")
-    return (isinstance(frm, int) and not isinstance(frm, bool)
-            and isinstance(until, int) and not isinstance(until, bool)
+    return (isinstance(frm, (int, float)) and not isinstance(frm, bool)
+            and isinstance(until, (int, float)) and not isinstance(until, bool)
             and frm < until)
 
 

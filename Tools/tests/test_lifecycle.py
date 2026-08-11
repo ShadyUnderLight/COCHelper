@@ -918,6 +918,18 @@ def test_find_lifecycle_phase_conflicts_multiple_phases_all_reported(tmp_path):
                                           "itemKeys": ["a:1"]}]}, "from 缺失或非数字"),
         ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": True, "until": 2,
                                           "itemKeys": ["a:1"]}]}, "from 缺失或非数字"),
+        # Issue #113 审计 R2-F1：非有限 float（Infinity/NaN）与超出 Swift
+        # Double 域（1e400 → inf、任意精度大 int）→ fail loud——Swift Date
+        # 解码失败整表空，Python 不得当合法命中（两侧漂移）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                          "until": float("inf"),
+                                          "itemKeys": ["a:1"]}]}, "until 非有限数值"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": float("nan"),
+                                          "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "from 非有限数值"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                          "until": 10**400,
+                                          "itemKeys": ["a:1"]}]}, "until 超出 Swift Double"),
     ],
 )
 def test_find_lifecycle_phase_conflicts_phases_failure_paths(

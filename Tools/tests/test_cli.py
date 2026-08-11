@@ -77,6 +77,100 @@ def test_validate_cli_success(full_minimal_apk, tmp_path):
     assert "verdict: OK" in r.stdout
 
 
+def test_validate_cli_emits_coverage_report(full_minimal_apk, tmp_path):
+    """Issue #112：coverage 报告接入 validator CLI（非阻断诊断输出）。
+
+    validate_game_catalog.py 是维护者的正常校验入口，必须能在校验流程中看到
+    seasonalCandidate ↔ phase 覆盖统计（评审 P1：coverage_report 此前只有函数
+    定义和单测调用，无 CLI 消费者）。断言输出段存在且数字为真实数据值；退出码
+    仍由目录校验决定（非阻断）。"""
+    apk = full_minimal_apk
+    out = tmp_path / "out"
+    _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+          "--output", str(out), "--game-version", "18.400.13"])
+    import hashlib
+    import json
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    r = _run([str(TOOLS / "validate_game_catalog.py"), "--catalog", str(out)])
+    assert r.returncode == 0, r.stderr
+    assert "verdict: OK" in r.stdout
+    assert "coverage:" in r.stdout, "validator 必须输出 coverage 报告段"
+    assert "seasonalCandidates=71" in r.stdout
+    assert "required=4" in r.stdout and "unknown=67" in r.stdout
+    assert "requiredMissingPhase=0" in r.stdout
+
+
+def test_validate_cli_coverage_unavailable_does_not_fail(full_minimal_apk, tmp_path, monkeypatch):
+    """Issue #112 评审 P1：coverage 报告是非阻断诊断——声明/阶段表文件缺失
+    （coverage_report 抛 CatalogError）时 validator 必须仍然成功（verdict OK、
+    退出码 0），只输出 unavailable 提示，不把诊断文本混入 errors。"""
+    import validate_game_catalog as vgc
+    from game_catalog.errors import CatalogError
+
+    apk = full_minimal_apk
+    out = tmp_path / "out"
+    _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+          "--output", str(out), "--game-version", "18.400.13"])
+    import hashlib
+    import json
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    monkeypatch.setattr(vgc, "coverage_report",
+                        lambda version=None: (_ for _ in ()).throw(CatalogError("声明文件缺失: /nope")))
+    rc = vgc.main(["--catalog", str(out)])
+    assert rc == 0, "coverage 报告失败不得改变 validator 退出码"
+
+
+def test_validate_cli_coverage_binds_catalog_game_version(full_minimal_apk, tmp_path, monkeypatch):
+    """评审 follow-up：coverage 报告必须绑定 --catalog 的 manifest.gameVersion
+    （而非固定 18.400.13）——_emit_coverage_report 从 manifest 读 gameVersion
+    传给 coverage_report(version=...)。"""
+    import validate_game_catalog as vgc
+
+    apk = full_minimal_apk
+    out = tmp_path / "out"
+    _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+          "--output", str(out), "--game-version", "18.400.13"])
+    import hashlib
+    import json
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+    seen: list[str | None] = []
+
+    def fake_coverage_report(version=None):
+        seen.append(version)
+        return {"seasonal_candidates": 0, "required": 0, "unknown": 0,
+                "required_with_phase": 0, "required_missing_phase": 0,
+                "phase_keys": 0, "phase_keys_declared": 0,
+                "phase_keys_not_declared": 0, "invalid_phases": 0}
+
+    monkeypatch.setattr(vgc, "coverage_report", fake_coverage_report)
+    rc = vgc.main(["--catalog", str(out)])
+    assert rc == 0, "validator 应通过"
+    assert seen == ["18.400.13"], \
+        f"必须从 manifest.gameVersion 绑定版本，实际传入: {seen}"
+
+
 def test_validate_cli_bad_dir_fails(full_minimal_apk, tmp_path):
     r = _run([str(TOOLS / "validate_game_catalog.py"), "--catalog", str(tmp_path / "empty")])
     assert r.returncode == 1

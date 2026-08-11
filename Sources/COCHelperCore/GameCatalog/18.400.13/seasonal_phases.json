@@ -21,6 +21,16 @@
         "buildings:102000026"
       ],
       "sourceURL": "https://supercell.com/en/games/clashofclans/blog/news/its-the-sound-of-clash/"
+    },
+    {
+      "phaseID": "sound-of-clash-medal-event-2026-04",
+      "name": "Sound of Clash Medal Event",
+      "from": 797328000,
+      "until": 799142400,
+      "itemKeys": [
+        "units:4000072"
+      ],
+      "sourceURL": "https://supercell.com/en/games/clashofclans/blog/news/sound-of-clash-medal-event-is-here/"
     }
   ]
 }

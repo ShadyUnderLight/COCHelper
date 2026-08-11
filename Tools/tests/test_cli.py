@@ -216,7 +216,7 @@ def test_validate_cli_lifecycle_phase_conflict_fails(full_minimal_apk, tmp_path,
     captured = capsys.readouterr()
     assert "verdict: FAIL" in captured.out
     assert "buildings:1000001" in captured.err, captured.err
-    assert "phases=[p1(阶段一)]" in captured.err, captured.err
+    assert "phaseID=p1 phaseName=阶段一" in captured.err, captured.err
     assert str(decl) in captured.err, "error 必须携带声明文件路径 provenance"
     assert str(phases) in captured.err, "error 必须携带阶段文件路径 provenance"
     assert "https://supercell.example/phase" in captured.err, \
@@ -226,9 +226,10 @@ def test_validate_cli_lifecycle_phase_conflict_fails(full_minimal_apk, tmp_path,
 def test_validate_cli_multiple_phase_conflicts_reported(
     full_minimal_apk, tmp_path, monkeypatch, capsys
 ):
-    """Issue #113 审计 F6：permanent key 命中多个 phase → error 消息列出全部
-    phaseID（phases=[...]），维护者无需逐个猜测（Python 数据审计视角报告全部，
-    Swift 运行时取单一确定性选择——两侧都可见完整候选集）。"""
+    """Issue #113 审计 F6 + 外部评审 P2：permanent key 命中多个 phase → 每个
+    (key, phaseID) 单独一条 error（全部报告，Python 数据审计视角；Swift 运行时
+    取单一确定性选择——两侧都可见完整候选集），且每条 error 自带**自己的**
+    sourceURL——不同 phase 可能来自不同官方公告，不得只输出第一个的来源。"""
     import validate_game_catalog as vgc
     from game_catalog import lifecycle as lifecycle_module
 
@@ -254,9 +255,9 @@ def test_validate_cli_multiple_phase_conflicts_reported(
     phases = tmp_path / "seasonal_phases.json"
     phases.write_text(json.dumps({"schemaVersion": 1, "phases": [
         {"phaseID": "p1", "name": "阶段一", "from": 1, "until": 2,
-         "itemKeys": ["buildings:1000001"]},
+         "itemKeys": ["buildings:1000001"], "sourceURL": "https://u1"},
         {"phaseID": "p2", "name": None, "from": 3, "until": 4,
-         "itemKeys": ["buildings:1000001"]},
+         "itemKeys": ["buildings:1000001"], "sourceURL": "https://u2"},
     ]}, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", decl)
     monkeypatch.setattr(lifecycle_module, "_phases_path", lambda version: phases)
@@ -264,9 +265,14 @@ def test_validate_cli_multiple_phase_conflicts_reported(
     rc = vgc.main(["--catalog", str(out)])
     assert rc == 1
     captured = capsys.readouterr()
-    assert "phases=[p1(阶段一), p2(无)]" in captured.err, captured.err
     assert str(decl) in captured.err
     assert str(phases) in captured.err
+    # 外部评审 P2：per-entry 格式——每条 error 必须自带 phaseID 与**自己的**
+    # sourceURL（p1→u1、p2→u2 不得丢失 p2 的来源）
+    assert "phaseID=p1 phaseName=阶段一" in captured.err, captured.err
+    assert "phaseID=p2 phaseName=无" in captured.err, captured.err
+    assert "来源=https://u1" in captured.err, "p1 的来源必须保留"
+    assert "来源=https://u2" in captured.err, "p2 的来源不得被 p1 覆盖（P2 诊断完整性）"
 
 
 def test_validate_cli_conflict_check_unavailable_does_not_fail(

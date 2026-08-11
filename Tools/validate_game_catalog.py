@@ -95,22 +95,18 @@ def _collect_conflict_errors(catalog_dir: Path) -> list[str]:
     conflicts = lifecycle_module.find_lifecycle_phase_conflicts(
         declarations_path=lifecycle_module.DECLARATIONS_PATH,
         phases_path=phases_path)
-    # Issue #113 审计 F6：按 key 分组，每条 error 列出该 key 命中的全部 phase
-    #（phases=[p1(名称), p2(无)]）——Python 数据审计视角报告全部，维护者修复
-    # 时能看到完整候选集（Swift 运行时取单一确定性选择）。
-    by_key: dict[str, list[dict]] = {}
-    for c in conflicts:
-        by_key.setdefault(c["key"], []).append(c)
-    errors: list[str] = []
-    for key, items in by_key.items():
-        phases_part = ", ".join(
-            f"{c['phaseID']}({c.get('phaseName') or '无'})" for c in items)
-        first = items[0]
-        errors.append(
-            f"lifecycle 声明永久内容与官方阶段表冲突: {key}: phases=[{phases_part}] "
-            f"声明={first['declarationsPath']} "
-            f"阶段={first['phasesPath']} 来源={first.get('sourceURL') or '无'}")
-    return errors
+    # Issue #113 审计 F6 + 外部评审 P2：每个 (key, phaseID) 单独一条 error——
+    # 全部命中 phase 都报告（Python 数据审计视角，Swift 运行时取单一确定性
+    # 选择），且每条 error 自带**自己的** sourceURL：不同 phase 可能来自
+    # 不同官方公告，分组后只输出首条来源会丢失其余来源（P2 诊断完整性）。
+    # 每条 error 完全自包含（key/phaseID/phaseName/双路径/sourceURL）。
+    return [
+        f"lifecycle 声明永久内容与官方阶段表冲突: {c['key']}: "
+        f"phaseID={c['phaseID']} phaseName={c.get('phaseName') or '无'} "
+        f"声明={c['declarationsPath']} "
+        f"阶段={c['phasesPath']} 来源={c.get('sourceURL') or '无'}"
+        for c in conflicts
+    ]
 
 
 def _emit_audit_report() -> None:

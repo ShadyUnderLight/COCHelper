@@ -380,4 +380,27 @@ final class ClanDisplayFormatTests: XCTestCase {
     func testPercentNegativeNonInteger() {
         XCTAssertEqual(ClanDisplayFormat.percent(-0.5), "-0.5")
     }
+
+    /// 公开 API 防御（nit）：NaN/±Infinity 不得 trap。NaN 与任何值比较均
+    /// 为 false，`value < Double(Int.max)` guard 天然放行走 %.1f 格式分支；
+    /// 输出与直接 String(format:) 逐字一致（实测 en_US_POSIX 下为
+    /// "NaN"/"INF"/"-INF"，拼写随平台 ICU 行为，本测试只钉格式分支语义，
+    /// 并断言包含非有限标记）。
+    func testPercentNaNAndInfinityNoTrap() {
+        let nonFinite: [(value: Double, marker: String)] = [
+            (.nan, "NaN"),
+            (.infinity, "INF"),
+            (-.infinity, "-INF"),
+        ]
+        for (value, marker) in nonFinite {
+            let result = ClanDisplayFormat.percent(value)
+            XCTAssertEqual(
+                result,
+                String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                       arguments: [value]),
+                "\(value) 必须走 %.1f 格式分支（不 trap、不截断）"
+            )
+            XCTAssertTrue(result.contains(marker), "输出必须包含非有限标记: \(result)")
+        }
+    }
 }

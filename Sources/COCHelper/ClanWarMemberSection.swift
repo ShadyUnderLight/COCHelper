@@ -163,6 +163,9 @@ struct ClanWarMemberSection: View {
                 Text(attackProgressText(row))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    // 长数值（malformed 超长攻击数）单行缩放，不得换行撑高行
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .frame(width: Self.attackProgressWidth)
                 starsCell(row)
                     .frame(width: Self.starsWidth)
@@ -251,10 +254,13 @@ struct ClanWarMemberSection: View {
     }
 
     /// 状态列（displayGroup 映射）：颜色只表状态——待处理警示 / 完成成功 / 未知中性。
+    /// 长文案（malformed 超长值）单行缩放，不得换行撑高行破坏表头对齐。
     private func statusCell(_ row: ClanWarMemberRow) -> some View {
         Text(statusText(row))
             .font(.caption)
             .foregroundStyle(statusColor(row))
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
     }
 
     private func statusText(_ row: ClanWarMemberRow) -> String {
@@ -270,14 +276,14 @@ struct ClanWarMemberSection: View {
         }
     }
 
-    /// 状态列颜色：待处理（未出手/剩余）橙色警示；完成绿色；备战期等待开战
-    /// 是正常状态（与 chip 中性语义一致）→ 与数据未知组同归 secondary。
-    /// warEnded 阶段同样分组但**不突出**（#125 Core 契约）→ 未出手/剩余
-    /// 与 chip 逻辑一致降为 secondary。
+    /// 状态列颜色：待处理（未出手/剩余）橙色警示；完成绿色；未知中性。
+    /// 备战期等待开战与 warEnded 结算都是正常状态（#125 Core 契约）→
+    /// 未出手/剩余与 chip 的 isPendingWarning 逻辑一致降为 secondary
+    /// （备战期契约内数据不应有 partial，属防御路径一致性）。
     private func statusColor(_ row: ClanWarMemberRow) -> Color {
         switch ClanWarDisplayProjection.displayGroup(phase: phase, action: row.action) {
         case .notAttacked, .remaining:
-            return phase == .warEnded ? .secondary : .orange
+            return (phase == .warEnded || phase == .preparation) ? .secondary : .orange
         case .complete: return .green
         case .awaitingWar, .overQuota, .quotaUnknown, .unknown: return .secondary
         }

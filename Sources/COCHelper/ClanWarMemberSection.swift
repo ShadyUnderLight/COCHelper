@@ -14,6 +14,8 @@ struct ClanWarMemberSection: View {
     let counts: ClanWarFilterCounts
     /// 当前筛选桶（主视图持有）。
     @Binding var selectedFilter: ClanWarMemberFilter
+    /// 搜索词（主视图持有，跨 side/村庄切换保留；纯显示过滤，不影响计数）。
+    let searchText: String
 
     /// 已展开攻击明细的成员 sourceIndex（单方内唯一；nil = 无展开行）。
     @State private var expandedIndex: Int?
@@ -66,10 +68,12 @@ struct ClanWarMemberSection: View {
     }
 
     /// 胶囊 chip 按钮：选中 cocAccent + 白字；未选中 cocElevated + secondary 字。
-    /// 待处理 chip 仅非备战期用橙色强调（备战期与其余 chip 同色）。
+    /// 待处理 chip 仅 inWar 阶段用橙色强调（备战期 0 次攻击与 warEnded 结算
+    /// 都是正常状态——#125 Core 契约"warEnded 时同样分组，只是样式上不突出"）。
     private func chipButton(_ item: ChipItem) -> some View {
         let isSelected = selectedFilter == item.filter
-        let isPendingWarning = item.filter == .pending && phase != .preparation
+        let isPendingWarning = item.filter == .pending
+            && phase != .preparation && phase != .warEnded
         return Button {
             selectedFilter = item.filter
         } label: {
@@ -123,8 +127,11 @@ struct ClanWarMemberSection: View {
     }
 
     /// 当前筛选桶下的可见行（投影 `filteredRows`，UI 不重新统计）。
+    /// 搜索是纯显示过滤：先按桶过滤、再按搜索词过滤（顺序与语义无关）；
+    /// 计数（chips）不受搜索影响——计数反映桶归属。
     private var visibleRows: [ClanWarMemberRow] {
-        ClanWarDisplayProjection.filteredRows(rows, filter: selectedFilter, phase: phase)
+        let filtered = ClanWarDisplayProjection.filteredRows(rows, filter: selectedFilter, phase: phase)
+        return ClanWarDisplayProjection.rows(filtered, matchingSearch: searchText)
     }
 
     /// 成员数据行：整行 Button 切换展开；列宽固定，成员列弹性截断。
@@ -151,6 +158,8 @@ struct ClanWarMemberSection: View {
                 Text(row.defenseAttacks.map { "防\($0)" } ?? "—")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .frame(width: Self.defenseWidth)
                 statusCell(row)
                     .frame(width: Self.statusWidth, alignment: .trailing)
@@ -169,6 +178,8 @@ struct ClanWarMemberSection: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
+                        // 装饰性图标：语义由整行 Button 承载，VoiceOver 跳过
+                        .accessibilityHidden(true)
                 } else {
                     Color.clear
                 }
@@ -199,6 +210,7 @@ struct ClanWarMemberSection: View {
     }
 
     /// 星数文案（caption2）：已知星数 + 缺失提示；nil → "—"；文本不重复 emoji。
+    /// 长数值（malformed 超大星数）单行缩放，不得换行挤动行高。
     private func starsCell(_ row: ClanWarMemberRow) -> some View {
         Group {
             if let stars = row.stars {
@@ -214,6 +226,8 @@ struct ClanWarMemberSection: View {
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
     }
 
     /// 状态列（displayGroup 映射）：颜色只表状态——待处理警示 / 完成成功 / 未知中性。
@@ -238,9 +252,12 @@ struct ClanWarMemberSection: View {
 
     /// 状态列颜色：待处理（未出手/剩余）橙色警示；完成绿色；备战期等待开战
     /// 是正常状态（与 chip 中性语义一致）→ 与数据未知组同归 secondary。
+    /// warEnded 阶段同样分组但**不突出**（#125 Core 契约）→ 未出手/剩余
+    /// 与 chip 逻辑一致降为 secondary。
     private func statusColor(_ row: ClanWarMemberRow) -> Color {
         switch ClanWarDisplayProjection.displayGroup(phase: phase, action: row.action) {
-        case .notAttacked, .remaining: return .orange
+        case .notAttacked, .remaining:
+            return phase == .warEnded ? .secondary : .orange
         case .complete: return .green
         case .awaitingWar, .overQuota, .quotaUnknown, .unknown: return .secondary
         }

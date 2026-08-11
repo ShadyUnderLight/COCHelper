@@ -337,4 +337,24 @@ final class ClanDisplayFormatTests: XCTestCase {
         // 修复实证：percent 恒为点号
         XCTAssertEqual(ClanDisplayFormat.percent(12.5), "12.5")
     }
+
+    /// 公开 API 防御（M1）：超过 Int 可表示范围的整数不得 trap——
+    /// `Double(Int.max)` 等于 2^63，`Int()` 转换即 trap；必须走
+    /// String(format:) 分支。现有调用点（摧毁率 ∈ [0,100]）不可达，
+    /// 但公开函数应对契约外输入防御。
+    func testPercentHugeIntegerValueNoTrap() {
+        // 2^63：truncatingRemainder == 0 且超出 Int.max → 走 %.1f 分支。
+        // 与直接 String(format:) 输出逐字一致（不因 Int 转换 trap 或截断）。
+        // 注意：%.1f 在 2^63 量级只保留 ~16 位有效十进制数字（IEEE754 十进制
+        // 转换的正常行为），本测试只钉「格式分支语义」，不钉具体数字。
+        let huge = Double(Int.max)
+        let expected = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                              arguments: [huge])
+        XCTAssertEqual(ClanDisplayFormat.percent(huge), expected)
+        XCTAssertEqual(ClanDisplayFormat.percent(1e30),
+                       String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                              arguments: [1e30]))
+        // 负方向：-2^63 恰为 Int.min（可表示），整数分支照常工作
+        XCTAssertEqual(ClanDisplayFormat.percent(Double(Int.min)), "-9223372036854775808")
+    }
 }

@@ -31,6 +31,8 @@ struct ClanWarCardView: View {
     @State private var sortOrder: ClanWarSortOrder = .actionPriority
     /// 当前筛选桶（chips 选中态，由 ClanWarMemberSection 双向绑定）。
     @State private var selectedFilter: ClanWarMemberFilter = .all
+    /// 成员搜索词（与 selectedFilter 同级持有：跨 side/村庄切换保留筛选/搜索上下文）。
+    @State private var searchText = ""
 
     private enum Side: CaseIterable {
         case clan, opponent
@@ -318,15 +320,23 @@ struct ClanWarCardView: View {
             if let rows = side?.members {
                 let sortedRows = ClanWarDisplayProjection.reorder(rows, order: sortOrder)
                 let counts = ClanWarDisplayProjection.chipCounts(rows: sortedRows, phase: projection.phase)
-                // 标题由上方标题行承担；.id(selectedSide) 重置展开态
-                // （expandedIndex 是组件内 @State，跨 side 复用会泄漏展开行）
+                // 搜索框：只过滤显示行（section 内 `rows(_:matchingSearch:)`），
+                // 计数不受搜索影响；跨 side/村庄切换保留搜索词（主视图持有）。
+                TextField("搜索成员名称或 tag", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .labelsHidden()
+                // 标题由上方标题行承担；.id(clanTag + side) 复合重置展开态：
+                // 村庄/部落切换时整个 section 重建（expandedIndex 清零），
+                // 同部落内 side 切换与快照刷新保留展开态（可接受的交互）。
                 ClanWarMemberSection(
                     rows: sortedRows,
                     phase: projection.phase,
                     counts: counts,
-                    selectedFilter: $selectedFilter
+                    selectedFilter: $selectedFilter,
+                    searchText: searchText
                 )
-                .id(selectedSide)
+                .id("\(clanTag ?? "")-\(selectedSide)")
             } else {
                 // 官方未返回成员数组（与 [] 区分：空数组走空表，不显示此提示）
                 Text("成员数据未返回")

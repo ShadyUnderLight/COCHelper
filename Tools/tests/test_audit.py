@@ -1,7 +1,7 @@
 """Issue #109：声明层 auditStatus（待人工复核清单）测试。测试是契约。
 
-- 种子快照：当前 8 条已知待核实条目标 pending（tripwire——外部核实完成后
-  逐条改 verified + note，并同步更新本清单）；
+- 种子快照：8 条已核实条目（Issue #109 1/2 条闭环）标 verified + 证据 note，
+  pending 为空（tripwire——核实状态变化时同步更新 VERIFIED_AUDIT_KEYS）；
 - load_audit_status 失败路径全部 fail loud（值非法 / verified 缺 note）；
 - compute_audit_report 纯函数 hypothesis property：分类守恒 + 意外值容忍 +
   排序确定性；
@@ -305,7 +305,7 @@ def test_validate_rejects_audit_status_on_seasonal(monkeypatch, tmp_path):
 
 
 def test_validate_accepts_wellformed_audit_status():
-    """P2 正向：真实声明文件（8 条合法 pending 种子）→ validate 不报
+    """P2 正向：真实声明文件（8 条合法 verified 条目）→ validate 不报
     auditStatus 错误（基线对照）。"""
     import game_catalog.validate as validate_module
     errors = validate_module.validate_catalog(

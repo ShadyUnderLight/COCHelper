@@ -48,7 +48,7 @@ struct BuildingGroupCard: View {
             instanceRow(instance)
             Divider()
             // 缩进与头部图标列对齐（24pt 图标 + 10pt spacing）。
-            BuildingUpgradeStepGrid(steps: instance.steps)
+            BuildingUpgradeStepGrid(steps: instance.steps, item: instance.item)
                 .padding(.leading, 34)
                 .padding(.vertical, 8)
         }

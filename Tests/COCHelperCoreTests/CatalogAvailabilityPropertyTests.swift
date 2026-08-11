@@ -69,18 +69,35 @@ final class CatalogAvailabilityPropertyTests: XCTestCase {
 
     // MARK: - 性质
 
-    /// 性质 1：permanent 声明恒 .permanent——任意表/任意日期（500 组随机输入）。
-    func testPropertyPermanentIsInvariant() {
+    /// 性质 1（Issue #113 改性质）：permanent 与阶段表冲突契约——permanent + 无 phase
+    /// → .permanent；permanent + phase 命中 → .conflict（fail-closed，不静默选边）。
+    /// 用 `table.phase(forItemKey:at:)` 预判命中与否，断言与映射表逐组一致（500 组随机输入）；
+    /// hitCount > 0 断言防 randomTable 退化导致 conflict 路径空过。
+    func testPropertyPermanentConflictContract() {
         var rng = SeededRNG(seed: 0x9E37_79B9_7F4A_7C15)
+        var conflictHitCount = 0
         for _ in 0..<500 {
             let table = randomTable(&rng)
             let key = randomKey(&rng)
             let date = randomDate(&rng)
-            XCTAssertEqual(
-                table.availability(forItemKey: key, lifecycle: .permanent, at: date),
-                .permanent,
-                "permanent 声明不得被任何阶段表/日期覆盖")
+            let phase = table.phase(forItemKey: key, at: date)
+            let result = table.availability(forItemKey: key, lifecycle: .permanent, at: date)
+            if let phase {
+                conflictHitCount += 1
+                XCTAssertEqual(
+                    result,
+                    .conflict(
+                        phaseID: phase.phaseID, phaseName: phase.name,
+                        lifecycle: .permanent, sourceURL: phase.sourceURL),
+                    "permanent + 阶段命中必须返回带完整诊断的 .conflict（key=\(key)）")
+            } else {
+                XCTAssertEqual(
+                    result, .permanent,
+                    "permanent + 无阶段命中不得降级（key=\(key)）")
+            }
         }
+        XCTAssertGreaterThan(conflictHitCount, 0,
+                             "conflict 路径必须被采样到（防参数漂移导致空过）")
     }
 
     /// 性质 2：纯函数确定性——同输入两次调用结果相等（500 组）。
@@ -98,9 +115,10 @@ final class CatalogAvailabilityPropertyTests: XCTestCase {
         }
     }
 
-    /// 性质 3：结果值域闭——{permanent, seasonal, unconfigured}；
+    /// 性质 3：结果值域闭——{permanent, seasonal, unconfigured, conflict}；
     /// seasonal.status ∈ {notStarted, active, ended}（500 组全随机输入）。
     /// seasonal 命中必须 > 0：key 空间 400 下期望 ~3 次，断言防参数漂移导致空过。
+    /// conflict（Issue #113）与 seasonal 同属阶段命中路径，在生命周期随机宇宙中被采样。
     func testPropertyResultDomain() {
         var rng = SeededRNG(seed: 0x9E37_79B9_7F4A_7C15)
         var seasonalHitCount = 0
@@ -118,6 +136,8 @@ final class CatalogAvailabilityPropertyTests: XCTestCase {
                 XCTAssertTrue(
                     status == .notStarted || status == .active || status == .ended,
                     "非法 seasonal status: \(status)")
+            case .conflict:
+                break
             }
         }
         XCTAssertGreaterThan(seasonalHitCount, 0,
@@ -177,5 +197,33 @@ final class CatalogAvailabilityPropertyTests: XCTestCase {
         }
         XCTAssertGreaterThan(hitCount, 0,
                              "seasonal 路径必须被采样到（防参数漂移导致空过）")
+    }
+
+    /// 性质 6（Issue #113）：conflict 的 phaseID/sourceURL 必须来自该 key 的候选阶段
+    ///（不得引入表外阶段、不得编造来源）——与 `phase(forItemKey:at:)` 确定性选择一致；
+    /// 500 组随机表/随机 key/随机日期。hitCount > 0 断言防参数漂移导致路径空过。
+    func testPropertyConflictPhaseIDComesFromTable() {
+        var rng = SeededRNG(seed: 0x9E37_79B9_7F4A_7C15)
+        var hitCount = 0
+        for _ in 0..<500 {
+            let table = randomTable(&rng)
+            let key = randomKey(&rng)
+            let date = randomDate(&rng)
+            let result = table.availability(forItemKey: key, lifecycle: .permanent, at: date)
+            guard case .conflict(let phaseID, let phaseName, _, let sourceURL) = result else { continue }
+            hitCount += 1
+            let selected = table.phase(forItemKey: key, at: date)
+            XCTAssertNotNil(selected, "conflict 前提是阶段命中（key=\(key)）")
+            if let selected {
+                XCTAssertEqual(phaseID, selected.phaseID,
+                               "conflict phaseID 必须与 phase(forItemKey:at:) 选择一致（key=\(key)）")
+                XCTAssertEqual(phaseName, selected.name,
+                               "conflict phaseName 必须透传命中阶段（key=\(key)）")
+                XCTAssertEqual(sourceURL, selected.sourceURL,
+                               "conflict sourceURL 必须透传命中阶段（key=\(key)）")
+            }
+        }
+        XCTAssertGreaterThan(hitCount, 0,
+                             "conflict 路径必须被采样到（防参数漂移导致空过）")
     }
 }

@@ -528,7 +528,8 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
     }
 
     func testRefreshStatusStale() {
-        let old = Date(timeIntervalSinceNow: -48 * 3600) // 超过 24h staleThreshold
+        // 超过 staleThreshold（24h）即 stale；不硬编码时长，跟随阈值定义
+        let old = Date(timeIntervalSinceNow: -(ClanWarAPIState.staleThreshold + 1))
         XCTAssertEqual(ClanWarDisplayProjection.refreshStatus(of: warState(status: .success,
                                                                            fetchedAt: old)), .stale)
     }

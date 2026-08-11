@@ -117,6 +117,9 @@ public struct ClanWarMemberStars: Hashable, Sendable {
 /// - `sourceIndex` = 成员在官方数组中的原始下标：既是排序的最终平局键
 ///   （保证全序，与 sort 稳定性无关），也是 UI ForEach 的稳定 identity
 ///   （全 optional 输入可能产出完全相同行，不能用 `\.self`）。
+///   **作用域注意**：`sourceIndex` 仅在单参与方内唯一——clan/opponent 双方
+///   的成员行 `id` 会重复（两侧各从 0 计）；UI 若把双方行放进同一 ForEach，
+///   需用复合 id（如 `"clan-\(sourceIndex)"` / `"opponent-\(sourceIndex)"`）。
 /// - `lines` 复用既有 `ClanWarAttackLine`（摧毁率逐次原样保留，永不聚合，
 ///   与 `ClanCombatSummary.warMember` 同一契约）；`attacks == nil` 时与
 ///   `stars` 同步为 nil（与"明确 0 次攻击"的空数组区分）。

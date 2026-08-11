@@ -25,7 +25,12 @@ from .display_categories import (
     apply_display_categories,
 )
 from .errors import CatalogError
-from .lifecycle import LIFECYCLE_VALUES, load_declarations
+from .lifecycle import (
+    AuditStatusError,
+    LIFECYCLE_VALUES,
+    load_audit_status,
+    load_declarations,
+)
 from .model import AssetRef, UpgradeCost, catalog_from_dict
 
 _HEX = frozenset(string.hexdigits)
@@ -169,6 +174,24 @@ def _check_lifecycle_declarations(errors: list[str], items) -> None:
                 errors.append(
                     f"{key}: lifecycle 与声明不一致: "
                     f"目录={item.lifecycle!r} 声明={declared!r}")
+
+
+def _check_audit_status_declarations(errors: list[str]) -> None:
+    """auditStatus 声明内容校验（Issue #109 复审 P2 端到端门禁）。
+
+    与 _check_lifecycle_declarations 同模式但语义更细：auditStatus **内容**
+    非法（未知值 / 非 permanent 携带 / verified 缺证据 note）→ 进 errors
+    （validator fail loud——CLI 的 _emit_audit_report 只做诊断输出，绝不把
+    内容错误降级为 unavailable）；**文件级**错误（缺失/解析失败/schemaVersion）
+    抛的是 CatalogError（AuditStatusError 子类之外），跳过——由
+    _check_lifecycle_declarations 报「lifecycle 声明加载失败」，不双报。
+    """
+    try:
+        load_audit_status()
+    except AuditStatusError as exc:
+        errors.append(f"auditStatus 声明非法: {exc}")
+    except CatalogError:
+        pass  # 文件级错误由 _check_lifecycle_declarations 报
 
 
 def _check_rendered_path(
@@ -604,6 +627,8 @@ def validate_catalog(dir_path: str | Path,
     _check_display_category_registry(errors, catalog.items)
     # ---- lifecycle 声明一致性（Issue #98）----
     _check_lifecycle_declarations(errors, catalog.items)
+    # ---- auditStatus 声明内容（Issue #109：非法值端到端失败）----
+    _check_audit_status_declarations(errors)
 
     # ---- counts 与目录内容重算一致 ----
     counts = counts_for(catalog.items)

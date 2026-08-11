@@ -131,11 +131,14 @@ def compute_phase_coverage(
 ) -> dict[str, int]:
     """统计 seasonalCandidate phaseCoverage 与阶段表的对账（纯函数，可 property 测试）。
 
-    Issue #112。输入：
-    - decl：{key: phaseCoverage}（key = "section:dataID"；值 required/unknown。
-      不做 load 校验——load 由 load_phase_coverage 负责，纯函数不重复校验；
-      意外值按「非 required」处理，不崩溃）；
-    - phases：阶段表 phases 数组（每项含 itemKeys 列表与 from/until 区间）。
+    Issue #112。输入契约（第二轮评审 Fix B）：
+    - decl：**必须是 dict**（{key: phaseCoverage}，key = "section:dataID"；
+      值 required/unknown；来自 load_phase_coverage 输出——实际调用路径不会
+      传 None/非 dict，非 dict 输入不在本函数契约内）。不做 load 校验——
+      load 由 load_phase_coverage 负责，纯函数不重复校验；意外值按「非
+      required」处理，不崩溃；
+    - phases：阶段表 phases 数组（每项含 itemKeys 列表与 from/until 区间），
+      **容忍畸形**（见下方容忍语义）。
 
     返回结构化统计（全部非负整数，见 test_phase_coverage.py 的不变量契约）：
     - seasonal_candidates：decl 条目总数；
@@ -148,12 +151,14 @@ def compute_phase_coverage(
       phase 的 key 不得计入命中，否则报告与运行时矛盾）；
     - phase_keys_declared / phase_keys_not_declared：阶段 key 在/不在 decl 中
       （守恒：phase_keys == 二者之和；not_declared = 模组等非目录条目 key）；
-    - invalid_phases：from/until 缺失、非 int、或 from >= until 的 phase 数
-      （语义问题，供报告区分；结构问题由 coverage_report fail loud）。
-    容忍语义（红队 Fix 3）：纯函数对任意畸形输入不崩溃、不产生垃圾统计——
-    phase 非 dict → 跳过；itemKeys 非 list → 按 [] 处理（不迭代字符串/int，
-    否则字符串会被逐字符拆成幽灵 key）；from/until 非 int → 该 phase 归
-    invalid_phases。
+    - invalid_phases：dict 形态但 from/until 缺失、非 int、或 from >= until 的
+      phase 数（非 dict 元素跳过不计入；语义问题供报告区分，结构问题由
+      coverage_report fail loud）。
+    容忍语义（红队 Fix 3 + 第二轮 Fix A）：纯函数对任意畸形 phases 输入不崩溃、
+    不产生垃圾统计——phase 非 dict → 跳过；itemKeys 非 list → 按 [] 处理
+    （不迭代字符串/int，否则字符串会被逐字符拆成幽灵 key）；itemKeys 元素
+    非 str → 跳过（不计入 phase_keys / 命中判定）；from/until 非 int → 该
+    phase 归 invalid_phases。
     """
     required_keys = {key for key, value in decl.items() if value == "required"}
     unknown = sum(1 for value in decl.values() if value == "unknown")
@@ -170,7 +175,8 @@ def compute_phase_coverage(
         if (isinstance(frm, int) and not isinstance(frm, bool)
                 and isinstance(until, int) and not isinstance(until, bool)
                 and frm < until):
-            phase_keys.update(item_keys)
+            # Fix A：itemKeys 元素非 str → 跳过（不产生幽灵 key 垃圾统计）
+            phase_keys.update(key for key in item_keys if isinstance(key, str))
         else:
             invalid_phases += 1
     return {
@@ -210,6 +216,13 @@ def coverage_report() -> dict[str, int]:
         if not isinstance(item_keys, list):
             raise CatalogError(
                 f"阶段表文件 phases[{i}] 非法: itemKeys 非 list: {item_keys!r}")
+        # 第二轮 Fix A：元素级校验——itemKeys 元素必须 str；dict/list/int/None
+        # 元素此前要么 TypeError 裸 traceback（[{"a": 1}]）要么静默幽灵 key
+        # 统计（[12345]），一律 fail loud 为干净 CatalogError。
+        for key in item_keys:
+            if not isinstance(key, str):
+                raise CatalogError(
+                    f"阶段表文件 phases[{i}] 非法: itemKeys 元素非 str: {key!r}")
     return compute_phase_coverage(decl, phases)
 
 

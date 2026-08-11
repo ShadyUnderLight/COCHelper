@@ -104,6 +104,17 @@ def test_coverage_report_summary():
         # Fix 3 结构校验：itemKeys 缺失 → CatalogError
         ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2}]},
          "itemKeys"),
+        # Fix A 元素级校验：itemKeys 含 int 元素 → CatalogError（原：静默
+        # 把 int 计入 phase_keys 产生幽灵 key 垃圾统计）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2,
+                                          "itemKeys": [12345]}]}, "itemKeys"),
+        # Fix A 元素级校验：itemKeys 含 dict 元素 → CatalogError（原：
+        # TypeError 裸 traceback 而非 CatalogError，违反 fail loud 契约）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2,
+                                          "itemKeys": [{"a": 1}]}]}, "itemKeys"),
+        # Fix A 元素级校验：itemKeys 含 None 元素 → CatalogError
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2,
+                                          "itemKeys": [None]}]}, "itemKeys"),
     ],
 )
 def test_coverage_report_failure_paths(monkeypatch, tmp_path, content, message_fragment):
@@ -171,6 +182,20 @@ def test_compute_phase_coverage_skips_invalid_interval_phases():
     assert report["phase_keys"] == 1  # 仅合法 phase 的 key
     assert report["required_with_phase"] == 1  # 仅合法命中
     assert report["required_missing_phase"] == 0
+
+
+def test_compute_phase_coverage_skips_non_str_itemkey_elements():
+    """第二轮 Fix A：itemKeys 混合 [str, int, None] 元素 → 只统计 str 元素
+    （非 str 元素跳过，不产生幽灵 key 垃圾统计；真实数据入口 coverage_report
+    层 fail loud，纯函数层是防御性容忍）。"""
+    decl = {"buildings:103000008": "required", "units:9999999": "unknown"}
+    phases = [{"phaseID": "x", "from": 1, "until": 2,
+               "itemKeys": ["buildings:103000008", 12345, None]}]
+    report = compute_phase_coverage(decl, phases)
+    assert report["phase_keys"] == 1
+    assert report["required_with_phase"] == 1
+    assert report["required_missing_phase"] == 0
+    assert report["invalid_phases"] == 0
 
 
 # ---- hypothesis property：纯函数分类守恒不变量 ----
@@ -250,12 +275,13 @@ def test_compute_phase_coverage_tolerates_unexpected_values(decl, phases):
 
 @st.composite
 def _phases_malformed_strategy(draw):
-    """随机畸形 phases 数组（Fix 3）：合法 dict 与 非 dict 元素、itemKeys 为
-    list/字符串/int/None、缺键混合——纯函数必须完全容忍。"""
+    """随机畸形 phases 数组（Fix 3 + 第二轮 Fix A）：合法 dict 与 非 dict 元素、
+    itemKeys 为 list/字符串/int/None、itemKeys 元素级畸形（str/int/dict/list/
+    None 混合）、缺键——纯函数必须完全容忍。"""
     count = draw(st.integers(min_value=0, max_value=4))
     phases = []
     for i in range(count):
-        kind = draw(st.integers(min_value=0, max_value=3))
+        kind = draw(st.integers(min_value=0, max_value=4))
         if kind == 0:  # 合法 dict
             phases.append({
                 "phaseID": f"phase-{i}",
@@ -268,7 +294,7 @@ def _phases_malformed_strategy(draw):
             phases.append(draw(st.one_of(
                 st.integers(min_value=-5, max_value=5),
                 st.text(min_size=0, max_size=5), st.none())))
-        elif kind == 2:  # itemKeys 类型错
+        elif kind == 2:  # itemKeys 类型错（非 list）
             phases.append({
                 "phaseID": f"phase-{i}",
                 "from": draw(st.integers(min_value=0, max_value=10)),
@@ -277,21 +303,58 @@ def _phases_malformed_strategy(draw):
                     _PHASE_KEY_POOL, st.integers(min_value=0, max_value=9),
                     st.none())),
             })
-        else:  # 缺 from/until/itemKeys
+        elif kind == 3:  # 缺 from/until/itemKeys
             phases.append({"phaseID": f"phase-{i}"})
+        else:  # Fix A：itemKeys 元素级畸形（str/int/dict/list/None 混合）
+            phases.append({
+                "phaseID": f"phase-{i}",
+                "from": draw(st.integers(min_value=0, max_value=10)),
+                "until": draw(st.integers(min_value=0, max_value=10)),
+                "itemKeys": draw(st.lists(st.one_of(
+                    _PHASE_KEY_POOL,
+                    st.integers(min_value=0, max_value=9), st.none(),
+                    st.lists(st.integers(min_value=0, max_value=9),
+                             max_size=2),
+                    st.fixed_dictionaries(
+                        {"a": st.integers(min_value=0, max_value=9)}),
+                ), min_size=0, max_size=4)),
+            })
     return phases
+
+
+def _valid_interval(phase: dict) -> bool:
+    """oracle：与 compute_phase_coverage 的区间合法判定一致（from < until，
+    int 且排除 bool）。"""
+    frm = phase.get("from")
+    until = phase.get("until")
+    return (isinstance(frm, int) and not isinstance(frm, bool)
+            and isinstance(until, int) and not isinstance(until, bool)
+            and frm < until)
 
 
 @given(_decl_strategy(), _phases_malformed_strategy())
 def test_compute_phase_coverage_tolerates_malformed_phases(decl, phases):
-    """红队 Fix 3：畸形 phases（非 dict 元素、itemKeys 字符串/int/None、缺键）
-    → 不崩溃、不产生垃圾统计；phase_keys 守恒与 required 守恒仍成立；
-    invalid_phases 非负且不超过 phase 总数（非 dict 元素被跳过不计入）。"""
+    """红队 Fix 3 + 第二轮 Fix A：畸形 phases（非 dict 元素、itemKeys 字符串/
+    int/None、itemKeys 元素级 str/int/dict/list/None 混合、缺键）→ 不崩溃、
+    不产生垃圾统计；phase_keys 守恒与 required 守恒仍成立；oracle 重算
+    phase_keys == 仅合法区间 dict phase 的 str 元素集合大小（元素非 str
+    跳过）；invalid_phases 非负且不超过 phase 总数。"""
     report = compute_phase_coverage(decl, phases)
     assert report["required"] == (
         report["required_with_phase"] + report["required_missing_phase"])
     assert report["phase_keys"] == (
         report["phase_keys_declared"] + report["phase_keys_not_declared"])
+    # oracle：phase_keys 只含「合法区间 dict phase 的 itemKeys str 元素」去重
+    expected = {
+        key
+        for phase in phases
+        if isinstance(phase, dict)
+        and isinstance(phase.get("itemKeys"), list)
+        and _valid_interval(phase)
+        for key in phase["itemKeys"]
+        if isinstance(key, str)
+    }
+    assert report["phase_keys"] == len(expected)
     assert 0 <= report["invalid_phases"] <= len(phases)
     for value in report.values():
         assert isinstance(value, int) and value >= 0

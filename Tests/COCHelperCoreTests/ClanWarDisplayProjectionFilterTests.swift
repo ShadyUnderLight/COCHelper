@@ -57,10 +57,11 @@ final class ClanWarDisplayProjectionFilterTests: XCTestCase {
         status: ClanWarMemberAttackStatus,
         remainingAttacks: Int? = nil,
         mapPosition: Int? = nil,
-        name: String? = nil
+        name: String? = nil,
+        tag: String? = nil
     ) -> ClanWarMemberRow {
         ClanWarMemberRow(
-            sourceIndex: sourceIndex, mapPosition: mapPosition, name: name, tag: nil,
+            sourceIndex: sourceIndex, mapPosition: mapPosition, name: name, tag: tag,
             townhallLevel: nil,
             action: ClanWarMemberAction(status: status, attackCount: nil,
                                         remainingAttacks: remainingAttacks),
@@ -145,6 +146,80 @@ final class ClanWarDisplayProjectionFilterTests: XCTestCase {
         XCTAssertFalse(ClanWarDisplayProjection.matches(complete, filter: .remainingOnce, phase: phase))
         XCTAssertFalse(ClanWarDisplayProjection.matches(complete, filter: .remainingMany, phase: phase))
         XCTAssertFalse(ClanWarDisplayProjection.matches(complete, filter: .unknownData, phase: phase))
+    }
+
+    /// 契约外 malformed 行（`.partial` 但 `remainingAttacks == nil`）：
+    /// `matches(.remainingMany)` 按 `!= 1` 语义返回 true，与 `chipCounts` 的
+    /// else 分支一致。该行为**依赖 #125 Core 契约**（"仅 `.partial` 时
+    /// `remainingAttacks` 非 nil"）——malformed 输入属契约外，本测试只
+    /// 文档化既有行为、防止实现漂移，不要求 Core 对契约外输入特判。
+    func testMatchesRemainingManyMalformedRow() {
+        let malformed = ClanWarMemberRow(
+            sourceIndex: 0, mapPosition: nil, name: nil, tag: nil, townhallLevel: nil,
+            action: ClanWarMemberAction(status: .partial, attackCount: 1, remainingAttacks: nil),
+            stars: nil, lines: nil, defenseAttacks: nil
+        )
+        let phase = ClanWarPhase.inWar
+        XCTAssertTrue(ClanWarDisplayProjection.matches(malformed, filter: .remainingMany, phase: phase))
+        XCTAssertFalse(ClanWarDisplayProjection.matches(malformed, filter: .remainingOnce, phase: phase))
+        // 与 chipCounts 一致：该行计入 remainingMany（remainingOnce 为 0）
+        let counts = ClanWarDisplayProjection.chipCounts(rows: [malformed], phase: phase)
+        XCTAssertEqual(counts.remainingMany, 1)
+        XCTAssertEqual(counts.remainingOnce, 0)
+    }
+
+    // MARK: - 搜索过滤（Issue #126：只匹配名称与 tag）
+
+    func testSearchMatchesNameCaseInsensitive() {
+        let rows = [makeRow(0, status: .complete, name: "Alex")]
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "ALEX").map(\.sourceIndex), [0])
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "ale").map(\.sourceIndex), [0])
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "lEX").map(\.sourceIndex), [0])
+    }
+
+    func testSearchMatchesTagPrefix() {
+        let rows = [makeRow(0, status: .complete, name: "随便", tag: "#ABCDEF")]
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "#ABC").map(\.sourceIndex), [0])
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "abcdef").map(\.sourceIndex), [0])
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "DEF").map(\.sourceIndex), [0])
+    }
+
+    func testSearchEmptyReturnsAll() {
+        let rows = [
+            makeRow(0, status: .complete, name: "Alpha"),
+            makeRow(1, status: .zero, name: "Beta", tag: "#BETA"),
+        ]
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: ""), rows)
+    }
+
+    func testSearchWhitespaceReturnsAll() {
+        let rows = [makeRow(0, status: .complete, name: "Alpha")]
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "   "), rows)
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "\n\t "), rows)
+    }
+
+    /// nil 名称/tag 不参与匹配：nil 名称 + 匹配 tag 时由 tag 命中；
+    /// 名称查询不得因 nil 名称误命中；反之亦然（两方向分开断言）。
+    func testSearchNilNameAndTagNeverMatch() {
+        // 名称 nil、tag 匹配：只有 tag 查询能命中，名称查询不命中
+        let noName = [makeRow(0, status: .complete, name: nil, tag: "#ABC123")]
+        XCTAssertEqual(ClanWarDisplayProjection.rows(noName, matchingSearch: "#ABC").map(\.sourceIndex), [0])
+        XCTAssertTrue(ClanWarDisplayProjection.rows(noName, matchingSearch: "alex").isEmpty)
+        XCTAssertTrue(ClanWarDisplayProjection.rows(noName, matchingSearch: "XYZ").isEmpty)
+        // tag nil、名称匹配：只有名称查询能命中，tag 查询不命中
+        let noTag = [makeRow(0, status: .complete, name: "Alex", tag: nil)]
+        XCTAssertEqual(ClanWarDisplayProjection.rows(noTag, matchingSearch: "ALEX").map(\.sourceIndex), [0])
+        XCTAssertTrue(ClanWarDisplayProjection.rows(noTag, matchingSearch: "#ABC").isEmpty)
+    }
+
+    func testSearchNoMatchReturnsEmpty() {
+        let rows = [
+            makeRow(0, status: .complete, name: "Alpha", tag: "#AAA"),
+            makeRow(1, status: .zero, name: "Beta", tag: "#BBB"),
+        ]
+        XCTAssertTrue(ClanWarDisplayProjection.rows(rows, matchingSearch: "zzz").isEmpty)
+        XCTAssertTrue(ClanWarDisplayProjection.rows(rows, matchingSearch: "#CCC").isEmpty)
+        XCTAssertTrue(ClanWarDisplayProjection.rows(rows, matchingSearch: "阿尔法").isEmpty)
     }
 
     // MARK: - filteredRows
@@ -446,7 +521,7 @@ final class ClanWarDisplayProjectionFilterTests: XCTestCase {
 /// 与 #125 property 测试同一约定）。
 final class ClanWarDisplayProjectionFilterPropertyTests: XCTestCase {
 
-    private static let iterationCount = 200
+    private static let iterationCount = 400
     private static let phases: [ClanWarPhase] = [.preparation, .inWar, .warEnded, .unknown(raw: nil)]
     private static let filters: [ClanWarMemberFilter] = [
         .pending, .notAttacked, .remainingOnce, .remainingMany, .complete, .unknownData,
@@ -518,8 +593,18 @@ final class ClanWarDisplayProjectionFilterPropertyTests: XCTestCase {
 
     func testPropertyFilterCountsSumConserved() {
         var g = FilterSeededGenerator(seed: 0x126)
+        // I1：统计 nil 比例（生成器偏差防再犯）。LCG 低 2 位周期 4 会让
+        // `next() % 4 == 0` 恒真/恒假 → nil 比例 0% 或 100%，此断言直接失败。
+        var totalMembers = 0
+        var nilMapPosition = 0
+        var nilTag = 0
         for _ in 0..<Self.iterationCount {
             let members = randomMemberList(&g)
+            for member in members {
+                totalMembers += 1
+                if member.mapPosition == nil { nilMapPosition += 1 }
+                if member.tag == nil { nilTag += 1 }
+            }
             let quota = randomQuota(&g)
             let phase = Self.phases[g.int(in: 0...(Self.phases.count - 1))]
             let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: quota)
@@ -555,6 +640,18 @@ final class ClanWarDisplayProjectionFilterPropertyTests: XCTestCase {
                          "awaitingWar 计数 == displayGroup(.awaitingWar) 行数",
                          context: "seed=0x126 n=\(rows.count) phase=\(phase)")
         }
+        // I1：nil 出现比例必须在 [15%, 35%]（期望 25%）——生成器真正覆盖 nil
+        // 分支；低 2 位 LCG（`next() % 4 == 0`）周期 4 会产生 0%/100% 极端
+        // 比例，本断言直接失败（防再犯）。
+        assertOrFail(totalMembers > 0, "生成器必须产出成员", context: "seed=0x126")
+        let mapPositionRatio = Double(nilMapPosition) / Double(totalMembers)
+        let tagRatio = Double(nilTag) / Double(totalMembers)
+        assertOrFail(mapPositionRatio >= 0.15 && mapPositionRatio <= 0.35,
+                     "mapPosition nil 比例必须在 [15%, 35%]",
+                     context: "seed=0x126 total=\(totalMembers) nil=\(nilMapPosition) ratio=\(mapPositionRatio)")
+        assertOrFail(tagRatio >= 0.15 && tagRatio <= 0.35,
+                     "tag nil 比例必须在 [15%, 35%]",
+                     context: "seed=0x126 total=\(totalMembers) nil=\(nilTag) ratio=\(tagRatio)")
     }
 
     func testPropertyUnknownNeverCountedAsNotAttacked() {
@@ -658,6 +755,55 @@ final class ClanWarDisplayProjectionFilterPropertyTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - 搜索 property（Issue #126：只匹配名称与 tag，大小写不敏感、包含匹配）
+
+    /// 搜索用字符池：大小写混合 ASCII + 数字 + "#" + 空白（覆盖大小写不敏感、
+    /// tag 前缀、空/纯空白查询；"#" 在 tag 内与官方 tag 格式一致）。
+    private static let searchCharPool: [Character] = Array("#ABCdef012 xY")
+
+    /// 随机搜索查询：长度 0...6；10% 概率纯空白（覆盖"空查询不过滤"）。
+    private func randomSearchQuery(_ g: inout FilterSeededGenerator) -> String {
+        let length = g.int(in: 0...6)
+        if g.int(in: 0...9) == 0 { return String(repeating: " ", count: max(length, 1)) }
+        return String((0..<length).map { _ in Self.searchCharPool[g.int(in: 0...(Self.searchCharPool.count - 1))] })
+    }
+
+    /// 随机搜索行：名称 25% nil、tag 25% nil（nil 不匹配），其余随机文本。
+    private func randomSearchRow(_ g: inout FilterSeededGenerator, index: Int) -> ClanWarMemberRow {
+        ClanWarMemberRow(
+            sourceIndex: index, mapPosition: nil,
+            name: g.int(in: 0...3) == 0 ? nil : randomSearchQuery(&g),
+            tag: g.int(in: 0...3) == 0 ? nil : "#" + randomSearchQuery(&g),
+            townhallLevel: nil,
+            action: ClanWarMemberAction(status: .complete, attackCount: 1, remainingAttacks: nil),
+            stars: nil, lines: nil, defenseAttacks: nil
+        )
+    }
+
+    /// 手动参考实现：trim 后空 → 全匹配；否则名称或 tag 小写包含匹配。
+    private func manualSearchMatch(_ row: ClanWarMemberRow, query: String) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        let needle = trimmed.lowercased()
+        return (row.name?.lowercased().contains(needle) ?? false)
+            || (row.tag?.lowercased().contains(needle) ?? false)
+    }
+
+    /// 随机 rows + 随机 query：rows(matchingSearch:) 结果 == 手动包含匹配过滤
+    /// （N=100，确定性生成器 seed 固定可复现）。空/纯空白查询两侧都必须返回全量。
+    func testPropertySearchMatchesManualFilter() {
+        var g = FilterSeededGenerator(seed: 0x526)
+        for round in 0..<100 {
+            let rows = (0..<g.int(in: 0...30)).map { randomSearchRow(&g, index: $0) }
+            let query = randomSearchQuery(&g)
+            let expected = rows.filter { manualSearchMatch($0, query: query) }
+            let actual = ClanWarDisplayProjection.rows(rows, matchingSearch: query)
+            assertOrFail(actual == expected,
+                         "rows(matchingSearch:) 必须等于手动包含匹配过滤（保持输入顺序）",
+                         context: "seed=0x526 round=\(round) n=\(rows.count) query=\(query.debugDescription)")
+        }
+    }
 }
 
 // MARK: - 确定性伪随机生成器（property-based 测试专用，seed 固定可复现）
@@ -674,8 +820,14 @@ private struct FilterSeededGenerator {
         return state
     }
 
+    /// 取 LCG 状态**高位** 32 位映射到区间（I1 修复）：低 2 位周期为 4
+    /// （a ≡ 1 mod 4 且 c 奇数），`next() % 4 == 0` 恒真/恒假 → nil 分支
+    /// 0%/100% 系统性偏差；高位比特随完整周期均匀分布。
+    /// range.count == 1 时先返回 lowerBound（% 0 防御，仅防御不可达路径）。
     mutating func int(in range: ClosedRange<Int>) -> Int {
-        Int(next() % UInt64(range.count)) + range.lowerBound
+        let count = range.count
+        guard count > 1 else { return range.lowerBound }
+        return Int(next() >> 32) % count + range.lowerBound
     }
 
     mutating func double(in range: ClosedRange<Double>) -> Double {

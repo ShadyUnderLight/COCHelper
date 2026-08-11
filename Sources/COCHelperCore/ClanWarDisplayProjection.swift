@@ -689,6 +689,24 @@ extension ClanWarDisplayProjection {
         filter == .all ? rows : rows.filter { matches($0, filter: filter, phase: phase) }
     }
 
+    /// 搜索过滤（Issue #126）：只匹配成员名称与 tag，大小写不敏感、包含匹配。
+    ///
+    /// 契约：
+    /// - 空字符串/纯空白 → 返回原数组（不过滤）；
+    /// - nil 名称/tag 不参与匹配（不把缺失当作空串命中）；
+    /// - 匹配大小写不敏感（`lowercased()` 包含比较），tag 的 "#" 前缀是
+    ///   tag 原文的一部分，包含匹配按完整 tag 字符串进行；
+    /// - 保持输入顺序（仅过滤，不重排）。
+    public static func rows(_ rows: [ClanWarMemberRow], matchingSearch query: String) -> [ClanWarMemberRow] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return rows }
+        let normalized = needle.lowercased()
+        return rows.filter { row in
+            (row.name?.lowercased().contains(normalized) ?? false)
+                || (row.tag?.lowercased().contains(normalized) ?? false)
+        }
+    }
+
     /// 各筛选桶计数（含 awaitingWar 中性计数）。
     ///
     /// 不变式：notAttacked + remainingOnce + remainingMany + complete + unknownData

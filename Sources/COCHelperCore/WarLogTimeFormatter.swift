@@ -34,7 +34,8 @@ public enum WarLogTimeFormatter {
     }()
 
     /// 官方串正则：8 位日期 + T + 6 位时间 + 可选 1-3 位毫秒 + 大写 Z。
-    private static let officialPattern = #"^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\.\d{1,3})?Z$"#
+    /// `\z` 严格锚定串尾（`$` 在 anchorsMatchLines 模式下会匹配行尾，不保险）。
+    private static let officialPattern = #"^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\.\d{1,3})?Z\z"#
 
     public static func displayText(raw: String?) -> WarLogTimeDisplay {
         guard let raw else { return .hidden }
@@ -51,7 +52,7 @@ public enum WarLogTimeFormatter {
     }
 
     /// 转换成功返回"yyyy年M月d日 HH:mm:ss"（北京时间）；失败返回 nil。
-    public static func beijingTimeText(raw: String) -> String? {
+    static func beijingTimeText(raw: String) -> String? {
         guard let match = raw.range(of: officialPattern, options: .regularExpression) else {
             return nil
         }
@@ -77,7 +78,11 @@ public enum WarLogTimeFormatter {
         // 显式范围校验：Foundation Calendar 对越界组件是"溢出归一化"而非拒绝
         // （实测 month 13 → 次年 1 月、hour 24 → 次日），必须先拒绝，
         // 否则会输出被 Calendar 归一化后的伪日期，违反"不得伪造日期"约束。
-        guard let maxDay = daysInMonth(year: year, month: month),
+        // 年份下限 1992：ICU 对更早年份走历史历法数据（BCE 纪元改写、1582 前
+        // Julian 历 10 天断层、1901 前 LMT 偏移 +8:05:43），输出组件与输入
+        // 不再对应，同样属于伪造日期；CoC 数据最早 2016 年，1992 以下直接拒绝。
+        guard year >= 1992,
+              let maxDay = daysInMonth(year: year, month: month),
               (1...maxDay).contains(day),
               (0...23).contains(hour),
               (0...59).contains(minute),

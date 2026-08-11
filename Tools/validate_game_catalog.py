@@ -72,15 +72,14 @@ def _collect_conflict_errors(catalog_dir: Path) -> list[str]:
     路径从 lifecycle_module 运行期读取（测试可 monkeypatch 注入 tmp 数据）。
     """
     version = _catalog_game_version(catalog_dir)
-    phases_path = (
-        lifecycle_module.PHASES_PATH if version is None
-        else lifecycle_module._phases_path(version))
+    phases_path = lifecycle_module.phases_path_for(version)
     conflicts = lifecycle_module.find_lifecycle_phase_conflicts(
         declarations_path=lifecycle_module.DECLARATIONS_PATH,
         phases_path=phases_path)
     return [
         f"lifecycle 声明永久内容与官方阶段表冲突: {c['key']}: "
-        f"phaseID={c['phaseID']} 声明={c['declarationsPath']} "
+        f"phaseID={c['phaseID']} phaseName={c.get('phaseName') or '无'} "
+        f"声明={c['declarationsPath']} "
         f"阶段={c['phasesPath']} 来源={c.get('sourceURL') or '无'}"
         for c in conflicts
     ]
@@ -92,12 +91,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strict", action="store_true", help="将 warning 升级为失败")
     args = parser.parse_args(argv)
 
+    errors: list[str] = []
     try:
         errors = validate_catalog(args.catalog)
         # Issue #113：冲突收集与 validate_catalog 同一 try 块——CatalogError
         # （声明/阶段表文件异常）同样走 except → error: + 退出码 1。
         errors += _collect_conflict_errors(args.catalog)
     except CatalogError as exc:
+        # 评审修复：异常分支不得吞掉已收集的 validate errors——先逐条打印
+        #（诊断完整性），再打印异常本身（退出码保持 1）。
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

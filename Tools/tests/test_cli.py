@@ -217,10 +217,50 @@ def test_validate_cli_lifecycle_phase_conflict_fails(full_minimal_apk, tmp_path,
     assert "verdict: FAIL" in captured.out
     assert "buildings:1000001" in captured.err, captured.err
     assert "phaseID=p1" in captured.err, captured.err
+    assert "phaseName=阶段一" in captured.err, "error 应含 phaseName 便于定位阶段"
     assert str(decl) in captured.err, "error 必须携带声明文件路径 provenance"
     assert str(phases) in captured.err, "error 必须携带阶段文件路径 provenance"
     assert "https://supercell.example/phase" in captured.err, \
         "error 必须携带官方来源 sourceURL provenance"
+
+
+def test_validate_cli_conflict_collection_failure_preserves_validate_errors(
+    full_minimal_apk, tmp_path, monkeypatch, capsys
+):
+    """Issue #113 评审修复：_collect_conflict_errors 抛 CatalogError 时不得吞掉
+    已收集的 validate errors——stderr 必须同时含 validate error（哈希不一致）与
+    lifecycle 错误（声明文件缺失），rc=1（诊断回归防护：except 分支先打印
+    errors 再打印异常）。"""
+    import validate_game_catalog as vgc
+    from game_catalog import lifecycle as lifecycle_module
+
+    apk = full_minimal_apk
+    out = tmp_path / "out"
+    _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+          "--output", str(out), "--game-version", "18.400.13"])
+    import hashlib
+    import json
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    # 篡改 craft hash → validate_catalog 返回 errors（不抛）
+    m["generatedFiles"][-1]["sha256"] = "sha256:" + "0" * 64
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    # 声明文件缺失 → _collect_conflict_errors 抛 CatalogError
+    missing = tmp_path / "no_such_lifecycle_declarations.json"
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", missing)
+
+    rc = vgc.main(["--catalog", str(out)])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "哈希不一致" in captured.err, \
+        "validate errors 不得被冲突收集异常吞掉"
+    assert "lifecycle 声明文件缺失" in captured.err, \
+        "冲突收集异常必须打印"
 
 
 def test_validate_cli_bad_dir_fails(full_minimal_apk, tmp_path):

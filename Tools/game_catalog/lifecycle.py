@@ -42,6 +42,17 @@ def _phases_path(version: str) -> Path:
 # 默认版本路径（向后兼容：无版本参数时使用；测试 monkeypatch 此常量）
 PHASES_PATH = _phases_path(DEFAULT_GAME_VERSION)
 
+
+def phases_path_for(version: str | None) -> Path:
+    """版本 → bundled 阶段表路径（None → DEFAULT_GAME_VERSION 的 PHASES_PATH）。
+
+    Issue #113 评审提取：coverage_report（lifecycle.py 内部）与 validator
+    冲突校验（validate_game_catalog.py）共用同一版本绑定，消除跨模块私有
+    访问（此前 validator 直接调 _phases_path）。版本推导逻辑与 _phases_path
+    docstring 一致（GameCatalog/<version>/seasonal_phases.json）。
+    """
+    return PHASES_PATH if version is None else _phases_path(version)
+
 # lifecycle 闭枚举（validate 校验用）
 LIFECYCLE_VALUES: frozenset[str] = frozenset({"permanent", "seasonalCandidate"})
 
@@ -161,6 +172,20 @@ def load_phase_coverage() -> dict[str, str]:
     return _load_phase_coverage_from(DECLARATIONS_PATH)
 
 
+def _valid_interval(frm: object, until: object) -> bool:
+    """from/until 是否构成合法阶段区间（from < until）。
+
+    Issue #113 评审提取：compute_phase_coverage 的 phase_keys 与
+    find_lifecycle_phase_conflicts 的命中判定共用（与 Swift
+    phase(forItemKey:at:) 过滤语义对齐——非法区间 phase 的 key 不得计入）。
+    R9 防御：bool 是 int 子类且 True == 1，先排除 bool，否则 JSON true 会被
+    当作合法 from/until 绕过区间判定（与 validate.py 同模式）。
+    """
+    return (isinstance(frm, int) and not isinstance(frm, bool)
+            and isinstance(until, int) and not isinstance(until, bool)
+            and frm < until)
+
+
 def compute_phase_coverage(
     decl: dict[str, str], phases: list[dict]
 ) -> dict[str, int]:
@@ -205,11 +230,7 @@ def compute_phase_coverage(
         item_keys = phase.get("itemKeys")
         if not isinstance(item_keys, list):
             item_keys = []
-        frm = phase.get("from")
-        until = phase.get("until")
-        if (isinstance(frm, int) and not isinstance(frm, bool)
-                and isinstance(until, int) and not isinstance(until, bool)
-                and frm < until):
+        if _valid_interval(phase.get("from"), phase.get("until")):
             # Fix A：itemKeys 元素非 str → 跳过（不产生幽灵 key 垃圾统计）
             phase_keys.update(key for key in item_keys if isinstance(key, str))
         else:
@@ -289,8 +310,7 @@ def coverage_report(version: str | None = None) -> dict[str, int]:
     绑定，评审 follow-up：多版本时不得固定写死）。
     """
     decl = load_phase_coverage()
-    phases_path = PHASES_PATH if version is None else _phases_path(version)
-    phases = _load_validated_phases(phases_path)
+    phases = _load_validated_phases(phases_path_for(version))
     return compute_phase_coverage(decl, phases)
 
 
@@ -316,11 +336,7 @@ def find_lifecycle_phase_conflicts(
     permanent_keys = {key for key, value in decl.items() if value == "permanent"}
     conflicts: list[dict] = []
     for phase in phases:
-        frm = phase.get("from")
-        until = phase.get("until")
-        if not (isinstance(frm, int) and not isinstance(frm, bool)
-                and isinstance(until, int) and not isinstance(until, bool)
-                and frm < until):
+        if not _valid_interval(phase.get("from"), phase.get("until")):
             continue
         for key in phase["itemKeys"]:
             if key not in permanent_keys:

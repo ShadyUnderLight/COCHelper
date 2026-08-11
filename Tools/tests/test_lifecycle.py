@@ -718,6 +718,20 @@ def test_find_lifecycle_phase_conflicts_none_on_real_data():
     assert find_lifecycle_phase_conflicts() == []
 
 
+def test_phases_path_for_version_binding(monkeypatch, tmp_path):
+    """评审 Minor #2：phases_path_for 统一「版本 → 阶段表路径」绑定
+    （coverage_report 与 validator 冲突校验共用，消除跨模块私有访问）。
+
+    version 非 None → _phases_path(version) 推导 bundled 路径；
+    None → 默认版本 PHASES_PATH 常量。"""
+    sentinel = tmp_path / "seasonal_phases.json"
+    default = tmp_path / "default_phases.json"
+    monkeypatch.setattr(lifecycle_module, "_phases_path", lambda version: sentinel)
+    monkeypatch.setattr(lifecycle_module, "PHASES_PATH", default)
+    assert lifecycle_module.phases_path_for("99.99.99") == sentinel
+    assert lifecycle_module.phases_path_for(None) == default
+
+
 def test_find_lifecycle_phase_conflicts_no_conflict(tmp_path):
     """正例（注入）：permanent key 不在阶段表、seasonalCandidate key 命中
     阶段表 → 均不算冲突 → []。"""

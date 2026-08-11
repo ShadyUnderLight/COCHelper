@@ -23,7 +23,6 @@ from game_catalog.lifecycle import (
     load_audit_status,
 )
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 DECLARATIONS = (
     Path(__file__).resolve().parents[1]
     / "game_catalog" / "lifecycle_declarations.json"

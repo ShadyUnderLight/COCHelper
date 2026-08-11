@@ -308,7 +308,8 @@ def compute_audit_report(statuses: dict[str, str]) -> dict:
     compute_phase_coverage 容忍语义一致）。
 
     返回（全部非负整数/字符串列表）：
-    - pending / verified：分类计数（守恒：pending + verified == 输入条目数）；
+    - pending / verified：分类计数（守恒：pending + verified == 已识别条目数，
+      意外值忽略不计入，见上方容忍语义）；
     - pending_keys / verified_keys：排序后的 key 列表（确定性，人工阅读
       即待复核清单）。
     """

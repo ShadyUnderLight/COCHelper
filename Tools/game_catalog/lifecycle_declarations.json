@@ -1236,33 +1236,33 @@
     },
     "guardians:107000002": {
       "lifecycle": "permanent",
-      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明",
-      "auditStatus": "pending"
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明；2026-08-11 已核实：APK guardians.csv 该条 Deprecated=TRUE（废弃 source-only 定义）；官方将 Guardian 定义为常规防御单位（当前公开 Guardian 为 Smasher/Longshot），无季节生命周期（TH18 公告 / 2026-01 平衡公告）——保持 permanent（auditStatus=verified）",
+      "auditStatus": "verified"
     },
     "guardians:107000003": {
       "lifecycle": "permanent",
-      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明",
-      "auditStatus": "pending"
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明；2026-08-11 已核实：APK guardians.csv 该条 Deprecated=TRUE（废弃 source-only 定义）；官方将 Guardian 定义为常规防御单位（当前公开 Guardian 为 Smasher/Longshot），无季节生命周期（TH18 公告 / 2026-01 平衡公告）——保持 permanent（auditStatus=verified）",
+      "auditStatus": "verified"
     },
     "guardians:107000004": {
       "lifecycle": "permanent",
-      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明",
-      "auditStatus": "pending"
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明；2026-08-11 已核实：APK guardians.csv 该条 Deprecated=TRUE（废弃 source-only 定义）；官方将 Guardian 定义为常规防御单位（当前公开 Guardian 为 Smasher/Longshot），无季节生命周期（TH18 公告 / 2026-01 平衡公告）——保持 permanent（auditStatus=verified）",
+      "auditStatus": "verified"
     },
     "guardians:107000005": {
       "lifecycle": "permanent",
-      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明",
-      "auditStatus": "pending"
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明；2026-08-11 已核实：APK guardians.csv 该条 Deprecated=TRUE（废弃 source-only 定义）；官方将 Guardian 定义为常规防御单位（当前公开 Guardian 为 Smasher/Longshot），无季节生命周期（TH18 公告 / 2026-01 平衡公告）——保持 permanent（auditStatus=verified）",
+      "auditStatus": "verified"
     },
     "guardians:107000006": {
       "lifecycle": "permanent",
-      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明",
-      "auditStatus": "pending"
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明；2026-08-11 已核实：APK guardians.csv 该条 Deprecated=TRUE（废弃 source-only 定义）；官方将 Guardian 定义为常规防御单位（当前公开 Guardian 为 Smasher/Longshot），无季节生命周期（TH18 公告 / 2026-01 平衡公告）——保持 permanent（auditStatus=verified）",
+      "auditStatus": "verified"
     },
     "guardians:107000007": {
       "lifecycle": "permanent",
-      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明",
-      "auditStatus": "pending"
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明；2026-08-11 已核实：APK guardians.csv 该条 Deprecated=TRUE（废弃 source-only 定义）；官方将 Guardian 定义为常规防御单位（当前公开 Guardian 为 Smasher/Longshot），无季节生命周期（TH18 公告 / 2026-01 平衡公告）——保持 permanent（auditStatus=verified）",
+      "auditStatus": "verified"
     },
     "guardians:107000008": {
       "lifecycle": "permanent",
@@ -1270,8 +1270,8 @@
     },
     "guardians:107000009": {
       "lifecycle": "permanent",
-      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明",
-      "auditStatus": "pending"
+      "note": "已从游戏移除（catalog deprecated_in_source），生命周期待外部核实——2026-08 暂按永久内容声明；2026-08-11 已核实：APK guardians.csv 该条 Deprecated=TRUE（废弃 source-only 定义）；官方将 Guardian 定义为常规防御单位（当前公开 Guardian 为 Smasher/Longshot），无季节生命周期（TH18 公告 / 2026-01 平衡公告）——保持 permanent（auditStatus=verified）",
+      "auditStatus": "verified"
     },
     "heroes2:28000003": {
       "lifecycle": "permanent",
@@ -2450,8 +2450,8 @@
     },
     "units:4000090": {
       "lifecycle": "permanent",
-      "note": "雷霆皮卡（home 单级 stub 无成本无时长）——数据特征更像跨 section 重复条目而非限时内容（BB units2:4000036 与 Capital 112000022 为同名常驻）；暂按永久内容声明，待外部核实",
-      "auditStatus": "pending"
+      "note": "雷霆皮卡（home 单级 stub 无成本无时长）——数据特征更像跨 section 重复条目而非限时内容（BB units2:4000036 与 Capital 112000022 为同名常驻）；暂按永久内容声明，待外部核实；2026-08-11 已核实：APK（base.apk.1）中 4000090 为 MOMMA/TID_SUPER_CHARGED_PEKKA home 单级 stub，同 TID/icon 在 BB 与 Capital 亦存在；官方将 Power/Super P.E.K.K.A 定义为可解锁可升级普通部队（Builder Base 2.0 公告 / Clan Capital release notes）——判定跨 section 重复/内部 stub，保持 permanent（auditStatus=verified）",
+      "auditStatus": "verified"
     },
     "units:4000093": {
       "lifecycle": "permanent",

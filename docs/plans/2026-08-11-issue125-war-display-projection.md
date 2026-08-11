@@ -180,12 +180,12 @@ public enum ClanWarDisplayProjection {
 1. **phase**：trim 后精确匹配 notInWar/preparation/inWar/warEnded；其余（含空串、缺失）→ `.unknown(raw:)`，raw 为原始值。
 2. **quota**：有效配额 = `attacksPerMember != nil && > 0`；`totalAttacks = teamSize × attacksPerMember` 用 `SaturatingArithmetic`（或 `multipliedReportingOverflow`），溢出 → 饱和值 + `saturated = true`；任一输入 nil 或 <= 0 → `totalAttacks = nil`。
 3. **memberAction**：`attacks == nil` → `.unknown`；`attacks == []` → `.zero`（无条件，配额无关）；配额有效时按 count 与 quota 比较 → partial/complete/overQuota；配额无效且 count > 0 → `.quotaUnknown`。`remainingAttacks = quota - count`（仅 partial，恒 >= 1，无溢出可能）。
-4. **memberStars**：`attacks == nil` → nil；否则 `knownStars = Σ 非 nil stars`（负数星数按 0 计？—— 不：负数星数 clamp 到 [0,3] 再计入，与 UI 现有 `min(max($0,0),3)` 一致），`missingCount = 有值攻击数中 stars == nil 的条数`。
-5. **排序**：rank = zero(0) < partial(1) < complete(2) < {overQuota, quotaUnknown, unknown}(3)；组内 mapPosition（nil 排最后）→ name（nil 排最后，Unicode 码点升序）→ sourceIndex 升序。全序，与 sort 稳定性无关，幂等。
+4. **memberStars**：`attacks == nil` → nil；否则 `knownStars = Σ 非 nil stars`（负数星数按 0 计？—— 不：负数星数 clamp 到 [0,3] 再计入，与 UI 现有 `min(max($0,0),3)` 一致），`missingCount = 攻击条数中 stars == nil 的条数`。
+5. **排序**：rank = zero(0) < partial(1) < complete(2) < {overQuota, quotaUnknown, unknown}(3)；组内 mapPosition（nil 排最后）→ name（nil 排最后，String 比较序，即 Unicode 规范化后比较）→ sourceIndex 升序。全序，与 sort 稳定性无关，幂等。
 6. **actionCounts**：六桶按 status 计数，Σ == rows.count。
 7. **displayGroup**：`preparation + .zero` → `.awaitingWar`；其余 status → 同名 case（.unknown/.zero → notAttacked 的映射仅当非 preparation）。具体：zero → (preparation ? awaitingWar : notAttacked)；partial → remaining；complete → complete；overQuota → overQuota；quotaUnknown → quotaUnknown；unknown → unknown。
 8. **participant**：`official` 透传 participant 三字段；`members == nil` → members/knownAttackDataCount/unknownAttackDataCount 全 nil；否则排序输出 + 计数（known = attacks != nil 计数，unknown = attacks == nil 计数）；`mismatches` 见规则 9。
-9. **mismatches**：任一成员 `attacks == nil` → `[.membersIncomplete]`（不判数值差异）；否则若官方 attacks 存在且 ≠ Σ 成员攻击数 → `.attackCount(official:memberSum:)`；若官方 stars 存在、全部攻击行 stars 已知（无缺失）且 ≠ Σ 已知星数 → `.stars(official:memberKnownSum:)`；空数组 = 一致。
+9. **mismatches**：任一成员 `attacks == nil` → `[.membersIncomplete]`（官方摘要缺失时仍上报——成员不完整是独立可审计事实；其余数值差异不判）；否则若官方 attacks 存在且 ≠ Σ 成员攻击数 → `.attackCount(official:memberSum:)`；若官方 stars 存在、全部攻击行 stars 已知（无缺失）且 ≠ Σ 成员**原始**星数（事实层求和，不使用展示层 clamp 值）→ `.stars(official:memberKnownSum:)`；空数组 = 一致。
 10. **refreshStatus**：复用 `state.displayStatus`（stale 判定同一映射点，不重复实现）；`status == .failed` 时按 `lastGood != nil` 分 `failedWithLastGood` / `failedWithoutLastGood`；never/loading/success/stale/skipped 一一映射。
 11. **notInWar**：`clan`/`opponent` 恒 nil，即使原始响应意外携带成员数据。
 

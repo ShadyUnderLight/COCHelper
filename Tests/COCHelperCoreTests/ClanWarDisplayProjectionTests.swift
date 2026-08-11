@@ -173,6 +173,14 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         XCTAssertNil(nilQuota.remainingAttacks)
     }
 
+    func testMemberActionHugeQuotaNoOverflow() {
+        // attacksPerMember = Int.max：remaining = quota - count 无溢出
+        let attacks = [attack(stars: 3)]
+        let action = ClanWarDisplayProjection.memberAction(attacks: attacks, attacksPerMember: Int.max)
+        XCTAssertEqual(action.status, .partial)
+        XCTAssertEqual(action.remainingAttacks, Int.max - 1)
+    }
+
     // MARK: - memberStars（规则 4）
 
     func testMemberStarsAllKnown() {
@@ -443,6 +451,25 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         XCTAssertTrue(projection.clan?.mismatches.isEmpty ?? false)
     }
 
+    func testProjectUnknownPhaseKeepsParticipants() {
+        // 未知阶段不是空状态：只有 notInWar 才清空参与者（防误改 isNotInWar 判定）
+        let clan = participant(name: "我方", attacks: 1, stars: 3,
+                               members: [member(tag: "m1", attacks: [attack(stars: 3)])])
+        let projection = ClanWarDisplayProjection.project(
+            snapshot(state: "mysteryPhase", clan: clan, opponent: nil)
+        )
+        XCTAssertEqual(projection.phase, .unknown(raw: "mysteryPhase"))
+        XCTAssertNotNil(projection.clan)
+        XCTAssertEqual(projection.clan?.mismatches, [])
+
+        // state 缺失同样不是空状态
+        let missingState = ClanWarDisplayProjection.project(
+            snapshot(state: nil, clan: clan, opponent: nil)
+        )
+        XCTAssertEqual(missingState.phase, .unknown(raw: nil))
+        XCTAssertNotNil(missingState.clan)
+    }
+
     // MARK: - mismatches（规则 9）
 
     func testMismatchesEmptyWhenConsistent() {
@@ -504,6 +531,22 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
         // 星数部分缺失 → 已知和只是下限，不判 stars mismatch
         XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p, rows: rows), [])
+    }
+
+    func testMismatchesStarsUsesRawNotClamped() {
+        // schema 违反输入（stars=5 超出官方 [0,3] 契约）但官方与成员双侧一致：
+        // 展示层 clamp 得 3，但诊断必须用原始事实 5 对比 → 不得误报不一致
+        let members = [
+            member(tag: "1", attacks: [attack(stars: 5), attack(stars: 0)]),
+        ]
+        let p = participant(attacks: 2, stars: 5, members: members)
+        let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p, rows: rows), [])
+
+        // 官方确实不一致时仍要报，且 memberKnownSum 携带原始和
+        let p2 = participant(attacks: 2, stars: 6, members: members)
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p2, rows: rows),
+                       [.stars(official: 6, memberKnownSum: 5)])
     }
 
     func testMismatchesBothDifferencesReported() {
@@ -577,6 +620,42 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         ]
         let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
         XCTAssertEqual(rows.map(\.id), [0, 1]) // 两个全 nil 成员靠 sourceIndex 区分
+    }
+
+    /// Issue #125 验收：40 人成员 fixture 的确定性排序（四种状态 × 各 10 人，
+    /// mapPosition 1-10；输入顺序按 position 主循环、状态轮转——相邻成员不同组）
+    /// → rank 分组 + 组内 position 升序 + 幂等。
+    func testSortedRowsFortyMembersDeterministic() {
+        var members: [ClanWarMember] = []
+        for position in 1...10 {
+            for kind in 0..<4 {
+                let attacks: [ClanWarAttack]? = switch kind {
+                case 0: []                                            // zero
+                case 1: [attack(stars: 1)]                            // partial
+                case 2: [attack(stars: 1), attack(stars: 2)]          // complete
+                default: nil                                          // unknown
+                }
+                members.append(member(tag: "m-\(kind)-\(position)", name: "成员\(position)",
+                                      mapPosition: position, attacks: attacks))
+            }
+        }
+        let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+        XCTAssertEqual(rows.count, 40)
+        // 输出必须 rank 分组：zero 10 人 → partial 10 人 → complete 10 人 → unknown 10 人，
+        // 组内 mapPosition 升序 1-10（输入是 position 主序，与组顺序完全错位）
+        let expectedGroups: [[ClanWarMemberAttackStatus]] = [
+            Array(repeating: .zero, count: 10),
+            Array(repeating: .partial, count: 10),
+            Array(repeating: .complete, count: 10),
+            Array(repeating: .unknown, count: 10),
+        ]
+        for (groupIndex, expected) in expectedGroups.enumerated() {
+            let slice = rows[(groupIndex * 10)..<((groupIndex + 1) * 10)]
+            XCTAssertEqual(slice.map(\.action.status), expected)
+            XCTAssertEqual(slice.map(\.mapPosition), Array(1...10))
+        }
+        // 幂等
+        XCTAssertEqual(rows, ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2))
     }
 }
 

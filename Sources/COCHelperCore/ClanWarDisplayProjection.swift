@@ -157,8 +157,9 @@ public struct ClanWarMemberRow: Hashable, Sendable, Identifiable {
 /// 成员行动状态计数（按 `ClanWarMemberAttackStatus` 六桶，阶段无关）。
 ///
 /// 契约（spec 规则 6）：Σ 六桶 == rows.count；`.unknown` **独立成桶，不计入
-/// "未出手"**。备战期"等待开战"的人数即 `zeroCount`（阶段由 view/
-/// `displayGroup` 解释）。
+/// "未出手"**。消费指引：若需按展示分组计数（如备战期"等待开战"人数 =
+/// `zeroCount`），用 `displayGroup(phase:action:)` 逐行归类——本类型保持
+/// 阶段无关，不做阶段推断。
 public struct ClanWarActionCounts: Hashable, Sendable {
     public let unknownCount: Int
     public let zeroCount: Int
@@ -427,7 +428,8 @@ public enum ClanWarDisplayProjection {
     /// 行动优先排序 + 行投影（spec 规则 5）。
     ///
     /// 全序：rank（zero < partial < complete < 数据未知组）→ mapPosition
-    ///（nil 排最后）→ name（nil 排最后，Unicode 码点升序）→ sourceIndex 升序。
+    ///（nil 排最后）→ name（nil 排最后，String 比较序，即 Unicode 规范化后
+    /// 比较）→ sourceIndex 升序。
     /// `sourceIndex` 唯一 → 排序结果与输入顺序无关、与 sort 稳定性无关；幂等。
     public static func sortedRows(_ members: [ClanWarMember], attacksPerMember: Int?) -> [ClanWarMemberRow] {
         let rows = members.enumerated().map { index, member in
@@ -459,7 +461,7 @@ public enum ClanWarDisplayProjection {
             case (_?, nil): return true
             case (nil, nil): break
             }
-            // name：nil 排最后，Unicode 码点升序
+            // name：nil 排最后，String 比较序（Unicode 规范化后）
             switch (lhs.name, rhs.name) {
             case let (l?, r?):
                 if l != r { return l < r }
@@ -549,11 +551,15 @@ public enum ClanWarDisplayProjection {
     /// 官方摘要 vs 成员推导诊断（spec 规则 9）。
     ///
     /// 仅当成员侧数据完整（无 attacks == nil）且官方字段存在时才判数值差异：
-    /// - 任一成员 attacks == nil → `[.membersIncomplete]`（推导不可得）；
+    /// - 任一成员 attacks == nil → `[.membersIncomplete]`（推导不可得；官方
+    ///   缺失时仍上报——成员不完整是独立可审计事实）；
     /// - 官方 attacks 存在且 ≠ Σ 成员攻击数 → `.attackCount`；
-    /// - 官方 stars 存在、全部攻击行星数已知（缺失合计 0）且 ≠ Σ 已知星数
-    ///   → `.stars`（部分缺失时已知和只是下限，不构成权威差异）；
-    /// - 全部一致 → 空数组。
+    /// - 官方 stars 存在、全部攻击行星数已知（缺失合计 0）且 ≠ Σ 成员星数
+    ///   → `.stars`（部分缺失时已知和只是下限，不构成权威差异）。
+    /// **注意**：星数比对使用逐行**原始** stars 求和（事实层），不使用
+    /// `ClanWarMemberStars.knownStars`（展示层 clamp 到 [0,3] 后的值）——
+    /// schema 违反输入（如 stars=5）下 clamp 会扭曲事实，导致"双侧一致却
+    /// 误报不一致"。
     public static func mismatches(participant: ClanWarParticipant, rows: [ClanWarMemberRow]) -> [ClanWarSummaryMismatch] {
         let memberAttacks = rows.compactMap { $0.lines }
         guard memberAttacks.count == rows.count else {
@@ -561,15 +567,16 @@ public enum ClanWarDisplayProjection {
             return [.membersIncomplete]
         }
         let memberAttackSum = memberAttacks.reduce(0) { $0 + $1.count }
-        let knownStarSum = rows.reduce(0) { $0 + ($1.stars?.knownStars ?? 0) }
-        let starMissingCount = rows.reduce(0) { $0 + ($1.stars?.missingCount ?? 0) }
+        // 事实层：原始 stars 求和（含 nil 记 0）与缺失计数，展示层 clamp 不参与。
+        let rawStarSum = memberAttacks.reduce(0) { $0 + $1.reduce(0) { $0 + ($1.stars ?? 0) } }
+        let starMissingCount = memberAttacks.reduce(0) { $0 + $1.reduce(0) { $0 + ($1.stars == nil ? 1 : 0) } }
 
         var result: [ClanWarSummaryMismatch] = []
         if let officialAttacks = participant.attacks, officialAttacks != memberAttackSum {
             result.append(.attackCount(official: officialAttacks, memberSum: memberAttackSum))
         }
-        if let officialStars = participant.stars, starMissingCount == 0, officialStars != knownStarSum {
-            result.append(.stars(official: officialStars, memberKnownSum: knownStarSum))
+        if let officialStars = participant.stars, starMissingCount == 0, officialStars != rawStarSum {
+            result.append(.stars(official: officialStars, memberKnownSum: rawStarSum))
         }
         return result
     }

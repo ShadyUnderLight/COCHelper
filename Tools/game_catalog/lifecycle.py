@@ -74,7 +74,9 @@ def _load_raw(path: Path, label: str) -> dict:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise CatalogError(f"{label}缺失: {path}") from None
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        # Issue #113 审计 F8：UnicodeDecodeError（ValueError 子类，非 OSError）
+        # 此前逃逸为裸 traceback——非 UTF-8 文件统一转干净 CatalogError。
         raise CatalogError(f"{label}解析失败: {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise CatalogError(f"{label} schemaVersion != 1: {path}")
@@ -180,9 +182,12 @@ def _valid_interval(frm: object, until: object) -> bool:
     phase(forItemKey:at:) 过滤语义对齐——非法区间 phase 的 key 不得计入）。
     R9 防御：bool 是 int 子类且 True == 1，先排除 bool，否则 JSON true 会被
     当作合法 from/until 绕过区间判定（与 validate.py 同模式）。
+    Issue #113 审计 F1：Swift Date 经 JSONDecoder .deferredToDate 解码接受
+    浮点时间戳（Double），Python 必须接受 int|float——严格 int 会让 float
+    区间在 Python 侧漏报冲突/漏计 phase_keys（validator fail-open，门禁绕过）。
     """
-    return (isinstance(frm, int) and not isinstance(frm, bool)
-            and isinstance(until, int) and not isinstance(until, bool)
+    return (isinstance(frm, (int, float)) and not isinstance(frm, bool)
+            and isinstance(until, (int, float)) and not isinstance(until, bool)
             and frm < until)
 
 
@@ -277,6 +282,16 @@ def _load_validated_phases(phases_path: Path) -> list[dict]:
             raise CatalogError(
                 f"阶段表文件 phases[{i}] 非法: phaseID 缺失或非 str: "
                 f"{phase.get('phaseID')!r}")
+        # Issue #113 审计 F2：from/until 必须 int|float（非 bool）——Swift Date
+        # 解码失败会**整表变空**（所有 key 显示 permanent/unconfigured），
+        # Python 不得静默跳过（否则同一文件两侧对冲突给出相反答案）。
+        # float 合法（F1：Swift Double 解码兼容）；bool 是 int 子类先排除（R9）。
+        for field in ("from", "until"):
+            value = phase.get(field)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise CatalogError(
+                    f"阶段表文件 phases[{i}] 非法: {field} 缺失或非数字: "
+                    f"{value!r}")
         for optional_field in ("name", "sourceURL"):
             value = phase.get(optional_field)
             if value is not None and not isinstance(value, str):
@@ -335,12 +350,18 @@ def find_lifecycle_phase_conflicts(
     phases = _load_validated_phases(phases_path)
     permanent_keys = {key for key, value in decl.items() if value == "permanent"}
     conflicts: list[dict] = []
+    seen: set[tuple[str, str]] = set()
     for phase in phases:
         if not _valid_interval(phase.get("from"), phase.get("until")):
             continue
         for key in phase["itemKeys"]:
             if key not in permanent_keys:
                 continue
+            # Issue #113 审计 F5：同一 phase 内重复 key 只报一条（(key, phaseID)
+            # 去重，保持表序——重复条目无诊断增量）
+            if (key, phase["phaseID"]) in seen:
+                continue
+            seen.add((key, phase["phaseID"]))
             conflicts.append({
                 "key": key,
                 "phaseID": phase["phaseID"],

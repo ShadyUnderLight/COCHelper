@@ -228,6 +228,21 @@ def test_compute_phase_coverage_skips_invalid_interval_phases():
     assert report["required_missing_phase"] == 0
 
 
+def test_compute_phase_coverage_float_interval_counts_as_phase_key():
+    """Issue #113 审计 F1：float 时间戳区间（Swift Double 解码兼容）必须计入
+    phase_keys（严格 int 会让 coverage 报告与运行时漂移——运行时命中而报告
+    invalid_phases，与红队 Fix 2 同一类反向对账失效）。"""
+    decl = {"buildings:103000008": "required"}
+    phases = [
+        {"phaseID": "float", "from": 100.5, "until": 200.5,
+         "itemKeys": ["buildings:103000008"]},
+    ]
+    report = compute_phase_coverage(decl, phases)
+    assert report["invalid_phases"] == 0
+    assert report["phase_keys"] == 1
+    assert report["required_with_phase"] == 1
+
+
 def test_compute_phase_coverage_skips_non_str_itemkey_elements():
     """第二轮 Fix A：itemKeys 混合 [str, int, None] 元素 → 只统计 str 元素
     （非 str 元素跳过，不产生幽灵 key 垃圾统计；真实数据入口 coverage_report

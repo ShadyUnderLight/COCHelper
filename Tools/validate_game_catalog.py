@@ -68,21 +68,37 @@ def _collect_conflict_errors(catalog_dir: Path) -> list[str]:
     coverage_report/_emit_coverage_report 非阻断分支（#112 评审红线保持——
     对比：coverage 失败只打印 unavailable 且退出码不变）。版本绑定与
     _emit_coverage_report 同模式（_catalog_game_version 回退默认版本）。
-    抛 CatalogError 时由 main 的 except CatalogError 捕获 → 退出码 1。
+    Issue #113 审计 F3：**基础设施故障**（声明/阶段表文件缺失、解析失败等
+    CatalogError）→ 非阻断——打印 `conflict check: unavailable` 后返回空列表，
+    与 #112 coverage 非阻断先例一致（文件缺失不是数据冲突；多版本目录在
+    阶段表补录前不得硬断校验管线）。只有**数据冲突本身**才 blocking。
     路径从 lifecycle_module 运行期读取（测试可 monkeypatch 注入 tmp 数据）。
     """
     version = _catalog_game_version(catalog_dir)
     phases_path = lifecycle_module.phases_path_for(version)
-    conflicts = lifecycle_module.find_lifecycle_phase_conflicts(
-        declarations_path=lifecycle_module.DECLARATIONS_PATH,
-        phases_path=phases_path)
-    return [
-        f"lifecycle 声明永久内容与官方阶段表冲突: {c['key']}: "
-        f"phaseID={c['phaseID']} phaseName={c.get('phaseName') or '无'} "
-        f"声明={c['declarationsPath']} "
-        f"阶段={c['phasesPath']} 来源={c.get('sourceURL') or '无'}"
-        for c in conflicts
-    ]
+    try:
+        conflicts = lifecycle_module.find_lifecycle_phase_conflicts(
+            declarations_path=lifecycle_module.DECLARATIONS_PATH,
+            phases_path=phases_path)
+    except CatalogError as exc:
+        print(f"conflict check: unavailable: {exc}", file=sys.stderr)
+        return []
+    # Issue #113 审计 F6：按 key 分组，每条 error 列出该 key 命中的全部 phase
+    #（phases=[p1(名称), p2(无)]）——Python 数据审计视角报告全部，维护者修复
+    # 时能看到完整候选集（Swift 运行时取单一确定性选择）。
+    by_key: dict[str, list[dict]] = {}
+    for c in conflicts:
+        by_key.setdefault(c["key"], []).append(c)
+    errors: list[str] = []
+    for key, items in by_key.items():
+        phases_part = ", ".join(
+            f"{c['phaseID']}({c.get('phaseName') or '无'})" for c in items)
+        first = items[0]
+        errors.append(
+            f"lifecycle 声明永久内容与官方阶段表冲突: {key}: phases=[{phases_part}] "
+            f"声明={first['declarationsPath']} "
+            f"阶段={first['phasesPath']} 来源={first.get('sourceURL') or '无'}")
+    return errors
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -771,18 +771,15 @@ def test_find_lifecycle_phase_conflicts_permanent_hit(tmp_path):
 
 @pytest.mark.parametrize(("frm", "until"), [
     (200, 100),   # from >= until
-    ("1", 100),   # from 非 int
-    (1, "2"),     # until 非 int
-    (None, 100),  # from 缺失
-    (1, None),    # until 缺失
-    (True, 100),  # bool 是 int 子类（True == 1），R9 防御：不算合法区间
+    (100, 100),   # from == until（零时长）
 ])
 def test_find_lifecycle_phase_conflicts_illegal_interval_not_conflict(
     tmp_path, frm, until
 ):
-    """负例：非法区间 phase（from >= until / from、until 缺失或非 int）的 key
-    不得算命中——与 Swift phase(forItemKey:at:) 过滤语义及 compute_phase_coverage
-    的 phase_keys 口径一致。"""
+    """负例：数字类型但非法区间 phase（from >= until）的 key 不得算命中——
+    与 Swift phase(forItemKey:at:) 过滤语义及 compute_phase_coverage 的
+    phase_keys 口径一致（非数字类型的 from/until 属结构错误，见
+    test_find_lifecycle_phase_conflicts_phases_failure_paths——fail loud）。"""
     decl = _write_decl_items(tmp_path, {
         "buildings:1000001": {"lifecycle": "permanent"},
     })
@@ -791,6 +788,54 @@ def test_find_lifecycle_phase_conflicts_illegal_interval_not_conflict(
          "itemKeys": ["buildings:1000001"]},
     ])
     assert find_lifecycle_phase_conflicts(decl, phases) == []
+
+
+def test_find_lifecycle_phase_conflicts_float_interval_is_hit(tmp_path):
+    """Issue #113 审计 F1：float 时间戳（如 796694400.5）必须算合法命中。
+
+    Swift Date 经 JSONDecoder .deferredToDate 解码接受浮点时间戳（Double）；
+    Python 若只认 int 会漏报冲突（validator fail-open，门禁绕过）。"""
+    decl = _write_decl_items(tmp_path, {
+        "buildings:1000001": {"lifecycle": "permanent"},
+    })
+    phases = _write_phases_file(tmp_path, [
+        {"phaseID": "p1", "name": "阶段一", "from": 100.5, "until": 200.5,
+         "itemKeys": ["buildings:1000001"]},
+    ])
+    conflicts = find_lifecycle_phase_conflicts(decl, phases)
+    assert len(conflicts) == 1
+    assert conflicts[0]["key"] == "buildings:1000001"
+    assert conflicts[0]["phaseID"] == "p1"
+
+
+def test_find_lifecycle_phase_conflicts_deduplicates_duplicate_item_keys(
+    tmp_path
+):
+    """Issue #113 审计 F5：同一 phase 内 itemKeys 重复 key → 只报一条冲突
+    （(key, phaseID) 去重，保持表序）。"""
+    decl = _write_decl_items(tmp_path, {
+        "buildings:1000001": {"lifecycle": "permanent"},
+    })
+    phases = _write_phases_file(tmp_path, [
+        {"phaseID": "p1", "from": 100, "until": 200,
+         "itemKeys": ["buildings:1000001", "buildings:1000001",
+                      "buildings:1000001"]},
+    ])
+    conflicts = find_lifecycle_phase_conflicts(decl, phases)
+    assert len(conflicts) == 1, f"重复 key 必须去重，实际 {len(conflicts)} 条"
+
+
+def test_find_lifecycle_phase_conflicts_non_utf8_phases_file_fails(tmp_path):
+    """Issue #113 审计 F8：非 UTF-8 阶段表文件 → CatalogError（裸
+    UnicodeDecodeError 不得逃逸为 traceback）。"""
+    decl = _write_decl_items(tmp_path, {
+        "buildings:1000001": {"lifecycle": "permanent"},
+    })
+    path = tmp_path / "seasonal_phases.json"
+    path.write_bytes(b"\xff\xfe\x00\x01\x02")  # 非 UTF-8 字节
+    with pytest.raises(CatalogError) as ei:
+        find_lifecycle_phase_conflicts(decl, path)
+    assert "阶段表文件解析失败" in str(ei.value)
 
 
 def test_find_lifecycle_phase_conflicts_seasonal_candidate_not_conflict(tmp_path):
@@ -862,6 +907,17 @@ def test_find_lifecycle_phase_conflicts_multiple_phases_all_reported(tmp_path):
          "itemKeys"),
         ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2,
                                           "itemKeys": [12345]}]}, "itemKeys"),
+        # from/until 类型结构校验（Issue #113 审计 F2）：非数字（str/bool/缺失）
+        # → fail loud——Swift Date 解码失败会整表变空，Python 不得静默跳过
+        #（否则同一文件两侧对冲突给出相反答案）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": "1", "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "from 缺失或非数字"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": "2",
+                                          "itemKeys": ["a:1"]}]}, "until 缺失或非数字"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "from 缺失或非数字"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": True, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "from 缺失或非数字"),
     ],
 )
 def test_find_lifecycle_phase_conflicts_phases_failure_paths(

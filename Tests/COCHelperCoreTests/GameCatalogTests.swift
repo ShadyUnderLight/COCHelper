@@ -946,12 +946,12 @@ final class GameCatalogTests: XCTestCase {
         )
         XCTAssertEqual(Set(phase.itemKeys), expectedKeys, "阶段键必须与版本化精制台目录对拍")
 
-        // Party Wizard（units:4000072）：Sound of Clash Medal Event 2026-04-08T08:00Z ~ 2026-04-29T08:00Z
+        // Party Wizard（units:4000072）：冲突之声奖章活动 2026-04-08T08:00Z ~ 2026-04-29T08:00Z
         // （Cocoa reference date 纪元秒数，见 SeasonalPhase 契约注释）。
         let partyWizard = try XCTUnwrap(
             table.phases.first(where: { $0.phaseID == "sound-of-clash-medal-event-2026-04" })
         )
-        XCTAssertEqual(partyWizard.name, "Sound of Clash Medal Event")
+        XCTAssertEqual(partyWizard.name, "冲突之声奖章活动")
         XCTAssertEqual(partyWizard.from, Date(timeIntervalSinceReferenceDate: 797_328_000))
         XCTAssertEqual(partyWizard.until, Date(timeIntervalSinceReferenceDate: 799_142_400))
         XCTAssertEqual(partyWizard.itemKeys, ["units:4000072"])
@@ -1029,7 +1029,7 @@ final class GameCatalogTests: XCTestCase {
         let key = "units:4000072"
         let expected = { (status: SeasonalStatus) -> CatalogAvailability in
             .seasonal(phaseID: "sound-of-clash-medal-event-2026-04",
-                      phaseName: "Sound of Clash Medal Event",
+                      phaseName: "冲突之声奖章活动",
                       status: status)
         }
         // date < from → notStarted（from 前 1 秒）。

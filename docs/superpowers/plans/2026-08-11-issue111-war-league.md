@@ -60,7 +60,7 @@ GitHub 数据源交叉验证：
 - 48000019-48000022 = Titan III/II/I、Legend 与 issue 引用的 Supercell
   "The Sound of Clash Update" 公告（新增 CWL Titan/Legend 联赛）吻合。
 - 中文名采用与 home context（29000000-29000022，官方简中术语）**平行映射**：
-  同一联赛体系（铜杯联赛3…传奇杯联赛），CWL 与主村联赛 ID 结构同构
+  同一联赛体系（铜杯联赛3…传奇杯联赛）；其中 2026 新增 CWL 顶级档位按官方当前简中称呼为“泰坦杯3/2/1、传奇杯”，CWL 与主村联赛 ID 结构同构
   （48000010=Crystal League III ↔ 29000010=水晶杯联赛3）。
 
 ### 3 候选投票（本地化实现方式）

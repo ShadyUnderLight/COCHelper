@@ -98,9 +98,9 @@ public struct ClanWarMemberAction: Hashable, Sendable {
 /// 契约（spec 规则 4）：缺失星数**不计入** knownStars（0 是"已知且全为 0 星"
 /// 的真实事实，与"星数缺失"可区分）。
 /// **注意**：`knownStars + missingCount == attacks.count` 仅在官方契约值域
-/// （stars ∈ [0,3]）内成立——schema 违反输入（负数/超大星数）经 clamp 后
-/// 和可能小于 attack count（如 [-1, Int.max] → known 3, missing 0, count 2），
-/// 属 fail-closed 预期行为，不伪装总和。
+/// （stars ∈ [0,3]）内成立——schema 违反输入经 clamp 后和可能**不等于**
+/// attack count（纯负数 → 小于；超大值如 [-1, Int.max] → known 3, missing 0,
+/// count 2 → 大于），属 fail-closed 预期行为，不伪装总和。
 /// 与旧 `ClanWarMemberSummary.totalStars`（缺失记 0，锁定旧语义）刻意不共用——
 /// issue #125 要求表达"已知星数 + 未知攻击数"，旧类型无法表达。
 public struct ClanWarMemberStars: Hashable, Sendable {

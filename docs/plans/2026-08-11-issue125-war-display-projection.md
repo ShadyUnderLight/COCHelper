@@ -180,7 +180,7 @@ public enum ClanWarDisplayProjection {
 1. **phase**：trim 后精确匹配 notInWar/preparation/inWar/warEnded；其余（含空串、缺失）→ `.unknown(raw:)`，raw 为原始值。
 2. **quota**：有效配额 = `attacksPerMember != nil && > 0`；`totalAttacks = teamSize × attacksPerMember` 用 `SaturatingArithmetic`（或 `multipliedReportingOverflow`），溢出 → 饱和值 + `saturated = true`；任一输入 nil 或 <= 0 → `totalAttacks = nil`。
 3. **memberAction**：`attacks == nil` → `.unknown`；`attacks == []` → `.zero`（无条件，配额无关）；配额有效时按 count 与 quota 比较 → partial/complete/overQuota；配额无效且 count > 0 → `.quotaUnknown`。`remainingAttacks = quota - count`（仅 partial，恒 >= 1，无溢出可能）。
-4. **memberStars**：`attacks == nil` → nil；否则 `knownStars = Σ 非 nil stars`（负数/超大星数 clamp 到 [0,3] 再计入，与 UI 现有 `min(max($0,0),3)` 一致），`missingCount = 攻击条数中 stars == nil 的条数`。**守恒断言 `knownStars + missingCount == attacks.count` 仅在官方契约值域 [0,3] 内成立**——schema 违反输入经 clamp 后和可能小于 attack count（fail-closed 预期，不伪装总和）。
+4. **memberStars**：`attacks == nil` → nil；否则 `knownStars = Σ 非 nil stars`（负数/超大星数 clamp 到 [0,3] 再计入，与 UI 现有 `min(max($0,0),3)` 一致），`missingCount = 攻击条数中 stars == nil 的条数`。**守恒断言 `knownStars + missingCount == attacks.count` 仅在官方契约值域 [0,3] 内成立**——schema 违反输入经 clamp 后和可能不等于 attack count（可小于或大于，fail-closed 预期，不伪装总和）。
 5. **排序**：rank = zero(0) < partial(1) < complete(2) < {overQuota, quotaUnknown, unknown}(3)；组内 mapPosition（nil 排最后）→ name（nil 排最后，String 比较序，即 Unicode 规范化后比较）→ sourceIndex 升序。全序，与 sort 稳定性无关，幂等。
 6. **actionCounts**：六桶按 status 计数，Σ == rows.count。
 7. **displayGroup**：`preparation + .zero` → `.awaitingWar`；其余 status → 同名 case（.unknown/.zero → notAttacked 的映射仅当非 preparation）。具体：zero → (preparation ? awaitingWar : notAttacked)；partial → remaining；complete → complete；overQuota → overQuota；quotaUnknown → quotaUnknown；unknown → unknown。

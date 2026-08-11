@@ -66,6 +66,10 @@ def _emit_audit_report() -> None:
     与 _emit_coverage_report 同模式：独立于 validate_catalog 的 errors
     （评审红线：errors 非空即失败，诊断文本不得混入）；文件缺失/解析失败
     → 打印 unavailable 提示，不影响退出码。
+    内容非法（AuditStatusError）在此同样打印 unavailable——真正的失败
+    已由 validate_catalog 的 _check_audit_status_declarations 报 error
+    （exit 1），本诊断行不重复承载阻断语义（复审 Minor：措辞差异仅为
+    诊断细节，不改变退出码）。
     """
     try:
         audit = audit_report()

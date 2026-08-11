@@ -223,6 +223,17 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         XCTAssertEqual(stars?.knownStars, 6) // 0 + 3 + 3
     }
 
+    func testMemberStarsClampMayBreakSumInvariant() {
+        // schema 违反输入（负数/超大星数）clamp 后 known+missing 可能 < attack count，
+        // 不伪装总和（fail-closed 预期行为）
+        let m = member(attacks: [attack(stars: 0), attack(stars: -1), attack(stars: -3),
+                                 attack(stars: 0), attack(stars: Int.max)])
+        let stars = ClanWarDisplayProjection.memberStars(m)
+        XCTAssertEqual(stars?.knownStars, 3) // 0 + 0 + 0 + 0 + 3
+        XCTAssertEqual(stars?.missingCount, 0)
+        XCTAssertEqual((stars?.knownStars ?? 0) + (stars?.missingCount ?? 0), 3)
+    }
+
     // MARK: - sortedRows（规则 5）
 
     /// 四组顺序：zero(0) < partial(1) < complete(2) < {overQuota, quotaUnknown, unknown}(3)
@@ -562,6 +573,21 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         XCTAssertEqual(result, [.stars(official: 3, memberKnownSum: Int.max)])
         // 展示层 memberStars 不受影响（clamp 后 6）
         XCTAssertEqual(rows[0].stars?.knownStars, 6)
+    }
+
+    func testMismatchesOneSidedOfficialMissing() {
+        // 官方 attacks 缺失但 stars 存在：只比对 stars；反之亦然（逐字段独立）
+        let members = [member(tag: "1", attacks: [attack(stars: 1), attack(stars: 2)])]
+        let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+        let p = participant(attacks: nil, stars: 4, members: members)
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p, rows: rows), [])
+        let p2 = participant(attacks: nil, stars: 5, members: members)
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p2, rows: rows),
+                       [.stars(official: 5, memberKnownSum: 3)])
+        // 官方 stars 缺失但 attacks 存在：只比对 attacks
+        let p3 = participant(attacks: 3, stars: nil, members: members)
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p3, rows: rows),
+                       [.attackCount(official: 3, memberSum: 2)])
     }
 
     func testMismatchesBothDifferencesReported() {

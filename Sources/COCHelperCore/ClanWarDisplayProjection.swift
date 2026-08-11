@@ -96,8 +96,11 @@ public struct ClanWarMemberAction: Hashable, Sendable {
 /// 成员星数事实：Σ 已知星数 + 缺失数，显式分开。
 ///
 /// 契约（spec 规则 4）：缺失星数**不计入** knownStars（0 是"已知且全为 0 星"
-/// 的真实事实，与"星数缺失"可区分）；`attacks != nil` 时恒有
-/// `knownStars + missingCount == attacks.count`。
+/// 的真实事实，与"星数缺失"可区分）。
+/// **注意**：`knownStars + missingCount == attacks.count` 仅在官方契约值域
+/// （stars ∈ [0,3]）内成立——schema 违反输入（负数/超大星数）经 clamp 后
+/// 和可能小于 attack count（如 [-1, Int.max] → known 3, missing 0, count 2），
+/// 属 fail-closed 预期行为，不伪装总和。
 /// 与旧 `ClanWarMemberSummary.totalStars`（缺失记 0，锁定旧语义）刻意不共用——
 /// issue #125 要求表达"已知星数 + 未知攻击数"，旧类型无法表达。
 public struct ClanWarMemberStars: Hashable, Sendable {
@@ -552,6 +555,9 @@ public enum ClanWarDisplayProjection {
 
     /// 官方摘要 vs 成员推导诊断（spec 规则 9）。
     ///
+    /// 前置条件：`rows` 必须与 `participant` 同源（同一参与方的成员数组投影），
+    /// 类型系统不校验此绑定，传错参与方会产出错误诊断（当前唯一调用方
+    /// `participant(_:attacksPerMember:)` 保证同源）。
     /// 仅当成员侧数据完整（无 attacks == nil）且官方字段存在时才判数值差异：
     /// - 任一成员 attacks == nil → `[.membersIncomplete]`（推导不可得；官方
     ///   缺失时仍上报——成员不完整是独立可审计事实）；
@@ -569,6 +575,8 @@ public enum ClanWarDisplayProjection {
             return [.membersIncomplete]
         }
         let memberAttackSum = memberAttacks.reduce(0) { $0 + $1.count }
+        // 攻击次数求和用普通加法：count 是数组长度，受内存约束（现实不可达
+        // 溢出）；星数求和用饱和加法（schema 违反输入可达，见下）。
         // 事实层：原始 stars 饱和累加（含 nil 记 0）与缺失计数；展示层 clamp 不参与。
         // 溢出饱和到 Int.max（不崩溃）：官方 stars 值域 [0,3]，饱和值必然 ≠ 官方值，
         // 一致性判断的 fail-closed 语义保持不变。

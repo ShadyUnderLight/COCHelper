@@ -115,6 +115,8 @@ def counts_for(items: list[CatalogItem]) -> dict:
         "displayCategories": {
             "defense": sum(1 for i in items if i.section == "buildings"
                            and i.base == "home" and i.displayCategory == "defense"),
+            "walls": sum(1 for i in items if i.section == "buildings"
+                         and i.base == "home" and i.displayCategory == "walls"),
             "military": sum(1 for i in items if i.section == "buildings"
                             and i.base == "home" and i.displayCategory == "military"),
             "craftTable": sum(1 for i in items if i.section == "buildings"

@@ -4,7 +4,8 @@ Issue #75 工作流 C。**本文件是分类知识的唯一事实源——改分
 不要在其他地方维护第二份 ID 集合（防双源漂移；Swift 侧白名单由 Task 2 删除）。
 
 分类结论（与 Swift BuildingDisplayCategoryRules 现状逐字一致，基础设施迁移不改变分类）：
-- 73 个 home buildings = 33 分类（21 defense + 11 military + 1 craftTable 1000097）+ 40 兜底；
+- 73 个 home buildings = 33 分类（20 defense + 1 walls 1000010 + 11 military
+  + 1 craftTable 1000097）+ 40 兜底；
 - 兜底项维持现状契约（含 TH17 新建筑 1000093/1000098/1000099/1000100 等），
   是否应归入某分类待裁决（注释登记，勿在未裁决时静默改动）。
 
@@ -15,12 +16,15 @@ from dataclasses import replace
 
 from .model import CatalogItem
 
-# 防御建筑（Swift defenseDataIDs，21 项）
+# 防御建筑（Swift defenseDataIDs，20 项）
 DEFENSE_DATA_IDS: frozenset[int] = frozenset({
-    1000008, 1000009, 1000010, 1000011, 1000012, 1000013, 1000019,
+    1000008, 1000009, 1000011, 1000012, 1000013, 1000019,
     1000021, 1000027, 1000028, 1000031, 1000032, 1000067, 1000072,
     1000077, 1000079, 1000084, 1000085, 1000086, 1000089, 1000102,
 })
+
+# 城墙（Issue #123：主村城墙 1000010 自 defense 移入 walls，1 项）
+WALL_DATA_IDS: frozenset[int] = frozenset({1000010})
 
 # 军事建筑（Swift militaryDataIDs，11 项）
 MILITARY_DATA_IDS: frozenset[int] = frozenset({
@@ -32,7 +36,7 @@ MILITARY_DATA_IDS: frozenset[int] = frozenset({
 CRAFT_TABLE_DATA_ID: int = 1000097
 
 # 兜底：其余全部 home buildings（73 − 33 = 40 项）。从 bundled catalog 实证核对：
-# 所有 home buildings 中不在 defense/military/craftTable 集合的 dataID 精确等于此表。
+# 所有 home buildings 中不在 defense/walls/military/craftTable 集合的 dataID 精确等于此表。
 # 现状契约：维持兜底（displayCategory = None），是否分类待裁决。
 INTENTIONAL_FALLBACK_DATA_IDS: frozenset[int] = frozenset({
     # 资源建筑
@@ -57,7 +61,7 @@ INTENTIONAL_FALLBACK_DATA_IDS: frozenset[int] = frozenset({
 })
 
 # displayCategory 闭枚举（validate 校验用）
-DISPLAY_CATEGORIES: frozenset[str] = frozenset({"defense", "military", "craftTable"})
+DISPLAY_CATEGORIES: frozenset[str] = frozenset({"defense", "walls", "military", "craftTable"})
 
 
 def _category_for(item: CatalogItem) -> str | None:
@@ -66,6 +70,8 @@ def _category_for(item: CatalogItem) -> str | None:
         return None
     if item.dataID == CRAFT_TABLE_DATA_ID:
         return "craftTable"
+    if item.dataID in WALL_DATA_IDS:
+        return "walls"
     if item.dataID in DEFENSE_DATA_IDS:
         return "defense"
     if item.dataID in MILITARY_DATA_IDS:
@@ -76,7 +82,7 @@ def _category_for(item: CatalogItem) -> str | None:
 def apply_display_categories(items: list[CatalogItem]) -> list[CatalogItem]:
     """对 items 应用展示分类，返回新列表（不改入参，纯函数）。
 
-    - home buildings：命中 defense/military/craftTable → 对应分类；否则 None（兜底）；
+    - home buildings：命中 defense/walls/military/craftTable → 对应分类；否则 None（兜底）；
     - 其他 section/base（buildings2、units、capital_* 等）→ 恒 None。
     """
     return [replace(item, displayCategory=_category_for(item)) for item in items]

@@ -522,7 +522,7 @@ public struct CatalogItem: Codable, Identifiable, Hashable, Sendable {
     /// `deprecated_in_source`）。旧目录缺键 → nil（向后兼容）；此前该字段
     /// 在 Swift 模型缺失，解码时被静默丢弃。
     public let missingReason: String?
-    /// Issue #75 工作流 C：home 建筑展示分类（"defense"/"military"/"craftTable"，
+    /// Issue #75 工作流 C：home 建筑展示分类（"defense"/"walls"/"military"/"craftTable"，
     /// 非 home 恒 null）。catalog 数据唯一事实源（Python 侧 validate 闭枚举），
     /// Swift 侧无白名单。旧目录缺键 → nil（向后兼容）→ UI 走「建筑与防御」兜底。
     public let displayCategory: String?

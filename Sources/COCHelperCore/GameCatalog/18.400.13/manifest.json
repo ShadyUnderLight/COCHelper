@@ -4,9 +4,10 @@
     "blockedIcons": 11,
     "displayCategories": {
       "craftTable": 1,
-      "defense": 21,
+      "defense": 20,
       "military": 11,
-      "uncategorizedBuildings": 40
+      "uncategorizedBuildings": 40,
+      "walls": 1
     },
     "initialLevel": 429,
     "instant": 75,
@@ -24,8 +25,8 @@
   "generatedFiles": [
     {
       "path": "catalog.json",
-      "sha256": "sha256:ca9f88c9a91d37039dfd667d388acb07201b2b502e4c840ead58f7f7035754f6",
-      "size": 4334759
+      "sha256": "sha256:a024fe5be9c3edff5f1f7e4f5ceeb0c013d3714b98a17678a7a7dd7d7dd225ab",
+      "size": 4334757
     },
     {
       "entries": 1264,

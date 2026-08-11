@@ -397,6 +397,7 @@ extension TrackerDisplayCategory {
     var tint: Color {
         switch self {
         case .defense: .blue
+        case .walls: .brown
         case .military: .orange
         case .craftTable: .purple
         }

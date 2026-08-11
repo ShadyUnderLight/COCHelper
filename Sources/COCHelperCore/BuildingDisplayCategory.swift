@@ -2,6 +2,7 @@ import Foundation
 
 public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case defense
+    case walls
     case military
     case craftTable
 
@@ -10,6 +11,7 @@ public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Ide
     public var title: String {
         switch self {
         case .defense: "防御建筑"
+        case .walls: "城墙"
         case .military: "军事设施"
         case .craftTable: "精制台"
         }
@@ -18,6 +20,7 @@ public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Ide
     public var systemImage: String {
         switch self {
         case .defense: "shield.lefthalf.filled"
+        case .walls: "square.grid.3x3"
         case .military: "figure.arms.open"
         case .craftTable: "hammer.fill"
         }
@@ -26,15 +29,16 @@ public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Ide
     public var sortOrder: Int {
         switch self {
         case .defense: 0
-        case .military: 1
-        case .craftTable: 2
+        case .walls: 1
+        case .military: 2
+        case .craftTable: 3
         }
     }
 }
 
 /// Issue #37 + #75 工作流 C：主世界建筑展示分类。数据源 = catalog 的
 /// `displayCategory` 字段（**唯一事实源**，Python 侧 validate 闭枚举保证
-/// "defense"/"military"/"craftTable"/null；Swift 侧白名单已随数据化删除）。
+/// "defense"/"walls"/"military"/"craftTable"/null；Swift 侧白名单已随数据化删除）。
 /// 规则：section == "buildings" 且 base == .home 才细分（按根父 dataID 查
 /// catalog）；catalog 为 nil、目录 item 缺失或字段缺失 → nil → UI 走原
 /// 「建筑与防御」兜底，项目不丢失（安全回退）——**精制台除外**（身份常量

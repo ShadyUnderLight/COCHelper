@@ -5783,7 +5783,7 @@
       "baseMissingReason": null,
       "category": "buildings",
       "dataID": 1000010,
-      "displayCategory": "defense",
+      "displayCategory": "walls",
       "icon": null,
       "levelVisual": {
         "container": "sc/buildings.sc",

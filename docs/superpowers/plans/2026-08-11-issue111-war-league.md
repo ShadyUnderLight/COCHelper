@@ -2,7 +2,9 @@
 
 日期：2026-08-11
 基线：`origin/main@32628b6`
-状态：设计完成，待 TDD 实现
+状态：**已实现并合入候选（PR #115）**。TDD 红→绿已执行（RED：编译失败 / 断言失败，
+GREEN：1025 tests 0 failures）；Spec 审查、Code quality 审查、两个独立 subagent
+交叉审核均通过；Python 回归 757 passed, 2 skipped。
 
 ## 1. 问题定义（SDD）
 

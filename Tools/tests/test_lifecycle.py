@@ -16,9 +16,11 @@ from game_catalog.catalog import generate
 from game_catalog.errors import CatalogError
 from game_catalog.lifecycle import (
     LIFECYCLE_VALUES,
+    PHASE_COVERAGE_VALUES,
     apply_lifecycle,
     lifecycle_for,
     load_declarations,
+    load_phase_coverage,
 )
 from game_catalog.model import Catalog, CatalogItem, CatalogLevel, catalog_to_dict
 from game_catalog.validate import validate_catalog
@@ -238,6 +240,8 @@ def test_lifecycle_for_known_and_unknown():
         (None, "声明文件缺失"),
         # schemaVersion != 1
         ({"schemaVersion": 2, "items": {}}, "schemaVersion"),
+        # schemaVersion=true（bool 是 int 子类且 True == 1，R9 绕过类）→ CatalogError
+        ({"schemaVersion": True, "items": {}}, "schemaVersion"),
         # items 键缺失
         ({"schemaVersion": 1}, "缺少 items"),
         # 条目值非法（非 dict / lifecycle 非字符串）
@@ -266,6 +270,105 @@ def test_load_declarations_failure_paths(monkeypatch, tmp_path, content, message
     monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
     with pytest.raises(CatalogError) as ei:
         load_declarations()
+    assert message_fragment in str(ei.value)
+
+
+# ---- phaseCoverage：声明层结构化日期覆盖（Issue #112） ----
+
+# required = 有可靠官方日期、必须命中 phase 表（精工防御 3 条 + 派对法师
+# Party Wizard，官方公告 2026-04-08 08:00 UTC ~ 2026-04-29 08:00 UTC）。
+PHASE_COVERAGE_REQUIRED_KEYS = {
+    "buildings:103000008", "buildings:103000009", "buildings:103000010",
+    "units:4000072",
+}
+
+
+def test_phase_coverage_wellformed():
+    """phaseCoverage 声明契约：required+unknown 之和 == seasonalCandidate 总数；
+    required 集合 == 官方可靠日期 4 条清单；permanent 条目不得携带 phaseCoverage
+    （防误标）；seasonalCandidate 全部有合法枚举值。"""
+    coverage = load_phase_coverage()
+    raw_items = json.loads(DECLARATIONS.read_text(encoding="utf-8"))["items"]
+    seasonal = [k for k, e in raw_items.items() if e["lifecycle"] == "seasonalCandidate"]
+    # required + unknown == seasonalCandidate 总数（数量从文件动态计算，不硬编码）
+    assert len(coverage) == len(seasonal)
+    assert set(coverage) == set(seasonal)
+    assert set(coverage.values()) <= PHASE_COVERAGE_VALUES
+    assert all(isinstance(v, str) for v in coverage.values())
+    # required 集合 == 官方可靠日期 4 条清单
+    required = {k for k, v in coverage.items() if v == "required"}
+    assert required == PHASE_COVERAGE_REQUIRED_KEYS
+    # permanent 条目不得携带 phaseCoverage（防误标）
+    for key, entry in raw_items.items():
+        if entry["lifecycle"] == "permanent":
+            assert "phaseCoverage" not in entry, f"{key} permanent 误带 phaseCoverage"
+    # seasonalCandidate 全部有合法 phaseCoverage
+    for key in seasonal:
+        assert raw_items[key].get("phaseCoverage") in PHASE_COVERAGE_VALUES, key
+
+
+def test_phase_coverage_not_written_to_catalog():
+    """phaseCoverage 是声明层私有字段：catalog.json / craft_table_catalog.json
+    不得携带（Swift CatalogItem/SeasonalDefense 无此字段，落盘会污染 Codable
+    解码契约）。"""
+    catalog = json.loads((CATALOG_DIR / "catalog.json").read_text(encoding="utf-8"))
+    craft = json.loads((CATALOG_DIR / "craft_table_catalog.json").read_text(encoding="utf-8"))
+    for item in catalog["items"]:
+        assert "phaseCoverage" not in item, f"{item['section']}:{item['dataID']}"
+    for defense in craft["defenses"]:
+        assert "phaseCoverage" not in defense, f"buildings:{defense['dataID']}"
+
+
+@pytest.mark.parametrize(
+    ("content", "message_fragment"),
+    [
+        # seasonalCandidate 缺 phaseCoverage（可追溯性缺失）→ CatalogError
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "note": "n"}}}, "phaseCoverage"),
+        # phaseCoverage 未知值（闭枚举外）→ CatalogError
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "phaseCoverage": "maybe",
+                                                "note": "n"}}}, "phaseCoverage"),
+        # permanent 条目误带 phaseCoverage → CatalogError（防误标）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
+                                                "phaseCoverage": "required",
+                                                "note": "n"}}}, "permanent"),
+        # lifecycle 未知值（与 load_declarations 同口径）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "other"}}}, "未知值"),
+        # 文件缺失（临时目录下不存在）
+        (None, "声明文件缺失"),
+        # schemaVersion != 1
+        ({"schemaVersion": 2, "items": {}}, "schemaVersion"),
+        # schemaVersion=true（bool 是 int 子类且 True == 1，R9 绕过类）→ CatalogError
+        ({"schemaVersion": True, "items": {}}, "schemaVersion"),
+        # items 键缺失
+        ({"schemaVersion": 1}, "缺少 items"),
+        # 条目值非法（非 dict / lifecycle 非字符串）
+        ({"schemaVersion": 1, "items": {"a:1": "required"}}, "条目非法"),
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": 123,
+                                                "phaseCoverage": "required"}}}, "条目非法"),
+        # 顶层非 dict（如列表）→ CatalogError
+        ([1, 2], "schemaVersion"),
+        # JSON 语法错误（原始串，非 json.dumps 产物）→ CatalogError
+        ("{not json", "解析失败"),
+    ],
+)
+def test_load_phase_coverage_failure_paths(monkeypatch, tmp_path, content, message_fragment):
+    """load_phase_coverage 失败路径全部 fail loud → CatalogError（消息含具体原因）；
+    phaseCoverage 只存在于声明层，不写入 catalog 产物（成功路径用真实声明文件，
+    其余测试不受 monkeypatch 影响）。"""
+    if content is None:
+        path = tmp_path / "missing_lifecycle_declarations.json"  # 不存在
+    else:
+        path = tmp_path / "declarations.json"
+        if isinstance(content, str):
+            # JSON 语法错误用例：原始内容直接写入（不经过 json.dumps）
+            path.write_text(content, encoding="utf-8")
+        else:
+            path.write_text(json.dumps(content), encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
+    with pytest.raises(CatalogError) as ei:
+        load_phase_coverage()
     assert message_fragment in str(ei.value)
 
 

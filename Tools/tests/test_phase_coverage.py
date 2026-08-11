@@ -145,6 +145,10 @@ def test_coverage_report_summary():
         ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
                                           "until": 10**400,
                                           "itemKeys": ["a:1"]}]}, "until 超出 Swift Double"),
+        # Issue #113 审计 R3-F1：underflow 字面量 → 解析失败（coverage 同口径）
+        ("""{"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                            "until": 1e-325,
+                                            "itemKeys": ["a:1"]}]}""", "underflow"),
     ],
 )
 def test_coverage_report_failure_paths(monkeypatch, tmp_path, content, message_fragment):

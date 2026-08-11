@@ -30,7 +30,15 @@ def _catalog_game_version(catalog_dir: Path) -> str | None:
         manifest = json.loads(
             (catalog_dir / "manifest.json").read_text(encoding="utf-8"))
         version = manifest.get("gameVersion")
-        return version if isinstance(version, str) and version else None
+        if not isinstance(version, str) or not version:
+            return None
+        # Issue #113 审计 R3-Minor4：gameVersion 直接拼文件路径（_phases_path），
+        # 含 `../`/绝对路径的非法值可让 validator 越界读任意本地文件（解析失败
+        # rc=1 + 路径泄露）。白名单 [0-9.]——非法格式回退 None（默认版本），
+        # 与缺失同语义（覆盖/冲突检查不因坏 manifest 硬断）。
+        if not all(ch in "0123456789." for ch in version):
+            return None
+        return version
     except (OSError, ValueError, json.JSONDecodeError, AttributeError):
         return None
 

@@ -930,6 +930,12 @@ def test_find_lifecycle_phase_conflicts_multiple_phases_all_reported(tmp_path):
         ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
                                           "until": 10**400,
                                           "itemKeys": ["a:1"]}]}, "until 超出 Swift Double"),
+        # Issue #113 审计 R3-F1：非零 underflow 字面量（1e-325 → Python 归零、
+        # Swift 解码失败）→ 解析失败（必须用原始 JSON 字符串——json.dumps 序列化
+        # 时 1e-325 已被 Python 归零为 0.0，字面量信息丢失）
+        ("""{"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                            "until": 1e-325,
+                                            "itemKeys": ["a:1"]}]}""", "underflow"),
     ],
 )
 def test_find_lifecycle_phase_conflicts_phases_failure_paths(

@@ -318,6 +318,51 @@ def test_validate_cli_conflict_check_unavailable_does_not_fail(
     assert "conflict check: unavailable" in captured.err, captured.err
 
 
+def test_validate_cli_game_version_path_traversal_ignored(
+    full_minimal_apk, tmp_path, monkeypatch, capsys
+):
+    """Issue #113 审计 R3-Minor4：manifest.gameVersion 含路径穿越字符（如
+    ../）→ 白名单 [0-9.] 拒绝 → 回退默认版本（18.400.13 bundled 存在 → 冲突
+    检查照常运行，rc=0，无越界读文件）。"""
+    import validate_game_catalog as vgc
+
+    apk = full_minimal_apk
+    out = tmp_path / "out"
+    _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+          "--output", str(out), "--game-version", "18.400.13"])
+    import hashlib
+    import json
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    m["gameVersion"] = "../../etc"
+    # 三处 gameVersion 必须同步（manifest == catalog == craft 一致性校验）
+    craft_bytes = craft_bytes.replace(b"18.400.13", b"../../etc")
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    m["generatedFiles"][-1]["sha256"] = "sha256:" + hashlib.sha256(craft_bytes).hexdigest()
+    m["generatedFiles"][-1]["size"] = len(craft_bytes)
+    catalog_path = out / "catalog.json"
+    catalog_raw = json.loads(catalog_path.read_text(encoding="utf-8"))
+    catalog_raw["gameVersion"] = "../../etc"
+    catalog_path.write_text(json.dumps(catalog_raw, ensure_ascii=False), encoding="utf-8")
+    for entry in m["generatedFiles"]:
+        if entry["path"] == "catalog.json":
+            entry["sha256"] = "sha256:" + hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+            entry["size"] = catalog_path.stat().st_size
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+    rc = vgc.main(["--catalog", str(out)])
+    assert rc == 0, "非法 gameVersion 必须回退默认版本而非越界读文件"
+    captured = capsys.readouterr()
+    assert "etc" not in captured.err, f"不得泄露越界路径: {captured.err}"
+    assert "conflict check: unavailable" not in captured.err, \
+        "默认版本 bundled 阶段表存在，冲突检查应正常运行"
+
+
 def test_validate_cli_corrupt_phase_with_real_conflict_fails(
     full_minimal_apk, tmp_path, monkeypatch, capsys
 ):

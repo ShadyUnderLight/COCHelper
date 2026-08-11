@@ -22,7 +22,30 @@ from .model import CatalogItem
 #: Swift Double 可表示上限（JSONDecoder .deferredToDate 解码 Date 的域）。
 #: 超出此范围的数值（含 Python 任意精度 int 与 1e400 → inf）在 Swift 侧
 #: 解码失败 → 整表变空；Python 不得当合法命中（两侧漂移）。
+#: 已知边界（红队 R3 Minor 2/3，fail-closed 方向，不修）：Python 对
+#: Double.max+1（Swift 舍入后可用）与 >2^53 精度差（Swift 舍入后可能 from
+#: == until）比 Swift 更严格——多报不误放，触发需荒谬时间戳（2.85 亿年+）。
 _DOUBLE_MAX = 1.7976931348623157e308
+
+#: Swift 最小正 subnormal（2^-1074 ≈ 4.94e-324）。JSONDecoder 对「非零但
+#: underflow 为 0」的字面量（如 1e-325）解码失败；Python json.loads 会静默
+#: 归零——_strict_parse_float 镜像 Swift 语义，见下。
+_DOUBLE_MIN_SUBNORMAL = 4.9406564584124654e-324
+
+
+def _strict_parse_float(raw: str) -> float:
+    """json.loads 的 parse_float：镜像 Swift JSONDecoder Double 解析语义。
+
+    Issue #113 审计 R3-F1：非零字面量在 Python 中 underflow 为 0.0（如
+    1e-325、1e-4000）时，Swift 解码失败 → 整表变空；Python 若静默归零会把
+    该 phase 当合法命中（与上溢 1e400 同构、方向相反）。规则：float 结果为
+    0.0 且字面量含非零数字 → 解析失败（Swift 对 4e-324 舍入到最小 subnormal
+    仍可解码，Python 同样舍入非零——两侧一致）。
+    """
+    value = float(raw)
+    if value == 0.0 and any(ch in raw for ch in "123456789"):
+        raise ValueError(f"非零数值 underflow 为 0（Swift Double 不可表示）: {raw}")
+    return value
 
 DECLARATIONS_PATH = Path(__file__).resolve().parent / "lifecycle_declarations.json"
 
@@ -77,12 +100,16 @@ def _load_raw(path: Path, label: str) -> dict:
     内容检查留在各调用点（结构不同，不合并进本 helper）。
     """
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_float=_strict_parse_float,  # R3-F1：underflow 字面量镜像 Swift 解码失败
+        )
     except FileNotFoundError:
         raise CatalogError(f"{label}缺失: {path}") from None
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
         # Issue #113 审计 F8：UnicodeDecodeError（ValueError 子类，非 OSError）
         # 此前逃逸为裸 traceback——非 UTF-8 文件统一转干净 CatalogError。
+        # R3-F1：_strict_parse_float 抛的 ValueError 同路径归入解析失败。
         raise CatalogError(f"{label}解析失败: {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise CatalogError(f"{label} schemaVersion != 1: {path}")
@@ -322,7 +349,7 @@ def _load_validated_phases(phases_path: Path) -> list[dict]:
             if abs(value) > _DOUBLE_MAX:
                 raise CatalogError(
                     f"阶段表文件 phases[{i}] 非法: {field} 超出 Swift Double "
-                    f"上限: {value!r}")
+                    f"可表示范围: {value!r}")
         for optional_field in ("name", "sourceURL"):
             value = phase.get(optional_field)
             if value is not None and not isinstance(value, str):

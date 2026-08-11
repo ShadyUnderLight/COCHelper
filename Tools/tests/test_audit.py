@@ -1,7 +1,7 @@
 """Issue #109：声明层 auditStatus（待人工复核清单）测试。测试是契约。
 
-- 种子快照：当前 8 条已知待核实条目标 pending（tripwire——外部核实完成后
-  逐条改 verified + note，并同步更新本清单）；
+- 种子快照：8 条已核实条目（Issue #109 1/2 条闭环）标 verified + 证据 note，
+  pending 为空（tripwire——核实状态变化时同步更新 VERIFIED_AUDIT_KEYS）；
 - load_audit_status 失败路径全部 fail loud（值非法 / verified 缺 note）；
 - compute_audit_report 纯函数 hypothesis property：分类守恒 + 意外值容忍 +
   排序确定性；
@@ -37,30 +37,35 @@ DECLARATIONS = (
     / "game_catalog" / "lifecycle_declarations.json"
 )
 
-# 种子快照：Issue #109 已知待核实条目（8 条，auditStatus 域 = permanent 且
-# 判定悬而未决；见模块 docstring 判据）。外部核实完成后逐条改 verified +
-# note 留痕，并同步更新本清单（tripwire，与 test_phase_coverage 的
-# PHASE_COVERAGE_REQUIRED_KEYS 同模式）。
-PENDING_AUDIT_KEYS = {
+# 种子快照（tripwire，与 test_phase_coverage 的 PHASE_COVERAGE_REQUIRED_KEYS
+# 同模式）：
+# - VERIFIED_AUDIT_KEYS：Issue #109 1/2 条已外部核实的 8 条（APK provenance +
+#   官方模式语义证据链，2026-08-11 核实完成）——保持 permanent + verified +
+#   note 证据留痕；
+# - PENDING_AUDIT_KEYS：当前无待核实条目（新发现待核实条目时加入并标 pending）。
+# 后续任何核实状态变化必须同步更新本清单。
+VERIFIED_AUDIT_KEYS = {
     "units:4000090",
     "guardians:107000002", "guardians:107000003", "guardians:107000004",
     "guardians:107000005", "guardians:107000006", "guardians:107000007",
     "guardians:107000009",
 }
+PENDING_AUDIT_KEYS: set[str] = set()
 
 
-def test_audit_status_seed_pending():
-    """种子快照：8 条已知待核实条目标 pending；verified 目前为 0；字段值闭枚举。"""
+def test_audit_status_seed_verified():
+    """种子快照：8 条已知待核实条目已核实为 verified（Issue #109 1/2 条闭环）；
+    pending 当前为空；字段值闭枚举。"""
     statuses = load_audit_status()
     pending = {k for k, v in statuses.items() if v == "pending"}
     verified = {k for k, v in statuses.items() if v == "verified"}
     assert pending == PENDING_AUDIT_KEYS
-    assert verified == set()
+    assert verified == VERIFIED_AUDIT_KEYS
     raw = json.loads(DECLARATIONS.read_text(encoding="utf-8"))["items"]
-    for key in PENDING_AUDIT_KEYS:
-        assert raw[key]["lifecycle"] == "permanent", f"{key} 种子必须是 permanent"
-        assert raw[key]["note"], f"{key} 待核实必须留痕 note"
-        assert raw[key]["auditStatus"] == "pending"
+    for key in VERIFIED_AUDIT_KEYS:
+        assert raw[key]["lifecycle"] == "permanent", f"{key} 核实后必须是 permanent"
+        assert raw[key]["note"], f"{key} 核实必须留痕 note（证据链）"
+        assert raw[key]["auditStatus"] == "verified"
     for key, entry in raw.items():
         if "auditStatus" in entry:
             assert entry["auditStatus"] in AUDIT_STATUS_VALUES, key
@@ -141,20 +146,21 @@ def test_load_audit_status_failure_paths(monkeypatch, tmp_path, content, message
 
 
 def test_load_audit_status_ignores_missing_field():
-    """无 auditStatus 字段的条目不进入返回（最小侵入：689 条无需复核不带字段）。"""
+    """无 auditStatus 字段的条目不进入返回（最小侵入：689 条无需复核不带字段）；
+    带字段的 8 条全部 verified。"""
     statuses = load_audit_status()
-    assert len(statuses) == len(PENDING_AUDIT_KEYS)  # 只有种子 8 条
-    assert set(statuses) == PENDING_AUDIT_KEYS
-    assert set(statuses.values()) == {"pending"}
+    assert len(statuses) == len(VERIFIED_AUDIT_KEYS)  # 只有核实过的 8 条
+    assert set(statuses) == VERIFIED_AUDIT_KEYS
+    assert set(statuses.values()) == {"verified"}
 
 
 def test_audit_report_summary():
-    """audit_report 真实数据：pending == 种子 8 条；verified == 0。"""
+    """audit_report 真实数据：pending == 0（无待核实）；verified == 8 条。"""
     report = audit_report()
-    assert report["pending"] == 8
-    assert report["verified"] == 0
-    assert set(report["pending_keys"]) == PENDING_AUDIT_KEYS
-    assert report["verified_keys"] == []
+    assert report["pending"] == 0
+    assert report["verified"] == 8
+    assert report["pending_keys"] == []
+    assert set(report["verified_keys"]) == VERIFIED_AUDIT_KEYS
 
 
 # ---- compute_audit_report：hypothesis property ----
@@ -299,7 +305,7 @@ def test_validate_rejects_audit_status_on_seasonal(monkeypatch, tmp_path):
 
 
 def test_validate_accepts_wellformed_audit_status():
-    """P2 正向：真实声明文件（8 条合法 pending 种子）→ validate 不报
+    """P2 正向：真实声明文件（8 条合法 verified 条目）→ validate 不报
     auditStatus 错误（基线对照）。"""
     import game_catalog.validate as validate_module
     errors = validate_module.validate_catalog(

@@ -120,7 +120,9 @@ final class BuildingDisplayCategoryTests: XCTestCase {
     }
 
     func testWallsNotClassifiedOutsideHomeBuildings() {
-        // 夜世界城墙（buildings2，dataID 1000010 与主世界城墙同号但不同物）不得归入城墙组
+        // 构造场景：buildings2 中构造与主世界城墙同 dataID 1000010 的条目
+        //（真实目录中夜世界城墙为 buildings2:1000033，buildings2 不存在 1000010；
+        // 构造同号是越界测试的最坏情况）→ 不得归入城墙组
         XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
             section: "buildings2", dataID: 1000010, base: .builder, rootParentDataID: nil, catalog: syntheticCatalog
         ))

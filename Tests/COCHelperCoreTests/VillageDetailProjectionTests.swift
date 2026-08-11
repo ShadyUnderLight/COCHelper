@@ -1025,11 +1025,14 @@ final class VillageDetailProjectionTests: XCTestCase {
         // 点「建筑与防御」chip 若按 category 匹配会误含防御/军事/精制台全部展示组，
         // 与 chip 计数（已排除 display 组）矛盾。
         let display = VillageDetailGroup(category: .buildings, displayCategory: .defense, items: [])
+        let walls = VillageDetailGroup(category: .buildings, displayCategory: .walls, items: [])
         let fallback = VillageDetailGroup(category: .buildings, displayCategory: nil, items: [])
         let traps = VillageDetailGroup(category: .traps, displayCategory: nil, items: [])
         XCTAssertTrue(VillageDetailProjection.matchesCategoryFilter(fallback, category: .buildings))
         XCTAssertFalse(VillageDetailProjection.matchesCategoryFilter(display, category: .buildings),
                        "display 组不得命中 buildings 筛选")
+        XCTAssertFalse(VillageDetailProjection.matchesCategoryFilter(walls, category: .buildings),
+                       "walls 展示组同样不得命中 buildings 筛选（Issue #123）")
         XCTAssertFalse(VillageDetailProjection.matchesCategoryFilter(traps, category: .buildings))
         XCTAssertTrue(VillageDetailProjection.matchesCategoryFilter(traps, category: .traps))
     }
@@ -1038,7 +1041,7 @@ final class VillageDetailProjectionTests: XCTestCase {
 
     func testPropertyDisplayCategoryGroupsConserveItems() {
         var rng = SeededRNG(seed: 0xAB_CD)
-        let displayCats: [TrackerDisplayCategory?] = [.defense, .military, .craftTable, nil]
+        let displayCats: [TrackerDisplayCategory?] = [.defense, .walls, .military, .craftTable, nil]
         for _ in 0..<200 {
             let items = (0..<Int(rng.next() % 40)).map { idx in
                 let dc = displayCats[Int(rng.next() % UInt64(displayCats.count))]

@@ -20,6 +20,15 @@ from .model import CatalogItem
 
 DECLARATIONS_PATH = Path(__file__).resolve().parent / "lifecycle_declarations.json"
 
+# bundled 阶段表（Issue #112 coverage 报告用）：从本文件推导 repo 根再下钻，
+# 与 test_lifecycle.py 的 CATALOG_DIR 推导方式一致（本文件位于 Tools/game_catalog/，
+# parents[2] = repo 根）。
+PHASES_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "Sources" / "COCHelperCore" / "GameCatalog" / "18.400.13"
+    / "seasonal_phases.json"
+)
+
 # lifecycle 闭枚举（validate 校验用）
 LIFECYCLE_VALUES: frozenset[str] = frozenset({"permanent", "seasonalCandidate"})
 
@@ -30,27 +39,36 @@ LIFECYCLE_VALUES: frozenset[str] = frozenset({"permanent", "seasonalCandidate"})
 PHASE_COVERAGE_VALUES: frozenset[str] = frozenset({"required", "unknown"})
 
 
+def _load_raw(path: Path, label: str) -> dict:
+    """读 + JSON 解析 + 顶层 dict + schemaVersion==1 校验 → raw dict。
+
+    label 用于错误消息（"lifecycle 声明文件" / "阶段表文件"），保持各调用点
+    既有消息逐字节不变（失败路径测试断言消息片段）。items/phases 等结构
+    内容检查留在各调用点（结构不同，不合并进本 helper）。
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise CatalogError(f"{label}缺失: {path}") from None
+    except (json.JSONDecodeError, OSError) as exc:
+        raise CatalogError(f"{label}解析失败: {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise CatalogError(f"{label} schemaVersion != 1: {path}")
+    sv = raw.get("schemaVersion")
+    if isinstance(sv, bool) or not isinstance(sv, int) or sv != 1:
+        # bool 是 int 子类且 True == 1——先排除 bool，否则 JSON true 绕过比较
+        # （R9 防御，与 validate.py 同模式）
+        raise CatalogError(f"{label} schemaVersion != 1: {path}")
+    return raw
+
+
 def load_declarations() -> dict[str, str]:
     """读声明文件 → {key: lifecycle}（key = "section:dataID"）。
 
     文件缺失 / JSON 解析失败 / schemaVersion != 1 / 值非闭枚举 → CatalogError
     （fail loud，声明文件是生成前置条件）。
     """
-    try:
-        raw = json.loads(DECLARATIONS_PATH.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        raise CatalogError(f"lifecycle 声明文件缺失: {DECLARATIONS_PATH}") from None
-    except (json.JSONDecodeError, OSError) as exc:
-        raise CatalogError(f"lifecycle 声明文件解析失败: {DECLARATIONS_PATH}: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise CatalogError(
-            f"lifecycle 声明文件 schemaVersion != 1: {DECLARATIONS_PATH}")
-    sv = raw.get("schemaVersion")
-    if isinstance(sv, bool) or not isinstance(sv, int) or sv != 1:
-        # bool 是 int 子类且 True == 1——先排除 bool，否则 JSON true 绕过比较
-        # （R9 防御，与 validate.py 同模式）
-        raise CatalogError(
-            f"lifecycle 声明文件 schemaVersion != 1: {DECLARATIONS_PATH}")
+    raw = _load_raw(DECLARATIONS_PATH, "lifecycle 声明文件")
     items = raw.get("items")
     if not isinstance(items, dict):
         raise CatalogError(f"lifecycle 声明文件缺少 items: {DECLARATIONS_PATH}")
@@ -76,21 +94,7 @@ def load_phase_coverage() -> dict[str, str]:
     - 文件缺失 / 解析失败 / schemaVersion != 1 → CatalogError（与
       load_declarations 同口径，声明文件是生成前置条件）。
     """
-    try:
-        raw = json.loads(DECLARATIONS_PATH.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        raise CatalogError(f"lifecycle 声明文件缺失: {DECLARATIONS_PATH}") from None
-    except (json.JSONDecodeError, OSError) as exc:
-        raise CatalogError(f"lifecycle 声明文件解析失败: {DECLARATIONS_PATH}: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise CatalogError(
-            f"lifecycle 声明文件 schemaVersion != 1: {DECLARATIONS_PATH}")
-    sv = raw.get("schemaVersion")
-    if isinstance(sv, bool) or not isinstance(sv, int) or sv != 1:
-        # bool 是 int 子类且 True == 1——先排除 bool，否则 JSON true 绕过比较
-        # （R9 防御，与 validate.py 同模式）
-        raise CatalogError(
-            f"lifecycle 声明文件 schemaVersion != 1: {DECLARATIONS_PATH}")
+    raw = _load_raw(DECLARATIONS_PATH, "lifecycle 声明文件")
     items = raw.get("items")
     if not isinstance(items, dict):
         raise CatalogError(f"lifecycle 声明文件缺少 items: {DECLARATIONS_PATH}")
@@ -114,6 +118,59 @@ def load_phase_coverage() -> dict[str, str]:
                 f"{key}: {coverage!r}")
         out[key] = coverage
     return out
+
+
+def compute_phase_coverage(
+    decl: dict[str, str], phases: list[dict]
+) -> dict[str, int]:
+    """统计 seasonalCandidate phaseCoverage 与阶段表的对账（纯函数，可 property 测试）。
+
+    Issue #112。输入：
+    - decl：{key: phaseCoverage}（key = "section:dataID"；值 required/unknown。
+      不做 load 校验——load 由 load_phase_coverage 负责，纯函数不重复校验；
+      意外值按「非 required」处理，不崩溃）；
+    - phases：阶段表 phases 数组（每项含 itemKeys 列表；缺 itemKeys 按空处理）。
+
+    返回结构化统计（全部非负整数，见 test_phase_coverage.py 的不变量契约）：
+    - seasonal_candidates：decl 条目总数；
+    - required / unknown：phaseCoverage 分类计数（守恒：
+      seasonal_candidates == required + unknown，well-formed 输入下成立）；
+    - required_with_phase / required_missing_phase：required 命中/未命中阶段表
+      （守恒：required == 二者之和；missing > 0 = 有官方日期待录入）；
+    - phase_keys：阶段表全部 itemKeys 去重数；
+    - phase_keys_declared / phase_keys_not_declared：阶段 key 在/不在 decl 中
+      （守恒：phase_keys == 二者之和；not_declared = 模组等非目录条目 key）。
+    """
+    required_keys = {key for key, value in decl.items() if value == "required"}
+    unknown = sum(1 for value in decl.values() if value == "unknown")
+    phase_keys = {key for phase in phases
+                  for key in (phase.get("itemKeys") or [])}
+    return {
+        "seasonal_candidates": len(decl),
+        "required": len(required_keys),
+        "unknown": unknown,
+        "required_with_phase": len(required_keys & phase_keys),
+        "required_missing_phase": len(required_keys - phase_keys),
+        "phase_keys": len(phase_keys),
+        "phase_keys_declared": len(phase_keys & set(decl)),
+        "phase_keys_not_declared": len(phase_keys - set(decl)),
+    }
+
+
+def coverage_report() -> dict[str, int]:
+    """真实数据 coverage 报告：声明 phaseCoverage vs bundled 阶段表对账统计。
+
+    Issue #112。独立于 validate_catalog（errors 非空即失败，诊断文本不得
+    混入 errors——评审红线）；只读声明文件 + seasonal_phases.json；文件缺失 /
+    解析失败 / schemaVersion != 1 / 缺 phases → CatalogError（与
+    load_phase_coverage 同口径 fail loud）。
+    """
+    decl = load_phase_coverage()
+    raw = _load_raw(PHASES_PATH, "阶段表文件")
+    phases = raw.get("phases")
+    if not isinstance(phases, list):
+        raise CatalogError(f"阶段表文件缺少 phases: {PHASES_PATH}")
+    return compute_phase_coverage(decl, phases)
 
 
 def apply_lifecycle(items: list[CatalogItem]) -> list[CatalogItem]:

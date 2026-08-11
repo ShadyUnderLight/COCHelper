@@ -6,6 +6,15 @@
 - compute_audit_report 纯函数 hypothesis property：分类守恒 + 意外值容忍 +
   排序确定性；
 - CLI 端到端：audit 段非阻断输出（与 coverage 段平行）。
+
+**auditStatus 判据（#109 复审明确）**：只标「permanent 声明、生命周期判定
+悬而未决」的条目——与 issue #109 第 1/2 条清单一一对应。其余待核实类型
+不在 auditStatus 域内，由既有机制跟踪，不重复标注：
+- seasonalCandidate 的待核实（如 pets:73000006「待外部核实」note）→ 已由
+  #112 phaseCoverage=unknown + coverage 报告结构化跟踪（未知日期候选），
+  加 pending 会造成双轨；
+- 常驻白名单人工判定（PERMANENT_FESTIVE_LOOKING_KEYS 系「人工判定，待复核」
+  note）→ 判定结论已在 note 留痕，复核记录即 note 本身。
 """
 
 import json
@@ -28,9 +37,10 @@ DECLARATIONS = (
     / "game_catalog" / "lifecycle_declarations.json"
 )
 
-# 种子快照：Issue #109 已知待核实条目（8 条）。外部核实完成后逐条改
-# verified + note 留痕，并同步更新本清单（tripwire，与 test_phase_coverage
-# 的 PHASE_COVERAGE_REQUIRED_KEYS 同模式）。
+# 种子快照：Issue #109 已知待核实条目（8 条，auditStatus 域 = permanent 且
+# 判定悬而未决；见模块 docstring 判据）。外部核实完成后逐条改 verified +
+# note 留痕，并同步更新本清单（tripwire，与 test_phase_coverage 的
+# PHASE_COVERAGE_REQUIRED_KEYS 同模式）。
 PENDING_AUDIT_KEYS = {
     "units:4000090",
     "guardians:107000002", "guardians:107000003", "guardians:107000004",
@@ -141,10 +151,15 @@ _status_unexpected_strategy = st.dictionaries(
 
 @given(_status_strategy)
 def test_compute_audit_report_conservation(statuses):
-    """分类守恒：pending + verified == 总条目数；key 列表 == 输入 key 集合；
-    排序确定性（输出 == 自身排序，重复调用一致）。"""
+    """分类守恒：pending + verified == 总条目数；pending/verified 列表互斥
+    （无同 key 双计，union 断言不够——重叠 key 会掩盖 len 守恒）；key 列表
+    == 输入 key 集合；排序确定性（输出 == 自身排序，重复调用一致）。"""
     report = compute_audit_report(statuses)
     assert report["pending"] + report["verified"] == len(statuses)
+    assert len(report["pending_keys"]) == report["pending"]
+    assert len(report["verified_keys"]) == report["verified"]
+    # 互斥：同 key 不得同时出现在两个列表（union 断言无法捕获重叠）
+    assert set(report["pending_keys"]) & set(report["verified_keys"]) == set()
     assert set(report["pending_keys"]) | set(report["verified_keys"]) == set(statuses)
     assert report["pending_keys"] == sorted(report["pending_keys"])
     assert report["verified_keys"] == sorted(report["verified_keys"])

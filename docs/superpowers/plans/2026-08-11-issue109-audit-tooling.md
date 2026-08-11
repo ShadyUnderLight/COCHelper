@@ -548,5 +548,9 @@ git commit -m "test: Issue #109 审计工具化全量回归通过"  # 无 diff �
 ## 6. 边界与风险
 
 - **不顺手做**：#113（permanent+phase 冲突契约，独立 issue）；issue 1、2 条的数据核实（外部证据未取得）；不给 689 条无需复核条目加字段（最小侵入）；不改 catalog.json/manifest（auditStatus 声明层私有）。
-- **种子快照锁定的风险**：外部核实完成后 pending 集合会变化——测试 tripwire 会红，需同步更新 `PENDING_AUDIT_KEYS`（与 #112 `PHASE_COVERAGE_REQUIRED_KEYS` 同模式，注释已说明）。
+- **auditStatus 判据（复审明确，2026-08-11 追加）**：只标「permanent 声明、生命周期判定悬而未决」的条目（= issue #109 第 1/2 条清单）。其余待核实类型不在 auditStatus 域内，由既有机制跟踪，不重复标注：
+  - seasonalCandidate 的待核实（如 pets:73000006「待外部核实」note）→ 已由 #112 phaseCoverage=unknown + coverage 报告结构化跟踪（未知日期候选），加 pending 会造成双轨；
+  - 常驻白名单人工判定（PERMANENT_FESTIVE_LOOKING_KEYS 系「人工判定，待复核」note）→ 判定结论已在 note 留痕，复核记录即 note 本身。
+  该判据已写入 test_audit.py 模块 docstring（tripwire 维护者可见）。
+- **种子快照锁定的风险**：外部核实完成后 pending 集合会变化——测试 tripwire 会红，需同步更新 `PENDING_AUDIT_KEYS`（test_audit.py）与 CLI 测试的 `pending=8` 断言（test_cli.py，docstring 已注明）（与 #112 `PHASE_COVERAGE_REQUIRED_KEYS` 同模式）。
 - **回归风险低**：纯新增函数 + 可选字段（无字段条目不进入返回，load_declarations/load_phase_coverage 不读 auditStatus，行为不变）；CLI 输出是追加行，不影响既有断言。

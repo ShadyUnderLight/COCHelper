@@ -190,8 +190,9 @@ def test_validate_cli_corrupted_catalog_fails(full_minimal_apk, tmp_path):
 def test_validate_cli_emits_audit_report(full_minimal_apk, tmp_path):
     """Issue #109：audit 段接入 validator CLI（非阻断诊断输出）。
 
-    与 coverage 段平行：validator 输出必须含 audit: 行（种子 8 条 pending →
-    pending=8），且不改变 verdict/退出码。
+    与 coverage 段平行：validator 输出必须含 audit: 行，且不改变 verdict/退出码。
+    `pending=8` 是种子快照 tripwire（与 test_audit.py 的 PENDING_AUDIT_KEYS
+    同步更新——外部核实完成改 verified 或新增 pending 条目时，两处一起改）。
     """
     apk = full_minimal_apk
     out = tmp_path / "out"
@@ -211,7 +212,7 @@ def test_validate_cli_emits_audit_report(full_minimal_apk, tmp_path):
     r = _run([str(TOOLS / "validate_game_catalog.py"), "--catalog", str(out)])
     assert r.returncode == 0, r.stderr
     assert "audit:" in r.stdout, "validator 必须输出 audit 报告段"
-    assert "pending=8" in r.stdout
+    assert "pending=8" in r.stdout  # 种子快照 tripwire（见 docstring）
     assert "pendingItems=" in r.stdout
     assert "verdict: OK" in r.stdout
 

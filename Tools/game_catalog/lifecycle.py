@@ -298,7 +298,7 @@ def load_audit_status() -> dict[str, str]:
     return out
 
 
-def compute_audit_report(statuses: dict[str, str]) -> dict:
+def compute_audit_report(statuses: dict[str, str]) -> dict[str, int | list[str]]:
     """纯函数审计统计（property 测试目标）。
 
     Issue #109。输入契约：{key: auditStatus}，值 pending/verified（来自

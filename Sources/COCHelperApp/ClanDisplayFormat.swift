@@ -174,4 +174,17 @@ public enum ClanDisplayFormat {
         guard let clanLevel else { return nil }
         return "部落等级 \(clanLevel)"
     }
+
+    /// 百分比文本：整数无小数，非整数 1 位小数（摧毁率展示的单一来源）。
+    ///
+    /// 固定用 en_US_POSIX 区域格式化——`String(format:)` 默认随系统区域设置，
+    /// 某些区域会把小数点换成逗号（如 "12,5"），UI 展示会漂移。
+    public static func percent(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value))
+            : String(format: "%.1f", locale: posixLocale, arguments: [value])
+    }
+
+    /// 固定小数点格式化的区域设置（不随系统区域改变输出）。
+    private static let posixLocale = Locale(identifier: "en_US_POSIX")
 }

@@ -306,4 +306,35 @@ final class ClanDisplayFormatTests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(asserted, 500)
     }
+
+    // MARK: - percent（摧毁率展示，Issue #126 收敛）
+
+    func testPercentIntegerNoDecimal() {
+        XCTAssertEqual(ClanDisplayFormat.percent(0), "0")
+        XCTAssertEqual(ClanDisplayFormat.percent(12), "12")
+        XCTAssertEqual(ClanDisplayFormat.percent(100), "100")
+        XCTAssertEqual(ClanDisplayFormat.percent(-5), "-5")
+    }
+
+    func testPercentOneDecimalForNonInteger() {
+        XCTAssertEqual(ClanDisplayFormat.percent(12.5), "12.5")
+        XCTAssertEqual(ClanDisplayFormat.percent(12.34), "12.3")
+        XCTAssertEqual(ClanDisplayFormat.percent(12.96), "13.0")
+        XCTAssertEqual(ClanDisplayFormat.percent(0.1), "0.1")
+        XCTAssertEqual(ClanDisplayFormat.percent(0.04), "0.0")
+        XCTAssertEqual(ClanDisplayFormat.percent(-12.34), "-12.3")
+    }
+
+    /// 区域设置不敏感：percent 恒输出 "." 小数点。判别性验证——同样的值用
+    /// de_DE 区域直接 String(format:) 会输出 "12,5"（ICU 逗号小数点），证明
+    /// 区域依赖格式化的隐患真实存在；percent（en_US_POSIX 固定）输出恒 "12.5"。
+    func testPercentLocaleIndependentDecimalPoint() {
+        // 隐患实证：区域化格式化在 de_DE 下输出逗号小数点
+        XCTAssertEqual(
+            String(format: "%.1f", locale: Locale(identifier: "de_DE"), arguments: [12.5]),
+            "12,5"
+        )
+        // 修复实证：percent 恒为点号
+        XCTAssertEqual(ClanDisplayFormat.percent(12.5), "12.5")
+    }
 }

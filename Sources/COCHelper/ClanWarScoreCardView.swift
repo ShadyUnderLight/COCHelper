@@ -54,7 +54,7 @@ struct ClanWarScoreCardView: View {
            let opponentStars = opponentRow.official.stars,
            let destruction = row.official.destructionPercentage.flatMap(ClanCombatSummary.displayDestructionPercent),
            let opponentDestruction = opponentRow.official.destructionPercentage.flatMap(ClanCombatSummary.displayDestructionPercent) {
-            Text("星数差 +\(Self.absoluteDifference(stars, opponentStars)) · 摧毁率差 \(Self.percent(abs(destruction - opponentDestruction)))%")
+            Text("星数差 \(Self.absoluteDifference(stars, opponentStars)) · 摧毁率差 \(ClanDisplayFormat.percent(abs(destruction - opponentDestruction)))%")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
         }
@@ -68,17 +68,12 @@ struct ClanWarScoreCardView: View {
         let (result, overflowed) = hi.subtractingReportingOverflow(lo)
         return overflowed ? Int.max : result
     }
-
-    /// 百分比文本：整数无小数，非整数 1 位小数（与旧 ClanWarCardView.percent
-    /// 的 truncatingRemainder 逻辑一致）。
-    fileprivate static func percent(_ value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(value)) : String(format: "%.1f", value)
-    }
 }
 
-/// 单方比分卡（内部私有组件，label/row/quota 由外部注入）。
-private struct ScoreCard: View {
+/// 单方比分卡（label/row/quota 由外部注入）。
+/// internal（非 private）：主视图 `ClanWarCardView.singleScoreCard` 复用，
+/// 单方缺失降级路径与双卡组件共用同一布局（Issue #126 评审 M5）。
+struct ScoreCard: View {
     /// 参与方标签，名称缺失时的兜底文案。
     let label: String
     /// 参与方投影（tag/name/clanLevel/official 摘要）。
@@ -103,7 +98,7 @@ private struct ScoreCard: View {
                     .font(.callout.weight(.semibold))
             }
             if let destruction = row.official.destructionPercentage.flatMap(ClanCombatSummary.displayDestructionPercent) {
-                Text("摧毁率 \(ClanWarScoreCardView.percent(destruction))%")
+                Text("摧毁率 \(ClanDisplayFormat.percent(destruction))%")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -118,10 +113,12 @@ private struct ScoreCard: View {
         }
     }
 
-    /// 攻击进度：配额与官方攻击数均已知 → "已用攻击 X / Y"；否则 → "攻击配额未知"。
+    /// 攻击进度：配额有效（未饱和）且官方攻击数均已知 → "已用攻击 X / Y"；
+    /// 饱和时 `totalAttacks` 只是可表示上界（非权威业务数据），不得伪造总配额，
+    /// 与配额缺失/无效同样显示 "攻击配额未知"。
     private var attackProgress: some View {
         Group {
-            if let total = quota.totalAttacks, let attacks = row.official.attacks {
+            if let total = quota.totalAttacks, let attacks = row.official.attacks, !quota.saturated {
                 Text("已用攻击 \(attacks) / \(total)")
             } else {
                 Text("攻击配额未知")

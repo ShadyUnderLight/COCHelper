@@ -4,9 +4,8 @@ import COCHelperApp
 
 /// 部落对战成员区（Issue #126）：筛选 chips、排序切换、成员表与行展开。
 /// 全部计数来自传入的 `counts`（chipCounts 输出），UI 不重新统计。
+/// 区标题由父视图承担（本组件不渲染标题）。
 struct ClanWarMemberSection: View {
-    /// 区标题（"我方成员（N）"/"对方成员（N）"）。
-    let title: String
     /// 已按当前排序顺序排好的成员行（单参与方）。
     let rows: [ClanWarMemberRow]
     /// 当前战争阶段（chips 语义与备战期文案依赖）。
@@ -29,8 +28,6 @@ struct ClanWarMemberSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
             filterChips
             headerRow
             memberList
@@ -208,7 +205,9 @@ struct ClanWarMemberSection: View {
                 Text(stars.missingCount > 0
                     ? "⭐\(stars.knownStars)+\(stars.missingCount)?"
                     : "⭐\(stars.knownStars)")
-                    .accessibilityLabel("\(stars.knownStars) 颗星")
+                    .accessibilityLabel(stars.missingCount > 0
+                        ? "\(stars.knownStars) 颗星，另有 \(stars.missingCount) 次未知"
+                        : "\(stars.knownStars) 颗星")
             } else {
                 Text("—")
             }
@@ -237,11 +236,13 @@ struct ClanWarMemberSection: View {
         }
     }
 
+    /// 状态列颜色：待处理（未出手/剩余）橙色警示；完成绿色；备战期等待开战
+    /// 是正常状态（与 chip 中性语义一致）→ 与数据未知组同归 secondary。
     private func statusColor(_ row: ClanWarMemberRow) -> Color {
         switch ClanWarDisplayProjection.displayGroup(phase: phase, action: row.action) {
-        case .awaitingWar, .notAttacked, .remaining: return .orange
+        case .notAttacked, .remaining: return .orange
         case .complete: return .green
-        case .overQuota, .quotaUnknown, .unknown: return .secondary
+        case .awaitingWar, .overQuota, .quotaUnknown, .unknown: return .secondary
         }
     }
 
@@ -265,14 +266,8 @@ struct ClanWarMemberSection: View {
         let order = line.order.map { "\($0)" } ?? "?"
         let stars = line.stars.map { "⭐\(min(max($0, 0), 3))" } ?? "⭐?"
         let destruction = ClanCombatSummary.displayDestructionPercent(line.destructionPercentage)
-            .map { "摧毁率 \(percent($0))%" } ?? "摧毁率未知"
+            .map { "摧毁率 \(ClanDisplayFormat.percent($0))%" } ?? "摧毁率未知"
         return "\(order)号进攻 · \(stars) · \(destruction)"
-    }
-
-    /// 百分比文本：整数无小数，非整数 1 位小数（与既有卡片视图一致）。
-    fileprivate static func percent(_ value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(value)) : String(format: "%.1f", value)
     }
 }
 

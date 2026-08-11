@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from game_catalog import lifecycle as lifecycle_module
 from game_catalog.validate import validate_catalog
 from game_catalog.errors import CatalogError
-from game_catalog.lifecycle import coverage_report
+from game_catalog.lifecycle import audit_report, coverage_report
 
 
 def _catalog_game_version(catalog_dir: Path) -> str | None:
@@ -113,6 +113,27 @@ def _collect_conflict_errors(catalog_dir: Path) -> list[str]:
     return errors
 
 
+def _emit_audit_report() -> None:
+    """Issue #109：非阻断输出审计统计（待人工复核清单）。
+
+    与 _emit_coverage_report 同模式：独立于 validate_catalog 的 errors
+    （评审红线：errors 非空即失败，诊断文本不得混入）；文件缺失/解析失败
+    → 打印 unavailable 提示，不影响退出码。
+    内容非法（AuditStatusError）在此同样打印 unavailable——真正的失败
+    已由 validate_catalog 的 _check_audit_status_declarations 报 error
+    （exit 1），本诊断行不重复承载阻断语义（复审 Minor：措辞差异仅为
+    诊断细节，不改变退出码）。
+    """
+    try:
+        audit = audit_report()
+    except CatalogError as exc:
+        print(f"audit: unavailable: {exc}", file=sys.stderr)
+        return
+    print(f"audit: pending={audit['pending']} verified={audit['verified']}")
+    if audit["pending_keys"]:
+        print("audit: pendingItems=" + ",".join(audit["pending_keys"]))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="校验 APK 静态升级目录")
     parser.add_argument("--catalog", type=Path, required=True)
@@ -138,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
     _emit_coverage_report(args.catalog)
+    _emit_audit_report()
     if errors:
         print("verdict: FAIL")
         return 1

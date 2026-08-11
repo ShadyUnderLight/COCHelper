@@ -171,6 +171,58 @@ def test_validate_cli_coverage_binds_catalog_game_version(full_minimal_apk, tmp_
         f"必须从 manifest.gameVersion 绑定版本，实际传入: {seen}"
 
 
+def test_validate_cli_lifecycle_phase_conflict_fails(full_minimal_apk, tmp_path, monkeypatch, capsys):
+    """Issue #113：permanent 声明与官方阶段表冲突 → blocking error（退出码 1）。
+
+    冲突必须走 errors 阻断路径（红线：不得塞进 coverage 非阻断分支——对比
+    test_validate_cli_coverage_unavailable_does_not_fail：coverage 失败仍返回 0，
+    冲突失败必须返回 1）。stderr 含 key/phaseID/provenance（声明文件路径/阶段
+    文件路径/sourceURL），verdict: FAIL。版本绑定与 coverage 同模式（manifest
+    gameVersion → _phases_path，此处 monkeypatch 到 tmp 冲突数据）。"""
+    import validate_game_catalog as vgc
+    from game_catalog import lifecycle as lifecycle_module
+
+    apk = full_minimal_apk
+    out = tmp_path / "out"
+    _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+          "--output", str(out), "--game-version", "18.400.13"])
+    import hashlib
+    import json
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+    # 注入冲突数据：声明 Town Hall（buildings:1000001）permanent，官方阶段表命中该 key
+    decl = tmp_path / "lifecycle_declarations.json"
+    decl.write_text(json.dumps({"schemaVersion": 1, "items": {
+        "buildings:1000001": {"lifecycle": "permanent"}}}, ensure_ascii=False),
+        encoding="utf-8")
+    phases = tmp_path / "seasonal_phases.json"
+    phases.write_text(json.dumps({"schemaVersion": 1, "phases": [
+        {"phaseID": "p1", "name": "阶段一", "from": 1, "until": 2,
+         "itemKeys": ["buildings:1000001"],
+         "sourceURL": "https://supercell.example/phase"}]},
+        ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", decl)
+    monkeypatch.setattr(lifecycle_module, "_phases_path", lambda version: phases)
+
+    rc = vgc.main(["--catalog", str(out)])
+    assert rc == 1, "permanent ∩ 阶段表冲突必须 blocking（退出码 1）"
+    captured = capsys.readouterr()
+    assert "verdict: FAIL" in captured.out
+    assert "buildings:1000001" in captured.err, captured.err
+    assert "phaseID=p1" in captured.err, captured.err
+    assert str(decl) in captured.err, "error 必须携带声明文件路径 provenance"
+    assert str(phases) in captured.err, "error 必须携带阶段文件路径 provenance"
+    assert "https://supercell.example/phase" in captured.err, \
+        "error 必须携带官方来源 sourceURL provenance"
+
+
 def test_validate_cli_bad_dir_fails(full_minimal_apk, tmp_path):
     r = _run([str(TOOLS / "validate_game_catalog.py"), "--catalog", str(tmp_path / "empty")])
     assert r.returncode == 1

@@ -18,6 +18,7 @@ from game_catalog.lifecycle import (
     LIFECYCLE_VALUES,
     PHASE_COVERAGE_VALUES,
     apply_lifecycle,
+    find_lifecycle_phase_conflicts,
     lifecycle_for,
     load_declarations,
     load_phase_coverage,
@@ -688,3 +689,222 @@ def test_generate_main_fails_loud_without_manifest(tmp_path):
                  "--output", str(out)])
     assert rc == 1
     assert not out.exists(), "登记失败时不得留下 craft 产物"
+
+
+# ---- Issue #113：permanent 声明 ∩ 官方阶段表 → blocking 冲突 ----
+
+def _write_decl_items(tmp_path, items: dict) -> Path:
+    """写最小声明文件（schemaVersion=1）到 tmp_path，返回路径。"""
+    path = tmp_path / "lifecycle_declarations.json"
+    path.write_text(json.dumps({"schemaVersion": 1, "items": items},
+                               ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _write_phases_file(tmp_path, phases: list) -> Path:
+    """写最小阶段表（schemaVersion=1）到 tmp_path，返回路径。"""
+    path = tmp_path / "seasonal_phases.json"
+    path.write_text(json.dumps({"schemaVersion": 1, "phases": phases},
+                               ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def test_find_lifecycle_phase_conflicts_none_on_real_data():
+    """正例（真实数据形态）：bundled 声明文件 + 阶段表无冲突 → []。
+
+    Issue #113 是纯防御性校验（permanent ∩ phase = ∅）；此测试锁定真实数据
+    不得回归出冲突（新增阶段条目误把 permanent 内容登记进阶段表时立即变红）。
+    """
+    assert find_lifecycle_phase_conflicts() == []
+
+
+def test_find_lifecycle_phase_conflicts_no_conflict(tmp_path):
+    """正例（注入）：permanent key 不在阶段表、seasonalCandidate key 命中
+    阶段表 → 均不算冲突 → []。"""
+    decl = _write_decl_items(tmp_path, {
+        "buildings:1000001": {"lifecycle": "permanent"},
+        "units:4000072": {"lifecycle": "seasonalCandidate",
+                          "phaseCoverage": "required", "note": "n"},
+    })
+    phases = _write_phases_file(tmp_path, [
+        {"phaseID": "p1", "name": "阶段一", "from": 100, "until": 200,
+         "itemKeys": ["units:4000072"], "sourceURL": "https://x"},
+    ])
+    assert find_lifecycle_phase_conflicts(decl, phases) == []
+
+
+def test_find_lifecycle_phase_conflicts_permanent_hit(tmp_path):
+    """负例：permanent key 命中合法区间 phase → 1 项冲突，字段完整
+    （key/phaseID/phaseName/declarationsPath/phasesPath/sourceURL）。"""
+    decl = _write_decl_items(tmp_path, {
+        "buildings:1000001": {"lifecycle": "permanent"},
+    })
+    phases = _write_phases_file(tmp_path, [
+        {"phaseID": "p1", "name": "阶段一", "from": 100, "until": 200,
+         "itemKeys": ["buildings:1000001", "units:4000072"],
+         "sourceURL": "https://supercell.example/p1"},
+    ])
+    conflicts = find_lifecycle_phase_conflicts(decl, phases)
+    assert len(conflicts) == 1
+    conflict = conflicts[0]
+    assert conflict["key"] == "buildings:1000001"
+    assert conflict["phaseID"] == "p1"
+    assert conflict["phaseName"] == "阶段一"
+    assert conflict["declarationsPath"] == str(decl)
+    assert conflict["phasesPath"] == str(phases)
+    assert conflict["sourceURL"] == "https://supercell.example/p1"
+
+
+@pytest.mark.parametrize(("frm", "until"), [
+    (200, 100),   # from >= until
+    ("1", 100),   # from 非 int
+    (1, "2"),     # until 非 int
+    (None, 100),  # from 缺失
+    (1, None),    # until 缺失
+    (True, 100),  # bool 是 int 子类（True == 1），R9 防御：不算合法区间
+])
+def test_find_lifecycle_phase_conflicts_illegal_interval_not_conflict(
+    tmp_path, frm, until
+):
+    """负例：非法区间 phase（from >= until / from、until 缺失或非 int）的 key
+    不得算命中——与 Swift phase(forItemKey:at:) 过滤语义及 compute_phase_coverage
+    的 phase_keys 口径一致。"""
+    decl = _write_decl_items(tmp_path, {
+        "buildings:1000001": {"lifecycle": "permanent"},
+    })
+    phases = _write_phases_file(tmp_path, [
+        {"phaseID": "bad", "name": "非法区间", "from": frm, "until": until,
+         "itemKeys": ["buildings:1000001"]},
+    ])
+    assert find_lifecycle_phase_conflicts(decl, phases) == []
+
+
+def test_find_lifecycle_phase_conflicts_seasonal_candidate_not_conflict(tmp_path):
+    """负例：seasonalCandidate key 命中合法 phase → 不算冲突（#113 只拦截
+    permanent 声明；seasonalCandidate 命中是正常状态，走 #112 coverage）。"""
+    decl = _write_decl_items(tmp_path, {
+        "units:4000072": {"lifecycle": "seasonalCandidate",
+                          "phaseCoverage": "required", "note": "n"},
+    })
+    phases = _write_phases_file(tmp_path, [
+        {"phaseID": "p1", "name": "阶段一", "from": 100, "until": 200,
+         "itemKeys": ["units:4000072"]},
+    ])
+    assert find_lifecycle_phase_conflicts(decl, phases) == []
+
+
+def test_find_lifecycle_phase_conflicts_multiple_phases_all_reported(tmp_path):
+    """负例：permanent key 命中多个合法 phase → 报告全部命中（Python 是数据
+    审计视角，与 Swift 单一确定性选择不同，spec 明确如此）；phaseName/sourceURL
+    缺失时返回 None。"""
+    decl = _write_decl_items(tmp_path, {
+        "buildings:1000001": {"lifecycle": "permanent"},
+    })
+    phases = _write_phases_file(tmp_path, [
+        {"phaseID": "p1", "from": 100, "until": 200,
+         "itemKeys": ["buildings:1000001"]},
+        {"phaseID": "p2", "from": 300, "until": 400,
+         "itemKeys": ["buildings:1000001"]},
+    ])
+    conflicts = find_lifecycle_phase_conflicts(decl, phases)
+    assert [c["phaseID"] for c in conflicts] == ["p1", "p2"]
+    for conflict in conflicts:
+        assert conflict["key"] == "buildings:1000001"
+        assert conflict["phaseName"] is None
+        assert conflict["sourceURL"] is None
+
+
+@pytest.mark.parametrize(
+    ("content", "message_fragment"),
+    [
+        # 文件缺失（临时目录下不存在）→ CatalogError
+        (None, "阶段表文件缺失"),
+        # JSON 语法错误（原始串，非 json.dumps 产物）→ CatalogError
+        ("{not json", "阶段表文件解析失败"),
+        # schemaVersion != 1 / 顶层非 dict（与 load_phase_coverage 同口径）
+        ({"schemaVersion": 2, "phases": []}, "schemaVersion"),
+        ([1, 2], "schemaVersion"),
+        # 缺 phases 键
+        ({"schemaVersion": 1}, "缺少 phases"),
+        # phase 非 dict
+        ({"schemaVersion": 1, "phases": ["not-a-dict"]}, "非 dict"),
+        # phaseID 缺失 / 非 str（Swift Codable 必填，缺失 → 运行时解码失败）
+        ({"schemaVersion": 1, "phases": [{"from": 1, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "phaseID"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": 123, "from": 1, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "phaseID"),
+        # name/sourceURL 存在时非 str（Optional<String>：缺失/null 合法）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "name": 123,
+                                          "from": 1, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "name"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "sourceURL": ["u"],
+                                          "from": 1, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "sourceURL"),
+        # itemKeys 非 list / 缺失 / 元素非 str（fail loud，与 coverage_report
+        # 同口径——不静默容忍，否则幽灵 key 或裸 TypeError）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2,
+                                          "itemKeys": "units:4000072"}]}, "itemKeys"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2}]},
+         "itemKeys"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2,
+                                          "itemKeys": [12345]}]}, "itemKeys"),
+    ],
+)
+def test_find_lifecycle_phase_conflicts_phases_failure_paths(
+    tmp_path, content, message_fragment
+):
+    """阶段表结构校验 fail-loud（与 coverage_report/load_phase_coverage 同口径）：
+    文件缺失/解析失败/schemaVersion != 1/缺 phases/phaseID 非 str/name、
+    sourceURL 存在时非 str/itemKeys 非 list 或元素非 str → CatalogError。"""
+    decl = _write_decl_items(tmp_path, {
+        "buildings:1000001": {"lifecycle": "permanent"},
+    })
+    if content is None:
+        path = tmp_path / "missing_seasonal_phases.json"  # 不存在
+    else:
+        path = tmp_path / "seasonal_phases.json"
+        if isinstance(content, str):
+            path.write_text(content, encoding="utf-8")  # JSON 语法错误用例
+        else:
+            path.write_text(json.dumps(content), encoding="utf-8")
+    with pytest.raises(CatalogError) as ei:
+        find_lifecycle_phase_conflicts(decl, path)
+    assert message_fragment in str(ei.value)
+
+
+@pytest.mark.parametrize(
+    ("content", "message_fragment"),
+    [
+        # 文件缺失（临时目录下不存在）→ CatalogError
+        (None, "声明文件缺失"),
+        # JSON 语法错误（原始串，非 json.dumps 产物）→ CatalogError
+        ("{not json", "解析失败"),
+        # schemaVersion != 1 / 顶层非 dict（与 load_declarations 同口径）
+        ({"schemaVersion": 2, "items": {}}, "schemaVersion"),
+        ([1, 2], "schemaVersion"),
+        # items 键缺失
+        ({"schemaVersion": 1}, "缺少 items"),
+        # 条目非法 / lifecycle 未知值（fail loud 与 load_declarations 同口径）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": 123}}}, "条目非法"),
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "other"}}}, "未知值"),
+    ],
+)
+def test_find_lifecycle_phase_conflicts_declarations_failure_paths(
+    tmp_path, content, message_fragment
+):
+    """声明文件结构校验 fail-loud（与 load_declarations 同口径）：文件缺失/
+    解析失败/schemaVersion != 1/缺 items/条目非法/未知 lifecycle → CatalogError。"""
+    if content is None:
+        path = tmp_path / "missing_lifecycle_declarations.json"  # 不存在
+    else:
+        path = tmp_path / "lifecycle_declarations.json"
+        if isinstance(content, str):
+            path.write_text(content, encoding="utf-8")
+        else:
+            path.write_text(json.dumps(content), encoding="utf-8")
+    phases = _write_phases_file(tmp_path, [
+        {"phaseID": "p1", "from": 1, "until": 2, "itemKeys": []},
+    ])
+    with pytest.raises(CatalogError) as ei:
+        find_lifecycle_phase_conflicts(path, phases)
+    assert message_fragment in str(ei.value)

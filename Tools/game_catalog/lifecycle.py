@@ -75,48 +75,17 @@ def _load_raw(path: Path, label: str) -> dict:
     return raw
 
 
-def load_declarations() -> dict[str, str]:
-    """读声明文件 → {key: lifecycle}（key = "section:dataID"）。
-
-    文件缺失 / JSON 解析失败 / schemaVersion != 1 / 值非闭枚举 → CatalogError
-    （fail loud，声明文件是生成前置条件）。
-    """
-    raw = _load_raw(DECLARATIONS_PATH, "lifecycle 声明文件")
-    items = raw.get("items")
-    if not isinstance(items, dict):
-        raise CatalogError(f"lifecycle 声明文件缺少 items: {DECLARATIONS_PATH}")
-    out: dict[str, str] = {}
-    for key, entry in items.items():
-        if not isinstance(entry, dict) or not isinstance(entry.get("lifecycle"), str):
-            raise CatalogError(
-                f"lifecycle 声明条目非法: {key}: {entry!r}")
-        if entry["lifecycle"] not in LIFECYCLE_VALUES:
-            raise CatalogError(
-                f"lifecycle 声明未知值: {key}: {entry['lifecycle']!r}")
-        out[key] = entry["lifecycle"]
-    # 红队 Fix 1：phaseCoverage 良构性必须进入生成管线——load_declarations 是
-    # apply_lifecycle/lifecycle_for（→ 生成器）的唯一入口，只读文件不校验则
-    # 「声明文件是生成前置条件」对 phaseCoverage 维度落空。此处调用仅用于
-    # 校验（非法 → CatalogError），返回值丢弃：phaseCoverage 不参与
-    # load_declarations 的返回结构。
-    load_phase_coverage()
-    return out
-
-
-def load_phase_coverage() -> dict[str, str]:
+def _load_phase_coverage_from(path: Path) -> dict[str, str]:
     """读声明文件 → {key: phaseCoverage}（key = "section:dataID"）。
 
-    Issue #112 评审修正：note 是自由文本，不可做日期状态分类；新增结构化
-    phaseCoverage 字段只存在于声明层（不写入 catalog 产物）：
-    - 仅 seasonalCandidate 携带；缺字段或值非闭枚举 → CatalogError（fail loud）；
-    - permanent 条目带 phaseCoverage → CatalogError（防误标）；
-    - 文件缺失 / 解析失败 / schemaVersion != 1 → CatalogError（与
-      load_declarations 同口径，声明文件是生成前置条件）。
+    Issue #113 提取：find_lifecycle_phase_conflicts 需要按参数路径读取声明
+    文件（测试注入 tmp 数据），与 load_phase_coverage 共用同一校验逻辑，
+    错误消息逐字节一致（失败路径测试锁定消息片段）。
     """
-    raw = _load_raw(DECLARATIONS_PATH, "lifecycle 声明文件")
+    raw = _load_raw(path, "lifecycle 声明文件")
     items = raw.get("items")
     if not isinstance(items, dict):
-        raise CatalogError(f"lifecycle 声明文件缺少 items: {DECLARATIONS_PATH}")
+        raise CatalogError(f"lifecycle 声明文件缺少 items: {path}")
     out: dict[str, str] = {}
     for key, entry in items.items():
         if not isinstance(entry, dict) or not isinstance(entry.get("lifecycle"), str):
@@ -139,6 +108,57 @@ def load_phase_coverage() -> dict[str, str]:
                 f"{key}: {coverage!r}")
         out[key] = coverage
     return out
+
+
+def _load_declarations_from(path: Path) -> dict[str, str]:
+    """读声明文件 → {key: lifecycle}（key = "section:dataID"）。
+
+    Issue #113 提取：find_lifecycle_phase_conflicts 需要按参数路径读取声明
+    文件（测试注入 tmp 数据），与 load_declarations 共用同一校验逻辑，
+    错误消息逐字节一致。path 必须传给 phaseCoverage 校验（同一文件）。
+    """
+    raw = _load_raw(path, "lifecycle 声明文件")
+    items = raw.get("items")
+    if not isinstance(items, dict):
+        raise CatalogError(f"lifecycle 声明文件缺少 items: {path}")
+    out: dict[str, str] = {}
+    for key, entry in items.items():
+        if not isinstance(entry, dict) or not isinstance(entry.get("lifecycle"), str):
+            raise CatalogError(
+                f"lifecycle 声明条目非法: {key}: {entry!r}")
+        if entry["lifecycle"] not in LIFECYCLE_VALUES:
+            raise CatalogError(
+                f"lifecycle 声明未知值: {key}: {entry['lifecycle']!r}")
+        out[key] = entry["lifecycle"]
+    # 红队 Fix 1：phaseCoverage 良构性必须进入生成管线——load_declarations 是
+    # apply_lifecycle/lifecycle_for（→ 生成器）的唯一入口，只读文件不校验则
+    # 「声明文件是生成前置条件」对 phaseCoverage 维度落空。此处调用仅用于
+    # 校验（非法 → CatalogError），返回值丢弃：phaseCoverage 不参与
+    # load_declarations 的返回结构。
+    _load_phase_coverage_from(path)
+    return out
+
+
+def load_declarations() -> dict[str, str]:
+    """读声明文件 → {key: lifecycle}（key = "section:dataID"）。
+
+    文件缺失 / JSON 解析失败 / schemaVersion != 1 / 值非闭枚举 → CatalogError
+    （fail loud，声明文件是生成前置条件）。
+    """
+    return _load_declarations_from(DECLARATIONS_PATH)
+
+
+def load_phase_coverage() -> dict[str, str]:
+    """读声明文件 → {key: phaseCoverage}（key = "section:dataID"）。
+
+    Issue #112 评审修正：note 是自由文本，不可做日期状态分类；新增结构化
+    phaseCoverage 字段只存在于声明层（不写入 catalog 产物）：
+    - 仅 seasonalCandidate 携带；缺字段或值非闭枚举 → CatalogError（fail loud）；
+    - permanent 条目带 phaseCoverage → CatalogError（防误标）；
+    - 文件缺失 / 解析失败 / schemaVersion != 1 → CatalogError（与
+      load_declarations 同口径，声明文件是生成前置条件）。
+    """
+    return _load_phase_coverage_from(DECLARATIONS_PATH)
 
 
 def compute_phase_coverage(
@@ -207,20 +227,16 @@ def compute_phase_coverage(
     }
 
 
-def coverage_report(version: str | None = None) -> dict[str, int]:
-    """真实数据 coverage 报告：声明 phaseCoverage vs bundled 阶段表对账统计。
+def _load_validated_phases(phases_path: Path) -> list[dict]:
+    """阶段表读取 + 结构校验 → phases 列表（fail loud）。
 
-    Issue #112。独立于 validate_catalog（errors 非空即失败，诊断文本不得
-    混入 errors——评审红线）；只读声明文件 + seasonal_phases.json；文件缺失 /
-    解析失败 / schemaVersion != 1 / 缺 phases → CatalogError（与
-    load_phase_coverage 同口径 fail loud）。
-
-    version：bundled 目录版本（GameCatalog/<version>/seasonal_phases.json）；
-    None → DEFAULT_GAME_VERSION（CLI 从 --catalog 的 manifest.gameVersion
-    绑定，评审 follow-up：多版本时不得固定写死）。
+    Issue #113 提取：find_lifecycle_phase_conflicts 与 coverage_report 共用
+    同口径校验（文件缺失/解析失败/schemaVersion != 1/缺 phases/phase 非
+    dict/phaseID 非 str/name、sourceURL 存在时非 str/itemKeys 非 list 或元素
+    非 str → CatalogError），错误消息与 coverage_report 既有实现逐字节一致
+    （失败路径测试锁定消息片段）。区间非法（from/until）是语义问题，不在此
+    拦截——留给各调用点（invalid_phases / 冲突判定跳过）。
     """
-    decl = load_phase_coverage()
-    phases_path = PHASES_PATH if version is None else _phases_path(version)
     raw = _load_raw(phases_path, "阶段表文件")
     phases = raw.get("phases")
     if not isinstance(phases, list):
@@ -257,7 +273,67 @@ def coverage_report(version: str | None = None) -> dict[str, int]:
             if not isinstance(key, str):
                 raise CatalogError(
                     f"阶段表文件 phases[{i}] 非法: itemKeys 元素非 str: {key!r}")
+    return phases
+
+
+def coverage_report(version: str | None = None) -> dict[str, int]:
+    """真实数据 coverage 报告：声明 phaseCoverage vs bundled 阶段表对账统计。
+
+    Issue #112。独立于 validate_catalog（errors 非空即失败，诊断文本不得
+    混入 errors——评审红线）；只读声明文件 + seasonal_phases.json；文件缺失 /
+    解析失败 / schemaVersion != 1 / 缺 phases → CatalogError（与
+    load_phase_coverage 同口径 fail loud）。
+
+    version：bundled 目录版本（GameCatalog/<version>/seasonal_phases.json）；
+    None → DEFAULT_GAME_VERSION（CLI 从 --catalog 的 manifest.gameVersion
+    绑定，评审 follow-up：多版本时不得固定写死）。
+    """
+    decl = load_phase_coverage()
+    phases_path = PHASES_PATH if version is None else _phases_path(version)
+    phases = _load_validated_phases(phases_path)
     return compute_phase_coverage(decl, phases)
+
+
+def find_lifecycle_phase_conflicts(
+    declarations_path: Path = DECLARATIONS_PATH,
+    phases_path: Path = PHASES_PATH,
+) -> list[dict]:
+    """permanent 声明 ∩ 阶段表 itemKeys → 冲突列表（每项含 key、phaseID、
+    phaseName、declarationsPath、phasesPath、sourceURL）。无冲突返回 []。
+
+    Issue #113：permanent 声明与官方阶段表命中是数据冲突（运行时 Swift
+    availability 显式 .conflict fail-closed，validator 必须 blocking）——
+    与 #112 coverage_report 非阻断路径严格分离。结构校验与 coverage_report
+    同口径 fail loud（文件缺失/解析失败/schemaVersion != 1/缺 phases/phaseID
+    非 str/name、sourceURL 存在时非 str/itemKeys 非 list 或元素非 str →
+    CatalogError）。区间非法（from >= until 或 from/until 缺失、非 int、bool）
+    的 phase 不算命中——与 Swift phase(forItemKey:at:) 过滤语义及
+    compute_phase_coverage 的 phase_keys 口径一致。多 phase 命中 → 报告全部
+    命中（Python 是数据审计视角，与 Swift 单一确定性选择不同，spec 明确如此）。
+    """
+    decl = _load_declarations_from(declarations_path)
+    phases = _load_validated_phases(phases_path)
+    permanent_keys = {key for key, value in decl.items() if value == "permanent"}
+    conflicts: list[dict] = []
+    for phase in phases:
+        frm = phase.get("from")
+        until = phase.get("until")
+        if not (isinstance(frm, int) and not isinstance(frm, bool)
+                and isinstance(until, int) and not isinstance(until, bool)
+                and frm < until):
+            continue
+        for key in phase["itemKeys"]:
+            if key not in permanent_keys:
+                continue
+            conflicts.append({
+                "key": key,
+                "phaseID": phase["phaseID"],
+                "phaseName": phase.get("name"),
+                "declarationsPath": str(declarations_path),
+                "phasesPath": str(phases_path),
+                "sourceURL": phase.get("sourceURL"),
+            })
+    return conflicts
 
 
 def apply_lifecycle(items: list[CatalogItem]) -> list[CatalogItem]:

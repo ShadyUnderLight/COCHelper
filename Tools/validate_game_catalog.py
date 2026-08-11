@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from game_catalog import lifecycle as lifecycle_module
 from game_catalog.validate import validate_catalog
 from game_catalog.errors import CatalogError
 from game_catalog.lifecycle import coverage_report
@@ -60,6 +61,31 @@ def _emit_coverage_report(catalog_dir: Path) -> None:
     )
 
 
+def _collect_conflict_errors(catalog_dir: Path) -> list[str]:
+    """Issue #113：permanent 声明与官方阶段表冲突 → blocking error（退出码 1）。
+
+    blocking 路径红线：冲突必须进入 errors（errors 非空即 FAIL），不得塞进
+    coverage_report/_emit_coverage_report 非阻断分支（#112 评审红线保持——
+    对比：coverage 失败只打印 unavailable 且退出码不变）。版本绑定与
+    _emit_coverage_report 同模式（_catalog_game_version 回退默认版本）。
+    抛 CatalogError 时由 main 的 except CatalogError 捕获 → 退出码 1。
+    路径从 lifecycle_module 运行期读取（测试可 monkeypatch 注入 tmp 数据）。
+    """
+    version = _catalog_game_version(catalog_dir)
+    phases_path = (
+        lifecycle_module.PHASES_PATH if version is None
+        else lifecycle_module._phases_path(version))
+    conflicts = lifecycle_module.find_lifecycle_phase_conflicts(
+        declarations_path=lifecycle_module.DECLARATIONS_PATH,
+        phases_path=phases_path)
+    return [
+        f"lifecycle 声明永久内容与官方阶段表冲突: {c['key']}: "
+        f"phaseID={c['phaseID']} 声明={c['declarationsPath']} "
+        f"阶段={c['phasesPath']} 来源={c.get('sourceURL') or '无'}"
+        for c in conflicts
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="校验 APK 静态升级目录")
     parser.add_argument("--catalog", type=Path, required=True)
@@ -68,6 +94,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         errors = validate_catalog(args.catalog)
+        # Issue #113：冲突收集与 validate_catalog 同一 try 块——CatalogError
+        # （声明/阶段表文件异常）同样走 except → error: + 退出码 1。
+        errors += _collect_conflict_errors(args.catalog)
     except CatalogError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

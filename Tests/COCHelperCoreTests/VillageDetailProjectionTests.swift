@@ -751,7 +751,7 @@ final class VillageDetailProjectionTests: XCTestCase {
         var rng = SplitMix64(seed: 0x53_53)
         for round in 0..<600 {
             // 前 300 轮普通桶（category/other），后 300 轮混入 display 桶
-            //（defense/military/craftTable，category 恒 .buildings），覆盖 #37 拆分路径。
+            //（defense/walls/military/craftTable，category 恒 .buildings），覆盖 #37 拆分路径。
             let items = round < 300
                 ? randomItems(&rng, count: 1 + Int(rng.next() % 30))
                 : randomDisplayItems(&rng, count: 1 + Int(rng.next() % 30))
@@ -1223,7 +1223,7 @@ final class VillageDetailProjectionTests: XCTestCase {
         }
     }
 
-    /// 带 display 桶（defense/military/craftTable）的随机生成器（issue #53 property 覆盖）。
+    /// 带 display 桶（defense/walls/military/craftTable）的随机生成器（issue #53 property 覆盖）。
     /// display 项 category 恒 .buildings（与投影层 #37 契约一致），其余同 randomItems。
     private func randomDisplayItems(_ rng: inout SplitMix64, count: Int) -> [VillageItemState] {
         (0..<count).map { i in

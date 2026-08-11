@@ -16,6 +16,11 @@ struct WarLogCardView: View {
     /// 手动部落入口注入的部落 tag（村庄入口为 nil）。
     let injectedClanTag: String?
 
+    /// 已授权展示的条数预算（Issue #124）：首屏 10，点"查看更多"+10。
+    /// 预算语义：点击 serverMore 时预算先 +10 再发起请求，请求返回后
+    /// prefix(预算) 自动展示新条目；失败时预算空位无影响（仍显示旧数据）。
+    @State private var visibleCount = WarLogDisplayProjection.defaultVisibleCount
+
     init(villageID: UUID? = nil, clanTag: String? = nil) {
         self.villageID = villageID
         self.injectedClanTag = clanTag
@@ -53,6 +58,9 @@ struct WarLogCardView: View {
                 header
                 statusContent
             }
+        }
+        .onChange(of: clanTag) {
+            visibleCount = WarLogDisplayProjection.defaultVisibleCount
         }
     }
 
@@ -113,8 +121,22 @@ struct WarLogCardView: View {
             statusLine(state)
             if let page = state.lastGood {
                 warLogList(page)
-                if hasMore {
-                        loadMoreButton("加载更多部落对战", tag: clanTag)
+                switch WarLogDisplayProjection.moreState(
+                    totalEntries: page.items.count,
+                    visibleCount: visibleCount,
+                    hasServerMore: hasMore
+                ) {
+                case .localHidden:
+                    loadMoreButton("查看更多（再显示 \(WarLogDisplayProjection.increment) 条）", tag: clanTag) {
+                        visibleCount += WarLogDisplayProjection.increment
+                    }
+                case .serverMore:
+                    loadMoreButton("查看更多", tag: clanTag) {
+                        visibleCount += WarLogDisplayProjection.increment
+                        model.loadMoreWarLog(tag: clanTag)
+                    }
+                case .none:
+                    EmptyView()
                 }
             }
             // 总是显示刷新按钮：failed（重试）与 stale（重新拉取）都需入口，
@@ -135,6 +157,7 @@ struct WarLogCardView: View {
     private func refreshButton(_ title: String, force: Bool = false, tag: String) -> some View {
         HStack {
             Button {
+                visibleCount = WarLogDisplayProjection.defaultVisibleCount
                 if force {
                     model.refreshWarLog(tag: tag, force: true)
                 } else {
@@ -154,11 +177,9 @@ struct WarLogCardView: View {
         }
     }
 
-    private func loadMoreButton(_ title: String, tag: String) -> some View {
+    private func loadMoreButton(_ title: String, tag: String, action: @escaping () -> Void) -> some View {
         HStack {
-            Button {
-                model.loadMoreWarLog(tag: tag)
-            } label: {
+            Button(action: action) {
                 if model.isRefreshingWarLog(clanTag: clanTag) {
                     ProgressView().controlSize(.small)
                 } else {
@@ -221,7 +242,10 @@ struct WarLogCardView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(page.items.enumerated()), id: \.offset) { _, entry in
+                ForEach(
+                    Array(WarLogDisplayProjection.visibleEntries(page.items, visibleCount: visibleCount).enumerated()),
+                    id: \.offset
+                ) { _, entry in
                     warLogRow(entry)
                     if entry.endTime != page.items.last?.endTime {
                         Divider().padding(.leading, 40)
@@ -265,8 +289,15 @@ struct WarLogCardView: View {
                 Text("对阵 " + (entry.opponent?.name ?? "未知部落"))
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                if let endTime = entry.endTime {
-                    Text("结束：\(endTime)（官方时间）")
+                switch WarLogTimeFormatter.displayText(raw: entry.endTime) {
+                case .hidden:
+                    EmptyView()
+                case .beijing(let text):
+                    Text("结束：\(text)（北京时间）")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                case .unparsable(let raw):
+                    Text("结束：\(raw)（官方原始时间）")
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
                 }

@@ -351,6 +351,10 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
     /// 其余（seasonalCandidate / nil / 未知）+ 命中 → .seasonal；+ 未命中 → .unconfigured。
     /// 注意：阶段表命中覆盖 nil——精工防御嵌套模组主目录不 join（lifecycle 恒 nil）仍显示 seasonal。
     /// 阶段选择与活动边界必须由同一张注入表和同一个 `date` 决定。
+    ///
+    /// **操作契约（Issue #113 审计）**：条目从 seasonal 转 permanent 时必须同步从阶段表
+    /// 移除该 key，否则将恒显 .conflict / validator 恒 blocking——历史 ended phase
+    /// 同样触发（无状态豁免），遗漏暴露的是数据冲突而非误报。
     public func availability(forItemKey key: String, lifecycle: CatalogLifecycle?, at date: Date) -> CatalogAvailability {
         guard let phase = phase(forItemKey: key, at: date) else {
             // 无阶段命中：permanent 不降级，其余保持 unconfigured（表缺失/未配置同语义）。

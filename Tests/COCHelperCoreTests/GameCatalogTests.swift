@@ -1236,6 +1236,33 @@ final class GameCatalogTests: XCTestCase {
                 sourceURL: "https://supercell.com/zh/games/clashofclans/blog/news/test/"))
     }
 
+    /// Issue #113（审计 F7）：permanent + 已结束 phase（until 在过去）→ .conflict——
+    /// 历史阶段残留同样触发冲突，不因 ended 豁免（阶段表清理遗漏必须显式暴露）。
+    func testAvailabilityPermanentWithEndedPhaseStillConflicts() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "p", name: "阶段",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["a:1"]),
+        ])
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", lifecycle: .permanent, at: Date(timeIntervalSince1970: 3_000)),
+            .conflict(phaseID: "p", phaseName: "阶段", lifecycle: .permanent, sourceURL: nil))
+    }
+
+    /// Issue #113（审计 F7）：permanent + 未开始 phase（from 在未来）→ .conflict（对称覆盖）。
+    func testAvailabilityPermanentWithNotStartedPhaseStillConflicts() {
+        let table = SeasonalPhaseTable(schemaVersion: 1, phases: [
+            SeasonalPhase(
+                phaseID: "p", name: "阶段",
+                from: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 2_000),
+                itemKeys: ["a:1"]),
+        ])
+        XCTAssertEqual(
+            table.availability(forItemKey: "a:1", lifecycle: .permanent, at: Date(timeIntervalSince1970: 500)),
+            .conflict(phaseID: "p", phaseName: "阶段", lifecycle: .permanent, sourceURL: nil))
+    }
+
     /// permanent + 阶段表未命中 → .permanent（不因表缺失降级）。
     func testAvailabilityPermanentAnyDate() {
         XCTAssertEqual(

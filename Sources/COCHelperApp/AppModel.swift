@@ -279,8 +279,11 @@ public final class AppModel: ObservableObject {
     }
 
     /// 指定部落的战争日志是否还有更多页（分页按钮可用性）。
+    /// 成功或失败（保留 last-good 的加载更多失败）且有游标 → 可继续翻页/重试
+    /// （Issue #124：加载更多失败时按钮仍可用于重试，不得误显"没有更多"）。
     public func warLogHasMore(for clanTag: String) -> Bool {
-        guard let state = warLogState(for: clanTag), state.status == .success,
+        guard let state = warLogState(for: clanTag),
+              state.status == .success || state.status == .failed,
               let cursor = state.lastGood?.after else { return false }
         return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
     }
@@ -765,11 +768,12 @@ public final class AppModel: ObservableObject {
     }
 
     /// 按显式 Tag 战争日志加载更多（手动部落入口；入参规范化，非法输入 no-op）。
+    /// 允许 `.success` 与保留 last-good 的 `.failed`（失败重试，Issue #124）。
     public func loadMoreWarLog(tag: String) {
         guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingWarLogData else { return }
         guard let current = clanWarLogStates[tag],
-              current.status == .success,
+              current.status == .success || current.status == .failed,
               let cursor = current.lastGood?.after else { return }
         refreshingWarLogTags = [tag]
         let client = clanLogClient

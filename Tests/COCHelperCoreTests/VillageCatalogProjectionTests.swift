@@ -3609,8 +3609,9 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(item.availability, .permanent)
     }
 
-    /// 验收：permanent 声明优先——条目在阶段表活动期也返回 .permanent（声明赢）。
-    func testAvailabilityPermanentWinsOverPhaseHit() throws {
+    /// Issue #113：permanent + 阶段表命中 → .conflict（fail-closed，不再静默选边）；
+    /// 诊断字段（phaseID/phaseName/lifecycle）从命中阶段透传，sourceURL nil 合法。
+    func testAvailabilityPermanentWithPhaseHitReturnsConflict() throws {
         let catalog = makeLifecycleCatalog(items: [
             makeLifecycleItem(section: "buildings", dataID: 103_000_000, lifecycle: .permanent),
         ])
@@ -3622,8 +3623,12 @@ final class VillageCatalogProjectionTests: XCTestCase {
             village, catalog: catalog, table: makeAvailabilityPhases(),
             now: Date(timeIntervalSince1970: 1_500))
         let item = try XCTUnwrap(home.items.first { $0.dataID == 103_000_000 })
-        XCTAssertEqual(item.availability, .permanent,
-                       "阶段表命中不得覆盖 permanent 声明")
+        XCTAssertEqual(
+            item.availability,
+            .conflict(
+                phaseID: "crafted-defenses-1", phaseName: "精制防御第一季",
+                lifecycle: .permanent, sourceURL: nil),
+            "permanent 与阶段表冲突必须显式 .conflict，不静默返回 .permanent")
     }
 
     /// 验收 2：seasonalCandidate + 阶段命中 → 三态边界

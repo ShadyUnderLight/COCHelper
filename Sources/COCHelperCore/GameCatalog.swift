@@ -344,15 +344,28 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
         return valid.max(by: { $0.until < $1.until })
     }
 
-    /// Issue #98 三态映射唯一入口（两投影共用防漂移）：
-    /// permanent 声明 → .permanent（声明优先，与阶段表矛盾时声明赢）；
-    /// 其余（seasonalCandidate / nil / 未知）→ 查阶段表：命中 .seasonal / 未命中 .unconfigured。
+    /// Issue #98 三态映射唯一入口（两投影共用防漂移）；
+    /// Issue #113 硬化：permanent 声明与阶段表命中 → 显式 .conflict（fail-closed，
+    /// 不再静默选边、不静默返回 .permanent）。
+    /// 映射：permanent + 未命中 → .permanent；permanent + 命中 → .conflict；
+    /// 其余（seasonalCandidate / nil / 未知）+ 命中 → .seasonal；+ 未命中 → .unconfigured。
     /// 注意：阶段表命中覆盖 nil——精工防御嵌套模组主目录不 join（lifecycle 恒 nil）仍显示 seasonal。
     /// 阶段选择与活动边界必须由同一张注入表和同一个 `date` 决定。
+    ///
+    /// **操作契约（Issue #113 审计）**：条目从 seasonal 转 permanent 时必须同步从阶段表
+    /// 移除该 key，否则将恒显 .conflict / validator 恒 blocking——历史 ended phase
+    /// 同样触发（无状态豁免），遗漏暴露的是数据冲突而非误报。
     public func availability(forItemKey key: String, lifecycle: CatalogLifecycle?, at date: Date) -> CatalogAvailability {
-        if lifecycle == .permanent { return .permanent }
         guard let phase = phase(forItemKey: key, at: date) else {
-            return .unconfigured
+            // 无阶段命中：permanent 不降级，其余保持 unconfigured（表缺失/未配置同语义）。
+            return lifecycle == .permanent ? .permanent : .unconfigured
+        }
+        if lifecycle == .permanent {
+            // Issue #113：声明 permanent 但官方阶段表命中该 key（数据冲突）——
+            // 携带完整诊断（phaseID/name/sourceURL 透传），UI 可明确区分并人工审计。
+            return .conflict(
+                phaseID: phase.phaseID, phaseName: phase.name,
+                lifecycle: .permanent, sourceURL: phase.sourceURL)
         }
         let status: SeasonalStatus
         if date < phase.from {
@@ -418,6 +431,9 @@ public enum CatalogAvailability: Codable, Hashable, Sendable {
     case seasonal(phaseID: String, phaseName: String?, status: SeasonalStatus)
     /// 无阶段信息（UI：「阶段信息未配置」）。
     case unconfigured
+    /// Issue #113：声明 permanent 但阶段表命中（数据冲突，fail-closed，
+    /// 不再静默返回 .permanent）。sourceURL = 官方公告来源（SeasonalPhase 透传）。
+    case conflict(phaseID: String, phaseName: String?, lifecycle: CatalogLifecycle, sourceURL: String?)
 }
 
 extension CatalogAvailability {
@@ -433,6 +449,8 @@ extension CatalogAvailability {
             case .ended: return "限时内容：\(name)（已结束，仅历史数据）"
             }
         case .unconfigured: return "阶段信息未配置"
+        case .conflict(let phaseID, let phaseName, _, _):
+            return "限时内容声明冲突：\(phaseName ?? phaseID)（声明为永久内容）"
         }
     }
 }

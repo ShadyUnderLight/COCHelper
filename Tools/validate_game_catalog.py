@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from game_catalog import lifecycle as lifecycle_module
 from game_catalog.validate import validate_catalog
 from game_catalog.errors import CatalogError
 from game_catalog.lifecycle import audit_report, coverage_report
@@ -29,7 +30,15 @@ def _catalog_game_version(catalog_dir: Path) -> str | None:
         manifest = json.loads(
             (catalog_dir / "manifest.json").read_text(encoding="utf-8"))
         version = manifest.get("gameVersion")
-        return version if isinstance(version, str) and version else None
+        if not isinstance(version, str) or not version:
+            return None
+        # Issue #113 审计 R3-Minor4：gameVersion 直接拼文件路径（_phases_path），
+        # 含 `../`/绝对路径的非法值可让 validator 越界读任意本地文件（解析失败
+        # rc=1 + 路径泄露）。白名单 [0-9.]——非法格式回退 None（默认版本），
+        # 与缺失同语义（覆盖/冲突检查不因坏 manifest 硬断）。
+        if not all(ch in "0123456789." for ch in version):
+            return None
+        return version
     except (OSError, ValueError, json.JSONDecodeError, AttributeError):
         return None
 
@@ -60,6 +69,46 @@ def _emit_coverage_report(catalog_dir: Path) -> None:
     )
 
 
+def _collect_conflict_errors(catalog_dir: Path) -> list[str]:
+    """Issue #113：permanent 声明与官方阶段表冲突 → blocking error（退出码 1）。
+
+    blocking 路径红线：冲突必须进入 errors（errors 非空即 FAIL），不得塞进
+    coverage_report/_emit_coverage_report 非阻断分支（#112 评审红线保持——
+    对比：coverage 失败只打印 unavailable 且退出码不变）。版本绑定与
+    _emit_coverage_report 同模式（_catalog_game_version 回退默认版本）。
+    Issue #113 审计 F3 + R2-F3：**只有阶段表文件缺失**（版本未 bundled /
+    partial checkout，多版本目录在阶段表补录前不得硬断管线）→ 非阻断，打印
+    `conflict check: unavailable` 后返回空列表（与 #112 coverage 非阻断先例
+    一致）；**其余 CatalogError**（解析失败/结构校验/schema 错误/声明文件
+    缺失）→ 传播给 main 的 except → 退出码 1（fail-loud——损坏文件不得
+    静默瘫痪冲突门禁，否则坏 phase + 真实冲突共存时漏报）。
+    路径从 lifecycle_module 运行期读取（测试可 monkeypatch 注入 tmp 数据）。
+    """
+    version = _catalog_game_version(catalog_dir)
+    phases_path = lifecycle_module.phases_path_for(version)
+    if not phases_path.exists():
+        # 只有「文件不存在」是基础设施缺失（非数据错误）——镜像 coverage
+        # 非阻断先例；文件存在但损坏（解析/结构/schema）必须 fail-loud。
+        print(f"conflict check: unavailable: 阶段表文件缺失: {phases_path}",
+              file=sys.stderr)
+        return []
+    conflicts = lifecycle_module.find_lifecycle_phase_conflicts(
+        declarations_path=lifecycle_module.DECLARATIONS_PATH,
+        phases_path=phases_path)
+    # Issue #113 审计 F6 + 外部评审 P2：每个 (key, phaseID) 单独一条 error——
+    # 全部命中 phase 都报告（Python 数据审计视角，Swift 运行时取单一确定性
+    # 选择），且每条 error 自带**自己的** sourceURL：不同 phase 可能来自
+    # 不同官方公告，分组后只输出首条来源会丢失其余来源（P2 诊断完整性）。
+    # 每条 error 完全自包含（key/phaseID/phaseName/双路径/sourceURL）。
+    return [
+        f"lifecycle 声明永久内容与官方阶段表冲突: {c['key']}: "
+        f"phaseID={c['phaseID']} phaseName={c.get('phaseName') or '无'} "
+        f"声明={c['declarationsPath']} "
+        f"阶段={c['phasesPath']} 来源={c.get('sourceURL') or '无'}"
+        for c in conflicts
+    ]
+
+
 def _emit_audit_report() -> None:
     """Issue #109：非阻断输出审计统计（待人工复核清单）。
 
@@ -87,9 +136,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strict", action="store_true", help="将 warning 升级为失败")
     args = parser.parse_args(argv)
 
+    errors: list[str] = []
     try:
         errors = validate_catalog(args.catalog)
+        # Issue #113：冲突收集与 validate_catalog 同一 try 块——CatalogError
+        # （阶段表文件损坏/声明文件缺失等）走 except → 先打印已收集 errors
+        # 再打印异常 → 退出码 1（阶段表文件**缺失**已在 _collect_conflict_errors
+        # 内部降级为非阻断 unavailable，见其 docstring）。
+        errors += _collect_conflict_errors(args.catalog)
     except CatalogError as exc:
+        # 评审修复：异常分支不得吞掉已收集的 validate errors——先逐条打印
+        #（诊断完整性），再打印异常本身（退出码保持 1）。
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

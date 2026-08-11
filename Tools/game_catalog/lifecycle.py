@@ -12,11 +12,45 @@ Issue #98。三态 `CatalogAvailability` 的 `.permanent` 生产路径修复：
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
 from pathlib import Path
 
 from .errors import CatalogError
 from .model import CatalogItem
+
+#: Swift Double 可表示上限（JSONDecoder .deferredToDate 解码 Date 的域）。
+#: 超出此范围的数值（含 Python 任意精度 int 与 1e400 → inf）在 Swift 侧
+#: 解码失败 → 整表变空；Python 不得当合法命中（两侧漂移）。
+#: 已知边界（红队 R3 Minor 2/3，fail-closed 方向，不修）：Python 对
+#: Double.max+1（Swift 舍入后可用）与 >2^53 精度差（Swift 舍入后可能 from
+#: == until）比 Swift 更严格——多报不误放，触发需荒谬时间戳（2.85 亿年+）。
+_DOUBLE_MAX = 1.7976931348623157e308
+
+#: Swift 最小正 subnormal（2^-1074 ≈ 4.94e-324）。JSONDecoder 对「非零但
+#: underflow 为 0」的字面量（如 1e-325）解码失败；Python json.loads 会静默
+#: 归零——_strict_parse_float 镜像 Swift 语义，见下。
+_DOUBLE_MIN_SUBNORMAL = 4.9406564584124654e-324
+
+
+def _strict_parse_float(raw: str) -> float:
+    """json.loads 的 parse_float：镜像 Swift JSONDecoder Double 解析语义。
+
+    Issue #113 审计 R3-F1：非零字面量在 Python 中 underflow 为 0.0（如
+    1e-325、1e-4000）时，Swift 解码失败 → 整表变空；Python 若静默归零会把
+    该 phase 当合法命中（与上溢 1e400 同构、方向相反）。规则：float 结果为
+    0.0 且**尾数**（e/E 之前）含非零数字 → 解析失败（Swift 对 4e-324 舍入
+    到最小 subnormal 仍可解码，Python 同样舍入非零——两侧一致）。
+    R4-Minor：只查尾数——零值字面量（0e100、-0e5、0.0e-325）数值恰为 0，
+    Swift 可正常解码，不得因指数位含 1-9 被误拒。
+    """
+    value = float(raw)
+    if value == 0.0:
+        mantissa = raw.split("e", 1)[0].split("E", 1)[0]
+        if any(ch in mantissa for ch in "123456789"):
+            raise ValueError(
+                f"非零数值 underflow 为 0（Swift Double 不可表示）: {raw}")
+    return value
 
 DECLARATIONS_PATH = Path(__file__).resolve().parent / "lifecycle_declarations.json"
 
@@ -41,6 +75,17 @@ def _phases_path(version: str) -> Path:
 
 # 默认版本路径（向后兼容：无版本参数时使用；测试 monkeypatch 此常量）
 PHASES_PATH = _phases_path(DEFAULT_GAME_VERSION)
+
+
+def phases_path_for(version: str | None) -> Path:
+    """版本 → bundled 阶段表路径（None → DEFAULT_GAME_VERSION 的 PHASES_PATH）。
+
+    Issue #113 评审提取：coverage_report（lifecycle.py 内部）与 validator
+    冲突校验（validate_game_catalog.py）共用同一版本绑定，消除跨模块私有
+    访问（此前 validator 直接调 _phases_path）。版本推导逻辑与 _phases_path
+    docstring 一致（GameCatalog/<version>/seasonal_phases.json）。
+    """
+    return PHASES_PATH if version is None else _phases_path(version)
 
 # lifecycle 闭枚举（validate 校验用）
 LIFECYCLE_VALUES: frozenset[str] = frozenset({"permanent", "seasonalCandidate"})
@@ -74,10 +119,16 @@ def _load_raw(path: Path, label: str) -> dict:
     内容检查留在各调用点（结构不同，不合并进本 helper）。
     """
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_float=_strict_parse_float,  # R3-F1：underflow 字面量镜像 Swift 解码失败
+        )
     except FileNotFoundError:
         raise CatalogError(f"{label}缺失: {path}") from None
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
+        # Issue #113 审计 F8：UnicodeDecodeError（ValueError 子类，非 OSError）
+        # 此前逃逸为裸 traceback——非 UTF-8 文件统一转干净 CatalogError。
+        # R3-F1：_strict_parse_float 抛的 ValueError 同路径归入解析失败。
         raise CatalogError(f"{label}解析失败: {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise CatalogError(f"{label} schemaVersion != 1: {path}")
@@ -89,48 +140,17 @@ def _load_raw(path: Path, label: str) -> dict:
     return raw
 
 
-def load_declarations() -> dict[str, str]:
-    """读声明文件 → {key: lifecycle}（key = "section:dataID"）。
-
-    文件缺失 / JSON 解析失败 / schemaVersion != 1 / 值非闭枚举 → CatalogError
-    （fail loud，声明文件是生成前置条件）。
-    """
-    raw = _load_raw(DECLARATIONS_PATH, "lifecycle 声明文件")
-    items = raw.get("items")
-    if not isinstance(items, dict):
-        raise CatalogError(f"lifecycle 声明文件缺少 items: {DECLARATIONS_PATH}")
-    out: dict[str, str] = {}
-    for key, entry in items.items():
-        if not isinstance(entry, dict) or not isinstance(entry.get("lifecycle"), str):
-            raise CatalogError(
-                f"lifecycle 声明条目非法: {key}: {entry!r}")
-        if entry["lifecycle"] not in LIFECYCLE_VALUES:
-            raise CatalogError(
-                f"lifecycle 声明未知值: {key}: {entry['lifecycle']!r}")
-        out[key] = entry["lifecycle"]
-    # 红队 Fix 1：phaseCoverage 良构性必须进入生成管线——load_declarations 是
-    # apply_lifecycle/lifecycle_for（→ 生成器）的唯一入口，只读文件不校验则
-    # 「声明文件是生成前置条件」对 phaseCoverage 维度落空。此处调用仅用于
-    # 校验（非法 → CatalogError），返回值丢弃：phaseCoverage 不参与
-    # load_declarations 的返回结构。
-    load_phase_coverage()
-    return out
-
-
-def load_phase_coverage() -> dict[str, str]:
+def _load_phase_coverage_from(path: Path) -> dict[str, str]:
     """读声明文件 → {key: phaseCoverage}（key = "section:dataID"）。
 
-    Issue #112 评审修正：note 是自由文本，不可做日期状态分类；新增结构化
-    phaseCoverage 字段只存在于声明层（不写入 catalog 产物）：
-    - 仅 seasonalCandidate 携带；缺字段或值非闭枚举 → CatalogError（fail loud）；
-    - permanent 条目带 phaseCoverage → CatalogError（防误标）；
-    - 文件缺失 / 解析失败 / schemaVersion != 1 → CatalogError（与
-      load_declarations 同口径，声明文件是生成前置条件）。
+    Issue #113 提取：find_lifecycle_phase_conflicts 需要按参数路径读取声明
+    文件（测试注入 tmp 数据），与 load_phase_coverage 共用同一校验逻辑，
+    错误消息逐字节一致（失败路径测试锁定消息片段）。
     """
-    raw = _load_raw(DECLARATIONS_PATH, "lifecycle 声明文件")
+    raw = _load_raw(path, "lifecycle 声明文件")
     items = raw.get("items")
     if not isinstance(items, dict):
-        raise CatalogError(f"lifecycle 声明文件缺少 items: {DECLARATIONS_PATH}")
+        raise CatalogError(f"lifecycle 声明文件缺少 items: {path}")
     out: dict[str, str] = {}
     for key, entry in items.items():
         if not isinstance(entry, dict) or not isinstance(entry.get("lifecycle"), str):
@@ -153,6 +173,86 @@ def load_phase_coverage() -> dict[str, str]:
                 f"{key}: {coverage!r}")
         out[key] = coverage
     return out
+
+
+def _load_declarations_from(path: Path) -> dict[str, str]:
+    """读声明文件 → {key: lifecycle}（key = "section:dataID"）。
+
+    Issue #113 提取：find_lifecycle_phase_conflicts 需要按参数路径读取声明
+    文件（测试注入 tmp 数据），与 load_declarations 共用同一校验逻辑，
+    错误消息逐字节一致。path 必须传给 phaseCoverage 校验（同一文件）。
+    """
+    raw = _load_raw(path, "lifecycle 声明文件")
+    items = raw.get("items")
+    if not isinstance(items, dict):
+        raise CatalogError(f"lifecycle 声明文件缺少 items: {path}")
+    out: dict[str, str] = {}
+    for key, entry in items.items():
+        if not isinstance(entry, dict) or not isinstance(entry.get("lifecycle"), str):
+            raise CatalogError(
+                f"lifecycle 声明条目非法: {key}: {entry!r}")
+        if entry["lifecycle"] not in LIFECYCLE_VALUES:
+            raise CatalogError(
+                f"lifecycle 声明未知值: {key}: {entry['lifecycle']!r}")
+        out[key] = entry["lifecycle"]
+    # 红队 Fix 1：phaseCoverage 良构性必须进入生成管线——load_declarations 是
+    # apply_lifecycle/lifecycle_for（→ 生成器）的唯一入口，只读文件不校验则
+    # 「声明文件是生成前置条件」对 phaseCoverage 维度落空。此处调用仅用于
+    # 校验（非法 → CatalogError），返回值丢弃：phaseCoverage 不参与
+    # load_declarations 的返回结构。
+    _load_phase_coverage_from(path)
+    return out
+
+
+def load_declarations() -> dict[str, str]:
+    """读声明文件 → {key: lifecycle}（key = "section:dataID"）。
+
+    文件缺失 / JSON 解析失败 / schemaVersion != 1 / 值非闭枚举 → CatalogError
+    （fail loud，声明文件是生成前置条件）。
+    """
+    return _load_declarations_from(DECLARATIONS_PATH)
+
+
+def load_phase_coverage() -> dict[str, str]:
+    """读声明文件 → {key: phaseCoverage}（key = "section:dataID"）。
+
+    Issue #112 评审修正：note 是自由文本，不可做日期状态分类；新增结构化
+    phaseCoverage 字段只存在于声明层（不写入 catalog 产物）：
+    - 仅 seasonalCandidate 携带；缺字段或值非闭枚举 → CatalogError（fail loud）；
+    - permanent 条目带 phaseCoverage → CatalogError（防误标）；
+    - 文件缺失 / 解析失败 / schemaVersion != 1 → CatalogError（与
+      load_declarations 同口径，声明文件是生成前置条件）。
+    """
+    return _load_phase_coverage_from(DECLARATIONS_PATH)
+
+
+def _valid_interval(frm: object, until: object) -> bool:
+    """from/until 是否构成合法阶段区间（from < until）。
+
+    Issue #113 评审提取：compute_phase_coverage 的 phase_keys 与
+    find_lifecycle_phase_conflicts 的命中判定共用（与 Swift
+    phase(forItemKey:at:) 过滤语义对齐——非法区间 phase 的 key 不得计入）。
+    R9 防御：bool 是 int 子类且 True == 1，先排除 bool，否则 JSON true 会被
+    当作合法 from/until 绕过区间判定（与 validate.py 同模式）。
+    Issue #113 审计 F1：Swift Date 经 JSONDecoder .deferredToDate 解码接受
+    浮点时间戳（Double），Python 必须接受 int|float——严格 int 会让 float
+    区间在 Python 侧漏报冲突/漏计 phase_keys（validator fail-open，门禁绕过）。
+    Issue #113 审计 R2-F1：非有限 float（Infinity/NaN）与超出 Swift Double 域
+    的数值在 Swift 侧解码失败整表空——本函数是纯函数容忍层，返回 False
+    （不算命中）而非崩溃；真实数据入口由 _load_validated_phases 前置
+    fail-loud（消息指引 Swift 解码失败根因）。
+    """
+    if isinstance(frm, bool) or not isinstance(frm, (int, float)):
+        return False
+    if isinstance(until, bool) or not isinstance(until, (int, float)):
+        return False
+    if isinstance(frm, float) and not math.isfinite(frm):
+        return False
+    if isinstance(until, float) and not math.isfinite(until):
+        return False
+    if abs(frm) > _DOUBLE_MAX or abs(until) > _DOUBLE_MAX:
+        return False
+    return frm < until
 
 
 def compute_phase_coverage(
@@ -180,14 +280,14 @@ def compute_phase_coverage(
       phase 的 key 不得计入命中，否则报告与运行时矛盾）；
     - phase_keys_declared / phase_keys_not_declared：阶段 key 在/不在 decl 中
       （守恒：phase_keys == 二者之和；not_declared = 模组等非目录条目 key）；
-    - invalid_phases：dict 形态但 from/until 缺失、非 int、或 from >= until 的
-      phase 数（非 dict 元素跳过不计入；语义问题供报告区分，结构问题由
-      coverage_report fail loud）。
+    - invalid_phases：dict 形态但 from/until 缺失、非 int|float、非有限、
+      超出 Swift Double 域、或 from >= until 的 phase 数（非 dict 元素跳过
+      不计入；语义问题供报告区分，结构问题由 coverage_report fail loud）。
     容忍语义（红队 Fix 3 + 第二轮 Fix A）：纯函数对任意畸形 phases 输入不崩溃、
     不产生垃圾统计——phase 非 dict → 跳过；itemKeys 非 list → 按 [] 处理
     （不迭代字符串/int，否则字符串会被逐字符拆成幽灵 key）；itemKeys 元素
-    非 str → 跳过（不计入 phase_keys / 命中判定）；from/until 非 int → 该
-    phase 归 invalid_phases。
+    非 str → 跳过（不计入 phase_keys / 命中判定）；from/until 非数字或
+    非有限或超 Double 域 → 该 phase 归 invalid_phases。
     """
     required_keys = {key for key, value in decl.items() if value == "required"}
     unknown = sum(1 for value in decl.values() if value == "unknown")
@@ -199,11 +299,7 @@ def compute_phase_coverage(
         item_keys = phase.get("itemKeys")
         if not isinstance(item_keys, list):
             item_keys = []
-        frm = phase.get("from")
-        until = phase.get("until")
-        if (isinstance(frm, int) and not isinstance(frm, bool)
-                and isinstance(until, int) and not isinstance(until, bool)
-                and frm < until):
+        if _valid_interval(phase.get("from"), phase.get("until")):
             # Fix A：itemKeys 元素非 str → 跳过（不产生幽灵 key 垃圾统计）
             phase_keys.update(key for key in item_keys if isinstance(key, str))
         else:
@@ -221,20 +317,17 @@ def compute_phase_coverage(
     }
 
 
-def coverage_report(version: str | None = None) -> dict[str, int]:
-    """真实数据 coverage 报告：声明 phaseCoverage vs bundled 阶段表对账统计。
+def _load_validated_phases(phases_path: Path) -> list[dict]:
+    """阶段表读取 + 结构校验 → phases 列表（fail loud）。
 
-    Issue #112。独立于 validate_catalog（errors 非空即失败，诊断文本不得
-    混入 errors——评审红线）；只读声明文件 + seasonal_phases.json；文件缺失 /
-    解析失败 / schemaVersion != 1 / 缺 phases → CatalogError（与
-    load_phase_coverage 同口径 fail loud）。
-
-    version：bundled 目录版本（GameCatalog/<version>/seasonal_phases.json）；
-    None → DEFAULT_GAME_VERSION（CLI 从 --catalog 的 manifest.gameVersion
-    绑定，评审 follow-up：多版本时不得固定写死）。
+    Issue #113 提取：find_lifecycle_phase_conflicts 与 coverage_report 共用
+    同口径校验（文件缺失/解析失败/schemaVersion != 1/缺 phases/phase 非
+    dict/phaseID 非 str/name、sourceURL 存在时非 str/itemKeys 非 list 或元素
+    非 str/from、until 非数字或非有限或超出 Swift Double 域 → CatalogError），
+    错误消息与 coverage_report 既有实现逐字节一致（失败路径测试锁定消息片段）。
+    from/until 的**区间语义**（from >= until）是合法数值内的语义问题，不在此
+    拦截——留给各调用点（invalid_phases / 冲突判定跳过）。
     """
-    decl = load_phase_coverage()
-    phases_path = PHASES_PATH if version is None else _phases_path(version)
     raw = _load_raw(phases_path, "阶段表文件")
     phases = raw.get("phases")
     if not isinstance(phases, list):
@@ -254,6 +347,28 @@ def coverage_report(version: str | None = None) -> dict[str, int]:
             raise CatalogError(
                 f"阶段表文件 phases[{i}] 非法: phaseID 缺失或非 str: "
                 f"{phase.get('phaseID')!r}")
+        # Issue #113 审计 F2：from/until 必须 int|float（非 bool）——Swift Date
+        # 解码失败会**整表变空**（所有 key 显示 permanent/unconfigured），
+        # Python 不得静默跳过（否则同一文件两侧对冲突给出相反答案）。
+        # float 合法（F1：Swift Double 解码兼容）；bool 是 int 子类先排除（R9）。
+        # Issue #113 审计 R2-F1：非有限 float（Infinity/NaN）与超出 Swift
+        # Double 域（1e400 → inf、任意精度大 int）在 Swift 侧解码失败——
+        # 与类型错误同属结构问题，fail loud 指引根因（拦截前必须修复文件，
+        # 否则报告「已覆盖/冲突」与运行时「整表空」矛盾）。
+        for field in ("from", "until"):
+            value = phase.get(field)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise CatalogError(
+                    f"阶段表文件 phases[{i}] 非法: {field} 缺失或非数字: "
+                    f"{value!r}")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise CatalogError(
+                    f"阶段表文件 phases[{i}] 非法: {field} 非有限数值: "
+                    f"{value!r}（Swift Date 解码失败 → 整表变空）")
+            if abs(value) > _DOUBLE_MAX:
+                raise CatalogError(
+                    f"阶段表文件 phases[{i}] 非法: {field} 超出 Swift Double "
+                    f"可表示范围: {value!r}")
         for optional_field in ("name", "sourceURL"):
             value = phase.get(optional_field)
             if value is not None and not isinstance(value, str):
@@ -271,7 +386,69 @@ def coverage_report(version: str | None = None) -> dict[str, int]:
             if not isinstance(key, str):
                 raise CatalogError(
                     f"阶段表文件 phases[{i}] 非法: itemKeys 元素非 str: {key!r}")
+    return phases
+
+
+def coverage_report(version: str | None = None) -> dict[str, int]:
+    """真实数据 coverage 报告：声明 phaseCoverage vs bundled 阶段表对账统计。
+
+    Issue #112。独立于 validate_catalog（errors 非空即失败，诊断文本不得
+    混入 errors——评审红线）；只读声明文件 + seasonal_phases.json；文件缺失 /
+    解析失败 / schemaVersion != 1 / 缺 phases → CatalogError（与
+    load_phase_coverage 同口径 fail loud）。
+
+    version：bundled 目录版本（GameCatalog/<version>/seasonal_phases.json）；
+    None → DEFAULT_GAME_VERSION（CLI 从 --catalog 的 manifest.gameVersion
+    绑定，评审 follow-up：多版本时不得固定写死）。
+    """
+    decl = load_phase_coverage()
+    phases = _load_validated_phases(phases_path_for(version))
     return compute_phase_coverage(decl, phases)
+
+
+def find_lifecycle_phase_conflicts(
+    declarations_path: Path = DECLARATIONS_PATH,
+    phases_path: Path = PHASES_PATH,
+) -> list[dict]:
+    """permanent 声明 ∩ 阶段表 itemKeys → 冲突列表（每项含 key、phaseID、
+    phaseName、declarationsPath、phasesPath、sourceURL）。无冲突返回 []。
+
+    Issue #113：permanent 声明与官方阶段表命中是数据冲突（运行时 Swift
+    availability 显式 .conflict fail-closed，validator 必须 blocking）——
+    与 #112 coverage_report 非阻断路径严格分离。结构校验与 coverage_report
+    同口径 fail loud（文件缺失/解析失败/schemaVersion != 1/缺 phases/phaseID
+    非 str/name、sourceURL 存在时非 str/itemKeys 非 list 或元素非 str/from、
+    until 非数字、非有限或超出 Swift Double 域 → CatalogError）。数字类型但
+    区间非法（from >= until）的 phase 不算命中——与 Swift phase(forItemKey:at:)
+    过滤语义及 compute_phase_coverage 的 phase_keys 口径一致。多 phase 命中 →
+    报告全部命中（Python 是数据审计视角，与 Swift 单一确定性选择不同，spec
+    明确如此）。
+    """
+    decl = _load_declarations_from(declarations_path)
+    phases = _load_validated_phases(phases_path)
+    permanent_keys = {key for key, value in decl.items() if value == "permanent"}
+    conflicts: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for phase in phases:
+        if not _valid_interval(phase.get("from"), phase.get("until")):
+            continue
+        for key in phase["itemKeys"]:
+            if key not in permanent_keys:
+                continue
+            # Issue #113 审计 F5：同一 phase 内重复 key 只报一条（(key, phaseID)
+            # 去重，保持表序——重复条目无诊断增量）
+            if (key, phase["phaseID"]) in seen:
+                continue
+            seen.add((key, phase["phaseID"]))
+            conflicts.append({
+                "key": key,
+                "phaseID": phase["phaseID"],
+                "phaseName": phase.get("name"),
+                "declarationsPath": str(declarations_path),
+                "phasesPath": str(phases_path),
+                "sourceURL": phase.get("sourceURL"),
+            })
+    return conflicts
 
 
 def load_audit_status() -> dict[str, str]:

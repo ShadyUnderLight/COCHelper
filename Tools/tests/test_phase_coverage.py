@@ -132,6 +132,23 @@ def test_coverage_report_summary():
         ({"schemaVersion": 1, "phases": [{"phaseID": "x", "sourceURL": ["u"],
                                           "from": 1, "until": 2,
                                           "itemKeys": ["a:1"]}]}, "sourceURL"),
+        # Issue #113 审计 F2（R2）：from/until 类型结构校验同样作用于
+        # coverage_report（共享 _load_validated_phases）——非数字 → fail loud
+        #（此前 string from 被静默计入 invalid_phases，报告与 Swift 整表空矛盾）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": "1", "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "from 缺失或非数字"),
+        # Issue #113 审计 R2-F1：非有限/超 Double 域数值 → fail loud（Swift
+        # Date 解码失败整表空，报告不得显示已覆盖）
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                          "until": float("inf"),
+                                          "itemKeys": ["a:1"]}]}, "until 非有限数值"),
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                          "until": 10**400,
+                                          "itemKeys": ["a:1"]}]}, "until 超出 Swift Double"),
+        # Issue #113 审计 R3-F1：underflow 字面量 → 解析失败（coverage 同口径）
+        ("""{"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1,
+                                            "until": 1e-325,
+                                            "itemKeys": ["a:1"]}]}""", "underflow"),
     ],
 )
 def test_coverage_report_failure_paths(monkeypatch, tmp_path, content, message_fragment):
@@ -226,6 +243,21 @@ def test_compute_phase_coverage_skips_invalid_interval_phases():
     assert report["phase_keys"] == 1  # 仅合法 phase 的 key
     assert report["required_with_phase"] == 1  # 仅合法命中
     assert report["required_missing_phase"] == 0
+
+
+def test_compute_phase_coverage_float_interval_counts_as_phase_key():
+    """Issue #113 审计 F1：float 时间戳区间（Swift Double 解码兼容）必须计入
+    phase_keys（严格 int 会让 coverage 报告与运行时漂移——运行时命中而报告
+    invalid_phases，与红队 Fix 2 同一类反向对账失效）。"""
+    decl = {"buildings:103000008": "required"}
+    phases = [
+        {"phaseID": "float", "from": 100.5, "until": 200.5,
+         "itemKeys": ["buildings:103000008"]},
+    ]
+    report = compute_phase_coverage(decl, phases)
+    assert report["invalid_phases"] == 0
+    assert report["phase_keys"] == 1
+    assert report["required_with_phase"] == 1
 
 
 def test_compute_phase_coverage_skips_non_str_itemkey_elements():
@@ -368,11 +400,12 @@ def _phases_malformed_strategy(draw):
 
 def _valid_interval(phase: dict) -> bool:
     """oracle：与 compute_phase_coverage 的区间合法判定一致（from < until，
-    int 且排除 bool）。"""
+    int|float 且排除 bool——Issue #113 审计 F1：float 时间戳合法（Swift
+    Double 解码兼容），与产品 _valid_interval 同步）。"""
     frm = phase.get("from")
     until = phase.get("until")
-    return (isinstance(frm, int) and not isinstance(frm, bool)
-            and isinstance(until, int) and not isinstance(until, bool)
+    return (isinstance(frm, (int, float)) and not isinstance(frm, bool)
+            and isinstance(until, (int, float)) and not isinstance(until, bool)
             and frm < until)
 
 

@@ -69,18 +69,39 @@ final class CatalogAvailabilityPropertyTests: XCTestCase {
 
     // MARK: - 性质
 
-    /// 性质 1：permanent 声明恒 .permanent——任意表/任意日期（500 组随机输入）。
-    func testPropertyPermanentIsInvariant() {
+    /// 性质 1（Issue #113 改性质）：permanent 与阶段表冲突契约——permanent + 无候选阶段
+    /// → .permanent；permanent + 候选非空 → .conflict（fail-closed，不静默选边）。
+    /// 独立 oracle（审计 F4）：命中判定直接从 `table.phases` 原始过滤推导——
+    /// 候选 = itemKeys 包含 key 且 from < until 的集合，命中 = 候选非空；**不调用**
+    /// `availability()` 内部同源的 `phase(forItemKey:at:)`，防命中/过滤/选择逻辑整体
+    /// 偏移时测试镜像通过（循环引用）。availability 内部对候选的选择（active 优先等）
+    /// 不影响 conflict 判定（只要非空即 conflict），故 oracle 只需判「候选非空」。
+    /// hitCount > 0 断言防 randomTable 退化导致 conflict 路径空过。
+    func testPropertyPermanentConflictContract() {
         var rng = SeededRNG(seed: 0x9E37_79B9_7F4A_7C15)
+        var conflictHitCount = 0
         for _ in 0..<500 {
             let table = randomTable(&rng)
             let key = randomKey(&rng)
             let date = randomDate(&rng)
-            XCTAssertEqual(
-                table.availability(forItemKey: key, lifecycle: .permanent, at: date),
-                .permanent,
-                "permanent 声明不得被任何阶段表/日期覆盖")
+            // 独立 oracle：与 phase() 内部 valid 过滤同条件，但不调用它。
+            let candidates = table.phases.filter { $0.itemKeys.contains(key) && $0.from < $0.until }
+            let result = table.availability(forItemKey: key, lifecycle: .permanent, at: date)
+            if !candidates.isEmpty {
+                conflictHitCount += 1
+                // 只断言形态：字段透传一致性由性质 6 以独立候选集验证（此处不镜像选择逻辑）。
+                guard case .conflict = result else {
+                    XCTFail("permanent + 候选阶段非空必须返回 .conflict（key=\(key)）")
+                    continue
+                }
+            } else {
+                XCTAssertEqual(
+                    result, .permanent,
+                    "permanent + 无候选阶段不得降级（key=\(key)）")
+            }
         }
+        XCTAssertGreaterThan(conflictHitCount, 0,
+                             "conflict 路径必须被采样到（防参数漂移导致空过）")
     }
 
     /// 性质 2：纯函数确定性——同输入两次调用结果相等（500 组）。
@@ -98,9 +119,10 @@ final class CatalogAvailabilityPropertyTests: XCTestCase {
         }
     }
 
-    /// 性质 3：结果值域闭——{permanent, seasonal, unconfigured}；
+    /// 性质 3：结果值域闭——{permanent, seasonal, unconfigured, conflict}；
     /// seasonal.status ∈ {notStarted, active, ended}（500 组全随机输入）。
     /// seasonal 命中必须 > 0：key 空间 400 下期望 ~3 次，断言防参数漂移导致空过。
+    /// conflict（Issue #113）与 seasonal 同属阶段命中路径，在生命周期随机宇宙中被采样。
     func testPropertyResultDomain() {
         var rng = SeededRNG(seed: 0x9E37_79B9_7F4A_7C15)
         var seasonalHitCount = 0
@@ -118,6 +140,8 @@ final class CatalogAvailabilityPropertyTests: XCTestCase {
                 XCTAssertTrue(
                     status == .notStarted || status == .active || status == .ended,
                     "非法 seasonal status: \(status)")
+            case .conflict:
+                break
             }
         }
         XCTAssertGreaterThan(seasonalHitCount, 0,
@@ -177,5 +201,38 @@ final class CatalogAvailabilityPropertyTests: XCTestCase {
         }
         XCTAssertGreaterThan(hitCount, 0,
                              "seasonal 路径必须被采样到（防参数漂移导致空过）")
+    }
+
+    /// 性质 6（Issue #113）：conflict 的 phaseID/phaseName/sourceURL 必须来自该 key 的
+    /// **候选阶段**（不得引入表外阶段、不得编造来源）——独立 oracle（审计 F4）：候选 =
+    /// phases 中 itemKeys 包含 key 且 from < until 的集合，直接从原始表推导，**不调用**
+    /// `phase(forItemKey:at:)`（防与实现镜像/循环引用）；availability 对候选的具体选择
+    /// 不约束（仿照 testPropertySeasonalPhaseIDComesFromTable 的候选集模式）。
+    /// 500 组随机表/随机 key/随机日期。hitCount > 0 断言防参数漂移导致路径空过。
+    func testPropertyConflictPhaseIDComesFromTable() {
+        var rng = SeededRNG(seed: 0x9E37_79B9_7F4A_7C15)
+        var hitCount = 0
+        for _ in 0..<500 {
+            let table = randomTable(&rng)
+            let key = randomKey(&rng)
+            let date = randomDate(&rng)
+            let result = table.availability(forItemKey: key, lifecycle: .permanent, at: date)
+            guard case .conflict(let phaseID, let phaseName, _, let sourceURL) = result else { continue }
+            hitCount += 1
+            let candidates = table.phases.filter { $0.itemKeys.contains(key) && $0.from < $0.until }
+            XCTAssertFalse(candidates.isEmpty,
+                           "conflict 前提是候选阶段非空（key=\(key)）")
+            XCTAssertTrue(
+                candidates.contains(where: { $0.phaseID == phaseID }),
+                "conflict phaseID \(phaseID) 不在 key \(key) 的候选阶段集")
+            if let matched = candidates.first(where: { $0.phaseID == phaseID }) {
+                XCTAssertEqual(phaseName, matched.name,
+                               "conflict phaseName 必须来自候选阶段（key=\(key)）")
+                XCTAssertEqual(sourceURL, matched.sourceURL,
+                               "conflict sourceURL 必须来自候选阶段（key=\(key)）")
+            }
+        }
+        XCTAssertGreaterThan(hitCount, 0,
+                             "conflict 路径必须被采样到（防参数漂移导致空过）")
     }
 }

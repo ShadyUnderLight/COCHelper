@@ -281,6 +281,103 @@ final class ClanWarDisplayProjectionFilterTests: XCTestCase {
         XCTAssertEqual(legacy.map(\.tag), ["2", "3", "4", "5", "1"])
     }
 
+    // MARK: - reorder（已投影行重排，Issue #126）
+
+    /// 契约：reorder 的键链必须与 sortedRows(order:) 完全一致。
+    /// actionPriority 键链 = rank → mapPosition → name → sourceIndex；
+    /// reorder 对已按 actionPriority 排好的行是恒等（同一全序）。
+    func testReorderActionPriorityMatchesSortedRows() {
+        let members = [
+            member(tag: "1", name: "未知", mapPosition: 3, attacks: nil),
+            member(tag: "2", name: "零", mapPosition: nil, attacks: []),
+            member(tag: "3", name: "部分", mapPosition: 1, attacks: [attack()]),
+            member(tag: "4", name: "完成", mapPosition: 4, attacks: [attack(), attack()]),
+            member(tag: "5", name: nil, mapPosition: 2, attacks: [attack(), attack(), attack()]),
+        ]
+        let expected = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2, order: .actionPriority)
+        // reorder 对已按 actionPriority 排好的行恒等
+        XCTAssertEqual(ClanWarDisplayProjection.reorder(expected, order: .actionPriority), expected)
+        // 乱序输入重排 == sortedRows 输出（键链一致，与输入顺序无关）
+        XCTAssertEqual(
+            ClanWarDisplayProjection.reorder(Array(expected.reversed()), order: .actionPriority),
+            expected
+        )
+    }
+
+    /// mapPosition 键链 = mapPosition → name → sourceIndex：重复 mapPosition
+    /// 时平局必须按 name（UI 旧实现缺 name 键，会按 sourceIndex 错误定序）。
+    func testReorderMapPositionUsesCoreKeyChain() {
+        let rows = [
+            makeRow(0, status: .complete, mapPosition: 1, name: "C"),
+            makeRow(1, status: .complete, mapPosition: 2, name: "B"),
+            makeRow(2, status: .complete, mapPosition: 1, name: "A"),
+        ]
+        let reordered = ClanWarDisplayProjection.reorder(rows, order: .mapPosition)
+        // position 1 组：name A(2) → C(0)；position 2：B(1)
+        XCTAssertEqual(reordered.map(\.sourceIndex), [2, 0, 1])
+
+        // 与 sortedRows 键链一致：乱序投影行重排 == sortedRows 输出
+        let members = [
+            member(tag: "a", name: "C", mapPosition: 3, attacks: [attack()]),
+            member(tag: "b", name: "B", mapPosition: nil, attacks: [attack()]),
+            member(tag: "c", name: "B", mapPosition: 1, attacks: [attack()]),
+            member(tag: "d", name: "A", mapPosition: 1, attacks: [attack()]),
+        ]
+        let expected = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2, order: .mapPosition)
+        XCTAssertEqual(
+            ClanWarDisplayProjection.reorder(Array(expected.reversed()), order: .mapPosition),
+            expected
+        )
+    }
+
+    /// name 键链 = name → mapPosition → sourceIndex：重名（含双 nil 名）平局
+    /// 必须按 mapPosition（UI 旧实现缺 mapPosition 键）。
+    func testReorderNameUsesCoreKeyChain() {
+        let rows = [
+            makeRow(0, status: .zero, mapPosition: 5, name: "B"),
+            makeRow(1, status: .zero, mapPosition: 1, name: "B"),
+            makeRow(2, status: .zero, mapPosition: 3, name: nil),
+            makeRow(3, status: .zero, mapPosition: 2, name: nil),
+        ]
+        let reordered = ClanWarDisplayProjection.reorder(rows, order: .name)
+        // B(pos1) → B(pos5) → nil 名组（pos2 → pos3）
+        XCTAssertEqual(reordered.map(\.sourceIndex), [1, 0, 3, 2])
+
+        // 与 sortedRows 键链一致：乱序投影行重排 == sortedRows 输出
+        let members = [
+            member(tag: "a", name: "B", mapPosition: 5, attacks: [attack()]),
+            member(tag: "b", name: nil, mapPosition: 1, attacks: [attack()]),
+            member(tag: "c", name: "A", mapPosition: 2, attacks: [attack()]),
+            member(tag: "d", name: "A", mapPosition: 1, attacks: [attack()]),
+            member(tag: "e", name: "C", mapPosition: nil, attacks: [attack()]),
+        ]
+        let expected = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2, order: .name)
+        XCTAssertEqual(
+            ClanWarDisplayProjection.reorder(Array(expected.reversed()), order: .name),
+            expected
+        )
+    }
+
+    /// 三种 order 下 reorder 幂等 + 乱序重排 == sortedRows（契约对齐的汇总校验）。
+    func testReorderIdempotentForAllOrders() {
+        let members = [
+            member(tag: "1", name: "D", mapPosition: 2, attacks: [attack()]),
+            member(tag: "2", name: "A", mapPosition: nil, attacks: []),
+            member(tag: "3", name: nil, mapPosition: 1, attacks: [attack(), attack()]),
+            member(tag: "4", name: "A", mapPosition: 1, attacks: [attack(), attack()]),
+        ]
+        for order in ClanWarSortOrder.allCases {
+            let expected = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2, order: order)
+            XCTAssertEqual(ClanWarDisplayProjection.reorder(expected, order: order), expected,
+                           "幂等：order=\(order)")
+            XCTAssertEqual(
+                ClanWarDisplayProjection.reorder(Array(expected.reversed()), order: order),
+                expected,
+                "乱序重排 == sortedRows：order=\(order)"
+            )
+        }
+    }
+
     // MARK: - 防守列
 
     func testDefenseAttacksProjected() {

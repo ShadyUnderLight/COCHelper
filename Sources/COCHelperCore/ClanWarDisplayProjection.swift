@@ -747,6 +747,21 @@ extension ClanWarDisplayProjection {
         return rows.sorted { compareRows($0, $1, order: order) }
     }
 
+    /// 对已投影行按指定顺序重排（Issue #126）。
+    ///
+    /// 契约：键链与 `sortedRows(_:attacksPerMember:order:)` 完全一致——
+    /// - actionPriority：rank（displayGroup 语义：zero < partial < complete <
+    ///   数据未知组）→ mapPosition → name → sourceIndex；
+    /// - mapPosition：mapPosition → name → sourceIndex；
+    /// - name：name → mapPosition → sourceIndex。
+    ///
+    /// `sourceIndex` 恒为最终平局键 → 全序确定、幂等、与输入顺序无关。
+    /// UI 层二次排序必须走本函数（禁止自行实现比较器——平局键链是
+    /// sortedRows 的既定契约，UI 复制实现会产生排序漂移）。
+    public static func reorder(_ rows: [ClanWarMemberRow], order: ClanWarSortOrder) -> [ClanWarMemberRow] {
+        rows.sorted { compareRows($0, $1, order: order) }
+    }
+
     /// 全序比较器（键链依 order 而异，sourceIndex 恒为最终平局键）：
     /// - actionPriority：rank → mapPosition → name → sourceIndex（= #125 语义）；
     /// - mapPosition：mapPosition → name → sourceIndex；

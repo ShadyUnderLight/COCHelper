@@ -54,12 +54,14 @@ public struct LeagueTierCatalog: Codable, Hashable, Sendable {
 
 /// 联赛/段位出现的语境：主村联赛（290000xx 奖杯联赛）、建筑大师基地联赛
 /// （440000xx）、部落都城联赛（850000xx）、排位段位（105xxxxxx，玩家
-/// leagueTier 与部落入会 requiredLeagueTier 共用同一 ID 表）。
+/// leagueTier 与部落入会 requiredLeagueTier 共用同一 ID 表）、部落对战
+/// 联赛 CWL（48000000-48000022，warLeague 字段）。
 public enum LeagueTierContext: String, Codable, CaseIterable, Sendable {
     case home
     case builderBase
     case capital
     case leagueTier
+    case war
 }
 
 public struct LeagueTierContextSpec: Codable, Hashable, Sendable {

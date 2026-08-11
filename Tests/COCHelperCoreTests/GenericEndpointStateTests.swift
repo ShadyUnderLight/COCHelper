@@ -48,7 +48,7 @@ final class GenericEndpointStateTests: XCTestCase {
             "status", "clanTag", "fetchedAt", "lastAttemptAt", "lastErrorReason",
             "lastHTTPStatus", "parserVersion", "lastGood", "unrecognizedKeys",
         ], "泛型编码键必须与旧格式一致（持久化兼容）")
-        XCTAssertEqual(json?["parserVersion"] as? String, "clan-snapshot-0.3")
+        XCTAssertEqual(json?["parserVersion"] as? String, "clan-snapshot-0.4")
     }
 
     /// typealias：ClanAPIState 就是泛型实例化（编译期验证 + 行为一致）。
@@ -83,11 +83,11 @@ final class GenericEndpointStateTests: XCTestCase {
     }
 
     /// P2 回归：默认构造的 parserVersion 必须恢复端点版本
-    /// （当前语义：`ClanAPIState(...)` 默认 "clan-snapshot-0.3"，
+    /// （当前语义：`ClanAPIState(...)` 默认 "clan-snapshot-0.4"，
     /// 不得产生无法审计的 "endpoint-state"）。
     func testDefaultParserVersionRestoredPerEndpoint() {
         let clan = ClanAPIState(status: .never, clanTag: "#A")
-        XCTAssertEqual(clan.parserVersion, "clan-snapshot-0.3")
+        XCTAssertEqual(clan.parserVersion, "clan-snapshot-0.4")
 
         let war = ClanWarAPIState(status: .never, clanTag: "#A")
         XCTAssertEqual(war.parserVersion, "clan-war-0.3")

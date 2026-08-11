@@ -24,18 +24,19 @@ final class LeagueTierCatalogTests: XCTestCase {
         XCTAssertEqual(catalog.gameVersion, GameCatalog.defaultBundledVersion)
         XCTAssertEqual(catalog.locale, "zh-CN")
         XCTAssertEqual(catalog.source, "clashy-static-2026-08")
-        // 4 个 context 全覆盖：home / builderBase / capital / leagueTier
+        // 5 个 context 全覆盖：home / builderBase / capital / leagueTier / war
         XCTAssertEqual(
             Set(catalog.contexts.map(\.context)),
             Set(LeagueTierContext.allCases)
         )
         // 全量收录：home 23（29000000 未定级 ~ 29000022 传奇杯联赛）、
         // builderBase 42（木头联赛5 ~ 钻石联赛）、capital 23（未排名 ~ 传奇杯联赛）、
-        // leagueTier 37（未进入联赛 ~ 传奇杯1）
+        // leagueTier 37（未进入联赛 ~ 传奇杯1）、war 23（48000000 未定级 ~ 48000022 传奇杯联赛）
         XCTAssertEqual(catalog.contexts.first { $0.context == .home }?.tiers.count, 23)
         XCTAssertEqual(catalog.contexts.first { $0.context == .builderBase }?.tiers.count, 42)
         XCTAssertEqual(catalog.contexts.first { $0.context == .capital }?.tiers.count, 23)
         XCTAssertEqual(catalog.contexts.first { $0.context == .leagueTier }?.tiers.count, 37)
+        XCTAssertEqual(catalog.contexts.first { $0.context == .war }?.tiers.count, 23)
     }
 
     // MARK: - 已知 ID 查询（官方术语）
@@ -77,6 +78,16 @@ final class LeagueTierCatalogTests: XCTestCase {
         XCTAssertEqual(catalog.name(forID: 105_000_036, context: .leagueTier), "传奇杯1")
         XCTAssertEqual(catalog.name(forID: 105_000_035, context: .leagueTier), "传奇杯2")
         XCTAssertEqual(catalog.name(forID: 105_000_034, context: .leagueTier), "传奇杯3")
+    }
+
+    /// CWL 部落对战联赛（warLeague，48000000-48000022，与 home 平行官方简中术语）。
+    func testKnownWarIDsMapToOfficialChinese() throws {
+        let catalog = try XCTUnwrap(LeagueTierCatalog.loadBundled())
+        XCTAssertEqual(catalog.name(forID: 48_000_000, context: .war), "未定级")
+        XCTAssertEqual(catalog.name(forID: 48_000_001, context: .war), "铜杯联赛3")
+        XCTAssertEqual(catalog.name(forID: 48_000_010, context: .war), "水晶杯联赛3")
+        XCTAssertEqual(catalog.name(forID: 48_000_019, context: .war), "泰坦杯联赛3")
+        XCTAssertEqual(catalog.name(forID: 48_000_022, context: .war), "传奇杯联赛")
     }
 
     // MARK: - 未知 ID

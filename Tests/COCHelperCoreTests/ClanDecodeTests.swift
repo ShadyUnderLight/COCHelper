@@ -36,6 +36,8 @@ final class ClanDecodeTests: XCTestCase {
         XCTAssertEqual(clan.clanCapitalPoints, 67890)
         XCTAssertEqual(clan.capitalLeague?.id, 85000006)
         XCTAssertEqual(clan.capitalLeague?.name, "Titan League I")
+        XCTAssertEqual(clan.warLeague?.id, 48000010)
+        XCTAssertEqual(clan.warLeague?.name, "Crystal League III")
         XCTAssertEqual(clan.warWins, 250)
         XCTAssertEqual(clan.warLosses, 120)
         XCTAssertEqual(clan.warTies, 10)
@@ -70,6 +72,16 @@ final class ClanDecodeTests: XCTestCase {
         XCTAssertNil(clan.clanLevel)
         XCTAssertNil(clan.members)
         XCTAssertNil(clan.clanCapital)
+        XCTAssertNil(clan.warLeague)
+        XCTAssertTrue(clan.unrecognizedKeys.isEmpty)
+    }
+
+    /// warLeague 显式 null 必须容忍（warLeague == nil，解码不失败，不产生未知键）；
+    /// 缺失场景由 testDecodeMinimalFixtureSucceeds 兜底。
+    func testWarLeagueNullAndMissingAreTolerated() throws {
+        let clan = try decode(Data(#"{"warLeague": null}"#.utf8))
+
+        XCTAssertNil(clan.warLeague)
         XCTAssertTrue(clan.unrecognizedKeys.isEmpty)
     }
 
@@ -129,13 +141,14 @@ final class ClanDecodeTests: XCTestCase {
             from: try JSONEncoder().encode(state)
         )
 
-        XCTAssertEqual(decoded.parserVersion, "clan-snapshot-0.3")
+        XCTAssertEqual(decoded.parserVersion, "clan-snapshot-0.4")
         XCTAssertEqual(decoded.lastGood?.requiredBuilderBaseTrophies, 1200)
         XCTAssertEqual(decoded.lastGood?.requiredLeagueTier?.id, 105000028)
         XCTAssertEqual(decoded.lastGood?.requiredLeagueTier?.name, "Titan League I")
         XCTAssertEqual(decoded.lastGood?.clanBuilderBasePoints, 12345)
         XCTAssertEqual(decoded.lastGood?.clanCapitalPoints, 67890)
         XCTAssertEqual(decoded.lastGood?.capitalLeague?.name, "Titan League I")
+        XCTAssertEqual(decoded.lastGood?.warLeague?.name, "Crystal League III")
         XCTAssertEqual(decoded.unrecognizedKeys, ["newOfficialField"])
     }
 
@@ -164,5 +177,16 @@ final class ClanDecodeTests: XCTestCase {
         ) as? [String: Any]
         let tier = encoded?["requiredLeagueTier"] as? [String: Any]
         XCTAssertEqual(tier?["id"] as? Int, 5)
+    }
+
+    /// nil warLeague 编码后不得写入 "warLeague" 键（encodeIfPresent 省略语义）。
+    func testNilWarLeagueDoesNotEmitKey() throws {
+        let snapshot = try decode(Data(#"{"name":"n"}"#.utf8))
+        XCTAssertNil(snapshot.warLeague)
+
+        let encoded = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(snapshot)
+        ) as? [String: Any]
+        XCTAssertNil(encoded?["warLeague"], "nil warLeague 不应写入 JSON 键")
     }
 }

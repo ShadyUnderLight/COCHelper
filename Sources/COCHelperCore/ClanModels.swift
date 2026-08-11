@@ -36,6 +36,8 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
     public let clanCapitalPoints: Int?
     /// 部落都城联赛。
     public let capitalLeague: ClanLeague?
+    /// 部落当前 CWL 联赛（官方 raw key `warLeague`，对象形状 {id, name}）。
+    public let warLeague: ClanLeague?
 
     // MARK: 战争记录概览
     public let warWins: Int?
@@ -64,7 +66,8 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         requiredLeagueTier: ClanLeagueTier? = nil,
         clanBuilderBasePoints: Int? = nil,
         clanCapitalPoints: Int? = nil,
-        capitalLeague: ClanLeague? = nil
+        capitalLeague: ClanLeague? = nil,
+        warLeague: ClanLeague? = nil
     ) {
         self.tag = tag
         self.name = name
@@ -80,6 +83,7 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         self.clanBuilderBasePoints = clanBuilderBasePoints
         self.clanCapitalPoints = clanCapitalPoints
         self.capitalLeague = capitalLeague
+        self.warLeague = warLeague
         self.warWins = warWins
         self.warLosses = warLosses
         self.warTies = warTies
@@ -142,6 +146,9 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         capitalLeague = try container.decodeIfPresent(
             ClanLeague.self, forKey: .init(stringValue: "capitalLeague")!
         )
+        warLeague = try container.decodeIfPresent(
+            ClanLeague.self, forKey: .init(stringValue: "warLeague")!
+        )
         warWins = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "warWins")!)
         warLosses = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "warLosses")!)
         warTies = try container.decodeIfPresent(Int.self, forKey: .init(stringValue: "warTies")!)
@@ -179,6 +186,7 @@ public struct OfficialClanSnapshot: Codable, Hashable, Sendable {
         try container.encodeIfPresent(clanBuilderBasePoints, forKey: key("clanBuilderBasePoints"))
         try container.encodeIfPresent(clanCapitalPoints, forKey: key("clanCapitalPoints"))
         try container.encodeIfPresent(capitalLeague, forKey: key("capitalLeague"))
+        try container.encodeIfPresent(warLeague, forKey: key("warLeague"))
         try container.encodeIfPresent(warWins, forKey: key("warWins"))
         try container.encodeIfPresent(warLosses, forKey: key("warLosses"))
         try container.encodeIfPresent(warTies, forKey: key("warTies"))

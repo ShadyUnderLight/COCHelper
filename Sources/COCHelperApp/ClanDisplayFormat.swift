@@ -55,6 +55,12 @@ public enum ClanDisplayFormat {
         leagueLabel(id: league?.id, name: league?.name, kind: .capital)
     }
 
+    /// 部落当前 CWL 联赛（warLeague）：按稳定 API ID 本地化。
+    /// 与 capitalLeagueLabel（都城联赛）语义严格区分，UI 文案不得互相回显。
+    public static func warLeagueLabel(_ league: ClanLeague?) -> String? {
+        leagueLabel(id: league?.id, name: league?.name, kind: .war)
+    }
+
     /// 入会所需联赛等级：按稳定 API ID 本地化。
     public static func requiredLeagueTierLabel(_ tier: ClanLeagueTier?) -> String? {
         leagueLabel(id: tier?.id, name: tier?.name, kind: .requiredTier)
@@ -113,6 +119,7 @@ public enum ClanDisplayFormat {
         case builderBase
         case capital
         case requiredTier
+        case war
     }
 
     /// 联赛/段位本地化目录缓存（Issue #71）：单一数据源替换原手写字典；
@@ -127,6 +134,7 @@ public enum ClanDisplayFormat {
         case .builderBase: context = .builderBase
         case .capital: context = .capital
         case .requiredTier: context = .leagueTier
+        case .war: context = .war
         }
         guard let localized = leagueTierCatalog?.name(forID: id, context: context) else {
             return tierNameFallback("未本地化联赛", id: id, officialName: name)

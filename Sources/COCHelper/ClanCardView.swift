@@ -238,6 +238,13 @@ struct ClanCardView: View {
                     metric("都城大本营", snapshot.clanCapital?.capitalHallLevel.map { "\($0)级" })
                     metric("部落都城联赛", ClanDisplayFormat.capitalLeagueLabel(snapshot.capitalLeague))
                 }
+                if let warLeague = ClanDisplayFormat.warLeagueLabel(snapshot.warLeague) {
+                    GridRow {
+                        metric("部落对战联赛", warLeague)
+                        metric("", nil)
+                        metric("", nil)
+                    }
+                }
                 if snapshot.clanBuilderBasePoints != nil
                     || snapshot.clanCapitalPoints != nil {
                     GridRow {

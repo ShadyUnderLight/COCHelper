@@ -10,8 +10,8 @@ import COCHelperApp
 /// 单元格展示 Lv / 费用 / 完整时长，单元格语义与 `LevelDetailSheet` 逐级行
 /// 一致：durationSeconds == 0 显示「即时」、缺失类按原因区分显示（Issue
 /// #74b：time_missing 等显示「目录缺失」而非「暂无目录数据」）、
-/// 费用 nil 显示「无费用数据」。阶梯为空（满级或不可 join）时显示占位
-/// 「无剩余等级」。
+/// 费用 nil 显示「无费用数据」。阶梯为空时，已确认达到当前大本营阶段上限
+/// 或全局满级会显示对应状态；其他不可 join/不可验证情况保留「无剩余等级」。
 ///
 /// 窄窗口适配（Issue #45：「用横向滚动适配较窄窗口」，Review 反馈 P2-2）：
 /// 固定列宽 3×150pt + 外层横向 ScrollView——实例区宽度不足 466pt 时横向滚动，
@@ -19,6 +19,8 @@ import COCHelperApp
 struct BuildingUpgradeStepGrid: View {
     /// 升序阶梯（调用方传入；可为空数组）。
     let steps: [BuildingUpgradeStep]
+    /// 实例状态，用于区分阶段满级、全局满级和不可验证的空阶梯。
+    let item: VillageItemState
 
     /// 单列固定宽：3 列 + 2×8 spacing = 466pt 内容宽。
     private static let columnWidth: CGFloat = 150
@@ -43,6 +45,19 @@ struct BuildingUpgradeStepGrid: View {
         step.durationState?.durationLabel ?? "暂无目录数据"
     }
 
+    /// 空阶梯文案：只有投影明确判定 `.maxed` 时才报告满级，避免把目录缺失或
+    /// 无法验证阶段上限误报成完成。`currentStageMaxLevel < maxLevel` 表示
+    /// 当前大本营已达到阶段上限，但目录仍存在更高的全局等级。
+    private var emptyStateLabel: String {
+        guard item.status == .maxed else { return "无剩余等级" }
+        if let stage = item.currentStageMaxLevel,
+           let max = item.maxLevel,
+           stage < max {
+            return "已达到当前大本营满级"
+        }
+        return "已满级"
+    }
+
     private func stepCell(_ step: BuildingUpgradeStep) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(String(step.level) + "级")
@@ -61,7 +76,7 @@ struct BuildingUpgradeStepGrid: View {
 
     var body: some View {
         if steps.isEmpty {
-            Text("无剩余等级")
+            Text(emptyStateLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

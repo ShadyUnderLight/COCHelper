@@ -922,7 +922,7 @@ final class GameCatalogTests: XCTestCase {
         // 官方“April 1-July 30”按 UTC 日边界编码为 [Apr 1, Jul 31)。
         let table = SeasonalPhaseTable.loadBundled(version: GameCatalog.defaultBundledVersion)
         XCTAssertEqual(table.schemaVersion, 1)
-        XCTAssertEqual(table.phases.count, 1)
+        XCTAssertEqual(table.phases.count, 2)
         let phase = try XCTUnwrap(table.phases.first)
         XCTAssertEqual(phase.phaseID, "crafted-defenses-2026-04-sound-of-clash")
         XCTAssertEqual(phase.from, Date(timeIntervalSinceReferenceDate: 796_694_400))
@@ -945,6 +945,20 @@ final class GameCatalogTests: XCTestCase {
                 }
         )
         XCTAssertEqual(Set(phase.itemKeys), expectedKeys, "阶段键必须与版本化精制台目录对拍")
+
+        // Party Wizard（units:4000072）：Sound of Clash Medal Event 2026-04-08T08:00Z ~ 2026-04-29T08:00Z
+        // （Cocoa reference date 纪元秒数，见 SeasonalPhase 契约注释）。
+        let partyWizard = try XCTUnwrap(
+            table.phases.first(where: { $0.phaseID == "sound-of-clash-medal-event-2026-04" })
+        )
+        XCTAssertEqual(partyWizard.name, "Sound of Clash Medal Event")
+        XCTAssertEqual(partyWizard.from, Date(timeIntervalSinceReferenceDate: 797_328_000))
+        XCTAssertEqual(partyWizard.until, Date(timeIntervalSinceReferenceDate: 799_142_400))
+        XCTAssertEqual(partyWizard.itemKeys, ["units:4000072"])
+        XCTAssertEqual(
+            partyWizard.sourceURL,
+            "https://supercell.com/en/games/clashofclans/blog/news/sound-of-clash-medal-event-is-here/"
+        )
     }
 
     func testSeasonalPhaseTableMissingVersionReturnsEmpty() {
@@ -989,6 +1003,49 @@ final class GameCatalogTests: XCTestCase {
         )
         XCTAssertEqual(
             table.availability(forItemKey: "missing", at: Date(timeIntervalSince1970: 1_500)),
+            .unconfigured
+        )
+    }
+
+    func testPartyWizardAvailabilityAcrossPhaseBoundaries() throws {
+        // 锁定 bundled 数据契约（timeIntervalSinceReferenceDate = Cocoa 2001 纪元，非 Unix）：
+        // Party Wizard 阶段 from=797328000 / until=799142400（2026-04-08 08:00 ~ 2026-04-29 08:00 UTC）。
+        let table = SeasonalPhaseTable.loadBundled(version: GameCatalog.defaultBundledVersion)
+        let partyWizard = try XCTUnwrap(
+            table.phases.first(where: { $0.phaseID == "sound-of-clash-medal-event-2026-04" })
+        )
+        XCTAssertEqual(partyWizard.from, Date(timeIntervalSinceReferenceDate: 797_328_000))
+        XCTAssertEqual(partyWizard.until, Date(timeIntervalSinceReferenceDate: 799_142_400))
+
+        let key = "units:4000072"
+        let expected = { (status: SeasonalStatus) -> CatalogAvailability in
+            .seasonal(phaseID: "sound-of-clash-medal-event-2026-04",
+                      phaseName: "Sound of Clash Medal Event",
+                      status: status)
+        }
+        // date < from → notStarted（from 前 1 秒）。
+        XCTAssertEqual(
+            table.availability(forItemKey: key, at: Date(timeIntervalSinceReferenceDate: 797_327_999)),
+            expected(.notStarted)
+        )
+        // date == from → active（from 含）。
+        XCTAssertEqual(
+            table.availability(forItemKey: key, at: Date(timeIntervalSinceReferenceDate: 797_328_000)),
+            expected(.active)
+        )
+        // date == until → ended（until 不含）。
+        XCTAssertEqual(
+            table.availability(forItemKey: key, at: Date(timeIntervalSinceReferenceDate: 799_142_400)),
+            expected(.ended)
+        )
+        // date > until → ended。
+        XCTAssertEqual(
+            table.availability(forItemKey: key, at: Date(timeIntervalSinceReferenceDate: 799_142_401)),
+            expected(.ended)
+        )
+        // 未命中 key → unconfigured 域。
+        XCTAssertEqual(
+            table.availability(forItemKey: "units:9999999", at: Date(timeIntervalSinceReferenceDate: 798_000_000)),
             .unconfigured
         )
     }

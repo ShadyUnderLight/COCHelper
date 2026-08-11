@@ -31,12 +31,13 @@ final class LeagueTierCatalogTests: XCTestCase {
         )
         // 全量收录：home 23（29000000 未定级 ~ 29000022 传奇杯联赛）、
         // builderBase 42（木头联赛5 ~ 钻石联赛）、capital 23（未排名 ~ 传奇杯联赛）、
-        // leagueTier 37（未进入联赛 ~ 传奇杯1）、war 23（48000000 未定级 ~ 48000022 传奇杯联赛）
+        // leagueTier 37（未进入联赛 ~ 传奇杯1）、war 23（48000000 未定级 ~ 48000022 传奇杯）
         XCTAssertEqual(catalog.contexts.first { $0.context == .home }?.tiers.count, 23)
         XCTAssertEqual(catalog.contexts.first { $0.context == .builderBase }?.tiers.count, 42)
         XCTAssertEqual(catalog.contexts.first { $0.context == .capital }?.tiers.count, 23)
         XCTAssertEqual(catalog.contexts.first { $0.context == .leagueTier }?.tiers.count, 37)
         XCTAssertEqual(catalog.contexts.first { $0.context == .war }?.tiers.count, 23)
+        XCTAssertTrue(LeagueTierCatalog.isSemanticallyValid(catalog))
     }
 
     // MARK: - 已知 ID 查询（官方术语）
@@ -86,8 +87,49 @@ final class LeagueTierCatalogTests: XCTestCase {
         XCTAssertEqual(catalog.name(forID: 48_000_000, context: .war), "未定级")
         XCTAssertEqual(catalog.name(forID: 48_000_001, context: .war), "铜杯联赛3")
         XCTAssertEqual(catalog.name(forID: 48_000_010, context: .war), "水晶杯联赛3")
-        XCTAssertEqual(catalog.name(forID: 48_000_019, context: .war), "泰坦杯联赛3")
-        XCTAssertEqual(catalog.name(forID: 48_000_022, context: .war), "传奇杯联赛")
+        XCTAssertEqual(catalog.name(forID: 48_000_019, context: .war), "泰坦杯3")
+        XCTAssertEqual(catalog.name(forID: 48_000_022, context: .war), "传奇杯")
+    }
+
+    func testSemanticValidationRejectsDuplicateContext() throws {
+        let catalog = try XCTUnwrap(LeagueTierCatalog.loadBundled())
+        let invalid = LeagueTierCatalog(
+            schemaVersion: catalog.schemaVersion,
+            gameVersion: catalog.gameVersion,
+            locale: catalog.locale,
+            source: catalog.source,
+            contexts: catalog.contexts + [try XCTUnwrap(catalog.contexts.first)]
+        )
+
+        XCTAssertFalse(LeagueTierCatalog.isSemanticallyValid(invalid))
+    }
+
+    func testSemanticValidationRejectsMissingContext() throws {
+        let catalog = try XCTUnwrap(LeagueTierCatalog.loadBundled())
+        let invalid = LeagueTierCatalog(
+            schemaVersion: catalog.schemaVersion,
+            gameVersion: catalog.gameVersion,
+            locale: catalog.locale,
+            source: catalog.source,
+            contexts: Array(catalog.contexts.dropFirst())
+        )
+
+        XCTAssertFalse(LeagueTierCatalog.isSemanticallyValid(invalid))
+    }
+
+    func testSemanticValidationRejectsDuplicateIDWithinContext() throws {
+        let catalog = try XCTUnwrap(LeagueTierCatalog.loadBundled())
+        let war = try XCTUnwrap(catalog.contexts.first { $0.context == .war })
+        let invalidWar = LeagueTierContextSpec(context: .war, tiers: war.tiers + [try XCTUnwrap(war.tiers.first)])
+        let invalid = LeagueTierCatalog(
+            schemaVersion: catalog.schemaVersion,
+            gameVersion: catalog.gameVersion,
+            locale: catalog.locale,
+            source: catalog.source,
+            contexts: catalog.contexts.map { $0.context == .war ? invalidWar : $0 }
+        )
+
+        XCTAssertFalse(LeagueTierCatalog.isSemanticallyValid(invalid))
     }
 
     // MARK: - 未知 ID

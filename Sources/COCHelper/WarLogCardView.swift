@@ -134,7 +134,7 @@ struct WarLogCardView: View {
                         visibleCount += WarLogDisplayProjection.increment
                     }
                 case .serverMore:
-                    loadMoreButton("查看更多", tag: clanTag) {
+                    loadMoreButton("查看更多（再显示 \(WarLogDisplayProjection.increment) 条）", tag: clanTag) {
                         visibleCount += WarLogDisplayProjection.increment
                         model.loadMoreWarLog(tag: clanTag)
                     }
@@ -245,12 +245,12 @@ struct WarLogCardView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(
-                    Array(WarLogDisplayProjection.visibleEntries(page.items, visibleCount: visibleCount).enumerated()),
-                    id: \.offset
-                ) { _, entry in
+                // 分隔线只在可见列表内部条目之间：最后一条可见记录后不得有
+                // 悬空分隔线（与完整累计页 last 比较会在截断时多出分隔线，P2）。
+                let visible = WarLogDisplayProjection.visibleEntries(page.items, visibleCount: visibleCount)
+                ForEach(Array(visible.enumerated()), id: \.offset) { _, entry in
                     warLogRow(entry)
-                    if entry.endTime != page.items.last?.endTime {
+                    if entry.endTime != visible.last?.endTime {
                         Divider().padding(.leading, 40)
                     }
                 }

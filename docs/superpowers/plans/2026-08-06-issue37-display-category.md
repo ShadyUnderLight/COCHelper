@@ -35,13 +35,13 @@
 ### 类型契约
 
 ```swift
-// Sources/COCHelperCore/BuildingDisplayCategory.swift（新文件）
+// Sources/COCHelperCore/BuildingDisplayCategory.swift（新文件；Issue #123 增补 walls）
 public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-    case defense, military, craftTable
+    case defense, walls, military, craftTable
     public var id: String { rawValue }
-    public var title: String { /* 防御建筑 / 军事设施 / 精制台 */ }
-    public var systemImage: String { /* shield.lefthalf.filled / figure.arms.open / hammer.fill */ }
-    public var sortOrder: Int { /* 0 / 1 / 2 */ }
+    public var title: String { /* 防御建筑 / 城墙 / 军事设施 / 精制台 */ }
+    public var systemImage: String { /* shield.lefthalf.filled / square.grid.3x3 / figure.arms.open / hammer.fill */ }
+    public var sortOrder: Int { /* 0 / 1 / 2 / 3 */ }
 }
 
 public enum BuildingDisplayCategoryRules {
@@ -68,11 +68,12 @@ public enum BuildingDisplayCategoryRules {
 - 兜底依据：Lv1 加农炮变体 TH 需求=1000（事件建筑）、exportName 前缀 `ch_`/`clashmas24_`/`deco_`/`candy_cage`/`sour_elixir`；英雄祭坛按 issue 定义归兜底。
 - 新防御（1000077/79/84/85/86/89/102）3 票一致确认是正式主世界防御（Multi-Gear Tower/Multi-Archer Tower/Ricochet Cannon/Revenge Tower/Firespitter/Super Wizard Tower/Monolith），纳入防御。
 
-- **防御**（21 项，3 票一致）：`1000008, 1000009, 1000010, 1000011, 1000012, 1000013, 1000019, 1000021, 1000027, 1000028, 1000031, 1000032, 1000067, 1000072, 1000077, 1000079, 1000084, 1000085, 1000086, 1000089, 1000102`
+- **防御**（20 项，3 票一致；原 21 项含 1000010 城墙，Issue #123 已迁出至「城墙」）：`1000008, 1000009, 1000011, 1000012, 1000013, 1000019, 1000021, 1000027, 1000028, 1000031, 1000032, 1000067, 1000072, 1000077, 1000079, 1000084, 1000085, 1000086, 1000089, 1000102`
+- **城墙**（1 项，Issue #123 新增展示分类）：`1000010`（仅 home；buildings2:1000033 夜世界城墙、capital_buildings:110000002 都城城墙不并入，另议）
 - **军事**（11 项，3 票一致）：`1000000, 1000006, 1000007, 1000014, 1000020, 1000026, 1000029, 1000059, 1000068, 1000070, 1000071`
 - **精制台**：`1000097`（仅 home；buildings2/base .builder 不命中）
 - **兜底**（40 项，displayCategory == nil → 保持「建筑与防御」）：`1000001, 1000002, 1000003, 1000004, 1000005, 1000015, 1000016, 1000017, 1000018, 1000022, 1000023, 1000024, 1000025, 1000030, 1000060, 1000061, 1000062, 1000064, 1000066, 1000069, 1000073, 1000074, 1000075, 1000076, 1000083, 1000087, 1000088, 1000090, 1000091, 1000092, 1000093, 1000094, 1000095, 1000096, 1000098, 1000099, 1000100, 1000101, 1000103, 1000104`
-- 合计 21+11+1+40 = 73 ✓
+- 合计 20+1+11+1+40 = 73 ✓（已分类 33 项不变）
 
 ---
 
@@ -262,8 +263,10 @@ Expected: 编译失败（类型不存在）。
 ```swift
 import Foundation
 
+// Issue #123：新增 walls（城墙）展示分类，排序 防御→城墙→军事→精制台。
 public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case defense
+    case walls
     case military
     case craftTable
 
@@ -272,6 +275,7 @@ public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Ide
     public var title: String {
         switch self {
         case .defense: "防御建筑"
+        case .walls: "城墙"
         case .military: "军事设施"
         case .craftTable: "精制台"
         }
@@ -280,6 +284,7 @@ public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Ide
     public var systemImage: String {
         switch self {
         case .defense: "shield.lefthalf.filled"
+        case .walls: "square.grid.3x3"
         case .military: "figure.arms.open"
         case .craftTable: "hammer.fill"
         }
@@ -288,8 +293,9 @@ public enum TrackerDisplayCategory: String, CaseIterable, Codable, Hashable, Ide
     public var sortOrder: Int {
         switch self {
         case .defense: 0
-        case .military: 1
-        case .craftTable: 2
+        case .walls: 1
+        case .military: 2
+        case .craftTable: 3
         }
     }
 }

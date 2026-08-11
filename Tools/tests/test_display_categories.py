@@ -15,6 +15,7 @@ from game_catalog.display_categories import (
     DEFENSE_DATA_IDS,
     INTENTIONAL_FALLBACK_DATA_IDS,
     MILITARY_DATA_IDS,
+    WALL_DATA_IDS,
     apply_display_categories,
     uncategorized_home_buildings,
 )
@@ -56,6 +57,21 @@ def test_apply_craft_table():
     assert apply_display_categories([_item(1000097)])[0].displayCategory == "craftTable"
 
 
+def test_apply_walls():
+    # Issue #123：主村城墙 1000010 归入 walls 分类
+    assert apply_display_categories([_item(1000010)])[0].displayCategory == "walls"
+
+
+def test_wall_not_in_defense_registry():
+    # Issue #123：城墙从 defense 移入 walls（防御集合不含 1000010）
+    assert 1000010 not in DEFENSE_DATA_IDS
+
+
+def test_apply_walls_non_home_always_none():
+    # buildings2 同 dataID（夜世界城墙）→ None（walls 不越界）
+    assert apply_display_categories([_item(1000010, section="buildings2")])[0].displayCategory is None
+
+
 def test_apply_uncategorized_home_none():
     assert apply_display_categories([_item(1000002)])[0].displayCategory is None
 
@@ -95,7 +111,7 @@ def test_fallback_registry_matches_bundled_catalog():
     assert uncat == INTENTIONAL_FALLBACK_DATA_IDS
     assert len(uncat) == 40
     assert len(cat) == 33
-    assert cat == DEFENSE_DATA_IDS | MILITARY_DATA_IDS | {CRAFT_TABLE_DATA_ID}
+    assert cat == DEFENSE_DATA_IDS | WALL_DATA_IDS | MILITARY_DATA_IDS | {CRAFT_TABLE_DATA_ID}
 
 
 def test_fallback_registry_contains_th17_buildings():
@@ -105,7 +121,7 @@ def test_fallback_registry_contains_th17_buildings():
 
 
 def test_fallback_registry_disjoint_from_classified():
-    assert (DEFENSE_DATA_IDS | MILITARY_DATA_IDS | {CRAFT_TABLE_DATA_ID}) \
+    assert (DEFENSE_DATA_IDS | WALL_DATA_IDS | MILITARY_DATA_IDS | {CRAFT_TABLE_DATA_ID}) \
         .isdisjoint(INTENTIONAL_FALLBACK_DATA_IDS)
 
 
@@ -201,7 +217,8 @@ def test_validate_counts_display_categories_recomputed(tmp_path):
     d = _write_dir(tmp_path, [_item(1000008, dc="defense"), _item(1000002, dc=None)])
     m = json.loads((d / "manifest.json").read_text())
     m["counts"]["displayCategories"] = {
-        "defense": 2, "military": 0, "craftTable": 0, "uncategorizedBuildings": 0,
+        "defense": 2, "walls": 0, "military": 0, "craftTable": 0,
+        "uncategorizedBuildings": 0,
     }
     (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False))
     errors = validate_catalog(d)
@@ -214,6 +231,7 @@ def test_counts_for_display_categories_home_only():
     items = [
         _item(1000008, dc="defense"),
         _item(1000102, dc="defense"),
+        _item(1000010, dc="walls"),
         _item(1000000, dc="military"),
         _item(1000097, dc="craftTable"),
         _item(1000002, dc=None),
@@ -223,5 +241,6 @@ def test_counts_for_display_categories_home_only():
         _item(4_000_000, section="units", dc=None),
     ]
     assert counts_for(items)["displayCategories"] == {
-        "defense": 2, "military": 1, "craftTable": 1, "uncategorizedBuildings": 1,
+        "defense": 2, "walls": 1, "military": 1, "craftTable": 1,
+        "uncategorizedBuildings": 1,
     }

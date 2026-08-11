@@ -126,7 +126,7 @@ class CatalogItem:
     levelVisual: AssetRef | None
     missingReason: str | None
     levels: list[CatalogLevel]
-    # Issue #75 工作流 C：建筑展示分类（defense/military/craftTable），
+    # Issue #75 工作流 C：建筑展示分类（defense/walls/military/craftTable），
     # home buildings 之外恒 None。旧格式 JSON 缺键 → None（向后兼容）。
     displayCategory: str | None = None
     # Issue #98：生命周期事实（"permanent" / "seasonalCandidate"），来源 =

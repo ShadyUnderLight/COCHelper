@@ -94,7 +94,7 @@ public struct VillageCategoryCompletion: Identifiable, Hashable, Sendable {
 /// - 未知（unknown）：其余全部（unknown/unavailable/available/缺失上限/缺失等级/版本不匹配）；
 /// - 快照缺失项目由投影层不产出，天然不计为 0 级。
 public enum VillageDetailProjection {
-    /// Issue #37：分组桶键。有展示分类的项（防御/军事/精制台）从 `.buildings`
+    /// Issue #37：分组桶键。有展示分类的项（防御/城墙/军事/精制台）从 `.buildings`
     /// 拆到独立展示分类组；无细分的项走原分类兜底；category 为 nil 的项归 other。
     private enum GroupKey: Hashable {
         case display(TrackerDisplayCategory)
@@ -112,7 +112,7 @@ public enum VillageDetailProjection {
         return .other
     }
 
-    /// Issue #37：组是否属于「原分类」筛选。display 组（防御/军事/精制台）的
+    /// Issue #37：组是否属于「原分类」筛选。display 组（防御/城墙/军事/精制台）的
     /// category 恒为 .buildings 仅作归属提示，必须排除——否则点「建筑与防御」
     /// 会误含全部展示分类组，与 chip 计数矛盾。
     public static func matchesCategoryFilter(_ group: VillageDetailGroup, category: TrackerCategory) -> Bool {

@@ -9,7 +9,7 @@ import XCTest
 final class BuildingDisplayCategoryTests: XCTestCase {
     // MARK: - 合成目录
 
-    /// 最小合成目录：防御/军事/精制台 + 兜底（1000001）+ 未知 raw 值（7777777）。
+    /// 最小合成目录：防御/城墙/军事/精制台 + 兜底（1000001）+ 未知 raw 值（7777777）。
     /// 分类知识完全来自 CatalogItem.displayCategory 字段——本目录即该字段的
     /// 测试事实源，断言与目录数据一一对应。
     private static func makeSyntheticCatalog() -> GameCatalog {
@@ -24,6 +24,7 @@ final class BuildingDisplayCategoryTests: XCTestCase {
             item(1_000_001, nil, name: "大本营"),
             item(1_000_000, "military", name: "兵营"),
             item(1_000_008, "defense", name: "加农炮"),
+            item(1_000_010, "walls", name: "城墙"),
             item(1_000_097, "craftTable", name: "精制台"),
             item(7_777_777, "unknownRaw", name: "未知分类"),
         ])
@@ -44,6 +45,16 @@ final class BuildingDisplayCategoryTests: XCTestCase {
                 rootParentDataID: nil, catalog: syntheticCatalog
             ),
             .defense
+        )
+    }
+
+    func testWallsFromCatalog() {
+        XCTAssertEqual(
+            BuildingDisplayCategoryRules.displayCategory(
+                section: "buildings", dataID: 1000010, base: .home,
+                rootParentDataID: nil, catalog: syntheticCatalog
+            ),
+            .walls
         )
     }
 
@@ -106,6 +117,19 @@ final class BuildingDisplayCategoryTests: XCTestCase {
                 rootParentDataID: nil, catalog: syntheticCatalog
             )
         )
+    }
+
+    func testWallsNotClassifiedOutsideHomeBuildings() {
+        // 构造场景：buildings2 中构造与主世界城墙同 dataID 1000010 的条目
+        //（真实目录中夜世界城墙为 buildings2:1000033，buildings2 不存在 1000010；
+        // 构造同号是越界测试的最坏情况）→ 不得归入城墙组
+        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings2", dataID: 1000010, base: .builder, rootParentDataID: nil, catalog: syntheticCatalog
+        ))
+        // 都城城墙（capital_buildings，dataID 110000002）不越界：非 buildings section 不细分
+        XCTAssertNil(BuildingDisplayCategoryRules.displayCategory(
+            section: "capital_buildings", dataID: 110000002, base: .home, rootParentDataID: nil, catalog: syntheticCatalog
+        ))
     }
 
     func testNonBuildingsSectionNeverClassified() {
@@ -273,7 +297,7 @@ final class BuildingDisplayCategoryTests: XCTestCase {
         )
     }
 
-    /// bundled 目录分类 spot-check：精制台/防御/军事命中，大本营兜底。
+    /// bundled 目录分类 spot-check：精制台/防御/城墙/军事命中，大本营兜底。
     func testBundledCatalogKnownClassifications() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
@@ -282,6 +306,9 @@ final class BuildingDisplayCategoryTests: XCTestCase {
         XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
             section: "buildings", dataID: 1000008, base: .home, rootParentDataID: nil, catalog: catalog
         ), .defense)
+        XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
+            section: "buildings", dataID: 1000010, base: .home, rootParentDataID: nil, catalog: catalog
+        ), .walls)
         XCTAssertEqual(BuildingDisplayCategoryRules.displayCategory(
             section: "buildings", dataID: 1000000, base: .home, rootParentDataID: nil, catalog: catalog
         ), .military)
@@ -292,8 +319,8 @@ final class BuildingDisplayCategoryTests: XCTestCase {
 
     /// 防漏机制（已分类端，评审补强）：bundled 目录 home buildings 中
     /// displayCategory 非 nil 的 dataID 必须 == 本测试硬编码的 33 项已分类集合
-    /// （21 defense + 11 military + 1 craftTable，与 Python
-    /// display_categories 注册表一致），按值分三个子集合精确断言。与
+    /// （20 defense + 1 walls + 11 military + 1 craftTable，与 Python
+    /// display_categories 注册表一致），按值分四个子集合精确断言。与
     /// testBundledCatalogClassificationMatchesIntentionalFallback（未分类端）互补，
     /// 双端锁死：登记表内错标分类（如 1000008→military）在此必红。
     func testBundledCatalogClassifiedSetsMatchIntentionalClassifications() throws {
@@ -301,13 +328,15 @@ final class BuildingDisplayCategoryTests: XCTestCase {
         let classified = catalog.items(in: "buildings")
             .filter { $0.base == "home" && $0.displayCategory != nil }
         let defense = Set(classified.filter { $0.displayCategory == "defense" }.map(\.dataID))
+        let walls = Set(classified.filter { $0.displayCategory == "walls" }.map(\.dataID))
         let military = Set(classified.filter { $0.displayCategory == "military" }.map(\.dataID))
         let craftTable = Set(classified.filter { $0.displayCategory == "craftTable" }.map(\.dataID))
         let expectedDefense: Set<Int64> = [
-            1000008, 1000009, 1000010, 1000011, 1000012, 1000013, 1000019,
+            1000008, 1000009, 1000011, 1000012, 1000013, 1000019,
             1000021, 1000027, 1000028, 1000031, 1000032, 1000067, 1000072,
             1000077, 1000079, 1000084, 1000085, 1000086, 1000089, 1000102,
         ]
+        let expectedWalls: Set<Int64> = [1000010]
         let expectedMilitary: Set<Int64> = [
             1000000, 1000006, 1000007, 1000014, 1000020, 1000026, 1000029,
             1000059, 1000068, 1000070, 1000071,
@@ -315,12 +344,14 @@ final class BuildingDisplayCategoryTests: XCTestCase {
         let expectedCraftTable: Set<Int64> = [1000097]
         XCTAssertEqual(defense, expectedDefense,
                        "defense 集合不一致：新增 \(defense.subtracting(expectedDefense))，移除 \(expectedDefense.subtracting(defense))")
+        XCTAssertEqual(walls, expectedWalls,
+                       "walls 集合不一致：新增 \(walls.subtracting(expectedWalls))，移除 \(expectedWalls.subtracting(walls))")
         XCTAssertEqual(military, expectedMilitary,
                        "military 集合不一致：新增 \(military.subtracting(expectedMilitary))，移除 \(expectedMilitary.subtracting(military))")
         XCTAssertEqual(craftTable, expectedCraftTable,
                        "craftTable 集合不一致：\(craftTable)")
-        // 三子集互斥 + 全覆盖 = 33 已分类项（73 home − 40 兜底）
-        XCTAssertEqual(defense.count + military.count + craftTable.count, 33)
+        // 四子集互斥 + 全覆盖 = 33 已分类项（73 home − 40 兜底）
+        XCTAssertEqual(defense.count + walls.count + military.count + craftTable.count, 33)
     }
 
     // MARK: - rootID 解析
@@ -358,6 +389,7 @@ final class BuildingDisplayCategoryTests: XCTestCase {
             let expected: TrackerDisplayCategory? = {
                 switch effectiveID {
                 case 1_000_008: return .defense
+                case 1_000_010: return .walls
                 case 1_000_000: return .military
                 case 1_000_097: return .craftTable
                 default: return nil

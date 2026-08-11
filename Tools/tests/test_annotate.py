@@ -31,7 +31,8 @@ def _item(data_id, name="x", section="buildings", base="home"):
 def _make_dir(tmp_path):
     d = tmp_path / "cat"
     d.mkdir()
-    items = [_item(1000008, "加农炮"), _item(1000097, "精制台"), _item(1000002, "圣水收集器")]
+    items = [_item(1000008, "加农炮"), _item(1000010, "城墙"), _item(1000097, "精制台"),
+             _item(1000002, "圣水收集器")]
     catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
                       items=items)
     catalog_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False,
@@ -64,6 +65,7 @@ def test_annotate_sets_display_category_fields(tmp_path):
     data = json.loads((d / "catalog.json").read_text())
     by_id = {i["dataID"]: i for i in data["items"]}
     assert by_id[1000008]["displayCategory"] == "defense"
+    assert by_id[1000010]["displayCategory"] == "walls"  # Issue #123：城墙归 walls
     assert by_id[1000097]["displayCategory"] == "craftTable"
     assert by_id[1000002]["displayCategory"] is None
 
@@ -83,9 +85,10 @@ def test_annotate_manifest_counts_display_categories(tmp_path):
     annotate_directory(d)
     m = json.loads((d / "manifest.json").read_text())
     assert m["counts"]["displayCategories"] == {
-        "defense": 1, "military": 0, "craftTable": 1, "uncategorizedBuildings": 1,
+        "defense": 1, "walls": 1, "military": 0, "craftTable": 1,
+        "uncategorizedBuildings": 1,
     }
-    assert m["counts"]["items"] == 3
+    assert m["counts"]["items"] == 4
 
 
 def test_annotate_preserves_other_generated_files_entries(tmp_path):

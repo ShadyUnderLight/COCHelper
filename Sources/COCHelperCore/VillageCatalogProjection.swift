@@ -105,7 +105,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let currentLevelIcon: CatalogAssetRef?
     public let currentLevelVisual: CatalogAssetRef?
     public let isNested: Bool
-    /// Issue #37：展示分类（防御/军事/精制台）；nil 表示无细分（走原分类兜底）。
+    /// Issue #37：展示分类（防御/城墙/军事/精制台）；nil 表示无细分（走原分类兜底）。
     public let displayCategory: TrackerDisplayCategory?
 
     public var isUpgrading: Bool { (remainingSeconds ?? 0) > 0 }

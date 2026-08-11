@@ -751,7 +751,7 @@ final class VillageDetailProjectionTests: XCTestCase {
         var rng = SplitMix64(seed: 0x53_53)
         for round in 0..<600 {
             // 前 300 轮普通桶（category/other），后 300 轮混入 display 桶
-            //（defense/military/craftTable，category 恒 .buildings），覆盖 #37 拆分路径。
+            //（defense/walls/military/craftTable，category 恒 .buildings），覆盖 #37 拆分路径。
             let items = round < 300
                 ? randomItems(&rng, count: 1 + Int(rng.next() % 30))
                 : randomDisplayItems(&rng, count: 1 + Int(rng.next() % 30))
@@ -1022,14 +1022,17 @@ final class VillageDetailProjectionTests: XCTestCase {
 
     func testMatchesCategoryFilterExcludesDisplayGroups() {
         // 回归（评审 blocker）：display 组的 category 恒为 .buildings 仅作归属提示，
-        // 点「建筑与防御」chip 若按 category 匹配会误含防御/军事/精制台全部展示组，
-        // 与 chip 计数（已排除 display 组）矛盾。
+        // 点「建筑与防御」chip 若按 category 匹配会误含防御/城墙/军事/精制台全部
+        // 展示组，与 chip 计数（已排除 display 组）矛盾。
         let display = VillageDetailGroup(category: .buildings, displayCategory: .defense, items: [])
+        let walls = VillageDetailGroup(category: .buildings, displayCategory: .walls, items: [])
         let fallback = VillageDetailGroup(category: .buildings, displayCategory: nil, items: [])
         let traps = VillageDetailGroup(category: .traps, displayCategory: nil, items: [])
         XCTAssertTrue(VillageDetailProjection.matchesCategoryFilter(fallback, category: .buildings))
         XCTAssertFalse(VillageDetailProjection.matchesCategoryFilter(display, category: .buildings),
                        "display 组不得命中 buildings 筛选")
+        XCTAssertFalse(VillageDetailProjection.matchesCategoryFilter(walls, category: .buildings),
+                       "walls 展示组同样不得命中 buildings 筛选（Issue #123）")
         XCTAssertFalse(VillageDetailProjection.matchesCategoryFilter(traps, category: .buildings))
         XCTAssertTrue(VillageDetailProjection.matchesCategoryFilter(traps, category: .traps))
     }
@@ -1038,7 +1041,7 @@ final class VillageDetailProjectionTests: XCTestCase {
 
     func testPropertyDisplayCategoryGroupsConserveItems() {
         var rng = SeededRNG(seed: 0xAB_CD)
-        let displayCats: [TrackerDisplayCategory?] = [.defense, .military, .craftTable, nil]
+        let displayCats: [TrackerDisplayCategory?] = [.defense, .walls, .military, .craftTable, nil]
         for _ in 0..<200 {
             let items = (0..<Int(rng.next() % 40)).map { idx in
                 let dc = displayCats[Int(rng.next() % UInt64(displayCats.count))]
@@ -1220,7 +1223,7 @@ final class VillageDetailProjectionTests: XCTestCase {
         }
     }
 
-    /// 带 display 桶（defense/military/craftTable）的随机生成器（issue #53 property 覆盖）。
+    /// 带 display 桶（defense/walls/military/craftTable）的随机生成器（issue #53 property 覆盖）。
     /// display 项 category 恒 .buildings（与投影层 #37 契约一致），其余同 randomItems。
     private func randomDisplayItems(_ rng: inout SplitMix64, count: Int) -> [VillageItemState] {
         (0..<count).map { i in
@@ -1243,7 +1246,7 @@ final class VillageDetailProjectionTests: XCTestCase {
             } : nil
             // 60% 概率 display 桶（category 恒 .buildings），40% 普通 category/other。
             if rng.next() % 5 < 3 {
-                let dcs: [TrackerDisplayCategory?] = [.defense, .military, .craftTable, nil]
+                let dcs: [TrackerDisplayCategory?] = [.defense, .walls, .military, .craftTable, nil]
                 let dc = dcs[Int(rng.next() % UInt64(dcs.count))]
                 return item(id: "d\(i)", category: .buildings, displayCategory: dc,
                             status: status, level: level, maxLevel: maxLevel,

@@ -481,7 +481,7 @@ struct VillageDetailView: View {
         }
     }
 
-    /// issue #37：展示分类（防御/军事/精制台）作为一级筛选维度，原分类兜底。
+    /// issue #37：展示分类（防御/城墙/军事/精制台）作为一级筛选维度，原分类兜底。
     /// 计数规则与分组键一致：display 组按 displayCategory 匹配；无细分项的
     /// category 组按原分类匹配；category 为 nil 的项归「其他」。
     /// issue #53：满级判定复用 completion 统计（key = completion.id），

@@ -1169,28 +1169,29 @@ final class VillageCatalogProjectionTests: XCTestCase {
         XCTAssertEqual(total.unknownCount, 0)
         XCTAssertEqual(total.completionRatio ?? -1, 300.0 / 325.0, accuracy: 0.0001)
 
-        // 全链路防御组（审核 B）：城墙 1000010 投影后 displayCategory == .defense
-        //（Issue #75 工作流 C：catalog displayCategory 字段标注 defense），
-        // 组统计 == (325, 300, 0)，且 known + unknown == 该组 Σweight（守恒）。
+        // 全链路城墙组（Issue #123）：城墙 1000010 投影后 displayCategory == .walls
+        //（Issue #75 工作流 C：catalog displayCategory 字段标注 walls，分类从
+        // defense 迁入 walls），组统计 == (325, 300, 0)，且 known + unknown ==
+        // 该组 Σweight（守恒）。
         let stats = VillageDetailProjection.completionStats(from: targetItems)
-        let defense = try XCTUnwrap(
-            stats.first { $0.displayCategory == .defense },
-            "城墙 1000010 投影后应归防御组；实际组: \(stats.map { $0.id })"
+        let wallsStats = try XCTUnwrap(
+            stats.first { $0.displayCategory == .walls },
+            "城墙 1000010 投影后应归城墙组；实际组: \(stats.map { $0.id })"
         )
-        XCTAssertEqual(defense.knownCount, 325, "got known=\(defense.knownCount)")
-        XCTAssertEqual(defense.completedCount, 300, "got completed=\(defense.completedCount)")
-        XCTAssertEqual(defense.unknownCount, 0, "got unknown=\(defense.unknownCount)")
-        let defenseGroup = try XCTUnwrap(
-            VillageDetailProjection.groups(from: home.items).first { $0.displayCategory == .defense }
+        XCTAssertEqual(wallsStats.knownCount, 325, "got known=\(wallsStats.knownCount)")
+        XCTAssertEqual(wallsStats.completedCount, 300, "got completed=\(wallsStats.completedCount)")
+        XCTAssertEqual(wallsStats.unknownCount, 0, "got unknown=\(wallsStats.unknownCount)")
+        let wallsGroup = try XCTUnwrap(
+            VillageDetailProjection.groups(from: home.items).first { $0.displayCategory == .walls }
         )
-        // Issue #70 阶段 2：宇宙差集 .available 项会进防御组（TH18 全宇宙），
+        // Issue #70 阶段 2：宇宙差集 .available 项会进城墙组（TH18 全宇宙），
         // 但完成度统计（isKnown）显式排除差集项——守恒只针对观测项
         //（known + unknown == 组内非差集 Σweight）。
-        let defenseObserved = defenseGroup.items.filter { $0.status != .available }
+        let wallsObserved = wallsGroup.items.filter { $0.status != .available }
         XCTAssertEqual(
-            defense.knownCount + defense.unknownCount,
-            VillageDetailProjection.instanceCount(of: defenseObserved),
-            "防御组三列守恒：known + unknown == 该组 Σweight（宇宙差集项不参与完成度统计）"
+            wallsStats.knownCount + wallsStats.unknownCount,
+            VillageDetailProjection.instanceCount(of: wallsObserved),
+            "城墙组三列守恒：known + unknown == 该组 Σweight（宇宙差集项不参与完成度统计）"
         )
     }
 

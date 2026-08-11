@@ -59,11 +59,20 @@ final class WarLogTimeFormatterTests: XCTestCase {
     func testUnparsableRawValuesDegrade() {
         let bad = ["", "20260809", "2026-08-09T11:07:38.000Z",
                    "20260809T110738", "20260809T110738.000", "20260809T110738.000+00:00",
-                   "20260809T110738.000z", "abc", "20261309T110738.000Z", "20260809T246000.000Z"]
+                   "20260809T110738.000z", "abc", "20261309T110738.000Z", "20260809T246000.000Z",
+                   "20260230T110738.000Z", "20230229T110738.000Z",
+                   "20260809T111160.000Z", "20260809T110760.000Z"]
         for raw in bad {
             XCTAssertEqual(WarLogTimeFormatter.displayText(raw: raw), .unparsable(raw),
                            "raw=\(raw) 应降级为 unparsable 并保留原始值")
         }
+    }
+
+    /// 闰年 2 月 29 日是合法日期（2024 为闰年），必须成功转换。
+    func testLeapDayValid() {
+        XCTAssertEqual(
+            WarLogTimeFormatter.displayText(raw: "20240229T110738.000Z"),
+            .beijing("2024年2月29日 19:07:38"))
     }
 
     // MARK: - 时区独立性（issue 验收：非北京时区环境输出一致）

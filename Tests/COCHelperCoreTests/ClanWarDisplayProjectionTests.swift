@@ -579,14 +579,17 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         // 官方 attacks 缺失但 stars 存在：只比对 stars；反之亦然（逐字段独立）
         let members = [member(tag: "1", attacks: [attack(stars: 1), attack(stars: 2)])]
         let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
-        let p = participant(attacks: nil, stars: 4, members: members)
+        // 成员推导：2 次攻击、3 星
+        let p = participant(attacks: nil, stars: 3, members: members)
         XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p, rows: rows), [])
         let p2 = participant(attacks: nil, stars: 5, members: members)
         XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p2, rows: rows),
                        [.stars(official: 5, memberKnownSum: 3)])
         // 官方 stars 缺失但 attacks 存在：只比对 attacks
-        let p3 = participant(attacks: 3, stars: nil, members: members)
-        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p3, rows: rows),
+        let p3 = participant(attacks: 2, stars: nil, members: members)
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p3, rows: rows), [])
+        let p4 = participant(attacks: 3, stars: nil, members: members)
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p4, rows: rows),
                        [.attackCount(official: 3, memberSum: 2)])
     }
 

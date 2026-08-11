@@ -56,6 +56,16 @@ PHASE_COVERAGE_VALUES: frozenset[str] = frozenset({"required", "unknown"})
 AUDIT_STATUS_VALUES: frozenset[str] = frozenset({"pending", "verified"})
 
 
+class AuditStatusError(CatalogError):
+    """auditStatus 声明**内容**非法（区别于文件缺失/解析失败等环境错误）。
+
+    Issue #109 复审 P2：内容错误必须进入 validator errors 端到端失败
+    （fail loud 门禁）；文件级错误（缺失/解析失败/schemaVersion）保持
+    CatalogError，由 _check_lifecycle_declarations 报「lifecycle 声明加载
+    失败」——两类错误语义不同，validate 层据此分流。
+    """
+
+
 def _load_raw(path: Path, label: str) -> dict:
     """读 + JSON 解析 + 顶层 dict + schemaVersion==1 校验 → raw dict。
 
@@ -270,11 +280,14 @@ def load_audit_status() -> dict[str, str]:
     Issue #109 流程工具化：auditStatus 把「note 自由文本里的待核实留痕」
     升级为结构化复核状态——
     - "pending"：生命周期判定待外部核实（官方公告/维基/APK 对拍）；
-    - "verified"：已人工复核确认，note 必须非空（复核留痕证据）；
-    - 无 auditStatus 字段 = 无需复核，不进入返回（最小侵入，不强制全量）。
-    值非闭枚举 / verified 缺 note → CatalogError（fail loud，声明文件是
-    唯一事实源）。文件缺失/解析失败/schemaVersion != 1 → CatalogError
-    （与 load_declarations/load_phase_coverage 同口径）。
+    - "verified"：已人工复核确认，note 必须非空字符串（复核留痕证据）；
+    - 无 auditStatus 字段 = 无需复核，不进入返回（最小侵入，不强制全量）；
+    - 仅 permanent 声明可携带（seasonalCandidate 的待核实由 #112
+      phaseCoverage=unknown 跟踪，auditStatus 双轨会被拒——复审 P3）。
+    值非闭枚举 / 非 permanent 携带 / verified 缺证据 note → AuditStatusError
+    （内容非法，validate 端到端失败；复审 P2）。文件缺失/解析失败/
+    schemaVersion != 1 → CatalogError（与 load_declarations 同口径，文件级
+    错误由 _check_lifecycle_declarations 报）。
     """
     raw = _load_raw(DECLARATIONS_PATH, "lifecycle 声明文件")
     items = raw.get("items")
@@ -289,11 +302,22 @@ def load_audit_status() -> dict[str, str]:
         if status is None:
             continue
         if not isinstance(status, str) or status not in AUDIT_STATUS_VALUES:
-            raise CatalogError(
+            raise AuditStatusError(
                 f"lifecycle 声明 auditStatus 未知值: {key}: {status!r}")
-        if status == "verified" and not entry.get("note"):
-            raise CatalogError(
-                f"lifecycle 声明 verified 条目缺 note（复核留痕证据）: {key}")
+        # 复审 P3：auditStatus 域 = permanent 声明、判定悬而未决（判据见
+        # test_audit.py docstring）；seasonalCandidate 待核实由 #112
+        # phaseCoverage 跟踪，双轨跟踪禁止。
+        if entry["lifecycle"] != "permanent":
+            raise AuditStatusError(
+                f"lifecycle 声明 auditStatus 仅允许 permanent 携带: "
+                f"{key}: {entry['lifecycle']!r}")
+        if status == "verified":
+            # 复审 P4：note 必须是非空字符串（复核留痕证据）；对象/数组/
+            # 数字/纯空白均拒绝（not 对空 dict 也为 True，必须显式类型检查）。
+            note = entry.get("note")
+            if not isinstance(note, str) or not note.strip():
+                raise AuditStatusError(
+                    f"lifecycle 声明 verified 条目缺 note（复核留痕证据）: {key}")
         out[key] = status
     return out
 

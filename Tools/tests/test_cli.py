@@ -251,3 +251,44 @@ def test_validate_cli_audit_unavailable_does_not_fail(full_minimal_apk, tmp_path
     assert rc == 0, "audit 报告失败不得改变 validator 退出码"
     assert "audit: unavailable" in captured.err
     assert "verdict: OK" in captured.out
+
+
+def test_validate_cli_rejects_invalid_audit_status(full_minimal_apk, tmp_path, monkeypatch, capsys):
+    """Issue #109 复审 P2：auditStatus 内容非法（未知值）→ CLI 必须失败
+    （exit 1 + error 行含 auditStatus）——fail loud 端到端门禁，诊断段
+    unavailable 不得吞掉内容错误。
+
+    与 unavailable 测试对比：文件缺失=非阻断；内容非法=阻断。
+    """
+    import json
+    import validate_game_catalog as vgc
+    import game_catalog.lifecycle as lifecycle_module
+
+    apk = full_minimal_apk
+    out = tmp_path / "out"
+    r = _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
+              "--output", str(out), "--game-version", "18.400.13"])
+    assert r.returncode == 0, r.stderr
+    import hashlib
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    mp = out / "manifest.json"
+    m = json.loads(mp.read_text(encoding="utf-8"))
+    m["generatedFiles"].append({"path": "craft_table_catalog.json",
+                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+                                "size": len(craft_bytes)})
+    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+    # 声明文件：Town Hall 声明合法 + 一条非法 auditStatus（未知值）
+    bad_decl = tmp_path / "declarations.json"
+    bad_decl.write_text(json.dumps({"schemaVersion": 1, "items": {
+        "buildings:1000001": {"lifecycle": "permanent", "note": "n"},
+        "units:999999": {"lifecycle": "permanent", "auditStatus": "typo"}}}),
+        encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", bad_decl)
+
+    rc = vgc.main(["--catalog", str(out)])
+    captured = capsys.readouterr()
+    assert rc == 1, "auditStatus 内容非法必须使 validator 失败"
+    assert "auditStatus" in captured.err and "未知值" in captured.err
+    assert "verdict: FAIL" in captured.out

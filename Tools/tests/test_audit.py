@@ -77,6 +77,15 @@ def test_audit_status_seed_pending():
         # auditStatus 非字符串（JSON 数字）
         ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
                                                 "auditStatus": 1}}}, "auditStatus"),
+        # 非 permanent 携带 auditStatus（P3：seasonalCandidate 待核实由
+        # phaseCoverage=unknown 跟踪，auditStatus 双轨会被拒）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "auditStatus": "pending",
+                                                "phaseCoverage": "unknown",
+                                                "note": "n"}}}, "仅允许 permanent"),
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": None,
+                                                "auditStatus": "pending",
+                                                "note": "n"}}}, "条目非法"),
         # verified 缺 note（复核留痕证据缺失）
         ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
                                                 "auditStatus": "verified"}}}, "缺 note"),
@@ -84,6 +93,20 @@ def test_audit_status_seed_pending():
         ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
                                                 "auditStatus": "verified",
                                                 "note": ""}}}, "缺 note"),
+        # verified note 全空白（P4：非空字符串，拒绝空白）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
+                                                "auditStatus": "verified",
+                                                "note": "   "}}}, "缺 note"),
+        # verified note 非字符串（P4：对象/数组/数字均拒绝）
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
+                                                "auditStatus": "verified",
+                                                "note": {"url": "x"}}}}, "缺 note"),
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
+                                                "auditStatus": "verified",
+                                                "note": ["x"]}}}, "缺 note"),
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
+                                                "auditStatus": "verified",
+                                                "note": 123}}}, "缺 note"),
         # 文件缺失
         (None, "声明文件缺失"),
         # schemaVersion != 1
@@ -176,9 +199,110 @@ def test_compute_audit_report_tolerates_unexpected(statuses):
 
 @given(st.dictionaries(st.text(min_size=1), st.text(), max_size=50))
 def test_compute_audit_report_empty_degenerate(statuses):
-    """退化端点：全部意外值 / 空输入 → 全零（与 compute_phase_coverage 同风格）。"""
+    """退化端点：任意值输入（含意外值）不崩溃；计数与 key 列表精确匹配
+    （意外值忽略，与容忍语义一致）。"""
     report = compute_audit_report(statuses)
     recognized = {k for k, v in statuses.items() if v in ("pending", "verified")}
     assert report["pending"] + report["verified"] == len(recognized)
-    assert report["pending_keys"] == []
-    assert report["verified_keys"] == []
+    assert report["pending_keys"] == sorted(
+        k for k, v in statuses.items() if v == "pending")
+    assert report["verified_keys"] == sorted(
+        k for k, v in statuses.items() if v == "verified")
+
+
+# ---- validate 端到端门禁（P2：非法 auditStatus 必须进 validator errors）----
+
+def _minimal_catalog_dir(tmp_path) -> Path:
+    """最小合法目录（Town Hall + craft 条目），供 validate 门禁测试。"""
+    import hashlib
+    from game_catalog.model import (
+        Catalog, CatalogItem, CatalogLevel, catalog_to_dict,
+    )
+    d = tmp_path / "cat"
+    d.mkdir()
+    item = CatalogItem(
+        section="buildings", dataID=1000001, category="buildings", base="home",
+        baseMissingReason=None, name="Town Hall", maxLevel=1,
+        icon=None, levelVisual=None, missingReason=None,
+        levels=[CatalogLevel(level=1, durationSeconds=0, missingReason=None,
+                             upgradeCosts=None, requiredTownHallLevel=None,
+                             requiredLaboratoryLevel=None, icon=None, levelVisual=None)],
+        lifecycle="permanent")
+    catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
+                      items=[item])
+    cat_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False).encode("utf-8")
+    (d / "catalog.json").write_bytes(cat_bytes)
+    (d / "icons").mkdir()
+    craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
+    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
+    (d / "manifest.json").write_text(json.dumps({
+        "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
+        "generatedFiles": [
+            {"path": "catalog.json",
+             "sha256": "sha256:" + hashlib.sha256(cat_bytes).hexdigest(),
+             "size": len(cat_bytes)},
+            {"path": "icons/", "kind": "directory"},
+            {"path": "craft_table_catalog.json",
+             "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
+             "size": len(craft_bytes)},
+        ],
+        "counts": {"items": 1, "levels": 1, "missingTime": 0, "missingIcons": 0},
+    }, ensure_ascii=False))
+    return d
+
+
+def test_validate_rejects_invalid_audit_status(monkeypatch, tmp_path):
+    """P2：声明文件 auditStatus 字段非法（未知值）→ validate_catalog errors
+    必须包含 auditStatus 错误（fail loud 端到端门禁，不得被 CLI 吞掉）。
+    monkeypatch lifecycle 模块的 DECLARATIONS_PATH 即可——validate 内部
+    调用的 load_audit_status 读该常量。"""
+    import game_catalog.validate as validate_module
+    path = tmp_path / "declarations.json"
+    path.write_text(json.dumps({"schemaVersion": 1, "items": {
+        "buildings:1000001": {"lifecycle": "permanent", "auditStatus": "typo"}}}),
+        encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
+    d = _minimal_catalog_dir(tmp_path)
+    errors = validate_module.validate_catalog(d)
+    assert any("auditStatus" in e and "未知值" in e for e in errors), errors
+
+
+def test_validate_rejects_verified_without_note(monkeypatch, tmp_path):
+    """P2：verified 缺 note → validate errors 必须包含（复核留痕证据缺失
+    是内容错误，不得非阻断）。"""
+    import game_catalog.validate as validate_module
+    path = tmp_path / "declarations.json"
+    path.write_text(json.dumps({"schemaVersion": 1, "items": {
+        "buildings:1000001": {"lifecycle": "permanent", "auditStatus": "verified"}}}),
+        encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
+    d = _minimal_catalog_dir(tmp_path)
+    errors = validate_module.validate_catalog(d)
+    assert any("auditStatus" in e and "缺 note" in e for e in errors), errors
+
+
+def test_validate_rejects_audit_status_on_seasonal(monkeypatch, tmp_path):
+    """P3：seasonalCandidate 携带 auditStatus → validate errors 必须包含
+    （双轨跟踪禁止，与 phaseCoverage 域分离）。"""
+    import game_catalog.validate as validate_module
+    path = tmp_path / "declarations.json"
+    path.write_text(json.dumps({"schemaVersion": 1, "items": {
+        "buildings:1000001": {"lifecycle": "seasonalCandidate",
+                              "auditStatus": "pending",
+                              "phaseCoverage": "unknown", "note": "n"}}}),
+        encoding="utf-8")
+    monkeypatch.setattr(lifecycle_module, "DECLARATIONS_PATH", path)
+    d = _minimal_catalog_dir(tmp_path)
+    errors = validate_module.validate_catalog(d)
+    assert any("auditStatus" in e and "仅允许 permanent" in e for e in errors), errors
+
+
+def test_validate_accepts_wellformed_audit_status():
+    """P2 正向：真实声明文件（8 条合法 pending 种子）→ validate 不报
+    auditStatus 错误（基线对照）。"""
+    import game_catalog.validate as validate_module
+    errors = validate_module.validate_catalog(
+        Path(__file__).resolve().parents[2]
+        / "Sources/COCHelperCore/GameCatalog/18.400.13")
+    assert not any("auditStatus" in e for e in errors), errors

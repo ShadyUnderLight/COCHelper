@@ -554,3 +554,14 @@ git commit -m "test: Issue #109 审计工具化全量回归通过"  # 无 diff �
   该判据已写入 test_audit.py 模块 docstring（tripwire 维护者可见）。
 - **种子快照锁定的风险**：外部核实完成后 pending 集合会变化——测试 tripwire 会红，需同步更新 `PENDING_AUDIT_KEYS`（test_audit.py）与 CLI 测试的 `pending=8` 断言（test_cli.py，docstring 已注明）（与 #112 `PHASE_COVERAGE_REQUIRED_KEYS` 同模式）。
 - **回归风险低**：纯新增函数 + 可选字段（无字段条目不进入返回，load_declarations/load_phase_coverage 不读 auditStatus，行为不变）；CLI 输出是追加行，不影响既有断言。
+
+## 7. 复审修复记录（2026-08-11，第三方 REQUEST CHANGES → 已修复）
+
+| # | 问题 | 修复 |
+|---|---|---|
+| P1 | PR body `Close #109` 会关闭整个 issue（1/2 条未完成） | body 改 `Partially addresses #109 (item 3 only)`，删除 Close 关键词 |
+| P1/P2 | 非法 auditStatus 被 CLI 吞掉显示 unavailable，仍 verdict OK | 新增 `AuditStatusError(CatalogError)` 子类（内容非法）+ validate.py `_check_audit_status_declarations` 进 errors 端到端失败；文件级错误保持 CatalogError 由 lifecycle 声明检查报（不双报）；CLI 测试补 exit 1 端到端 |
+| P2 | loader 接受 seasonalCandidate+auditStatus（与 phaseCoverage 双轨） | `entry["lifecycle"] != "permanent"` → AuditStatusError「仅允许 permanent 携带」 |
+| P2/P3 | verified.note 只做 truthy 检查，对象/数组/数字/空白通过 | 显式 `isinstance(note, str) and note.strip()`，否则 AuditStatusError「缺 note」 |
+
+测试：test_audit.py 失败路径 +7（P3×2/P4×4 并入 parametrize）、validate 门禁 +4、CLI 端到端 +1；全量 842 passed / 2 skipped（基线 812）。

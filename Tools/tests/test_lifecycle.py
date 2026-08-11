@@ -332,6 +332,16 @@ def test_phase_coverage_not_written_to_catalog():
         ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
                                                 "phaseCoverage": "maybe",
                                                 "note": "n"}}}, "phaseCoverage"),
+        # phaseCoverage 非字符串（JSON 数组/对象/数字）→ CatalogError 而非裸 TypeError
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "phaseCoverage": ["required"],
+                                                "note": "n"}}}, "phaseCoverage"),
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "phaseCoverage": {"v": "required"},
+                                                "note": "n"}}}, "phaseCoverage"),
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "phaseCoverage": 123,
+                                                "note": "n"}}}, "phaseCoverage"),
         # permanent 条目误带 phaseCoverage → CatalogError（防误标）
         ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",
                                                 "phaseCoverage": "required",
@@ -384,6 +394,13 @@ def test_load_phase_coverage_failure_paths(monkeypatch, tmp_path, content, messa
         # phaseCoverage 未知值（闭枚举外）→ CatalogError
         ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
                                                 "phaseCoverage": "maybe",
+                                                "note": "n"}}}, "phaseCoverage"),
+        # phaseCoverage 非字符串（JSON 数组/对象）→ CatalogError 而非裸 TypeError
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "phaseCoverage": ["required"],
+                                                "note": "n"}}}, "phaseCoverage"),
+        ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "seasonalCandidate",
+                                                "phaseCoverage": {"v": "required"},
                                                 "note": "n"}}}, "phaseCoverage"),
         # permanent 条目误带 phaseCoverage → CatalogError（防误标）
         ({"schemaVersion": 1, "items": {"a:1": {"lifecycle": "permanent",

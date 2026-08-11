@@ -118,7 +118,9 @@ def load_phase_coverage() -> dict[str, str]:
                     f"permanent 条目不得携带 phaseCoverage: {key}")
             continue
         coverage = entry.get("phaseCoverage")
-        if coverage not in PHASE_COVERAGE_VALUES:
+        if not isinstance(coverage, str) or coverage not in PHASE_COVERAGE_VALUES:
+            # 先校验 str：JSON 数组/对象对 frozenset membership 会抛裸 TypeError
+            # （unhashable），必须统一 fail loud 为 CatalogError
             raise CatalogError(
                 f"seasonalCandidate 声明缺 phaseCoverage 或值非法: "
                 f"{key}: {coverage!r}")

@@ -15,6 +15,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from game_catalog.validate import validate_catalog
 from game_catalog.errors import CatalogError
+from game_catalog.lifecycle import coverage_report
+
+
+def _emit_coverage_report() -> None:
+    """Issue #112：非阻断输出 seasonalCandidate ↔ phase 覆盖统计。
+
+    接入维护者正常校验流程（验收标准「validator 输出 coverage 报告」）。
+    独立于 validate_catalog 的 errors（评审红线：errors 非空即失败，诊断文本
+    不得混入）；文件缺失/解析失败 → 打印 unavailable 提示，不影响退出码。
+    """
+    try:
+        cov = coverage_report()
+    except CatalogError as exc:
+        print(f"coverage: unavailable: {exc}", file=sys.stderr)
+        return
+    print(
+        "coverage: "
+        f"seasonalCandidates={cov['seasonal_candidates']} "
+        f"required={cov['required']} unknown={cov['unknown']} "
+        f"requiredWithPhase={cov['required_with_phase']} "
+        f"requiredMissingPhase={cov['required_missing_phase']} "
+        f"phaseKeys={cov['phase_keys']} "
+        f"phaseKeysDeclared={cov['phase_keys_declared']} "
+        f"phaseKeysNotDeclared={cov['phase_keys_not_declared']} "
+        f"invalidPhases={cov['invalid_phases']}"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
+    _emit_coverage_report()
     if errors:
         print("verdict: FAIL")
         return 1

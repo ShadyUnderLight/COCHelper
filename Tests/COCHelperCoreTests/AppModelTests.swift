@@ -499,7 +499,67 @@ private final class FailFlag: @unchecked Sendable {
     var shouldFail = false
 }
 
+/// 可变的 Sendable 请求计数器（@Sendable handler 捕获用）。
+private final class RequestCounter: @unchecked Sendable {
+    var count = 0
+}
+
 extension AppModelTests {
+    /// 加载更多失败：保留 last-good 与游标，warLogHasMore 仍为 true（可重试），
+    /// 重试成功后恢复 .success 并合并新页（Issue #124 验收：
+    /// "加载更多失败时保留已有可见记录和 last-good 数据；按钮仍可用于重试"）。
+    @MainActor
+    func testLoadMoreWarLogFailureKeepsRetryableAndRecovers() async throws {
+        let counter = RequestCounter()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            counter.count += 1
+            if counter.count == 2 {
+                // 第二页：加载更多失败（429）
+                return (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            if counter.count == 3 {
+                // 重试成功：第二页数据（1 条新 + 1 条与首页重复）
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                        Data("""
+                        {"items":[
+                          {"result":"win","endTime":"20260801T100000.000Z","teamSize":30,"attacksPerMember":2,
+                           "clan":{"tag":"#CLANANONYMIZED","name":"anonymized-clan","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":12,"attacks":60,"stars":95,"destructionPercentage":100.0,
+                           "members":[{"tag":"#PLAYERANONYMIZED","name":"anonymized-member","townhallLevel":14,"mapPosition":1,"attacks":[{"order":1,"attackerTag":"#PLAYERANONYMIZED","defenderTag":"#OPPONENTPLAYERANONYMIZED","stars":3,"destructionPercentage":100,"duration":180}],"opponentAttacks":1,"bestOpponentAttack":{"order":1,"attackerTag":"#OPPONENTPLAYERANONYMIZED","defenderTag":"#PLAYERANONYMIZED","stars":2,"destructionPercentage":85,"duration":175}}]},
+                           "opponent":{"tag":"#OPPONENTANONYMIZED","name":"anonymized-opponent","badgeUrls":{"medium":"https://api-assets.clashofclans.com/badges/200/anonymized.png"},"clanLevel":11,"attacks":58,"stars":80,"destructionPercentage":85.0,
+                           "members":[]}}
+                        ],"paging":{"cursors":{"before":"B2","after":"CURSORAFTER2"}}}
+                        """.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullWarLogPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        // 首屏成功（2 条 + after=CURSORAFTER1）
+        model.refreshCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertTrue(model.currentWarLogHasMore)
+
+        // 加载更多失败 → last-good 与游标保留，hasMore 仍为 true（可重试）
+        model.loadMoreCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertEqual(model.currentWarLogState?.status, .failed)
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 2, "失败保留已累计的 last-good")
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.after, "CURSORAFTER1", "失败保留游标")
+        XCTAssertTrue(model.currentWarLogHasMore, "失败后仍可重试（Issue #124 验收）")
+
+        // 重试成功 → 恢复 .success 并合并新页
+        model.loadMoreCurrentWarLog()
+        await waitUntil { !model.isRefreshingWarLogData }
+        XCTAssertEqual(model.currentWarLogState?.status, .success)
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.items.count, 3, "重试成功后合并新页")
+        XCTAssertEqual(model.currentWarLogState?.lastGood?.after, "CURSORAFTER2", "重试成功后游标推进")
+    }
+
     /// 刷新失败保留已累计的 last-good（复审 B1/B2：传 previous 保持契约）。
     @MainActor
     func testRefreshWarLogFailureKeepsAccumulatedLastGood() async throws {

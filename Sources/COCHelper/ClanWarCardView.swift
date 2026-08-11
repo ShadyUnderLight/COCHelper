@@ -295,7 +295,7 @@ struct ClanWarCardView: View {
         let side = selectedSide == .clan ? projection.clan : projection.opponent
         let sideTitle = selectedSide == .clan ? "我方成员" : "对方成员"
         VStack(alignment: .leading, spacing: 10) {
-            Picker("", selection: $selectedSide) {
+            Picker("查看", selection: $selectedSide) {
                 Text("我方").tag(Side.clan)
                 Text("对方").tag(Side.opponent)
             }
@@ -326,9 +326,9 @@ struct ClanWarCardView: View {
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
                     .labelsHidden()
-                // 标题由上方标题行承担；.id(clanTag + side) 复合重置展开态：
-                // 村庄/部落切换时整个 section 重建（expandedIndex 清零），
-                // 同部落内 side 切换与快照刷新保留展开态（可接受的交互）。
+                // 标题由上方标题行承担；.id(clanTag + side) 复合键：
+                // side 切换与村庄/部落切换时整个 section 重建（展开态重置）；
+                // 同部落快照刷新（clanTag 与 selectedSide 均不变）保留展开态。
                 ClanWarMemberSection(
                     rows: sortedRows,
                     phase: projection.phase,

@@ -179,11 +179,13 @@ public enum ClanDisplayFormat {
     ///
     /// 固定用 en_US_POSIX 区域格式化——`String(format:)` 默认随系统区域设置，
     /// 某些区域会把小数点换成逗号（如 "12,5"），UI 展示会漂移。
-    /// 防御（M1）：`Double(Int.max)` 即 2^63，`Int(value)` 转换会 trap——
-    /// 整数分支前先拒绝不可表示的大值，改走 `%.1f` 分支（公开 API 契约外
-    /// 输入不崩溃；现有调用点摧毁率 ∈ [0,100] 不可达此分支）。
+    /// 防御（M1/M2）：`Double(Int.max)` 即 2^63、`Double(Int.min)` 即 -2^63，
+    /// 超出任一边界的值 `Int(value)` 转换都会 trap（负向如 `percent(-1e19)`
+    /// 实测崩溃 "result would be less than Int.min"）——整数分支前先拒绝
+    /// 不可表示的大值，改走 `%.1f` 分支（公开 API 契约外输入不崩溃；
+    /// 现有调用点摧毁率 ∈ [0,100] 不可达此分支）。
     public static func percent(_ value: Double) -> String {
-        guard value < Double(Int.max) else {
+        guard value < Double(Int.max), value >= Double(Int.min) else {
             return String(format: "%.1f", locale: posixLocale, arguments: [value])
         }
         return value.truncatingRemainder(dividingBy: 1) == 0

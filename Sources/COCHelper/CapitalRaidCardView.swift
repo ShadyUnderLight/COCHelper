@@ -386,7 +386,7 @@ struct CapitalRaidCardView: View {
                 .lineLimit(1)
             Spacer()
             Text([district.stars.map { "⭐\(min(max($0, 0), 3))" },
-                  district.destructionPercent.flatMap(ClanCombatSummary.displayDestructionPercent).map { "摧毁率 \(Self.percent($0))%" },
+                  district.destructionPercent.flatMap(ClanCombatSummary.displayDestructionPercent).map { "摧毁率 \(ClanDisplayFormat.percent($0))%" },
                   district.attackCount.map { "\($0) 次进攻" },
                   district.totalLooted.map { "掠夺 \(Self.formatted($0)) 都城金币" }]
                 .compactMap { $0 }
@@ -395,11 +395,6 @@ struct CapitalRaidCardView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 1)
-    }
-
-    private static func percent(_ value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(value)) : String(format: "%.1f", value)
     }
 
     private static func formatted(_ value: Int) -> String {

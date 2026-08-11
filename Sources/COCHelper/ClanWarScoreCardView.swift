@@ -46,15 +46,20 @@ struct ClanWarScoreCardView: View {
         ScoreCard(label: opponentLabel, row: opponentRow, quota: quota)
     }
 
-    /// 星数差/摧毁率差单行：仅当双方官方 stars 与 destructionPercentage
-    /// 双侧都存在时计算 `abs` 差；任一缺失 → 不渲染差值行。
+    /// 星数差/摧毁率差两行（各自独立判断，互不影响）：
+    /// - 星数差：仅需双侧官方 stars 存在（任一缺失 → 不渲染该行）；
+    /// - 摧毁率差：仅需双侧官方 destructionPercentage 存在（任一缺失 → 不渲染该行）。
     @ViewBuilder
     private var scoreDifference: some View {
         if let stars = row.official.stars,
-           let opponentStars = opponentRow.official.stars,
-           let destruction = row.official.destructionPercentage.flatMap(ClanCombatSummary.displayDestructionPercent),
+           let opponentStars = opponentRow.official.stars {
+            Text("星数差 \(Self.absoluteDifference(stars, opponentStars))")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+        }
+        if let destruction = row.official.destructionPercentage.flatMap(ClanCombatSummary.displayDestructionPercent),
            let opponentDestruction = opponentRow.official.destructionPercentage.flatMap(ClanCombatSummary.displayDestructionPercent) {
-            Text("星数差 \(Self.absoluteDifference(stars, opponentStars)) · 摧毁率差 \(ClanDisplayFormat.percent(abs(destruction - opponentDestruction)))%")
+            Text("摧毁率差 \(ClanDisplayFormat.percent(abs(destruction - opponentDestruction)))%")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
         }

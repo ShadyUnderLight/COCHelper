@@ -357,4 +357,27 @@ final class ClanDisplayFormatTests: XCTestCase {
         // 负方向：-2^63 恰为 Int.min（可表示），整数分支照常工作
         XCTAssertEqual(ClanDisplayFormat.percent(Double(Int.min)), "-9223372036854775808")
     }
+
+    /// 公开 API 防御（M2）：负向大值（小于 Double(Int.min) = -2^63）同样
+    /// 不得 trap——`percent(-1e19)` 实测崩溃（"result would be less than
+    /// Int.min"）。与正方向对称：必须走 String(format:) 格式分支，输出与
+    /// 直接格式化逐字一致（含小数点，调用方拼接的 "%" 后缀不受影响）。
+    func testPercentHugeNegativeValueNoTrap() {
+        let hugeNegative = -1e19
+        XCTAssertLessThan(hugeNegative, Double(Int.min), "fixture 必须超出 Int 负向可表示范围")
+        let expected = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                              arguments: [hugeNegative])
+        XCTAssertEqual(ClanDisplayFormat.percent(hugeNegative), expected)
+        // 再覆盖一个更极端的值，确认不崩溃且走格式分支
+        XCTAssertEqual(
+            ClanDisplayFormat.percent(-Double.greatestFiniteMagnitude),
+            String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                   arguments: [-Double.greatestFiniteMagnitude])
+        )
+    }
+
+    /// 负向非整数：含负号 + 点号分隔，正常走 1 位小数分支。
+    func testPercentNegativeNonInteger() {
+        XCTAssertEqual(ClanDisplayFormat.percent(-0.5), "-0.5")
+    }
 }

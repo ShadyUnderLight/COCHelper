@@ -115,12 +115,23 @@ struct ClanWarMemberSection: View {
     }
 
     /// 成员表：按当前筛选桶过滤后**全量渲染**（无 prefix 截断），行可展开攻击明细。
+    /// 搜索词非空（trim 后）且过滤后无行 → 空态文案替代空列表（避免纯空白区）。
+    @ViewBuilder
     private var memberList: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(visibleRows, id: \.sourceIndex) { row in
-                memberRow(row)
-                if expandedIndex == row.sourceIndex, let lines = row.lines, !lines.isEmpty {
-                    detailBlock(lines)
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && visibleRows.isEmpty {
+            Text("无匹配成员")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 6)
+        } else {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(visibleRows, id: \.sourceIndex) { row in
+                    memberRow(row)
+                    if expandedIndex == row.sourceIndex, let lines = row.lines, !lines.isEmpty {
+                        detailBlock(lines)
+                    }
                 }
             }
         }
@@ -168,6 +179,15 @@ struct ClanWarMemberSection: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
+        // VoiceOver 提示：仅当行有攻击明细可展开时提供（无明细的行
+        // 点击不产生新内容，不给误导性提示）。
+        .accessibilityHint(expandableHint(for: row))
+    }
+
+    /// 行展开的 a11y 提示文案：有攻击明细 → 提示可展开；否则空串（不加提示）。
+    private func expandableHint(for row: ClanWarMemberRow) -> String {
+        if let lines = row.lines, !lines.isEmpty { return "双击展开攻击明细" }
+        return ""
     }
 
     /// 成员列：行首 chevron（仅当有攻击明细可展开，否则同宽占位）+ 名称单行截断。
@@ -201,7 +221,7 @@ struct ClanWarMemberSection: View {
         case .remaining:
             let count = row.action.attackCount.map { "\($0)" } ?? "?"
             let remaining = row.action.remainingAttacks.map { "\($0)" } ?? "?"
-            return "\(count)/\(remaining)剩"
+            return "已用\(count)·剩\(remaining)"
         case .complete: return "已完成"
         case .overQuota: return "超配额"
         case .quotaUnknown: return "配额未知"
@@ -246,7 +266,7 @@ struct ClanWarMemberSection: View {
         case .complete: return "已完成"
         case .overQuota: return "超出配额"
         case .quotaUnknown: return "配额未知"
-        case .unknown: return "数据未知"
+        case .unknown: return "数据未确认"
         }
     }
 

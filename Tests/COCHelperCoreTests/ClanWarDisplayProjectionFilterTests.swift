@@ -222,6 +222,26 @@ final class ClanWarDisplayProjectionFilterTests: XCTestCase {
         XCTAssertTrue(ClanWarDisplayProjection.rows(rows, matchingSearch: "阿尔法").isEmpty)
     }
 
+    /// CJK 正向用例：中文名称包含匹配（"阿尔法" 匹配 "阿尔"），大小写
+    /// 归一化对 CJK 是恒等（无字母大小写语义）；子串跨 CJK 字符边界正常命中。
+    func testSearchMatchesChineseName() {
+        let rows = [
+            makeRow(0, status: .complete, name: "阿尔法", tag: "#AAA"),
+            makeRow(1, status: .complete, name: "贝塔", tag: "#BBB"),
+            makeRow(2, status: .complete, name: nil, tag: "#伽马"),
+        ]
+        // 正向：完整词 / 前缀子串 / 单字后缀均命中
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "阿尔").map(\.sourceIndex), [0])
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "阿尔法").map(\.sourceIndex), [0])
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "法").map(\.sourceIndex), [0])
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "贝").map(\.sourceIndex), [1])
+        // tag 中文匹配同样生效（与名称匹配独立）
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "伽").map(\.sourceIndex), [2])
+        // 负向：不存在的词不命中任何行；query 含空白仍 trim 后匹配
+        XCTAssertTrue(ClanWarDisplayProjection.rows(rows, matchingSearch: "德尔塔").isEmpty)
+        XCTAssertEqual(ClanWarDisplayProjection.rows(rows, matchingSearch: "  阿尔 ").map(\.sourceIndex), [0])
+    }
+
     // MARK: - filteredRows
 
     func testFilteredRowsPreservesOrderAndAllReturnsIdentity() {
@@ -802,6 +822,20 @@ final class ClanWarDisplayProjectionFilterPropertyTests: XCTestCase {
             assertOrFail(actual == expected,
                          "rows(matchingSearch:) 必须等于手动包含匹配过滤（保持输入顺序）",
                          context: "seed=0x526 round=\(round) n=\(rows.count) query=\(query.debugDescription)")
+            // 真值 oracle（防"与生产同构错"）：query 非空时，结果中每一行都
+            // 必须真实包含查询——name 或 tag（小写）包含 query（小写）。
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let needle = trimmed.lowercased()
+                for row in actual {
+                    assertOrFail(
+                        (row.name?.lowercased().contains(needle) ?? false)
+                            || (row.tag?.lowercased().contains(needle) ?? false),
+                        "结果行必须真实匹配查询（真值 oracle）",
+                        context: "seed=0x526 round=\(round) query=\(query.debugDescription) name=\(row.name?.debugDescription ?? "nil") tag=\(row.tag?.debugDescription ?? "nil")"
+                    )
+                }
+            }
         }
     }
 }

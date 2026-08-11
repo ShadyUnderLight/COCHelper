@@ -348,6 +348,16 @@ struct VillageDetailView: View {
                 title: coverage.isComplete ? "观测数据完整性" : "已观测数据关联率"
             )
             .help(coverage.helpText)
+            if let notice = metricsNotice(metrics: metrics, coverage: coverage) {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                    Text(notice.summary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .help(notice.details)
+            }
         }
         .padding(12)
         .background(Color.cocAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -380,14 +390,45 @@ struct VillageDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            // saturated 时 ratio 恒 nil，但 partial 的降级原因（如「N 项未知」）
-            // 不得被吞——与「数据异常」并存展示，信息不丢失。
-            if let reason = metric.degradedReason, (metric.ratio != nil || metric.saturated) {
-                Text(reason)
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
+        }
+    }
+
+    /// 诊断在卡片底部统一展示，避免同一组原因在三个指标行重复出现；完整
+    /// 原因保留在悬停说明中，便于需要核对数据口径时查看。
+    private func metricsNotice(
+        metrics: VillageProgressMetrics,
+        coverage: ProgressUniverseCoverage
+    ) -> (summary: String, details: String)? {
+        let reasons = [
+            metrics.currentStageProgress.degradedReason,
+            metrics.globalProgress.degradedReason,
+            metrics.snapshotCoverage.degradedReason,
+        ]
+        .compactMap { $0 }
+        .reduce(into: [String]()) { unique, reason in
+            if !unique.contains(reason) {
+                unique.append(reason)
             }
         }
+        guard !reasons.isEmpty else { return nil }
+
+        let hasUnavailableMetric = [
+            metrics.currentStageProgress,
+            metrics.globalProgress,
+            metrics.snapshotCoverage,
+        ].contains { $0.state == .unavailable }
+
+        let summary: String
+        if hasUnavailableMetric {
+            summary = "当前目录或快照数据不足，以上指标暂无法完整确认。"
+        } else if !coverage.isComplete {
+            summary = "以上进度基于当前已观测数据，暂不代表完整村庄进度。"
+        } else {
+            summary = "部分项目数据尚未核验，以上百分比仅供参考。"
+        }
+
+        let details = ([coverage.helpText] + reasons).joined(separator: "\n")
+        return (summary: summary, details: details)
     }
 
     /// 不可计算状态文案（unknown/unavailable；saturated 已在 metricRow 提前处理）。

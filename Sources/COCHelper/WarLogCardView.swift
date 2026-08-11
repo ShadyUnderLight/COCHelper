@@ -103,6 +103,9 @@ struct WarLogCardView: View {
                     .foregroundStyle(.orange)
                 HStack {
                     Button {
+                        // 不变量："刷新 ⇒ 预算重置"（与 refreshButton 一致，防未来
+                        // 本分支渲染列表时残留展开预算）。
+                        visibleCount = WarLogDisplayProjection.defaultVisibleCount
                         model.refreshWarLog(tag: clanTag, force: true)
                     } label: {
                         if model.isRefreshingWarLog(clanTag: clanTag) {

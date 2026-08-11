@@ -158,4 +158,43 @@ final class WarLogTimeFormatterTests: XCTestCase {
         XCTAssertNotNil(text.range(of: #"^\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}:\d{2}$"#, options: .regularExpression),
                          "输出格式不符: \(text)")
     }
+
+    // MARK: - 年份边界与世纪闰年（评审补测）
+
+    /// year < 1992 拒绝（ICU 历史历法数据），1992 边界接受。
+    func testYear1992Boundary() {
+        XCTAssertEqual(
+            WarLogTimeFormatter.displayText(raw: "19911231T235959.000Z"),
+            .unparsable("19911231T235959.000Z"))
+        XCTAssertEqual(
+            WarLogTimeFormatter.displayText(raw: "19920101T000000.000Z"),
+            .beijing("1992年1月1日 08:00:00"))
+    }
+
+    /// 世纪闰年：2000 可被 400 整除是闰年，2100 不是。
+    func testCenturyLeapYears() {
+        XCTAssertEqual(
+            WarLogTimeFormatter.displayText(raw: "20000229T000000.000Z"),
+            .beijing("2000年2月29日 08:00:00"))
+        XCTAssertEqual(
+            WarLogTimeFormatter.displayText(raw: "21000229T000000.000Z"),
+            .unparsable("21000229T000000.000Z"))
+    }
+
+    /// 极端年份 9999：ICU 正确处理 +8h 进位（输出 5 位年，理论不可达，锁定行为防回归）。
+    func testYear9999Extreme() {
+        XCTAssertEqual(
+            WarLogTimeFormatter.displayText(raw: "99991231T235959Z"),
+            .beijing("10000年1月1日 07:59:59"))
+    }
+
+    /// 尾部空白与 4 位毫秒必须拒绝（正则严格锚定）。
+    func testTrailingWhitespaceAndFourDigitMillisecondsRejected() {
+        XCTAssertEqual(
+            WarLogTimeFormatter.displayText(raw: "20260809T110738.000Z "),
+            .unparsable("20260809T110738.000Z "))
+        XCTAssertEqual(
+            WarLogTimeFormatter.displayText(raw: "20260809T110738.0000Z"),
+            .unparsable("20260809T110738.0000Z"))
+    }
 }

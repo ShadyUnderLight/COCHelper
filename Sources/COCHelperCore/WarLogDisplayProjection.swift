@@ -29,9 +29,12 @@ public enum WarLogDisplayProjection {
     }
 
     /// 按钮状态判定：本地隐藏优先于服务端更多（本地未展示完时不发请求）。
+    /// 空列表一律 `.none`：官方契约下空页无 after，防御
+    /// "没有历史部落对战记录" 与 "查看更多" 同屏的异常态（评审 M2）。
     public static func moreState(
         totalEntries: Int, visibleCount: Int, hasServerMore: Bool
     ) -> MoreState {
+        if totalEntries == 0 { return .none }
         if visibleCount < totalEntries { return .localHidden }
         if hasServerMore { return .serverMore }
         return .none

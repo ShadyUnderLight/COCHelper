@@ -42,14 +42,30 @@ final class WarLogDisplayProjectionTests: XCTestCase {
                 for server in [false, true] {
                     let state = WarLogDisplayProjection.moreState(
                         totalEntries: total, visibleCount: visible, hasServerMore: server)
+                    // 空列表短路 .none：官方契约下空页无 after，防御
+                    // "没有历史部落对战记录" + "查看更多"同屏的异常态。
                     let expected: WarLogDisplayProjection.MoreState =
-                        visible < total ? .localHidden
-                        : (server ? .serverMore : .none)
+                        total == 0 ? .none
+                        : (visible < total ? .localHidden
+                           : (server ? .serverMore : .none))
                     XCTAssertEqual(state, expected,
                                    "total=\(total) visible=\(visible) server=\(server)")
                 }
             }
         }
+    }
+
+    /// 空页 + 游标并存是异常态：空列表必须隐藏"查看更多"（评审 M2）。
+    func testMoreStateEmptyListShortCircuitsNone() {
+        XCTAssertEqual(
+            WarLogDisplayProjection.moreState(totalEntries: 0, visibleCount: 10, hasServerMore: true),
+            .none)
+        XCTAssertEqual(
+            WarLogDisplayProjection.moreState(totalEntries: 0, visibleCount: 0, hasServerMore: true),
+            .none)
+        XCTAssertEqual(
+            WarLogDisplayProjection.moreState(totalEntries: 0, visibleCount: 0, hasServerMore: false),
+            .none)
     }
 
     func testMoreStateLocalHiddenTakesPriorityOverServerMore() {

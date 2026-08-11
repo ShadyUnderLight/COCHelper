@@ -115,6 +115,23 @@ def test_coverage_report_summary():
         # Fix A 元素级校验：itemKeys 含 None 元素 → CatalogError
         ({"schemaVersion": 1, "phases": [{"phaseID": "x", "from": 1, "until": 2,
                                           "itemKeys": [None]}]}, "itemKeys"),
+        # Round 4 结构校验：缺 phaseID → CatalogError（Swift SeasonalPhase.phaseID
+        # 是 Codable 必填——缺失时 Swift loadBundled 解码失败返回空表，运行时
+        # .unconfigured；Python 报告若照常统计会显示已覆盖，报告与运行时矛盾）
+        ({"schemaVersion": 1, "phases": [{"from": 1, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "phaseID"),
+        # Round 4 结构校验：phaseID 非 str（如数字）→ CatalogError
+        ({"schemaVersion": 1, "phases": [{"phaseID": 123, "from": 1, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "phaseID"),
+        # Round 4 结构校验：name 非 str（存在时必须 str，Swift Optional<String>；
+        # 缺失/null 合法）→ CatalogError
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "name": 123,
+                                          "from": 1, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "name"),
+        # Round 4 结构校验：sourceURL 非 str（存在时必须 str）→ CatalogError
+        ({"schemaVersion": 1, "phases": [{"phaseID": "x", "sourceURL": ["u"],
+                                          "from": 1, "until": 2,
+                                          "itemKeys": ["a:1"]}]}, "sourceURL"),
     ],
 )
 def test_coverage_report_failure_paths(monkeypatch, tmp_path, content, message_fragment):

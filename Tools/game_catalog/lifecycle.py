@@ -214,6 +214,20 @@ def coverage_report() -> dict[str, int]:
         if not isinstance(phase, dict):
             raise CatalogError(
                 f"阶段表文件 phases[{i}] 非法: 非 dict: {phase!r}")
+        # Round 4：与 Swift SeasonalPhase Codable 契约对齐——phaseID 必填 str
+        # （缺失/类型错 → Swift loadBundled 解码失败返回空表，运行时
+        # .unconfigured；Python 报告若照常统计会显示已覆盖，报告与运行时矛盾）；
+        # name/sourceURL 是 Optional<String>：缺失/null 合法，存在时必须 str。
+        if not isinstance(phase.get("phaseID"), str):
+            raise CatalogError(
+                f"阶段表文件 phases[{i}] 非法: phaseID 缺失或非 str: "
+                f"{phase.get('phaseID')!r}")
+        for optional_field in ("name", "sourceURL"):
+            value = phase.get(optional_field)
+            if value is not None and not isinstance(value, str):
+                raise CatalogError(
+                    f"阶段表文件 phases[{i}] 非法: {optional_field} 非 str: "
+                    f"{value!r}")
         item_keys = phase.get("itemKeys")
         if not isinstance(item_keys, list):
             raise CatalogError(

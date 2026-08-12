@@ -46,7 +46,7 @@
 - Test: `Tests/COCHelperCoreTests/ClanCombatSummaryTests.swift`（durationText 单元测试）
 - Test: `Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift`（透传/bestDefense 单元测试）
 
-- [ ] **Step 1: 写失败测试（durationText）**
+- [x] **Step 1: 写失败测试（durationText）**
 
 在 `Tests/COCHelperCoreTests/ClanCombatSummaryTests.swift` 追加：
 
@@ -69,12 +69,12 @@
     }
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `swift test --filter ClanCombatSummaryTests/testDurationText`
 Expected: 编译失败（durationText 不存在）
 
-- [ ] **Step 3: 实现 durationText**
+- [x] **Step 3: 实现 durationText**
 
 `Sources/COCHelperCore/ClanCombatSummary.swift` 在 `displayDestructionPercent` 后追加：
 
@@ -89,12 +89,12 @@ Expected: 编译失败（durationText 不存在）
     }
 ```
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `swift test --filter ClanCombatSummaryTests/testDurationText`
 Expected: 2 tests PASS
 
-- [ ] **Step 5: 扩展 ClanWarAttackLine（写失败测试先行）**
+- [x] **Step 5: 扩展 ClanWarAttackLine（写失败测试先行）**
 
 在 `Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift` 的 `ClanWarDisplayProjectionTests` 类追加：
 
@@ -128,12 +128,12 @@ Expected: 2 tests PASS
     }
 ```
 
-- [ ] **Step 6: 运行确认失败**
+- [x] **Step 6: 运行确认失败**
 
 Run: `swift test --filter ClanWarDisplayProjectionTests/testAttackLine`
 Expected: 编译失败（ClanWarAttackLine 无 defenderTag/duration 属性）
 
-- [ ] **Step 7: 实现扩展**
+- [x] **Step 7: 实现扩展**
 
 `Sources/COCHelperCore/ClanCombatSummary.swift` 的 `ClanWarAttackLine` 改为：
 
@@ -162,7 +162,7 @@ public struct ClanWarAttackLine: Hashable, Sendable {
 }
 ```
 
-- [ ] **Step 8: 投影透传（sortedRows）**
+- [x] **Step 8: 投影透传（sortedRows）**
 
 `Sources/COCHelperCore/ClanWarDisplayProjection.swift` 的 `sortedRows(_:attacksPerMember:order:)` 中 lines 构造改为：
 
@@ -178,7 +178,7 @@ public struct ClanWarAttackLine: Hashable, Sendable {
 
 （同时给 `ClanWarMemberRow` 加 `bestDefense` 字段，见 Step 9——本步骤先只加透传）
 
-- [ ] **Step 9: bestDefense 投影（写失败测试先行）**
+- [x] **Step 9: bestDefense 投影（写失败测试先行）**
 
 在 `ClanWarDisplayProjectionTests` 追加：
 
@@ -210,12 +210,12 @@ public struct ClanWarAttackLine: Hashable, Sendable {
     }
 ```
 
-- [ ] **Step 10: 运行确认失败**
+- [x] **Step 10: 运行确认失败**
 
 Run: `swift test --filter ClanWarDisplayProjectionTests/testBestDefense`
 Expected: 编译失败（ClanWarMemberRow 无 bestDefense）
 
-- [ ] **Step 11: 实现 bestDefense**
+- [x] **Step 11: 实现 bestDefense**
 
 `ClanWarDisplayProjection.swift` 的 `ClanWarMemberRow`：
 
@@ -259,12 +259,12 @@ Expected: 编译失败（ClanWarMemberRow 无 bestDefense）
                 }
 ```
 
-- [ ] **Step 12: 运行全量 Core 测试确认无回归**
+- [x] **Step 12: 运行全量 Core 测试确认无回归**
 
 Run: `swift test --filter ClanWarDisplayProjectionTests` 与 `swift test --filter ClanCombatSummaryTests`
 Expected: 全 PASS（warlog 共用类型零破坏；FilterTests.makeRow 用命名参数 + 默认值零改动）
 
-- [ ] **Step 13: Commit**
+- [x] **Step 13: Commit**
 
 ```bash
 git add Sources/COCHelperCore/ClanCombatSummary.swift Sources/COCHelperCore/ClanWarDisplayProjection.swift Tests/COCHelperCoreTests/ClanCombatSummaryTests.swift Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift
@@ -278,7 +278,7 @@ git commit -m "feat(core): 攻击行透传目标/时长与最佳防守投影（I
 **Files:**
 - Test: `Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift`（PropertyTests 类追加）
 
-- [ ] **Step 1: 扩展随机生成器（randomAttack/randomMember 加新字段随机化）**
+- [x] **Step 1: 扩展随机生成器（randomAttack/randomMember 加新字段随机化）**
 
 在 `ClanWarDisplayProjectionPropertyTests` 中修改 `randomAttack` 与 `randomMember`：
 
@@ -318,7 +318,7 @@ git commit -m "feat(core): 攻击行透传目标/时长与最佳防守投影（I
 
 **注意**：随机序列变化不影响既有 property 断言（幂等/守恒/不变量），既有测试不得改动。
 
-- [ ] **Step 2: 写失败测试（三个新 property）**
+- [x] **Step 2: 写失败测试（三个新 property）**
 
 **关键**：`sortedRows` 会按行动优先级重排成员，成员与行的对应必须用 `sourceIndex`（成员数组下标），不能依赖行序。
 
@@ -496,12 +496,12 @@ git commit -m "feat(core): 攻击行透传目标/时长与最佳防守投影（I
     }
 ```
 
-- [ ] **Step 3: 运行确认全绿（生产代码已在 Task 1/3 落地，本 Task 只加测试）**
+- [x] **Step 3: 运行确认全绿（生产代码已在 Task 1/3 落地，本 Task 只加测试）**
 
 Run: `swift test --filter ClanWarDisplayProjectionPropertyTests`
 Expected: 3 新 property + 既有 7 property 全 PASS（新测试对既有实现必须直接绿——透传与 bestDefense 已在 Task 1 实现；若红说明 Task 1 实现有缺陷，报告 BLOCKED）
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift
@@ -516,7 +516,7 @@ git commit -m "test(core): 攻击透传/bestDefense/duration property 覆盖（I
 - Modify: `Sources/COCHelperCore/WarLogTimeFormatter.swift`
 - Test: `Tests/COCHelperCoreTests/WarLogTimeFormatterTests.swift`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `WarLogTimeFormatterTests` 追加：
 
@@ -552,12 +552,12 @@ git commit -m "test(core): 攻击透传/bestDefense/duration property 覆盖（I
     }
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `swift test --filter WarLogTimeFormatterTests/testRemainingText`
 Expected: 编译失败（remainingText 不存在）
 
-- [ ] **Step 3: 提取 utcDate 并实现 remainingText**
+- [x] **Step 3: 提取 utcDate 并实现 remainingText**
 
 `WarLogTimeFormatter.swift`：
 - 现有 `beijingTimeText(raw:)` 中从正则匹配到 `utcCalendar.date(from: components)` 的解析+校验逻辑提取为 `static func utcDate(from raw: String) -> Date?`（internal，保持原有范围校验：year >= 1992、daysInMonth、h/m/s 范围），`beijingTimeText` 改为：
@@ -621,12 +621,12 @@ Expected: 编译失败（remainingText 不存在）
     }
 ```
 
-- [ ] **Step 4: 运行确认通过 + 既有 formatter 测试无回归**
+- [x] **Step 4: 运行确认通过 + 既有 formatter 测试无回归**
 
 Run: `swift test --filter WarLogTimeFormatterTests`
 Expected: 既有 17 测试 + 新 3 测试全 PASS（重构提取 utcDate 后 beijing 输出逐字节不变）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/COCHelperCore/WarLogTimeFormatter.swift Tests/COCHelperCoreTests/WarLogTimeFormatterTests.swift
@@ -640,7 +640,7 @@ git commit -m "feat(core): 共享 UTC 解析提取与战争剩余时间（Issue 
 **Files:**
 - Modify: `Sources/COCHelper/ClanWarMemberSection.swift`
 
-- [ ] **Step 1: 扩展 attackLineText**
+- [x] **Step 1: 扩展 attackLineText**
 
 `ClanWarMemberSection.attackLineText` 改为（字段独立降级，缺失不隐藏其他字段）：
 
@@ -659,7 +659,7 @@ git commit -m "feat(core): 共享 UTC 解析提取与战争剩余时间（Issue 
     }
 ```
 
-- [ ] **Step 2: 展开明细块加最佳防守行**
+- [x] **Step 2: 展开明细块加最佳防守行**
 
 `detailBlock` 签名从 `(_ lines: [ClanWarAttackLine])` 改为 `(_ row: ClanWarMemberRow)`，内部渲染攻击明细 + 最佳防守：
 
@@ -698,7 +698,7 @@ git commit -m "feat(core): 共享 UTC 解析提取与战争剩余时间（Issue 
     }
 ```
 
-- [ ] **Step 3: 展开条件与 a11y 同步**
+- [x] **Step 3: 展开条件与 a11y 同步**
 
 `memberList` 中展开条件改为（lines 非空 **或** bestDefense 非 nil）：
 
@@ -727,7 +727,7 @@ git commit -m "feat(core): 共享 UTC 解析提取与战争剩余时间（Issue 
 
 `memberCell` 中 chevron 条件同步改为 `Self.hasExpandableContent(row)`。
 
-- [ ] **Step 4: 构建验证**
+- [x] **Step 4: 构建验证**
 
 Run: `swift build`
 Expected: 0 error 0 warning
@@ -735,7 +735,7 @@ Expected: 0 error 0 warning
 Run: `swift test`
 Expected: 全量 PASS（Core 无回归）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/COCHelper/ClanWarMemberSection.swift
@@ -749,7 +749,7 @@ git commit -m "feat(ui): 攻击行目标/时长与最佳防守展示（Issue #12
 **Files:**
 - Modify: `Sources/COCHelper/ClanWarCardView.swift`
 
-- [ ] **Step 1: metaLines 按 phase 三态组织时间行**
+- [x] **Step 1: metaLines 按 phase 三态组织时间行**
 
 `ClanWarCardView.metaLines` 中时间部分替换为调用 `timeLines(_:phase:)`：
 
@@ -817,17 +817,17 @@ git commit -m "feat(ui): 攻击行目标/时长与最佳防守展示（Issue #12
     }
 ```
 
-- [ ] **Step 2: 构建验证**
+- [x] **Step 2: 构建验证**
 
 Run: `swift build`
 Expected: 0 error 0 warning
 
-- [ ] **Step 3: 全量测试**
+- [x] **Step 3: 全量测试**
 
 Run: `swift test`
 Expected: 全量 PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add Sources/COCHelper/ClanWarCardView.swift
@@ -838,14 +838,14 @@ git commit -m "feat(ui): 当前战争时间按阶段显示北京时间与剩余�
 
 ### Task 6: 文档 + 全量验证
 
-- [ ] **Step 1: plan 文档入库**
+- [x] **Step 1: plan 文档入库**
 
 ```bash
 git add docs/plans/2026-08-12-issue127-currentwar-detail.md
 git commit -m "docs(plans): Issue #127 攻击详情/防守/北京时间实施计划"
 ```
 
-- [ ] **Step 2: 全量门禁**
+- [x] **Step 2: 全量门禁**
 
 ```bash
 swift test 2>&1 | tail -3
@@ -855,12 +855,12 @@ git diff --check
 
 Expected: 全绿（基线 1169 + 新增）；release build 0 error；diff-check 无输出
 
-- [ ] **Step 3: 自查清单**
-- [ ] raw snapshot/缓存/parserVersion 零改动（git diff 核对仅列出的文件）
-- [ ] warlog 行为零变化（`ClanCombatSummary.warMember` 构造未传新字段）
-- [ ] `ClanWarAttackLine` 扩展向后兼容（默认 nil）
-- [ ] 摧毁率仍逐次保留无聚合
-- [ ] 时间只改 UI 投影，未动原始字符串写入/读取
+- [x] **Step 3: 自查清单**
+- [x] raw snapshot/缓存/parserVersion 零改动（git diff 核对仅列出的文件）
+- [x] warlog 行为零变化（`ClanCombatSummary.warMember` 构造未传新字段）
+- [x] `ClanWarAttackLine` 扩展向后兼容（默认 nil）
+- [x] 摧毁率仍逐次保留无聚合
+- [x] 时间只改 UI 投影，未动原始字符串写入/读取
 
 ---
 

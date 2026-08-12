@@ -429,6 +429,113 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         }
         XCTAssertEqual(try store.readRawData(), missingEntry)
     }
+
+    func testFullIntegrityDigestRejectsMetadataDisplayAndCoverageTampering() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("COCHelper-SnapshotHistoryIntegrityTests-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("history.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FileSnapshotHistoryStore(fileURL: url)
+        let raw = "{\"tag\":\"\(firstTag)\",\"timestamp\":100,\"buildings\":[{\"data\":1,\"lvl\":2}]}"
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(
+                tag: firstTag,
+                text: raw,
+                capturedAt: Date(timeIntervalSince1970: 100)
+            ),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 101)
+        )
+        let marker = SnapshotHistoryMigrationMarker(completedAt: Date(timeIntervalSince1970: 101))
+
+        let tamperedTag = copy(
+            entry,
+            rawJSON: "{\"tag\":\"#2QJQ8J89\",\"timestamp\":100,\"buildings\":[{\"data\":1,\"lvl\":2}]}"
+        )
+        let tamperedTimestamp = copy(
+            entry,
+            rawJSON: "{\"tag\":\"\(firstTag)\",\"timestamp\":101,\"buildings\":[{\"data\":1,\"lvl\":2}]}"
+        )
+
+        var displayItems = entry.observation.items
+        let originalItem = try XCTUnwrap(displayItems.first)
+        displayItems[0] = SnapshotObservationItem(
+            identity: originalItem.identity,
+            level: originalItem.level,
+            count: originalItem.count,
+            rawTimerEvidence: originalItem.rawTimerEvidence,
+            helperRecurrent: originalItem.helperRecurrent,
+            gearUp: originalItem.gearUp,
+            weapon: originalItem.weapon,
+            unknownFields: originalItem.unknownFields,
+            display: SnapshotDisplayBinding(
+                displayName: "篡改显示名",
+                category: originalItem.display.category,
+                displayCategory: originalItem.display.displayCategory,
+                catalogVersion: originalItem.display.catalogVersion,
+                catalogFingerprint: originalItem.display.catalogFingerprint
+            )
+        )
+        let tamperedDisplay = copy(
+            entry,
+            observation: CanonicalSnapshotObservation(
+                schemaVersion: entry.observation.schemaVersion,
+                rawTopLevelFields: entry.observation.rawTopLevelFields,
+                unknownTopLevelFields: entry.observation.unknownTopLevelFields,
+                items: displayItems
+            )
+        )
+        let tamperedCoverage = copy(
+            entry,
+            coverage: SnapshotObservationCoverage(
+                schemaVersion: entry.coverage.schemaVersion,
+                fields: entry.coverage.fields,
+                diagnostics: entry.coverage.diagnostics + ["篡改 coverage"]
+            )
+        )
+
+        for tampered in [tamperedTag, tamperedTimestamp, tamperedDisplay, tamperedCoverage] {
+            try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
+                entries: [tampered],
+                migrationMarker: marker
+            )))
+            XCTAssertThrowsError(try store.load()) { error in
+                XCTAssertEqual(
+                    error as? SnapshotHistoryStoreError,
+                    .invalidEntry("历史 entry 的完整性摘要不一致。")
+                )
+            }
+        }
+    }
+
+    private func copy(
+        _ entry: SnapshotHistoryEntry,
+        rawJSON: String? = nil,
+        observation: CanonicalSnapshotObservation? = nil,
+        coverage: SnapshotObservationCoverage? = nil
+    ) -> SnapshotHistoryEntry {
+        SnapshotHistoryEntry(
+            schemaVersion: entry.schemaVersion,
+            observationVersion: entry.observationVersion,
+            fingerprintVersion: entry.fingerprintVersion,
+            integrityVersion: entry.integrityVersion,
+            snapshotID: entry.snapshotID,
+            villageID: entry.villageID,
+            lineageID: entry.lineageID,
+            normalizedPlayerTag: entry.normalizedPlayerTag,
+            appliedAt: entry.appliedAt,
+            sourceTimestamp: entry.sourceTimestamp,
+            parserVersion: entry.parserVersion,
+            canonicalFingerprint: entry.canonicalFingerprint,
+            rawJSON: rawJSON ?? entry.rawJSON,
+            observation: observation ?? entry.observation,
+            coverage: coverage ?? entry.coverage,
+            isBaseline: entry.isBaseline,
+            baselineReason: entry.baselineReason,
+            integrityFingerprint: entry.integrityFingerprint
+        )
+    }
 }
 
 private extension String {

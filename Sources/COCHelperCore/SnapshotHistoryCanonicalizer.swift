@@ -88,6 +88,51 @@ public enum SnapshotHistoryCanonicalizer {
         return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    static func integrityFingerprint(
+        integrityVersion: Int,
+        schemaVersion: Int,
+        observationVersion: Int,
+        fingerprintVersion: Int,
+        snapshotID: UUID,
+        villageID: UUID,
+        lineageID: UUID,
+        normalizedPlayerTag: String?,
+        appliedAt: Date,
+        sourceTimestamp: Date?,
+        parserVersion: String,
+        canonicalFingerprint: String,
+        rawJSON: String,
+        observation: CanonicalSnapshotObservation,
+        coverage: SnapshotObservationCoverage,
+        isBaseline: Bool,
+        baselineReason: SnapshotLineageReason?
+    ) -> String {
+        let material = SnapshotHistoryIntegrityMaterial(
+            integrityVersion: integrityVersion,
+            schemaVersion: schemaVersion,
+            observationVersion: observationVersion,
+            fingerprintVersion: fingerprintVersion,
+            snapshotID: snapshotID,
+            villageID: villageID,
+            lineageID: lineageID,
+            normalizedPlayerTag: normalizedPlayerTag,
+            appliedAt: appliedAt,
+            sourceTimestamp: sourceTimestamp,
+            parserVersion: parserVersion,
+            canonicalFingerprint: canonicalFingerprint,
+            rawJSON: rawJSON,
+            observation: observation,
+            coverage: coverage,
+            isBaseline: isBaseline,
+            baselineReason: baselineReason
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try! encoder.encode(material)
+        let digest = SHA256.hash(data: data)
+        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
     private struct CanonicalSource {
         let fields: [String: CanonicalJSONValue]
         let unknownFields: [String: CanonicalJSONValue]
@@ -856,5 +901,63 @@ public enum SnapshotHistoryCanonicalizer {
         }
         return lines.dropFirst().dropLast().joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct SnapshotHistoryIntegrityMaterial: Encodable {
+    let integrityVersion: Int
+    let schemaVersion: Int
+    let observationVersion: Int
+    let fingerprintVersion: Int
+    let snapshotID: UUID
+    let villageID: UUID
+    let lineageID: UUID
+    let normalizedPlayerTag: String?
+    let appliedAt: Date
+    let sourceTimestamp: Date?
+    let parserVersion: String
+    let canonicalFingerprint: String
+    let rawJSON: String
+    let observation: CanonicalSnapshotObservation
+    let coverage: SnapshotObservationCoverage
+    let isBaseline: Bool
+    let baselineReason: SnapshotLineageReason?
+
+    init(
+        integrityVersion: Int,
+        schemaVersion: Int,
+        observationVersion: Int,
+        fingerprintVersion: Int,
+        snapshotID: UUID,
+        villageID: UUID,
+        lineageID: UUID,
+        normalizedPlayerTag: String?,
+        appliedAt: Date,
+        sourceTimestamp: Date?,
+        parserVersion: String,
+        canonicalFingerprint: String,
+        rawJSON: String,
+        observation: CanonicalSnapshotObservation,
+        coverage: SnapshotObservationCoverage,
+        isBaseline: Bool,
+        baselineReason: SnapshotLineageReason?
+    ) {
+        self.integrityVersion = integrityVersion
+        self.schemaVersion = schemaVersion
+        self.observationVersion = observationVersion
+        self.fingerprintVersion = fingerprintVersion
+        self.snapshotID = snapshotID
+        self.villageID = villageID
+        self.lineageID = lineageID
+        self.normalizedPlayerTag = normalizedPlayerTag
+        self.appliedAt = appliedAt
+        self.sourceTimestamp = sourceTimestamp
+        self.parserVersion = parserVersion
+        self.canonicalFingerprint = canonicalFingerprint
+        self.rawJSON = rawJSON
+        self.observation = observation
+        self.coverage = coverage
+        self.isBaseline = isBaseline
+        self.baselineReason = baselineReason
     }
 }

@@ -142,11 +142,17 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
             guard entry.fingerprintVersion == SnapshotHistorySchema.fingerprint else {
                 throw SnapshotHistoryStoreError.unsupportedSchema(entry.fingerprintVersion)
             }
+            guard entry.integrityVersion == SnapshotHistorySchema.integrity else {
+                throw SnapshotHistoryStoreError.unsupportedSchema(entry.integrityVersion)
+            }
             guard !entry.rawJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw SnapshotHistoryStoreError.invalidEntry("历史 entry 缺少 rawJSON。")
             }
             guard Self.isSHA256Fingerprint(entry.canonicalFingerprint) else {
                 throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的 fingerprint 格式无效。")
+            }
+            guard Self.isSHA256Fingerprint(entry.integrityFingerprint) else {
+                throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的完整性摘要格式无效。")
             }
             try Self.validateIntegrity(of: entry)
         }
@@ -200,6 +206,29 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
     }
 
     private static func validateIntegrity(of entry: SnapshotHistoryEntry) throws {
+        let expectedIntegrityFingerprint = SnapshotHistoryCanonicalizer.integrityFingerprint(
+            integrityVersion: entry.integrityVersion,
+            schemaVersion: entry.schemaVersion,
+            observationVersion: entry.observationVersion,
+            fingerprintVersion: entry.fingerprintVersion,
+            snapshotID: entry.snapshotID,
+            villageID: entry.villageID,
+            lineageID: entry.lineageID,
+            normalizedPlayerTag: entry.normalizedPlayerTag,
+            appliedAt: entry.appliedAt,
+            sourceTimestamp: entry.sourceTimestamp,
+            parserVersion: entry.parserVersion,
+            canonicalFingerprint: entry.canonicalFingerprint,
+            rawJSON: entry.rawJSON,
+            observation: entry.observation,
+            coverage: entry.coverage,
+            isBaseline: entry.isBaseline,
+            baselineReason: entry.baselineReason
+        )
+        guard expectedIntegrityFingerprint == entry.integrityFingerprint else {
+            throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的完整性摘要不一致。")
+        }
+
         let rebuilt: SnapshotHistoryEntry
         do {
             let snapshot = try AccountSnapshotImporter.parse(entry.rawJSON)

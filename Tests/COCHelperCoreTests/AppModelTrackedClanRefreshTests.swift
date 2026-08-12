@@ -126,7 +126,8 @@ final class AppModelTrackedClanRefreshTests: XCTestCase {
             defaults: defaults,
             clanRefresher: clanRefresher,
             clanWarRefresher: clanWarRefresher,
-            clanLogClient: clanLogClient
+            clanLogClient: clanLogClient,
+            historyStore: TestSnapshotHistoryStore()
         )
     }
 

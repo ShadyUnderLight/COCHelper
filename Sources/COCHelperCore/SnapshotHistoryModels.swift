@@ -6,6 +6,7 @@ import Foundation
 /// format.  Storage and migrations can therefore reject a future history
 /// record without changing the legacy `AccountSnapshot` Codable contract.
 public enum SnapshotHistorySchema {
+    public static let envelope = 1
     public static let entry = 1
     public static let observation = 1
     public static let fingerprint = 1

@@ -275,10 +275,10 @@ struct ClanWarCardView: View {
     }
 
     /// 元信息行：战争规则（BattleModifierText 映射）+ 对战规模（quota 投影）
-    /// + 开始/结束时间（官方时间原样展示）。
+    /// + 时间行（按阶段三态，Issue #127：preparation 备战开始/开战时间；
+    /// inWar 开始+结束+剩余；warEnded 只显示结束时间，不显示倒计时）。
     private func metaLines(_ snapshot: OfficialClanWarSnapshot, _ projection: ClanWarProjection) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            // 战争规则（锦标赛模式 / 传奇杯）：无规则（nil/"none"）时不渲染占位
             if let rule = BattleModifierText.localizedText(for: snapshot.battleModifier) {
                 Text("规则：\(rule)")
                     .font(.caption)
@@ -289,13 +289,47 @@ struct ClanWarCardView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if let start = snapshot.startTime ?? snapshot.warStartTime {
-                Text("开始：\(start)（官方时间）")
+            timeLines(snapshot, phase: projection.phase)
+        }
+    }
+
+    /// 时间行（按阶段）：缺失字段不渲染；解析失败保留原文并标注"格式未识别"。
+    /// 全部复用 Core `WarLogTimeFormatter`（#124 同一解析规则，不维护第二套 UTC 解析）。
+    @ViewBuilder
+    private func timeLines(_ snapshot: OfficialClanWarSnapshot, phase: ClanWarPhase) -> some View {
+        switch phase {
+        case .preparation:
+            timeLine(label: "备战开始", raw: snapshot.preparationStartTime)
+            timeLine(label: "开战", raw: snapshot.startTime)
+        case .inWar:
+            timeLine(label: "开始", raw: snapshot.startTime ?? snapshot.warStartTime)
+            timeLine(label: "结束", raw: snapshot.endTime)
+            if let end = snapshot.endTime,
+               let remaining = WarLogTimeFormatter.remainingText(endRaw: end, now: Date()) {
+                Text("剩余：\(remaining)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
             }
-            if let end = snapshot.endTime {
-                Text("结束：\(end)（官方时间）")
+        case .warEnded:
+            timeLine(label: "结束", raw: snapshot.endTime)
+        case .notInWar, .unknown:
+            EmptyView()
+        }
+    }
+
+    /// 单条时间行：三态（北京时间 / 官方原始未识别 / 缺失不渲染）。
+    @ViewBuilder
+    private func timeLine(label: String, raw: String?) -> some View {
+        if let raw {
+            switch WarLogTimeFormatter.displayText(raw: raw) {
+            case .hidden:
+                EmptyView()
+            case .beijing(let text):
+                Text("\(label)：\(text)（北京时间）")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+            case .unparsable(let original):
+                Text("\(label)：\(original)（官方原始时间/格式未识别）")
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
             }

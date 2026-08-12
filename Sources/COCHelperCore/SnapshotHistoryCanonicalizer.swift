@@ -299,6 +299,19 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?
     ) -> SnapshotDisplayBinding {
+        // Once the separate craft universe is supplied, it is authoritative
+        // for nested identities.  An unknown type/module must remain raw and
+        // unbound; falling through to GameCatalog could mislabel it when the
+        // two catalogs happen to reuse the same dataID.
+        if craftTableCatalog != nil,
+           identity.nestedKind == .type || identity.nestedKind == .module {
+            return craftTableDisplayBinding(
+                for: identity,
+                catalog: catalog,
+                craftTableCatalog: craftTableCatalog
+            ) ?? SnapshotDisplayBinding()
+        }
+
         if let craftTableBinding = craftTableDisplayBinding(
             for: identity,
             catalog: catalog,

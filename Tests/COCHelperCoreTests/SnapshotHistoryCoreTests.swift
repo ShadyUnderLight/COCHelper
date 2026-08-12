@@ -383,6 +383,45 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(module.display.displayName, "module")
     }
 
+    func testUnknownCraftNestedIDsDoNotFallbackToGameCatalogCollision() throws {
+        let snapshot = try makeSnapshot(
+            """
+            {"buildings":[{"data":1000001,"types":[{"data":777,"modules":[{"data":888}]}],"modules":[{"data":888}]}]}
+            """
+        )
+        let gameCatalog = makeCatalog(name: "root", version: "18.400.13", includeNested: true)
+        let craftTableCatalog = makeCraftTableCatalog(defenseIDs: [])
+        let entry = try canonicalize(
+            snapshot,
+            catalog: gameCatalog,
+            craftTableCatalog: craftTableCatalog
+        )
+
+        let type = try XCTUnwrap(entry.observation.items.first {
+            $0.identity.nestedKind == .type && $0.identity.dataID == 777
+        })
+        let module = try XCTUnwrap(entry.observation.items.first {
+            $0.identity.nestedKind == .module && $0.identity.dataID == 888
+        })
+
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "types"), .partial)
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "modules"), .partial)
+        XCTAssertTrue(entry.coverage.diagnostics.contains {
+            $0.contains("buildings[0].types[0].data") && $0.contains("未知 dataID 777")
+        })
+        XCTAssertTrue(entry.coverage.diagnostics.contains {
+            $0.contains("buildings[0].types[0].modules[0].data") && $0.contains("未知 dataID 888")
+        })
+        XCTAssertEqual(type.identity.dataID, 777)
+        XCTAssertEqual(module.identity.dataID, 888)
+        XCTAssertNil(type.display.displayName)
+        XCTAssertNil(type.display.category)
+        XCTAssertNil(type.display.catalogVersion)
+        XCTAssertNil(module.display.displayName)
+        XCTAssertNil(module.display.category)
+        XCTAssertNil(module.display.catalogVersion)
+    }
+
     func testLineageRulesDoNotJoinMissingOrConflictingIdentity() {
         let villageID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
         let first = SnapshotLineageResolver.resolve(

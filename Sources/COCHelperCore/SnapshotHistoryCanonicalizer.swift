@@ -6,6 +6,9 @@ import Foundation
 /// This adapter intentionally does not mutate `AccountSnapshot`, `VillageProfile`
 /// or persistence.  It reparses the retained source text so fields that the
 /// legacy importer does not yet model remain available to history consumers.
+/// `catalog` supplies the root/numeric dataID universe; `craftTableCatalog`
+/// supplies the separate `types/modules` universe.  Both are needed for
+/// complete dataID validation of bundled craft-table snapshots.
 public enum SnapshotHistoryCanonicalizer {
     public static func canonicalize(
         snapshot: AccountSnapshot,
@@ -15,11 +18,16 @@ public enum SnapshotHistoryCanonicalizer {
         snapshotID: UUID = UUID(),
         isBaseline: Bool = false,
         baselineReason: SnapshotLineageReason? = nil,
-        catalog: GameCatalog? = nil
+        catalog: GameCatalog? = nil,
+        craftTableCatalog: CraftTableCatalog? = nil
     ) throws -> SnapshotHistoryEntry {
         let source = try canonicalSource(snapshot.originalText)
         let observation = makeObservation(source: source, catalog: catalog)
-        let coverage = makeCoverage(source: source, catalog: catalog)
+        let coverage = makeCoverage(
+            source: source,
+            catalog: catalog,
+            craftTableCatalog: craftTableCatalog
+        )
         let fingerprint = fingerprint(for: observation)
 
         return SnapshotHistoryEntry(
@@ -45,7 +53,8 @@ public enum SnapshotHistoryCanonicalizer {
         lineage: SnapshotLineageResolution,
         appliedAt: Date,
         snapshotID: UUID = UUID(),
-        catalog: GameCatalog? = nil
+        catalog: GameCatalog? = nil,
+        craftTableCatalog: CraftTableCatalog? = nil
     ) throws -> SnapshotHistoryEntry {
         try canonicalize(
             snapshot: snapshot,
@@ -55,7 +64,8 @@ public enum SnapshotHistoryCanonicalizer {
             snapshotID: snapshotID,
             isBaseline: lineage.isBaseline,
             baselineReason: lineage.isBaseline ? lineage.reason : nil,
-            catalog: catalog
+            catalog: catalog,
+            craftTableCatalog: craftTableCatalog
         )
     }
 
@@ -285,7 +295,8 @@ public enum SnapshotHistoryCanonicalizer {
 
     private static func makeCoverage(
         source: CanonicalSource,
-        catalog: GameCatalog?
+        catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?
     ) -> SnapshotObservationCoverage {
         var fields: [SnapshotCoverageField] = []
         var diagnostics: [String] = []
@@ -347,7 +358,8 @@ public enum SnapshotHistoryCanonicalizer {
                         records: records,
                         field: field,
                         section: section,
-                        catalog: catalog
+                        catalog: catalog,
+                        craftTableCatalog: craftTableCatalog
                     )
                     state = nested.state
                     diagnostics.append(contentsOf: nested.diagnostics)
@@ -356,6 +368,8 @@ public enum SnapshotHistoryCanonicalizer {
                         records: records,
                         section: section,
                         catalog: catalog,
+                        nestedKind: nil,
+                        craftTableCatalog: craftTableCatalog,
                         diagnostics: &diagnostics
                     )
                 } else {
@@ -431,6 +445,8 @@ public enum SnapshotHistoryCanonicalizer {
                     values,
                     section: section,
                     catalog: catalog,
+                    nestedKind: nil,
+                    craftTableCatalog: craftTableCatalog,
                     diagnostics: &diagnostics
                 )
             ))
@@ -452,19 +468,22 @@ public enum SnapshotHistoryCanonicalizer {
         records: [(index: Int, object: [String: CanonicalJSONValue]?)],
         field: String,
         section: String,
-        catalog: GameCatalog?
+        catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?
     ) -> NestedCoverageAnalysis {
         guard !records.isEmpty else {
             return NestedCoverageAnalysis(state: .unavailable, diagnostics: [])
         }
 
-        let objectRecords = records.compactMap { $0.object }
         let present = records.compactMap {
             record -> (index: Int, object: [String: CanonicalJSONValue])? in
             guard let object = record.object, object[field] != nil else { return nil }
             return (index: record.index, object: object)
         }
-        let hasInvalidRoot = objectRecords.count != records.count
+        let hasInvalidRoot = records.contains { record in
+            guard let object = record.object else { return true }
+            return integer(object["data"]) == nil
+        }
         guard !present.isEmpty else {
             return NestedCoverageAnalysis(
                 state: hasInvalidRoot ? .partial : .unavailable,
@@ -472,7 +491,7 @@ public enum SnapshotHistoryCanonicalizer {
             )
         }
 
-        var state: SnapshotCoverageState = hasInvalidRoot || present.count != objectRecords.count
+        var state: SnapshotCoverageState = hasInvalidRoot || present.count != records.count
             ? .partial
             : .complete
         var diagnostics: [String] = []
@@ -487,7 +506,9 @@ public enum SnapshotHistoryCanonicalizer {
                 values,
                 path: path,
                 section: section,
-                catalog: catalog
+                nestedKind: field == "types" ? .type : .module,
+                catalog: catalog,
+                craftTableCatalog: craftTableCatalog
             )
             diagnostics.append(contentsOf: nested.diagnostics)
             if nested.state != .complete {
@@ -501,7 +522,9 @@ public enum SnapshotHistoryCanonicalizer {
         _ values: [CanonicalJSONValue],
         path: String,
         section: String,
-        catalog: GameCatalog?
+        nestedKind: SnapshotNestedKind,
+        catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?
     ) -> NestedCoverageAnalysis {
         var diagnostics: [String] = []
         var complete = true
@@ -513,17 +536,23 @@ public enum SnapshotHistoryCanonicalizer {
                 diagnostics.append("\(childPath): 子项不是对象。")
                 continue
             }
-            guard let dataID = integer(object["data"]) else {
+            if let dataID = integer(object["data"]) {
+                if let known = isKnownDataID(
+                    dataID,
+                    section: section,
+                    nestedKind: nestedKind,
+                    catalog: catalog,
+                    craftTableCatalog: craftTableCatalog
+                ), !known {
+                    complete = false
+                    diagnostics.append(
+                        "\(childPath).data: 未知 dataID \(dataID)，不在传入 known dataID universe 中。"
+                    )
+                }
+            } else {
                 complete = false
                 diagnostics.append(
                     "\(childPath).data: 缺少有效 dataID，记录未纳入 canonical observation。"
-                )
-                continue
-            }
-            if !isKnownDataID(dataID, section: section, catalog: catalog) {
-                complete = false
-                diagnostics.append(
-                    "\(childPath).data: 未知 dataID \(dataID)，不在传入 catalog 的已知 dataID universe 中。"
                 )
             }
 
@@ -539,7 +568,9 @@ public enum SnapshotHistoryCanonicalizer {
                     nestedValues,
                     path: nestedPath,
                     section: section,
-                    catalog: catalog
+                    nestedKind: nestedField == "types" ? .type : .module,
+                    catalog: catalog,
+                    craftTableCatalog: craftTableCatalog
                 )
                 diagnostics.append(contentsOf: nested.diagnostics)
                 if nested.state != .complete {
@@ -558,6 +589,8 @@ public enum SnapshotHistoryCanonicalizer {
         records: [(index: Int, object: [String: CanonicalJSONValue]?)],
         section: String,
         catalog: GameCatalog?,
+        nestedKind: SnapshotNestedKind?,
+        craftTableCatalog: CraftTableCatalog?,
         diagnostics: inout [String]
     ) -> SnapshotCoverageState {
         guard !records.isEmpty else { return .complete }
@@ -572,10 +605,19 @@ public enum SnapshotHistoryCanonicalizer {
                 state = .partial
                 continue
             }
-            guard isKnownDataID(dataID, section: section, catalog: catalog) else {
+            guard let known = isKnownDataID(
+                dataID,
+                section: section,
+                nestedKind: nestedKind,
+                catalog: catalog,
+                craftTableCatalog: craftTableCatalog
+            ) else {
+                continue
+            }
+            guard known else {
                 state = .partial
                 diagnostics.append(
-                    "\(section)[\(record.index)].data: 未知 dataID \(dataID)，不在传入 catalog 的已知 dataID universe 中。"
+                    "\(section)[\(record.index)].data: 未知 dataID \(dataID)，不在传入 known dataID universe 中。"
                 )
                 continue
             }
@@ -587,6 +629,8 @@ public enum SnapshotHistoryCanonicalizer {
         _ values: [CanonicalJSONValue],
         section: String,
         catalog: GameCatalog?,
+        nestedKind: SnapshotNestedKind?,
+        craftTableCatalog: CraftTableCatalog?,
         diagnostics: inout [String]
     ) -> SnapshotCoverageState {
         guard !values.isEmpty else { return .complete }
@@ -598,10 +642,19 @@ public enum SnapshotHistoryCanonicalizer {
                 diagnostics.append("\(section)[\(index)]: 不是有效 dataID。")
                 continue
             }
-            guard isKnownDataID(dataID, section: section, catalog: catalog) else {
+            guard let known = isKnownDataID(
+                dataID,
+                section: section,
+                nestedKind: nestedKind,
+                catalog: catalog,
+                craftTableCatalog: craftTableCatalog
+            ) else {
+                continue
+            }
+            guard known else {
                 state = .partial
                 diagnostics.append(
-                    "\(section)[\(index)]: 未知 dataID \(dataID)，不在传入 catalog 的已知 dataID universe 中。"
+                    "\(section)[\(index)]: 未知 dataID \(dataID)，不在传入 known dataID universe 中。"
                 )
                 continue
             }
@@ -695,9 +748,23 @@ public enum SnapshotHistoryCanonicalizer {
     private static func isKnownDataID(
         _ dataID: Int64,
         section: String,
-        catalog: GameCatalog?
-    ) -> Bool {
-        guard let catalog else { return true }
+        nestedKind: SnapshotNestedKind?,
+        catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?
+    ) -> Bool? {
+        if let nestedKind, nestedKind != .root {
+            guard let craftTableCatalog else { return nil }
+            switch nestedKind {
+            case .type:
+                return craftTableCatalog.defense(dataID: dataID) != nil
+            case .module:
+                return craftTableCatalog.module(dataID: dataID) != nil
+            case .root, .unknown:
+                return nil
+            }
+        }
+
+        guard let catalog, !catalog.items(in: section).isEmpty else { return nil }
         return catalog.item(section: section, dataID: dataID) != nil
     }
 

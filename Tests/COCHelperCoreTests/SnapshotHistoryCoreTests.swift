@@ -190,6 +190,59 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         })
     }
 
+    func testInvalidRootDataMakesNestedCoveragePartial() throws {
+        let snapshot = makeRawSnapshot(
+            """
+            {
+              "buildings": [{
+                "types": [{"data": 777}]
+              }]
+            }
+            """
+        )
+        let entry = try canonicalize(snapshot)
+
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "data"), .partial)
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "types"), .partial)
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "modules"), .partial)
+        XCTAssertTrue(entry.coverage.diagnostics.contains {
+            $0.contains("buildings[0].data") && $0.contains("缺少有效 dataID")
+        })
+        XCTAssertTrue(entry.observation.items.isEmpty)
+    }
+
+    func testNestedCoverageContinuesAfterInvalidParentData() throws {
+        let snapshot = makeRawSnapshot(
+            """
+            {
+              "buildings": [{
+                "data": 1000001,
+                "types": [{
+                  "modules": [{
+                    "types": [{}]
+                  }]
+                }]
+              }]
+            }
+            """
+        )
+        let entry = try canonicalize(snapshot)
+        let missingDataDiagnostics = entry.coverage.diagnostics.filter {
+            $0.contains("缺少有效 dataID")
+        }
+
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "types"), .partial)
+        XCTAssertTrue(missingDataDiagnostics.contains {
+            $0.contains("buildings[0].types[0].data")
+        })
+        XCTAssertTrue(missingDataDiagnostics.contains {
+            $0.contains("buildings[0].types[0].modules[0].data")
+        })
+        XCTAssertTrue(missingDataDiagnostics.contains {
+            $0.contains("buildings[0].types[0].modules[0].types[0].data")
+        })
+    }
+
     func testCoverageUsesCatalogToRejectUnknownRootAndNestedDataIDs() throws {
         let snapshot = makeRawSnapshot(
             """
@@ -203,7 +256,8 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         )
         let entry = try canonicalize(
             snapshot,
-            catalog: makeCatalog(name: "known root", version: "18.400.13")
+            catalog: makeCatalog(name: "known root", version: "18.400.13"),
+            craftTableCatalog: makeCraftTableCatalog(defenseIDs: [888])
         )
 
         XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "data"), .partial)
@@ -214,6 +268,32 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertTrue(entry.coverage.diagnostics.contains {
             $0.contains("buildings[0].types[0].data") && $0.contains("未知 dataID 777")
         })
+    }
+
+    func testBundledCatalogPairRecognizesCraftTableNestedRows() throws {
+        let gameCatalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let craftTableCatalog = try XCTUnwrap(CraftTableCatalog.loadBundled())
+        let snapshot = makeRawSnapshot(
+            """
+            {
+              "buildings": [{
+                "data": 1000097,
+                "types": [{"data": 103000011, "modules": [{"data": 102000033}]}],
+                "modules": []
+              }]
+            }
+            """
+        )
+        let entry = try canonicalize(
+            snapshot,
+            catalog: gameCatalog,
+            craftTableCatalog: craftTableCatalog
+        )
+
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "data"), .complete)
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "types"), .complete)
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "modules"), .complete)
+        XCTAssertFalse(entry.coverage.diagnostics.contains { $0.contains("未知 dataID") })
     }
 
     func testDeepNestedIdentityKeepsOutermostRoot() throws {
@@ -373,7 +453,8 @@ final class SnapshotHistoryCoreTests: XCTestCase {
 
     private func canonicalize(
         _ snapshot: AccountSnapshot,
-        catalog: GameCatalog? = nil
+        catalog: GameCatalog? = nil,
+        craftTableCatalog: CraftTableCatalog? = nil
     ) throws -> SnapshotHistoryEntry {
         try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot,
@@ -381,7 +462,8 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
             appliedAt: Date(timeIntervalSince1970: 1_700_100_000),
             snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
-            catalog: catalog
+            catalog: catalog,
+            craftTableCatalog: craftTableCatalog
         )
     }
 
@@ -442,6 +524,25 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             icon: nil,
             levelVisual: nil,
             levels: [level]
+        )
+    }
+
+    private func makeCraftTableCatalog(defenseIDs: [Int64]) -> CraftTableCatalog {
+        CraftTableCatalog(
+            schemaVersion: 1,
+            gameVersion: "18.400.13",
+            buildTag: "test",
+            defenses: defenseIDs.map {
+                CraftTableDefenseSpec(
+                    dataID: $0,
+                    name: "defense-\($0)",
+                    sourceName: "test",
+                    specialAbility: "",
+                    moduleIDs: [],
+                    totalModuleLevelThresholds: []
+                )
+            },
+            modules: []
         )
     }
 }

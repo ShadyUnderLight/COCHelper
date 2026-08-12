@@ -306,7 +306,7 @@ struct ClanWarCardView: View {
             timeLine(label: "结束", raw: snapshot.endTime)
             if let end = snapshot.endTime,
                let remaining = WarLogTimeFormatter.remainingText(endRaw: end, now: Date()) {
-                Text("剩余：\(remaining)")
+                Text(remaining)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
             }

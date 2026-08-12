@@ -92,11 +92,6 @@ struct ClanWarCardView: View {
             statusLine(state)
             if let snapshot = state.lastGood {
                 warSummary(snapshot)
-                if !state.unrecognizedKeys.isEmpty {
-                    Text("官方响应包含未识别字段：" + state.unrecognizedKeys.joined(separator: "、"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
             }
             refreshButton(title: "刷新部落对战状态", tag: clanTag)
         } else if let clanTag {
@@ -182,6 +177,7 @@ struct ClanWarCardView: View {
                 metaLines(snapshot, projection)
                 scoreCards(projection)
                 memberArea(projection)
+                dataDiagnostics(projection, snapshot)
             }
         case .unknown(raw: let raw):
             VStack(alignment: .leading, spacing: 6) {
@@ -194,8 +190,64 @@ struct ClanWarCardView: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
                 }
+                dataDiagnostics(projection, snapshot)
             }
         }
+    }
+
+    /// 可展开数据诊断区：双方 mismatches（官方摘要 vs 成员推导不一致）、
+    /// 攻击数据未知计数与官方未识别字段（Issue #126 复审，替代原 statusContent
+    /// 中直接显示的 unrecognizedKeys 文本行）。
+    /// 无任何诊断内容时不渲染 DisclosureGroup。
+    @ViewBuilder
+    private func dataDiagnostics(_ projection: ClanWarProjection, _ snapshot: OfficialClanWarSnapshot) -> some View {
+        let lines = diagnosticLines(projection, snapshot)
+        if lines.isEmpty {
+            EmptyView()
+        } else {
+            DisclosureGroup("数据诊断") {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 2)
+            }
+            .font(.caption)
+        }
+    }
+
+    /// 诊断行文案（参与方前缀 + mismatches 逐条 + 未知计数 + 未识别字段）；
+    /// 空数组 = 无任何诊断内容。
+    private func diagnosticLines(_ projection: ClanWarProjection, _ snapshot: OfficialClanWarSnapshot) -> [String] {
+        var lines: [String] = []
+        // 双方 mismatches：前缀区分参与方（"我方 · …" / "对方 · …"）
+        for (label, side) in [("我方", projection.clan), ("对方", projection.opponent)] {
+            guard let side else { continue }
+            for mismatch in side.mismatches {
+                switch mismatch {
+                case .membersIncomplete:
+                    lines.append("\(label) · 成员攻击数据不完整（存在未返回攻击数据的成员）")
+                case let .attackCount(official, memberSum):
+                    lines.append("\(label) · 官方攻击数 \(official) ≠ 成员合计 \(memberSum)")
+                case let .stars(official, memberKnownSum):
+                    lines.append("\(label) · 官方星数 \(official) ≠ 成员合计 \(memberKnownSum)")
+                case let .memberCount(official, returned):
+                    lines.append("\(label) · 成员数 \(returned) / 预期 \(official)")
+                }
+            }
+            // 攻击数据未知计数（> 0 才提示）
+            if let unknown = side.unknownAttackDataCount, unknown > 0 {
+                lines.append("\(label) · \(unknown) 名成员攻击数据未知")
+            }
+        }
+        // 官方响应顶层未识别字段（schema 漂移审计）
+        if !snapshot.unrecognizedKeys.isEmpty {
+            lines.append("官方响应包含未识别字段：" + snapshot.unrecognizedKeys.joined(separator: "、"))
+        }
+        return lines
     }
 
     private func stateBadge(_ title: String, color: Color) -> some View {
@@ -315,6 +367,17 @@ struct ClanWarCardView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+            }
+
+            // 成员覆盖率紧凑提示：官方 teamSize 已知、成员数组已返回但数量
+            // 不一致（逐条诊断的展开详情在下方"数据诊断"区）
+            if let sideMembers = side?.members,
+               let teamSize = projection.quota.teamSize,
+               sideMembers.count != teamSize {
+                Text("成员数据不完整：返回 \(sideMembers.count) 人 / 预期 \(teamSize) 人")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if let rows = side?.members {

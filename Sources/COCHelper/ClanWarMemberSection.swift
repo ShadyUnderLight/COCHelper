@@ -17,14 +17,19 @@ struct ClanWarMemberSection: View {
     /// 搜索词（主视图持有，跨 side/村庄切换保留；纯显示过滤，不影响计数）。
     let searchText: String
 
-    /// 已展开攻击明细的成员 sourceIndex（单方内唯一；nil = 无展开行）。
-    @State private var expandedIndex: Int?
+    /// 已展开攻击明细的成员**身份**（tag 优先 → name → "#\(sourceIndex)" 兜底；
+    /// nil = 无展开行）。
+    /// 身份绑定语义：sourceIndex 会随排序/刷新重排而漂移，不能作为跨刷新
+    /// 展开身份；tag/name 是成员稳定身份——重排后 tag/name 相同的成员保持
+    /// 展开，不同成员不误展开（双 nil 用 sourceIndex 兜底，仅合同内不可达的
+    /// 全匿名行退化为位置绑定）。
+    @State private var expandedIdentity: String?
 
     /// 列宽固定值：表头与数据行共用，窄窗口下右侧列不被挤出。
     fileprivate static let positionWidth: CGFloat = 26
     fileprivate static let townhallWidth: CGFloat = 52
     fileprivate static let attackProgressWidth: CGFloat = 56
-    fileprivate static let starsWidth: CGFloat = 44
+    fileprivate static let starsWidth: CGFloat = 88
     fileprivate static let defenseWidth: CGFloat = 36
     fileprivate static let statusWidth: CGFloat = 64
 
@@ -106,7 +111,7 @@ struct ClanWarMemberSection: View {
             Text("成员").frame(maxWidth: .infinity, alignment: .leading)
             Text("大本营").frame(width: Self.townhallWidth)
             Text("攻击进度").frame(width: Self.attackProgressWidth)
-            Text("星数").frame(width: Self.starsWidth)
+            Text("星数/摧毁率").frame(width: Self.starsWidth)
             Text("防守").frame(width: Self.defenseWidth)
             Text("状态").frame(width: Self.statusWidth, alignment: .trailing)
         }
@@ -129,7 +134,7 @@ struct ClanWarMemberSection: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(visibleRows, id: \.sourceIndex) { row in
                     memberRow(row)
-                    if expandedIndex == row.sourceIndex, let lines = row.lines, !lines.isEmpty {
+                    if expandedIdentity == identity(of: row), let lines = row.lines, !lines.isEmpty {
                         detailBlock(lines)
                     }
                 }
@@ -148,7 +153,8 @@ struct ClanWarMemberSection: View {
     /// 成员数据行：整行 Button 切换展开；列宽固定，成员列弹性截断。
     private func memberRow(_ row: ClanWarMemberRow) -> some View {
         Button {
-            expandedIndex = expandedIndex == row.sourceIndex ? nil : row.sourceIndex
+            // 身份绑定：同一身份再点收起，不同身份切换展开（见 expandedIdentity 注释）
+            expandedIdentity = expandedIdentity == identity(of: row) ? nil : identity(of: row)
         } label: {
             HStack(spacing: 6) {
                 Text(row.mapPosition.map { "\($0)" } ?? "—")
@@ -232,25 +238,58 @@ struct ClanWarMemberSection: View {
         }
     }
 
-    /// 星数文案（caption2）：已知星数 + 缺失提示；nil → "—"；文本不重复 emoji。
-    /// 长数值（malformed 超大星数）单行缩放，不得换行挤动行高。
+    /// 星数/摧毁率文案（caption2）：
+    /// - `stars == nil`（无攻击数据）→ "—"；
+    /// - `lines` 非空 → 星数文本（"⭐N" / "⭐N+?M"）+ 空格 + 逐次摧毁率
+    ///   （`ClanCombatSummary.displayDestructionPercent` 过滤非法值，nil 跳过
+    ///   不显示；全部 nil 时只显示星数）；
+    /// - `lines` 为空（明确 0 次攻击）→ "⭐0"。
+    /// 摧毁率**逐次保留、永不聚合**（Issue #69 契约）。长文本单行缩放，
+    /// 不得换行挤动行高。
     private func starsCell(_ row: ClanWarMemberRow) -> some View {
         Group {
-            if let stars = row.stars {
-                Text(stars.missingCount > 0
-                    ? "⭐\(stars.knownStars)+\(stars.missingCount)?"
-                    : "⭐\(stars.knownStars)")
-                    .accessibilityLabel(stars.missingCount > 0
-                        ? "\(stars.knownStars) 颗星，另有 \(stars.missingCount) 次未知"
-                        : "\(stars.knownStars) 颗星")
-            } else {
+            if row.stars == nil {
                 Text("—")
+            } else if let lines = row.lines, !lines.isEmpty {
+                let starsText = row.stars.map(Self.starsSummaryText) ?? ""
+                let destructions = lines.compactMap {
+                    $0.destructionPercentage
+                        .flatMap(ClanCombatSummary.displayDestructionPercent)
+                        .map { ClanDisplayFormat.percent($0) + "%" }
+                }.joined(separator: " ")
+                let text = destructions.isEmpty ? starsText : starsText + " " + destructions
+                Text(text)
+                    .accessibilityLabel(row.stars.map(Self.starsAccessibilityLabel) ?? "未知星数")
+            } else {
+                Text("⭐0")
+                    .accessibilityLabel("0 颗星")
             }
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .minimumScaleFactor(0.5)
+    }
+
+    /// 星数摘要文本（"⭐N" / "⭐N+?M"，缺失提示）；与既有展示格式逐字一致。
+    private static func starsSummaryText(_ stars: ClanWarMemberStars) -> String {
+        stars.missingCount > 0
+            ? "⭐\(stars.knownStars)+\(stars.missingCount)?"
+            : "⭐\(stars.knownStars)"
+    }
+
+    /// 星数单元格的 VoiceOver 标签（保留既有语义，不含摧毁率——逐次摧毁率
+    /// 已由明细行承载，展开后可读）。
+    private static func starsAccessibilityLabel(_ stars: ClanWarMemberStars) -> String {
+        stars.missingCount > 0
+            ? "\(stars.knownStars) 颗星，另有 \(stars.missingCount) 次未知"
+            : "\(stars.knownStars) 颗星"
+    }
+
+    /// 行展开身份：tag 优先，name 次之，双 nil 用 sourceIndex 兜底
+    ///（刷新重排后 tag/name 相同的成员保持展开，不同成员不误展开）。
+    private func identity(of row: ClanWarMemberRow) -> String {
+        row.tag ?? row.name ?? "#\(row.sourceIndex)"
     }
 
     /// 状态列（displayGroup 映射）：颜色只表状态——待处理警示 / 完成成功 / 未知中性。

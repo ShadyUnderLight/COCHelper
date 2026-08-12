@@ -145,7 +145,8 @@ final class Issue35VillageIDRoutingTests: XCTestCase {
             refresher: playerRefresher,
             clanRefresher: clanRefresher,
             clanWarRefresher: clanWarRefresher,
-            clanLogClient: clanLogClient
+            clanLogClient: clanLogClient,
+            historyStore: TestSnapshotHistoryStore()
         )
     }
 

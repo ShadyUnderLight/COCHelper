@@ -47,7 +47,11 @@ final class AppModelQuickImportTests: XCTestCase {
         clipboardReader: @escaping () -> String? = { nil }
     ) -> AppModel {
         defaults.set(try! JSONEncoder().encode(villages), forKey: "coc-helper.villages.v1")
-        return AppModel(defaults: defaults, clipboardReader: clipboardReader)
+        return AppModel(
+            defaults: defaults,
+            clipboardReader: clipboardReader,
+            historyStore: TestSnapshotHistoryStore()
+        )
     }
 
     private func persistedVillagesData() -> Data? {
@@ -482,7 +486,10 @@ final class AppModelQuickImportTests: XCTestCase {
 
         model.applyQuickImport(preview)
 
-        let reloaded = AppModel(defaults: defaults)
+        let reloaded = AppModel(
+            defaults: defaults,
+            historyStore: TestSnapshotHistoryStore()
+        )
         let reloadedSnapshot = reloaded.villages[0].accountSnapshot
         XCTAssertEqual(reloadedSnapshot?.tag, preview.snapshot.tag)
         XCTAssertEqual(reloadedSnapshot?.originalText, preview.snapshot.originalText)
@@ -666,8 +673,9 @@ final class AppModelQuickImportTests: XCTestCase {
                                "迭代 \(iteration)：成功路由必须指向传入 ID")
             case .failure(let error):
                 switch error {
-                case .emptyClipboard, .targetVillageMissing, .tagBelongsToAnotherVillage, .parseFailed:
-                    break  // 四个合法 case
+                case .emptyClipboard, .targetVillageMissing, .tagBelongsToAnotherVillage, .parseFailed,
+                     .historyUnavailable:
+                    break  // prepare 只返回解析/路由错误，事务错误在确认阶段返回
                 }
             }
 

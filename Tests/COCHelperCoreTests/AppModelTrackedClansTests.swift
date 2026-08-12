@@ -20,7 +20,7 @@ final class AppModelTrackedClansTests: XCTestCase {
 
     @MainActor
     private func makeModel() throws -> AppModel {
-        AppModel(defaults: defaults)
+        AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
     }
 
     /// 通过村庄存储注入带官方玩家快照的村庄（与 Issue35/AppModelTests 同构，
@@ -29,7 +29,7 @@ final class AppModelTrackedClansTests: XCTestCase {
     private func makeModel(villages: [VillageProfile]) throws -> AppModel {
         let data = try JSONEncoder().encode(villages)
         defaults.set(data, forKey: "coc-helper.villages.v1")
-        return AppModel(defaults: defaults)
+        return AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
     }
 
     /// 带官方玩家快照的村庄：lastGood.clan.tag 决定 currentVillageClanTag。
@@ -100,7 +100,7 @@ final class AppModelTrackedClansTests: XCTestCase {
         let model = try makeModel()
         _ = model.addTrackedClan(rawTag: "#AAA111", displayName: "甲")
         _ = model.addTrackedClan(rawTag: "#BBB222", displayName: nil)
-        let reloaded = AppModel(defaults: defaults)
+        let reloaded = AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
         XCTAssertEqual(reloaded.trackedClans.map(\.clanTag), ["#AAA111", "#BBB222"])
         XCTAssertEqual(reloaded.trackedClans[0].displayName, "甲")
     }

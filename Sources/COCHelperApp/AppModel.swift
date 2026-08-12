@@ -31,6 +31,7 @@ public enum QuickImportError: Error, LocalizedError, Equatable, Sendable {
     case parseFailed(AccountSnapshotImportError)
     case targetVillageMissing
     case tagBelongsToAnotherVillage(tag: String, villageName: String)
+    case historyUnavailable(String)
 
     public var errorDescription: String? {
         switch self {
@@ -42,6 +43,8 @@ public enum QuickImportError: Error, LocalizedError, Equatable, Sendable {
             "目标村庄已不存在，请刷新后重试。"
         case .tagBelongsToAnotherVillage(let tag, let villageName):
             "剪贴板 JSON 的账号 Tag（\(tag)）属于另一档案「\(villageName)」。为避免误覆盖，请到「账号数据」页手动导入。"
+        case .historyUnavailable(let message):
+            message
         }
     }
 }
@@ -55,6 +58,7 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var accountSnapshot: AccountSnapshot?
     @Published public private(set) var pendingAccountSnapshot: AccountSnapshot?
     @Published public private(set) var accountImportError: String?
+    @Published public private(set) var snapshotHistoryError: String?
     /// 正在刷新官方玩家数据的村庄 ID 集合（防重入守卫 + 卡片按村庄隔离，Issue #35）。
     /// 空集合 = 无请求在途；非空 = 对应村庄的请求在途。
     @Published public private(set) var refreshingOfficialPlayerVillageIDs: Set<UUID> = []
@@ -111,17 +115,69 @@ public final class AppModel: ObservableObject {
     private let clanLogClient: CoAPIClient
     /// 快捷导入的剪贴板读取器（测试注入；生产默认读系统剪贴板）。
     private let clipboardReader: () -> String?
+    private let historyService: SnapshotHistoryService
+    private let currentVillagePersistence: any CurrentVillagePersistence
+    private let importTransaction: SnapshotImportTransactionCoordinator
+    private var historyEnvelope: SnapshotHistoryEnvelope?
 
-    public init(
+    public convenience init(
         defaults: UserDefaults = .standard,
         refresher: OfficialPlayerRefresher? = nil,
         clanRefresher: ClanRefresher? = nil,
         clanWarRefresher: ClanWarRefresher? = nil,
         clanLogClient: CoAPIClient? = nil,
-        clipboardReader: (() -> String?)? = nil
+        clipboardReader: (() -> String?)? = nil,
+        historyStore: (any SnapshotHistoryStore)? = nil
+    ) {
+        self.init(
+            defaults: defaults,
+            refresher: refresher,
+            clanRefresher: clanRefresher,
+            clanWarRefresher: clanWarRefresher,
+            clanLogClient: clanLogClient,
+            clipboardReader: clipboardReader,
+            historyStore: historyStore,
+            currentVillagePersistence: nil,
+            transactionJournalURL: nil
+        )
+    }
+
+    init(
+        defaults: UserDefaults = .standard,
+        refresher: OfficialPlayerRefresher? = nil,
+        clanRefresher: ClanRefresher? = nil,
+        clanWarRefresher: ClanWarRefresher? = nil,
+        clanLogClient: CoAPIClient? = nil,
+        clipboardReader: (() -> String?)? = nil,
+        historyStore: (any SnapshotHistoryStore)? = nil,
+        currentVillagePersistence: (any CurrentVillagePersistence)? = nil,
+        transactionJournalURL: URL? = nil
     ) {
         self.defaults = defaults
         self.clipboardReader = clipboardReader ?? { NSPasteboard.general.string(forType: .string) }
+
+        let resolvedHistoryStore = historyStore ?? FileSnapshotHistoryStore(
+            fileURL: FileSnapshotHistoryStore.defaultURL()
+        )
+        let resolvedCurrentPersistence = currentVillagePersistence
+            ?? UserDefaultsCurrentVillagePersistence(defaults: defaults, key: villagesStorageKey)
+        self.historyService = SnapshotHistoryService(store: resolvedHistoryStore)
+        self.currentVillagePersistence = resolvedCurrentPersistence
+        self.importTransaction = SnapshotImportTransactionCoordinator(
+            current: resolvedCurrentPersistence,
+            history: resolvedHistoryStore,
+            journalURL: transactionJournalURL ?? resolvedHistoryStore.transactionJournalURL
+        )
+        self.historyEnvelope = nil
+        snapshotHistoryError = nil
+
+        var startupError: String?
+        do {
+            try importTransaction.recoverIfNeeded()
+        } catch {
+            startupError = Self.localizedPersistenceError(error)
+        }
+
         let loadedVillages = Self.loadVillages(from: defaults)
         let initialVillages: [VillageProfile]
         if loadedVillages.isEmpty {
@@ -179,12 +235,29 @@ public final class AppModel: ObservableObject {
         accountSnapshot = initialVillages[0].accountSnapshot
         pendingAccountSnapshot = nil
         accountImportError = nil
+        snapshotHistoryError = startupError
         importText = initialVillages[0].accountSnapshot?.originalText ?? ""
         officialRefreshSummary = nil
 
         // This upgrades the previous single-account storage and also drops
         // the old planner-only fields on the next write.
-        persistVillages()
+        if startupError == nil {
+            persistVillages()
+        }
+
+        if startupError == nil {
+            do {
+                historyEnvelope = try historyService.loadOrMigrate(
+                    villages: initialVillages,
+                    now: Date(),
+                    catalog: gameCatalog,
+                    craftTableCatalog: craftTableCatalog
+                )
+                snapshotHistoryError = nil
+            } catch {
+                snapshotHistoryError = Self.localizedPersistenceError(error)
+            }
+        }
     }
 
     public var currentVillageName: String {
@@ -521,18 +594,40 @@ public final class AppModel: ObservableObject {
     /// 被 load 清空，`importText` 替换为导入快照的原文，selectedVillageID 切回
     /// 目标村庄。详情页快捷入口不经过 pending 流程，UI 路径上这些重置不可达；
     /// 但本方法是 public API，调用方（尤其测试与未来调用点）需知晓。
-    public func applyQuickImport(_ preview: QuickImportPreview) {
-        guard let index = villages.firstIndex(where: { $0.id == preview.targetVillageID }) else { return }
-
-        villages[index].applyImportedSnapshot(preview.snapshot)
-        if villages[index].name.hasPrefix("村庄 ") || villages[index].name == VillageProfile.placeholderName {
-            villages[index].name = OfficialPlayerTagValidator.normalized(preview.snapshot.tag) ?? villages[index].name
+    @discardableResult
+    public func applyQuickImport(_ preview: QuickImportPreview) -> Bool {
+        snapshotHistoryError = nil
+        guard let index = villages.firstIndex(where: { $0.id == preview.targetVillageID }) else {
+            snapshotHistoryError = QuickImportError.targetVillageMissing.errorDescription
+            return false
         }
-        villages[index].updatedAt = Date()
 
-        let targetVillage = villages[index]
+        let appliedAt = Date()
+        var candidateVillages = villagesForImportPersistence()
+        candidateVillages[index].applyImportedSnapshot(preview.snapshot)
+        if candidateVillages[index].name.hasPrefix("村庄 ")
+            || candidateVillages[index].name == VillageProfile.placeholderName {
+            candidateVillages[index].name = OfficialPlayerTagValidator.normalized(preview.snapshot.tag)
+                ?? candidateVillages[index].name
+        }
+        candidateVillages[index].updatedAt = appliedAt
+
+        do {
+            try commitImportedSnapshot(
+                preview.snapshot,
+                targetVillage: villages[index],
+                candidateVillages: candidateVillages,
+                appliedAt: appliedAt
+            )
+        } catch {
+            snapshotHistoryError = Self.localizedPersistenceError(error)
+            return false
+        }
+
+        let targetVillage = candidateVillages[index]
         load(targetVillage, importText: preview.snapshot.originalText)
-        persistVillages()
+        snapshotHistoryError = nil
+        return true
     }
 
     public func parseAccountText() {
@@ -540,7 +635,14 @@ public final class AppModel: ObservableObject {
         pendingAccountSnapshot = nil
 
         do {
-            pendingAccountSnapshot = try AccountSnapshotImporter.parse(importText)
+            let snapshot = try AccountSnapshotImporter.parse(importText)
+            pendingAccountSnapshot = snapshot
+            if case .ambiguous(let tag, let villageNames) = pendingSnapshotTarget(for: snapshot) {
+                accountImportError = Self.ambiguousImportTargetMessage(
+                    tag: tag,
+                    villageNames: villageNames
+                )
+            }
         } catch {
             accountImportError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -549,10 +651,15 @@ public final class AppModel: ObservableObject {
     public var pendingAccountSnapshotActionTitle: String? {
         guard let snapshot = pendingAccountSnapshot else { return nil }
 
-        if let targetIndex = targetVillageIndex(for: snapshot) {
+        switch pendingSnapshotTarget(for: snapshot) {
+        case .ambiguous:
+            return "无法确定导入目标"
+        case .existing(let targetIndex):
             let targetName = villages[targetIndex].name
             let action = isReimportingExistingVillage(snapshot, at: targetIndex) ? "更新" : "应用到"
             return action + "「" + targetName + "」"
+        case .create:
+            break
         }
 
         let newName = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
@@ -562,45 +669,79 @@ public final class AppModel: ObservableObject {
     public var pendingAccountSnapshotDestinationDescription: String? {
         guard let snapshot = pendingAccountSnapshot else { return nil }
 
-        if let targetIndex = targetVillageIndex(for: snapshot) {
+        switch pendingSnapshotTarget(for: snapshot) {
+        case .ambiguous(let tag, let villageNames):
+            return Self.ambiguousImportTargetMessage(tag: tag, villageNames: villageNames)
+        case .existing(let targetIndex):
             let targetName = villages[targetIndex].name
             if isReimportingExistingVillage(snapshot, at: targetIndex) {
                 return "导入目标：按账号 tag 更新「" + targetName + "」"
             }
             return "导入目标：应用到「" + targetName + "」"
+        case .create:
+            break
         }
 
         let newName = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
         return "导入目标：没有同 tag 档案，将创建「" + newName + "」"
     }
 
-    public func applyPendingAccountSnapshot() {
-        guard let snapshot = pendingAccountSnapshot else { return }
-        persistVillages()
+    @discardableResult
+    public func applyPendingAccountSnapshot() -> Bool {
+        guard let snapshot = pendingAccountSnapshot else { return false }
 
         let targetIndex: Int
-        if let existingIndex = targetVillageIndex(for: snapshot) {
+        switch pendingSnapshotTarget(for: snapshot) {
+        case .existing(let existingIndex):
             // Re-importing the same account refreshes only its raw snapshot.
             targetIndex = existingIndex
-        } else {
-            let name = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
-            villages.append(VillageProfile(name: name))
-            targetIndex = villages.count - 1
+        case .create:
+            targetIndex = villages.count
+        case .ambiguous(let tag, let villageNames):
+            accountImportError = Self.ambiguousImportTargetMessage(
+                tag: tag,
+                villageNames: villageNames
+            )
+            return false
+        }
+
+        let appliedAt = Date()
+        var candidateVillages = villagesForImportPersistence()
+        if targetIndex == candidateVillages.count {
+            let name = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(candidateVillages.count + 1)
+            candidateVillages.append(VillageProfile(name: name))
         }
 
         // tag 变化时自动重置官方数据（applyImportedSnapshot 内部处理）。
-        villages[targetIndex].applyImportedSnapshot(snapshot)
-        if villages[targetIndex].name.hasPrefix("村庄 ") || villages[targetIndex].name == VillageProfile.placeholderName {
-            villages[targetIndex].name = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? villages[targetIndex].name
+        candidateVillages[targetIndex].applyImportedSnapshot(snapshot)
+        if candidateVillages[targetIndex].name.hasPrefix("村庄 ")
+            || candidateVillages[targetIndex].name == VillageProfile.placeholderName {
+            candidateVillages[targetIndex].name = OfficialPlayerTagValidator.normalized(snapshot.tag)
+                ?? candidateVillages[targetIndex].name
         }
-        villages[targetIndex].updatedAt = Date()
+        candidateVillages[targetIndex].updatedAt = appliedAt
 
-        let targetVillage = villages[targetIndex]
+        let existingTarget = targetIndex < villages.count ? villages[targetIndex] : VillageProfile(
+            id: candidateVillages[targetIndex].id,
+            name: candidateVillages[targetIndex].name
+        )
+        do {
+            try commitImportedSnapshot(
+                snapshot,
+                targetVillage: existingTarget,
+                candidateVillages: candidateVillages,
+                appliedAt: appliedAt
+            )
+        } catch {
+            accountImportError = Self.localizedPersistenceError(error)
+            return false
+        }
+
+        let targetVillage = candidateVillages[targetIndex]
         load(targetVillage, importText: snapshot.originalText)
-        pendingAccountSnapshot = nil
-        accountImportError = nil
         importIntoCurrentVillage = false
-        persistVillages()
+        snapshotHistoryError = nil
+        return true
     }
 
     public func discardPendingAccountSnapshot() {
@@ -1408,22 +1549,84 @@ public final class AppModel: ObservableObject {
         villages[index].updatedAt = Date()
     }
 
+    private func villagesForImportPersistence() -> [VillageProfile] {
+        var candidate = villages
+        guard let index = candidate.firstIndex(where: { $0.id == selectedVillageID }) else {
+            return candidate
+        }
+        candidate[index].accountSnapshot = accountSnapshot
+        candidate[index].updatedAt = Date()
+        return candidate
+    }
+
+    private func commitImportedSnapshot(
+        _ snapshot: AccountSnapshot,
+        targetVillage: VillageProfile,
+        candidateVillages: [VillageProfile],
+        appliedAt: Date
+    ) throws {
+        guard let historyEnvelope else {
+            throw SnapshotHistoryServiceError.historyUnavailable(
+                snapshotHistoryError ?? "历史存储尚未可用。"
+            )
+        }
+
+        let decision = try historyService.planImport(
+            snapshot: snapshot,
+            villageID: targetVillage.id,
+            currentTag: targetVillage.tag,
+            hasCurrentSnapshot: targetVillage.accountSnapshot != nil,
+            envelope: historyEnvelope,
+            appliedAt: appliedAt,
+            catalog: gameCatalog,
+            craftTableCatalog: craftTableCatalog
+        )
+        let currentData = try JSONEncoder().encode(candidateVillages)
+        try importTransaction.commit(currentData: currentData, envelope: decision.envelope)
+        villages = candidateVillages
+        self.historyEnvelope = decision.envelope
+    }
+
     private func persistVillages() {
         syncCurrentVillage()
         guard let data = try? JSONEncoder().encode(villages) else { return }
-        defaults.set(data, forKey: villagesStorageKey)
+        try? currentVillagePersistence.writeData(data)
     }
 
-    private func targetVillageIndex(for snapshot: AccountSnapshot) -> Int? {
-        if let tag = OfficialPlayerTagValidator.normalized(snapshot.tag),
-           let existingIndex = villages.firstIndex(where: { OfficialPlayerTagValidator.normalized($0.tag) == tag }) {
-            return existingIndex
+    private enum PendingSnapshotTarget {
+        case existing(Int)
+        case create
+        case ambiguous(tag: String, villageNames: [String])
+    }
+
+    private func pendingSnapshotTarget(for snapshot: AccountSnapshot) -> PendingSnapshotTarget {
+        if let tag = OfficialPlayerTagValidator.normalized(snapshot.tag) {
+            let matchingIndices = villages.indices.filter {
+                OfficialPlayerTagValidator.normalized(villages[$0].tag) == tag
+            }
+            if matchingIndices.count > 1 {
+                return .ambiguous(
+                    tag: tag,
+                    villageNames: matchingIndices.map { villages[$0].name }
+                )
+            }
+            if let existingIndex = matchingIndices.first {
+                return .existing(existingIndex)
+            }
         }
 
         guard let currentIndex = villages.firstIndex(where: { $0.id == selectedVillageID }),
               importIntoCurrentVillage || (villages.count == 1 && !villages[currentIndex].hasImportedData)
-        else { return nil }
-        return currentIndex
+        else { return .create }
+        return .existing(currentIndex)
+    }
+
+    private static func ambiguousImportTargetMessage(
+        tag: String,
+        villageNames: [String]
+    ) -> String {
+        "账号 Tag（" + tag + "）对应多个村庄档案：" + villageNames.joined(separator: "、")
+            + "。为避免绑定错误，导入已拒绝，请先保留唯一匹配档案后重试。"
     }
 
     private func isReimportingExistingVillage(_ snapshot: AccountSnapshot, at index: Int) -> Bool {
@@ -1437,6 +1640,14 @@ public final class AppModel: ObservableObject {
             return []
         }
         return decoded
+    }
+
+    private static func localizedPersistenceError(_ error: Error) -> String {
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription {
+            return description
+        }
+        return error.localizedDescription
     }
 
     /// 测试辅助：为指定 Tag 注入共享部落缓存（验证删除跟踪关系保留缓存）。

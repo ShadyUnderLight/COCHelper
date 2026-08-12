@@ -6,9 +6,11 @@ import Foundation
 /// format.  Storage and migrations can therefore reject a future history
 /// record without changing the legacy `AccountSnapshot` Codable contract.
 public enum SnapshotHistorySchema {
+    public static let envelope = 1
     public static let entry = 1
     public static let observation = 1
     public static let fingerprint = 1
+    public static let integrity = 1
 }
 
 public enum SnapshotHistoryBase: String, Codable, Hashable, Sendable {
@@ -407,6 +409,7 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
     public let schemaVersion: Int
     public let observationVersion: Int
     public let fingerprintVersion: Int
+    public let integrityVersion: Int
     public let snapshotID: UUID
     public let villageID: UUID
     public let lineageID: UUID
@@ -422,11 +425,13 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
     public let coverage: SnapshotObservationCoverage
     public let isBaseline: Bool
     public let baselineReason: SnapshotLineageReason?
+    public let integrityFingerprint: String
 
     public init(
         schemaVersion: Int = SnapshotHistorySchema.entry,
         observationVersion: Int = SnapshotHistorySchema.observation,
         fingerprintVersion: Int = SnapshotHistorySchema.fingerprint,
+        integrityVersion: Int = SnapshotHistorySchema.integrity,
         snapshotID: UUID,
         villageID: UUID,
         lineageID: UUID,
@@ -439,11 +444,13 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
         observation: CanonicalSnapshotObservation,
         coverage: SnapshotObservationCoverage,
         isBaseline: Bool,
-        baselineReason: SnapshotLineageReason?
+        baselineReason: SnapshotLineageReason?,
+        integrityFingerprint: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.observationVersion = observationVersion
         self.fingerprintVersion = fingerprintVersion
+        self.integrityVersion = integrityVersion
         self.snapshotID = snapshotID
         self.villageID = villageID
         self.lineageID = lineageID
@@ -457,6 +464,25 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
         self.coverage = coverage
         self.isBaseline = isBaseline
         self.baselineReason = baselineReason
+        self.integrityFingerprint = integrityFingerprint ?? SnapshotHistoryCanonicalizer.integrityFingerprint(
+            integrityVersion: integrityVersion,
+            schemaVersion: schemaVersion,
+            observationVersion: observationVersion,
+            fingerprintVersion: fingerprintVersion,
+            snapshotID: snapshotID,
+            villageID: villageID,
+            lineageID: lineageID,
+            normalizedPlayerTag: normalizedPlayerTag,
+            appliedAt: appliedAt,
+            sourceTimestamp: sourceTimestamp,
+            parserVersion: parserVersion,
+            canonicalFingerprint: canonicalFingerprint,
+            rawJSON: rawJSON,
+            observation: observation,
+            coverage: coverage,
+            isBaseline: isBaseline,
+            baselineReason: baselineReason
+        )
     }
 
     public var id: UUID { snapshotID }

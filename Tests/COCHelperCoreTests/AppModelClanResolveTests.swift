@@ -54,7 +54,8 @@ final class AppModelClanResolveTests: XCTestCase {
             clanLogClient: CoAPIClient(
                 config: CoAPIConfig(maxRetryCount: 0),
                 session: MockURLProtocol.makeSession()
-            ) { "fake-token" }
+            ) { "fake-token" },
+            historyStore: TestSnapshotHistoryStore()
         )
     }
 

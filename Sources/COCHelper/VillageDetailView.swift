@@ -55,8 +55,14 @@ struct VillageDetailView: View {
             QuickImportSheet(
                 preview: preview,
                 onConfirm: {
-                    model.applyQuickImport(preview)
-                    quickImportPreview = nil
+                    if model.applyQuickImport(preview) {
+                        quickImportPreview = nil
+                    } else {
+                        quickImportError = .historyUnavailable(
+                            model.snapshotHistoryError ?? "历史存储不可用，导入未提交。"
+                        )
+                        quickImportPreview = nil
+                    }
                 },
                 onCancel: {
                     quickImportPreview = nil

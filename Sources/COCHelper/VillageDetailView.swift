@@ -11,6 +11,9 @@ struct VillageDetailView: View {
     @EnvironmentObject private var model: AppModel
     let villageID: UUID
     let openImport: () -> Void
+    /// Optional injection seam for the #142 store. Keeping this value outside
+    /// `VillageProfile` preserves the raw snapshot/manual-storage boundary.
+    var manualUpgradeCore: ManualUpgradeCore? = nil
 
     @State private var selectedBase: TrackerBase = .home
     @State private var selectedFilter: CategoryFilter = .all
@@ -89,7 +92,8 @@ struct VillageDetailView: View {
             // lifecycle 声明，与精制台投影同口径（防同一防御两投影漂移）。
             craftTableCatalog: craftTableCatalog,
             base: selectedBase,
-            now: now
+            now: now,
+            manualUpgradeCore: manualUpgradeCore
         )
         // 与升级总览（UpgradeOverviewProjection.allRecords）口径一致：
         // decos/helpers/obstacles 等不参与升级追踪的类别不展示、不计入完成度。
@@ -713,9 +717,11 @@ struct VillageDetailView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             ForEach(orderedGroups) { buildingGroup in
-                BuildingGroupCard(group: buildingGroup) { instance in
-                    selectedItem = instance.item
-                }
+                BuildingGroupCard(
+                    group: buildingGroup,
+                    onOpenDetail: { instance in selectedItem = instance.item },
+                    now: now
+                )
             }
             if !fallbackItems.isEmpty {
                 legacyRows(items: fallbackItems, group: group, now: now, village: village, metrics: metrics)

@@ -97,7 +97,8 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         cannonLifecycle: CatalogLifecycle? = .permanent,
         cannonDuration: Int64? = 90,
         cannonMissingReason: String? = nil,
-        sourceFingerprint: String = "sha256:catalog"
+        sourceFingerprint: String = "sha256:catalog",
+        instanceCounts: [String: [Int]]? = nil
     ) -> GameCatalog {
         GameCatalog(
             gameVersion: "18.400.13",
@@ -157,7 +158,15 @@ final class EffectiveVillageProjectionTests: XCTestCase {
                 buildTag: "test",
                 locale: "zh-CN",
                 sourceFingerprint: sourceFingerprint,
-                generatedFiles: [],
+                generatedFiles: [
+                    CatalogGeneratedFile(
+                        path: "catalog.json",
+                        sha256: "sha256:catalog",
+                        size: nil,
+                        kind: nil,
+                        entries: nil
+                    ),
+                ],
                 counts: CatalogCounts(
                     items: 3,
                     levels: 35,
@@ -170,7 +179,8 @@ final class EffectiveVillageProjectionTests: XCTestCase {
                     sourceMissing: nil,
                     parseFailed: nil
                 )
-            )
+            ),
+            instanceCounts: instanceCounts
         )
     }
 
@@ -199,10 +209,11 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         target: Int,
         quantity: Int64 = 1,
         expectedEndAt: Date,
-        startedAt: Date
+        startedAt: Date,
+        recordID: UUID = UUID()
     ) throws -> ManualUpgradeRecord {
         try ManualUpgradeRecord(
-            recordID: UUID(),
+            recordID: recordID,
             itemKey: key,
             fromLevel: from,
             targetLevel: target,
@@ -420,6 +431,335 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         )
         XCTAssertEqual(ambiguous.effectiveTrackerItems.first?.status, .conflict)
         XCTAssertTrue(ambiguous.effectiveTrackerItems.first?.diagnostic?.contains("匹配") == true)
+    }
+
+    func testActiveMatchingCannotReuseOneImportedTimerForTwoManualRecords() throws {
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(
+                    section: "buildings",
+                    dataID: 1_000_002,
+                    level: 1,
+                    timerSeconds: 100,
+                    remainingSeconds: 90
+                ),
+            ],
+        ])
+        let manualState = try state(
+            key: key,
+            imported: try distribution([(1, 2)]),
+            manual: try distribution([(1, 2)]),
+            status: .manualCompleted
+        )
+        let first = try record(
+            key: key,
+            from: 1,
+            target: 2,
+            expectedEndAt: importedAt.addingTimeInterval(90),
+            startedAt: importedAt,
+            recordID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        )
+        let second = try record(
+            key: key,
+            from: 1,
+            target: 2,
+            expectedEndAt: importedAt.addingTimeInterval(90),
+            startedAt: importedAt,
+            recordID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        )
+
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: try core(states: [manualState], records: [first, second])
+        )
+
+        let effective = try XCTUnwrap(projection.effectiveTrackerItems.first)
+        XCTAssertEqual(effective.status, .conflict)
+        XCTAssertTrue(effective.diagnostic?.contains("匹配") == true)
+    }
+
+    func testNeedsReimportIsUnknownToEffectiveInstanceProgress() throws {
+        let townHallKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+        let cannonKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(
+                    section: "buildings",
+                    dataID: 1_000_002,
+                    level: 2,
+                    timerSeconds: 100,
+                    remainingSeconds: 0,
+                    path: "1"
+                ),
+            ],
+        ])
+        let manual = try core(states: [
+            try state(
+                key: townHallKey,
+                imported: try distribution([(11, 1)]),
+                manual: try distribution([(11, 1)]),
+                status: .observed
+            ),
+        ])
+
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: manual
+        )
+
+        let cannon = try XCTUnwrap(projection.effectiveTrackerItems.first { $0.itemKey == cannonKey })
+        XCTAssertEqual(cannon.status, .needsReimport)
+        XCTAssertEqual(projection.progressMetrics.instanceProgress.numerator, 0)
+        XCTAssertEqual(projection.progressMetrics.instanceProgress.denominator, 2)
+        XCTAssertEqual(projection.progressMetrics.instanceProgress.state, .partial)
+        XCTAssertTrue(projection.progressMetrics.instanceProgress.degradedReason?.contains("1 个实例") == true)
+        XCTAssertFalse(projection.progressMetrics.instanceProgress.degradedReason?.contains("(unknownWeight)") == true)
+    }
+
+    func testManualInstanceProgressKeepsAvailableUniverseDenominator() throws {
+        let cannonKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let universe = [
+            "buildings:1000002": Array(repeating: 2, count: 18),
+            "buildings:1000010": Array(repeating: 3, count: 18),
+        ]
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                item(section: "buildings", dataID: 1_000_010, level: 1, path: "2"),
+            ],
+        ])
+        let manual = try core(states: [
+            try state(
+                key: cannonKey,
+                imported: try distribution([(1, 1)]),
+                manual: try distribution([(3, 1)]),
+                status: .manualCompleted
+            ),
+        ])
+        let currentCatalog = catalog(instanceCounts: universe)
+
+        let importedOnly = VillageCatalogProjection.project(
+            village: village,
+            catalog: currentCatalog,
+            base: .home,
+            now: importedAt
+        )
+        let effective = VillageCatalogProjection.project(
+            village: village,
+            catalog: currentCatalog,
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: manual
+        )
+
+        XCTAssertEqual(importedOnly.items.filter { $0.status == .available }.count, 2)
+        XCTAssertEqual(importedOnly.progressMetrics.instanceProgress.denominator, 6)
+        XCTAssertEqual(
+            effective.progressMetrics.instanceProgress.denominator,
+            importedOnly.progressMetrics.instanceProgress.denominator
+        )
+        XCTAssertEqual(effective.progressMetrics.instanceProgress.numerator, 1)
+    }
+
+    func testManualInstanceProgressDoesNotDuplicateStableDistributionAcrossRows() throws {
+        let cannonKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(section: "buildings", dataID: 1_000_002, level: 1, count: 2, path: "1"),
+                item(section: "buildings", dataID: 1_000_002, level: 2, count: 1, path: "2"),
+            ],
+        ])
+        let importedDistribution = try distribution([(1, 2), (2, 1)])
+        let manual = try core(states: [
+            try state(
+                key: cannonKey,
+                imported: importedDistribution,
+                manual: importedDistribution,
+                status: .manualCompleted
+            ),
+        ])
+
+        let importedOnly = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt
+        )
+        let effective = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: manual
+        )
+
+        XCTAssertEqual(importedOnly.progressMetrics.instanceProgress.denominator, 4)
+        XCTAssertEqual(
+            effective.progressMetrics.instanceProgress.denominator,
+            importedOnly.progressMetrics.instanceProgress.denominator
+        )
+    }
+
+    func testDetailAndBuildingGroupUseEffectiveCompletedState() throws {
+        let cannonKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 12),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let manual = try core(states: [
+            try state(
+                key: cannonKey,
+                imported: try distribution([(1, 1)]),
+                manual: try distribution([(3, 1)]),
+                status: .manualCompleted
+            ),
+        ])
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: manual
+        )
+
+        let displayItems = projection.items.filter { $0.status != .unavailable && $0.status != .available }
+        let total = VillageDetailProjection.totalCompletion(from: displayItems)
+        XCTAssertEqual(total.completedCount, 1)
+        XCTAssertEqual(total.knownCount, 2)
+
+        let group = try XCTUnwrap(
+            BuildingGroupProjection.project(projection: projection, catalog: catalog(), base: .home)
+                .first { $0.dataID == 1_000_002 }
+        )
+        XCTAssertEqual(group.summary.remainingLevelCount, 0)
+        XCTAssertTrue(group.instances.first?.steps.isEmpty == true)
+        XCTAssertEqual(group.instances.first?.item.effectiveCurrentLevel, 3)
+    }
+
+    func testManualCompletedLevelReprojectsNextUpgradeFromEffectiveLevel() throws {
+        let cannonKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 12),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: try core(states: [
+                try state(
+                    key: cannonKey,
+                    imported: try distribution([(1, 1)]),
+                    manual: try distribution([(2, 1)]),
+                    status: .manualCompleted
+                ),
+            ])
+        )
+
+        let cannon = try XCTUnwrap(projection.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(cannon.effectiveCurrentLevel, 2)
+        guard case .available(let level, let duration) = cannon.effectiveNextUpgrade else {
+            return XCTFail("manual completed level should reproject the next catalog level")
+        }
+        XCTAssertEqual(level, 3)
+        XCTAssertEqual(duration, 60)
+        XCTAssertEqual(cannon.effectiveNextLevelDurationState, .timed(seconds: 60))
+    }
+
+    func testManualCoverageDiagnosticsUseConcreteCounts() throws {
+        let townHallKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+        let cannonKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let unmatchedKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_010)
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: try core(states: [
+                try state(
+                    key: townHallKey,
+                    imported: try distribution([(11, 1)]),
+                    manual: try distribution([(11, 1)]),
+                    status: .observed
+                ),
+                try state(
+                    key: cannonKey,
+                    imported: try distribution([(1, 1)]),
+                    manual: try distribution([(1, 1)]),
+                    status: .conflict
+                ),
+                try state(
+                    key: unmatchedKey,
+                    imported: try distribution([(1, 1)]),
+                    manual: try distribution([(1, 1)]),
+                    status: .unknown
+                ),
+            ])
+        )
+
+        XCTAssertTrue(projection.manualCoverage.diagnostics.contains { $0.contains("有 1 条本地手动状态") })
+        XCTAssertTrue(projection.manualCoverage.diagnostics.contains { $0.contains("有 1 个项目") })
+        XCTAssertFalse(projection.manualCoverage.diagnostics.contains { $0.contains("(unmatched)") })
+        XCTAssertFalse(projection.manualCoverage.diagnostics.contains { $0.contains("(unknown)") })
+        XCTAssertFalse(projection.progressMetrics.instanceProgress.degradedReason?.contains("(unknownWeight)") == true)
+    }
+
+    func testManualOnlyActiveAppearsInOverview() throws {
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let activeRecord = try record(
+            key: key,
+            from: 1,
+            target: 2,
+            expectedEndAt: importedAt.addingTimeInterval(90),
+            startedAt: importedAt
+        )
+        let manual = try core(states: [
+            try state(
+                key: key,
+                imported: try distribution([(1, 1)]),
+                manual: try distribution([(1, 1)]),
+                status: .manualCompleted
+            ),
+        ], records: [activeRecord])
+
+        let overview = UpgradeOverviewProjection.overviewRecords(
+            from: [village],
+            catalog: catalog(),
+            manualUpgradeCores: [village.id: manual],
+            at: importedAt
+        )
+
+        let active = try XCTUnwrap(overview.active.first)
+        XCTAssertEqual(overview.active.count, 1)
+        XCTAssertEqual(active.item.effectiveState?.status, .manualActive)
+        XCTAssertEqual(active.completionDate(from: importedAt), importedAt.addingTimeInterval(90))
     }
 
     func testActiveManualFailsClosedForCatalogProvenanceDurationAndLifecycle() throws {

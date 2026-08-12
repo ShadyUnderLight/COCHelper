@@ -20,12 +20,12 @@ import COCHelperCore
 /// 图标复用 `VillageItemState.preferredAssetURLs` 4 级候选链（与列表行/详情
 /// sheet 同解析防漂移），版本固定 `GameCatalog.defaultBundledVersion`（本组件
 /// 不接收 catalog）。状态徽标复用 `StatusBadge`（UpgradeDisplayRow 内）：
-/// 「正在升级」条件 `item.isUpgrading`（remainingSeconds > 0）、「待重新导入
-/// 确认」条件 `item.needsReimport`（timerSeconds != nil && remainingSeconds == 0，
-/// 与投影层同谓词防漂移）。
+/// 「正在升级」和「待重新导入确认」均消费 `VillageItemState` 的有效状态谓词，
+/// 与总览/详情的 sidecar 语义保持一致。
 struct BuildingGroupCard: View {
     let group: BuildingGroup
     let onOpenDetail: (BuildingInstance) -> Void
+    let now: Date
 
     /// 实例区：每条记录一个实例块（头部行 + 内嵌阶梯），实例块间分隔线。
     /// `BuildingInstance` 是 Identifiable（id = 原始快照记录 ID，组内唯一），
@@ -77,12 +77,12 @@ struct BuildingGroupCard: View {
                                 .background(Color.white.opacity(0.07), in: Capsule())
                         }
                     }
-                    if item.isUpgrading || item.needsReimport {
+                    if item.isEffectivelyUpgrading || item.effectivelyNeedsReimport {
                         HStack(spacing: 6) {
-                            if item.isUpgrading {
+                            if item.isEffectivelyUpgrading {
                                 StatusBadge(text: "正在升级", tint: .orange)
                             }
-                            if item.needsReimport {
+                            if item.effectivelyNeedsReimport {
                                 StatusBadge(text: "待重新导入确认", tint: .orange)
                             }
                         }
@@ -91,7 +91,7 @@ struct BuildingGroupCard: View {
 
                 Spacer(minLength: 8)
 
-                if let remainingSeconds = item.remainingSeconds, remainingSeconds > 0 {
+                if let remainingSeconds = item.effectiveRemainingSeconds(at: now), remainingSeconds > 0 {
                     Text(AccountDurationFormatter.label(remainingSeconds))
                         .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(.orange)
@@ -105,7 +105,7 @@ struct BuildingGroupCard: View {
 
     /// 等级标签：currentLevel 缺失 →「等级未记录」；maxLevel 缺失 →「X级 / --」。
     private func levelLabel(_ item: VillageItemState) -> String {
-        guard let currentLevel = item.currentLevel else { return "等级未记录" }
+        guard let currentLevel = item.effectiveCurrentLevel else { return "等级未记录" }
         if let maxLevel = item.maxLevel {
             return String(currentLevel) + "级 / " + String(maxLevel) + "级"
         }

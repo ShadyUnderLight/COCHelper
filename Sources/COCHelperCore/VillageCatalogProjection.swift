@@ -124,6 +124,120 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 避免两处手写条件漂移。
     public var needsReimport: Bool { timerSeconds != nil && remainingSeconds == 0 }
 
+    /// Effective level for consumers that received the unified manual overlay.
+    /// Raw snapshot fields remain unchanged; a mixed distribution deliberately
+    /// falls back to the imported level instead of guessing one row level.
+    public var effectiveCurrentLevel: Int? {
+        effectiveState?.effectiveCompletedLevel
+            ?? effectiveState?.importedCurrentLevel
+            ?? currentLevel
+    }
+
+    /// Effective target level. An active manual target is never returned as a
+    /// completed level, but is exposed here for active-row/status rendering.
+    public var effectiveTargetLevel: Int? {
+        if effectiveState?.status == .manualActive {
+            return effectiveState?.activeTargetLevel
+        }
+        return nextLevel
+    }
+
+    /// Upgrade status after the optional manual overlay is applied.
+    public var isEffectivelyUpgrading: Bool {
+        isUpgrading || effectiveState?.status == .manualActive
+    }
+
+    /// Re-import status after the optional manual overlay is applied. A valid
+    /// manual completion takes precedence over a stale imported timer.
+    public var effectivelyNeedsReimport: Bool {
+        guard let status = effectiveState?.status else { return needsReimport }
+        switch status {
+        case .manualCompleted, .manualActive:
+            return false
+        case .observed, .importedActive, .needsReimport, .unknown, .conflict, .unavailable:
+            // Re-import is an observation-level signal. A stable tracker key
+            // may contain duplicate instances at different levels, so do not
+            // let one finished duplicate mark every row in that key pending.
+            return needsReimport
+        }
+    }
+
+    /// Real-time remaining time for an imported or manual-active operation.
+    /// The caller supplies the same clock used to build the projection.
+    public func effectiveRemainingSeconds(at now: Date) -> Int64? {
+        guard let activeState = effectiveState,
+              activeState.activeManualRecords.count == 1,
+              let active = activeState.activeManualRecords.first else {
+            return remainingSeconds
+        }
+        let interval = active.expectedEndAt.timeIntervalSince(now)
+        guard interval.isFinite,
+              interval <= Double(Int64.max),
+              interval >= Double(Int64.min) else { return nil }
+        return max(0, Int64(interval.rounded(.down)))
+    }
+
+    /// Duration state for the effective next/active target. Manual-only active
+    /// rows have no raw `nextLevelDurationState`, so use the catalog-backed
+    /// sidecar in that case.
+    public var effectiveNextLevelDurationState: CatalogDurationState? {
+        guard let effectiveState else { return nextLevelDurationState }
+        switch effectiveState.status {
+        case .unknown, .conflict, .needsReimport, .unavailable:
+            return nil
+        case .manualCompleted:
+            return effectiveState.catalogDurationState
+        case .manualActive:
+            guard effectiveState.activeTargetLevel != nil else { return nil }
+            return effectiveState.catalogDurationState
+        case .observed, .importedActive:
+            return effectiveState.catalogDurationState ?? nextLevelDurationState
+        }
+    }
+
+    /// Next-upgrade semantic with a manual-active target substituted for the
+    /// raw imported-only projection.
+    public var effectiveNextUpgrade: VillageNextUpgrade? {
+        guard let effectiveState else { return nextUpgrade }
+        if effectiveState.status == .manualActive,
+           let target = effectiveState.activeTargetLevel {
+            let duration: Int64?
+            switch effectiveState.catalogDurationState {
+            case .timed(let seconds): duration = seconds
+            case .instant: duration = 0
+            default: duration = nil
+            }
+            return .inProgressFact(level: target, durationSeconds: duration)
+        }
+        switch effectiveState.status {
+        case .unknown, .conflict, .needsReimport:
+            return .unknown
+        case .unavailable:
+            return nil
+        case .manualCompleted:
+            return effectiveState.catalogNextUpgrade ?? .unknown
+        case .manualActive:
+            return .unknown
+        case .observed, .importedActive:
+            return nextUpgrade
+        }
+    }
+
+    /// Whether the effective completed level has reached the current-stage
+    /// (or global, when no stage cap exists) maximum. A conflicted/unknown
+    /// sidecar never reports maxed, even when the raw snapshot did.
+    public var isEffectivelyMaxed: Bool {
+        if let effectiveState {
+            guard effectiveState.isKnown,
+                  let currentLevel = effectiveCurrentLevel,
+                  let effectiveMax = effectiveState.currentStageMaxLevel ?? maxLevel else {
+                return false
+            }
+            return currentLevel >= effectiveMax
+        }
+        return status == .maxed
+    }
+
     /// 实例权重（issue #66 契约，聚合层与统计层共用同一来源）：
     /// count == nil → 1；count <= 0（malformed）→ 1（与 `TrackerModels.countLabel`
     /// 展示口径一致：count <= 1 不显示 ×N，按单条处理）；count > 0 → count。

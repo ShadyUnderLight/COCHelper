@@ -45,6 +45,9 @@ public struct EffectiveVillageItemState: Identifiable, Hashable, Sendable {
     public let diagnostic: String?
     public let catalogDurationState: CatalogDurationState?
     public let catalogCosts: [CatalogUpgradeCost]?
+    /// Catalog next-upgrade semantics recalculated from the effective level
+    /// when a manual completion changed the imported current level.
+    public let catalogNextUpgrade: VillageNextUpgrade?
     public let currentStageMaxLevel: Int?
     public let globalMaxLevel: Int?
 
@@ -71,6 +74,7 @@ public struct EffectiveVillageItemState: Identifiable, Hashable, Sendable {
 
     public var isKnown: Bool {
         status != .unknown && status != .conflict && status != .unavailable
+            && status != .needsReimport
             && effectiveCompletedDistribution != nil
     }
 }
@@ -184,12 +188,21 @@ enum EffectiveVillageProjectionBuilder {
             }
         )
 
-        let attachedItems = items.map { item in
-            item.attachingEffectiveState(state(for: item, keyMap: keyMap, states: stateByKey))
-        }
-        let attachedRawItems = rawItems.map { item in
-            item.attachingEffectiveState(state(for: item, keyMap: keyMap, states: stateByKey))
-        }
+        // Preserve the imported-only item contract when no manual ledger is
+        // supplied. The stable tracker states are still exposed for callers
+        // that need coverage/diagnostics, but row/detail consumers should not
+        // switch to effective-state semantics until they actually receive the
+        // optional manual overlay.
+        let attachedItems = manualUpgradeCore == nil
+            ? items
+            : items.map { item in
+                item.attachingEffectiveState(state(for: item, keyMap: keyMap, states: stateByKey))
+            }
+        let attachedRawItems = manualUpgradeCore == nil
+            ? rawItems
+            : rawItems.map { item in
+                item.attachingEffectiveState(state(for: item, keyMap: keyMap, states: stateByKey))
+            }
         let trackerItems = trackerKeys.compactMap { stateByKey[$0] }
         let manualCoverage = makeCoverage(
             trackerItems: trackerItems,
@@ -211,6 +224,7 @@ enum EffectiveVillageProjectionBuilder {
             progressMetrics = importedMetrics.replacingTrackerMetrics(
                 instanceProgress: instanceMetric(
                     trackerItems: trackerItems,
+                    availableItems: attachedItems.filter { $0.status == .available },
                     catalogIsUsable: catalogIsUsable,
                     compatibility: compatibility,
                     manualCoverage: manualCoverage
@@ -285,12 +299,12 @@ enum EffectiveVillageProjectionBuilder {
             $0.timerSeconds != nil
                 && VillageCatalogProjection.liveRemainingSeconds(for: $0, snapshot: snapshot, at: now) == 0
         }
-        let hasExactActiveMatch = !activeRecords.isEmpty && !observedActiveItems.isEmpty
-            && activeRecords.allSatisfy { record in
-                observedActiveItems.contains {
-                    matches(record: record, item: $0, snapshot: snapshot, now: now)
-                }
-            }
+        let hasExactActiveMatch = hasExactActiveMatch(
+            records: activeRecords,
+            observedItems: observedActiveItems,
+            snapshot: snapshot,
+            now: now
+        )
         let activeCatalogDiagnostic = activeRecords.isEmpty ? nil : Self.activeCatalogDiagnostic(
             records: activeRecords,
             key: key,
@@ -341,15 +355,40 @@ enum EffectiveVillageProjectionBuilder {
             provenance.append(.observed)
         }
 
-        let targetLevel = activeRecords.first?.targetLevel
-            ?? representative?.nextLevel
-        let catalogLevel = targetLevel.flatMap { level in
-            catalog?.item(section: key.rawSection, dataID: key.dataID)?.levels.first { $0.level == level }
-        }
-        let catalogDurationState = catalogLevel?.durationState ?? representative?.nextLevelDurationState
-        let catalogCosts = catalogLevel?.upgradeCosts
         let stageMax = representative?.currentStageMaxLevel
         let globalMax = representative?.maxLevel
+        let effectiveCatalogProjection: EffectiveCatalogProjection?
+        if activeRecords.isEmpty, manualItemState?.status == .manualCompleted {
+            let effectiveLevel = effectiveCompleted?.levels.count == 1
+                ? effectiveCompleted?.levels.first?.level
+                : nil
+            effectiveCatalogProjection = Self.effectiveCatalogProjection(
+                key: key,
+                currentLevel: effectiveLevel,
+                stageMax: stageMax,
+                catalog: catalog,
+                catalogIsUsable: catalogIsUsable
+            )
+        } else {
+            effectiveCatalogProjection = nil
+        }
+        let targetLevel = activeRecords.first?.targetLevel ?? representative?.nextLevel
+        let catalogLevel = effectiveCatalogProjection?.catalogLevel
+            ?? targetLevel.flatMap { level in
+                catalog?.item(section: key.rawSection, dataID: key.dataID)?.levels.first {
+                    $0.level == level
+                }
+            }
+        let catalogDurationState: CatalogDurationState?
+        let catalogCosts: [CatalogUpgradeCost]?
+        switch status {
+        case .unknown, .conflict, .needsReimport, .unavailable:
+            catalogDurationState = nil
+            catalogCosts = nil
+        default:
+            catalogDurationState = catalogLevel?.durationState ?? representative?.nextLevelDurationState
+            catalogCosts = catalogLevel?.upgradeCosts
+        }
 
         return EffectiveVillageItemState(
             itemKey: key,
@@ -374,8 +413,74 @@ enum EffectiveVillageProjectionBuilder {
             diagnostic: diagnostic,
             catalogDurationState: catalogDurationState,
             catalogCosts: catalogCosts,
+            catalogNextUpgrade: effectiveCatalogProjection?.nextUpgrade,
             currentStageMaxLevel: stageMax,
             globalMaxLevel: globalMax
+        )
+    }
+
+    private struct EffectiveCatalogProjection {
+        let nextUpgrade: VillageNextUpgrade
+        let catalogLevel: CatalogLevel?
+    }
+
+    /// Reprojects the catalog-facing next-upgrade semantics after a manual
+    /// completion changes the current level. The imported projection cannot be
+    /// reused here because its real-next-level calculation used the stale raw
+    /// snapshot level.
+    private static func effectiveCatalogProjection(
+        key: TrackerItemKey,
+        currentLevel: Int?,
+        stageMax: Int?,
+        catalog: GameCatalog?,
+        catalogIsUsable: Bool
+    ) -> EffectiveCatalogProjection? {
+        guard let catalogItem = catalog?.item(section: key.rawSection, dataID: key.dataID) else {
+            return nil
+        }
+        guard catalogIsUsable else {
+            return EffectiveCatalogProjection(nextUpgrade: .unknown, catalogLevel: nil)
+        }
+        guard let currentLevel, currentLevel >= 0 else {
+            return EffectiveCatalogProjection(nextUpgrade: .unknown, catalogLevel: nil)
+        }
+        guard let stageMax, stageMax > 0 else {
+            return EffectiveCatalogProjection(nextUpgrade: .unverified, catalogLevel: nil)
+        }
+        if currentLevel >= catalogItem.maxLevel {
+            return EffectiveCatalogProjection(nextUpgrade: .globalMaxed, catalogLevel: nil)
+        }
+
+        let threshold = currentLevel >= stageMax ? stageMax : currentLevel
+        let realNext = catalogItem.levels
+            .sorted { $0.level < $1.level }
+            .first { $0.level > threshold }
+        guard let realNext else {
+            return EffectiveCatalogProjection(nextUpgrade: .globalMaxed, catalogLevel: nil)
+        }
+        guard realNext.level > currentLevel else {
+            return EffectiveCatalogProjection(nextUpgrade: .unknown, catalogLevel: nil)
+        }
+        if currentLevel >= stageMax {
+            let requirements = realNext.requirements(base: catalogItem.base)
+            guard !requirements.isEmpty else {
+                return EffectiveCatalogProjection(nextUpgrade: .globalMaxed, catalogLevel: nil)
+            }
+            return EffectiveCatalogProjection(
+                nextUpgrade: .requires(
+                    nextLevel: realNext.level,
+                    requirements: requirements,
+                    referenceDurationSeconds: realNext.durationSeconds
+                ),
+                catalogLevel: realNext
+            )
+        }
+        return EffectiveCatalogProjection(
+            nextUpgrade: .available(
+                level: realNext.level,
+                durationSeconds: realNext.durationSeconds
+            ),
+            catalogLevel: realNext
         )
     }
 
@@ -480,6 +585,64 @@ enum EffectiveVillageProjectionBuilder {
         return abs(expectedRemaining - remaining) <= 1
     }
 
+    /// Checks exact imported/manual activity with one-to-one evidence usage.
+    /// A plain `allSatisfy { contains(...) }` is insufficient because two local
+    /// records could otherwise reuse one imported timer and be reported as an
+    /// exact match.
+    private static func hasExactActiveMatch(
+        records: [ManualUpgradeRecord],
+        observedItems: [AccountItem],
+        snapshot: AccountSnapshot,
+        now: Date
+    ) -> Bool {
+        guard !records.isEmpty, !observedItems.isEmpty,
+              records.count <= observedItems.count else { return false }
+
+        let candidates = records.map { record in
+            observedItems.indices.filter { index in
+                matches(
+                    record: record,
+                    item: observedItems[index],
+                    snapshot: snapshot,
+                    now: now
+                )
+            }
+        }
+        guard candidates.allSatisfy({ !$0.isEmpty }) else { return false }
+
+        // Process the most constrained records first. The augmenting-path
+        // search remains deterministic because both records and candidates
+        // retain their stable sorted/index order.
+        let order = candidates.indices.sorted { lhs, rhs in
+            if candidates[lhs].count != candidates[rhs].count {
+                return candidates[lhs].count < candidates[rhs].count
+            }
+            return lhs < rhs
+        }
+        var owner = Array(repeating: nil as Int?, count: observedItems.count)
+
+        func augment(recordIndex: Int, visited: inout Set<Int>) -> Bool {
+            for itemIndex in candidates[recordIndex] where visited.insert(itemIndex).inserted {
+                if let previousRecord = owner[itemIndex] {
+                    if augment(recordIndex: previousRecord, visited: &visited) {
+                        owner[itemIndex] = recordIndex
+                        return true
+                    }
+                } else {
+                    owner[itemIndex] = recordIndex
+                    return true
+                }
+            }
+            return false
+        }
+
+        for recordIndex in order {
+            var visited = Set<Int>()
+            guard augment(recordIndex: recordIndex, visited: &visited) else { return false }
+        }
+        return true
+    }
+
     private static func makeCoverage(
         trackerItems: [EffectiveVillageItemState],
         manualUpgradeCore: ManualUpgradeCore?
@@ -502,10 +665,10 @@ enum EffectiveVillageProjectionBuilder {
         let effective = supportedItems.filter { $0.effectiveCompletedDistribution != nil }.count
         var diagnostics: [String] = []
         if unmatched > 0 {
-            diagnostics.append("有 (unmatched) 条本地手动状态没有对应的当前快照项目。")
+            diagnostics.append("有 \(unmatched) 条本地手动状态没有对应的当前快照项目。")
         }
         if unknown > 0 {
-            diagnostics.append("有 (unknown) 个项目的本地有效状态未知或冲突。")
+            diagnostics.append("有 \(unknown) 个项目的本地有效状态未知或冲突。")
         }
         let state: ProgressMetricState
         if supportedItems.isEmpty {
@@ -528,6 +691,7 @@ enum EffectiveVillageProjectionBuilder {
 
     private static func instanceMetric(
         trackerItems: [EffectiveVillageItemState],
+        availableItems: [VillageItemState],
         catalogIsUsable: Bool,
         compatibility: CatalogCompatibility,
         manualCoverage: ManualTrackerCoverage
@@ -539,9 +703,16 @@ enum EffectiveVillageProjectionBuilder {
         var denominator = 0
         var unknown = 0
         var saturated = false
+        // Stable tracker items are already one row per key. Do not iterate
+        // aggregated VillageItemState rows here: duplicate levels can attach
+        // the same effective distribution to more than one display row and
+        // would otherwise multiply both the denominator and unknown weight.
         for item in trackerItems where item.status != .unavailable {
             let distribution = trackerDistribution(for: item)
-            let weight = distribution?.totalQuantity ?? 1
+            // The denominator is the complete observed instance universe. An
+            // active reservation is still an instance, so use the imported
+            // distribution rather than the reservation-adjusted distribution.
+            let weight = item.importedDistribution?.totalQuantity ?? 1
             let weightInfo = add(&denominator, weight)
             saturated = saturated || weightInfo
             guard item.isKnown,
@@ -558,6 +729,12 @@ enum EffectiveVillageProjectionBuilder {
                     total.addingReportingOverflow(entry.quantity).partialValue
                 }
             saturated = saturated || add(&numerator, completed)
+        }
+        // `.available` is a known universe gap, not an unknown observation;
+        // it contributes to the denominator but not to the numerator or
+        // unknown-weight diagnostic, matching VillageProgressProjection.
+        for item in availableItems {
+            saturated = saturated || add(&denominator, Int64(item.instanceWeight))
         }
         let reason = manualCoverage.diagnostics.joined(separator: " ")
         return makeMetric(
@@ -622,16 +799,27 @@ enum EffectiveVillageProjectionBuilder {
     /// A current manual upgrade keeps its target out of completed progress,
     /// but the imported source level remains the last observed level until
     /// settlement. ManualUpgradeCore's effective distribution intentionally
-    /// removes the reserved source quantity, so use the imported distribution
-    /// for this progress-only fallback when the reservation consumes it all.
+    /// removes reserved source quantities, so restore those source quantities
+    /// for progress calculations without treating the target as completed.
     private static func trackerDistribution(
         for item: EffectiveVillageItemState
     ) -> ManualLevelDistribution? {
-        if let effective = item.effectiveCompletedDistribution,
-           !effective.isEmpty || item.status != .manualActive {
-            return effective
+        guard let effective = item.effectiveCompletedDistribution else {
+            return item.status == .manualActive ? item.importedDistribution : nil
         }
-        return item.importedDistribution
+        guard item.status == .manualActive else { return effective }
+        do {
+            var restored = effective
+            for record in item.activeManualRecords {
+                restored = try restored.adding(level: record.fromLevel, quantity: record.quantity)
+            }
+            return restored
+        } catch {
+            // The core validates conservation. If persisted data is nevertheless
+            // inconsistent, retain the imported distribution and let isKnown
+            // keep the effective metric fail-closed when the state is unknown.
+            return item.importedDistribution
+        }
     }
 
     private static func makeMetric(
@@ -649,7 +837,7 @@ enum EffectiveVillageProjectionBuilder {
             reasons.append("无可确认项目，暂无法计算")
         }
         if unknownWeight > 0 {
-            reasons.append("(unknownWeight) 个实例未知或无法验证，结果仅为可确认项目。")
+            reasons.append("\(unknownWeight) 个实例未知或无法验证，结果仅为可确认项目。")
         }
         if let extraReason { reasons.append(extraReason) }
         if compatibility.isUnverified {

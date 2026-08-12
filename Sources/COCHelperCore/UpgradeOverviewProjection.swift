@@ -46,12 +46,19 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
 
     public var remainingSeconds: Int64? { item.remainingSeconds }
 
+    /// Effective remaining time for callers that have a clock available. The
+    /// legacy property above remains raw/imported for source compatibility.
+    public func remainingSeconds(at now: Date) -> Int64? {
+        item.effectiveRemainingSeconds(at: now)
+    }
+
     /// 预计完成时间；remainingSeconds 不存在或非正时返回 nil。
     ///
     /// 必须传入 `UpgradeOverviewProjection.activeRecords` 调用时的同一个 `now`：
     /// 传入更晚的时间会系统性高估完成时间（now + remaining 随 now 右移）。
     public func completionDate(from now: Date) -> Date? {
-        guard let remainingSeconds, remainingSeconds > 0 else { return nil }
+        guard let remainingSeconds = item.effectiveRemainingSeconds(at: now),
+              remainingSeconds > 0 else { return nil }
         return now.addingTimeInterval(TimeInterval(remainingSeconds))
     }
 }
@@ -82,14 +89,16 @@ public enum UpgradeOverviewProjection {
             at: now
         )
         return (
-            active: records.filter(\.item.isUpgrading).sorted(by: activeOrder),
-            pending: records.filter(\.item.needsReimport).sorted(by: pendingOrder)
+            active: records.filter(\.item.isEffectivelyUpgrading).sorted {
+                activeOrder($0, $1, at: now)
+            },
+            pending: records.filter(\.item.effectivelyNeedsReimport).sorted(by: pendingOrder)
         )
     }
 
     /// 全部村庄 × 全部 base 的进行中升级记录。
     ///
-    /// 每条记录由 `VillageCatalogProjection.project` 产出并过滤 `isUpgrading`；
+    /// 每条记录由 `VillageCatalogProjection.project` 产出并过滤有效升级状态；
     /// 按剩余时间升序（nil 视为最大排最后），再按 villageName、base、id 稳定排序。
     /// villageName 用 `localizedStandardCompare`（与旧层 UpgradeTracker 排序语义一致）。
     ///
@@ -113,9 +122,9 @@ public enum UpgradeOverviewProjection {
 
     /// 全部村庄 × 全部 base 中「计时已结束」的项目（待重新导入确认等级）。
     ///
-    /// 过滤条件与投影聚合层的「需重新导入」信号一致：
-    /// `VillageItemState.needsReimport`（`timerSeconds != nil && remainingSeconds == 0`，
-    /// 见 VillageCatalogProjection 聚合注释与 VillageItemState doc）。与 `activeRecords`
+    /// 过滤条件与投影聚合层的「需重新导入」有效信号一致：
+    /// `VillageItemState.effectivelyNeedsReimport`（导入计时结束且没有被有效手动
+    /// 状态覆盖，见 VillageCatalogProjection 聚合注释与 VillageItemState doc）。与 `activeRecords`
     /// 语义互斥：升级中项（remaining > 0）进 active，计时结束项进本列表；
     /// 普通完成项（timerSeconds == nil）两者都不进。该信号与目录收录无关——
     /// 即使目录未命中，计时结束也仍需重新导入确认。
@@ -139,9 +148,13 @@ public enum UpgradeOverviewProjection {
     }
 
     /// active 排序键：剩余时间升序（nil 视为最大排最后）→ villageName → base → id。
-    private static func activeOrder(_ lhs: UpgradeDisplayRecord, _ rhs: UpgradeDisplayRecord) -> Bool {
-        let lhsRemaining = lhs.item.remainingSeconds ?? .max
-        let rhsRemaining = rhs.item.remainingSeconds ?? .max
+    private static func activeOrder(
+        _ lhs: UpgradeDisplayRecord,
+        _ rhs: UpgradeDisplayRecord,
+        at now: Date
+    ) -> Bool {
+        let lhsRemaining = lhs.item.effectiveRemainingSeconds(at: now) ?? .max
+        let rhsRemaining = rhs.item.effectiveRemainingSeconds(at: now) ?? .max
         if lhsRemaining != rhsRemaining { return lhsRemaining < rhsRemaining }
         let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
         if villageOrder != .orderedSame { return villageOrder == .orderedAscending }

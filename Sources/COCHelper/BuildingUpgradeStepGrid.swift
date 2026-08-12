@@ -49,7 +49,7 @@ struct BuildingUpgradeStepGrid: View {
     /// 无法验证阶段上限误报成完成。`currentStageMaxLevel < maxLevel` 表示
     /// 当前大本营已达到阶段上限，但目录仍存在更高的全局等级。
     private var emptyStateLabel: String {
-        guard item.status == .maxed else { return "无剩余等级" }
+        guard item.isEffectivelyMaxed else { return "无剩余等级" }
         if let stage = item.currentStageMaxLevel,
            let max = item.maxLevel,
            stage < max {

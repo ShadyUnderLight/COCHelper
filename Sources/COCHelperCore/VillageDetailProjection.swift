@@ -172,7 +172,7 @@ public enum VillageDetailProjection {
                 ? Self.instanceCountAndOverflow(of: group.items.filter { isKnown($0) })
                 : (count: 0, didOverflow: false)
             let completedInfo = catalogIsUsable
-                ? Self.instanceCountAndOverflow(of: group.items.filter { $0.status == .maxed && isKnown($0) })
+                ? Self.instanceCountAndOverflow(of: group.items.filter { isEffectivelyMaxed($0) && isKnown($0) })
                 : (count: 0, didOverflow: false)
             // unknown 独立求和（不再用减法推导）：catalogIsUsable == false 时
             // 已知侧归 0，全部权重进 unknown（issue #16「全部归 unknown」）；
@@ -204,7 +204,7 @@ public enum VillageDetailProjection {
             ? Self.instanceCountAndOverflow(of: items.filter { isKnown($0) })
             : (count: 0, didOverflow: false)
         let completedInfo = catalogIsUsable
-            ? Self.instanceCountAndOverflow(of: items.filter { $0.status == .maxed && isKnown($0) })
+            ? Self.instanceCountAndOverflow(of: items.filter { isEffectivelyMaxed($0) && isKnown($0) })
             : (count: 0, didOverflow: false)
         let unknownInfo = Self.instanceCountAndOverflow(
             of: catalogIsUsable ? items.filter { !isKnown($0) } : items
@@ -254,6 +254,18 @@ public enum VillageDetailProjection {
     /// 计入完成度分母的条件（见类型 doc comment）。internal 供
     /// `VillageProgressProjection` 直接复用（issue #70，防 known 规则双份漂移）。
     internal static func isKnown(_ item: VillageItemState) -> Bool {
+        if let effective = item.effectiveState {
+            guard effective.isKnown,
+                  item.maxLevel != nil,
+                  item.effectiveCurrentLevel != nil else { return false }
+            if item.isEffectivelyUpgrading,
+               let nextLevel = item.effectiveTargetLevel,
+               let maxLevel = item.maxLevel,
+               nextLevel > maxLevel {
+                return false
+            }
+            return true
+        }
         // unknown/unavailable/available：目录未命中/类别不支持；available：目录存在但快照
         // 无记录（Issue #70 阶段 2 起由投影层宇宙差集合成产出）；unverified：缺
         // prerequisite 无法验证（Issue #67 fail-closed，不计入 known，全部进
@@ -269,6 +281,10 @@ public enum VillageDetailProjection {
             return false // 版本不匹配：目录可能过时，不纳入可确认完成度
         }
         return true
+    }
+
+    private static func isEffectivelyMaxed(_ item: VillageItemState) -> Bool {
+        item.isEffectivelyMaxed
     }
 
     // MARK: - 嵌套归父（issue #24）

@@ -976,14 +976,13 @@ final class ClanWarDisplayProjectionPropertyTests: XCTestCase {
             let members = randomMemberList(&g)
             let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
             for (index, member) in members.enumerated() {
-                guard let attacks = member.attacks else {
-                    assertOrFail(rows.first(where: { $0.sourceIndex == index })?.lines == nil,
-                                 "attacks nil 时该成员不得有 lines",
-                                 context: "seed=707")
-                    continue
-                }
                 guard let row = rows.first(where: { $0.sourceIndex == index }) else {
                     XCTFail("成员必有对应行")
+                    continue
+                }
+                guard let attacks = member.attacks else {
+                    assertOrFail(row.lines == nil, "attacks nil 时该成员不得有 lines",
+                                 context: "seed=707")
                     continue
                 }
                 guard let lines = row.lines else {

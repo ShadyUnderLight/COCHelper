@@ -339,13 +339,13 @@ struct ClanWarMemberSection: View {
         VStack(alignment: .leading, spacing: 3) {
             if let lines = row.lines, !lines.isEmpty {
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                    Text(Self.attackLineText(line))
+                    Text(ClanWarDetailText.attackLine(line))
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
                 }
             }
             if let best = row.bestDefense {
-                Text(Self.bestDefenseText(best))
+                Text(ClanWarDetailText.bestDefense(best))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
             }
@@ -354,29 +354,6 @@ struct ClanWarMemberSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cocElevated, in: RoundedRectangle(cornerRadius: 8))
         .padding(.bottom, 6)
-    }
-
-    /// 最佳防守文案：`最佳防守 · ⭐2 · 摧毁率 75% · 耗时 2:00`。
-    /// 字段缺失独立降级（与 attackLineText 同风格）；bestDefense 本身 nil 不显示。
-    private static func bestDefenseText(_ best: ClanWarAttackLine) -> String {
-        let stars = best.stars.map { "⭐\(min(max($0, 0), 3))" } ?? "⭐?"
-        let destruction = ClanCombatSummary.displayDestructionPercent(best.destructionPercentage)
-            .map { "摧毁率 \(ClanDisplayFormat.percent($0))%" } ?? "摧毁率未知"
-        let duration = ClanCombatSummary.durationText(best.duration).map { "耗时 \($0)" } ?? "耗时未知"
-        return "最佳防守 · \(stars) · \(destruction) · \(duration)"
-    }
-
-    /// 单次攻击明细文案：`1号进攻 · 目标 #XXX · ⭐2 · 摧毁率 90% · 耗时 2:25`。
-    /// 各字段独立降级：order 缺失 → "?"；目标缺失 → "目标未知"（不补名称）；
-    /// 星数缺失 → "⭐?"；摧毁率缺失 → "摧毁率未知"；时长缺失 → "耗时未知"。
-    private static func attackLineText(_ line: ClanWarAttackLine) -> String {
-        let order = line.order.map { "\($0)" } ?? "?"
-        let target = line.defenderTag.map { "目标 \($0)" } ?? "目标未知"
-        let stars = line.stars.map { "⭐\(min(max($0, 0), 3))" } ?? "⭐?"
-        let destruction = ClanCombatSummary.displayDestructionPercent(line.destructionPercentage)
-            .map { "摧毁率 \(ClanDisplayFormat.percent($0))%" } ?? "摧毁率未知"
-        let duration = ClanCombatSummary.durationText(line.duration).map { "耗时 \($0)" } ?? "耗时未知"
-        return "\(order)号进攻 · \(target) · \(stars) · \(destruction) · \(duration)"
     }
 }
 

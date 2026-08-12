@@ -300,15 +300,21 @@ struct ClanWarCardView: View {
         switch phase {
         case .preparation:
             timeLine(label: "备战开始", raw: snapshot.preparationStartTime)
-            timeLine(label: "开战", raw: snapshot.startTime)
+            timeLine(label: "开战", raw: snapshot.startTime ?? snapshot.warStartTime)
         case .inWar:
             timeLine(label: "开始", raw: snapshot.startTime ?? snapshot.warStartTime)
             timeLine(label: "结束", raw: snapshot.endTime)
-            if let end = snapshot.endTime,
-               let remaining = WarLogTimeFormatter.remainingText(endRaw: end, now: Date()) {
-                Text(remaining)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
+            // 倒计时随 60s tick 刷新（Issue #49 P2 约定）：剩余时间过期后
+            // 下一分钟自动消失（endTime 已过 → remainingText 返回 nil）。
+            if snapshot.endTime != nil {
+                TimelineView(.periodic(from: Date(), by: 60)) { context in
+                    if let remaining = WarLogTimeFormatter.remainingText(
+                        endRaw: snapshot.endTime, now: context.date) {
+                        Text(remaining)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
         case .warEnded:
             timeLine(label: "结束", raw: snapshot.endTime)

@@ -85,15 +85,22 @@ public struct BuildingGroupSummary: Hashable, Sendable {
 
 /// One v1 local-tracker action exposed by a duplicate group.
 ///
-/// The action always represents one source quantity.  A caller can invoke the
-/// existing `ManualUpgradeCore.startUpgrade` once for this action; batching and
-/// queue management remain outside this projection.
+/// The action always represents one source quantity. When `isStartable` is
+/// true, this projection has verified the catalog, count quality, matching
+/// local item state/baseline, source availability, and effective distribution.
+/// A caller can invoke the existing `ManualUpgradeCore.startUpgrade` once for
+/// this action; it still owns record IDs, timestamps, provenance, batching, and
+/// queue management.
 public struct BuildingGroupUpgradeAction: Hashable, Sendable {
     public let fromLevel: Int
     public let targetLevel: Int
     public let quantity: Int64
     public let durationState: CatalogDurationState?
     public let upgradeCosts: [CatalogUpgradeCost]?
+    /// Baseline that must be passed back to `ManualUpgradeCore.startUpgrade`.
+    /// It is nil when the projection was not given a matching local tracker
+    /// state, in which case `isStartable` is false.
+    public let baselineReference: ManualBaselineReference?
     public let isStartable: Bool
     public let diagnostic: String?
 
@@ -103,6 +110,7 @@ public struct BuildingGroupUpgradeAction: Hashable, Sendable {
         quantity: Int64 = 1,
         durationState: CatalogDurationState?,
         upgradeCosts: [CatalogUpgradeCost]?,
+        baselineReference: ManualBaselineReference? = nil,
         isStartable: Bool,
         diagnostic: String? = nil
     ) {
@@ -111,6 +119,7 @@ public struct BuildingGroupUpgradeAction: Hashable, Sendable {
         self.quantity = quantity
         self.durationState = durationState
         self.upgradeCosts = upgradeCosts
+        self.baselineReference = baselineReference
         self.isStartable = isStartable
         self.diagnostic = diagnostic
     }
@@ -126,6 +135,7 @@ public struct BuildingGroupUpgradeAction: Hashable, Sendable {
 public struct BuildingGroupTrackerState: Hashable, Sendable {
     public let itemKey: TrackerItemKey
     public let importedDistribution: ManualLevelDistribution?
+    public let importedCountQuality: EffectiveVillageCountQuality?
     public let manualCompletedDistribution: ManualLevelDistribution?
     public let effectiveCompletedDistribution: ManualLevelDistribution?
     public let activeTargetDistribution: ManualLevelDistribution
@@ -138,6 +148,7 @@ public struct BuildingGroupTrackerState: Hashable, Sendable {
     public init(
         itemKey: TrackerItemKey,
         importedDistribution: ManualLevelDistribution?,
+        importedCountQuality: EffectiveVillageCountQuality? = nil,
         manualCompletedDistribution: ManualLevelDistribution?,
         effectiveCompletedDistribution: ManualLevelDistribution?,
         activeTargetDistribution: ManualLevelDistribution = .empty,
@@ -149,6 +160,7 @@ public struct BuildingGroupTrackerState: Hashable, Sendable {
     ) {
         self.itemKey = itemKey
         self.importedDistribution = importedDistribution
+        self.importedCountQuality = importedCountQuality
         self.manualCompletedDistribution = manualCompletedDistribution
         self.effectiveCompletedDistribution = effectiveCompletedDistribution
         self.activeTargetDistribution = activeTargetDistribution
@@ -224,7 +236,12 @@ public enum BuildingGroupProjection {
             now: now,
             manualUpgradeCore: manualUpgradeCore
         )
-        return project(projection: projection, catalog: catalog, base: base)
+        return project(
+            projection: projection,
+            catalog: catalog,
+            base: base,
+            manualUpgradeCore: manualUpgradeCore
+        )
     }
 
     /// Builds group cards from the already-resolved village projection.
@@ -235,7 +252,8 @@ public enum BuildingGroupProjection {
     public static func project(
         projection: VillageCatalogProjection,
         catalog: GameCatalog?,
-        base: TrackerBase
+        base: TrackerBase,
+        manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> [BuildingGroup] {
         // 目录可用性（与 VillageCatalogProjection 同语义，Review 反馈 P1-2）：
         // 目录存在且版本与期望匹配时才可用；expectedGameVersion == nil 不校验。
@@ -300,7 +318,8 @@ public enum BuildingGroupProjection {
                     for: itemKey,
                     effective: effectiveByKey[itemKey],
                     catalog: catalog,
-                    catalogIsUsable: catalogIsUsable
+                    catalogIsUsable: catalogIsUsable,
+                    manualUpgradeCore: manualUpgradeCore
                 )
             )
         }
@@ -310,12 +329,14 @@ public enum BuildingGroupProjection {
         for itemKey: TrackerItemKey,
         effective: EffectiveVillageItemState?,
         catalog: GameCatalog?,
-        catalogIsUsable: Bool
+        catalogIsUsable: Bool,
+        manualUpgradeCore: ManualUpgradeCore?
     ) -> BuildingGroupTrackerState {
         guard let effective else {
             return BuildingGroupTrackerState(
                 itemKey: itemKey,
                 importedDistribution: nil,
+                importedCountQuality: nil,
                 manualCompletedDistribution: nil,
                 effectiveCompletedDistribution: nil,
                 status: .unavailable,
@@ -327,15 +348,29 @@ public enum BuildingGroupProjection {
         if effective.effectiveCompletedDistribution == nil {
             diagnostics.append("完成等级分布未知，不能生成升级操作。")
         }
+        switch effective.importedCountQuality {
+        case .known:
+            break
+        case .malformed:
+            diagnostics.append("快照数量字段缺失或非正数，不能安全启动本地升级。")
+        case .overflowed:
+            diagnostics.append("快照数量汇总溢出，不能安全启动本地升级。")
+        }
         if catalog == nil || !catalogIsUsable {
             diagnostics.append("目录不可用，不能生成升级操作。")
         } else if catalog?.item(section: itemKey.rawSection, dataID: itemKey.dataID) == nil {
             diagnostics.append("目录中没有对应的升级条目，不能生成升级操作。")
         }
+        if manualUpgradeCore == nil {
+            diagnostics.append("未提供本地 tracker 状态，升级操作不可直接执行。")
+        } else if manualUpgradeCore?.itemState(for: itemKey) == nil {
+            diagnostics.append("本地 tracker 没有对应的 itemState，升级操作不可直接执行。")
+        }
 
         return BuildingGroupTrackerState(
             itemKey: itemKey,
             importedDistribution: effective.importedDistribution,
+            importedCountQuality: effective.importedCountQuality,
             manualCompletedDistribution: effective.manualCompletedDistribution,
             effectiveCompletedDistribution: effective.effectiveCompletedDistribution,
             activeTargetDistribution: effective.activeTargetDistribution,
@@ -346,7 +381,8 @@ public enum BuildingGroupProjection {
             actions: actions(
                 for: effective,
                 catalog: catalog,
-                catalogIsUsable: catalogIsUsable
+                catalogIsUsable: catalogIsUsable,
+                manualUpgradeCore: manualUpgradeCore
             )
         )
     }
@@ -354,7 +390,8 @@ public enum BuildingGroupProjection {
     private static func actions(
         for effective: EffectiveVillageItemState,
         catalog: GameCatalog?,
-        catalogIsUsable: Bool
+        catalogIsUsable: Bool,
+        manualUpgradeCore: ManualUpgradeCore?
     ) -> [BuildingGroupUpgradeAction] {
         guard catalogIsUsable,
               let distribution = effective.effectiveCompletedDistribution,
@@ -366,6 +403,8 @@ public enum BuildingGroupProjection {
             return []
         }
 
+        let manualItemState = manualUpgradeCore?.itemState(for: effective.itemKey)
+        let manualEffectiveState = manualUpgradeCore?.effectiveState(for: effective.itemKey)
         let levels = catalogItem.levels.sorted { $0.level < $1.level }
         return distribution.levels.compactMap { source in
             guard let target = levels.first(where: { $0.level > source.level }) else {
@@ -388,6 +427,57 @@ public enum BuildingGroupProjection {
                 reasons.append("当前项目不可用。")
             }
 
+            switch effective.importedCountQuality {
+            case .known:
+                break
+            case .malformed:
+                reasons.append("快照数量字段缺失或非正数，不能安全启动本地升级。")
+            case .overflowed:
+                reasons.append("快照数量汇总溢出，不能安全启动本地升级。")
+            }
+
+            if manualUpgradeCore == nil {
+                reasons.append("未提供本地 tracker 状态，不能直接执行升级。")
+            } else if let manualItemState {
+                guard manualItemState.isStructurallyValid else {
+                    reasons.append("本地 tracker 的 itemState 或 baseline 无效。")
+                    return makeAction(
+                        source: source,
+                        target: target,
+                        baselineReference: manualItemState.baselineReference,
+                        blockingReasons: reasons,
+                        diagnostics: reasons
+                    )
+                }
+                switch manualItemState.status {
+                case .observed, .manualCompleted:
+                    break
+                case .unknown:
+                    reasons.append("本地 tracker 状态未知。")
+                case .conflict:
+                    reasons.append("本地 tracker 状态冲突。")
+                }
+                guard let manualEffectiveState,
+                      let coreDistribution = manualEffectiveState.effectiveCompletedDistribution else {
+                    reasons.append("本地 tracker 无可执行的完成等级分布。")
+                    return makeAction(
+                        source: source,
+                        target: target,
+                        baselineReference: manualItemState.baselineReference,
+                        blockingReasons: reasons,
+                        diagnostics: reasons
+                    )
+                }
+                if coreDistribution.quantity(at: source.level) < source.quantity {
+                    reasons.append("本地 tracker 的可用数量不足。")
+                }
+                if coreDistribution != effective.effectiveCompletedDistribution {
+                    reasons.append("快照 effective 分布与本地 tracker 分布不一致。")
+                }
+            } else {
+                reasons.append("本地 tracker 没有对应的 itemState。")
+            }
+
             if let stageMax = effective.currentStageMaxLevel {
                 if target.level > stageMax {
                     reasons.append("目标等级超过当前阶段上限。")
@@ -407,16 +497,40 @@ public enum BuildingGroupProjection {
                 reasons.append("目标升级时长不可用。")
             }
 
-            let isStartable = reasons.isEmpty && source.quantity > 0
-            return BuildingGroupUpgradeAction(
-                fromLevel: source.level,
-                targetLevel: target.level,
-                durationState: target.durationState,
-                upgradeCosts: target.upgradeCosts,
-                isStartable: isStartable,
-                diagnostic: reasons.isEmpty ? nil : reasons.joined(separator: "；")
+            let blockingReasons = reasons
+            var diagnostics = reasons
+            if target.upgradeCosts?.contains(where: \.parseFailed) == true {
+                diagnostics.append("目标升级费用含解析失败项，启动时保留 raw 费用证据。")
+            } else if target.upgradeCosts == nil {
+                diagnostics.append("目标升级费用未知，启动时保留 unknown cost 状态。")
+            }
+            return makeAction(
+                source: source,
+                target: target,
+                baselineReference: manualItemState?.baselineReference,
+                blockingReasons: blockingReasons,
+                diagnostics: diagnostics
             )
         }
+    }
+
+    private static func makeAction(
+        source: ManualLevelQuantity,
+        target: CatalogLevel,
+        baselineReference: ManualBaselineReference?,
+        blockingReasons: [String],
+        diagnostics: [String]
+    ) -> BuildingGroupUpgradeAction {
+        return BuildingGroupUpgradeAction(
+            fromLevel: source.level,
+            targetLevel: target.level,
+            quantity: 1,
+            durationState: target.durationState,
+            upgradeCosts: target.upgradeCosts,
+            baselineReference: baselineReference,
+            isStartable: blockingReasons.isEmpty && source.quantity > 0,
+            diagnostic: diagnostics.isEmpty ? nil : diagnostics.joined(separator: "；")
+        )
     }
 
     private static func unique(_ values: [String]) -> [String] {

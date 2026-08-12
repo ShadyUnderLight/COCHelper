@@ -884,7 +884,12 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         XCTAssertEqual(total.knownCount, 2)
 
         let group = try XCTUnwrap(
-            BuildingGroupProjection.project(projection: projection, catalog: catalog(), base: .home)
+            BuildingGroupProjection.project(
+                projection: projection,
+                catalog: catalog(),
+                base: .home,
+                manualUpgradeCore: manual
+            )
                 .first { $0.dataID == 1_000_002 }
         )
         XCTAssertEqual(group.summary.remainingLevelCount, 0)
@@ -1317,6 +1322,7 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         )
         XCTAssertNil(effective.importedDistribution)
         XCTAssertEqual(effective.importedInstanceWeight, 5)
+        XCTAssertEqual(effective.importedCountQuality, .known)
         XCTAssertFalse(effective.importedCountOverflowed)
         XCTAssertEqual(projection.progressMetrics.instanceProgress.denominator, 5)
         XCTAssertTrue(
@@ -1349,6 +1355,7 @@ final class EffectiveVillageProjectionTests: XCTestCase {
             exactMaxProjection.effectiveTrackerItems.first { $0.itemKey == key }
         )
         XCTAssertEqual(exactMaxEffective.importedInstanceWeight, Int64.max)
+        XCTAssertEqual(exactMaxEffective.importedCountQuality, .known)
         XCTAssertFalse(exactMaxEffective.importedCountOverflowed)
         XCTAssertEqual(exactMaxProjection.progressMetrics.instanceProgress.denominator, Int.max)
         XCTAssertFalse(exactMaxProjection.progressMetrics.instanceProgress.saturated)
@@ -1384,6 +1391,7 @@ final class EffectiveVillageProjectionTests: XCTestCase {
             overflowProjection.effectiveTrackerItems.first { $0.itemKey == key }
         )
         XCTAssertEqual(overflowEffective.importedInstanceWeight, Int64.max)
+        XCTAssertEqual(overflowEffective.importedCountQuality, .overflowed)
         XCTAssertTrue(overflowEffective.importedCountOverflowed)
         XCTAssertEqual(
             overflowProjection.progressMetrics.instanceProgress.denominator,

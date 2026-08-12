@@ -152,6 +152,59 @@ final class ManualUpgradeCoreTests: XCTestCase {
         )
     }
 
+    func testTrackerItemKeyAdapterKeepsNestedScopeCollisionsSeparate() throws {
+        let typeA = AccountItem(
+            id: "buildings[0].types[0]",
+            section: "buildings",
+            dataID: 500
+        )
+        let moduleA = AccountItem(
+            id: "buildings[0].modules[0]",
+            section: "buildings",
+            dataID: 500
+        )
+        let typeB = AccountItem(
+            id: "buildings[1].types[0]",
+            section: "buildings",
+            dataID: 500
+        )
+        let rootA = AccountItem(
+            id: "buildings[0]",
+            section: "buildings",
+            dataID: 100,
+            types: [typeA],
+            modules: [moduleA]
+        )
+        let rootB = AccountItem(
+            id: "buildings[1]",
+            section: "buildings",
+            dataID: 101,
+            types: [typeB]
+        )
+        let snapshot = AccountSnapshot(
+            tag: "#TEST",
+            capturedAt: nil,
+            importedAt: date(900),
+            ageSeconds: nil,
+            originalText: "{}",
+            objectSections: ["buildings": [rootA, rootB]],
+            numericSections: [:],
+            boosts: [:],
+            unknownTopLevelKeys: [],
+            diagnostics: []
+        )
+
+        let map = TrackerItemKeyAdapter.keyMap(in: snapshot, base: .home)
+        let keys = try [typeA, moduleA, typeB].map { try XCTUnwrap(map[$0.id]) }
+
+        XCTAssertEqual(Set(keys).count, 3)
+        XCTAssertNotEqual(keys[0], keys[1], "同一 root 下 type/module 不能碰撞")
+        XCTAssertNotEqual(keys[0], keys[2], "不同 root 下相同 nested dataID 不能碰撞")
+        XCTAssertNotEqual(keys[1], keys[2])
+        XCTAssertTrue(keys.allSatisfy { $0.nestedKind != .root })
+        XCTAssertNotEqual(keys[0].nestedRootIdentity, keys[2].nestedRootIdentity)
+    }
+
     func testLevelDistributionIsSortedAndRejectsInvalidEntries() throws {
         let distribution = try distribution([(12, 99), (10, 1)])
         XCTAssertEqual(distribution.levels.map(\.level), [10, 12])

@@ -184,6 +184,60 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         )
     }
 
+    private func prerequisiteCatalog(
+        base: TrackerBase,
+        unlockSection: String,
+        unlockID: Int64,
+        dependentSection: String,
+        dependentID: Int64,
+        dependentCategory: String,
+        requiredTownHallLevel: Int? = nil,
+        requiredLaboratoryLevel: Int? = nil,
+        requiredHeroHallLevel: Int? = nil,
+        requiredBlacksmithLevel: Int? = nil
+    ) -> GameCatalog {
+        GameCatalog(
+            gameVersion: "18.400.13",
+            items: [
+                CatalogItem(
+                    section: unlockSection,
+                    category: "buildings",
+                    dataID: unlockID,
+                    base: base.rawValue,
+                    baseMissingReason: nil,
+                    name: "解锁建筑",
+                    maxLevel: 2,
+                    icon: nil,
+                    levelVisual: nil,
+                    lifecycle: .permanent,
+                    levels: [level(1), level(2)]
+                ),
+                CatalogItem(
+                    section: dependentSection,
+                    category: dependentCategory,
+                    dataID: dependentID,
+                    base: base.rawValue,
+                    baseMissingReason: nil,
+                    name: "依赖项目",
+                    maxLevel: 2,
+                    icon: nil,
+                    levelVisual: nil,
+                    lifecycle: .permanent,
+                    levels: [
+                        level(1),
+                        level(
+                            2,
+                            townHall: requiredTownHallLevel,
+                            laboratory: requiredLaboratoryLevel,
+                            heroHall: requiredHeroHallLevel,
+                            blacksmith: requiredBlacksmithLevel
+                        ),
+                    ]
+                ),
+            ]
+        )
+    }
+
     private func state(
         key: TrackerItemKey,
         imported: ManualLevelDistribution,
@@ -301,6 +355,196 @@ final class EffectiveVillageProjectionTests: XCTestCase {
             settled.items.first { $0.dataID == 1_000_002 }?.currentStageMaxLevel,
             2
         )
+    }
+
+    func testManualCompletedPrerequisitesReprojectAllUnlockBuildings() throws {
+        struct Scenario {
+            let name: String
+            let base: TrackerBase
+            let unlockSection: String
+            let unlockID: Int64
+            let dependentSection: String
+            let dependentID: Int64
+            let dependentCategory: String
+            let requirement: UpgradeRequirement
+            let requiredTownHallLevel: Int?
+            let requiredLaboratoryLevel: Int?
+            let requiredHeroHallLevel: Int?
+            let requiredBlacksmithLevel: Int?
+        }
+
+        let scenarios = [
+            Scenario(
+                name: "Town Hall",
+                base: .home,
+                unlockSection: "buildings",
+                unlockID: 1_000_001,
+                dependentSection: "buildings",
+                dependentID: 1_000_002,
+                dependentCategory: "buildings",
+                requirement: .townHall(level: 2),
+                requiredTownHallLevel: 2,
+                requiredLaboratoryLevel: nil,
+                requiredHeroHallLevel: nil,
+                requiredBlacksmithLevel: nil
+            ),
+            Scenario(
+                name: "Laboratory",
+                base: .home,
+                unlockSection: "buildings",
+                unlockID: 1_000_007,
+                dependentSection: "units",
+                dependentID: 4_000_000,
+                dependentCategory: "troops",
+                requirement: .laboratory(level: 2),
+                requiredTownHallLevel: nil,
+                requiredLaboratoryLevel: 2,
+                requiredHeroHallLevel: nil,
+                requiredBlacksmithLevel: nil
+            ),
+            Scenario(
+                name: "Hero Hall",
+                base: .home,
+                unlockSection: "buildings",
+                unlockID: 1_000_071,
+                dependentSection: "heroes",
+                dependentID: 28_000_000,
+                dependentCategory: "heroes",
+                requirement: .heroHall(level: 2),
+                requiredTownHallLevel: nil,
+                requiredLaboratoryLevel: nil,
+                requiredHeroHallLevel: 2,
+                requiredBlacksmithLevel: nil
+            ),
+            Scenario(
+                name: "Blacksmith",
+                base: .home,
+                unlockSection: "buildings",
+                unlockID: 1_000_070,
+                dependentSection: "equipment",
+                dependentID: 90_000_000,
+                dependentCategory: "equipment",
+                requirement: .blacksmith(level: 2),
+                requiredTownHallLevel: nil,
+                requiredLaboratoryLevel: nil,
+                requiredHeroHallLevel: nil,
+                requiredBlacksmithLevel: 2
+            ),
+            Scenario(
+                name: "Builder Hall",
+                base: .builder,
+                unlockSection: "buildings2",
+                unlockID: 1_000_034,
+                dependentSection: "buildings2",
+                dependentID: 1_000_042,
+                dependentCategory: "buildings",
+                requirement: .builderHall(level: 2),
+                requiredTownHallLevel: 2,
+                requiredLaboratoryLevel: nil,
+                requiredHeroHallLevel: nil,
+                requiredBlacksmithLevel: nil
+            ),
+            Scenario(
+                name: "Star Laboratory",
+                base: .builder,
+                unlockSection: "buildings2",
+                unlockID: 1_000_046,
+                dependentSection: "units2",
+                dependentID: 4_000_001,
+                dependentCategory: "troops",
+                requirement: .starLaboratory(level: 2),
+                requiredTownHallLevel: nil,
+                requiredLaboratoryLevel: 2,
+                requiredHeroHallLevel: nil,
+                requiredBlacksmithLevel: nil
+            ),
+        ]
+
+        for scenario in scenarios {
+            let unlockKey = TrackerItemKey.root(
+                base: scenario.base,
+                rawSection: scenario.unlockSection,
+                dataID: scenario.unlockID
+            )
+            var objectSections: [String: [AccountItem]] = [:]
+            objectSections[scenario.unlockSection, default: []].append(
+                item(section: scenario.unlockSection, dataID: scenario.unlockID, level: 1)
+            )
+            objectSections[scenario.dependentSection, default: []].append(
+                item(
+                    section: scenario.dependentSection,
+                    dataID: scenario.dependentID,
+                    level: 1,
+                    path: "1"
+                )
+            )
+            let dependentVillage = village(objectSections: objectSections)
+            let scenarioCatalog = prerequisiteCatalog(
+                base: scenario.base,
+                unlockSection: scenario.unlockSection,
+                unlockID: scenario.unlockID,
+                dependentSection: scenario.dependentSection,
+                dependentID: scenario.dependentID,
+                dependentCategory: scenario.dependentCategory,
+                requiredTownHallLevel: scenario.requiredTownHallLevel,
+                requiredLaboratoryLevel: scenario.requiredLaboratoryLevel,
+                requiredHeroHallLevel: scenario.requiredHeroHallLevel,
+                requiredBlacksmithLevel: scenario.requiredBlacksmithLevel
+            )
+            let raw = VillageCatalogProjection.project(
+                village: dependentVillage,
+                catalog: scenarioCatalog,
+                base: scenario.base,
+                now: importedAt
+            )
+            let manual = try core(states: [
+                try state(
+                    key: unlockKey,
+                    imported: try distribution([(1, 1)]),
+                    manual: try distribution([(2, 1)]),
+                    status: .manualCompleted
+                ),
+            ])
+            let effective = VillageCatalogProjection.project(
+                village: dependentVillage,
+                catalog: scenarioCatalog,
+                base: scenario.base,
+                now: importedAt,
+                manualUpgradeCore: manual
+            )
+
+            let rawDependent = try XCTUnwrap(
+                raw.items.first { $0.dataID == scenario.dependentID },
+                "\(scenario.name): raw dependent item"
+            )
+            let effectiveDependent = try XCTUnwrap(
+                effective.items.first { $0.dataID == scenario.dependentID },
+                "\(scenario.name): effective dependent item"
+            )
+            XCTAssertEqual(
+                rawDependent.currentStageMaxLevel,
+                1,
+                "\(scenario.name): raw unlock level must block level 2"
+            )
+            XCTAssertEqual(rawDependent.status, .maxed, "\(scenario.name): raw reason/status")
+            guard case let .requires(nextLevel, requirements, _) = rawDependent.nextUpgrade else {
+                return XCTFail("\(scenario.name): raw item should expose prerequisite requirements")
+            }
+            XCTAssertEqual(nextLevel, 2, "\(scenario.name): raw gated next level")
+            XCTAssertEqual(requirements, [scenario.requirement], "\(scenario.name): raw gate reason")
+
+            XCTAssertEqual(
+                effectiveDependent.currentStageMaxLevel,
+                2,
+                "\(scenario.name): manual completion must raise effective stage max"
+            )
+            XCTAssertEqual(effectiveDependent.status, .complete, "\(scenario.name): effective status")
+            guard case let .available(nextLevel, _) = effectiveDependent.nextUpgrade else {
+                return XCTFail("\(scenario.name): effective item should become available")
+            }
+            XCTAssertEqual(nextLevel, 2, "\(scenario.name): effective next level")
+            XCTAssertEqual(effectiveDependent.availability, .permanent, "\(scenario.name): lifecycle")
+        }
     }
 
     func testSnapshotCoverageRemainsSeparateFromEffectiveTrackerProgress() throws {

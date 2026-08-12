@@ -704,6 +704,60 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         // 幂等
         XCTAssertEqual(rows, ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2))
     }
+
+    // MARK: - 攻击行透传（Issue #127）
+
+    func testAttackLineProjectsTargetAndDuration() {
+        let atk = ClanWarAttack(order: 1, attackerTag: "#ATK", defenderTag: "#DEF",
+                                stars: 2, destructionPercentage: 80, duration: 145)
+        let member = ClanWarMember(tag: "#M", name: "M", mapPosition: 1, townhallLevel: 10,
+                                   attacks: [atk], opponentAttacks: nil, bestOpponentAttack: nil)
+        let rows = ClanWarDisplayProjection.sortedRows([member], attacksPerMember: 2)
+        let line = try! XCTUnwrap(rows.first?.lines?.first)
+        XCTAssertEqual(line.order, 1)
+        XCTAssertEqual(line.stars, 2)
+        XCTAssertEqual(line.destructionPercentage, 80)
+        XCTAssertEqual(line.defenderTag, "#DEF")
+        XCTAssertEqual(line.duration, 145)
+    }
+
+    func testAttackLineMissingTargetAndDurationKeepOtherFields() {
+        let atk = ClanWarAttack(order: 1, attackerTag: nil, defenderTag: nil,
+                                stars: 3, destructionPercentage: 100, duration: nil)
+        let member = ClanWarMember(tag: "#M", name: "M", mapPosition: 1, townhallLevel: nil,
+                                   attacks: [atk], opponentAttacks: nil, bestOpponentAttack: nil)
+        let line = try! XCTUnwrap(ClanWarDisplayProjection.sortedRows([member], attacksPerMember: 1).first?.lines?.first)
+        XCTAssertNil(line.defenderTag)
+        XCTAssertNil(line.duration)
+        XCTAssertEqual(line.stars, 3)
+        XCTAssertEqual(line.destructionPercentage, 100)
+    }
+
+    // MARK: - bestDefense（Issue #127）
+
+    func testBestDefenseProjectedFromBestOpponentAttack() {
+        let best = ClanWarAttack(order: nil, attackerTag: "#OPP", defenderTag: "#M",
+                                 stars: 2, destructionPercentage: 75, duration: 120)
+        let member = ClanWarMember(tag: "#M", name: "M", mapPosition: 1, townhallLevel: nil,
+                                   attacks: [], opponentAttacks: 3, bestOpponentAttack: best)
+        let row = try! XCTUnwrap(ClanWarDisplayProjection.sortedRows([member], attacksPerMember: 2).first)
+        XCTAssertEqual(row.defenseAttacks, 3)
+        let defense = try! XCTUnwrap(row.bestDefense)
+        // 防守视角只消费 stars/destruction/duration；order/defenderTag 无意义恒 nil
+        XCTAssertEqual(defense.stars, 2)
+        XCTAssertEqual(defense.destructionPercentage, 75)
+        XCTAssertEqual(defense.duration, 120)
+        XCTAssertNil(defense.order)
+        XCTAssertNil(defense.defenderTag)
+    }
+
+    func testBestDefenseNilWhenBestOpponentAttackMissing() {
+        let member = ClanWarMember(tag: "#M", name: "M", mapPosition: 1, townhallLevel: nil,
+                                   attacks: [], opponentAttacks: 0, bestOpponentAttack: nil)
+        let row = try! XCTUnwrap(ClanWarDisplayProjection.sortedRows([member], attacksPerMember: 2).first)
+        XCTAssertNil(row.bestDefense)
+        XCTAssertEqual(row.defenseAttacks, 0)
+    }
 }
 
 /// Issue #125：部落对战展示投影的 property-based 测试。

@@ -11,11 +11,19 @@ public struct ClanWarAttackLine: Hashable, Sendable {
     public let stars: Int?
     /// 摧毁百分比；nil = 缺失（不得用 0 顶替）。
     public let destructionPercentage: Double?
+    /// 目标 tag（官方 defenderTag 透传）；nil = 缺失。warlog/currentwar 共用
+    /// 类型：warlog 调用点不消费该字段（Issue #127 扩展，默认 nil 向后兼容）。
+    public let defenderTag: String?
+    /// 攻击时长（秒，官方透传）；nil = 缺失。展示格式见 `ClanCombatSummary.durationText`。
+    public let duration: Int?
 
-    public init(order: Int? = nil, stars: Int? = nil, destructionPercentage: Double? = nil) {
+    public init(order: Int? = nil, stars: Int? = nil, destructionPercentage: Double? = nil,
+                defenderTag: String? = nil, duration: Int? = nil) {
         self.order = order
         self.stars = stars
         self.destructionPercentage = destructionPercentage
+        self.defenderTag = defenderTag
+        self.duration = duration
     }
 }
 
@@ -91,6 +99,15 @@ public enum ClanCombatSummary {
     public static func displayDestructionPercent(_ value: Double?) -> Double? {
         guard let value, value.isFinite else { return nil }
         return min(max(value, 0), 100)
+    }
+
+    /// 攻击时长展示文本（分:秒，如 145 → "2:25"）；nil 或负值 → nil（未知）。
+    /// 不伪造时长；超长值（如 Int.max）分钟数直接大字面量，无算术风险。
+    public static func durationText(_ duration: Int?) -> String? {
+        guard let duration, duration >= 0 else { return nil }
+        let minutes = duration / 60
+        let seconds = duration % 60
+        return "\(minutes):" + String(format: "%02d", seconds)
     }
 
     /// 已摧毁子城数：官方字段优先（0 也是官方事实）；缺失时从子城明细推导。

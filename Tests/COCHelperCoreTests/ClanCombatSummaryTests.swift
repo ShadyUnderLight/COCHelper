@@ -176,4 +176,21 @@ final class ClanCombatSummaryTests: XCTestCase {
         XCTAssertEqual(ClanCombatSummary.clampedPercent(Double.infinity), 0)
         XCTAssertEqual(ClanCombatSummary.clampedPercent(-Double.infinity), 0)
     }
+
+    // MARK: - durationText（Issue #127）
+
+    func testDurationTextFormatsMinutesAndSeconds() {
+        XCTAssertEqual(ClanCombatSummary.durationText(0), "0:00")
+        XCTAssertEqual(ClanCombatSummary.durationText(59), "0:59")
+        XCTAssertEqual(ClanCombatSummary.durationText(60), "1:00")
+        XCTAssertEqual(ClanCombatSummary.durationText(65), "1:05")
+        XCTAssertEqual(ClanCombatSummary.durationText(145), "2:25")
+        XCTAssertEqual(ClanCombatSummary.durationText(3661), "61:01")
+    }
+
+    func testDurationTextNilAndNegativeIsUnknown() {
+        XCTAssertNil(ClanCombatSummary.durationText(nil))
+        XCTAssertNil(ClanCombatSummary.durationText(-1))
+        XCTAssertNil(ClanCombatSummary.durationText(Int.min))
+    }
 }

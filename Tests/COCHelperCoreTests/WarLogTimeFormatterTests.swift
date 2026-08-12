@@ -221,6 +221,20 @@ final class WarLogTimeFormatterTests: XCTestCase {
         XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: "not-a-date", now: Date()))
     }
 
+    func testRemainingTextBoundaries() {
+        let end = "20260809T110738.000Z"
+        // end 恰好等于 now：不算剩余 → nil
+        XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                       now: utcDate(2026, 8, 9, 11, 7, 38)))
+        // 不足 1 小时按 floor 显示 0 小时（hours-only 粒度契约）
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                         now: utcDate(2026, 8, 9, 10, 37, 38)),
+                       "剩余 0 小时")
+        // 极端跨度（正则允许的最大区间）不溢出不崩溃
+        XCTAssertNotNil(WarLogTimeFormatter.remainingText(
+            endRaw: "99991231T235959Z", now: utcDate(1992, 1, 1, 0, 0, 0)))
+    }
+
     /// 测试辅助：UTC 固定日期（避免 DateComponents 时区漂移）。
     /// 必须显式钉住 UTC：Calendar(identifier:) 默认跟随本机时区（实测 Asia/Shanghai），
     /// 否则组件会被按本地时区解释，断言值只在 UTC 下成立。

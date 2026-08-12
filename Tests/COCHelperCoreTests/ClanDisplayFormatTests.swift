@@ -306,4 +306,101 @@ final class ClanDisplayFormatTests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(asserted, 500)
     }
+
+    // MARK: - percent（摧毁率展示，Issue #126 收敛）
+
+    func testPercentIntegerNoDecimal() {
+        XCTAssertEqual(ClanDisplayFormat.percent(0), "0")
+        XCTAssertEqual(ClanDisplayFormat.percent(12), "12")
+        XCTAssertEqual(ClanDisplayFormat.percent(100), "100")
+        XCTAssertEqual(ClanDisplayFormat.percent(-5), "-5")
+    }
+
+    func testPercentOneDecimalForNonInteger() {
+        XCTAssertEqual(ClanDisplayFormat.percent(12.5), "12.5")
+        XCTAssertEqual(ClanDisplayFormat.percent(12.34), "12.3")
+        XCTAssertEqual(ClanDisplayFormat.percent(12.96), "13.0")
+        XCTAssertEqual(ClanDisplayFormat.percent(0.1), "0.1")
+        XCTAssertEqual(ClanDisplayFormat.percent(0.04), "0.0")
+        XCTAssertEqual(ClanDisplayFormat.percent(-12.34), "-12.3")
+    }
+
+    /// 区域设置不敏感：percent 恒输出 "." 小数点。判别性验证——同样的值用
+    /// de_DE 区域直接 String(format:) 会输出 "12,5"（ICU 逗号小数点），证明
+    /// 区域依赖格式化的隐患真实存在；percent（en_US_POSIX 固定）输出恒 "12.5"。
+    func testPercentLocaleIndependentDecimalPoint() {
+        // 隐患实证：区域化格式化在 de_DE 下输出逗号小数点
+        XCTAssertEqual(
+            String(format: "%.1f", locale: Locale(identifier: "de_DE"), arguments: [12.5]),
+            "12,5"
+        )
+        // 修复实证：percent 恒为点号
+        XCTAssertEqual(ClanDisplayFormat.percent(12.5), "12.5")
+    }
+
+    /// 公开 API 防御（M1）：超过 Int 可表示范围的整数不得 trap——
+    /// `Double(Int.max)` 等于 2^63，`Int()` 转换即 trap；必须走
+    /// String(format:) 分支。现有调用点（摧毁率 ∈ [0,100]）不可达，
+    /// 但公开函数应对契约外输入防御。
+    func testPercentHugeIntegerValueNoTrap() {
+        // 2^63：truncatingRemainder == 0 且超出 Int.max → 走 %.1f 分支。
+        // 与直接 String(format:) 输出逐字一致（不因 Int 转换 trap 或截断）。
+        // 注意：%.1f 在 2^63 量级只保留 ~16 位有效十进制数字（IEEE754 十进制
+        // 转换的正常行为），本测试只钉「格式分支语义」，不钉具体数字。
+        let huge = Double(Int.max)
+        let expected = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                              arguments: [huge])
+        XCTAssertEqual(ClanDisplayFormat.percent(huge), expected)
+        XCTAssertEqual(ClanDisplayFormat.percent(1e30),
+                       String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                              arguments: [1e30]))
+        // 负方向：-2^63 恰为 Int.min（可表示），整数分支照常工作
+        XCTAssertEqual(ClanDisplayFormat.percent(Double(Int.min)), "-9223372036854775808")
+    }
+
+    /// 公开 API 防御（M2）：负向大值（小于 Double(Int.min) = -2^63）同样
+    /// 不得 trap——`percent(-1e19)` 实测崩溃（"result would be less than
+    /// Int.min"）。与正方向对称：必须走 String(format:) 格式分支，输出与
+    /// 直接格式化逐字一致（含小数点，调用方拼接的 "%" 后缀不受影响）。
+    func testPercentHugeNegativeValueNoTrap() {
+        let hugeNegative = -1e19
+        XCTAssertLessThan(hugeNegative, Double(Int.min), "fixture 必须超出 Int 负向可表示范围")
+        let expected = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                              arguments: [hugeNegative])
+        XCTAssertEqual(ClanDisplayFormat.percent(hugeNegative), expected)
+        // 再覆盖一个更极端的值，确认不崩溃且走格式分支
+        XCTAssertEqual(
+            ClanDisplayFormat.percent(-Double.greatestFiniteMagnitude),
+            String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                   arguments: [-Double.greatestFiniteMagnitude])
+        )
+    }
+
+    /// 负向非整数：含负号 + 点号分隔，正常走 1 位小数分支。
+    func testPercentNegativeNonInteger() {
+        XCTAssertEqual(ClanDisplayFormat.percent(-0.5), "-0.5")
+    }
+
+    /// 公开 API 防御（nit）：NaN/±Infinity 不得 trap。NaN 与任何值比较均
+    /// 为 false，`value < Double(Int.max)` guard 天然放行走 %.1f 格式分支；
+    /// 输出与直接 String(format:) 逐字一致（实测 en_US_POSIX 下为
+    /// "NaN"/"INF"/"-INF"，拼写随平台 ICU 行为，本测试只钉格式分支语义，
+    /// 并断言包含非有限标记）。
+    func testPercentNaNAndInfinityNoTrap() {
+        let nonFinite: [(value: Double, marker: String)] = [
+            (.nan, "NaN"),
+            (.infinity, "INF"),
+            (-.infinity, "-INF"),
+        ]
+        for (value, marker) in nonFinite {
+            let result = ClanDisplayFormat.percent(value)
+            XCTAssertEqual(
+                result,
+                String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"),
+                       arguments: [value]),
+                "\(value) 必须走 %.1f 格式分支（不 trap、不截断）"
+            )
+            XCTAssertTrue(result.contains(marker), "输出必须包含非有限标记: \(result)")
+        }
+    }
 }

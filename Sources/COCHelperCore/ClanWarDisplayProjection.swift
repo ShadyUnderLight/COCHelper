@@ -138,13 +138,18 @@ public struct ClanWarMemberRow: Hashable, Sendable, Identifiable {
     public let stars: ClanWarMemberStars?
     /// 逐次攻击明细；nil = attacks == nil，[] = 明确 0 次攻击。
     public let lines: [ClanWarAttackLine]?
+    /// 防守列数据：对方攻击本成员的次数（raw `ClanWarMember.opponentAttacks`
+    /// 直接透传，官方即整数次数）；nil = 官方未返回防守数据。深度防守表现
+    /// 归 Issue #127。
+    public let defenseAttacks: Int?
 
     public var id: Int { sourceIndex }
 
     public init(
         sourceIndex: Int, mapPosition: Int?, name: String?, tag: String?,
         townhallLevel: Int?, action: ClanWarMemberAction,
-        stars: ClanWarMemberStars?, lines: [ClanWarAttackLine]?
+        stars: ClanWarMemberStars?, lines: [ClanWarAttackLine]?,
+        defenseAttacks: Int?
     ) {
         self.sourceIndex = sourceIndex
         self.mapPosition = mapPosition
@@ -154,6 +159,7 @@ public struct ClanWarMemberRow: Hashable, Sendable, Identifiable {
         self.action = action
         self.stars = stars
         self.lines = lines
+        self.defenseAttacks = defenseAttacks
     }
 }
 
@@ -244,6 +250,9 @@ public enum ClanWarSummaryMismatch: Hashable, Sendable {
     case attackCount(official: Int, memberSum: Int)
     /// 官方 stars ≠ Σ 成员已知星数（全部攻击行星数已知时判定）。
     case stars(official: Int, memberKnownSum: Int)
+    /// 官方 teamSize 已知、成员数组已返回但数量与 teamSize 不一致
+    ///（成员覆盖率诊断；官方未返回成员数组时不产生——UI 已有"成员数据未返回"提示）。
+    case memberCount(official: Int, returned: Int)
 }
 
 /// 参与方投影：官方摘要（顶部比分）与成员行动队列（明细/诊断）分层存放。
@@ -359,8 +368,8 @@ public enum ClanWarDisplayProjection {
         return ClanWarProjection(
             phase: phase,
             quota: quota,
-            clan: isNotInWar ? nil : snapshot.clan.map { participant($0, attacksPerMember: snapshot.attacksPerMember) },
-            opponent: isNotInWar ? nil : snapshot.opponent.map { participant($0, attacksPerMember: snapshot.attacksPerMember) }
+            clan: isNotInWar ? nil : snapshot.clan.map { participant($0, attacksPerMember: snapshot.attacksPerMember, teamSize: snapshot.teamSize) },
+            opponent: isNotInWar ? nil : snapshot.opponent.map { participant($0, attacksPerMember: snapshot.attacksPerMember, teamSize: snapshot.teamSize) }
         )
     }
 
@@ -436,47 +445,9 @@ public enum ClanWarDisplayProjection {
     ///（nil 排最后）→ name（nil 排最后，String 比较序，即 Unicode 规范化后
     /// 比较）→ sourceIndex 升序。
     /// `sourceIndex` 唯一 → 排序结果与输入顺序无关、与 sort 稳定性无关；幂等。
+    /// Issue #126 起 delegate 到 `sortedRows(_:attacksPerMember:order:)`（行为不变）。
     public static func sortedRows(_ members: [ClanWarMember], attacksPerMember: Int?) -> [ClanWarMemberRow] {
-        let rows = members.enumerated().map { index, member in
-            ClanWarMemberRow(
-                sourceIndex: index,
-                mapPosition: member.mapPosition,
-                name: member.name,
-                tag: member.tag,
-                townhallLevel: member.townhallLevel,
-                action: memberAction(attacks: member.attacks, attacksPerMember: attacksPerMember),
-                stars: memberStars(member),
-                lines: member.attacks.map { attacks in
-                    attacks.map {
-                        ClanWarAttackLine(order: $0.order, stars: $0.stars,
-                                          destructionPercentage: $0.destructionPercentage)
-                    }
-                }
-            )
-        }
-        return rows.sorted { lhs, rhs in
-            let lRank = sortRank(lhs.action.status)
-            let rRank = sortRank(rhs.action.status)
-            if lRank != rRank { return lRank < rRank }
-            // mapPosition：nil 排最后
-            switch (lhs.mapPosition, rhs.mapPosition) {
-            case let (l?, r?):
-                if l != r { return l < r }
-            case (nil, _?): return false
-            case (_?, nil): return true
-            case (nil, nil): break
-            }
-            // name：nil 排最后，String 比较序（Unicode 规范化后）
-            switch (lhs.name, rhs.name) {
-            case let (l?, r?):
-                if l != r { return l < r }
-            case (nil, _?): return false
-            case (_?, nil): return true
-            case (nil, nil): break
-            }
-            // sourceIndex：最终平局键（全序）
-            return lhs.sourceIndex < rhs.sourceIndex
-        }
+        sortedRows(members, attacksPerMember: attacksPerMember, order: .actionPriority)
     }
 
     /// 排序组键：未出手(0) → 剩余(1) → 已完成(2) → 数据未知组(3)
@@ -527,7 +498,10 @@ public enum ClanWarDisplayProjection {
     }
 
     /// 参与方投影：官方摘要 + 排序行动队列 + 覆盖计数 + 诊断。
-    public static func participant(_ participant: ClanWarParticipant, attacksPerMember: Int?) -> ClanWarParticipantProjection {
+    ///
+    /// `teamSize` 传入官方 teamSize（Issue #126 成员覆盖率诊断）；nil = 官方
+    /// 缺失，不产生 memberCount 诊断。
+    public static func participant(_ participant: ClanWarParticipant, attacksPerMember: Int?, teamSize: Int? = nil) -> ClanWarParticipantProjection {
         let official = ClanWarParticipantSummary(
             attacks: participant.attacks,
             stars: participant.stars,
@@ -549,7 +523,7 @@ public enum ClanWarDisplayProjection {
             tag: participant.tag, name: participant.name, clanLevel: participant.clanLevel,
             official: official, members: rows,
             knownAttackDataCount: known, unknownAttackDataCount: unknown,
-            mismatches: mismatches(participant: participant, rows: rows)
+            mismatches: mismatches(participant: participant, rows: rows, teamSize: teamSize)
         )
     }
 
@@ -557,8 +531,10 @@ public enum ClanWarDisplayProjection {
     ///
     /// 前置条件：`rows` 必须与 `participant` 同源（同一参与方的成员数组投影），
     /// 类型系统不校验此绑定，传错参与方会产出错误诊断（当前唯一调用方
-    /// `participant(_:attacksPerMember:)` 保证同源）。
+    /// `participant(_:attacksPerMember:teamSize:)` 保证同源）。
     /// 仅当成员侧数据完整（无 attacks == nil）且官方字段存在时才判数值差异：
+    /// - `teamSize` 非 nil 且成员数组已返回但数量不一致 → `.memberCount`
+    ///   （成员覆盖率诊断；`members == nil` 或 `teamSize == nil` 不产生）；
     /// - 任一成员 attacks == nil → `[.membersIncomplete]`（推导不可得；官方
     ///   缺失时仍上报——成员不完整是独立可审计事实）；
     /// - 官方 attacks 存在且 ≠ Σ 成员攻击数 → `.attackCount`；
@@ -568,11 +544,19 @@ public enum ClanWarDisplayProjection {
     /// 饱和累加防 malformed 输入崩溃），不使用 `ClanWarMemberStars.knownStars`
     /// （展示层 clamp 到 [0,3] 后的值）——schema 违反输入（如 stars=5）下
     /// clamp 会扭曲事实，导致"双侧一致却误报不一致"。
-    public static func mismatches(participant: ClanWarParticipant, rows: [ClanWarMemberRow]) -> [ClanWarSummaryMismatch] {
+    /// **注意**：memberCount 的数量以 `participant.members`（raw 数组）为准，
+    /// 不使用 `rows.count`——rows 是排序投影，契约上同源但 raw 才是事实层。
+    public static func mismatches(participant: ClanWarParticipant, rows: [ClanWarMemberRow], teamSize: Int? = nil) -> [ClanWarSummaryMismatch] {
+        var result: [ClanWarSummaryMismatch] = []
+        // 成员覆盖率诊断：官方 teamSize 已知、成员数组已返回但数量不一致。
+        if let teamSize, let members = participant.members, members.count != teamSize {
+            result.append(.memberCount(official: teamSize, returned: members.count))
+        }
         let memberAttacks = rows.compactMap { $0.lines }
         guard memberAttacks.count == rows.count else {
             // 存在成员 attacks == nil：推导不可得，不得误报数值差异。
-            return [.membersIncomplete]
+            result.append(.membersIncomplete)
+            return result
         }
         let memberAttackSum = memberAttacks.reduce(0) { $0 + $1.count }
         // 攻击次数求和用普通加法：count 是数组长度，受内存约束（现实不可达
@@ -592,7 +576,6 @@ public enum ClanWarDisplayProjection {
             }
         }
 
-        var result: [ClanWarSummaryMismatch] = []
         if let officialAttacks = participant.attacks, officialAttacks != memberAttackSum {
             result.append(.attackCount(official: officialAttacks, memberSum: memberAttackSum))
         }
@@ -615,6 +598,238 @@ public enum ClanWarDisplayProjection {
         case .skipped: return .skipped
         case .failed:
             return state.lastGood == nil ? .failedWithoutLastGood : .failedWithLastGood
+        }
+    }
+}
+
+// MARK: - 成员筛选桶与排序变体（Issue #126）
+
+/// 成员筛选桶（UI chips 的纯数据映射）。
+///
+/// 契约（Issue #126，SDD 3 候选投票定稿方案 A）：
+/// - 基座五桶互斥且覆盖除 awaitingWar 外的全部 displayGroup：
+///   notAttacked / remainingOnce / remainingMany / complete / unknownData；
+/// - `pending` 是派生聚合桶：== notAttacked ∪ remaining（不含 awaitingWar——
+///   备战期 0 次攻击是正常状态，不算"未出手告警"）；
+/// - `.unknown`（attacks == nil）只能进 unknownData，绝不进未出手；
+/// - awaitingWar（preparation + zero）不进任何告警桶，计数单独由
+///   `ClanWarFilterCounts.awaitingWar` 输出（UI 显示"等待开战 N"，中性色）。
+public enum ClanWarMemberFilter: Hashable, Sendable, CaseIterable {
+    case all
+    case pending
+    case notAttacked
+    case remainingOnce
+    case remainingMany
+    case complete
+    case unknownData
+}
+
+/// 成员排序顺序（Issue #126：默认行动优先，提供地图位置/名称切换）。
+public enum ClanWarSortOrder: Hashable, Sendable, CaseIterable {
+    /// 行动优先（= #125 `sortedRows` 语义）：未出手 → 剩余 → 已完成 → 数据未知组。
+    case actionPriority
+    /// 地图位置升序（nil 排最后），平局按名称再按 sourceIndex。
+    case mapPosition
+    /// 名称升序（nil 排最后，String 比较序），平局按 mapPosition 再按 sourceIndex。
+    case name
+}
+
+/// 筛选桶计数（Σ 守恒不变式的可测输出）。
+public struct ClanWarFilterCounts: Hashable, Sendable {
+    /// 派生聚合桶：notAttacked + remainingOnce + remainingMany（不含 awaitingWar）。
+    public let pending: Int
+    /// 未出手（0 次攻击，非备战期）。
+    public let notAttacked: Int
+    /// 剩余攻击恰好 1 次。
+    public let remainingOnce: Int
+    /// 剩余攻击 >= 2 次。
+    public let remainingMany: Int
+    /// 已完成配额。
+    public let complete: Int
+    /// 数据未知（unknown / quotaUnknown / overQuota 三态合并）。
+    public let unknownData: Int
+    /// 备战期且明确 0 次攻击（中性计数，不进告警桶）。
+    public let awaitingWar: Int
+
+    public init(pending: Int, notAttacked: Int, remainingOnce: Int,
+                remainingMany: Int, complete: Int, unknownData: Int, awaitingWar: Int) {
+        self.pending = pending
+        self.notAttacked = notAttacked
+        self.remainingOnce = remainingOnce
+        self.remainingMany = remainingMany
+        self.complete = complete
+        self.unknownData = unknownData
+        self.awaitingWar = awaitingWar
+    }
+}
+
+extension ClanWarDisplayProjection {
+
+    /// 行是否匹配筛选桶。`all` 恒 true；其余基于 displayGroup + remainingAttacks。
+    ///
+    /// 映射（契约见 `ClanWarMemberFilter`）：notAttacked ↔ group .notAttacked；
+    /// remainingOnce/Many ↔ group .remaining 且 remainingAttacks == 1 / != 1；
+    /// complete ↔ group .complete；unknownData ↔ group {.unknown, .quotaUnknown,
+    /// .overQuota}；pending ↔ group {.notAttacked, .remaining}。
+    public static func matches(_ row: ClanWarMemberRow, filter: ClanWarMemberFilter, phase: ClanWarPhase) -> Bool {
+        switch filter {
+        case .all:
+            return true
+        case .pending:
+            switch displayGroup(phase: phase, action: row.action) {
+            case .notAttacked, .remaining: return true
+            default: return false
+            }
+        case .notAttacked:
+            return displayGroup(phase: phase, action: row.action) == .notAttacked
+        case .remainingOnce:
+            return displayGroup(phase: phase, action: row.action) == .remaining
+                && row.action.remainingAttacks == 1
+        case .remainingMany:
+            return displayGroup(phase: phase, action: row.action) == .remaining
+                && row.action.remainingAttacks != 1
+        case .complete:
+            return displayGroup(phase: phase, action: row.action) == .complete
+        case .unknownData:
+            switch displayGroup(phase: phase, action: row.action) {
+            case .unknown, .quotaUnknown, .overQuota: return true
+            default: return false
+            }
+        }
+    }
+
+    /// 过滤行（保持输入顺序不变，仅过滤）。`all` 返回原数组。
+    public static func filteredRows(_ rows: [ClanWarMemberRow], filter: ClanWarMemberFilter,
+                                    phase: ClanWarPhase) -> [ClanWarMemberRow] {
+        filter == .all ? rows : rows.filter { matches($0, filter: filter, phase: phase) }
+    }
+
+    /// 搜索过滤（Issue #126）：只匹配成员名称与 tag，大小写不敏感、包含匹配。
+    ///
+    /// 契约：
+    /// - 空字符串/纯空白 → 返回原数组（不过滤）；
+    /// - nil 名称/tag 不参与匹配（不把缺失当作空串命中）；
+    /// - 匹配大小写不敏感（`lowercased()` 包含比较），tag 的 "#" 前缀是
+    ///   tag 原文的一部分，包含匹配按完整 tag 字符串进行；
+    /// - 保持输入顺序（仅过滤，不重排）。
+    public static func rows(_ rows: [ClanWarMemberRow], matchingSearch query: String) -> [ClanWarMemberRow] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return rows }
+        let normalized = needle.lowercased()
+        return rows.filter { row in
+            (row.name?.lowercased().contains(normalized) ?? false)
+                || (row.tag?.lowercased().contains(normalized) ?? false)
+        }
+    }
+
+    /// 各筛选桶计数（含 awaitingWar 中性计数）。
+    ///
+    /// 不变式：notAttacked + remainingOnce + remainingMany + complete + unknownData
+    /// + awaitingWar == rows.count；pending == notAttacked + remainingOnce + remainingMany。
+    /// awaitingWar 仅来自 preparation + zero（displayGroup 唯一特判点）。
+    public static func chipCounts(rows: [ClanWarMemberRow], phase: ClanWarPhase) -> ClanWarFilterCounts {
+        var notAttacked = 0, once = 0, many = 0, complete = 0, unknownData = 0, awaitingWar = 0
+        for row in rows {
+            switch displayGroup(phase: phase, action: row.action) {
+            case .awaitingWar:
+                awaitingWar += 1
+            case .notAttacked:
+                notAttacked += 1
+            case .remaining:
+                // .remaining ⇒ status == .partial ⇒ remainingAttacks 恒非 nil 且 >= 1
+                if row.action.remainingAttacks == 1 {
+                    once += 1
+                } else {
+                    many += 1
+                }
+            case .complete:
+                complete += 1
+            case .overQuota, .quotaUnknown, .unknown:
+                unknownData += 1
+            }
+        }
+        return ClanWarFilterCounts(
+            pending: notAttacked + once + many,
+            notAttacked: notAttacked, remainingOnce: once, remainingMany: many,
+            complete: complete, unknownData: unknownData, awaitingWar: awaitingWar
+        )
+    }
+
+    /// 按指定顺序排序（`order` 变体；`actionPriority` 与 #125 `sortedRows` 全序一致）。
+    /// 三种顺序均以 sourceIndex 为最终平局键 → 全序确定、结果与输入顺序无关、幂等。
+    public static func sortedRows(_ members: [ClanWarMember], attacksPerMember: Int?,
+                                  order: ClanWarSortOrder) -> [ClanWarMemberRow] {
+        let rows = members.enumerated().map { index, member in
+            ClanWarMemberRow(
+                sourceIndex: index,
+                mapPosition: member.mapPosition,
+                name: member.name,
+                tag: member.tag,
+                townhallLevel: member.townhallLevel,
+                action: memberAction(attacks: member.attacks, attacksPerMember: attacksPerMember),
+                stars: memberStars(member),
+                lines: member.attacks.map { attacks in
+                    attacks.map {
+                        ClanWarAttackLine(order: $0.order, stars: $0.stars,
+                                          destructionPercentage: $0.destructionPercentage)
+                    }
+                },
+                defenseAttacks: member.opponentAttacks
+            )
+        }
+        return rows.sorted { compareRows($0, $1, order: order) }
+    }
+
+    /// 对已投影行按指定顺序重排（Issue #126）。
+    ///
+    /// 契约：键链与 `sortedRows(_:attacksPerMember:order:)` 完全一致——
+    /// - actionPriority：rank（displayGroup 语义：zero < partial < complete <
+    ///   数据未知组）→ mapPosition → name → sourceIndex；
+    /// - mapPosition：mapPosition → name → sourceIndex；
+    /// - name：name → mapPosition → sourceIndex。
+    ///
+    /// `sourceIndex` 恒为最终平局键 → 全序确定、幂等、与输入顺序无关。
+    /// UI 层二次排序必须走本函数（禁止自行实现比较器——平局键链是
+    /// sortedRows 的既定契约，UI 复制实现会产生排序漂移）。
+    public static func reorder(_ rows: [ClanWarMemberRow], order: ClanWarSortOrder) -> [ClanWarMemberRow] {
+        rows.sorted { compareRows($0, $1, order: order) }
+    }
+
+    /// 全序比较器（键链依 order 而异，sourceIndex 恒为最终平局键）：
+    /// - actionPriority：rank → mapPosition → name → sourceIndex（= #125 语义）；
+    /// - mapPosition：mapPosition → name → sourceIndex；
+    /// - name：name → mapPosition → sourceIndex。
+    ///
+    /// 键链是字典序比较：首个不同键即定序，sourceIndex 唯一 → 严格全序，
+    /// 排序幂等且与输入顺序无关。
+    private static func compareRows(_ lhs: ClanWarMemberRow, _ rhs: ClanWarMemberRow,
+                                    order: ClanWarSortOrder) -> Bool {
+        switch order {
+        case .actionPriority:
+            let lRank = sortRank(lhs.action.status)
+            let rRank = sortRank(rhs.action.status)
+            if lRank != rRank { return lRank < rRank }
+            if let decision = compareNilLast(lhs.mapPosition, rhs.mapPosition) { return decision }
+            if let decision = compareNilLast(lhs.name, rhs.name) { return decision }
+        case .mapPosition:
+            if let decision = compareNilLast(lhs.mapPosition, rhs.mapPosition) { return decision }
+            if let decision = compareNilLast(lhs.name, rhs.name) { return decision }
+        case .name:
+            if let decision = compareNilLast(lhs.name, rhs.name) { return decision }
+            if let decision = compareNilLast(lhs.mapPosition, rhs.mapPosition) { return decision }
+        }
+        // sourceIndex：最终平局键（全序）
+        return lhs.sourceIndex < rhs.sourceIndex
+    }
+
+    /// 可空升序比较（nil 排最后）：返回 nil 表示两侧相等（继续下一键）。
+    private static func compareNilLast<T: Comparable>(_ lhs: T?, _ rhs: T?) -> Bool? {
+        switch (lhs, rhs) {
+        case let (l?, r?):
+            return l != r ? l < r : nil
+        case (nil, _?): return false
+        case (_?, nil): return true
+        case (nil, nil): return nil
         }
     }
 }

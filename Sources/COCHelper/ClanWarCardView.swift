@@ -6,9 +6,10 @@ import COCHelperApp
 ///
 /// 状态语义（Issue #7 stage 3b）：
 /// - `notInWar` 是**成功**响应 → 显示"当前没有进行中的部落对战"空状态（不是失败）
-/// - `preparation` / `inWar` → 双方摘要比分（攻击/星/摧毁%）
+/// - `preparation` / `inWar` → 双方比分卡（ClanWarScoreCardView）+ 成员区
 /// - `warEnded` → 部落对战已结束 + 结果
-/// - 失败保留 last-good；成员级攻击表以展开组展示（默认折叠，上限 30 行）
+/// - 失败保留 last-good；成员区由 `ClanWarMemberSection` 渲染（全量无截断，
+///   排序/筛选状态由本视图持有，Issue #126）
 struct ClanWarCardView: View {
     @EnvironmentObject private var model: AppModel
     /// 本卡片数据来源的村庄（显式路由，不得读全局选中村庄）。
@@ -20,6 +21,21 @@ struct ClanWarCardView: View {
     init(villageID: UUID? = nil, clanTag: String? = nil) {
         self.villageID = villageID
         self.injectedClanTag = clanTag
+    }
+
+    // MARK: - 成员区状态（Issue #126）
+
+    /// 当前展示的参与方（我方/对方切换；只渲染选中方成员表）。
+    @State private var selectedSide = Side.clan
+    /// 成员行排序顺序（行动优先/地图位置/名称）。
+    @State private var sortOrder: ClanWarSortOrder = .actionPriority
+    /// 当前筛选桶（chips 选中态，由 ClanWarMemberSection 双向绑定）。
+    @State private var selectedFilter: ClanWarMemberFilter = .all
+    /// 成员搜索词（与 selectedFilter 同级持有：跨 side/村庄切换保留筛选/搜索上下文）。
+    @State private var searchText = ""
+
+    private enum Side: CaseIterable {
+        case clan, opponent
     }
 
     /// 手动入口直接使用注入 tag；村庄入口从玩家快照派生。
@@ -76,11 +92,6 @@ struct ClanWarCardView: View {
             statusLine(state)
             if let snapshot = state.lastGood {
                 warSummary(snapshot)
-                if !state.unrecognizedKeys.isEmpty {
-                    Text("官方响应包含未识别字段：" + state.unrecognizedKeys.joined(separator: "、"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
             }
             refreshButton(title: "刷新部落对战状态", tag: clanTag)
         } else if let clanTag {
@@ -149,28 +160,94 @@ struct ClanWarCardView: View {
         }
     }
 
+    /// 战争摘要：消费 `ClanWarDisplayProjection`（Issue #125/126），
+    /// 不再直接消费 raw snapshot 的 state 字符串与成员数组。
     @ViewBuilder
     private func warSummary(_ snapshot: OfficialClanWarSnapshot) -> some View {
-        switch snapshot.state {
-        case "notInWar":
+        let projection = ClanWarDisplayProjection.project(snapshot)
+        switch projection.phase {
+        case .notInWar:
             // 成功空状态：无部落对战不是失败
             Label("当前没有进行中的部落对战", systemImage: "checkmark.circle")
                 .font(.callout)
                 .foregroundStyle(.green)
-        case "preparation":
-            stateBadge("备战中", color: .orange)
-            scoreRow(snapshot)
-        case "inWar":
-            stateBadge("部落对战进行中", color: .red)
-            scoreRow(snapshot)
-        case "warEnded":
-            stateBadge("部落对战已结束", color: .secondary)
-            scoreRow(snapshot)
-        default:
-            Label("未知部落对战状态", systemImage: "questionmark.circle")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        case .preparation, .inWar, .warEnded:
+            VStack(alignment: .leading, spacing: 10) {
+                phaseBadge(projection.phase)
+                metaLines(snapshot, projection)
+                scoreCards(projection)
+                memberArea(projection)
+                dataDiagnostics(projection, snapshot)
+            }
+        case .unknown(raw: let raw):
+            VStack(alignment: .leading, spacing: 6) {
+                Label("未知部落对战状态", systemImage: "questionmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                // raw 原样展示（monospaced 小字，可审计）；字段缺失/空串时不渲染
+                if let raw, !raw.isEmpty {
+                    Text(raw)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                }
+                dataDiagnostics(projection, snapshot)
+            }
         }
+    }
+
+    /// 可展开数据诊断区：双方 mismatches（官方摘要 vs 成员推导不一致）、
+    /// 攻击数据未知计数与官方未识别字段（Issue #126 复审，替代原 statusContent
+    /// 中直接显示的 unrecognizedKeys 文本行）。
+    /// 无任何诊断内容时不渲染 DisclosureGroup。
+    @ViewBuilder
+    private func dataDiagnostics(_ projection: ClanWarProjection, _ snapshot: OfficialClanWarSnapshot) -> some View {
+        let lines = diagnosticLines(projection, snapshot)
+        if lines.isEmpty {
+            EmptyView()
+        } else {
+            DisclosureGroup("数据诊断") {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 2)
+            }
+            .font(.caption)
+        }
+    }
+
+    /// 诊断行文案（参与方前缀 + mismatches 逐条 + 未知计数 + 未识别字段）；
+    /// 空数组 = 无任何诊断内容。
+    private func diagnosticLines(_ projection: ClanWarProjection, _ snapshot: OfficialClanWarSnapshot) -> [String] {
+        var lines: [String] = []
+        // 双方 mismatches：前缀区分参与方（"我方 · …" / "对方 · …"）
+        for (label, side) in [("我方", projection.clan), ("对方", projection.opponent)] {
+            guard let side else { continue }
+            for mismatch in side.mismatches {
+                switch mismatch {
+                case .membersIncomplete:
+                    lines.append("\(label) · 成员攻击数据不完整（存在未返回攻击数据的成员）")
+                case let .attackCount(official, memberSum):
+                    lines.append("\(label) · 官方攻击数 \(official) ≠ 成员合计 \(memberSum)")
+                case let .stars(official, memberKnownSum):
+                    lines.append("\(label) · 官方星数 \(official) ≠ 成员合计 \(memberKnownSum)")
+                case let .memberCount(official, returned):
+                    lines.append("\(label) · 成员数 \(returned) / 预期 \(official)")
+                }
+            }
+            // 攻击数据未知计数（> 0 才提示）
+            if let unknown = side.unknownAttackDataCount, unknown > 0 {
+                lines.append("\(label) · \(unknown) 名成员攻击数据未知")
+            }
+        }
+        // 官方响应顶层未识别字段（schema 漂移审计）
+        if !snapshot.unrecognizedKeys.isEmpty {
+            lines.append("官方响应包含未识别字段：" + snapshot.unrecognizedKeys.joined(separator: "、"))
+        }
+        return lines
     }
 
     private func stateBadge(_ title: String, color: Color) -> some View {
@@ -182,45 +259,33 @@ struct ClanWarCardView: View {
             .foregroundStyle(color)
     }
 
-    private func scoreRow(_ snapshot: OfficialClanWarSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // 战争规则（Hard Mode / 传奇杯）：无规则（nil/"none"）时不渲染占位
+    /// 阶段胶囊（备战中/orange、部落对战进行中/red、部落对战已结束/secondary）。
+    @ViewBuilder
+    private func phaseBadge(_ phase: ClanWarPhase) -> some View {
+        switch phase {
+        case .preparation:
+            stateBadge("备战中", color: .orange)
+        case .inWar:
+            stateBadge("部落对战进行中", color: .red)
+        case .warEnded:
+            stateBadge("部落对战已结束", color: .secondary)
+        case .notInWar, .unknown:
+            EmptyView()
+        }
+    }
+
+    /// 元信息行：战争规则（BattleModifierText 映射）+ 对战规模（quota 投影）
+    /// + 开始/结束时间（官方时间原样展示）。
+    private func metaLines(_ snapshot: OfficialClanWarSnapshot, _ projection: ClanWarProjection) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 战争规则（锦标赛模式 / 传奇杯）：无规则（nil/"none"）时不渲染占位
             if let rule = BattleModifierText.localizedText(for: snapshot.battleModifier) {
                 Text("规则：\(rule)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if let teamSize = snapshot.teamSize {
+            if let teamSize = projection.quota.teamSize {
                 Text("对战规模：\(teamSize) 人")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if let clan = snapshot.clan {
-                participantRow(
-                    name: clan.name,
-                    tag: clan.tag,
-                    clanLevel: clan.clanLevel,
-                    attacks: clan.attacks,
-                    stars: clan.stars,
-                    destruction: clan.destructionPercentage,
-                    isClan: true
-                )
-                memberDisclosure(title: "成员进攻记录（\(clan.members?.count ?? 0) 人）", members: clan.members ?? [])
-            }
-            if let opponent = snapshot.opponent {
-                participantRow(
-                    name: opponent.name,
-                    tag: opponent.tag,
-                    clanLevel: opponent.clanLevel,
-                    attacks: opponent.attacks,
-                    stars: opponent.stars,
-                    destruction: opponent.destructionPercentage,
-                    isClan: false
-                )
-                memberDisclosure(title: "对方成员进攻记录（\(opponent.members?.count ?? 0) 人）", members: opponent.members ?? [])
-            }
-            if snapshot.clan == nil && snapshot.opponent == nil {
-                Text("部落对战详情字段缺失（可能刚结束或数据不完整）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -237,132 +302,110 @@ struct ClanWarCardView: View {
         }
     }
 
-    /// 战争参与方摘要行。`clanLevel` 参数名为部落等级（ClanWarParticipant
-    /// 语义），不得传入 townHallLevel 等大本营等级（Issue #95）。
-    private func participantRow(
-        name: String?, tag: String?, clanLevel: Int?,
-        attacks: Int?, stars: Int?, destruction: Double?, isClan: Bool
-    ) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: isClan ? "shield.fill" : "shield.lefthalf.filled.slash")
-                .foregroundStyle(isClan ? Color.cocAccent : .secondary)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(name ?? (isClan ? "我方" : "对方"))
-                        .font(.subheadline.weight(.semibold))
-                    if let clanLabel = ClanDisplayFormat.clanLevelLabel(clanLevel) {
-                        Text(clanLabel)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let tag {
-                        Text(tag)
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                if let stars {
-                    Text("⭐ \(stars) 星" + (attacks.map { " · \($0) 次攻击" } ?? "")
-                        + (destruction.flatMap(ClanCombatSummary.displayDestructionPercent).map { " · 摧毁率 \(Self.percent($0))%" } ?? ""))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
-
-    /// 成员攻击表展开组（默认折叠；上限 30 行，超出提示）。
+    /// 双方比分卡：`ClanWarScoreCardView` 要求双参与方非 nil——双侧齐全时用组件
+    ///（含星数差/摧毁率差）；一方缺失时降级为单卡（不伪造另一侧数据，不崩溃）；
+    /// 双侧缺失保留现状提示。
     @ViewBuilder
-    private func memberDisclosure(title: String, members: [ClanWarMember]) -> some View {
-        if !members.isEmpty {
-            DisclosureGroup(title) {
-                VStack(alignment: .leading, spacing: 2) {
-                    // id: \.offset：成员全 optional，两个相同对象（如全 nil）会撞 \.self
-                    ForEach(Array(members.prefix(30).enumerated()), id: \.offset) { _, member in
-                        memberRow(member)
-                    }
-                    if members.count > 30 {
-                        Text("还有 \(members.count - 30) 名成员…")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-            .font(.caption)
-        }
-    }
-
-    @ViewBuilder
-    private func memberRow(_ member: ClanWarMember) -> some View {
-        if let attacks = member.attacks, !attacks.isEmpty {
-            let summary = ClanCombatSummary.warMember(attacks: attacks)
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(summary.lines.enumerated()), id: \.offset) { _, line in
-                        attackLineRow(line)
-                    }
-                }
-                .padding(.vertical, 2)
-            } label: {
-                memberLabel(member, summaryText: "\(summary.attackCount)次进攻 · ⭐\(summary.totalStars)")
-            }
-            .font(.caption)
+    private func scoreCards(_ projection: ClanWarProjection) -> some View {
+        if let clan = projection.clan, let opponent = projection.opponent {
+            ClanWarScoreCardView(
+                label: "我方",
+                row: clan,
+                opponentLabel: "对方",
+                opponentRow: opponent,
+                quota: projection.quota
+            )
+        } else if let clan = projection.clan {
+            singleScoreCard(clan, label: "我方", quota: projection.quota)
+        } else if let opponent = projection.opponent {
+            singleScoreCard(opponent, label: "对方", quota: projection.quota)
         } else {
-            memberLabel(member, summaryText: member.attacks != nil ? "未攻击" : "—")
+            Text("部落对战详情字段缺失（可能刚结束或数据不完整）")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
-    /// 成员行标签（旧布局，仅汇总文案参数化）。
-    private func memberLabel(_ member: ClanWarMember, summaryText: String) -> some View {
-        HStack(spacing: 8) {
-            if let position = member.mapPosition {
-                Text("\(position)")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 22, alignment: .trailing)
+    /// 单方比分卡（另一参与方官方未返回时降级）：复用 `ScoreCard` 组件
+    /// （信息层与双卡布局同一来源，不重复实现），只消费官方 participant 摘要。
+    private func singleScoreCard(_ row: ClanWarParticipantProjection, label: String, quota: ClanWarQuota) -> some View {
+        ScoreCard(label: label, row: row, quota: quota)
+    }
+
+    // MARK: - 成员区（Issue #126）
+
+    /// 成员区：我方/对方切换（segmented）+ 标题行（标题 + 排序 Picker）
+    /// + `ClanWarMemberSection`。
+    /// - 排序：统一走 `ClanWarDisplayProjection.reorder`（键链与 Core sortedRows
+    ///   契约一致；actionPriority 对投影已排好的行是恒等）——UI 不再实现比较器。
+    /// - 过滤：`ClanWarMemberSection` 内部按 `selectedFilter` 过滤，本视图只传
+    ///   未过滤的排序后全量行（不过滤两次、不漏过滤）。
+    /// - 只渲染当前选中参与方的表（两侧各一张大表无意义）。
+    /// - `members == nil`（官方未返回成员数组）显示提示；`[]` 走空表（区分两者）。
+    @ViewBuilder
+    private func memberArea(_ projection: ClanWarProjection) -> some View {
+        let side = selectedSide == .clan ? projection.clan : projection.opponent
+        let sideTitle = selectedSide == .clan ? "我方成员" : "对方成员"
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("查看", selection: $selectedSide) {
+                Text("我方").tag(Side.clan)
+                Text("对方").tag(Side.opponent)
             }
-            Text(member.name ?? "未知成员")
-                .font(.caption)
-                .lineLimit(1)
-            if let th = member.townhallLevel {
-                Text("\(th)级大本营")
-                    .font(.caption2)
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            HStack(spacing: 8) {
+                // 官方未返回成员数组 ≠ 空数组：nil 显示"未返回"，[] 显示"0 人"
+                Text(side?.members == nil ? "\(sideTitle)（未返回）" : "\(sideTitle)（\(side?.members?.count ?? 0) 人）")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Picker("排序", selection: $sortOrder) {
+                    Text("行动优先").tag(ClanWarSortOrder.actionPriority)
+                    Text("地图位置").tag(ClanWarSortOrder.mapPosition)
+                    Text("名称").tag(ClanWarSortOrder.name)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            // 成员覆盖率紧凑提示：官方 teamSize 已知、成员数组已返回但数量
+            // 不一致（逐条诊断的展开详情在下方"数据诊断"区）
+            if let sideMembers = side?.members,
+               let teamSize = projection.quota.teamSize,
+               sideMembers.count != teamSize {
+                Text("成员数据不完整：返回 \(sideMembers.count) 人 / 预期 \(teamSize) 人")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let rows = side?.members {
+                let sortedRows = ClanWarDisplayProjection.reorder(rows, order: sortOrder)
+                let counts = ClanWarDisplayProjection.chipCounts(rows: sortedRows, phase: projection.phase)
+                // 搜索框：只过滤显示行（section 内 `rows(_:matchingSearch:)`），
+                // 计数不受搜索影响；跨 side/村庄切换保留搜索词（主视图持有）。
+                TextField("搜索成员名称或 tag", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .labelsHidden()
+                // 标题由上方标题行承担；.id(clanTag + side) 复合键：
+                // side 切换与村庄/部落切换时整个 section 重建（展开态重置）；
+                // 同部落快照刷新（clanTag 与 selectedSide 均不变）保留展开态。
+                ClanWarMemberSection(
+                    rows: sortedRows,
+                    phase: projection.phase,
+                    counts: counts,
+                    selectedFilter: $selectedFilter,
+                    searchText: searchText
+                )
+                .id("\(clanTag ?? "")-\(selectedSide)")
+            } else {
+                // 官方未返回成员数组（与 [] 区分：空数组走空表，不显示此提示）
+                Text("成员数据未返回")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Spacer()
-            Text(summaryText)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 1)
-    }
-
-    /// 逐次攻击明细行：`1. ⭐⭐⭐ 摧毁率 100%`；缺失摧毁率显示"摧毁率未知"。
-    private func attackLineRow(_ line: ClanWarAttackLine) -> some View {
-        HStack(spacing: 8) {
-            Text(line.order.map { "\($0)." } ?? "?")
-                .font(.caption2.monospaced())
-                .foregroundStyle(.tertiary)
-                .frame(width: 22, alignment: .trailing)
-            // 星数钳制到 [0,3]：官方契约虽为 0...3，但 schema 外输入不可信，
-            // String(repeating:count:) 对负 count 会触发 fatal error "Negative count not allowed"
-            Text(line.stars.map { String(repeating: "⭐", count: min(max($0, 0), 3)) } ?? "—")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(ClanCombatSummary.displayDestructionPercent(line.destructionPercentage).map { "摧毁率 \(Self.percent($0))%" } ?? "摧毁率未知")
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 1)
-    }
-
-    private static func percent(_ value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(value)) : String(format: "%.1f", value)
     }
 }

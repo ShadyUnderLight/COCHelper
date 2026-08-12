@@ -318,7 +318,7 @@ struct WarLogCardView: View {
                         .font(.callout.weight(.semibold))
                 }
                 if let destruction = entry.clan?.destructionPercentage.flatMap(ClanCombatSummary.displayDestructionPercent) {
-                        Text("摧毁率 \(Self.percent(destruction))%")
+                        Text("摧毁率 \(ClanDisplayFormat.percent(destruction))%")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -385,16 +385,11 @@ struct WarLogCardView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Spacer()
-            Text(ClanCombatSummary.displayDestructionPercent(line.destructionPercentage).map { "摧毁率 \(Self.percent($0))%" } ?? "摧毁率未知")
+            Text(ClanCombatSummary.displayDestructionPercent(line.destructionPercentage).map { "摧毁率 \(ClanDisplayFormat.percent($0))%" } ?? "摧毁率未知")
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 1)
-    }
-
-    private static func percent(_ value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(value)) : String(format: "%.1f", value)
     }
 
     @ViewBuilder

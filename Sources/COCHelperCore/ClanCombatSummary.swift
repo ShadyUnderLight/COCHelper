@@ -110,6 +110,19 @@ public enum ClanCombatSummary {
         return "\(minutes):" + String(format: "%02d", seconds)
     }
 
+    /// 百分比文本（摧毁率展示单一来源，Core 版）：整数无小数，非整数 1 位小数。
+    /// 固定 en_US_POSIX（`String(format:)` 默认随系统区域，某些区域小数点变逗号）。
+    /// 防御：超出 Int 可表示范围的 Double 走 %.1f 分支（不 trap）。
+    /// 注：app target 的 `ClanDisplayFormat.percent` 是另一份拷贝（既有先例：
+    /// WarLogCardView.percent），Core 内一律用本函数保证单一来源。
+    public static func percentText(_ value: Double) -> String {
+        guard value < Double(Int.max), value >= Double(Int.min) else {
+            return String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), arguments: [value])
+        }
+        return value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value)) : String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), arguments: [value])
+    }
+
     /// 已摧毁子城数：官方字段优先（0 也是官方事实）；缺失时从子城明细推导。
     /// 只有全部子城摧毁率已知（有限）才返回确切计数（含 0）；
     /// 任一子城摧毁率未知（nil/NaN/Inf）→ nil（调用方省略分句，绝不编造或低估）。

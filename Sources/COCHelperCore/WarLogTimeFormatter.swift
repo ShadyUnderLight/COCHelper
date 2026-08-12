@@ -111,13 +111,18 @@ public enum WarLogTimeFormatter {
     }
 
     /// 剩余时间（Issue #127，currentwar inWar 用）：endTime 可解析且晚于 now
-    /// → "剩余 X 天 X 小时"（不足 1 天只显示小时）；解析失败/已过期 → nil。
+    /// → "剩余 X 天 X 小时" / "剩余 X 小时" / "剩余 X 分钟" / "剩余不足 1 分钟"
+    /// （不足 1 天显示小时，不足 1 小时显示分钟，不足 1 分钟诚实提示，不伪造）；
+    /// 解析失败/已过期 → nil。floor 语义（小数秒不向上进位）。
     public static func remainingText(endRaw: String?, now: Date) -> String? {
         guard let endRaw, let end = utcDate(from: endRaw) else { return nil }
         let seconds = Int(end.timeIntervalSince(now))
         guard seconds > 0 else { return nil }
         let days = seconds / 86_400
         let hours = (seconds % 86_400) / 3_600
-        return days > 0 ? "剩余 \(days) 天 \(hours) 小时" : "剩余 \(hours) 小时"
+        if days > 0 { return "剩余 \(days) 天 \(hours) 小时" }
+        if hours > 0 { return "剩余 \(hours) 小时" }
+        let minutes = seconds / 60
+        return minutes > 0 ? "剩余 \(minutes) 分钟" : "剩余不足 1 分钟"
     }
 }

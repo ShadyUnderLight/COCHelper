@@ -11,11 +11,19 @@ public struct ClanWarAttackLine: Hashable, Sendable {
     public let stars: Int?
     /// 摧毁百分比；nil = 缺失（不得用 0 顶替）。
     public let destructionPercentage: Double?
+    /// 目标 tag（官方 defenderTag 透传）；nil = 缺失。warlog/currentwar 共用
+    /// 类型：warlog 调用点不消费该字段（Issue #127 扩展，默认 nil 向后兼容）。
+    public let defenderTag: String?
+    /// 攻击时长（秒，官方透传）；nil = 缺失。展示格式见 `ClanCombatSummary.durationText`。
+    public let duration: Int?
 
-    public init(order: Int? = nil, stars: Int? = nil, destructionPercentage: Double? = nil) {
+    public init(order: Int? = nil, stars: Int? = nil, destructionPercentage: Double? = nil,
+                defenderTag: String? = nil, duration: Int? = nil) {
         self.order = order
         self.stars = stars
         self.destructionPercentage = destructionPercentage
+        self.defenderTag = defenderTag
+        self.duration = duration
     }
 }
 
@@ -92,6 +100,31 @@ public enum ClanCombatSummary {
         guard let value, value.isFinite else { return nil }
         return min(max(value, 0), 100)
     }
+
+    /// 攻击时长展示文本（分:秒，如 145 → "2:25"）；nil 或负值 → nil（未知）。
+    /// 不伪造时长；超长值（如 Int.max）分钟数直接大字面量，无算术风险。
+    public static func durationText(_ duration: Int?) -> String? {
+        guard let duration, duration >= 0 else { return nil }
+        let minutes = duration / 60
+        let seconds = duration % 60
+        return "\(minutes):" + String(format: "%02d", seconds)
+    }
+
+    /// 百分比文本（摧毁率展示单一来源，Core 版）：整数无小数，非整数 1 位小数。
+    /// 固定 en_US_POSIX（`String(format:)` 默认随系统区域，某些区域小数点变逗号）。
+    /// 防御：超出 Int 可表示范围的 Double 走 %.1f 分支（不 trap）。
+    /// 注：app target 的 `ClanDisplayFormat.percent` 是另一份拷贝（既有先例：
+    /// WarLogCardView 即用它渲染摧毁率），Core 内一律用本函数保证单一来源。
+    public static func percentText(_ value: Double) -> String {
+        guard value < Double(Int.max), value >= Double(Int.min) else {
+            return String(format: "%.1f", locale: posixLocale, arguments: [value])
+        }
+        return value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value)) : String(format: "%.1f", locale: posixLocale, arguments: [value])
+    }
+
+    /// 固定 en_US_POSIX（`String(format:)` 默认随系统区域，某些区域小数点变逗号）。
+    private static let posixLocale = Locale(identifier: "en_US_POSIX")
 
     /// 已摧毁子城数：官方字段优先（0 也是官方事实）；缺失时从子城明细推导。
     /// 只有全部子城摧毁率已知（有限）才返回确切计数（含 0）；

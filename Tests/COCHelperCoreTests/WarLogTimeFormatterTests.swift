@@ -197,4 +197,73 @@ final class WarLogTimeFormatterTests: XCTestCase {
             WarLogTimeFormatter.displayText(raw: "20260809T110738.0000Z"),
             .unparsable("20260809T110738.0000Z"))
     }
+
+    // MARK: - remainingText（Issue #127，currentwar inWar 倒计时）
+
+    func testRemainingTextPositive() {
+        // 20260809T110738.000Z = 北京时间 19:07:38
+        let end = "20260809T110738.000Z"
+        let now = utcDate(2026, 8, 9, 3, 7, 38)   // UTC 03:07:38 → 剩余 8 小时
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end, now: now), "剩余 8 小时")
+    }
+
+    func testRemainingTextMultipleDays() {
+        let end = "20260809T110738.000Z"
+        let now = utcDate(2026, 8, 6, 11, 7, 38)  // 剩余 3 天
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end, now: now), "剩余 3 天 0 小时")
+    }
+
+    func testRemainingTextExpiredOrUnparsableIsNil() {
+        let end = "20260809T110738.000Z"
+        XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                       now: utcDate(2026, 8, 9, 12, 0, 0)))
+        XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: nil, now: Date()))
+        XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: "not-a-date", now: Date()))
+    }
+
+    func testRemainingTextBoundaries() {
+        let end = "20260809T110738.000Z"
+        // end 恰好等于 now：不算剩余 → nil
+        XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                       now: utcDate(2026, 8, 9, 11, 7, 38)))
+        // 不足 1 小时显示分钟粒度（Issue #127 F2 契约变更：不再伪造"剩余 0 小时"）
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                         now: utcDate(2026, 8, 9, 10, 37, 38)),
+                       "剩余 30 分钟")
+        // 极端跨度（正则允许的最大区间）不溢出不崩溃
+        XCTAssertNotNil(WarLogTimeFormatter.remainingText(
+            endRaw: "99991231T235959Z", now: utcDate(1992, 1, 1, 0, 0, 0)))
+    }
+
+    /// 分钟粒度（Issue #127 F2）：不足 1 小时显示分钟；不足 1 分钟显示"剩余不足 1 分钟"。
+    func testRemainingTextMinuteGranularity() {
+        let end = "20260809T110738.000Z"
+        // 剩 30 分钟
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                         now: utcDate(2026, 8, 9, 10, 37, 38)),
+                       "剩余 30 分钟")
+        // 剩 59 秒（floor 到不足 1 分钟）
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                         now: utcDate(2026, 8, 9, 11, 6, 39)),
+                       "剩余不足 1 分钟")
+        // 剩 1 分钟整
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                         now: utcDate(2026, 8, 9, 11, 6, 38)),
+                       "剩余 1 分钟")
+        // 小数秒：剩 59m30s → floor 到 59 分钟（锁定 floor 语义，防 ceil 逃逸）
+        let nowHalf = utcDate(2026, 8, 9, 10, 7, 38).addingTimeInterval(0.5)  // 10:07:38.5 → 距 end 3599.5s
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end, now: nowHalf),
+                       "剩余 59 分钟")
+    }
+
+    /// 测试辅助：UTC 固定日期（避免 DateComponents 时区漂移）。
+    /// 必须显式钉住 UTC：Calendar(identifier:) 默认跟随本机时区（实测 Asia/Shanghai），
+    /// 否则组件会被按本地时区解释，断言值只在 UTC 下成立。
+    private func utcDate(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int, _ s: Int) -> Date {
+        var c = DateComponents()
+        c.year = y; c.month = mo; c.day = d; c.hour = h; c.minute = mi; c.second = s
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        return cal.date(from: c)!
+    }
 }

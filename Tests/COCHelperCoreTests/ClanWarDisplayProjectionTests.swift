@@ -704,6 +704,60 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         // 幂等
         XCTAssertEqual(rows, ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2))
     }
+
+    // MARK: - 攻击行透传（Issue #127）
+
+    func testAttackLineProjectsTargetAndDuration() {
+        let atk = ClanWarAttack(order: 1, attackerTag: "#ATK", defenderTag: "#DEF",
+                                stars: 2, destructionPercentage: 80, duration: 145)
+        let member = ClanWarMember(tag: "#M", name: "M", mapPosition: 1, townhallLevel: 10,
+                                   attacks: [atk], opponentAttacks: nil, bestOpponentAttack: nil)
+        let rows = ClanWarDisplayProjection.sortedRows([member], attacksPerMember: 2)
+        let line = try! XCTUnwrap(rows.first?.lines?.first)
+        XCTAssertEqual(line.order, 1)
+        XCTAssertEqual(line.stars, 2)
+        XCTAssertEqual(line.destructionPercentage, 80)
+        XCTAssertEqual(line.defenderTag, "#DEF")
+        XCTAssertEqual(line.duration, 145)
+    }
+
+    func testAttackLineMissingTargetAndDurationKeepOtherFields() {
+        let atk = ClanWarAttack(order: 1, attackerTag: nil, defenderTag: nil,
+                                stars: 3, destructionPercentage: 100, duration: nil)
+        let member = ClanWarMember(tag: "#M", name: "M", mapPosition: 1, townhallLevel: nil,
+                                   attacks: [atk], opponentAttacks: nil, bestOpponentAttack: nil)
+        let line = try! XCTUnwrap(ClanWarDisplayProjection.sortedRows([member], attacksPerMember: 1).first?.lines?.first)
+        XCTAssertNil(line.defenderTag)
+        XCTAssertNil(line.duration)
+        XCTAssertEqual(line.stars, 3)
+        XCTAssertEqual(line.destructionPercentage, 100)
+    }
+
+    // MARK: - bestDefense（Issue #127）
+
+    func testBestDefenseProjectedFromBestOpponentAttack() {
+        let best = ClanWarAttack(order: nil, attackerTag: "#OPP", defenderTag: "#M",
+                                 stars: 2, destructionPercentage: 75, duration: 120)
+        let member = ClanWarMember(tag: "#M", name: "M", mapPosition: 1, townhallLevel: nil,
+                                   attacks: [], opponentAttacks: 3, bestOpponentAttack: best)
+        let row = try! XCTUnwrap(ClanWarDisplayProjection.sortedRows([member], attacksPerMember: 2).first)
+        XCTAssertEqual(row.defenseAttacks, 3)
+        let defense = try! XCTUnwrap(row.bestDefense)
+        // 防守视角只消费 stars/destruction/duration；order/defenderTag 无意义恒 nil
+        XCTAssertEqual(defense.stars, 2)
+        XCTAssertEqual(defense.destructionPercentage, 75)
+        XCTAssertEqual(defense.duration, 120)
+        XCTAssertNil(defense.order)
+        XCTAssertNil(defense.defenderTag)
+    }
+
+    func testBestDefenseNilWhenBestOpponentAttackMissing() {
+        let member = ClanWarMember(tag: "#M", name: "M", mapPosition: 1, townhallLevel: nil,
+                                   attacks: [], opponentAttacks: 0, bestOpponentAttack: nil)
+        let row = try! XCTUnwrap(ClanWarDisplayProjection.sortedRows([member], attacksPerMember: 2).first)
+        XCTAssertNil(row.bestDefense)
+        XCTAssertEqual(row.defenseAttacks, 0)
+    }
 }
 
 /// Issue #125：部落对战展示投影的 property-based 测试。
@@ -734,10 +788,11 @@ final class ClanWarDisplayProjectionPropertyTests: XCTestCase {
     private func randomAttack(_ g: inout SeededGenerator, order: Int) -> ClanWarAttack {
         ClanWarAttack(
             order: g.int(in: 0...3) == 0 ? nil : order,
-            attackerTag: nil, defenderTag: nil,
+            attackerTag: nil,
+            defenderTag: g.int(in: 0...99) < 25 ? nil : "opponent-\(g.int(in: 0...99))",
             stars: g.int(in: 0...3) == 0 ? nil : g.int(in: -2...3),
             destructionPercentage: g.int(in: 0...3) == 0 ? nil : g.double(in: 0...150),
-            duration: nil
+            duration: g.int(in: 0...99) < 25 ? nil : g.int(in: 0...600)
         )
     }
 
@@ -751,7 +806,12 @@ final class ClanWarDisplayProjectionPropertyTests: XCTestCase {
             mapPosition: g.int(in: 0...3) == 0 ? nil : g.int(in: 1...40),
             townhallLevel: g.int(in: 0...3) == 0 ? nil : g.int(in: 1...17),
             attacks: attacks,
-            opponentAttacks: nil, bestOpponentAttack: nil
+            opponentAttacks: g.int(in: 0...99) < 25 ? nil : g.int(in: 0...10),
+            bestOpponentAttack: g.int(in: 0...99) < 25 ? nil :
+                ClanWarAttack(order: nil, attackerTag: nil, defenderTag: nil,
+                              stars: g.int(in: -1...3),
+                              destructionPercentage: g.int(in: 0...99) < 25 ? nil : g.double(in: 0...150),
+                              duration: g.int(in: 0...99) < 25 ? nil : g.int(in: 0...600))
         )
     }
 
@@ -903,6 +963,101 @@ final class ClanWarDisplayProjectionPropertyTests: XCTestCase {
                          + counts.completeCount + counts.overQuotaCount + counts.quotaUnknownCount == rows.count,
                          "计数守恒（含全 nil 成员）",
                          context: "seed=707 n=\(members.count)")
+        }
+    }
+
+    // MARK: - Issue #127 properties
+
+    /// 逐次攻击的 target/duration 与输入一一透传（保序、无聚合）。
+    /// 关键：sortedRows 按行动优先级重排成员，成员与行必须用 sourceIndex 关联。
+    func testAttackLinesPreserveTargetAndDurationProperty() {
+        var g = SeededGenerator(seed: 707)
+        for _ in 0..<Self.iterationCount {
+            let members = randomMemberList(&g)
+            let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+            for (index, member) in members.enumerated() {
+                guard let row = rows.first(where: { $0.sourceIndex == index }) else {
+                    XCTFail("成员必有对应行")
+                    continue
+                }
+                guard let attacks = member.attacks else {
+                    assertOrFail(row.lines == nil, "attacks nil 时该成员不得有 lines",
+                                 context: "seed=707")
+                    continue
+                }
+                guard let lines = row.lines else {
+                    XCTFail("attacks 非 nil 时 lines 必须存在")
+                    continue
+                }
+                assertOrFail(lines.count == attacks.count, "lines 数量必须等于 attacks 数量",
+                             context: "seed=707 n=\(attacks.count)")
+                for (atk, line) in zip(attacks, lines) {
+                    assertOrFail(line.order == atk.order, "order 透传（保序）",
+                                 context: "seed=707")
+                    assertOrFail(line.defenderTag == atk.defenderTag, "defenderTag 透传",
+                                 context: "seed=707")
+                    assertOrFail(line.duration == atk.duration, "duration 透传",
+                                 context: "seed=707")
+                    assertOrFail(line.stars == atk.stars, "stars 透传",
+                                 context: "seed=707")
+                    assertOrFail(line.destructionPercentage == atk.destructionPercentage,
+                                 "destructionPercentage 透传（无聚合）", context: "seed=707")
+                }
+            }
+        }
+    }
+
+    /// bestDefense 与 bestOpponentAttack 一一对应；bestOpponentAttack nil → bestDefense nil。
+    func testBestDefenseConsistentProperty() {
+        var g = SeededGenerator(seed: 808)
+        for _ in 0..<Self.iterationCount {
+            let members = randomMemberList(&g)
+            let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+            for (index, member) in members.enumerated() {
+                guard let row = rows.first(where: { $0.sourceIndex == index }) else {
+                    XCTFail("成员必有对应行")
+                    continue
+                }
+                assertOrFail(row.defenseAttacks == member.opponentAttacks,
+                             "defenseAttacks 透传", context: "seed=808")
+                let best = member.bestOpponentAttack
+                if let best {
+                    let defense = row.bestDefense
+                    assertOrFail(defense != nil, "bestOpponentAttack 存在时 bestDefense 必须非 nil",
+                                 context: "seed=808")
+                    assertOrFail(defense?.stars == best.stars, "bestDefense.stars 透传",
+                                 context: "seed=808")
+                    assertOrFail(defense?.destructionPercentage == best.destructionPercentage,
+                                 "bestDefense.destructionPercentage 透传", context: "seed=808")
+                    assertOrFail(defense?.duration == best.duration, "bestDefense.duration 透传",
+                                 context: "seed=808")
+                } else {
+                    assertOrFail(row.bestDefense == nil, "bestOpponentAttack nil 时 bestDefense 必须 nil",
+                                 context: "seed=808")
+                }
+            }
+        }
+    }
+
+    /// durationText 可逆：非负输入解析回秒数一致；负值/nil → nil。
+    func testDurationTextRoundTripProperty() {
+        var g = SeededGenerator(seed: 909)
+        for _ in 0..<Self.iterationCount {
+            let raw = g.int(in: -100...10000)
+            let text = ClanCombatSummary.durationText(raw)
+            if raw < 0 {
+                assertOrFail(text == nil, "负值必须 nil", context: "seed=909 raw=\(raw)")
+            } else {
+                assertOrFail(text != nil, "非负值必须非 nil", context: "seed=909 raw=\(raw)")
+                if let text {
+                    let parts = text.split(separator: ":")
+                    assertOrFail(parts.count == 2, "格式必须 M:SS", context: "seed=909 text=\(text)")
+                    let minutes = Int(parts[0]) ?? -1
+                    let seconds = Int(parts[1]) ?? -1
+                    assertOrFail(minutes * 60 + seconds == raw,
+                                 "解析回秒数必须等于输入", context: "seed=909 raw=\(raw) text=\(text)")
+                }
+            }
         }
     }
 }

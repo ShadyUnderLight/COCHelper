@@ -139,9 +139,12 @@ public struct ClanWarMemberRow: Hashable, Sendable, Identifiable {
     /// 逐次攻击明细；nil = attacks == nil，[] = 明确 0 次攻击。
     public let lines: [ClanWarAttackLine]?
     /// 防守列数据：对方攻击本成员的次数（raw `ClanWarMember.opponentAttacks`
-    /// 直接透传，官方即整数次数）；nil = 官方未返回防守数据。深度防守表现
-    /// 归 Issue #127。
+    /// 直接透传，官方即整数次数）；nil = 官方未返回防守数据。
     public let defenseAttacks: Int?
+    /// 最佳防守（官方 `bestOpponentAttack` 投影；nil = 官方未返回）。
+    /// 只消费 stars/destructionPercentage/duration（order 无意义恒 nil；
+    /// defenderTag 即本成员自身 tag，自引用无展示信息量）。
+    public let bestDefense: ClanWarAttackLine?
 
     public var id: Int { sourceIndex }
 
@@ -149,7 +152,7 @@ public struct ClanWarMemberRow: Hashable, Sendable, Identifiable {
         sourceIndex: Int, mapPosition: Int?, name: String?, tag: String?,
         townhallLevel: Int?, action: ClanWarMemberAction,
         stars: ClanWarMemberStars?, lines: [ClanWarAttackLine]?,
-        defenseAttacks: Int?
+        defenseAttacks: Int?, bestDefense: ClanWarAttackLine? = nil
     ) {
         self.sourceIndex = sourceIndex
         self.mapPosition = mapPosition
@@ -160,6 +163,7 @@ public struct ClanWarMemberRow: Hashable, Sendable, Identifiable {
         self.stars = stars
         self.lines = lines
         self.defenseAttacks = defenseAttacks
+        self.bestDefense = bestDefense
     }
 }
 
@@ -771,10 +775,16 @@ extension ClanWarDisplayProjection {
                 lines: member.attacks.map { attacks in
                     attacks.map {
                         ClanWarAttackLine(order: $0.order, stars: $0.stars,
-                                          destructionPercentage: $0.destructionPercentage)
+                                          destructionPercentage: $0.destructionPercentage,
+                                          defenderTag: $0.defenderTag, duration: $0.duration)
                     }
                 },
-                defenseAttacks: member.opponentAttacks
+                defenseAttacks: member.opponentAttacks,
+                bestDefense: member.bestOpponentAttack.map {
+                    ClanWarAttackLine(stars: $0.stars,
+                                      destructionPercentage: $0.destructionPercentage,
+                                      duration: $0.duration)
+                }
             )
         }
         return rows.sorted { compareRows($0, $1, order: order) }

@@ -176,4 +176,34 @@ final class ClanCombatSummaryTests: XCTestCase {
         XCTAssertEqual(ClanCombatSummary.clampedPercent(Double.infinity), 0)
         XCTAssertEqual(ClanCombatSummary.clampedPercent(-Double.infinity), 0)
     }
+
+    // MARK: - durationText（Issue #127）
+
+    func testDurationTextFormatsMinutesAndSeconds() {
+        XCTAssertEqual(ClanCombatSummary.durationText(0), "0:00")
+        XCTAssertEqual(ClanCombatSummary.durationText(59), "0:59")
+        XCTAssertEqual(ClanCombatSummary.durationText(60), "1:00")
+        XCTAssertEqual(ClanCombatSummary.durationText(65), "1:05")
+        XCTAssertEqual(ClanCombatSummary.durationText(145), "2:25")
+        XCTAssertEqual(ClanCombatSummary.durationText(3661), "61:01")
+    }
+
+    func testDurationTextNilAndNegativeIsUnknown() {
+        XCTAssertNil(ClanCombatSummary.durationText(nil))
+        XCTAssertNil(ClanCombatSummary.durationText(-1))
+        XCTAssertNil(ClanCombatSummary.durationText(Int.min))
+    }
+
+    func testDurationTextIntMaxDoesNotOverflow() {
+        // 超长值分钟数直接大字面量，无算术风险（= 文档注释承诺）
+        XCTAssertEqual(ClanCombatSummary.durationText(Int.max), "153722867280912930:07")
+    }
+
+    // MARK: - percentText（Issue #127）
+
+    func testPercentTextExtremeValuesDoNotTrap() {
+        // 超出 Int 可表示范围的 Double 走 %.1f 分支（不 trap）
+        XCTAssertEqual(ClanCombatSummary.percentText(1e300), String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), arguments: [1e300]))
+        XCTAssertEqual(ClanCombatSummary.percentText(-1e300), String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), arguments: [-1e300]))
+    }
 }

@@ -98,6 +98,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertNotEqual(homeTypes[0].identity.key, homeTypes[1].identity.key)
         XCTAssertNotEqual(homeTypes[0].identity.key, module.identity.key)
         XCTAssertEqual(module.identity.nestedRootDataID, 1000001)
+        XCTAssertEqual(module.identity.nestedRootIdentity, homeRoot.identity.key)
         XCTAssertEqual(module.identity.nestedParentPath.map(\.kind), [.root, .type])
         XCTAssertFalse(items.contains { $0.identity.key.contains(".types.") })
     }
@@ -167,6 +168,87 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertTrue(missingDataDiagnostics.contains { $0.contains("buildings[0].types[") && $0.hasSuffix("canonical observation。") })
         XCTAssertTrue(missingDataDiagnostics.contains { $0.contains(".modules[") && $0.hasSuffix("canonical observation。") })
         XCTAssertFalse(entry.observation.items.contains { $0.identity.dataID == 0 })
+    }
+
+    func testNonObjectRootMakesNestedCoveragePartialAndReportsPath() throws {
+        let snapshot = makeRawSnapshot(
+            """
+            {
+              "buildings": [
+                {"data": 1000001, "types": []},
+                "not-an-object"
+              ]
+            }
+            """
+        )
+        let entry = try canonicalize(snapshot)
+
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "types"), .partial)
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "modules"), .partial)
+        XCTAssertTrue(entry.coverage.diagnostics.contains {
+            $0.contains("buildings[") && $0.contains("根记录不是对象")
+        })
+    }
+
+    func testCoverageUsesCatalogToRejectUnknownRootAndNestedDataIDs() throws {
+        let snapshot = makeRawSnapshot(
+            """
+            {
+              "buildings": [{
+                "data": 9999999,
+                "types": [{"data": 777}]
+              }]
+            }
+            """
+        )
+        let entry = try canonicalize(
+            snapshot,
+            catalog: makeCatalog(name: "known root", version: "18.400.13")
+        )
+
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "data"), .partial)
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "types"), .partial)
+        XCTAssertTrue(entry.coverage.diagnostics.contains {
+            $0.contains("buildings[0].data") && $0.contains("未知 dataID 9999999")
+        })
+        XCTAssertTrue(entry.coverage.diagnostics.contains {
+            $0.contains("buildings[0].types[0].data") && $0.contains("未知 dataID 777")
+        })
+    }
+
+    func testDeepNestedIdentityKeepsOutermostRoot() throws {
+        let snapshot = try makeSnapshot(
+            """
+            {
+              "buildings": [{
+                "data": 1000001,
+                "types": [{
+                  "data": 777,
+                  "modules": [{
+                    "data": 888,
+                    "modules": [{"data": 999}]
+                  }]
+                }]
+              }]
+            }
+            """
+        )
+        let entry = try canonicalize(snapshot)
+
+        let root = try XCTUnwrap(entry.observation.items.first { $0.identity.nestedKind == .root })
+        let type = try XCTUnwrap(entry.observation.items.first { $0.identity.nestedKind == .type })
+        let parentModule = try XCTUnwrap(entry.observation.items.first {
+            $0.identity.nestedKind == .module && $0.identity.dataID == 888
+        })
+        let deepModule = try XCTUnwrap(entry.observation.items.first {
+            $0.identity.nestedKind == .module && $0.identity.dataID == 999
+        })
+
+        XCTAssertEqual(type.identity.nestedRootIdentity, root.identity.key)
+        XCTAssertEqual(parentModule.identity.nestedRootIdentity, root.identity.key)
+        XCTAssertEqual(deepModule.identity.nestedRootIdentity, root.identity.key)
+        XCTAssertNotEqual(deepModule.identity.nestedRootIdentity, type.identity.key)
+        XCTAssertEqual(deepModule.identity.nestedParentPath.map(\.kind), [.root, .type, .module])
     }
 
     func testDisplayBindingIsCopiedAtCreationAndDoesNotAffectFingerprint() throws {

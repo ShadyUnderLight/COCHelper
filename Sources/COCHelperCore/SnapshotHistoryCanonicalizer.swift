@@ -19,7 +19,7 @@ public enum SnapshotHistoryCanonicalizer {
     ) throws -> SnapshotHistoryEntry {
         let source = try canonicalSource(snapshot.originalText)
         let observation = makeObservation(source: source, catalog: catalog)
-        let coverage = makeCoverage(source: source)
+        let coverage = makeCoverage(source: source, catalog: catalog)
         let fingerprint = fingerprint(for: observation)
 
         return SnapshotHistoryEntry(
@@ -207,7 +207,10 @@ public enum SnapshotHistoryCanonicalizer {
             display: displayBinding(for: identity, catalog: catalog)
         ))
 
-        let childRootIdentity = identity.key
+        // A nested record keeps the identity of the outermost root.  Passing
+        // the current identity here would make a module nested under a type
+        // look rooted at that type instead of at the building record.
+        let childRootIdentity = rootIdentity ?? identity.key
         let childRootDataID = rootDataID ?? dataID
         let childParentPath = parentPath + [
             SnapshotNestedPathComponent(kind: nestedKind, dataID: dataID)
@@ -280,7 +283,10 @@ public enum SnapshotHistoryCanonicalizer {
         )
     }
 
-    private static func makeCoverage(source: CanonicalSource) -> SnapshotObservationCoverage {
+    private static func makeCoverage(
+        source: CanonicalSource,
+        catalog: GameCatalog?
+    ) -> SnapshotObservationCoverage {
         var fields: [SnapshotCoverageField] = []
         var diagnostics: [String] = []
 
@@ -311,29 +317,47 @@ public enum SnapshotHistoryCanonicalizer {
                 field: "presence",
                 state: .complete
             ))
-            let records = values.enumerated().compactMap {
-                element -> (index: Int, object: [String: CanonicalJSONValue])? in
-                guard case .object(let object) = element.element else { return nil }
+            let records: [(index: Int, object: [String: CanonicalJSONValue]?)] = values.enumerated().map {
+                element in
+                guard case .object(let object) = element.element else {
+                    return (index: element.offset, object: nil)
+                }
                 return (index: element.offset, object: object)
             }
-            let objects = records.map { $0.object }
-            if objects.count != values.count {
+            let objects = records.compactMap { $0.object }
+            let invalidRootRecords = records.filter { $0.object == nil }
+            if !invalidRootRecords.isEmpty {
                 diagnostics.append("\(section): 数组中存在非对象记录。")
+                diagnostics.append(contentsOf: invalidRootRecords.map {
+                    "\(section)[\($0.index)]: 根记录不是对象，无法验证 nested fields。"
+                })
             }
-            for (index, value) in values.enumerated() {
-                guard case .object(let object) = value else { continue }
+            for record in records {
+                guard let object = record.object else { continue }
                 if integer(object["data"]) == nil {
                     diagnostics.append(
-                        "\(section)[\(index)].data: 缺少有效 dataID，记录未纳入 canonical observation。"
+                        "\(section)[\(record.index)].data: 缺少有效 dataID，记录未纳入 canonical observation。"
                     )
                 }
             }
             for field in SnapshotHistoryKnownSections.itemFields {
                 let state: SnapshotCoverageState
                 if field == "types" || field == "modules" {
-                    let nested = nestedFieldState(records: records, field: field, section: section)
+                    let nested = nestedFieldState(
+                        records: records,
+                        field: field,
+                        section: section,
+                        catalog: catalog
+                    )
                     state = nested.state
                     diagnostics.append(contentsOf: nested.diagnostics)
+                } else if field == "data" {
+                    state = dataFieldState(
+                        records: records,
+                        section: section,
+                        catalog: catalog,
+                        diagnostics: &diagnostics
+                    )
                 } else {
                     state = fieldState(
                         objects: objects,
@@ -403,7 +427,12 @@ public enum SnapshotHistoryCanonicalizer {
                 base: base,
                 rawSection: section,
                 field: "data",
-                state: values.allSatisfy { integer($0) != nil } ? .complete : .partial
+                state: numericDataState(
+                    values,
+                    section: section,
+                    catalog: catalog,
+                    diagnostics: &diagnostics
+                )
             ))
         }
 
@@ -420,20 +449,32 @@ public enum SnapshotHistoryCanonicalizer {
     }
 
     private static func nestedFieldState(
-        records: [(index: Int, object: [String: CanonicalJSONValue])],
+        records: [(index: Int, object: [String: CanonicalJSONValue]?)],
         field: String,
-        section: String
+        section: String,
+        catalog: GameCatalog?
     ) -> NestedCoverageAnalysis {
         guard !records.isEmpty else {
             return NestedCoverageAnalysis(state: .unavailable, diagnostics: [])
         }
 
-        let present = records.filter { $0.object[field] != nil }
+        let objectRecords = records.compactMap { $0.object }
+        let present = records.compactMap {
+            record -> (index: Int, object: [String: CanonicalJSONValue])? in
+            guard let object = record.object, object[field] != nil else { return nil }
+            return (index: record.index, object: object)
+        }
+        let hasInvalidRoot = objectRecords.count != records.count
         guard !present.isEmpty else {
-            return NestedCoverageAnalysis(state: .unavailable, diagnostics: [])
+            return NestedCoverageAnalysis(
+                state: hasInvalidRoot ? .partial : .unavailable,
+                diagnostics: []
+            )
         }
 
-        var state: SnapshotCoverageState = present.count == records.count ? .complete : .partial
+        var state: SnapshotCoverageState = hasInvalidRoot || present.count != objectRecords.count
+            ? .partial
+            : .complete
         var diagnostics: [String] = []
         for record in present {
             let path = "\(section)[\(record.index)].\(field)"
@@ -442,7 +483,12 @@ public enum SnapshotHistoryCanonicalizer {
                 diagnostics.append("\(path): 嵌套值不是数组。")
                 continue
             }
-            let nested = validateNestedArray(values, path: path)
+            let nested = validateNestedArray(
+                values,
+                path: path,
+                section: section,
+                catalog: catalog
+            )
             diagnostics.append(contentsOf: nested.diagnostics)
             if nested.state != .complete {
                 state = .partial
@@ -453,7 +499,9 @@ public enum SnapshotHistoryCanonicalizer {
 
     private static func validateNestedArray(
         _ values: [CanonicalJSONValue],
-        path: String
+        path: String,
+        section: String,
+        catalog: GameCatalog?
     ) -> NestedCoverageAnalysis {
         var diagnostics: [String] = []
         var complete = true
@@ -465,12 +513,18 @@ public enum SnapshotHistoryCanonicalizer {
                 diagnostics.append("\(childPath): 子项不是对象。")
                 continue
             }
-            guard integer(object["data"]) != nil else {
+            guard let dataID = integer(object["data"]) else {
                 complete = false
                 diagnostics.append(
                     "\(childPath).data: 缺少有效 dataID，记录未纳入 canonical observation。"
                 )
                 continue
+            }
+            if !isKnownDataID(dataID, section: section, catalog: catalog) {
+                complete = false
+                diagnostics.append(
+                    "\(childPath).data: 未知 dataID \(dataID)，不在传入 catalog 的已知 dataID universe 中。"
+                )
             }
 
             for nestedField in ["types", "modules"] {
@@ -481,7 +535,12 @@ public enum SnapshotHistoryCanonicalizer {
                     diagnostics.append("\(nestedPath): 嵌套值不是数组。")
                     continue
                 }
-                let nested = validateNestedArray(nestedValues, path: nestedPath)
+                let nested = validateNestedArray(
+                    nestedValues,
+                    path: nestedPath,
+                    section: section,
+                    catalog: catalog
+                )
                 diagnostics.append(contentsOf: nested.diagnostics)
                 if nested.state != .complete {
                     complete = false
@@ -493,6 +552,61 @@ public enum SnapshotHistoryCanonicalizer {
             state: complete ? .complete : .partial,
             diagnostics: diagnostics
         )
+    }
+
+    private static func dataFieldState(
+        records: [(index: Int, object: [String: CanonicalJSONValue]?)],
+        section: String,
+        catalog: GameCatalog?,
+        diagnostics: inout [String]
+    ) -> SnapshotCoverageState {
+        guard !records.isEmpty else { return .complete }
+
+        var state: SnapshotCoverageState = .complete
+        for record in records {
+            guard let object = record.object else {
+                state = .partial
+                continue
+            }
+            guard let dataID = integer(object["data"]) else {
+                state = .partial
+                continue
+            }
+            guard isKnownDataID(dataID, section: section, catalog: catalog) else {
+                state = .partial
+                diagnostics.append(
+                    "\(section)[\(record.index)].data: 未知 dataID \(dataID)，不在传入 catalog 的已知 dataID universe 中。"
+                )
+                continue
+            }
+        }
+        return state
+    }
+
+    private static func numericDataState(
+        _ values: [CanonicalJSONValue],
+        section: String,
+        catalog: GameCatalog?,
+        diagnostics: inout [String]
+    ) -> SnapshotCoverageState {
+        guard !values.isEmpty else { return .complete }
+
+        var state: SnapshotCoverageState = .complete
+        for (index, value) in values.enumerated() {
+            guard let dataID = integer(value) else {
+                state = .partial
+                diagnostics.append("\(section)[\(index)]: 不是有效 dataID。")
+                continue
+            }
+            guard isKnownDataID(dataID, section: section, catalog: catalog) else {
+                state = .partial
+                diagnostics.append(
+                    "\(section)[\(index)]: 未知 dataID \(dataID)，不在传入 catalog 的已知 dataID universe 中。"
+                )
+                continue
+            }
+        }
+        return state
     }
 
     private static func appendUnavailable(
@@ -576,6 +690,15 @@ public enum SnapshotHistoryCanonicalizer {
     private static func integer(_ value: CanonicalJSONValue?) -> Int64? {
         guard case .number(let raw) = value else { return nil }
         return Int64(raw)
+    }
+
+    private static func isKnownDataID(
+        _ dataID: Int64,
+        section: String,
+        catalog: GameCatalog?
+    ) -> Bool {
+        guard let catalog else { return true }
+        return catalog.item(section: section, dataID: dataID) != nil
     }
 
     private static func boolean(_ value: CanonicalJSONValue?) -> Bool? {

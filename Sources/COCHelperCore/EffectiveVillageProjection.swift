@@ -615,7 +615,10 @@ enum EffectiveVillageProjectionBuilder {
               let remaining = VillageCatalogProjection.liveRemainingSeconds(
                 for: item, snapshot: snapshot, at: now
               ) else { return false }
-        let expectedRemaining = max(0, Int64(record.expectedEndAt.timeIntervalSince(now).rounded(.down)))
+        guard let rawExpectedRemaining = VillageCatalogProjection.safeFloorInt64(
+            record.expectedEndAt.timeIntervalSince(now)
+        ) else { return false }
+        let expectedRemaining = max(0, rawExpectedRemaining)
         return abs(expectedRemaining - remaining) <= 1
     }
 

@@ -191,11 +191,10 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
                   let active = activeState.activeManualRecords.first else {
                 return nil
             }
-            let interval = active.expectedEndAt.timeIntervalSince(now)
-            guard interval.isFinite,
-                  interval <= Double(Int64.max),
-                  interval >= Double(Int64.min) else { return nil }
-            return max(0, Int64(interval.rounded(.down)))
+            guard let interval = VillageCatalogProjection.safeFloorInt64(
+                active.expectedEndAt.timeIntervalSince(now)
+            ) else { return nil }
+            return max(0, interval)
         case .importedActive:
             return remainingSeconds
         case .observed, .manualCompleted, .needsReimport, .unknown, .conflict, .unavailable:
@@ -1376,7 +1375,20 @@ public struct VillageCatalogProjection: Sendable {
         at now: Date
     ) -> Int64? {
         guard let remaining = item.remainingSeconds else { return nil }
-        let elapsed = max(0, Int64(now.timeIntervalSince(snapshot.importedAt).rounded(.down)))
+        guard let elapsed = safeFloorInt64(now.timeIntervalSince(snapshot.importedAt)) else {
+            return nil
+        }
         return max(0, remaining - elapsed)
+    }
+
+    /// Converts a finite, floored time interval without relying on
+    /// `Double(Int64.max)`, which rounds to 2^63 and is not representable as
+    /// an Int64. The strict upper bound keeps every caller fail-closed.
+    static func safeFloorInt64(_ interval: TimeInterval) -> Int64? {
+        guard interval.isFinite else { return nil }
+        let floored = interval.rounded(.down)
+        guard floored >= Double(Int64.min),
+              floored < Double(Int64.max) else { return nil }
+        return Int64(floored)
     }
 }

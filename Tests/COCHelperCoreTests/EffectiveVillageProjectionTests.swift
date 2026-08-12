@@ -962,6 +962,89 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         XCTAssertEqual(completion.completedCount, 0)
     }
 
+    func testExtremeManualDurationFailsClosedWithoutDoubleToInt64Trap() throws {
+        let townHallKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+        let cannonKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let activeRecord = try ManualUpgradeRecord(
+            itemKey: cannonKey,
+            fromLevel: 1,
+            targetLevel: 2,
+            quantity: 1,
+            startedAt: importedAt,
+            expectedEndAt: importedAt.addingTimeInterval(Double(Int64.max)),
+            durationSeconds: Int64.max,
+            durationKind: .timed,
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: baseline
+        )
+        let manual = try core(
+            states: [
+                try state(
+                    key: townHallKey,
+                    imported: try distribution([(11, 1)]),
+                    manual: try distribution([(11, 1)]),
+                    status: .observed
+                ),
+                try state(
+                    key: cannonKey,
+                    imported: try distribution([(1, 1)]),
+                    manual: try distribution([(1, 1)]),
+                    status: .manualCompleted
+                ),
+            ],
+            records: [activeRecord]
+        )
+        let catalogWithExtremeDuration = catalog(cannonDuration: Int64.max)
+
+        let manualOnly = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalogWithExtremeDuration,
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: manual
+        )
+        let manualOnlyItem = try XCTUnwrap(manualOnly.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(manualOnlyItem.effectiveState?.status, .manualActive)
+        XCTAssertNil(manualOnlyItem.effectiveRemainingSeconds(at: importedAt))
+
+        let matchingVillage = self.village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(
+                    section: "buildings",
+                    dataID: 1_000_002,
+                    level: 1,
+                    timerSeconds: Int64.max,
+                    remainingSeconds: Int64.max,
+                    path: "1"
+                ),
+            ],
+        ])
+        let matching = VillageCatalogProjection.project(
+            village: matchingVillage,
+            catalog: catalogWithExtremeDuration,
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: manual
+        )
+        XCTAssertEqual(
+            matching.effectiveTrackerItems.first { $0.itemKey == cannonKey }?.status,
+            .conflict
+        )
+        XCTAssertNil(VillageCatalogProjection.safeFloorInt64(Double(Int64.max)))
+        XCTAssertEqual(
+            VillageCatalogProjection.safeFloorInt64(Double(Int64.min)),
+            Int64.min
+        )
+    }
+
     func testMalformedImportedLevelsPreserveRawInstanceWeightAndOverflow() throws {
         let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
         let malformedVillage = village(objectSections: [

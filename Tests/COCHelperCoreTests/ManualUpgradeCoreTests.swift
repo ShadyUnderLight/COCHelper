@@ -168,6 +168,87 @@ final class ManualUpgradeCoreTests: XCTestCase {
         }
     }
 
+    func testCoreRejectsActiveReservationBeyondMaterializedSource() throws {
+        let itemState = try state(
+            manual: distribution([(10, 1)]),
+            status: .manualCompleted
+        )
+        let record = try ManualUpgradeRecord(
+            recordID: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
+            itemKey: key,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 2,
+            startedAt: date(1_000),
+            expectedEndAt: date(1_010),
+            durationSeconds: 10,
+            durationKind: .timed,
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: baseline
+        )
+
+        XCTAssertThrowsError(try ManualUpgradeCore(
+            itemStates: [itemState],
+            records: [record]
+        )) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeError,
+                .insufficientQuantity(level: 10, requested: 2, available: 1)
+            )
+        }
+    }
+
+    func testTimedRecordRequiresExactAbsoluteEnd() throws {
+        XCTAssertThrowsError(try ManualUpgradeRecord(
+            itemKey: key,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: date(1_000),
+            expectedEndAt: date(1_001),
+            durationSeconds: 10,
+            durationKind: .timed,
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: baseline
+        )) { error in
+            XCTAssertEqual(error as? ManualUpgradeError, .invalidRecord)
+        }
+
+        let valid = try ManualUpgradeRecord(
+            itemKey: key,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: date(1_000),
+            expectedEndAt: date(1_010),
+            durationSeconds: 10,
+            durationKind: .timed,
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: baseline
+        )
+        XCTAssertEqual(valid.expectedEndAt, date(1_010))
+    }
+
+    func testImportedObservationMustMatchItemBaseline() throws {
+        let otherBaseline = ManualBaselineReference(revision: "snapshot-2")
+        let observation = try ManualImportedObservation(
+            reference: otherBaseline,
+            levelDistribution: try distribution([(10, 1)])
+        )
+
+        XCTAssertThrowsError(try ManualItemState(
+            itemKey: key,
+            baselineReference: baseline,
+            importedObservation: observation,
+            status: .observed
+        )) { error in
+            XCTAssertEqual(error as? ManualUpgradeError, .baselineMismatch(key))
+        }
+    }
+
     func testTimedUpgradeReservesSourceAndSettlesIdempotently() throws {
         var core = try core(
             imported: distribution([(12, 100)]),
@@ -192,6 +273,7 @@ final class ManualUpgradeCoreTests: XCTestCase {
 
         let active = try XCTUnwrap(core.effectiveState(for: key))
         XCTAssertEqual(active.importedDistribution?.quantity(at: 12), 100)
+        XCTAssertEqual(active.manualCompletedDistribution.quantity(at: 12), 100)
         XCTAssertEqual(active.effectiveCompletedDistribution?.quantity(at: 12), 99)
         XCTAssertEqual(active.activeTargetDistribution.quantity(at: 13), 1)
         XCTAssertEqual(active.activeTargetLevel, 13)

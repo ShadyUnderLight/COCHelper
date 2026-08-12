@@ -451,6 +451,9 @@ public struct ManualItemState: Codable, Hashable, Sendable {
     public let itemKey: TrackerItemKey
     public let baselineReference: ManualBaselineReference
     public var importedObservation: ManualImportedObservation?
+    /// The materialized completed distribution before active reservations.
+    /// Active source quantities are held by records and removed only when a
+    /// record settles; importedObservation remains the immutable provenance.
     public var manualCompletedDistribution: ManualLevelDistribution
     public var status: ManualItemStatus
 
@@ -461,6 +464,7 @@ public struct ManualItemState: Codable, Hashable, Sendable {
             return status != .observed
         }
         return importedObservation.reference.isStructurallyValid
+            && importedObservation.reference == baselineReference
     }
 
     public init(
@@ -477,6 +481,10 @@ public struct ManualItemState: Codable, Hashable, Sendable {
         if let importedObservation,
            !importedObservation.reference.isStructurallyValid {
             throw ManualUpgradeError.invalidBaselineReference
+        }
+        if let importedObservation,
+           importedObservation.reference != baselineReference {
+            throw ManualUpgradeError.baselineMismatch(itemKey)
         }
         if status == .observed && importedObservation == nil {
             throw ManualUpgradeError.invalidRecord
@@ -601,8 +609,19 @@ public struct ManualUpgradeRecord: Identifiable, Codable, Hashable, Sendable {
             guard durationSeconds == 0 else { throw ManualUpgradeError.invalidDuration }
         }
         guard expectedEndAt >= startedAt else { throw ManualUpgradeError.invalidRecord }
-        if durationKind == .instant && expectedEndAt != startedAt {
-            throw ManualUpgradeError.invalidRecord
+        switch durationKind {
+        case .timed:
+            let expected = try Self.expectedEndAt(
+                startedAt: startedAt,
+                durationSeconds: durationSeconds
+            )
+            guard expectedEndAt == expected else {
+                throw ManualUpgradeError.invalidRecord
+            }
+        case .instant:
+            guard expectedEndAt == startedAt else {
+                throw ManualUpgradeError.invalidRecord
+            }
         }
         guard catalogProvenance.isStructurallyValid else {
             throw ManualUpgradeError.invalidCatalogProvenance
@@ -665,6 +684,20 @@ public struct ManualUpgradeRecord: Identifiable, Codable, Hashable, Sendable {
         case baselineReference
         case queueKind
         case status
+    }
+
+    private static func expectedEndAt(
+        startedAt: Date,
+        durationSeconds: Int64
+    ) throws -> Date {
+        let interval = Double(durationSeconds)
+        guard interval.isFinite else { throw ManualUpgradeError.arithmeticOverflow }
+        let expected = startedAt.addingTimeInterval(interval)
+        guard expected.timeIntervalSinceReferenceDate.isFinite,
+              expected >= startedAt else {
+            throw ManualUpgradeError.arithmeticOverflow
+        }
+        return expected
     }
 }
 

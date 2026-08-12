@@ -43,6 +43,10 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
                 throw ManualUpgradeError.unavailableItemState(record.itemKey)
             }
         }
+        for state in sortedStates {
+            let stateRecords = sortedRecords.filter { $0.itemKey == state.itemKey }
+            try Self.validateConservation(for: state, records: stateRecords)
+        }
 
         self.itemStates = sortedStates
         self.records = sortedRecords
@@ -89,9 +93,9 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
         itemStates.first { $0.itemKey == itemKey }
     }
 
-    /// Starts one local upgrade. The source quantity is reserved immediately
-    /// by subtracting it from the current completed distribution; the target
-    /// is exposed separately until settlement.
+    /// Starts one local upgrade. The source quantity is reserved by the active
+    /// record; the materialized completed distribution is transferred only at
+    /// settlement, while the effective view excludes active reservations.
     @discardableResult
     public mutating func startUpgrade(
         itemKey: TrackerItemKey,
@@ -126,7 +130,7 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
         return result
     }
 
-    /// Cancels an active record and restores its source quantity.
+    /// Cancels an active record and releases its source reservation.
     @discardableResult
     public mutating func cancelUpgrade(recordID: UUID) throws -> ManualUpgradeRecord {
         var candidate = self
@@ -179,7 +183,7 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
         case .observed:
             effectiveCompleted = imported
         case .manualCompleted:
-            effectiveCompleted = state.manualCompletedDistribution
+            effectiveCompleted = try? availableDistribution(for: state)
         case .unknown, .conflict:
             effectiveCompleted = nil
         }
@@ -203,6 +207,62 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
             return lhs.expectedEndAt < rhs.expectedEndAt
         }
         return lhs.recordID.uuidString < rhs.recordID.uuidString
+    }
+
+    /// Validates the persisted balance before accepting a Core instance.
+    /// `manualCompletedDistribution` is the materialized distribution before
+    /// active reservations. Completed records transfer source to target;
+    /// active records reserve source only; cancelled records have no net
+    /// effect. When an imported distribution is known, replaying that ledger
+    /// must reproduce the materialized state exactly.
+    private static func validateConservation(
+        for state: ManualItemState,
+        records: [ManualUpgradeRecord]
+    ) throws {
+        guard !records.isEmpty else { return }
+        guard state.status == .manualCompleted else {
+            throw ManualUpgradeError.invalidRecord
+        }
+
+        let completed = records
+            .filter { $0.status == .completed }
+            .sorted(by: Self.recordOrder)
+        let active = records
+            .filter { $0.status == .active }
+            .sorted(by: Self.recordOrder)
+
+        if let imported = state.importedObservation?.levelDistribution {
+            var expected = imported
+            for record in completed {
+                expected = try expected.subtracting(
+                    level: record.fromLevel,
+                    quantity: record.quantity
+                )
+                expected = try expected.adding(
+                    level: record.targetLevel,
+                    quantity: record.quantity
+                )
+            }
+            guard expected == state.manualCompletedDistribution else {
+                throw ManualUpgradeError.invalidRecord
+            }
+            try validateActiveReservations(active, against: expected)
+        } else {
+            try validateActiveReservations(active, against: state.manualCompletedDistribution)
+        }
+    }
+
+    private static func validateActiveReservations(
+        _ records: [ManualUpgradeRecord],
+        against distribution: ManualLevelDistribution
+    ) throws {
+        var available = distribution
+        for record in records {
+            available = try available.subtracting(
+                level: record.fromLevel,
+                quantity: record.quantity
+            )
+        }
     }
 
     private mutating func startUpgradeImpl(
@@ -240,8 +300,9 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
         guard startedAt <= now else { throw ManualUpgradeError.futureStart }
 
         let source = try startableDistribution(for: state)
-        let updatedSource = try source.subtracting(level: fromLevel, quantity: quantity)
-        itemStates[stateIndex].manualCompletedDistribution = updatedSource
+        let available = try availableDistribution(for: state)
+        _ = try available.subtracting(level: fromLevel, quantity: quantity)
+        itemStates[stateIndex].manualCompletedDistribution = source
         itemStates[stateIndex].status = .manualCompleted
 
         let timing = try resolveTiming(durationState, startedAt: startedAt)
@@ -282,9 +343,7 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
         guard let stateIndex = itemStates.firstIndex(where: { $0.itemKey == record.itemKey }) else {
             throw ManualUpgradeError.missingItemState(record.itemKey)
         }
-        let updated = try completedDistributionForMutation(itemStates[stateIndex])
-            .adding(level: record.fromLevel, quantity: record.quantity)
-        itemStates[stateIndex].manualCompletedDistribution = updated
+        _ = try completedDistributionForMutation(itemStates[stateIndex])
         itemStates[stateIndex].status = .manualCompleted
         records[recordIndex].status = .cancelled
         return records[recordIndex]
@@ -348,6 +407,7 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
                 throw ManualUpgradeError.missingItemState(dueRecord.itemKey)
             }
             let updated = try completedDistributionForMutation(itemStates[stateIndex])
+                .subtracting(level: dueRecord.fromLevel, quantity: dueRecord.quantity)
                 .adding(level: dueRecord.targetLevel, quantity: dueRecord.quantity)
             itemStates[stateIndex].manualCompletedDistribution = updated
             itemStates[stateIndex].status = .manualCompleted
@@ -399,6 +459,19 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
         case .conflict:
             throw ManualUpgradeError.conflictingItemState(state.itemKey)
         }
+    }
+
+    private func availableDistribution(
+        for state: ManualItemState
+    ) throws -> ManualLevelDistribution {
+        var available = try completedDistributionForMutation(state)
+        for record in records where record.status == .active && record.itemKey == state.itemKey {
+            available = try available.subtracting(
+                level: record.fromLevel,
+                quantity: record.quantity
+            )
+        }
+        return available
     }
 
     private func activeTargetDistribution(

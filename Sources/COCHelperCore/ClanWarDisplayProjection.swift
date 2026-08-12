@@ -142,9 +142,8 @@ public struct ClanWarMemberRow: Hashable, Sendable, Identifiable {
     /// 直接透传，官方即整数次数）；nil = 官方未返回防守数据。
     public let defenseAttacks: Int?
     /// 最佳防守（官方 `bestOpponentAttack` 投影；nil = 官方未返回）。
-    /// 只消费 stars/destructionPercentage/duration——order/defenderTag
-    /// 对防守无意义，恒 nil（官方 bestOpponentAttack 的 defenderTag 是进攻方
-    /// tag，防守视角不展示）。
+    /// 只消费 stars/destructionPercentage/duration（order 无意义恒 nil；
+    /// defenderTag 即本成员自身 tag，自引用无展示信息量）。
     public let bestDefense: ClanWarAttackLine?
 
     public var id: Int { sourceIndex }

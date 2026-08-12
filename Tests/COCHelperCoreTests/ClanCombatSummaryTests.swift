@@ -193,4 +193,9 @@ final class ClanCombatSummaryTests: XCTestCase {
         XCTAssertNil(ClanCombatSummary.durationText(-1))
         XCTAssertNil(ClanCombatSummary.durationText(Int.min))
     }
+
+    func testDurationTextIntMaxDoesNotOverflow() {
+        // 超长值分钟数直接大字面量，无算术风险（= 文档注释承诺）
+        XCTAssertEqual(ClanCombatSummary.durationText(Int.max), "153722867280912930:07")
+    }
 }

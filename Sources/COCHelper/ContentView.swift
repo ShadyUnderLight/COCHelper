@@ -4,13 +4,17 @@ import COCHelperApp
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
-    /// Injected by the future ManualTrackerStore integration (#142). The
-    /// projection/UI path is already village-ID scoped; an empty map means
-    /// that no local manual state is available, not that snapshot data was
-    /// rewritten into manual state.
+    /// Optional explicit injection for previews/tests.  The normal app path
+    /// receives the persisted, village-ID-scoped map from AppModel.
     var manualUpgradeCores: [UUID: ManualUpgradeCore] = [:]
     @State private var selection: AppSection? = .tracker
     @State private var showAddTrackedClan = false
+
+    private var activeManualUpgradeCores: [UUID: ManualUpgradeCore] {
+        // Keep the existing explicit injection seam useful for previews/tests;
+        // the normal app path consumes AppModel's persisted map.
+        manualUpgradeCores.isEmpty ? model.manualUpgradeCores : manualUpgradeCores
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -27,7 +31,7 @@ struct ContentView: View {
                                     isSelected: village.id == model.selectedVillageID,
                                     activeCount: model.activeUpgradeCount(
                                         for: village,
-                                        manualUpgradeCore: manualUpgradeCores[village.id],
+                                        manualUpgradeCore: activeManualUpgradeCores[village.id],
                                         at: context.date
                                     ),
                                     now: context.date
@@ -113,6 +117,9 @@ struct ContentView: View {
                         .foregroundStyle(Color.cocAccent)
                     }
                 }
+                .onChange(of: context.date) { _, now in
+                    _ = model.settleManualUpgrades(at: now)
+                }
                 .listStyle(.sidebar)
                 .navigationTitle("COC 助手")
                 .safeAreaInset(edge: .bottom) {
@@ -130,7 +137,7 @@ struct ContentView: View {
         } detail: {
             switch selection ?? .tracker {
             case .tracker:
-                UpgradeTrackerView(manualUpgradeCores: manualUpgradeCores) {
+                UpgradeTrackerView(manualUpgradeCores: activeManualUpgradeCores) {
                     selection = .accountData
                 }
             case .villageTracker(let villageID):
@@ -139,7 +146,7 @@ struct ContentView: View {
                     openImport: {
                         selection = .accountData
                     },
-                    manualUpgradeCore: manualUpgradeCores[villageID]
+                    manualUpgradeCore: activeManualUpgradeCores[villageID]
                 )
                 .id(villageID)
             case .accountData:
@@ -539,6 +546,11 @@ struct UpgradeTrackerView: View {
                     )
                 }
 
+                ManualTrackerStatusNote(
+                    status: model.manualTrackerStatus,
+                    message: model.manualTrackerError
+                )
+
                 if let village {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
                         TrackerOverviewContent(
@@ -572,6 +584,33 @@ struct UpgradeTrackerView: View {
             .padding(28)
         }
         .background(Color.cocBackground)
+    }
+}
+
+private struct ManualTrackerStatusNote: View {
+    let status: ManualTrackerStoreStatus
+    let message: String?
+
+    var body: some View {
+        let text: String
+        let color: Color
+        switch status {
+        case .empty:
+            text = "本地手动升级状态为空，等待手动记录。"
+            color = .secondary
+        case .available:
+            text = "本地手动升级状态已加载。"
+            color = .secondary
+        case .unavailable:
+            text = message ?? "本地手动升级状态不可用，当前仅显示导入快照。"
+            color = .orange
+        case .migrationRequired:
+            text = message ?? "本地手动升级状态需要迁移，当前未加载旧数据。"
+            color = .orange
+        }
+        return Label(text, systemImage: status == .available ? "checkmark.circle" : "info.circle")
+            .font(.caption)
+            .foregroundStyle(color)
     }
 }
 

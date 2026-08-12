@@ -1,0 +1,471 @@
+import Foundation
+import XCTest
+@testable import COCHelperApp
+@testable import COCHelperCore
+
+final class ManualTrackerStoreTests: XCTestCase {
+    private final class TestStore: ManualTrackerStore, @unchecked Sendable {
+        var transactionJournalURL: URL?
+        var rawData: Data?
+        var failWrite = false
+        var writeBeforeFailure = false
+        var failRestore = false
+
+        func load() throws -> ManualTrackerEnvelope? {
+            guard let rawData else { return nil }
+            do {
+                return try JSONDecoder()
+                    .decode(ManualTrackerEnvelope.self, from: rawData)
+                    .validated()
+            } catch let error as ManualTrackerStoreError {
+                throw error
+            } catch {
+                throw ManualTrackerStoreError.corrupt(error.localizedDescription)
+            }
+        }
+
+        func save(_ envelope: ManualTrackerEnvelope) throws {
+            try writeRawData(envelope.encodedData())
+        }
+
+        func readRawData() throws -> Data? { rawData }
+
+        func writeRawData(_ data: Data) throws {
+            if failWrite {
+                if writeBeforeFailure { rawData = data }
+                throw ManualTrackerStoreError.writeFailed("测试手动状态写入失败")
+            }
+            rawData = data
+        }
+
+        func restoreRawData(_ data: Data?) throws {
+            if failRestore {
+                throw ManualTrackerStoreError.writeFailed("测试手动状态回滚失败")
+            }
+            rawData = data
+        }
+    }
+
+    private var defaults: UserDefaults!
+    private var suiteName: String!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "ManualTrackerStoreTests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)!
+    }
+
+    override func tearDown() {
+        MockURLProtocol.handler = nil
+        defaults.removePersistentDomain(forName: suiteName)
+        super.tearDown()
+    }
+
+    private func makeFileURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("COCHelper-ManualTracker-\(UUID().uuidString)")
+            .appendingPathComponent("manual-tracker-v1.json")
+    }
+
+    private func historyStore() -> TestSnapshotHistoryStore {
+        TestSnapshotHistoryStore(
+            envelope: SnapshotHistoryEnvelope(
+                migrationMarker: SnapshotHistoryMigrationMarker(
+                    completedAt: Date(timeIntervalSince1970: 1)
+                )
+            )
+        )
+    }
+
+    private let key = TrackerItemKey.root(
+        base: .home,
+        rawSection: "buildings",
+        dataID: 100
+    )
+    private let baseline = ManualBaselineReference(
+        revision: "snapshot-1",
+        fingerprint: "sha256:baseline",
+        lineageID: "lineage-1"
+    )
+    private let provenance = ManualCatalogProvenance(
+        gameVersion: "18.400.13",
+        sourceFingerprint: "sha256:catalog"
+    )
+
+    private func manualCompletedCore() throws -> ManualUpgradeCore {
+        let itemState = try ManualItemState(
+            itemKey: key,
+            baselineReference: baseline,
+            manualCompletedDistribution: try ManualLevelDistribution(
+                levelQuantities: [10: 1]
+            ),
+            status: .manualCompleted
+        )
+        return try ManualUpgradeCore(itemStates: [itemState])
+    }
+
+    @MainActor
+    private func makeModel(
+        store: TestStore,
+        villages: [VillageProfile] = [VillageProfile(name: "主村")]
+    ) throws -> AppModel {
+        defaults.set(
+            try JSONEncoder().encode(villages),
+            forKey: "coc-helper.villages.v1"
+        )
+        return AppModel(
+            defaults: defaults,
+            historyStore: historyStore(),
+            manualTrackerStore: store
+        )
+    }
+
+    func testFileStoreRoundTripsVersionedEnvelopeWithoutRemainingSeconds() throws {
+        let url = makeFileURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = FileManualTrackerStore(fileURL: url)
+        let villageID = UUID()
+        let empty = ManualTrackerEnvelope.empty(for: [villageID])
+
+        try store.save(empty)
+        XCTAssertEqual(try store.load(), empty)
+
+        var core = try manualCompletedCore()
+        _ = try core.startUpgrade(
+            itemKey: key,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: Date(timeIntervalSince1970: 100),
+            durationState: .timed(seconds: 60),
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: UUID(),
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: Date(timeIntervalSince1970: 100)
+        )
+        var envelope = empty
+        try envelope.upsert(state)
+        try store.save(envelope)
+
+        let raw = try XCTUnwrap(store.readRawData())
+        XCTAssertFalse(String(decoding: raw, as: UTF8.self).contains("remainingSeconds"))
+        XCTAssertEqual(try store.load(), envelope)
+        XCTAssertEqual(try XCTUnwrap(try store.load()?.state(for: villageID)).baselineRevision, "snapshot-1")
+    }
+
+    func testCorruptAndFutureSchemaAreRejectedWithoutReplacingBytes() throws {
+        let url = makeFileURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = FileManualTrackerStore(fileURL: url)
+
+        let corrupt = Data("not-json".utf8)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try corrupt.write(to: url, options: .atomic)
+        XCTAssertThrowsError(try store.load()) { error in
+            guard case .corrupt = error as? ManualTrackerStoreError else {
+                return XCTFail("损坏手动状态必须 fail closed：\(error)")
+            }
+        }
+        XCTAssertEqual(try Data(contentsOf: url), corrupt)
+
+        let future = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 99,
+            "storeVersion": 1,
+            "villages": []
+        ])
+        try future.write(to: url, options: .atomic)
+        XCTAssertThrowsError(try store.load()) { error in
+            XCTAssertEqual(error as? ManualTrackerStoreError, .unsupportedSchema(99))
+        }
+        XCTAssertEqual(try Data(contentsOf: url), future)
+    }
+
+    func testEnvelopeRejectsDuplicateRecordIDAcrossVillages() throws {
+        var core = try manualCompletedCore()
+        let recordID = UUID(uuidString: "00000000-0000-0000-0000-000000000142")!
+        _ = try core.startUpgrade(
+            itemKey: key,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: Date(timeIntervalSince1970: 100),
+            durationState: .timed(seconds: 60),
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: recordID,
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let first = try ManualTrackerVillageState(villageID: UUID(), core: core)
+        let second = try ManualTrackerVillageState(villageID: UUID(), core: core)
+
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": ManualTrackerSchema.envelope,
+            "storeVersion": ManualTrackerSchema.store,
+            "villages": [
+                try JSONSerialization.jsonObject(with: JSONEncoder().encode(first)),
+                try JSONSerialization.jsonObject(with: JSONEncoder().encode(second))
+            ],
+            "migrationMarker": [
+                "version": ManualTrackerSchema.envelope,
+                "completedAt": 0
+            ]
+        ])
+        let url = makeFileURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = FileManualTrackerStore(fileURL: url)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try raw.write(to: url, options: .atomic)
+
+        XCTAssertThrowsError(try store.load()) { error in
+            guard case .invalidEnvelope = error as? ManualTrackerStoreError else {
+                return XCTFail("跨村庄重复 recordID 必须被拒绝：\(error)")
+            }
+        }
+    }
+
+    @MainActor
+    func testAppModelPersistsManualCorePerVillageAndDeleteCascades() throws {
+        let store = TestStore()
+        let model = try makeModel(store: store)
+        let firstID = model.villages[0].id
+        let now = Date(timeIntervalSince1970: 100)
+
+        try model.updateManualUpgradeCore(for: firstID, at: now) { core in
+            core = try self.manualCompletedCore()
+            _ = try core.startUpgrade(
+                itemKey: self.key,
+                fromLevel: 10,
+                targetLevel: 11,
+                quantity: 1,
+                startedAt: now,
+                durationState: .instant,
+                frozenCosts: nil,
+                catalogProvenance: self.provenance,
+                baselineReference: self.baseline,
+                recordID: UUID(),
+                now: now
+            )
+        }
+        let saved = try XCTUnwrap(store.load())
+        XCTAssertNotNil(saved.state(for: firstID)?.core.completedHistory.first)
+
+        model.addVillageForImport()
+        XCTAssertEqual(model.villages.count, 2)
+        let secondID = try XCTUnwrap(model.villages.last?.id)
+        XCTAssertNotNil(try store.load()?.state(for: firstID))
+        XCTAssertNotNil(try store.load()?.state(for: secondID))
+        XCTAssertTrue(try XCTUnwrap(store.load()?.state(for: secondID)?.core.records).isEmpty)
+
+        model.deleteVillage(id: firstID)
+        XCTAssertEqual(model.villages.count, 1)
+        XCTAssertNil(try store.load()?.state(for: firstID))
+        XCTAssertNotNil(try store.load()?.state(for: secondID))
+    }
+
+    @MainActor
+    func testAppModelManualCoreSurvivesRestartWithSameStore() throws {
+        let url = makeFileURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = FileManualTrackerStore(fileURL: url)
+        let village = VillageProfile(name: "主村")
+        defaults.set(
+            try JSONEncoder().encode([village]),
+            forKey: "coc-helper.villages.v1"
+        )
+        let first = AppModel(
+            defaults: defaults,
+            historyStore: historyStore(),
+            manualTrackerStore: store
+        )
+        let villageID = first.villages[0].id
+        try first.updateManualUpgradeCore(for: villageID, at: Date(timeIntervalSince1970: 100)) { core in
+            core = try self.manualCompletedCore()
+        }
+
+        let reloaded = AppModel(
+            defaults: defaults,
+            historyStore: historyStore(),
+            manualTrackerStore: FileManualTrackerStore(fileURL: url)
+        )
+        XCTAssertEqual(
+            reloaded.manualUpgradeCore(for: villageID),
+            first.manualUpgradeCore(for: villageID)
+        )
+        XCTAssertEqual(reloaded.manualTrackerStatus, .available)
+    }
+
+    @MainActor
+    func testAppModelSettlesDueRecordsAtInjectedTimeAndStartup() throws {
+        let store = TestStore()
+        let model = try makeModel(store: store)
+        let villageID = model.villages[0].id
+        let start = Date(timeIntervalSince1970: 100)
+        try model.updateManualUpgradeCore(for: villageID, at: start) { core in
+            core = try self.manualCompletedCore()
+            _ = try core.startUpgrade(
+                itemKey: self.key,
+                fromLevel: 10,
+                targetLevel: 11,
+                quantity: 1,
+                startedAt: start,
+                durationState: .timed(seconds: 60),
+                frozenCosts: nil,
+                catalogProvenance: self.provenance,
+                baselineReference: self.baseline,
+                recordID: UUID(),
+                now: start
+            )
+        }
+        XCTAssertEqual(model.settleManualUpgrades(at: start.addingTimeInterval(59)), 0)
+        XCTAssertEqual(model.settleManualUpgrades(at: start.addingTimeInterval(60)), 1)
+        XCTAssertEqual(model.manualUpgradeCore(for: villageID)?.activeRecords.count, 0)
+        XCTAssertEqual(model.manualUpgradeCore(for: villageID)?.completedHistory.count, 1)
+
+        var dueCore = try manualCompletedCore()
+        _ = try dueCore.startUpgrade(
+            itemKey: key,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: start,
+            durationState: .instant,
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: UUID(),
+            now: start
+        )
+        var envelope = ManualTrackerEnvelope.empty(for: [villageID])
+        try envelope.upsert(try ManualTrackerVillageState(
+            villageID: villageID,
+            core: dueCore,
+            stateUpdatedAt: start
+        ))
+        try store.save(envelope)
+        let reloaded = try makeModel(
+            store: store,
+            villages: [VillageProfile(id: villageID, name: "主村")]
+        )
+        XCTAssertEqual(reloaded.manualUpgradeCore(for: villageID)?.activeRecords.count, 0)
+        XCTAssertEqual(reloaded.manualUpgradeCore(for: villageID)?.completedHistory.count, 1)
+    }
+
+    @MainActor
+    func testManualWriteFailureDoesNotHalfCommitVillageCreation() throws {
+        let store = TestStore()
+        let model = try makeModel(store: store)
+        let beforeCurrent = try XCTUnwrap(
+            defaults.data(forKey: "coc-helper.villages.v1")
+        )
+        let beforeManual = try XCTUnwrap(store.rawData)
+        store.failWrite = true
+        store.writeBeforeFailure = true
+
+        model.addVillageForImport()
+
+        XCTAssertEqual(model.villages.count, 1)
+        XCTAssertEqual(defaults.data(forKey: "coc-helper.villages.v1"), beforeCurrent)
+        XCTAssertEqual(store.rawData, beforeManual)
+        XCTAssertNotNil(model.manualTrackerError)
+    }
+
+    @MainActor
+    func testCorruptOrFutureManualStoreDoesNotBlockVillageLoad() throws {
+        let store = TestStore()
+        store.rawData = Data("not-json".utf8)
+        let model = try makeModel(store: store)
+        XCTAssertEqual(model.villages.count, 1)
+        XCTAssertEqual(model.manualTrackerStatus, .unavailable)
+        XCTAssertTrue(model.manualUpgradeCores.isEmpty)
+        XCTAssertEqual(store.rawData, Data("not-json".utf8))
+
+        let futureStore = TestStore()
+        futureStore.rawData = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 99,
+            "storeVersion": 1,
+            "villages": []
+        ])
+        let futureModel = try makeModel(store: futureStore)
+        XCTAssertEqual(futureModel.villages.count, 1)
+        XCTAssertEqual(futureModel.manualTrackerStatus, .migrationRequired)
+        XCTAssertTrue(futureModel.manualUpgradeCores.isEmpty)
+    }
+
+    @MainActor
+    func testClearAndRenameDoNotRewriteManualState() throws {
+        let store = TestStore()
+        let model = try makeModel(store: store)
+        let villageID = model.villages[0].id
+        let now = Date(timeIntervalSince1970: 100)
+        try model.updateManualUpgradeCore(for: villageID, at: now) { core in
+            core = try self.manualCompletedCore()
+        }
+        let before = try XCTUnwrap(store.rawData)
+
+        model.clearAccountSnapshot()
+        model.renameSelectedVillage("改名后")
+        XCTAssertEqual(store.rawData, before)
+        XCTAssertEqual(model.manualUpgradeCore(for: villageID), try store.load()?.state(for: villageID)?.core)
+    }
+
+    @MainActor
+    func testOfficialRefreshDoesNotRewriteManualState() async throws {
+        let store = TestStore()
+        let village = VillageProfile(name: "主村", officialAPIState: OfficialAPIState(
+            status: .success,
+            playerTag: "#P1",
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            lastAttemptAt: Date(timeIntervalSince1970: 1),
+            lastGood: nil
+        ))
+        defaults.set(
+            try JSONEncoder().encode([village]),
+            forKey: "coc-helper.villages.v1"
+        )
+        let response = Data(##"{"tag":"#P1","name":"updated","townHallLevel":18}"##.utf8)
+        let refresher = OfficialPlayerRefresher(client: CoAPIClient(
+            config: CoAPIConfig(maxRetryCount: 0),
+            session: MockURLProtocol.makeSession()
+        ) { "fake-token" })
+        MockURLProtocol.handler = { request in
+            (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                response
+            )
+        }
+        let model = AppModel(
+            defaults: defaults,
+            refresher: refresher,
+            historyStore: historyStore(),
+            manualTrackerStore: store
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        try model.updateManualUpgradeCore(for: villageID, at: Date(timeIntervalSince1970: 100)) { core in
+            core = try self.manualCompletedCore()
+        }
+        let before = try XCTUnwrap(store.rawData)
+
+        model.refreshOfficialPlayer(villageID: villageID)
+        let deadline = Date().addingTimeInterval(5)
+        while model.isRefreshingOfficialData && Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(model.isRefreshingOfficialData, "官方刷新测试超时")
+
+        XCTAssertEqual(store.rawData, before)
+        XCTAssertEqual(model.manualUpgradeCore(for: villageID), try store.load()?.state(for: villageID)?.core)
+    }
+}

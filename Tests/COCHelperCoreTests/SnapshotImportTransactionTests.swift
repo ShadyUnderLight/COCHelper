@@ -140,7 +140,7 @@ final class SnapshotImportTransactionTests: XCTestCase {
         )
         try coordinator.recoverIfNeeded()
         XCTAssertEqual(current.data, newCurrent)
-        XCTAssertEqual(history.rawData, newHistory)
+        XCTAssertEqual(try history.load(), migratedEnvelope())
         XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
     }
 

@@ -4,6 +4,11 @@ import COCHelperApp
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    /// Injected by the future ManualTrackerStore integration (#142). The
+    /// projection/UI path is already village-ID scoped; an empty map means
+    /// that no local manual state is available, not that snapshot data was
+    /// rewritten into manual state.
+    var manualUpgradeCores: [UUID: ManualUpgradeCore] = [:]
     @State private var selection: AppSection? = .tracker
     @State private var showAddTrackedClan = false
 
@@ -20,7 +25,11 @@ struct ContentView: View {
                                 VillageSidebarRow(
                                     village: village,
                                     isSelected: village.id == model.selectedVillageID,
-                                    activeCount: model.activeUpgradeCount(for: village, at: context.date),
+                                    activeCount: model.activeUpgradeCount(
+                                        for: village,
+                                        manualUpgradeCore: manualUpgradeCores[village.id],
+                                        at: context.date
+                                    ),
                                     now: context.date
                                 )
                             }
@@ -121,13 +130,17 @@ struct ContentView: View {
         } detail: {
             switch selection ?? .tracker {
             case .tracker:
-                UpgradeTrackerView {
+                UpgradeTrackerView(manualUpgradeCores: manualUpgradeCores) {
                     selection = .accountData
                 }
             case .villageTracker(let villageID):
-                VillageDetailView(villageID: villageID) {
-                    selection = .accountData
-                }
+                VillageDetailView(
+                    villageID: villageID,
+                    openImport: {
+                        selection = .accountData
+                    },
+                    manualUpgradeCore: manualUpgradeCores[villageID]
+                )
                 .id(villageID)
             case .accountData:
                 AccountDataView()
@@ -495,10 +508,16 @@ struct UpgradeTrackerView: View {
     @EnvironmentObject private var model: AppModel
     let villageID: UUID?
     let openImport: () -> Void
+    let manualUpgradeCores: [UUID: ManualUpgradeCore]
 
-    init(villageID: UUID? = nil, openImport: @escaping () -> Void) {
+    init(
+        villageID: UUID? = nil,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
+        openImport: @escaping () -> Void
+    ) {
         self.villageID = villageID
         self.openImport = openImport
+        self.manualUpgradeCores = manualUpgradeCores
     }
 
     private var village: VillageProfile? {
@@ -526,6 +545,7 @@ struct UpgradeTrackerView: View {
                             villages: [village],
                             catalog: model.gameCatalog,
                             seasonalPhases: model.seasonalPhases,
+                            manualUpgradeCores: manualUpgradeCores,
                             scopeLabel: "当前村庄",
                             panelTitle: village.name + " · 正在升级",
                             now: context.date
@@ -537,6 +557,7 @@ struct UpgradeTrackerView: View {
                             villages: model.villages,
                             catalog: model.gameCatalog,
                             seasonalPhases: model.seasonalPhases,
+                            manualUpgradeCores: manualUpgradeCores,
                             scopeLabel: "全部村庄",
                             panelTitle: "全部村庄 · 正在升级",
                             now: context.date
@@ -623,6 +644,7 @@ private struct TrackerOverviewContent: View {
     let villages: [VillageProfile]
     let catalog: GameCatalog?
     let seasonalPhases: SeasonalPhaseTable
+    let manualUpgradeCores: [UUID: ManualUpgradeCore]
     let scopeLabel: String
     let panelTitle: String
     let now: Date
@@ -633,6 +655,7 @@ private struct TrackerOverviewContent: View {
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
             at: now
         )
 
@@ -717,7 +740,8 @@ private struct TrackerMetricsView: View {
     }
 
     private var nearestCompletion: String {
-        guard let remainingSeconds = records.first?.remainingSeconds else { return "--" }
+        guard let first = records.first,
+              let remainingSeconds = first.remainingSeconds(at: now) else { return "--" }
         return AccountDurationFormatter.label(remainingSeconds, zeroLabel: "已完成")
     }
 

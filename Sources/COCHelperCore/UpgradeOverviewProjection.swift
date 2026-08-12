@@ -17,7 +17,7 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
     public let item: VillageItemState
     /// 目录版本；目录不可用时 nil。
     public let catalogVersion: String?
-    /// Issue #70 实现要求 6：该村庄×基地的三指标投影。同 village+base 的
+    /// Issue #70/#140 实现要求 6：该村庄×基地的五种进度口径。同 village+base 的
     /// 记录共享同一实例（allRecords 内计算一次）；与详情页消费同一个
     /// `VillageProgressProjection`，供升级总览 UI 聚合覆盖率等使用。
     public let villageMetrics: VillageProgressMetrics
@@ -46,12 +46,19 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
 
     public var remainingSeconds: Int64? { item.remainingSeconds }
 
+    /// Effective remaining time for callers that have a clock available. The
+    /// legacy property above remains raw/imported for source compatibility.
+    public func remainingSeconds(at now: Date) -> Int64? {
+        item.effectiveRemainingSeconds(at: now)
+    }
+
     /// 预计完成时间；remainingSeconds 不存在或非正时返回 nil。
     ///
     /// 必须传入 `UpgradeOverviewProjection.activeRecords` 调用时的同一个 `now`：
     /// 传入更晚的时间会系统性高估完成时间（now + remaining 随 now 右移）。
     public func completionDate(from now: Date) -> Date? {
-        guard let remainingSeconds, remainingSeconds > 0 else { return nil }
+        guard let remainingSeconds = item.effectiveRemainingSeconds(at: now),
+              remainingSeconds > 0 else { return nil }
         return now.addingTimeInterval(TimeInterval(remainingSeconds))
     }
 }
@@ -71,23 +78,27 @@ public enum UpgradeOverviewProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable = .empty,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date()
     ) -> (active: [UpgradeDisplayRecord], pending: [UpgradeDisplayRecord]) {
         let records = allRecords(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
             at: now
         )
         return (
-            active: records.filter(\.item.isUpgrading).sorted(by: activeOrder),
-            pending: records.filter(\.item.needsReimport).sorted(by: pendingOrder)
+            active: records.filter(\.item.isEffectivelyUpgrading).sorted {
+                activeOrder($0, $1, at: now)
+            },
+            pending: records.filter(\.item.effectivelyNeedsReimport).sorted(by: pendingOrder)
         )
     }
 
     /// 全部村庄 × 全部 base 的进行中升级记录。
     ///
-    /// 每条记录由 `VillageCatalogProjection.project` 产出并过滤 `isUpgrading`；
+    /// 每条记录由 `VillageCatalogProjection.project` 产出并过滤有效升级状态；
     /// 按剩余时间升序（nil 视为最大排最后），再按 villageName、base、id 稳定排序。
     /// villageName 用 `localizedStandardCompare`（与旧层 UpgradeTracker 排序语义一致）。
     ///
@@ -97,21 +108,23 @@ public enum UpgradeOverviewProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable = .empty,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
         overviewRecords(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
             at: now
         ).active
     }
 
     /// 全部村庄 × 全部 base 中「计时已结束」的项目（待重新导入确认等级）。
     ///
-    /// 过滤条件与投影聚合层的「需重新导入」信号一致：
-    /// `VillageItemState.needsReimport`（`timerSeconds != nil && remainingSeconds == 0`，
-    /// 见 VillageCatalogProjection 聚合注释与 VillageItemState doc）。与 `activeRecords`
+    /// 过滤条件与投影聚合层的「需重新导入」有效信号一致：
+    /// `VillageItemState.effectivelyNeedsReimport`（导入计时结束且没有被有效手动
+    /// 状态覆盖，见 VillageCatalogProjection 聚合注释与 VillageItemState doc）。与 `activeRecords`
     /// 语义互斥：升级中项（remaining > 0）进 active，计时结束项进本列表；
     /// 普通完成项（timerSeconds == nil）两者都不进。该信号与目录收录无关——
     /// 即使目录未命中，计时结束也仍需重新导入确认。
@@ -122,20 +135,26 @@ public enum UpgradeOverviewProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable = .empty,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
         overviewRecords(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
             at: now
         ).pending
     }
 
     /// active 排序键：剩余时间升序（nil 视为最大排最后）→ villageName → base → id。
-    private static func activeOrder(_ lhs: UpgradeDisplayRecord, _ rhs: UpgradeDisplayRecord) -> Bool {
-        let lhsRemaining = lhs.item.remainingSeconds ?? .max
-        let rhsRemaining = rhs.item.remainingSeconds ?? .max
+    private static func activeOrder(
+        _ lhs: UpgradeDisplayRecord,
+        _ rhs: UpgradeDisplayRecord,
+        at now: Date
+    ) -> Bool {
+        let lhsRemaining = lhs.item.effectiveRemainingSeconds(at: now) ?? .max
+        let rhsRemaining = rhs.item.effectiveRemainingSeconds(at: now) ?? .max
         if lhsRemaining != rhsRemaining { return lhsRemaining < rhsRemaining }
         let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
         if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
@@ -165,6 +184,7 @@ public enum UpgradeOverviewProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable,
+        manualUpgradeCores: [UUID: ManualUpgradeCore],
         at now: Date
     ) -> [UpgradeDisplayRecord] {
         villages.flatMap { village in
@@ -174,7 +194,8 @@ public enum UpgradeOverviewProjection {
                     catalog: catalog,
                     seasonalPhases: seasonalPhases,
                     base: base,
-                    now: now
+                    now: now,
+                    manualUpgradeCore: manualUpgradeCores[village.id]
                 )
                 // Issue #70 阶段 2：消费拆分——records 只含「已观测项」
                 //（排除宇宙差集 .available：差集项无升级计时，进总览列表无意义）；
@@ -185,12 +206,7 @@ public enum UpgradeOverviewProjection {
                 let displayRecords = tracked.filter { $0.status != .available }
                 // Issue #70 实现要求 6：同 village×base 的指标只算一次，全部
                 // record 共享（口径与详情页一致：排除 .unavailable + 完整分母）。
-                let metrics = VillageProgressProjection.metrics(
-                    from: tracked,
-                    catalogIsUsable: projection.catalogIsUsable,
-                    compatibility: projection.compatibility,
-                    coverage: projection.progressCoverage
-                )
+                let metrics = projection.progressMetrics
                 return displayRecords.map { item in
                     UpgradeDisplayRecord(
                         id: village.id.uuidString + ":" + base.rawValue + ":" + item.id,

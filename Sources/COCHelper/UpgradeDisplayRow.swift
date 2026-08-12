@@ -48,8 +48,8 @@ struct UpgradeDisplayRow: View {
     // MARK: - 等级
 
     private var levelLabel: String {
-        if let currentLevel = item.currentLevel {
-            if let nextLevel = item.nextLevel {
+        if let currentLevel = item.effectiveCurrentLevel {
+            if let nextLevel = item.effectiveTargetLevel {
                 return String(currentLevel) + " → " + String(nextLevel)
             }
             return "等级 " + String(currentLevel)
@@ -61,20 +61,22 @@ struct UpgradeDisplayRow: View {
 
     /// 目录版本不匹配：nextLevel 存在且超过目录 maxLevel（目录可能过时）。
     private var hasVersionMismatch: Bool {
-        guard let nextLevel = item.nextLevel, let maxLevel = item.maxLevel else { return false }
+        guard let nextLevel = item.effectiveTargetLevel, let maxLevel = item.maxLevel else { return false }
         return nextLevel > maxLevel
     }
 
     /// 计时已结束（timer 存在、remaining 归零）：需要重新导入确认实际等级。
-    /// 复用 `VillageItemState.needsReimport` 公共谓词（与投影层
+    /// 复用 `VillageItemState.effectivelyNeedsReimport` 公共谓词（与投影层
     /// `pendingReimportRecords` 完全一致，避免两处手写条件漂移）。本组件会被村庄
     /// 详情页复用、届时可能直接展示非聚合 item，普通完成项（remaining == 0 且
     /// timer == nil）不得误标。不做自动等级 +1——nextLevel 只来自投影显式推断。
     private var needsReimport: Bool {
-        item.needsReimport
+        item.effectivelyNeedsReimport
     }
 
-    private var isMaxed: Bool { item.status == .maxed }
+    private var isMaxed: Bool {
+        item.isEffectivelyMaxed
+    }
 
     /// 阶段满级（Issue #67）：currentStageMaxLevel 存在且低于全局 maxLevel——
     /// 当前大本营阶段已达目录上限，但目录全局仍有更高等级。仅用于 maxed
@@ -88,7 +90,7 @@ struct UpgradeDisplayRow: View {
     // MARK: - 完整时长
 
     private var durationLabel: String {
-        if item.status == .maxed {
+        if item.isEffectivelyMaxed {
             // 已满级：目录无下一级，显示上限（避免误导的「暂无目录数据」）。
             // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分。
             let baseLabel: String
@@ -99,19 +101,19 @@ struct UpgradeDisplayRow: View {
             }
             // Issue #68 验收 2：阶段满级（.requires，仅当目录存在更高等级时产生）
             // 追加被门槛阻塞的下一级解锁条件，替代可操作升级时长。
-            if case .requires(let nextLevel, let requirements, _) = item.nextUpgrade {
+            if case .requires(let nextLevel, let requirements, _) = item.effectiveNextUpgrade {
                 return baseLabel + " · 下一级 " + String(nextLevel) + "级 解锁条件："
                     + requirements.displayLabels(base: item.base.rawValue)
             }
             return baseLabel
         }
-        guard let state = item.nextLevelDurationState else { return "暂无目录数据" }
+        guard let state = item.effectiveNextLevelDurationState else { return "暂无目录数据" }
         let prefix: String
-        if item.isUpgrading {
+        if item.isEffectivelyUpgrading {
             // 升级行：levelLabel 已显示「当前 → 目标」；时长行仍带「完整时长：」
             // 前缀（与旧实现一致，明确这是完整耗时而非完成时刻）。
             prefix = "完整时长："
-        } else if case .available(let level, _) = item.nextUpgrade {
+        } else if case .available(let level, _) = item.effectiveNextUpgrade {
             // 非升级未满级（issue 列表规则要求显示下一等级）：编号来自
             // nextUpgrade 投影（Issue #68，禁止 currentLevel + 1 推导），
             // 时长来自目录。
@@ -149,8 +151,12 @@ struct UpgradeDisplayRow: View {
     // MARK: - 进度
 
     private var progress: Double? {
-        guard let timerSeconds = item.timerSeconds, timerSeconds > 0,
-              let remainingSeconds = item.remainingSeconds else { return nil }
+        let manualDuration = item.effectiveState?.activeManualRecords.count == 1
+            ? item.effectiveState?.activeManualRecords.first?.durationSeconds
+            : nil
+        let timerSeconds = item.timerSeconds ?? manualDuration
+        guard let timerSeconds, timerSeconds > 0,
+              let remainingSeconds = item.effectiveRemainingSeconds(at: now) else { return nil }
         return min(1, max(0, 1 - Double(remainingSeconds) / Double(timerSeconds)))
     }
 
@@ -312,7 +318,7 @@ struct UpgradeDisplayRow: View {
             .frame(width: 130, alignment: .trailing)
 
             VStack(alignment: .trailing, spacing: 4) {
-                if let remainingSeconds = item.remainingSeconds, remainingSeconds > 0 {
+                if let remainingSeconds = item.effectiveRemainingSeconds(at: now), remainingSeconds > 0 {
                     Text(AccountDurationFormatter.label(remainingSeconds, zeroLabel: "已完成"))
                         .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(.orange)
@@ -349,6 +355,33 @@ struct UpgradeDisplayRow: View {
                     Text("无法验证阶段上限")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
+                } else if let effectiveStatus = item.effectiveState?.status {
+                    switch effectiveStatus {
+                    case .conflict:
+                        Text("本地状态冲突")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    case .unknown:
+                        Text("本地状态未知")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    case .needsReimport:
+                        Text("待重新导入确认")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    case .unavailable:
+                        Text("不参与追踪")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .manualActive, .importedActive:
+                        Text("正在升级")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    case .manualCompleted, .observed:
+                        Text(isMaxed ? (isStageMaxed ? "当前阶段已满级" : "已满级") : "已记录")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
                 } else {
                     Text(isMaxed ? (isStageMaxed ? "当前阶段已满级" : "已满级") : "已记录")
                         .font(.caption)

@@ -29,21 +29,57 @@ struct LevelDetailSheet: View {
     }
 
     private var statusLabel: String {
+        if let effectiveStatus = item.effectiveState?.status {
+            switch effectiveStatus {
+            case .manualActive, .importedActive:
+                return "正在升级"
+            case .needsReimport:
+                return "待重新导入确认"
+            case .conflict:
+                return "本地状态冲突"
+            case .unknown:
+                return "无法确认当前状态"
+            case .unavailable:
+                return "不参与升级追踪"
+            case .manualCompleted, .observed:
+                break
+            }
+
+            if item.isEffectivelyMaxed {
+                // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分。
+                if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
+                    return "当前阶段已满级（全局尚有 \(max - stage) 级）"
+                }
+                return "已满级"
+            }
+
+            // An effective sidecar is authoritative for the status. Do not
+            // fall through to raw `.upgrading` when a stale timer survived a
+            // manual completion or an effective-state validation failure.
+            return "已记录"
+        }
+        if item.isEffectivelyMaxed {
+            // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分。
+            if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
+                return "当前阶段已满级（全局尚有 \(max - stage) 级）"
+            }
+            return "已满级"
+        }
         switch item.status {
-        case .upgrading: "正在升级"
+        case .upgrading: return "正在升级"
         case .maxed:
             // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分，
             // 但都不当作当前可升级项。
             if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
-                "当前阶段已满级（全局尚有 \(max - stage) 级）"
+                return "当前阶段已满级（全局尚有 \(max - stage) 级）"
             } else {
-                "已满级"
+                return "已满级"
             }
-        case .complete: "已记录"
-        case .unknown: "目录未收录"
-        case .unverified: "无法验证当前阶段上限"
-        case .unavailable: "不参与升级追踪"
-        case .available: "目录中可用"
+        case .complete: return "已记录"
+        case .unknown: return "目录未收录"
+        case .unverified: return "无法验证当前阶段上限"
+        case .unavailable: return "不参与升级追踪"
+        case .available: return "目录中可用"
         }
     }
 
@@ -54,6 +90,18 @@ struct LevelDetailSheet: View {
         if item.isCatalogDeprecated {
             // Issue #74a：源目录标记已废弃——历史数据仍展示，但不属于当前游戏内容。
             return "该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。"
+        }
+        if let effectiveState = item.effectiveState {
+            switch effectiveState.status {
+            case .conflict:
+                return effectiveState.diagnostic ?? "本地手动状态冲突，暂无法确认当前等级。"
+            case .needsReimport:
+                return "导入计时已结束，重新导入快照后才能确认当前等级。"
+            case .unknown where item.status != .unknown && item.status != .unverified:
+                return effectiveState.diagnostic ?? "本地有效状态未知，暂无法确认当前等级。"
+            default:
+                break
+            }
         }
         if item.status == .unverified {
             // Issue #67 fail-closed：缺 prerequisite 无法验证阶段上限，展示原因
@@ -67,7 +115,7 @@ struct LevelDetailSheet: View {
             // 让 body 走提示分支而非「全部等级」列表（审核 P1：详情页旧目录泄漏）。
             return item.missingReason ?? "该项目暂无逐级升级数据。"
         }
-        if item.isUpgrading, let reason = item.missingReason {
+        if item.isEffectivelyUpgrading, let reason = item.missingReason {
             // Issue #68：升级中记录的 status 恒为 .upgrading（独立于目录），旧逻辑
             // 会穿过 unverified/unknown 守卫落入目录等级列表——升级中 + 版本不匹配
             //（Task 1 保证 missingReason 含「版本不匹配」文案）时旧目录时长/阶梯泄漏。
@@ -151,8 +199,8 @@ struct LevelDetailSheet: View {
                                 + Text(" · #" + String(item.dataID))
                             Text(statusLabel)
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(item.status == .maxed ? .green : (item.isUpgrading ? .orange : .secondary))
-                            if case .requires(let nextLevel, let requirements, _) = item.nextUpgrade {
+                                .foregroundStyle(item.isEffectivelyMaxed ? .green : (item.isEffectivelyUpgrading ? .orange : .secondary))
+                            if case .requires(let nextLevel, let requirements, _) = item.effectiveNextUpgrade {
                                 // Issue #68 验收 2：阶段满级时展示被门槛阻塞的下一级
                                 // 解锁条件（替代可操作升级时长），与 .requires 投影同口径。
                                 Text("下一级 " + String(nextLevel) + "级 解锁条件：" + requirements.displayLabels(base: catalogItem?.base))
@@ -233,7 +281,7 @@ struct LevelDetailSheet: View {
     }
 
     private func levelRow(_ level: CatalogLevel) -> some View {
-        let isCurrent = item.currentLevel == level.level
+        let isCurrent = item.effectiveCurrentLevel == level.level
         // Issue #68：下一级徽标只消费 nextUpgrade 投影（UI 三处统一，禁止各自
         // currentLevel + 1 推导）。.available = 可操作下一级（目录真实等级，非连续
         // 目录安全）；.inProgressFact = 升级中目标等级（快照事实，仅当等级列表可见
@@ -242,7 +290,7 @@ struct LevelDetailSheet: View {
         // 「下一级」（fail-closed：阶段满级/无法验证/版本不匹配不得伪装可升级，
         // 与投影同口径）。
         let effectiveNext: Int?
-        switch item.nextUpgrade {
+        switch item.effectiveNextUpgrade {
         case .available(let level, _), .inProgressFact(let level, _):
             effectiveNext = level
         default:

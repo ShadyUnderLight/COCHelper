@@ -355,11 +355,20 @@ public final class AppModel: ObservableObject {
         villages.count > 1
     }
 
-    public func activeUpgradeCount(for village: VillageProfile, at now: Date = Date()) -> Int {
-        guard let snapshot = village.accountSnapshot else { return 0 }
-        return TrackerBase.allCases.reduce(0) { total, base in
-            total + UpgradeTracker.activeRecords(from: snapshot, base: base, at: now).count
-        }
+    public func activeUpgradeCount(
+        for village: VillageProfile,
+        manualUpgradeCore: ManualUpgradeCore? = nil,
+        at now: Date = Date()
+    ) -> Int {
+        guard village.accountSnapshot != nil else { return 0 }
+        let manualUpgradeCores = manualUpgradeCore.map { [village.id: $0] } ?? [:]
+        return UpgradeOverviewProjection.activeRecords(
+            from: [village],
+            catalog: gameCatalog,
+            seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
+            at: now
+        ).count
     }
 
     public func selectVillage(id: UUID) {

@@ -107,6 +107,12 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let isNested: Bool
     /// Issue #37：展示分类（防御/城墙/军事/精制台）；nil 表示无细分（走原分类兜底）。
     public let displayCategory: TrackerDisplayCategory?
+    /// Optional effective tracker state produced by the unified projection.
+    ///
+    /// The imported fields above remain the raw snapshot observation. This
+    /// sidecar is deliberately separate so local manual progress cannot be
+    /// mistaken for a fact observed in the JSON payload.
+    public let effectiveState: EffectiveVillageItemState?
 
     public var isUpgrading: Bool { (remainingSeconds ?? 0) > 0 }
 
@@ -117,6 +123,149 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// 投影聚合层（UpgradeOverviewProjection）与 UI 行（UpgradeDisplayRow）共用此谓词，
     /// 避免两处手写条件漂移。
     public var needsReimport: Bool { timerSeconds != nil && remainingSeconds == 0 }
+
+    /// Effective level for consumers that received the unified manual overlay.
+    /// Raw snapshot fields remain unchanged; a mixed distribution deliberately
+    /// falls back to the imported level instead of guessing one row level.
+    public var effectiveCurrentLevel: Int? {
+        effectiveState?.effectiveCompletedLevel
+            ?? effectiveState?.importedCurrentLevel
+            ?? currentLevel
+    }
+
+    /// Effective target level. Raw targets are exposed only for observed or
+    /// imported-active states; manual-completed rows use the reprojected
+    /// catalog target, while fail-closed states expose no target.
+    public var effectiveTargetLevel: Int? {
+        guard let effectiveState else { return nextLevel }
+        switch effectiveState.status {
+        case .manualActive:
+            return effectiveState.activeTargetLevel
+        case .observed, .importedActive:
+            return nextLevel
+        case .manualCompleted:
+            switch effectiveState.catalogNextUpgrade {
+            case .available(let level, _), .requires(let level, _, _):
+                return level
+            default:
+                return nil
+            }
+        case .needsReimport, .unknown, .conflict, .unavailable:
+            return nil
+        }
+    }
+
+    /// Upgrade status after the optional manual overlay is applied.
+    public var isEffectivelyUpgrading: Bool {
+        guard let status = effectiveState?.status else { return isUpgrading }
+        switch status {
+        case .manualActive, .importedActive:
+            return true
+        case .observed, .manualCompleted, .needsReimport, .unknown, .conflict, .unavailable:
+            return false
+        }
+    }
+
+    /// Re-import status after the optional manual overlay is applied. A valid
+    /// manual completion takes precedence over a stale imported timer.
+    public var effectivelyNeedsReimport: Bool {
+        guard let status = effectiveState?.status else { return needsReimport }
+        switch status {
+        case .manualCompleted, .manualActive:
+            return false
+        case .observed, .importedActive, .needsReimport, .unknown, .conflict, .unavailable:
+            // Re-import is an observation-level signal. A stable tracker key
+            // may contain duplicate instances at different levels, so do not
+            // let one finished duplicate mark every row in that key pending.
+            return needsReimport
+        }
+    }
+
+    /// Real-time remaining time for an imported or manual-active operation.
+    /// The caller supplies the same clock used to build the projection.
+    public func effectiveRemainingSeconds(at now: Date) -> Int64? {
+        guard let activeState = effectiveState else { return remainingSeconds }
+        switch activeState.status {
+        case .manualActive:
+            guard activeState.activeManualRecords.count == 1,
+                  let active = activeState.activeManualRecords.first else {
+                return nil
+            }
+            guard let interval = VillageCatalogProjection.safeFloorInt64(
+                active.expectedEndAt.timeIntervalSince(now)
+            ) else { return nil }
+            return max(0, interval)
+        case .importedActive:
+            return remainingSeconds
+        case .observed, .manualCompleted, .needsReimport, .unknown, .conflict, .unavailable:
+            return nil
+        }
+    }
+
+    /// Duration state for the effective next/active target. Manual-only active
+    /// rows have no raw `nextLevelDurationState`, so use the catalog-backed
+    /// sidecar in that case.
+    public var effectiveNextLevelDurationState: CatalogDurationState? {
+        guard let effectiveState else { return nextLevelDurationState }
+        switch effectiveState.status {
+        case .unknown, .conflict, .needsReimport, .unavailable:
+            return nil
+        case .manualCompleted:
+            return effectiveState.catalogDurationState
+        case .manualActive:
+            guard effectiveState.activeTargetLevel != nil else { return nil }
+            return effectiveState.catalogDurationState
+        case .observed, .importedActive:
+            return effectiveState.catalogDurationState ?? nextLevelDurationState
+        }
+    }
+
+    /// Next-upgrade semantic with a manual-active target substituted for the
+    /// raw imported-only projection.
+    public var effectiveNextUpgrade: VillageNextUpgrade? {
+        guard let effectiveState else { return nextUpgrade }
+        if effectiveState.status == .manualActive,
+           let target = effectiveState.activeTargetLevel {
+            let duration: Int64?
+            switch effectiveState.catalogDurationState {
+            case .timed(let seconds): duration = seconds
+            case .instant: duration = 0
+            default: duration = nil
+            }
+            return .inProgressFact(level: target, durationSeconds: duration)
+        }
+        switch effectiveState.status {
+        case .unknown, .conflict, .needsReimport:
+            return .unknown
+        case .unavailable:
+            return nil
+        case .manualCompleted:
+            return effectiveState.catalogNextUpgrade ?? .unknown
+        case .manualActive:
+            return .unknown
+        case .observed, .importedActive:
+            return nextUpgrade
+        }
+    }
+
+    /// Whether the effective completed level has reached the current-stage
+    /// (or global, when no stage cap exists) maximum. Active, conflicted, or
+    /// unknown sidecars never report maxed, even when the raw snapshot did.
+    public var isEffectivelyMaxed: Bool {
+        if let effectiveState {
+            guard effectiveState.status != .manualActive,
+                  effectiveState.status != .importedActive else {
+                return false
+            }
+            guard effectiveState.isKnown,
+                  let currentLevel = effectiveCurrentLevel,
+                  let effectiveMax = effectiveState.currentStageMaxLevel ?? maxLevel else {
+                return false
+            }
+            return currentLevel >= effectiveMax
+        }
+        return status == .maxed
+    }
 
     /// 实例权重（issue #66 契约，聚合层与统计层共用同一来源）：
     /// count == nil → 1；count <= 0（malformed）→ 1（与 `TrackerModels.countLabel`
@@ -199,7 +348,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         currentLevelVisual: CatalogAssetRef?,
         isNested: Bool,
         displayCategory: TrackerDisplayCategory? = nil,
-        countOverflowed: Bool = false
+        countOverflowed: Bool = false,
+        effectiveState: EffectiveVillageItemState? = nil
     ) {
         self.id = id
         self.section = section
@@ -228,6 +378,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.isNested = isNested
         self.displayCategory = displayCategory
         self.countOverflowed = countOverflowed
+        self.effectiveState = effectiveState
     }
 }
 
@@ -367,6 +518,16 @@ public struct VillageCatalogProjection: Sendable {
     /// 分离——后者阻断完成度、前者供 UI 展示「未验证/已匹配/不匹配」）。
     public let compatibility: CatalogCompatibility
     public let items: [VillageItemState]
+    /// Unaggregated records consumed by building-group cards. Keeping them on
+    /// the projection prevents that consumer from re-reading the snapshot and
+    /// silently deriving a second state graph.
+    public let rawItems: [VillageItemState]
+    /// One effective tracker state per stable `TrackerItemKey`. Duplicate
+    /// buildings/walls remain one tracker item with a level distribution.
+    public let effectiveTrackerItems: [EffectiveVillageItemState]
+    public let manualCoverage: ManualTrackerCoverage
+    /// All five progress metrics computed from this exact projection.
+    public let progressMetrics: VillageProgressMetrics
     public let diagnostics: [AccountDataDiagnostic]
     /// Issue #96：全村庄进度覆盖状态（唯一覆盖判定点）。生产门禁与判定逻辑见
     /// `project()`；`universeSupplement` 合成门禁使用内部 `buildingUniverseAvailable`
@@ -388,7 +549,8 @@ public struct VillageCatalogProjection: Sendable {
         seasonalPhases: SeasonalPhaseTable = .empty,
         craftTableCatalog: CraftTableCatalog? = nil,
         base: TrackerBase,
-        now: Date = Date()
+        now: Date = Date(),
+        manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> VillageCatalogProjection {
         var diagnostics: [AccountDataDiagnostic] = []
         let compatibility = CatalogCompatibility.resolve(
@@ -420,7 +582,10 @@ public struct VillageCatalogProjection: Sendable {
         }
 
         // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
-        let unlocks = PlayerUnlockLevels(snapshot: village.accountSnapshot)
+        let unlocks = PlayerUnlockLevels.effective(
+            snapshot: village.accountSnapshot,
+            manualUpgradeCore: manualUpgradeCore
+        )
         // Issue #96：拆分布局（原 Issue #70 阶段 2 的 universeComplete 判定）：
         // 1) buildingUniverseAvailable —— 建筑/陷阱实例宇宙门禁（universeSupplement
         //    唯一生产入口；含 catalogIsUsable 与 TH 范围守卫，同旧判定，BB 恒 false）；
@@ -462,22 +627,40 @@ public struct VillageCatalogProjection: Sendable {
             // 与旧判定一致），不引入 force-unwrap。
             progressCoverage = .unavailable
         }
-        let states = village.accountSnapshot.map { snapshot in
-            // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
-            // buildingUniverseAvailable 守卫 = universeSupplement 的唯一生产
-            // 入口门禁（目录不可信 / TH 未知或越界 / 旧目录 / BB → 不产出）。
-            aggregate(records(
+        let importedRecords = village.accountSnapshot.map { snapshot in
+            // Keep the unaggregated records in the same projection so building
+            // groups and detail rows share the exact unlock/catalog decisions.
+            records(
                 from: snapshot, catalog: catalog, base: base, now: now,
                 unlocks: unlocks, catalogIsUsable: catalogIsUsable,
                 seasonalPhases: seasonalPhases,
                 craftTableCatalog: craftTableCatalog
-            )) + (buildingUniverseAvailable ? Self.universeSupplement(
+            )
+        } ?? []
+        let importedStates = village.accountSnapshot.map { snapshot in
+            // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
+            // buildingUniverseAvailable 守卫 = universeSupplement 的唯一生产
+            // 入口门禁（目录不可信 / TH 未知或越界 / 旧目录 / BB → 不产出）。
+            aggregate(importedRecords) + (buildingUniverseAvailable ? Self.universeSupplement(
                 snapshot: snapshot,
                 catalog: catalog,
                 unlocks: unlocks,  // 复用 project 已推导的解锁等级（评审 B-4）
                 base: base
             ) : [])
         } ?? []
+
+        let effective = EffectiveVillageProjectionBuilder.build(
+            snapshot: village.accountSnapshot,
+            rawItems: importedRecords,
+            items: importedStates,
+            catalog: catalog,
+            catalogIsUsable: catalogIsUsable,
+            compatibility: compatibility,
+            base: base,
+            now: now,
+            manualUpgradeCore: manualUpgradeCore,
+            progressCoverage: progressCoverage
+        )
 
         return VillageCatalogProjection(
             villageID: village.id,
@@ -486,7 +669,11 @@ public struct VillageCatalogProjection: Sendable {
             catalogVersion: catalog?.gameVersion,
             catalogIsUsable: catalogIsUsable,
             compatibility: compatibility,
-            items: states,
+            items: effective.items,
+            rawItems: effective.rawItems,
+            effectiveTrackerItems: effective.trackerItems,
+            manualCoverage: effective.manualCoverage,
+            progressMetrics: effective.progressMetrics,
             diagnostics: diagnostics,
             progressCoverage: progressCoverage
         )
@@ -1188,7 +1375,20 @@ public struct VillageCatalogProjection: Sendable {
         at now: Date
     ) -> Int64? {
         guard let remaining = item.remainingSeconds else { return nil }
-        let elapsed = max(0, Int64(now.timeIntervalSince(snapshot.importedAt).rounded(.down)))
+        guard let elapsed = safeFloorInt64(now.timeIntervalSince(snapshot.importedAt)) else {
+            return nil
+        }
         return max(0, remaining - elapsed)
+    }
+
+    /// Converts a finite, floored time interval without relying on
+    /// `Double(Int64.max)`, which rounds to 2^63 and is not representable as
+    /// an Int64. The strict upper bound keeps every caller fail-closed.
+    static func safeFloorInt64(_ interval: TimeInterval) -> Int64? {
+        guard interval.isFinite else { return nil }
+        let floored = interval.rounded(.down)
+        guard floored >= Double(Int64.min),
+              floored < Double(Int64.max) else { return nil }
+        return Int64(floored)
     }
 }

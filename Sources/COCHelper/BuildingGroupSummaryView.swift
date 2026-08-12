@@ -66,10 +66,10 @@ struct BuildingGroupSummaryView: View {
             && hasStageCappedInstance
         guard showsStageCappedText else { return nil }
         guard let first = group.instances.first(where: {
-            if case .requires = $0.item.nextUpgrade { return true }
+            if case .requires = $0.item.effectiveNextUpgrade { return true }
             return false
         }) else { return nil }
-        guard case .requires(_, let requirements, _) = first.item.nextUpgrade else { return nil }
+        guard case .requires(_, let requirements, _) = first.item.effectiveNextUpgrade else { return nil }
         return "下一级解锁条件：" + requirements.displayLabels(base: first.item.base.rawValue)
     }
 

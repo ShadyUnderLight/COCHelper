@@ -166,14 +166,26 @@ public struct TrackerItemKey: Codable, Hashable, Sendable {
 /// changing `AccountItem.id` or the snapshot representation.
 public enum TrackerItemKeyAdapter {
     public static func keys(in snapshot: AccountSnapshot, base: TrackerBase) -> [TrackerItemKey] {
-        var result: [TrackerItemKey] = []
+        Array(keyMap(in: snapshot, base: base).values)
+            .sorted { $0.stableID < $1.stableID }
+    }
 
-        func keys(
+    /// Maps import-trace ids to the same semantic keys returned by `keys(in:base:)`.
+    ///
+    /// The import id is used only as an in-memory join handle for the current
+    /// snapshot. It is not persisted and is never used as the tracker identity.
+    public static func keyMap(
+        in snapshot: AccountSnapshot,
+        base: TrackerBase
+    ) -> [String: TrackerItemKey] {
+        var result: [String: TrackerItemKey] = [:]
+
+        func visit(
             _ item: AccountItem,
             section: String,
             root: TrackerRootIdentity?,
             path: [TrackerNestedPathComponent]
-        ) -> [TrackerItemKey] {
+        ) {
             let key: TrackerItemKey
             let childRoot: TrackerRootIdentity
             if let root {
@@ -199,41 +211,40 @@ public enum TrackerItemKeyAdapter {
                 childRoot = rootIdentity
             }
 
-            var result = [key]
+            result[item.id] = key
             for child in item.types {
                 let childPath = path + [
                     TrackerNestedPathComponent(kind: .type, dataID: child.dataID)
                 ]
-                result.append(contentsOf: keys(
+                visit(
                     child,
                     section: section,
                     root: childRoot,
                     path: childPath
-                ))
+                )
             }
             for child in item.modules {
                 let childPath = path + [
                     TrackerNestedPathComponent(kind: .module, dataID: child.dataID)
                 ]
-                result.append(contentsOf: keys(
+                visit(
                     child,
                     section: section,
                     root: childRoot,
                     path: childPath
-                ))
+                )
             }
-            return result
         }
 
         for section in snapshot.objectSections.keys.sorted() {
             let isBuilderSection = section.hasSuffix("2")
             guard isBuilderSection == (base == .builder) else { continue }
             for item in snapshot.objectSections[section, default: []] {
-                result.append(contentsOf: keys(item, section: section, root: nil, path: []))
+                visit(item, section: section, root: nil, path: [])
             }
         }
 
-        return result.sorted { $0.stableID < $1.stableID }
+        return result
     }
 
     public static func uniqueKeys(in snapshot: AccountSnapshot, base: TrackerBase) -> [TrackerItemKey] {

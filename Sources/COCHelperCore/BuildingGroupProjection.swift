@@ -106,9 +106,31 @@ public enum BuildingGroupProjection {
         base: TrackerBase,
         expectedGameVersion: String? = nil,  // Issue #74a：默认不自我比较（unverified）
         seasonalPhases: SeasonalPhaseTable = .empty,
-        now: Date = Date()
+        now: Date = Date(),
+        manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> [BuildingGroup] {
-        guard let snapshot = village.accountSnapshot else { return [] }
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog,
+            expectedGameVersion: expectedGameVersion,
+            seasonalPhases: seasonalPhases,
+            base: base,
+            now: now,
+            manualUpgradeCore: manualUpgradeCore
+        )
+        return project(projection: projection, catalog: catalog, base: base)
+    }
+
+    /// Builds group cards from the already-resolved village projection.
+    ///
+    /// The previous implementation re-read `AccountSnapshot` and called the
+    /// catalog mapper again. Reusing `rawItems` keeps prerequisite, lifecycle,
+    /// and effective-state decisions identical to detail/overview consumers.
+    public static func project(
+        projection: VillageCatalogProjection,
+        catalog: GameCatalog?,
+        base: TrackerBase
+    ) -> [BuildingGroup] {
         // 目录可用性（与 VillageCatalogProjection 同语义，Review 反馈 P1-2）：
         // 目录存在且版本与期望匹配时才可用；expectedGameVersion == nil 不校验。
         // 注意区分两种降级（Issue #45 契约第 5 节）：目录不可用（catalog == nil）
@@ -116,22 +138,14 @@ public enum BuildingGroupProjection {
         // 是「不得输出权威汇总」→ versionMismatch（UI 红标诊断）。
         // Issue #74a：完成度可用性由兼容性状态派生（与 VillageCatalogProjection
         // 同一判定点，防手写版本比较漂移）。
-        let catalogIsUsable = CatalogCompatibility.resolve(
-            catalog: catalog, expectedGameVersion: expectedGameVersion).isUsable
+        let catalogIsUsable = projection.catalogIsUsable
         // 原始记录层（聚合前）：只取 buildings/buildings2 的非嵌套项。
         // catalogIsUsable 必须显式传入（Issue #67 P1-2）：版本不匹配时行状态
         // 不得消费旧目录判 maxed/complete——组卡→详情链路与列表行同口径。
-        let records = VillageCatalogProjection.records(
-            from: snapshot,
-            catalog: catalog,
-            base: base,
-            now: now,
-            unlocks: PlayerUnlockLevels(snapshot: snapshot),
-            catalogIsUsable: catalogIsUsable,
-            seasonalPhases: seasonalPhases,
-            // 组卡过滤非嵌套项，嵌套防御回查无意义；显式 nil 保持语义不变。
-            craftTableCatalog: nil
-        ).filter { !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2") }
+        let records = projection.rawItems.filter {
+            !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2")
+                && $0.base == base
+        }
 
         // 按 (base, section, dataID) 分组，组按首现顺序输出（字典 + 有序键数组）。
         var keys: [String] = []
@@ -192,13 +206,14 @@ public enum BuildingGroupProjection {
         catalogIsUsable: Bool
     ) -> [BuildingUpgradeStep] {
         guard catalogIsUsable,
-              !(item.status == .upgrading && item.currentStageMaxLevel == nil),
+              !(item.isEffectivelyUpgrading && item.currentStageMaxLevel == nil),
               item.status != .unverified, item.status != .unknown,
+              !effectiveStateIsUnusable(item),
               let maxLevel = item.maxLevel,
               let catalogItem = catalog?.item(section: item.section, dataID: item.dataID)
         else { return [] }
         let effectiveMax = item.currentStageMaxLevel ?? maxLevel
-        let currentLevel = item.currentLevel
+        let currentLevel = item.effectiveCurrentLevel
         return catalogItem.levels
             .filter { $0.level > (currentLevel ?? .max) && $0.level <= effectiveMax }
             .sorted { $0.level < $1.level }
@@ -229,7 +244,7 @@ public enum BuildingGroupProjection {
             // 复用带聚合 count 的状态时静默丢失上游饱和信息。
             saturated = saturated || instance.item.countOverflowed || instanceCountResult.overflowed
             // 任一实例 currentLevel > maxLevel（目录过时）→ versionMismatch，最高优先级。
-            if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel,
+            if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.effectiveCurrentLevel,
                currentLevel > maxLevel {
                 hasVersionMismatch = true
             }
@@ -242,9 +257,11 @@ public enum BuildingGroupProjection {
             // 恒为空，即 Task-2 fail-closed 信号）→ 同样不计剩余等级：不得用旧目录
             // 或全局 maxLevel 计剩余（与阶梯同口径，汇总与阶梯不得矛盾）。
             if instance.item.status == .unverified || instance.item.status == .unknown
-                || (instance.item.status == .upgrading && instance.steps.isEmpty) {
+                || effectiveStateIsUnusable(instance.item)
+                || (instance.item.isEffectivelyUpgrading && instance.steps.isEmpty) {
                 hasPartialMissing = true
-            } else if let maxLevel = instance.item.maxLevel, let currentLevel = instance.item.currentLevel {
+            } else if let maxLevel = instance.item.maxLevel,
+                      let currentLevel = instance.item.effectiveCurrentLevel {
                 let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
                 let levelDifference = SaturatingArithmetic.subtract(effectiveMax, currentLevel)
                 saturated = saturated || levelDifference.overflowed
@@ -263,10 +280,11 @@ public enum BuildingGroupProjection {
             // （currentLevel >= effectiveMax，阶段或全局，issue #67）steps 为空是
             // 正常状态，不降级。unverified/unknown 在上面已置位 partialMissing（fail-closed）。
             if let maxLevel = instance.item.maxLevel,
-               instance.item.status != .unverified, instance.item.status != .unknown {
+               instance.item.status != .unverified, instance.item.status != .unknown,
+               !effectiveStateIsUnusable(instance.item) {
                 let effectiveMax = instance.item.currentStageMaxLevel ?? maxLevel
-                let maxed = instance.item.currentLevel.map { $0 >= effectiveMax } ?? false
-                if instance.item.currentLevel == nil || (instance.steps.isEmpty && !maxed) {
+                let maxed = instance.item.effectiveCurrentLevel.map { $0 >= effectiveMax } ?? false
+                if instance.item.effectiveCurrentLevel == nil || (instance.steps.isEmpty && !maxed) {
                     hasPartialMissing = true
                 }
             } else {
@@ -327,5 +345,15 @@ public enum BuildingGroupProjection {
                 : hasPartialMissing ? .partialMissing
                 : .complete
         )
+    }
+
+    private static func effectiveStateIsUnusable(_ item: VillageItemState) -> Bool {
+        guard let status = item.effectiveState?.status else { return false }
+        switch status {
+        case .unknown, .conflict, .needsReimport, .unavailable:
+            return true
+        case .observed, .manualCompleted, .manualActive, .importedActive:
+            return false
+        }
     }
 }

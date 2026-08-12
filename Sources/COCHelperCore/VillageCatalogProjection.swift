@@ -107,6 +107,12 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     public let isNested: Bool
     /// Issue #37：展示分类（防御/城墙/军事/精制台）；nil 表示无细分（走原分类兜底）。
     public let displayCategory: TrackerDisplayCategory?
+    /// Optional effective tracker state produced by the unified projection.
+    ///
+    /// The imported fields above remain the raw snapshot observation. This
+    /// sidecar is deliberately separate so local manual progress cannot be
+    /// mistaken for a fact observed in the JSON payload.
+    public let effectiveState: EffectiveVillageItemState?
 
     public var isUpgrading: Bool { (remainingSeconds ?? 0) > 0 }
 
@@ -199,7 +205,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         currentLevelVisual: CatalogAssetRef?,
         isNested: Bool,
         displayCategory: TrackerDisplayCategory? = nil,
-        countOverflowed: Bool = false
+        countOverflowed: Bool = false,
+        effectiveState: EffectiveVillageItemState? = nil
     ) {
         self.id = id
         self.section = section
@@ -228,6 +235,7 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         self.isNested = isNested
         self.displayCategory = displayCategory
         self.countOverflowed = countOverflowed
+        self.effectiveState = effectiveState
     }
 }
 
@@ -367,6 +375,16 @@ public struct VillageCatalogProjection: Sendable {
     /// 分离——后者阻断完成度、前者供 UI 展示「未验证/已匹配/不匹配」）。
     public let compatibility: CatalogCompatibility
     public let items: [VillageItemState]
+    /// Unaggregated records consumed by building-group cards. Keeping them on
+    /// the projection prevents that consumer from re-reading the snapshot and
+    /// silently deriving a second state graph.
+    public let rawItems: [VillageItemState]
+    /// One effective tracker state per stable `TrackerItemKey`. Duplicate
+    /// buildings/walls remain one tracker item with a level distribution.
+    public let effectiveTrackerItems: [EffectiveVillageItemState]
+    public let manualCoverage: ManualTrackerCoverage
+    /// All five progress metrics computed from this exact projection.
+    public let progressMetrics: VillageProgressMetrics
     public let diagnostics: [AccountDataDiagnostic]
     /// Issue #96：全村庄进度覆盖状态（唯一覆盖判定点）。生产门禁与判定逻辑见
     /// `project()`；`universeSupplement` 合成门禁使用内部 `buildingUniverseAvailable`
@@ -388,7 +406,8 @@ public struct VillageCatalogProjection: Sendable {
         seasonalPhases: SeasonalPhaseTable = .empty,
         craftTableCatalog: CraftTableCatalog? = nil,
         base: TrackerBase,
-        now: Date = Date()
+        now: Date = Date(),
+        manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> VillageCatalogProjection {
         var diagnostics: [AccountDataDiagnostic] = []
         let compatibility = CatalogCompatibility.resolve(
@@ -420,7 +439,10 @@ public struct VillageCatalogProjection: Sendable {
         }
 
         // 解锁建筑等级（阶段上限驱动）只推导一次，经 records 传给 map。
-        let unlocks = PlayerUnlockLevels(snapshot: village.accountSnapshot)
+        let unlocks = PlayerUnlockLevels.effective(
+            snapshot: village.accountSnapshot,
+            manualUpgradeCore: manualUpgradeCore
+        )
         // Issue #96：拆分布局（原 Issue #70 阶段 2 的 universeComplete 判定）：
         // 1) buildingUniverseAvailable —— 建筑/陷阱实例宇宙门禁（universeSupplement
         //    唯一生产入口；含 catalogIsUsable 与 TH 范围守卫，同旧判定，BB 恒 false）；
@@ -462,22 +484,40 @@ public struct VillageCatalogProjection: Sendable {
             // 与旧判定一致），不引入 force-unwrap。
             progressCoverage = .unavailable
         }
-        let states = village.accountSnapshot.map { snapshot in
-            // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
-            // buildingUniverseAvailable 守卫 = universeSupplement 的唯一生产
-            // 入口门禁（目录不可信 / TH 未知或越界 / 旧目录 / BB → 不产出）。
-            aggregate(records(
+        let importedRecords = village.accountSnapshot.map { snapshot in
+            // Keep the unaggregated records in the same projection so building
+            // groups and detail rows share the exact unlock/catalog decisions.
+            records(
                 from: snapshot, catalog: catalog, base: base, now: now,
                 unlocks: unlocks, catalogIsUsable: catalogIsUsable,
                 seasonalPhases: seasonalPhases,
                 craftTableCatalog: craftTableCatalog
-            )) + (buildingUniverseAvailable ? Self.universeSupplement(
+            )
+        } ?? []
+        let importedStates = village.accountSnapshot.map { snapshot in
+            // 宇宙差集合成项不参与 aggregate（直接追加，观测行与差集行分离）。
+            // buildingUniverseAvailable 守卫 = universeSupplement 的唯一生产
+            // 入口门禁（目录不可信 / TH 未知或越界 / 旧目录 / BB → 不产出）。
+            aggregate(importedRecords) + (buildingUniverseAvailable ? Self.universeSupplement(
                 snapshot: snapshot,
                 catalog: catalog,
                 unlocks: unlocks,  // 复用 project 已推导的解锁等级（评审 B-4）
                 base: base
             ) : [])
         } ?? []
+
+        let effective = EffectiveVillageProjectionBuilder.build(
+            snapshot: village.accountSnapshot,
+            rawItems: importedRecords,
+            items: importedStates,
+            catalog: catalog,
+            catalogIsUsable: catalogIsUsable,
+            compatibility: compatibility,
+            base: base,
+            now: now,
+            manualUpgradeCore: manualUpgradeCore,
+            progressCoverage: progressCoverage
+        )
 
         return VillageCatalogProjection(
             villageID: village.id,
@@ -486,7 +526,11 @@ public struct VillageCatalogProjection: Sendable {
             catalogVersion: catalog?.gameVersion,
             catalogIsUsable: catalogIsUsable,
             compatibility: compatibility,
-            items: states,
+            items: effective.items,
+            rawItems: effective.rawItems,
+            effectiveTrackerItems: effective.trackerItems,
+            manualCoverage: effective.manualCoverage,
+            progressMetrics: effective.progressMetrics,
             diagnostics: diagnostics,
             progressCoverage: progressCoverage
         )

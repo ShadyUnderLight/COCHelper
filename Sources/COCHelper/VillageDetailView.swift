@@ -111,12 +111,7 @@ struct VillageDetailView: View {
         // 分母 = known ∪ 差集（完整分母）；partial/unavailable → 已观测口径 +
         // 覆盖诊断；覆盖率为完整覆盖率；列表口径（displayItems）与指标
         // 口径分离（决策 3）。
-        let progressMetrics = VillageProgressProjection.metrics(
-            from: trackedItems,
-            catalogIsUsable: projection.catalogIsUsable,
-            compatibility: projection.compatibility,
-            coverage: projection.progressCoverage
-        )
+        let progressMetrics = projection.progressMetrics
         let statsByKey = Dictionary(
             uniqueKeysWithValues: VillageDetailProjection.completionStats(
                 from: displayItems,
@@ -128,15 +123,12 @@ struct VillageDetailView: View {
         // 分组 id 集合：数据变化（重新导入快照、切换基地等）后用于校正筛选，
         // 不得残留成错误的空筛选（issue #37 验收）。
         let groupIDs = groups.map(\.id)
-        // Issue #45：同类建筑组卡投影（buildings/buildings2 原始记录层）。
-        // 与 VillageCatalogProjection.project 并行调用：聚合层（agg: 前缀记录）
-        // 继续供完成度/诊断/筛选使用，组卡基于原始记录层，两者语义互不影响。
+        // Issue #45/#140：同类建筑组卡复用同一有效村庄投影的 rawItems，
+        // 不重新从 snapshot 推导 prerequisite、lifecycle 或 manual 状态。
         let buildingGroups = BuildingGroupProjection.project(
-            village: village,
+            projection: projection,
             catalog: catalog,
-            base: selectedBase,
-            seasonalPhases: seasonalPhases,
-            now: now
+            base: selectedBase
         )
         let craftTable = CraftTableProjection.project(
             village: village,

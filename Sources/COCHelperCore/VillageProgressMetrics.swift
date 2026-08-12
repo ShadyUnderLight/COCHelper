@@ -25,6 +25,10 @@ public struct ProgressMetric: Identifiable, Hashable, Sendable {
         case globalProgress
         /// 观测数据完整性：已关联目录实例数 / 追踪类别观测实例数。
         case snapshotCoverage
+        /// 实例/数量维度的已完成实例数 / 追踪实例数。
+        case instanceProgress
+        /// 导入事实与本地手动完成状态合并后的全局 Tracker 进度。
+        case effectiveTrackerProgress
     }
 
     public let kind: Kind
@@ -67,11 +71,42 @@ public struct ProgressMetric: Identifiable, Hashable, Sendable {
     }
 }
 
-/// 一个村庄、一个基地的三指标聚合（issue #70）。
+/// 一个村庄、一个基地的五种相互独立的进度口径。
 public struct VillageProgressMetrics: Hashable, Sendable {
     public let currentStageProgress: ProgressMetric
     public let globalProgress: ProgressMetric
     public let snapshotCoverage: ProgressMetric
+
+    public let instanceProgress: ProgressMetric
+    public let effectiveTrackerProgress: ProgressMetric
+
+    public init(
+        currentStageProgress: ProgressMetric,
+        globalProgress: ProgressMetric,
+        snapshotCoverage: ProgressMetric,
+        instanceProgress: ProgressMetric? = nil,
+        effectiveTrackerProgress: ProgressMetric? = nil
+    ) {
+        self.currentStageProgress = currentStageProgress
+        self.globalProgress = globalProgress
+        self.snapshotCoverage = snapshotCoverage
+        self.instanceProgress = instanceProgress ?? ProgressMetric(
+            kind: .instanceProgress,
+            numerator: 0,
+            denominator: 0,
+            state: .unknown,
+            units: "实例",
+            degradedReason: "尚未建立实例进度口径。"
+        )
+        self.effectiveTrackerProgress = effectiveTrackerProgress ?? ProgressMetric(
+            kind: .effectiveTrackerProgress,
+            numerator: 0,
+            denominator: 0,
+            state: .unknown,
+            units: "级",
+            degradedReason: "尚未建立有效 Tracker 进度口径。"
+        )
+    }
 }
 
 /// 升级总览「观测数据完整性」卡的聚合结果（Issue #110）。
@@ -106,7 +141,7 @@ public struct AggregateCoverage: Hashable, Sendable {
 
 // MARK: - 投影
 
-/// Issue #70：三指标投影。纯函数，known 判定与 `VillageDetailProjection.totalCompletion`
+/// Issue #70/#140：五指标投影。纯函数，known 判定与 `VillageDetailProjection.totalCompletion`
 /// 同规则（单一来源：`VillageDetailProjection.isKnown`）。
 ///
 /// 指标语义：
@@ -125,7 +160,7 @@ public struct AggregateCoverage: Hashable, Sendable {
 ///   `known / (known + unknown + available)`（100% ⟺ 快照覆盖全部宇宙项）。
 ///
 /// 状态判定（决策 2/3/5 + Issue #96）：
-/// - `catalogIsUsable == false` → 三指标全部 `.unavailable`（目录不可用/版本不匹配，
+/// - `catalogIsUsable == false` → 五种指标全部 `.unavailable`（目录不可用/版本不匹配，
 ///   fail-closed，禁止假精度）；
 /// - 分母 == 0 → `.unknown`（无快照或无可确认实例）；
 /// - 未知实例权重 > 0（含 needsReimport 项归未知侧，实现要求 4）→ `.partial`；
@@ -240,8 +275,7 @@ public enum VillageProgressProjection {
 
         let unverifiedCatalog = compatibility?.isUnverified ?? false
 
-        return VillageProgressMetrics(
-            currentStageProgress: makeMetric(
+        let currentStageMetric = makeMetric(
                 kind: .currentStageProgress,
                 numerator: stageNum.value,
                 denominator: stageDen.value,
@@ -256,8 +290,8 @@ public enum VillageProgressProjection {
                     ? String(stageMissingWeightInfo.count) + " 项缺少阶段上限，未计入阶段进度。"
                     : nil,
                 coverageDiagnostic: coverageDiagnostic
-            ),
-            globalProgress: makeMetric(
+            )
+        let globalMetric = makeMetric(
                 kind: .globalProgress,
                 numerator: globalNum.value,
                 denominator: globalDen.value,
@@ -272,8 +306,8 @@ public enum VillageProgressProjection {
                     ? String(globalMissingWeightInfo.count) + " 项缺少或异常全局上限，未计入全局进度。"
                     : nil,
                 coverageDiagnostic: coverageDiagnostic
-            ),
-            snapshotCoverage: makeMetric(
+            )
+        let snapshotMetric = makeMetric(
                 kind: .snapshotCoverage,
                 numerator: coverageNum.count,
                 denominator: coverageDen.count,
@@ -292,6 +326,39 @@ public enum VillageProgressProjection {
                 emptyReason: "尚未导入快照",
                 coverageDiagnostic: coverageDiagnostic
             )
+        let instanceDenominator = VillageDetailProjection.instanceCountAndOverflow(of: items)
+        let instanceNumerator = VillageDetailProjection.instanceCountAndOverflow(
+            of: known.filter { $0.status == .maxed }
+        )
+        let instanceMetric = makeMetric(
+            kind: .instanceProgress,
+            numerator: instanceNumerator.count,
+            denominator: instanceDenominator.count,
+            saturated: instanceNumerator.didOverflow || instanceDenominator.didOverflow,
+            unknownWeight: unknownWeightInfo.count,
+            availableWeight: availableWeightInfo.count,
+            unverifiedCatalog: unverifiedCatalog,
+            denominatorIsComplete: completeDenominator,
+            units: "实例",
+            emptyReason: "无可确认项目，暂无法计算",
+            coverageDiagnostic: coverageDiagnostic
+        )
+        let effectiveMetric = ProgressMetric(
+            kind: .effectiveTrackerProgress,
+            numerator: globalMetric.numerator,
+            denominator: globalMetric.denominator,
+            state: globalMetric.state,
+            saturated: globalMetric.saturated,
+            units: globalMetric.units,
+            degradedReason: globalMetric.degradedReason
+        )
+
+        return VillageProgressMetrics(
+            currentStageProgress: currentStageMetric,
+            globalProgress: globalMetric,
+            snapshotCoverage: snapshotMetric,
+            instanceProgress: instanceMetric,
+            effectiveTrackerProgress: effectiveMetric
         )
     }
 
@@ -335,11 +402,7 @@ public enum VillageProgressProjection {
                 if base == .home {
                     homeCoverages.append(projection.progressCoverage)
                 }
-                let metrics = VillageProgressProjection.metrics(
-                    from: projection.items.filter { $0.status != .unavailable },
-                    catalogIsUsable: projection.catalogIsUsable,
-                    compatibility: projection.compatibility
-                )
+                let metrics = projection.progressMetrics
                 let coverage = metrics.snapshotCoverage
                 if coverage.saturated { return nil } // fail-closed
                 let (k, kOver) = known.addingReportingOverflow(coverage.numerator)
@@ -489,7 +552,13 @@ public enum VillageProgressProjection {
                 state: .unavailable, units: "级", degradedReason: reason),
             snapshotCoverage: ProgressMetric(
                 kind: .snapshotCoverage, numerator: 0, denominator: 0,
-                state: .unavailable, units: "实例", degradedReason: reason)
+                state: .unavailable, units: "实例", degradedReason: reason),
+            instanceProgress: ProgressMetric(
+                kind: .instanceProgress, numerator: 0, denominator: 0,
+                state: .unavailable, units: "实例", degradedReason: reason),
+            effectiveTrackerProgress: ProgressMetric(
+                kind: .effectiveTrackerProgress, numerator: 0, denominator: 0,
+                state: .unavailable, units: "级", degradedReason: reason)
         )
     }
 

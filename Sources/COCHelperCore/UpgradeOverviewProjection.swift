@@ -17,7 +17,7 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
     public let item: VillageItemState
     /// 目录版本；目录不可用时 nil。
     public let catalogVersion: String?
-    /// Issue #70 实现要求 6：该村庄×基地的三指标投影。同 village+base 的
+    /// Issue #70/#140 实现要求 6：该村庄×基地的五种进度口径。同 village+base 的
     /// 记录共享同一实例（allRecords 内计算一次）；与详情页消费同一个
     /// `VillageProgressProjection`，供升级总览 UI 聚合覆盖率等使用。
     public let villageMetrics: VillageProgressMetrics
@@ -71,12 +71,14 @@ public enum UpgradeOverviewProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable = .empty,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date()
     ) -> (active: [UpgradeDisplayRecord], pending: [UpgradeDisplayRecord]) {
         let records = allRecords(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
             at: now
         )
         return (
@@ -97,12 +99,14 @@ public enum UpgradeOverviewProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable = .empty,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
         overviewRecords(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
             at: now
         ).active
     }
@@ -122,12 +126,14 @@ public enum UpgradeOverviewProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable = .empty,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date()
     ) -> [UpgradeDisplayRecord] {
         overviewRecords(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
             at: now
         ).pending
     }
@@ -165,6 +171,7 @@ public enum UpgradeOverviewProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable,
+        manualUpgradeCores: [UUID: ManualUpgradeCore],
         at now: Date
     ) -> [UpgradeDisplayRecord] {
         villages.flatMap { village in
@@ -174,7 +181,8 @@ public enum UpgradeOverviewProjection {
                     catalog: catalog,
                     seasonalPhases: seasonalPhases,
                     base: base,
-                    now: now
+                    now: now,
+                    manualUpgradeCore: manualUpgradeCores[village.id]
                 )
                 // Issue #70 阶段 2：消费拆分——records 只含「已观测项」
                 //（排除宇宙差集 .available：差集项无升级计时，进总览列表无意义）；
@@ -185,12 +193,7 @@ public enum UpgradeOverviewProjection {
                 let displayRecords = tracked.filter { $0.status != .available }
                 // Issue #70 实现要求 6：同 village×base 的指标只算一次，全部
                 // record 共享（口径与详情页一致：排除 .unavailable + 完整分母）。
-                let metrics = VillageProgressProjection.metrics(
-                    from: tracked,
-                    catalogIsUsable: projection.catalogIsUsable,
-                    compatibility: projection.compatibility,
-                    coverage: projection.progressCoverage
-                )
+                let metrics = projection.progressMetrics
                 return displayRecords.map { item in
                     UpgradeDisplayRecord(
                         id: village.id.uuidString + ":" + base.rawValue + ":" + item.id,

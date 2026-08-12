@@ -106,9 +106,31 @@ public enum BuildingGroupProjection {
         base: TrackerBase,
         expectedGameVersion: String? = nil,  // Issue #74a：默认不自我比较（unverified）
         seasonalPhases: SeasonalPhaseTable = .empty,
-        now: Date = Date()
+        now: Date = Date(),
+        manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> [BuildingGroup] {
-        guard let snapshot = village.accountSnapshot else { return [] }
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog,
+            expectedGameVersion: expectedGameVersion,
+            seasonalPhases: seasonalPhases,
+            base: base,
+            now: now,
+            manualUpgradeCore: manualUpgradeCore
+        )
+        return project(projection: projection, catalog: catalog, base: base)
+    }
+
+    /// Builds group cards from the already-resolved village projection.
+    ///
+    /// The previous implementation re-read `AccountSnapshot` and called the
+    /// catalog mapper again. Reusing `rawItems` keeps prerequisite, lifecycle,
+    /// and effective-state decisions identical to detail/overview consumers.
+    public static func project(
+        projection: VillageCatalogProjection,
+        catalog: GameCatalog?,
+        base: TrackerBase
+    ) -> [BuildingGroup] {
         // 目录可用性（与 VillageCatalogProjection 同语义，Review 反馈 P1-2）：
         // 目录存在且版本与期望匹配时才可用；expectedGameVersion == nil 不校验。
         // 注意区分两种降级（Issue #45 契约第 5 节）：目录不可用（catalog == nil）
@@ -116,22 +138,14 @@ public enum BuildingGroupProjection {
         // 是「不得输出权威汇总」→ versionMismatch（UI 红标诊断）。
         // Issue #74a：完成度可用性由兼容性状态派生（与 VillageCatalogProjection
         // 同一判定点，防手写版本比较漂移）。
-        let catalogIsUsable = CatalogCompatibility.resolve(
-            catalog: catalog, expectedGameVersion: expectedGameVersion).isUsable
+        let catalogIsUsable = projection.catalogIsUsable
         // 原始记录层（聚合前）：只取 buildings/buildings2 的非嵌套项。
         // catalogIsUsable 必须显式传入（Issue #67 P1-2）：版本不匹配时行状态
         // 不得消费旧目录判 maxed/complete——组卡→详情链路与列表行同口径。
-        let records = VillageCatalogProjection.records(
-            from: snapshot,
-            catalog: catalog,
-            base: base,
-            now: now,
-            unlocks: PlayerUnlockLevels(snapshot: snapshot),
-            catalogIsUsable: catalogIsUsable,
-            seasonalPhases: seasonalPhases,
-            // 组卡过滤非嵌套项，嵌套防御回查无意义；显式 nil 保持语义不变。
-            craftTableCatalog: nil
-        ).filter { !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2") }
+        let records = projection.rawItems.filter {
+            !$0.isNested && ($0.section == "buildings" || $0.section == "buildings2")
+                && $0.base == base
+        }
 
         // 按 (base, section, dataID) 分组，组按首现顺序输出（字典 + 有序键数组）。
         var keys: [String] = []

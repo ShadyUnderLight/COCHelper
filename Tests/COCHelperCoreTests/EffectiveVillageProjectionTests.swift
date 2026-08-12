@@ -877,6 +877,7 @@ final class EffectiveVillageProjectionTests: XCTestCase {
             )
             XCTAssertEqual(effectiveItem.effectiveState?.status, expectedStatus)
             XCTAssertFalse(effectiveItem.isEffectivelyUpgrading, manualStatus.rawValue)
+            XCTAssertNil(effectiveItem.effectiveTargetLevel, manualStatus.rawValue)
             XCTAssertNil(
                 effectiveItem.effectiveRemainingSeconds(at: importedAt),
                 manualStatus.rawValue
@@ -897,6 +898,68 @@ final class EffectiveVillageProjectionTests: XCTestCase {
             )
             XCTAssertTrue(overview.active.isEmpty, manualStatus.rawValue)
         }
+    }
+
+    func testEffectiveActiveAtStageCapIsNotMaxed() throws {
+        let townHallKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+        let cannonKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(
+                    section: "buildings",
+                    dataID: 1_000_002,
+                    level: 2,
+                    timerSeconds: 60,
+                    remainingSeconds: 60,
+                    path: "1"
+                ),
+            ],
+        ])
+        let activeRecord = try record(
+            key: cannonKey,
+            from: 2,
+            target: 3,
+            expectedEndAt: importedAt.addingTimeInterval(60),
+            startedAt: importedAt
+        )
+        let manual = try core(
+            states: [
+                try state(
+                    key: townHallKey,
+                    imported: try distribution([(11, 1)]),
+                    manual: try distribution([(11, 1)]),
+                    status: .observed
+                ),
+                try state(
+                    key: cannonKey,
+                    imported: try distribution([(2, 1)]),
+                    manual: try distribution([(2, 1)]),
+                    status: .manualCompleted
+                ),
+            ],
+            records: [activeRecord]
+        )
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: manual
+        )
+
+        let cannon = try XCTUnwrap(projection.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(cannon.effectiveState?.status, .manualActive)
+        XCTAssertEqual(cannon.currentStageMaxLevel, 2)
+        XCTAssertTrue(cannon.isEffectivelyUpgrading)
+        XCTAssertFalse(cannon.isEffectivelyMaxed)
+        XCTAssertEqual(cannon.effectiveTargetLevel, 3)
+        XCTAssertEqual(cannon.effectiveRemainingSeconds(at: importedAt), 60)
+
+        let completion = VillageDetailProjection.totalCompletion(
+            from: projection.items.filter { $0.status != .available && $0.status != .unavailable }
+        )
+        XCTAssertEqual(completion.completedCount, 0)
     }
 
     func testMalformedImportedLevelsPreserveRawInstanceWeightAndOverflow() throws {
@@ -935,6 +998,34 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         XCTAssertTrue(
             projection.progressMetrics.effectiveTrackerProgress.degradedReason?.contains("5 个实例") == true
         )
+
+        let exactMaxVillage = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_002, level: nil, count: Int.max, path: "1"),
+            ],
+        ])
+        let exactMaxProjection = VillageCatalogProjection.project(
+            village: exactMaxVillage,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: try core(states: [
+                try state(
+                    key: key,
+                    imported: .empty,
+                    manual: .empty,
+                    status: .unknown
+                ),
+            ])
+        )
+        let exactMaxEffective = try XCTUnwrap(
+            exactMaxProjection.effectiveTrackerItems.first { $0.itemKey == key }
+        )
+        XCTAssertEqual(exactMaxEffective.importedInstanceWeight, Int64.max)
+        XCTAssertFalse(exactMaxEffective.importedCountOverflowed)
+        XCTAssertEqual(exactMaxProjection.progressMetrics.instanceProgress.denominator, Int.max)
+        XCTAssertFalse(exactMaxProjection.progressMetrics.instanceProgress.saturated)
+        XCTAssertFalse(exactMaxProjection.progressMetrics.effectiveTrackerProgress.saturated)
 
         let overflowVillage = village(objectSections: [
             "buildings": [

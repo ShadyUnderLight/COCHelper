@@ -133,13 +133,26 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
             ?? currentLevel
     }
 
-    /// Effective target level. An active manual target is never returned as a
-    /// completed level, but is exposed here for active-row/status rendering.
+    /// Effective target level. Raw targets are exposed only for observed or
+    /// imported-active states; manual-completed rows use the reprojected
+    /// catalog target, while fail-closed states expose no target.
     public var effectiveTargetLevel: Int? {
-        if effectiveState?.status == .manualActive {
-            return effectiveState?.activeTargetLevel
+        guard let effectiveState else { return nextLevel }
+        switch effectiveState.status {
+        case .manualActive:
+            return effectiveState.activeTargetLevel
+        case .observed, .importedActive:
+            return nextLevel
+        case .manualCompleted:
+            switch effectiveState.catalogNextUpgrade {
+            case .available(let level, _), .requires(let level, _, _):
+                return level
+            default:
+                return nil
+            }
+        case .needsReimport, .unknown, .conflict, .unavailable:
+            return nil
         }
-        return nextLevel
     }
 
     /// Upgrade status after the optional manual overlay is applied.
@@ -237,10 +250,14 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     }
 
     /// Whether the effective completed level has reached the current-stage
-    /// (or global, when no stage cap exists) maximum. A conflicted/unknown
-    /// sidecar never reports maxed, even when the raw snapshot did.
+    /// (or global, when no stage cap exists) maximum. Active, conflicted, or
+    /// unknown sidecars never report maxed, even when the raw snapshot did.
     public var isEffectivelyMaxed: Bool {
         if let effectiveState {
+            guard effectiveState.status != .manualActive,
+                  effectiveState.status != .importedActive else {
+                return false
+            }
             guard effectiveState.isKnown,
                   let currentLevel = effectiveCurrentLevel,
                   let effectiveMax = effectiveState.currentStageMaxLevel ?? maxLevel else {

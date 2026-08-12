@@ -29,14 +29,34 @@ struct LevelDetailSheet: View {
     }
 
     private var statusLabel: String {
-        if item.effectiveState?.status == .manualActive {
-            return "正在升级"
-        }
-        if item.effectivelyNeedsReimport {
-            return "待重新导入确认"
-        }
-        if item.effectiveState?.status == .conflict {
-            return "本地状态冲突"
+        if let effectiveStatus = item.effectiveState?.status {
+            switch effectiveStatus {
+            case .manualActive, .importedActive:
+                return "正在升级"
+            case .needsReimport:
+                return "待重新导入确认"
+            case .conflict:
+                return "本地状态冲突"
+            case .unknown:
+                return "无法确认当前状态"
+            case .unavailable:
+                return "不参与升级追踪"
+            case .manualCompleted, .observed:
+                break
+            }
+
+            if item.isEffectivelyMaxed {
+                // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分。
+                if let stage = item.currentStageMaxLevel, let max = item.maxLevel, stage < max {
+                    return "当前阶段已满级（全局尚有 \(max - stage) 级）"
+                }
+                return "已满级"
+            }
+
+            // An effective sidecar is authoritative for the status. Do not
+            // fall through to raw `.upgrading` when a stale timer survived a
+            // manual completion or an effective-state validation failure.
+            return "已记录"
         }
         if item.isEffectivelyMaxed {
             // Issue #67：阶段满级（currentStageMaxLevel < maxLevel）与全局满级区分。

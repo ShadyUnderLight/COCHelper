@@ -755,7 +755,7 @@ enum EffectiveVillageProjectionBuilder {
                   !distribution.isEmpty,
                   let stageMax = item.currentStageMaxLevel,
                   stageMax > 0 else {
-                unknown = addUnknown(unknown, weight)
+                saturated = saturated || add(&unknown, weight)
                 continue
             }
             let completed = distribution.levels
@@ -909,16 +909,11 @@ enum EffectiveVillageProjectionBuilder {
     }
 
     private static func add(_ target: inout Int, _ value: Int64) -> Bool {
-        let converted = value >= Int64(Int.max) ? Int.max : Int(max(0, value))
+        let exceedsIntRange = value > Int64(Int.max)
+        let converted = exceedsIntRange ? Int.max : Int(max(0, value))
         let result = target.addingReportingOverflow(converted)
         target = result.overflow ? Int.max : result.partialValue
-        return result.overflow || value >= Int64(Int.max)
-    }
-
-    private static func addUnknown(_ target: Int, _ value: Int64) -> Int {
-        var result = target
-        _ = add(&result, value)
-        return result
+        return result.overflow || exceedsIntRange
     }
 
     private static func multiply(_ lhs: Int64, _ rhs: Int64) -> Int64 {

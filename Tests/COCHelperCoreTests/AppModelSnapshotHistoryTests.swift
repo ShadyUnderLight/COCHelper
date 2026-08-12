@@ -106,6 +106,42 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
     }
 
     @MainActor
+    func testAccountImportRejectsDuplicateTagWithoutChoosingFirstVillage() throws {
+        let tag = "#2QJQ8J88"
+        let raw = "{\"tag\":\"\(tag)\",\"buildings\":[]}"
+        let villages = [
+            VillageProfile(
+                id: UUID(),
+                name: "村庄 A",
+                accountSnapshot: snapshot(tag: tag, text: raw)
+            ),
+            VillageProfile(
+                id: UUID(),
+                name: "村庄 B",
+                accountSnapshot: snapshot(tag: tag, text: raw)
+            )
+        ]
+        let historyStore = TestSnapshotHistoryStore()
+        let model = try makeModel(villages: villages, historyStore: historyStore)
+        model.importText = raw
+        model.parseAccountText()
+
+        let beforeVillages = model.villages
+        let beforeCurrent = defaults.data(forKey: "coc-helper.villages.v1")
+        let beforeHistory = historyStore.rawData
+
+        XCTAssertNotNil(model.pendingAccountSnapshot)
+        XCTAssertEqual(model.pendingAccountSnapshotActionTitle, "无法确定导入目标")
+        XCTAssertTrue(model.pendingAccountSnapshotDestinationDescription?.contains("多个") == true)
+        XCTAssertTrue(model.accountImportError?.contains("多个") == true)
+        XCTAssertFalse(model.applyPendingAccountSnapshot())
+        XCTAssertEqual(model.villages, beforeVillages)
+        XCTAssertEqual(defaults.data(forKey: "coc-helper.villages.v1"), beforeCurrent)
+        XCTAssertEqual(historyStore.rawData, beforeHistory)
+        XCTAssertNotNil(model.pendingAccountSnapshot)
+    }
+
+    @MainActor
     func testLegacySingleSnapshotLoadsIntoCurrentVillageAndCreatesOneBaseline() throws {
         let raw = "{\"tag\":\"#2QJQ8J88\",\"buildings\":[]}"
         let legacySnapshot = snapshot(tag: "#2QJQ8J88", text: raw)

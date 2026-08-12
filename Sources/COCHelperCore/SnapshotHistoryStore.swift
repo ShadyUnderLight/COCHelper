@@ -148,6 +148,7 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
             guard Self.isSHA256Fingerprint(entry.canonicalFingerprint) else {
                 throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的 fingerprint 格式无效。")
             }
+            try Self.validateIntegrity(of: entry)
         }
 
         var lineageIDs = Set<UUID>()
@@ -196,6 +197,47 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
     private static func isSHA256Fingerprint(_ value: String) -> Bool {
         guard value.count == 71, value.hasPrefix("sha256:") else { return false }
         return value.dropFirst(7).allSatisfy { $0.isHexDigit }
+    }
+
+    private static func validateIntegrity(of entry: SnapshotHistoryEntry) throws {
+        let rebuilt: SnapshotHistoryEntry
+        do {
+            let snapshot = try AccountSnapshotImporter.parse(entry.rawJSON)
+            rebuilt = try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot,
+                villageID: entry.villageID,
+                lineageID: entry.lineageID,
+                appliedAt: entry.appliedAt,
+                snapshotID: entry.snapshotID,
+                isBaseline: entry.isBaseline,
+                baselineReason: entry.baselineReason
+            )
+        } catch let error as SnapshotHistoryStoreError {
+            throw error
+        } catch let error as LocalizedError {
+            throw SnapshotHistoryStoreError.invalidEntry(
+                "历史 entry 的 rawJSON 无法重建 observation："
+                    + (error.errorDescription ?? error.localizedDescription)
+            )
+        } catch {
+            throw SnapshotHistoryStoreError.invalidEntry(
+                "历史 entry 的 rawJSON 无法重建 observation：" + error.localizedDescription
+            )
+        }
+
+        let storedObservationFingerprint = SnapshotHistoryCanonicalizer.fingerprint(
+            for: entry.observation
+        )
+        guard storedObservationFingerprint == entry.canonicalFingerprint else {
+            throw SnapshotHistoryStoreError.invalidEntry(
+                "历史 entry 的 observation 与 canonicalFingerprint 不一致。"
+            )
+        }
+        guard rebuilt.canonicalFingerprint == entry.canonicalFingerprint else {
+            throw SnapshotHistoryStoreError.invalidEntry(
+                "历史 entry 的 rawJSON 与 canonicalFingerprint 不一致。"
+            )
+        }
     }
 }
 

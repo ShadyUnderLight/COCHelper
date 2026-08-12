@@ -626,7 +626,14 @@ public final class AppModel: ObservableObject {
         pendingAccountSnapshot = nil
 
         do {
-            pendingAccountSnapshot = try AccountSnapshotImporter.parse(importText)
+            let snapshot = try AccountSnapshotImporter.parse(importText)
+            pendingAccountSnapshot = snapshot
+            if case .ambiguous(let tag, let villageNames) = pendingSnapshotTarget(for: snapshot) {
+                accountImportError = Self.ambiguousImportTargetMessage(
+                    tag: tag,
+                    villageNames: villageNames
+                )
+            }
         } catch {
             accountImportError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -635,10 +642,15 @@ public final class AppModel: ObservableObject {
     public var pendingAccountSnapshotActionTitle: String? {
         guard let snapshot = pendingAccountSnapshot else { return nil }
 
-        if let targetIndex = targetVillageIndex(for: snapshot) {
+        switch pendingSnapshotTarget(for: snapshot) {
+        case .ambiguous:
+            return "无法确定导入目标"
+        case .existing(let targetIndex):
             let targetName = villages[targetIndex].name
             let action = isReimportingExistingVillage(snapshot, at: targetIndex) ? "更新" : "应用到"
             return action + "「" + targetName + "」"
+        case .create:
+            break
         }
 
         let newName = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
@@ -648,12 +660,17 @@ public final class AppModel: ObservableObject {
     public var pendingAccountSnapshotDestinationDescription: String? {
         guard let snapshot = pendingAccountSnapshot else { return nil }
 
-        if let targetIndex = targetVillageIndex(for: snapshot) {
+        switch pendingSnapshotTarget(for: snapshot) {
+        case .ambiguous(let tag, let villageNames):
+            return Self.ambiguousImportTargetMessage(tag: tag, villageNames: villageNames)
+        case .existing(let targetIndex):
             let targetName = villages[targetIndex].name
             if isReimportingExistingVillage(snapshot, at: targetIndex) {
                 return "导入目标：按账号 tag 更新「" + targetName + "」"
             }
             return "导入目标：应用到「" + targetName + "」"
+        case .create:
+            break
         }
 
         let newName = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(villages.count + 1)
@@ -665,11 +682,18 @@ public final class AppModel: ObservableObject {
         guard let snapshot = pendingAccountSnapshot else { return false }
 
         let targetIndex: Int
-        if let existingIndex = targetVillageIndex(for: snapshot) {
+        switch pendingSnapshotTarget(for: snapshot) {
+        case .existing(let existingIndex):
             // Re-importing the same account refreshes only its raw snapshot.
             targetIndex = existingIndex
-        } else {
+        case .create:
             targetIndex = villages.count
+        case .ambiguous(let tag, let villageNames):
+            accountImportError = Self.ambiguousImportTargetMessage(
+                tag: tag,
+                villageNames: villageNames
+            )
+            return false
         }
 
         let appliedAt = Date()
@@ -1560,16 +1584,40 @@ public final class AppModel: ObservableObject {
         try? currentVillagePersistence.writeData(data)
     }
 
-    private func targetVillageIndex(for snapshot: AccountSnapshot) -> Int? {
-        if let tag = OfficialPlayerTagValidator.normalized(snapshot.tag),
-           let existingIndex = villages.firstIndex(where: { OfficialPlayerTagValidator.normalized($0.tag) == tag }) {
-            return existingIndex
+    private enum PendingSnapshotTarget {
+        case existing(Int)
+        case create
+        case ambiguous(tag: String, villageNames: [String])
+    }
+
+    private func pendingSnapshotTarget(for snapshot: AccountSnapshot) -> PendingSnapshotTarget {
+        if let tag = OfficialPlayerTagValidator.normalized(snapshot.tag) {
+            let matchingIndices = villages.indices.filter {
+                OfficialPlayerTagValidator.normalized(villages[$0].tag) == tag
+            }
+            if matchingIndices.count > 1 {
+                return .ambiguous(
+                    tag: tag,
+                    villageNames: matchingIndices.map { villages[$0].name }
+                )
+            }
+            if let existingIndex = matchingIndices.first {
+                return .existing(existingIndex)
+            }
         }
 
         guard let currentIndex = villages.firstIndex(where: { $0.id == selectedVillageID }),
               importIntoCurrentVillage || (villages.count == 1 && !villages[currentIndex].hasImportedData)
-        else { return nil }
-        return currentIndex
+        else { return .create }
+        return .existing(currentIndex)
+    }
+
+    private static func ambiguousImportTargetMessage(
+        tag: String,
+        villageNames: [String]
+    ) -> String {
+        "账号 Tag（" + tag + "）对应多个村庄档案：" + villageNames.joined(separator: "、")
+            + "。为避免绑定错误，导入已拒绝，请先保留唯一匹配档案后重试。"
     }
 
     private func isReimportingExistingVillage(_ snapshot: AccountSnapshot, at index: Int) -> Bool {

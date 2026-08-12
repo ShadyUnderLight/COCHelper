@@ -327,6 +327,64 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             )
         }
 
+        let legalButWrongFingerprint = SnapshotHistoryEntry(
+            schemaVersion: entry.schemaVersion,
+            observationVersion: entry.observationVersion,
+            fingerprintVersion: entry.fingerprintVersion,
+            snapshotID: entry.snapshotID,
+            villageID: entry.villageID,
+            lineageID: entry.lineageID,
+            normalizedPlayerTag: entry.normalizedPlayerTag,
+            appliedAt: entry.appliedAt,
+            sourceTimestamp: entry.sourceTimestamp,
+            parserVersion: entry.parserVersion,
+            canonicalFingerprint: "sha256:" + String(repeating: "0", count: 64),
+            rawJSON: entry.rawJSON,
+            observation: entry.observation,
+            coverage: entry.coverage,
+            isBaseline: entry.isBaseline,
+            baselineReason: entry.baselineReason
+        )
+        try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
+            entries: [legalButWrongFingerprint],
+            migrationMarker: marker
+        )))
+        XCTAssertThrowsError(try store.load()) { error in
+            XCTAssertEqual(
+                error as? SnapshotHistoryStoreError,
+                .invalidEntry("历史 entry 的 observation 与 canonicalFingerprint 不一致。")
+            )
+        }
+
+        let tamperedRawJSON = SnapshotHistoryEntry(
+            schemaVersion: entry.schemaVersion,
+            observationVersion: entry.observationVersion,
+            fingerprintVersion: entry.fingerprintVersion,
+            snapshotID: entry.snapshotID,
+            villageID: entry.villageID,
+            lineageID: entry.lineageID,
+            normalizedPlayerTag: entry.normalizedPlayerTag,
+            appliedAt: entry.appliedAt,
+            sourceTimestamp: entry.sourceTimestamp,
+            parserVersion: entry.parserVersion,
+            canonicalFingerprint: entry.canonicalFingerprint,
+            rawJSON: "{\"buildings\":[],\"unknown\":1}",
+            observation: entry.observation,
+            coverage: entry.coverage,
+            isBaseline: entry.isBaseline,
+            baselineReason: entry.baselineReason
+        )
+        try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
+            entries: [tamperedRawJSON],
+            migrationMarker: marker
+        )))
+        XCTAssertThrowsError(try store.load()) { error in
+            XCTAssertEqual(
+                error as? SnapshotHistoryStoreError,
+                .invalidEntry("历史 entry 的 rawJSON 与 canonicalFingerprint 不一致。")
+            )
+        }
+
         let unsupportedFingerprintVersion = SnapshotHistoryEntry(
             schemaVersion: entry.schemaVersion,
             observationVersion: entry.observationVersion,

@@ -66,6 +66,18 @@ public enum BuildingGroupCompleteness: String, Hashable, Sendable, CaseIterable 
     case versionMismatch
 }
 
+/// Coverage state for the scope that a building-group action consumes.
+///
+/// `VillageCatalogProjection.progressCoverage` describes the whole home village.
+/// A missing unrelated category must not disable a known building action, but a
+/// missing/unmodeled `buildings` scope (or no home coverage evidence) must remain
+/// fail-closed.
+public enum BuildingGroupCoverage: String, Hashable, Sendable {
+    case complete
+    case partial
+    case unavailable
+}
+
 /// 组卡汇总。
 public struct BuildingGroupSummary: Hashable, Sendable {
     /// 所有实例数量之和（使用 `VillageItemState.instanceWeight`）。
@@ -97,6 +109,8 @@ public struct BuildingGroupUpgradeAction: Hashable, Sendable {
     public let quantity: Int64
     public let durationState: CatalogDurationState?
     public let upgradeCosts: [CatalogUpgradeCost]?
+    /// Coverage of the building scope used to derive this action.
+    public let coverage: BuildingGroupCoverage
     /// Baseline that must be passed back to `ManualUpgradeCore.startUpgrade`.
     /// It is nil when the projection was not given a matching local tracker
     /// state, in which case `isStartable` is false.
@@ -110,6 +124,7 @@ public struct BuildingGroupUpgradeAction: Hashable, Sendable {
         quantity: Int64 = 1,
         durationState: CatalogDurationState?,
         upgradeCosts: [CatalogUpgradeCost]?,
+        coverage: BuildingGroupCoverage = .unavailable,
         baselineReference: ManualBaselineReference? = nil,
         isStartable: Bool,
         diagnostic: String? = nil
@@ -119,6 +134,7 @@ public struct BuildingGroupUpgradeAction: Hashable, Sendable {
         self.quantity = quantity
         self.durationState = durationState
         self.upgradeCosts = upgradeCosts
+        self.coverage = coverage
         self.baselineReference = baselineReference
         self.isStartable = isStartable
         self.diagnostic = diagnostic
@@ -134,6 +150,8 @@ public struct BuildingGroupUpgradeAction: Hashable, Sendable {
 /// without collapsing mixed-level records into a singular current level.
 public struct BuildingGroupTrackerState: Hashable, Sendable {
     public let itemKey: TrackerItemKey
+    /// Coverage of the building scope used to derive this tracker state.
+    public let coverage: BuildingGroupCoverage
     public let importedDistribution: ManualLevelDistribution?
     public let importedCountQuality: EffectiveVillageCountQuality?
     public let manualCompletedDistribution: ManualLevelDistribution?
@@ -147,6 +165,7 @@ public struct BuildingGroupTrackerState: Hashable, Sendable {
 
     public init(
         itemKey: TrackerItemKey,
+        coverage: BuildingGroupCoverage = .unavailable,
         importedDistribution: ManualLevelDistribution?,
         importedCountQuality: EffectiveVillageCountQuality? = nil,
         manualCompletedDistribution: ManualLevelDistribution?,
@@ -159,6 +178,7 @@ public struct BuildingGroupTrackerState: Hashable, Sendable {
         actions: [BuildingGroupUpgradeAction] = []
     ) {
         self.itemKey = itemKey
+        self.coverage = coverage
         self.importedDistribution = importedDistribution
         self.importedCountQuality = importedCountQuality
         self.manualCompletedDistribution = manualCompletedDistribution
@@ -305,6 +325,10 @@ public enum BuildingGroupProjection {
                 rawSection: first.section,
                 dataID: first.dataID
             )
+            let coverage = buildingGroupCoverage(
+                for: itemKey,
+                progressCoverage: projection.progressCoverage
+            )
             return BuildingGroup(
                 base: base,
                 section: first.section,
@@ -319,7 +343,8 @@ public enum BuildingGroupProjection {
                     effective: effectiveByKey[itemKey],
                     catalog: catalog,
                     catalogIsUsable: catalogIsUsable,
-                    manualUpgradeCore: manualUpgradeCore
+                    manualUpgradeCore: manualUpgradeCore,
+                    coverage: coverage
                 )
             )
         }
@@ -330,11 +355,13 @@ public enum BuildingGroupProjection {
         effective: EffectiveVillageItemState?,
         catalog: GameCatalog?,
         catalogIsUsable: Bool,
-        manualUpgradeCore: ManualUpgradeCore?
+        manualUpgradeCore: ManualUpgradeCore?,
+        coverage: BuildingGroupCoverage
     ) -> BuildingGroupTrackerState {
         guard let effective else {
             return BuildingGroupTrackerState(
                 itemKey: itemKey,
+                coverage: coverage,
                 importedDistribution: nil,
                 importedCountQuality: nil,
                 manualCompletedDistribution: nil,
@@ -356,6 +383,14 @@ public enum BuildingGroupProjection {
         case .overflowed:
             diagnostics.append("快照数量汇总溢出，不能安全启动本地升级。")
         }
+        switch coverage {
+        case .complete:
+            break
+        case .partial:
+            diagnostics.append("建筑 scope 覆盖不完整，不能安全启动本地升级。")
+        case .unavailable:
+            diagnostics.append("建筑 scope 覆盖状态不可用，不能安全启动本地升级。")
+        }
         if catalog == nil || !catalogIsUsable {
             diagnostics.append("目录不可用，不能生成升级操作。")
         } else if catalog?.item(section: itemKey.rawSection, dataID: itemKey.dataID) == nil {
@@ -369,6 +404,7 @@ public enum BuildingGroupProjection {
 
         return BuildingGroupTrackerState(
             itemKey: itemKey,
+            coverage: coverage,
             importedDistribution: effective.importedDistribution,
             importedCountQuality: effective.importedCountQuality,
             manualCompletedDistribution: effective.manualCompletedDistribution,
@@ -382,7 +418,8 @@ public enum BuildingGroupProjection {
                 for: effective,
                 catalog: catalog,
                 catalogIsUsable: catalogIsUsable,
-                manualUpgradeCore: manualUpgradeCore
+                manualUpgradeCore: manualUpgradeCore,
+                coverage: coverage
             )
         )
     }
@@ -391,7 +428,8 @@ public enum BuildingGroupProjection {
         for effective: EffectiveVillageItemState,
         catalog: GameCatalog?,
         catalogIsUsable: Bool,
-        manualUpgradeCore: ManualUpgradeCore?
+        manualUpgradeCore: ManualUpgradeCore?,
+        coverage: BuildingGroupCoverage
     ) -> [BuildingGroupUpgradeAction] {
         guard catalogIsUsable,
               let distribution = effective.effectiveCompletedDistribution,
@@ -412,6 +450,14 @@ public enum BuildingGroupProjection {
             }
 
             var reasons: [String] = []
+            switch coverage {
+            case .complete:
+                break
+            case .partial:
+                reasons.append("建筑 scope 覆盖不完整，不能安全启动本地升级。")
+            case .unavailable:
+                reasons.append("建筑 scope 覆盖状态不可用，不能安全启动本地升级。")
+            }
             switch effective.status {
             case .observed, .manualCompleted, .manualActive:
                 break
@@ -444,6 +490,7 @@ public enum BuildingGroupProjection {
                     return makeAction(
                         source: source,
                         target: target,
+                        coverage: coverage,
                         baselineReference: manualItemState.baselineReference,
                         blockingReasons: reasons,
                         diagnostics: reasons
@@ -463,6 +510,7 @@ public enum BuildingGroupProjection {
                     return makeAction(
                         source: source,
                         target: target,
+                        coverage: coverage,
                         baselineReference: manualItemState.baselineReference,
                         blockingReasons: reasons,
                         diagnostics: reasons
@@ -507,6 +555,7 @@ public enum BuildingGroupProjection {
             return makeAction(
                 source: source,
                 target: target,
+                coverage: coverage,
                 baselineReference: manualItemState?.baselineReference,
                 blockingReasons: blockingReasons,
                 diagnostics: diagnostics
@@ -517,6 +566,7 @@ public enum BuildingGroupProjection {
     private static func makeAction(
         source: ManualLevelQuantity,
         target: CatalogLevel,
+        coverage: BuildingGroupCoverage,
         baselineReference: ManualBaselineReference?,
         blockingReasons: [String],
         diagnostics: [String]
@@ -527,6 +577,7 @@ public enum BuildingGroupProjection {
             quantity: 1,
             durationState: target.durationState,
             upgradeCosts: target.upgradeCosts,
+            coverage: coverage,
             baselineReference: baselineReference,
             isStartable: blockingReasons.isEmpty && source.quantity > 0,
             diagnostic: diagnostics.isEmpty ? nil : diagnostics.joined(separator: "；")
@@ -536,6 +587,29 @@ public enum BuildingGroupProjection {
     private static func unique(_ values: [String]) -> [String] {
         var seen = Set<String>()
         return values.filter { seen.insert($0).inserted }
+    }
+
+    /// Narrows whole-village coverage to the scope consumed by one building
+    /// group. Unrelated missing categories do not manufacture uncertainty for a
+    /// known home building, while missing/unmodeled buildings remain blocked.
+    private static func buildingGroupCoverage(
+        for itemKey: TrackerItemKey,
+        progressCoverage: ProgressUniverseCoverage
+    ) -> BuildingGroupCoverage {
+        guard itemKey.base == .home, itemKey.rawSection == "buildings" else {
+            return .unavailable
+        }
+        switch progressCoverage {
+        case .complete:
+            return .complete
+        case .unavailable:
+            return .unavailable
+        case let .partial(missingSections, unmodeledCategories):
+            return missingSections.contains("buildings")
+                || unmodeledCategories.contains(.buildings)
+                ? .partial
+                : .complete
+        }
     }
 
     /// 阶梯：目录 levels 中 `level ∈ (currentLevel, effectiveMax]` 的条目，按 level 升序。

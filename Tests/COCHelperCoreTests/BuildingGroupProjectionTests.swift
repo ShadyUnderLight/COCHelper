@@ -7,9 +7,11 @@ final class BuildingGroupProjectionTests: XCTestCase {
     // MARK: - Helpers
 
     private var syntheticCatalog: GameCatalog!
+    private var syntheticBuildingCoverageCatalog: GameCatalog!
 
     override func setUpWithError() throws {
         syntheticCatalog = try makeCatalog(items: Self.syntheticCatalogItems)
+        syntheticBuildingCoverageCatalog = try makeTrustedCatalog(items: Self.syntheticCatalogItems)
     }
 
     /// 目录 JSON 载荷的最小编码形态（缺失字段在 CatalogItem/CatalogLevel 解码时按 Optional 缺省）。
@@ -83,6 +85,64 @@ final class BuildingGroupProjectionTests: XCTestCase {
         let data = try JSONEncoder().encode(Payload(gameVersion: gameVersion, items: items))
         let payload = try JSONDecoder().decode(DecodedPayload.self, from: data)
         return GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
+    }
+
+    /// Trusted universe fixture used by action tests. The ordinary synthetic
+    /// catalog intentionally has no universe and therefore must not certify a
+    /// startable building scope.
+    private func makeTrustedCatalog(
+        items: [SpecItem],
+        universeKeys: Set<String>? = nil,
+        gameVersion: String = "18.400.13"
+    ) throws -> GameCatalog {
+        struct Payload: Encodable {
+            let gameVersion: String
+            let items: [SpecItem]
+        }
+        struct DecodedPayload: Decodable {
+            let gameVersion: String
+            let items: [CatalogItem]
+        }
+        let data = try JSONEncoder().encode(Payload(gameVersion: gameVersion, items: items))
+        let payload = try JSONDecoder().decode(DecodedPayload.self, from: data)
+        let defaultKeys = Set(payload.items
+            .filter { $0.section == "buildings" || $0.section == "traps" }
+            .map { "\($0.section):\($0.dataID)" })
+        let keys = universeKeys ?? defaultKeys
+        let instanceCounts = Dictionary(uniqueKeysWithValues: keys.map {
+            ($0, Array(repeating: 1, count: 18))
+        })
+        return GameCatalog(
+            gameVersion: payload.gameVersion,
+            items: payload.items,
+            manifest: CatalogManifest(
+                schemaVersion: 1,
+                gameVersion: payload.gameVersion,
+                buildTag: "test",
+                locale: "zh-CN",
+                sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+                generatedFiles: [CatalogGeneratedFile(
+                    path: "catalog.json",
+                    sha256: "sha256:" + String(repeating: "b", count: 64),
+                    size: nil,
+                    kind: nil,
+                    entries: nil
+                )],
+                counts: CatalogCounts(
+                    items: payload.items.count,
+                    levels: payload.items.flatMap(\.levels).count,
+                    missingIcons: nil,
+                    missingTime: nil,
+                    timed: nil,
+                    instant: nil,
+                    notApplicable: nil,
+                    initialLevel: nil,
+                    sourceMissing: nil,
+                    parseFailed: nil
+                )
+            ),
+            instanceCounts: instanceCounts
+        )
     }
 
     private func makeVillage(
@@ -714,7 +774,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
         let withoutCore = try XCTUnwrap(
             project(
                 village: village,
-                catalog: syntheticCatalog,
+                catalog: syntheticBuildingCoverageCatalog,
                 base: .home
             ).first
         )
@@ -732,7 +792,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
         let group = try XCTUnwrap(
             project(
                 village: village,
-                catalog: syntheticCatalog,
+                catalog: syntheticBuildingCoverageCatalog,
                 base: .home,
                 manualUpgradeCore: core
             ).first
@@ -753,6 +813,9 @@ final class BuildingGroupProjectionTests: XCTestCase {
         XCTAssertTrue(tracker.actions.allSatisfy(\.isStartable))
         XCTAssertTrue(tracker.actions.allSatisfy { $0.durationState != nil })
         XCTAssertTrue(tracker.actions.allSatisfy { $0.baselineReference == issue141Baseline })
+        XCTAssertEqual(tracker.coverage, .complete,
+                       "无关类别的全村 partial coverage 不应阻塞已建模 buildings scope")
+        XCTAssertTrue(tracker.actions.allSatisfy { $0.coverage == .complete })
 
         let action = try XCTUnwrap(tracker.actions.first)
         var executableCore = core
@@ -764,10 +827,53 @@ final class BuildingGroupProjectionTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),
             durationState: action.durationState,
             frozenCosts: action.upgradeCosts,
-            catalogProvenance: ManualCatalogProvenance(catalog: syntheticCatalog),
+            catalogProvenance: ManualCatalogProvenance(catalog: syntheticBuildingCoverageCatalog),
             baselineReference: try XCTUnwrap(action.baselineReference),
             now: Date(timeIntervalSince1970: 1_700_000_000)
         )
+    }
+
+    func testIssue141PartialBuildingCoverageDisablesActions() throws {
+        let partialCatalog = try makeTrustedCatalog(
+            items: [
+                SpecItem(
+                    section: "buildings", category: "buildings", dataID: 1_000_001,
+                    base: "home", name: "覆盖缺口测试", maxLevel: 3,
+                    levels: Self.standardLevels(3)
+                ),
+                SpecItem(
+                    section: "traps", category: "traps", dataID: 12_000_000,
+                    base: "home", name: "炸弹", maxLevel: 3,
+                    levels: Self.standardLevels(3)
+                ),
+            ],
+            universeKeys: ["traps:12000000"]
+        )
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings", dataID: 1_000_001, level: 1, count: 1, path: "0"
+            )],
+        ])
+        let itemKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+        let core = try issue141Core(
+            itemKey: itemKey,
+            distribution: try ManualLevelDistribution(levelQuantities: [1: 1])
+        )
+
+        let group = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: partialCatalog,
+                base: .home,
+                manualUpgradeCore: core
+            ).first
+        )
+        XCTAssertEqual(group.trackerState.coverage, .partial)
+        let action = try XCTUnwrap(group.trackerState.actions.first)
+        XCTAssertEqual(action.coverage, .partial)
+        XCTAssertFalse(action.isStartable)
+        XCTAssertTrue(action.diagnostic?.contains("scope 覆盖") == true)
+        XCTAssertTrue(group.trackerState.diagnostics.contains { $0.contains("scope 覆盖") })
     }
 
     func testIssue141ActiveReservationAndSettlementStayVisibleAtGroupLevel() throws {
@@ -911,7 +1017,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
     }
 
     func testIssue141InstantCatalogLevelProducesStartableInstantAction() throws {
-        let instantCatalog = try makeCatalog(items: [
+        let instantCatalog = try makeTrustedCatalog(items: [
             SpecItem(
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "即时升级测试", maxLevel: 3,
@@ -973,7 +1079,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
             let group = try XCTUnwrap(
                 project(
                     village: village,
-                    catalog: syntheticCatalog,
+                    catalog: syntheticBuildingCoverageCatalog,
                     base: .home,
                     manualUpgradeCore: core
                 ).first
@@ -1005,7 +1111,7 @@ final class BuildingGroupProjectionTests: XCTestCase {
     }
 
     func testIssue141ParseFailedCostKeepsRawEvidenceButDoesNotBlockStart() throws {
-        let catalog = try makeCatalog(items: [
+        let catalog = try makeTrustedCatalog(items: [
             SpecItem(
                 section: "buildings", category: "buildings", dataID: 1_000_001,
                 base: "home", name: "费用解析失败测试", maxLevel: 3,

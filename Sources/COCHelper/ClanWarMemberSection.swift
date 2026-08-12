@@ -119,7 +119,7 @@ struct ClanWarMemberSection: View {
         .foregroundStyle(.secondary)
     }
 
-    /// 成员表：按当前筛选桶过滤后**全量渲染**（无 prefix 截断），行可展开攻击明细。
+    /// 成员表：按当前筛选桶过滤后**全量渲染**（无 prefix 截断），行可展开攻击/防守明细。
     /// 搜索词非空（trim 后）且过滤后无行 → 空态文案替代空列表（避免纯空白区）。
     @ViewBuilder
     private var memberList: some View {
@@ -134,8 +134,8 @@ struct ClanWarMemberSection: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(visibleRows, id: \.sourceIndex) { row in
                     memberRow(row)
-                    if expandedIdentity == identity(of: row), let lines = row.lines, !lines.isEmpty {
-                        detailBlock(lines)
+                    if expandedIdentity == identity(of: row), Self.hasExpandableContent(row) {
+                        detailBlock(row)
                     }
                 }
             }
@@ -188,22 +188,27 @@ struct ClanWarMemberSection: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
-        // VoiceOver 提示：仅当行有攻击明细可展开时提供（无明细的行
-        // 点击不产生新内容，不给误导性提示）。
+        // VoiceOver 提示：仅当行有可展开内容（攻击明细或最佳防守）时提供
+        // （无可展开内容的行点击不产生新内容，不给误导性提示）。
         .accessibilityHint(expandableHint(for: row))
     }
 
-    /// 行展开的 a11y 提示文案：有攻击明细 → 提示可展开；否则空串（不加提示）。
+    /// 行展开的 a11y 提示文案：有可展开内容 → 提示可展开；否则空串（不加提示）。
     private func expandableHint(for row: ClanWarMemberRow) -> String {
-        if let lines = row.lines, !lines.isEmpty { return "双击展开攻击明细" }
-        return ""
+        Self.hasExpandableContent(row) ? "双击展开攻击/防守明细" : ""
     }
 
-    /// 成员列：行首 chevron（仅当有攻击明细可展开，否则同宽占位）+ 名称单行截断。
+    /// 行是否有可展开内容：攻击明细非空 或 最佳防守非 nil。
+    private static func hasExpandableContent(_ row: ClanWarMemberRow) -> Bool {
+        if let lines = row.lines, !lines.isEmpty { return true }
+        return row.bestDefense != nil
+    }
+
+    /// 成员列：行首 chevron（仅当有可展开内容，否则同宽占位）+ 名称单行截断。
     private func memberCell(_ row: ClanWarMemberRow) -> some View {
         HStack(spacing: 4) {
             Group {
-                if let lines = row.lines, !lines.isEmpty {
+                if Self.hasExpandableContent(row) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -328,11 +333,19 @@ struct ClanWarMemberSection: View {
         }
     }
 
-    /// 展开的逐次攻击明细块（cocElevated 圆角背景；调用方保证 lines 非空）。
-    private func detailBlock(_ lines: [ClanWarAttackLine]) -> some View {
+    /// 展开的逐次攻击明细 + 最佳防守块（cocElevated 圆角背景）。
+    /// 调用方保证 row 至少有一个可展开内容（lines 非空 或 bestDefense 非 nil）。
+    private func detailBlock(_ row: ClanWarMemberRow) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text(Self.attackLineText(line))
+            if let lines = row.lines, !lines.isEmpty {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    Text(Self.attackLineText(line))
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let best = row.bestDefense {
+                Text(Self.bestDefenseText(best))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
             }
@@ -343,13 +356,27 @@ struct ClanWarMemberSection: View {
         .padding(.bottom, 6)
     }
 
-    /// 单次攻击明细文案：`N号进攻 · ⭐M · 摧毁率 X%`（缺失项 "?"/"摧毁率未知"）。
+    /// 最佳防守文案：`最佳防守 · ⭐2 · 摧毁率 75% · 耗时 2:00`。
+    /// 字段缺失独立降级（与 attackLineText 同风格）；bestDefense 本身 nil 不显示。
+    private static func bestDefenseText(_ best: ClanWarAttackLine) -> String {
+        let stars = best.stars.map { "⭐\(min(max($0, 0), 3))" } ?? "⭐?"
+        let destruction = ClanCombatSummary.displayDestructionPercent(best.destructionPercentage)
+            .map { "摧毁率 \(ClanDisplayFormat.percent($0))%" } ?? "摧毁率未知"
+        let duration = ClanCombatSummary.durationText(best.duration).map { "耗时 \($0)" } ?? "耗时未知"
+        return "最佳防守 · \(stars) · \(destruction) · \(duration)"
+    }
+
+    /// 单次攻击明细文案：`1号进攻 · 目标 #XXX · ⭐2 · 摧毁率 90% · 耗时 2:25`。
+    /// 各字段独立降级：order 缺失 → "?"；目标缺失 → "目标未知"（不补名称）；
+    /// 星数缺失 → "⭐?"；摧毁率缺失 → "摧毁率未知"；时长缺失 → "耗时未知"。
     private static func attackLineText(_ line: ClanWarAttackLine) -> String {
         let order = line.order.map { "\($0)" } ?? "?"
+        let target = line.defenderTag.map { "目标 \($0)" } ?? "目标未知"
         let stars = line.stars.map { "⭐\(min(max($0, 0), 3))" } ?? "⭐?"
         let destruction = ClanCombatSummary.displayDestructionPercent(line.destructionPercentage)
             .map { "摧毁率 \(ClanDisplayFormat.percent($0))%" } ?? "摧毁率未知"
-        return "\(order)号进攻 · \(stars) · \(destruction)"
+        let duration = ClanCombatSummary.durationText(line.duration).map { "耗时 \($0)" } ?? "耗时未知"
+        return "\(order)号进攻 · \(target) · \(stars) · \(destruction) · \(duration)"
     }
 }
 

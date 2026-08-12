@@ -600,6 +600,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         )
         XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.value, 1)
         XCTAssertEqual(statistics.today.aggregateInferredEventCount.value, 1)
+        XCTAssertEqual(statistics.today.wallLevelGrowth.state, .insufficientData)
 
         let incomplete = makeEntry(
             id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
@@ -623,6 +624,54 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             incompleteStatistics.today.aggregateInferredEventCount.state,
             .insufficientData
         )
+    }
+
+    func testIncompleteTrapCoverageDoesNotDegradeCompleteWallStatistics() throws {
+        let wallIdentity = makeIdentity(section: "buildings", dataID: 8)
+        let trapIdentity = makeIdentity(section: "traps", dataID: 9)
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [
+                makeItem(identity: wallIdentity, level: 12, count: 1, display: wallBinding()),
+                makeItem(
+                    identity: trapIdentity,
+                    level: 1,
+                    count: 1,
+                    display: SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+                )
+            ],
+            section: "buildings",
+            states: ["cnt": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [
+                makeItem(identity: wallIdentity, level: 13, count: 1, display: wallBinding()),
+                makeItem(
+                    identity: trapIdentity,
+                    level: 2,
+                    display: SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+                )
+            ],
+            section: "buildings",
+            states: ["cnt": .complete]
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        XCTAssertEqual(diff.changes.count, 2)
+        XCTAssertTrue(diff.changes.contains { $0.identity == trapIdentity && $0.changeKind == .unknown })
+        XCTAssertEqual(statistics.today.wallLevelGrowth.state, .available)
+        XCTAssertEqual(statistics.today.wallLevelGrowth.value, 1)
+        XCTAssertEqual(statistics.today.aggregateInferredWallLevelGrowth.value, 1)
     }
 
     func testBaselineHasNoPredecessorDiff() throws {

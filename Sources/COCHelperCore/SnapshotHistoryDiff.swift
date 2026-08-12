@@ -1643,11 +1643,13 @@ private struct MetricAccumulators {
             }
         }
         let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
+        let wallSections: Set<String> = ["buildings", "buildings2"]
         let heroSections: Set<String> = ["heroes", "heroes2"]
         let troopSections: Set<String> = ["units", "units2"]
         let levelFields: Set<String> = ["presence", "data", "lvl"]
         let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
-        let histogramComplete = complete(buildingSections, histogramFields)
+        let buildingHistogramComplete = complete(buildingSections, histogramFields)
+        let wallHistogramComplete = complete(wallSections, histogramFields)
         let heroComplete = complete(heroSections, levelFields)
         let troopComplete = complete(troopSections, levelFields)
         let spellComplete = complete(["spells"], levelFields)
@@ -1656,12 +1658,12 @@ private struct MetricAccumulators {
         func shouldMark(_ complete: Bool, _ metricCategory: SnapshotMetricCategory) -> Bool {
             complete || (!hasSectionCoverage && hasKnownChange(metricCategory))
         }
-        if shouldMark(histogramComplete, .building) {
+        if shouldMark(buildingHistogramComplete, .building) {
             buildingCompletions.markComparable()
             buildingGrowth.markComparable()
             aggregateBuildingGrowth.markComparable()
         }
-        if shouldMark(histogramComplete, .wall) {
+        if shouldMark(wallHistogramComplete, .wall) {
             wallGrowth.markComparable()
             aggregateWallGrowth.markComparable()
         }
@@ -1754,12 +1756,16 @@ private struct MetricAccumulators {
                 ? String(change.identity.rawSection.dropLast())
                 : change.identity.rawSection
             switch section {
-            case "buildings", "traps":
+            case "buildings":
                 buildingCompletions.markUnknown()
                 buildingGrowth.markUnknown()
                 wallGrowth.markUnknown()
                 aggregateBuildingGrowth.markUnknown()
                 aggregateWallGrowth.markUnknown()
+            case "traps":
+                buildingCompletions.markUnknown()
+                buildingGrowth.markUnknown()
+                aggregateBuildingGrowth.markUnknown()
             case "heroes": heroGrowth.markUnknown()
             case "units": troopGrowth.markUnknown()
             case "spells": spellGrowth.markUnknown()
@@ -1795,12 +1801,16 @@ private struct MetricAccumulators {
             ? String(rawSection.dropLast())
             : rawSection
         switch section {
-        case "buildings", "traps":
+        case "buildings":
             buildingCompletions.markUnknown()
             buildingGrowth.markUnknown()
             aggregateBuildingGrowth.markUnknown()
             wallGrowth.markUnknown()
             aggregateWallGrowth.markUnknown()
+        case "traps":
+            buildingCompletions.markUnknown()
+            buildingGrowth.markUnknown()
+            aggregateBuildingGrowth.markUnknown()
         case "heroes": heroGrowth.markUnknown()
         case "units": troopGrowth.markUnknown()
         case "spells": spellGrowth.markUnknown()

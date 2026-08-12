@@ -66,6 +66,18 @@ public enum BuildingGroupCompleteness: String, Hashable, Sendable, CaseIterable 
     case versionMismatch
 }
 
+/// Coverage state for the scope that a building-group action consumes.
+///
+/// `VillageCatalogProjection.progressCoverage` describes the whole home village.
+/// A missing unrelated category must not disable a known building action, but a
+/// missing/unmodeled `buildings` scope (or no home coverage evidence) must remain
+/// fail-closed.
+public enum BuildingGroupCoverage: String, Hashable, Sendable {
+    case complete
+    case partial
+    case unavailable
+}
+
 /// 组卡汇总。
 public struct BuildingGroupSummary: Hashable, Sendable {
     /// 所有实例数量之和（使用 `VillageItemState.instanceWeight`）。
@@ -83,6 +95,130 @@ public struct BuildingGroupSummary: Hashable, Sendable {
     public let completeness: BuildingGroupCompleteness
 }
 
+/// One v1 local-tracker action exposed by a duplicate group.
+///
+/// The action always represents one source quantity. When `isStartable` is
+/// true, this projection has verified the catalog, count quality, matching
+/// local item state/baseline, source availability, and effective distribution.
+/// A caller can invoke the existing `ManualUpgradeCore.startUpgrade` once for
+/// this action; it still owns record IDs, timestamps, provenance, batching, and
+/// queue management.
+public struct BuildingGroupUpgradeAction: Hashable, Sendable {
+    public let fromLevel: Int
+    public let targetLevel: Int
+    public let quantity: Int64
+    public let durationState: CatalogDurationState?
+    public let upgradeCosts: [CatalogUpgradeCost]?
+    /// Coverage of the building scope used to derive this action.
+    public let coverage: BuildingGroupCoverage
+    /// Baseline that must be passed back to `ManualUpgradeCore.startUpgrade`.
+    /// It is nil when the projection was not given a matching local tracker
+    /// state, in which case `isStartable` is false.
+    public let baselineReference: ManualBaselineReference?
+    public let isStartable: Bool
+    public let diagnostic: String?
+
+    public init(
+        fromLevel: Int,
+        targetLevel: Int,
+        quantity: Int64 = 1,
+        durationState: CatalogDurationState?,
+        upgradeCosts: [CatalogUpgradeCost]?,
+        coverage: BuildingGroupCoverage = .unavailable,
+        baselineReference: ManualBaselineReference? = nil,
+        isStartable: Bool,
+        diagnostic: String? = nil
+    ) {
+        self.fromLevel = fromLevel
+        self.targetLevel = targetLevel
+        self.quantity = quantity
+        self.durationState = durationState
+        self.upgradeCosts = upgradeCosts
+        self.coverage = coverage
+        self.baselineReference = baselineReference
+        self.isStartable = isStartable
+        self.diagnostic = diagnostic
+    }
+}
+
+/// Stable tracker-facing state for one duplicate group.
+///
+/// `effectiveCompletedDistribution` is the currently available completed
+/// material.  When an active local record reserves one source quantity, that
+/// quantity is absent from this distribution and appears in
+/// `activeTargetDistribution` instead.  This keeps source conservation visible
+/// without collapsing mixed-level records into a singular current level.
+public struct BuildingGroupTrackerState: Hashable, Sendable {
+    public let itemKey: TrackerItemKey
+    /// Coverage of the building scope used to derive this tracker state.
+    public let coverage: BuildingGroupCoverage
+    public let importedDistribution: ManualLevelDistribution?
+    public let importedCountQuality: EffectiveVillageCountQuality?
+    public let manualCompletedDistribution: ManualLevelDistribution?
+    public let effectiveCompletedDistribution: ManualLevelDistribution?
+    public let activeTargetDistribution: ManualLevelDistribution
+    public let activeRecords: [ManualUpgradeRecord]
+    public let status: EffectiveVillageItemStatus
+    public let provenance: [EffectiveVillageItemProvenance]
+    public let diagnostics: [String]
+    public let actions: [BuildingGroupUpgradeAction]
+
+    public init(
+        itemKey: TrackerItemKey,
+        coverage: BuildingGroupCoverage = .unavailable,
+        importedDistribution: ManualLevelDistribution?,
+        importedCountQuality: EffectiveVillageCountQuality? = nil,
+        manualCompletedDistribution: ManualLevelDistribution?,
+        effectiveCompletedDistribution: ManualLevelDistribution?,
+        activeTargetDistribution: ManualLevelDistribution = .empty,
+        activeRecords: [ManualUpgradeRecord] = [],
+        status: EffectiveVillageItemStatus,
+        provenance: [EffectiveVillageItemProvenance] = [],
+        diagnostics: [String] = [],
+        actions: [BuildingGroupUpgradeAction] = []
+    ) {
+        self.itemKey = itemKey
+        self.coverage = coverage
+        self.importedDistribution = importedDistribution
+        self.importedCountQuality = importedCountQuality
+        self.manualCompletedDistribution = manualCompletedDistribution
+        self.effectiveCompletedDistribution = effectiveCompletedDistribution
+        self.activeTargetDistribution = activeTargetDistribution
+        self.activeRecords = activeRecords
+        self.status = status
+        self.provenance = provenance
+        self.diagnostics = diagnostics
+        self.actions = actions
+    }
+
+    /// Quantity still available to start at a source level; nil means unknown.
+    public func availableQuantity(at level: Int) -> Int64? {
+        effectiveCompletedDistribution.map { $0.quantity(at: level) }
+    }
+
+    public var importedQuantity: Int64? {
+        importedDistribution?.totalQuantity
+    }
+
+    public var completedQuantity: Int64? {
+        effectiveCompletedDistribution?.totalQuantity
+    }
+
+    public var activeQuantity: Int64 {
+        activeTargetDistribution.totalQuantity
+    }
+
+    public func activeQuantity(fromLevel: Int) -> Int64 {
+        activeRecords
+            .filter { $0.fromLevel == fromLevel }
+            .reduce(0) { $0 + $1.quantity }
+    }
+
+    public func activeQuantity(targetLevel: Int) -> Int64 {
+        activeTargetDistribution.quantity(at: targetLevel)
+    }
+}
+
 /// 同类建筑组。
 public struct BuildingGroup: Identifiable, Hashable, Sendable {
     public let base: TrackerBase
@@ -94,6 +230,8 @@ public struct BuildingGroup: Identifiable, Hashable, Sendable {
     /// 投影层推导（复用 BuildingDisplayCategoryRules），UI 分派键。
     public let displayCategory: TrackerDisplayCategory?
     public let category: TrackerCategory?
+    /// Stable local-tracker state; one state per semantic group key.
+    public let trackerState: BuildingGroupTrackerState
     public var id: String { "\(base.rawValue):\(section):\(dataID)" }
 }
 
@@ -118,7 +256,12 @@ public enum BuildingGroupProjection {
             now: now,
             manualUpgradeCore: manualUpgradeCore
         )
-        return project(projection: projection, catalog: catalog, base: base)
+        return project(
+            projection: projection,
+            catalog: catalog,
+            base: base,
+            manualUpgradeCore: manualUpgradeCore
+        )
     }
 
     /// Builds group cards from the already-resolved village projection.
@@ -129,7 +272,8 @@ public enum BuildingGroupProjection {
     public static func project(
         projection: VillageCatalogProjection,
         catalog: GameCatalog?,
-        base: TrackerBase
+        base: TrackerBase,
+        manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> [BuildingGroup] {
         // 目录可用性（与 VillageCatalogProjection 同语义，Review 反馈 P1-2）：
         // 目录存在且版本与期望匹配时才可用；expectedGameVersion == nil 不校验。
@@ -147,17 +291,28 @@ public enum BuildingGroupProjection {
                 && $0.base == base
         }
 
-        // 按 (base, section, dataID) 分组，组按首现顺序输出（字典 + 有序键数组）。
-        var keys: [String] = []
-        var grouped: [String: [VillageItemState]] = [:]
+        // 按 (base, section, dataID) 分组。组顺序必须由稳定语义键决定，不能
+        // 依赖快照数组的首现顺序；实例数组本身仍保留输入顺序供追溯/UI 使用。
+        struct GroupKey: Hashable {
+            let section: String
+            let dataID: Int64
+        }
+        var grouped: [GroupKey: [VillageItemState]] = [:]
         for record in records {
-            let key = "\(base.rawValue):\(record.section):\(record.dataID)"
-            if grouped[key] == nil { keys.append(key) }
+            let key = GroupKey(section: record.section, dataID: record.dataID)
             grouped[key, default: []].append(record)
         }
+        let keys = grouped.keys.sorted {
+            if $0.section != $1.section { return $0.section < $1.section }
+            return $0.dataID < $1.dataID
+        }
+        let effectiveByKey = Dictionary(
+            uniqueKeysWithValues: projection.effectiveTrackerItems.map { ($0.itemKey, $0) }
+        )
 
         return keys.compactMap { key in
-            guard let records = grouped[key], let first = records.first else { return nil }
+            guard let records = grouped[key],
+                  let first = records.sorted(by: { $0.id < $1.id }).first else { return nil }
             let instances = records.map { record in
                 BuildingInstance(
                     id: record.id,
@@ -165,6 +320,15 @@ public enum BuildingGroupProjection {
                     steps: steps(for: record, catalog: catalog, catalogIsUsable: catalogIsUsable)
                 )
             }
+            let itemKey = TrackerItemKey.root(
+                base: base,
+                rawSection: first.section,
+                dataID: first.dataID
+            )
+            let coverage = buildingGroupCoverage(
+                for: itemKey,
+                progressCoverage: projection.progressCoverage
+            )
             return BuildingGroup(
                 base: base,
                 section: first.section,
@@ -173,8 +337,278 @@ public enum BuildingGroupProjection {
                 instances: instances,
                 summary: summary(for: instances, catalogIsUsable: catalogIsUsable, catalogIsNil: catalog == nil),
                 displayCategory: first.displayCategory,
-                category: first.category
+                category: first.category,
+                trackerState: trackerState(
+                    for: itemKey,
+                    effective: effectiveByKey[itemKey],
+                    catalog: catalog,
+                    catalogIsUsable: catalogIsUsable,
+                    manualUpgradeCore: manualUpgradeCore,
+                    coverage: coverage
+                )
             )
+        }
+    }
+
+    private static func trackerState(
+        for itemKey: TrackerItemKey,
+        effective: EffectiveVillageItemState?,
+        catalog: GameCatalog?,
+        catalogIsUsable: Bool,
+        manualUpgradeCore: ManualUpgradeCore?,
+        coverage: BuildingGroupCoverage
+    ) -> BuildingGroupTrackerState {
+        guard let effective else {
+            return BuildingGroupTrackerState(
+                itemKey: itemKey,
+                coverage: coverage,
+                importedDistribution: nil,
+                importedCountQuality: nil,
+                manualCompletedDistribution: nil,
+                effectiveCompletedDistribution: nil,
+                status: .unavailable,
+                diagnostics: ["没有对应的稳定 tracker 状态。"]
+            )
+        }
+
+        var diagnostics = effective.diagnostic.map { [$0] } ?? []
+        if effective.effectiveCompletedDistribution == nil {
+            diagnostics.append("完成等级分布未知，不能生成升级操作。")
+        }
+        switch effective.importedCountQuality {
+        case .known:
+            break
+        case .malformed:
+            diagnostics.append("快照数量字段缺失或非正数，不能安全启动本地升级。")
+        case .overflowed:
+            diagnostics.append("快照数量汇总溢出，不能安全启动本地升级。")
+        }
+        switch coverage {
+        case .complete:
+            break
+        case .partial:
+            diagnostics.append("建筑 scope 覆盖不完整，不能安全启动本地升级。")
+        case .unavailable:
+            diagnostics.append("建筑 scope 覆盖状态不可用，不能安全启动本地升级。")
+        }
+        if catalog == nil || !catalogIsUsable {
+            diagnostics.append("目录不可用，不能生成升级操作。")
+        } else if catalog?.item(section: itemKey.rawSection, dataID: itemKey.dataID) == nil {
+            diagnostics.append("目录中没有对应的升级条目，不能生成升级操作。")
+        }
+        if manualUpgradeCore == nil {
+            diagnostics.append("未提供本地 tracker 状态，升级操作不可直接执行。")
+        } else if manualUpgradeCore?.itemState(for: itemKey) == nil {
+            diagnostics.append("本地 tracker 没有对应的 itemState，升级操作不可直接执行。")
+        }
+
+        return BuildingGroupTrackerState(
+            itemKey: itemKey,
+            coverage: coverage,
+            importedDistribution: effective.importedDistribution,
+            importedCountQuality: effective.importedCountQuality,
+            manualCompletedDistribution: effective.manualCompletedDistribution,
+            effectiveCompletedDistribution: effective.effectiveCompletedDistribution,
+            activeTargetDistribution: effective.activeTargetDistribution,
+            activeRecords: effective.activeManualRecords,
+            status: effective.status,
+            provenance: effective.provenance,
+            diagnostics: unique(diagnostics),
+            actions: actions(
+                for: effective,
+                catalog: catalog,
+                catalogIsUsable: catalogIsUsable,
+                manualUpgradeCore: manualUpgradeCore,
+                coverage: coverage
+            )
+        )
+    }
+
+    private static func actions(
+        for effective: EffectiveVillageItemState,
+        catalog: GameCatalog?,
+        catalogIsUsable: Bool,
+        manualUpgradeCore: ManualUpgradeCore?,
+        coverage: BuildingGroupCoverage
+    ) -> [BuildingGroupUpgradeAction] {
+        guard catalogIsUsable,
+              let distribution = effective.effectiveCompletedDistribution,
+              let catalogItem = catalog?.item(
+                section: effective.itemKey.rawSection,
+                dataID: effective.itemKey.dataID
+              ),
+              catalogItem.base == effective.itemKey.base.rawValue else {
+            return []
+        }
+
+        let manualItemState = manualUpgradeCore?.itemState(for: effective.itemKey)
+        let manualEffectiveState = manualUpgradeCore?.effectiveState(for: effective.itemKey)
+        let levels = catalogItem.levels.sorted { $0.level < $1.level }
+        return distribution.levels.compactMap { source in
+            guard let target = levels.first(where: { $0.level > source.level }) else {
+                return nil
+            }
+
+            var reasons: [String] = []
+            switch coverage {
+            case .complete:
+                break
+            case .partial:
+                reasons.append("建筑 scope 覆盖不完整，不能安全启动本地升级。")
+            case .unavailable:
+                reasons.append("建筑 scope 覆盖状态不可用，不能安全启动本地升级。")
+            }
+            switch effective.status {
+            case .observed, .manualCompleted, .manualActive:
+                break
+            case .importedActive:
+                reasons.append("导入计时尚未被本地 tracker 精确接管。")
+            case .needsReimport:
+                reasons.append("导入快照需要重新导入。")
+            case .conflict:
+                reasons.append("本地与导入状态冲突。")
+            case .unknown:
+                reasons.append("当前等级分布未知。")
+            case .unavailable:
+                reasons.append("当前项目不可用。")
+            }
+
+            switch effective.importedCountQuality {
+            case .known:
+                break
+            case .malformed:
+                reasons.append("快照数量字段缺失或非正数，不能安全启动本地升级。")
+            case .overflowed:
+                reasons.append("快照数量汇总溢出，不能安全启动本地升级。")
+            }
+
+            if manualUpgradeCore == nil {
+                reasons.append("未提供本地 tracker 状态，不能直接执行升级。")
+            } else if let manualItemState {
+                guard manualItemState.isStructurallyValid else {
+                    reasons.append("本地 tracker 的 itemState 或 baseline 无效。")
+                    return makeAction(
+                        source: source,
+                        target: target,
+                        coverage: coverage,
+                        baselineReference: manualItemState.baselineReference,
+                        blockingReasons: reasons,
+                        diagnostics: reasons
+                    )
+                }
+                switch manualItemState.status {
+                case .observed, .manualCompleted:
+                    break
+                case .unknown:
+                    reasons.append("本地 tracker 状态未知。")
+                case .conflict:
+                    reasons.append("本地 tracker 状态冲突。")
+                }
+                guard let manualEffectiveState,
+                      let coreDistribution = manualEffectiveState.effectiveCompletedDistribution else {
+                    reasons.append("本地 tracker 无可执行的完成等级分布。")
+                    return makeAction(
+                        source: source,
+                        target: target,
+                        coverage: coverage,
+                        baselineReference: manualItemState.baselineReference,
+                        blockingReasons: reasons,
+                        diagnostics: reasons
+                    )
+                }
+                if coreDistribution.quantity(at: source.level) < source.quantity {
+                    reasons.append("本地 tracker 的可用数量不足。")
+                }
+                if coreDistribution != effective.effectiveCompletedDistribution {
+                    reasons.append("快照 effective 分布与本地 tracker 分布不一致。")
+                }
+            } else {
+                reasons.append("本地 tracker 没有对应的 itemState。")
+            }
+
+            if let stageMax = effective.currentStageMaxLevel {
+                if target.level > stageMax {
+                    reasons.append("目标等级超过当前阶段上限。")
+                }
+            } else {
+                reasons.append("当前阶段上限无法验证。")
+            }
+
+            if let globalMax = effective.globalMaxLevel, target.level > globalMax {
+                reasons.append("目标等级超过目录全局上限。")
+            }
+
+            switch target.durationState {
+            case .timed, .instant:
+                break
+            default:
+                reasons.append("目标升级时长不可用。")
+            }
+
+            let blockingReasons = reasons
+            var diagnostics = reasons
+            if target.upgradeCosts?.contains(where: \.parseFailed) == true {
+                diagnostics.append("目标升级费用含解析失败项，启动时保留 raw 费用证据。")
+            } else if target.upgradeCosts == nil {
+                diagnostics.append("目标升级费用未知，启动时保留 unknown cost 状态。")
+            }
+            return makeAction(
+                source: source,
+                target: target,
+                coverage: coverage,
+                baselineReference: manualItemState?.baselineReference,
+                blockingReasons: blockingReasons,
+                diagnostics: diagnostics
+            )
+        }
+    }
+
+    private static func makeAction(
+        source: ManualLevelQuantity,
+        target: CatalogLevel,
+        coverage: BuildingGroupCoverage,
+        baselineReference: ManualBaselineReference?,
+        blockingReasons: [String],
+        diagnostics: [String]
+    ) -> BuildingGroupUpgradeAction {
+        return BuildingGroupUpgradeAction(
+            fromLevel: source.level,
+            targetLevel: target.level,
+            quantity: 1,
+            durationState: target.durationState,
+            upgradeCosts: target.upgradeCosts,
+            coverage: coverage,
+            baselineReference: baselineReference,
+            isStartable: blockingReasons.isEmpty && source.quantity > 0,
+            diagnostic: diagnostics.isEmpty ? nil : diagnostics.joined(separator: "；")
+        )
+    }
+
+    private static func unique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+
+    /// Narrows whole-village coverage to the scope consumed by one building
+    /// group. Unrelated missing categories do not manufacture uncertainty for a
+    /// known home building, while missing/unmodeled buildings remain blocked.
+    private static func buildingGroupCoverage(
+        for itemKey: TrackerItemKey,
+        progressCoverage: ProgressUniverseCoverage
+    ) -> BuildingGroupCoverage {
+        guard itemKey.base == .home, itemKey.rawSection == "buildings" else {
+            return .unavailable
+        }
+        switch progressCoverage {
+        case .complete:
+            return .complete
+        case .unavailable:
+            return .unavailable
+        case let .partial(missingSections, unmodeledCategories):
+            return missingSections.contains("buildings")
+                || unmodeledCategories.contains(.buildings)
+                ? .partial
+                : .complete
         }
     }
 

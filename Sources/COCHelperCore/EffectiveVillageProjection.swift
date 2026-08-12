@@ -808,14 +808,20 @@ enum EffectiveVillageProjectionBuilder {
                 continue
             }
             for entry in distribution.levels {
-                saturated = saturated || add(
-                    &denominator,
-                    multiply(entry.quantity, Int64(maxLevel))
+                let denominatorProduct = multiply(entry.quantity, Int64(maxLevel))
+                let denominatorOverflowed = add(&denominator, denominatorProduct.value)
+                saturated = saturated
+                    || denominatorProduct.overflowed
+                    || denominatorOverflowed
+
+                let numeratorProduct = multiply(
+                    entry.quantity,
+                    Int64(min(max(0, entry.level), maxLevel))
                 )
-                saturated = saturated || add(
-                    &numerator,
-                    multiply(entry.quantity, Int64(min(max(0, entry.level), maxLevel)))
-                )
+                let numeratorOverflowed = add(&numerator, numeratorProduct.value)
+                saturated = saturated
+                    || numeratorProduct.overflowed
+                    || numeratorOverflowed
             }
         }
         let reason = manualCoverage.diagnostics.joined(separator: " ")
@@ -916,9 +922,12 @@ enum EffectiveVillageProjectionBuilder {
         return result.overflow || exceedsIntRange
     }
 
-    private static func multiply(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+    private static func multiply(_ lhs: Int64, _ rhs: Int64) -> (value: Int64, overflowed: Bool) {
         let result = lhs.multipliedReportingOverflow(by: rhs)
-        return result.overflow ? Int64.max : result.partialValue
+        return (
+            value: result.overflow ? Int64.max : result.partialValue,
+            overflowed: result.overflow
+        )
     }
 }
 

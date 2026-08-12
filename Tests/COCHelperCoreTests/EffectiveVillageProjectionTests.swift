@@ -1066,6 +1066,37 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         XCTAssertTrue(overflowProjection.progressMetrics.effectiveTrackerProgress.saturated)
     }
 
+    func testEffectiveMetricPropagatesKnownLevelMultiplicationOverflow() throws {
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 11),
+                item(section: "buildings", dataID: 1_000_002, level: 1, count: Int.max, path: "1"),
+            ],
+        ])
+        let exactDistribution = try distribution([(1, Int64.max)])
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: try core(states: [
+                try state(
+                    key: key,
+                    imported: exactDistribution,
+                    manual: exactDistribution,
+                    status: .observed
+                ),
+            ])
+        )
+
+        let metric = projection.progressMetrics.effectiveTrackerProgress
+        XCTAssertEqual(metric.numerator, Int.max)
+        XCTAssertEqual(metric.denominator, Int.max)
+        XCTAssertTrue(metric.saturated)
+        XCTAssertNil(metric.ratio)
+    }
+
     func testManualOverlayIsIsolatedPerVillage() throws {
         let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
         let firstVillage = village(objectSections: [

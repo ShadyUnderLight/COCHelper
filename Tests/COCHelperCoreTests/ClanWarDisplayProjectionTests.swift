@@ -789,10 +789,10 @@ final class ClanWarDisplayProjectionPropertyTests: XCTestCase {
         ClanWarAttack(
             order: g.int(in: 0...3) == 0 ? nil : order,
             attackerTag: nil,
-            defenderTag: g.int(in: 0...3) == 0 ? nil : "opponent-\(g.int(in: 0...99))",
+            defenderTag: g.int(in: 0...99) < 25 ? nil : "opponent-\(g.int(in: 0...99))",
             stars: g.int(in: 0...3) == 0 ? nil : g.int(in: -2...3),
             destructionPercentage: g.int(in: 0...3) == 0 ? nil : g.double(in: 0...150),
-            duration: g.int(in: 0...3) == 0 ? nil : g.int(in: 0...600)
+            duration: g.int(in: 0...99) < 25 ? nil : g.int(in: 0...600)
         )
     }
 
@@ -806,12 +806,12 @@ final class ClanWarDisplayProjectionPropertyTests: XCTestCase {
             mapPosition: g.int(in: 0...3) == 0 ? nil : g.int(in: 1...40),
             townhallLevel: g.int(in: 0...3) == 0 ? nil : g.int(in: 1...17),
             attacks: attacks,
-            opponentAttacks: g.int(in: 0...3) == 0 ? nil : g.int(in: 0...10),
-            bestOpponentAttack: g.int(in: 0...3) == 0 ? nil :
+            opponentAttacks: g.int(in: 0...99) < 25 ? nil : g.int(in: 0...10),
+            bestOpponentAttack: g.int(in: 0...99) < 25 ? nil :
                 ClanWarAttack(order: nil, attackerTag: nil, defenderTag: nil,
                               stars: g.int(in: -1...3),
-                              destructionPercentage: g.int(in: 0...3) == 0 ? nil : g.double(in: 0...150),
-                              duration: g.int(in: 0...3) == 0 ? nil : g.int(in: 0...600))
+                              destructionPercentage: g.int(in: 0...99) < 25 ? nil : g.double(in: 0...150),
+                              duration: g.int(in: 0...99) < 25 ? nil : g.int(in: 0...600))
         )
     }
 
@@ -976,18 +976,25 @@ final class ClanWarDisplayProjectionPropertyTests: XCTestCase {
             let members = randomMemberList(&g)
             let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
             for (index, member) in members.enumerated() {
-                guard let attacks = member.attacks,
-                      let row = rows.first(where: { $0.sourceIndex == index }),
-                      let lines = row.lines
-                else {
-                    assertOrFail(member.attacks == nil,
-                                 "attacks nil 时该成员无行或无 lines",
+                guard let attacks = member.attacks else {
+                    assertOrFail(rows.first(where: { $0.sourceIndex == index })?.lines == nil,
+                                 "attacks nil 时该成员不得有 lines",
                                  context: "seed=707")
+                    continue
+                }
+                guard let row = rows.first(where: { $0.sourceIndex == index }) else {
+                    XCTFail("成员必有对应行")
+                    continue
+                }
+                guard let lines = row.lines else {
+                    XCTFail("attacks 非 nil 时 lines 必须存在")
                     continue
                 }
                 assertOrFail(lines.count == attacks.count, "lines 数量必须等于 attacks 数量",
                              context: "seed=707 n=\(attacks.count)")
                 for (atk, line) in zip(attacks, lines) {
+                    assertOrFail(line.order == atk.order, "order 透传（保序）",
+                                 context: "seed=707")
                     assertOrFail(line.defenderTag == atk.defenderTag, "defenderTag 透传",
                                  context: "seed=707")
                     assertOrFail(line.duration == atk.duration, "duration 透传",
@@ -1012,6 +1019,8 @@ final class ClanWarDisplayProjectionPropertyTests: XCTestCase {
                     XCTFail("成员必有对应行")
                     continue
                 }
+                assertOrFail(row.defenseAttacks == member.opponentAttacks,
+                             "defenseAttacks 透传", context: "seed=808")
                 let best = member.bestOpponentAttack
                 if let best {
                     let defense = row.bestDefense

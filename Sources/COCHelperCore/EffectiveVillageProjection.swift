@@ -33,6 +33,13 @@ public struct EffectiveVillageItemState: Identifiable, Hashable, Sendable {
     public let rawItemID: String?
     public let importedCurrentLevel: Int?
     public let importedCount: Int?
+    /// Raw instance weight retained even when the level histogram cannot be
+    /// materialized (for example, a missing level or Int64 overflow).
+    public let importedInstanceWeight: Int64
+    /// The raw count sum saturated while being computed. This is separate
+    /// from `importedDistribution`: a malformed histogram must not erase the
+    /// fact that its source still described multiple instances.
+    public let importedCountOverflowed: Bool
     public let importedTimerSeconds: Int64?
     public let importedRemainingSeconds: Int64?
     public let importedDistribution: ManualLevelDistribution?
@@ -271,6 +278,7 @@ enum EffectiveVillageProjectionBuilder {
         let orderedObservedItems = observedItems.sorted { $0.id < $1.id }
         guard let firstObserved = orderedObservedItems.first else { return nil }
         let importedDistribution = levelDistribution(observedItems)
+        let rawInstanceWeight = rawInstanceWeight(observedItems)
         let importedCount = importedDistribution.flatMap { distribution in
             distribution.totalQuantity <= Int64(Int.max) ? Int(distribution.totalQuantity) : nil
         }
@@ -395,6 +403,8 @@ enum EffectiveVillageProjectionBuilder {
             rawItemID: representative?.id,
             importedCurrentLevel: uniformValue(observedItems.map(\.level)),
             importedCount: importedCount,
+            importedInstanceWeight: rawInstanceWeight.total,
+            importedCountOverflowed: rawInstanceWeight.overflowed,
             importedTimerSeconds: uniformValue(observedItems.map(\.timerSeconds)),
             importedRemainingSeconds: observedActiveItems.isEmpty
                 ? uniformValue(observedItems.map(\.remainingSeconds))
@@ -495,6 +505,30 @@ enum EffectiveVillageProjectionBuilder {
             quantities[level] = sum
         }
         return try? ManualLevelDistribution(levelQuantities: quantities)
+    }
+
+    private struct RawInstanceWeight {
+        let total: Int64
+        let overflowed: Bool
+    }
+
+    /// Count instances independently from the level histogram. The histogram
+    /// is intentionally fail-closed for malformed levels, but the raw count
+    /// remains valid evidence for metric denominators and unknown diagnostics.
+    private static func rawInstanceWeight(_ items: [AccountItem]) -> RawInstanceWeight {
+        var total: Int64 = 0
+        var overflowed = false
+        for item in items {
+            let quantity = Int64(max(item.count ?? 1, 1))
+            let result = total.addingReportingOverflow(quantity)
+            if result.overflow {
+                total = Int64.max
+                overflowed = true
+            } else {
+                total = result.partialValue
+            }
+        }
+        return RawInstanceWeight(total: total, overflowed: overflowed)
     }
 
     private static func uniformValue<T: Equatable>(_ values: [T?]) -> T? {
@@ -712,7 +746,8 @@ enum EffectiveVillageProjectionBuilder {
             // The denominator is the complete observed instance universe. An
             // active reservation is still an instance, so use the imported
             // distribution rather than the reservation-adjusted distribution.
-            let weight = item.importedDistribution?.totalQuantity ?? 1
+            let weight = item.importedInstanceWeight
+            saturated = saturated || item.importedCountOverflowed
             let weightInfo = add(&denominator, weight)
             saturated = saturated || weightInfo
             guard item.isKnown,
@@ -763,13 +798,13 @@ enum EffectiveVillageProjectionBuilder {
         var unknown = 0
         var saturated = false
         for item in trackerItems where item.status != .unavailable {
+            saturated = saturated || item.importedCountOverflowed
             guard item.isKnown,
                   let maxLevel = item.globalMaxLevel,
                   maxLevel > 0,
                   let distribution = trackerDistribution(for: item),
                   !distribution.isEmpty else {
-                let weight = item.importedDistribution?.totalQuantity ?? 1
-                unknown = addUnknown(unknown, weight)
+                saturated = saturated || add(&unknown, item.importedInstanceWeight)
                 continue
             }
             for entry in distribution.levels {

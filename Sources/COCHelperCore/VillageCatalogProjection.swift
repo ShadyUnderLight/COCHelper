@@ -144,7 +144,13 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
 
     /// Upgrade status after the optional manual overlay is applied.
     public var isEffectivelyUpgrading: Bool {
-        isUpgrading || effectiveState?.status == .manualActive
+        guard let status = effectiveState?.status else { return isUpgrading }
+        switch status {
+        case .manualActive, .importedActive:
+            return true
+        case .observed, .manualCompleted, .needsReimport, .unknown, .conflict, .unavailable:
+            return false
+        }
     }
 
     /// Re-import status after the optional manual overlay is applied. A valid
@@ -165,16 +171,23 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// Real-time remaining time for an imported or manual-active operation.
     /// The caller supplies the same clock used to build the projection.
     public func effectiveRemainingSeconds(at now: Date) -> Int64? {
-        guard let activeState = effectiveState,
-              activeState.activeManualRecords.count == 1,
-              let active = activeState.activeManualRecords.first else {
+        guard let activeState = effectiveState else { return remainingSeconds }
+        switch activeState.status {
+        case .manualActive:
+            guard activeState.activeManualRecords.count == 1,
+                  let active = activeState.activeManualRecords.first else {
+                return nil
+            }
+            let interval = active.expectedEndAt.timeIntervalSince(now)
+            guard interval.isFinite,
+                  interval <= Double(Int64.max),
+                  interval >= Double(Int64.min) else { return nil }
+            return max(0, Int64(interval.rounded(.down)))
+        case .importedActive:
             return remainingSeconds
+        case .observed, .manualCompleted, .needsReimport, .unknown, .conflict, .unavailable:
+            return nil
         }
-        let interval = active.expectedEndAt.timeIntervalSince(now)
-        guard interval.isFinite,
-              interval <= Double(Int64.max),
-              interval >= Double(Int64.min) else { return nil }
-        return max(0, Int64(interval.rounded(.down)))
     }
 
     /// Duration state for the effective next/active target. Manual-only active

@@ -827,6 +827,154 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         }
     }
 
+    func testEffectiveActiveConsumersFailClosedForSettledOrInvalidManualStates() throws {
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let village = village(objectSections: [
+            "buildings": [
+                item(
+                    section: "buildings",
+                    dataID: 1_000_002,
+                    level: 1,
+                    timerSeconds: 100,
+                    remainingSeconds: 90
+                ),
+            ],
+        ])
+
+        let importedOnly = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt
+        )
+        let importedItem = try XCTUnwrap(importedOnly.items.first { $0.dataID == 1_000_002 })
+        XCTAssertTrue(importedItem.isEffectivelyUpgrading)
+        XCTAssertEqual(importedItem.effectiveRemainingSeconds(at: importedAt), 90)
+
+        let cases: [(ManualItemStatus, EffectiveVillageItemStatus)] = [
+            (.manualCompleted, .manualCompleted),
+            (.unknown, .unknown),
+            (.conflict, .conflict),
+        ]
+        for (manualStatus, expectedStatus) in cases {
+            let projection = VillageCatalogProjection.project(
+                village: village,
+                catalog: catalog(),
+                base: .home,
+                now: importedAt,
+                manualUpgradeCore: try core(states: [
+                    try state(
+                        key: key,
+                        imported: try distribution([(1, 1)]),
+                        manual: try distribution([(1, 1)]),
+                        status: manualStatus
+                    ),
+                ])
+            )
+            let effectiveItem = try XCTUnwrap(
+                projection.items.first { $0.dataID == 1_000_002 },
+                manualStatus.rawValue
+            )
+            XCTAssertEqual(effectiveItem.effectiveState?.status, expectedStatus)
+            XCTAssertFalse(effectiveItem.isEffectivelyUpgrading, manualStatus.rawValue)
+            XCTAssertNil(
+                effectiveItem.effectiveRemainingSeconds(at: importedAt),
+                manualStatus.rawValue
+            )
+
+            let overview = UpgradeOverviewProjection.overviewRecords(
+                from: [village],
+                catalog: catalog(),
+                manualUpgradeCores: [village.id: try core(states: [
+                    try state(
+                        key: key,
+                        imported: try distribution([(1, 1)]),
+                        manual: try distribution([(1, 1)]),
+                        status: manualStatus
+                    ),
+                ])],
+                at: importedAt
+            )
+            XCTAssertTrue(overview.active.isEmpty, manualStatus.rawValue)
+        }
+    }
+
+    func testMalformedImportedLevelsPreserveRawInstanceWeightAndOverflow() throws {
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let malformedVillage = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_002, level: nil, count: 2, path: "1"),
+                item(section: "buildings", dataID: 1_000_002, level: 1, count: 3, path: "2"),
+            ],
+        ])
+        let projection = VillageCatalogProjection.project(
+            village: malformedVillage,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: try core(states: [
+                try state(
+                    key: key,
+                    imported: .empty,
+                    manual: .empty,
+                    status: .unknown
+                ),
+            ])
+        )
+
+        let effective = try XCTUnwrap(
+            projection.effectiveTrackerItems.first { $0.itemKey == key }
+        )
+        XCTAssertNil(effective.importedDistribution)
+        XCTAssertEqual(effective.importedInstanceWeight, 5)
+        XCTAssertFalse(effective.importedCountOverflowed)
+        XCTAssertEqual(projection.progressMetrics.instanceProgress.denominator, 5)
+        XCTAssertTrue(
+            projection.progressMetrics.instanceProgress.degradedReason?.contains("5 个实例") == true
+        )
+        XCTAssertTrue(
+            projection.progressMetrics.effectiveTrackerProgress.degradedReason?.contains("5 个实例") == true
+        )
+
+        let overflowVillage = village(objectSections: [
+            "buildings": [
+                item(
+                    section: "buildings",
+                    dataID: 1_000_002,
+                    level: 1,
+                    count: Int.max,
+                    path: "1"
+                ),
+                item(section: "buildings", dataID: 1_000_002, level: 1, count: 1, path: "2"),
+            ],
+        ])
+        let overflowProjection = VillageCatalogProjection.project(
+            village: overflowVillage,
+            catalog: catalog(),
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: try core(states: [
+                try state(
+                    key: key,
+                    imported: .empty,
+                    manual: .empty,
+                    status: .unknown
+                ),
+            ])
+        )
+        let overflowEffective = try XCTUnwrap(
+            overflowProjection.effectiveTrackerItems.first { $0.itemKey == key }
+        )
+        XCTAssertEqual(overflowEffective.importedInstanceWeight, Int64.max)
+        XCTAssertTrue(overflowEffective.importedCountOverflowed)
+        XCTAssertEqual(
+            overflowProjection.progressMetrics.instanceProgress.denominator,
+            Int.max
+        )
+        XCTAssertTrue(overflowProjection.progressMetrics.instanceProgress.saturated)
+        XCTAssertTrue(overflowProjection.progressMetrics.effectiveTrackerProgress.saturated)
+    }
+
     func testManualOverlayIsIsolatedPerVillage() throws {
         let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
         let firstVillage = village(objectSections: [

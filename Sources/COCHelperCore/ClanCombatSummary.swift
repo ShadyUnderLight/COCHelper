@@ -114,14 +114,17 @@ public enum ClanCombatSummary {
     /// 固定 en_US_POSIX（`String(format:)` 默认随系统区域，某些区域小数点变逗号）。
     /// 防御：超出 Int 可表示范围的 Double 走 %.1f 分支（不 trap）。
     /// 注：app target 的 `ClanDisplayFormat.percent` 是另一份拷贝（既有先例：
-    /// WarLogCardView.percent），Core 内一律用本函数保证单一来源。
+    /// WarLogCardView 即用它渲染摧毁率），Core 内一律用本函数保证单一来源。
     public static func percentText(_ value: Double) -> String {
         guard value < Double(Int.max), value >= Double(Int.min) else {
-            return String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), arguments: [value])
+            return String(format: "%.1f", locale: posixLocale, arguments: [value])
         }
         return value.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(value)) : String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), arguments: [value])
+            ? String(Int(value)) : String(format: "%.1f", locale: posixLocale, arguments: [value])
     }
+
+    /// 固定 en_US_POSIX（`String(format:)` 默认随系统区域，某些区域小数点变逗号）。
+    private static let posixLocale = Locale(identifier: "en_US_POSIX")
 
     /// 已摧毁子城数：官方字段优先（0 也是官方事实）；缺失时从子城明细推导。
     /// 只有全部子城摧毁率已知（有限）才返回确切计数（含 0）；

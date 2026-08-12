@@ -198,4 +198,12 @@ final class ClanCombatSummaryTests: XCTestCase {
         // 超长值分钟数直接大字面量，无算术风险（= 文档注释承诺）
         XCTAssertEqual(ClanCombatSummary.durationText(Int.max), "153722867280912930:07")
     }
+
+    // MARK: - percentText（Issue #127）
+
+    func testPercentTextExtremeValuesDoNotTrap() {
+        // 超出 Int 可表示范围的 Double 走 %.1f 分支（不 trap）
+        XCTAssertEqual(ClanCombatSummary.percentText(1e300), String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), arguments: [1e300]))
+        XCTAssertEqual(ClanCombatSummary.percentText(-1e300), String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), arguments: [-1e300]))
+    }
 }

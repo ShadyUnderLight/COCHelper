@@ -53,6 +53,19 @@ public enum WarLogTimeFormatter {
 
     /// 转换成功返回"yyyy年M月d日 HH:mm:ss"（北京时间）；失败返回 nil。
     static func beijingTimeText(raw: String) -> String? {
+        guard let utcDate = utcDate(from: raw) else { return nil }
+        let bj = beijingCalendar.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second], from: utcDate)
+        guard let by = bj.year, let bm = bj.month, let bd = bj.day,
+              let bh = bj.hour, let bmi = bj.minute, let bs = bj.second
+        else { return nil }
+        return "\(by)年\(bm)月\(bd)日 "
+            + String(format: "%02d:%02d:%02d", bh, bmi, bs)
+    }
+
+    /// 官方 UTC 紧凑串 → Date（UTC）；解析/校验失败 nil。
+    /// 与 `displayText` 共用同一解析规则（Issue #127 要求不得维护两套 UTC 解析）。
+    static func utcDate(from raw: String) -> Date? {
         guard let match = raw.range(of: officialPattern, options: .regularExpression) else {
             return nil
         }
@@ -94,14 +107,17 @@ public enum WarLogTimeFormatter {
         components.year = year; components.month = month; components.day = day
         components.hour = hour; components.minute = minute; components.second = second
 
-        guard let utcDate = utcCalendar.date(from: components) else { return nil }
-        let bj = beijingCalendar.dateComponents(
-            [.year, .month, .day, .hour, .minute, .second], from: utcDate)
-        guard let by = bj.year, let bm = bj.month, let bd = bj.day,
-              let bh = bj.hour, let bmi = bj.minute, let bs = bj.second
-        else { return nil }
+        return utcCalendar.date(from: components)
+    }
 
-        return "\(by)年\(bm)月\(bd)日 "
-            + String(format: "%02d:%02d:%02d", bh, bmi, bs)
+    /// 剩余时间（Issue #127，currentwar inWar 用）：endTime 可解析且晚于 now
+    /// → "剩余 X 天 X 小时"（不足 1 天只显示小时）；解析失败/已过期 → nil。
+    public static func remainingText(endRaw: String?, now: Date) -> String? {
+        guard let endRaw, let end = utcDate(from: endRaw) else { return nil }
+        let seconds = Int(end.timeIntervalSince(now))
+        guard seconds > 0 else { return nil }
+        let days = seconds / 86_400
+        let hours = (seconds % 86_400) / 3_600
+        return days > 0 ? "剩余 \(days) 天 \(hours) 小时" : "剩余 \(hours) 小时"
     }
 }

@@ -197,4 +197,38 @@ final class WarLogTimeFormatterTests: XCTestCase {
             WarLogTimeFormatter.displayText(raw: "20260809T110738.0000Z"),
             .unparsable("20260809T110738.0000Z"))
     }
+
+    // MARK: - remainingText（Issue #127，currentwar inWar 倒计时）
+
+    func testRemainingTextPositive() {
+        // 20260809T110738.000Z = 北京时间 19:07:38
+        let end = "20260809T110738.000Z"
+        let now = utcDate(2026, 8, 9, 3, 7, 38)   // UTC 03:07:38 → 剩余 8 小时
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end, now: now), "剩余 8 小时")
+    }
+
+    func testRemainingTextMultipleDays() {
+        let end = "20260809T110738.000Z"
+        let now = utcDate(2026, 8, 6, 11, 7, 38)  // 剩余 3 天
+        XCTAssertEqual(WarLogTimeFormatter.remainingText(endRaw: end, now: now), "剩余 3 天 0 小时")
+    }
+
+    func testRemainingTextExpiredOrUnparsableIsNil() {
+        let end = "20260809T110738.000Z"
+        XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: end,
+                                                       now: utcDate(2026, 8, 9, 12, 0, 0)))
+        XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: nil, now: Date()))
+        XCTAssertNil(WarLogTimeFormatter.remainingText(endRaw: "not-a-date", now: Date()))
+    }
+
+    /// 测试辅助：UTC 固定日期（避免 DateComponents 时区漂移）。
+    /// 必须显式钉住 UTC：Calendar(identifier:) 默认跟随本机时区（实测 Asia/Shanghai），
+    /// 否则组件会被按本地时区解释，断言值只在 UTC 下成立。
+    private func utcDate(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int, _ s: Int) -> Date {
+        var c = DateComponents()
+        c.year = y; c.month = mo; c.day = d; c.hour = h; c.minute = mi; c.second = s
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        return cal.date(from: c)!
+    }
 }

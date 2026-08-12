@@ -306,8 +306,11 @@ gh pr create --title "feat(ui): currentwar 卡片重做，取消 30 人截断（
 
 ## 风险和边界（本计划遵守）
 
-- 不做 #127（攻击详情扩展/防守表现/北京时间/数据诊断）——防守列仅显示"防 N"次数
+- 不做 #127（攻击详情扩展/防守表现/北京时间）——防守列仅显示"防 N"次数；
+  **数据诊断已在本次实现**（可展开诊断区：mismatches 覆盖诊断/攻击数/星数、unknownAttackDataCount、unrecognizedKeys）
 - 不做 #124（warlog）；不改 raw snapshot 字节/UserDefaults key/parserVersion
 - 不改 `ClanWarModels.swift` 解码；不改 `ClanWarRefresher.swift`
 - 不引入新视觉系统；不改两个入口的调用签名
 - 已知边界：`phase == .unknown(raw:)` + zero 计入未出手（继承 #125 Core 行为，不改）
+- 已知边界：展开态身份 = `tag ?? name ?? "#\(sourceIndex)"`——缺 tag 且重名成员会同时展开
+  （官方 API 契约成员必有 tag，实际不可达；tag/name 双缺时按位置兜底，刷新重排后可能错位）

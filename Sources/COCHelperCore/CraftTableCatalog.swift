@@ -12,6 +12,9 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
     public let buildTag: String
     public let locale: String
     public let source: String
+    /// Source APK fingerprint from the versioned manifest.  Manually injected
+    /// catalogs may omit provenance and therefore keep this value nil.
+    public let sourceFingerprint: String?
     public let defenses: [CraftTableDefenseSpec]
     public let modules: [CraftTableModuleSpec]
 
@@ -24,6 +27,9 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
     /// 篡改或过期数据不得静默把季节内容判为 permanent。
     static func integrityOK(manifestData: Data, craftData: Data) -> Bool {
         guard let manifest = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData) else {
+            return false
+        }
+        guard Self.validSourceFingerprint(manifest.sourceFingerprint) else {
             return false
         }
         // 复审 P2：与 validator「恰好一个」契约一致——重复条目（Python 侧会
@@ -41,6 +47,14 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
         return declared.dropFirst("sha256:".count) == actual
     }
 
+    private static func validSourceFingerprint(_ value: String) -> Bool {
+        let prefix = "sha256:"
+        let hex = value.dropFirst(prefix.count)
+        return value.hasPrefix(prefix)
+            && hex.count == 64
+            && hex.allSatisfy(\.isHexDigit)
+    }
+
     public init(
         schemaVersion: Int = 1,
         gameVersion: String,
@@ -48,13 +62,15 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
         locale: String = "zh-CN",
         source: String = "",
         defenses: [CraftTableDefenseSpec],
-        modules: [CraftTableModuleSpec]
+        modules: [CraftTableModuleSpec],
+        sourceFingerprint: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.gameVersion = gameVersion
         self.buildTag = buildTag
         self.locale = locale
         self.source = source
+        self.sourceFingerprint = sourceFingerprint
         self.defenses = defenses
         self.modules = modules
     }
@@ -92,13 +108,24 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
     ) -> CraftTableCatalog? {
         guard let resources = bundledResourceData(version: version),
               let catalog = try? JSONDecoder().decode(CraftTableCatalog.self, from: resources.craft),
+              let manifest = try? JSONDecoder().decode(CatalogManifest.self, from: resources.manifest),
               catalog.schemaVersion == 1,
               catalog.gameVersion == version,
+              manifest.gameVersion == catalog.gameVersion,
               integrityOK(manifestData: resources.manifest, craftData: resources.craft)
         else {
             return nil
         }
-        return catalog
+        return CraftTableCatalog(
+            schemaVersion: catalog.schemaVersion,
+            gameVersion: catalog.gameVersion,
+            buildTag: catalog.buildTag,
+            locale: catalog.locale,
+            source: catalog.source,
+            defenses: catalog.defenses,
+            modules: catalog.modules,
+            sourceFingerprint: manifest.sourceFingerprint
+        )
     }
 
     public func defense(dataID: Int64) -> CraftTableDefenseSpec? {

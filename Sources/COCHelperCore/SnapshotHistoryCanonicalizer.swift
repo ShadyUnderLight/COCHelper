@@ -8,7 +8,8 @@ import Foundation
 /// legacy importer does not yet model remain available to history consumers.
 /// `catalog` supplies the root/numeric dataID universe; `craftTableCatalog`
 /// supplies the separate `types/modules` universe.  Both are needed for
-/// complete dataID validation of bundled craft-table snapshots.
+/// complete dataID validation and immutable display binding of bundled
+/// craft-table snapshots.
 public enum SnapshotHistoryCanonicalizer {
     public static func canonicalize(
         snapshot: AccountSnapshot,
@@ -22,7 +23,11 @@ public enum SnapshotHistoryCanonicalizer {
         craftTableCatalog: CraftTableCatalog? = nil
     ) throws -> SnapshotHistoryEntry {
         let source = try canonicalSource(snapshot.originalText)
-        let observation = makeObservation(source: source, catalog: catalog)
+        let observation = makeObservation(
+            source: source,
+            catalog: catalog,
+            craftTableCatalog: craftTableCatalog
+        )
         let coverage = makeCoverage(
             source: source,
             catalog: catalog,
@@ -126,7 +131,8 @@ public enum SnapshotHistoryCanonicalizer {
 
     private static func makeObservation(
         source: CanonicalSource,
-        catalog: GameCatalog?
+        catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?
     ) -> CanonicalSnapshotObservation {
         var items: [SnapshotObservationItem] = []
 
@@ -142,6 +148,7 @@ public enum SnapshotHistoryCanonicalizer {
                     rootDataID: nil,
                     parentPath: [],
                     catalog: catalog,
+                    craftTableCatalog: craftTableCatalog,
                     into: &items
                 )
             }
@@ -158,7 +165,11 @@ public enum SnapshotHistoryCanonicalizer {
                 )
                 items.append(SnapshotObservationItem(
                     identity: identity,
-                    display: displayBinding(for: identity, catalog: catalog)
+                    display: displayBinding(
+                        for: identity,
+                        catalog: catalog,
+                        craftTableCatalog: craftTableCatalog
+                    )
                 ))
             }
         }
@@ -184,6 +195,7 @@ public enum SnapshotHistoryCanonicalizer {
         rootDataID: Int64?,
         parentPath: [SnapshotNestedPathComponent],
         catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?,
         into items: inout [SnapshotObservationItem]
     ) {
         guard let dataID = integer(object["data"]) else { return }
@@ -214,7 +226,11 @@ public enum SnapshotHistoryCanonicalizer {
             gearUp: integer(object["gear_up"]).flatMap(Int.init),
             weapon: integer(object["weapon"]).flatMap(Int.init),
             unknownFields: unknownFields,
-            display: displayBinding(for: identity, catalog: catalog)
+            display: displayBinding(
+                for: identity,
+                catalog: catalog,
+                craftTableCatalog: craftTableCatalog
+            )
         ))
 
         // A nested record keeps the identity of the outermost root.  Passing
@@ -234,6 +250,7 @@ public enum SnapshotHistoryCanonicalizer {
             rootDataID: childRootDataID,
             parentPath: childParentPath,
             catalog: catalog,
+            craftTableCatalog: craftTableCatalog,
             into: &items
         )
         appendChildren(
@@ -244,6 +261,7 @@ public enum SnapshotHistoryCanonicalizer {
             rootDataID: childRootDataID,
             parentPath: childParentPath,
             catalog: catalog,
+            craftTableCatalog: craftTableCatalog,
             into: &items
         )
     }
@@ -256,6 +274,7 @@ public enum SnapshotHistoryCanonicalizer {
         rootDataID: Int64,
         parentPath: [SnapshotNestedPathComponent],
         catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?,
         into items: inout [SnapshotObservationItem]
     ) {
         guard case .array(let values) = value else { return }
@@ -269,6 +288,7 @@ public enum SnapshotHistoryCanonicalizer {
                 rootDataID: rootDataID,
                 parentPath: parentPath,
                 catalog: catalog,
+                craftTableCatalog: craftTableCatalog,
                 into: &items
             )
         }
@@ -276,8 +296,17 @@ public enum SnapshotHistoryCanonicalizer {
 
     private static func displayBinding(
         for identity: SnapshotItemIdentity,
-        catalog: GameCatalog?
+        catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?
     ) -> SnapshotDisplayBinding {
+        if let craftTableBinding = craftTableDisplayBinding(
+            for: identity,
+            catalog: catalog,
+            craftTableCatalog: craftTableCatalog
+        ) {
+            return craftTableBinding
+        }
+
         guard let catalog else { return SnapshotDisplayBinding() }
 
         // Display binding belongs to the observed record itself.  Nested
@@ -290,6 +319,36 @@ public enum SnapshotHistoryCanonicalizer {
             displayCategory: item?.displayCategory,
             catalogVersion: catalog.gameVersion,
             catalogFingerprint: catalog.manifest?.sourceFingerprint
+        )
+    }
+
+    private static func craftTableDisplayBinding(
+        for identity: SnapshotItemIdentity,
+        catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?
+    ) -> SnapshotDisplayBinding? {
+        guard let craftTableCatalog else { return nil }
+
+        let name: String?
+        switch identity.nestedKind {
+        case .type:
+            name = craftTableCatalog.defense(dataID: identity.dataID)?.name
+        case .module:
+            name = craftTableCatalog.module(dataID: identity.dataID)?.name
+        case .root, .unknown:
+            name = nil
+        }
+        guard let name else { return nil }
+
+        let rootItem = identity.nestedRootDataID.flatMap {
+            catalog?.item(section: identity.rawSection, dataID: $0)
+        }
+        return SnapshotDisplayBinding(
+            displayName: name,
+            category: rootItem?.category ?? TrackerCategory.from(section: identity.rawSection)?.rawValue,
+            displayCategory: TrackerDisplayCategory.craftTable.rawValue,
+            catalogVersion: craftTableCatalog.gameVersion,
+            catalogFingerprint: craftTableCatalog.sourceFingerprint
         )
     }
 

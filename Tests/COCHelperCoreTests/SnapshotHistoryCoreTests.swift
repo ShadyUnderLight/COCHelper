@@ -294,6 +294,22 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "types"), .complete)
         XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "modules"), .complete)
         XCTAssertFalse(entry.coverage.diagnostics.contains { $0.contains("未知 dataID") })
+
+        let type = try XCTUnwrap(entry.observation.items.first {
+            $0.identity.nestedKind == .type && $0.identity.dataID == 103_000_011
+        })
+        let module = try XCTUnwrap(entry.observation.items.first {
+            $0.identity.nestedKind == .module && $0.identity.dataID == 102_000_033
+        })
+        for item in [type, module] {
+            XCTAssertEqual(item.display.category, "buildings")
+            XCTAssertEqual(item.display.displayCategory, "craftTable")
+            XCTAssertEqual(item.display.catalogVersion, craftTableCatalog.gameVersion)
+            XCTAssertEqual(item.display.catalogFingerprint, craftTableCatalog.sourceFingerprint)
+            XCTAssertNotNil(item.display.catalogFingerprint)
+        }
+        XCTAssertEqual(type.display.displayName, "火热蜡烛")
+        XCTAssertEqual(module.display.displayName, "火热蜡烛生命值模组")
     }
 
     func testDeepNestedIdentityKeepsOutermostRoot() throws {

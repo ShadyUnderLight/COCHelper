@@ -80,6 +80,23 @@ final class CraftTableCatalogTests: XCTestCase {
         XCTAssertTrue(CraftTableCatalog.integrityOK(manifestData: manifestData, craftData: craftData))
     }
 
+    /// provenance 负例：sourceFingerprint 格式非法时，不得作为历史绑定证据。
+    func testIntegrityOKFailsForInvalidSourceFingerprint() throws {
+        let version = GameCatalog.defaultBundledVersion
+        let resources = try XCTUnwrap(CraftTableCatalog.bundledResourceData(version: version))
+        let manifest = try XCTUnwrap(String(data: resources.manifest, encoding: .utf8))
+        let decoded = try JSONDecoder().decode(CatalogManifest.self, from: resources.manifest)
+        let tampered = manifest.replacingOccurrences(
+            of: decoded.sourceFingerprint,
+            with: "md5:deadbeef"
+        )
+
+        XCTAssertFalse(CraftTableCatalog.integrityOK(
+            manifestData: Data(tampered.utf8),
+            craftData: resources.craft
+        ))
+    }
+
     /// tampered 负例：篡改 craft 数据任意字节 → sha256 失配 → 不通过
     ///（篡改数据不得静默把季节内容判为 permanent）。
     func testIntegrityOKFailsForTamperedCraftData() throws {

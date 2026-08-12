@@ -78,6 +78,11 @@ public enum SnapshotHistoryCanonicalizer {
         let unknownFields: [String: CanonicalJSONValue]
     }
 
+    private struct NestedCoverageAnalysis {
+        let state: SnapshotCoverageState
+        let diagnostics: [String]
+    }
+
     private static func canonicalSource(_ originalText: String) throws -> CanonicalSource {
         let prepared = prepare(originalText)
         guard !prepared.isEmpty else { throw SnapshotHistoryCanonicalizationError.emptySource }
@@ -262,7 +267,10 @@ public enum SnapshotHistoryCanonicalizer {
     ) -> SnapshotDisplayBinding {
         guard let catalog else { return SnapshotDisplayBinding() }
 
-        let item = catalog.item(section: identity.rawSection, dataID: identity.rootDataID)
+        // Display binding belongs to the observed record itself.  Nested
+        // records may have their own catalog entry; using rootDataID here
+        // would make every child inherit the root building's label.
+        let item = catalog.item(section: identity.rawSection, dataID: identity.dataID)
         return SnapshotDisplayBinding(
             displayName: item?.name,
             category: item?.category,
@@ -303,32 +311,46 @@ public enum SnapshotHistoryCanonicalizer {
                 field: "presence",
                 state: .complete
             ))
-            let objects = values.compactMap { value -> [String: CanonicalJSONValue]? in
-                guard case .object(let object) = value else { return nil }
-                return object
+            let records = values.enumerated().compactMap {
+                element -> (index: Int, object: [String: CanonicalJSONValue])? in
+                guard case .object(let object) = element.element else { return nil }
+                return (index: element.offset, object: object)
             }
+            let objects = records.map { $0.object }
             if objects.count != values.count {
                 diagnostics.append("\(section): 数组中存在非对象记录。")
             }
+            for (index, value) in values.enumerated() {
+                guard case .object(let object) = value else { continue }
+                if integer(object["data"]) == nil {
+                    diagnostics.append(
+                        "\(section)[\(index)].data: 缺少有效 dataID，记录未纳入 canonical observation。"
+                    )
+                }
+            }
             for field in SnapshotHistoryKnownSections.itemFields {
-                let state = fieldState(
-                    objects: objects,
-                    invalidObjectCount: values.count - objects.count,
-                    field: field,
-                    isValid: { value in
-                        switch field {
-                        case "data", "lvl", "cnt", "timer", "helper_timer", "helper_cooldown", "gear_up", "weapon":
-                            return integer(value) != nil
-                        case "helper_recurrent":
-                            return boolean(value) != nil
-                        case "types", "modules":
-                            if case .array = value { return true }
-                            return false
-                        default:
-                            return true
+                let state: SnapshotCoverageState
+                if field == "types" || field == "modules" {
+                    let nested = nestedFieldState(records: records, field: field, section: section)
+                    state = nested.state
+                    diagnostics.append(contentsOf: nested.diagnostics)
+                } else {
+                    state = fieldState(
+                        objects: objects,
+                        invalidObjectCount: values.count - objects.count,
+                        field: field,
+                        isValid: { value in
+                            switch field {
+                            case "data", "lvl", "cnt", "timer", "helper_timer", "helper_cooldown", "gear_up", "weapon":
+                                return integer(value) != nil
+                            case "helper_recurrent":
+                                return boolean(value) != nil
+                            default:
+                                return true
+                            }
                         }
-                    }
-                )
+                    )
+                }
                 fields.append(SnapshotCoverageField(
                     base: base,
                     rawSection: section,
@@ -397,6 +419,82 @@ public enum SnapshotHistoryCanonicalizer {
         return SnapshotObservationCoverage(fields: fields, diagnostics: diagnostics)
     }
 
+    private static func nestedFieldState(
+        records: [(index: Int, object: [String: CanonicalJSONValue])],
+        field: String,
+        section: String
+    ) -> NestedCoverageAnalysis {
+        guard !records.isEmpty else {
+            return NestedCoverageAnalysis(state: .unavailable, diagnostics: [])
+        }
+
+        let present = records.filter { $0.object[field] != nil }
+        guard !present.isEmpty else {
+            return NestedCoverageAnalysis(state: .unavailable, diagnostics: [])
+        }
+
+        var state: SnapshotCoverageState = present.count == records.count ? .complete : .partial
+        var diagnostics: [String] = []
+        for record in present {
+            let path = "\(section)[\(record.index)].\(field)"
+            guard case .array(let values) = record.object[field] else {
+                state = .partial
+                diagnostics.append("\(path): 嵌套值不是数组。")
+                continue
+            }
+            let nested = validateNestedArray(values, path: path)
+            diagnostics.append(contentsOf: nested.diagnostics)
+            if nested.state != .complete {
+                state = .partial
+            }
+        }
+        return NestedCoverageAnalysis(state: state, diagnostics: diagnostics)
+    }
+
+    private static func validateNestedArray(
+        _ values: [CanonicalJSONValue],
+        path: String
+    ) -> NestedCoverageAnalysis {
+        var diagnostics: [String] = []
+        var complete = true
+
+        for (index, value) in values.enumerated() {
+            let childPath = "\(path)[\(index)]"
+            guard case .object(let object) = value else {
+                complete = false
+                diagnostics.append("\(childPath): 子项不是对象。")
+                continue
+            }
+            guard integer(object["data"]) != nil else {
+                complete = false
+                diagnostics.append(
+                    "\(childPath).data: 缺少有效 dataID，记录未纳入 canonical observation。"
+                )
+                continue
+            }
+
+            for nestedField in ["types", "modules"] {
+                guard let nestedValue = object[nestedField] else { continue }
+                let nestedPath = childPath + "." + nestedField
+                guard case .array(let nestedValues) = nestedValue else {
+                    complete = false
+                    diagnostics.append("\(nestedPath): 嵌套值不是数组。")
+                    continue
+                }
+                let nested = validateNestedArray(nestedValues, path: nestedPath)
+                diagnostics.append(contentsOf: nested.diagnostics)
+                if nested.state != .complete {
+                    complete = false
+                }
+            }
+        }
+
+        return NestedCoverageAnalysis(
+            state: complete ? .complete : .partial,
+            diagnostics: diagnostics
+        )
+    }
+
     private static func appendUnavailable(
         base: SnapshotHistoryBase,
         section: String,
@@ -433,7 +531,9 @@ public enum SnapshotHistoryCanonicalizer {
                 : .partial
         }
         let present = objects.filter { $0[field] != nil }
-        guard !present.isEmpty else { return .unavailable }
+        guard !present.isEmpty else {
+            return field == "data" ? .partial : .unavailable
+        }
         guard invalidObjectCount == 0,
               present.count == objects.count,
               objects.allSatisfy({ isValid($0[field]) }) else {

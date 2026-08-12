@@ -247,6 +247,7 @@ public enum SnapshotLineageReason: String, Codable, Hashable, Sendable {
     case sameVillageAndTag
     case tagChanged
     case missingTag
+    case invalidTag
     case villageChanged
     case previousConflict
 }
@@ -295,12 +296,28 @@ public struct SnapshotLineageResolution: Codable, Hashable, Sendable {
 }
 
 public enum SnapshotLineageResolver {
+    private enum TagStatus {
+        case missing
+        case invalid
+        case valid(String)
+    }
+
     public static func resolve(
         villageID: UUID,
         normalizedPlayerTag rawTag: String?,
         previous: SnapshotLineageContext?
     ) -> SnapshotLineageResolution {
-        let tag = OfficialPlayerTagValidator.normalized(rawTag)
+        let tagStatus = status(of: rawTag)
+
+        guard case .valid = tagStatus else {
+            return SnapshotLineageResolution(
+                lineageID: UUID(),
+                outcome: .unknown,
+                reason: reason(for: tagStatus),
+                isBaseline: true,
+                comparisonAllowed: false
+            )
+        }
 
         guard let previous else {
             return SnapshotLineageResolution(
@@ -311,6 +328,8 @@ public enum SnapshotLineageResolver {
                 comparisonAllowed: false
             )
         }
+
+        let previousTagStatus = status(of: previous.normalizedPlayerTag)
 
         guard previous.villageID == villageID else {
             return SnapshotLineageResolution(
@@ -332,14 +351,15 @@ public enum SnapshotLineageResolver {
             )
         }
 
-        guard let tag, let previousTag = OfficialPlayerTagValidator.normalized(previous.normalizedPlayerTag) else {
-            // Missing identity is intentionally never joined to a prior record.
-            // A later storage layer can keep the record, but must suppress a
-            // diff until a confirmed lineage is available again.
+        guard case .valid(let tag) = tagStatus,
+              case .valid(let previousTag) = previousTagStatus else {
+            // An unconfirmed identity is intentionally never joined to a prior
+            // record.  A later storage layer can keep the record, but must
+            // suppress a diff until a confirmed lineage is available again.
             return SnapshotLineageResolution(
                 lineageID: UUID(),
                 outcome: .unknown,
-                reason: .missingTag,
+                reason: reason(for: previousTagStatus),
                 isBaseline: true,
                 comparisonAllowed: false
             )
@@ -362,6 +382,24 @@ public enum SnapshotLineageResolver {
             isBaseline: true,
             comparisonAllowed: false
         )
+    }
+
+    private static func status(of rawTag: String?) -> TagStatus {
+        guard let normalized = OfficialPlayerTagValidator.normalized(rawTag) else {
+            return .missing
+        }
+        guard OfficialPlayerTagValidator.isValid(normalized) else {
+            return .invalid
+        }
+        return .valid(normalized)
+    }
+
+    private static func reason(for status: TagStatus) -> SnapshotLineageReason {
+        switch status {
+        case .missing: .missingTag
+        case .invalid: .invalidTag
+        case .valid: .sameVillageAndTag
+        }
     }
 }
 

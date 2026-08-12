@@ -145,6 +145,30 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(entry.observation.items.first?.unknownFields["future_item_field"], .bool(true))
     }
 
+    func testNestedCoverageRequiresDataAndReportsStableSourcePaths() throws {
+        let snapshot = makeRawSnapshot(
+            """
+            {
+              "buildings": [{
+                "data": 1000001,
+                "types": [
+                  {"lvl": 1},
+                  {"data": 777, "modules": [{}]}
+                ]
+              }]
+            }
+            """
+        )
+        let entry = try canonicalize(snapshot)
+
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "types"), .partial)
+        let missingDataDiagnostics = entry.coverage.diagnostics.filter { $0.contains("缺少有效 dataID") }
+        XCTAssertEqual(missingDataDiagnostics.count, 2)
+        XCTAssertTrue(missingDataDiagnostics.contains { $0.contains("buildings[0].types[") && $0.hasSuffix("canonical observation。") })
+        XCTAssertTrue(missingDataDiagnostics.contains { $0.contains(".modules[") && $0.hasSuffix("canonical observation。") })
+        XCTAssertFalse(entry.observation.items.contains { $0.identity.dataID == 0 })
+    }
+
     func testDisplayBindingIsCopiedAtCreationAndDoesNotAffectFingerprint() throws {
         let snapshot = try makeSnapshot(
             "{" +
@@ -161,6 +185,24 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(firstEntry.observation.items.first?.display.displayName, "旧目录名称")
         XCTAssertEqual(firstEntry.observation.items.first?.display.catalogVersion, "18.400.13")
         XCTAssertEqual(secondEntry.observation.items.first?.display.displayName, "新目录名称")
+    }
+
+    func testNestedDisplayBindingUsesObservedItemDataID() throws {
+        let snapshot = try makeSnapshot(
+            """
+            {"buildings":[{"data":1000001,"types":[{"data":777,"modules":[{"data":888}]}]}]}
+            """
+        )
+        let catalog = makeCatalog(name: "root", version: "18.400.13", includeNested: true)
+        let entry = try canonicalize(snapshot, catalog: catalog)
+
+        let root = try XCTUnwrap(entry.observation.items.first { $0.identity.nestedKind == .root })
+        let type = try XCTUnwrap(entry.observation.items.first { $0.identity.nestedKind == .type })
+        let module = try XCTUnwrap(entry.observation.items.first { $0.identity.nestedKind == .module })
+
+        XCTAssertEqual(root.display.displayName, "root")
+        XCTAssertEqual(type.display.displayName, "type")
+        XCTAssertEqual(module.display.displayName, "module")
     }
 
     func testLineageRulesDoNotJoinMissingOrConflictingIdentity() {
@@ -191,6 +233,11 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             normalizedPlayerTag: nil,
             previous: context
         )
+        let invalid = SnapshotLineageResolver.resolve(
+            villageID: villageID,
+            normalizedPlayerTag: "not-a-tag",
+            previous: context
+        )
         let conflict = SnapshotLineageResolver.resolve(
             villageID: villageID,
             normalizedPlayerTag: "#ABC",
@@ -210,6 +257,9 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertTrue(changed.isBaseline)
         XCTAssertEqual(missing.reason, .missingTag)
         XCTAssertFalse(missing.comparisonAllowed)
+        XCTAssertEqual(invalid.outcome, .unknown)
+        XCTAssertEqual(invalid.reason, .invalidTag)
+        XCTAssertFalse(invalid.comparisonAllowed)
         XCTAssertEqual(conflict.reason, .previousConflict)
         XCTAssertFalse(conflict.comparisonAllowed)
     }
@@ -260,7 +310,35 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         try AccountSnapshotImporter.parse(text, now: now)
     }
 
-    private func makeCatalog(name: String, version: String) -> GameCatalog {
+    private func makeRawSnapshot(_ text: String) -> AccountSnapshot {
+        AccountSnapshot(
+            tag: "#ABC",
+            capturedAt: nil,
+            importedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            ageSeconds: nil,
+            originalText: text,
+            objectSections: [:],
+            numericSections: [:],
+            boosts: [:],
+            unknownTopLevelKeys: [],
+            diagnostics: []
+        )
+    }
+
+    private func makeCatalog(
+        name: String,
+        version: String,
+        includeNested: Bool = false
+    ) -> GameCatalog {
+        var items = [makeCatalogItem(dataID: 1000001, name: name)]
+        if includeNested {
+            items.append(makeCatalogItem(dataID: 777, name: "type"))
+            items.append(makeCatalogItem(dataID: 888, name: "module"))
+        }
+        return GameCatalog(gameVersion: version, items: items)
+    }
+
+    private func makeCatalogItem(dataID: Int64, name: String) -> CatalogItem {
         let level = CatalogLevel(
             level: 10,
             durationSeconds: nil,
@@ -271,10 +349,10 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             levelVisual: nil,
             missingReason: nil
         )
-        let item = CatalogItem(
+        return CatalogItem(
             section: "buildings",
             category: "buildings",
-            dataID: 1000001,
+            dataID: dataID,
             base: "home",
             baseMissingReason: nil,
             name: name,
@@ -283,6 +361,5 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             levelVisual: nil,
             levels: [level]
         )
-        return GameCatalog(gameVersion: version, items: [item])
     }
 }

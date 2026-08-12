@@ -180,6 +180,33 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(diff.changes.single?.evidence, .unknown)
     }
 
+    func testHistogramTotalOverflowFailsClosed() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 8)
+        let overflowingItems = [
+            makeItem(identity: identity, level: 12, count: Int.max, display: wallBinding()),
+            makeItem(identity: identity, level: 13, count: 1, display: wallBinding())
+        ]
+        let oldEntry = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: overflowingItems,
+            section: "buildings",
+            states: ["cnt": .complete]
+        )
+        let newEntry = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: overflowingItems,
+            section: "buildings",
+            states: ["cnt": .complete]
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: newEntry)
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+        XCTAssertEqual(diff.comparisonState, .insufficientCoverage)
+    }
+
     func testTimerTransitionsAreGroupedWithLevelChange() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeItem(
@@ -259,6 +286,66 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         )
         XCTAssertEqual(unavailable.changes.single?.changeKind, .unknown)
         XCTAssertEqual(unavailable.changes.single?.evidence, .unknown)
+    }
+
+    func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        func canonicalEntry(
+            _ text: String,
+            id: String,
+            appliedAt: TimeInterval
+        ) throws -> SnapshotHistoryEntry {
+            let snapshot = try AccountSnapshotImporter.parse(
+                text,
+                now: Date(timeIntervalSince1970: appliedAt)
+            )
+            return try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot,
+                villageID: villageID,
+                lineageID: lineageID,
+                appliedAt: Date(timeIntervalSince1970: appliedAt),
+                snapshotID: UUID(uuidString: id)!
+            )
+        }
+
+        let active = try canonicalEntry(
+            "{\"heroes\":[{\"data\":1,\"lvl\":1,\"timer\":90}]}",
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            appliedAt: 100
+        )
+        let completed = try canonicalEntry(
+            "{\"heroes\":[{\"data\":1,\"lvl\":2}]}",
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            appliedAt: 200
+        )
+
+        XCTAssertEqual(
+            completed.coverage.state(base: .home, rawSection: "heroes", field: "timer"),
+            .complete
+        )
+        let completion = SnapshotDiffEngine.compare(from: active, to: completed)
+        XCTAssertEqual(completion.changes.single?.changeKind, .upgradeCompleted)
+        XCTAssertEqual(completion.changes.single?.evidence, .confirmed)
+
+        let negative = try canonicalEntry(
+            "{\"heroes\":[{\"data\":1,\"lvl\":1,\"timer\":-1}]}",
+            id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            appliedAt: 300
+        )
+        let restarted = try canonicalEntry(
+            "{\"heroes\":[{\"data\":1,\"lvl\":1,\"timer\":90}]}",
+            id: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD",
+            appliedAt: 400
+        )
+
+        XCTAssertEqual(
+            negative.coverage.state(base: .home, rawSection: "heroes", field: "timer"),
+            .partial
+        )
+        let negativeDiff = SnapshotDiffEngine.compare(from: negative, to: restarted)
+        XCTAssertEqual(negativeDiff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(negativeDiff.changes.single?.evidence, .unknown)
     }
 
     func testMissingRequiredLevelIsUnknownInsteadOfUnchanged() throws {
@@ -474,6 +561,68 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(statistics.today.aggregateInferredWallLevelGrowth.value, 20)
         XCTAssertEqual(statistics.today.aggregateInferredEventCount.value, 1)
         XCTAssertEqual(statistics.today.buildingLevelGrowth.value, 0)
+    }
+
+    func testTrapHistogramFeedsBuildingStatisticsAndUnknownCoverage() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(
+                identity: identity,
+                level: 1,
+                count: 1,
+                display: SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+            )],
+            section: "traps",
+            states: ["cnt": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(
+                identity: identity,
+                level: 2,
+                count: 1,
+                display: SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+            )],
+            section: "traps",
+            states: ["cnt": .complete]
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        XCTAssertEqual(diff.changes.single?.evidence, .aggregateInferred)
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.value, 1)
+        XCTAssertEqual(statistics.today.aggregateInferredEventCount.value, 1)
+
+        let incomplete = makeEntry(
+            id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            date: 300,
+            items: [makeItem(
+                identity: identity,
+                level: 2,
+                display: SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+            )],
+            section: "traps"
+        )
+        let incompleteDiff = SnapshotDiffEngine.compare(from: old, to: incomplete)
+        XCTAssertEqual(incompleteDiff.changes.single?.changeKind, .unknown)
+        let incompleteStatistics = SnapshotHistoryStatistics.calculate(
+            diffs: [incompleteDiff],
+            referenceDate: Date(timeIntervalSince1970: 300),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(
+            incompleteStatistics.today.aggregateInferredEventCount.state,
+            .insufficientData
+        )
     }
 
     func testBaselineHasNoPredecessorDiff() throws {

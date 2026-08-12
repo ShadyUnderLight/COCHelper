@@ -140,7 +140,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
 
         XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "data"), .complete)
         XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "lvl"), .partial)
-        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "timer"), .unavailable)
+        XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "buildings", field: "timer"), .complete)
         XCTAssertEqual(entry.coverage.state(base: .home, rawSection: "units", field: "data"), .unavailable)
         XCTAssertEqual(entry.coverage.state(base: .unknown, rawSection: "$topLevel", field: "future_top_level"), .complete)
         XCTAssertEqual(entry.observation.items.first?.unknownFields["future_item_field"], .bool(true))

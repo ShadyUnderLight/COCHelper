@@ -901,7 +901,7 @@ public enum SnapshotDiffEngine {
         }
 
         guard let oldHistogram = histogram(oldItems), let newHistogram = histogram(newItems) else {
-            let reason = "重复建筑/城墙 histogram 需要每条记录都提供有效 level 和 count。"
+            let reason = "重复建筑/城墙 histogram 的 level/count 无效或总量溢出。"
             let unknownCoverage = coverage.addingReason(reason, degradingTo: .partial)
             changes.append(unknownChange(
                 identity: identity,
@@ -1264,11 +1264,12 @@ public enum SnapshotDiffEngine {
             guard !overflow else { return nil }
             levels[level] = sum
         }
-        let total = levels.values.reduce(into: 0) { partial, value in
-            let (sum, overflow) = partial.addingReportingOverflow(value)
-            partial = overflow ? Int.max : sum
+        var total = 0
+        for value in levels.values {
+            let (sum, overflow) = total.addingReportingOverflow(value)
+            guard !overflow else { return nil }
+            total = sum
         }
-        guard total != Int.max || levels.values.allSatisfy({ $0 < Int.max }) else { return nil }
         return Histogram(levels: levels, total: total)
     }
 
@@ -1318,7 +1319,8 @@ public enum SnapshotDiffEngine {
 
     private static func timerNumber(_ value: CanonicalJSONValue) -> Int64? {
         guard case .number(let raw) = value else { return nil }
-        return Int64(raw)
+        guard let number = Int64(raw), number >= 0 else { return nil }
+        return number
     }
 
     private static func timerSignature(_ evidence: [String: CanonicalJSONValue]) -> String {
@@ -1640,7 +1642,7 @@ private struct MetricAccumulators {
                 diff.sectionCoverage.first(where: { $0.rawSection == section })?.isComplete(for: fields) == true
             }
         }
-        let buildingSections: Set<String> = ["buildings", "buildings2"]
+        let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
         let heroSections: Set<String> = ["heroes", "heroes2"]
         let troopSections: Set<String> = ["units", "units2"]
         let levelFields: Set<String> = ["presence", "data", "lvl"]
@@ -1752,7 +1754,7 @@ private struct MetricAccumulators {
                 ? String(change.identity.rawSection.dropLast())
                 : change.identity.rawSection
             switch section {
-            case "buildings":
+            case "buildings", "traps":
                 buildingCompletions.markUnknown()
                 buildingGrowth.markUnknown()
                 wallGrowth.markUnknown()
@@ -1793,7 +1795,7 @@ private struct MetricAccumulators {
             ? String(rawSection.dropLast())
             : rawSection
         switch section {
-        case "buildings":
+        case "buildings", "traps":
             buildingCompletions.markUnknown()
             buildingGrowth.markUnknown()
             aggregateBuildingGrowth.markUnknown()
@@ -1844,9 +1846,12 @@ private struct MetricAccumulators {
             ? String(change.identity.rawSection.dropLast())
             : change.identity.rawSection
         switch section {
-        case "buildings":
-            guard category == "buildings", change.identity.nestedKind == .root else { return nil }
-            return change.displayCategory == TrackerDisplayCategory.walls.rawValue ? .wall : .building
+        case "buildings", "traps":
+            guard category == section, change.identity.nestedKind == .root else { return nil }
+            if section == "buildings" && change.displayCategory == TrackerDisplayCategory.walls.rawValue {
+                return .wall
+            }
+            return .building
         case "heroes":
             return category == "heroes" && change.identity.nestedKind == .root ? .hero : nil
         case "units":

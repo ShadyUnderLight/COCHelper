@@ -250,6 +250,9 @@ public enum ClanWarSummaryMismatch: Hashable, Sendable {
     case attackCount(official: Int, memberSum: Int)
     /// 官方 stars ≠ Σ 成员已知星数（全部攻击行星数已知时判定）。
     case stars(official: Int, memberKnownSum: Int)
+    /// 官方 teamSize 已知、成员数组已返回但数量与 teamSize 不一致
+    ///（成员覆盖率诊断；官方未返回成员数组时不产生——UI 已有"成员数据未返回"提示）。
+    case memberCount(official: Int, returned: Int)
 }
 
 /// 参与方投影：官方摘要（顶部比分）与成员行动队列（明细/诊断）分层存放。
@@ -365,8 +368,8 @@ public enum ClanWarDisplayProjection {
         return ClanWarProjection(
             phase: phase,
             quota: quota,
-            clan: isNotInWar ? nil : snapshot.clan.map { participant($0, attacksPerMember: snapshot.attacksPerMember) },
-            opponent: isNotInWar ? nil : snapshot.opponent.map { participant($0, attacksPerMember: snapshot.attacksPerMember) }
+            clan: isNotInWar ? nil : snapshot.clan.map { participant($0, attacksPerMember: snapshot.attacksPerMember, teamSize: snapshot.teamSize) },
+            opponent: isNotInWar ? nil : snapshot.opponent.map { participant($0, attacksPerMember: snapshot.attacksPerMember, teamSize: snapshot.teamSize) }
         )
     }
 
@@ -495,7 +498,10 @@ public enum ClanWarDisplayProjection {
     }
 
     /// 参与方投影：官方摘要 + 排序行动队列 + 覆盖计数 + 诊断。
-    public static func participant(_ participant: ClanWarParticipant, attacksPerMember: Int?) -> ClanWarParticipantProjection {
+    ///
+    /// `teamSize` 传入官方 teamSize（Issue #126 成员覆盖率诊断）；nil = 官方
+    /// 缺失，不产生 memberCount 诊断。
+    public static func participant(_ participant: ClanWarParticipant, attacksPerMember: Int?, teamSize: Int? = nil) -> ClanWarParticipantProjection {
         let official = ClanWarParticipantSummary(
             attacks: participant.attacks,
             stars: participant.stars,
@@ -517,7 +523,7 @@ public enum ClanWarDisplayProjection {
             tag: participant.tag, name: participant.name, clanLevel: participant.clanLevel,
             official: official, members: rows,
             knownAttackDataCount: known, unknownAttackDataCount: unknown,
-            mismatches: mismatches(participant: participant, rows: rows)
+            mismatches: mismatches(participant: participant, rows: rows, teamSize: teamSize)
         )
     }
 
@@ -525,8 +531,10 @@ public enum ClanWarDisplayProjection {
     ///
     /// 前置条件：`rows` 必须与 `participant` 同源（同一参与方的成员数组投影），
     /// 类型系统不校验此绑定，传错参与方会产出错误诊断（当前唯一调用方
-    /// `participant(_:attacksPerMember:)` 保证同源）。
+    /// `participant(_:attacksPerMember:teamSize:)` 保证同源）。
     /// 仅当成员侧数据完整（无 attacks == nil）且官方字段存在时才判数值差异：
+    /// - `teamSize` 非 nil 且成员数组已返回但数量不一致 → `.memberCount`
+    ///   （成员覆盖率诊断；`members == nil` 或 `teamSize == nil` 不产生）；
     /// - 任一成员 attacks == nil → `[.membersIncomplete]`（推导不可得；官方
     ///   缺失时仍上报——成员不完整是独立可审计事实）；
     /// - 官方 attacks 存在且 ≠ Σ 成员攻击数 → `.attackCount`；
@@ -536,11 +544,19 @@ public enum ClanWarDisplayProjection {
     /// 饱和累加防 malformed 输入崩溃），不使用 `ClanWarMemberStars.knownStars`
     /// （展示层 clamp 到 [0,3] 后的值）——schema 违反输入（如 stars=5）下
     /// clamp 会扭曲事实，导致"双侧一致却误报不一致"。
-    public static func mismatches(participant: ClanWarParticipant, rows: [ClanWarMemberRow]) -> [ClanWarSummaryMismatch] {
+    /// **注意**：memberCount 的数量以 `participant.members`（raw 数组）为准，
+    /// 不使用 `rows.count`——rows 是排序投影，契约上同源但 raw 才是事实层。
+    public static func mismatches(participant: ClanWarParticipant, rows: [ClanWarMemberRow], teamSize: Int? = nil) -> [ClanWarSummaryMismatch] {
+        var result: [ClanWarSummaryMismatch] = []
+        // 成员覆盖率诊断：官方 teamSize 已知、成员数组已返回但数量不一致。
+        if let teamSize, let members = participant.members, members.count != teamSize {
+            result.append(.memberCount(official: teamSize, returned: members.count))
+        }
         let memberAttacks = rows.compactMap { $0.lines }
         guard memberAttacks.count == rows.count else {
             // 存在成员 attacks == nil：推导不可得，不得误报数值差异。
-            return [.membersIncomplete]
+            result.append(.membersIncomplete)
+            return result
         }
         let memberAttackSum = memberAttacks.reduce(0) { $0 + $1.count }
         // 攻击次数求和用普通加法：count 是数组长度，受内存约束（现实不可达
@@ -560,7 +576,6 @@ public enum ClanWarDisplayProjection {
             }
         }
 
-        var result: [ClanWarSummaryMismatch] = []
         if let officialAttacks = participant.attacks, officialAttacks != memberAttackSum {
             result.append(.attackCount(official: officialAttacks, memberSum: memberAttackSum))
         }

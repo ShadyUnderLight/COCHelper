@@ -499,6 +499,51 @@ final class ClanWarDisplayProjectionFilterTests: XCTestCase {
         XCTAssertNil(projection.members?[1].defenseAttacks)
     }
 
+    // MARK: - mismatches 成员覆盖率诊断（Issue #126 复审：teamSize 与成员数组数量比对）
+
+    /// teamSize 已知（30）但成员数组仅 1 人 → .memberCount 诊断（成员覆盖率告警）。
+    func testMismatchesMemberCountWhenCountDiffers() {
+        let members = [member(tag: "1", attacks: [attack(stars: 1)])]
+        let p = participant(attacks: 1, stars: 1, members: members)
+        let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+        XCTAssertEqual(
+            ClanWarDisplayProjection.mismatches(participant: p, rows: rows, teamSize: 30),
+            [.memberCount(official: 30, returned: 1)]
+        )
+    }
+
+    /// teamSize 与成员数组数量一致 → 不产生 memberCount（30/30）。
+    func testMismatchesNoMemberCountWhenMatch() {
+        let members = [
+            member(tag: "1", attacks: [attack(stars: 1)]),
+            member(tag: "2", attacks: [attack(stars: 2)]),
+            member(tag: "3", attacks: [attack(stars: 0)]),
+        ]
+        let p = participant(attacks: 3, stars: 3, members: members)
+        let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p, rows: rows, teamSize: 3), [])
+    }
+
+    /// teamSize 缺失（nil，含默认参数路径）→ 不产生 memberCount（既有调用兼容）。
+    func testMismatchesNoMemberCountWhenTeamSizeNil() {
+        let members = [member(tag: "1", attacks: [attack(stars: 1)])]
+        let p = participant(attacks: 1, stars: 1, members: members)
+        let rows = ClanWarDisplayProjection.sortedRows(members, attacksPerMember: 2)
+        // 显式 nil 与缺省参数等价：都不产生 memberCount
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p, rows: rows), [])
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p, rows: rows, teamSize: nil), [])
+    }
+
+    /// 官方未返回成员数组（members == nil）→ 不产生 memberCount
+    ///（UI 已有"成员数据未返回"提示，不重复告警）。
+    /// 官方数值字段一并置 nil（rows 为空时官方 attacks/stars 会触发既有
+    /// attackCount/stars 诊断——本测试只隔离 memberCount 行为）。
+    func testMismatchesNoMemberCountWhenMembersNil() {
+        let p = participant(attacks: nil, stars: nil, members: nil)
+        // rows 为空与 members == nil 对应（mismatches 前置条件：rows 与 participant 同源）
+        XCTAssertEqual(ClanWarDisplayProjection.mismatches(participant: p, rows: [], teamSize: 30), [])
+    }
+
     // MARK: - 40 人全量投影（无截断路径）
 
     func testFortyMembersAllProjected() {

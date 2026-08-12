@@ -456,10 +456,12 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         let projection = ClanWarDisplayProjection.project(snapshot)
         XCTAssertEqual(projection.clan?.name, "我方")
         XCTAssertEqual(projection.opponent?.name, "对方")
-        // 对方成员 2 攻击数据未知 → membersIncomplete
-        XCTAssertEqual(projection.opponent?.mismatches, [.membersIncomplete])
-        // 己方一致 → 无诊断
-        XCTAssertTrue(projection.clan?.mismatches.isEmpty ?? false)
+        // fixture teamSize=10 而双方各 2 成员：双方都触发成员覆盖率诊断；
+        // 对方成员 2 攻击数据未知 → 追加 membersIncomplete
+        XCTAssertEqual(projection.opponent?.mismatches,
+                       [.memberCount(official: 10, returned: 2), .membersIncomplete])
+        // 己方：仅覆盖率诊断，数值一致
+        XCTAssertEqual(projection.clan?.mismatches, [.memberCount(official: 10, returned: 2)])
     }
 
     func testProjectUnknownPhaseKeepsParticipants() {
@@ -471,7 +473,8 @@ final class ClanWarDisplayProjectionTests: XCTestCase {
         )
         XCTAssertEqual(projection.phase, .unknown(raw: "mysteryPhase"))
         XCTAssertNotNil(projection.clan)
-        XCTAssertEqual(projection.clan?.mismatches, [])
+        // fixture teamSize=10 而成员 1 人 → 成员覆盖率诊断
+        XCTAssertEqual(projection.clan?.mismatches, [.memberCount(official: 10, returned: 1)])
 
         // state 缺失同样不是空状态
         let missingState = ClanWarDisplayProjection.project(

@@ -522,6 +522,54 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(change.evidence, .aggregateInferred)
     }
 
+    func testHistogramTimerUnknownOnPartialCoverage() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let binding = SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 90, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .partial]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 85, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .partial]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.evidence, .unknown)
+        XCTAssertTrue(change.coverage.fields.contains { $0.field == "timer" })
+    }
+
+    func testHistogramTimerUnknownOnUnparsableEvidence() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let binding = SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 90, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: -1, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.evidence, .unknown)
+        XCTAssertEqual(diff.comparisonState, .insufficientCoverage)
+    }
+
     func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

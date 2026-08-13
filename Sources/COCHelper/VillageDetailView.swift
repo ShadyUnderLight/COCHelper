@@ -138,7 +138,8 @@ struct VillageDetailView: View {
         let buildingGroups = BuildingGroupProjection.project(
             projection: projection,
             catalog: catalog,
-            base: selectedBase
+            base: selectedBase,
+            manualUpgradeCore: manualUpgradeCore
         )
         let craftTable = CraftTableProjection.project(
             village: village,

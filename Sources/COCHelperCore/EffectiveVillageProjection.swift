@@ -26,6 +26,17 @@ public enum EffectiveVillageItemProvenance: String, Hashable, Sendable {
     case needsReimport
 }
 
+/// Quality of the imported duplicate count used by the tracker action layer.
+///
+/// The display projection keeps its historical normalization for missing and
+/// non-positive counts, but a local upgrade action must retain the raw quality
+/// signal and fail closed when that signal is not trustworthy.
+public enum EffectiveVillageCountQuality: String, Hashable, Sendable {
+    case known
+    case malformed
+    case overflowed
+}
+
 /// One stable tracker item after joining the imported observation with the
 /// optional local manual ledger.
 public struct EffectiveVillageItemState: Identifiable, Hashable, Sendable {
@@ -40,6 +51,10 @@ public struct EffectiveVillageItemState: Identifiable, Hashable, Sendable {
     /// from `importedDistribution`: a malformed histogram must not erase the
     /// fact that its source still described multiple instances.
     public let importedCountOverflowed: Bool
+    /// Raw count quality for tracker actions. This is separate from the
+    /// normalized display histogram above so malformed input cannot become
+    /// executable merely because it was normalized to one instance.
+    public let importedCountQuality: EffectiveVillageCountQuality
     public let importedTimerSeconds: Int64?
     public let importedRemainingSeconds: Int64?
     public let importedDistribution: ManualLevelDistribution?
@@ -279,6 +294,7 @@ enum EffectiveVillageProjectionBuilder {
         guard let firstObserved = orderedObservedItems.first else { return nil }
         let importedDistribution = levelDistribution(observedItems)
         let rawInstanceWeight = rawInstanceWeight(observedItems)
+        let importedCountQuality = countQuality(observedItems, rawInstanceWeight: rawInstanceWeight)
         let importedCount = importedDistribution.flatMap { distribution in
             distribution.totalQuantity <= Int64(Int.max) ? Int(distribution.totalQuantity) : nil
         }
@@ -405,6 +421,7 @@ enum EffectiveVillageProjectionBuilder {
             importedCount: importedCount,
             importedInstanceWeight: rawInstanceWeight.total,
             importedCountOverflowed: rawInstanceWeight.overflowed,
+            importedCountQuality: importedCountQuality,
             importedTimerSeconds: uniformValue(observedItems.map(\.timerSeconds)),
             importedRemainingSeconds: observedActiveItems.isEmpty
                 ? uniformValue(observedItems.map(\.remainingSeconds))
@@ -505,6 +522,22 @@ enum EffectiveVillageProjectionBuilder {
             quantities[level] = sum
         }
         return try? ManualLevelDistribution(levelQuantities: quantities)
+    }
+
+    private static func countQuality(
+        _ items: [AccountItem],
+        rawInstanceWeight: RawInstanceWeight
+    ) -> EffectiveVillageCountQuality {
+        if rawInstanceWeight.overflowed {
+            return .overflowed
+        }
+        guard items.allSatisfy({
+            guard let count = $0.count else { return false }
+            return count > 0
+        }) else {
+            return .malformed
+        }
+        return .known
     }
 
     private struct RawInstanceWeight {

@@ -7,9 +7,11 @@ final class BuildingGroupProjectionTests: XCTestCase {
     // MARK: - Helpers
 
     private var syntheticCatalog: GameCatalog!
+    private var syntheticBuildingCoverageCatalog: GameCatalog!
 
     override func setUpWithError() throws {
         syntheticCatalog = try makeCatalog(items: Self.syntheticCatalogItems)
+        syntheticBuildingCoverageCatalog = try makeTrustedCatalog(items: Self.syntheticCatalogItems)
     }
 
     /// 目录 JSON 载荷的最小编码形态（缺失字段在 CatalogItem/CatalogLevel 解码时按 Optional 缺省）。
@@ -85,6 +87,64 @@ final class BuildingGroupProjectionTests: XCTestCase {
         return GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
     }
 
+    /// Trusted universe fixture used by action tests. The ordinary synthetic
+    /// catalog intentionally has no universe and therefore must not certify a
+    /// startable building scope.
+    private func makeTrustedCatalog(
+        items: [SpecItem],
+        universeKeys: Set<String>? = nil,
+        gameVersion: String = "18.400.13"
+    ) throws -> GameCatalog {
+        struct Payload: Encodable {
+            let gameVersion: String
+            let items: [SpecItem]
+        }
+        struct DecodedPayload: Decodable {
+            let gameVersion: String
+            let items: [CatalogItem]
+        }
+        let data = try JSONEncoder().encode(Payload(gameVersion: gameVersion, items: items))
+        let payload = try JSONDecoder().decode(DecodedPayload.self, from: data)
+        let defaultKeys = Set(payload.items
+            .filter { $0.section == "buildings" || $0.section == "traps" }
+            .map { "\($0.section):\($0.dataID)" })
+        let keys = universeKeys ?? defaultKeys
+        let instanceCounts = Dictionary(uniqueKeysWithValues: keys.map {
+            ($0, Array(repeating: 1, count: 18))
+        })
+        return GameCatalog(
+            gameVersion: payload.gameVersion,
+            items: payload.items,
+            manifest: CatalogManifest(
+                schemaVersion: 1,
+                gameVersion: payload.gameVersion,
+                buildTag: "test",
+                locale: "zh-CN",
+                sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
+                generatedFiles: [CatalogGeneratedFile(
+                    path: "catalog.json",
+                    sha256: "sha256:" + String(repeating: "b", count: 64),
+                    size: nil,
+                    kind: nil,
+                    entries: nil
+                )],
+                counts: CatalogCounts(
+                    items: payload.items.count,
+                    levels: payload.items.flatMap(\.levels).count,
+                    missingIcons: nil,
+                    missingTime: nil,
+                    timed: nil,
+                    instant: nil,
+                    notApplicable: nil,
+                    initialLevel: nil,
+                    sourceMissing: nil,
+                    parseFailed: nil
+                )
+            ),
+            instanceCounts: instanceCounts
+        )
+    }
+
     private func makeVillage(
         tag: String? = "#TEST",
         objectSections: [String: [AccountItem]] = [:]
@@ -135,9 +195,42 @@ final class BuildingGroupProjectionTests: XCTestCase {
         catalog: GameCatalog?,
         base: TrackerBase,
         // 默认 now == importedAt（elapsed = 0）：计时记录保持原样，不被快照年龄消耗。
-        now: Date = Date(timeIntervalSince1970: 1_700_000_000)
+        now: Date = Date(timeIntervalSince1970: 1_700_000_000),
+        manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> [BuildingGroup] {
-        BuildingGroupProjection.project(village: village, catalog: catalog, base: base, now: now)
+        BuildingGroupProjection.project(
+            village: village,
+            catalog: catalog,
+            base: base,
+            now: now,
+            manualUpgradeCore: manualUpgradeCore
+        )
+    }
+
+    private let issue141Baseline = ManualBaselineReference(
+        revision: "snapshot-1",
+        fingerprint: "sha256:baseline",
+        lineageID: "village-1"
+    )
+
+    private func issue141Core(
+        itemKey: TrackerItemKey,
+        distribution: ManualLevelDistribution,
+        status: ManualItemStatus = .observed
+    ) throws -> ManualUpgradeCore {
+        let observation = try ManualImportedObservation(
+            reference: issue141Baseline,
+            levelDistribution: distribution,
+            sourceTimestamp: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let state = try ManualItemState(
+            itemKey: itemKey,
+            baselineReference: issue141Baseline,
+            importedObservation: observation,
+            manualCompletedDistribution: distribution,
+            status: status
+        )
+        return try ManualUpgradeCore(itemStates: [state])
     }
 
     // MARK: - T1: 同 dataID 不同 base 不合并
@@ -604,9 +697,11 @@ final class BuildingGroupProjectionTests: XCTestCase {
             makeItem(section: "buildings", dataID: 1_000_001, level: 9, count: 2, path: "2"),
             makeItem(section: "buildings", dataID: 1_000_001, level: 12, count: 1, path: "3"),
         ]
-        let baseline = try XCTUnwrap(
+        let baselineGroup = try XCTUnwrap(
             project(village: makeVillage(objectSections: ["buildings": items]), catalog: catalog, base: .home).first
-        ).summary
+        )
+        let baseline = baselineGroup.summary
+        let baselineTrackerState = baselineGroup.trackerState
 
         for seed: UInt64 in [11, 22, 33, 44, 55] {
             var rng = SeededRNG(seed: seed)
@@ -617,10 +712,12 @@ final class BuildingGroupProjectionTests: XCTestCase {
             XCTAssertEqual(group.instances.count, 4)
             XCTAssertEqual(group.summary, baseline,
                            "seed \(seed)：同组实例随机重排后 summary 必须完全相等（costByResource 字典序保证）")
+            XCTAssertEqual(group.trackerState, baselineTrackerState,
+                           "seed \(seed)：同组实例随机重排后 tracker 分布与 action 必须完全相等")
         }
     }
 
-    // MARK: - P2: 组顺序稳定（随机重排 → 按首现顺序输出、组内容不变）
+    // MARK: - P2: 组顺序稳定（随机重排 → 按稳定语义键输出、组内容不变）
 
     func testP2GroupOrderStableUnderShuffle() throws {
         let items = [
@@ -636,26 +733,23 @@ final class BuildingGroupProjectionTests: XCTestCase {
             base: .home
         )
         XCTAssertEqual(baseline.map(\.id), [
-            "home:buildings:1000013", "home:buildings:1000008",
-            "home:buildings:1000001", "home:buildings:1000097",
+            "home:buildings:1000001", "home:buildings:1000008",
+            "home:buildings:1000013", "home:buildings:1000097",
         ])
         let baselineByID = Dictionary(baseline.map { ($0.id, $0) }) { $1 }
 
         for seed: UInt64 in [101, 202, 303, 404, 505] {
             var rng = SeededRNG(seed: seed)
             let shuffled = items.shuffled(using: &rng)
-            // 首现顺序 oracle：按重排后的数组顺序记录每个组 id 的首次出现。
-            var expectedOrder: [String] = []
-            for item in shuffled {
-                let id = "home:\(item.section):\(item.dataID)"
-                if !expectedOrder.contains(id) { expectedOrder.append(id) }
-            }
+            let expectedOrder = Set(shuffled.map {
+                "home:\($0.section):\($0.dataID)"
+            }).sorted()
             let groups = project(
                 village: makeVillage(objectSections: ["buildings": shuffled]),
                 catalog: syntheticCatalog,
                 base: .home
             )
-            XCTAssertEqual(groups.map(\.id), expectedOrder, "seed \(seed)：组必须按首现顺序输出")
+            XCTAssertEqual(groups.map(\.id), expectedOrder, "seed \(seed)：组必须按稳定语义键输出")
             for group in groups {
                 let baseGroup = try XCTUnwrap(baselineByID[group.id])
                 XCTAssertEqual(group.name, baseGroup.name)
@@ -666,6 +760,487 @@ final class BuildingGroupProjectionTests: XCTestCase {
                                "seed \(seed)：组内实例集合不变（顺序允许不同）")
             }
         }
+    }
+
+    // MARK: - Issue #141: stable histogram, one-quantity actions, and conservation
+
+    func testIssue141GroupTrackerStateUsesStableHistogramAndOneQuantityActions() throws {
+        let items = [
+            makeItem(section: "buildings", dataID: 1_000_001, level: 2, count: 3, path: "0"),
+            makeItem(section: "buildings", dataID: 1_000_001, level: 5, count: 1, path: "1"),
+            makeItem(section: "buildings", dataID: 1_000_001, level: 9, count: 2, path: "2"),
+        ]
+        let village = makeVillage(objectSections: ["buildings": items])
+        let withoutCore = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: syntheticBuildingCoverageCatalog,
+                base: .home
+            ).first
+        )
+
+        XCTAssertTrue(withoutCore.trackerState.actions.allSatisfy { !$0.isStartable })
+        XCTAssertTrue(withoutCore.trackerState.diagnostics.contains {
+            $0.contains("本地 tracker 状态")
+        })
+
+        let distribution = try ManualLevelDistribution(levelQuantities: [2: 3, 5: 1, 9: 2])
+        let core = try issue141Core(
+            itemKey: .root(base: .home, rawSection: "buildings", dataID: 1_000_001),
+            distribution: distribution
+        )
+        let group = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: syntheticBuildingCoverageCatalog,
+                base: .home,
+                manualUpgradeCore: core
+            ).first
+        )
+
+        let tracker = group.trackerState
+        XCTAssertEqual(tracker.itemKey, .root(base: .home, rawSection: "buildings", dataID: 1_000_001))
+        XCTAssertEqual(tracker.importedDistribution?.quantity(at: 2), 3)
+        XCTAssertEqual(tracker.importedDistribution?.quantity(at: 5), 1)
+        XCTAssertEqual(tracker.importedDistribution?.quantity(at: 9), 2)
+        XCTAssertEqual(tracker.completedQuantity, 6)
+        XCTAssertEqual(tracker.activeQuantity, 0)
+        XCTAssertEqual(tracker.actions.map {
+            "\($0.fromLevel)->\($0.targetLevel):\($0.quantity)"
+        }, [
+            "2->3:1", "5->6:1", "9->10:1",
+        ])
+        XCTAssertTrue(tracker.actions.allSatisfy(\.isStartable))
+        XCTAssertTrue(tracker.actions.allSatisfy { $0.durationState != nil })
+        XCTAssertTrue(tracker.actions.allSatisfy { $0.baselineReference == issue141Baseline })
+        XCTAssertEqual(tracker.coverage, .complete,
+                       "无关类别的全村 partial coverage 不应阻塞已建模 buildings scope")
+        XCTAssertTrue(tracker.actions.allSatisfy { $0.coverage == .complete })
+
+        let action = try XCTUnwrap(tracker.actions.first)
+        var executableCore = core
+        _ = try executableCore.startUpgrade(
+            itemKey: tracker.itemKey,
+            fromLevel: action.fromLevel,
+            targetLevel: action.targetLevel,
+            quantity: action.quantity,
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            durationState: action.durationState,
+            frozenCosts: action.upgradeCosts,
+            catalogProvenance: ManualCatalogProvenance(catalog: syntheticBuildingCoverageCatalog),
+            baselineReference: try XCTUnwrap(action.baselineReference),
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+    }
+
+    func testIssue141PartialBuildingCoverageDisablesActions() throws {
+        let partialCatalog = try makeTrustedCatalog(
+            items: [
+                SpecItem(
+                    section: "buildings", category: "buildings", dataID: 1_000_001,
+                    base: "home", name: "覆盖缺口测试", maxLevel: 3,
+                    levels: Self.standardLevels(3)
+                ),
+                SpecItem(
+                    section: "traps", category: "traps", dataID: 12_000_000,
+                    base: "home", name: "炸弹", maxLevel: 3,
+                    levels: Self.standardLevels(3)
+                ),
+            ],
+            universeKeys: ["traps:12000000"]
+        )
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings", dataID: 1_000_001, level: 1, count: 1, path: "0"
+            )],
+        ])
+        let itemKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+        let core = try issue141Core(
+            itemKey: itemKey,
+            distribution: try ManualLevelDistribution(levelQuantities: [1: 1])
+        )
+
+        let group = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: partialCatalog,
+                base: .home,
+                manualUpgradeCore: core
+            ).first
+        )
+        XCTAssertEqual(group.trackerState.coverage, .partial)
+        let action = try XCTUnwrap(group.trackerState.actions.first)
+        XCTAssertEqual(action.coverage, .partial)
+        XCTAssertFalse(action.isStartable)
+        XCTAssertTrue(action.diagnostic?.contains("scope 覆盖") == true)
+        XCTAssertTrue(group.trackerState.diagnostics.contains { $0.contains("scope 覆盖") })
+    }
+
+    func testIssue141ActiveReservationAndSettlementStayVisibleAtGroupLevel() throws {
+        let itemKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_008)
+        let baseline = ManualBaselineReference(
+            revision: "snapshot-1",
+            fingerprint: "sha256:baseline",
+            lineageID: "village-1"
+        )
+        let imported = try ManualLevelDistribution(levelQuantities: [10: 100, 11: 50])
+        let observation = try ManualImportedObservation(
+            reference: baseline,
+            levelDistribution: imported,
+            sourceTimestamp: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let state = try ManualItemState(
+            itemKey: itemKey,
+            baselineReference: baseline,
+            importedObservation: observation,
+            manualCompletedDistribution: imported,
+            status: .manualCompleted
+        )
+        var core = try ManualUpgradeCore(itemStates: [state])
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_008, level: 10, count: 100, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_008, level: 11, count: 50, path: "1"),
+            ],
+        ])
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let target = try XCTUnwrap(
+            syntheticCatalog.item(section: "buildings", dataID: 1_000_008)?.levels.first { $0.level == 11 }
+        )
+        let recordID = UUID(uuidString: "00000000-0000-0000-0000-000000000141")!
+        _ = try core.startUpgrade(
+            itemKey: itemKey,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: startedAt,
+            durationState: try XCTUnwrap(target.durationState),
+            frozenCosts: target.upgradeCosts,
+            catalogProvenance: ManualCatalogProvenance(catalog: syntheticCatalog),
+            baselineReference: baseline,
+            recordID: recordID,
+            now: startedAt
+        )
+
+        let activeGroup = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: syntheticCatalog,
+                base: .home,
+                now: startedAt,
+                manualUpgradeCore: core
+            ).first
+        )
+        XCTAssertEqual(activeGroup.trackerState.manualCompletedDistribution?.quantity(at: 10), 100)
+        XCTAssertEqual(activeGroup.trackerState.effectiveCompletedDistribution?.quantity(at: 10), 99)
+        XCTAssertEqual(activeGroup.trackerState.effectiveCompletedDistribution?.quantity(at: 11), 50)
+        XCTAssertEqual(activeGroup.trackerState.activeTargetDistribution.quantity(at: 11), 1)
+        XCTAssertEqual(activeGroup.trackerState.activeRecords.map(\.recordID), [recordID])
+        XCTAssertEqual(activeGroup.trackerState.availableQuantity(at: 10), 99)
+        XCTAssertEqual(activeGroup.trackerState.activeQuantity, 1)
+        XCTAssertEqual(activeGroup.trackerState.activeQuantity(fromLevel: 10), 1)
+        XCTAssertEqual(activeGroup.trackerState.activeQuantity(targetLevel: 11), 1)
+
+        var cancelledCore = core
+        _ = try cancelledCore.cancelUpgrade(recordID: recordID)
+        let cancelledGroup = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: syntheticCatalog,
+                base: .home,
+                now: startedAt,
+                manualUpgradeCore: cancelledCore
+            ).first
+        )
+        XCTAssertEqual(cancelledGroup.trackerState.effectiveCompletedDistribution?.quantity(at: 10), 100)
+        XCTAssertEqual(cancelledGroup.trackerState.effectiveCompletedDistribution?.quantity(at: 11), 50)
+        XCTAssertTrue(cancelledGroup.trackerState.activeRecords.isEmpty)
+
+        var cappedCore = core
+        for _ in 0..<99 {
+            _ = try cappedCore.startUpgrade(
+                itemKey: itemKey,
+                fromLevel: 10,
+                targetLevel: 11,
+                quantity: 1,
+                startedAt: startedAt,
+                durationState: try XCTUnwrap(target.durationState),
+                frozenCosts: target.upgradeCosts,
+                catalogProvenance: ManualCatalogProvenance(catalog: syntheticCatalog),
+                baselineReference: baseline,
+                now: startedAt
+            )
+        }
+        let cappedGroup = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: syntheticCatalog,
+                base: .home,
+                now: startedAt,
+                manualUpgradeCore: cappedCore
+            ).first
+        )
+        XCTAssertEqual(cappedGroup.trackerState.availableQuantity(at: 10), 0)
+        XCTAssertEqual(cappedGroup.trackerState.activeQuantity(fromLevel: 10), 100)
+        XCTAssertFalse(cappedGroup.trackerState.actions.contains { $0.fromLevel == 10 })
+        XCTAssertThrowsError(try cappedCore.startUpgrade(
+            itemKey: itemKey,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: startedAt,
+            durationState: try XCTUnwrap(target.durationState),
+            frozenCosts: target.upgradeCosts,
+            catalogProvenance: ManualCatalogProvenance(catalog: syntheticCatalog),
+            baselineReference: baseline,
+            now: startedAt
+        )) { error in
+            XCTAssertEqual(error as? ManualUpgradeError,
+                           .insufficientQuantity(level: 10, requested: 1, available: 0))
+        }
+
+        try core.settleDue(at: startedAt.addingTimeInterval(660))
+        let settledGroup = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: syntheticCatalog,
+                base: .home,
+                now: startedAt.addingTimeInterval(660),
+                manualUpgradeCore: core
+            ).first
+        )
+        XCTAssertTrue(settledGroup.trackerState.activeRecords.isEmpty)
+        XCTAssertEqual(settledGroup.trackerState.effectiveCompletedDistribution?.quantity(at: 10), 99)
+        XCTAssertEqual(settledGroup.trackerState.effectiveCompletedDistribution?.quantity(at: 11), 51)
+        XCTAssertEqual(settledGroup.trackerState.activeQuantity, 0)
+        XCTAssertEqual(settledGroup.trackerState.completedQuantity, 150)
+    }
+
+    func testIssue141InstantCatalogLevelProducesStartableInstantAction() throws {
+        let instantCatalog = try makeTrustedCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "即时升级测试", maxLevel: 3,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 0, upgradeCosts: [Self.cost("Elixir", 200)]),
+                    SpecLevel(level: 3, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 300)]),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings",
+                dataID: 1_000_001,
+                level: 1,
+                count: 1,
+                path: "0"
+            )],
+        ])
+        let core = try issue141Core(
+            itemKey: .root(base: .home, rawSection: "buildings", dataID: 1_000_001),
+            distribution: try ManualLevelDistribution(levelQuantities: [1: 1])
+        )
+        let group = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: instantCatalog,
+                base: .home,
+                manualUpgradeCore: core
+            ).first
+        )
+        let action = try XCTUnwrap(group.trackerState.actions.first)
+        XCTAssertEqual(action.fromLevel, 1)
+        XCTAssertEqual(action.targetLevel, 2)
+        XCTAssertEqual(action.quantity, 1)
+        XCTAssertEqual(action.durationState, .instant)
+        XCTAssertEqual(action.baselineReference, issue141Baseline)
+        XCTAssertTrue(action.isStartable)
+    }
+
+    func testIssue141MalformedCountsRemainDisplayableButCannotStartActions() throws {
+        let itemKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+        let counts: [Int?] = [nil, 0, -1]
+
+        for (index, count) in counts.enumerated() {
+            let village = makeVillage(objectSections: [
+                "buildings": [makeItem(
+                    section: "buildings",
+                    dataID: 1_000_001,
+                    level: 1,
+                    count: count,
+                    path: String(index)
+                )],
+            ])
+            let core = try issue141Core(
+                itemKey: itemKey,
+                distribution: try ManualLevelDistribution(levelQuantities: [1: 1])
+            )
+            let group = try XCTUnwrap(
+                project(
+                    village: village,
+                    catalog: syntheticBuildingCoverageCatalog,
+                    base: .home,
+                    manualUpgradeCore: core
+                ).first
+            )
+
+            XCTAssertEqual(group.trackerState.importedCountQuality, .some(.malformed))
+            XCTAssertEqual(group.trackerState.importedDistribution?.quantity(at: 1), 1)
+            let action = try XCTUnwrap(group.trackerState.actions.first)
+            XCTAssertFalse(action.isStartable)
+            XCTAssertTrue(action.diagnostic?.contains("数量") == true)
+        }
+    }
+
+    func testIssue141OverflowedCountsExposeDiagnosticAndDoNotCreateAction() throws {
+        let village = makeVillage(objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: Int.max, path: "0"),
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: 1, path: "1"),
+            ],
+        ])
+        let group = try XCTUnwrap(
+            project(village: village, catalog: syntheticCatalog, base: .home).first
+        )
+
+        XCTAssertEqual(group.trackerState.importedCountQuality, .some(.overflowed))
+        XCTAssertNil(group.trackerState.importedQuantity)
+        XCTAssertTrue(group.trackerState.actions.isEmpty)
+        XCTAssertTrue(group.trackerState.diagnostics.contains { $0.contains("溢出") })
+    }
+
+    func testIssue141ParseFailedCostKeepsRawEvidenceButDoesNotBlockStart() throws {
+        let catalog = try makeTrustedCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "费用解析失败测试", maxLevel: 3,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: 120, upgradeCosts: [Self.failedCost("Gold", rawAmount: "forty")]),
+                    SpecLevel(level: 3, durationSeconds: 180, upgradeCosts: [Self.cost("Elixir", 300)]),
+                ]
+            ),
+        ])
+        let village = makeVillage(objectSections: [
+            "buildings": [makeItem(
+                section: "buildings", dataID: 1_000_001, level: 1, count: 1, path: "0"
+            )],
+        ])
+        let core = try issue141Core(
+            itemKey: .root(base: .home, rawSection: "buildings", dataID: 1_000_001),
+            distribution: try ManualLevelDistribution(levelQuantities: [1: 1])
+        )
+        let group = try XCTUnwrap(
+            project(
+                village: village,
+                catalog: catalog,
+                base: .home,
+                manualUpgradeCore: core
+            ).first
+        )
+        let action = try XCTUnwrap(group.trackerState.actions.first)
+
+        XCTAssertTrue(action.isStartable)
+        XCTAssertTrue(action.upgradeCosts?.first?.parseFailed == true)
+        XCTAssertEqual(action.upgradeCosts?.first?.rawAmount, "forty")
+        XCTAssertTrue(action.diagnostic?.contains("解析失败") == true)
+    }
+
+    func testIssue141ImportedTimerIsNotConvertedIntoStartableLocalAction() throws {
+        let group = try XCTUnwrap(
+            project(
+                village: makeVillage(objectSections: [
+                    "buildings": [makeItem(
+                        section: "buildings",
+                        dataID: 1_000_008,
+                        level: 1,
+                        count: 1,
+                        timerSeconds: 60,
+                        remainingSeconds: 60,
+                        path: "0"
+                    )],
+                ]),
+                catalog: syntheticCatalog,
+                base: .home
+            ).first
+        )
+        XCTAssertEqual(group.trackerState.status, .importedActive)
+        let action = try XCTUnwrap(group.trackerState.actions.first)
+        XCTAssertFalse(action.isStartable)
+        XCTAssertTrue(action.diagnostic?.contains("导入计时") == true)
+        XCTAssertTrue(group.trackerState.activeRecords.isEmpty)
+    }
+
+    func testIssue141UnknownLevelProducesNoActionAndDiagnostic() throws {
+        let group = try XCTUnwrap(
+            project(
+                village: makeVillage(objectSections: [
+                    "buildings": [makeItem(section: "buildings", dataID: 1_000_008, level: nil, path: "0")],
+                ]),
+                catalog: syntheticCatalog,
+                base: .home
+            ).first
+        )
+        XCTAssertNil(group.trackerState.effectiveCompletedDistribution)
+        XCTAssertTrue(group.trackerState.actions.isEmpty)
+        XCTAssertFalse(group.trackerState.diagnostics.isEmpty)
+    }
+
+    func testIssue141LargeWallHistogramDoesNotExpandIntoPerWallInstances() throws {
+        let group = try XCTUnwrap(
+            project(
+                village: makeVillage(objectSections: [
+                    "buildings": [makeItem(
+                        section: "buildings",
+                        dataID: 1_000_008,
+                        level: 10,
+                        count: 1_000,
+                        path: "0"
+                    )],
+                ]),
+                catalog: syntheticCatalog,
+                base: .home
+            ).first
+        )
+        XCTAssertEqual(group.instances.count, 1)
+        XCTAssertEqual(group.trackerState.importedQuantity, 1_000)
+        XCTAssertEqual(group.trackerState.completedQuantity, 1_000)
+        XCTAssertEqual(group.trackerState.actions.first?.quantity, 1)
+    }
+
+    func testIssue141UnavailableDurationsAreNotInstantOrStartable() throws {
+        let catalog = try makeCatalog(items: [
+            SpecItem(
+                section: "buildings", category: "buildings", dataID: 1_000_001,
+                base: "home", name: "时长边界测试", maxLevel: 4,
+                levels: [
+                    SpecLevel(level: 1, durationSeconds: 60, upgradeCosts: [Self.cost("Elixir", 100)]),
+                    SpecLevel(level: 2, durationSeconds: nil, upgradeCosts: [Self.cost("Elixir", 200)], missingReason: "time_missing"),
+                    SpecLevel(level: 3, durationSeconds: nil, upgradeCosts: [Self.cost("Elixir", 300)], missingReason: "time_invalid"),
+                    SpecLevel(level: 4, durationSeconds: nil, upgradeCosts: [Self.cost("Elixir", 400)], missingReason: "future_reason"),
+                ]
+            ),
+        ])
+        let group = try XCTUnwrap(
+            project(
+                village: makeVillage(objectSections: [
+                    "buildings": [
+                        makeItem(section: "buildings", dataID: 1_000_001, level: 1, count: 1, path: "0"),
+                        makeItem(section: "buildings", dataID: 1_000_001, level: 2, count: 1, path: "1"),
+                        makeItem(section: "buildings", dataID: 1_000_001, level: 3, count: 1, path: "2"),
+                    ],
+                ]),
+                catalog: catalog,
+                base: .home
+            ).first
+        )
+        XCTAssertEqual(group.trackerState.actions.count, 3)
+        XCTAssertEqual(group.trackerState.actions.map(\.durationState), [
+            .sourceMissing, .parseFailed, .unknownReason("future_reason"),
+        ])
+        XCTAssertTrue(group.trackerState.actions.allSatisfy { !$0.isStartable })
+        XCTAssertTrue(group.trackerState.actions.allSatisfy { $0.durationState != .instant })
     }
 
     // MARK: - P3: 阶梯界内升序（随机记录 + 随机稀疏目录，20 轮）

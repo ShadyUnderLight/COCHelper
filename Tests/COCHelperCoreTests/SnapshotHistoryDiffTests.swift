@@ -288,6 +288,73 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(unavailable.changes.single?.evidence, .unknown)
     }
 
+    func testUniqueTimerNaturalCountdownDoesNotCreateChange() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let old = makeItem(
+            identity: identity,
+            level: 1,
+            timer: 90,
+            display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        )
+        let natural = makeItem(
+            identity: identity,
+            level: 1,
+            timer: 85,
+            display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [old],
+                section: "heroes",
+                states: ["timer": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [natural],
+                section: "heroes",
+                states: ["timer": .complete]
+            )
+        )
+        XCTAssertTrue(diff.changes.isEmpty)
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testUniqueTimerRestartStillReportsTimerChanged() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let old = makeItem(
+            identity: identity,
+            level: 1,
+            timer: 90,
+            display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        )
+        let restarted = makeItem(
+            identity: identity,
+            level: 1,
+            timer: 500,
+            display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [old],
+                section: "heroes",
+                states: ["timer": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [restarted],
+                section: "heroes",
+                states: ["timer": .complete]
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .timerChanged)
+    }
+
     func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

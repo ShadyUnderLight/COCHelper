@@ -1116,7 +1116,7 @@ public enum SnapshotDiffEngine {
         case (.absent, .active), (.inactive, .active):
             return TimerResult(kind: .upgradeStarted, requiredFields: fields)
         case (.active, .active):
-            if timerSignature(old.rawTimerEvidence) != timerSignature(new.rawTimerEvidence) {
+            if timerChangedAfterNormalization(old: old, new: new, from: from, to: to) {
                 return TimerResult(kind: .timerChanged, requiredFields: fields)
             }
         case (.active, .absent), (.active, .inactive):
@@ -1434,10 +1434,33 @@ public enum SnapshotDiffEngine {
         return number
     }
 
-    private static func timerSignature(_ evidence: [String: CanonicalJSONValue]) -> String {
-        evidence.keys.sorted().map { key in
-            key + "=" + (evidence[key]?.canonicalData.base64EncodedString() ?? "")
-        }.joined(separator: "|")
+    /// remaining timer 自然倒计时的容差（秒）。两次观测间期望值 = old − elapsed，
+    /// 偏差超过该容差才视为业务变化（覆盖时钟抖动与抓取延迟）。
+    private static let timerElapsedTolerance: TimeInterval = 30
+
+    /// 规范化 remaining timer 比较：自然倒计时（new ≈ old − elapsed）不算业务变化。
+    /// 所有可解析 timer 字段都必须自然流逝才判定为无变化；任一字段规范化后仍变化 → timerChanged。
+    private static func timerChangedAfterNormalization(
+        old: SnapshotObservationItem,
+        new: SnapshotObservationItem,
+        from: SnapshotHistoryEntry,
+        to: SnapshotHistoryEntry
+    ) -> Bool {
+        let elapsed = to.appliedAt.timeIntervalSince(from.appliedAt)
+        let fields = Set(old.rawTimerEvidence.keys).union(new.rawTimerEvidence.keys).sorted()
+        for field in fields {
+            guard let oldValue = old.rawTimerEvidence[field],
+                  let newValue = new.rawTimerEvidence[field],
+                  let oldNumber = timerNumber(oldValue),
+                  let newNumber = timerNumber(newValue) else {
+                continue
+            }
+            let expected = Double(oldNumber) - elapsed
+            if abs(Double(newNumber) - expected) > timerElapsedTolerance {
+                return true
+            }
+        }
+        return false
     }
 
     private struct Histogram {

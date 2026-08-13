@@ -725,6 +725,9 @@ public enum SnapshotDiffEngine {
         let universeProofComplete = sectionCoverageIsComplete(
             entry: presenceSide,
             identity: identity
+        ) && nestedFieldCoverageIsComplete(
+            entry: presenceSide,
+            identity: identity
         )
         let itemComplete = observedItemFieldsAreComplete(
             entry: observedSide,
@@ -1278,6 +1281,32 @@ public enum SnapshotDiffEngine {
             base: identity.base,
             rawSection: identity.rawSection
         )?.isComplete == true
+    }
+
+    /// A root-level authoritative proof covers root record enumeration only.
+    /// Confirming that a nested type/module child appeared or disappeared also
+    /// requires the `types`/`modules` field evidence to be complete on the
+    /// presence side, otherwise a truncated nested array could be mistaken for
+    /// a real removal.
+    private static func nestedFieldCoverageIsComplete(
+        entry: SnapshotHistoryEntry,
+        identity: SnapshotItemIdentity
+    ) -> Bool {
+        guard identity.nestedKind != .root else { return true }
+        let field: String
+        switch identity.nestedKind {
+        case .type:
+            field = "types"
+        case .module:
+            field = "modules"
+        case .root, .unknown:
+            return true
+        }
+        return entry.coverage.state(
+            base: identity.base,
+            rawSection: identity.rawSection,
+            field: field
+        ) == .complete
     }
 
     private static func observedItemFieldsAreComplete(

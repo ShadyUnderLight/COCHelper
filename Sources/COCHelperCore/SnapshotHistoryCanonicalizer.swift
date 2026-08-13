@@ -714,7 +714,21 @@ public enum SnapshotHistoryCanonicalizer {
                 // An authoritative source claims the whole section is
                 // enumerated; a root record without a usable `data` identity
                 // means the enumeration is not well-formed enough to trust.
-                return integer(object["data"]) == nil
+                guard integer(object["data"]) != nil else { return true }
+                // Root completeness does not imply nested content is intact.
+                // A malformed or truncated `types`/`modules` array must keep
+                // the section from claiming complete coverage.
+                for nestedField in ["types", "modules"] {
+                    guard let nestedValue = object[nestedField] else { continue }
+                    guard case .array(let children) = nestedValue else { return true }
+                    if children.contains(where: { child in
+                        guard case .object(let childObject) = child else { return true }
+                        return integer(childObject["data"]) == nil
+                    }) {
+                        return true
+                    }
+                }
+                return false
             }
             if SnapshotHistoryKnownSections.numeric.contains(section) {
                 return integer(value) == nil

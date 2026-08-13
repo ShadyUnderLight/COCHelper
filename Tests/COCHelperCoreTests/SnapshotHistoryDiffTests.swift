@@ -470,6 +470,58 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(change.evidence, .aggregateInferred)
     }
 
+    func testBuildingHistogramTimerCompletionWithLevelMigration() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 2, timer: 90, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 15, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let completed = try XCTUnwrap(diff.changes.first { $0.changeKind == .upgradeCompleted })
+        XCTAssertEqual(completed.evidence, .aggregateInferred)
+        XCTAssertEqual(completed.relatedChangeKinds, [.levelIncreased])
+        XCTAssertNil(completed.levelDelta)
+        XCTAssertNil(completed.movedQuantity)
+        let migration = try XCTUnwrap(diff.changes.first { $0.changeKind == .levelIncreased })
+        XCTAssertEqual(migration.oldLevel, 14)
+        XCTAssertEqual(migration.newLevel, 15)
+        XCTAssertEqual(migration.movedQuantity, 2)
+    }
+
+    func testBuildingHistogramTimerEndedWithoutLevelMigration() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 2, timer: 90, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 14, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .timerEndedObserved)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+    }
+
     func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

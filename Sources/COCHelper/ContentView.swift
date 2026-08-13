@@ -4,6 +4,7 @@ import COCHelperApp
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
     /// Optional explicit injection for previews/tests.  The normal app path
     /// receives the persisted, village-ID-scoped map from AppModel.
     var manualUpgradeCores: [UUID: ManualUpgradeCore] = [:]
@@ -122,6 +123,12 @@ struct ContentView: View {
                 }
                 .onChange(of: context.date) { _, now in
                     _ = model.settleManualUpgrades(at: now)
+                }
+                // Issue #144：scene 进入 active 时结算一次（启动/睡眠恢复）。
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        _ = model.settleManualUpgrades()
+                    }
                 }
                 .listStyle(.sidebar)
                 .navigationTitle("COC 助手")
@@ -821,6 +828,17 @@ private struct TrackerOverviewContent: View {
                 now: now
             )
             CatalogStatusNote(catalog: catalog)
+            // Issue #144：本地手动升级状态面板（计数/最近完成/关注行）。
+            ManualUpgradeStatePanel(
+                state: UpgradeOverviewProjection.overviewState(
+                    from: villages,
+                    catalog: catalog,
+                    seasonalPhases: seasonalPhases,
+                    manualUpgradeCores: manualUpgradeCores,
+                    at: now
+                ),
+                now: now
+            )
             ActiveUpgradesPanel(
                 records: combined.active,
                 pendingReimport: combined.pending,
@@ -1092,6 +1110,119 @@ private struct PendingReimportBlock: View {
         }
         .padding(12)
         .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// Issue #144：本地手动升级状态面板。
+///
+/// 计数按记录分开（manual active / imported active / exact 去重展示 /
+/// manual completed），重复建筑的数量不混入；「最近完成」= 7 天内完成的
+/// 本地记录；conflict/unknown 行并列显示（不隐藏导入事实）。
+private struct ManualUpgradeStatePanel: View {
+    let state: UpgradeOverviewState
+    let now: Date
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("本地升级状态", systemImage: "hammer.circle.fill")
+                    .font(.headline)
+                HStack(spacing: 10) {
+                    metric("本地进行中", String(state.manualActiveCount), .orange)
+                    metric("导入进行中", String(state.importedActiveCount), .orange)
+                    metric("去重后展示", String(state.deduplicatedDisplayCount), .blue)
+                    metric("本地已完成", String(state.manualCompletedCount), .green)
+                    Spacer()
+                }
+                if !state.completedRecently.isEmpty {
+                    Divider()
+                    Label("最近完成（7 天内）", systemImage: "clock.badge.checkmark.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    VStack(spacing: 0) {
+                        ForEach(state.completedRecently) { completion in
+                            HStack {
+                                Text(completion.itemName)
+                                    .font(.caption)
+                                Text("#" + String(completion.itemKey.dataID))
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.tertiary)
+                                Text("→ " + String(completion.targetLevel) + " 级")
+                                    .font(.caption.monospacedDigit())
+                                Spacer()
+                                Text(completion.completedAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 3)
+                        }
+                    }
+                }
+                if !state.attentionRecords.isEmpty {
+                    Divider()
+                    Label("需要关注", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    VStack(spacing: 0) {
+                        ForEach(state.attentionRecords) { record in
+                            HStack(spacing: 6) {
+                                Text(record.item.name)
+                                    .font(.caption)
+                                attentionBadge(record)
+                                Spacer()
+                                if let diagnostic = record.item.effectiveState?.diagnostic {
+                                    Text(diagnostic)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.vertical, 3)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func metric(_ title: String, _ value: String, _ tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.title3.weight(.bold).monospacedDigit())
+                .foregroundStyle(tint)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func attentionBadge(_ record: UpgradeDisplayRecord) -> some View {
+        let badge = Self.attentionBadgeInfo(record)
+        Text(badge.text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(badge.tint)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(badge.tint.opacity(0.15), in: Capsule())
+    }
+
+    private static func attentionBadgeInfo(
+        _ record: UpgradeDisplayRecord
+    ) -> (text: String, tint: Color) {
+        switch record.item.effectiveState?.status {
+        case .conflict:
+            return ("冲突", .red)
+        case .unknown:
+            return ("未知", .orange)
+        case .needsReimport:
+            return ("待重新导入", .orange)
+        default:
+            return ("关注", .orange)
+        }
     }
 }
 

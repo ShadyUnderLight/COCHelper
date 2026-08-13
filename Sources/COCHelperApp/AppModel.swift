@@ -118,6 +118,36 @@ private struct SnapshotHistoryProjectionCacheKey: Hashable {
     let hasCurrentSnapshot: Bool
 }
 
+/// 手动升级命令错误（UI 展示导向；Core 内部错误统一归类）。
+public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendable {
+    case villageMissing
+    case storeUnavailable(String)
+    case staleAction
+    case recordNotFound(UUID)
+    case recordNotActive(UUID)
+    case invalidTime
+    case coreRejected(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .villageMissing:
+            "目标村庄不存在。"
+        case .storeUnavailable(let message):
+            "手动升级存储不可用：" + message
+        case .staleAction:
+            "升级操作已过期，请刷新后重试。"
+        case .recordNotFound:
+            "未找到该升级记录。"
+        case .recordNotActive:
+            "该升级记录已不在进行中。"
+        case .invalidTime:
+            "开始时间无效（不允许未来时间）。"
+        case .coreRejected(let message):
+            "升级命令被拒绝：" + message
+        }
+    }
+}
+
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public private(set) var villages: [VillageProfile]
@@ -616,6 +646,330 @@ public final class AppModel: ObservableObject {
 
         installManualTrackerEnvelope(candidate)
         return settledCount
+    }
+
+    // MARK: - Issue #144 类型化手动升级命令
+
+    /// 启动一次本地手动升级（Issue #144）。
+    ///
+    /// 执行前必须重新验证（不信任 UI 旧 action）：
+    /// 显式 villageID 存在、存储可用、基于当前快照/目录/存储 core 重建投影后
+    /// action 仍可启动，且 itemKey/from/target/quantity/baseline/duration 与
+    /// 传入 action 一致。unknown cost 不阻塞（成本只是本地记录事实）。
+    @discardableResult
+    public func startManualUpgrade(
+        for villageID: UUID,
+        action: UpgradeAction,
+        startedAt: Date,
+        now: Date = Date()
+    ) throws -> ManualUpgradeRecord {
+        guard let village = villages.first(where: { $0.id == villageID }) else {
+            throw ManualUpgradeCommandError.villageMissing
+        }
+        guard let currentEnvelope = manualTrackerEnvelope,
+              manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualUpgradeCommandError.storeUnavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        guard now.timeIntervalSinceReferenceDate.isFinite,
+              startedAt.timeIntervalSinceReferenceDate.isFinite else {
+            throw ManualUpgradeCommandError.invalidTime
+        }
+
+        let core = try (currentEnvelope.state(for: villageID)?.core ?? ManualUpgradeCore())
+        let freshAction = try revalidatedAction(
+            for: action,
+            village: village,
+            core: core,
+            now: now
+        )
+        guard let fromLevel = freshAction.fromLevel,
+              let targetLevel = freshAction.targetLevel,
+              let baseline = freshAction.baselineReference,
+              let provenance = freshAction.catalogProvenance else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+
+        var created: ManualUpgradeRecord?
+        do {
+            try updateManualUpgradeCore(for: villageID, at: now) { core in
+                created = try core.startUpgrade(
+                    itemKey: freshAction.itemKey,
+                    fromLevel: fromLevel,
+                    targetLevel: targetLevel,
+                    quantity: freshAction.quantity,
+                    startedAt: startedAt,
+                    durationState: freshAction.durationState,
+                    frozenCosts: freshAction.frozenCosts,
+                    catalogProvenance: provenance,
+                    baselineReference: baseline,
+                    now: now
+                )
+            }
+        } catch let error as ManualUpgradeError {
+            if case .futureStart = error {
+                throw ManualUpgradeCommandError.invalidTime
+            }
+            throw ManualUpgradeCommandError.coreRejected(Self.manualUpgradeErrorMessage(error))
+        }
+        guard let created else {
+            throw ManualUpgradeCommandError.coreRejected("启动命令未产生记录。")
+        }
+        return created
+    }
+
+    /// 取消一条进行中的手动升级记录（Issue #144）。
+    @discardableResult
+    public func cancelManualUpgrade(
+        for villageID: UUID,
+        recordID: UUID
+    ) throws -> ManualUpgradeRecord {
+        guard villages.contains(where: { $0.id == villageID }) else {
+            throw ManualUpgradeCommandError.villageMissing
+        }
+        guard manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualUpgradeCommandError.storeUnavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        var cancelled: ManualUpgradeRecord?
+        do {
+            try updateManualUpgradeCore(for: villageID) { core in
+                cancelled = try core.cancelUpgrade(recordID: recordID)
+            }
+        } catch let error as ManualUpgradeError {
+            switch error {
+            case .recordNotFound:
+                throw ManualUpgradeCommandError.recordNotFound(recordID)
+            case .recordNotActive, .cannotCancelCompleted:
+                throw ManualUpgradeCommandError.recordNotActive(recordID)
+            default:
+                throw ManualUpgradeCommandError.coreRejected(Self.manualUpgradeErrorMessage(error))
+            }
+        }
+        guard let cancelled else {
+            throw ManualUpgradeCommandError.coreRejected("取消命令未产生记录。")
+        }
+        return cancelled
+    }
+
+    /// 调整进行中的手动升级开始时间（Issue #144）。
+    ///
+    /// 调整后由 Core 重算 expectedEndAt；已到期立即经同一 settle 路径完成。
+    @discardableResult
+    public func adjustManualUpgradeStart(
+        for villageID: UUID,
+        recordID: UUID,
+        startedAt: Date,
+        now: Date = Date()
+    ) throws -> ManualUpgradeRecord {
+        guard villages.contains(where: { $0.id == villageID }) else {
+            throw ManualUpgradeCommandError.villageMissing
+        }
+        guard manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualUpgradeCommandError.storeUnavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        guard now.timeIntervalSinceReferenceDate.isFinite,
+              startedAt.timeIntervalSinceReferenceDate.isFinite else {
+            throw ManualUpgradeCommandError.invalidTime
+        }
+        var adjusted: ManualUpgradeRecord?
+        do {
+            try updateManualUpgradeCore(for: villageID, at: now) { core in
+                adjusted = try core.adjustStartTime(
+                    recordID: recordID,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        } catch let error as ManualUpgradeError {
+            switch error {
+            case .futureStart:
+                throw ManualUpgradeCommandError.invalidTime
+            case .recordNotFound:
+                throw ManualUpgradeCommandError.recordNotFound(recordID)
+            case .recordNotActive:
+                throw ManualUpgradeCommandError.recordNotActive(recordID)
+            default:
+                throw ManualUpgradeCommandError.coreRejected(Self.manualUpgradeErrorMessage(error))
+            }
+        }
+        guard let adjusted else {
+            throw ManualUpgradeCommandError.coreRejected("调整命令未产生记录。")
+        }
+        return adjusted
+    }
+
+    /// 基于当前快照/目录/存储 core 重建 action 并与传入 action 比对。
+    /// 任一不一致或不可启动 → staleAction。
+    ///
+    /// 按 `action.sourceKind` 选择投影路径（review P1-2）：
+    /// - `.row`：普通行投影——`.manualActive` 行不产生 Start（由 Cancel/Adjust
+    ///   承接），剩余数量不可再启动。
+    /// - `.group`：组聚合投影——`.manualActive` 下仍可为剩余数量生成 action
+    ///   （v1 每次启动一个实例），且保留混合等级的 fromLevel。
+    private func revalidatedAction(
+        for action: UpgradeAction,
+        village: VillageProfile,
+        core: ManualUpgradeCore,
+        now: Date
+    ) throws -> UpgradeAction {
+        switch action.sourceKind {
+        case .row:
+            return try revalidatedRowAction(
+                for: action, village: village, core: core, now: now
+            )
+        case .group:
+            return try revalidatedGroupAction(
+                for: action, village: village, core: core, now: now
+            )
+        }
+    }
+
+    private func revalidatedRowAction(
+        for action: UpgradeAction,
+        village: VillageProfile,
+        core: ManualUpgradeCore,
+        now: Date
+    ) throws -> UpgradeAction {
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: gameCatalog,
+            seasonalPhases: seasonalPhases,
+            craftTableCatalog: craftTableCatalog,
+            base: action.base,
+            now: now,
+            manualUpgradeCore: core
+        )
+        guard let item = trackerItem(for: action.itemKey, in: projection) else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        guard let fresh = UpgradeActionProjection.action(
+            for: item,
+            catalog: gameCatalog,
+            catalogIsUsable: projection.catalogIsUsable,
+            manualUpgradeCore: core,
+            coverage: UpgradeActionProjection.coverage(
+                for: item,
+                progressCoverage: projection.progressCoverage
+            ),
+            now: now
+        ), fresh.isStartable else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        guard fresh.itemKey == action.itemKey,
+              fresh.fromLevel == action.fromLevel,
+              fresh.targetLevel == action.targetLevel,
+              fresh.quantity == action.quantity,
+              fresh.baselineReference == action.baselineReference,
+              fresh.durationState == action.durationState else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        return fresh
+    }
+
+    /// 组聚合 action 复核：重建组投影，按 fromLevel/targetLevel 定位同名 action。
+    /// 组在 `.manualActive` 下仍可为剩余数量生成 action（不 stale），混合等级
+    /// 组的 fromLevel 不被普通行投影抹平。
+    private func revalidatedGroupAction(
+        for action: UpgradeAction,
+        village: VillageProfile,
+        core: ManualUpgradeCore,
+        now: Date
+    ) throws -> UpgradeAction {
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: gameCatalog,
+            seasonalPhases: seasonalPhases,
+            craftTableCatalog: craftTableCatalog,
+            base: action.base,
+            now: now,
+            manualUpgradeCore: core
+        )
+        let groups = BuildingGroupProjection.project(
+            projection: projection,
+            catalog: gameCatalog,
+            base: action.base,
+            manualUpgradeCore: core
+        )
+        guard let group = groups.first(where: { $0.trackerState.itemKey == action.itemKey }) else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        let freshActions = UpgradeActionProjection.actions(for: group, catalog: gameCatalog)
+        guard let fresh = freshActions.first(where: {
+            $0.fromLevel == action.fromLevel && $0.targetLevel == action.targetLevel
+        }), fresh.isStartable else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        guard fresh.itemKey == action.itemKey,
+              fresh.fromLevel == action.fromLevel,
+              fresh.targetLevel == action.targetLevel,
+              fresh.quantity == action.quantity,
+              fresh.baselineReference == action.baselineReference,
+              fresh.durationState == action.durationState else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        return fresh
+    }
+
+    private func trackerItem(
+        for itemKey: TrackerItemKey,
+        in projection: VillageCatalogProjection
+    ) -> VillageItemState? {
+        projection.items.first { $0.effectiveState?.itemKey == itemKey }
+            ?? projection.items.first {
+                TrackerItemKey.root(base: $0.base, rawSection: $0.section, dataID: $0.dataID)
+                    == itemKey
+            }
+    }
+
+    private static func manualUpgradeErrorMessage(_ error: ManualUpgradeError) -> String {
+        switch error {
+        case .invalidItemKey:
+            "项目身份无效。"
+        case .invalidBaselineReference:
+            "基线引用无效。"
+        case .invalidCatalogProvenance:
+            "目录来源无效。"
+        case .invalidLevel:
+            "等级无效。"
+        case .invalidQuantity:
+            "数量无效。"
+        case .arithmeticOverflow:
+            "数值溢出。"
+        case .missingItemState:
+            "缺少项目状态。"
+        case .unavailableItemState:
+            "项目状态不可用。"
+        case .conflictingItemState:
+            "项目状态冲突。"
+        case .baselineMismatch:
+            "基线不匹配。"
+        case .insufficientQuantity:
+            "可用数量不足。"
+        case .futureStart:
+            "不允许未来开始时间。"
+        case .invalidDuration:
+            "升级时长无效。"
+        case .durationUnavailable:
+            "升级时长不可用。"
+        case .duplicateRecordID:
+            "记录 ID 重复。"
+        case .recordNotFound:
+            "记录不存在。"
+        case .recordNotActive:
+            "记录不在进行中。"
+        case .cannotCancelCompleted:
+            "已完成记录不可取消。"
+        case .invalidRecord:
+            "记录内容无效。"
+        }
     }
 
     public var currentVillageName: String {

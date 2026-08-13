@@ -223,3 +223,166 @@ public enum UpgradeOverviewProjection {
         }
     }
 }
+
+// MARK: - Issue #144 总览状态（面板计数 / 最近完成 / 关注行）
+
+/// 一条本地 completed 记录（总览「最近完成」面板消费）。
+public struct UpgradeRecentCompletion: Identifiable, Hashable, Sendable {
+    public let villageID: UUID
+    public let itemKey: TrackerItemKey
+    public let itemName: String
+    public let targetLevel: Int
+    public let quantity: Int64
+    public let completedAt: Date
+
+    public var id: String {
+        itemKey.stableID + ":" + String(targetLevel) + ":" + String(completedAt.timeIntervalSince1970)
+    }
+}
+
+/// 升级总览的 Issue #144 状态面板投影。
+///
+/// 计数口径（v1 契约）：
+/// - `manualActiveCount` / `manualCompletedCount`：按本地记录计数（Core 的
+///   activeRecords / completedHistory）。
+/// - `importedActiveCount`：按 imported-active 展示行计数。
+/// - `deduplicatedDisplayCount`：exact match 合并后的 active 展示行数。
+/// 重复建筑的数量不混入以上记录数（行级只计 1）。
+public struct UpgradeOverviewState: Sendable {
+    public let manualActiveCount: Int
+    public let importedActiveCount: Int
+    public let deduplicatedDisplayCount: Int
+    public let manualCompletedCount: Int
+    /// 最近 7 天完成的本地记录（按完成时间降序）。
+    public let completedRecently: [UpgradeRecentCompletion]
+    /// active 展示行（exact match 已合并；conflict 行不隐藏）。
+    public let activeRecords: [UpgradeDisplayRecord]
+    /// 需要关注的展示行：conflict / unknown / needsReimport（并列显示，不隐藏）。
+    public let attentionRecords: [UpgradeDisplayRecord]
+    /// 待重新导入确认的行。
+    public let needsReimportRecords: [UpgradeDisplayRecord]
+
+    public init(
+        manualActiveCount: Int,
+        importedActiveCount: Int,
+        deduplicatedDisplayCount: Int,
+        manualCompletedCount: Int,
+        completedRecently: [UpgradeRecentCompletion],
+        activeRecords: [UpgradeDisplayRecord],
+        attentionRecords: [UpgradeDisplayRecord],
+        needsReimportRecords: [UpgradeDisplayRecord]
+    ) {
+        self.manualActiveCount = manualActiveCount
+        self.importedActiveCount = importedActiveCount
+        self.deduplicatedDisplayCount = deduplicatedDisplayCount
+        self.manualCompletedCount = manualCompletedCount
+        self.completedRecently = completedRecently
+        self.activeRecords = activeRecords
+        self.attentionRecords = attentionRecords
+        self.needsReimportRecords = needsReimportRecords
+    }
+}
+
+extension UpgradeOverviewProjection {
+    /// Issue #144：总览状态面板（单趟投影，消费 `allRecords` + cores）。
+    ///
+    /// `recentlyCompletedWindow` 默认 7 天；超过窗口的 completed 记录仍计入
+    /// `manualCompletedCount` 与项目行/进度，只是不进入「最近完成」面板。
+    public static func overviewState(
+        from villages: [VillageProfile],
+        catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable = .empty,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
+        at now: Date = Date(),
+        recentlyCompletedWindow: TimeInterval = 7 * 24 * 3600
+    ) -> UpgradeOverviewState {
+        let records = allRecords(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
+            at: now
+        )
+
+        let active = records.filter(\.item.isEffectivelyUpgrading)
+            .sorted { activeOrder($0, $1, at: now) }
+        let needsReimport = records.filter(\.item.effectivelyNeedsReimport)
+            .sorted(by: pendingOrder)
+        let attention = records.filter { record in
+            guard let status = record.item.effectiveState?.status else { return false }
+            return status == .conflict || status == .unknown || status == .needsReimport
+        }
+
+        let manualActiveCount = manualUpgradeCores.values.reduce(0) {
+            $0 + $1.activeRecords.count
+        }
+        let manualCompletedCount = manualUpgradeCores.values.reduce(0) {
+            $0 + $1.completedHistory.count
+        }
+        // review v2：只对可证明的 exact-match 合并去重（契约「只按 exact match
+        // 去重；无法确认时并列显示」）。规则（按 (villageID, itemKey) 分组）：
+        // - 带导入计时（timerSeconds != nil）的 active 行 = 独立导入事实，
+        //   逐行计数（同 key 不同等级的两条计时 → 2，不合并）；
+        // - 无计时行（active 状态来自共享 effectiveState，如 manualActive /
+        //   附着状态）同 key 只计 1（合并展示）。
+        // 注意 effectiveState 是 per-key 的：同 key 的 idle 行也会被标记 active，
+        // 但无独立计时证据，不应计入 imported 事实。
+        var importedActiveCount = 0
+        var deduplicatedDisplayCount = 0
+        let activeByKey = Dictionary(
+            grouping: active,
+            by: { Self.stableKey(villageID: $0.villageID, item: $0.item) }
+        )
+        for rows in activeByKey.values {
+            let timerRows = rows.filter { $0.item.timerSeconds != nil }
+            if !timerRows.isEmpty {
+                importedActiveCount += timerRows.count
+                deduplicatedDisplayCount += timerRows.count
+            } else if !rows.isEmpty {
+                // manual-only（无导入计时）或纯共享状态附着：同 key 合并为 1。
+                deduplicatedDisplayCount += 1
+            }
+        }
+
+        let completions: [UpgradeRecentCompletion] = manualUpgradeCores
+            .flatMap { villageID, core in
+                core.completedHistory.compactMap { record in
+                    guard record.expectedEndAt >= now.addingTimeInterval(-recentlyCompletedWindow)
+                    else { return nil }
+                    let name = catalog?.item(
+                        section: record.itemKey.rawSection,
+                        dataID: record.itemKey.dataID
+                    )?.name ?? record.itemKey.stableID
+                    return UpgradeRecentCompletion(
+                        villageID: villageID,
+                        itemKey: record.itemKey,
+                        itemName: name,
+                        targetLevel: record.targetLevel,
+                        quantity: record.quantity,
+                        completedAt: record.expectedEndAt
+                    )
+                }
+            }
+            .sorted { $0.completedAt > $1.completedAt }
+
+        return UpgradeOverviewState(
+            manualActiveCount: manualActiveCount,
+            importedActiveCount: importedActiveCount,
+            deduplicatedDisplayCount: deduplicatedDisplayCount,
+            manualCompletedCount: manualCompletedCount,
+            completedRecently: completions,
+            activeRecords: active,
+            attentionRecords: attention,
+            needsReimportRecords: needsReimport
+        )
+    }
+
+    /// 展示行的 stable identity 键（villageID + effective itemKey，防御回退推导）。
+    private static func stableKey(villageID: UUID, item: VillageItemState) -> String {
+        let key = item.effectiveState?.itemKey.stableID
+            ?? TrackerItemKey.root(
+                base: item.base, rawSection: item.section, dataID: item.dataID
+            ).stableID
+        return villageID.uuidString + ":" + key
+    }
+}

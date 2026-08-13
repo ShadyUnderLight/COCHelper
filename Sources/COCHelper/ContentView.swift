@@ -216,6 +216,13 @@ private struct VillageStoreRecoveryView: View {
                 }
                 .buttonStyle(.bordered)
 
+                if model.hasPendingVillageTransactionJournal {
+                    Button("从事务 journal 恢复") {
+                        _ = model.recoverVillageStoreFromTransactionJournal()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 Button("从文件恢复") {
                     _ = model.restoreVillageStoreFromFile()
                 }
@@ -245,6 +252,13 @@ private struct VillageStoreRecoveryView: View {
 
             if let notice = model.villageStoreRecoveryNotice {
                 Label(notice, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if model.hasPendingVillageTransactionJournal {
+                Text("事务 journal 恢复会按记录阶段处理：prepared 回滚到旧状态，committed 重放新状态。选择文件恢复或重置前，journal 会先被隔离保存，避免旧记录再次覆盖新数据。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -67,6 +67,54 @@ final class VillageStoreTests: XCTestCase {
         try JSONEncoder().encode(villages)
     }
 
+    private func migratedHistoryData(completedAt: TimeInterval) throws -> Data {
+        try SnapshotHistoryEnvelope(
+            migrationMarker: SnapshotHistoryMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: completedAt)
+            )
+        ).encodedData()
+    }
+
+    private func makeTransactionJournalURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("COCHelper-VillageRecovery-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("transaction.json")
+    }
+
+    private func writeSnapshotImportJournal(
+        phase: String,
+        to url: URL,
+        previousCurrentData: Data?,
+        newCurrentData: Data,
+        previousHistoryData: Data?,
+        newHistoryData: Data
+    ) throws {
+        struct JournalFixture: Codable {
+            let phase: String
+            let previousCurrentData: Data?
+            let newCurrentData: Data
+            let previousHistoryData: Data?
+            let newHistoryData: Data
+            let previousManualData: Data?
+            let manualIncluded: Bool?
+            let newManualData: Data?
+        }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(JournalFixture(
+            phase: phase,
+            previousCurrentData: previousCurrentData,
+            newCurrentData: newCurrentData,
+            previousHistoryData: previousHistoryData,
+            newHistoryData: newHistoryData,
+            previousManualData: nil,
+            manualIncluded: false,
+            newManualData: nil
+        )).write(to: url, options: .atomic)
+    }
+
     @MainActor
     private func makeModel(
         current: TestCurrentVillagePersistence,
@@ -200,6 +248,130 @@ final class VillageStoreTests: XCTestCase {
         XCTAssertNil(model.villageStoreRecoveryDataForExport)
         XCTAssertGreaterThanOrEqual(history.writeCount, 1)
         XCTAssertGreaterThanOrEqual(manual.writeCount, 1)
+    }
+
+    @MainActor
+    func testCorruptStartupCanExplicitlyRecoverCommittedTransactionJournal() throws {
+        let corrupt = Data("not-json".utf8)
+        let oldVillages = [VillageProfile(name: "事务旧村")]
+        let journalVillages = [VillageProfile(name: "事务新村")]
+        let oldCurrent = try validVillagesData(oldVillages)
+        let journalCurrent = try validVillagesData(journalVillages)
+        let oldHistory = try migratedHistoryData(completedAt: 1)
+        let journalHistory = try migratedHistoryData(completedAt: 2)
+        let journalURL = makeTransactionJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        try writeSnapshotImportJournal(
+            phase: "committed",
+            to: journalURL,
+            previousCurrentData: oldCurrent,
+            newCurrentData: journalCurrent,
+            previousHistoryData: oldHistory,
+            newHistoryData: journalHistory
+        )
+
+        let current = TestCurrentVillagePersistence(data: corrupt)
+        let history = TestSnapshotHistoryStore(
+            envelope: try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: oldHistory),
+            transactionJournalURL: journalURL
+        )
+        let manual = CountingManualStore()
+        let model = makeModel(current: current, history: history, manual: manual)
+
+        XCTAssertTrue(model.isVillageStoreRecoveryRequired)
+        XCTAssertTrue(model.hasPendingVillageTransactionJournal)
+        XCTAssertTrue(model.recoverVillageStoreFromTransactionJournal())
+        XCTAssertEqual(current.data, journalCurrent)
+        XCTAssertEqual(model.villages.map(\.name), ["事务新村"])
+        XCTAssertEqual(model.villageStoreStatus, .available)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
+        XCTAssertFalse(model.hasPendingVillageTransactionJournal)
+
+        let restarted = makeModel(current: current, history: history, manual: manual)
+        XCTAssertEqual(restarted.villageStoreStatus, .available)
+        XCTAssertEqual(restarted.villages.map(\.name), ["事务新村"])
+        XCTAssertEqual(current.data, journalCurrent)
+    }
+
+    @MainActor
+    func testRestoreQuarantinesPendingJournalSoRestartCannotReplayIt() throws {
+        let corrupt = Data("not-json".utf8)
+        let oldCurrent = try validVillagesData([VillageProfile(name: "旧村")])
+        let journalCurrent = try validVillagesData([VillageProfile(name: "旧 journal 村")])
+        let oldHistory = try migratedHistoryData(completedAt: 1)
+        let journalHistory = try migratedHistoryData(completedAt: 2)
+        let journalURL = makeTransactionJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        try writeSnapshotImportJournal(
+            phase: "committed",
+            to: journalURL,
+            previousCurrentData: oldCurrent,
+            newCurrentData: journalCurrent,
+            previousHistoryData: oldHistory,
+            newHistoryData: journalHistory
+        )
+        let journalData = try Data(contentsOf: journalURL)
+
+        let current = TestCurrentVillagePersistence(data: corrupt)
+        let history = TestSnapshotHistoryStore(
+            envelope: try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: oldHistory),
+            transactionJournalURL: journalURL
+        )
+        let manual = CountingManualStore()
+        let model = makeModel(current: current, history: history, manual: manual)
+        let selectedRestore = try validVillagesData([VillageProfile(name: "用户恢复村")])
+
+        XCTAssertTrue(model.restoreVillageStore(from: selectedRestore))
+        XCTAssertEqual(current.data, selectedRestore)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
+        XCTAssertEqual(
+            try Data(contentsOf: journalURL.appendingPathExtension("quarantined")),
+            journalData
+        )
+
+        let restarted = makeModel(current: current, history: history, manual: manual)
+        XCTAssertEqual(restarted.villageStoreStatus, .available)
+        XCTAssertEqual(restarted.villages.map(\.name), ["用户恢复村"])
+        XCTAssertEqual(current.data, selectedRestore)
+    }
+
+    @MainActor
+    func testResetQuarantinesCorruptPendingJournalAndRestartStaysAvailable() throws {
+        let corrupt = Data("not-json".utf8)
+        let journalURL = makeTransactionJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(
+            at: journalURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let corruptJournal = Data("corrupt-transaction-journal".utf8)
+        try corruptJournal.write(to: journalURL, options: .atomic)
+
+        let current = TestCurrentVillagePersistence(data: corrupt)
+        let history = TestSnapshotHistoryStore(
+            envelope: SnapshotHistoryEnvelope(
+                migrationMarker: SnapshotHistoryMigrationMarker(
+                    completedAt: Date(timeIntervalSince1970: 1)
+                )
+            ),
+            transactionJournalURL: journalURL
+        )
+        let manual = CountingManualStore()
+        let model = makeModel(current: current, history: history, manual: manual)
+
+        XCTAssertTrue(model.resetVillageStore())
+        XCTAssertEqual(model.villageStoreStatus, .available)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
+        XCTAssertEqual(
+            try Data(contentsOf: journalURL.appendingPathExtension("quarantined")),
+            corruptJournal
+        )
+
+        let restarted = makeModel(current: current, history: history, manual: manual)
+        XCTAssertEqual(restarted.villageStoreStatus, .available)
+        XCTAssertEqual(restarted.villages.count, 1)
+        XCTAssertEqual(restarted.villages[0].name, "我的村庄")
+        XCTAssertEqual(current.data, try validVillagesData(restarted.villages))
     }
 
     @MainActor

@@ -209,6 +209,11 @@ public final class AppModel: ObservableObject {
     private var historyProjectionCache: [SnapshotHistoryProjectionCacheKey: SnapshotHistoryProjection] = [:]
     private var villageStoreRecoveryData: Data?
 
+    private enum VillageTransactionJournalKind: String, Codable {
+        case snapshotImport
+        case manualTracker
+    }
+
     public convenience init(
         defaults: UserDefaults = .standard,
         refresher: OfficialPlayerRefresher? = nil,
@@ -452,6 +457,12 @@ public final class AppModel: ObservableObject {
         villageStoreError = resolvedVillageError
         villageStoreRecoveryNotice = nil
         villageStoreRecoveryData = resolvedVillageRecoveryData
+        if villageStoreStatus.isRecoveryRequired,
+           let journalNotice = pendingTransactionJournalNotice() {
+            villageStoreError = [villageStoreError, journalNotice]
+                .compactMap { $0 }
+                .joined(separator: "\n")
+        }
 
         if shouldPersistInitialVillages, startupError == nil {
             do {
@@ -838,10 +849,82 @@ public final class AppModel: ObservableObject {
         villageStoreStatus.isRecoveryRequired
     }
 
+    /// A pending transaction journal is intentionally surfaced separately
+    /// from the villages blob.  When the blob is corrupt, startup must not
+    /// replay a journal implicitly because that would write derived state
+    /// before the user chooses which source to trust.
+    public var hasPendingVillageTransactionJournal: Bool {
+        activeTransactionJournalURLs().contains { entry in
+            FileManager.default.fileExists(atPath: entry.url.path)
+                || FileManager.default.fileExists(
+                    atPath: quarantinedTransactionJournalURL(for: entry.url).path
+                )
+        }
+    }
+
     /// A read-only copy for recovery/export UI.  Callers cannot mutate the
     /// in-memory bytes held by AppModel.
     public var villageStoreRecoveryDataForExport: Data? {
         villageStoreRecoveryData
+    }
+
+    /// Replays valid pending transaction journals only after the user has
+    /// explicitly chosen this action in the recovery UI.  Prepared journals
+    /// roll back and committed journals roll forward using the same
+    /// coordinator rules as normal startup recovery.
+    @discardableResult
+    public func recoverVillageStoreFromTransactionJournal() -> Bool {
+        guard villageStoreStatus.isRecoveryRequired else {
+            villageStoreRecoveryNotice = "当前村庄数据无需从事务记录恢复。"
+            return false
+        }
+        guard hasPendingVillageTransactionJournal else {
+            villageStoreRecoveryNotice = "没有找到待处理的事务 journal。"
+            return false
+        }
+
+        if let villageStoreRecoveryData {
+            defaults.set(villageStoreRecoveryData, forKey: villageStoreRecoveryKey)
+        }
+
+        do {
+            try recoverTransactionJournal(.snapshotImport)
+            try recoverTransactionJournal(.manualTracker)
+
+            let recoveredData = currentVillagePersistence.readData()
+            let recoveredVillages: [VillageProfile]
+            switch VillageStoreCodec.load(recoveredData) {
+            case .missing:
+                recoveredVillages = [VillageProfile(name: "我的村庄")]
+                try persistVillages(recoveredVillages, bypassRecoveryGate: true)
+            case .loaded(let villages) where villages.isEmpty:
+                recoveredVillages = [VillageProfile(name: "我的村庄")]
+                try persistVillages(recoveredVillages, bypassRecoveryGate: true)
+            case .loaded(let villages):
+                recoveredVillages = villages
+            case .corrupt(let rawData, let message):
+                villageStoreRecoveryData = rawData
+                villageStoreStatus = .corrupt
+                villageStoreError = "事务记录恢复后当前村庄数据仍无法解码：\n" + message
+                return false
+            case .unsupportedSchema(let rawData, let schemaVersion):
+                villageStoreRecoveryData = rawData
+                villageStoreStatus = .unsupported
+                villageStoreError = "事务记录恢复后检测到未来村庄存储版本 \(schemaVersion)。"
+                return false
+            }
+
+            installRestoredVillageState(recoveredVillages)
+            villageStoreRecoveryNotice = "事务 journal 已恢复；prepared 已回滚，committed 已重放。"
+            return true
+        } catch {
+            villageStoreStatus = .readOnly
+            villageStoreError = Self.localizedPersistenceError(error)
+            snapshotHistoryError = villageStoreError
+            villageStoreRecoveryData = currentVillagePersistence.readData()
+            villageStoreRecoveryNotice = "事务 journal 恢复失败；原始数据和未处理 journal 仍保留。"
+            return false
+        }
     }
 
     /// Opens a save panel and exports the exact bytes that caused recovery.
@@ -916,6 +999,10 @@ public final class AppModel: ObservableObject {
         }
 
         do {
+            if let villageStoreRecoveryData {
+                defaults.set(villageStoreRecoveryData, forKey: villageStoreRecoveryKey)
+            }
+            try quarantinePendingTransactionJournals()
             if preservesRawData {
                 try writeVillageStoreData(
                     rawData,
@@ -949,6 +1036,7 @@ public final class AppModel: ObservableObject {
 
         let resetVillages = [VillageProfile(name: "我的村庄")]
         do {
+            try quarantinePendingTransactionJournals()
             try persistVillages(resetVillages, bypassRecoveryGate: true)
             installRestoredVillageState(resetVillages)
             villageStoreRecoveryNotice = "村庄数据已重置；旧 bytes 已保存为恢复副本。"
@@ -2492,6 +2580,96 @@ public final class AppModel: ObservableObject {
     ) -> SnapshotHistoryEntry? {
         guard let lineage = envelope.activeLineage(for: villageID) else { return nil }
         return envelope.entry(id: lineage.lastEntryID)
+    }
+
+    private func activeTransactionJournalURLs() -> [(kind: VillageTransactionJournalKind, url: URL)] {
+        [
+            (.snapshotImport, importTransaction.journalURL),
+            (.manualTracker, manualTrackerTransaction.journalURL),
+        ].compactMap { kind, url in
+            guard let url else { return nil }
+            return (kind, url)
+        }
+    }
+
+    private func quarantinedTransactionJournalURL(for journalURL: URL) -> URL {
+        journalURL.appendingPathExtension("quarantined")
+    }
+
+    private func pendingTransactionJournalNotice() -> String? {
+        let pending = activeTransactionJournalURLs().filter {
+            FileManager.default.fileExists(atPath: $0.url.path)
+                || FileManager.default.fileExists(
+                    atPath: quarantinedTransactionJournalURL(for: $0.url).path
+                )
+        }
+        let total = pending.count
+        guard total > 0 else { return nil }
+        return "检测到 \(total) 条待处理事务 journal；可显式从 journal 恢复，或选择文件恢复/重置（会先隔离 journal）。"
+    }
+
+    /// Copies active journal bytes to a sibling quarantine file before
+    /// removing the source file.  This prevents a stale committed journal
+    /// from replaying over a user-selected restore while retaining evidence.
+    private func quarantinePendingTransactionJournals() throws {
+        let active = activeTransactionJournalURLs().filter {
+            FileManager.default.fileExists(atPath: $0.url.path)
+        }
+        guard !active.isEmpty else { return }
+
+        var bytesByKind: [(kind: VillageTransactionJournalKind, url: URL, quarantineURL: URL, data: Data)] = []
+        for (kind, url) in active {
+            bytesByKind.append((
+                kind,
+                url,
+                quarantinedTransactionJournalURL(for: url),
+                try Data(contentsOf: url)
+            ))
+        }
+
+        do {
+            for item in bytesByKind {
+                try item.data.write(to: item.quarantineURL, options: .atomic)
+            }
+            for item in bytesByKind {
+                try FileManager.default.removeItem(at: item.url)
+            }
+        } catch {
+            throw VillageStoreError.writeFailed(
+                "事务 journal 隔离后清理源文件失败：" + error.localizedDescription
+            )
+        }
+    }
+
+    private func recoverTransactionJournal(
+        _ kind: VillageTransactionJournalKind
+    ) throws {
+        guard let journalURL = activeTransactionJournalURLs().first(where: { $0.kind == kind })?.url else {
+            return
+        }
+
+        let quarantineURL = quarantinedTransactionJournalURL(for: journalURL)
+        let hasActiveJournal = FileManager.default.fileExists(atPath: journalURL.path)
+        if !hasActiveJournal, FileManager.default.fileExists(atPath: quarantineURL.path) {
+            try FileManager.default.createDirectory(
+                at: journalURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let quarantinedData = try Data(contentsOf: quarantineURL)
+            try quarantinedData.write(to: journalURL, options: .atomic)
+        }
+
+        guard FileManager.default.fileExists(atPath: journalURL.path) else { return }
+        switch kind {
+        case .snapshotImport:
+            try importTransaction.recoverIfNeeded()
+        case .manualTracker:
+            try manualTrackerTransaction.recoverIfNeeded()
+        }
+
+        if FileManager.default.fileExists(atPath: quarantineURL.path) {
+            try FileManager.default.removeItem(at: quarantineURL)
+        }
     }
 
     private func persistVillages(

@@ -67,6 +67,25 @@ final class ManualTrackerStoreTests: XCTestCase {
             .appendingPathComponent("manual-tracker-v1.json")
     }
 
+    private func makeJournalURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("COCHelper-ManualTransaction-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("transaction.json")
+    }
+
+    private func currentData(name: String) throws -> Data {
+        try JSONEncoder().encode([
+            VillageProfile(
+                id: UUID(uuidString: name == "old"
+                    ? "00000000-0000-0000-0000-000000000011"
+                    : "00000000-0000-0000-0000-000000000012")!,
+                name: name,
+                createdAt: Date(timeIntervalSince1970: 1),
+                updatedAt: Date(timeIntervalSince1970: 1)
+            ),
+        ])
+    }
+
     private func historyStore() -> TestSnapshotHistoryStore {
         TestSnapshotHistoryStore(
             envelope: SnapshotHistoryEnvelope(
@@ -92,16 +111,29 @@ final class ManualTrackerStoreTests: XCTestCase {
         sourceFingerprint: "sha256:catalog"
     )
 
-    private func manualCompletedCore() throws -> ManualUpgradeCore {
+    private func manualCompletedCore(
+        for baselineReference: ManualBaselineReference
+    ) throws -> ManualUpgradeCore {
         let itemState = try ManualItemState(
             itemKey: key,
-            baselineReference: baseline,
+            baselineReference: baselineReference,
             manualCompletedDistribution: try ManualLevelDistribution(
                 levelQuantities: [10: 1]
             ),
             status: .manualCompleted
         )
         return try ManualUpgradeCore(itemStates: [itemState])
+    }
+
+    private func manualCompletedCore() throws -> ManualUpgradeCore {
+        try manualCompletedCore(for: baseline)
+    }
+
+    private func importedSnapshot(tag: String) throws -> AccountSnapshot {
+        try AccountSnapshotImporter.parse(
+            "{\"tag\":\"\(tag)\",\"buildings\":[{\"data\":100,\"lvl\":10}]}",
+            now: Date(timeIntervalSince1970: 1)
+        )
     }
 
     @MainActor
@@ -189,6 +221,170 @@ final class ManualTrackerStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), future)
     }
 
+    func testPreparedManualJournalWithCorruptCurrentBlobFailsClosed() throws {
+        let journalURL = makeJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        let oldCurrent = try currentData(name: "old")
+        let manualData = try ManualTrackerEnvelope.empty(for: []).encodedData()
+        try writeTransactionJournal(
+            phase: "prepared",
+            to: journalURL,
+            previousCurrentData: oldCurrent,
+            newCurrentData: Data("corrupt-current".utf8),
+            previousManualData: nil,
+            newManualData: manualData
+        )
+        let current = TestCurrentVillagePersistence(data: oldCurrent)
+        let store = TestStore()
+        store.rawData = manualData
+        let coordinator = ManualTrackerTransactionCoordinator(
+            current: current,
+            manual: store,
+            journalURL: journalURL
+        )
+
+        XCTAssertThrowsError(try coordinator.recoverIfNeeded()) { error in
+            guard case .journalCorrupt = error as? ManualTrackerTransactionError else {
+                return XCTFail("prepared manual journal 的损坏 currentData 必须 fail closed：\(error)")
+            }
+        }
+        XCTAssertEqual(current.data, oldCurrent)
+        XCTAssertEqual(store.rawData, manualData)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
+    func testCommittedManualJournalWithCorruptCurrentBlobFailsClosed() throws {
+        let journalURL = makeJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        let oldCurrent = try currentData(name: "old")
+        let manualData = try ManualTrackerEnvelope.empty(for: []).encodedData()
+        try writeTransactionJournal(
+            phase: "committed",
+            to: journalURL,
+            previousCurrentData: oldCurrent,
+            newCurrentData: Data("corrupt-current".utf8),
+            previousManualData: nil,
+            newManualData: manualData
+        )
+        let current = TestCurrentVillagePersistence(data: oldCurrent)
+        let store = TestStore()
+        store.rawData = manualData
+        let coordinator = ManualTrackerTransactionCoordinator(
+            current: current,
+            manual: store,
+            journalURL: journalURL
+        )
+
+        XCTAssertThrowsError(try coordinator.recoverIfNeeded()) { error in
+            guard case .journalCorrupt = error as? ManualTrackerTransactionError else {
+                return XCTFail("committed manual journal 的损坏 currentData 必须 fail closed：\(error)")
+            }
+        }
+        XCTAssertEqual(current.data, oldCurrent)
+        XCTAssertEqual(store.rawData, manualData)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
+    @MainActor
+    func testClearAndReimportGateOldManualProjectionUntilReconcile() throws {
+        let history = TestSnapshotHistoryStore()
+        let store = TestStore()
+        let snapshot = try importedSnapshot(tag: "#2QJQ8J88")
+        let village = VillageProfile(name: "主村", accountSnapshot: snapshot)
+        defaults.set(
+            try JSONEncoder().encode([village]),
+            forKey: "coc-helper.villages.v1"
+        )
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        let active = try XCTUnwrap(try history.load()?.activeLineage(for: villageID))
+        let entry = try XCTUnwrap(try history.load()?.entry(id: active.lastEntryID))
+        let currentBaseline = ManualBaselineReference(
+            revision: entry.snapshotID.uuidString,
+            fingerprint: entry.canonicalFingerprint,
+            lineageID: entry.lineageID.uuidString
+        )
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try self.manualCompletedCore(for: currentBaseline)
+        }
+        XCTAssertEqual(
+            model.manualUpgradeCores[villageID]?.itemState(for: self.key)?.status,
+            .manualCompleted
+        )
+        let persistedBeforeReset = try XCTUnwrap(store.rawData)
+
+        model.clearAccountSnapshot()
+
+        XCTAssertEqual(store.rawData, persistedBeforeReset)
+        XCTAssertEqual(
+            model.manualUpgradeCore(for: villageID)?.itemState(for: self.key)?.status,
+            .manualCompleted
+        )
+        XCTAssertEqual(
+            model.manualUpgradeCores[villageID]?.itemState(for: self.key)?.status,
+            .unknown
+        )
+        XCTAssertTrue(model.manualUpgradeCores[villageID]?.activeRecords.isEmpty == true)
+
+        model.importIntoCurrentVillage = true
+        model.importText = "{\"tag\":\"#2QJQ8J88\",\"buildings\":[{\"data\":100,\"lvl\":11}]}"
+        model.parseAccountText()
+        XCTAssertTrue(model.applyPendingAccountSnapshot())
+
+        XCTAssertEqual(store.rawData, persistedBeforeReset)
+        XCTAssertEqual(
+            model.manualUpgradeCores[villageID]?.itemState(for: self.key)?.status,
+            .unknown,
+            "同 Tag 的新 snapshot 也必须等 reconcile，不能按 TrackerItemKey 复用旧手动状态"
+        )
+    }
+
+    @MainActor
+    func testChangingTagStartsNewLineageAndGatesOldManualProjection() throws {
+        let history = TestSnapshotHistoryStore()
+        let store = TestStore()
+        let snapshot = try importedSnapshot(tag: "#2QJQ8J88")
+        let village = VillageProfile(name: "主村", accountSnapshot: snapshot)
+        defaults.set(
+            try JSONEncoder().encode([village]),
+            forKey: "coc-helper.villages.v1"
+        )
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        let active = try XCTUnwrap(try history.load()?.activeLineage(for: villageID))
+        let entry = try XCTUnwrap(try history.load()?.entry(id: active.lastEntryID))
+        let currentBaseline = ManualBaselineReference(
+            revision: entry.snapshotID.uuidString,
+            fingerprint: entry.canonicalFingerprint,
+            lineageID: entry.lineageID.uuidString
+        )
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try self.manualCompletedCore(for: currentBaseline)
+        }
+        let persistedBeforeImport = try XCTUnwrap(store.rawData)
+
+        model.importIntoCurrentVillage = true
+        model.importText = "{\"tag\":\"#2QJQ8J87\",\"buildings\":[{\"data\":100,\"lvl\":10}]}"
+        model.parseAccountText()
+        XCTAssertTrue(model.applyPendingAccountSnapshot())
+
+        XCTAssertEqual(store.rawData, persistedBeforeImport)
+        XCTAssertEqual(
+            model.manualUpgradeCores[villageID]?.itemState(for: self.key)?.status,
+            .unknown,
+            "换 Tag 进入新 lineage 后，旧 manual state 必须隔离"
+        )
+        XCTAssertTrue(model.manualUpgradeCores[villageID]?.activeRecords.isEmpty == true)
+    }
+
     func testEnvelopeRejectsDuplicateRecordIDAcrossVillages() throws {
         var core = try manualCompletedCore()
         let recordID = UUID(uuidString: "00000000-0000-0000-0000-000000000142")!
@@ -234,6 +430,35 @@ final class ManualTrackerStoreTests: XCTestCase {
                 return XCTFail("跨村庄重复 recordID 必须被拒绝：\(error)")
             }
         }
+    }
+
+    private func writeTransactionJournal(
+        phase: String,
+        to url: URL,
+        previousCurrentData: Data?,
+        newCurrentData: Data,
+        previousManualData: Data?,
+        newManualData: Data
+    ) throws {
+        struct JournalFixture: Codable {
+            let phase: String
+            let previousCurrentData: Data?
+            let newCurrentData: Data
+            let previousManualData: Data?
+            let newManualData: Data
+        }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONEncoder().encode(JournalFixture(
+            phase: phase,
+            previousCurrentData: previousCurrentData,
+            newCurrentData: newCurrentData,
+            previousManualData: previousManualData,
+            newManualData: newManualData
+        ))
+        try data.write(to: url, options: .atomic)
     }
 
     @MainActor

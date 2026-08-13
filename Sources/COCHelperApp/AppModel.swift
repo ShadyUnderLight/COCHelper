@@ -100,8 +100,9 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var pendingAccountSnapshot: AccountSnapshot?
     @Published public private(set) var accountImportError: String?
     @Published public private(set) var snapshotHistoryError: String?
-    /// Per-village local manual upgrade state. Imported snapshots remain
-    /// observations and are never rewritten with these local values.
+    /// Projection-safe per-village manual state. Imported snapshots remain
+    /// observations; a core whose baseline is not the current active history
+    /// tail is exposed here as unknown without rewriting its persisted bytes.
     @Published public private(set) var manualUpgradeCores: [UUID: ManualUpgradeCore] = [:]
     @Published public private(set) var manualTrackerStatus: ManualTrackerStoreStatus = .empty
     @Published public private(set) var manualTrackerError: String?
@@ -347,12 +348,18 @@ public final class AppModel: ObservableObject {
                 snapshotHistoryError = Self.localizedPersistenceError(error)
             }
         }
+        // The manual store is loaded before the history store so startup can
+        // recover both independently.  Rebuild the UI-facing projection now
+        // that the current snapshot's active lineage is known.
+        refreshManualTrackerProjection()
     }
 
     /// Returns the persisted local tracker core for an explicit village.
     /// Snapshot data remains separate and is never used as a fallback here.
+    /// UI consumers use `manualUpgradeCores`, which is a projection-safe view
+    /// and may intentionally expose an unreconciled state as `unknown`.
     public func manualUpgradeCore(for villageID: UUID) -> ManualUpgradeCore? {
-        manualUpgradeCores[villageID]
+        manualTrackerEnvelope?.state(for: villageID)?.core
     }
 
     /// Applies one manual-tracker command to a single village and persists the
@@ -859,6 +866,7 @@ public final class AppModel: ObservableObject {
 
         let targetVillage = candidateVillages[index]
         load(targetVillage, importText: preview.snapshot.originalText)
+        refreshManualTrackerProjection()
         snapshotHistoryError = nil
         return true
     }
@@ -990,6 +998,7 @@ public final class AppModel: ObservableObject {
 
         let targetVillage = candidateVillages[targetIndex]
         load(targetVillage, importText: snapshot.originalText)
+        refreshManualTrackerProjection()
         importIntoCurrentVillage = false
         snapshotHistoryError = nil
         return true
@@ -1010,6 +1019,7 @@ public final class AppModel: ObservableObject {
             villages[index].officialAPIState = nil
         }
         persistVillages()
+        refreshManualTrackerProjection()
     }
 
     // MARK: - 官方数据刷新
@@ -1867,12 +1877,66 @@ public final class AppModel: ObservableObject {
         var cores: [UUID: ManualUpgradeCore] = [:]
         for village in villages where cores[village.id] == nil {
             if let state = envelope.state(for: village.id) {
-                cores[village.id] = state.core
+                cores[village.id] = projectedManualUpgradeCore(
+                    state.core,
+                    for: village.id
+                )
             }
         }
         manualUpgradeCores = cores
         manualTrackerStatus = envelope.isEmpty ? .empty : .available
         manualTrackerError = nil
+    }
+
+    /// Rebuilds only the projection exposed to UI/overview consumers.  The
+    /// persisted envelope remains the source for mutations and is never
+    /// rewritten merely because a snapshot is cleared or re-imported.
+    private func refreshManualTrackerProjection() {
+        guard let manualTrackerEnvelope else {
+            manualUpgradeCores = [:]
+            return
+        }
+        installManualTrackerEnvelope(manualTrackerEnvelope)
+    }
+
+    private func projectedManualUpgradeCore(
+        _ core: ManualUpgradeCore,
+        for villageID: UUID
+    ) -> ManualUpgradeCore {
+        guard !core.itemStates.isEmpty || !core.records.isEmpty else {
+            return core
+        }
+        guard let storedBaseline = core.baselineReference,
+              let currentBaseline = currentManualBaselineReference(for: villageID),
+              storedBaseline == currentBaseline else {
+            return core.gatedForUnreconciledSnapshot()
+        }
+        return core
+    }
+
+    /// Converts the active history tail into the baseline identity used by
+    /// manual tracker records.  Missing/invalid/conflicted identity is not a
+    /// joinable baseline, so the caller must keep local manual state unknown.
+    private func currentManualBaselineReference(for villageID: UUID) -> ManualBaselineReference? {
+        guard let village = villages.first(where: { $0.id == villageID }),
+              village.accountSnapshot != nil,
+              let historyEnvelope,
+              let lineage = historyEnvelope.activeLineage(for: villageID),
+              !lineage.hasConflict,
+              let entry = historyEnvelope.entry(id: lineage.lastEntryID),
+              entry.villageID == villageID,
+              entry.lineageID == lineage.lineageID,
+              OfficialPlayerTagValidator.normalized(village.tag)
+                  == lineage.normalizedPlayerTag,
+              let normalizedTag = lineage.normalizedPlayerTag,
+              !normalizedTag.isEmpty else {
+            return nil
+        }
+        return ManualBaselineReference(
+            revision: entry.snapshotID.uuidString,
+            fingerprint: entry.canonicalFingerprint,
+            lineageID: entry.lineageID.uuidString
+        )
     }
 
     private func markManualTrackerUnavailable(_ error: Error) {

@@ -1,6 +1,46 @@
 import Foundation
 import COCHelperCore
 
+enum CurrentVillageDataValidationError: Error, LocalizedError {
+    case invalid(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalid(let message):
+            message
+        }
+    }
+}
+
+enum CurrentVillageDataValidator {
+    /// Validates the persisted villages blob before a transaction can restore
+    /// or replay it.  An empty array is not a valid current store: AppModel
+    /// treats that value as "no store" and would otherwise synthesize a
+    /// placeholder village on the next launch.
+    static func validate(_ data: Data?, label: String) throws {
+        guard let data else { return }
+        do {
+            let villages = try JSONDecoder().decode([VillageProfile].self, from: data)
+            guard !villages.isEmpty else {
+                throw CurrentVillageDataValidationError.invalid(
+                    "\(label) 不能是空村庄列表。"
+                )
+            }
+            guard Set(villages.map(\.id)).count == villages.count else {
+                throw CurrentVillageDataValidationError.invalid(
+                    "\(label) 包含重复的村庄 ID。"
+                )
+            }
+        } catch let error as CurrentVillageDataValidationError {
+            throw error
+        } catch {
+            throw CurrentVillageDataValidationError.invalid(
+                "\(label) 无法解码为有效的村庄列表：\(error.localizedDescription)"
+            )
+        }
+    }
+}
+
 /// The current village blob is kept behind a tiny injectable adapter so the
 /// import transaction can test partial writes without coupling Core to
 /// UserDefaults.
@@ -43,6 +83,9 @@ private struct SnapshotImportJournal: Codable {
     let previousHistoryData: Data?
     let newHistoryData: Data
     let previousManualData: Data?
+    /// Explicitly distinguishes "no manual transaction" from a journal that
+    /// claims to include one but lost its payload.
+    let manualIncluded: Bool
     let newManualData: Data?
 
     init(
@@ -52,6 +95,7 @@ private struct SnapshotImportJournal: Codable {
         previousHistoryData: Data?,
         newHistoryData: Data,
         previousManualData: Data? = nil,
+        manualIncluded: Bool = false,
         newManualData: Data? = nil
     ) {
         self.phase = phase
@@ -60,11 +104,13 @@ private struct SnapshotImportJournal: Codable {
         self.previousHistoryData = previousHistoryData
         self.newHistoryData = newHistoryData
         self.previousManualData = previousManualData
+        self.manualIncluded = manualIncluded
         self.newManualData = newManualData
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let newManualData = try container.decodeIfPresent(Data.self, forKey: .newManualData)
         self.init(
             phase: try container.decode(SnapshotImportJournalPhase.self, forKey: .phase),
             previousCurrentData: try container.decodeIfPresent(Data.self, forKey: .previousCurrentData),
@@ -72,7 +118,9 @@ private struct SnapshotImportJournal: Codable {
             previousHistoryData: try container.decodeIfPresent(Data.self, forKey: .previousHistoryData),
             newHistoryData: try container.decode(Data.self, forKey: .newHistoryData),
             previousManualData: try container.decodeIfPresent(Data.self, forKey: .previousManualData),
-            newManualData: try container.decodeIfPresent(Data.self, forKey: .newManualData)
+            manualIncluded: try container.decodeIfPresent(Bool.self, forKey: .manualIncluded)
+                ?? (newManualData != nil),
+            newManualData: newManualData
         )
     }
 
@@ -83,6 +131,7 @@ private struct SnapshotImportJournal: Codable {
         case previousHistoryData
         case newHistoryData
         case previousManualData
+        case manualIncluded
         case newManualData
     }
 }
@@ -134,17 +183,66 @@ struct SnapshotImportTransactionCoordinator {
             throw SnapshotImportTransactionError.journalCorrupt(error.localizedDescription)
         }
 
+        guard journal.manualIncluded == (journal.newManualData != nil) else {
+            throw SnapshotImportTransactionError.journalCorrupt(
+                "事务记录的 manualIncluded 与手动状态 payload 不一致。"
+            )
+        }
+        guard journal.manualIncluded || journal.previousManualData == nil else {
+            throw SnapshotImportTransactionError.journalCorrupt(
+                "无 manual 事务的记录不应包含 previousManualData。"
+            )
+        }
+        do {
+            try CurrentVillageDataValidator.validate(
+                journal.previousCurrentData,
+                label: "事务记录中的旧当前村庄数据"
+            )
+            try CurrentVillageDataValidator.validate(
+                journal.newCurrentData,
+                label: "事务记录中的新当前村庄数据"
+            )
+        } catch {
+            throw SnapshotImportTransactionError.journalCorrupt(error.localizedDescription)
+        }
+
+        let recoveryManualStore: (any ManualTrackerStore)?
+        let recoveryManualData: Data?
+        if journal.manualIncluded {
+            guard let manual else {
+                throw SnapshotImportTransactionError.journalCorrupt(
+                    "事务记录包含手动状态，但当前未配置手动存储。"
+                )
+            }
+            guard let newManualData = journal.newManualData else {
+                throw SnapshotImportTransactionError.journalCorrupt(
+                    "事务记录声明包含手动状态，但缺少 newManualData。"
+                )
+            }
+            do {
+                let envelope = try JSONDecoder().decode(
+                    ManualTrackerEnvelope.self,
+                    from: newManualData
+                )
+                _ = try envelope.validated()
+            } catch {
+                throw SnapshotImportTransactionError.journalCorrupt(
+                    "事务记录中的新手动状态无效：" + error.localizedDescription
+                )
+            }
+            recoveryManualStore = manual
+            recoveryManualData = newManualData
+        } else {
+            recoveryManualStore = nil
+            recoveryManualData = nil
+        }
+
         switch journal.phase {
         case .prepared:
             try current.restoreData(journal.previousCurrentData)
             try history.restoreRawData(journal.previousHistoryData)
-            if journal.newManualData != nil {
-                guard let manual else {
-                    throw SnapshotImportTransactionError.journalCorrupt(
-                        "事务记录包含手动状态，但当前未配置手动存储。"
-                    )
-                }
-                try manual.restoreRawData(journal.previousManualData)
+            if let recoveryManualStore {
+                try recoveryManualStore.restoreRawData(journal.previousManualData)
             }
         case .committed:
             do {
@@ -158,28 +256,10 @@ struct SnapshotImportTransactionCoordinator {
                     "事务记录中的新历史无效：" + error.localizedDescription
                 )
             }
-            if let newManualData = journal.newManualData {
-                guard manual != nil else {
-                    throw SnapshotImportTransactionError.journalCorrupt(
-                        "事务记录包含手动状态，但当前未配置手动存储。"
-                    )
-                }
-                do {
-                    let envelope = try JSONDecoder().decode(
-                        ManualTrackerEnvelope.self,
-                        from: newManualData
-                    )
-                    _ = try envelope.validated()
-                } catch {
-                    throw SnapshotImportTransactionError.journalCorrupt(
-                        "事务记录中的新手动状态无效：" + error.localizedDescription
-                    )
-                }
-            }
             try current.writeData(journal.newCurrentData)
             try history.writeRawData(journal.newHistoryData)
-            if let newManualData = journal.newManualData {
-                try manual?.writeRawData(newManualData)
+            if let recoveryManualStore, let recoveryManualData {
+                try recoveryManualStore.writeRawData(recoveryManualData)
             }
         }
         try FileManager.default.removeItem(at: journalURL)
@@ -208,6 +288,15 @@ struct SnapshotImportTransactionCoordinator {
             previousManualData = nil
         }
         let newManualData = try manualEnvelope?.encodedData()
+        do {
+            try CurrentVillageDataValidator.validate(
+                previousCurrentData,
+                label: "旧当前村庄数据"
+            )
+            try CurrentVillageDataValidator.validate(currentData, label: "新当前村庄数据")
+        } catch {
+            throw SnapshotImportTransactionError.journalCorrupt(error.localizedDescription)
+        }
 
         let journal = SnapshotImportJournal(
             phase: .prepared,
@@ -216,6 +305,7 @@ struct SnapshotImportTransactionCoordinator {
             previousHistoryData: previousHistoryData,
             newHistoryData: newHistoryData,
             previousManualData: previousManualData,
+            manualIncluded: manualEnvelope != nil,
             newManualData: newManualData
         )
         try writeJournal(journal)
@@ -249,6 +339,7 @@ struct SnapshotImportTransactionCoordinator {
                 previousHistoryData: previousHistoryData,
                 newHistoryData: newHistoryData,
                 previousManualData: previousManualData,
+                manualIncluded: manualEnvelope != nil,
                 newManualData: newManualData
             ))
         } catch {

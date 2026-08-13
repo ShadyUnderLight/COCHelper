@@ -89,6 +89,37 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
             .sorted(by: Self.recordOrder)
     }
 
+    /// The single baseline carried by a valid per-village tracker state.
+    ///
+    /// `ManualTrackerVillageState` enforces this invariant at the storage
+    /// boundary.  Keeping the derived value here lets projection callers gate
+    /// a loaded core before joining it to a newer snapshot lineage.
+    public var baselineReference: ManualBaselineReference? {
+        let references = Set(
+            itemStates.map(\.baselineReference) + records.map(\.baselineReference)
+        )
+        return references.count == 1 ? references.first : nil
+    }
+
+    /// Returns a projection-only copy for a snapshot that has not been
+    /// reconciled with this core yet.
+    ///
+    /// The persisted core is deliberately left untouched: its original bytes
+    /// remain available for a future reconcile.  The copy drops imported
+    /// observations, completed distributions, and active records so callers
+    /// can expose `unknown` without accidentally showing stale progress or
+    /// making an old active record actionable.
+    public func gatedForUnreconciledSnapshot() -> Self {
+        let states = itemStates.map { state in
+            try! ManualItemState(
+                itemKey: state.itemKey,
+                baselineReference: state.baselineReference,
+                status: .unknown
+            )
+        }
+        return try! Self(itemStates: states)
+    }
+
     public func itemState(for itemKey: TrackerItemKey) -> ManualItemState? {
         itemStates.first { $0.itemKey == itemKey }
     }

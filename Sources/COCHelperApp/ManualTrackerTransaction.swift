@@ -24,6 +24,19 @@ struct ManualTrackerTransactionCoordinator {
             throw ManualTrackerTransactionError.journalCorrupt(error.localizedDescription)
         }
 
+        do {
+            try CurrentVillageDataValidator.validate(
+                journal.previousCurrentData,
+                label: "事务记录中的旧当前村庄数据"
+            )
+            try CurrentVillageDataValidator.validate(
+                journal.newCurrentData,
+                label: "事务记录中的新当前村庄数据"
+            )
+        } catch {
+            throw ManualTrackerTransactionError.journalCorrupt(error.localizedDescription)
+        }
+
         switch journal.phase {
         case .prepared:
             try restore(journal.previousCurrentData, manualData: journal.previousManualData)
@@ -53,6 +66,15 @@ struct ManualTrackerTransactionCoordinator {
         let newManualData = try envelope.encodedData()
         let previousCurrentData = current.readData()
         let previousManualData = try manual.readRawData()
+        do {
+            try CurrentVillageDataValidator.validate(
+                previousCurrentData,
+                label: "旧当前村庄数据"
+            )
+            try CurrentVillageDataValidator.validate(currentData, label: "新当前村庄数据")
+        } catch {
+            throw ManualTrackerTransactionError.journalCorrupt(error.localizedDescription)
+        }
 
         let prepared = ManualTrackerJournal(
             phase: .prepared,
@@ -102,8 +124,14 @@ struct ManualTrackerTransactionCoordinator {
 
     private func restore(_ currentData: Data?, manualData: Data?) throws {
         do {
+            try CurrentVillageDataValidator.validate(
+                currentData,
+                label: "待恢复的当前村庄数据"
+            )
             try current.restoreData(currentData)
             try manual.restoreRawData(manualData)
+        } catch let error as CurrentVillageDataValidationError {
+            throw ManualTrackerTransactionError.journalCorrupt(error.localizedDescription)
         } catch {
             throw ManualTrackerTransactionError.rollbackFailed(error.localizedDescription)
         }

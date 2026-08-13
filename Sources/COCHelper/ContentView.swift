@@ -12,7 +12,7 @@ struct ContentView: View {
 
     private var activeManualUpgradeCores: [UUID: ManualUpgradeCore] {
         // Keep the existing explicit injection seam useful for previews/tests;
-        // the normal app path consumes AppModel's persisted map.
+        // the normal app path consumes AppModel's projection-safe map.
         manualUpgradeCores.isEmpty ? model.manualUpgradeCores : manualUpgradeCores
     }
 

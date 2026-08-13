@@ -489,6 +489,12 @@ public enum SnapshotHistoryCanonicalizer {
                         craftTableCatalog: craftTableCatalog,
                         diagnostics: &diagnostics
                     )
+                } else if isTimerField(field) {
+                    state = timerFieldState(
+                        objects: objects,
+                        invalidObjectCount: values.count - objects.count,
+                        field: field
+                    )
                 } else {
                     state = fieldState(
                         objects: objects,
@@ -824,6 +830,41 @@ public enum SnapshotHistoryCanonicalizer {
             return .partial
         }
         return .complete
+    }
+
+    private static func timerFieldState(
+        objects: [[String: CanonicalJSONValue]],
+        invalidObjectCount: Int,
+        field: String
+    ) -> SnapshotCoverageState {
+        guard !objects.isEmpty else {
+            return invalidObjectCount == 0 ? .unavailable : .partial
+        }
+
+        let present = objects.filter { $0[field] != nil }
+        guard !present.isEmpty else {
+            // For a non-empty, well-formed section, omission of this optional
+            // timer field is an observed inactive/absent state.  An empty
+            // section remains unavailable because it contains no item-level
+            // evidence at all.
+            return invalidObjectCount == 0 ? .complete : .partial
+        }
+
+        guard invalidObjectCount == 0,
+              present.count == objects.count,
+              objects.allSatisfy({ object in
+                  guard let value = object[field], let timer = integer(value) else {
+                      return false
+                  }
+                  return timer >= 0
+              }) else {
+            return .partial
+        }
+        return .complete
+    }
+
+    private static func isTimerField(_ field: String) -> Bool {
+        field == "timer" || field == "helper_timer" || field == "helper_cooldown"
     }
 
     private static func fingerprintValue(for item: SnapshotObservationItem) -> CanonicalJSONValue {

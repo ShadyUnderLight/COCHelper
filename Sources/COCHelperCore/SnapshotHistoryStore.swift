@@ -136,8 +136,18 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
             guard entry.schemaVersion == SnapshotHistorySchema.entry else {
                 throw SnapshotHistoryStoreError.unsupportedSchema(entry.schemaVersion)
             }
-            guard entry.observationVersion == SnapshotHistorySchema.observation else {
+            guard (1...SnapshotHistorySchema.observation).contains(entry.observationVersion) else {
                 throw SnapshotHistoryStoreError.unsupportedSchema(entry.observationVersion)
+            }
+            guard entry.observation.schemaVersion == entry.observationVersion,
+                  entry.coverage.schemaVersion == entry.observationVersion else {
+                throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的 observation/coverage 版本不一致。")
+            }
+            if entry.observationVersion == SnapshotHistorySchema.observation,
+               entry.coverage.hasLegacySectionCoverage {
+                throw SnapshotHistoryStoreError.invalidEntry(
+                    "历史 entry 的 observation v2 缺少 section 完整性证据。"
+                )
             }
             guard entry.fingerprintVersion == SnapshotHistorySchema.fingerprint else {
                 throw SnapshotHistoryStoreError.unsupportedSchema(entry.fingerprintVersion)
@@ -239,7 +249,8 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
                 appliedAt: entry.appliedAt,
                 snapshotID: entry.snapshotID,
                 isBaseline: entry.isBaseline,
-                baselineReason: entry.baselineReason
+                baselineReason: entry.baselineReason,
+                observationVersion: entry.observationVersion
             )
         } catch let error as SnapshotHistoryStoreError {
             throw error
@@ -446,7 +457,8 @@ public struct SnapshotHistoryService: Sendable {
         villages: [VillageProfile],
         now: Date = Date(),
         catalog: GameCatalog? = nil,
-        craftTableCatalog: CraftTableCatalog? = nil
+        craftTableCatalog: CraftTableCatalog? = nil,
+        sectionProofs: [String: SnapshotCoverageProof] = [:]
     ) throws -> SnapshotHistoryEnvelope {
         if let existing = try store.load() {
             if existing.isMigrated { return existing }
@@ -468,7 +480,8 @@ public struct SnapshotHistoryService: Sendable {
                 lineage: lineage,
                 appliedAt: now,
                 catalog: catalog,
-                craftTableCatalog: craftTableCatalog
+                craftTableCatalog: craftTableCatalog,
+                sectionProofs: sectionProofs
             )
             envelope.append(entry: entry, lineage: lineage)
         }
@@ -486,7 +499,8 @@ public struct SnapshotHistoryService: Sendable {
         envelope: SnapshotHistoryEnvelope,
         appliedAt: Date = Date(),
         catalog: GameCatalog? = nil,
-        craftTableCatalog: CraftTableCatalog? = nil
+        craftTableCatalog: CraftTableCatalog? = nil,
+        sectionProofs: [String: SnapshotCoverageProof] = [:]
     ) throws -> SnapshotHistoryImportDecision {
         guard envelope.isMigrated else {
             throw SnapshotHistoryServiceError.historyUnavailable("历史尚未完成迁移。")
@@ -520,14 +534,16 @@ public struct SnapshotHistoryService: Sendable {
             lineage: lineage,
             appliedAt: appliedAt,
             catalog: catalog,
-            craftTableCatalog: craftTableCatalog
+            craftTableCatalog: craftTableCatalog,
+            sectionProofs: sectionProofs
         )
 
         var updated = envelope
         if lineage.outcome == .continued,
            let active,
            let previousEntry = envelope.entry(id: active.lastEntryID),
-           previousEntry.canonicalFingerprint == candidate.canonicalFingerprint {
+           previousEntry.canonicalFingerprint == candidate.canonicalFingerprint,
+           previousEntry.coverage == candidate.coverage {
             let key = previousEntry.snapshotID.uuidString
             let previousMetadata = updated.duplicateMetadata[key]
             updated.duplicateMetadata[key] = SnapshotHistoryDuplicateMetadata(

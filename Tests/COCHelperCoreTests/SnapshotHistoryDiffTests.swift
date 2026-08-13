@@ -348,6 +348,213 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(negativeDiff.changes.single?.evidence, .unknown)
     }
 
+    func testCanonicalEmptySectionDoesNotConfirmItemDisappearance() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[{\"data\":1,\"lvl\":1}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let emptySnapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        )
+        let emptyEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: emptySnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: emptyEntry)
+
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+        XCTAssertEqual(diff.changes.single?.coverage.state, .insufficient)
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .insufficientCoverage })
+    }
+
+    func testCanonicalPartialHistogramDoesNotConfirmQuantityDecrease() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14,\"cnt\":5}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let newSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14,\"cnt\":3}]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        )
+        let newEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: newSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: newEntry)
+
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+        XCTAssertEqual(diff.changes.single?.coverage.state, .insufficient)
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .insufficientCoverage })
+    }
+
+    func testAuthoritativeSectionProofAllowsConfirmedDisappearance() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[{\"data\":1,\"lvl\":1}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let emptySnapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": .authoritative(source: "test-export", version: "1", expectedCount: 0)
+        ]
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            sectionProofs: [
+                "heroes": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+            ]
+        )
+        let emptyEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: emptySnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            sectionProofs: proof
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: emptyEntry)
+
+        XCTAssertEqual(diff.changes.single?.changeKind, .noLongerObserved)
+        XCTAssertEqual(diff.changes.single?.evidence, .confirmed)
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testCanonicalPresentNonEmptyWithoutProofDoesNotConfirmNewlyObserved() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let emptySnapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let nonEmptySnapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[{\"data\":1,\"lvl\":2}]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let emptyEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: emptySnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        )
+        let nonEmptyEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: nonEmptySnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: emptyEntry, to: nonEmptyEntry)
+
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+        XCTAssertEqual(diff.changes.single?.coverage.state, .insufficient)
+    }
+
+    func testCanonicalHistogramMigrationWithoutProofIsUnknown() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":12,\"cnt\":100},{\"data\":1000001,\"lvl\":13,\"cnt\":50}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let newSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":12,\"cnt\":80},{\"data\":1000001,\"lvl\":13,\"cnt\":70}]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        )
+        let newEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: newSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: newEntry)
+
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+        XCTAssertEqual(diff.changes.single?.coverage.state, .insufficient)
+    }
+
+    func testAuthoritativeProofWithMalformedRecordDegradesToPartial() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let snapshot = AccountSnapshot(
+            tag: "#ABC",
+            capturedAt: nil,
+            importedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            ageSeconds: nil,
+            originalText: "{\"heroes\":[{\"lvl\":1}]}",
+            objectSections: [:],
+            numericSections: [:],
+            boosts: [:],
+            unknownTopLevelKeys: [],
+            diagnostics: []
+        )
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            sectionProofs: [
+                "heroes": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+            ]
+        )
+
+        let section = try XCTUnwrap(
+            entry.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertEqual(section.completeness, .partial)
+        XCTAssertFalse(section.isComplete)
+    }
+
     func testMissingRequiredLevelIsUnknownInsteadOfUnchanged() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let diff = SnapshotDiffEngine.compare(
@@ -718,6 +925,14 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 "lvl": .complete
             ]
             let merged = defaults.merging(states) { _, new in new }
+            let sectionCoverage = SnapshotSectionCoverage(
+                base: SnapshotHistoryBase(section: section),
+                rawSection: section,
+                presence: items.isEmpty ? .presentEmpty : .presentNonEmpty,
+                completeness: .complete,
+                proof: .authoritative(source: "test", version: "1", expectedCount: nil),
+                observedCount: items.count
+            )
             coverage = SnapshotObservationCoverage(fields: merged.map {
                 SnapshotCoverageField(
                     base: SnapshotHistoryBase(section: section),
@@ -725,7 +940,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                     field: $0.key,
                     state: $0.value
                 )
-            }, diagnostics: diagnostics)
+            }, sections: [sectionCoverage], diagnostics: diagnostics)
         } else {
             coverage = SnapshotObservationCoverage(fields: [], diagnostics: diagnostics)
         }

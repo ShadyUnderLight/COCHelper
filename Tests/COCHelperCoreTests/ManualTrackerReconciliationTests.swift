@@ -15,7 +15,10 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         let snapshot: AccountSnapshot
     }
 
-    private func history(_ raw: String) throws -> HistoryContext {
+    private func history(
+        _ raw: String,
+        sectionProofs: [String: SnapshotCoverageProof] = [:]
+    ) throws -> HistoryContext {
         let snapshot = try AccountSnapshotImporter.parse(
             raw,
             now: Date(timeIntervalSince1970: 1_800_000_000)
@@ -28,7 +31,8 @@ final class ManualTrackerReconciliationTests: XCTestCase {
                 name: "主村",
                 accountSnapshot: snapshot
             )],
-            now: Date(timeIntervalSince1970: 1_700_000_010)
+            now: Date(timeIntervalSince1970: 1_700_000_010),
+            sectionProofs: sectionProofs
         )
         let lineage = try XCTUnwrap(envelope.activeLineage(for: villageID))
         let entry = try XCTUnwrap(envelope.entry(id: lineage.lastEntryID))
@@ -45,7 +49,8 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         _ raw: String,
         from context: HistoryContext,
         appliedAt: TimeInterval = 1_700_000_200,
-        currentTag: String = "#P1"
+        currentTag: String = "#P1",
+        sectionProofs: [String: SnapshotCoverageProof] = [:]
     ) throws -> SnapshotHistoryImportDecision {
         let snapshot = try AccountSnapshotImporter.parse(
             raw,
@@ -57,7 +62,8 @@ final class ManualTrackerReconciliationTests: XCTestCase {
             currentTag: currentTag,
             hasCurrentSnapshot: true,
             envelope: context.envelope,
-            appliedAt: Date(timeIntervalSince1970: appliedAt)
+            appliedAt: Date(timeIntervalSince1970: appliedAt),
+            sectionProofs: sectionProofs
         )
     }
 
@@ -468,7 +474,40 @@ final class ManualTrackerReconciliationTests: XCTestCase {
     }
 
     func testNonMonotonicHistogramMovementIsConflict() throws {
-        let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1},{"data":100,"lvl":12,"cnt":1}]}"##)
+        let context = try history(
+            ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1},{"data":100,"lvl":12,"cnt":1}]}"##,
+            sectionProofs: [
+                "buildings": .authoritative(source: "test-export", version: "1", expectedCount: 2)
+            ]
+        )
+        let state = try observedState(reference: context.reference, distribution: [10: 1, 12: 1])
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":2}]}"##,
+            from: context,
+            sectionProofs: [
+                "buildings": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+            ]
+        )
+        let preview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: next,
+            currentState: state,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(preview.items.single?.classification, .conflict)
+        XCTAssertTrue(preview.requiresExplicitDecision)
+    }
+
+    func testNonMonotonicHistogramMovementWithoutProofIsUnknown() throws {
+        // Issue 164: without an authoritative source proof a non-monotonic
+        // histogram movement cannot be confirmed as a conflict; it must stay
+        // unknown (still requiring an explicit decision) instead of claiming
+        // the observed distribution contradicts the local state.
+        let context = try history(
+            ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1},{"data":100,"lvl":12,"cnt":1}]}"##
+        )
         let state = try observedState(reference: context.reference, distribution: [10: 1, 12: 1])
         let next = try decision(
             ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":2}]}"##,
@@ -482,7 +521,7 @@ final class ManualTrackerReconciliationTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
         )
 
-        XCTAssertEqual(preview.items.single?.classification, .conflict)
+        XCTAssertEqual(preview.items.single?.classification, .unknown)
         XCTAssertTrue(preview.requiresExplicitDecision)
     }
 

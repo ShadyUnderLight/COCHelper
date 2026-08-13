@@ -117,6 +117,40 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(secondDuplicate.envelope.activeLineage(for: villageID)?.lastEntryID, entryID.asUUID)
     }
 
+    func testCoverageProofChangeAppendsEntryInsteadOfHidingEvidenceChangeAsDuplicate() throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+        ]
+        let base = snapshot(tag: firstTag, text: text)
+        let envelope = try service.loadOrMigrate(
+            villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: base)],
+            now: Date(timeIntervalSince1970: 1),
+            sectionProofs: [:]
+        )
+
+        let decision = try service.planImport(
+            snapshot: base,
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: envelope,
+            appliedAt: Date(timeIntervalSince1970: 2),
+            sectionProofs: proof
+        )
+
+        XCTAssertTrue(decision.appended)
+        XCTAssertFalse(decision.duplicate)
+        XCTAssertEqual(decision.envelope.entries.count, 2)
+        XCTAssertEqual(
+            decision.entry.coverage.section(base: .home, rawSection: "heroes")?.proof,
+            proof["heroes"]
+        )
+    }
+
     func testChangedContentAppendsAndTagChangeStartsNewActiveLineage() throws {
         let store = TestSnapshotHistoryStore()
         let service = SnapshotHistoryService(store: store)
@@ -430,6 +464,75 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(try store.readRawData(), missingEntry)
     }
 
+    func testLegacyObservationVersionRemainsReadableWithoutSectionProof() throws {
+        let store = TestSnapshotHistoryStore()
+        let current = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(
+                tag: firstTag,
+                text: "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+            ),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            observationVersion: 1
+        )
+        let legacyCoverage = SnapshotObservationCoverage(
+            schemaVersion: 1,
+            fields: current.coverage.fields,
+            sections: [],
+            diagnostics: current.coverage.diagnostics
+        )
+        let legacyObservation = CanonicalSnapshotObservation(
+            schemaVersion: 1,
+            rawTopLevelFields: current.observation.rawTopLevelFields,
+            unknownTopLevelFields: current.observation.unknownTopLevelFields,
+            items: current.observation.items
+        )
+        let legacy = SnapshotHistoryEntry(
+            observationVersion: 1,
+            snapshotID: current.snapshotID,
+            villageID: current.villageID,
+            lineageID: current.lineageID,
+            normalizedPlayerTag: current.normalizedPlayerTag,
+            appliedAt: current.appliedAt,
+            sourceTimestamp: current.sourceTimestamp,
+            parserVersion: current.parserVersion,
+            canonicalFingerprint: SnapshotHistoryCanonicalizer.fingerprint(for: legacyObservation),
+            rawJSON: current.rawJSON,
+            observation: legacyObservation,
+            coverage: legacyCoverage,
+            isBaseline: current.isBaseline,
+            baselineReason: current.baselineReason
+        )
+        let envelope = SnapshotHistoryEnvelope(
+            entries: [legacy],
+            lineages: [SnapshotHistoryLineageMetadata(
+                villageID: legacy.villageID,
+                lineageID: legacy.lineageID,
+                normalizedPlayerTag: legacy.normalizedPlayerTag,
+                lastEntryID: legacy.snapshotID,
+                lastFingerprint: legacy.canonicalFingerprint,
+                lastAppliedAt: legacy.appliedAt,
+                hasConflict: false
+            )],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: legacy.appliedAt)
+        )
+
+        let encoded = try envelope.encodedData()
+        // The v1 entry must serialize in the exact legacy shape: no `sections`
+        // key anywhere, so stored bytes and integrity digests stay identical
+        // to the format written by the pre-164 build.
+        let rawJSONString = String(data: encoded, encoding: .utf8) ?? ""
+        XCTAssertFalse(rawJSONString.contains("\"sections\""))
+        try store.writeRawData(encoded)
+        let restored = try XCTUnwrap(try store.load())
+        let restoredEntry = try XCTUnwrap(restored.entries.first)
+
+        XCTAssertEqual(restoredEntry.observationVersion, 1)
+        XCTAssertTrue(restoredEntry.coverage.hasLegacySectionCoverage)
+        XCTAssertNil(restoredEntry.coverage.section(base: .home, rawSection: "heroes"))
+    }
+
     func testFullIntegrityDigestRejectsMetadataDisplayAndCoverageTampering() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("COCHelper-SnapshotHistoryIntegrityTests-\(UUID().uuidString)", isDirectory: true)
@@ -491,6 +594,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             coverage: SnapshotObservationCoverage(
                 schemaVersion: entry.coverage.schemaVersion,
                 fields: entry.coverage.fields,
+                sections: entry.coverage.sections,
                 diagnostics: entry.coverage.diagnostics + ["篡改 coverage"]
             )
         )

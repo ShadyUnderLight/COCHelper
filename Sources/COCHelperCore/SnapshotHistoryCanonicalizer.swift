@@ -20,7 +20,9 @@ public enum SnapshotHistoryCanonicalizer {
         isBaseline: Bool = false,
         baselineReason: SnapshotLineageReason? = nil,
         catalog: GameCatalog? = nil,
-        craftTableCatalog: CraftTableCatalog? = nil
+        craftTableCatalog: CraftTableCatalog? = nil,
+        sectionProofs: [String: SnapshotCoverageProof] = [:],
+        observationVersion: Int = SnapshotHistorySchema.observation
     ) throws -> SnapshotHistoryEntry {
         let source = try canonicalSource(snapshot.originalText)
         let observation = makeObservation(
@@ -31,11 +33,20 @@ public enum SnapshotHistoryCanonicalizer {
         let coverage = makeCoverage(
             source: source,
             catalog: catalog,
-            craftTableCatalog: craftTableCatalog
+            craftTableCatalog: craftTableCatalog,
+            sectionProofs: sectionProofs,
+            schemaVersion: observationVersion
         )
-        let fingerprint = fingerprint(for: observation)
+        let normalizedObservation = CanonicalSnapshotObservation(
+            schemaVersion: observationVersion,
+            rawTopLevelFields: observation.rawTopLevelFields,
+            unknownTopLevelFields: observation.unknownTopLevelFields,
+            items: observation.items
+        )
+        let fingerprint = fingerprint(for: normalizedObservation)
 
         return SnapshotHistoryEntry(
+            observationVersion: observationVersion,
             snapshotID: snapshotID,
             villageID: villageID,
             lineageID: lineageID,
@@ -45,7 +56,7 @@ public enum SnapshotHistoryCanonicalizer {
             parserVersion: AccountSnapshotImporter.parserVersion,
             canonicalFingerprint: fingerprint,
             rawJSON: snapshot.originalText,
-            observation: observation,
+            observation: normalizedObservation,
             coverage: coverage,
             isBaseline: isBaseline,
             baselineReason: baselineReason
@@ -59,7 +70,9 @@ public enum SnapshotHistoryCanonicalizer {
         appliedAt: Date,
         snapshotID: UUID = UUID(),
         catalog: GameCatalog? = nil,
-        craftTableCatalog: CraftTableCatalog? = nil
+        craftTableCatalog: CraftTableCatalog? = nil,
+        sectionProofs: [String: SnapshotCoverageProof] = [:],
+        observationVersion: Int = SnapshotHistorySchema.observation
     ) throws -> SnapshotHistoryEntry {
         try canonicalize(
             snapshot: snapshot,
@@ -70,7 +83,9 @@ public enum SnapshotHistoryCanonicalizer {
             isBaseline: lineage.isBaseline,
             baselineReason: lineage.isBaseline ? lineage.reason : nil,
             catalog: catalog,
-            craftTableCatalog: craftTableCatalog
+            craftTableCatalog: craftTableCatalog,
+            sectionProofs: sectionProofs,
+            observationVersion: observationVersion
         )
     }
 
@@ -413,14 +428,25 @@ public enum SnapshotHistoryCanonicalizer {
     private static func makeCoverage(
         source: CanonicalSource,
         catalog: GameCatalog?,
-        craftTableCatalog: CraftTableCatalog?
+        craftTableCatalog: CraftTableCatalog?,
+        sectionProofs: [String: SnapshotCoverageProof],
+        schemaVersion: Int
     ) -> SnapshotObservationCoverage {
         var fields: [SnapshotCoverageField] = []
+        var sections: [SnapshotSectionCoverage] = []
         var diagnostics: [String] = []
 
         for section in SnapshotHistoryKnownSections.object.sorted() {
             let base = SnapshotHistoryBase(section: section)
             guard let value = source.fields[section] else {
+                sections.append(SnapshotSectionCoverage(
+                    base: base,
+                    rawSection: section,
+                    presence: .missing,
+                    completeness: .unavailable,
+                    proof: proof(for: section, in: sectionProofs, fallback: "源 JSON 缺少 section。"),
+                    observedCount: 0
+                ))
                 appendUnavailable(
                     base: base,
                     section: section,
@@ -430,6 +456,14 @@ public enum SnapshotHistoryCanonicalizer {
             }
 
             guard case .array(let values) = value else {
+                sections.append(SnapshotSectionCoverage(
+                    base: base,
+                    rawSection: section,
+                    presence: .invalid,
+                    completeness: .partial,
+                    proof: proof(for: section, in: sectionProofs, fallback: "section 不是数组。"),
+                    observedCount: 0
+                ))
                 appendPartial(
                     base: base,
                     section: section,
@@ -445,6 +479,20 @@ public enum SnapshotHistoryCanonicalizer {
                 field: "presence",
                 state: .complete
             ))
+            let sectionAnalysis = sectionCoverage(
+                section: section,
+                values: values,
+                proof: sectionProofs[section]
+            )
+            sections.append(SnapshotSectionCoverage(
+                base: base,
+                rawSection: section,
+                presence: values.isEmpty ? .presentEmpty : .presentNonEmpty,
+                completeness: sectionAnalysis.completeness,
+                proof: sectionAnalysis.proof,
+                observedCount: values.count
+            ))
+            diagnostics.append(contentsOf: sectionAnalysis.diagnostics)
             let records: [(index: Int, object: [String: CanonicalJSONValue]?)] = values.enumerated().map {
                 element in
                 guard case .object(let object) = element.element else {
@@ -524,6 +572,14 @@ public enum SnapshotHistoryCanonicalizer {
         for section in SnapshotHistoryKnownSections.numeric.sorted() {
             let base = SnapshotHistoryBase(section: section)
             guard let value = source.fields[section] else {
+                sections.append(SnapshotSectionCoverage(
+                    base: base,
+                    rawSection: section,
+                    presence: .missing,
+                    completeness: .unavailable,
+                    proof: proof(for: section, in: sectionProofs, fallback: "源 JSON 缺少 section。"),
+                    observedCount: 0
+                ))
                 fields.append(SnapshotCoverageField(
                     base: base,
                     rawSection: section,
@@ -539,6 +595,14 @@ public enum SnapshotHistoryCanonicalizer {
                 continue
             }
             guard case .array(let values) = value else {
+                sections.append(SnapshotSectionCoverage(
+                    base: base,
+                    rawSection: section,
+                    presence: .invalid,
+                    completeness: .partial,
+                    proof: proof(for: section, in: sectionProofs, fallback: "section 不是数组。"),
+                    observedCount: 0
+                ))
                 fields.append(SnapshotCoverageField(
                     base: base,
                     rawSection: section,
@@ -560,6 +624,20 @@ public enum SnapshotHistoryCanonicalizer {
                 field: "presence",
                 state: .complete
             ))
+            let sectionAnalysis = sectionCoverage(
+                section: section,
+                values: values,
+                proof: sectionProofs[section]
+            )
+            sections.append(SnapshotSectionCoverage(
+                base: base,
+                rawSection: section,
+                presence: values.isEmpty ? .presentEmpty : .presentNonEmpty,
+                completeness: sectionAnalysis.completeness,
+                proof: sectionAnalysis.proof,
+                observedCount: values.count
+            ))
+            diagnostics.append(contentsOf: sectionAnalysis.diagnostics)
             fields.append(SnapshotCoverageField(
                 base: base,
                 rawSection: section,
@@ -584,7 +662,81 @@ public enum SnapshotHistoryCanonicalizer {
             ))
         }
 
-        return SnapshotObservationCoverage(fields: fields, diagnostics: diagnostics)
+        return SnapshotObservationCoverage(
+            schemaVersion: schemaVersion,
+            fields: fields,
+            sections: sections,
+            diagnostics: diagnostics
+        )
+    }
+
+    private struct SectionCoverageAnalysis {
+        let completeness: SnapshotCoverageState
+        let proof: SnapshotCoverageProof
+        let diagnostics: [String]
+    }
+
+    private static func sectionCoverage(
+        section: String,
+        values: [CanonicalJSONValue],
+        proof: SnapshotCoverageProof?
+    ) -> SectionCoverageAnalysis {
+        guard let proof else {
+            return SectionCoverageAnalysis(
+                completeness: .unavailable,
+                proof: .unavailable(reason: "来源未提供 section 完整性证明。"),
+                diagnostics: []
+            )
+        }
+
+        guard proof.isAuthoritative else {
+            return SectionCoverageAnalysis(
+                completeness: .unavailable,
+                proof: proof,
+                diagnostics: []
+            )
+        }
+
+        if case .authoritative(_, _, let expectedCount) = proof,
+           let expectedCount,
+           expectedCount != values.count {
+            return SectionCoverageAnalysis(
+                completeness: .partial,
+                proof: proof,
+                diagnostics: [section + ": observed count 与来源声明不一致。"]
+            )
+        }
+        let hasInvalidElement = values.contains { value in
+            if case .object(let object) = value {
+                if SnapshotHistoryKnownSections.numeric.contains(section) {
+                    return true
+                }
+                // An authoritative source claims the whole section is
+                // enumerated; a root record without a usable `data` identity
+                // means the enumeration is not well-formed enough to trust.
+                return integer(object["data"]) == nil
+            }
+            if SnapshotHistoryKnownSections.numeric.contains(section) {
+                return integer(value) == nil
+            }
+            return true
+        }
+        guard !hasInvalidElement else {
+            return SectionCoverageAnalysis(
+                completeness: .partial,
+                proof: proof,
+                diagnostics: [section + ": section 含无法解析的元素。"]
+            )
+        }
+        return SectionCoverageAnalysis(completeness: .complete, proof: proof, diagnostics: [])
+    }
+
+    private static func proof(
+        for section: String,
+        in proofs: [String: SnapshotCoverageProof],
+        fallback: String
+    ) -> SnapshotCoverageProof {
+        proofs[section] ?? .unavailable(reason: fallback)
     }
 
     private static func nestedFieldState(

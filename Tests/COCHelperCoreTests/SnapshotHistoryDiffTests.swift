@@ -570,6 +570,77 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(diff.comparisonState, .insufficientCoverage)
     }
 
+    func testHistogramTimerOrderIndependence() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let oldItems = [
+            makeItem(identity: identity, level: 14, count: 1, timer: 90, display: binding),
+            makeItem(identity: identity, level: 14, count: 1, timer: 60, display: binding)
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 14, count: 1, timer: 10, display: binding),
+            makeItem(identity: identity, level: 14, count: 1, timer: 85, display: binding)
+        ]
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: oldItems,
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let forward = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: newItems,
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let reversed = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: newItems.reversed(),
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diffA = SnapshotDiffEngine.compare(from: old, to: forward)
+        let diffB = SnapshotDiffEngine.compare(from: old, to: reversed)
+        XCTAssertEqual(diffA, diffB)
+        XCTAssertTrue(diffA.changes.contains { $0.changeKind == .timerChanged })
+    }
+
+    func testHistogramTimerCompletionStatisticsNotDoubleCounted() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 2, timer: 90, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 15, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        XCTAssertTrue(diff.changes.contains { $0.changeKind == .upgradeCompleted })
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        // aggregateInferred 事件不污染 confirmed 完成数
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.value, 0)
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .available)
+        // level 迁移与 timer 完成是两个独立事件，各计一次
+        XCTAssertEqual(statistics.today.aggregateInferredEventCount.value, 2)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.value, 2)
+    }
+
     func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

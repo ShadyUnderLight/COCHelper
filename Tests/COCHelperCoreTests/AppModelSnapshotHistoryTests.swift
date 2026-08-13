@@ -267,4 +267,105 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         XCTAssertNil(model.villages[0].accountSnapshot)
         XCTAssertEqual(model.villages[0].name, "新名称")
     }
+
+    // MARK: - Issue #173: 真实导入经统一 source coverage contract 接线
+
+    /// 真实账号 JSON 没有完整性协议 → 导入后 buildings 不得声称 complete
+    /// （fail-closed，任何入口都不能隐式用空 proof 声称 complete）。
+    @MainActor
+    func testRealAccountImportWithoutCoverageProtocolKeepsSectionsUnavailable() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle.module.url(forResource: "anonymized_account_snapshot", withExtension: "json")
+        )
+        let raw = try String(contentsOf: fixtureURL, encoding: .utf8)
+        let historyStore = TestSnapshotHistoryStore()
+        let model = try makeModel(villages: [], historyStore: historyStore)
+        model.importText = raw
+        model.parseAccountText()
+
+        XCTAssertNotNil(model.pendingAccountSnapshot)
+        XCTAssertTrue(model.applyPendingAccountSnapshot())
+        let envelope = try XCTUnwrap(historyStore.load())
+        let entry = try XCTUnwrap(envelope.entries.first)
+        let buildings = try XCTUnwrap(
+            entry.coverage.section(base: .home, rawSection: "buildings")
+        )
+        XCTAssertFalse(buildings.isComplete, "无来源协议时不得声称 complete")
+        XCTAssertFalse(buildings.proof.isAuthoritative)
+    }
+
+    /// 账号导入路径：带 coverage 声明的 JSON 的 proof 必须到达 immutable entry。
+    @MainActor
+    func testAccountImportWithCoverageDeclarationReachesCompleteEntry() throws {
+        let raw = """
+        {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
+         "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+        """
+        let historyStore = TestSnapshotHistoryStore()
+        let model = try makeModel(villages: [], historyStore: historyStore)
+        model.importText = raw
+        model.parseAccountText()
+
+        XCTAssertTrue(model.applyPendingAccountSnapshot())
+        let envelope = try XCTUnwrap(historyStore.load())
+        let entry = try XCTUnwrap(envelope.entries.first)
+        let buildings = try XCTUnwrap(
+            entry.coverage.section(base: .home, rawSection: "buildings")
+        )
+        XCTAssertEqual(buildings.completeness, .complete)
+        XCTAssertEqual(
+            buildings.proof,
+            .authoritative(source: "u.coc", version: "1", expectedCount: 1)
+        )
+    }
+
+    /// 快捷导入路径（预览 + 提交）同样经过 source coverage adapter。
+    @MainActor
+    func testQuickImportWithCoverageDeclarationReachesCompleteEntry() throws {
+        let raw = """
+        {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
+         "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+        """
+        let village = VillageProfile(id: UUID(), name: "主村")
+        let historyStore = TestSnapshotHistoryStore()
+        let model = try makeModel(
+            villages: [village],
+            historyStore: historyStore,
+            clipboardReader: { raw }
+        )
+
+        guard case .success(let preview) = model.prepareQuickImport(for: model.villages[0].id) else {
+            return XCTFail("有效快照应能生成快捷导入预览")
+        }
+        XCTAssertTrue(model.applyQuickImport(preview))
+        let envelope = try XCTUnwrap(historyStore.load())
+        let entry = try XCTUnwrap(envelope.entries.last)
+        let buildings = try XCTUnwrap(
+            entry.coverage.section(base: .home, rawSection: "buildings")
+        )
+        XCTAssertEqual(buildings.completeness, .complete)
+    }
+
+    /// 启动迁移路径（loadOrMigrate）也按村庄传入 source coverage proof。
+    @MainActor
+    func testStartupMigrationWithCoverageDeclarationReachesCompleteEntry() throws {
+        let raw = """
+        {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
+         "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+        """
+        let village = VillageProfile(
+            id: UUID(),
+            name: "主村",
+            accountSnapshot: snapshot(tag: "#2QJQ8J88", text: raw)
+        )
+        let historyStore = TestSnapshotHistoryStore()
+        _ = try makeModel(villages: [village], historyStore: historyStore)
+
+        let envelope = try XCTUnwrap(historyStore.load())
+        let entry = try XCTUnwrap(envelope.entries.first)
+        let buildings = try XCTUnwrap(
+            entry.coverage.section(base: .home, rawSection: "buildings")
+        )
+        XCTAssertEqual(buildings.completeness, .complete)
+    }
 }

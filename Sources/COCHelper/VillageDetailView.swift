@@ -17,6 +17,7 @@ struct VillageDetailView: View {
 
     @State private var selectedBase: TrackerBase = .home
     @State private var selectedFilter: CategoryFilter = .all
+    @State private var selectedHistoryCategory: SnapshotHistoryCategory = .all
     @State private var selectedItem: VillageItemState?
     // Issue #61：快捷「粘贴并更新」的确认 sheet 与失败提示载体。
     // prepareQuickImport 是纯函数（不写状态），结果分派到这两个载体之一。
@@ -155,11 +156,20 @@ struct VillageDetailView: View {
             buildingGroups.flatMap { group in group.instances.map { ($0.id, group) } },
             uniquingKeysWith: { first, _ in first }
         )
+        let historyProjection = model.snapshotHistoryProjection(
+            for: villageID,
+            category: selectedHistoryCategory,
+            at: now
+        )
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, now: now)
                 officialAPISection()
+                SnapshotHistoryView(
+                    projection: historyProjection,
+                    selectedCategory: $selectedHistoryCategory
+                )
                 metricsBar(metrics: progressMetrics, coverage: projection.progressCoverage)
                 basePicker()
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)

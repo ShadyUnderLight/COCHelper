@@ -725,10 +725,7 @@ public enum SnapshotDiffEngine {
         let universeProofComplete = sectionCoverageIsComplete(
             entry: presenceSide,
             identity: identity
-        ) && nestedFieldCoverageIsComplete(
-            entry: presenceSide,
-            identity: identity
-        )
+        ) && nestedEnumerationIsConfirmed(identity: identity)
         let itemComplete = observedItemFieldsAreComplete(
             entry: observedSide,
             item: observed,
@@ -1284,29 +1281,14 @@ public enum SnapshotDiffEngine {
     }
 
     /// A root-level authoritative proof covers root record enumeration only.
-    /// Confirming that a nested type/module child appeared or disappeared also
-    /// requires the `types`/`modules` field evidence to be complete on the
-    /// presence side, otherwise a truncated nested array could be mistaken for
-    /// a real removal.
-    private static func nestedFieldCoverageIsComplete(
-        entry: SnapshotHistoryEntry,
-        identity: SnapshotItemIdentity
-    ) -> Bool {
-        guard identity.nestedKind != .root else { return true }
-        let field: String
-        switch identity.nestedKind {
-        case .type:
-            field = "types"
-        case .module:
-            field = "modules"
-        case .root, .unknown:
-            return true
-        }
-        return entry.coverage.state(
-            base: identity.base,
-            rawSection: identity.rawSection,
-            field: field
-        ) == .complete
+    /// Field-level `types`/`modules` completeness proves the array is
+    /// parseable, not that its nested enumeration was not truncated, and a
+    /// root-level `modules:[]` says nothing about deeper `types[].modules[]`.
+    /// Until an explicit nested enumeration proof (expected counts per nested
+    /// path) exists, single-sided nested appearance/disappearance fails
+    /// closed and stays unknown + insufficient.
+    private static func nestedEnumerationIsConfirmed(identity: SnapshotItemIdentity) -> Bool {
+        identity.nestedKind == .root
     }
 
     private static func observedItemFieldsAreComplete(

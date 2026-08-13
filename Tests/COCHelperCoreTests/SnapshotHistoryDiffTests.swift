@@ -640,6 +640,171 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(childChange.coverage.state, .insufficient)
     }
 
+    func testNestedEnumerationTruncationDoesNotConfirmChildDisappearance() throws {
+        // P1 反例：types:[200,201] → types:[201] 两侧字段都可解析且
+        // coverage complete，但 200 可能是被截断而非真实消失。
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let proof: [String: SnapshotCoverageProof] = [
+            "buildings": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+        ]
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":200},{\"data\":201}]}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let newSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":201}]}]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            sectionProofs: proof
+        )
+        let newEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: newSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            sectionProofs: proof
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: newEntry)
+        let missingChild = try XCTUnwrap(
+            diff.changes.first { $0.identity.dataID == 200 && $0.identity.nestedKind == .type }
+        )
+        XCTAssertEqual(missingChild.changeKind, .unknown)
+        XCTAssertEqual(missingChild.evidence, .unknown)
+        XCTAssertEqual(missingChild.coverage.state, .insufficient)
+    }
+
+    func testNestedEnumerationTruncationDoesNotConfirmChildNewlyObserved() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let proof: [String: SnapshotCoverageProof] = [
+            "buildings": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+        ]
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":201}]}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let newSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":200},{\"data\":201}]}]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            sectionProofs: proof
+        )
+        let newEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: newSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            sectionProofs: proof
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: newEntry)
+        let newChild = try XCTUnwrap(
+            diff.changes.first { $0.identity.dataID == 200 && $0.identity.nestedKind == .type }
+        )
+        XCTAssertEqual(newChild.changeKind, .unknown)
+        XCTAssertEqual(newChild.evidence, .unknown)
+        XCTAssertEqual(newChild.coverage.state, .insufficient)
+    }
+
+    func testDeepNestedModuleDisappearanceUnderRootModulesIsNotConfirmed() throws {
+        // 深层反例（评审原文）：types[].modules[] 缺失时，若根级存在 modules:[]，
+        // 根级 modules 字段 coverage 为 complete —— 不能据此确认深层子项消失。
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let proof: [String: SnapshotCoverageProof] = [
+            "buildings": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+        ]
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":200,\"modules\":[{\"data\":300}]}]}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let newSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":200,\"modules\":[]}]}]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            sectionProofs: proof
+        )
+        let newEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: newSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            sectionProofs: proof
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: newEntry)
+        let moduleChange = try XCTUnwrap(
+            diff.changes.first { $0.identity.dataID == 300 && $0.identity.nestedKind == .module }
+        )
+        XCTAssertEqual(moduleChange.changeKind, .unknown)
+        XCTAssertEqual(moduleChange.evidence, .unknown)
+        XCTAssertEqual(moduleChange.coverage.state, .insufficient)
+    }
+
+    func testRootLevelModulesEmptyArrayDoesNotConfirmModuleChildDisappearance() throws {
+        // 评审原文反例的根级形态：modules:[{data:300}] → modules:[]（根级字段存在）。
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let proof: [String: SnapshotCoverageProof] = [
+            "buildings": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+        ]
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":100,\"modules\":[{\"data\":300}]}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let newSnapshot = try AccountSnapshotImporter.parse(
+            "{\"buildings\":[{\"data\":100,\"modules\":[]}]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            sectionProofs: proof
+        )
+        let newEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: newSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            sectionProofs: proof
+        )
+
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: newEntry)
+        let moduleChange = try XCTUnwrap(
+            diff.changes.first { $0.identity.dataID == 300 && $0.identity.nestedKind == .module }
+        )
+        XCTAssertEqual(moduleChange.changeKind, .unknown)
+        XCTAssertEqual(moduleChange.evidence, .unknown)
+        XCTAssertEqual(moduleChange.coverage.state, .insufficient)
+    }
+
     func testAuthoritativeProofWithMalformedNestedArrayDegradesToPartial() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

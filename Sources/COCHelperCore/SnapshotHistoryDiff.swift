@@ -1185,8 +1185,18 @@ public enum SnapshotDiffEngine {
         case (.absent, .active), (.inactive, .active):
             return TimerResult(kind: .upgradeStarted, requiredFields: fields)
         case (.active, .active):
-            if timerChangedAfterNormalization(old: old, new: new, from: from, to: to) {
+            switch normalizedTimerComparison(
+                oldNumbersByField: timerNumbersByField(old.rawTimerEvidence),
+                newNumbersByField: timerNumbersByField(new.rawTimerEvidence),
+                from: from,
+                to: to
+            ) {
+            case .changed:
                 return TimerResult(kind: .timerChanged, requiredFields: fields)
+            case .unstable(let reason):
+                return TimerResult(kind: nil, isUnknown: true, reason: reason, requiredFields: fields)
+            case .unchanged:
+                break
             }
         case (.active, .absent), (.active, .inactive):
             if let oldLevel = validLevel(old.level), let newLevel = validLevel(new.level), newLevel > oldLevel {
@@ -1563,13 +1573,18 @@ public enum SnapshotDiffEngine {
         case (.absent, .active), (.inactive, .active):
             return TimerResult(kind: .upgradeStarted, requiredFields: fields)
         case (.active, .active):
-            if aggregateTimerChangedAfterNormalization(
-                oldItems: oldItems,
-                newItems: newItems,
+            switch normalizedTimerComparison(
+                oldNumbersByField: aggregateTimerNumbersByField(oldItems),
+                newNumbersByField: aggregateTimerNumbersByField(newItems),
                 from: from,
                 to: to
             ) {
+            case .changed:
                 return TimerResult(kind: .timerChanged, requiredFields: fields)
+            case .unstable(let reason):
+                return TimerResult(kind: nil, isUnknown: true, reason: reason, requiredFields: fields)
+            case .unchanged:
+                break
             }
         case (.active, .absent), (.active, .inactive):
             if hasCredibleLevelUp {
@@ -1590,29 +1605,81 @@ public enum SnapshotDiffEngine {
         return TimerResult(requiredFields: fields)
     }
 
-    private static func aggregateTimerChangedAfterNormalization(
-        oldItems: [SnapshotObservationItem],
-        newItems: [SnapshotObservationItem],
+    /// remaining timer 规范化比较结果。
+    private enum TimerNormalizedResult {
+        case changed
+        case unchanged
+        case unstable(String)
+    }
+
+    /// 规范化 remaining timer 比较（unique 与 aggregate 共用）：
+    /// - 时间证据：sourceTimestamp 缺失/非法（≤ 0）/倒序 → unstable，不得猜测；
+    /// - 字段证据：timer 字段集合不一致（某字段仅单侧出现）→ unstable；
+    /// - 数量证据：同字段实例数量不一致 → unstable（无法稳定配对）；
+    /// - 数值证据：|new − (old − elapsed)| 超过容差 → changed；全部自然流逝 → unchanged。
+    private static func normalizedTimerComparison(
+        oldNumbersByField: [String: [Int64]],
+        newNumbersByField: [String: [Int64]],
         from: SnapshotHistoryEntry,
         to: SnapshotHistoryEntry
-    ) -> Bool {
-        let elapsed = to.appliedAt.timeIntervalSince(from.appliedAt)
-        let fields = Set(oldItems.flatMap { $0.rawTimerEvidence.keys })
-            .union(newItems.flatMap { $0.rawTimerEvidence.keys })
-            .sorted()
-        for field in fields {
-            let oldNumbers = oldItems.compactMap { $0.rawTimerEvidence[field].flatMap(timerNumber) }.sorted()
-            let newNumbers = newItems.compactMap { $0.rawTimerEvidence[field].flatMap(timerNumber) }.sorted()
-            guard !oldNumbers.isEmpty, !newNumbers.isEmpty else { continue }
-            guard oldNumbers.count == newNumbers.count else { return true }
+    ) -> TimerNormalizedResult {
+        guard let fromTime = from.sourceTimestamp,
+              let toTime = to.sourceTimestamp,
+              fromTime.timeIntervalSince1970 > 0,
+              toTime.timeIntervalSince1970 > 0 else {
+            return .unstable("source timestamp 缺失或非法，无法规范化 remaining timer。")
+        }
+        let elapsed = toTime.timeIntervalSince(fromTime)
+        guard elapsed >= 0 else {
+            return .unstable("source timestamp 倒序，无法规范化 remaining timer。")
+        }
+        let fields = Set(oldNumbersByField.keys).union(newNumbersByField.keys)
+        for field in fields.sorted() {
+            guard let oldNumbers = oldNumbersByField[field], !oldNumbers.isEmpty,
+                  let newNumbers = newNumbersByField[field], !newNumbers.isEmpty else {
+                return .unstable("timer 字段 \(field) 仅在一侧出现，无法确认 timer 变化。")
+            }
+            guard oldNumbers.count == newNumbers.count else {
+                return .unstable("timer 字段 \(field) 的实例数量不一致，无法稳定配对。")
+            }
             for (oldNumber, newNumber) in zip(oldNumbers, newNumbers) {
                 let expected = Double(oldNumber) - elapsed
                 if abs(Double(newNumber) - expected) > timerElapsedTolerance {
-                    return true
+                    return .changed
                 }
             }
         }
-        return false
+        return .unchanged
+    }
+
+    /// 按字段收集可解析的 timer 数值（unique 场景每字段至多一个）。
+    private static func timerNumbersByField(
+        _ evidence: [String: CanonicalJSONValue]
+    ) -> [String: [Int64]] {
+        var result: [String: [Int64]] = [:]
+        for key in evidence.keys.sorted() {
+            if let number = evidence[key].flatMap(timerNumber) {
+                result[key] = [number]
+            }
+        }
+        return result
+    }
+
+    /// 按字段收集所有实例的可解析 timer 数值（aggregate 场景）。
+    private static func aggregateTimerNumbersByField(
+        _ items: [SnapshotObservationItem]
+    ) -> [String: [Int64]] {
+        var result: [String: [Int64]] = [:]
+        for item in items {
+            for key in item.rawTimerEvidence.keys {
+                guard let number = item.rawTimerEvidence[key].flatMap(timerNumber) else { continue }
+                result[key, default: []].append(number)
+            }
+        }
+        for key in result.keys {
+            result[key]?.sort()
+        }
+        return result
     }
 
     /// 把 aggregate timer 结果输出为独立 change（evidence: .aggregateInferred）。
@@ -1666,31 +1733,6 @@ public enum SnapshotDiffEngine {
                 rawSection: identity.rawSection
             ))
         }
-    }
-
-    /// 规范化 remaining timer 比较：自然倒计时（new ≈ old − elapsed）不算业务变化。
-    /// 所有可解析 timer 字段都必须自然流逝才判定为无变化；任一字段规范化后仍变化 → timerChanged。
-    private static func timerChangedAfterNormalization(
-        old: SnapshotObservationItem,
-        new: SnapshotObservationItem,
-        from: SnapshotHistoryEntry,
-        to: SnapshotHistoryEntry
-    ) -> Bool {
-        let elapsed = to.appliedAt.timeIntervalSince(from.appliedAt)
-        let fields = Set(old.rawTimerEvidence.keys).union(new.rawTimerEvidence.keys).sorted()
-        for field in fields {
-            guard let oldValue = old.rawTimerEvidence[field],
-                  let newValue = new.rawTimerEvidence[field],
-                  let oldNumber = timerNumber(oldValue),
-                  let newNumber = timerNumber(newValue) else {
-                continue
-            }
-            let expected = Double(oldNumber) - elapsed
-            if abs(Double(newNumber) - expected) > timerElapsedTolerance {
-                return true
-            }
-        }
-        return false
     }
 
     private struct Histogram {

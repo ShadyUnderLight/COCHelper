@@ -124,6 +124,58 @@ public struct SnapshotHistoryCategorySummary: Hashable, Identifiable, Sendable {
     }
 }
 
+public extension SnapshotChange {
+    /// Quantity represented by one history change row.
+    ///
+    /// Whole-group additions/removals intentionally carry only one side of
+    /// the quantity pair.  Other change kinds must not consume a lone value,
+    /// because an unknown/partial comparison cannot safely turn an observed
+    /// quantity into a confirmed delta.
+    var snapshotHistoryImpact: Int {
+        if let movedQuantity, movedQuantity > 0 { return movedQuantity }
+
+        switch changeKind {
+        case .newlyObserved:
+            if let newQuantity, newQuantity > 0 { return newQuantity }
+        case .noLongerObserved:
+            if let oldQuantity, oldQuantity > 0 { return oldQuantity }
+        default:
+            break
+        }
+
+        if let oldQuantity, let newQuantity {
+            let (delta, overflow) = newQuantity.subtractingReportingOverflow(oldQuantity)
+            if overflow || delta == Int.min { return Int.max }
+            let magnitude = abs(delta)
+            if magnitude > 0 { return magnitude }
+        }
+        return 1
+    }
+
+    /// Quantity suffix used by the immutable history detail row.
+    var snapshotHistoryQuantityText: String? {
+        if let movedQuantity, movedQuantity > 1 {
+            return "×\(movedQuantity)"
+        }
+        if let oldQuantity, let newQuantity, oldQuantity != newQuantity {
+            return "数量 \(oldQuantity) → \(newQuantity)"
+        }
+        switch changeKind {
+        case .newlyObserved:
+            if let newQuantity, newQuantity > 1 { return "×\(newQuantity)" }
+        case .noLongerObserved:
+            if let oldQuantity, oldQuantity > 1 { return "×\(oldQuantity)" }
+        default:
+            break
+        }
+        return nil
+    }
+
+    var snapshotHistoryIsUncertain: Bool {
+        changeKind == .unknown || evidence == .unknown || coverage.state != .complete
+    }
+}
+
 public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
     public let snapshotID: UUID
     public let lineageID: UUID
@@ -145,6 +197,9 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
     fileprivate let unfilteredDiagnostics: [String]
 
     public var id: UUID { snapshotID }
+    public var containsUncertainChanges: Bool {
+        changes.contains { $0.snapshotHistoryIsUncertain }
+    }
 
     fileprivate init(
         entry: SnapshotHistoryEntry,
@@ -171,7 +226,6 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
         self.summary = Self.summary(
             isBaseline: entry.isBaseline,
             comparisonState: diff?.comparisonState,
-            summaries: summaries,
             changes: changes
         )
         self.changes = changes
@@ -201,7 +255,6 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
         self.summary = Self.summary(
             isBaseline: source.isBaseline,
             comparisonState: source.comparisonState,
-            summaries: summaries,
             changes: visibleChanges
         )
         self.changes = visibleChanges
@@ -231,7 +284,7 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
         var totals: [SnapshotHistoryCategory: Int] = [:]
         for change in changes {
             let category = SnapshotHistoryCategory.boundCategory(for: change)
-            totals[category] = saturatedAdd(totals[category] ?? 0, impact(of: change))
+            totals[category] = saturatedAdd(totals[category] ?? 0, change.snapshotHistoryImpact)
         }
         return totals.map { SnapshotHistoryCategorySummary(category: $0.key, count: $0.value) }
             .sorted { lhs, rhs in
@@ -242,19 +295,7 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
     }
 
     private static func impactCount(of changes: [SnapshotChange]) -> Int {
-        changes.reduce(0) { saturatedAdd($0, impact(of: $1)) }
-    }
-
-    private static func impact(of change: SnapshotChange) -> Int {
-        if let moved = change.movedQuantity, moved > 0 { return moved }
-        if let old = change.oldQuantity, let new = change.newQuantity {
-            let (delta, overflow) = new.subtractingReportingOverflow(old)
-            if overflow { return Int.max }
-            if delta == Int.min { return Int.max }
-            let magnitude = abs(delta)
-            if magnitude > 0 { return magnitude }
-        }
-        return 1
+        changes.reduce(0) { saturatedAdd($0, $1.snapshotHistoryImpact) }
     }
 
     private static func saturatedAdd(_ lhs: Int, _ rhs: Int) -> Int {
@@ -265,7 +306,6 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
     private static func summary(
         isBaseline: Bool,
         comparisonState: SnapshotDiffComparisonState?,
-        summaries: [SnapshotHistoryCategorySummary],
         changes: [SnapshotChange]
     ) -> String {
         if isBaseline { return "初始基线（不计变化）" }
@@ -274,9 +314,60 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
                 ? "覆盖不足，无法确认变化"
                 : "没有可确认变化"
         }
-        let parts = summaries.prefix(4).map { $0.category.title + " +" + String($0.count) }
-        let remaining = max(0, summaries.count - 4)
-        return parts.joined(separator: " · ") + (remaining > 0 ? " · 另 \(remaining) 类" : "")
+
+        let confirmedChanges = changes.filter {
+            $0.evidence == .confirmed && !$0.snapshotHistoryIsUncertain
+        }
+        let inferredChanges = changes.filter {
+            $0.evidence == .aggregateInferred && !$0.snapshotHistoryIsUncertain
+        }
+        let pendingChanges = changes.filter {
+            $0.evidence == .unknown || $0.snapshotHistoryIsUncertain
+        }
+
+        var parts: [String] = []
+        if let confirmed = summaryGroup(
+            summaries: summaries(for: confirmedChanges),
+            limit: 3,
+            prefix: "",
+            suffix: { " +" + String($0) }
+        ) {
+            parts.append(confirmed)
+        }
+        if let inferred = summaryGroup(
+            summaries: summaries(for: inferredChanges),
+            limit: 2,
+            prefix: "推断：",
+            suffix: { " +" + String($0) }
+        ) {
+            parts.append(inferred)
+        }
+        if let pending = summaryGroup(
+            summaries: summaries(for: pendingChanges),
+            limit: 2,
+            prefix: "待确认：",
+            suffix: { " " + String($0) + " 项" }
+        ) {
+            parts.append(pending)
+        }
+        if comparisonState == .insufficientCoverage && pendingChanges.isEmpty {
+            parts.append("覆盖不足，无法确认完整变化")
+        }
+        return parts.isEmpty ? "没有可确认变化" : parts.joined(separator: " · ")
+    }
+
+    private static func summaryGroup(
+        summaries: [SnapshotHistoryCategorySummary],
+        limit: Int,
+        prefix: String,
+        suffix: (Int) -> String
+    ) -> String? {
+        guard !summaries.isEmpty else { return nil }
+        let visible = summaries.prefix(limit).map {
+            $0.category.title + suffix($0.count)
+        }.joined(separator: " · ")
+        let remaining = max(0, summaries.count - limit)
+        return prefix + visible + (remaining > 0 ? " · 另 \(remaining) 类" : "")
     }
 }
 
@@ -379,6 +470,9 @@ public struct SnapshotHistoryProjection: Hashable, Sendable {
             availability = .insufficient("没有可比较的相邻快照。")
         } else if diffs.allSatisfy({ $0.comparisonState != .comparable }) {
             availability = .insufficient("相邻快照覆盖不足，无法确认完整变化。")
+        } else if rows.first?.comparisonState == .insufficientCoverage
+                    || rows.first?.containsUncertainChanges == true {
+            availability = .insufficient("最新相邻快照覆盖不足，部分变化仍待确认。")
         } else {
             availability = .available
         }

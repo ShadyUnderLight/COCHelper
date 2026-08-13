@@ -82,8 +82,10 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         XCTAssertEqual(all.timeline[0].changes.first(where: { $0.category == "heroes" })?.displayName, "历史英雄名")
         XCTAssertEqual(all.statistics.today.heroLevelGrowth.value, 1)
         XCTAssertEqual(all.statistics.today.wallLevelGrowth.value, 100)
+        XCTAssertEqual(all.statistics.today.aggregateInferredWallLevelGrowth.value, 100)
+        XCTAssertEqual(all.statistics.today.confirmedWallLevelGrowth.value, 0)
         XCTAssertTrue(all.latestSummary?.contains("英雄 +1") == true)
-        XCTAssertTrue(all.latestSummary?.contains("城墙 +100") == true)
+        XCTAssertTrue(all.latestSummary?.contains("推断：城墙 +100") == true)
 
         let walls = all.applying(category: .walls)
         XCTAssertEqual(walls.selectedCategory, .walls)
@@ -96,6 +98,75 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         XCTAssertTrue(pets.filterIsEmpty)
         XCTAssertEqual(pets.timeline, [])
         XCTAssertEqual(pets.applying(category: .all).timeline.count, 2)
+    }
+
+    func testWholeGroupAdditionAndRemovalKeepSingleSidedQuantity() throws {
+        let baseline = makeEntry(
+            id: "B0000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 100,
+            isBaseline: true,
+            items: []
+        )
+        let appeared = makeEntry(
+            id: "B1000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 200,
+            items: [wall(level: 12, count: 100)]
+        )
+        let disappeared = makeEntry(
+            id: "B2000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 300,
+            items: []
+        )
+        let envelope = makeEnvelope(
+            entries: [baseline, appeared, disappeared],
+            activeEntries: [(villageA, disappeared)]
+        )
+
+        let result = projection(envelope: envelope, referenceDate: 300)
+        let removalRow = try XCTUnwrap(result.timeline.first { $0.snapshotID == disappeared.snapshotID })
+        XCTAssertEqual(removalRow.changes.count, 1)
+        let removal = try XCTUnwrap(removalRow.changes.first)
+        XCTAssertEqual(removal.changeKind, .noLongerObserved)
+        XCTAssertEqual(removal.oldQuantity, 100)
+        XCTAssertNil(removal.newQuantity)
+        XCTAssertEqual(removal.snapshotHistoryImpact, 100)
+        XCTAssertEqual(removal.snapshotHistoryQuantityText, "×100")
+        XCTAssertEqual(removalRow.visibleChangeCount, 100)
+        XCTAssertEqual(removalRow.summary, "城墙 +100")
+
+        let additionRow = try XCTUnwrap(result.timeline.first { $0.snapshotID == appeared.snapshotID })
+        XCTAssertEqual(additionRow.changes.count, 1)
+        let addition = try XCTUnwrap(additionRow.changes.first)
+        XCTAssertEqual(addition.changeKind, .newlyObserved)
+        XCTAssertNil(addition.oldQuantity)
+        XCTAssertEqual(addition.newQuantity, 100)
+        XCTAssertEqual(addition.snapshotHistoryImpact, 100)
+        XCTAssertEqual(addition.snapshotHistoryQuantityText, "×100")
+        XCTAssertEqual(additionRow.visibleChangeCount, 100)
+        XCTAssertEqual(additionRow.summary, "城墙 +100")
+    }
+
+    func testUnknownChangeDoesNotPromoteSingleSidedQuantityToDelta() {
+        let change = SnapshotChange(
+            identity: SnapshotItemIdentity(base: .home, rawSection: "buildings", dataID: 8),
+            displayName: "历史城墙名",
+            category: "buildings",
+            displayCategory: "walls",
+            newQuantity: 100,
+            changeKind: .unknown,
+            evidence: .unknown,
+            coverage: SnapshotDiffCoverage(state: .insufficient, reasons: ["测试覆盖不足"])
+        )
+
+        XCTAssertEqual(change.snapshotHistoryImpact, 1)
+        XCTAssertNil(change.snapshotHistoryQuantityText)
+        XCTAssertTrue(change.snapshotHistoryIsUncertain)
     }
 
     func testInterleavedVillagesStillFormAdjacentDiffWithinActiveLineage() {
@@ -262,6 +333,43 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         XCTAssertFalse(projection.timeline[0].diagnostics.isEmpty)
         XCTAssertFalse(projection.timeline[0].changes.contains { $0.changeKind == .noLongerObserved })
         XCTAssertEqual(projection.statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
+    func testLatestCoverageFailureDegradesHeaderAndUsesTentativeSummary() {
+        let baseline = makeEntry(
+            id: "C0000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 100,
+            isBaseline: true,
+            items: [hero(level: 1)]
+        )
+        let comparable = makeEntry(
+            id: "C1000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 200,
+            items: [hero(level: 2)]
+        )
+        let incomplete = makeEntry(
+            id: "C2000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 300,
+            items: [],
+            levelCoverage: .partial
+        )
+        let envelope = makeEnvelope(
+            entries: [baseline, comparable, incomplete],
+            activeEntries: [(villageA, incomplete)]
+        )
+
+        let result = projection(envelope: envelope, referenceDate: 300)
+        XCTAssertEqual(result.availability, .insufficient("最新相邻快照覆盖不足，部分变化仍待确认。"))
+        XCTAssertEqual(result.timeline[0].comparisonState, .insufficientCoverage)
+        XCTAssertTrue(result.timeline[0].containsUncertainChanges)
+        XCTAssertEqual(result.latestSummary, "待确认：英雄 1 项")
+        XCTAssertFalse(result.latestSummary?.contains("英雄 +1") == true)
     }
 
     func testUnavailableProjectionPreservesTypedFailure() {

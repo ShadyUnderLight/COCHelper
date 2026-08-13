@@ -216,7 +216,10 @@ struct SnapshotHistoryView: View {
     }
 
     private func rowHeader(_ row: SnapshotHistoryRow) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        let countLabel = row.containsUncertainChanges
+            ? String(row.visibleChangeCount) + " 项（含待确认）"
+            : String(row.visibleChangeCount) + " 项变化"
+        return HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.appliedAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.subheadline.weight(.semibold).monospacedDigit())
@@ -232,7 +235,7 @@ struct SnapshotHistoryView: View {
             }
             Spacer(minLength: 10)
             if !row.isBaseline {
-                Text(String(row.visibleChangeCount) + " 项变化")
+                Text(countLabel)
                     .font(.caption2.weight(.semibold).monospacedDigit())
                     .foregroundStyle(row.comparisonState == .insufficientCoverage ? .orange : Color.cocAccent)
                     .padding(.horizontal, 8)
@@ -337,14 +340,23 @@ struct SnapshotHistoryView: View {
     private func statisticMetrics(window: SnapshotHistoryStatisticsWindow) -> [StatisticMetric] {
         [
             StatisticMetric(title: "建筑升级完成", value: window.buildingUpgradeCompletions),
-            StatisticMetric(title: "建筑等级增长", value: window.buildingLevelGrowth),
-            StatisticMetric(title: "城墙等级增长", value: window.wallLevelGrowth),
+            StatisticMetric(title: "建筑等级增长（已确认）", value: window.buildingLevelGrowth),
+            StatisticMetric(
+                title: "建筑等级增长（聚合推断）",
+                value: window.aggregateInferredBuildingLevelGrowth
+            ),
+            StatisticMetric(title: "城墙等级增长（总计）", value: window.wallLevelGrowth),
+            StatisticMetric(title: "城墙等级增长（已确认）", value: window.confirmedWallLevelGrowth),
+            StatisticMetric(
+                title: "城墙等级增长（聚合推断）",
+                value: window.aggregateInferredWallLevelGrowth
+            ),
             StatisticMetric(title: "英雄等级增长", value: window.heroLevelGrowth),
             StatisticMetric(title: "兵种等级增长", value: window.troopLevelGrowth),
             StatisticMetric(title: "法术等级增长", value: window.spellLevelGrowth),
             StatisticMetric(title: "战宠等级增长", value: window.petLevelGrowth),
             StatisticMetric(title: "英雄装备增长", value: window.heroEquipmentLevelGrowth),
-            StatisticMetric(title: "聚合推断事件", value: window.aggregateInferredEventCount)
+            StatisticMetric(title: "聚合推断事件数", value: window.aggregateInferredEventCount)
         ]
     }
 
@@ -437,11 +449,8 @@ struct SnapshotHistoryView: View {
         } else if let newLevel = change.newLevel {
             parts.append("当前等级 Lv.\(newLevel)")
         }
-        if let moved = change.movedQuantity, moved > 1 {
-            parts.append("×\(moved)")
-        } else if let oldQuantity = change.oldQuantity, let newQuantity = change.newQuantity,
-                  oldQuantity != newQuantity {
-            parts.append("数量 \(oldQuantity) → \(newQuantity)")
+        if let quantityText = change.snapshotHistoryQuantityText {
+            parts.append(quantityText)
         }
         if parts.isEmpty {
             parts.append(change.identity.rawSection + " #" + String(change.identity.dataID))

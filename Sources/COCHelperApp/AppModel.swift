@@ -129,6 +129,12 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var pendingReconciliationPreview: ManualReconciliationPreview?
     @Published public private(set) var accountImportError: String?
     @Published public private(set) var snapshotHistoryError: String?
+    /// Health of the base village store.  A corrupt or future store is kept in
+    /// memory only as a recovery placeholder and never treated as an empty
+    /// successful load.
+    @Published public private(set) var villageStoreStatus: VillageStoreStatus = .missing
+    @Published public private(set) var villageStoreError: String?
+    @Published public private(set) var villageStoreRecoveryNotice: String?
     /// Projection-safe per-village manual state. Imported snapshots remain
     /// observations; a core whose baseline is not the current active history
     /// tail is exposed here as unknown without rewriting its persisted bytes.
@@ -179,6 +185,7 @@ public final class AppModel: ObservableObject {
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"
     private let villagesStorageKey = "coc-helper.villages.v1"
+    private let villageStoreRecoveryKey = "coc-helper.villages.v1.recovery"
     private static let clanStatesStorageKey = "coc-helper.clans.v1"
     private static let clanWarStatesStorageKey = "coc-helper.clan-wars.v1"
     private static let clanWarLogStatesStorageKey = "coc-helper.clan-war-logs.v1"
@@ -200,6 +207,12 @@ public final class AppModel: ObservableObject {
     private var manualTrackerEnvelope: ManualTrackerEnvelope?
     private var historyLoadFailure: SnapshotHistoryAvailability?
     private var historyProjectionCache: [SnapshotHistoryProjectionCacheKey: SnapshotHistoryProjection] = [:]
+    private var villageStoreRecoveryData: Data?
+
+    private enum VillageTransactionJournalKind: String, Codable {
+        case snapshotImport
+        case manualTracker
+    }
 
     public convenience init(
         defaults: UserDefaults = .standard,
@@ -274,36 +287,121 @@ public final class AppModel: ObservableObject {
         self.historyEnvelope = nil
         self.manualTrackerEnvelope = nil
         self.historyLoadFailure = nil
+        self.villageStoreRecoveryData = nil
         snapshotHistoryError = nil
         manualTrackerStatus = .empty
         manualTrackerError = nil
 
+        var persistedVillageData = resolvedCurrentPersistence.readData()
+        var villageLoadResult = VillageStoreCodec.load(persistedVillageData)
+        let skipTransactionRecovery: Bool = {
+            switch villageLoadResult {
+            case .corrupt, .unsupportedSchema:
+                return true
+            case .missing, .loaded:
+                return false
+            }
+        }()
         var startupError: String?
-        do {
-            try importTransaction.recoverIfNeeded()
-        } catch {
-            startupError = Self.localizedPersistenceError(error)
-            historyLoadFailure = Self.snapshotHistoryAvailability(for: error)
-        }
-
         var manualStartupError: String?
-        do {
-            try manualTrackerTransaction.recoverIfNeeded()
-        } catch {
-            manualStartupError = Self.localizedPersistenceError(error)
+
+        // A transaction journal can restore a missing/valid current blob.  It
+        // must run before startup decides whether to synthesize and persist a
+        // default village; otherwise a recovered payload could be overwritten.
+        // Corrupt/future bytes deliberately skip all recovery writes so the
+        // original payload remains untouched until the user chooses recovery.
+        if !skipTransactionRecovery {
+            do {
+                try importTransaction.recoverIfNeeded()
+                persistedVillageData = resolvedCurrentPersistence.readData()
+                villageLoadResult = VillageStoreCodec.load(persistedVillageData)
+            } catch {
+                startupError = Self.localizedPersistenceError(error)
+                historyLoadFailure = Self.snapshotHistoryAvailability(for: error)
+            }
+
+            // Manual transactions can also carry a current-village payload;
+            // recover them before deciding whether a missing store needs a
+            // synthesized default.  A corrupt/future current blob never
+            // reaches this path, so no derived-store side effect is started.
+            if startupError == nil {
+                let skipManualRecovery: Bool = {
+                    switch villageLoadResult {
+                    case .corrupt, .unsupportedSchema:
+                        return true
+                    case .missing, .loaded:
+                        return false
+                    }
+                }()
+                if !skipManualRecovery {
+                    do {
+                        try manualTrackerTransaction.recoverIfNeeded()
+                    } catch {
+                        manualStartupError = Self.localizedPersistenceError(error)
+                    }
+                }
+            }
+
+            persistedVillageData = resolvedCurrentPersistence.readData()
+            villageLoadResult = VillageStoreCodec.load(persistedVillageData)
         }
 
-        let loadedVillages = Self.loadVillages(from: defaults)
-        let initialVillages: [VillageProfile]
-        if loadedVillages.isEmpty {
+        var resolvedVillageStatus: VillageStoreStatus
+        var resolvedVillageError: String?
+        var resolvedVillageRecoveryData: Data?
+        var initialVillages: [VillageProfile]
+        var shouldPersistInitialVillages = false
+        var canInitializeDerivedStores = false
+
+        switch villageLoadResult {
+        case .missing:
             let legacySnapshot = defaults.data(forKey: legacyAccountSnapshotStorageKey)
                 .flatMap { try? JSONDecoder().decode(AccountSnapshot.self, from: $0) }
             initialVillages = [VillageProfile(
                 name: legacySnapshot?.tag ?? "我的村庄",
                 accountSnapshot: legacySnapshot
             )]
-        } else {
-            initialVillages = loadedVillages
+            resolvedVillageStatus = .missing
+            resolvedVillageError = nil
+            resolvedVillageRecoveryData = nil
+            shouldPersistInitialVillages = true
+            canInitializeDerivedStores = true
+        case .loaded(let villages) where villages.isEmpty:
+            // An explicit empty array is valid data, but the UI/model invariant
+            // still needs one in-memory target.  Canonicalize it to a first
+            // village through the normal explicit write path below; it is not a
+            // decode failure and never consults the legacy snapshot.
+            initialVillages = [VillageProfile(name: "我的村庄")]
+            resolvedVillageStatus = .empty
+            resolvedVillageError = nil
+            resolvedVillageRecoveryData = nil
+            shouldPersistInitialVillages = true
+            canInitializeDerivedStores = true
+        case .loaded(let villages):
+            initialVillages = villages
+            resolvedVillageStatus = .available
+            resolvedVillageError = nil
+            resolvedVillageRecoveryData = nil
+            canInitializeDerivedStores = true
+        case .corrupt(let rawData, let message):
+            initialVillages = [VillageProfile(name: "需要恢复的村庄")]
+            resolvedVillageStatus = .corrupt
+            resolvedVillageError = "村庄数据无法解码，原始 bytes 已保留。\n" + message
+            resolvedVillageRecoveryData = rawData
+        case .unsupportedSchema(let rawData, let schemaVersion):
+            initialVillages = [VillageProfile(name: "需要升级的村庄数据")]
+            resolvedVillageStatus = .unsupported
+            resolvedVillageError = "检测到未来村庄存储版本 \(schemaVersion)，当前版本不会覆盖它。"
+            resolvedVillageRecoveryData = rawData
+        }
+
+        if let startupError {
+            resolvedVillageStatus = .readOnly
+            resolvedVillageError = startupError
+            resolvedVillageRecoveryData = persistedVillageData
+            initialVillages = [VillageProfile(name: "需要完成存储恢复")]
+            shouldPersistInitialVillages = false
+            canInitializeDerivedStores = false
         }
 
         if let refresher {
@@ -355,21 +453,42 @@ public final class AppModel: ObservableObject {
         manualTrackerError = manualStartupError
         importText = initialVillages[0].accountSnapshot?.originalText ?? ""
         officialRefreshSummary = nil
-
-        // This upgrades the previous single-account storage and also drops
-        // the old planner-only fields on the next write.
-        if startupError == nil {
-            persistVillages()
+        villageStoreStatus = resolvedVillageStatus
+        villageStoreError = resolvedVillageError
+        villageStoreRecoveryNotice = nil
+        villageStoreRecoveryData = resolvedVillageRecoveryData
+        if villageStoreStatus.isRecoveryRequired,
+           let journalNotice = pendingTransactionJournalNotice() {
+            villageStoreError = [villageStoreError, journalNotice]
+                .compactMap { $0 }
+                .joined(separator: "\n")
         }
 
-        if let manualStartupError {
+        if shouldPersistInitialVillages, startupError == nil {
+            do {
+                try persistVillages(initialVillages)
+            } catch {
+                startupError = Self.localizedPersistenceError(error)
+                snapshotHistoryError = startupError
+                villageStoreStatus = .writeFailed
+                villageStoreError = startupError
+                canInitializeDerivedStores = false
+            }
+        }
+
+        if !canInitializeDerivedStores {
+            manualTrackerStatus = .unavailable
+            manualTrackerError = manualStartupError
+                ?? villageStoreError
+                ?? "村庄基础存储尚未恢复，手动升级状态不会被初始化。"
+        } else if let manualStartupError {
             manualTrackerStatus = .unavailable
             manualTrackerError = manualStartupError
         } else {
             loadManualTracker(for: initialVillages.map(\.id), now: Date())
         }
 
-        if startupError == nil {
+        if canInitializeDerivedStores, startupError == nil {
             do {
                 historyEnvelope = try historyService.loadOrMigrate(
                     villages: initialVillages,
@@ -383,6 +502,8 @@ public final class AppModel: ObservableObject {
                 snapshotHistoryError = Self.localizedPersistenceError(error)
                 historyLoadFailure = Self.snapshotHistoryAvailability(for: error)
             }
+        } else if snapshotHistoryError == nil {
+            snapshotHistoryError = villageStoreError
         }
         // The manual store is loaded before the history store so startup can
         // recover both independently.  Rebuild the UI-facing projection now
@@ -724,6 +845,208 @@ public final class AppModel: ObservableObject {
         try tokenStore.deleteToken()
     }
 
+    public var isVillageStoreRecoveryRequired: Bool {
+        villageStoreStatus.isRecoveryRequired
+    }
+
+    /// A pending transaction journal is intentionally surfaced separately
+    /// from the villages blob.  When the blob is corrupt, startup must not
+    /// replay a journal implicitly because that would write derived state
+    /// before the user chooses which source to trust.
+    public var hasPendingVillageTransactionJournal: Bool {
+        activeTransactionJournalURLs().contains { entry in
+            FileManager.default.fileExists(atPath: entry.url.path)
+                || FileManager.default.fileExists(
+                    atPath: quarantinedTransactionJournalURL(for: entry.url).path
+                )
+        }
+    }
+
+    /// A read-only copy for recovery/export UI.  Callers cannot mutate the
+    /// in-memory bytes held by AppModel.
+    public var villageStoreRecoveryDataForExport: Data? {
+        villageStoreRecoveryData
+    }
+
+    /// Replays valid pending transaction journals only after the user has
+    /// explicitly chosen this action in the recovery UI.  Prepared journals
+    /// roll back and committed journals roll forward using the same
+    /// coordinator rules as normal startup recovery.
+    @discardableResult
+    public func recoverVillageStoreFromTransactionJournal() -> Bool {
+        guard villageStoreStatus.isRecoveryRequired else {
+            villageStoreRecoveryNotice = "当前村庄数据无需从事务记录恢复。"
+            return false
+        }
+        guard hasPendingVillageTransactionJournal else {
+            villageStoreRecoveryNotice = "没有找到待处理的事务 journal。"
+            return false
+        }
+
+        if let villageStoreRecoveryData {
+            defaults.set(villageStoreRecoveryData, forKey: villageStoreRecoveryKey)
+        }
+
+        do {
+            try recoverTransactionJournal(.snapshotImport)
+            try recoverTransactionJournal(.manualTracker)
+
+            let recoveredData = currentVillagePersistence.readData()
+            let recoveredVillages: [VillageProfile]
+            switch VillageStoreCodec.load(recoveredData) {
+            case .missing:
+                recoveredVillages = [VillageProfile(name: "我的村庄")]
+                try persistVillages(recoveredVillages, bypassRecoveryGate: true)
+            case .loaded(let villages) where villages.isEmpty:
+                recoveredVillages = [VillageProfile(name: "我的村庄")]
+                try persistVillages(recoveredVillages, bypassRecoveryGate: true)
+            case .loaded(let villages):
+                recoveredVillages = villages
+            case .corrupt(let rawData, let message):
+                villageStoreRecoveryData = rawData
+                villageStoreStatus = .corrupt
+                villageStoreError = "事务记录恢复后当前村庄数据仍无法解码：\n" + message
+                return false
+            case .unsupportedSchema(let rawData, let schemaVersion):
+                villageStoreRecoveryData = rawData
+                villageStoreStatus = .unsupported
+                villageStoreError = "事务记录恢复后检测到未来村庄存储版本 \(schemaVersion)。"
+                return false
+            }
+
+            installRestoredVillageState(recoveredVillages)
+            villageStoreRecoveryNotice = "事务 journal 已恢复；prepared 已回滚，committed 已重放。"
+            return true
+        } catch {
+            villageStoreStatus = .readOnly
+            villageStoreError = Self.localizedPersistenceError(error)
+            snapshotHistoryError = villageStoreError
+            villageStoreRecoveryData = currentVillagePersistence.readData()
+            villageStoreRecoveryNotice = "事务 journal 恢复失败；原始数据和未处理 journal 仍保留。"
+            return false
+        }
+    }
+
+    /// Opens a save panel and exports the exact bytes that caused recovery.
+    /// The operation is deliberately user-triggered and never rewrites the
+    /// villages key.
+    public func exportVillageStoreData() {
+        guard let data = villageStoreRecoveryData else {
+            villageStoreRecoveryNotice = "当前没有可导出的村庄原始数据。"
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "coc-helper.villages.v1.recovery.json"
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try data.write(to: url, options: .atomic)
+            villageStoreRecoveryNotice = "原始村庄数据已导出。"
+        } catch {
+            villageStoreRecoveryNotice = "导出失败：" + error.localizedDescription
+        }
+    }
+
+    /// Opens a user-selected recovery copy and restores it only when the
+    /// complete villages blob validates.  Invalid input never replaces the
+    /// existing corrupt bytes.
+    @discardableResult
+    public func restoreVillageStoreFromFile() -> Bool {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+
+        do {
+            return restoreVillageStore(from: try Data(contentsOf: url))
+        } catch {
+            villageStoreRecoveryNotice = "读取恢复文件失败：" + error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    public func restoreVillageStoreFromSavedRecoveryCopy() -> Bool {
+        guard let data = defaults.data(forKey: villageStoreRecoveryKey) else {
+            villageStoreRecoveryNotice = "没有找到保存的村庄恢复副本。"
+            return false
+        }
+        return restoreVillageStore(from: data)
+    }
+
+    /// Testable/core recovery seam.  The UI calls this through the file-panel
+    /// wrapper; malformed or future data is rejected before any write.
+    @discardableResult
+    public func restoreVillageStore(from rawData: Data) -> Bool {
+        let loaded: [VillageProfile]
+        let preservesRawData: Bool
+        switch VillageStoreCodec.load(rawData) {
+        case .loaded(let villages):
+            preservesRawData = !villages.isEmpty
+            loaded = villages.isEmpty ? [VillageProfile(name: "我的村庄")] : villages
+        case .corrupt(_, let message):
+            villageStoreRecoveryNotice = "恢复文件损坏，未写入当前数据：" + message
+            return false
+        case .unsupportedSchema(_, let version):
+            villageStoreRecoveryNotice = "恢复文件版本不受支持（\(version)），未写入当前数据。"
+            return false
+        case .missing:
+            villageStoreRecoveryNotice = "恢复文件为空，未写入当前数据。"
+            return false
+        }
+
+        do {
+            if let villageStoreRecoveryData {
+                defaults.set(villageStoreRecoveryData, forKey: villageStoreRecoveryKey)
+            }
+            try quarantinePendingTransactionJournals()
+            if preservesRawData {
+                try writeVillageStoreData(
+                    rawData,
+                    candidateVillages: loaded,
+                    bypassRecoveryGate: true
+                )
+            } else {
+                try persistVillages(loaded, bypassRecoveryGate: true)
+            }
+            installRestoredVillageState(loaded)
+            villageStoreRecoveryNotice = "村庄数据已恢复，原始恢复副本仍保留。"
+            return true
+        } catch {
+            villageStoreRecoveryNotice = "恢复写入失败：" + Self.localizedPersistenceError(error)
+            return false
+        }
+    }
+
+    /// Explicit reset entry point.  The caller must provide a confirmation in
+    /// the UI before invoking this method; the previous bytes are retained in
+    /// a separate recovery key before the new default village is written.
+    @discardableResult
+    public func resetVillageStore() -> Bool {
+        guard villageStoreStatus.isRecoveryRequired else {
+            villageStoreRecoveryNotice = "当前村庄数据无需重置。"
+            return false
+        }
+        if let villageStoreRecoveryData {
+            defaults.set(villageStoreRecoveryData, forKey: villageStoreRecoveryKey)
+        }
+
+        let resetVillages = [VillageProfile(name: "我的村庄")]
+        do {
+            try quarantinePendingTransactionJournals()
+            try persistVillages(resetVillages, bypassRecoveryGate: true)
+            installRestoredVillageState(resetVillages)
+            villageStoreRecoveryNotice = "村庄数据已重置；旧 bytes 已保存为恢复副本。"
+            return true
+        } catch {
+            villageStoreRecoveryNotice = "重置写入失败：" + Self.localizedPersistenceError(error)
+            return false
+        }
+    }
+
     public var canDeleteCurrentVillage: Bool {
         villages.count > 1
     }
@@ -748,7 +1071,12 @@ public final class AppModel: ObservableObject {
         guard id != selectedVillageID,
               let village = villages.first(where: { $0.id == id }) else { return }
 
-        persistVillages()
+        do {
+            try persistVillages(villagesForImportPersistence())
+        } catch {
+            accountImportError = Self.localizedPersistenceError(error)
+            return
+        }
         load(village)
     }
 
@@ -787,9 +1115,17 @@ public final class AppModel: ObservableObject {
         guard !trimmedName.isEmpty,
               let index = villages.firstIndex(where: { $0.id == selectedVillageID }) else { return }
 
-        villages[index].name = trimmedName
-        villages[index].updatedAt = Date()
-        persistVillages()
+        var candidateVillages = villagesForImportPersistence()
+        candidateVillages[index].name = trimmedName
+        candidateVillages[index].updatedAt = Date()
+        do {
+            try persistVillages(candidateVillages)
+        } catch {
+            accountImportError = Self.localizedPersistenceError(error)
+            return
+        }
+        villages = candidateVillages
+        accountImportError = nil
     }
 
     public func deleteVillage(id: UUID) {
@@ -934,15 +1270,13 @@ public final class AppModel: ObservableObject {
     }
 
     /// 应用快捷导入：按 preview 固定的目标村庄写入快照。
-    /// 顺序契约：先 `applyImportedSnapshot`（tag 变化清官方数据）→ 再 `load`
-    /// （刷新 accountSnapshot 属性与 selectedVillageID）→ 最后 `persistVillages`
-    /// （`syncCurrentVillage` 用属性回写，必须先 load 才能写盘一致）。
+    /// 顺序契约：先 `applyImportedSnapshot`（tag 变化清官方数据）→ 构造
+    /// 包含当前属性的 candidate → 事务持久化 → 再 `load` 刷新选中状态。
     /// 目标村庄已不存在时 no-op（不崩溃）。
     ///
     /// 隐性不变式：`accountSnapshot` 属性与 selectedVillageID 指向的村庄 entry
-    /// 必须保持同步——`persistVillages` 内部经 `syncCurrentVillage` 用属性回写
-    /// 该 entry，因此任何属性写入点之后都必须紧跟 persist（本方法在 load 之后
-    /// 只写一次盘），新代码不得在两者之间插入状态变更或绕过该顺序。
+    /// 会在 candidate 构造阶段物化，因此任何属性写入点都必须通过对应的
+    /// candidate/事务路径持久化，新代码不得绕过该顺序。
     ///
     /// 副作用（load 语义的既有复用，账号数据页全局状态会被重置）：
     /// `pendingAccountSnapshot` / `accountImportError` / `importIntoCurrentVillage`
@@ -1145,16 +1479,25 @@ public final class AppModel: ObservableObject {
     }
 
     public func clearAccountSnapshot() {
+        guard let index = villages.firstIndex(where: { $0.id == selectedVillageID }) else { return }
+        var candidateVillages = villagesForImportPersistence()
+        candidateVillages[index].accountSnapshot = nil
+        candidateVillages[index].officialAPIState = nil
+        candidateVillages[index].updatedAt = Date()
+
+        do {
+            try persistVillages(candidateVillages)
+        } catch {
+            accountImportError = Self.localizedPersistenceError(error)
+            return
+        }
+
+        villages = candidateVillages
         accountSnapshot = nil
         pendingAccountSnapshot = nil
         pendingReconciliationPreview = nil
         accountImportError = nil
         importText = ""
-        // 清除本地快照后官方数据（原账号）不再适用于本村庄，一并重置。
-        if let index = villages.firstIndex(where: { $0.id == selectedVillageID }) {
-            villages[index].officialAPIState = nil
-        }
-        persistVillages()
         refreshManualTrackerProjection()
     }
 
@@ -1177,8 +1520,24 @@ public final class AppModel: ObservableObject {
             defer { self.refreshingOfficialPlayerVillageIDs.removeAll() }
             let state = await self.refresher.refresh(village: village)
             // 竞态防护：刷新期间账号若已变化（重导入/清除），丢弃过期结果。
-            let applied = self.applyOfficialState(state, to: village.id, expectedTag: expectedTag)
-            self.persistVillages()
+            var candidateVillages = self.villages
+            let applied = self.applyOfficialState(
+                state,
+                to: village.id,
+                expectedTag: expectedTag,
+                in: &candidateVillages
+            )
+            guard applied else { return }
+            do {
+                try self.persistVillages(candidateVillages)
+                self.villages = candidateVillages
+                if self.selectedVillageID == village.id {
+                    self.officialRefreshSummary = nil
+                }
+            } catch {
+                self.accountImportError = Self.localizedPersistenceError(error)
+                return
+            }
             // 玩家快照更新后部落归属可能变化，联动刷新**发起村庄**的部落
             // （传 village.id 而非读取当前选中村庄：刷新期间用户可能已切换
             // 村庄，读 selectedVillageID 会误刷当前村庄、漏刷发起村庄）。
@@ -1211,20 +1570,35 @@ public final class AppModel: ObservableObject {
             // defer 清空：无论后续分支如何都保证在途状态复位（防御未来提前 return）。
             defer { self.refreshingOfficialPlayerVillageIDs.removeAll() }
             let states = await self.refresher.refreshAll(villages: villages)
+            var candidateVillages = self.villages
+            var appliedVillageIDs = Set<UUID>()
             for (id, state) in states {
-                self.applyOfficialState(state, to: id, expectedTag: tagByID[id])
+                if self.applyOfficialState(
+                    state,
+                    to: id,
+                    expectedTag: tagByID[id],
+                    in: &candidateVillages
+                ) {
+                    appliedVillageIDs.insert(id)
+                }
             }
             let successCount = states.values.filter { $0.status == .success }.count
             let skippedCount = states.values.filter { $0.status == .skipped }.count
             let failedCount = states.values.filter { $0.status == .failed }.count
+            do {
+                // 批量刷新只写一次 UserDefaults，避免 N+1 次全量 JSON 编码。
+                try self.persistVillages(candidateVillages)
+                self.villages = candidateVillages
+            } catch {
+                self.accountImportError = Self.localizedPersistenceError(error)
+                return
+            }
             self.officialRefreshSummary = "刷新完成：成功 \(successCount)，失败 \(failedCount)，跳过 \(skippedCount)"
-            // 批量刷新只写一次 UserDefaults，避免 N+1 次全量 JSON 编码。
-            self.persistVillages()
             // 玩家快照更新后部落归属可能变化，联动刷新部落共享数据
             // （refreshAllClans 内部按 clan tag 去重，被占用时排队补跑）。
             // 仅在本次存在成功时联动：玩家请求全挂（如断网/429）时不追加
             // 部落请求，避免在限流边界上放大请求面。
-            if successCount > 0 {
+            if successCount > 0, !appliedVillageIDs.isEmpty {
                 self.refreshAllClans()
             }
         }
@@ -1233,14 +1607,16 @@ public final class AppModel: ObservableObject {
     /// 纯内存状态更新；调用方负责在合适的时机持久化。
     /// 若村庄当前 tag 与发起请求时不一致（账号已变化），丢弃过期结果并返回 false。
     @discardableResult
-    private func applyOfficialState(_ state: OfficialAPIState, to villageID: UUID, expectedTag: String?) -> Bool {
-        guard let index = villages.firstIndex(where: { $0.id == villageID }) else { return false }
-        guard villages[index].officialStateMatchesTag(at: expectedTag) else { return false }
-        villages[index].officialAPIState = state
-        villages[index].updatedAt = Date()
-        if selectedVillageID == villageID {
-            officialRefreshSummary = nil
-        }
+    private func applyOfficialState(
+        _ state: OfficialAPIState,
+        to villageID: UUID,
+        expectedTag: String?,
+        in candidateVillages: inout [VillageProfile]
+    ) -> Bool {
+        guard let index = candidateVillages.firstIndex(where: { $0.id == villageID }) else { return false }
+        guard candidateVillages[index].officialStateMatchesTag(at: expectedTag) else { return false }
+        candidateVillages[index].officialAPIState = state
+        candidateVillages[index].updatedAt = Date()
         return true
     }
 
@@ -1941,12 +2317,6 @@ public final class AppModel: ObservableObject {
         accountImportError = nil
     }
 
-    private func syncCurrentVillage() {
-        guard let index = villages.firstIndex(where: { $0.id == selectedVillageID }) else { return }
-        villages[index].accountSnapshot = accountSnapshot
-        villages[index].updatedAt = Date()
-    }
-
     private func villagesForImportPersistence() -> [VillageProfile] {
         var candidate = villages
         guard let index = candidate.firstIndex(where: { $0.id == selectedVillageID }) else {
@@ -2093,11 +2463,18 @@ public final class AppModel: ObservableObject {
         candidateVillages: [VillageProfile],
         envelope: ManualTrackerEnvelope
     ) throws {
-        let currentData = try JSONEncoder().encode(candidateVillages)
-        try manualTrackerTransaction.commit(
-            currentData: currentData,
-            envelope: envelope
-        )
+        try ensureVillageStoreWritable()
+        let currentData = try VillageStoreCodec.encode(candidateVillages)
+        do {
+            try manualTrackerTransaction.commit(
+                currentData: currentData,
+                envelope: envelope
+            )
+            markVillageStoreAvailable(for: candidateVillages)
+        } catch {
+            markVillageStoreWriteFailure(error)
+            throw error
+        }
     }
 
     private func commitImportedSnapshot(
@@ -2109,6 +2486,7 @@ public final class AppModel: ObservableObject {
         expectedPreview: ManualReconciliationPreview? = nil,
         reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
     ) throws {
+        try ensureVillageStoreWritable()
         guard let historyEnvelope else {
             throw SnapshotHistoryServiceError.historyUnavailable(
                 snapshotHistoryError ?? "历史存储尚未可用。"
@@ -2144,12 +2522,18 @@ public final class AppModel: ObservableObject {
             appliedAt: appliedAt
         )
         try candidateManualEnvelope.upsert(reconciliationPlan.state)
-        let currentData = try JSONEncoder().encode(candidateVillages)
-        try importTransaction.commit(
-            currentData: currentData,
-            envelope: historyDecision.envelope,
-            manualEnvelope: candidateManualEnvelope
-        )
+        let currentData = try VillageStoreCodec.encode(candidateVillages)
+        do {
+            try importTransaction.commit(
+                currentData: currentData,
+                envelope: historyDecision.envelope,
+                manualEnvelope: candidateManualEnvelope
+            )
+            markVillageStoreAvailable(for: candidateVillages)
+        } catch {
+            markVillageStoreWriteFailure(error)
+            throw error
+        }
         villages = candidateVillages
         self.historyEnvelope = historyDecision.envelope
         historyProjectionCache.removeAll()
@@ -2198,10 +2582,198 @@ public final class AppModel: ObservableObject {
         return envelope.entry(id: lineage.lastEntryID)
     }
 
-    private func persistVillages() {
-        syncCurrentVillage()
-        guard let data = try? JSONEncoder().encode(villages) else { return }
-        try? currentVillagePersistence.writeData(data)
+    private func activeTransactionJournalURLs() -> [(kind: VillageTransactionJournalKind, url: URL)] {
+        [
+            (.snapshotImport, importTransaction.journalURL),
+            (.manualTracker, manualTrackerTransaction.journalURL),
+        ].compactMap { kind, url in
+            guard let url else { return nil }
+            return (kind, url)
+        }
+    }
+
+    private func quarantinedTransactionJournalURL(for journalURL: URL) -> URL {
+        journalURL.appendingPathExtension("quarantined")
+    }
+
+    private func pendingTransactionJournalNotice() -> String? {
+        let pending = activeTransactionJournalURLs().filter {
+            FileManager.default.fileExists(atPath: $0.url.path)
+                || FileManager.default.fileExists(
+                    atPath: quarantinedTransactionJournalURL(for: $0.url).path
+                )
+        }
+        let total = pending.count
+        guard total > 0 else { return nil }
+        return "检测到 \(total) 条待处理事务 journal；可显式从 journal 恢复，或选择文件恢复/重置（会先隔离 journal）。"
+    }
+
+    /// Copies active journal bytes to a sibling quarantine file before
+    /// removing the source file.  This prevents a stale committed journal
+    /// from replaying over a user-selected restore while retaining evidence.
+    private func quarantinePendingTransactionJournals() throws {
+        let active = activeTransactionJournalURLs().filter {
+            FileManager.default.fileExists(atPath: $0.url.path)
+        }
+        guard !active.isEmpty else { return }
+
+        var bytesByKind: [(kind: VillageTransactionJournalKind, url: URL, quarantineURL: URL, data: Data)] = []
+        for (kind, url) in active {
+            bytesByKind.append((
+                kind,
+                url,
+                quarantinedTransactionJournalURL(for: url),
+                try Data(contentsOf: url)
+            ))
+        }
+
+        do {
+            for item in bytesByKind {
+                try item.data.write(to: item.quarantineURL, options: .atomic)
+            }
+            for item in bytesByKind {
+                try FileManager.default.removeItem(at: item.url)
+            }
+        } catch {
+            throw VillageStoreError.writeFailed(
+                "事务 journal 隔离后清理源文件失败：" + error.localizedDescription
+            )
+        }
+    }
+
+    private func recoverTransactionJournal(
+        _ kind: VillageTransactionJournalKind
+    ) throws {
+        guard let journalURL = activeTransactionJournalURLs().first(where: { $0.kind == kind })?.url else {
+            return
+        }
+
+        let quarantineURL = quarantinedTransactionJournalURL(for: journalURL)
+        let hasActiveJournal = FileManager.default.fileExists(atPath: journalURL.path)
+        if !hasActiveJournal, FileManager.default.fileExists(atPath: quarantineURL.path) {
+            try FileManager.default.createDirectory(
+                at: journalURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let quarantinedData = try Data(contentsOf: quarantineURL)
+            try quarantinedData.write(to: journalURL, options: .atomic)
+        }
+
+        guard FileManager.default.fileExists(atPath: journalURL.path) else { return }
+        switch kind {
+        case .snapshotImport:
+            try importTransaction.recoverIfNeeded()
+        case .manualTracker:
+            try manualTrackerTransaction.recoverIfNeeded()
+        }
+
+        if FileManager.default.fileExists(atPath: quarantineURL.path) {
+            try FileManager.default.removeItem(at: quarantineURL)
+        }
+    }
+
+    private func persistVillages(
+        _ candidateVillages: [VillageProfile],
+        bypassRecoveryGate: Bool = false
+    ) throws {
+        let data = try VillageStoreCodec.encode(candidateVillages)
+        try writeVillageStoreData(
+            data,
+            candidateVillages: candidateVillages,
+            bypassRecoveryGate: bypassRecoveryGate
+        )
+    }
+
+    private func writeVillageStoreData(
+        _ data: Data,
+        candidateVillages: [VillageProfile],
+        bypassRecoveryGate: Bool = false
+    ) throws {
+        if !bypassRecoveryGate {
+            try ensureVillageStoreWritable()
+        }
+
+        let previousData = currentVillagePersistence.readData()
+        var writeAttempted = false
+        do {
+            try CurrentVillageDataValidator.validate(data, label: "候选村庄数据")
+            writeAttempted = true
+            try currentVillagePersistence.writeData(data)
+            villageStoreStatus = candidateVillages.isEmpty ? .empty : .available
+            villageStoreError = nil
+            villageStoreRecoveryData = nil
+        } catch {
+            var failure = error
+            if writeAttempted {
+                do {
+                    try currentVillagePersistence.restoreData(previousData)
+                } catch {
+                    failure = VillageStoreError.writeFailed(
+                        Self.localizedPersistenceError(error)
+                            + "；原始村庄 bytes 回滚失败。"
+                    )
+                }
+            }
+            markVillageStoreWriteFailure(failure)
+            throw failure
+        }
+    }
+
+    private func markVillageStoreWriteFailure(_ error: Error) {
+        villageStoreStatus = .writeFailed
+        villageStoreError = Self.localizedPersistenceError(error)
+        villageStoreRecoveryData = currentVillagePersistence.readData()
+    }
+
+    private func ensureVillageStoreWritable() throws {
+        guard !villageStoreStatus.isRecoveryRequired else {
+            throw VillageStoreError.unavailable(
+                villageStoreError ?? "村庄数据处于恢复状态，普通写入已停止。"
+            )
+        }
+    }
+
+    private func markVillageStoreAvailable(for candidateVillages: [VillageProfile]? = nil) {
+        let villages = candidateVillages ?? villages
+        villageStoreStatus = villages.isEmpty ? .empty : .available
+        villageStoreError = nil
+        villageStoreRecoveryData = nil
+    }
+
+    private func installRestoredVillageState(_ restoredVillages: [VillageProfile]) {
+        let normalizedVillages = restoredVillages.isEmpty
+            ? [VillageProfile(name: "我的村庄")]
+            : restoredVillages
+        villages = normalizedVillages
+        selectedVillageID = normalizedVillages[0].id
+        accountSnapshot = normalizedVillages[0].accountSnapshot
+        pendingAccountSnapshot = nil
+        accountImportError = nil
+        importText = normalizedVillages[0].accountSnapshot?.originalText ?? ""
+        historyEnvelope = nil
+        historyLoadFailure = nil
+        historyProjectionCache.removeAll()
+        snapshotHistoryError = nil
+        manualTrackerEnvelope = nil
+        manualTrackerStatus = .empty
+        manualTrackerError = nil
+        villageStoreStatus = .available
+        villageStoreError = nil
+        villageStoreRecoveryData = nil
+
+        loadManualTracker(for: normalizedVillages.map(\.id), now: Date())
+        do {
+            historyEnvelope = try historyService.loadOrMigrate(
+                villages: normalizedVillages,
+                now: Date(),
+                catalog: gameCatalog,
+                craftTableCatalog: craftTableCatalog
+            )
+        } catch {
+            snapshotHistoryError = Self.localizedPersistenceError(error)
+            historyLoadFailure = Self.snapshotHistoryAvailability(for: error)
+        }
+        refreshManualTrackerProjection()
     }
 
     private enum PendingSnapshotTarget {
@@ -2243,14 +2815,6 @@ public final class AppModel: ObservableObject {
     private func isReimportingExistingVillage(_ snapshot: AccountSnapshot, at index: Int) -> Bool {
         guard let tag = OfficialPlayerTagValidator.normalized(snapshot.tag) else { return false }
         return OfficialPlayerTagValidator.normalized(villages[index].tag) == tag
-    }
-
-    private static func loadVillages(from defaults: UserDefaults) -> [VillageProfile] {
-        guard let data = defaults.data(forKey: "coc-helper.villages.v1"),
-              let decoded = try? JSONDecoder().decode([VillageProfile].self, from: data) else {
-            return []
-        }
-        return decoded
     }
 
     private static func localizedPersistenceError(_ error: Error) -> String {

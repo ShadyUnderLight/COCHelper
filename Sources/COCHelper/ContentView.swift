@@ -17,7 +17,10 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        if model.isVillageStoreRecoveryRequired {
+            VillageStoreRecoveryView()
+        } else {
+            NavigationSplitView {
             TimelineView(.periodic(from: Date(), by: 60)) { context in
                 List(selection: $selection) {
                     Section("村庄") {
@@ -164,6 +167,116 @@ struct ContentView: View {
             AddTrackedClanSheet { tag in
                 selection = .clan(tag)
             }
+            }
+        }
+    }
+}
+
+/// Recovery-only root shown when the base villages blob is corrupt, from a
+/// future schema, or cannot be written.  It intentionally exposes no normal
+/// village actions until the user has exported/restored/reset explicitly.
+private struct VillageStoreRecoveryView: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var showResetConfirmation = false
+
+    private var statusLabel: String {
+        switch model.villageStoreStatus {
+        case .corrupt:
+            return "村庄数据损坏"
+        case .unsupported:
+            return "村庄数据版本较新"
+        case .readOnly:
+            return "村庄数据处于只读恢复状态"
+        case .writeFailed:
+            return "村庄数据写入失败"
+        case .missing, .available, .empty:
+            return "村庄数据可用"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label(statusLabel, systemImage: "externaldrive.badge.exclamationmark")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.orange)
+
+            Text("为避免覆盖本地原始数据，COC 助手已停止普通村庄操作。请先导出原始 bytes，或选择一份完整且可验证的恢复文件。")
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let error = model.villageStoreError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 10) {
+                Button("导出原始数据") {
+                    model.exportVillageStoreData()
+                }
+                .buttonStyle(.bordered)
+
+                if model.hasPendingVillageTransactionJournal {
+                    Button("从事务 journal 恢复") {
+                        _ = model.recoverVillageStoreFromTransactionJournal()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button("从文件恢复") {
+                    _ = model.restoreVillageStoreFromFile()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.cocAccent)
+
+                Button("恢复上次重置副本") {
+                    _ = model.restoreVillageStoreFromSavedRecoveryCopy()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("显式重置")
+                    .font(.headline)
+                Text("重置会用一个新的空白村庄替换当前基础村庄数据；旧 bytes 会先保存为恢复副本。Snapshot History 和 Manual Tracker 不会被自动删除。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("重置并建立默认村庄", role: .destructive) {
+                    showResetConfirmation = true
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if let notice = model.villageStoreRecoveryNotice {
+                Label(notice, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if model.hasPendingVillageTransactionJournal {
+                Text("事务 journal 恢复会按记录阶段处理：prepared 回滚到旧状态，committed 重放新状态。选择文件恢复或重置前，journal 会先被隔离保存，避免旧记录再次覆盖新数据。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: 760, alignment: .leading)
+        .confirmationDialog(
+            "确认重置村庄数据？",
+            isPresented: $showResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("确认重置", role: .destructive) {
+                _ = model.resetVillageStore()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("这会替换当前 villages 基础数据，但不会自动删除历史和手动升级文件。")
         }
     }
 }

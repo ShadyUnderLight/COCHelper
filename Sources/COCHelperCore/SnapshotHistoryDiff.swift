@@ -982,6 +982,28 @@ public enum SnapshotDiffEngine {
         }
 
         guard let oldHistogram = histogram(oldItems), let newHistogram = histogram(newItems) else {
+            let timerResult = aggregateTimerTransition(
+                oldItems: oldItems,
+                newItems: newItems,
+                from: from,
+                to: to,
+                hasCredibleLevelUp: false,
+                sectionProofComplete: sectionCoverageIsComplete(entry: from, identity: identity)
+                    && sectionCoverageIsComplete(entry: to, identity: identity)
+            )
+            if timerResult.kind != nil || timerResult.isUnknown {
+                appendAggregateTimerChange(
+                    timerResult,
+                    identity: identity,
+                    oldItems: oldItems,
+                    newItems: newItems,
+                    from: from,
+                    to: to,
+                    changes: &changes,
+                    diagnostics: &diagnostics
+                )
+                return
+            }
             let reason = "重复建筑/城墙 histogram 的 level/count 无效或总量溢出。"
             let unknownCoverage = coverage.addingReason(reason, degradingTo: .partial)
             changes.append(unknownChange(
@@ -1003,6 +1025,30 @@ public enum SnapshotDiffEngine {
         let sectionProofComplete = sectionCoverageIsComplete(entry: from, identity: identity)
             && sectionCoverageIsComplete(entry: to, identity: identity)
         guard coverage.state == .complete, sectionProofComplete else {
+            // timer 出现/变化类事件（upgradeStarted/timerChanged）只依赖 timer
+            // 字段证据，不依赖 section/level/count coverage，可以独立输出；
+            // timer 消失类结果需要 section proof，在此必然降级为 unknown，
+            // 由下方 level unknown 表达，不再重复输出。
+            let timerResult = aggregateTimerTransition(
+                oldItems: oldItems,
+                newItems: newItems,
+                from: from,
+                to: to,
+                hasCredibleLevelUp: false,
+                sectionProofComplete: sectionProofComplete
+            )
+            if timerResult.kind != nil {
+                appendAggregateTimerChange(
+                    timerResult,
+                    identity: identity,
+                    oldItems: oldItems,
+                    newItems: newItems,
+                    from: from,
+                    to: to,
+                    changes: &changes,
+                    diagnostics: &diagnostics
+                )
+            }
             let reason = "重复建筑/城墙 histogram 的 section、level 或 count coverage 不完整。"
             let unknownCoverage = coverage.addingReason(
                 reason,
@@ -1028,6 +1074,7 @@ public enum SnapshotDiffEngine {
 
         var oldRemaining = oldHistogram.levels
         var newRemaining = newHistogram.levels
+        var anyLevelUp = false
         for level in Set(oldRemaining.keys).intersection(newRemaining.keys) {
             let unchanged = min(oldRemaining[level] ?? 0, newRemaining[level] ?? 0)
             oldRemaining[level, default: 0] -= unchanged
@@ -1044,6 +1091,7 @@ public enum SnapshotDiffEngine {
             let moved = min(oldRemaining[oldLevel] ?? 0, newRemaining[newLevel] ?? 0)
             if moved > 0 && oldLevel != newLevel {
                 let delta = newLevel - oldLevel
+                if delta > 0 { anyLevelUp = true }
                 let kind: SnapshotChangeKind = delta > 0 ? .levelIncreased : .levelDecreased
                 changes.append(makeChange(
                     identity: identity,
@@ -1084,6 +1132,27 @@ public enum SnapshotDiffEngine {
                 coverage: coverage
             ))
         }
+
+        let timerResult = aggregateTimerTransition(
+            oldItems: oldItems,
+            newItems: newItems,
+            from: from,
+            to: to,
+            hasCredibleLevelUp: anyLevelUp,
+            sectionProofComplete: sectionProofComplete
+        )
+        if timerResult.kind != nil || timerResult.isUnknown {
+            appendAggregateTimerChange(
+                timerResult,
+                identity: identity,
+                oldItems: oldItems,
+                newItems: newItems,
+                from: from,
+                to: to,
+                changes: &changes,
+                diagnostics: &diagnostics
+            )
+        }
     }
 
     private static func timerTransition(
@@ -1116,8 +1185,18 @@ public enum SnapshotDiffEngine {
         case (.absent, .active), (.inactive, .active):
             return TimerResult(kind: .upgradeStarted, requiredFields: fields)
         case (.active, .active):
-            if timerSignature(old.rawTimerEvidence) != timerSignature(new.rawTimerEvidence) {
+            switch normalizedTimerComparison(
+                oldNumbersByField: timerNumbersByField(old.rawTimerEvidence),
+                newNumbersByField: timerNumbersByField(new.rawTimerEvidence),
+                from: from,
+                to: to
+            ) {
+            case .changed:
                 return TimerResult(kind: .timerChanged, requiredFields: fields)
+            case .unstable(let reason):
+                return TimerResult(kind: nil, isUnknown: true, reason: reason, requiredFields: fields)
+            case .unchanged:
+                break
             }
         case (.active, .absent), (.active, .inactive):
             if let oldLevel = validLevel(old.level), let newLevel = validLevel(new.level), newLevel > oldLevel {
@@ -1434,10 +1513,226 @@ public enum SnapshotDiffEngine {
         return number
     }
 
-    private static func timerSignature(_ evidence: [String: CanonicalJSONValue]) -> String {
-        evidence.keys.sorted().map { key in
-            key + "=" + (evidence[key]?.canonicalData.base64EncodedString() ?? "")
-        }.joined(separator: "|")
+    /// remaining timer 自然倒计时的容差（秒）。两次观测间期望值 = old − elapsed，
+    /// 偏差超过该容差才视为业务变化（覆盖时钟抖动与抓取延迟）。
+    private static let timerElapsedTolerance: TimeInterval = 30
+
+    /// 聚合多个重复实例的 timer 状态：任一 evidence 无法解析 → unknown；
+    /// 任一 active（>0）→ active；全部为空 → absent；否则 inactive。
+    private static func aggregateTimerState(_ items: [SnapshotObservationItem]) -> TimerState {
+        var hasEvidence = false
+        var hasActive = false
+        for item in items {
+            if item.rawTimerEvidence.isEmpty { continue }
+            hasEvidence = true
+            switch timerState(item.rawTimerEvidence) {
+            case .unknown:
+                return .unknown
+            case .active:
+                hasActive = true
+            case .absent, .inactive:
+                break
+            }
+        }
+        guard hasEvidence else { return .absent }
+        return hasActive ? .active : .inactive
+    }
+
+    /// 聚合 timer 状态迁移。active→active 时按"remaining 规范化"比较：
+    /// 同一字段可解析数值集合数量不同 → unknown（身份无法稳定聚合，fail-closed）；
+    /// 数量相同 → 排序后逐位比较，全部自然流逝才无变化。
+    /// timer 消失类结果（upgradeCompleted/timerEndedObserved）需要 section
+    /// 完整性证明：section 不完整时对象可能只是未导出，不得推断 timer 结束。
+    private static func aggregateTimerTransition(
+        oldItems: [SnapshotObservationItem],
+        newItems: [SnapshotObservationItem],
+        from: SnapshotHistoryEntry,
+        to: SnapshotHistoryEntry,
+        hasCredibleLevelUp: Bool,
+        sectionProofComplete: Bool
+    ) -> TimerResult {
+        let oldState = aggregateTimerState(oldItems)
+        let newState = aggregateTimerState(newItems)
+        let fields = Set(oldItems.flatMap { $0.rawTimerEvidence.keys })
+            .union(newItems.flatMap { $0.rawTimerEvidence.keys })
+            .sorted()
+        guard !fields.isEmpty else { return TimerResult() }
+        guard let identity = (newItems.first ?? oldItems.first)?.identity else { return TimerResult() }
+
+        let coverage = coverageFor(identity: identity, from: from, to: to, fields: fields)
+        if oldState == .unknown || newState == .unknown || coverage.state != .complete {
+            return TimerResult(
+                kind: nil,
+                isUnknown: true,
+                reason: "timer 原始状态或 coverage 不足，不能确认 timer 变化。",
+                requiredFields: fields
+            )
+        }
+
+        switch (oldState, newState) {
+        case (.absent, .active), (.inactive, .active):
+            return TimerResult(kind: .upgradeStarted, requiredFields: fields)
+        case (.active, .active):
+            switch normalizedTimerComparison(
+                oldNumbersByField: aggregateTimerNumbersByField(oldItems),
+                newNumbersByField: aggregateTimerNumbersByField(newItems),
+                from: from,
+                to: to
+            ) {
+            case .changed:
+                return TimerResult(kind: .timerChanged, requiredFields: fields)
+            case .unstable(let reason):
+                return TimerResult(kind: nil, isUnknown: true, reason: reason, requiredFields: fields)
+            case .unchanged:
+                break
+            }
+        case (.active, .absent), (.active, .inactive):
+            if hasCredibleLevelUp {
+                return TimerResult(kind: .upgradeCompleted, requiredFields: fields)
+            }
+            guard sectionProofComplete else {
+                return TimerResult(
+                    kind: nil,
+                    isUnknown: true,
+                    reason: "section 完整性证据不足，不能推断 timer 结束或升级完成。",
+                    requiredFields: fields
+                )
+            }
+            return TimerResult(kind: .timerEndedObserved, requiredFields: fields)
+        default:
+            break
+        }
+        return TimerResult(requiredFields: fields)
+    }
+
+    /// remaining timer 规范化比较结果。
+    private enum TimerNormalizedResult {
+        case changed
+        case unchanged
+        case unstable(String)
+    }
+
+    /// 规范化 remaining timer 比较（unique 与 aggregate 共用）：
+    /// - 时间证据：sourceTimestamp 缺失/非法（≤ 0）/倒序 → unstable，不得猜测；
+    /// - 字段证据：timer 字段集合不一致（某字段仅单侧出现）→ unstable；
+    /// - 数量证据：同字段实例数量不一致 → unstable（无法稳定配对）；
+    /// - 数值证据：|new − (old − elapsed)| 超过容差 → changed；全部自然流逝 → unchanged。
+    private static func normalizedTimerComparison(
+        oldNumbersByField: [String: [Int64]],
+        newNumbersByField: [String: [Int64]],
+        from: SnapshotHistoryEntry,
+        to: SnapshotHistoryEntry
+    ) -> TimerNormalizedResult {
+        guard let fromTime = from.sourceTimestamp,
+              let toTime = to.sourceTimestamp,
+              fromTime.timeIntervalSince1970 > 0,
+              toTime.timeIntervalSince1970 > 0 else {
+            return .unstable("source timestamp 缺失或非法，无法规范化 remaining timer。")
+        }
+        let elapsed = toTime.timeIntervalSince(fromTime)
+        guard elapsed >= 0 else {
+            return .unstable("source timestamp 倒序，无法规范化 remaining timer。")
+        }
+        let fields = Set(oldNumbersByField.keys).union(newNumbersByField.keys)
+        for field in fields.sorted() {
+            guard let oldNumbers = oldNumbersByField[field], !oldNumbers.isEmpty,
+                  let newNumbers = newNumbersByField[field], !newNumbers.isEmpty else {
+                return .unstable("timer 字段 \(field) 仅在一侧出现，无法确认 timer 变化。")
+            }
+            guard oldNumbers.count == newNumbers.count else {
+                return .unstable("timer 字段 \(field) 的实例数量不一致，无法稳定配对。")
+            }
+            for (oldNumber, newNumber) in zip(oldNumbers, newNumbers) {
+                let expected = Double(oldNumber) - elapsed
+                if abs(Double(newNumber) - expected) > timerElapsedTolerance {
+                    return .changed
+                }
+            }
+        }
+        return .unchanged
+    }
+
+    /// 按字段收集可解析的 timer 数值（unique 场景每字段至多一个）。
+    private static func timerNumbersByField(
+        _ evidence: [String: CanonicalJSONValue]
+    ) -> [String: [Int64]] {
+        var result: [String: [Int64]] = [:]
+        for key in evidence.keys.sorted() {
+            if let number = evidence[key].flatMap(timerNumber) {
+                result[key] = [number]
+            }
+        }
+        return result
+    }
+
+    /// 按字段收集所有实例的可解析 timer 数值（aggregate 场景）。
+    private static func aggregateTimerNumbersByField(
+        _ items: [SnapshotObservationItem]
+    ) -> [String: [Int64]] {
+        var result: [String: [Int64]] = [:]
+        for item in items {
+            for key in item.rawTimerEvidence.keys {
+                guard let number = item.rawTimerEvidence[key].flatMap(timerNumber) else { continue }
+                result[key, default: []].append(number)
+            }
+        }
+        for key in result.keys {
+            result[key]?.sort()
+        }
+        return result
+    }
+
+    /// 把 aggregate timer 结果输出为独立 change（evidence: .aggregateInferred）。
+    private static func appendAggregateTimerChange(
+        _ timerResult: TimerResult,
+        identity: SnapshotItemIdentity,
+        oldItems: [SnapshotObservationItem],
+        newItems: [SnapshotObservationItem],
+        from: SnapshotHistoryEntry,
+        to: SnapshotHistoryEntry,
+        changes: inout [SnapshotChange],
+        diagnostics: inout [SnapshotDiffDiagnostic]
+    ) {
+        let timerCoverage = coverageFor(
+            identity: identity,
+            from: from,
+            to: to,
+            fields: Array(Set(timerResult.requiredFields)).sorted()
+        )
+        if let kind = timerResult.kind {
+            changes.append(makeChange(
+                identity: identity,
+                old: oldItems.first,
+                new: newItems.first,
+                oldLevel: nil,
+                newLevel: nil,
+                oldQuantity: nil,
+                newQuantity: nil,
+                movedQuantity: nil,
+                levelDelta: nil,
+                changeKind: kind,
+                related: kind == .upgradeCompleted ? [.levelIncreased] : [],
+                evidence: .aggregateInferred,
+                coverage: timerCoverage
+            ))
+        } else if timerResult.isUnknown {
+            let reason = timerResult.reason.isEmpty
+                ? "timer 证据不足，无法确认变化。"
+                : timerResult.reason
+            changes.append(unknownChange(
+                identity: identity,
+                old: oldItems.first,
+                new: newItems.first,
+                coverage: timerCoverage.addingReason(reason, degradingTo: .partial),
+                reason: reason
+            ))
+            diagnostics.append(SnapshotDiffDiagnostic(
+                kind: .insufficientCoverage,
+                message: reason,
+                identity: identity,
+                rawSection: identity.rawSection
+            ))
+        }
     }
 
     private struct Histogram {

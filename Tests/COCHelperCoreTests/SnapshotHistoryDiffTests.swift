@@ -228,8 +228,22 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         )
 
         let timerDiff = SnapshotDiffEngine.compare(
-            from: makeEntry(id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", date: 100, items: [old], section: "heroes", states: ["timer": .complete]),
-            to: makeEntry(id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB", date: 200, items: [changed], section: "heroes", states: ["timer": .complete])
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [old],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100)
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: [changed],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 200)
+            )
         )
         XCTAssertEqual(timerDiff.changes.single?.changeKind, .timerChanged)
 
@@ -286,6 +300,613 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         )
         XCTAssertEqual(unavailable.changes.single?.changeKind, .unknown)
         XCTAssertEqual(unavailable.changes.single?.evidence, .unknown)
+    }
+
+    func testUniqueTimerNaturalCountdownDoesNotCreateChange() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let old = makeItem(
+            identity: identity,
+            level: 1,
+            timer: 90,
+            display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        )
+        let natural = makeItem(
+            identity: identity,
+            level: 1,
+            timer: 85,
+            display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [old],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100)
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [natural],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105)
+            )
+        )
+        XCTAssertTrue(diff.changes.isEmpty)
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testUniqueTimerRestartStillReportsTimerChanged() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let old = makeItem(
+            identity: identity,
+            level: 1,
+            timer: 90,
+            display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        )
+        let restarted = makeItem(
+            identity: identity,
+            level: 1,
+            timer: 500,
+            display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [old],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100)
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [restarted],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105)
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .timerChanged)
+    }
+
+    func testBuildingHistogramTimerUpgradeStartedWithoutCount() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, display: binding)],
+            section: "buildings",
+            states: ["timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 14, timer: 900, display: binding)],
+            section: "buildings",
+            states: ["timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .upgradeStarted)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+        XCTAssertEqual(change.coverage.state, .complete)
+    }
+
+    func testBuilderBaseHistogramTimerUpgradeStarted() throws {
+        let identity = makeIdentity(section: "buildings2", dataID: 1_000_033, base: .builder)
+        let binding = SnapshotDisplayBinding(displayName: "建筑工人小屋", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, display: binding)],
+            section: "buildings2",
+            states: ["timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 1, timer: 60, display: binding)],
+            section: "buildings2",
+            states: ["timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .upgradeStarted)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+    }
+
+    func testTrapHistogramTimerChangedAfterNormalization() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let binding = SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 90, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 100)
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 40, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 105)
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .timerChanged)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+    }
+
+    func testTrapHistogramNaturalCountdownCreatesNoChange() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let binding = SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 90, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 100)
+        )
+        let natural = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 85, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 105)
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: natural)
+        XCTAssertTrue(diff.changes.isEmpty)
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testBuilderBaseTrapHistogramTimerChanged() throws {
+        let identity = makeIdentity(section: "traps2", dataID: 12_000_011, base: .builder)
+        let binding = SnapshotDisplayBinding(displayName: "弹簧陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 300, display: binding)],
+            section: "traps2",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 100)
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 10, display: binding)],
+            section: "traps2",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 105)
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .timerChanged)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+    }
+
+    func testBuildingHistogramTimerCompletionWithLevelMigration() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 2, timer: 90, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 15, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let completed = try XCTUnwrap(diff.changes.first { $0.changeKind == .upgradeCompleted })
+        XCTAssertEqual(completed.evidence, .aggregateInferred)
+        XCTAssertEqual(completed.relatedChangeKinds, [.levelIncreased])
+        XCTAssertNil(completed.levelDelta)
+        XCTAssertNil(completed.movedQuantity)
+        let migration = try XCTUnwrap(diff.changes.first { $0.changeKind == .levelIncreased })
+        XCTAssertEqual(migration.oldLevel, 14)
+        XCTAssertEqual(migration.newLevel, 15)
+        XCTAssertEqual(migration.movedQuantity, 2)
+    }
+
+    func testBuildingHistogramTimerEndedWithoutLevelMigration() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 2, timer: 90, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 14, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .timerEndedObserved)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+    }
+
+    func testHistogramTimerUnknownOnPartialCoverage() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let binding = SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 90, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .partial]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 85, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .partial]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.evidence, .unknown)
+        XCTAssertTrue(change.coverage.fields.contains { $0.field == "timer" })
+    }
+
+    func testHistogramTimerUnknownOnUnparsableEvidence() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let binding = SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 90, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: -1, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.evidence, .unknown)
+        XCTAssertEqual(diff.comparisonState, .insufficientCoverage)
+    }
+
+    func testHistogramTimerOrderIndependence() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let oldItems = [
+            makeItem(identity: identity, level: 14, count: 1, timer: 90, display: binding),
+            makeItem(identity: identity, level: 14, count: 1, timer: 60, display: binding)
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 14, count: 1, timer: 10, display: binding),
+            makeItem(identity: identity, level: 14, count: 1, timer: 85, display: binding)
+        ]
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: oldItems,
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 100)
+        )
+        let forward = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: newItems,
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 105)
+        )
+        let reversed = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: newItems.reversed(),
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 105)
+        )
+        let diffA = SnapshotDiffEngine.compare(from: old, to: forward)
+        let diffB = SnapshotDiffEngine.compare(from: old, to: reversed)
+        XCTAssertEqual(diffA, diffB)
+        XCTAssertTrue(diffA.changes.contains { $0.changeKind == .timerChanged })
+    }
+
+    func testHistogramTimerCompletionStatisticsNotDoubleCounted() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 2, timer: 90, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 15, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        XCTAssertTrue(diff.changes.contains { $0.changeKind == .upgradeCompleted })
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        // aggregateInferred 事件不污染 confirmed 完成数
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.value, 0)
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .available)
+        // level 迁移与 timer 完成是两个独立事件，各计一次
+        XCTAssertEqual(statistics.today.aggregateInferredEventCount.value, 2)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.value, 2)
+    }
+
+    func testRealisticBuildingAndTrapTimerFixtureDiffs() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        func canonicalEntry(
+            _ text: String,
+            id: String,
+            appliedAt: TimeInterval
+        ) throws -> SnapshotHistoryEntry {
+            let snapshot = try AccountSnapshotImporter.parse(
+                text,
+                now: Date(timeIntervalSince1970: appliedAt)
+            )
+            return try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot,
+                villageID: villageID,
+                lineageID: lineageID,
+                appliedAt: Date(timeIntervalSince1970: appliedAt),
+                snapshotID: UUID(uuidString: id)!
+            )
+        }
+
+        let idle = try canonicalEntry(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14}],\"traps\":[{\"data\":12000000,\"lvl\":1,\"cnt\":1}]}",
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            appliedAt: 100
+        )
+        let upgrading = try canonicalEntry(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14,\"timer\":900}],\"traps\":[{\"data\":12000000,\"lvl\":1,\"cnt\":1,\"timer\":60}]}",
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            appliedAt: 110
+        )
+        XCTAssertEqual(
+            upgrading.observation.items.first { $0.identity.dataID == 1_000_001 }?.rawTimerEvidence["timer"],
+            .number("900")
+        )
+        XCTAssertEqual(
+            upgrading.observation.items.first { $0.identity.dataID == 12_000_000 }?.rawTimerEvidence["timer"],
+            .number("60")
+        )
+        let started = SnapshotDiffEngine.compare(from: idle, to: upgrading)
+        let buildingStarted = try XCTUnwrap(
+            started.changes.first { $0.identity.dataID == 1_000_001 && $0.changeKind == .upgradeStarted }
+        )
+        XCTAssertEqual(buildingStarted.changeKind, .upgradeStarted)
+        XCTAssertEqual(buildingStarted.evidence, .aggregateInferred)
+        let trapStarted = try XCTUnwrap(
+            started.changes.first { $0.identity.dataID == 12_000_000 && $0.changeKind == .upgradeStarted }
+        )
+        XCTAssertEqual(trapStarted.changeKind, .upgradeStarted)
+        XCTAssertEqual(trapStarted.evidence, .aggregateInferred)
+    }
+
+    func testRealisticTimerDisappearanceWithoutSectionProofStaysUnknown() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        func canonicalEntry(
+            _ text: String,
+            id: String,
+            appliedAt: TimeInterval
+        ) throws -> SnapshotHistoryEntry {
+            let snapshot = try AccountSnapshotImporter.parse(
+                text,
+                now: Date(timeIntervalSince1970: appliedAt)
+            )
+            return try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot,
+                villageID: villageID,
+                lineageID: lineageID,
+                appliedAt: Date(timeIntervalSince1970: appliedAt),
+                snapshotID: UUID(uuidString: id)!
+            )
+        }
+
+        let upgrading = try canonicalEntry(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14,\"timer\":900}]}",
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            appliedAt: 100
+        )
+        let idle = try canonicalEntry(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14}]}",
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            appliedAt: 200
+        )
+        // 无 cnt → histogram 无效路径；timer 消失但 section proof 不完整（fixture 无
+        // authoritative proof）→ 不得推断 timer 结束，保持 unknown。
+        let diff = SnapshotDiffEngine.compare(from: upgrading, to: idle)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.evidence, .unknown)
+        XCTAssertEqual(diff.comparisonState, .insufficientCoverage)
+    }
+
+    func testUniqueTimerNaturalCountdownWithoutSourceTimestampIsUnknown() throws {
+        // active→active 但两侧 sourceTimestamp 缺失：无法规范化倒计时 → unknown。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let old = makeItem(identity: identity, level: 1, timer: 90, display: binding)
+        let natural = makeItem(identity: identity, level: 1, timer: 85, display: binding)
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [old],
+                section: "heroes",
+                states: ["timer": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [natural],
+                section: "heroes",
+                states: ["timer": .complete]
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+    }
+
+    func testUniqueTimerSourceTimestampReversedStaysUnknown() throws {
+        // sourceTimestamp 倒序（to < from）：时间证据矛盾 → unknown。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let old = makeItem(identity: identity, level: 1, timer: 90, display: binding)
+        let natural = makeItem(identity: identity, level: 1, timer: 85, display: binding)
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [old],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 200)
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [natural],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100)
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+    }
+
+    func testHistogramTimerInstanceCountMismatchIsUnknown() throws {
+        // 同一 identity 从两个 active timer 变成一个 active timer：
+        // 实例数量不一致，无法稳定配对 → unknown，而不是 timerChanged。
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let oldItems = [
+            makeItem(identity: identity, level: 14, count: 1, timer: 90, display: binding),
+            makeItem(identity: identity, level: 14, count: 1, timer: 80, display: binding)
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 14, count: 1, timer: 85, display: binding)
+        ]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems,
+                section: "buildings",
+                states: ["cnt": .complete, "timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100)
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: newItems,
+                section: "buildings",
+                states: ["cnt": .complete, "timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105)
+            )
+        )
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .timerChanged })
+        XCTAssertTrue(diff.changes.contains { $0.changeKind == .unknown && $0.evidence == .unknown })
+    }
+
+    func testHistogramTimerFieldSwapIsUnknown() throws {
+        // timer → helper_timer 字段切换：字段集合不一致，无法确认 → unknown。
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 1, timer: 90, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete, "helper_timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 100)
+        )
+        let swapped = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [SnapshotObservationItem(
+                identity: identity,
+                level: 14,
+                count: 1,
+                rawTimerEvidence: ["helper_timer": .number("85")],
+                display: binding
+            )],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete, "helper_timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 105)
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: swapped)
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .timerChanged })
+        XCTAssertTrue(diff.changes.contains { $0.changeKind == .unknown && $0.evidence == .unknown })
+    }
+
+    func testUniqueTimerFieldSwapIsUnknown() throws {
+        // unique 路径同样：timer → helper_timer 字段切换 → unknown，而不是无变化。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, timer: 90, display: binding)],
+            section: "heroes",
+            states: ["timer": .complete, "helper_timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 100)
+        )
+        let swapped = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["helper_timer": .number("85")],
+                display: binding
+            )],
+            section: "heroes",
+            states: ["timer": .complete, "helper_timer": .complete],
+            sourceTimestamp: Date(timeIntervalSince1970: 105)
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: swapped)
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown)
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
     }
 
     func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {

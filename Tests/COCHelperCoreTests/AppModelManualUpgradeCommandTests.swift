@@ -40,10 +40,11 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     private func snapshot(
+        tag: String = "#TEST",
         objectSections: [String: [AccountItem]]
     ) -> AccountSnapshot {
         AccountSnapshot(
-            tag: "#TEST",
+            tag: tag,
             capturedAt: nil,
             importedAt: importedAt,
             ageSeconds: nil,
@@ -624,5 +625,478 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         ))
         XCTAssertTrue(action.isStartable)
         return (model, villageID, action)
+    }
+
+    // MARK: - Issue #170：未对账基线命令 fail-closed
+
+    /// 用真实 canonicalizer 生成合法 history entry（fingerprint/integrity 与
+    /// observation 一致，通过 `SnapshotHistoryEnvelope.validated()`）。
+    /// rawJSON 仅含 tag（无 item），entry 的身份字段是唯一用途。
+    private func makeHistoryEntry(
+        tag: String,
+        villageID: UUID,
+        lineageID: UUID,
+        appliedAt: Date,
+        isBaseline: Bool = false
+    ) throws -> SnapshotHistoryEntry {
+        let snapshot = try AccountSnapshotImporter.parse(
+            "{\"tag\":\"\(tag)\",\"buildings\":[]}",
+            now: appliedAt
+        )
+        return try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: appliedAt,
+            isBaseline: isBaseline,
+            baselineReason: isBaseline ? .initial : nil,
+            catalog: catalog,
+            craftTableCatalog: CraftTableCatalog.loadBundled()
+        )
+    }
+
+    /// 构造一个村庄的 manual core：绑定 `baselineReference` 的 observed item
+    /// state + 一条 active record（from 1 → 2）。`startedAt` 相对现在偏移
+    /// `startedAtOffset` 秒，duration `durationSeconds`，保证 record 在
+    /// `Date()` 时未到期（启动时的自动 settle 不触发），由测试显式推进时间。
+    private func makeBoundCore(
+        baselineReference: ManualBaselineReference,
+        recordID: UUID,
+        startedAtOffset: TimeInterval = -2_000,
+        durationSeconds: Int64 = 5_000
+    ) throws -> ManualUpgradeCore {
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let startedAt = Date(timeIntervalSinceNow: startedAtOffset)
+        let record = try ManualUpgradeRecord(
+            recordID: recordID,
+            itemKey: key,
+            fromLevel: 1,
+            targetLevel: 2,
+            quantity: 1,
+            startedAt: startedAt,
+            expectedEndAt: startedAt.addingTimeInterval(TimeInterval(durationSeconds)),
+            durationSeconds: durationSeconds,
+            durationKind: .timed,
+            frozenCosts: nil,
+            catalogProvenance: ManualCatalogProvenance(catalog: catalog),
+            baselineReference: baselineReference,
+            status: .active
+        )
+        let state = try ManualItemState(
+            itemKey: key,
+            baselineReference: baselineReference,
+            manualCompletedDistribution: try ManualLevelDistribution(levelQuantities: [1: 2]),
+            status: .manualCompleted
+        )
+        return try ManualUpgradeCore(itemStates: [state], records: [record])
+    }
+
+    /// 只有 observed item state（无 record）的 core：投影可产生 startable
+    /// action，用于验证 Start 在未对账时被 baseline gate 拒绝（而非先被
+    /// active-record 投影的 staleAction 拦截）。
+    private func makeObservedCore(
+        baselineReference: ManualBaselineReference,
+        recordID: UUID
+    ) throws -> ManualUpgradeCore {
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        let state = try ManualItemState(
+            itemKey: key,
+            baselineReference: baselineReference,
+            importedObservation: ManualImportedObservation(
+                reference: baselineReference,
+                levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+                sourceTimestamp: Date(timeIntervalSinceNow: -3_000)
+            ),
+            manualCompletedDistribution: .empty,
+            status: .observed
+        )
+        return try ManualUpgradeCore(itemStates: [state])
+    }
+
+    /// 构造「账号已从旧 lineage 切换到新快照，但 manual core 仍绑定旧
+    /// baseline」的未对账模型：
+    /// - 村庄当前快照 tag 为 #TEST（history 的 active lineage B）；
+    /// - core 的 item state / record 全部绑定旧 lineage A（tag #OLD）；
+    /// 模拟 Tag 切换但尚未完成显式对账（#143）时的状态。
+    @MainActor
+    private func makeUnreconciledModel(
+        coreBuilder: (ManualBaselineReference, UUID) throws -> ManualUpgradeCore
+    ) throws -> (model: AppModel, villageID: UUID, recordID: UUID) {
+        let villageID = UUID()
+        let lineageA = UUID()
+        let lineageB = UUID()
+        let entryA = try makeHistoryEntry(
+            tag: "#OLD",
+            villageID: villageID,
+            lineageID: lineageA,
+            appliedAt: Date(timeIntervalSince1970: 800),
+            isBaseline: true
+        )
+        let entryB = try makeHistoryEntry(
+            tag: "#TEST",
+            villageID: villageID,
+            lineageID: lineageB,
+            appliedAt: Date(timeIntervalSince1970: 1_600)
+        )
+        let historyEnvelope = SnapshotHistoryEnvelope(
+            entries: [entryA, entryB],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageA,
+                    normalizedPlayerTag: "#OLD",
+                    lastEntryID: entryA.snapshotID,
+                    lastFingerprint: entryA.canonicalFingerprint,
+                    lastAppliedAt: entryA.appliedAt,
+                    hasConflict: false,
+                    isActive: false
+                ),
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageB,
+                    normalizedPlayerTag: "#TEST",
+                    lastEntryID: entryB.snapshotID,
+                    lastFingerprint: entryB.canonicalFingerprint,
+                    lastAppliedAt: entryB.appliedAt,
+                    hasConflict: false,
+                    isActive: true
+                ),
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let village = VillageProfile(
+            id: villageID,
+            name: "测试村庄",
+            accountSnapshot: snapshot(objectSections: [
+                "buildings": [
+                    item(section: "buildings", dataID: 1_000_001, level: 18),
+                    item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                ],
+            ])
+        )
+        let baselineA = ManualBaselineReference(
+            revision: entryA.snapshotID.uuidString,
+            fingerprint: entryA.canonicalFingerprint,
+            lineageID: lineageA.uuidString
+        )
+        let recordID = UUID()
+        let core = try coreBuilder(baselineA, recordID)
+        let stateTime = Date()
+        let manualEnvelope = try ManualTrackerEnvelope(
+            villages: [
+                ManualTrackerVillageState(
+                    villageID: villageID,
+                    core: core,
+                    stateUpdatedAt: stateTime,
+                    lastSettleAt: stateTime,
+                    lastImportAt: stateTime,
+                    diagnostics: [],
+                    reconciliationHistory: []
+                ),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        try store.save(manualEnvelope)
+
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        return (model, villageID, recordID)
+    }
+
+    @MainActor
+    func testStartRejectedWhenBaselineUnreconciled() throws {
+        let (model, villageID, recordID) = try makeUnreconciledModel(
+            coreBuilder: { try makeObservedCore(baselineReference: $0, recordID: $1) }
+        )
+        // UI 投影保持 unknown（未对账状态不得被命令改写或展示为可执行）。
+        let projected = try XCTUnwrap(model.manualUpgradeCores[villageID])
+        XCTAssertEqual(projected.itemStates.first?.status, .unknown)
+
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let village = try XCTUnwrap(model.villages.first)
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog,
+            base: .home,
+            now: Date(),
+            manualUpgradeCore: core
+        )
+        let cannon = try XCTUnwrap(projection.items.first { $0.dataID == 1_000_002 })
+        // 旧 action 持有旧 lineage 的 baseline（切换前生成，当前仍可 start）。
+        let staleAction = try XCTUnwrap(
+            UpgradeActionProjection.action(
+                for: cannon,
+                catalog: catalog,
+                catalogIsUsable: true,
+                manualUpgradeCore: core,
+                coverage: .complete,
+                now: Date()
+            )
+        )
+        XCTAssertTrue(staleAction.isStartable)
+        XCTAssertEqual(staleAction.baselineReference, core.baselineReference)
+
+        XCTAssertThrowsError(
+            try model.startManualUpgrade(
+                for: villageID, action: staleAction, startedAt: Date(), now: Date()
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError, .unreconciledSnapshot
+            )
+        }
+        // 不落盘新 record。
+        let after = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        XCTAssertEqual(after, core)
+        XCTAssertNil(after.records.first { $0.recordID != recordID })
+        XCTAssertTrue(after.records.isEmpty)
+    }
+
+    @MainActor
+    func testCancelRejectedWhenBaselineUnreconciled() throws {
+        let (model, villageID, recordID) = try makeUnreconciledModel(
+            coreBuilder: { try makeBoundCore(baselineReference: $0, recordID: $1) }
+        )
+        let before = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        XCTAssertThrowsError(
+            try model.cancelManualUpgrade(for: villageID, recordID: recordID)
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError, .unreconciledSnapshot
+            )
+        }
+        let after = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        XCTAssertEqual(after, before)
+        let record = try XCTUnwrap(after.records.first { $0.recordID == recordID })
+        XCTAssertEqual(record.status, .active)
+    }
+
+    @MainActor
+    func testAdjustRejectedWhenBaselineUnreconciled() throws {
+        let (model, villageID, recordID) = try makeUnreconciledModel(
+            coreBuilder: { try makeBoundCore(baselineReference: $0, recordID: $1) }
+        )
+        let before = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let old = try XCTUnwrap(before.records.first { $0.recordID == recordID })
+        XCTAssertThrowsError(
+            try model.adjustManualUpgradeStart(
+                for: villageID,
+                recordID: recordID,
+                startedAt: old.startedAt.addingTimeInterval(60),
+                now: Date()
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError, .unreconciledSnapshot
+            )
+        }
+        let after = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        XCTAssertEqual(after, before)
+        let record = try XCTUnwrap(after.records.first { $0.recordID == recordID })
+        XCTAssertEqual(record.startedAt, old.startedAt)
+        XCTAssertEqual(record.expectedEndAt, old.expectedEndAt)
+    }
+
+    @MainActor
+    func testSettleSkipsUnreconciledVillage() throws {
+        let (model, villageID, recordID) = try makeUnreconciledModel(
+            coreBuilder: { try makeBoundCore(baselineReference: $0, recordID: $1) }
+        )
+        let dueAt = Date(timeIntervalSinceNow: 4_000)
+        let settled = model.settleManualUpgrades(at: dueAt)
+        XCTAssertEqual(settled, 0)
+        let state = try XCTUnwrap(try store.load()?.state(for: villageID))
+        let record = try XCTUnwrap(state.core.records.first { $0.recordID == recordID })
+        XCTAssertEqual(record.status, .active, "未对账村庄的 due record 不得被自动结算")
+        // core / stateUpdatedAt / lastSettleAt 均不得被改写。
+        XCTAssertEqual(state.core, try model.manualUpgradeCore(for: villageID))
+    }
+
+    @MainActor
+    func testUnreconciledVillageDoesNotBlockReconciledVillage() throws {
+        // v1：未对账（旧 baseline record）；v2：基线一致的对账村庄。
+        let v1ID = UUID()
+        let v2ID = UUID()
+        let lineageA = UUID()
+        let lineageB = UUID()
+        let lineageC = UUID()
+        let entryA = try makeHistoryEntry(
+            tag: "#OLD",
+            villageID: v1ID,
+            lineageID: lineageA,
+            appliedAt: Date(timeIntervalSince1970: 800),
+            isBaseline: true
+        )
+        let entryB = try makeHistoryEntry(
+            tag: "#TEST",
+            villageID: v1ID,
+            lineageID: lineageB,
+            appliedAt: Date(timeIntervalSince1970: 1_600)
+        )
+        let entryC = try makeHistoryEntry(
+            tag: "#TEST2",
+            villageID: v2ID,
+            lineageID: lineageC,
+            appliedAt: Date(timeIntervalSince1970: 2_400),
+            isBaseline: true
+        )
+        let historyEnvelope = SnapshotHistoryEnvelope(
+            entries: [entryA, entryB, entryC],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: v1ID,
+                    lineageID: lineageA,
+                    normalizedPlayerTag: "#OLD",
+                    lastEntryID: entryA.snapshotID,
+                    lastFingerprint: entryA.canonicalFingerprint,
+                    lastAppliedAt: entryA.appliedAt,
+                    hasConflict: false,
+                    isActive: false
+                ),
+                SnapshotHistoryLineageMetadata(
+                    villageID: v1ID,
+                    lineageID: lineageB,
+                    normalizedPlayerTag: "#TEST",
+                    lastEntryID: entryB.snapshotID,
+                    lastFingerprint: entryB.canonicalFingerprint,
+                    lastAppliedAt: entryB.appliedAt,
+                    hasConflict: false,
+                    isActive: true
+                ),
+                SnapshotHistoryLineageMetadata(
+                    villageID: v2ID,
+                    lineageID: lineageC,
+                    normalizedPlayerTag: "#TEST2",
+                    lastEntryID: entryC.snapshotID,
+                    lastFingerprint: entryC.canonicalFingerprint,
+                    lastAppliedAt: entryC.appliedAt,
+                    hasConflict: false,
+                    isActive: true
+                ),
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+        let villages = [
+            VillageProfile(
+                id: v1ID,
+                name: "测试村庄1",
+                accountSnapshot: snapshot(objectSections: [
+                    "buildings": [
+                        item(section: "buildings", dataID: 1_000_001, level: 18),
+                        item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                    ],
+                ])
+            ),
+            VillageProfile(
+                id: v2ID,
+                name: "测试村庄2",
+                accountSnapshot: snapshot(tag: "#TEST2", objectSections: [
+                    "buildings": [
+                        item(section: "buildings", dataID: 1_000_001, level: 18),
+                        item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                    ],
+                ])
+            ),
+        ]
+        let baselineA = ManualBaselineReference(
+            revision: entryA.snapshotID.uuidString,
+            fingerprint: entryA.canonicalFingerprint,
+            lineageID: lineageA.uuidString
+        )
+        let baselineC = ManualBaselineReference(
+            revision: entryC.snapshotID.uuidString,
+            fingerprint: entryC.canonicalFingerprint,
+            lineageID: lineageC.uuidString
+        )
+        let v1RecordID = UUID()
+        let v2RecordID = UUID()
+        let stateTime = Date()
+        let manualEnvelope = try ManualTrackerEnvelope(
+            villages: [
+                ManualTrackerVillageState(
+                    villageID: v1ID,
+                    core: try makeBoundCore(
+                        baselineReference: baselineA, recordID: v1RecordID
+                    ),
+                    stateUpdatedAt: stateTime,
+                    lastSettleAt: stateTime,
+                    lastImportAt: stateTime,
+                    diagnostics: [],
+                    reconciliationHistory: []
+                ),
+                ManualTrackerVillageState(
+                    villageID: v2ID,
+                    core: try makeBoundCore(
+                        baselineReference: baselineC, recordID: v2RecordID
+                    ),
+                    stateUpdatedAt: stateTime,
+                    lastSettleAt: stateTime,
+                    lastImportAt: stateTime,
+                    diagnostics: [],
+                    reconciliationHistory: []
+                ),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let villagesData = try JSONEncoder().encode(villages)
+        let history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        try store.save(manualEnvelope)
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+
+        // v2 的 UI 投影未被 gate（基线一致）。
+        XCTAssertEqual(
+            try XCTUnwrap(model.manualUpgradeCores[v2ID]).itemStates.first?.status,
+            .manualCompleted
+        )
+        // v1 的 UI 投影保持 unknown。
+        XCTAssertEqual(
+            try XCTUnwrap(model.manualUpgradeCores[v1ID]).itemStates.first?.status,
+            .unknown
+        )
+
+        // 未对账村庄被 gate 不影响对账村庄的 settle：v2 的 due record 正常
+        // 完成，v1 的 due record 保持 active。
+        let dueAt = Date(timeIntervalSinceNow: 4_000)
+        XCTAssertEqual(model.settleManualUpgrades(at: dueAt), 1)
+        let v1Persisted = try XCTUnwrap(try store.load()?.state(for: v1ID))
+        XCTAssertEqual(
+            try XCTUnwrap(v1Persisted.core.records.first { $0.recordID == v1RecordID }).status,
+            .active
+        )
+        let v2Persisted = try XCTUnwrap(try store.load()?.state(for: v2ID))
+        XCTAssertEqual(
+            try XCTUnwrap(v2Persisted.core.records.first { $0.recordID == v2RecordID }).status,
+            .completed
+        )
     }
 }

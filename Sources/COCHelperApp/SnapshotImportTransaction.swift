@@ -14,18 +14,13 @@ enum CurrentVillageDataValidationError: Error, LocalizedError {
 
 enum CurrentVillageDataValidator {
     /// Validates the persisted villages blob before a transaction can restore
-    /// or replay it.  An empty array is not a valid current store: AppModel
-    /// treats that value as "no store" and would otherwise synthesize a
-    /// placeholder village on the next launch.
+    /// or replay it.  A legal empty array is distinct from a missing store and
+    /// must not be turned into a decode failure.
     static func validate(_ data: Data?, label: String) throws {
-        guard let data else { return }
         do {
+            try VillageStoreCodec.validate(data, label: label)
+            guard let data else { return }
             let villages = try JSONDecoder().decode([VillageProfile].self, from: data)
-            guard !villages.isEmpty else {
-                throw CurrentVillageDataValidationError.invalid(
-                    "\(label) 不能是空村庄列表。"
-                )
-            }
             guard Set(villages.map(\.id)).count == villages.count else {
                 throw CurrentVillageDataValidationError.invalid(
                     "\(label) 包含重复的村庄 ID。"
@@ -34,9 +29,11 @@ enum CurrentVillageDataValidator {
         } catch let error as CurrentVillageDataValidationError {
             throw error
         } catch {
-            throw CurrentVillageDataValidationError.invalid(
-                "\(label) 无法解码为有效的村庄列表：\(error.localizedDescription)"
-            )
+            if let localized = error as? LocalizedError,
+               let description = localized.errorDescription {
+                throw CurrentVillageDataValidationError.invalid(description)
+            }
+            throw CurrentVillageDataValidationError.invalid(error.localizedDescription)
         }
     }
 }
@@ -88,13 +85,22 @@ struct UserDefaultsCurrentVillagePersistence: CurrentVillagePersistence {
 
     func writeData(_ data: Data) throws {
         defaults.set(data, forKey: key)
+        guard defaults.data(forKey: key) == data else {
+            throw VillageStoreError.writeFailed("写入后读回的村庄数据与候选数据不一致。")
+        }
     }
 
     func restoreData(_ data: Data?) throws {
         if let data {
             defaults.set(data, forKey: key)
+            guard defaults.data(forKey: key) == data else {
+                throw VillageStoreError.writeFailed("恢复后读回的村庄数据与原始数据不一致。")
+            }
         } else {
             defaults.removeObject(forKey: key)
+            guard defaults.data(forKey: key) == nil else {
+                throw VillageStoreError.writeFailed("删除村庄数据后仍能读到旧数据。")
+            }
         }
     }
 }

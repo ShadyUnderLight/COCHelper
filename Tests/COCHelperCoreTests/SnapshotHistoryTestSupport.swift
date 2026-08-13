@@ -7,6 +7,8 @@ import Foundation
 final class TestSnapshotHistoryStore: SnapshotHistoryStore, @unchecked Sendable {
     var transactionJournalURL: URL?
     var rawData: Data?
+    var writeCount = 0
+    var restoreCount = 0
     var failLoad = false
     var failRead = false
     var failWrite = false
@@ -47,6 +49,7 @@ final class TestSnapshotHistoryStore: SnapshotHistoryStore, @unchecked Sendable 
     }
 
     func writeRawData(_ data: Data) throws {
+        writeCount += 1
         if failWrite {
             if writeBeforeFailure { rawData = data }
             throw SnapshotHistoryStoreError.writeFailed("测试历史写入失败")
@@ -55,6 +58,7 @@ final class TestSnapshotHistoryStore: SnapshotHistoryStore, @unchecked Sendable 
     }
 
     func restoreRawData(_ data: Data?) throws {
+        restoreCount += 1
         if failRestore {
             throw SnapshotHistoryStoreError.writeFailed("测试历史回滚失败")
         }
@@ -64,6 +68,8 @@ final class TestSnapshotHistoryStore: SnapshotHistoryStore, @unchecked Sendable 
 
 final class TestCurrentVillagePersistence: CurrentVillagePersistence, @unchecked Sendable {
     var data: Data?
+    var writeCount = 0
+    var restoreCount = 0
     var failWrite = false
     var writeBeforeFailure = false
     var failRestore = false
@@ -75,6 +81,7 @@ final class TestCurrentVillagePersistence: CurrentVillagePersistence, @unchecked
     func readData() -> Data? { data }
 
     func writeData(_ data: Data) throws {
+        writeCount += 1
         if failWrite {
             if writeBeforeFailure { self.data = data }
             throw SnapshotHistoryStoreError.writeFailed("测试当前状态写入失败")
@@ -83,6 +90,7 @@ final class TestCurrentVillagePersistence: CurrentVillagePersistence, @unchecked
     }
 
     func restoreData(_ data: Data?) throws {
+        restoreCount += 1
         if failRestore {
             throw SnapshotHistoryStoreError.writeFailed("测试当前状态回滚失败")
         }

@@ -987,7 +987,9 @@ public enum SnapshotDiffEngine {
                 newItems: newItems,
                 from: from,
                 to: to,
-                hasCredibleLevelUp: false
+                hasCredibleLevelUp: false,
+                sectionProofComplete: sectionCoverageIsComplete(entry: from, identity: identity)
+                    && sectionCoverageIsComplete(entry: to, identity: identity)
             )
             if timerResult.kind != nil || timerResult.isUnknown {
                 appendAggregateTimerChange(
@@ -1023,6 +1025,30 @@ public enum SnapshotDiffEngine {
         let sectionProofComplete = sectionCoverageIsComplete(entry: from, identity: identity)
             && sectionCoverageIsComplete(entry: to, identity: identity)
         guard coverage.state == .complete, sectionProofComplete else {
+            // timer 出现/变化类事件（upgradeStarted/timerChanged）只依赖 timer
+            // 字段证据，不依赖 section/level/count coverage，可以独立输出；
+            // timer 消失类结果需要 section proof，在此必然降级为 unknown，
+            // 由下方 level unknown 表达，不再重复输出。
+            let timerResult = aggregateTimerTransition(
+                oldItems: oldItems,
+                newItems: newItems,
+                from: from,
+                to: to,
+                hasCredibleLevelUp: false,
+                sectionProofComplete: sectionProofComplete
+            )
+            if timerResult.kind != nil {
+                appendAggregateTimerChange(
+                    timerResult,
+                    identity: identity,
+                    oldItems: oldItems,
+                    newItems: newItems,
+                    from: from,
+                    to: to,
+                    changes: &changes,
+                    diagnostics: &diagnostics
+                )
+            }
             let reason = "重复建筑/城墙 histogram 的 section、level 或 count coverage 不完整。"
             let unknownCoverage = coverage.addingReason(
                 reason,
@@ -1112,7 +1138,8 @@ public enum SnapshotDiffEngine {
             newItems: newItems,
             from: from,
             to: to,
-            hasCredibleLevelUp: anyLevelUp
+            hasCredibleLevelUp: anyLevelUp,
+            sectionProofComplete: sectionProofComplete
         )
         if timerResult.kind != nil || timerResult.isUnknown {
             appendAggregateTimerChange(
@@ -1504,12 +1531,15 @@ public enum SnapshotDiffEngine {
     /// 聚合 timer 状态迁移。active→active 时按"remaining 规范化"比较：
     /// 同一字段可解析数值集合数量不同 → unknown（身份无法稳定聚合，fail-closed）；
     /// 数量相同 → 排序后逐位比较，全部自然流逝才无变化。
+    /// timer 消失类结果（upgradeCompleted/timerEndedObserved）需要 section
+    /// 完整性证明：section 不完整时对象可能只是未导出，不得推断 timer 结束。
     private static func aggregateTimerTransition(
         oldItems: [SnapshotObservationItem],
         newItems: [SnapshotObservationItem],
         from: SnapshotHistoryEntry,
         to: SnapshotHistoryEntry,
-        hasCredibleLevelUp: Bool
+        hasCredibleLevelUp: Bool,
+        sectionProofComplete: Bool
     ) -> TimerResult {
         let oldState = aggregateTimerState(oldItems)
         let newState = aggregateTimerState(newItems)
@@ -1544,6 +1574,14 @@ public enum SnapshotDiffEngine {
         case (.active, .absent), (.active, .inactive):
             if hasCredibleLevelUp {
                 return TimerResult(kind: .upgradeCompleted, requiredFields: fields)
+            }
+            guard sectionProofComplete else {
+                return TimerResult(
+                    kind: nil,
+                    isUnknown: true,
+                    reason: "section 完整性证据不足，不能推断 timer 结束或升级完成。",
+                    requiredFields: fields
+                )
             }
             return TimerResult(kind: .timerEndedObserved, requiredFields: fields)
         default:

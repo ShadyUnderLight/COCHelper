@@ -641,6 +641,98 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.value, 2)
     }
 
+    func testRealisticBuildingAndTrapTimerFixtureDiffs() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        func canonicalEntry(
+            _ text: String,
+            id: String,
+            appliedAt: TimeInterval
+        ) throws -> SnapshotHistoryEntry {
+            let snapshot = try AccountSnapshotImporter.parse(
+                text,
+                now: Date(timeIntervalSince1970: appliedAt)
+            )
+            return try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot,
+                villageID: villageID,
+                lineageID: lineageID,
+                appliedAt: Date(timeIntervalSince1970: appliedAt),
+                snapshotID: UUID(uuidString: id)!
+            )
+        }
+
+        let idle = try canonicalEntry(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14}],\"traps\":[{\"data\":12000000,\"lvl\":1,\"cnt\":1}]}",
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            appliedAt: 100
+        )
+        let upgrading = try canonicalEntry(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14,\"timer\":900}],\"traps\":[{\"data\":12000000,\"lvl\":1,\"cnt\":1,\"timer\":60}]}",
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            appliedAt: 110
+        )
+        XCTAssertEqual(
+            upgrading.observation.items.first { $0.identity.dataID == 1_000_001 }?.rawTimerEvidence["timer"],
+            .number("900")
+        )
+        XCTAssertEqual(
+            upgrading.observation.items.first { $0.identity.dataID == 12_000_000 }?.rawTimerEvidence["timer"],
+            .number("60")
+        )
+        let started = SnapshotDiffEngine.compare(from: idle, to: upgrading)
+        let buildingStarted = try XCTUnwrap(
+            started.changes.first { $0.identity.dataID == 1_000_001 && $0.changeKind == .upgradeStarted }
+        )
+        XCTAssertEqual(buildingStarted.changeKind, .upgradeStarted)
+        XCTAssertEqual(buildingStarted.evidence, .aggregateInferred)
+        let trapStarted = try XCTUnwrap(
+            started.changes.first { $0.identity.dataID == 12_000_000 && $0.changeKind == .upgradeStarted }
+        )
+        XCTAssertEqual(trapStarted.changeKind, .upgradeStarted)
+        XCTAssertEqual(trapStarted.evidence, .aggregateInferred)
+    }
+
+    func testRealisticTimerDisappearanceWithoutSectionProofStaysUnknown() throws {
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        func canonicalEntry(
+            _ text: String,
+            id: String,
+            appliedAt: TimeInterval
+        ) throws -> SnapshotHistoryEntry {
+            let snapshot = try AccountSnapshotImporter.parse(
+                text,
+                now: Date(timeIntervalSince1970: appliedAt)
+            )
+            return try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot,
+                villageID: villageID,
+                lineageID: lineageID,
+                appliedAt: Date(timeIntervalSince1970: appliedAt),
+                snapshotID: UUID(uuidString: id)!
+            )
+        }
+
+        let upgrading = try canonicalEntry(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14,\"timer\":900}]}",
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            appliedAt: 100
+        )
+        let idle = try canonicalEntry(
+            "{\"buildings\":[{\"data\":1000001,\"lvl\":14}]}",
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            appliedAt: 200
+        )
+        // 无 cnt → histogram 无效路径；timer 消失但 section proof 不完整（fixture 无
+        // authoritative proof）→ 不得推断 timer 结束，保持 unknown。
+        let diff = SnapshotDiffEngine.compare(from: upgrading, to: idle)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.evidence, .unknown)
+        XCTAssertEqual(diff.comparisonState, .insufficientCoverage)
+    }
+
     func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

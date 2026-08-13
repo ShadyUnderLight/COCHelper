@@ -371,7 +371,15 @@ final class VillageStoreTests: XCTestCase {
         XCTAssertEqual(restarted.villageStoreStatus, .available)
         XCTAssertEqual(restarted.villages.count, 1)
         XCTAssertEqual(restarted.villages[0].name, "我的村庄")
-        XCTAssertEqual(current.data, try validVillagesData(restarted.villages))
+
+        // JSONEncoder 不保证 key 字节顺序，合法数据用语义等价比较；
+        // 字节级精确比较仅保留给证据保留场景（quarantined / recovery copy）。
+        switch VillageStoreCodec.load(current.data) {
+        case .loaded(let persistedVillages):
+            XCTAssertEqual(persistedVillages, restarted.villages)
+        case .missing, .corrupt, .unsupportedSchema:
+            XCTFail("重置后写入的 current.data 应可解码为合法村庄列表")
+        }
     }
 
     @MainActor

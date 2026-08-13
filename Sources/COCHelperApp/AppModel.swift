@@ -126,6 +126,7 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
     case recordNotFound(UUID)
     case recordNotActive(UUID)
     case invalidTime
+    case unreconciledSnapshot
     case coreRejected(String)
 
     public var errorDescription: String? {
@@ -142,6 +143,8 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
             "该升级记录已不在进行中。"
         case .invalidTime:
             "开始时间无效（不允许未来时间）。"
+        case .unreconciledSnapshot:
+            "当前快照与手动升级记录尚未对账。请先完成快照对账后再操作。"
         case .coreRejected(let message):
             "升级命令被拒绝：" + message
         }
@@ -539,6 +542,9 @@ public final class AppModel: ObservableObject {
         // recover both independently.  Rebuild the UI-facing projection now
         // that the current snapshot's active lineage is known.
         refreshManualTrackerProjection()
+        // 自动结算需要当前快照基线（Issue #170 gate）：history 已加载，
+        // 只结算基线一致的村庄，未对账村庄保持原状。
+        _ = settleManualUpgrades(at: Date())
     }
 
     /// Returns the persisted local tracker core for an explicit village.
@@ -622,6 +628,12 @@ public final class AppModel: ObservableObject {
                     continue
                 }
                 var core = previousState.core
+                // Issue #170：未对账村庄跳过自动结算，不修改其 Core、
+                // stateUpdatedAt、lastSettleAt 或 record status；其他基线
+                // 一致的村庄不受影响。
+                guard isBaselineReconciled(for: village.id, core: core) else {
+                    continue
+                }
                 let settled = try core.settleDue(at: now)
                 guard core != previousState.core else { continue }
 
@@ -679,6 +691,11 @@ public final class AppModel: ObservableObject {
         }
 
         let core = try (currentEnvelope.state(for: villageID)?.core ?? ManualUpgradeCore())
+        // Issue #170：未对账（当前快照/lineage 基线 ≠ 存储 core 基线）时拒绝
+        // 旧 baseline action，不落盘任何新 record。
+        guard isBaselineReconciled(for: villageID, core: core) else {
+            throw ManualUpgradeCommandError.unreconciledSnapshot
+        }
         let freshAction = try revalidatedAction(
             for: action,
             village: village,
@@ -735,6 +752,11 @@ public final class AppModel: ObservableObject {
                 manualTrackerError ?? "手动升级存储尚未可用。"
             )
         }
+        // Issue #170：未对账村庄的旧 record 不得被取消或改写。
+        if let storedCore = manualTrackerEnvelope?.state(for: villageID)?.core,
+           !isBaselineReconciled(for: villageID, core: storedCore) {
+            throw ManualUpgradeCommandError.unreconciledSnapshot
+        }
         var cancelled: ManualUpgradeRecord?
         do {
             try updateManualUpgradeCore(for: villageID) { core in
@@ -778,6 +800,11 @@ public final class AppModel: ObservableObject {
         guard now.timeIntervalSinceReferenceDate.isFinite,
               startedAt.timeIntervalSinceReferenceDate.isFinite else {
             throw ManualUpgradeCommandError.invalidTime
+        }
+        // Issue #170：未对账村庄的旧 record 不得通过调整时间绕过基线校验。
+        if let storedCore = manualTrackerEnvelope?.state(for: villageID)?.core,
+           !isBaselineReconciled(for: villageID, core: storedCore) {
+            throw ManualUpgradeCommandError.unreconciledSnapshot
         }
         var adjusted: ManualUpgradeRecord?
         do {
@@ -2715,7 +2742,8 @@ public final class AppModel: ObservableObject {
                 try manualTrackerStore.save(envelope)
             }
             installManualTrackerEnvelope(envelope)
-            _ = settleManualUpgrades(at: now)
+            // 自动结算依赖当前快照基线（Issue #170 gate），必须在 history
+            // 加载完成后由调用方触发；此处不再提前 settle。
         } catch let error as ManualTrackerStoreError {
             if case .unsupportedSchema = error {
                 manualTrackerStatus = .migrationRequired
@@ -2767,12 +2795,33 @@ public final class AppModel: ObservableObject {
         guard !core.itemStates.isEmpty || !core.records.isEmpty else {
             return core
         }
-        guard let storedBaseline = core.baselineReference,
-              let currentBaseline = currentManualBaselineReference(for: villageID),
-              storedBaseline == currentBaseline else {
+        guard isBaselineReconciled(for: villageID, core: core) else {
             return core.gatedForUnreconciledSnapshot()
         }
         return core
+    }
+
+    /// 统一基线 gate（Issue #170）：当前快照/active lineage 的基线是否与
+    /// 持久化 Core 的基线是同一个可比较事实。
+    ///
+    /// - 空白新村庄（无 item state / record）可继续作为空状态使用；
+    /// - 有任何本地 item state 或 record，但缺少当前可比较 baseline
+    ///   （无快照、无 active lineage、lineage 有冲突、或 tag 不一致），
+    ///   或 stored baseline 与 current baseline 不相等 → 未对账；
+    /// - 未对账状态不得被命令改写或自动结算，旧 bytes 留给 #143 显式对账。
+    private func isBaselineReconciled(
+        for villageID: UUID,
+        core: ManualUpgradeCore
+    ) -> Bool {
+        guard !core.itemStates.isEmpty || !core.records.isEmpty else {
+            return true
+        }
+        guard let storedBaseline = core.baselineReference,
+              let currentBaseline = currentManualBaselineReference(for: villageID),
+              storedBaseline == currentBaseline else {
+            return false
+        }
+        return true
     }
 
     /// Converts the active history tail into the baseline identity used by
@@ -3128,6 +3177,9 @@ public final class AppModel: ObservableObject {
             historyLoadFailure = Self.snapshotHistoryAvailability(for: error)
         }
         refreshManualTrackerProjection()
+        // 自动结算需要当前快照基线（Issue #170 gate）：history 已加载，
+        // 只结算基线一致的村庄。
+        _ = settleManualUpgrades(at: Date())
     }
 
     private enum PendingSnapshotTarget {

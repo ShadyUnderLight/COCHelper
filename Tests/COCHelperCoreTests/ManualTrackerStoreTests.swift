@@ -691,7 +691,107 @@ final class ManualTrackerStoreTests: XCTestCase {
     @MainActor
     func testAppModelSettlesDueRecordsAtInjectedTimeAndStartup() throws {
         let store = TestStore()
-        let model = try makeModel(store: store)
+        // 村庄必须携带快照：启动迁移出的 history lineage 是自动结算的
+        // 基线事实（Issue #170 gate），无快照的村庄会被视为未对账而跳过。
+        let history = TestSnapshotHistoryStore()
+        let village = VillageProfile(
+            name: "主村",
+            accountSnapshot: try importedSnapshot(tag: "#TEST")
+        )
+        let model = try makeModel(
+            store: store,
+            villages: [village],
+            injectedHistoryStore: history
+        )
+        let villageID = model.villages[0].id
+        let start = Date(timeIntervalSince1970: 100)
+        let lineage = try XCTUnwrap(try history.load()?.activeLineage(for: villageID))
+        let entry = try XCTUnwrap(try history.load()?.entry(id: lineage.lastEntryID))
+        let currentBaseline = ManualBaselineReference(
+            revision: entry.snapshotID.uuidString,
+            fingerprint: entry.canonicalFingerprint,
+            lineageID: lineage.lineageID.uuidString
+        )
+        try model.updateManualUpgradeCore(for: villageID, at: start) { core in
+            core = try ManualUpgradeCore(itemStates: [
+                ManualItemState(
+                    itemKey: self.key,
+                    baselineReference: currentBaseline,
+                    manualCompletedDistribution: try ManualLevelDistribution(
+                        levelQuantities: [10: 1]
+                    ),
+                    status: .manualCompleted
+                ),
+            ])
+            _ = try core.startUpgrade(
+                itemKey: self.key,
+                fromLevel: 10,
+                targetLevel: 11,
+                quantity: 1,
+                startedAt: start,
+                durationState: .timed(seconds: 60),
+                frozenCosts: nil,
+                catalogProvenance: self.provenance,
+                baselineReference: currentBaseline,
+                recordID: UUID(),
+                now: start
+            )
+        }
+        XCTAssertEqual(model.settleManualUpgrades(at: start.addingTimeInterval(59)), 0)
+        XCTAssertEqual(model.settleManualUpgrades(at: start.addingTimeInterval(60)), 1)
+        XCTAssertEqual(model.manualUpgradeCore(for: villageID)?.activeRecords.count, 0)
+        XCTAssertEqual(model.manualUpgradeCore(for: villageID)?.completedHistory.count, 1)
+
+        var dueCore = try ManualUpgradeCore(itemStates: [
+            ManualItemState(
+                itemKey: key,
+                baselineReference: currentBaseline,
+                manualCompletedDistribution: try ManualLevelDistribution(
+                    levelQuantities: [10: 1]
+                ),
+                status: .manualCompleted
+            ),
+        ])
+        _ = try dueCore.startUpgrade(
+            itemKey: key,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: start,
+            durationState: .instant,
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: currentBaseline,
+            recordID: UUID(),
+            now: start
+        )
+        var envelope = ManualTrackerEnvelope.empty(for: [villageID])
+        try envelope.upsert(try ManualTrackerVillageState(
+            villageID: villageID,
+            core: dueCore,
+            stateUpdatedAt: start
+        ))
+        try store.save(envelope)
+        let reloaded = try makeModel(
+            store: store,
+            villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: village.accountSnapshot)],
+            injectedHistoryStore: history
+        )
+        XCTAssertEqual(reloaded.manualUpgradeCore(for: villageID)?.activeRecords.count, 0)
+        XCTAssertEqual(reloaded.manualUpgradeCore(for: villageID)?.completedHistory.count, 1)
+    }
+
+    @MainActor
+    func testStartupSettleSkipsVillageWithoutSnapshot() throws {
+        // 无快照村庄的本地 record 缺少当前可比较 baseline（Issue #170），
+        // 启动时不得被自动结算；旧 bytes 保留给显式对账。
+        let store = TestStore()
+        let village = VillageProfile(name: "主村")
+        let model = try makeModel(
+            store: store,
+            villages: [village],
+            injectedHistoryStore: TestSnapshotHistoryStore()
+        )
         let villageID = model.villages[0].id
         let start = Date(timeIntervalSince1970: 100)
         try model.updateManualUpgradeCore(for: villageID, at: start) { core in
@@ -710,38 +810,12 @@ final class ManualTrackerStoreTests: XCTestCase {
                 now: start
             )
         }
-        XCTAssertEqual(model.settleManualUpgrades(at: start.addingTimeInterval(59)), 0)
-        XCTAssertEqual(model.settleManualUpgrades(at: start.addingTimeInterval(60)), 1)
-        XCTAssertEqual(model.manualUpgradeCore(for: villageID)?.activeRecords.count, 0)
-        XCTAssertEqual(model.manualUpgradeCore(for: villageID)?.completedHistory.count, 1)
-
-        var dueCore = try manualCompletedCore()
-        _ = try dueCore.startUpgrade(
-            itemKey: key,
-            fromLevel: 10,
-            targetLevel: 11,
-            quantity: 1,
-            startedAt: start,
-            durationState: .instant,
-            frozenCosts: nil,
-            catalogProvenance: provenance,
-            baselineReference: baseline,
-            recordID: UUID(),
-            now: start
+        // 显式 settle 与启动 settle 均跳过该未对账村庄。
+        XCTAssertEqual(model.settleManualUpgrades(at: start.addingTimeInterval(120)), 0)
+        let record = try XCTUnwrap(
+            model.manualUpgradeCore(for: villageID)?.records.first
         )
-        var envelope = ManualTrackerEnvelope.empty(for: [villageID])
-        try envelope.upsert(try ManualTrackerVillageState(
-            villageID: villageID,
-            core: dueCore,
-            stateUpdatedAt: start
-        ))
-        try store.save(envelope)
-        let reloaded = try makeModel(
-            store: store,
-            villages: [VillageProfile(id: villageID, name: "主村")]
-        )
-        XCTAssertEqual(reloaded.manualUpgradeCore(for: villageID)?.activeRecords.count, 0)
-        XCTAssertEqual(reloaded.manualUpgradeCore(for: villageID)?.completedHistory.count, 1)
+        XCTAssertEqual(record.status, .active)
     }
 
     @MainActor

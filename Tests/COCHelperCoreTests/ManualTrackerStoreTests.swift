@@ -139,7 +139,8 @@ final class ManualTrackerStoreTests: XCTestCase {
     @MainActor
     private func makeModel(
         store: TestStore,
-        villages: [VillageProfile] = [VillageProfile(name: "主村")]
+        villages: [VillageProfile] = [VillageProfile(name: "主村")],
+        injectedHistoryStore: TestSnapshotHistoryStore? = nil
     ) throws -> AppModel {
         defaults.set(
             try JSONEncoder().encode(villages),
@@ -147,7 +148,7 @@ final class ManualTrackerStoreTests: XCTestCase {
         )
         return AppModel(
             defaults: defaults,
-            historyStore: historyStore(),
+            historyStore: injectedHistoryStore ?? historyStore(),
             manualTrackerStore: store
         )
     }
@@ -179,7 +180,17 @@ final class ManualTrackerStoreTests: XCTestCase {
         let state = try ManualTrackerVillageState(
             villageID: villageID,
             core: core,
-            stateUpdatedAt: Date(timeIntervalSince1970: 100)
+            stateUpdatedAt: Date(timeIntervalSince1970: 100),
+            reconciliationHistory: [ManualReconciliationRecord(
+                previousReference: baseline,
+                newReference: baseline,
+                decision: .keepLocal,
+                timeConfidence: .reliableSourceTimestamp,
+                sourceTimestamp: Date(timeIntervalSince1970: 90),
+                duplicate: false,
+                appliedAt: Date(timeIntervalSince1970: 100),
+                items: []
+            )]
         )
         var envelope = empty
         try envelope.upsert(state)
@@ -189,6 +200,40 @@ final class ManualTrackerStoreTests: XCTestCase {
         XCTAssertFalse(String(decoding: raw, as: UTF8.self).contains("remainingSeconds"))
         XCTAssertEqual(try store.load(), envelope)
         XCTAssertEqual(try XCTUnwrap(try store.load()?.state(for: villageID)).baselineRevision, "snapshot-1")
+    }
+
+    @MainActor
+    func testReimportPreviewAndCancelLeaveAllThreeStoresUnchanged() throws {
+        let raw = "{\"tag\":\"#2QJQ8J88\",\"timestamp\":1700000000,\"buildings\":[{\"data\":100,\"lvl\":10,\"cnt\":1}]}"
+        let nextRaw = "{\"tag\":\"#2QJQ8J88\",\"timestamp\":1700000200,\"buildings\":[{\"data\":100,\"lvl\":11,\"cnt\":1}]}"
+        let village = VillageProfile(
+            name: "主村",
+            accountSnapshot: try AccountSnapshotImporter.parse(
+                raw,
+                now: Date(timeIntervalSince1970: 1_800_000_000)
+            )
+        )
+        let manualStore = TestStore()
+        let snapshotHistoryStore = historyStore()
+        let model = try makeModel(
+            store: manualStore,
+            villages: [village],
+            injectedHistoryStore: snapshotHistoryStore
+        )
+        let currentBefore = defaults.data(forKey: "coc-helper.villages.v1")
+        let historyBefore = snapshotHistoryStore.rawData
+        let manualBefore = manualStore.rawData
+
+        model.importText = nextRaw
+        model.parseAccountText()
+        XCTAssertNotNil(model.pendingReconciliationPreview)
+        model.discardPendingAccountSnapshot()
+
+        XCTAssertEqual(defaults.data(forKey: "coc-helper.villages.v1"), currentBefore)
+        XCTAssertEqual(snapshotHistoryStore.rawData, historyBefore)
+        XCTAssertEqual(manualStore.rawData, manualBefore)
+        XCTAssertNil(model.pendingAccountSnapshot)
+        XCTAssertNil(model.pendingReconciliationPreview)
     }
 
     func testCorruptAndFutureSchemaAreRejectedWithoutReplacingBytes() throws {
@@ -320,7 +365,7 @@ final class ManualTrackerStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testClearAndReimportGateOldManualProjectionUntilReconcile() throws {
+    func testClearAndReimportReconcilesWithoutRollingBackManualState() throws {
         let history = TestSnapshotHistoryStore()
         let store = TestStore()
         let snapshot = try importedSnapshot(tag: "#2QJQ8J88")
@@ -369,11 +414,11 @@ final class ManualTrackerStoreTests: XCTestCase {
         model.parseAccountText()
         XCTAssertTrue(model.applyPendingAccountSnapshot())
 
-        XCTAssertEqual(store.rawData, persistedBeforeReset)
+        XCTAssertNotEqual(store.rawData, persistedBeforeReset)
         XCTAssertEqual(
             model.manualUpgradeCores[villageID]?.itemState(for: self.key)?.status,
-            .unknown,
-            "完全相同的同 Tag snapshot 重导入也必须等 reconcile"
+            .manualCompleted,
+            "完全相同的同 Tag snapshot 重导入应只更新 baseline，不降级本地状态"
         )
         XCTAssertEqual(
             try history.load()?.duplicateMetadata.values.first?.duplicateImportCount,
@@ -384,12 +429,13 @@ final class ManualTrackerStoreTests: XCTestCase {
         model.parseAccountText()
         XCTAssertTrue(model.applyPendingAccountSnapshot())
 
-        XCTAssertEqual(store.rawData, persistedBeforeReset)
+        XCTAssertNotEqual(store.rawData, persistedBeforeReset)
         XCTAssertEqual(
             model.manualUpgradeCores[villageID]?.itemState(for: self.key)?.status,
-            .unknown,
-            "同 Tag 的新 snapshot 也必须等 reconcile，不能按 TrackerItemKey 复用旧手动状态"
+            .manualCompleted,
+            "缺少来源时间的新 snapshot 不能回滚已完成的本地状态"
         )
+        XCTAssertEqual(try store.load()?.state(for: villageID)?.reconciliationHistory.count, 2)
     }
 
     @MainActor
@@ -425,13 +471,16 @@ final class ManualTrackerStoreTests: XCTestCase {
         model.parseAccountText()
         XCTAssertTrue(model.applyPendingAccountSnapshot())
 
-        XCTAssertEqual(store.rawData, persistedBeforeImport)
+        XCTAssertNotEqual(store.rawData, persistedBeforeImport)
         XCTAssertEqual(
             model.manualUpgradeCores[villageID]?.itemState(for: self.key)?.status,
             .unknown,
             "换 Tag 进入新 lineage 后，旧 manual state 必须隔离"
         )
         XCTAssertTrue(model.manualUpgradeCores[villageID]?.activeRecords.isEmpty == true)
+        let items = try store.load()?.state(for: villageID)?.reconciliationHistory.last?.items
+        XCTAssertEqual(items?.count, 1)
+        XCTAssertEqual(items?.first?.classification, .lineageMismatch)
     }
 
     func testVillageStateRejectsRecordStartingAfterStateUpdatedAt() throws {
@@ -575,6 +624,36 @@ final class ManualTrackerStoreTests: XCTestCase {
         XCTAssertEqual(model.villages.count, 1)
         XCTAssertNil(try store.load()?.state(for: firstID))
         XCTAssertNotNil(try store.load()?.state(for: secondID))
+    }
+
+    @MainActor
+    func testReimportReconcilesOnlyTheTargetVillage() throws {
+        let store = TestStore()
+        let firstSnapshot = try importedSnapshot(tag: "#2QJQ8J88")
+        let secondSnapshot = try importedSnapshot(tag: "#2QJQ8J89")
+        let villages = [
+            VillageProfile(name: "A", accountSnapshot: firstSnapshot),
+            VillageProfile(name: "B", accountSnapshot: secondSnapshot)
+        ]
+        let model = try makeModel(
+            store: store,
+            villages: villages,
+            injectedHistoryStore: TestSnapshotHistoryStore()
+        )
+        let firstID = model.villages[0].id
+        let secondID = model.villages[1].id
+        let secondBefore = try XCTUnwrap(store.load()?.state(for: secondID))
+
+        model.importText = firstSnapshot.originalText
+        model.parseAccountText()
+        XCTAssertTrue(model.applyPendingAccountSnapshot())
+
+        let persisted = try XCTUnwrap(store.load())
+        XCTAssertEqual(persisted.state(for: secondID), secondBefore)
+        XCTAssertEqual(persisted.state(for: firstID)?.reconciliationHistory.count, 1)
+        XCTAssertTrue(
+            persisted.state(for: firstID)?.reconciliationHistory.last?.duplicate == true
+        )
     }
 
     @MainActor

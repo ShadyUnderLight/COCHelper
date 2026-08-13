@@ -54,8 +54,8 @@ struct VillageDetailView: View {
         .sheet(item: $quickImportPreview) { preview in
             QuickImportSheet(
                 preview: preview,
-                onConfirm: {
-                    if model.applyQuickImport(preview) {
+                onApplyDecision: { decision in
+                    if model.applyQuickImport(preview, decision: decision) {
                         quickImportPreview = nil
                     } else {
                         quickImportError = .historyUnavailable(
@@ -806,7 +806,7 @@ private struct QuickImportSheet: View {
     /// 快捷导入预览（目标村庄、解析结果、目的地描述）。
     let preview: QuickImportPreview
     /// 确认按钮动作（外部负责 applyQuickImport 并关闭 sheet）。
-    let onConfirm: () -> Void
+    let onApplyDecision: (ManualReconciliationDecision) -> Void
     /// 放弃按钮动作（外部负责关闭 sheet）。
     let onCancel: () -> Void
 
@@ -820,8 +820,9 @@ private struct QuickImportSheet: View {
                     isPending: true,
                     destinationDescription: preview.destinationDescription,
                     confirmTitle: preview.confirmationTitle,
-                    onConfirm: onConfirm,
                     onCancel: onCancel,
+                    onApplyDecision: onApplyDecision,
+                    reconciliationPreview: preview.reconciliationPreview,
                     targetVillageName: preview.targetVillageName,
                     targetVillageTag: preview.targetVillageTag,
                     targetVillageHasSnapshot: preview.targetVillageHasSnapshot

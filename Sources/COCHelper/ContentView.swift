@@ -1271,6 +1271,10 @@ struct AccountSnapshotSummaryView: View {
     var onConfirm: (() -> Void)? = nil
     /// 放弃动作（默认 model.discardPendingAccountSnapshot()）。
     var onCancel: (() -> Void)? = nil
+    /// 对账决策动作。快捷导入注入；账号数据页默认转发到 AppModel。
+    var onApplyDecision: ((ManualReconciliationDecision) -> Void)? = nil
+    /// 快捷导入注入的纯预览；账号数据页默认读取 pending preview。
+    var reconciliationPreview: ManualReconciliationPreview? = nil
     /// Issue #61：快捷导入的目标村庄名称（非 nil 时渲染「目标村庄 / 目标 Tag /
     /// JSON Tag」对照行，账号数据页不传 = 不渲染，行为不变）。
     var targetVillageName: String? = nil
@@ -1309,6 +1313,18 @@ struct AccountSnapshotSummaryView: View {
 
     private var activeItems: [AccountItem] {
         snapshot.activeItems.filter { ($0.remainingSeconds ?? 0) > 0 }
+    }
+
+    private var resolvedReconciliationPreview: ManualReconciliationPreview? {
+        reconciliationPreview ?? (isPending ? model.pendingReconciliationPreview : nil)
+    }
+
+    private func apply(_ decision: ManualReconciliationDecision) {
+        if let onApplyDecision {
+            onApplyDecision(decision)
+        } else {
+            _ = model.applyPendingAccountSnapshot(decision: decision)
+        }
     }
 
     var body: some View {
@@ -1430,6 +1446,10 @@ struct AccountSnapshotSummaryView: View {
                     }
                 }
 
+                if let preview = resolvedReconciliationPreview {
+                    ReconciliationPreviewSection(preview: preview)
+                }
+
                 if isPending {
                     if let destination = destinationDescription
                         ?? model.pendingAccountSnapshotDestinationDescription {
@@ -1437,7 +1457,7 @@ struct AccountSnapshotSummaryView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Color.cocAccent)
                     }
-                    HStack {
+                    HStack(alignment: .center, spacing: 8) {
                         Spacer()
                         Button("放弃") {
                             if let onCancel {
@@ -1447,15 +1467,33 @@ struct AccountSnapshotSummaryView: View {
                             }
                         }
                         .buttonStyle(.bordered)
-                        Button(confirmTitle ?? model.pendingAccountSnapshotActionTitle ?? "应用快照") {
-                            if let onConfirm {
-                                onConfirm()
-                            } else {
-                                model.applyPendingAccountSnapshot()
+                        if let preview = resolvedReconciliationPreview {
+                            if preview.requiresExplicitDecision {
+                                Button("全部保留本地") {
+                                    apply(.keepLocal)
+                                }
+                                .buttonStyle(.bordered)
+                                Button("接受导入观察") {
+                                    apply(.acceptObserved)
+                                }
+                                .buttonStyle(.bordered)
                             }
+                            Button(preview.requiresExplicitDecision ? "应用安全项" : "应用快照") {
+                                apply(.applyNonConflicting)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.cocAccent)
+                        } else {
+                            Button(confirmTitle ?? model.pendingAccountSnapshotActionTitle ?? "应用快照") {
+                                if let onConfirm {
+                                    onConfirm()
+                                } else {
+                                    _ = model.applyPendingAccountSnapshot()
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.cocAccent)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.cocAccent)
                     }
                 } else {
                     HStack {
@@ -1471,6 +1509,104 @@ struct AccountSnapshotSummaryView: View {
                 }
             }
         }
+    }
+}
+
+private struct ReconciliationPreviewSection: View {
+    let preview: ManualReconciliationPreview
+
+    private var examples: [ManualReconciliationItem] {
+        Array(preview.items.filter(\.classification.needsAttention).prefix(5))
+    }
+
+    private func distributionLabel(_ distribution: ManualLevelDistribution?) -> String {
+        guard let distribution else { return "unknown" }
+        return distribution.levels.map { "Lv\($0.level)×\($0.quantity)" }.joined(separator: ", ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Label("重导入对账", systemImage: preview.requiresExplicitDecision
+                    ? "exclamationmark.triangle.fill"
+                    : "checkmark.shield.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(preview.requiresExplicitDecision ? .orange : .green)
+                Spacer()
+                Text(preview.timeConfidence.label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                ReconciliationMetric(title: "安全", value: preview.safeCount)
+                ReconciliationMetric(title: "需确认", value: preview.attentionCount)
+                ReconciliationMetric(title: "观察领先", value: preview.count(.observedAhead))
+                ReconciliationMetric(title: "旧快照", value: preview.count(.staleImport))
+            }
+            HStack(spacing: 8) {
+                ReconciliationMetric(title: "精确一致", value: preview.count(.exactMatch))
+                ReconciliationMetric(title: "证据不足", value: preview.count(.unknown))
+                ReconciliationMetric(title: "冲突", value: preview.count(.conflict))
+                ReconciliationMetric(title: "可能重复", value: preview.count(.possibleDuplicate))
+            }
+
+            Text("Village: \(preview.villageID.uuidString)\nLineage: \(preview.newReference.lineageID ?? "unknown")")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            Text("来源时间：\(preview.sourceTimestamp?.formatted(date: .abbreviated, time: .standard) ?? "未提供")；本地应用时间：\(preview.appliedAt.formatted(date: .abbreviated, time: .standard))")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if preview.duplicate {
+                Text("canonical fingerprint 未变化；不会新增 canonical history entry，但会记录本次对账 revision，也不会重新开始手动记录。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !preview.lineageComparable {
+                Text("账号或 lineage 已变化，禁止自动匹配旧手动记录。")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            }
+            ForEach(examples) { item in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.displayName + " · " + item.classification.label)
+                        .font(.caption.weight(.semibold))
+                    Text(item.message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("本地：\(distributionLabel(item.previousDistribution)) → 导入：\(distributionLabel(item.observedDistribution))")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Text("将更新 current snapshot、snapshot history，并记录新的 reconciliation reference；默认保留本地 active/completed 历史，证据不足或冲突项不会自动回滚。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if preview.requiresExplicitDecision {
+                Text("“应用安全项”只吸收明确观察；冲突项保留本地状态。“接受导入观察”是显式 rebase。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct ReconciliationMetric: View {
+    let title: String
+    let value: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(String(value)).font(.caption.weight(.bold).monospacedDigit())
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
     }
 }
 

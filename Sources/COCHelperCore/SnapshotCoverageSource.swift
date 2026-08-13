@@ -74,7 +74,10 @@ public enum JSONSnapshotCoverageAdapter {
     }
 
     private static func topLevelObject(of text: String) throws -> [String: Any] {
-        guard let data = text.data(using: .utf8),
+        // 与导入器同源清洗(去除 Markdown code fence),否则合法围栏输入
+        // 会解析失败并把来源声明降级为 unavailable。
+        let prepared = AccountSnapshotImporter.prepare(text).text
+        guard let data = prepared.data(using: .utf8),
               let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw SnapshotHistoryCanonicalizationError.invalidJSON("顶层必须是 JSON 对象。")
         }

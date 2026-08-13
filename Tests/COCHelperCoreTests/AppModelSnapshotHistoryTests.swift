@@ -368,4 +368,83 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         )
         XCTAssertEqual(buildings.completeness, .complete)
     }
+
+    /// Issue #173 手工验证等价项:两个真实村庄连续导入。
+    /// 无协议的真实 fixture → 双村 buildings proof 均 unavailable;
+    /// 对村 A 导入带 coverage 声明的 JSON → 村 A complete、村 B 保持
+    /// unavailable(per-village 隔离,证明不会跨村庄借用)。
+    @MainActor
+    func testTwoRealVillageImportsKeepUnknownAndIsolatePerVillageProof() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle.module.url(forResource: "anonymized_account_snapshot", withExtension: "json")
+        )
+        let fixture = try String(contentsOf: fixtureURL, encoding: .utf8)
+        let villageAJSON = fixture.replacingOccurrences(
+            of: "\"#ANONYMIZED\"", with: "\"#2QJQ8J88\""
+        )
+        let villageBJSON = fixture.replacingOccurrences(
+            of: "\"#ANONYMIZED\"", with: "\"#2QJQ8J89\""
+        )
+        let villageA = VillageProfile(
+            id: UUID(),
+            name: "村庄 A",
+            accountSnapshot: snapshot(tag: "#2QJQ8J88", text: villageAJSON)
+        )
+        let villageB = VillageProfile(
+            id: UUID(),
+            name: "村庄 B",
+            accountSnapshot: snapshot(tag: "#2QJQ8J89", text: villageBJSON)
+        )
+        let historyStore = TestSnapshotHistoryStore()
+        let model = try makeModel(
+            villages: [villageA, villageB],
+            historyStore: historyStore,
+            clipboardReader: {
+                """
+                {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
+                 "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+                """
+            }
+        )
+        let idA = model.villages[0].id
+        let idB = model.villages[1].id
+
+        // 启动迁移后:双村真实 fixture 均无协议 → 均 unavailable。
+        var envelope = try XCTUnwrap(historyStore.load())
+        var entryA = try XCTUnwrap(
+            envelope.entry(id: XCTUnwrap(envelope.activeLineage(for: idA)?.lastEntryID))
+        )
+        var entryB = try XCTUnwrap(
+            envelope.entry(id: XCTUnwrap(envelope.activeLineage(for: idB)?.lastEntryID))
+        )
+        XCTAssertFalse(
+            try XCTUnwrap(entryA.coverage.section(base: .home, rawSection: "buildings")).isComplete,
+            "村庄 A 无协议不得 complete"
+        )
+        XCTAssertFalse(
+            try XCTUnwrap(entryB.coverage.section(base: .home, rawSection: "buildings")).isComplete,
+            "村庄 B 无协议不得 complete"
+        )
+
+        // 村 A 快捷导入带 coverage 声明的 JSON → 村 A complete,村 B 不变。
+        guard case .success(let preview) = model.prepareQuickImport(for: idA) else {
+            return XCTFail("有效快照应能生成快捷导入预览")
+        }
+        XCTAssertTrue(model.applyQuickImport(preview))
+        envelope = try XCTUnwrap(historyStore.load())
+        entryA = try XCTUnwrap(
+            envelope.entry(id: XCTUnwrap(envelope.activeLineage(for: idA)?.lastEntryID))
+        )
+        entryB = try XCTUnwrap(
+            envelope.entry(id: XCTUnwrap(envelope.activeLineage(for: idB)?.lastEntryID))
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(entryA.coverage.section(base: .home, rawSection: "buildings")).completeness,
+            .complete
+        )
+        XCTAssertFalse(
+            try XCTUnwrap(entryB.coverage.section(base: .home, rawSection: "buildings")).isComplete,
+            "村庄 B 不得借用村庄 A 的证明"
+        )
+    }
 }

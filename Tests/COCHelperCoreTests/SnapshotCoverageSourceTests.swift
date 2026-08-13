@@ -151,4 +151,59 @@ final class SnapshotCoverageSourceTests: XCTestCase {
             .authoritative(source: "u.coc", version: "1", expectedCount: 3)
         )
     }
+
+    func testMarkdownFencedJSONKeepsDeclaredProof() throws {
+        // 导入器支持去除 Markdown code fence;adapter 必须用同样的清洗逻辑,
+        // 否则合法输入(带 ```json 围栏)会解析失败并把 proof 降级为 unavailable。
+        let inner = """
+        {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
+         "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+        """
+        let fenced = "```json\n" + inner + "\n```"
+
+        let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot(text: fenced))
+
+        XCTAssertEqual(
+            proofs["buildings"],
+            .authoritative(source: "u.coc", version: "1", expectedCount: 1),
+            "带 code fence 的合法输入不得丢失 coverage 声明"
+        )
+    }
+
+    func testUnrecognizedProtocolVersionFailsClosedToUnavailable() throws {
+        // Issue #173: source version 不可信 → 不得产生 authoritative。
+        // version 必须是数字点分语义版本("1"、"1.2");"unrecognized" 等
+        // 不可解析版本按 fail-closed 处理。
+        let cases: [(String, String)] = [
+            ("unrecognized", "1"),
+            ("v1", "1"),
+            ("1.2-beta", "1"),
+            ("", "1")
+        ]
+        for (version, source) in cases {
+            let proof = SnapshotCoverageProof.authoritative(
+                source: source,
+                version: version,
+                expectedCount: 1
+            )
+            XCTAssertFalse(
+                proof.isAuthoritative,
+                "不可解析的协议版本 \(version.debugDescription) 不得为 authoritative"
+            )
+        }
+
+        let validCases: [(String, String)] = [
+            ("1", "u.coc"),
+            ("1.2", "u.coc"),
+            ("1.2.3", "u.coc")
+        ]
+        for (version, source) in validCases {
+            let proof = SnapshotCoverageProof.authoritative(
+                source: source,
+                version: version,
+                expectedCount: 1
+            )
+            XCTAssertTrue(proof.isAuthoritative, "合法语义版本 \(version) 应为 authoritative")
+        }
+    }
 }

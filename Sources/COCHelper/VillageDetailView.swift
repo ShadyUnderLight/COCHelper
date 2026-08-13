@@ -803,8 +803,12 @@ struct VillageDetailView: View {
                         .accessibilityLabel("开始升级不可用：" + (action.disabledReason ?? ""))
                 }
             }
-            if let record = activeRecords.first {
+            // review：多条 active 记录时每条都提供 Cancel/Adjust 入口。
+            ForEach(activeRecords) { record in
                 HStack(spacing: 6) {
+                    Text("Lv \(record.fromLevel) → \(record.targetLevel)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
                     Button("取消") {
                         actionSheet = .cancel(record)
                     }
@@ -903,7 +907,9 @@ struct VillageDetailView: View {
                     onOpenDetail: { instance in selectedItem = instance.item },
                     now: now,
                     startActions: UpgradeActionProjection.actions(for: buildingGroup, catalog: catalog),
-                    onStart: { action in actionSheet = .start(action) }
+                    onStart: { action in actionSheet = .start(action) },
+                    onCancel: { record in actionSheet = .cancel(record) },
+                    onAdjust: { record in actionSheet = .adjust(record) }
                 )
             }
             if !fallbackItems.isEmpty {

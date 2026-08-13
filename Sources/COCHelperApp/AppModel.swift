@@ -808,7 +808,31 @@ public final class AppModel: ObservableObject {
 
     /// 基于当前快照/目录/存储 core 重建 action 并与传入 action 比对。
     /// 任一不一致或不可启动 → staleAction。
+    ///
+    /// 按 `action.sourceKind` 选择投影路径（review P1-2）：
+    /// - `.row`：普通行投影——`.manualActive` 行不产生 Start（由 Cancel/Adjust
+    ///   承接），剩余数量不可再启动。
+    /// - `.group`：组聚合投影——`.manualActive` 下仍可为剩余数量生成 action
+    ///   （v1 每次启动一个实例），且保留混合等级的 fromLevel。
     private func revalidatedAction(
+        for action: UpgradeAction,
+        village: VillageProfile,
+        core: ManualUpgradeCore,
+        now: Date
+    ) throws -> UpgradeAction {
+        switch action.sourceKind {
+        case .row:
+            return try revalidatedRowAction(
+                for: action, village: village, core: core, now: now
+            )
+        case .group:
+            return try revalidatedGroupAction(
+                for: action, village: village, core: core, now: now
+            )
+        }
+    }
+
+    private func revalidatedRowAction(
         for action: UpgradeAction,
         village: VillageProfile,
         core: ManualUpgradeCore,
@@ -837,6 +861,50 @@ public final class AppModel: ObservableObject {
             ),
             now: now
         ), fresh.isStartable else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        guard fresh.itemKey == action.itemKey,
+              fresh.fromLevel == action.fromLevel,
+              fresh.targetLevel == action.targetLevel,
+              fresh.quantity == action.quantity,
+              fresh.baselineReference == action.baselineReference,
+              fresh.durationState == action.durationState else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        return fresh
+    }
+
+    /// 组聚合 action 复核：重建组投影，按 fromLevel/targetLevel 定位同名 action。
+    /// 组在 `.manualActive` 下仍可为剩余数量生成 action（不 stale），混合等级
+    /// 组的 fromLevel 不被普通行投影抹平。
+    private func revalidatedGroupAction(
+        for action: UpgradeAction,
+        village: VillageProfile,
+        core: ManualUpgradeCore,
+        now: Date
+    ) throws -> UpgradeAction {
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: gameCatalog,
+            seasonalPhases: seasonalPhases,
+            craftTableCatalog: craftTableCatalog,
+            base: action.base,
+            now: now,
+            manualUpgradeCore: core
+        )
+        let groups = BuildingGroupProjection.project(
+            projection: projection,
+            catalog: gameCatalog,
+            base: action.base,
+            manualUpgradeCore: core
+        )
+        guard let group = groups.first(where: { $0.trackerState.itemKey == action.itemKey }) else {
+            throw ManualUpgradeCommandError.staleAction
+        }
+        let freshActions = UpgradeActionProjection.actions(for: group, catalog: gameCatalog)
+        guard let fresh = freshActions.first(where: {
+            $0.fromLevel == action.fromLevel && $0.targetLevel == action.targetLevel
+        }), fresh.isStartable else {
             throw ManualUpgradeCommandError.staleAction
         }
         guard fresh.itemKey == action.itemKey,

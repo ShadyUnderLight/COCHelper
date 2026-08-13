@@ -277,6 +277,36 @@ final class UpgradeOverviewStateTests: XCTestCase {
         )
     }
 
+    // MARK: - 同 key 多行去重（review P2）
+
+    func testSameStableIdentityMultipleRowsDeduplicated() throws {
+        // 同一 key（加农炮）两条不同等级的行都带导入计时 → 共享同一 effective
+        // state（importedActive），active 展示 2 行但去重计数应为 1。
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(
+                    section: "buildings", dataID: 1_000_002, level: 1,
+                    timerSeconds: 100, remainingSeconds: 90, path: "1"
+                ),
+                item(
+                    section: "buildings", dataID: 1_000_002, level: 2,
+                    timerSeconds: 100, remainingSeconds: 90, path: "2"
+                ),
+            ],
+        ])
+        let core = try ManualUpgradeCore()
+        let state = UpgradeOverviewProjection.overviewState(
+            from: [village],
+            catalog: catalog,
+            manualUpgradeCores: [village.id: core],
+            at: importedAt
+        )
+        XCTAssertEqual(state.activeRecords.count, 2)
+        XCTAssertEqual(state.deduplicatedDisplayCount, 1)
+        XCTAssertEqual(state.importedActiveCount, 1)
+    }
+
     // MARK: - 冲突 / 未知行
 
     func testAttentionRowsAreListedNotHidden() throws {

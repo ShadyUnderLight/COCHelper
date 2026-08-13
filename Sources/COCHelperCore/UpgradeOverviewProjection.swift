@@ -319,9 +319,19 @@ extension UpgradeOverviewProjection {
         let manualCompletedCount = manualUpgradeCores.values.reduce(0) {
             $0 + $1.completedHistory.count
         }
-        let importedActiveCount = active.filter { record in
-            record.item.effectiveState?.provenance.contains(.importedActive) == true
-        }.count
+        // review P2：同一 stable identity（itemKey）下的多行共享同一 effective
+        // state，active 展示按 (villageID, itemKey) 去重后计数——exact match
+        // 合并与同 key 多行都不重复计入；不同村庄的同 key 不合并。
+        let activeKeys = Set(active.map { record in
+            Self.stableKey(villageID: record.villageID, item: record.item)
+        })
+        let importedActiveCount = Set(
+            active
+                .filter { record in
+                    record.item.effectiveState?.provenance.contains(.importedActive) == true
+                }
+                .map { Self.stableKey(villageID: $0.villageID, item: $0.item) }
+        ).count
 
         let completions: [UpgradeRecentCompletion] = manualUpgradeCores
             .flatMap { villageID, core in
@@ -347,12 +357,21 @@ extension UpgradeOverviewProjection {
         return UpgradeOverviewState(
             manualActiveCount: manualActiveCount,
             importedActiveCount: importedActiveCount,
-            deduplicatedDisplayCount: active.count,
+            deduplicatedDisplayCount: activeKeys.count,
             manualCompletedCount: manualCompletedCount,
             completedRecently: completions,
             activeRecords: active,
             attentionRecords: attention,
             needsReimportRecords: needsReimport
         )
+    }
+
+    /// 展示行的 stable identity 键（villageID + effective itemKey，防御回退推导）。
+    private static func stableKey(villageID: UUID, item: VillageItemState) -> String {
+        let key = item.effectiveState?.itemKey.stableID
+            ?? TrackerItemKey.root(
+                base: item.base, rawSection: item.section, dataID: item.dataID
+            ).stableID
+        return villageID.uuidString + ":" + key
     }
 }

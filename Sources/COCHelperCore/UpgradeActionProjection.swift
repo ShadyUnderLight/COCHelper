@@ -11,6 +11,17 @@ public enum UpgradeActionCoverage: String, Hashable, Sendable {
     case unavailable
 }
 
+/// action 来源（Issue #144 review P1-2）：决定 AppModel 复核走哪条投影路径。
+///
+/// - `.row`：普通顶层行（`UpgradeActionProjection.action(for:catalog:...)`）。
+/// - `.group`：重复建筑/城墙组聚合 action（`BuildingGroupProjection` 生成，
+///   经 `UpgradeActionProjection.actions(for:catalog:)` 适配）。组在已有 active
+///   记录时仍可为剩余数量生成 action（.manualActive 不阻塞组启动）。
+public enum UpgradeActionSource: String, Hashable, Sendable {
+    case row
+    case group
+}
+
 /// 一条投影产出的本地升级动作（Issue #144 canonical action）。
 ///
 /// 普通顶层行由 `UpgradeActionProjection.action(for:catalog:catalogIsUsable:
@@ -37,6 +48,8 @@ public struct UpgradeAction: Identifiable, Hashable, Sendable {
     public let isStartable: Bool
     public let disabledReason: String?
     public let diagnostics: [String]
+    /// 来源（row / group）：AppModel 复核按此选择投影路径（review P1-2）。
+    public let sourceKind: UpgradeActionSource
 
     public var id: String {
         itemKey.stableID + ":"
@@ -56,7 +69,8 @@ public struct UpgradeAction: Identifiable, Hashable, Sendable {
         baselineReference: ManualBaselineReference?,
         isStartable: Bool,
         disabledReason: String?,
-        diagnostics: [String]
+        diagnostics: [String],
+        sourceKind: UpgradeActionSource = .row
     ) {
         self.itemKey = itemKey
         self.itemName = itemName
@@ -71,6 +85,7 @@ public struct UpgradeAction: Identifiable, Hashable, Sendable {
         self.isStartable = isStartable
         self.disabledReason = disabledReason
         self.diagnostics = diagnostics
+        self.sourceKind = sourceKind
     }
 
     /// 重复建筑/城墙组的 action 适配（`BuildingGroupUpgradeAction` → canonical）。
@@ -94,7 +109,8 @@ public struct UpgradeAction: Identifiable, Hashable, Sendable {
             baselineReference: buildingAction.baselineReference,
             isStartable: buildingAction.isStartable,
             disabledReason: buildingAction.diagnostic,
-            diagnostics: buildingAction.diagnostic.map { [$0] } ?? []
+            diagnostics: buildingAction.diagnostic.map { [$0] } ?? [],
+            sourceKind: .group
         )
     }
 }

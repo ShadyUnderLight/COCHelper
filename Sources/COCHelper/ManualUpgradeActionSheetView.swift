@@ -43,6 +43,9 @@ struct ManualUpgradeActionSheetView: View {
                 cancelContent(record)
             case .adjust(let record):
                 adjustContent(record)
+                    // review P1-3：默认时间必须是现有记录 startedAt，
+                    // 用户直接确认不会把原始开始时间静默改成打开时刻。
+                    .onAppear { adjustDate = record.startedAt }
             }
         }
         .padding(20)

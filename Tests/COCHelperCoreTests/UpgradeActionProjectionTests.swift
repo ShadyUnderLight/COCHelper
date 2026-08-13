@@ -574,7 +574,6 @@ final class UpgradeActionProjectionTests: XCTestCase {
     // MARK: - 显示状态
 
     func testDisplayStateMapping() throws {
-        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
         // observed → available
         let observed = cannonProjection(objectSections: [
             "buildings": [

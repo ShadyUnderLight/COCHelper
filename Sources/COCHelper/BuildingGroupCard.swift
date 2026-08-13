@@ -29,6 +29,9 @@ struct BuildingGroupCard: View {
     /// Issue #144：组级 Start 动作（v1 每次 quantity = 1）。
     var startActions: [UpgradeAction] = []
     var onStart: ((UpgradeAction) -> Void)? = nil
+    /// Issue #144 review P1-1：组内本地 active 记录也必须有 Cancel/Adjust 入口。
+    var onCancel: ((ManualUpgradeRecord) -> Void)? = nil
+    var onAdjust: ((ManualUpgradeRecord) -> Void)? = nil
 
     /// 实例区：每条记录一个实例块（头部行 + 内嵌阶梯），实例块间分隔线。
     /// `BuildingInstance` 是 Identifiable（id = 原始快照记录 ID，组内唯一），
@@ -163,44 +166,77 @@ struct BuildingGroupCard: View {
                     BuildingGroupSummaryView(group: group)
                     instanceList
                 }
-                if !startActions.isEmpty {
+                let activeRecords = group.trackerState.activeRecords
+                if !startActions.isEmpty || !activeRecords.isEmpty {
                     Divider()
-                    actionRow
+                    actionRow(activeRecords: activeRecords)
                 }
             }
         }
     }
 
-    /// Issue #144：组级动作行（聚合 action，v1 一次启动一个实例）。
-    private var actionRow: some View {
-        HStack(spacing: 8) {
-            Text("本地升级")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            ForEach(startActions, id: \.id) { action in
-                if action.isStartable {
-                    Button("开始升级 " + Self.levelLabel(action)) {
-                        onStart?(action)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .accessibilityLabel("开始升级 " + group.name + " " + Self.levelLabel(action))
-                } else {
-                    Button("开始升级 " + Self.levelLabel(action)) {}
+    /// Issue #144：组级动作行（聚合 action，v1 一次启动一个实例；
+    /// review P1-1：active 记录提供 Cancel/Adjust）。
+    private func actionRow(activeRecords: [ManualUpgradeRecord]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("本地升级")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(startActions, id: \.id) { action in
+                    if action.isStartable {
+                        Button("开始升级 " + Self.levelLabel(action)) {
+                            onStart?(action)
+                        }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .disabled(true)
-                        .help(action.disabledReason ?? "不可启动")
+                        .accessibilityLabel("开始升级 " + group.name + " " + Self.levelLabel(action))
+                    } else {
+                        Button("开始升级 " + Self.levelLabel(action)) {}
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(true)
+                            .help(action.disabledReason ?? "不可启动")
+                    }
+                }
+                let diagnostics = group.trackerState.diagnostics
+                if !diagnostics.isEmpty {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help(diagnostics.joined(separator: "\n"))
+                }
+                Spacer()
+            }
+            if !activeRecords.isEmpty {
+                HStack(spacing: 8) {
+                    Text("进行中")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    ForEach(activeRecords) { record in
+                        Text("Lv \(record.fromLevel) → \(record.targetLevel)")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        Button("取消") {
+                            onCancel?(record)
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .accessibilityLabel("取消升级 " + group.name + " " + Self.levelLabel(record))
+                        Button("调整时间") {
+                            onAdjust?(record)
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .accessibilityLabel("调整开始时间 " + group.name + " " + Self.levelLabel(record))
+                    }
+                    Spacer()
                 }
             }
-            let diagnostics = group.trackerState.diagnostics
-            if !diagnostics.isEmpty {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .help(diagnostics.joined(separator: "\n"))
-            }
-            Spacer()
         }
+    }
+
+    private static func levelLabel(_ record: ManualUpgradeRecord) -> String {
+        "\(record.fromLevel) → \(record.targetLevel)"
     }
 
     private static func levelLabel(_ action: UpgradeAction) -> String {

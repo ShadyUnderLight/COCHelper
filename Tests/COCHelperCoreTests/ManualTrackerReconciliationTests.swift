@@ -32,7 +32,7 @@ final class ManualTrackerReconciliationTests: XCTestCase {
                 accountSnapshot: snapshot
             )],
             now: Date(timeIntervalSince1970: 1_700_000_010),
-            sectionProofs: sectionProofs
+            sectionProofs: [villageID: sectionProofs]
         )
         let lineage = try XCTUnwrap(envelope.activeLineage(for: villageID))
         let entry = try XCTUnwrap(envelope.entry(id: lineage.lastEntryID))

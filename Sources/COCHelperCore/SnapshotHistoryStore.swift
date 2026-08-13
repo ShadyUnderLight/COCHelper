@@ -458,7 +458,7 @@ public struct SnapshotHistoryService: Sendable {
         now: Date = Date(),
         catalog: GameCatalog? = nil,
         craftTableCatalog: CraftTableCatalog? = nil,
-        sectionProofs: [String: SnapshotCoverageProof] = [:]
+        sectionProofs: [UUID: [String: SnapshotCoverageProof]] = [:]
     ) throws -> SnapshotHistoryEnvelope {
         if let existing = try store.load() {
             if existing.isMigrated { return existing }
@@ -481,7 +481,7 @@ public struct SnapshotHistoryService: Sendable {
                 appliedAt: now,
                 catalog: catalog,
                 craftTableCatalog: craftTableCatalog,
-                sectionProofs: sectionProofs
+                sectionProofs: sectionProofs[village.id] ?? [:]
             )
             envelope.append(entry: entry, lineage: lineage)
         }

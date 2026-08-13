@@ -485,7 +485,11 @@ public enum AccountSnapshotImporter {
         return max(0, raw - ageSeconds)
     }
 
-    private static func prepare(_ text: String) -> (text: String, removedCodeFence: Bool) {
+    /// 去除 Markdown code fence 并清理首尾空白。
+    /// internal:同时被 `SnapshotHistoryCanonicalizer` 与
+    /// `JSONSnapshotCoverageAdapter` 复用,保证所有消费者对同一
+    /// originalText 使用完全相同的清洗语义。
+    static func prepare(_ text: String) -> (text: String, removedCodeFence: Bool) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let lines = trimmed.components(separatedBy: .newlines)
         guard lines.count >= 3,

@@ -527,7 +527,8 @@ public final class AppModel: ObservableObject {
                     villages: initialVillages,
                     now: Date(),
                     catalog: gameCatalog,
-                    craftTableCatalog: craftTableCatalog
+                    craftTableCatalog: craftTableCatalog,
+                    sectionProofs: Self.coverageProofs(for: initialVillages)
                 )
                 snapshotHistoryError = nil
                 historyLoadFailure = nil
@@ -2908,7 +2909,8 @@ public final class AppModel: ObservableObject {
             envelope: historyEnvelope,
             appliedAt: appliedAt,
             catalog: gameCatalog,
-            craftTableCatalog: craftTableCatalog
+            craftTableCatalog: craftTableCatalog,
+            sectionProofs: JSONSnapshotCoverageAdapter.proofs(for: snapshot)
         )
         guard var candidateManualEnvelope = manualEnvelope ?? manualTrackerEnvelope else {
             throw ManualTrackerStoreError.unavailable("导入前未找到可用的手动升级状态。")
@@ -2966,7 +2968,8 @@ public final class AppModel: ObservableObject {
             envelope: historyEnvelope,
             appliedAt: appliedAt,
             catalog: gameCatalog,
-            craftTableCatalog: craftTableCatalog
+            craftTableCatalog: craftTableCatalog,
+            sectionProofs: JSONSnapshotCoverageAdapter.proofs(for: snapshot)
         )
         return try ManualTrackerReconciliationService.preview(
             villageID: targetVillage.id,
@@ -3170,7 +3173,8 @@ public final class AppModel: ObservableObject {
                 villages: normalizedVillages,
                 now: Date(),
                 catalog: gameCatalog,
-                craftTableCatalog: craftTableCatalog
+                craftTableCatalog: craftTableCatalog,
+                sectionProofs: Self.coverageProofs(for: normalizedVillages)
             )
         } catch {
             snapshotHistoryError = Self.localizedPersistenceError(error)
@@ -3186,6 +3190,22 @@ public final class AppModel: ObservableObject {
         case existing(Int)
         case create
         case ambiguous(tag: String, villageNames: [String])
+    }
+
+    /// Issue #173: 为启动迁移等批量入口按村庄提取来源 coverage proof。
+    ///
+    /// 每个村庄的快照独立经过 `JSONSnapshotCoverageAdapter`,来源没有
+    /// 完整性协议的村庄保持 unavailable(fail-closed),不会借用其他村庄
+    /// 或默认参数的证明。
+    private static func coverageProofs(
+        for villages: [VillageProfile]
+    ) -> [UUID: [String: SnapshotCoverageProof]] {
+        var proofs: [UUID: [String: SnapshotCoverageProof]] = [:]
+        for village in villages {
+            guard let snapshot = village.accountSnapshot else { continue }
+            proofs[village.id] = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+        }
+        return proofs
     }
 
     private func pendingSnapshotTarget(for snapshot: AccountSnapshot) -> PendingSnapshotTarget {

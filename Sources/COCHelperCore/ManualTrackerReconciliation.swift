@@ -114,6 +114,9 @@ public struct ManualReconciliationPreview: Codable, Hashable, Sendable, Identifi
     public let previousLineageID: UUID?
     public let manualStateUpdatedAt: Date
     public let newReference: ManualBaselineReference
+    /// Stable candidate identity independent of the random snapshot/lineage
+    /// UUIDs allocated while planning a new import.
+    public let newNormalizedPlayerTag: String?
     public let sourceTimestamp: Date?
     public let appliedAt: Date
     public let timeConfidence: ManualReconciliationTimeConfidence
@@ -130,6 +133,7 @@ public struct ManualReconciliationPreview: Codable, Hashable, Sendable, Identifi
         previousLineageID: UUID? = nil,
         manualStateUpdatedAt: Date,
         newReference: ManualBaselineReference,
+        newNormalizedPlayerTag: String? = nil,
         sourceTimestamp: Date?,
         appliedAt: Date,
         timeConfidence: ManualReconciliationTimeConfidence,
@@ -145,6 +149,7 @@ public struct ManualReconciliationPreview: Codable, Hashable, Sendable, Identifi
         self.previousLineageID = previousLineageID
         self.manualStateUpdatedAt = manualStateUpdatedAt
         self.newReference = newReference
+        self.newNormalizedPlayerTag = newNormalizedPlayerTag
         self.sourceTimestamp = sourceTimestamp
         self.appliedAt = appliedAt
         self.timeConfidence = timeConfidence
@@ -234,6 +239,7 @@ public enum ManualTrackerReconciliationService {
         let displayName: String
         let hasTimer: Bool
         let coverageComplete: Bool
+        let timerCoverageComplete: Bool
     }
 
     public static func reference(
@@ -346,6 +352,7 @@ public enum ManualTrackerReconciliationService {
             previousLineageID: previousEntry?.lineageID,
             manualStateUpdatedAt: currentState.stateUpdatedAt,
             newReference: newReference,
+            newNormalizedPlayerTag: decision.entry.normalizedPlayerTag,
             sourceTimestamp: newSourceTimestamp,
             appliedAt: appliedAt,
             timeConfidence: timeConfidence,
@@ -381,6 +388,10 @@ public enum ManualTrackerReconciliationService {
             currentState: currentState,
             appliedAt: appliedAt
         )
+        if let expectedPreview,
+           !candidateMatches(expectedPreview, actual: preview) {
+            throw ManualReconciliationError.stalePreview
+        }
         let observations = try observations(in: historyDecision.entry)
         let classifications = Dictionary(uniqueKeysWithValues: preview.items.map {
             ($0.itemKey, $0)
@@ -447,7 +458,14 @@ public enum ManualTrackerReconciliationService {
 
         for oldRecord in core.records {
             let item = classifications[oldRecord.itemKey]
-            let shouldAdopt = shouldAdopt(item?.classification, decision: decision)
+            let hasActiveRecord = core.records.contains {
+                $0.itemKey == oldRecord.itemKey && $0.status == .active
+            }
+            let shouldAdopt = shouldAdopt(
+                item,
+                decision: decision,
+                hasActiveRecord: hasActiveRecord
+            )
             let confirmed = shouldAdopt && (item?.confirmedRecordIDs.contains(oldRecord.recordID) ?? false)
             records.append(try ManualUpgradeRecord(
                 recordID: oldRecord.recordID,
@@ -474,7 +492,13 @@ public enum ManualTrackerReconciliationService {
             let observation = observations[key]
             let itemRecords = records.filter { $0.itemKey == key }
             let hasLocal = hasLocalState(state: old, records: core.records.filter { $0.itemKey == key })
-            let adopt = shouldAdopt(classifications[key]?.classification, decision: decision)
+            let item = classifications[key]
+            let hasActiveRecord = itemRecords.contains { $0.status == .active }
+            let adopt = shouldAdopt(
+                item,
+                decision: decision,
+                hasActiveRecord: hasActiveRecord
+            )
 
             if old == nil, let distribution = observation?.distribution {
                 let imported = try ManualImportedObservation(
@@ -491,6 +515,34 @@ public enum ManualTrackerReconciliationService {
                 continue
             }
             guard let old else { continue }
+
+            // An imported observation is not a user-confirmed manual
+            // completion. When the new snapshot is unknown/partial/stale, keep
+            // that distinction after rebasing the baseline instead of
+            // materializing it as `.manualCompleted`.
+            if !hasLocal, observation?.distribution == nil {
+                let imported = try ManualImportedObservation(
+                    reference: newReference,
+                    levelDistribution: nil,
+                    sourceTimestamp: sourceTimestamp
+                )
+                let status: ManualItemStatus
+                switch old.status {
+                case .conflict:
+                    status = .conflict
+                case .unknown:
+                    status = .unknown
+                default:
+                    status = .observed
+                }
+                states.append(try ManualItemState(
+                    itemKey: key,
+                    baselineReference: newReference,
+                    importedObservation: imported,
+                    status: status
+                ))
+                continue
+            }
 
             if !hasLocal, adopt, let distribution = observation?.distribution {
                 let imported = try ManualImportedObservation(
@@ -534,17 +586,25 @@ public enum ManualTrackerReconciliationService {
     }
 
     private static func shouldAdopt(
-        _ classification: ManualReconciliationClassification?,
-        decision: ManualReconciliationDecision
+        _ item: ManualReconciliationItem?,
+        decision: ManualReconciliationDecision,
+        hasActiveRecord: Bool
     ) -> Bool {
+        guard let item else { return false }
         switch decision {
         case .keepLocal:
-            return classification == .duplicate || classification == .newObservation
+            return item.classification == .duplicate || item.classification == .newObservation
         case .acceptObserved:
-            return classification != nil
+            return true
         case .applyNonConflicting:
-            return [.duplicate, .newObservation, .exactMatch, .observedAhead]
-                .contains(classification)
+            guard [.duplicate, .newObservation, .exactMatch, .observedAhead]
+                .contains(item.classification) else { return false }
+            if item.classification == .observedAhead,
+               hasActiveRecord,
+               item.confirmedRecordIDs.isEmpty {
+                return false
+            }
+            return true
         }
     }
 
@@ -576,10 +636,15 @@ public enum ManualTrackerReconciliationService {
         guard let previousDistribution else { return .newObservation }
 
         let timerEnded = (previousObservation?.hasTimer ?? false) && !observation.hasTimer
-        if timerEnded,
-           observed == previousDistribution,
-           records.contains(where: { $0.status == .active }) {
-            return .observedTimerEnded
+        if timerEnded {
+            guard previousObservation?.timerCoverageComplete == true,
+                  observation.timerCoverageComplete else {
+                return .unknown
+            }
+            if observed == previousDistribution,
+               records.contains(where: { $0.status == .active }) {
+                return .observedTimerEnded
+            }
         }
         if timeConfidence == .sourceTimestampAbsent
             || timeConfidence == .localAppliedAtOnly {
@@ -589,6 +654,10 @@ public enum ManualTrackerReconciliationService {
             return .exactMatch
         }
         if dominates(observed, previousDistribution) {
+            if records.contains(where: { $0.status == .active }),
+               confirmedRecordIDs.isEmpty {
+                return .unknown
+            }
             return .observedAhead
         }
         if dominates(previousDistribution, observed) {
@@ -598,6 +667,24 @@ public enum ManualTrackerReconciliationService {
             return .unknown
         }
         return .conflict
+    }
+
+    private static func candidateMatches(
+        _ expected: ManualReconciliationPreview,
+        actual: ManualReconciliationPreview
+    ) -> Bool {
+        guard expected.duplicate == actual.duplicate,
+              expected.newReference.fingerprint == actual.newReference.fingerprint,
+              expected.newNormalizedPlayerTag == actual.newNormalizedPlayerTag,
+              expected.sourceTimestamp == actual.sourceTimestamp,
+              expected.lineageComparable == actual.lineageComparable else {
+            return false
+        }
+        // Non-duplicate entries receive fresh snapshot/lineage UUIDs during
+        // each pure plan; fingerprint + normalized tag are the stable key.
+        // Duplicate revisions instead include the existing snapshot ID and
+        // duplicate count, so compare the full revision in that case.
+        return !expected.duplicate || expected.newReference.revision == actual.newReference.revision
     }
 
     private static func timeConfidence(
@@ -745,9 +832,33 @@ public enum ManualTrackerReconciliationService {
                 ) == .complete
             }
             var quantities: [Int: Int64] = [:]
+            var levelCoverageComplete = true
+            var countCoverageComplete = true
             var valid = coverageComplete && !items.isEmpty
+            let countCoverageState = entry.coverage.state(
+                base: snapshotBase(key.base),
+                rawSection: key.rawSection,
+                field: "cnt"
+            )
+            let timerCoverageComplete = ["timer", "helper_timer", "helper_cooldown"].allSatisfy { field in
+                guard let state = entry.coverage.state(
+                    base: snapshotBase(key.base),
+                    rawSection: key.rawSection,
+                    field: field
+                ) else { return false }
+                guard state == .partial else {
+                    return state == .complete || state == .unavailable
+                }
+                // A section may be partial because another identity carries a
+                // timer while this identity has no timer evidence at all. That
+                // does not make this item's level/count observation unknown.
+                // Once this identity itself contains timer evidence, however,
+                // a partial timer field cannot establish a safe transition.
+                return !items.contains { !$0.rawTimerEvidence.isEmpty }
+            }
             for item in items {
                 guard let level = item.level, level >= 0 else {
+                    levelCoverageComplete = false
                     valid = false
                     continue
                 }
@@ -757,11 +868,22 @@ public enum ManualTrackerReconciliationService {
                         continue
                     }
                     guard let count = item.count, count > 0 else {
+                        countCoverageComplete = false
                         valid = false
                         continue
                     }
                     quantity = Int64(count)
                 } else {
+                    if item.count == nil, countCoverageState == .partial {
+                        countCoverageComplete = false
+                        valid = false
+                        continue
+                    }
+                    if let count = item.count, count <= 0 {
+                        countCoverageComplete = false
+                        valid = false
+                        continue
+                    }
                     quantity = Int64(max(item.count ?? 1, 1))
                 }
                 let (sum, overflow) = (quantities[level] ?? 0).addingReportingOverflow(quantity)
@@ -773,12 +895,27 @@ public enum ManualTrackerReconciliationService {
             if quantities.isEmpty {
                 valid = false
             }
+            if histogram, countCoverageState == .partial {
+                // A histogram may legitimately mix completed-count rows with
+                // timer-only rows. A partial `cnt` field is safe only when all
+                // missing-count rows for this identity carry timer evidence;
+                // otherwise the quantity is not a complete observation.
+                let hasUnexplainedMissingCount = items.contains {
+                    $0.count == nil && $0.rawTimerEvidence.isEmpty
+                }
+                countCoverageComplete = countCoverageComplete && !hasUnexplainedMissingCount
+            } else if histogram, countCoverageState != .complete {
+                countCoverageComplete = false
+            }
+            valid = valid && timerCoverageComplete
+            valid = valid && levelCoverageComplete && countCoverageComplete
             let distribution = valid ? try ManualLevelDistribution(levelQuantities: quantities) : nil
             result[key] = Observation(
                 distribution: distribution,
                 displayName: items.compactMap(\.display.displayName).first ?? key.stableID,
                 hasTimer: items.contains { !$0.rawTimerEvidence.isEmpty },
-                coverageComplete: valid
+                coverageComplete: valid,
+                timerCoverageComplete: timerCoverageComplete
             )
         }
         return result

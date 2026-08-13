@@ -153,7 +153,7 @@ final class ManualTrackerReconciliationTests: XCTestCase {
     }
 
     func testReliableObservedCompletionConfirmsActiveRecordOnce() throws {
-        let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"timer":60},{"data":100,"lvl":10,"cnt":1}]}"##)
+        let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"timer":60,"cnt":1}]}"##)
         let state = try activeState(reference: context.reference)
         let next = try decision(
             ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":1}]}"##,
@@ -178,6 +178,28 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         )
         var settled = plan.state.core
         XCTAssertTrue(try settled.settleDue(at: Date(timeIntervalSince1970: 1_800_000_000)).isEmpty)
+    }
+
+    func testEarlyObservedMovementBeforeExpectedEndRemainsUnknownAndActive() throws {
+        let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##)
+        let state = try activeState(reference: context.reference, duration: 600)
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000020,"buildings":[{"data":100,"lvl":11,"cnt":1}]}"##,
+            from: context
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_020)
+        )
+
+        XCTAssertEqual(plan.preview.items.single?.classification, .unknown)
+        XCTAssertTrue(plan.preview.items.single?.confirmedRecordIDs.isEmpty == true)
+        XCTAssertEqual(plan.state.core.records.single?.status, .active)
     }
 
     func testExactObservationIsSafeWhenFingerprintChangesOnlyOutsideItemState() throws {
@@ -336,6 +358,52 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         XCTAssertEqual(preview.items.single?.classification, .unknown)
         XCTAssertFalse(preview.items.single?.coverageComplete ?? true)
         XCTAssertNil(preview.items.single?.observedDistribution)
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+        let rebased = try XCTUnwrap(plan.state.core.itemState(for: key))
+        XCTAssertEqual(rebased.status, .observed)
+        XCTAssertNotNil(rebased.importedObservation)
+        XCTAssertNil(rebased.importedObservation?.levelDistribution)
+    }
+
+    func testPartialCountOrTimerCoverageRemainsUnknown() throws {
+        let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##)
+        let state = try observedState(reference: context.reference, distribution: [10: 1])
+
+        let missingCount = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":1},{"data":100,"lvl":10}]}"##,
+            from: context
+        )
+        let missingCountPreview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: missingCount,
+            currentState: state,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+        XCTAssertEqual(missingCountPreview.items.single?.classification, .unknown)
+
+        let timerContext = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":2,"timer":60},{"data":100,"lvl":10,"cnt":1}]}"##)
+        let timerState = try observedState(reference: timerContext.reference, distribution: [10: 3])
+        let timerEnded = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":3}]}"##,
+            from: timerContext
+        )
+        let timerCoveragePreview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: timerContext.entry,
+            decision: timerEnded,
+            currentState: timerState,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+        XCTAssertEqual(timerCoveragePreview.items.single?.classification, .unknown)
     }
 
     func testManualAheadDoesNotRollbackLocalEffectiveDistribution() throws {
@@ -541,6 +609,38 @@ final class ManualTrackerReconciliationTests: XCTestCase {
             historyDecision: next,
             currentState: changedState,
             expectedPreview: preview,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )) { error in
+            XCTAssertEqual(error as? ManualReconciliationError, .stalePreview)
+        }
+    }
+
+    func testCandidateChangeInvalidatesPreview() throws {
+        let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##)
+        let state = try observedState(reference: context.reference, distribution: [10: 1])
+        let candidateA = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":1}]}"##,
+            from: context
+        )
+        let candidateB = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":12,"cnt":1}]}"##,
+            from: context
+        )
+        let previewA = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: candidateA,
+            currentState: state,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertThrowsError(try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: candidateB,
+            currentState: state,
+            expectedPreview: previewA,
             decision: .applyNonConflicting,
             appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
         )) { error in

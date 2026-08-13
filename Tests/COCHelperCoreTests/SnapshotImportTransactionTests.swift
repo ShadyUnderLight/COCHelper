@@ -130,6 +130,7 @@ final class SnapshotImportTransactionTests: XCTestCase {
         let manual = TestManualStore()
         let previousManual = ManualTrackerEnvelope.empty(for: [oldVillage.id])
         manual.rawData = try previousManual.encodedData()
+        let previousManualData = manual.rawData
         manual.failWrite = true
         manual.writeBeforeFailure = true
         let journalURL = makeJournalURL()
@@ -148,7 +149,7 @@ final class SnapshotImportTransactionTests: XCTestCase {
         ))
         XCTAssertEqual(current.data, oldCurrent)
         XCTAssertEqual(history.rawData, previousHistory)
-        XCTAssertEqual(manual.rawData, try previousManual.encodedData())
+        XCTAssertEqual(manual.rawData, previousManualData)
         XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
     }
 

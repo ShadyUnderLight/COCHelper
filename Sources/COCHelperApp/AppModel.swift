@@ -111,6 +111,13 @@ public enum QuickImportError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+private struct SnapshotHistoryProjectionCacheKey: Hashable {
+    let villageID: UUID
+    let startOfDay: Date
+    let timeZoneIdentifier: String
+    let hasCurrentSnapshot: Bool
+}
+
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public private(set) var villages: [VillageProfile]
@@ -191,6 +198,8 @@ public final class AppModel: ObservableObject {
     private let manualTrackerStore: any ManualTrackerStore
     private let manualTrackerTransaction: ManualTrackerTransactionCoordinator
     private var manualTrackerEnvelope: ManualTrackerEnvelope?
+    private var historyLoadFailure: SnapshotHistoryAvailability?
+    private var historyProjectionCache: [SnapshotHistoryProjectionCacheKey: SnapshotHistoryProjection] = [:]
 
     public convenience init(
         defaults: UserDefaults = .standard,
@@ -264,6 +273,7 @@ public final class AppModel: ObservableObject {
         )
         self.historyEnvelope = nil
         self.manualTrackerEnvelope = nil
+        self.historyLoadFailure = nil
         snapshotHistoryError = nil
         manualTrackerStatus = .empty
         manualTrackerError = nil
@@ -273,6 +283,7 @@ public final class AppModel: ObservableObject {
             try importTransaction.recoverIfNeeded()
         } catch {
             startupError = Self.localizedPersistenceError(error)
+            historyLoadFailure = Self.snapshotHistoryAvailability(for: error)
         }
 
         var manualStartupError: String?
@@ -367,8 +378,10 @@ public final class AppModel: ObservableObject {
                     craftTableCatalog: craftTableCatalog
                 )
                 snapshotHistoryError = nil
+                historyLoadFailure = nil
             } catch {
                 snapshotHistoryError = Self.localizedPersistenceError(error)
+                historyLoadFailure = Self.snapshotHistoryAvailability(for: error)
             }
         }
         // The manual store is loaded before the history store so startup can
@@ -504,6 +517,69 @@ public final class AppModel: ObservableObject {
 
     public var currentVillageOfficialState: OfficialAPIState? {
         officialState(for: selectedVillageID)
+    }
+
+    /// Read-only history projection for Village Detail.  Diff construction is
+    /// cached per village and local calendar day, while category changes only
+    /// filter the immutable rows.  This prevents the surrounding 60-second
+    /// `TimelineView` from rebuilding every historical diff on each tick.
+    public func snapshotHistoryProjection(
+        for villageID: UUID,
+        category: SnapshotHistoryCategory = .all,
+        at referenceDate: Date = Date(),
+        calendar inputCalendar: Calendar = .current,
+        timeZone: TimeZone = .current
+    ) -> SnapshotHistoryProjection {
+        let hasCurrentSnapshot = villages.first(where: { $0.id == villageID })?.accountSnapshot != nil
+        if let historyLoadFailure {
+            return SnapshotHistoryProjection.unavailable(
+                villageID: villageID,
+                hasCurrentSnapshot: hasCurrentSnapshot,
+                availability: historyLoadFailure,
+                selectedCategory: category,
+                referenceDate: referenceDate,
+                calendar: inputCalendar,
+                timeZone: timeZone
+            )
+        }
+        guard let historyEnvelope else {
+            return SnapshotHistoryProjection.unavailable(
+                villageID: villageID,
+                hasCurrentSnapshot: hasCurrentSnapshot,
+                availability: .unavailable(snapshotHistoryError ?? "历史尚未完成加载。"),
+                selectedCategory: category,
+                referenceDate: referenceDate,
+                calendar: inputCalendar,
+                timeZone: timeZone
+            )
+        }
+
+        var calendar = inputCalendar
+        calendar.timeZone = timeZone
+        let cacheKey = SnapshotHistoryProjectionCacheKey(
+            villageID: villageID,
+            startOfDay: calendar.startOfDay(for: referenceDate),
+            timeZoneIdentifier: timeZone.identifier,
+            hasCurrentSnapshot: hasCurrentSnapshot
+        )
+        let baseProjection: SnapshotHistoryProjection
+        if let cached = historyProjectionCache[cacheKey] {
+            baseProjection = cached
+        } else {
+            let projection = SnapshotHistoryProjection.project(
+                envelope: historyEnvelope,
+                villageID: villageID,
+                hasCurrentSnapshot: hasCurrentSnapshot,
+                selectedCategory: .all,
+                referenceDate: referenceDate,
+                calendar: calendar,
+                timeZone: timeZone
+            )
+            historyProjectionCache = historyProjectionCache.filter { $0.key.villageID != villageID }
+            historyProjectionCache[cacheKey] = projection
+            baseProjection = projection
+        }
+        return baseProjection.applying(category: category)
     }
 
     /// 当前村庄的部落归属：派生自最近成功玩家快照的 `clan.tag`。
@@ -832,24 +908,29 @@ public final class AppModel: ObservableObject {
             description = "导入目标：按当前详情页应用到「\(target.name)」，原官方数据将因 Tag 变化被重置"
         }
 
-        // Parsing/routing preview remains available when a backing store is
-        // unavailable. Applying still fails closed in commitImportedSnapshot;
-        // the optional reconciliation preview is never treated as authority.
-        let reconciliationPreview = try? prepareReconciliationPreview(
-            snapshot,
-            targetVillage: target,
-            appliedAt: Date()
-        )
-        return .success(QuickImportPreview(
-            snapshot: snapshot,
-            targetVillageID: target.id,
-            targetVillageName: target.name,
-            targetVillageTag: target.tag,
-            targetVillageHasSnapshot: targetVillageHasSnapshot,
-            replacesSameTag: replacesSameTag,
-            destinationDescription: description,
-            reconciliationPreview: reconciliationPreview
-        ))
+        do {
+            let reconciliationPreview = try prepareReconciliationPreview(
+                snapshot,
+                targetVillage: target,
+                appliedAt: Date()
+            )
+            return .success(QuickImportPreview(
+                snapshot: snapshot,
+                targetVillageID: target.id,
+                targetVillageName: target.name,
+                targetVillageTag: target.tag,
+                targetVillageHasSnapshot: targetVillageHasSnapshot,
+                replacesSameTag: replacesSameTag,
+                destinationDescription: description,
+                reconciliationPreview: reconciliationPreview
+            ))
+        } catch {
+            // A quick-import confirmation without a reconciliation preview
+            // cannot safely reach the fallback pending-snapshot action. Fail
+            // closed and keep the model unchanged so the caller can explain
+            // that history storage must be repaired first.
+            return .failure(.historyUnavailable(Self.localizedPersistenceError(error)))
+        }
     }
 
     /// 应用快捷导入：按 preview 固定的目标村庄写入快照。
@@ -2071,6 +2152,7 @@ public final class AppModel: ObservableObject {
         )
         villages = candidateVillages
         self.historyEnvelope = historyDecision.envelope
+        historyProjectionCache.removeAll()
         installManualTrackerEnvelope(candidateManualEnvelope)
     }
 
@@ -2177,6 +2259,29 @@ public final class AppModel: ObservableObject {
             return description
         }
         return error.localizedDescription
+    }
+
+    private static func snapshotHistoryAvailability(for error: Error) -> SnapshotHistoryAvailability {
+        let message = localizedPersistenceError(error)
+        if let storeError = error as? SnapshotHistoryStoreError {
+            switch storeError {
+            case .corrupt, .invalidEntry:
+                return .corrupt(message)
+            case .unsupportedSchema:
+                return .unsupported(message)
+            case .unavailable, .writeFailed:
+                return .unavailable(message)
+            }
+        }
+        if let transactionError = error as? SnapshotImportTransactionError {
+            switch transactionError {
+            case .journalCorrupt:
+                return .corrupt(message)
+            case .rollbackFailed:
+                return .unavailable(message)
+            }
+        }
+        return .unavailable(message)
     }
 
     /// 测试辅助：为指定 Tag 注入共享部落缓存（验证删除跟踪关系保留缓存）。

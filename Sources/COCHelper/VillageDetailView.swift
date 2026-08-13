@@ -17,6 +17,7 @@ struct VillageDetailView: View {
 
     @State private var selectedBase: TrackerBase = .home
     @State private var selectedFilter: CategoryFilter = .all
+    @State private var selectedHistoryCategory: SnapshotHistoryCategory = .all
     @State private var selectedItem: VillageItemState?
     // Issue #61：快捷「粘贴并更新」的确认 sheet 与失败提示载体。
     // prepareQuickImport 是纯函数（不写状态），结果分派到这两个载体之一。
@@ -54,6 +55,16 @@ struct VillageDetailView: View {
         .sheet(item: $quickImportPreview) { preview in
             QuickImportSheet(
                 preview: preview,
+                onConfirm: {
+                    if model.applyQuickImport(preview) {
+                        quickImportPreview = nil
+                    } else {
+                        quickImportError = .historyUnavailable(
+                            model.snapshotHistoryError ?? "历史存储不可用，导入未提交。"
+                        )
+                        quickImportPreview = nil
+                    }
+                },
                 onApplyDecision: { decision in
                     if model.applyQuickImport(preview, decision: decision) {
                         quickImportPreview = nil
@@ -155,11 +166,20 @@ struct VillageDetailView: View {
             buildingGroups.flatMap { group in group.instances.map { ($0.id, group) } },
             uniquingKeysWith: { first, _ in first }
         )
+        let historyProjection = model.snapshotHistoryProjection(
+            for: villageID,
+            category: selectedHistoryCategory,
+            at: now
+        )
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, now: now)
                 officialAPISection()
+                SnapshotHistoryView(
+                    projection: historyProjection,
+                    selectedCategory: $selectedHistoryCategory
+                )
                 metricsBar(metrics: progressMetrics, coverage: projection.progressCoverage)
                 basePicker()
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
@@ -799,12 +819,14 @@ struct VillageDetailView: View {
 /// 复用账号数据页的 `AccountSnapshotSummaryView`（同一预览组件、同一视觉）：
 /// 通过注入参数展示快捷导入的目的地描述、确认标题与确认/放弃动作。
 /// 快捷导入直接写入目标村庄，不经过 AppModel 的 pendingAccountSnapshot
-/// 待确认流程——注入的 onConfirm 由 VillageDetailView 负责执行
+/// 待确认流程——注入的 onConfirm/onApplyDecision 由 VillageDetailView 负责执行
 /// `applyQuickImport` 并关闭 sheet。`model` 经 @EnvironmentObject 从
 /// VillageDetailView 环境继承（AppModel 在根部注入）。
 private struct QuickImportSheet: View {
     /// 快捷导入预览（目标村庄、解析结果、目的地描述）。
     let preview: QuickImportPreview
+    /// 无 reconciliation preview 时的兼容确认动作；外部负责 applyQuickImport 并关闭 sheet。
+    let onConfirm: () -> Void
     /// 确认按钮动作（外部负责 applyQuickImport 并关闭 sheet）。
     let onApplyDecision: (ManualReconciliationDecision) -> Void
     /// 放弃按钮动作（外部负责关闭 sheet）。
@@ -820,6 +842,7 @@ private struct QuickImportSheet: View {
                     isPending: true,
                     destinationDescription: preview.destinationDescription,
                     confirmTitle: preview.confirmationTitle,
+                    onConfirm: onConfirm,
                     onCancel: onCancel,
                     onApplyDecision: onApplyDecision,
                     reconciliationPreview: preview.reconciliationPreview,

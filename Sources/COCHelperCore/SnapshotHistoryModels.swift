@@ -8,7 +8,7 @@ import Foundation
 public enum SnapshotHistorySchema {
     public static let envelope = 1
     public static let entry = 1
-    public static let observation = 1
+    public static let observation = 2
     public static let fingerprint = 1
     public static let integrity = 1
 }
@@ -188,6 +188,107 @@ public enum SnapshotCoverageState: String, Codable, Hashable, Sendable {
     case unavailable
 }
 
+/// Whether a source section was present in the original JSON.  Presence is
+/// intentionally separate from completeness: a parseable array is not proof
+/// that the source enumerated the entire section.
+public enum SnapshotSectionPresence: String, Codable, Hashable, Sendable {
+    case missing
+    case presentEmpty
+    case presentNonEmpty
+    case invalid
+}
+
+/// Evidence that permits absence to be interpreted as a real observation.
+/// The current account JSON adapter has no such source-level proof and uses
+/// `unavailable`; future adapters may provide an explicit authoritative
+/// protocol and version.
+public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
+    case authoritative(source: String, version: String, expectedCount: Int?)
+    case unavailable(reason: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case source
+        case version
+        case expectedCount
+        case reason
+    }
+
+    private enum Kind: String, Codable {
+        case authoritative
+        case unavailable
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .authoritative(let source, let version, let expectedCount):
+            try container.encode(Kind.authoritative, forKey: .kind)
+            try container.encode(source, forKey: .source)
+            try container.encode(version, forKey: .version)
+            try container.encodeIfPresent(expectedCount, forKey: .expectedCount)
+        case .unavailable(let reason):
+            try container.encode(Kind.unavailable, forKey: .kind)
+            try container.encode(reason, forKey: .reason)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .authoritative:
+            self = .authoritative(
+                source: try container.decode(String.self, forKey: .source),
+                version: try container.decode(String.self, forKey: .version),
+                expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount)
+            )
+        case .unavailable:
+            self = .unavailable(reason: try container.decode(String.self, forKey: .reason))
+        }
+    }
+
+    public var isAuthoritative: Bool {
+        guard case .authoritative(let source, let version, let expectedCount) = self else {
+            return false
+        }
+        return !source.isEmpty && !version.isEmpty && (expectedCount == nil || expectedCount! >= 0)
+    }
+}
+
+/// Frozen completeness evidence for one raw source section.
+public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable {
+    public let base: SnapshotHistoryBase
+    public let rawSection: String
+    public let presence: SnapshotSectionPresence
+    public let completeness: SnapshotCoverageState
+    public let proof: SnapshotCoverageProof
+    public let observedCount: Int
+
+    public init(
+        base: SnapshotHistoryBase,
+        rawSection: String,
+        presence: SnapshotSectionPresence,
+        completeness: SnapshotCoverageState,
+        proof: SnapshotCoverageProof,
+        observedCount: Int
+    ) {
+        self.base = base
+        self.rawSection = rawSection
+        self.presence = presence
+        self.completeness = completeness
+        self.proof = proof
+        self.observedCount = max(0, observedCount)
+    }
+
+    public var id: String {
+        [base.rawValue, rawSection].map { String($0.utf8.count) + ":" + $0 }.joined(separator: "|")
+    }
+
+    public var isComplete: Bool {
+        completeness == .complete && proof.isAuthoritative
+    }
+}
+
 public struct SnapshotCoverageField: Codable, Hashable, Sendable, Identifiable {
     public let base: SnapshotHistoryBase
     public let rawSection: String
@@ -214,15 +315,18 @@ public struct SnapshotCoverageField: Codable, Hashable, Sendable, Identifiable {
 public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let fields: [SnapshotCoverageField]
+    public let sections: [SnapshotSectionCoverage]
     public let diagnostics: [String]
 
     public init(
         schemaVersion: Int = SnapshotHistorySchema.observation,
         fields: [SnapshotCoverageField],
+        sections: [SnapshotSectionCoverage] = [],
         diagnostics: [String] = []
     ) {
         self.schemaVersion = schemaVersion
         self.fields = fields.sorted { $0.id < $1.id }
+        self.sections = sections.sorted { $0.id < $1.id }
         self.diagnostics = diagnostics.sorted()
     }
 
@@ -234,6 +338,52 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
         fields.first {
             $0.base == base && $0.rawSection == rawSection && $0.field == field
         }?.state
+    }
+
+    public func section(
+        base: SnapshotHistoryBase,
+        rawSection: String
+    ) -> SnapshotSectionCoverage? {
+        sections.first { $0.base == base && $0.rawSection == rawSection }
+    }
+
+    /// Records written before the section evidence contract are readable but
+    /// cannot prove that an observed array was complete.
+    public var hasLegacySectionCoverage: Bool {
+        schemaVersion < SnapshotHistorySchema.observation || sections.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case fields
+        case sections
+        case diagnostics
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            schemaVersion: try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+                ?? SnapshotHistorySchema.observation,
+            fields: try container.decode([SnapshotCoverageField].self, forKey: .fields),
+            sections: try container.decodeIfPresent([SnapshotSectionCoverage].self, forKey: .sections)
+                ?? [],
+            diagnostics: try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(fields, forKey: .fields)
+        // Legacy v1 records were written without section evidence.  Omitting
+        // the key keeps their serialized bytes and integrity digest identical
+        // to the original format; the Diff engine treats them as legacy and
+        // never backfills them from the current catalog.
+        if schemaVersion >= SnapshotHistorySchema.observation {
+            try container.encode(sections, forKey: .sections)
+        }
+        try container.encode(diagnostics, forKey: .diagnostics)
     }
 }
 

@@ -146,6 +146,90 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(entry.observation.items.first?.unknownFields["future_item_field"], .bool(true))
     }
 
+    func testSectionCoverageRequiresExplicitProofAndPreservesAuthoritativeEmpty() throws {
+        let withoutProof = try canonicalize(
+            makeRawSnapshot("{\"heroes\":[]}")
+        )
+        let noProof = try XCTUnwrap(
+            withoutProof.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertEqual(noProof.presence, .presentEmpty)
+        XCTAssertEqual(noProof.completeness, .unavailable)
+        XCTAssertFalse(noProof.isComplete)
+        XCTAssertEqual(
+            noProof.proof,
+            .unavailable(reason: "来源未提供 section 完整性证明。")
+        )
+        let nonEmpty = try canonicalize(
+            makeRawSnapshot("{\"heroes\":[{\"data\":1,\"lvl\":1}]}")
+        )
+        let nonEmptySection = try XCTUnwrap(
+            nonEmpty.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertEqual(nonEmptySection.presence, .presentNonEmpty)
+        XCTAssertEqual(nonEmptySection.completeness, .unavailable)
+        XCTAssertFalse(nonEmptySection.isComplete)
+
+        let withProof = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: makeRawSnapshot("{\"heroes\":[]}"),
+            villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            appliedAt: Date(timeIntervalSince1970: 1_700_100_000),
+            sectionProofs: [
+                "heroes": .authoritative(
+                    source: "test-export",
+                    version: "1",
+                    expectedCount: 0
+                )
+            ]
+        )
+        let authoritative = try XCTUnwrap(
+            withProof.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertEqual(authoritative.presence, .presentEmpty)
+        XCTAssertEqual(authoritative.completeness, .complete)
+        XCTAssertTrue(authoritative.isComplete)
+        XCTAssertEqual(authoritative.proof, .authoritative(
+            source: "test-export",
+            version: "1",
+            expectedCount: 0
+        ))
+
+        let encoded = try JSONEncoder().encode(authoritative)
+        let restored = try JSONDecoder().decode(SnapshotSectionCoverage.self, from: encoded)
+        XCTAssertEqual(restored, authoritative)
+
+        let invalid = try canonicalize(
+            makeRawSnapshot("{\"heroes\":{}}")
+        )
+        let invalidSection = try XCTUnwrap(
+            invalid.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertEqual(invalidSection.presence, .invalid)
+        XCTAssertEqual(invalidSection.completeness, .partial)
+    }
+
+    func testLegacyCoverageDecodesWithoutSectionProofAndRemainsUnavailable() throws {
+        let legacyJSON = """
+        {
+          "schemaVersion": 1,
+          "fields": [
+            {"base":"home","rawSection":"heroes","field":"presence","state":"complete"},
+            {"base":"home","rawSection":"heroes","field":"data","state":"complete"}
+          ],
+          "diagnostics": []
+        }
+        """
+        let coverage = try JSONDecoder().decode(
+            SnapshotObservationCoverage.self,
+            from: Data(legacyJSON.utf8)
+        )
+
+        XCTAssertEqual(coverage.schemaVersion, 1)
+        XCTAssertTrue(coverage.hasLegacySectionCoverage)
+        XCTAssertNil(coverage.section(base: .home, rawSection: "heroes"))
+    }
+
     func testNestedCoverageRequiresDataAndReportsStableSourcePaths() throws {
         let snapshot = makeRawSnapshot(
             """

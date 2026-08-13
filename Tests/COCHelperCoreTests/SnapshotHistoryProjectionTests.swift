@@ -453,6 +453,18 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         }
         let coverage = SnapshotObservationCoverage(
             fields: fields,
+            sections: sections.map { section in
+                SnapshotSectionCoverage(
+                    base: SnapshotHistoryBase(section: section),
+                    rawSection: section,
+                    presence: items.contains { $0.identity.rawSection == section }
+                        ? .presentNonEmpty
+                        : .presentEmpty,
+                    completeness: .complete,
+                    proof: .authoritative(source: "test", version: "1", expectedCount: nil),
+                    observedCount: items.filter { $0.identity.rawSection == section }.count
+                )
+            },
             diagnostics: levelCoverage == .complete ? [] : ["heroes.lvl: 测试覆盖不足。"]
         )
         let fingerprintSeed = UUID(uuidString: id)?.uuidString.replacingOccurrences(of: "-", with: "") ?? id

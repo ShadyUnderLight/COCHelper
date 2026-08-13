@@ -40,6 +40,10 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
     public let toState: SnapshotCoverageState
     public let fromDataState: SnapshotCoverageState
     public let toDataState: SnapshotCoverageState
+    public let fromSectionCompleteness: SnapshotCoverageState
+    public let toSectionCompleteness: SnapshotCoverageState
+    public let fromProof: SnapshotCoverageProof?
+    public let toProof: SnapshotCoverageProof?
     public let fromFieldStates: [String: SnapshotCoverageState]
     public let toFieldStates: [String: SnapshotCoverageState]
     public let fromObservedItemCount: Int
@@ -52,6 +56,10 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
         toState: SnapshotCoverageState,
         fromDataState: SnapshotCoverageState = .unavailable,
         toDataState: SnapshotCoverageState = .unavailable,
+        fromSectionCompleteness: SnapshotCoverageState = .unavailable,
+        toSectionCompleteness: SnapshotCoverageState = .unavailable,
+        fromProof: SnapshotCoverageProof? = nil,
+        toProof: SnapshotCoverageProof? = nil,
         fromFieldStates: [String: SnapshotCoverageState] = [:],
         toFieldStates: [String: SnapshotCoverageState] = [:],
         fromObservedItemCount: Int = 0,
@@ -63,6 +71,10 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
         self.toState = toState
         self.fromDataState = fromDataState
         self.toDataState = toDataState
+        self.fromSectionCompleteness = fromSectionCompleteness
+        self.toSectionCompleteness = toSectionCompleteness
+        self.fromProof = fromProof
+        self.toProof = toProof
         self.fromFieldStates = fromFieldStates
         self.toFieldStates = toFieldStates
         self.fromObservedItemCount = fromObservedItemCount
@@ -75,14 +87,67 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
 
     public var isComplete: Bool {
         fromState == .complete && toState == .complete &&
-            fromDataState == .complete && toDataState == .complete
+            fromDataState == .complete && toDataState == .complete &&
+            fromSectionCompleteness == .complete &&
+            toSectionCompleteness == .complete &&
+            fromProof?.isAuthoritative == true &&
+            toProof?.isAuthoritative == true
     }
 
     public func isComplete(for fields: Set<String>) -> Bool {
-        fields.allSatisfy {
+        guard fromSectionCompleteness == .complete,
+              toSectionCompleteness == .complete,
+              fromProof?.isAuthoritative == true,
+              toProof?.isAuthoritative == true else {
+            return false
+        }
+        return fields.allSatisfy {
             fieldIsComplete($0, state: fromFieldStates[$0] ?? .unavailable, observedItemCount: fromObservedItemCount) &&
                 fieldIsComplete($0, state: toFieldStates[$0] ?? .unavailable, observedItemCount: toObservedItemCount)
         }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case base
+        case rawSection
+        case fromState
+        case toState
+        case fromDataState
+        case toDataState
+        case fromSectionCompleteness
+        case toSectionCompleteness
+        case fromProof
+        case toProof
+        case fromFieldStates
+        case toFieldStates
+        case fromObservedItemCount
+        case toObservedItemCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            base: try container.decode(SnapshotHistoryBase.self, forKey: .base),
+            rawSection: try container.decode(String.self, forKey: .rawSection),
+            fromState: try container.decode(SnapshotCoverageState.self, forKey: .fromState),
+            toState: try container.decode(SnapshotCoverageState.self, forKey: .toState),
+            fromDataState: try container.decodeIfPresent(SnapshotCoverageState.self, forKey: .fromDataState)
+                ?? .unavailable,
+            toDataState: try container.decodeIfPresent(SnapshotCoverageState.self, forKey: .toDataState)
+                ?? .unavailable,
+            fromSectionCompleteness: try container.decodeIfPresent(SnapshotCoverageState.self, forKey: .fromSectionCompleteness)
+                ?? .unavailable,
+            toSectionCompleteness: try container.decodeIfPresent(SnapshotCoverageState.self, forKey: .toSectionCompleteness)
+                ?? .unavailable,
+            fromProof: try container.decodeIfPresent(SnapshotCoverageProof.self, forKey: .fromProof),
+            toProof: try container.decodeIfPresent(SnapshotCoverageProof.self, forKey: .toProof),
+            fromFieldStates: try container.decodeIfPresent([String: SnapshotCoverageState].self, forKey: .fromFieldStates)
+                ?? [:],
+            toFieldStates: try container.decodeIfPresent([String: SnapshotCoverageState].self, forKey: .toFieldStates)
+                ?? [:],
+            fromObservedItemCount: try container.decodeIfPresent(Int.self, forKey: .fromObservedItemCount) ?? 0,
+            toObservedItemCount: try container.decodeIfPresent(Int.self, forKey: .toObservedItemCount) ?? 0
+        )
     }
 
     private func fieldIsComplete(
@@ -657,6 +722,10 @@ public enum SnapshotDiffEngine {
             entry: presenceSide,
             identity: identity
         )
+        let universeProofComplete = sectionCoverageIsComplete(
+            entry: presenceSide,
+            identity: identity
+        ) && nestedEnumerationIsConfirmed(identity: identity)
         let itemComplete = observedItemFieldsAreComplete(
             entry: observedSide,
             item: observed,
@@ -664,7 +733,7 @@ public enum SnapshotDiffEngine {
         )
         let kind: SnapshotChangeKind = observedOnNew ? .newlyObserved : .noLongerObserved
 
-        if universeComplete && itemComplete && coverage.state == .complete {
+        if universeComplete && universeProofComplete && itemComplete && coverage.state == .complete {
             changes.append(makeChange(
                 identity: identity,
                 old: old,
@@ -681,10 +750,13 @@ public enum SnapshotDiffEngine {
                 coverage: coverage
             ))
         } else {
-            let reason = universeComplete
+            let reason = universeComplete && universeProofComplete
                 ? "项目自身字段 coverage 不足，不能确认观察变化。"
                 : "对应 section/presence coverage 不完整，不能确认新增或消失。"
-            let unknownCoverage = coverage.addingReason(reason, degradingTo: .partial)
+            let unknownCoverage = coverage.addingReason(
+                reason,
+                degradingTo: universeComplete && universeProofComplete ? .partial : .insufficient
+            )
             changes.append(unknownChange(
                 identity: identity,
                 old: old,
@@ -858,6 +930,14 @@ public enum SnapshotDiffEngine {
                     items: newItems
                 )
                 : sectionPresenceAndDataAreComplete(entry: observedSide, identity: identity)
+            let observedProofComplete = sectionCoverageIsComplete(
+                entry: observedSide,
+                identity: identity
+            )
+            let presenceProofComplete = sectionCoverageIsComplete(
+                entry: presenceSide,
+                identity: identity
+            )
             let changeCoverage = mergeCoverage(
                 coverageFor(
                     identity: identity,
@@ -879,7 +959,8 @@ public enum SnapshotDiffEngine {
                         fields: ["presence", "data"]
                     )
             )
-            if universeComplete && observedComplete, let observedHistogram {
+            if universeComplete && presenceProofComplete && observedProofComplete && observedComplete,
+               let observedHistogram {
                 let total = observedHistogram.total
                 changes.append(makeChange(
                     identity: identity,
@@ -919,9 +1000,14 @@ public enum SnapshotDiffEngine {
             return
         }
 
-        guard coverage.state == .complete else {
+        let sectionProofComplete = sectionCoverageIsComplete(entry: from, identity: identity)
+            && sectionCoverageIsComplete(entry: to, identity: identity)
+        guard coverage.state == .complete, sectionProofComplete else {
             let reason = "重复建筑/城墙 histogram 的 section、level 或 count coverage 不完整。"
-            let unknownCoverage = coverage.addingReason(reason, degradingTo: .partial)
+            let unknownCoverage = coverage.addingReason(
+                reason,
+                degradingTo: sectionProofComplete ? .partial : .insufficient
+            )
             changes.append(unknownChange(
                 identity: identity,
                 old: oldItems.first,
@@ -1184,6 +1270,27 @@ public enum SnapshotDiffEngine {
             entry.coverage.state(base: identity.base, rawSection: identity.rawSection, field: "data") == .complete
     }
 
+    private static func sectionCoverageIsComplete(
+        entry: SnapshotHistoryEntry,
+        identity: SnapshotItemIdentity
+    ) -> Bool {
+        entry.coverage.section(
+            base: identity.base,
+            rawSection: identity.rawSection
+        )?.isComplete == true
+    }
+
+    /// A root-level authoritative proof covers root record enumeration only.
+    /// Field-level `types`/`modules` completeness proves the array is
+    /// parseable, not that its nested enumeration was not truncated, and a
+    /// root-level `modules:[]` says nothing about deeper `types[].modules[]`.
+    /// Until an explicit nested enumeration proof (expected counts per nested
+    /// path) exists, single-sided nested appearance/disappearance fails
+    /// closed and stays unknown + insufficient.
+    private static func nestedEnumerationIsConfirmed(identity: SnapshotItemIdentity) -> Bool {
+        identity.nestedKind == .root
+    }
+
     private static func observedItemFieldsAreComplete(
         entry: SnapshotHistoryEntry,
         item: SnapshotObservationItem?,
@@ -1224,6 +1331,10 @@ public enum SnapshotDiffEngine {
                 toState: to.coverage.state(base: base, rawSection: section, field: "presence") ?? .unavailable,
                 fromDataState: from.coverage.state(base: base, rawSection: section, field: "data") ?? .unavailable,
                 toDataState: to.coverage.state(base: base, rawSection: section, field: "data") ?? .unavailable,
+                fromSectionCompleteness: from.coverage.section(base: base, rawSection: section)?.completeness ?? .unavailable,
+                toSectionCompleteness: to.coverage.section(base: base, rawSection: section)?.completeness ?? .unavailable,
+                fromProof: from.coverage.section(base: base, rawSection: section)?.proof,
+                toProof: to.coverage.section(base: base, rawSection: section)?.proof,
                 fromFieldStates: Dictionary(uniqueKeysWithValues: (Array(SnapshotHistoryKnownSections.itemFields) + ["presence"]).map {
                     ($0, from.coverage.state(base: base, rawSection: section, field: $0) ?? .unavailable)
                 }),
@@ -1677,7 +1788,11 @@ private struct MetricAccumulators {
         let petComplete = complete(["pets"], levelFields)
         let equipmentComplete = complete(["equipment"], levelFields)
         func shouldMark(_ complete: Bool, _ metricCategory: SnapshotMetricCategory) -> Bool {
-            complete || (!hasSectionCoverage && hasKnownChange(metricCategory))
+            // A directly observed unique level/timer change can be counted from
+            // field evidence alone.  Section proof is still mandatory for
+            // absence-based and histogram changes, which the Diff engine emits
+            // as unknown when the universe is not proven complete.
+            complete || hasKnownChange(metricCategory)
         }
         if shouldMark(buildingHistogramComplete, .building) {
             buildingCompletions.markComparable()

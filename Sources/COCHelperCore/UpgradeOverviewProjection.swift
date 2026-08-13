@@ -319,19 +319,30 @@ extension UpgradeOverviewProjection {
         let manualCompletedCount = manualUpgradeCores.values.reduce(0) {
             $0 + $1.completedHistory.count
         }
-        // review P2：同一 stable identity（itemKey）下的多行共享同一 effective
-        // state，active 展示按 (villageID, itemKey) 去重后计数——exact match
-        // 合并与同 key 多行都不重复计入；不同村庄的同 key 不合并。
-        let activeKeys = Set(active.map { record in
-            Self.stableKey(villageID: record.villageID, item: record.item)
-        })
-        let importedActiveCount = Set(
-            active
-                .filter { record in
-                    record.item.effectiveState?.provenance.contains(.importedActive) == true
-                }
-                .map { Self.stableKey(villageID: $0.villageID, item: $0.item) }
-        ).count
+        // review v2：只对可证明的 exact-match 合并去重（契约「只按 exact match
+        // 去重；无法确认时并列显示」）。规则（按 (villageID, itemKey) 分组）：
+        // - 带导入计时（timerSeconds != nil）的 active 行 = 独立导入事实，
+        //   逐行计数（同 key 不同等级的两条计时 → 2，不合并）；
+        // - 无计时行（active 状态来自共享 effectiveState，如 manualActive /
+        //   附着状态）同 key 只计 1（合并展示）。
+        // 注意 effectiveState 是 per-key 的：同 key 的 idle 行也会被标记 active，
+        // 但无独立计时证据，不应计入 imported 事实。
+        var importedActiveCount = 0
+        var deduplicatedDisplayCount = 0
+        let activeByKey = Dictionary(
+            grouping: active,
+            by: { Self.stableKey(villageID: $0.villageID, item: $0.item) }
+        )
+        for rows in activeByKey.values {
+            let timerRows = rows.filter { $0.item.timerSeconds != nil }
+            if !timerRows.isEmpty {
+                importedActiveCount += timerRows.count
+                deduplicatedDisplayCount += timerRows.count
+            } else if !rows.isEmpty {
+                // manual-only（无导入计时）或纯共享状态附着：同 key 合并为 1。
+                deduplicatedDisplayCount += 1
+            }
+        }
 
         let completions: [UpgradeRecentCompletion] = manualUpgradeCores
             .flatMap { villageID, core in
@@ -357,7 +368,7 @@ extension UpgradeOverviewProjection {
         return UpgradeOverviewState(
             manualActiveCount: manualActiveCount,
             importedActiveCount: importedActiveCount,
-            deduplicatedDisplayCount: activeKeys.count,
+            deduplicatedDisplayCount: deduplicatedDisplayCount,
             manualCompletedCount: manualCompletedCount,
             completedRecently: completions,
             activeRecords: active,

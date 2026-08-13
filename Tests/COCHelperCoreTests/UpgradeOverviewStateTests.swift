@@ -277,11 +277,11 @@ final class UpgradeOverviewStateTests: XCTestCase {
         )
     }
 
-    // MARK: - 同 key 多行去重（review P2）
+    // MARK: - 同 key 多行（review v2：只对 exact match 去重）
 
-    func testSameStableIdentityMultipleRowsDeduplicated() throws {
-        // 同一 key（加农炮）两条不同等级的行都带导入计时 → 共享同一 effective
-        // state（importedActive），active 展示 2 行但去重计数应为 1。
+    func testSameKeyTwoImportedTimersAreNotDeduplicated() throws {
+        // 同一 key（加农炮）两条不同等级的行都带导入计时 → 两条独立导入事实，
+        // 无 exact-match 证据不得合并（契约：无法确认时并列显示）。
         let village = village(objectSections: [
             "buildings": [
                 item(section: "buildings", dataID: 1_000_001, level: 18),
@@ -303,6 +303,31 @@ final class UpgradeOverviewStateTests: XCTestCase {
             at: importedAt
         )
         XCTAssertEqual(state.activeRecords.count, 2)
+        XCTAssertEqual(state.deduplicatedDisplayCount, 2)
+        XCTAssertEqual(state.importedActiveCount, 2)
+    }
+
+    func testSameKeyTimerPlusIdleRowCountsOne() throws {
+        // 同 key：level 1 带计时（active）+ level 2 无计时（idle）。
+        // effectiveState 是 per-key 的，idle 行也会被标记 active，但无独立
+        // 计时证据 → 不新增 imported 事实，dedup 只计 1。
+        let village = village(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(
+                    section: "buildings", dataID: 1_000_002, level: 1,
+                    timerSeconds: 100, remainingSeconds: 90, path: "1"
+                ),
+                item(section: "buildings", dataID: 1_000_002, level: 2, path: "2"),
+            ],
+        ])
+        let core = try ManualUpgradeCore()
+        let state = UpgradeOverviewProjection.overviewState(
+            from: [village],
+            catalog: catalog,
+            manualUpgradeCores: [village.id: core],
+            at: importedAt
+        )
         XCTAssertEqual(state.deduplicatedDisplayCount, 1)
         XCTAssertEqual(state.importedActiveCount, 1)
     }

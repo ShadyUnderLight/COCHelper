@@ -1932,8 +1932,14 @@ public final class AppModel: ObservableObject {
               !normalizedTag.isEmpty else {
             return nil
         }
+        let duplicateImportCount = historyEnvelope.duplicateMetadata[
+            entry.snapshotID.uuidString
+        ]?.duplicateImportCount ?? 0
+        let observationRevision = duplicateImportCount == 0
+            ? entry.snapshotID.uuidString
+            : entry.snapshotID.uuidString + ":observation:" + String(duplicateImportCount)
         return ManualBaselineReference(
-            revision: entry.snapshotID.uuidString,
+            revision: observationRevision,
             fingerprint: entry.canonicalFingerprint,
             lineageID: entry.lineageID.uuidString
         )

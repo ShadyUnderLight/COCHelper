@@ -285,6 +285,40 @@ final class ManualTrackerStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: journalURL.path))
     }
 
+    func testPreparedManualJournalWithCorruptPreviousManualPayloadFailsClosed() throws {
+        let journalURL = makeJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        let oldCurrent = try currentData(name: "old")
+        let newCurrent = try currentData(name: "new")
+        let validManualData = try ManualTrackerEnvelope.empty(for: [UUID()]).encodedData()
+        let corruptPreviousManualData = Data("corrupt-previous-manual".utf8)
+        try writeTransactionJournal(
+            phase: "prepared",
+            to: journalURL,
+            previousCurrentData: oldCurrent,
+            newCurrentData: newCurrent,
+            previousManualData: corruptPreviousManualData,
+            newManualData: validManualData
+        )
+        let current = TestCurrentVillagePersistence(data: newCurrent)
+        let store = TestStore()
+        store.rawData = validManualData
+        let coordinator = ManualTrackerTransactionCoordinator(
+            current: current,
+            manual: store,
+            journalURL: journalURL
+        )
+
+        XCTAssertThrowsError(try coordinator.recoverIfNeeded()) { error in
+            guard case .journalCorrupt = error as? ManualTrackerTransactionError else {
+                return XCTFail("损坏的 previousManualData 必须在恢复写入前 fail closed：\(error)")
+            }
+        }
+        XCTAssertEqual(current.data, newCurrent)
+        XCTAssertEqual(store.rawData, validManualData)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
     @MainActor
     func testClearAndReimportGateOldManualProjectionUntilReconcile() throws {
         let history = TestSnapshotHistoryStore()
@@ -331,6 +365,21 @@ final class ManualTrackerStoreTests: XCTestCase {
         XCTAssertTrue(model.manualUpgradeCores[villageID]?.activeRecords.isEmpty == true)
 
         model.importIntoCurrentVillage = true
+        model.importText = snapshot.originalText
+        model.parseAccountText()
+        XCTAssertTrue(model.applyPendingAccountSnapshot())
+
+        XCTAssertEqual(store.rawData, persistedBeforeReset)
+        XCTAssertEqual(
+            model.manualUpgradeCores[villageID]?.itemState(for: self.key)?.status,
+            .unknown,
+            "完全相同的同 Tag snapshot 重导入也必须等 reconcile"
+        )
+        XCTAssertEqual(
+            try history.load()?.duplicateMetadata.values.first?.duplicateImportCount,
+            1
+        )
+
         model.importText = "{\"tag\":\"#2QJQ8J88\",\"buildings\":[{\"data\":100,\"lvl\":11}]}"
         model.parseAccountText()
         XCTAssertTrue(model.applyPendingAccountSnapshot())
@@ -383,6 +432,34 @@ final class ManualTrackerStoreTests: XCTestCase {
             "换 Tag 进入新 lineage 后，旧 manual state 必须隔离"
         )
         XCTAssertTrue(model.manualUpgradeCores[villageID]?.activeRecords.isEmpty == true)
+    }
+
+    func testVillageStateRejectsRecordStartingAfterStateUpdatedAt() throws {
+        let startedAt = Date(timeIntervalSince1970: 200)
+        var core = try manualCompletedCore()
+        _ = try core.startUpgrade(
+            itemKey: key,
+            fromLevel: 10,
+            targetLevel: 11,
+            quantity: 1,
+            startedAt: startedAt,
+            durationState: .timed(seconds: 60),
+            frozenCosts: nil,
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: UUID(),
+            now: startedAt
+        )
+
+        XCTAssertThrowsError(try ManualTrackerVillageState(
+            villageID: UUID(),
+            core: core,
+            stateUpdatedAt: Date(timeIntervalSince1970: 100)
+        )) { error in
+            guard case .invalidEnvelope = error as? ManualTrackerStoreError else {
+                return XCTFail("future startedAt 必须在存储边界 fail closed：\(error)")
+            }
+        }
     }
 
     func testEnvelopeRejectsDuplicateRecordIDAcrossVillages() throws {

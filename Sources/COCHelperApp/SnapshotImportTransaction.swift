@@ -41,6 +41,34 @@ enum CurrentVillageDataValidator {
     }
 }
 
+enum SnapshotHistoryDataValidator {
+    static func validate(_ data: Data?, label: String) throws {
+        guard let data else { return }
+        do {
+            let envelope = try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: data)
+            _ = try envelope.validated()
+        } catch {
+            throw SnapshotImportTransactionError.journalCorrupt(
+                "\(label) 无效：\(error.localizedDescription)"
+            )
+        }
+    }
+}
+
+enum ManualTrackerDataValidator {
+    static func validate(_ data: Data?, label: String) throws {
+        guard let data else { return }
+        do {
+            let envelope = try JSONDecoder().decode(ManualTrackerEnvelope.self, from: data)
+            _ = try envelope.validated()
+        } catch {
+            throw SnapshotImportTransactionError.journalCorrupt(
+                "\(label) 无效：\(error.localizedDescription)"
+            )
+        }
+    }
+}
+
 /// The current village blob is kept behind a tiny injectable adapter so the
 /// import transaction can test partial writes without coupling Core to
 /// UserDefaults.
@@ -202,7 +230,18 @@ struct SnapshotImportTransactionCoordinator {
                 journal.newCurrentData,
                 label: "事务记录中的新当前村庄数据"
             )
+            try SnapshotHistoryDataValidator.validate(
+                journal.previousHistoryData,
+                label: "事务记录中的旧历史"
+            )
+            try SnapshotHistoryDataValidator.validate(
+                journal.newHistoryData,
+                label: "事务记录中的新历史"
+            )
         } catch {
+            if let transactionError = error as? SnapshotImportTransactionError {
+                throw transactionError
+            }
             throw SnapshotImportTransactionError.journalCorrupt(error.localizedDescription)
         }
 
@@ -219,17 +258,14 @@ struct SnapshotImportTransactionCoordinator {
                     "事务记录声明包含手动状态，但缺少 newManualData。"
                 )
             }
-            do {
-                let envelope = try JSONDecoder().decode(
-                    ManualTrackerEnvelope.self,
-                    from: newManualData
-                )
-                _ = try envelope.validated()
-            } catch {
-                throw SnapshotImportTransactionError.journalCorrupt(
-                    "事务记录中的新手动状态无效：" + error.localizedDescription
-                )
-            }
+            try ManualTrackerDataValidator.validate(
+                journal.previousManualData,
+                label: "事务记录中的旧手动状态"
+            )
+            try ManualTrackerDataValidator.validate(
+                newManualData,
+                label: "事务记录中的新手动状态"
+            )
             recoveryManualStore = manual
             recoveryManualData = newManualData
         } else {
@@ -245,17 +281,6 @@ struct SnapshotImportTransactionCoordinator {
                 try recoveryManualStore.restoreRawData(journal.previousManualData)
             }
         case .committed:
-            do {
-                let envelope = try JSONDecoder().decode(
-                    SnapshotHistoryEnvelope.self,
-                    from: journal.newHistoryData
-                )
-                _ = try envelope.validated()
-            } catch {
-                throw SnapshotImportTransactionError.journalCorrupt(
-                    "事务记录中的新历史无效：" + error.localizedDescription
-                )
-            }
             try current.writeData(journal.newCurrentData)
             try history.writeRawData(journal.newHistoryData)
             if let recoveryManualStore, let recoveryManualData {
@@ -294,7 +319,22 @@ struct SnapshotImportTransactionCoordinator {
                 label: "旧当前村庄数据"
             )
             try CurrentVillageDataValidator.validate(currentData, label: "新当前村庄数据")
+            try SnapshotHistoryDataValidator.validate(
+                previousHistoryData,
+                label: "旧历史"
+            )
+            try SnapshotHistoryDataValidator.validate(newHistoryData, label: "新历史")
+            if manualEnvelope != nil {
+                try ManualTrackerDataValidator.validate(
+                    previousManualData,
+                    label: "旧手动状态"
+                )
+                try ManualTrackerDataValidator.validate(newManualData, label: "新手动状态")
+            }
         } catch {
+            if let transactionError = error as? SnapshotImportTransactionError {
+                throw transactionError
+            }
             throw SnapshotImportTransactionError.journalCorrupt(error.localizedDescription)
         }
 

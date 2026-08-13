@@ -112,6 +112,11 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
                 "同一村庄包含多个 baseline reference。"
             )
         }
+        guard core.records.allSatisfy({ $0.startedAt <= stateUpdatedAt }) else {
+            throw ManualTrackerStoreError.invalidEnvelope(
+                "升级记录的 startedAt 不能晚于 stateUpdatedAt。"
+            )
+        }
 
         self.villageID = villageID
         self.schemaVersion = ManualTrackerSchema.village

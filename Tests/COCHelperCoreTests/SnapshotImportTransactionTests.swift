@@ -4,6 +4,24 @@ import XCTest
 @testable import COCHelperCore
 
 final class SnapshotImportTransactionTests: XCTestCase {
+    private final class TestManualStore: ManualTrackerStore, @unchecked Sendable {
+        var transactionJournalURL: URL?
+        var rawData: Data?
+
+        func load() throws -> ManualTrackerEnvelope? {
+            guard let rawData else { return nil }
+            return try JSONDecoder().decode(ManualTrackerEnvelope.self, from: rawData).validated()
+        }
+
+        func save(_ envelope: ManualTrackerEnvelope) throws {
+            rawData = try envelope.encodedData()
+        }
+
+        func readRawData() throws -> Data? { rawData }
+        func writeRawData(_ data: Data) throws { rawData = data }
+        func restoreRawData(_ data: Data?) throws { rawData = data }
+    }
+
     private let oldVillage = VillageProfile(
         id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
         name: "旧村",
@@ -16,21 +34,15 @@ final class SnapshotImportTransactionTests: XCTestCase {
         createdAt: Date(timeIntervalSince1970: 2),
         updatedAt: Date(timeIntervalSince1970: 2)
     )
-    private var oldCurrent: Data {
-        try! JSONEncoder().encode([oldVillage])
-    }
-    private var newCurrent: Data {
-        try! JSONEncoder().encode([newVillage])
-    }
-    private let oldHistory = Data("old-history".utf8)
-    private var newHistory: Data {
-        (try? migratedEnvelope().encodedData()) ?? Data()
-    }
+    private lazy var oldCurrent = try! JSONEncoder().encode([oldVillage])
+    private lazy var newCurrent = try! JSONEncoder().encode([newVillage])
+    private lazy var oldHistory = try! migratedEnvelope(completedAt: 0).encodedData()
+    private lazy var newHistory = try! migratedEnvelope().encodedData()
 
-    private func migratedEnvelope() -> SnapshotHistoryEnvelope {
+    private func migratedEnvelope(completedAt: TimeInterval = 1) -> SnapshotHistoryEnvelope {
         SnapshotHistoryEnvelope(
             migrationMarker: SnapshotHistoryMigrationMarker(
-                completedAt: Date(timeIntervalSince1970: 1)
+                completedAt: Date(timeIntervalSince1970: completedAt)
             )
         )
     }
@@ -243,6 +255,74 @@ final class SnapshotImportTransactionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: journalURL.path))
     }
 
+    func testPreparedJournalWithCorruptPreviousHistoryFailsClosedBeforeAnyRestore() throws {
+        let journalURL = makeJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        let current = TestCurrentVillagePersistence(data: newCurrent)
+        let history = TestSnapshotHistoryStore()
+        history.rawData = newHistory
+        try writeJournal(
+            phase: "prepared",
+            to: journalURL,
+            previousCurrentData: oldCurrent,
+            newCurrentData: newCurrent,
+            previousHistoryData: Data("corrupt-previous-history".utf8),
+            newHistoryData: newHistory
+        )
+        let coordinator = SnapshotImportTransactionCoordinator(
+            current: current,
+            history: history,
+            journalURL: journalURL
+        )
+
+        XCTAssertThrowsError(try coordinator.recoverIfNeeded()) { error in
+            guard case .journalCorrupt = error as? SnapshotImportTransactionError else {
+                return XCTFail("损坏的 previousHistoryData 必须在恢复写入前 fail closed：\(error)")
+            }
+        }
+        XCTAssertEqual(current.data, newCurrent)
+        XCTAssertEqual(history.rawData, newHistory)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
+    func testPreparedJournalWithCorruptPreviousManualFailsClosedBeforeAnyRestore() throws {
+        let journalURL = makeJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        let current = TestCurrentVillagePersistence(data: newCurrent)
+        let history = TestSnapshotHistoryStore()
+        history.rawData = newHistory
+        let manual = TestManualStore()
+        let validManualData = try ManualTrackerEnvelope.empty(for: [UUID()]).encodedData()
+        manual.rawData = validManualData
+        try writeJournal(
+            phase: "prepared",
+            to: journalURL,
+            previousCurrentData: oldCurrent,
+            newCurrentData: newCurrent,
+            previousHistoryData: oldHistory,
+            newHistoryData: newHistory,
+            previousManualData: Data("corrupt-previous-manual".utf8),
+            manualIncluded: true,
+            newManualData: validManualData
+        )
+        let coordinator = SnapshotImportTransactionCoordinator(
+            current: current,
+            history: history,
+            journalURL: journalURL,
+            manual: manual
+        )
+
+        XCTAssertThrowsError(try coordinator.recoverIfNeeded()) { error in
+            guard case .journalCorrupt = error as? SnapshotImportTransactionError else {
+                return XCTFail("损坏的 previousManualData 必须在恢复写入前 fail closed：\(error)")
+            }
+        }
+        XCTAssertEqual(current.data, newCurrent)
+        XCTAssertEqual(history.rawData, newHistory)
+        XCTAssertEqual(manual.rawData, validManualData)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
     func testManualIncludedWithoutPayloadFailsClosedBeforeCurrentRestore() throws {
         let journalURL = makeJournalURL()
         defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
@@ -281,6 +361,7 @@ final class SnapshotImportTransactionTests: XCTestCase {
         newCurrentData: Data,
         previousHistoryData: Data?,
         newHistoryData: Data,
+        previousManualData: Data? = nil,
         manualIncluded: Bool? = nil,
         newManualData: Data? = nil
     ) throws {
@@ -290,6 +371,7 @@ final class SnapshotImportTransactionTests: XCTestCase {
             let newCurrentData: Data
             let previousHistoryData: Data?
             let newHistoryData: Data
+            let previousManualData: Data?
             let manualIncluded: Bool?
             let newManualData: Data?
         }
@@ -303,6 +385,7 @@ final class SnapshotImportTransactionTests: XCTestCase {
             newCurrentData: newCurrentData,
             previousHistoryData: previousHistoryData,
             newHistoryData: newHistoryData,
+            previousManualData: previousManualData,
             manualIncluded: manualIncluded,
             newManualData: newManualData
         ))

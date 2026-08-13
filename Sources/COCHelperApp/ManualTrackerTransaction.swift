@@ -33,6 +33,14 @@ struct ManualTrackerTransactionCoordinator {
                 journal.newCurrentData,
                 label: "事务记录中的新当前村庄数据"
             )
+            try validateManualData(
+                journal.previousManualData,
+                label: "事务记录中的旧手动状态"
+            )
+            try validateManualData(
+                journal.newManualData,
+                label: "事务记录中的新手动状态"
+            )
         } catch {
             throw ManualTrackerTransactionError.journalCorrupt(error.localizedDescription)
         }
@@ -41,17 +49,6 @@ struct ManualTrackerTransactionCoordinator {
         case .prepared:
             try restore(journal.previousCurrentData, manualData: journal.previousManualData)
         case .committed:
-            do {
-                let envelope = try JSONDecoder().decode(
-                    ManualTrackerEnvelope.self,
-                    from: journal.newManualData
-                )
-                _ = try envelope.validated()
-            } catch {
-                throw ManualTrackerTransactionError.journalCorrupt(
-                    "事务记录中的新手动状态无效：" + error.localizedDescription
-                )
-            }
             try current.writeData(journal.newCurrentData)
             try manual.writeRawData(journal.newManualData)
         }
@@ -72,6 +69,8 @@ struct ManualTrackerTransactionCoordinator {
                 label: "旧当前村庄数据"
             )
             try CurrentVillageDataValidator.validate(currentData, label: "新当前村庄数据")
+            try validateManualData(previousManualData, label: "旧手动状态")
+            try validateManualData(newManualData, label: "新手动状态")
         } catch {
             throw ManualTrackerTransactionError.journalCorrupt(error.localizedDescription)
         }
@@ -134,6 +133,18 @@ struct ManualTrackerTransactionCoordinator {
             throw ManualTrackerTransactionError.journalCorrupt(error.localizedDescription)
         } catch {
             throw ManualTrackerTransactionError.rollbackFailed(error.localizedDescription)
+        }
+    }
+
+    private func validateManualData(_ data: Data?, label: String) throws {
+        guard let data else { return }
+        do {
+            let envelope = try JSONDecoder().decode(ManualTrackerEnvelope.self, from: data)
+            _ = try envelope.validated()
+        } catch {
+            throw ManualTrackerTransactionError.journalCorrupt(
+                "\(label)无效：\(error.localizedDescription)"
+            )
         }
     }
 

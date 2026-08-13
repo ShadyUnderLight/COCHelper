@@ -3,6 +3,47 @@ import Combine
 import Foundation
 import COCHelperCore
 
+/// Existing AppModel tests inject a history store but do not need to touch the
+/// user's Application Support directory.  Production uses the file-backed
+/// store; this adapter keeps the same persistence contract for injected runs.
+private final class InMemoryManualTrackerStore: ManualTrackerStore, @unchecked Sendable {
+    private var envelope: ManualTrackerEnvelope?
+
+    var transactionJournalURL: URL? { nil }
+
+    func load() throws -> ManualTrackerEnvelope? {
+        envelope
+    }
+
+    func save(_ envelope: ManualTrackerEnvelope) throws {
+        self.envelope = try envelope.validated()
+    }
+
+    func readRawData() throws -> Data? {
+        try envelope?.encodedData()
+    }
+
+    func writeRawData(_ data: Data) throws {
+        do {
+            envelope = try JSONDecoder()
+                .decode(ManualTrackerEnvelope.self, from: data)
+                .validated()
+        } catch let error as ManualTrackerStoreError {
+            throw error
+        } catch {
+            throw ManualTrackerStoreError.corrupt(error.localizedDescription)
+        }
+    }
+
+    func restoreRawData(_ data: Data?) throws {
+        guard let data else {
+            envelope = nil
+            return
+        }
+        try writeRawData(data)
+    }
+}
+
 // MARK: - 快捷快照导入（Issue #61）
 
 /// 「按当前详情页」快捷导入的预览：目标村庄固定为 `targetVillageID`，
@@ -59,6 +100,12 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var pendingAccountSnapshot: AccountSnapshot?
     @Published public private(set) var accountImportError: String?
     @Published public private(set) var snapshotHistoryError: String?
+    /// Projection-safe per-village manual state. Imported snapshots remain
+    /// observations; a core whose baseline is not the current active history
+    /// tail is exposed here as unknown without rewriting its persisted bytes.
+    @Published public private(set) var manualUpgradeCores: [UUID: ManualUpgradeCore] = [:]
+    @Published public private(set) var manualTrackerStatus: ManualTrackerStoreStatus = .empty
+    @Published public private(set) var manualTrackerError: String?
     /// 正在刷新官方玩家数据的村庄 ID 集合（防重入守卫 + 卡片按村庄隔离，Issue #35）。
     /// 空集合 = 无请求在途；非空 = 对应村庄的请求在途。
     @Published public private(set) var refreshingOfficialPlayerVillageIDs: Set<UUID> = []
@@ -119,6 +166,9 @@ public final class AppModel: ObservableObject {
     private let currentVillagePersistence: any CurrentVillagePersistence
     private let importTransaction: SnapshotImportTransactionCoordinator
     private var historyEnvelope: SnapshotHistoryEnvelope?
+    private let manualTrackerStore: any ManualTrackerStore
+    private let manualTrackerTransaction: ManualTrackerTransactionCoordinator
+    private var manualTrackerEnvelope: ManualTrackerEnvelope?
 
     public convenience init(
         defaults: UserDefaults = .standard,
@@ -127,7 +177,8 @@ public final class AppModel: ObservableObject {
         clanWarRefresher: ClanWarRefresher? = nil,
         clanLogClient: CoAPIClient? = nil,
         clipboardReader: (() -> String?)? = nil,
-        historyStore: (any SnapshotHistoryStore)? = nil
+        historyStore: (any SnapshotHistoryStore)? = nil,
+        manualTrackerStore: (any ManualTrackerStore)? = nil
     ) {
         self.init(
             defaults: defaults,
@@ -137,6 +188,7 @@ public final class AppModel: ObservableObject {
             clanLogClient: clanLogClient,
             clipboardReader: clipboardReader,
             historyStore: historyStore,
+            manualTrackerStore: manualTrackerStore,
             currentVillagePersistence: nil,
             transactionJournalURL: nil
         )
@@ -150,6 +202,7 @@ public final class AppModel: ObservableObject {
         clanLogClient: CoAPIClient? = nil,
         clipboardReader: (() -> String?)? = nil,
         historyStore: (any SnapshotHistoryStore)? = nil,
+        manualTrackerStore: (any ManualTrackerStore)? = nil,
         currentVillagePersistence: (any CurrentVillagePersistence)? = nil,
         transactionJournalURL: URL? = nil
     ) {
@@ -163,19 +216,48 @@ public final class AppModel: ObservableObject {
             ?? UserDefaultsCurrentVillagePersistence(defaults: defaults, key: villagesStorageKey)
         self.historyService = SnapshotHistoryService(store: resolvedHistoryStore)
         self.currentVillagePersistence = resolvedCurrentPersistence
+        let resolvedManualTrackerStore: any ManualTrackerStore
+        if let manualTrackerStore {
+            resolvedManualTrackerStore = manualTrackerStore
+        } else if historyStore != nil {
+            // A caller-supplied history store is the existing test/injection
+            // seam.  Keep that path fully isolated from real user data.
+            resolvedManualTrackerStore = InMemoryManualTrackerStore()
+        } else {
+            resolvedManualTrackerStore = FileManualTrackerStore(
+                fileURL: FileManualTrackerStore.defaultURL()
+            )
+        }
+        self.manualTrackerStore = resolvedManualTrackerStore
         self.importTransaction = SnapshotImportTransactionCoordinator(
             current: resolvedCurrentPersistence,
             history: resolvedHistoryStore,
-            journalURL: transactionJournalURL ?? resolvedHistoryStore.transactionJournalURL
+            journalURL: transactionJournalURL ?? resolvedHistoryStore.transactionJournalURL,
+            manual: resolvedManualTrackerStore
+        )
+        self.manualTrackerTransaction = ManualTrackerTransactionCoordinator(
+            current: resolvedCurrentPersistence,
+            manual: resolvedManualTrackerStore,
+            journalURL: resolvedManualTrackerStore.transactionJournalURL
         )
         self.historyEnvelope = nil
+        self.manualTrackerEnvelope = nil
         snapshotHistoryError = nil
+        manualTrackerStatus = .empty
+        manualTrackerError = nil
 
         var startupError: String?
         do {
             try importTransaction.recoverIfNeeded()
         } catch {
             startupError = Self.localizedPersistenceError(error)
+        }
+
+        var manualStartupError: String?
+        do {
+            try manualTrackerTransaction.recoverIfNeeded()
+        } catch {
+            manualStartupError = Self.localizedPersistenceError(error)
         }
 
         let loadedVillages = Self.loadVillages(from: defaults)
@@ -236,6 +318,7 @@ public final class AppModel: ObservableObject {
         pendingAccountSnapshot = nil
         accountImportError = nil
         snapshotHistoryError = startupError
+        manualTrackerError = manualStartupError
         importText = initialVillages[0].accountSnapshot?.originalText ?? ""
         officialRefreshSummary = nil
 
@@ -243,6 +326,13 @@ public final class AppModel: ObservableObject {
         // the old planner-only fields on the next write.
         if startupError == nil {
             persistVillages()
+        }
+
+        if let manualStartupError {
+            manualTrackerStatus = .unavailable
+            manualTrackerError = manualStartupError
+        } else {
+            loadManualTracker(for: initialVillages.map(\.id), now: Date())
         }
 
         if startupError == nil {
@@ -258,6 +348,115 @@ public final class AppModel: ObservableObject {
                 snapshotHistoryError = Self.localizedPersistenceError(error)
             }
         }
+        // The manual store is loaded before the history store so startup can
+        // recover both independently.  Rebuild the UI-facing projection now
+        // that the current snapshot's active lineage is known.
+        refreshManualTrackerProjection()
+    }
+
+    /// Returns the persisted local tracker core for an explicit village.
+    /// Snapshot data remains separate and is never used as a fallback here.
+    /// UI consumers use `manualUpgradeCores`, which is a projection-safe view
+    /// and may intentionally expose an unreconciled state as `unknown`.
+    public func manualUpgradeCore(for villageID: UUID) -> ManualUpgradeCore? {
+        manualTrackerEnvelope?.state(for: villageID)?.core
+    }
+
+    /// Applies one manual-tracker command to a single village and persists the
+    /// candidate envelope only after the core accepts it.  The closure is the
+    /// narrow command seam for the tracker UI; it cannot accidentally route by
+    /// the currently selected village.
+    public func updateManualUpgradeCore(
+        for villageID: UUID,
+        at now: Date = Date(),
+        _ update: (inout ManualUpgradeCore) throws -> Void
+    ) throws {
+        guard villages.contains(where: { $0.id == villageID }) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄不存在。")
+        }
+        guard let currentEnvelope = manualTrackerEnvelope,
+              manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualTrackerStoreError.unavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        guard now.timeIntervalSinceReferenceDate.isFinite else {
+            throw ManualTrackerStoreError.invalidEnvelope("更新时间无效。")
+        }
+
+        var core: ManualUpgradeCore
+        if let storedCore = currentEnvelope.state(for: villageID)?.core {
+            core = storedCore
+        } else {
+            core = try ManualUpgradeCore()
+        }
+        let previousCore = core
+        try update(&core)
+        guard core != previousCore else { return }
+
+        let previousState = currentEnvelope.state(for: villageID)
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: now,
+            lastSettleAt: previousState?.lastSettleAt,
+            lastImportAt: previousState?.lastImportAt,
+            diagnostics: previousState?.diagnostics ?? []
+        )
+        var candidate = currentEnvelope
+        try candidate.upsert(state)
+        do {
+            try manualTrackerStore.save(candidate)
+        } catch {
+            markManualTrackerUnavailable(error)
+            throw error
+        }
+        installManualTrackerEnvelope(candidate)
+    }
+
+    /// Settles due records using the same absolute-time Core path used by
+    /// manual commands.  `remainingSeconds` is intentionally not persisted.
+    @discardableResult
+    public func settleManualUpgrades(at now: Date = Date()) -> Int {
+        guard let currentEnvelope = manualTrackerEnvelope,
+              manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired,
+              now.timeIntervalSinceReferenceDate.isFinite else {
+            return 0
+        }
+
+        var candidate = currentEnvelope
+        var settledCount = 0
+        do {
+            for village in villages {
+                guard let previousState = currentEnvelope.state(for: village.id) else {
+                    continue
+                }
+                var core = previousState.core
+                let settled = try core.settleDue(at: now)
+                guard core != previousState.core else { continue }
+
+                let state = try ManualTrackerVillageState(
+                    villageID: village.id,
+                    core: core,
+                    stateUpdatedAt: now,
+                    lastSettleAt: now,
+                    lastImportAt: previousState.lastImportAt,
+                    diagnostics: previousState.diagnostics
+                )
+                try candidate.upsert(state)
+                settledCount += settled.count
+            }
+            guard candidate != currentEnvelope else { return 0 }
+            try manualTrackerStore.save(candidate)
+        } catch {
+            markManualTrackerUnavailable(error)
+            return 0
+        }
+
+        installManualTrackerEnvelope(candidate)
+        return settledCount
     }
 
     public var currentVillageName: String {
@@ -453,14 +652,33 @@ public final class AppModel: ObservableObject {
     }
 
     public func addVillageForImport() {
-        persistVillages()
-
         let name = "村庄 " + String(villages.count + 1)
         let village = VillageProfile(name: name)
-        villages.append(village)
+        var candidateVillages = villagesForImportPersistence()
+        candidateVillages.append(village)
+        guard var candidateEnvelope = manualTrackerEnvelope else {
+            let error = ManualTrackerStoreError.unavailable("手动升级存储不可用，无法创建村庄。")
+            markManualTrackerUnavailable(error)
+            accountImportError = Self.localizedPersistenceError(error)
+            return
+        }
+        do {
+            try candidateEnvelope.upsert(ManualTrackerVillageState.empty(villageID: village.id))
+            try commitVillageMutation(
+                candidateVillages: candidateVillages,
+                envelope: candidateEnvelope
+            )
+        } catch {
+            accountImportError = Self.localizedPersistenceError(error)
+            manualTrackerError = Self.localizedPersistenceError(error)
+            return
+        }
+
+        villages = candidateVillages
+        installManualTrackerEnvelope(candidateEnvelope)
         load(village, importText: "")
         importIntoCurrentVillage = true
-        persistVillages()
+        accountImportError = nil
     }
 
     public func renameSelectedVillage(_ name: String) {
@@ -477,14 +695,36 @@ public final class AppModel: ObservableObject {
         guard villages.count > 1,
               let index = villages.firstIndex(where: { $0.id == id }) else { return }
 
+        guard var candidateEnvelope = manualTrackerEnvelope else {
+            let error = ManualTrackerStoreError.unavailable("手动升级存储不可用，无法删除村庄。")
+            markManualTrackerUnavailable(error)
+            accountImportError = Self.localizedPersistenceError(error)
+            return
+        }
+
+        var candidateVillages = villagesForImportPersistence()
+        candidateVillages.remove(at: index)
+        candidateEnvelope.remove(villageID: id)
+        do {
+            try commitVillageMutation(
+                candidateVillages: candidateVillages,
+                envelope: candidateEnvelope
+            )
+        } catch {
+            accountImportError = Self.localizedPersistenceError(error)
+            manualTrackerError = Self.localizedPersistenceError(error)
+            return
+        }
+
         let isSelected = id == selectedVillageID
-        villages.remove(at: index)
+        villages = candidateVillages
+        installManualTrackerEnvelope(candidateEnvelope)
 
         if isSelected {
             let nextIndex = min(index, villages.count - 1)
             load(villages[nextIndex])
         }
-        persistVillages()
+        accountImportError = nil
     }
 
     public func pasteFromClipboard() {
@@ -626,6 +866,7 @@ public final class AppModel: ObservableObject {
 
         let targetVillage = candidateVillages[index]
         load(targetVillage, importText: preview.snapshot.originalText)
+        refreshManualTrackerProjection()
         snapshotHistoryError = nil
         return true
     }
@@ -707,9 +948,26 @@ public final class AppModel: ObservableObject {
 
         let appliedAt = Date()
         var candidateVillages = villagesForImportPersistence()
+        var manualEnvelopeForCreate: ManualTrackerEnvelope?
         if targetIndex == candidateVillages.count {
             let name = OfficialPlayerTagValidator.normalized(snapshot.tag) ?? "村庄 " + String(candidateVillages.count + 1)
-            candidateVillages.append(VillageProfile(name: name))
+            let newVillage = VillageProfile(name: name)
+            candidateVillages.append(newVillage)
+            guard var candidateEnvelope = manualTrackerEnvelope else {
+                accountImportError = ManualTrackerStoreError.unavailable(
+                    "手动升级存储不可用，无法创建村庄。"
+                ).errorDescription
+                return false
+            }
+            do {
+                try candidateEnvelope.upsert(
+                    ManualTrackerVillageState.empty(villageID: newVillage.id, now: appliedAt)
+                )
+            } catch {
+                accountImportError = Self.localizedPersistenceError(error)
+                return false
+            }
+            manualEnvelopeForCreate = candidateEnvelope
         }
 
         // tag 变化时自动重置官方数据（applyImportedSnapshot 内部处理）。
@@ -730,7 +988,8 @@ public final class AppModel: ObservableObject {
                 snapshot,
                 targetVillage: existingTarget,
                 candidateVillages: candidateVillages,
-                appliedAt: appliedAt
+                appliedAt: appliedAt,
+                manualEnvelope: manualEnvelopeForCreate
             )
         } catch {
             accountImportError = Self.localizedPersistenceError(error)
@@ -739,6 +998,7 @@ public final class AppModel: ObservableObject {
 
         let targetVillage = candidateVillages[targetIndex]
         load(targetVillage, importText: snapshot.originalText)
+        refreshManualTrackerProjection()
         importIntoCurrentVillage = false
         snapshotHistoryError = nil
         return true
@@ -759,6 +1019,7 @@ public final class AppModel: ObservableObject {
             villages[index].officialAPIState = nil
         }
         persistVillages()
+        refreshManualTrackerProjection()
     }
 
     // MARK: - 官方数据刷新
@@ -1559,11 +1820,155 @@ public final class AppModel: ObservableObject {
         return candidate
     }
 
+    private func loadManualTracker(for villageIDs: [UUID], now: Date) {
+        do {
+            let uniqueVillageIDs = Array(Set(villageIDs)).sorted {
+                $0.uuidString < $1.uuidString
+            }
+            var envelope = try manualTrackerStore.load()
+            var shouldSave = false
+
+            if envelope == nil {
+                // Missing storage is an uninitialized store, not an error and
+                // never a reason to synthesize completed manual records.
+                envelope = ManualTrackerEnvelope.empty(for: uniqueVillageIDs, now: now)
+                shouldSave = true
+            } else if var existing = envelope {
+                if existing.migrationMarker == nil {
+                    existing.migrationMarker = ManualTrackerMigrationMarker(completedAt: now)
+                    shouldSave = true
+                }
+                for villageID in uniqueVillageIDs where existing.state(for: villageID) == nil {
+                    try existing.upsert(
+                        ManualTrackerVillageState.empty(villageID: villageID, now: now)
+                    )
+                    shouldSave = true
+                }
+                envelope = existing
+            }
+
+            guard let envelope else {
+                throw ManualTrackerStoreError.unavailable("无法建立手动升级初始状态。")
+            }
+            if shouldSave {
+                try manualTrackerStore.save(envelope)
+            }
+            installManualTrackerEnvelope(envelope)
+            _ = settleManualUpgrades(at: now)
+        } catch let error as ManualTrackerStoreError {
+            if case .unsupportedSchema = error {
+                manualTrackerStatus = .migrationRequired
+            } else {
+                manualTrackerStatus = .unavailable
+            }
+            manualTrackerEnvelope = nil
+            manualUpgradeCores = [:]
+            manualTrackerError = Self.localizedPersistenceError(error)
+        } catch {
+            manualTrackerStatus = .unavailable
+            manualTrackerEnvelope = nil
+            manualUpgradeCores = [:]
+            manualTrackerError = Self.localizedPersistenceError(error)
+        }
+    }
+
+    private func installManualTrackerEnvelope(_ envelope: ManualTrackerEnvelope) {
+        manualTrackerEnvelope = envelope
+        var cores: [UUID: ManualUpgradeCore] = [:]
+        for village in villages where cores[village.id] == nil {
+            if let state = envelope.state(for: village.id) {
+                cores[village.id] = projectedManualUpgradeCore(
+                    state.core,
+                    for: village.id
+                )
+            }
+        }
+        manualUpgradeCores = cores
+        manualTrackerStatus = envelope.isEmpty ? .empty : .available
+        manualTrackerError = nil
+    }
+
+    /// Rebuilds only the projection exposed to UI/overview consumers.  The
+    /// persisted envelope remains the source for mutations and is never
+    /// rewritten merely because a snapshot is cleared or re-imported.
+    private func refreshManualTrackerProjection() {
+        guard let manualTrackerEnvelope else {
+            manualUpgradeCores = [:]
+            return
+        }
+        installManualTrackerEnvelope(manualTrackerEnvelope)
+    }
+
+    private func projectedManualUpgradeCore(
+        _ core: ManualUpgradeCore,
+        for villageID: UUID
+    ) -> ManualUpgradeCore {
+        guard !core.itemStates.isEmpty || !core.records.isEmpty else {
+            return core
+        }
+        guard let storedBaseline = core.baselineReference,
+              let currentBaseline = currentManualBaselineReference(for: villageID),
+              storedBaseline == currentBaseline else {
+            return core.gatedForUnreconciledSnapshot()
+        }
+        return core
+    }
+
+    /// Converts the active history tail into the baseline identity used by
+    /// manual tracker records.  Missing/invalid/conflicted identity is not a
+    /// joinable baseline, so the caller must keep local manual state unknown.
+    private func currentManualBaselineReference(for villageID: UUID) -> ManualBaselineReference? {
+        guard let village = villages.first(where: { $0.id == villageID }),
+              village.accountSnapshot != nil,
+              let historyEnvelope,
+              let lineage = historyEnvelope.activeLineage(for: villageID),
+              !lineage.hasConflict,
+              let entry = historyEnvelope.entry(id: lineage.lastEntryID),
+              entry.villageID == villageID,
+              entry.lineageID == lineage.lineageID,
+              OfficialPlayerTagValidator.normalized(village.tag)
+                  == lineage.normalizedPlayerTag,
+              let normalizedTag = lineage.normalizedPlayerTag,
+              !normalizedTag.isEmpty else {
+            return nil
+        }
+        let duplicateImportCount = historyEnvelope.duplicateMetadata[
+            entry.snapshotID.uuidString
+        ]?.duplicateImportCount ?? 0
+        let observationRevision = duplicateImportCount == 0
+            ? entry.snapshotID.uuidString
+            : entry.snapshotID.uuidString + ":observation:" + String(duplicateImportCount)
+        return ManualBaselineReference(
+            revision: observationRevision,
+            fingerprint: entry.canonicalFingerprint,
+            lineageID: entry.lineageID.uuidString
+        )
+    }
+
+    private func markManualTrackerUnavailable(_ error: Error) {
+        manualTrackerEnvelope = nil
+        manualUpgradeCores = [:]
+        manualTrackerStatus = .unavailable
+        manualTrackerError = Self.localizedPersistenceError(error)
+    }
+
+    private func commitVillageMutation(
+        candidateVillages: [VillageProfile],
+        envelope: ManualTrackerEnvelope
+    ) throws {
+        let currentData = try JSONEncoder().encode(candidateVillages)
+        try manualTrackerTransaction.commit(
+            currentData: currentData,
+            envelope: envelope
+        )
+    }
+
     private func commitImportedSnapshot(
         _ snapshot: AccountSnapshot,
         targetVillage: VillageProfile,
         candidateVillages: [VillageProfile],
-        appliedAt: Date
+        appliedAt: Date,
+        manualEnvelope: ManualTrackerEnvelope? = nil
     ) throws {
         guard let historyEnvelope else {
             throw SnapshotHistoryServiceError.historyUnavailable(
@@ -1582,9 +1987,16 @@ public final class AppModel: ObservableObject {
             craftTableCatalog: craftTableCatalog
         )
         let currentData = try JSONEncoder().encode(candidateVillages)
-        try importTransaction.commit(currentData: currentData, envelope: decision.envelope)
+        try importTransaction.commit(
+            currentData: currentData,
+            envelope: decision.envelope,
+            manualEnvelope: manualEnvelope
+        )
         villages = candidateVillages
         self.historyEnvelope = decision.envelope
+        if let manualEnvelope {
+            installManualTrackerEnvelope(manualEnvelope)
+        }
     }
 
     private func persistVillages() {

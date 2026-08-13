@@ -402,6 +402,74 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(change.evidence, .aggregateInferred)
     }
 
+    func testTrapHistogramTimerChangedAfterNormalization() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let binding = SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 90, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 40, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .timerChanged)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+    }
+
+    func testTrapHistogramNaturalCountdownCreatesNoChange() throws {
+        let identity = makeIdentity(section: "traps", dataID: 9)
+        let binding = SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 90, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let natural = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 85, display: binding)],
+            section: "traps",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: natural)
+        XCTAssertTrue(diff.changes.isEmpty)
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testBuilderBaseTrapHistogramTimerChanged() throws {
+        let identity = makeIdentity(section: "traps2", dataID: 12_000_011, base: .builder)
+        let binding = SnapshotDisplayBinding(displayName: "弹簧陷阱", category: "traps")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 300, display: binding)],
+            section: "traps2",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 105,
+            items: [makeItem(identity: identity, level: 1, count: 1, timer: 10, display: binding)],
+            section: "traps2",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .timerChanged)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+    }
+
     func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

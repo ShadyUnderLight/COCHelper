@@ -1048,6 +1048,7 @@ public enum SnapshotDiffEngine {
 
         var oldRemaining = oldHistogram.levels
         var newRemaining = newHistogram.levels
+        var anyLevelUp = false
         for level in Set(oldRemaining.keys).intersection(newRemaining.keys) {
             let unchanged = min(oldRemaining[level] ?? 0, newRemaining[level] ?? 0)
             oldRemaining[level, default: 0] -= unchanged
@@ -1064,6 +1065,7 @@ public enum SnapshotDiffEngine {
             let moved = min(oldRemaining[oldLevel] ?? 0, newRemaining[newLevel] ?? 0)
             if moved > 0 && oldLevel != newLevel {
                 let delta = newLevel - oldLevel
+                if delta > 0 { anyLevelUp = true }
                 let kind: SnapshotChangeKind = delta > 0 ? .levelIncreased : .levelDecreased
                 changes.append(makeChange(
                     identity: identity,
@@ -1103,6 +1105,26 @@ public enum SnapshotDiffEngine {
                 evidence: .aggregateInferred,
                 coverage: coverage
             ))
+        }
+
+        let timerResult = aggregateTimerTransition(
+            oldItems: oldItems,
+            newItems: newItems,
+            from: from,
+            to: to,
+            hasCredibleLevelUp: anyLevelUp
+        )
+        if timerResult.kind != nil || timerResult.isUnknown {
+            appendAggregateTimerChange(
+                timerResult,
+                identity: identity,
+                oldItems: oldItems,
+                newItems: newItems,
+                from: from,
+                to: to,
+                changes: &changes,
+                diagnostics: &diagnostics
+            )
         }
     }
 

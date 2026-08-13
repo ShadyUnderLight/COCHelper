@@ -7,6 +7,8 @@ final class SnapshotImportTransactionTests: XCTestCase {
     private final class TestManualStore: ManualTrackerStore, @unchecked Sendable {
         var transactionJournalURL: URL?
         var rawData: Data?
+        var failWrite = false
+        var writeBeforeFailure = false
 
         func load() throws -> ManualTrackerEnvelope? {
             guard let rawData else { return nil }
@@ -18,7 +20,13 @@ final class SnapshotImportTransactionTests: XCTestCase {
         }
 
         func readRawData() throws -> Data? { rawData }
-        func writeRawData(_ data: Data) throws { rawData = data }
+        func writeRawData(_ data: Data) throws {
+            if failWrite {
+                if writeBeforeFailure { rawData = data }
+                throw ManualTrackerStoreError.writeFailed("测试手动写入失败")
+            }
+            rawData = data
+        }
         func restoreRawData(_ data: Data?) throws { rawData = data }
     }
 
@@ -111,6 +119,37 @@ final class SnapshotImportTransactionTests: XCTestCase {
         XCTAssertThrowsError(try coordinator.commit(currentData: newCurrent, envelope: migratedEnvelope()))
         XCTAssertEqual(current.data, oldCurrent)
         XCTAssertEqual(history.rawData, previousHistory)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
+    func testManualWriteFailureRestoresCurrentHistoryAndManualStores() throws {
+        let current = TestCurrentVillagePersistence(data: oldCurrent)
+        let history = TestSnapshotHistoryStore()
+        history.rawData = try migratedEnvelope().encodedData()
+        let previousHistory = history.rawData
+        let manual = TestManualStore()
+        let previousManual = ManualTrackerEnvelope.empty(for: [oldVillage.id])
+        manual.rawData = try previousManual.encodedData()
+        let previousManualData = manual.rawData
+        manual.failWrite = true
+        manual.writeBeforeFailure = true
+        let journalURL = makeJournalURL()
+        defer { try? FileManager.default.removeItem(at: journalURL.deletingLastPathComponent()) }
+        let coordinator = SnapshotImportTransactionCoordinator(
+            current: current,
+            history: history,
+            journalURL: journalURL,
+            manual: manual
+        )
+
+        XCTAssertThrowsError(try coordinator.commit(
+            currentData: newCurrent,
+            envelope: migratedEnvelope(),
+            manualEnvelope: ManualTrackerEnvelope.empty(for: [newVillage.id])
+        ))
+        XCTAssertEqual(current.data, oldCurrent)
+        XCTAssertEqual(history.rawData, previousHistory)
+        XCTAssertEqual(manual.rawData, previousManualData)
         XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
     }
 

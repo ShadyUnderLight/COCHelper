@@ -64,6 +64,27 @@ public struct QuickImportPreview: Identifiable, Equatable, Sendable {
     public var id: UUID { targetVillageID }
     public var confirmationTitle: String { "更新「\(targetVillageName)」" }
     public let destinationDescription: String
+    public let reconciliationPreview: ManualReconciliationPreview?
+
+    public init(
+        snapshot: AccountSnapshot,
+        targetVillageID: UUID,
+        targetVillageName: String,
+        targetVillageTag: String?,
+        targetVillageHasSnapshot: Bool,
+        replacesSameTag: Bool,
+        destinationDescription: String,
+        reconciliationPreview: ManualReconciliationPreview? = nil
+    ) {
+        self.snapshot = snapshot
+        self.targetVillageID = targetVillageID
+        self.targetVillageName = targetVillageName
+        self.targetVillageTag = targetVillageTag
+        self.targetVillageHasSnapshot = targetVillageHasSnapshot
+        self.replacesSameTag = replacesSameTag
+        self.destinationDescription = destinationDescription
+        self.reconciliationPreview = reconciliationPreview
+    }
 }
 
 /// 快捷导入错误（展示导向：UI 直接展示 `errorDescription`）。
@@ -105,6 +126,7 @@ public final class AppModel: ObservableObject {
     @Published public var importIntoCurrentVillage = false
     @Published public private(set) var accountSnapshot: AccountSnapshot?
     @Published public private(set) var pendingAccountSnapshot: AccountSnapshot?
+    @Published public private(set) var pendingReconciliationPreview: ManualReconciliationPreview?
     @Published public private(set) var accountImportError: String?
     @Published public private(set) var snapshotHistoryError: String?
     /// Projection-safe per-village manual state. Imported snapshots remain
@@ -327,6 +349,7 @@ public final class AppModel: ObservableObject {
         selectedVillageID = initialVillages[0].id
         accountSnapshot = initialVillages[0].accountSnapshot
         pendingAccountSnapshot = nil
+        pendingReconciliationPreview = nil
         accountImportError = nil
         snapshotHistoryError = startupError
         manualTrackerError = manualStartupError
@@ -415,7 +438,8 @@ public final class AppModel: ObservableObject {
             stateUpdatedAt: now,
             lastSettleAt: previousState?.lastSettleAt,
             lastImportAt: previousState?.lastImportAt,
-            diagnostics: previousState?.diagnostics ?? []
+            diagnostics: previousState?.diagnostics ?? [],
+            reconciliationHistory: previousState?.reconciliationHistory ?? []
         )
         var candidate = currentEnvelope
         try candidate.upsert(state)
@@ -456,7 +480,8 @@ public final class AppModel: ObservableObject {
                     stateUpdatedAt: now,
                     lastSettleAt: now,
                     lastImportAt: previousState.lastImportAt,
-                    diagnostics: previousState.diagnostics
+                    diagnostics: previousState.diagnostics,
+                    reconciliationHistory: previousState.reconciliationHistory
                 )
                 try candidate.upsert(state)
                 settledCount += settled.count
@@ -883,15 +908,29 @@ public final class AppModel: ObservableObject {
             description = "导入目标：按当前详情页应用到「\(target.name)」，原官方数据将因 Tag 变化被重置"
         }
 
-        return .success(QuickImportPreview(
-            snapshot: snapshot,
-            targetVillageID: target.id,
-            targetVillageName: target.name,
-            targetVillageTag: target.tag,
-            targetVillageHasSnapshot: targetVillageHasSnapshot,
-            replacesSameTag: replacesSameTag,
-            destinationDescription: description
-        ))
+        do {
+            let reconciliationPreview = try prepareReconciliationPreview(
+                snapshot,
+                targetVillage: target,
+                appliedAt: Date()
+            )
+            return .success(QuickImportPreview(
+                snapshot: snapshot,
+                targetVillageID: target.id,
+                targetVillageName: target.name,
+                targetVillageTag: target.tag,
+                targetVillageHasSnapshot: targetVillageHasSnapshot,
+                replacesSameTag: replacesSameTag,
+                destinationDescription: description,
+                reconciliationPreview: reconciliationPreview
+            ))
+        } catch {
+            // A quick-import confirmation without a reconciliation preview
+            // cannot safely reach the fallback pending-snapshot action. Fail
+            // closed and keep the model unchanged so the caller can explain
+            // that history storage must be repaired first.
+            return .failure(.historyUnavailable(Self.localizedPersistenceError(error)))
+        }
     }
 
     /// 应用快捷导入：按 preview 固定的目标村庄写入快照。
@@ -911,7 +950,10 @@ public final class AppModel: ObservableObject {
     /// 目标村庄。详情页快捷入口不经过 pending 流程，UI 路径上这些重置不可达；
     /// 但本方法是 public API，调用方（尤其测试与未来调用点）需知晓。
     @discardableResult
-    public func applyQuickImport(_ preview: QuickImportPreview) -> Bool {
+    public func applyQuickImport(
+        _ preview: QuickImportPreview,
+        decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
+    ) -> Bool {
         snapshotHistoryError = nil
         guard let index = villages.firstIndex(where: { $0.id == preview.targetVillageID }) else {
             snapshotHistoryError = QuickImportError.targetVillageMissing.errorDescription
@@ -933,7 +975,9 @@ public final class AppModel: ObservableObject {
                 preview.snapshot,
                 targetVillage: villages[index],
                 candidateVillages: candidateVillages,
-                appliedAt: appliedAt
+                appliedAt: appliedAt,
+                expectedPreview: preview.reconciliationPreview,
+                reconciliationDecision: reconciliationDecision
             )
         } catch {
             snapshotHistoryError = Self.localizedPersistenceError(error)
@@ -950,15 +994,25 @@ public final class AppModel: ObservableObject {
     public func parseAccountText() {
         accountImportError = nil
         pendingAccountSnapshot = nil
+        pendingReconciliationPreview = nil
 
         do {
             let snapshot = try AccountSnapshotImporter.parse(importText)
             pendingAccountSnapshot = snapshot
-            if case .ambiguous(let tag, let villageNames) = pendingSnapshotTarget(for: snapshot) {
+            switch pendingSnapshotTarget(for: snapshot) {
+            case .ambiguous(let tag, let villageNames):
                 accountImportError = Self.ambiguousImportTargetMessage(
                     tag: tag,
                     villageNames: villageNames
                 )
+            case .existing(let index):
+                pendingReconciliationPreview = try prepareReconciliationPreview(
+                    snapshot,
+                    targetVillage: villages[index],
+                    appliedAt: Date()
+                )
+            case .create:
+                pendingReconciliationPreview = nil
             }
         } catch {
             accountImportError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -1004,7 +1058,9 @@ public final class AppModel: ObservableObject {
     }
 
     @discardableResult
-    public func applyPendingAccountSnapshot() -> Bool {
+    public func applyPendingAccountSnapshot(
+        decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
+    ) -> Bool {
         guard let snapshot = pendingAccountSnapshot else { return false }
 
         let targetIndex: Int
@@ -1065,7 +1121,9 @@ public final class AppModel: ObservableObject {
                 targetVillage: existingTarget,
                 candidateVillages: candidateVillages,
                 appliedAt: appliedAt,
-                manualEnvelope: manualEnvelopeForCreate
+                manualEnvelope: manualEnvelopeForCreate,
+                expectedPreview: pendingReconciliationPreview,
+                reconciliationDecision: reconciliationDecision
             )
         } catch {
             accountImportError = Self.localizedPersistenceError(error)
@@ -1082,12 +1140,14 @@ public final class AppModel: ObservableObject {
 
     public func discardPendingAccountSnapshot() {
         pendingAccountSnapshot = nil
+        pendingReconciliationPreview = nil
         accountImportError = nil
     }
 
     public func clearAccountSnapshot() {
         accountSnapshot = nil
         pendingAccountSnapshot = nil
+        pendingReconciliationPreview = nil
         accountImportError = nil
         importText = ""
         // 清除本地快照后官方数据（原账号）不再适用于本村庄，一并重置。
@@ -1877,6 +1937,7 @@ public final class AppModel: ObservableObject {
         self.importText = importText ?? village.accountSnapshot?.originalText ?? ""
         importIntoCurrentVillage = false
         pendingAccountSnapshot = nil
+        pendingReconciliationPreview = nil
         accountImportError = nil
     }
 
@@ -2044,7 +2105,9 @@ public final class AppModel: ObservableObject {
         targetVillage: VillageProfile,
         candidateVillages: [VillageProfile],
         appliedAt: Date,
-        manualEnvelope: ManualTrackerEnvelope? = nil
+        manualEnvelope: ManualTrackerEnvelope? = nil,
+        expectedPreview: ManualReconciliationPreview? = nil,
+        reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
     ) throws {
         guard let historyEnvelope else {
             throw SnapshotHistoryServiceError.historyUnavailable(
@@ -2052,7 +2115,11 @@ public final class AppModel: ObservableObject {
             )
         }
 
-        let decision = try historyService.planImport(
+        let previousEntry = activeHistoryEntry(
+            for: targetVillage.id,
+            in: historyEnvelope
+        )
+        let historyDecision = try historyService.planImport(
             snapshot: snapshot,
             villageID: targetVillage.id,
             currentTag: targetVillage.tag,
@@ -2062,18 +2129,73 @@ public final class AppModel: ObservableObject {
             catalog: gameCatalog,
             craftTableCatalog: craftTableCatalog
         )
+        guard var candidateManualEnvelope = manualEnvelope ?? manualTrackerEnvelope else {
+            throw ManualTrackerStoreError.unavailable("导入前未找到可用的手动升级状态。")
+        }
+        let currentManualState = candidateManualEnvelope.state(for: targetVillage.id)
+            ?? ManualTrackerVillageState.empty(villageID: targetVillage.id, now: appliedAt)
+        let reconciliationPlan = try ManualTrackerReconciliationService.reconcile(
+            villageID: targetVillage.id,
+            previousEntry: previousEntry,
+            historyDecision: historyDecision,
+            currentState: currentManualState,
+            expectedPreview: expectedPreview,
+            decision: reconciliationDecision,
+            appliedAt: appliedAt
+        )
+        try candidateManualEnvelope.upsert(reconciliationPlan.state)
         let currentData = try JSONEncoder().encode(candidateVillages)
         try importTransaction.commit(
             currentData: currentData,
-            envelope: decision.envelope,
-            manualEnvelope: manualEnvelope
+            envelope: historyDecision.envelope,
+            manualEnvelope: candidateManualEnvelope
         )
         villages = candidateVillages
-        self.historyEnvelope = decision.envelope
+        self.historyEnvelope = historyDecision.envelope
         historyProjectionCache.removeAll()
-        if let manualEnvelope {
-            installManualTrackerEnvelope(manualEnvelope)
+        installManualTrackerEnvelope(candidateManualEnvelope)
+    }
+
+    private func prepareReconciliationPreview(
+        _ snapshot: AccountSnapshot,
+        targetVillage: VillageProfile,
+        appliedAt: Date
+    ) throws -> ManualReconciliationPreview {
+        guard let historyEnvelope else {
+            throw SnapshotHistoryServiceError.historyUnavailable(
+                snapshotHistoryError ?? "历史存储尚未可用。"
+            )
         }
+        guard let manualTrackerEnvelope,
+              let currentState = manualTrackerEnvelope.state(for: targetVillage.id) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄的手动升级状态尚未可用。")
+        }
+        let previousEntry = activeHistoryEntry(for: targetVillage.id, in: historyEnvelope)
+        let historyDecision = try historyService.planImport(
+            snapshot: snapshot,
+            villageID: targetVillage.id,
+            currentTag: targetVillage.tag,
+            hasCurrentSnapshot: targetVillage.accountSnapshot != nil,
+            envelope: historyEnvelope,
+            appliedAt: appliedAt,
+            catalog: gameCatalog,
+            craftTableCatalog: craftTableCatalog
+        )
+        return try ManualTrackerReconciliationService.preview(
+            villageID: targetVillage.id,
+            previousEntry: previousEntry,
+            decision: historyDecision,
+            currentState: currentState,
+            appliedAt: appliedAt
+        )
+    }
+
+    private func activeHistoryEntry(
+        for villageID: UUID,
+        in envelope: SnapshotHistoryEnvelope
+    ) -> SnapshotHistoryEntry? {
+        guard let lineage = envelope.activeLineage(for: villageID) else { return nil }
+        return envelope.entry(id: lineage.lastEntryID)
     }
 
     private func persistVillages() {

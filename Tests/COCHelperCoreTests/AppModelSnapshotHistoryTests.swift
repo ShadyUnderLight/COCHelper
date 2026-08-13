@@ -208,11 +208,9 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         )
         let beforeCurrent = defaults.data(forKey: "coc-helper.villages.v1")
 
-        guard case .success(let preview) = model.prepareQuickImport(for: model.villages[0].id) else {
-            return XCTFail("有效快照应能生成快捷导入预览")
+        guard case .failure(.historyUnavailable) = model.prepareQuickImport(for: model.villages[0].id) else {
+            return XCTFail("历史读取失败时快捷导入不得生成没有对账预览的确认页")
         }
-        XCTAssertFalse(model.applyQuickImport(preview))
-        XCTAssertNotNil(model.snapshotHistoryError)
         guard case .unavailable = model.snapshotHistoryProjection(for: model.villages[0].id).availability else {
             return XCTFail("历史读取失败必须映射为不可用，而不是空历史。")
         }
@@ -244,10 +242,9 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         guard case .corrupt = model.snapshotHistoryProjection(for: model.villages[0].id).availability else {
             return XCTFail("损坏事务记录必须映射为 corrupt 历史状态。")
         }
-        guard case .success(let preview) = model.prepareQuickImport(for: model.villages[0].id) else {
-            return XCTFail("有效快照应能生成快捷导入预览")
+        guard case .failure(.historyUnavailable) = model.prepareQuickImport(for: model.villages[0].id) else {
+            return XCTFail("事务日志损坏时快捷导入不得生成没有对账预览的确认页")
         }
-        XCTAssertFalse(model.applyQuickImport(preview))
         XCTAssertEqual(defaults.data(forKey: "coc-helper.villages.v1"), beforeCurrent)
         XCTAssertEqual(try Data(contentsOf: journalURL), corrupt)
     }

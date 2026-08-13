@@ -68,13 +68,14 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
     public let core: ManualUpgradeCore
     public var stateUpdatedAt: Date
     public var lastSettleAt: Date?
-    /// Reserved for the import/reconcile slice.  #142 records the metadata
-    /// without letting snapshot imports rewrite manual state.
+    /// Local time of the last successfully applied snapshot reconciliation;
+    /// never treated as the source snapshot's game time.
     public var lastImportAt: Date?
     public var diagnostics: [ManualTrackerDiagnostic]
+    public var reconciliationHistory: [ManualReconciliationRecord]
 
-    /// The source snapshot reference that established this village's manual
-    /// baseline. It is metadata only; re-import/reconcile remains #143.
+    /// The source snapshot reference currently used by the manual ledger.
+    /// Reconciliation outcomes remain separately auditable in history.
     public var baselineRevision: String? { baselineReference?.revision }
     public var baselineFingerprint: String? { baselineReference?.fingerprint }
 
@@ -84,7 +85,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         stateUpdatedAt: Date = Date(),
         lastSettleAt: Date? = nil,
         lastImportAt: Date? = nil,
-        diagnostics: [ManualTrackerDiagnostic] = []
+        diagnostics: [ManualTrackerDiagnostic] = [],
+        reconciliationHistory: [ManualReconciliationRecord] = []
     ) throws {
         guard stateUpdatedAt.timeIntervalSinceReferenceDate.isFinite else {
             throw ManualTrackerStoreError.invalidEnvelope("stateUpdatedAt 无效。")
@@ -101,6 +103,18 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
             $0.recordedAt.timeIntervalSinceReferenceDate.isFinite
         }) else {
             throw ManualTrackerStoreError.invalidEnvelope("村庄诊断时间无效。")
+        }
+        guard reconciliationHistory.allSatisfy({
+            $0.appliedAt.timeIntervalSinceReferenceDate.isFinite
+                && ($0.sourceTimestamp?.timeIntervalSinceReferenceDate.isFinite ?? true)
+                && $0.newReference.isStructurallyValid
+                && ($0.previousReference?.isStructurallyValid ?? true)
+        }) else {
+            throw ManualTrackerStoreError.invalidEnvelope("对账历史无效。")
+        }
+        guard Set(reconciliationHistory.map(\.reconciliationID)).count
+                == reconciliationHistory.count else {
+            throw ManualTrackerStoreError.invalidEnvelope("存在重复的 reconciliationID。")
         }
 
         let references = Set(
@@ -126,6 +140,7 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         self.lastSettleAt = lastSettleAt
         self.lastImportAt = lastImportAt
         self.diagnostics = diagnostics
+        self.reconciliationHistory = reconciliationHistory
     }
 
     public init(from decoder: Decoder) throws {
@@ -149,6 +164,10 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
             diagnostics: try container.decodeIfPresent(
                 [ManualTrackerDiagnostic].self,
                 forKey: .diagnostics
+            ) ?? [],
+            reconciliationHistory: try container.decodeIfPresent(
+                [ManualReconciliationRecord].self,
+                forKey: .reconciliationHistory
             ) ?? []
         )
         guard self.baselineReference == decodedBaseline else {
@@ -163,7 +182,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         stateUpdatedAt: Date = Date(),
         lastSettleAt: Date? = nil,
         lastImportAt: Date? = nil,
-        diagnostics: [ManualTrackerDiagnostic] = []
+        diagnostics: [ManualTrackerDiagnostic] = [],
+        reconciliationHistory: [ManualReconciliationRecord] = []
     ) throws {
         try self.init(
             villageID: villageID,
@@ -171,7 +191,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
             stateUpdatedAt: stateUpdatedAt,
             lastSettleAt: lastSettleAt,
             lastImportAt: lastImportAt,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            reconciliationHistory: reconciliationHistory
         )
     }
 
@@ -191,6 +212,7 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         case lastSettleAt
         case lastImportAt
         case diagnostics
+        case reconciliationHistory
     }
 }
 

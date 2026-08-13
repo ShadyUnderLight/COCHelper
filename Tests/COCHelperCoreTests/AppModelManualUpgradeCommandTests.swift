@@ -819,6 +819,28 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         return (model, villageID, recordID)
     }
 
+    /// 拒绝路径的持久化不变量（Issue #170 验收）：
+    /// store 原始 bytes、core、stateUpdatedAt、lastSettleAt 全部不变。
+    private func assertPersistedStateUnchanged(
+        store: FileManualTrackerStore,
+        villageID: UUID,
+        rawDataBefore: Data?,
+        stateBefore: ManualTrackerVillageState,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        XCTAssertEqual(
+            try store.readRawData(), rawDataBefore,
+            "manual store 原始 bytes 不得被改写", file: file, line: line
+        )
+        let after = try XCTUnwrap(
+            try store.load()?.state(for: villageID), file: file, line: line
+        )
+        XCTAssertEqual(after.core, stateBefore.core, file: file, line: line)
+        XCTAssertEqual(after.stateUpdatedAt, stateBefore.stateUpdatedAt, file: file, line: line)
+        XCTAssertEqual(after.lastSettleAt, stateBefore.lastSettleAt, file: file, line: line)
+    }
+
     @MainActor
     func testStartRejectedWhenBaselineUnreconciled() throws {
         let (model, villageID, recordID) = try makeUnreconciledModel(
@@ -829,6 +851,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertEqual(projected.itemStates.first?.status, .unknown)
 
         let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let rawDataBefore = try store.readRawData()
+        let stateBefore = try XCTUnwrap(try store.load()?.state(for: villageID))
         let village = try XCTUnwrap(model.villages.first)
         let projection = VillageCatalogProjection.project(
             village: village,
@@ -861,7 +885,14 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 error as? ManualUpgradeCommandError, .unreconciledSnapshot
             )
         }
-        // 不落盘新 record。
+        // 不落盘新 record：store 原始 bytes / core / stateUpdatedAt /
+        // lastSettleAt 全部不变。
+        try assertPersistedStateUnchanged(
+            store: store,
+            villageID: villageID,
+            rawDataBefore: rawDataBefore,
+            stateBefore: stateBefore
+        )
         let after = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
         XCTAssertEqual(after, core)
         XCTAssertNil(after.records.first { $0.recordID != recordID })
@@ -874,6 +905,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             coreBuilder: { try makeBoundCore(baselineReference: $0, recordID: $1) }
         )
         let before = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let rawDataBefore = try store.readRawData()
+        let stateBefore = try XCTUnwrap(try store.load()?.state(for: villageID))
         XCTAssertThrowsError(
             try model.cancelManualUpgrade(for: villageID, recordID: recordID)
         ) { error in
@@ -881,6 +914,13 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 error as? ManualUpgradeCommandError, .unreconciledSnapshot
             )
         }
+        // 旧 record bytes / stateUpdatedAt / lastSettleAt 均不变。
+        try assertPersistedStateUnchanged(
+            store: store,
+            villageID: villageID,
+            rawDataBefore: rawDataBefore,
+            stateBefore: stateBefore
+        )
         let after = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
         XCTAssertEqual(after, before)
         let record = try XCTUnwrap(after.records.first { $0.recordID == recordID })
@@ -893,6 +933,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             coreBuilder: { try makeBoundCore(baselineReference: $0, recordID: $1) }
         )
         let before = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let rawDataBefore = try store.readRawData()
+        let stateBefore = try XCTUnwrap(try store.load()?.state(for: villageID))
         let old = try XCTUnwrap(before.records.first { $0.recordID == recordID })
         XCTAssertThrowsError(
             try model.adjustManualUpgradeStart(
@@ -906,6 +948,13 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 error as? ManualUpgradeCommandError, .unreconciledSnapshot
             )
         }
+        // 旧 record bytes / stateUpdatedAt / lastSettleAt 均不变。
+        try assertPersistedStateUnchanged(
+            store: store,
+            villageID: villageID,
+            rawDataBefore: rawDataBefore,
+            stateBefore: stateBefore
+        )
         let after = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
         XCTAssertEqual(after, before)
         let record = try XCTUnwrap(after.records.first { $0.recordID == recordID })
@@ -918,14 +967,21 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         let (model, villageID, recordID) = try makeUnreconciledModel(
             coreBuilder: { try makeBoundCore(baselineReference: $0, recordID: $1) }
         )
+        let rawDataBefore = try store.readRawData()
+        let stateBefore = try XCTUnwrap(try store.load()?.state(for: villageID))
         let dueAt = Date(timeIntervalSinceNow: 4_000)
         let settled = model.settleManualUpgrades(at: dueAt)
         XCTAssertEqual(settled, 0)
         let state = try XCTUnwrap(try store.load()?.state(for: villageID))
         let record = try XCTUnwrap(state.core.records.first { $0.recordID == recordID })
         XCTAssertEqual(record.status, .active, "未对账村庄的 due record 不得被自动结算")
-        // core / stateUpdatedAt / lastSettleAt 均不得被改写。
-        XCTAssertEqual(state.core, try model.manualUpgradeCore(for: villageID))
+        // store 原始 bytes / core / stateUpdatedAt / lastSettleAt 均不得被改写。
+        try assertPersistedStateUnchanged(
+            store: store,
+            villageID: villageID,
+            rawDataBefore: rawDataBefore,
+            stateBefore: stateBefore
+        )
     }
 
     @MainActor

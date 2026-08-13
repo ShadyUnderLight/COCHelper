@@ -26,6 +26,9 @@ struct BuildingGroupCard: View {
     let group: BuildingGroup
     let onOpenDetail: (BuildingInstance) -> Void
     let now: Date
+    /// Issue #144：组级 Start 动作（v1 每次 quantity = 1）。
+    var startActions: [UpgradeAction] = []
+    var onStart: ((UpgradeAction) -> Void)? = nil
 
     /// 实例区：每条记录一个实例块（头部行 + 内嵌阶梯），实例块间分隔线。
     /// `BuildingInstance` 是 Identifiable（id = 原始快照记录 ID，组内唯一），
@@ -155,10 +158,53 @@ struct BuildingGroupCard: View {
 
     var body: some View {
         Panel {
-            HStack(alignment: .top, spacing: 18) {
-                BuildingGroupSummaryView(group: group)
-                instanceList
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 18) {
+                    BuildingGroupSummaryView(group: group)
+                    instanceList
+                }
+                if !startActions.isEmpty {
+                    Divider()
+                    actionRow
+                }
             }
         }
+    }
+
+    /// Issue #144：组级动作行（聚合 action，v1 一次启动一个实例）。
+    private var actionRow: some View {
+        HStack(spacing: 8) {
+            Text("本地升级")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ForEach(startActions, id: \.id) { action in
+                if action.isStartable {
+                    Button("开始升级 " + Self.levelLabel(action)) {
+                        onStart?(action)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel("开始升级 " + group.name + " " + Self.levelLabel(action))
+                } else {
+                    Button("开始升级 " + Self.levelLabel(action)) {}
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(true)
+                        .help(action.disabledReason ?? "不可启动")
+                }
+            }
+            let diagnostics = group.trackerState.diagnostics
+            if !diagnostics.isEmpty {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help(diagnostics.joined(separator: "\n"))
+            }
+            Spacer()
+        }
+    }
+
+    private static func levelLabel(_ action: UpgradeAction) -> String {
+        guard let from = action.fromLevel, let target = action.targetLevel else { return "" }
+        return "\(from) → \(target)"
     }
 }

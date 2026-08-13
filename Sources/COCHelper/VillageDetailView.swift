@@ -19,6 +19,11 @@ struct VillageDetailView: View {
     @State private var selectedFilter: CategoryFilter = .all
     @State private var selectedHistoryCategory: SnapshotHistoryCategory = .all
     @State private var selectedItem: VillageItemState?
+    // Issue #144：搜索 / 状态筛选 / 排序（纯投影消费，不重跑解析）。
+    @State private var searchText = ""
+    @State private var stateFilter: UpgradeDisplayStateFilter?
+    @State private var sortOrder: UpgradeDisplaySort = .categoryName
+    @State private var actionSheet: ManualUpgradeActionSheet?
     // Issue #61：快捷「粘贴并更新」的确认 sheet 与失败提示载体。
     // prepareQuickImport 是纯函数（不写状态），结果分派到这两个载体之一。
     @State private var quickImportPreview: QuickImportPreview?
@@ -49,6 +54,14 @@ struct VillageDetailView: View {
         .background(Color.cocBackground)
         .sheet(item: $selectedItem) { item in
             LevelDetailSheet(item: item, catalog: catalog)
+        }
+        // Issue #144：手动升级动作确认面板。
+        .sheet(item: $actionSheet) { sheet in
+            ManualUpgradeActionSheetView(
+                sheet: sheet,
+                villageID: villageID,
+                onDone: { actionSheet = nil }
+            )
         }
         // Issue #61：快捷「粘贴并更新」预览确认 sheet（复用账号数据页的
         // AccountSnapshotSummaryView，经注入参数展示快捷导入的目标与文案）。
@@ -119,11 +132,21 @@ struct VillageDetailView: View {
         // 宇宙差集 .available，保持 UI 只显示快照中存在的项目）；三指标
         // 消费「含宇宙差集」数组（完整分母/完整覆盖率）。
         let displayItems = trackedItems.filter { $0.status != .available }
-        let groups = VillageDetailProjection.groups(from: displayItems)
+        // Issue #144：search/state/sort 纯投影筛选（不重跑解析/reconcile）。
+        let filteredDisplayItems = UpgradeActionProjection.filtered(
+            displayItems,
+            filter: UpgradeDisplayFilter(
+                state: stateFilter,
+                text: searchText,
+                sort: sortOrder
+            ),
+            at: now
+        )
+        let groups = VillageDetailProjection.groups(from: filteredDisplayItems)
         // 目录不可用或版本不匹配时（projection.catalogIsUsable == false）：
         // issue #16「不纳入可确认完成度」——完成度全部归未知，不显示百分比。
         let total = VillageDetailProjection.totalCompletion(
-            from: displayItems,
+            from: filteredDisplayItems,
             catalogIsUsable: projection.catalogIsUsable
         )
         // Issue #70：三指标（当前阶段进度 / 全局养成进度 / 观测数据完整性）。
@@ -135,7 +158,7 @@ struct VillageDetailView: View {
         let progressMetrics = projection.progressMetrics
         let statsByKey = Dictionary(
             uniqueKeysWithValues: VillageDetailProjection.completionStats(
-                from: displayItems,
+                from: filteredDisplayItems,
                 catalogIsUsable: projection.catalogIsUsable
             )
                 .map { ($0.id, $0) }
@@ -171,6 +194,23 @@ struct VillageDetailView: View {
             category: selectedHistoryCategory,
             at: now
         )
+        // Issue #144：行级 canonical action（嵌套项/Craft Table 只读 → 无 action）。
+        let actionsByItemID = Dictionary(
+            uniqueKeysWithValues: filteredDisplayItems.compactMap { item -> (String, UpgradeAction)? in
+                guard let action = UpgradeActionProjection.action(
+                    for: item,
+                    catalog: catalog,
+                    catalogIsUsable: projection.catalogIsUsable,
+                    manualUpgradeCore: manualUpgradeCore,
+                    coverage: UpgradeActionProjection.coverage(
+                        for: item,
+                        progressCoverage: projection.progressCoverage
+                    ),
+                    now: now
+                ) else { return nil }
+                return (item.id, action)
+            }
+        )
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -183,6 +223,7 @@ struct VillageDetailView: View {
                 metricsBar(metrics: progressMetrics, coverage: projection.progressCoverage)
                 basePicker()
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
+                manualUpgradeFilterBar()
 
                 if displayGroups.isEmpty {
                     Panel {
@@ -204,7 +245,8 @@ struct VillageDetailView: View {
                             village: village,
                             groupByInstanceID: groupByInstanceID,
                             craftTable: craftTable,
-                            metrics: progressMetrics
+                            metrics: progressMetrics,
+                            actionsByItemID: actionsByItemID
                         )
                     }
                 }
@@ -644,7 +686,8 @@ struct VillageDetailView: View {
         village: VillageProfile,
         groupByInstanceID: [String: BuildingGroup],
         craftTable: [CraftTableDefenseState],
-        metrics: VillageProgressMetrics
+        metrics: VillageProgressMetrics,
+        actionsByItemID: [String: UpgradeAction]
     ) -> some View {
         Panel {
             VStack(alignment: .leading, spacing: 10) {
@@ -670,7 +713,8 @@ struct VillageDetailView: View {
                         groupByInstanceID: groupByInstanceID,
                         now: now,
                         village: village,
-                        metrics: metrics
+                        metrics: metrics,
+                        actionsByItemID: actionsByItemID
                     )
                 }
             }
@@ -681,12 +725,17 @@ struct VillageDetailView: View {
     /// 触发 Swift 编译器类型检查超时。`village` 已由 detailContent 解包后传入，
     /// 直接取 `.name`/`.tag`（不经 Optional 计算属性，避免与 SwiftUI
     /// `Optional.tag(_:)` modifier 歧义）。
+    ///
+    /// Issue #144：有 action 或 active manual 记录的行渲染动作按钮（Start /
+    /// Cancel / Adjust），行主体用 onTapGesture 打开详情（按钮优先消费点击）；
+    /// 无动作的行保持原 Button 语义。嵌套项/Craft Table 无 action → 只读。
     private func itemRow(
         _ item: VillageItemState,
         group: VillageDetailGroup,
         now: Date,
         village: VillageProfile,
         metrics: VillageProgressMetrics,
+        actionsByItemID: [String: UpgradeAction],
         indented: Bool = false
     ) -> some View {
         let rowID = villageID.uuidString + ":" + selectedBase.rawValue + ":" + item.id
@@ -700,19 +749,123 @@ struct VillageDetailView: View {
             catalogVersion: catalog?.gameVersion,
             villageMetrics: metrics
         )
-        return Button {
-            selectedItem = item
-        } label: {
-            UpgradeDisplayRow(
-                record: record,
-                now: now,
-                showsVillageColumn: false
-            )
-            // 嵌套项缩进展示在根父行下（issue #24「类型/模块」区域）。
+        let action = actionsByItemID[item.id]
+        let activeRecords = item.effectiveState?.activeManualRecords ?? []
+        let rowContent = UpgradeDisplayRow(
+            record: record,
+            now: now,
+            showsVillageColumn: false
+        )
+        // 嵌套项缩进展示在根父行下（issue #24「类型/模块」区域）。
+        let indentedRow = rowContent
             .padding(.leading, indented ? UpgradeDisplayLayout.nestedIndent : 0)
+
+        if action == nil && activeRecords.isEmpty {
+            return AnyView(Button {
+                selectedItem = item
+            } label: {
+                indentedRow
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle()))
         }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
+        return AnyView(HStack(spacing: 10) {
+            indentedRow
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedItem = item
+                }
+            rowActions(action: action, activeRecords: activeRecords)
+        })
+    }
+
+    /// Issue #144：行内动作按钮（Start / Cancel / Adjust）。
+    @ViewBuilder
+    private func rowActions(
+        action: UpgradeAction?,
+        activeRecords: [ManualUpgradeRecord]
+    ) -> some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            if let action {
+                if action.isStartable {
+                    Button("开始升级") {
+                        actionSheet = .start(action)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel("开始升级 " + action.itemName)
+                } else {
+                    Button("开始升级") {}
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(true)
+                        .help(action.disabledReason ?? "不可启动")
+                        .accessibilityLabel("开始升级不可用：" + (action.disabledReason ?? ""))
+                }
+            }
+            if let record = activeRecords.first {
+                HStack(spacing: 6) {
+                    Button("取消") {
+                        actionSheet = .cancel(record)
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .accessibilityLabel("取消升级 " + record.itemKey.stableID)
+                    Button("调整时间") {
+                        actionSheet = .adjust(record)
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .accessibilityLabel("调整开始时间 " + record.itemKey.stableID)
+                }
+            }
+        }
+    }
+
+    /// Issue #144：搜索 / 状态筛选 / 排序（纯投影消费，View 不重跑解析）。
+    private func manualUpgradeFilterBar() -> some View {
+        HStack(spacing: 10) {
+            TextField("搜索名称 / dataID", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 220)
+            Picker("状态", selection: $stateFilter) {
+                Text("全部状态").tag(UpgradeDisplayStateFilter?.none)
+                ForEach(UpgradeDisplayStateFilter.allCases, id: \.self) { state in
+                    Text(Self.stateFilterTitle(state)).tag(Optional(state))
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 140)
+            Picker("排序", selection: $sortOrder) {
+                ForEach(UpgradeDisplaySort.allCases, id: \.self) { sort in
+                    Text(Self.sortTitle(sort)).tag(sort)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 140)
+            Spacer()
+        }
+    }
+
+    private static func stateFilterTitle(_ state: UpgradeDisplayStateFilter) -> String {
+        switch state {
+        case .available: "可升级"
+        case .manualActive: "本地升级中"
+        case .importedActive: "导入升级中"
+        case .completed: "已完成"
+        case .needsReimport: "待重新导入"
+        case .unknown: "未知/冲突"
+        }
+    }
+
+    private static func sortTitle(_ sort: UpgradeDisplaySort) -> String {
+        switch sort {
+        case .remaining: "剩余时间"
+        case .categoryName: "分类/名称"
+        case .level: "等级"
+        case .stageMax: "阶段上限"
+        case .recentlyChanged: "最近变更"
+        }
     }
 
     /// Issue #45：非精制台分组的组卡内容。有组归属的 items 按 BuildingGroup 聚类
@@ -726,7 +879,8 @@ struct VillageDetailView: View {
         groupByInstanceID: [String: BuildingGroup],
         now: Date,
         village: VillageProfile,
-        metrics: VillageProgressMetrics
+        metrics: VillageProgressMetrics,
+        actionsByItemID: [String: UpgradeAction]
     ) -> some View {
         var orderedGroups: [BuildingGroup] = []
         var seenGroupIDs = Set<String>()
@@ -747,11 +901,17 @@ struct VillageDetailView: View {
                 BuildingGroupCard(
                     group: buildingGroup,
                     onOpenDetail: { instance in selectedItem = instance.item },
-                    now: now
+                    now: now,
+                    startActions: UpgradeActionProjection.actions(for: buildingGroup, catalog: catalog),
+                    onStart: { action in actionSheet = .start(action) }
                 )
             }
             if !fallbackItems.isEmpty {
-                legacyRows(items: fallbackItems, group: group, now: now, village: village, metrics: metrics)
+                legacyRows(
+                    items: fallbackItems, group: group, now: now,
+                    village: village, metrics: metrics,
+                    actionsByItemID: actionsByItemID
+                )
             }
         }
     }
@@ -762,17 +922,18 @@ struct VillageDetailView: View {
         group: VillageDetailGroup,
         now: Date,
         village: VillageProfile,
-        metrics: VillageProgressMetrics
+        metrics: VillageProgressMetrics,
+        actionsByItemID: [String: UpgradeAction]
     ) -> some View {
         LazyVStack(spacing: 0) {
             // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
             // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
             let rows = VillageDetailProjection.parentedRows(from: items)
             ForEach(rows) { row in
-                itemRow(row.item, group: group, now: now, village: village, metrics: metrics)
+                itemRow(row.item, group: group, now: now, village: village, metrics: metrics, actionsByItemID: actionsByItemID)
                 ForEach(row.children) { child in
                     Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
-                    itemRow(child, group: group, now: now, village: village, metrics: metrics, indented: true)
+                    itemRow(child, group: group, now: now, village: village, metrics: metrics, actionsByItemID: actionsByItemID, indented: true)
                 }
                 if row.id != rows.last?.id {
                     Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)

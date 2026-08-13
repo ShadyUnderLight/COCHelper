@@ -1420,6 +1420,27 @@ public struct SnapshotHistoryStatisticsWindow: Codable, Hashable, Sendable {
     public let heroEquipmentLevelGrowth: SnapshotStatisticValue
     public let aggregateInferredEventCount: SnapshotStatisticValue
 
+    /// Confirmed wall growth is the safe remainder after removing the
+    /// aggregate-inferred subset from the total wall growth.  Keep this
+    /// derivation in Core so the UI never invents evidence partitions.
+    public var confirmedWallLevelGrowth: SnapshotStatisticValue {
+        guard wallLevelGrowth.state == .available,
+              aggregateInferredWallLevelGrowth.state == .available,
+              let total = wallLevelGrowth.value,
+              let inferred = aggregateInferredWallLevelGrowth.value else {
+            let reasons = [wallLevelGrowth.reason, aggregateInferredWallLevelGrowth.reason]
+                .compactMap { $0 }
+            return .insufficientData(
+                reasons.first ?? "城墙总增长或聚合推断增长数据不足，无法拆分已确认部分。"
+            )
+        }
+        let (confirmed, overflow) = total.subtractingReportingOverflow(inferred)
+        guard !overflow, confirmed >= 0 else {
+            return .insufficientData("城墙增长证据分区不一致，无法安全拆分。")
+        }
+        return .available(confirmed)
+    }
+
     fileprivate init(
         start: Date,
         end: Date,

@@ -73,6 +73,10 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         let firstEnvelope = try XCTUnwrap(historyStore.load())
         XCTAssertEqual(firstEnvelope.entries.count, 1)
         XCTAssertEqual(firstEnvelope.entries[0].rawJSON, raw)
+        let baselineProjection = model.snapshotHistoryProjection(for: targetID)
+        XCTAssertEqual(baselineProjection.availability, .baselineOnly)
+        XCTAssertEqual(baselineProjection.timeline.count, 1)
+        XCTAssertTrue(baselineProjection.timeline[0].isBaseline)
 
         guard case .success(let secondPreview) = model.prepareQuickImport(for: targetID) else {
             return XCTFail("重复导入仍应能生成快捷导入预览")
@@ -82,6 +86,11 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         XCTAssertEqual(secondEnvelope.entries.count, 1)
         XCTAssertEqual(secondEnvelope.duplicateMetadata.count, 1)
         XCTAssertEqual(secondEnvelope.duplicateMetadata.values.first?.duplicateImportCount, 1)
+        let duplicateProjection = model.snapshotHistoryProjection(for: targetID)
+        XCTAssertEqual(duplicateProjection.totalSnapshotCount, 1)
+        XCTAssertEqual(duplicateProjection.timeline.count, 1)
+        XCTAssertEqual(duplicateProjection.timeline[0].duplicateImportCount, 1)
+        XCTAssertNotNil(duplicateProjection.latestCheckedAt)
     }
 
     @MainActor
@@ -204,6 +213,9 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         }
         XCTAssertFalse(model.applyQuickImport(preview))
         XCTAssertNotNil(model.snapshotHistoryError)
+        guard case .unavailable = model.snapshotHistoryProjection(for: model.villages[0].id).availability else {
+            return XCTFail("历史读取失败必须映射为不可用，而不是空历史。")
+        }
         XCTAssertNil(model.villages[0].accountSnapshot)
         XCTAssertEqual(defaults.data(forKey: "coc-helper.villages.v1"), beforeCurrent)
     }
@@ -229,6 +241,9 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         let beforeCurrent = defaults.data(forKey: "coc-helper.villages.v1")
 
         XCTAssertNotNil(model.snapshotHistoryError)
+        guard case .corrupt = model.snapshotHistoryProjection(for: model.villages[0].id).availability else {
+            return XCTFail("损坏事务记录必须映射为 corrupt 历史状态。")
+        }
         guard case .success(let preview) = model.prepareQuickImport(for: model.villages[0].id) else {
             return XCTFail("有效快照应能生成快捷导入预览")
         }

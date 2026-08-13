@@ -206,4 +206,43 @@ final class SnapshotCoverageSourceTests: XCTestCase {
             XCTAssertTrue(proof.isAuthoritative, "合法语义版本 \(version) 应为 authoritative")
         }
     }
+
+    func testBlankSourceAndOverSegmentedVersionFailsClosed() throws {
+        // 复审 P2:source 纯空白无审计价值、version 超出 1–3 段语义版本
+        // 惯例(主.次.补丁)或含非 ASCII 数字,一律 fail-closed。
+        let invalid: [(source: String, version: String)] = [
+            ("   ", "1"),
+            ("\n\t", "1"),
+            ("u.coc", "1.2.3.4"),
+            ("u.coc", "1.2.3.4.5"),
+            ("u.coc", "１"),       // 全角数字不是 ASCII 数字
+            ("u.coc", "1.２.3")
+        ]
+        for case (let source, let version) in invalid {
+            let proof = SnapshotCoverageProof.authoritative(
+                source: source,
+                version: version,
+                expectedCount: 1
+            )
+            XCTAssertFalse(
+                proof.isAuthoritative,
+                "source=\(source.debugDescription) version=\(version.debugDescription) 不得为 authoritative"
+            )
+        }
+
+        let valid: [(source: String, version: String)] = [
+            ("u.coc", "1"),
+            ("u.coc", "1.2"),
+            ("u.coc", "1.2.3"),
+            ("official-api", "2026.08.13")
+        ]
+        for case (let source, let version) in valid {
+            let proof = SnapshotCoverageProof.authoritative(
+                source: source,
+                version: version,
+                expectedCount: 1
+            )
+            XCTAssertTrue(proof.isAuthoritative, "合法 source/version 应为 authoritative")
+        }
+    }
 }

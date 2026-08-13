@@ -251,19 +251,27 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
         guard case .authoritative(let source, let version, let expectedCount) = self else {
             return false
         }
-        guard !source.isEmpty, Self.isParsableProtocolVersion(version) else {
+        guard Self.isNonBlankSource(source), Self.isParsableProtocolVersion(version) else {
             return false
         }
         return expectedCount == nil || expectedCount! >= 0
     }
 
-    /// 协议版本必须是数字点分语义版本("1"、"1.2"、"1.2.3")。
-    /// 不可解析的版本(""、"unrecognized"、"v1"、"1.2-beta")按不可信
-    /// 处理——Issue #173 fail-closed:source version 不可信 → unavailable。
+    /// source 必须含非空白字符——纯空白来源没有可审计的标识价值。
+    private static func isNonBlankSource(_ source: String) -> Bool {
+        !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 协议版本必须是 1–3 段 ASCII 数字("1"、"1.2"、"1.2.3")。
+    /// 空白段、4+ 段、非 ASCII 数字(如全角"１")、字母混入("v1"、
+    /// "1.2-beta")均按不可信处理——Issue #173 fail-closed:
+    /// source version 不可信 → unavailable。
     private static func isParsableProtocolVersion(_ version: String) -> Bool {
         let components = version.split(separator: ".", omittingEmptySubsequences: false)
-        guard !components.isEmpty else { return false }
-        return components.allSatisfy { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
+        guard (1...3).contains(components.count) else { return false }
+        return components.allSatisfy {
+            !$0.isEmpty && $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber)
+        }
     }
 }
 

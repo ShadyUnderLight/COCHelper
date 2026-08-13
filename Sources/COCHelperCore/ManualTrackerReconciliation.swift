@@ -817,44 +817,46 @@ public enum ManualTrackerReconciliationService {
         for (key, values) in grouped {
             let items = values.map(\.1)
             let histogram = isHistogram(key)
-            // Histogram sections also contain timer-only rows in real exports.
-            // Those rows legitimately omit `cnt`, so section-level `cnt`
-            // coverage is partial even when every completed-count row is valid.
-            // `lvl`/`cnt` are validated per row below. Section-level coverage
-            // may be partial because another key is a timer-only or nested
-            // craft-table row; that must not poison an otherwise complete key.
+            let base = snapshotBase(key.base)
             let requiredFields = ["presence", "data"]
             let coverageComplete = requiredFields.allSatisfy {
                 entry.coverage.state(
-                    base: snapshotBase(key.base),
+                    base: base,
                     rawSection: key.rawSection,
                     field: $0
                 ) == .complete
             }
+            // Coverage is recorded for a whole source section, while the
+            // reconciliation map is keyed by one dataID.  A partial lvl/cnt
+            // or timer field therefore invalidates every key in that section;
+            // allowing a complete-looking key to pass would turn a sibling's
+            // missing field into a false observedAhead/manual completion.
+            let sectionSafetyCoverageComplete = [
+                "lvl", "cnt", "timer", "helper_timer", "helper_cooldown"
+            ].allSatisfy { field in
+                guard let state = entry.coverage.state(
+                    base: base,
+                    rawSection: key.rawSection,
+                    field: field
+                ) else { return false }
+                return state != .partial
+            }
             var quantities: [Int: Int64] = [:]
             var levelCoverageComplete = true
             var countCoverageComplete = true
-            var valid = coverageComplete && !items.isEmpty
+            var valid = coverageComplete && sectionSafetyCoverageComplete && !items.isEmpty
             let countCoverageState = entry.coverage.state(
-                base: snapshotBase(key.base),
+                base: base,
                 rawSection: key.rawSection,
                 field: "cnt"
             )
             let timerCoverageComplete = ["timer", "helper_timer", "helper_cooldown"].allSatisfy { field in
                 guard let state = entry.coverage.state(
-                    base: snapshotBase(key.base),
+                    base: base,
                     rawSection: key.rawSection,
                     field: field
                 ) else { return false }
-                guard state == .partial else {
-                    return state == .complete || state == .unavailable
-                }
-                // A section may be partial because another identity carries a
-                // timer while this identity has no timer evidence at all. That
-                // does not make this item's level/count observation unknown.
-                // Once this identity itself contains timer evidence, however,
-                // a partial timer field cannot establish a safe transition.
-                return !items.contains { !$0.rawTimerEvidence.isEmpty }
+                return state == .complete || state == .unavailable
             }
             for item in items {
                 guard let level = item.level, level >= 0 else {
@@ -895,16 +897,10 @@ public enum ManualTrackerReconciliationService {
             if quantities.isEmpty {
                 valid = false
             }
-            if histogram, countCoverageState == .partial {
-                // A histogram may legitimately mix completed-count rows with
-                // timer-only rows. A partial `cnt` field is safe only when all
-                // missing-count rows for this identity carry timer evidence;
-                // otherwise the quantity is not a complete observation.
-                let hasUnexplainedMissingCount = items.contains {
-                    $0.count == nil && $0.rawTimerEvidence.isEmpty
-                }
-                countCoverageComplete = countCoverageComplete && !hasUnexplainedMissingCount
-            } else if histogram, countCoverageState != .complete {
+            if histogram, countCoverageState != .complete {
+                // Timer-only histogram rows may explain why `cnt` is partial,
+                // but the section-level partial state still makes all sibling
+                // observations non-authoritative for automatic reconciliation.
                 countCoverageComplete = false
             }
             valid = valid && timerCoverageComplete

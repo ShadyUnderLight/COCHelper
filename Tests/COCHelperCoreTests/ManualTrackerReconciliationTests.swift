@@ -406,6 +406,44 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         XCTAssertEqual(timerCoveragePreview.items.single?.classification, .unknown)
     }
 
+    func testPartialSectionCoveragePoisonsSiblingKeys() throws {
+        let cases: [(name: String, old: String, new: String)] = [
+            (
+                "level",
+                ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1},{"data":101,"lvl":10,"cnt":1}]}"##,
+                ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":1},{"data":101,"cnt":1}]}"##
+            ),
+            (
+                "count",
+                ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1},{"data":101,"lvl":10,"cnt":1}]}"##,
+                ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":1},{"data":101,"lvl":10}]}"##
+            ),
+            (
+                "timer",
+                ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1},{"data":101,"lvl":10,"cnt":1}]}"##,
+                ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":1},{"data":101,"lvl":10,"cnt":1,"timer":60}]}"##
+            )
+        ]
+
+        for testCase in cases {
+            let context = try history(testCase.old)
+            let state = try observedState(reference: context.reference, distribution: [10: 1])
+            let next = try decision(testCase.new, from: context)
+            let preview = try ManualTrackerReconciliationService.preview(
+                villageID: villageID,
+                previousEntry: context.entry,
+                decision: next,
+                currentState: state,
+                appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+            )
+            let item = try XCTUnwrap(preview.items.first { $0.itemKey == key }, testCase.name)
+
+            XCTAssertEqual(item.classification, .unknown, testCase.name)
+            XCTAssertFalse(item.coverageComplete, testCase.name)
+            XCTAssertNil(item.observedDistribution, testCase.name)
+        }
+    }
+
     func testManualAheadDoesNotRollbackLocalEffectiveDistribution() throws {
         let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":9,"cnt":1}]}"##)
         let state = try observedState(reference: context.reference, distribution: [11: 1])
@@ -547,7 +585,7 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         )
     }
 
-    func testRealExportKeepsCompletedHistogramBesideTimerAndNestedRows() throws {
+    func testRealExportSectionPartialCoverageBlocksAutomaticReconciliation() throws {
         let fixtureURL = try XCTUnwrap(
             Bundle.module.url(forResource: "anonymized_account_snapshot", withExtension: "json")
         )
@@ -576,11 +614,11 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         )
         let building = try XCTUnwrap(preview.items.first { $0.itemKey == buildingKey })
 
-        XCTAssertTrue(building.coverageComplete)
-        XCTAssertEqual(
-            building.observedDistribution,
-            try ManualLevelDistribution(levelQuantities: [14: 4])
-        )
+        // The content is a duplicate, but its section-level partial coverage
+        // still prevents treating the parsed distribution as authoritative.
+        XCTAssertEqual(building.classification, .duplicate)
+        XCTAssertFalse(building.coverageComplete)
+        XCTAssertNil(building.observedDistribution)
     }
 
     func testStalePreviewIsRejectedBeforeStateMutation() throws {

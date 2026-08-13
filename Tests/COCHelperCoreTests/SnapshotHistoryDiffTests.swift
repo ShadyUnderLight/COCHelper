@@ -355,6 +355,53 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(diff.changes.single?.changeKind, .timerChanged)
     }
 
+    func testBuildingHistogramTimerUpgradeStartedWithoutCount() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, display: binding)],
+            section: "buildings",
+            states: ["timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 14, timer: 900, display: binding)],
+            section: "buildings",
+            states: ["timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .upgradeStarted)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+        XCTAssertEqual(change.coverage.state, .complete)
+    }
+
+    func testBuilderBaseHistogramTimerUpgradeStarted() throws {
+        let identity = makeIdentity(section: "buildings2", dataID: 1_000_033, base: .builder)
+        let binding = SnapshotDisplayBinding(displayName: "建筑工人小屋", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, display: binding)],
+            section: "buildings2",
+            states: ["timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 1, timer: 60, display: binding)],
+            section: "buildings2",
+            states: ["timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.changeKind, .upgradeStarted)
+        XCTAssertEqual(change.evidence, .aggregateInferred)
+    }
+
     func testCanonicalizerConfirmsTimerAbsenceAndRejectsNegativeTimer() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

@@ -923,4 +923,100 @@ final class ManualTrackerStoreTests: XCTestCase {
         XCTAssertEqual(store.rawData, before)
         XCTAssertEqual(model.manualUpgradeCore(for: villageID), try store.load()?.state(for: villageID)?.core)
     }
+
+    // MARK: - Issue #145 队列容量配置持久化
+
+    private func capacityConfig(
+        villageID: UUID,
+        kind: LocalQueueKind,
+        capacity: Int = 2,
+        updatedAt: Date = Date(timeIntervalSince1970: 1_000)
+    ) throws -> LocalQueueCapacityConfig {
+        try LocalQueueCapacityConfig(
+            villageID: villageID, queueKind: kind, capacity: capacity, updatedAt: updatedAt
+        )
+    }
+
+    func testVillageStateCapacityConfigsRoundTrip() throws {
+        let villageID = UUID()
+        let config = try capacityConfig(villageID: villageID, kind: .builder)
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            queueCapacityConfigs: [config]
+        )
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(ManualTrackerVillageState.self, from: data)
+        XCTAssertEqual(decoded.queueCapacityConfigs, [config])
+        XCTAssertEqual(decoded.queueCapacityConfigs.first?.source, .userConfigured)
+    }
+
+    func testVillageStateRejectsCrossVillageCapacityConfig() {
+        let config = try! capacityConfig(villageID: UUID(), kind: .builder)
+        XCTAssertThrowsError(
+            try ManualTrackerVillageState(villageID: UUID(), queueCapacityConfigs: [config])
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualTrackerStoreError,
+                .invalidEnvelope("队列容量配置的村庄与所属村庄不一致。")
+            )
+        }
+    }
+
+    func testVillageStateRejectsDuplicateQueueKindCapacityConfig() throws {
+        let villageID = UUID()
+        XCTAssertThrowsError(
+            try ManualTrackerVillageState(
+                villageID: villageID,
+                queueCapacityConfigs: [
+                    try capacityConfig(villageID: villageID, kind: .builder),
+                    try capacityConfig(villageID: villageID, kind: .builder, capacity: 3),
+                ]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualTrackerStoreError,
+                .invalidEnvelope("存在重复的队列类别容量配置。")
+            )
+        }
+    }
+
+    func testVillageStateDecodesLegacyDataWithoutCapacityConfigs() throws {
+        // 旧版 JSON 没有 queueCapacityConfigs 字段：decode 必须回退为空数组，
+        // 不能报错（向后兼容，不 bump schemaVersion）。
+        let villageID = UUID()
+        let json = """
+        {"villageID":"\(villageID.uuidString)","schemaVersion":1,"baselineReference":null,\
+        "core":{"itemStates":[],"records":[]},"stateUpdatedAt":1000}
+        """
+        let state = try JSONDecoder().decode(
+            ManualTrackerVillageState.self, from: Data(json.utf8)
+        )
+        XCTAssertTrue(state.queueCapacityConfigs.isEmpty)
+    }
+
+    func testEnvelopePersistsCapacityConfigsAcrossSaveLoad() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Issue145Store-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileStore = FileManualTrackerStore(
+            fileURL: directory.appendingPathComponent("manual-tracker-v1.json")
+        )
+
+        let villageID = UUID()
+        let config = try capacityConfig(villageID: villageID, kind: .laboratory, capacity: 1)
+        var envelope = try ManualTrackerEnvelope(
+            villages: [
+                try ManualTrackerVillageState(villageID: villageID, queueCapacityConfigs: [config]),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(completedAt: Date(timeIntervalSince1970: 1_000))
+        )
+        try fileStore.save(envelope)
+
+        let loaded = try XCTUnwrap(try fileStore.load())
+        let state = try XCTUnwrap(loaded.state(for: villageID))
+        XCTAssertEqual(state.queueCapacityConfigs, [config])
+        XCTAssertEqual(state.queueCapacityConfigs.first?.source, .userConfigured)
+        XCTAssertEqual(state.queueCapacityConfigs.first?.updatedAt, config.updatedAt)
+    }
 }

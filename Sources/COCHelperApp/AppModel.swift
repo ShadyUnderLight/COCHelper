@@ -128,6 +128,8 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
     case invalidTime
     case unreconciledSnapshot
     case coreRejected(String)
+    case queueCapacityInvalid
+    case queueCapacityFull(queueKind: LocalQueueKind, activeCount: Int, capacity: Int)
 
     public var errorDescription: String? {
         switch self {
@@ -147,6 +149,10 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
             "当前快照与手动升级记录尚未对账。请先完成快照对账后再操作。"
         case .coreRejected(let message):
             "升级命令被拒绝：" + message
+        case .queueCapacityInvalid:
+            "队列容量配置无效（必须为 0 到 10000 的整数）。"
+        case .queueCapacityFull(let queueKind, let activeCount, let capacity):
+            "本地容量已满：\(queueKind.displayName) 队列已占用 \(activeCount)/\(capacity)。"
         }
     }
 }
@@ -597,7 +603,8 @@ public final class AppModel: ObservableObject {
             lastSettleAt: previousState?.lastSettleAt,
             lastImportAt: previousState?.lastImportAt,
             diagnostics: previousState?.diagnostics ?? [],
-            reconciliationHistory: previousState?.reconciliationHistory ?? []
+            reconciliationHistory: previousState?.reconciliationHistory ?? [],
+            queueCapacityConfigs: previousState?.queueCapacityConfigs ?? []
         )
         var candidate = currentEnvelope
         try candidate.upsert(state)
@@ -645,7 +652,8 @@ public final class AppModel: ObservableObject {
                     lastSettleAt: now,
                     lastImportAt: previousState.lastImportAt,
                     diagnostics: previousState.diagnostics,
-                    reconciliationHistory: previousState.reconciliationHistory
+                    reconciliationHistory: previousState.reconciliationHistory,
+                    queueCapacityConfigs: previousState.queueCapacityConfigs
                 )
                 try candidate.upsert(state)
                 settledCount += settled.count
@@ -661,6 +669,143 @@ public final class AppModel: ObservableObject {
         return settledCount
     }
 
+    // MARK: - Issue #145 队列容量配置
+
+    /// 设置/更新某个队列类别的本地容量（userConfigured）。
+    /// 只影响未来 local manual start 的容量校验，不修改历史 record。
+    @discardableResult
+    public func setQueueCapacity(
+        for villageID: UUID,
+        queueKind: LocalQueueKind,
+        capacity: Int,
+        now: Date = Date()
+    ) throws -> LocalQueueCapacityConfig {
+        guard villages.contains(where: { $0.id == villageID }) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄不存在。")
+        }
+        guard let currentEnvelope = manualTrackerEnvelope,
+              manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualTrackerStoreError.unavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        guard now.timeIntervalSinceReferenceDate.isFinite else {
+            throw ManualTrackerStoreError.invalidEnvelope("更新时间无效。")
+        }
+        let config: LocalQueueCapacityConfig
+        do {
+            config = try LocalQueueCapacityConfig(
+                villageID: villageID,
+                queueKind: queueKind,
+                capacity: capacity,
+                updatedAt: now
+            )
+        } catch LocalQueueCapacityConfigError.invalidCapacity {
+            throw ManualUpgradeCommandError.queueCapacityInvalid
+        } catch LocalQueueCapacityConfigError.invalidTimestamp {
+            throw ManualUpgradeCommandError.invalidTime
+        }
+
+        var candidate = currentEnvelope
+        let previousState = candidate.state(for: villageID)
+        let core: ManualUpgradeCore
+        if let storedCore = previousState?.core {
+            core = storedCore
+        } else {
+            core = try ManualUpgradeCore()
+        }
+        var configs = previousState?.queueCapacityConfigs
+            .filter { $0.queueKind != queueKind } ?? []
+        configs.append(config)
+        configs.sort { $0.queueKind.rawValue < $1.queueKind.rawValue }
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: now,
+            lastSettleAt: previousState?.lastSettleAt,
+            lastImportAt: previousState?.lastImportAt,
+            diagnostics: previousState?.diagnostics ?? [],
+            reconciliationHistory: previousState?.reconciliationHistory ?? [],
+            queueCapacityConfigs: configs
+        )
+        try candidate.upsert(state)
+        do {
+            try manualTrackerStore.save(candidate)
+        } catch {
+            markManualTrackerUnavailable(error)
+            throw error
+        }
+        installManualTrackerEnvelope(candidate)
+        return config
+    }
+
+    /// 清除某个队列类别的本地容量配置（回到未配置状态）。
+    public func clearQueueCapacity(
+        for villageID: UUID,
+        queueKind: LocalQueueKind,
+        now: Date = Date()
+    ) throws {
+        guard villages.contains(where: { $0.id == villageID }) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄不存在。")
+        }
+        guard let currentEnvelope = manualTrackerEnvelope,
+              manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualTrackerStoreError.unavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        guard now.timeIntervalSinceReferenceDate.isFinite else {
+            throw ManualTrackerStoreError.invalidEnvelope("更新时间无效。")
+        }
+        guard let previousState = currentEnvelope.state(for: villageID),
+              previousState.queueCapacityConfigs.contains(where: {
+                  $0.queueKind == queueKind
+              }) else { return }
+
+        var candidate = currentEnvelope
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: previousState.core,
+            stateUpdatedAt: now,
+            lastSettleAt: previousState.lastSettleAt,
+            lastImportAt: previousState.lastImportAt,
+            diagnostics: previousState.diagnostics,
+            reconciliationHistory: previousState.reconciliationHistory,
+            queueCapacityConfigs: previousState.queueCapacityConfigs.filter {
+                $0.queueKind != queueKind
+            }
+        )
+        try candidate.upsert(state)
+        do {
+            try manualTrackerStore.save(candidate)
+        } catch {
+            markManualTrackerUnavailable(error)
+            throw error
+        }
+        installManualTrackerEnvelope(candidate)
+    }
+
+    /// 某个村庄×队列类别的本地占用投影（未配置容量时 capacity == nil）。
+    /// `at now` 用于排除已到期未 settle 的 active 记录（与 Start 校验同口径）。
+    public func queueOccupancy(
+        for villageID: UUID,
+        queueKind: LocalQueueKind,
+        at now: Date = Date()
+    ) -> LocalQueueOccupancy {
+        guard let state = manualTrackerEnvelope?.state(for: villageID) else {
+            return LocalQueueOccupancy(queueKind: queueKind, activeManualCount: 0, capacity: nil)
+        }
+        let config = state.queueCapacityConfigs.first { $0.queueKind == queueKind }
+        return LocalQueueOccupancyResolver.occupancy(
+            queueKind: queueKind,
+            activeRecords: state.core.activeRecords,
+            capacityConfig: config,
+            at: now
+        )
+    }
+
     // MARK: - Issue #144 类型化手动升级命令
 
     /// 启动一次本地手动升级（Issue #144）。
@@ -674,6 +819,7 @@ public final class AppModel: ObservableObject {
         for villageID: UUID,
         action: UpgradeAction,
         startedAt: Date,
+        queueKind: LocalQueueKind? = nil,
         now: Date = Date()
     ) throws -> ManualUpgradeRecord {
         guard let village = villages.first(where: { $0.id == villageID }) else {
@@ -696,6 +842,28 @@ public final class AppModel: ObservableObject {
         // 旧 baseline action，不落盘任何新 record。
         guard isBaselineReconciled(for: villageID, core: core) else {
             throw ManualUpgradeCommandError.unreconciledSnapshot
+        }
+        // Issue #145：容量校验只约束 future local manual start。
+        // 未配置容量或 queueKind == nil（不归类）时不校验；
+        // imported active 从不计入本地占用（occupancy 只统计 local records）。
+        if let queueKind {
+            let capacityConfigs = currentEnvelope.state(for: villageID)?
+                .queueCapacityConfigs ?? []
+            if let config = capacityConfigs.first(where: { $0.queueKind == queueKind }) {
+                let occupancy = LocalQueueOccupancyResolver.occupancy(
+                    queueKind: queueKind,
+                    activeRecords: core.activeRecords,
+                    capacityConfig: config,
+                    at: now
+                )
+                guard !occupancy.isFull else {
+                    throw ManualUpgradeCommandError.queueCapacityFull(
+                        queueKind: queueKind,
+                        activeCount: occupancy.activeManualCount,
+                        capacity: config.capacity
+                    )
+                }
+            }
         }
         let freshAction = try revalidatedAction(
             for: action,
@@ -723,6 +891,7 @@ public final class AppModel: ObservableObject {
                     frozenCosts: freshAction.frozenCosts,
                     catalogProvenance: provenance,
                     baselineReference: baseline,
+                    queueKind: queueKind?.rawValue,
                     now: now
                 )
             }

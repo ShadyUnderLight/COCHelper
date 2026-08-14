@@ -33,6 +33,8 @@ struct ManualUpgradeActionSheetView: View {
     @State private var adjustDate: Date = Date()
     @State private var errorMessage: String?
     @State private var busy = false
+    // Issue #145：Start 队列类别选择（"" = 不归类）。
+    @State private var selectedQueueRawValue: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -70,6 +72,8 @@ struct ManualUpgradeActionSheetView: View {
             Divider()
             detailGrid(action)
             Divider()
+            queueKindBlock
+            Divider()
             costBlock(action)
             Divider()
             localOnlyNote
@@ -82,7 +86,7 @@ struct ManualUpgradeActionSheetView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.cocAccent)
-                .disabled(busy)
+                .disabled(busy || isSelectedQueueFull)
             }
         }
     }
@@ -172,13 +176,70 @@ struct ManualUpgradeActionSheetView: View {
             .foregroundStyle(.secondary)
     }
 
+    // MARK: - Issue #145 队列类别与容量
+
+    private var selectedQueueKind: LocalQueueKind? {
+        selectedQueueRawValue.isEmpty
+            ? nil
+            : LocalQueueKind(rawValue: selectedQueueRawValue)
+    }
+
+    /// 已选队列的占用投影；未归类时为 nil。
+    private var selectedOccupancy: LocalQueueOccupancy? {
+        selectedQueueKind.map { model.queueOccupancy(for: villageID, queueKind: $0) }
+    }
+
+    private var isSelectedQueueFull: Bool {
+        selectedOccupancy?.isFull ?? false
+    }
+
+    /// 队列类别选择 + 本地占用/容量摘要 + imported 不占用的固定诊断。
+    private var queueKindBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("队列类别", selection: $selectedQueueRawValue) {
+                Text("不归类").tag("")
+                ForEach(LocalQueueKind.knownKinds, id: \.self) { kind in
+                    Text(kind.displayName).tag(kind.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 240)
+            if let occupancy = selectedOccupancy {
+                if occupancy.isCapacityConfigured {
+                    Label(
+                        "本地占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)",
+                        systemImage: "rectangle.stack.badge.person.crop"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(occupancy.isFull ? .red : .secondary)
+                    if occupancy.isFull {
+                        Text("本地容量已满，不能开始新的本地升级。")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                } else {
+                    Label("未配置容量，不限制本地升级。", systemImage: "rectangle.stack")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Label(
+                "导入快照中的升级计时不计入本地容量；本地记录与导入计时相互独立。",
+                systemImage: "arrow.triangle.2.circlepath"
+            )
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+    }
+
     private func confirmStart(_ action: UpgradeAction) {
         busy = true
         do {
             let record = try model.startManualUpgrade(
                 for: villageID,
                 action: action,
-                startedAt: Date()
+                startedAt: Date(),
+                queueKind: selectedQueueKind
             )
             if record.status == .completed {
                 onDone()

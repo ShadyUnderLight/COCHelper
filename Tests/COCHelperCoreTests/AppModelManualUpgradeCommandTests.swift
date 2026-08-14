@@ -145,8 +145,22 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         level: Int,
         history: TestSnapshotHistoryStore
     ) throws {
-        let section = dataID == 1_000_010 ? "buildings" : "buildings"
-        let key = TrackerItemKey.root(base: .home, rawSection: section, dataID: dataID)
+        try installObservedStates(
+            in: model, villageID: villageID, dataIDs: [dataID], levels: [level], history: history
+        )
+    }
+
+    /// 批量安装多个 observed itemState（一次 updateManualUpgradeCore，避免
+    /// 单条安装互相覆盖 core）。
+    @MainActor
+    private static func installObservedStates(
+        in model: AppModel,
+        villageID: UUID,
+        dataIDs: [Int64],
+        levels: [Int],
+        history: TestSnapshotHistoryStore
+    ) throws {
+        let section = "buildings"
         let lineage = try XCTUnwrap(try history.load()?.activeLineage(for: villageID))
         let entry = try XCTUnwrap(try history.load()?.entry(id: lineage.lastEntryID))
         let currentBaseline = ManualBaselineReference(
@@ -154,20 +168,21 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             fingerprint: entry.canonicalFingerprint,
             lineageID: entry.lineageID.uuidString
         )
-        try model.updateManualUpgradeCore(for: villageID) { core in
-            core = try ManualUpgradeCore(itemStates: [
-                ManualItemState(
-                    itemKey: key,
-                    baselineReference: currentBaseline,
-                    importedObservation: ManualImportedObservation(
-                        reference: currentBaseline,
-                        levelDistribution: try ManualLevelDistribution(levelQuantities: [level: 1]),
-                        sourceTimestamp: Date(timeIntervalSince1970: 1_000)
-                    ),
-                    manualCompletedDistribution: .empty,
-                    status: .observed
+        let states = try zip(dataIDs, levels).map { dataID, level in
+            try ManualItemState(
+                itemKey: TrackerItemKey.root(base: .home, rawSection: section, dataID: dataID),
+                baselineReference: currentBaseline,
+                importedObservation: ManualImportedObservation(
+                    reference: currentBaseline,
+                    levelDistribution: try ManualLevelDistribution(levelQuantities: [level: 1]),
+                    sourceTimestamp: Date(timeIntervalSince1970: 1_000)
                 ),
-            ])
+                manualCompletedDistribution: .empty,
+                status: .observed
+            )
+        }
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try ManualUpgradeCore(itemStates: states)
         }
     }
 
@@ -1153,6 +1168,404 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertEqual(
             try XCTUnwrap(v2Persisted.core.records.first { $0.recordID == v2RecordID }).status,
             .completed
+        )
+    }
+
+    // MARK: - Issue #145 队列容量配置
+
+    @MainActor
+    func testSetQueueCapacityPersistsAndProjects() throws {
+        let (model, villageID, _) = try makeModel()
+        XCTAssertNil(
+            model.queueOccupancy(for: villageID, queueKind: .builder).capacity,
+            "初始未配置容量"
+        )
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 3)
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.capacity, 3)
+        XCTAssertEqual(occupancy.activeManualCount, 0)
+        XCTAssertFalse(occupancy.isFull)
+        // 其他类别不受影响
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .hero).capacity)
+    }
+
+    @MainActor
+    func testClearQueueCapacityRemovesConfig() throws {
+        let (model, villageID, _) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 3)
+        try model.clearQueueCapacity(for: villageID, queueKind: .builder)
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .builder).capacity)
+    }
+
+    @MainActor
+    func testQueueCapacityConfigSurvivesUnrelatedCoreUpdate() throws {
+        let (model, villageID, action) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
+        _ = try model.startManualUpgrade(
+            for: villageID, action: action, startedAt: Date(), queueKind: .builder
+        )
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.capacity, 5, "core 命令不得丢失容量配置")
+        XCTAssertEqual(occupancy.activeManualCount, 1)
+    }
+
+    @MainActor
+    func testQueueCapacityConfigSurvivesSettlement() throws {
+        let (model, villageID, action) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
+        _ = try model.startManualUpgrade(
+            for: villageID, action: action, startedAt: importedAt,
+            queueKind: .builder, now: importedAt
+        )
+        let duration = try cannonLevel2Duration()
+        let settled = model.settleManualUpgrades(
+            at: importedAt.addingTimeInterval(TimeInterval(duration) + 10)
+        )
+        XCTAssertEqual(settled, 1)
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.capacity, 5, "settle 不得丢失容量配置")
+        XCTAssertEqual(occupancy.activeManualCount, 0, "已 settle 的 record 不再占用")
+    }
+
+    @MainActor
+    func testQueueCapacityConfigPersistsAcrossRestart() throws {
+        let (model, villageID, _) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 2)
+
+        // 重启：同一 store 文件 + 同一村庄数据（重新编码当前 villages 保证 id 一致）。
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let currentData = try JSONEncoder().encode(model.villages)
+        let restored = AppModel(
+            defaults: defaults,
+            historyStore: TestSnapshotHistoryStore(),
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: currentData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        let occupancy = restored.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.capacity, 2, "重启后 userConfigured 容量必须保留")
+        XCTAssertEqual(occupancy.activeManualCount, 0)
+    }
+
+    @MainActor
+    func testSetQueueCapacityRejectsNegativeCapacity() throws {
+        let (model, villageID, _) = try makeModel()
+        XCTAssertThrowsError(
+            try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: -1)
+        ) { error in
+            guard case ManualUpgradeCommandError.queueCapacityInvalid = error else {
+                return XCTFail("期望 queueCapacityInvalid，得到 \(error)")
+            }
+        }
+    }
+
+    // MARK: - Issue #145 Start 队列归类与容量校验
+
+    /// 两个可启动项目（加农炮 1_000_002 与箭塔 1_000_003）的村庄模型。
+    @MainActor
+    private func makeTwoStartableItemsModel(
+        now: Date? = nil
+    ) throws -> (model: AppModel, villageID: UUID, first: UpgradeAction, second: UpgradeAction) {
+        let snapshot = snapshot(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                item(section: "buildings", dataID: 1_000_003, level: 1, path: "2"),
+            ],
+        ])
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let village = VillageProfile(name: "测试村庄", accountSnapshot: snapshot)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore()
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        try Self.installObservedStates(
+            in: model, villageID: villageID, dataIDs: [1_000_002, 1_000_003],
+            levels: [1, 1], history: history
+        )
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog,
+            base: .home,
+            now: now ?? importedAt,
+            manualUpgradeCore: core
+        )
+        func action(for dataID: Int64) throws -> UpgradeAction {
+            let target = try XCTUnwrap(projection.items.first { $0.dataID == dataID })
+            let action = try XCTUnwrap(
+                UpgradeActionProjection.action(
+                    for: target,
+                    catalog: catalog,
+                    catalogIsUsable: true,
+                    manualUpgradeCore: core,
+                    coverage: .complete,
+                    now: now ?? importedAt
+                )
+            )
+            XCTAssertTrue(action.isStartable, "fixture must produce startable action: \(action.disabledReason ?? "")")
+            return action
+        }
+        return (model, villageID, try action(for: 1_000_002), try action(for: 1_000_003))
+    }
+
+    @MainActor
+    func testStartWithQueueKindStoresQueueKind() throws {
+        let (model, villageID, action, _) = try makeTwoStartableItemsModel()
+        let record = try model.startManualUpgrade(
+            for: villageID, action: action, startedAt: Date(), queueKind: .builder
+        )
+        XCTAssertEqual(record.queueKind, LocalQueueKind.builder.rawValue)
+        XCTAssertEqual(
+            model.queueOccupancy(for: villageID, queueKind: .builder).activeManualCount, 1
+        )
+    }
+
+    @MainActor
+    func testStartWithoutQueueKindStoresNil() throws {
+        let (model, villageID, action, _) = try makeTwoStartableItemsModel()
+        let record = try model.startManualUpgrade(
+            for: villageID, action: action, startedAt: Date(), queueKind: nil
+        )
+        XCTAssertNil(record.queueKind)
+    }
+
+    @MainActor
+    func testStartRejectedWhenQueueCapacityFull() throws {
+        let (model, villageID, first, second) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 1)
+        _ = try model.startManualUpgrade(
+            for: villageID, action: first, startedAt: Date(), queueKind: .builder
+        )
+        XCTAssertThrowsError(
+            try model.startManualUpgrade(
+                for: villageID, action: second, startedAt: Date(), queueKind: .builder
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError,
+                .queueCapacityFull(queueKind: .builder, activeCount: 1, capacity: 1)
+            )
+        }
+    }
+
+    @MainActor
+    func testStartAllowedWhenBelowCapacity() throws {
+        let (model, villageID, first, second) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 2)
+        _ = try model.startManualUpgrade(
+            for: villageID, action: first, startedAt: Date(), queueKind: .builder
+        )
+        // 第二个仍可启动（1 < 2）
+        let record = try model.startManualUpgrade(
+            for: villageID, action: second, startedAt: Date(), queueKind: .builder
+        )
+        XCTAssertEqual(record.status, .active)
+        XCTAssertEqual(
+            model.queueOccupancy(for: villageID, queueKind: .builder).activeManualCount, 2
+        )
+    }
+
+    @MainActor
+    func testStartAllowedWhenCapacityNotConfigured() throws {
+        let (model, villageID, first, second) = try makeTwoStartableItemsModel()
+        _ = try model.startManualUpgrade(
+            for: villageID, action: first, startedAt: Date(), queueKind: .builder
+        )
+        // 未配置容量：不限制
+        let record = try model.startManualUpgrade(
+            for: villageID, action: second, startedAt: Date(), queueKind: .builder
+        )
+        XCTAssertEqual(record.status, .active)
+        XCTAssertFalse(
+            model.queueOccupancy(for: villageID, queueKind: .builder).isCapacityConfigured
+        )
+    }
+
+    @MainActor
+    func testStartWithNilQueueKindSkipsCapacityCheck() throws {
+        let (model, villageID, first, second) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 0)
+        _ = try model.startManualUpgrade(
+            for: villageID, action: first, startedAt: Date(), queueKind: nil
+        )
+        // 不归类 → 不参与容量校验
+        let record = try model.startManualUpgrade(
+            for: villageID, action: second, startedAt: Date(), queueKind: nil
+        )
+        XCTAssertEqual(record.status, .active)
+    }
+
+    @MainActor
+    func testStartRejectedWhenCapacityZero() throws {
+        let (model, villageID, action, _) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 0)
+        XCTAssertThrowsError(
+            try model.startManualUpgrade(
+                for: villageID, action: action, startedAt: Date(), queueKind: .builder
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError,
+                .queueCapacityFull(queueKind: .builder, activeCount: 0, capacity: 0)
+            )
+        }
+    }
+
+    @MainActor
+    func testQueueCapacityIsolatedPerVillage() throws {
+        let (model, villageID, first, _) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 1)
+        _ = try model.startManualUpgrade(
+            for: villageID, action: first, startedAt: Date(), queueKind: .builder
+        )
+
+        // 第二个村庄：独立 AppModel，同一 store 文件。
+        let snapshot2 = snapshot(tag: "#TEST2", objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let village2 = VillageProfile(name: "测试村庄2", accountSnapshot: snapshot2)
+        let villagesData2 = try JSONEncoder().encode([village2])
+        let history2 = TestSnapshotHistoryStore()
+        let model2 = AppModel(
+            defaults: defaults,
+            historyStore: history2,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData2),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction2.json")
+        )
+        let village2ID = try XCTUnwrap(model2.villages.first?.id)
+        try Self.installObservedState(in: model2, villageID: village2ID, dataID: 1_000_002, level: 1, history: history2)
+        let core2 = try XCTUnwrap(model2.manualUpgradeCore(for: village2ID))
+        let projection2 = VillageCatalogProjection.project(
+            village: village2,
+            catalog: catalog,
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: core2
+        )
+        let target2 = try XCTUnwrap(projection2.items.first { $0.dataID == 1_000_002 })
+        let action2 = try XCTUnwrap(
+            UpgradeActionProjection.action(
+                for: target2, catalog: catalog, catalogIsUsable: true,
+                manualUpgradeCore: core2, coverage: .complete, now: importedAt
+            )
+        )
+        // 村庄2 未配置容量 → 不受村庄1 的容量限制
+        let record2 = try model2.startManualUpgrade(
+            for: village2ID, action: action2, startedAt: Date(), queueKind: .builder
+        )
+        XCTAssertEqual(record2.status, .active)
+    }
+
+    @MainActor
+    func testDifferentQueueKindNotBlockedByFullOtherKind() throws {
+        let (model, villageID, first, second) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 0)
+        // hero 类别未配置容量，不受 builder 的 capacity 0 影响
+        let record = try model.startManualUpgrade(
+            for: villageID, action: first, startedAt: Date(), queueKind: .hero
+        )
+        XCTAssertEqual(record.status, .active)
+        // builder 类别仍被拒绝
+        XCTAssertThrowsError(
+            try model.startManualUpgrade(
+                for: villageID, action: second, startedAt: Date(), queueKind: .builder
+            )
+        )
+    }
+
+    @MainActor
+    func testStartNotBlockedByDueButUnsettledRecord() throws {
+        // review P2：第一个记录在 start 第二个时已到期（expectedEndAt <= now）
+        // 但尚未 settle（AppModel 容量校验先于 core.startUpgrade 的 settleDue），
+        // 不得误报「本地容量已满」。
+        let (model, villageID, first, second) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 1)
+        let duration = try cannonLevel2Duration()
+        _ = try model.startManualUpgrade(
+            for: villageID, action: first,
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            queueKind: .builder, now: Date(timeIntervalSince1970: 1_000)
+        )
+        // 第二个 start 的 now 晚于第一个的 expectedEndAt（1_000 + duration）。
+        let later = Date(timeIntervalSince1970: 1_000 + TimeInterval(duration) + 10)
+        let record = try model.startManualUpgrade(
+            for: villageID, action: second,
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            queueKind: .builder, now: later
+        )
+        XCTAssertEqual(
+            record.status, .active,
+            "已到期未 settle 的旧记录不得阻塞新 start（容量校验排除 due records）"
+        )
+    }
+
+    @MainActor
+    func testSnapshotItemsDoNotConsumeLocalCapacity() throws {
+        // 快照中两个项目存在（imported observation），本地只记录一个 active；
+        // occupancy 只统计本地 active records，imported 不计入容量。
+        let snapshot = snapshot(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                item(section: "buildings", dataID: 1_000_003, level: 1, path: "2"),
+            ],
+        ])
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let village = VillageProfile(name: "测试村庄", accountSnapshot: snapshot)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore()
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        try Self.installObservedStates(
+            in: model, villageID: villageID, dataIDs: [1_000_002, 1_000_003],
+            levels: [1, 1], history: history
+        )
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 1)
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog,
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: core
+        )
+        let target = try XCTUnwrap(projection.items.first { $0.dataID == 1_000_002 })
+        let action = try XCTUnwrap(
+            UpgradeActionProjection.action(
+                for: target, catalog: catalog, catalogIsUsable: true,
+                manualUpgradeCore: core, coverage: .complete, now: importedAt
+            )
+        )
+        _ = try model.startManualUpgrade(
+            for: villageID, action: action, startedAt: Date(), queueKind: .builder
+        )
+        // occupancy 只统计本地 active（1）；快照 timer 不计入。
+        XCTAssertEqual(
+            model.queueOccupancy(for: villageID, queueKind: .builder).activeManualCount, 1
         )
     }
 }

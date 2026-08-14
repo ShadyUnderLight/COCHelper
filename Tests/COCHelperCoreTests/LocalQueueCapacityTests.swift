@@ -240,4 +240,68 @@ final class LocalQueueCapacityTests: XCTestCase {
         )
         XCTAssertTrue(occupancy.isFull)
     }
+
+    // MARK: - Issue #183 confirmedImportedCount
+
+    private func assignment(
+        queueKind: LocalQueueKind,
+        status: QueueAssignmentStatus = .userAssigned,
+        decidedAt: Date = Date(timeIntervalSince1970: 1_000)
+    ) throws -> QueueAssignmentDecision {
+        try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_003),
+            baselineReference: ManualBaselineReference(
+                revision: "rev", fingerprint: "fp", lineageID: "lineage-1"),
+            queueKind: queueKind,
+            decidedAt: decidedAt,
+            status: status
+        )
+    }
+
+    func testOccupancyCountsOnlyUserAssignedAssignments() throws {
+        let occupancy = LocalQueueOccupancyResolver.occupancy(
+            queueKind: .builder,
+            activeRecords: [],
+            confirmedAssignments: [
+                try assignment(queueKind: .builder),
+                try assignment(queueKind: .builder, status: .observedOnly),
+                try assignment(queueKind: .builder, status: .unknown),
+                try assignment(queueKind: .laboratory),
+            ],
+            capacityConfig: try config(capacity: 2),
+            at: Date(timeIntervalSince1970: 1_000)
+        )
+        XCTAssertEqual(occupancy.activeManualCount, 0)
+        XCTAssertEqual(occupancy.confirmedImportedCount, 1)
+        XCTAssertEqual(occupancy.totalOccupancyCount, 1)
+        XCTAssertFalse(occupancy.isFull)
+        XCTAssertEqual(occupancy.availableSlots, 1)
+    }
+
+    func testOccupancyIsFullCountsManualPlusConfirmed() throws {
+        let occupancy = LocalQueueOccupancyResolver.occupancy(
+            queueKind: .builder,
+            activeRecords: [try record(queueKind: "builder")],
+            confirmedAssignments: [try assignment(queueKind: .builder)],
+            capacityConfig: try config(capacity: 1),
+            at: Date(timeIntervalSince1970: 1_000)
+        )
+        XCTAssertEqual(occupancy.activeManualCount, 1)
+        XCTAssertEqual(occupancy.confirmedImportedCount, 1)
+        XCTAssertEqual(occupancy.totalOccupancyCount, 2)
+        XCTAssertTrue(occupancy.isFull)
+        XCTAssertEqual(occupancy.availableSlots, 0)
+    }
+
+    func testOccupancyDefaultConfirmedCountIsZero() throws {
+        let occupancy = LocalQueueOccupancyResolver.occupancy(
+            queueKind: .builder,
+            activeRecords: [],
+            capacityConfig: try config(capacity: 1),
+            at: Date(timeIntervalSince1970: 1_000)
+        )
+        XCTAssertEqual(occupancy.confirmedImportedCount, 0)
+        XCTAssertFalse(occupancy.isFull)
+    }
 }

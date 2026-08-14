@@ -148,7 +148,8 @@ final class LocalQueueCapacityTests: XCTestCase {
         let occupancy = LocalQueueOccupancyResolver.occupancy(
             queueKind: .builder,
             activeRecords: [try record(queueKind: "builder")],
-            capacityConfig: nil
+            capacityConfig: nil,
+            at: Date(timeIntervalSince1970: 1_000)
         )
         XCTAssertEqual(occupancy.activeManualCount, 1)
         XCTAssertNil(occupancy.capacity)
@@ -166,7 +167,8 @@ final class LocalQueueCapacityTests: XCTestCase {
                 try record(queueKind: "laboratory"),
                 try record(queueKind: nil),
             ],
-            capacityConfig: try config(capacity: 2)
+            capacityConfig: try config(capacity: 2),
+            at: Date(timeIntervalSince1970: 1_000)
         )
         XCTAssertEqual(occupancy.activeManualCount, 2)
         XCTAssertEqual(occupancy.capacity, 2)
@@ -179,7 +181,8 @@ final class LocalQueueCapacityTests: XCTestCase {
         let occupancy = LocalQueueOccupancyResolver.occupancy(
             queueKind: .builder,
             activeRecords: [try record(queueKind: "builder")],
-            capacityConfig: try config(capacity: 5)
+            capacityConfig: try config(capacity: 5),
+            at: Date(timeIntervalSince1970: 1_000)
         )
         XCTAssertFalse(occupancy.isFull)
         XCTAssertEqual(occupancy.availableSlots, 4)
@@ -189,7 +192,8 @@ final class LocalQueueCapacityTests: XCTestCase {
         let occupancy = LocalQueueOccupancyResolver.occupancy(
             queueKind: .builder,
             activeRecords: [],
-            capacityConfig: try config(capacity: 0)
+            capacityConfig: try config(capacity: 0),
+            at: Date(timeIntervalSince1970: 1_000)
         )
         XCTAssertEqual(occupancy.activeManualCount, 0)
         XCTAssertTrue(occupancy.isFull, "capacity 0 时不允许任何本地 active")
@@ -203,10 +207,27 @@ final class LocalQueueCapacityTests: XCTestCase {
                 try record(queueKind: "builder", status: .completed),
                 try record(queueKind: "builder", status: .cancelled),
             ],
-            capacityConfig: try config(capacity: 1)
+            capacityConfig: try config(capacity: 1),
+            at: Date(timeIntervalSince1970: 1_000)
         )
         XCTAssertEqual(occupancy.activeManualCount, 0)
         XCTAssertFalse(occupancy.isFull)
+    }
+
+    func testOccupancyExcludesDueButUnsettledRecords() throws {
+        // review P2：已到期（expectedEndAt <= now）但尚未 settle 的记录
+        // 不应占用容量——否则会误报「本地容量已满」。
+        // record helper 的 expectedEndAt = 3_600。
+        let now = Date(timeIntervalSince1970: 5_000)
+        let occupancy = LocalQueueOccupancyResolver.occupancy(
+            queueKind: .builder,
+            activeRecords: [try record(queueKind: "builder")],
+            capacityConfig: try config(capacity: 1),
+            at: now
+        )
+        XCTAssertEqual(occupancy.activeManualCount, 0)
+        XCTAssertFalse(occupancy.isFull)
+        XCTAssertEqual(occupancy.availableSlots, 1)
     }
 
     func testOccupancyUnknownKindMatchesRawValue() throws {
@@ -214,7 +235,8 @@ final class LocalQueueCapacityTests: XCTestCase {
         let occupancy = LocalQueueOccupancyResolver.occupancy(
             queueKind: kind,
             activeRecords: [try record(queueKind: "forge")],
-            capacityConfig: try config(capacity: 1, kind: kind)
+            capacityConfig: try config(capacity: 1, kind: kind),
+            at: Date(timeIntervalSince1970: 1_000)
         )
         XCTAssertTrue(occupancy.isFull)
     }

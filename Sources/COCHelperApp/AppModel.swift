@@ -788,9 +788,11 @@ public final class AppModel: ObservableObject {
     }
 
     /// 某个村庄×队列类别的本地占用投影（未配置容量时 capacity == nil）。
+    /// `at now` 用于排除已到期未 settle 的 active 记录（与 Start 校验同口径）。
     public func queueOccupancy(
         for villageID: UUID,
-        queueKind: LocalQueueKind
+        queueKind: LocalQueueKind,
+        at now: Date = Date()
     ) -> LocalQueueOccupancy {
         guard let state = manualTrackerEnvelope?.state(for: villageID) else {
             return LocalQueueOccupancy(queueKind: queueKind, activeManualCount: 0, capacity: nil)
@@ -799,7 +801,8 @@ public final class AppModel: ObservableObject {
         return LocalQueueOccupancyResolver.occupancy(
             queueKind: queueKind,
             activeRecords: state.core.activeRecords,
-            capacityConfig: config
+            capacityConfig: config,
+            at: now
         )
     }
 
@@ -850,7 +853,8 @@ public final class AppModel: ObservableObject {
                 let occupancy = LocalQueueOccupancyResolver.occupancy(
                     queueKind: queueKind,
                     activeRecords: core.activeRecords,
-                    capacityConfig: config
+                    capacityConfig: config,
+                    at: now
                 )
                 guard !occupancy.isFull else {
                     throw ManualUpgradeCommandError.queueCapacityFull(

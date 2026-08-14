@@ -147,13 +147,21 @@ public struct LocalQueueOccupancy: Codable, Hashable, Sendable {
 /// Issue #145：本地队列占用投影入口（纯函数）。
 public enum LocalQueueOccupancyResolver {
     /// `capacityConfig` 的 villageID 与调用方村庄一致由调用方保证。
+    ///
+    /// `at now` 用于排除已到期（`expectedEndAt <= now`）但尚未 settle 的
+    /// active 记录：它们即将完成，不应占用本地容量（review P2）。
     public static func occupancy(
         queueKind: LocalQueueKind,
         activeRecords: [ManualUpgradeRecord],
-        capacityConfig: LocalQueueCapacityConfig?
+        capacityConfig: LocalQueueCapacityConfig?,
+        at now: Date
     ) -> LocalQueueOccupancy {
         let count = activeRecords
-            .filter { $0.status == .active && $0.queueKind == queueKind.rawValue }
+            .filter {
+                $0.status == .active
+                    && $0.queueKind == queueKind.rawValue
+                    && $0.expectedEndAt > now
+            }
             .count
         return LocalQueueOccupancy(
             queueKind: queueKind,

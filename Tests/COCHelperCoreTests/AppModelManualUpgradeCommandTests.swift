@@ -1490,6 +1490,32 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
+    func testStartNotBlockedByDueButUnsettledRecord() throws {
+        // review P2：第一个记录在 start 第二个时已到期（expectedEndAt <= now）
+        // 但尚未 settle（AppModel 容量校验先于 core.startUpgrade 的 settleDue），
+        // 不得误报「本地容量已满」。
+        let (model, villageID, first, second) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 1)
+        let duration = try cannonLevel2Duration()
+        _ = try model.startManualUpgrade(
+            for: villageID, action: first,
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            queueKind: .builder, now: Date(timeIntervalSince1970: 1_000)
+        )
+        // 第二个 start 的 now 晚于第一个的 expectedEndAt（1_000 + duration）。
+        let later = Date(timeIntervalSince1970: 1_000 + TimeInterval(duration) + 10)
+        let record = try model.startManualUpgrade(
+            for: villageID, action: second,
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            queueKind: .builder, now: later
+        )
+        XCTAssertEqual(
+            record.status, .active,
+            "已到期未 settle 的旧记录不得阻塞新 start（容量校验排除 due records）"
+        )
+    }
+
+    @MainActor
     func testSnapshotItemsDoNotConsumeLocalCapacity() throws {
         // 快照中两个项目存在（imported observation），本地只记录一个 active；
         // occupancy 只统计本地 active records，imported 不计入容量。

@@ -84,7 +84,13 @@ struct ManualQueueCapacitySettingsView: View {
         for kind in LocalQueueKind.knownKinds {
             let text = capacityTexts[kind.rawValue] ?? ""
             if text.isEmpty {
-                try? model.clearQueueCapacity(for: villageID, queueKind: kind)
+                do {
+                    try model.clearQueueCapacity(for: villageID, queueKind: kind)
+                } catch {
+                    errorMessage = (error as? LocalizedError)?.errorDescription
+                        ?? error.localizedDescription
+                    return
+                }
                 continue
             }
             guard let capacity = Int(text) else {

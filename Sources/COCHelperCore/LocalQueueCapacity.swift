@@ -132,27 +132,39 @@ public struct LocalQueueOccupancy: Codable, Hashable, Sendable {
     public let queueKind: LocalQueueKind
     /// 本地手动 active 记录数（只统计 `status == .active` 且 queueKind 匹配）。
     public let activeManualCount: Int
+    /// Issue #183：用户确认（userAssigned）且属于当前 lineage 的导入观察
+    /// overlay 数。调用方负责先按当前 lineage 过滤传入的 assignments。
+    public let confirmedImportedCount: Int
     /// 用户配置的容量；nil = 未配置（不做容量校验）。
     public let capacity: Int?
 
-    public init(queueKind: LocalQueueKind, activeManualCount: Int, capacity: Int?) {
+    public init(
+        queueKind: LocalQueueKind,
+        activeManualCount: Int,
+        confirmedImportedCount: Int = 0,
+        capacity: Int?
+    ) {
         self.queueKind = queueKind
         self.activeManualCount = activeManualCount
+        self.confirmedImportedCount = confirmedImportedCount
         self.capacity = capacity
     }
+
+    /// 手动 active + 用户确认的导入 overlay 总数。
+    public var totalOccupancyCount: Int { activeManualCount + confirmedImportedCount }
 
     public var isCapacityConfigured: Bool { capacity != nil }
 
     /// 本地容量已满（仅当配置了容量时判定）。
     public var isFull: Bool {
         guard let capacity else { return false }
-        return activeManualCount >= capacity
+        return totalOccupancyCount >= capacity
     }
 
     /// 剩余可启动数量；未配置容量时 nil。
     public var availableSlots: Int? {
         guard let capacity else { return nil }
-        return max(0, capacity - activeManualCount)
+        return max(0, capacity - totalOccupancyCount)
     }
 }
 
@@ -162,9 +174,12 @@ public enum LocalQueueOccupancyResolver {
     ///
     /// `at now` 用于排除已到期（`expectedEndAt <= now`）但尚未 settle 的
     /// active 记录：它们即将完成，不应占用本地容量（review P2）。
+    /// `confirmedAssignments` 只统计 `status == .userAssigned` 且 queueKind
+    /// 匹配的 overlay；observedOnly/unknown/其他类别不占容量（#183）。
     public static func occupancy(
         queueKind: LocalQueueKind,
         activeRecords: [ManualUpgradeRecord],
+        confirmedAssignments: [QueueAssignmentDecision] = [],
         capacityConfig: LocalQueueCapacityConfig?,
         at now: Date
     ) -> LocalQueueOccupancy {
@@ -175,9 +190,13 @@ public enum LocalQueueOccupancyResolver {
                     && $0.expectedEndAt > now
             }
             .count
+        let confirmed = confirmedAssignments
+            .filter { $0.status == .userAssigned && $0.queueKind == queueKind }
+            .count
         return LocalQueueOccupancy(
             queueKind: queueKind,
             activeManualCount: count,
+            confirmedImportedCount: confirmed,
             capacity: capacityConfig?.capacity
         )
     }

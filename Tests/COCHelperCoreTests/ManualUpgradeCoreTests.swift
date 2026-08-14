@@ -302,6 +302,39 @@ final class ManualUpgradeCoreTests: XCTestCase {
         }
     }
 
+    // MARK: - Issue #183 review P1：observedTimer 证据
+
+    func testImportedObservationDefaultsToNoTimer() throws {
+        let observation = try ManualImportedObservation(
+            reference: baseline,
+            levelDistribution: try distribution([(10, 1)])
+        )
+        XCTAssertFalse(observation.observedTimer)
+    }
+
+    func testImportedObservationPreservesObservedTimer() throws {
+        let observation = try ManualImportedObservation(
+            reference: baseline,
+            levelDistribution: try distribution([(10, 1)]),
+            observedTimer: true
+        )
+        XCTAssertTrue(observation.observedTimer)
+        let data = try JSONEncoder().encode(observation)
+        let decoded = try JSONDecoder().decode(ManualImportedObservation.self, from: data)
+        XCTAssertTrue(decoded.observedTimer)
+    }
+
+    func testImportedObservationDecodesLegacyDataWithoutTimerField() throws {
+        // 旧版本没有 observedTimer 字段：必须回退为 false。
+        let json = """
+        {"reference":{"revision":"snapshot-1"},"levelDistribution":[]}
+        """
+        let decoded = try JSONDecoder().decode(
+            ManualImportedObservation.self, from: Data(json.utf8)
+        )
+        XCTAssertFalse(decoded.observedTimer)
+    }
+
     func testTimedUpgradeReservesSourceAndSettlesIdempotently() throws {
         var core = try core(
             imported: distribution([(12, 100)]),

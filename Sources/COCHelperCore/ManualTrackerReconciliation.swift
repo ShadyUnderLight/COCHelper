@@ -439,9 +439,56 @@ public enum ManualTrackerReconciliationService {
             lastImportAt: appliedAt,
             diagnostics: diagnostics,
             reconciliationHistory: currentState.reconciliationHistory + [record],
-            queueCapacityConfigs: currentState.queueCapacityConfigs
+            queueCapacityConfigs: currentState.queueCapacityConfigs,
+            queueAssignments: rebasedQueueAssignments(
+                currentState.queueAssignments,
+                newReference: preview.newReference,
+                observations: observations
+            )
         )
         return ManualReconciliationPlan(preview: preview, state: state)
+    }
+
+    /// Issue #183：对账后对 overlay 做保守降级，从不创建/删除。
+    ///
+    /// - lineage 变化 → `unknown`（旧账号历史证据，不参与新 lineage 容量）；
+    /// - 同 lineage 但 timer 消失/观察缺失/覆盖不完整 → `observedOnly`
+    ///   （保留记录，不占容量，等待用户重新确认或明确解除）；
+    /// - 同 lineage 且 timer 仍被观察到、覆盖完整 → 保持原 status
+    ///   （不自动改 queueKind）。
+    private static func rebasedQueueAssignments(
+        _ assignments: [QueueAssignmentDecision],
+        newReference: ManualBaselineReference,
+        observations: [TrackerItemKey: Observation]
+    ) -> [QueueAssignmentDecision] {
+        assignments.map { assignment in
+            let lineageChanged = assignment.baselineReference.lineageID
+                != newReference.lineageID
+            // review P1：timer 存在但覆盖不完整（如部分 lvl/cnt/timer 字段
+            // 缺失）不得保持 userAssigned——证据不足不能占容量。
+            let observation = observations[assignment.itemKey]
+            let timerStillObserved = observation?.hasTimer == true
+                && observation?.coverageComplete == true
+            let newStatus: QueueAssignmentStatus
+            if lineageChanged {
+                newStatus = .unknown
+            } else if !timerStillObserved {
+                newStatus = .observedOnly
+            } else {
+                newStatus = assignment.status
+            }
+            guard newStatus != assignment.status else { return assignment }
+            return try! QueueAssignmentDecision(
+                decisionID: assignment.decisionID,
+                villageID: assignment.villageID,
+                itemKey: assignment.itemKey,
+                baselineReference: assignment.baselineReference,
+                queueKind: assignment.queueKind,
+                source: assignment.source,
+                decidedAt: assignment.decidedAt,
+                status: newStatus
+            )
+        }
     }
 
     private static func rebuildCore(
@@ -505,7 +552,8 @@ public enum ManualTrackerReconciliationService {
                 let imported = try ManualImportedObservation(
                     reference: newReference,
                     levelDistribution: distribution,
-                    sourceTimestamp: sourceTimestamp
+                    sourceTimestamp: sourceTimestamp,
+                    observedTimer: observation?.hasTimer ?? false
                 )
                 states.append(try ManualItemState(
                     itemKey: key,
@@ -525,7 +573,8 @@ public enum ManualTrackerReconciliationService {
                 let imported = try ManualImportedObservation(
                     reference: newReference,
                     levelDistribution: nil,
-                    sourceTimestamp: sourceTimestamp
+                    sourceTimestamp: sourceTimestamp,
+                    observedTimer: observation?.hasTimer ?? false
                 )
                 let status: ManualItemStatus
                 switch old.status {
@@ -549,7 +598,8 @@ public enum ManualTrackerReconciliationService {
                 let imported = try ManualImportedObservation(
                     reference: newReference,
                     levelDistribution: distribution,
-                    sourceTimestamp: sourceTimestamp
+                    sourceTimestamp: sourceTimestamp,
+                    observedTimer: observation?.hasTimer ?? false
                 )
                 states.append(try ManualItemState(
                     itemKey: key,

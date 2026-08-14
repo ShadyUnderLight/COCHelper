@@ -776,6 +776,159 @@ final class ManualTrackerReconciliationTests: XCTestCase {
             XCTAssertEqual(error as? ManualReconciliationError, .villageMismatch)
         }
     }
+
+    // MARK: - Issue #183 queueAssignments 对账
+
+    private func stateWithAssignment(
+        reference: ManualBaselineReference,
+        distribution: [Int: Int64],
+        queueKind: LocalQueueKind = .builder
+    ) throws -> ManualTrackerVillageState {
+        var state = try observedState(reference: reference, distribution: distribution)
+        state.queueAssignments = [
+            try QueueAssignmentDecision(
+                villageID: villageID,
+                itemKey: key,
+                baselineReference: reference,
+                queueKind: queueKind,
+                decidedAt: Date(timeIntervalSince1970: 1_700_000_010)
+            ),
+        ]
+        return state
+    }
+
+    func testReconcileKeepsUserAssignedWithinSameLineage() throws {
+        let raw = ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60}]}"##
+        let context = try history(raw)
+        let state = try stateWithAssignment(
+            reference: context.reference, distribution: [10: 1]
+        )
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60}]}"##,
+            from: context
+        )
+        XCTAssertTrue(next.duplicate)
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(plan.state.queueAssignments.count, 1)
+        XCTAssertEqual(plan.state.queueAssignments[0].status, .userAssigned)
+        XCTAssertEqual(plan.state.queueAssignments[0].queueKind, .builder)
+        XCTAssertEqual(
+            plan.state.queueAssignments[0].baselineReference.lineageID,
+            context.reference.lineageID
+        )
+    }
+
+    func testReconcileDegradesCrossLineageAssignmentToUnknown() throws {
+        let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##)
+        let state = try stateWithAssignment(
+            reference: context.reference, distribution: [10: 1]
+        )
+        let next = try decision(
+            ##"{"tag":"#P2","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":1}]}"##,
+            from: context,
+            currentTag: "#P1"
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .acceptObserved,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(plan.state.queueAssignments.count, 1,
+            "对账不得删除旧 lineage 的映射，保留为历史证据")
+        XCTAssertEqual(plan.state.queueAssignments[0].status, .unknown)
+        XCTAssertEqual(plan.state.queueAssignments[0].queueKind, .builder)
+    }
+
+    func testReconcileDegradesTimerEndedAssignmentToObservedOnly() throws {
+        let raw = ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60}]}"##
+        let context = try history(raw)
+        let state = try stateWithAssignment(
+            reference: context.reference, distribution: [10: 1]
+        )
+        // 同 lineage、同分布，但 timer 消失。
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##,
+            from: context
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(plan.state.queueAssignments.count, 1,
+            "timer 消失不得删除用户映射，等待用户明确解除")
+        XCTAssertEqual(plan.state.queueAssignments[0].status, .observedOnly)
+    }
+
+    func testReconcileNeverCreatesAssignmentsAutomatically() throws {
+        let raw = ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60}]}"##
+        let context = try history(raw)
+        let state = try observedState(reference: context.reference, distribution: [10: 1])
+        XCTAssertTrue(state.queueAssignments.isEmpty)
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60}]}"##,
+            from: context
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertTrue(plan.state.queueAssignments.isEmpty,
+            "导入计时从未被自动分配到任何队列")
+    }
+
+    func testReconcileDegradesAssignmentWhenCoverageIncomplete() throws {
+        // Issue #183 review P1：同 section 另一条目缺 lvl → 该 section 覆盖
+        // 不完整，即使 timer 仍存在也不能保持 userAssigned 占用容量。
+        let raw = ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60},{"data":101,"lvl":10,"cnt":1}]}"##
+        let context = try history(raw)
+        let state = try stateWithAssignment(
+            reference: context.reference, distribution: [10: 1]
+        )
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60},{"data":101,"cnt":1}]}"##,
+            from: context
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(plan.state.queueAssignments.count, 1,
+            "覆盖不完整不得删除映射，保留记录")
+        XCTAssertEqual(plan.state.queueAssignments[0].status, .observedOnly,
+            "覆盖不完整时 timer 存在也不能保持 userAssigned")
+    }
 }
 
 private final class MemoryHistoryStore: SnapshotHistoryStore, @unchecked Sendable {

@@ -933,6 +933,121 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(diff.changes.single?.changeKind, .unknown, "契约不一致必须 fail-closed")
     }
 
+    func testSchemaMismatchBeforeStateTransitionIsUnknown() throws {
+        // Issue #175 review：契约规格不一致必须在任何状态转换（含
+        // active→inactive / inactive→active）前 fail-closed，不能只拦
+        // active→active 的数值比较。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let secondsSchema = SnapshotTimerSchema(
+            version: "seconds-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)]
+        )
+        let millisSchema = SnapshotTimerSchema(
+            version: "millis-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .remaining)]
+        )
+        // 1) active → inactive（timer 归零）：契约不一致也必须 unknown，
+        //    不能输出 timerEndedObserved。
+        let ended = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: secondsSchema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(0)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: millisSchema
+            )
+        )
+        XCTAssertEqual(ended.changes.single?.changeKind, .unknown, "active→inactive 时契约不一致必须 fail-closed")
+        XCTAssertEqual(ended.changes.single?.evidence, .unknown)
+
+        // 2) inactive → active（timer 出现）：契约不一致也必须 unknown，
+        //    不能输出 upgradeStarted。
+        let started = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(0)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: secondsSchema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: millisSchema
+            )
+        )
+        XCTAssertEqual(started.changes.single?.changeKind, .unknown, "inactive→active 时契约不一致必须 fail-closed")
+        XCTAssertEqual(started.changes.single?.evidence, .unknown)
+    }
+
+    func testAbsoluteSemanticsExpiresAgainstSourceTimestamp() throws {
+        // Issue #175 review：absolute 结束时间戳必须与观测时刻
+        // （sourceTimestamp）比较判定 active/inactive；观测时刻越过
+        // 结束时间戳后应产生结束事件，而不是永远 active。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let schema = SnapshotTimerSchema(
+            version: "absolute-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .absolute)]
+        )
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        // 结束时间戳 110：观测 100 时 active；观测 120 时已过期 → inactive。
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(110)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 120,
+                items: [item(110)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 120),
+                timerSchema: schema
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .timerEndedObserved, "absolute 时间戳越过结束点必须产生结束事件")
+    }
+
     func testUniqueTimerNaturalCountdownDoesNotCreateChange() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeItem(

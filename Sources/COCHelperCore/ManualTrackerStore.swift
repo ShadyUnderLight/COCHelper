@@ -76,6 +76,10 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
     /// Issue #145：用户配置的本地队列容量（source = userConfigured）。
     /// 只约束未来 local manual start，不修改历史 record 或 imported 快照。
     public var queueCapacityConfigs: [LocalQueueCapacityConfig]
+    /// Issue #183：用户确认的导入观察本地队列映射 overlay。
+    /// 独立于 core 与 reconciliationHistory；只记录用户显式分配决定，
+    /// 对账只降级不创建/删除。
+    public var queueAssignments: [QueueAssignmentDecision]
 
     /// The source snapshot reference currently used by the manual ledger.
     /// Reconciliation outcomes remain separately auditable in history.
@@ -90,7 +94,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         lastImportAt: Date? = nil,
         diagnostics: [ManualTrackerDiagnostic] = [],
         reconciliationHistory: [ManualReconciliationRecord] = [],
-        queueCapacityConfigs: [LocalQueueCapacityConfig] = []
+        queueCapacityConfigs: [LocalQueueCapacityConfig] = [],
+        queueAssignments: [QueueAssignmentDecision] = []
     ) throws {
         guard stateUpdatedAt.timeIntervalSinceReferenceDate.isFinite else {
             throw ManualTrackerStoreError.invalidEnvelope("stateUpdatedAt 无效。")
@@ -137,6 +142,27 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
                 == queueCapacityConfigs.count else {
             throw ManualTrackerStoreError.invalidEnvelope("存在重复的队列类别容量配置。")
         }
+        guard queueAssignments.count <= 4096 else {
+            throw ManualTrackerStoreError.invalidEnvelope("队列分配数量超过上限。")
+        }
+        for assignment in queueAssignments {
+            guard assignment.villageID == villageID else {
+                throw ManualTrackerStoreError.invalidEnvelope(
+                    "队列分配的村庄与所属村庄不一致。"
+                )
+            }
+            guard assignment.decidedAt.timeIntervalSinceReferenceDate.isFinite else {
+                throw ManualTrackerStoreError.invalidEnvelope("队列分配时间无效。")
+            }
+            guard assignment.itemKey.isStructurallyValid,
+                  assignment.baselineReference.isStructurallyValid else {
+                throw ManualTrackerStoreError.invalidEnvelope("队列分配身份无效。")
+            }
+        }
+        guard Set(queueAssignments.map(\.decisionID)).count
+                == queueAssignments.count else {
+            throw ManualTrackerStoreError.invalidEnvelope("存在重复的队列分配 ID。")
+        }
 
         let references = Set(
             core.itemStates.map(\.baselineReference)
@@ -163,6 +189,7 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         self.diagnostics = diagnostics
         self.reconciliationHistory = reconciliationHistory
         self.queueCapacityConfigs = queueCapacityConfigs
+        self.queueAssignments = queueAssignments
     }
 
     public init(from decoder: Decoder) throws {
@@ -194,6 +221,10 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
             queueCapacityConfigs: try container.decodeIfPresent(
                 [LocalQueueCapacityConfig].self,
                 forKey: .queueCapacityConfigs
+            ) ?? [],
+            queueAssignments: try container.decodeIfPresent(
+                [QueueAssignmentDecision].self,
+                forKey: .queueAssignments
             ) ?? []
         )
         guard self.baselineReference == decodedBaseline else {
@@ -210,7 +241,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         lastImportAt: Date? = nil,
         diagnostics: [ManualTrackerDiagnostic] = [],
         reconciliationHistory: [ManualReconciliationRecord] = [],
-        queueCapacityConfigs: [LocalQueueCapacityConfig] = []
+        queueCapacityConfigs: [LocalQueueCapacityConfig] = [],
+        queueAssignments: [QueueAssignmentDecision] = []
     ) throws {
         try self.init(
             villageID: villageID,
@@ -220,7 +252,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
             lastImportAt: lastImportAt,
             diagnostics: diagnostics,
             reconciliationHistory: reconciliationHistory,
-            queueCapacityConfigs: queueCapacityConfigs
+            queueCapacityConfigs: queueCapacityConfigs,
+            queueAssignments: queueAssignments
         )
     }
 
@@ -242,6 +275,7 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         case diagnostics
         case reconciliationHistory
         case queueCapacityConfigs
+        case queueAssignments
     }
 }
 

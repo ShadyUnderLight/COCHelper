@@ -994,6 +994,111 @@ final class ManualTrackerStoreTests: XCTestCase {
         XCTAssertTrue(state.queueCapacityConfigs.isEmpty)
     }
 
+    // MARK: - Issue #183 queueAssignments 持久化
+
+    private func assignment(
+        villageID: UUID,
+        key: TrackerItemKey = TrackerItemKey.root(
+            base: .home, rawSection: "buildings", dataID: 123
+        ),
+        queueKind: LocalQueueKind = .builder,
+        decidedAt: Date = Date(timeIntervalSince1970: 1_000),
+        status: QueueAssignmentStatus = .userAssigned
+    ) throws -> QueueAssignmentDecision {
+        try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: ManualBaselineReference(
+                revision: "rev-1", fingerprint: "fp-1", lineageID: "lineage-1"),
+            queueKind: queueKind,
+            decidedAt: decidedAt,
+            status: status
+        )
+    }
+
+    func testVillageStateQueueAssignmentsRoundTrip() throws {
+        let villageID = UUID()
+        let decision = try assignment(villageID: villageID)
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            queueAssignments: [decision]
+        )
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(ManualTrackerVillageState.self, from: data)
+        XCTAssertEqual(decoded.queueAssignments, [decision])
+        XCTAssertEqual(decoded.queueAssignments.first?.status, .userAssigned)
+        XCTAssertEqual(decoded.queueAssignments.first?.source, .userConfigured)
+    }
+
+    func testVillageStateRejectsCrossVillageQueueAssignment() {
+        let decision = try! assignment(villageID: UUID())
+        XCTAssertThrowsError(
+            try ManualTrackerVillageState(villageID: UUID(), queueAssignments: [decision])
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualTrackerStoreError,
+                .invalidEnvelope("队列分配的村庄与所属村庄不一致。")
+            )
+        }
+    }
+
+    func testVillageStateRejectsDuplicateQueueAssignmentID() throws {
+        let villageID = UUID()
+        let decision = try assignment(villageID: villageID)
+        var second = decision
+        XCTAssertThrowsError(
+            try ManualTrackerVillageState(
+                villageID: villageID,
+                queueAssignments: [decision, second]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualTrackerStoreError,
+                .invalidEnvelope("存在重复的队列分配 ID。")
+            )
+        }
+    }
+
+    func testVillageStateDecodesLegacyDataWithoutQueueAssignments() throws {
+        // 旧版 JSON 没有 queueAssignments 字段：decode 必须回退为空数组，
+        // 不能报错（向后兼容，不 bump schemaVersion）。
+        let villageID = UUID()
+        let json = """
+        {"villageID":"\(villageID.uuidString)","schemaVersion":1,"baselineReference":null,\
+        "core":{"itemStates":[],"records":[]},"stateUpdatedAt":1000}
+        """
+        let state = try JSONDecoder().decode(
+            ManualTrackerVillageState.self, from: Data(json.utf8)
+        )
+        XCTAssertTrue(state.queueAssignments.isEmpty)
+    }
+
+    func testEnvelopePersistsQueueAssignmentsAcrossSaveLoad() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Issue183Store-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileStore = FileManualTrackerStore(
+            fileURL: directory.appendingPathComponent("manual-tracker-v1.json")
+        )
+
+        let villageID = UUID()
+        let decision = try assignment(villageID: villageID, queueKind: .laboratory)
+        var envelope = try ManualTrackerEnvelope(
+            villages: [
+                try ManualTrackerVillageState(villageID: villageID, queueAssignments: [decision]),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(completedAt: Date(timeIntervalSince1970: 1_000))
+        )
+        try fileStore.save(envelope)
+
+        let loaded = try XCTUnwrap(try fileStore.load())
+        let state = try XCTUnwrap(loaded.state(for: villageID))
+        XCTAssertEqual(state.queueAssignments, [decision])
+        XCTAssertEqual(state.queueAssignments.first?.queueKind, .laboratory)
+        XCTAssertEqual(state.queueAssignments.first?.decidedAt, decision.decidedAt)
+    }
+
     func testEnvelopePersistsCapacityConfigsAcrossSaveLoad() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Issue145Store-\(UUID().uuidString)", isDirectory: true)

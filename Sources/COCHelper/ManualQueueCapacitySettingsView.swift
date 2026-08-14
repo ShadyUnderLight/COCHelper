@@ -85,23 +85,23 @@ struct ManualQueueCapacitySettingsView: View {
     /// 先完整解析全部输入（空串 = 清除该类别，`0` 是合法容量），
     /// 全部通过后再走一次受保护的批量保存；任何非法输入都不写入。
     private func save() {
-        var capacityByKind: [LocalQueueKind: Int?] = [:]
+        var updates: [LocalQueueKind: LocalQueueCapacityUpdate] = [:]
         for kind in LocalQueueKind.knownKinds {
             let text = capacityTexts[kind.rawValue] ?? ""
             if text.isEmpty {
-                capacityByKind[kind] = nil
+                updates[kind] = .clear
                 continue
             }
             guard let capacity = Int(text) else {
                 errorMessage = "「\(kind.displayName)」容量必须是整数。"
                 return
             }
-            capacityByKind[kind] = capacity
+            updates[kind] = .set(capacity)
         }
         do {
             try model.replaceQueueCapacities(
                 for: villageID,
-                capacityByKind: capacityByKind
+                updates: updates
             )
         } catch ManualUpgradeCommandError.queueCapacityInvalid {
             errorMessage = "容量必须在 0 到 \(LocalQueueCapacityConfig.maximumCapacity) 之间。"

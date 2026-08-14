@@ -789,17 +789,19 @@ public final class AppModel: ObservableObject {
 
     /// Issue #182：以一次事务替换本村庄的容量配置。
     ///
-    /// `capacityByKind` 中 `Int? == nil` 表示清除该类别的配置（回到未配置），
-    /// `0` 是合法容量（不允许任何本地 active）。字典未出现的类别保持原配置
-    /// 不变——包括未知/未来 `queueKind`，不会被已知类别表单保存静默删除。
+    /// `updates` 中 `.clear` 表示清除该类别配置（回到未配置），`.set` 的
+    /// `0` 是合法容量（不允许任何本地 active）。字典未出现的类别保持原
+    /// 配置不变——包括未知/未来 `queueKind`，不会被已知类别表单保存静默删除。
     ///
     /// 原子性：先构造并校验全部候选 config，全部合法后才走一次受保护的
-    /// 保存路径；任何校验失败或持久化失败都不会改变原有配置、内存状态、
-    /// `stateUpdatedAt` 或已持久化字节。成功时只产生一次有效 state 保存。
+    /// 保存路径；任何校验失败都不会改变原有配置、内存状态、`stateUpdatedAt`
+    /// 或已持久化字节。保存失败时尚未 install 候选，内存与磁盘保持一致的
+    /// 旧状态，因此不标记 unavailable，用户可直接重试。成功时只产生一次
+    /// 有效 state 保存。
     @discardableResult
     public func replaceQueueCapacities(
         for villageID: UUID,
-        capacityByKind: [LocalQueueKind: Int?],
+        updates: [LocalQueueKind: LocalQueueCapacityUpdate],
         now: Date = Date()
     ) throws -> [LocalQueueCapacityConfig] {
         guard villages.contains(where: { $0.id == villageID }) else {
@@ -818,9 +820,9 @@ public final class AppModel: ObservableObject {
 
         // 先完整构造候选 config：任何非法输入在此抛错，不碰任何状态。
         var replacements: [LocalQueueCapacityConfig] = []
-        replacements.reserveCapacity(capacityByKind.count)
-        for (kind, capacity) in capacityByKind.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
-            guard let capacity else { continue }
+        replacements.reserveCapacity(updates.count)
+        for (kind, update) in updates.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            guard case .set(let capacity) = update else { continue }
             do {
                 replacements.append(try LocalQueueCapacityConfig(
                     villageID: villageID,
@@ -837,8 +839,8 @@ public final class AppModel: ObservableObject {
 
         let previousState = currentEnvelope.state(for: villageID)
         let previousConfigs = previousState?.queueCapacityConfigs ?? []
-        // 未出现在 capacityByKind 的类别（含未知/未来 queueKind）原样保留。
-        var configs = previousConfigs.filter { capacityByKind[$0.queueKind] == nil }
+        // 未出现在 updates 的类别（含未知/未来 queueKind）原样保留。
+        var configs = previousConfigs.filter { updates[$0.queueKind] == nil }
         configs.append(contentsOf: replacements)
         configs.sort { $0.queueKind.rawValue < $1.queueKind.rawValue }
         guard configs != previousConfigs else { return configs }
@@ -864,7 +866,8 @@ public final class AppModel: ObservableObject {
         do {
             try manualTrackerStore.save(candidate)
         } catch {
-            markManualTrackerUnavailable(error)
+            // 与单条命令不同：失败时未 install 候选，内存与磁盘一致（旧状态），
+            // 不标记 unavailable，允许用户直接重试本次编辑。
             throw error
         }
         installManualTrackerEnvelope(candidate)

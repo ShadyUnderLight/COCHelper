@@ -1301,11 +1301,11 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
 
         try model.replaceQueueCapacities(
             for: villageID,
-            capacityByKind: [
-                .builder: 3,
-                .laboratory: 0,
-                .hero: 2,
-                .equipment: nil,
+            updates: [
+                .builder: .set(3),
+                .laboratory: .set(0),
+                .hero: .set(2),
+                .equipment: .clear,
             ],
             now: now
         )
@@ -1332,9 +1332,9 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertThrowsError(
             try model.replaceQueueCapacities(
                 for: villageID,
-                capacityByKind: [
-                    .builder: 3,
-                    .laboratory: LocalQueueCapacityConfig.maximumCapacity + 1,
+                updates: [
+                    .builder: .set(3),
+                    .laboratory: .set(LocalQueueCapacityConfig.maximumCapacity + 1),
                 ]
             )
         ) { error in
@@ -1358,7 +1358,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertThrowsError(
             try model.replaceQueueCapacities(
                 for: villageID,
-                capacityByKind: [.builder: 3, .hero: -1]
+                updates: [.builder: .set(3), .hero: .set(-1)]
             )
         ) { error in
             guard case ManualUpgradeCommandError.queueCapacityInvalid = error else {
@@ -1374,20 +1374,26 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
         try model.setQueueCapacity(for: villageID, queueKind: .laboratory, capacity: 2)
 
-        try model.replaceQueueCapacities(
-            for: villageID,
-            capacityByKind: [
-                .builder: nil,
-                .laboratory: 3,
-                .hero: 1,
-            ]
-        )
+        // 按真实 UI 路径构造：循环逐项赋值（与 SettingsView.save 相同方式），
+        // 显式写入 .clear 而不是依赖字面量 nil 语义。
+        var updates: [LocalQueueKind: LocalQueueCapacityUpdate] = [:]
+        for kind in LocalQueueKind.knownKinds {
+            switch kind {
+            case .builder: updates[kind] = .clear
+            case .laboratory: updates[kind] = .set(3)
+            case .hero: updates[kind] = .set(1)
+            case .equipment: updates[kind] = .set(0)
+            default: break
+            }
+        }
+        try model.replaceQueueCapacities(for: villageID, updates: updates)
 
         XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .builder).capacity)
         XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity, 3)
         XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .hero).capacity, 1)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .equipment).capacity, 0)
         let persisted = try XCTUnwrap(try store.load()?.state(for: villageID))
-        XCTAssertEqual(persisted.queueCapacityConfigs.count, 2)
+        XCTAssertEqual(persisted.queueCapacityConfigs.count, 3)
     }
 
     @MainActor
@@ -1422,7 +1428,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
 
         try restored.replaceQueueCapacities(
             for: villageID,
-            capacityByKind: [.builder: 3]
+            updates: [.builder: .set(3)]
         )
 
         let persisted = try XCTUnwrap(try store.load()?.state(for: villageID))
@@ -1464,31 +1470,49 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         let beforeUpdatedAt = beforeState.stateUpdatedAt
         let beforeBytes = failingStore.rawData
         let savesBefore = failingStore.saveCount
+        let beforeStatus = model.manualTrackerStatus
 
         failingStore.failWrite = true
         XCTAssertThrowsError(
             try model.replaceQueueCapacities(
                 for: villageID,
-                capacityByKind: [.builder: 3, .hero: 2]
+                updates: [.builder: .set(3), .hero: .set(2)]
             )
         ) { error in
             XCTAssertNotNil(
                 error as? ManualTrackerStoreError,
-                "持久化失败必须明确抛错（unavailable 状态由 UI 展示）"
+                "持久化失败必须明确抛错（由 UI 展示）"
             )
         }
         failingStore.failWrite = false
 
-        // 存储故障沿用既有 fail-closed 语义：store bytes 与已持久化
-        // stateUpdatedAt 不变，且只尝试一次持久化（无逐项部分写入）。
+        // 批量命令失败时尚未 install 候选：内存与磁盘保持一致的旧状态，
+        // 内存配置仍可见、状态未被标记 unavailable（.empty/.available 均
+        // 不阻塞命令），允许用户直接重试本次编辑（不要求重启）。
+        XCTAssertEqual(model.manualTrackerStatus, beforeStatus)
+        XCTAssertNotEqual(model.manualTrackerStatus, .unavailable)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 5)
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .hero).capacity)
+        // store bytes 与已持久化 stateUpdatedAt 不变，且只尝试一次持久化。
         XCTAssertEqual(failingStore.rawData, beforeBytes)
         let afterState = try XCTUnwrap(try failingStore.load()?.state(for: villageID))
         XCTAssertEqual(afterState.stateUpdatedAt, beforeUpdatedAt)
         XCTAssertEqual(afterState.queueCapacityConfigs.first {
             $0.queueKind == .builder
         }?.capacity, 5)
-        // 只尝试了一次持久化（无逐项保存），失败后未再写入。
         XCTAssertEqual(failingStore.saveCount, savesBefore + 1)
+
+        // 重试：存储恢复后同一次编辑可直接再次提交成功。
+        try model.replaceQueueCapacities(
+            for: villageID,
+            updates: [.builder: .set(3), .hero: .set(2)]
+        )
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 3)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .hero).capacity, 2)
+        let retried = try XCTUnwrap(try failingStore.load()?.state(for: villageID))
+        XCTAssertEqual(retried.queueCapacityConfigs.first {
+            $0.queueKind == .builder
+        }?.capacity, 3)
     }
 
     @MainActor
@@ -1519,7 +1543,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
 
         try model.replaceQueueCapacities(
             for: villageID,
-            capacityByKind: [.builder: 3, .hero: 1]
+            updates: [.builder: .set(3), .hero: .set(1)]
         )
 
         // 村庄1 更新；村庄2 仍无任何容量配置。

@@ -2450,6 +2450,17 @@ private struct MetricAccumulators {
         guard !relevant.isEmpty else { return }
 
         for diagnostic in relevant {
+            // Issue #176：城墙与普通建筑共享 rawSection "buildings"，section
+            // 粒度传播会互相污染。diagnostic 有 identity 且能在本 diff 的
+            // changes 中匹配到同 identity 的 change 时，按 change 的
+            // category/displayCategory 传播；匹配不到才回退 section 粒度
+            // （保守，保持既有行为）。
+            if let identity = diagnostic.identity,
+               let matched = diff.changes.first(where: { $0.identity == identity }),
+               let category = Self.category(for: matched) {
+                markUnknown(category: category)
+                continue
+            }
             if let section = diagnostic.rawSection ?? diagnostic.identity?.rawSection {
                 markUnknown(section: section)
             } else {

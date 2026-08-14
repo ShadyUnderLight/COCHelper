@@ -1745,6 +1745,55 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .insufficientData)
     }
 
+    func testWallResidualDoesNotDegradeBuildingMetrics() throws {
+        // 城墙与普通建筑共享 rawSection "buildings"；城墙 histogram residual
+        // fail-closed 只影响墙指标，不得把同 diff 普通建筑的合法迁移
+        // 降级为 insufficientData。
+        let wallIdentity = makeIdentity(section: "buildings", dataID: 8)
+        let buildingIdentity = makeIdentity(section: "buildings", dataID: 1)
+        let buildingBinding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [
+                makeItem(identity: wallIdentity, level: 12, count: 100, display: wallBinding()),
+                makeItem(identity: wallIdentity, level: 13, count: 50, display: wallBinding()),
+                makeItem(identity: buildingIdentity, level: 1, count: 1, display: buildingBinding)
+            ],
+            section: "buildings",
+            states: ["cnt": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [
+                makeItem(identity: wallIdentity, level: 12, count: 80, display: wallBinding()),
+                makeItem(identity: wallIdentity, level: 13, count: 70, display: wallBinding()),
+                makeItem(identity: wallIdentity, level: 14, count: 1, display: wallBinding()),
+                makeItem(identity: buildingIdentity, level: 2, count: 1, display: buildingBinding)
+            ],
+            section: "buildings",
+            states: ["cnt": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        XCTAssertTrue(diff.changes.contains { $0.changeKind == .unknown && $0.identity == wallIdentity })
+        XCTAssertTrue(diff.changes.contains { $0.changeKind == .levelIncreased && $0.identity == buildingIdentity })
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        // 墙指标数据不足
+        XCTAssertEqual(statistics.today.wallLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredWallLevelGrowth.state, .insufficientData)
+        // 普通建筑指标不受城墙 residual 影响
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.state, .available)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.value, 1)
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .available)
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.value, 0)
+    }
+
     func testRealisticBuildingAndTrapTimerFixtureDiffs() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

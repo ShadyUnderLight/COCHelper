@@ -100,6 +100,54 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         XCTAssertEqual(pets.applying(category: .all).timeline.count, 2)
     }
 
+    func testTimerCompletionAggregateInferredProjectsToUIAndStatistics() throws {
+        // Issue #175 验收：aggregate/inferred 的 timer 完成语义一路投影到
+        // UI（change 行、类别）和统计（aggregateInferredEventCount）。
+        let identity = SnapshotItemIdentity(base: .home, rawSection: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let active = SnapshotObservationItem(
+            identity: identity,
+            level: 14,
+            count: 2,
+            rawTimerEvidence: ["timer": .number("90")],
+            display: binding
+        )
+        let finished = SnapshotObservationItem(
+            identity: identity,
+            level: 15,
+            count: 2,
+            rawTimerEvidence: [:],
+            display: binding
+        )
+        let baseline = makeEntry(
+            id: "B0000000-0000-0000-0000-000000000001",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 100,
+            isBaseline: true,
+            items: [active]
+        )
+        let changed = makeEntry(
+            id: "B0000000-0000-0000-0000-000000000002",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 200,
+            items: [finished]
+        )
+        let envelope = makeEnvelope(entries: [baseline, changed], activeEntries: [(villageA, changed)])
+
+        let all = projection(envelope: envelope, referenceDate: 200)
+        XCTAssertEqual(all.availability, .available)
+        let completion = try XCTUnwrap(all.timeline[0].changes.first { $0.changeKind == .upgradeCompleted })
+        XCTAssertEqual(completion.evidence, .aggregateInferred)
+        XCTAssertEqual(completion.category, "buildings")
+        // upgradeCompleted + levelIncreased migration 两条 aggregateInferred 事件
+        XCTAssertEqual(all.statistics.today.aggregateInferredEventCount.value, 2)
+
+        let buildings = all.applying(category: .buildings)
+        XCTAssertTrue(buildings.timeline[0].changes.contains { $0.changeKind == .upgradeCompleted })
+    }
+
     func testWholeGroupAdditionAndRemovalKeepSingleSidedQuantity() throws {
         let baseline = makeEntry(
             id: "B0000000-0000-0000-0000-000000000000",

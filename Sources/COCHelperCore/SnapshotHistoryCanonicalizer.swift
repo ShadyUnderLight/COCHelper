@@ -22,21 +22,24 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog? = nil,
         craftTableCatalog: CraftTableCatalog? = nil,
         sectionProofs: [String: SnapshotCoverageProof] = [:],
-        observationVersion: Int = SnapshotHistorySchema.observation
+        observationVersion: Int = SnapshotHistorySchema.observation,
+        timerSchema: SnapshotTimerSchema? = AccountSnapshotImporter.timerSchema
     ) throws -> SnapshotHistoryEntry {
         let source = try canonicalSource(snapshot.originalText)
         let observation = makeObservation(
             source: source,
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
-            observationVersion: observationVersion
+            observationVersion: observationVersion,
+            timerSchema: timerSchema
         )
         let coverage = makeCoverage(
             source: source,
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
             sectionProofs: sectionProofs,
-            schemaVersion: observationVersion
+            schemaVersion: observationVersion,
+            timerSchema: timerSchema
         )
         let normalizedObservation = CanonicalSnapshotObservation(
             schemaVersion: observationVersion,
@@ -60,7 +63,8 @@ public enum SnapshotHistoryCanonicalizer {
             observation: normalizedObservation,
             coverage: coverage,
             isBaseline: isBaseline,
-            baselineReason: baselineReason
+            baselineReason: baselineReason,
+            timerSchema: observationVersion >= SnapshotHistorySchema.observation ? timerSchema : nil
         )
     }
 
@@ -73,7 +77,8 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog? = nil,
         craftTableCatalog: CraftTableCatalog? = nil,
         sectionProofs: [String: SnapshotCoverageProof] = [:],
-        observationVersion: Int = SnapshotHistorySchema.observation
+        observationVersion: Int = SnapshotHistorySchema.observation,
+        timerSchema: SnapshotTimerSchema? = AccountSnapshotImporter.timerSchema
     ) throws -> SnapshotHistoryEntry {
         try canonicalize(
             snapshot: snapshot,
@@ -86,7 +91,8 @@ public enum SnapshotHistoryCanonicalizer {
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
             sectionProofs: sectionProofs,
-            observationVersion: observationVersion
+            observationVersion: observationVersion,
+            timerSchema: timerSchema
         )
     }
 
@@ -121,7 +127,8 @@ public enum SnapshotHistoryCanonicalizer {
         observation: CanonicalSnapshotObservation,
         coverage: SnapshotObservationCoverage,
         isBaseline: Bool,
-        baselineReason: SnapshotLineageReason?
+        baselineReason: SnapshotLineageReason?,
+        timerSchema: SnapshotTimerSchema? = nil
     ) -> String {
         let material = SnapshotHistoryIntegrityMaterial(
             integrityVersion: integrityVersion,
@@ -140,7 +147,8 @@ public enum SnapshotHistoryCanonicalizer {
             observation: observation,
             coverage: coverage,
             isBaseline: isBaseline,
-            baselineReason: baselineReason
+            baselineReason: baselineReason,
+            timerSchema: timerSchema
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -194,7 +202,8 @@ public enum SnapshotHistoryCanonicalizer {
         source: CanonicalSource,
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
-        observationVersion: Int
+        observationVersion: Int,
+        timerSchema: SnapshotTimerSchema?
     ) -> CanonicalSnapshotObservation {
         var items: [SnapshotObservationItem] = []
 
@@ -212,6 +221,7 @@ public enum SnapshotHistoryCanonicalizer {
                     catalog: catalog,
                     craftTableCatalog: craftTableCatalog,
                     observationVersion: observationVersion,
+                    timerSchema: timerSchema,
                     into: &items
                 )
             }
@@ -260,6 +270,7 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
         observationVersion: Int,
+        timerSchema: SnapshotTimerSchema?,
         into items: inout [SnapshotObservationItem]
     ) {
         guard let dataID = integer(object["data"]) else { return }
@@ -276,12 +287,15 @@ public enum SnapshotHistoryCanonicalizer {
 
         let knownFields = SnapshotHistoryKnownSections.itemFields
         let unknownFields = object.filter { key, _ in !knownFields.contains(key) }
-        // Issue #175：v3+ 只有 source contract（allowlist）确认的 timer 字段
-        // 才能进入 rawTimerEvidence，名字包含 timer/cooldown 的未知字段只留在
-        // unknownFields。v2 及更早的 entry 由宽松匹配保存，重建时必须沿用
-        // 旧规则，否则历史 fingerprint 会漂移（store load 校验失败）。
+        // Issue #175：timer evidence 的收集规则按 observationVersion 分叉——
+        // v4+ 由 source adapter 的版本化契约（字段集合）决定，无契约时
+        // fail-closed（字段名不再自动权威）；v3 用全局 timerFields allowlist；
+        // v2 及更早沿用宽松匹配（历史 entry 重建必须稳定）。
         let timerEvidence = object.filter { key, _ in
             if observationVersion >= SnapshotHistorySchema.observation {
+                return timerSchema?.fields.keys.contains(key) ?? false
+            }
+            if observationVersion >= 3 {
                 return SnapshotHistoryKnownSections.timerFields.contains(key)
             }
             let normalized = key.lowercased()
@@ -323,6 +337,7 @@ public enum SnapshotHistoryCanonicalizer {
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
             observationVersion: observationVersion,
+            timerSchema: timerSchema,
             into: &items
         )
         appendChildren(
@@ -335,6 +350,7 @@ public enum SnapshotHistoryCanonicalizer {
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
             observationVersion: observationVersion,
+            timerSchema: timerSchema,
             into: &items
         )
     }
@@ -349,6 +365,7 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
         observationVersion: Int,
+        timerSchema: SnapshotTimerSchema?,
         into items: inout [SnapshotObservationItem]
     ) {
         guard case .array(let values) = value else { return }
@@ -364,6 +381,7 @@ public enum SnapshotHistoryCanonicalizer {
                 catalog: catalog,
                 craftTableCatalog: craftTableCatalog,
                 observationVersion: observationVersion,
+                timerSchema: timerSchema,
                 into: &items
             )
         }
@@ -445,7 +463,8 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
         sectionProofs: [String: SnapshotCoverageProof],
-        schemaVersion: Int
+        schemaVersion: Int,
+        timerSchema: SnapshotTimerSchema?
     ) -> SnapshotObservationCoverage {
         var fields: [SnapshotCoverageField] = []
         var sections: [SnapshotSectionCoverage] = []
@@ -556,7 +575,8 @@ public enum SnapshotHistoryCanonicalizer {
                     state = timerFieldState(
                         objects: objects,
                         invalidObjectCount: values.count - objects.count,
-                        field: field
+                        field: field,
+                        spec: timerSchema?.fields[field]
                     )
                 } else {
                     state = fieldState(
@@ -1016,7 +1036,8 @@ public enum SnapshotHistoryCanonicalizer {
     private static func timerFieldState(
         objects: [[String: CanonicalJSONValue]],
         invalidObjectCount: Int,
-        field: String
+        field: String,
+        spec: SnapshotTimerFieldSpec?
     ) -> SnapshotCoverageState {
         guard !objects.isEmpty else {
             return invalidObjectCount == 0 ? .unavailable : .partial
@@ -1037,7 +1058,10 @@ public enum SnapshotHistoryCanonicalizer {
                   guard let value = object[field], let timer = integer(value) else {
                       return false
                   }
-                  return timer >= 0
+                  guard timer >= 0 else { return false }
+                  if let minValue = spec?.minValue, timer < minValue { return false }
+                  if let maxValue = spec?.maxValue, timer > maxValue { return false }
+                  return true
               }) else {
             return .partial
         }
@@ -1144,6 +1168,7 @@ private struct SnapshotHistoryIntegrityMaterial: Encodable {
     let coverage: SnapshotObservationCoverage
     let isBaseline: Bool
     let baselineReason: SnapshotLineageReason?
+    let timerSchema: SnapshotTimerSchema?
 
     init(
         integrityVersion: Int,
@@ -1162,7 +1187,8 @@ private struct SnapshotHistoryIntegrityMaterial: Encodable {
         observation: CanonicalSnapshotObservation,
         coverage: SnapshotObservationCoverage,
         isBaseline: Bool,
-        baselineReason: SnapshotLineageReason?
+        baselineReason: SnapshotLineageReason?,
+        timerSchema: SnapshotTimerSchema?
     ) {
         self.integrityVersion = integrityVersion
         self.schemaVersion = schemaVersion
@@ -1181,5 +1207,6 @@ private struct SnapshotHistoryIntegrityMaterial: Encodable {
         self.coverage = coverage
         self.isBaseline = isBaseline
         self.baselineReason = baselineReason
+        self.timerSchema = timerSchema
     }
 }

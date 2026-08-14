@@ -233,7 +233,8 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
             observation: entry.observation,
             coverage: entry.coverage,
             isBaseline: entry.isBaseline,
-            baselineReason: entry.baselineReason
+            baselineReason: entry.baselineReason,
+            timerSchema: entry.timerSchema
         )
         guard expectedIntegrityFingerprint == entry.integrityFingerprint else {
             throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的完整性摘要不一致。")
@@ -250,7 +251,8 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
                 snapshotID: entry.snapshotID,
                 isBaseline: entry.isBaseline,
                 baselineReason: entry.baselineReason,
-                observationVersion: entry.observationVersion
+                observationVersion: entry.observationVersion,
+                timerSchema: entry.timerSchema
             )
         } catch let error as SnapshotHistoryStoreError {
             throw error

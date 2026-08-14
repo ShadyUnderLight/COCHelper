@@ -835,9 +835,9 @@ public enum ManualTrackerReconciliationService {
             // or timer field therefore invalidates every key in that section;
             // allowing a complete-looking key to pass would turn a sibling's
             // missing field into a false observedAhead/manual completion.
-            let sectionSafetyCoverageComplete = [
-                "lvl", "cnt", "timer", "helper_timer", "helper_cooldown"
-            ].allSatisfy { field in
+            let sectionSafetyCoverageComplete = (
+                ["lvl", "cnt"] + SnapshotHistoryKnownSections.timerFields.sorted()
+            ).allSatisfy { field in
                 guard let state = entry.coverage.state(
                     base: base,
                     rawSection: key.rawSection,
@@ -854,7 +854,7 @@ public enum ManualTrackerReconciliationService {
                 rawSection: key.rawSection,
                 field: "cnt"
             )
-            let timerCoverageComplete = ["timer", "helper_timer", "helper_cooldown"].allSatisfy { field in
+            let timerCoverageComplete = SnapshotHistoryKnownSections.timerFields.allSatisfy { field in
                 guard let state = entry.coverage.state(
                     base: base,
                     rawSection: key.rawSection,

@@ -28,7 +28,8 @@ public enum SnapshotHistoryCanonicalizer {
         let observation = makeObservation(
             source: source,
             catalog: catalog,
-            craftTableCatalog: craftTableCatalog
+            craftTableCatalog: craftTableCatalog,
+            observationVersion: observationVersion
         )
         let coverage = makeCoverage(
             source: source,
@@ -192,7 +193,8 @@ public enum SnapshotHistoryCanonicalizer {
     private static func makeObservation(
         source: CanonicalSource,
         catalog: GameCatalog?,
-        craftTableCatalog: CraftTableCatalog?
+        craftTableCatalog: CraftTableCatalog?,
+        observationVersion: Int
     ) -> CanonicalSnapshotObservation {
         var items: [SnapshotObservationItem] = []
 
@@ -209,6 +211,7 @@ public enum SnapshotHistoryCanonicalizer {
                     parentPath: [],
                     catalog: catalog,
                     craftTableCatalog: craftTableCatalog,
+                    observationVersion: observationVersion,
                     into: &items
                 )
             }
@@ -256,6 +259,7 @@ public enum SnapshotHistoryCanonicalizer {
         parentPath: [SnapshotNestedPathComponent],
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
+        observationVersion: Int,
         into items: inout [SnapshotObservationItem]
     ) {
         guard let dataID = integer(object["data"]) else { return }
@@ -272,7 +276,14 @@ public enum SnapshotHistoryCanonicalizer {
 
         let knownFields = SnapshotHistoryKnownSections.itemFields
         let unknownFields = object.filter { key, _ in !knownFields.contains(key) }
+        // Issue #175：v3+ 只有 source contract（allowlist）确认的 timer 字段
+        // 才能进入 rawTimerEvidence，名字包含 timer/cooldown 的未知字段只留在
+        // unknownFields。v2 及更早的 entry 由宽松匹配保存，重建时必须沿用
+        // 旧规则，否则历史 fingerprint 会漂移（store load 校验失败）。
         let timerEvidence = object.filter { key, _ in
+            if observationVersion >= SnapshotHistorySchema.observation {
+                return SnapshotHistoryKnownSections.timerFields.contains(key)
+            }
             let normalized = key.lowercased()
             return normalized.contains("timer") || normalized.contains("cooldown")
         }
@@ -311,6 +322,7 @@ public enum SnapshotHistoryCanonicalizer {
             parentPath: childParentPath,
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
+            observationVersion: observationVersion,
             into: &items
         )
         appendChildren(
@@ -322,6 +334,7 @@ public enum SnapshotHistoryCanonicalizer {
             parentPath: childParentPath,
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
+            observationVersion: observationVersion,
             into: &items
         )
     }
@@ -335,6 +348,7 @@ public enum SnapshotHistoryCanonicalizer {
         parentPath: [SnapshotNestedPathComponent],
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
+        observationVersion: Int,
         into items: inout [SnapshotObservationItem]
     ) {
         guard case .array(let values) = value else { return }
@@ -349,6 +363,7 @@ public enum SnapshotHistoryCanonicalizer {
                 parentPath: parentPath,
                 catalog: catalog,
                 craftTableCatalog: craftTableCatalog,
+                observationVersion: observationVersion,
                 into: &items
             )
         }
@@ -1030,7 +1045,7 @@ public enum SnapshotHistoryCanonicalizer {
     }
 
     private static func isTimerField(_ field: String) -> Bool {
-        field == "timer" || field == "helper_timer" || field == "helper_cooldown"
+        SnapshotHistoryKnownSections.timerFields.contains(field)
     }
 
     private static func fingerprintValue(for item: SnapshotObservationItem) -> CanonicalJSONValue {

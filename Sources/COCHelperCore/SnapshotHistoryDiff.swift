@@ -1558,7 +1558,7 @@ public enum SnapshotDiffEngine {
     }
 
     private static func isTimerField(_ field: String) -> Bool {
-        field == "timer" || field == "helper_timer" || field == "helper_cooldown"
+        SnapshotHistoryKnownSections.timerFields.contains(field)
     }
 
     private static func timerState(_ evidence: [String: CanonicalJSONValue]) -> TimerState {

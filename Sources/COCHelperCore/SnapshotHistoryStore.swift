@@ -143,10 +143,10 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
                   entry.coverage.schemaVersion == entry.observationVersion else {
                 throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的 observation/coverage 版本不一致。")
             }
-            if entry.observationVersion == SnapshotHistorySchema.observation,
+            if entry.observationVersion >= SnapshotHistorySchema.observationWithSectionEvidence,
                entry.coverage.hasLegacySectionCoverage {
                 throw SnapshotHistoryStoreError.invalidEntry(
-                    "历史 entry 的 observation v2 缺少 section 完整性证据。"
+                    "历史 entry 的 observation v2+ 缺少 section 完整性证据。"
                 )
             }
             guard entry.fingerprintVersion == SnapshotHistorySchema.fingerprint else {

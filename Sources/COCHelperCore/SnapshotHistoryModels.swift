@@ -8,7 +8,13 @@ import Foundation
 public enum SnapshotHistorySchema {
     public static let envelope = 1
     public static let entry = 1
-    public static let observation = 2
+    /// v2 首次引入 section coverage 证据（Issue #164/#173）。
+    /// 该版本及以上的 entry 必须携带 section 完整性证明。
+    public static let observationWithSectionEvidence = 2
+    /// v3 引入 timer evidence allowlist（Issue #175）：canonicalizer 只把
+    /// `timerFields` 内的字段收集进 rawTimerEvidence；v2 及更早的 entry
+    /// 重建时沿用宽松匹配，保证旧历史 fingerprint 稳定。
+    public static let observation = 3
     public static let fingerprint = 1
     public static let integrity = 1
 }
@@ -370,7 +376,7 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
     /// Records written before the section evidence contract are readable but
     /// cannot prove that an observed array was complete.
     public var hasLegacySectionCoverage: Bool {
-        schemaVersion < SnapshotHistorySchema.observation || sections.isEmpty
+        schemaVersion < SnapshotHistorySchema.observationWithSectionEvidence || sections.isEmpty
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -400,7 +406,7 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
         // the key keeps their serialized bytes and integrity digest identical
         // to the original format; the Diff engine treats them as legacy and
         // never backfills them from the current catalog.
-        if schemaVersion >= SnapshotHistorySchema.observation {
+        if schemaVersion >= SnapshotHistorySchema.observationWithSectionEvidence {
             try container.encode(sections, forKey: .sections)
         }
         try container.encode(diagnostics, forKey: .diagnostics)
@@ -856,6 +862,12 @@ enum SnapshotHistoryKnownSections {
     static let home: Set<String> = object.union(numeric).filter { !$0.hasSuffix("2") }
     static let all: Set<String> = object.union(numeric)
     static let topLevelMetadata: Set<String> = ["tag", "timestamp", "boosts"]
+    /// Issue #175 source contract：唯一允许进入 timer 业务 reducer 的字段。
+    /// 名字相似但不在契约内的未知字段（如 timer_state、cooldown_remaining）
+    /// 只保留在 unknownFields / raw JSON，不得驱动升级/完成判定。
+    static let timerFields: Set<String> = [
+        "timer", "helper_timer", "helper_cooldown"
+    ]
     static let itemFields: Set<String> = [
         "data", "lvl", "cnt", "timer", "helper_timer", "helper_cooldown",
         "helper_recurrent", "gear_up", "weapon", "types", "modules"

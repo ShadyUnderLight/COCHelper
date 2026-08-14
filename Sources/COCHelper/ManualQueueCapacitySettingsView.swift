@@ -80,33 +80,36 @@ struct ManualQueueCapacitySettingsView: View {
         }
     }
 
+    /// Issue #182：一次保存视为村庄级配置事务。
+    ///
+    /// 先完整解析全部输入（空串 = 清除该类别，`0` 是合法容量），
+    /// 全部通过后再走一次受保护的批量保存；任何非法输入都不写入。
     private func save() {
+        var updates: [LocalQueueKind: LocalQueueCapacityUpdate] = [:]
         for kind in LocalQueueKind.knownKinds {
             let text = capacityTexts[kind.rawValue] ?? ""
             if text.isEmpty {
-                do {
-                    try model.clearQueueCapacity(for: villageID, queueKind: kind)
-                } catch {
-                    errorMessage = (error as? LocalizedError)?.errorDescription
-                        ?? error.localizedDescription
-                    return
-                }
+                updates[kind] = .clear
                 continue
             }
             guard let capacity = Int(text) else {
                 errorMessage = "「\(kind.displayName)」容量必须是整数。"
                 return
             }
-            do {
-                try model.setQueueCapacity(for: villageID, queueKind: kind, capacity: capacity)
-            } catch ManualUpgradeCommandError.queueCapacityInvalid {
-                errorMessage = "「\(kind.displayName)」容量必须在 0 到 \(LocalQueueCapacityConfig.maximumCapacity) 之间。"
-                return
-            } catch {
-                errorMessage = (error as? LocalizedError)?.errorDescription
-                    ?? error.localizedDescription
-                return
-            }
+            updates[kind] = .set(capacity)
+        }
+        do {
+            try model.replaceQueueCapacities(
+                for: villageID,
+                updates: updates
+            )
+        } catch ManualUpgradeCommandError.queueCapacityInvalid {
+            errorMessage = "容量必须在 0 到 \(LocalQueueCapacityConfig.maximumCapacity) 之间。"
+            return
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+            return
         }
         onDone()
     }

@@ -56,6 +56,18 @@ public enum LocalQueueCapacitySource: String, Codable, Hashable, Sendable {
     case userConfigured
 }
 
+/// Issue #182：容量配置批量更新项。
+///
+/// 使用显式 case 而非 `Int?` 字典值，避免 `dict[key] = nil`（移除键）
+/// 与"值为 nil"（键存在）语义混淆导致的静默丢失/失效问题。
+/// `updates` 字典中未出现的类别保持原配置（含未知/未来 `queueKind`）。
+public enum LocalQueueCapacityUpdate: Hashable, Sendable {
+    /// 设置/更新为指定容量（`0` 合法，不允许任何本地 active）。
+    case set(Int)
+    /// 显式清除该类别配置（回到未配置）。
+    case clear
+}
+
 /// Issue #145：用户配置的本地队列容量（source = userConfigured）。
 public struct LocalQueueCapacityConfig: Codable, Hashable, Sendable {
     /// 容量上限（防御性：超过视为非法输入，避免无意义的大数）。

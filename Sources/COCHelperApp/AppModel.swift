@@ -787,6 +787,93 @@ public final class AppModel: ObservableObject {
         installManualTrackerEnvelope(candidate)
     }
 
+    /// Issue #182：以一次事务替换本村庄的容量配置。
+    ///
+    /// `updates` 中 `.clear` 表示清除该类别配置（回到未配置），`.set` 的
+    /// `0` 是合法容量（不允许任何本地 active）。字典未出现的类别保持原
+    /// 配置不变——包括未知/未来 `queueKind`，不会被已知类别表单保存静默删除。
+    ///
+    /// 原子性：先构造并校验全部候选 config，全部合法后才走一次受保护的
+    /// 保存路径；任何校验失败都不会改变原有配置、内存状态、`stateUpdatedAt`
+    /// 或已持久化字节。保存失败时尚未 install 候选，内存与磁盘保持一致的
+    /// 旧状态，因此不标记 unavailable，用户可直接重试。成功时只产生一次
+    /// 有效 state 保存。
+    @discardableResult
+    public func replaceQueueCapacities(
+        for villageID: UUID,
+        updates: [LocalQueueKind: LocalQueueCapacityUpdate],
+        now: Date = Date()
+    ) throws -> [LocalQueueCapacityConfig] {
+        guard villages.contains(where: { $0.id == villageID }) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄不存在。")
+        }
+        guard let currentEnvelope = manualTrackerEnvelope,
+              manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualTrackerStoreError.unavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        guard now.timeIntervalSinceReferenceDate.isFinite else {
+            throw ManualTrackerStoreError.invalidEnvelope("更新时间无效。")
+        }
+
+        // 先完整构造候选 config：任何非法输入在此抛错，不碰任何状态。
+        var replacements: [LocalQueueCapacityConfig] = []
+        replacements.reserveCapacity(updates.count)
+        for (kind, update) in updates.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            guard case .set(let capacity) = update else { continue }
+            do {
+                replacements.append(try LocalQueueCapacityConfig(
+                    villageID: villageID,
+                    queueKind: kind,
+                    capacity: capacity,
+                    updatedAt: now
+                ))
+            } catch LocalQueueCapacityConfigError.invalidCapacity {
+                throw ManualUpgradeCommandError.queueCapacityInvalid
+            } catch LocalQueueCapacityConfigError.invalidTimestamp {
+                throw ManualUpgradeCommandError.invalidTime
+            }
+        }
+
+        let previousState = currentEnvelope.state(for: villageID)
+        let previousConfigs = previousState?.queueCapacityConfigs ?? []
+        // 未出现在 updates 的类别（含未知/未来 queueKind）原样保留。
+        var configs = previousConfigs.filter { updates[$0.queueKind] == nil }
+        configs.append(contentsOf: replacements)
+        configs.sort { $0.queueKind.rawValue < $1.queueKind.rawValue }
+        guard configs != previousConfigs else { return configs }
+
+        let core: ManualUpgradeCore
+        if let storedCore = previousState?.core {
+            core = storedCore
+        } else {
+            core = try ManualUpgradeCore()
+        }
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: now,
+            lastSettleAt: previousState?.lastSettleAt,
+            lastImportAt: previousState?.lastImportAt,
+            diagnostics: previousState?.diagnostics ?? [],
+            reconciliationHistory: previousState?.reconciliationHistory ?? [],
+            queueCapacityConfigs: configs
+        )
+        var candidate = currentEnvelope
+        try candidate.upsert(state)
+        do {
+            try manualTrackerStore.save(candidate)
+        } catch {
+            // 与单条命令不同：失败时未 install 候选，内存与磁盘一致（旧状态），
+            // 不标记 unavailable，允许用户直接重试本次编辑。
+            throw error
+        }
+        installManualTrackerEnvelope(candidate)
+        return configs
+    }
+
     /// 某个村庄×队列类别的本地占用投影（未配置容量时 capacity == nil）。
     /// `at now` 用于排除已到期未 settle 的 active 记录（与 Start 校验同口径）。
     public func queueOccupancy(

@@ -1260,6 +1260,298 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         }
     }
 
+    // MARK: - Issue #182 批量原子容量保存
+
+    /// 可注入失败的 store 桩：验证批量命令失败时的字节级不变性。
+    private final class FailingSaveStore: ManualTrackerStore, @unchecked Sendable {
+        var transactionJournalURL: URL?
+        var rawData: Data?
+        var failWrite = false
+        var saveCount = 0
+
+        func load() throws -> ManualTrackerEnvelope? {
+            guard let rawData else { return nil }
+            return try JSONDecoder()
+                .decode(ManualTrackerEnvelope.self, from: rawData)
+                .validated()
+        }
+
+        func save(_ envelope: ManualTrackerEnvelope) throws {
+            saveCount += 1
+            try writeRawData(envelope.encodedData())
+        }
+
+        func readRawData() throws -> Data? { rawData }
+
+        func writeRawData(_ data: Data) throws {
+            if failWrite {
+                throw ManualTrackerStoreError.writeFailed("测试手动状态写入失败")
+            }
+            rawData = data
+        }
+
+        func restoreRawData(_ data: Data?) throws { rawData = data }
+    }
+
+    @MainActor
+    func testReplaceQueueCapacitiesSetsAllKindsInOneSave() throws {
+        let (model, villageID, _) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
+        let now = Date(timeIntervalSince1970: 2_000)
+
+        try model.replaceQueueCapacities(
+            for: villageID,
+            updates: [
+                .builder: .set(3),
+                .laboratory: .set(0),
+                .hero: .set(2),
+                .equipment: .clear,
+            ],
+            now: now
+        )
+
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 3)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity, 0)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .hero).capacity, 2)
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .equipment).capacity)
+        // 只产生一次有效 state 保存：stateUpdatedAt 统一为本次 now。
+        let persisted = try XCTUnwrap(try store.load()?.state(for: villageID))
+        XCTAssertEqual(persisted.stateUpdatedAt, now)
+        XCTAssertEqual(persisted.queueCapacityConfigs.count, 3)
+    }
+
+    @MainActor
+    func testReplaceQueueCapacitiesRejectsInvalidBeforeAnyWrite() throws {
+        let (model, villageID, _) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
+        let beforeState = try XCTUnwrap(try store.load()?.state(for: villageID))
+        let beforeUpdatedAt = beforeState.stateUpdatedAt
+        let beforeBytes = try store.readRawData()
+
+        // 混合合法与非法（超过上限）：整个事务拒绝。
+        XCTAssertThrowsError(
+            try model.replaceQueueCapacities(
+                for: villageID,
+                updates: [
+                    .builder: .set(3),
+                    .laboratory: .set(LocalQueueCapacityConfig.maximumCapacity + 1),
+                ]
+            )
+        ) { error in
+            guard case ManualUpgradeCommandError.queueCapacityInvalid = error else {
+                return XCTFail("期望 queueCapacityInvalid，得到 \(error)")
+            }
+        }
+
+        // 原有配置、stateUpdatedAt、已持久化字节全部不变。
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 5)
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity)
+        let afterState = try XCTUnwrap(try store.load()?.state(for: villageID))
+        XCTAssertEqual(afterState.stateUpdatedAt, beforeUpdatedAt)
+        XCTAssertEqual(try store.readRawData(), beforeBytes)
+    }
+
+    @MainActor
+    func testReplaceQueueCapacitiesRejectsNegativeCapacity() throws {
+        let (model, villageID, _) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
+        XCTAssertThrowsError(
+            try model.replaceQueueCapacities(
+                for: villageID,
+                updates: [.builder: .set(3), .hero: .set(-1)]
+            )
+        ) { error in
+            guard case ManualUpgradeCommandError.queueCapacityInvalid = error else {
+                return XCTFail("期望 queueCapacityInvalid，得到 \(error)")
+            }
+        }
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 5)
+    }
+
+    @MainActor
+    func testReplaceQueueCapacitiesMixedClearAndSetInOneCommit() throws {
+        let (model, villageID, _) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
+        try model.setQueueCapacity(for: villageID, queueKind: .laboratory, capacity: 2)
+
+        // 按真实 UI 路径构造：循环逐项赋值（与 SettingsView.save 相同方式），
+        // 显式写入 .clear 而不是依赖字面量 nil 语义。
+        var updates: [LocalQueueKind: LocalQueueCapacityUpdate] = [:]
+        for kind in LocalQueueKind.knownKinds {
+            switch kind {
+            case .builder: updates[kind] = .clear
+            case .laboratory: updates[kind] = .set(3)
+            case .hero: updates[kind] = .set(1)
+            case .equipment: updates[kind] = .set(0)
+            default: break
+            }
+        }
+        try model.replaceQueueCapacities(for: villageID, updates: updates)
+
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .builder).capacity)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity, 3)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .hero).capacity, 1)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .equipment).capacity, 0)
+        let persisted = try XCTUnwrap(try store.load()?.state(for: villageID))
+        XCTAssertEqual(persisted.queueCapacityConfigs.count, 3)
+    }
+
+    @MainActor
+    func testReplaceQueueCapacitiesPreservesUnknownKinds() throws {
+        let (model, villageID, _) = try makeModel()
+        // 预置一个未知/未来 queueKind 配置（未来类别，UI 表单不展示）。
+        let unknownKind = LocalQueueKind(rawValue: "future-kind")
+        var envelope = try XCTUnwrap(try store.load() ?? ManualTrackerEnvelope())
+        var state = try XCTUnwrap(envelope.state(for: villageID))
+        let unknownConfig = try LocalQueueCapacityConfig(
+            villageID: villageID,
+            queueKind: unknownKind,
+            capacity: 7,
+            updatedAt: Date(timeIntervalSince1970: 500)
+        )
+        state.queueCapacityConfigs.append(unknownConfig)
+        try envelope.upsert(state)
+        try store.save(envelope)
+
+        // 重启模式：新建 AppModel 从同一 store 加载，保证内存 envelope 包含未知配置。
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let restored = AppModel(
+            defaults: defaults,
+            historyStore: TestSnapshotHistoryStore(),
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(
+                data: try JSONEncoder().encode(model.villages)
+            ),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+
+        try restored.replaceQueueCapacities(
+            for: villageID,
+            updates: [.builder: .set(3)]
+        )
+
+        let persisted = try XCTUnwrap(try store.load()?.state(for: villageID))
+        let unknown = try XCTUnwrap(
+            persisted.queueCapacityConfigs.first { $0.queueKind == unknownKind }
+        )
+        XCTAssertEqual(unknown.capacity, 7, "未知类别配置不得被已知类别表单保存静默删除")
+        XCTAssertEqual(
+            persisted.queueCapacityConfigs.first { $0.queueKind == .builder }?.capacity, 3
+        )
+    }
+
+    @MainActor
+    func testReplaceQueueCapacitiesStoreFailureKeepsBytesAndMemory() throws {
+        let failingStore = FailingSaveStore()
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let snapshot = snapshot(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let village = VillageProfile(name: "测试村庄", accountSnapshot: snapshot)
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: TestSnapshotHistoryStore(),
+            manualTrackerStore: failingStore,
+            currentVillagePersistence: TestCurrentVillagePersistence(
+                data: try JSONEncoder().encode([village])
+            ),
+            transactionJournalURL: nil
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
+        let beforeState = try XCTUnwrap(
+            try failingStore.load()?.state(for: villageID)
+        )
+        let beforeUpdatedAt = beforeState.stateUpdatedAt
+        let beforeBytes = failingStore.rawData
+        let savesBefore = failingStore.saveCount
+        let beforeStatus = model.manualTrackerStatus
+
+        failingStore.failWrite = true
+        XCTAssertThrowsError(
+            try model.replaceQueueCapacities(
+                for: villageID,
+                updates: [.builder: .set(3), .hero: .set(2)]
+            )
+        ) { error in
+            XCTAssertNotNil(
+                error as? ManualTrackerStoreError,
+                "持久化失败必须明确抛错（由 UI 展示）"
+            )
+        }
+        failingStore.failWrite = false
+
+        // 批量命令失败时尚未 install 候选：内存与磁盘保持一致的旧状态，
+        // 内存配置仍可见、状态未被标记 unavailable（.empty/.available 均
+        // 不阻塞命令），允许用户直接重试本次编辑（不要求重启）。
+        XCTAssertEqual(model.manualTrackerStatus, beforeStatus)
+        XCTAssertNotEqual(model.manualTrackerStatus, .unavailable)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 5)
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .hero).capacity)
+        // store bytes 与已持久化 stateUpdatedAt 不变，且只尝试一次持久化。
+        XCTAssertEqual(failingStore.rawData, beforeBytes)
+        let afterState = try XCTUnwrap(try failingStore.load()?.state(for: villageID))
+        XCTAssertEqual(afterState.stateUpdatedAt, beforeUpdatedAt)
+        XCTAssertEqual(afterState.queueCapacityConfigs.first {
+            $0.queueKind == .builder
+        }?.capacity, 5)
+        XCTAssertEqual(failingStore.saveCount, savesBefore + 1)
+
+        // 重试：存储恢复后同一次编辑可直接再次提交成功。
+        try model.replaceQueueCapacities(
+            for: villageID,
+            updates: [.builder: .set(3), .hero: .set(2)]
+        )
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 3)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .hero).capacity, 2)
+        let retried = try XCTUnwrap(try failingStore.load()?.state(for: villageID))
+        XCTAssertEqual(retried.queueCapacityConfigs.first {
+            $0.queueKind == .builder
+        }?.capacity, 3)
+    }
+
+    @MainActor
+    func testReplaceQueueCapacitiesIsolatedPerVillage() throws {
+        let (model, villageID, _) = try makeModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 5)
+
+        // 第二个村庄：同一 store 文件，独立 AppModel。
+        let snapshot2 = snapshot(tag: "#TEST2", objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let village2 = VillageProfile(name: "测试村庄2", accountSnapshot: snapshot2)
+        let model2 = AppModel(
+            defaults: defaults,
+            historyStore: TestSnapshotHistoryStore(),
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(
+                data: try JSONEncoder().encode([village2])
+            ),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction2.json")
+        )
+        let village2ID = try XCTUnwrap(model2.villages.first?.id)
+
+        try model.replaceQueueCapacities(
+            for: villageID,
+            updates: [.builder: .set(3), .hero: .set(1)]
+        )
+
+        // 村庄1 更新；村庄2 仍无任何容量配置。
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 3)
+        XCTAssertNil(model2.queueOccupancy(for: village2ID, queueKind: .builder).capacity)
+        XCTAssertNil(model2.queueOccupancy(for: village2ID, queueKind: .hero).capacity)
+    }
+
     // MARK: - Issue #145 Start 队列归类与容量校验
 
     /// 两个可启动项目（加农炮 1_000_002 与箭塔 1_000_003）的村庄模型。

@@ -113,6 +113,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(migration.movedQuantity, 20)
         XCTAssertEqual(migration.levelDelta, 1)
         XCTAssertEqual(migration.displayCategory, TrackerDisplayCategory.walls.rawValue)
+        XCTAssertEqual(migration.coverage.state, .complete)
+        XCTAssertTrue(diff.diagnostics.isEmpty)
 
         let reordered = SnapshotDiffEngine.compare(
             from: oldEntry,
@@ -125,6 +127,305 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             )
         )
         XCTAssertEqual(reordered, diff)
+    }
+
+    func testHistogramOldSideResidualFailsClosed() throws {
+        // A：Lv.10 ×1 + Lv.12 ×1 → B：Lv.11 ×1（两侧 coverage 完整）。
+        // 贪心配对会消耗 10→11，但旧侧 Lv.12 ×1 无法解释：
+        // 必须整体 fail-closed 为 unknown，不得保留部分 level growth，
+        // 也不得把残余量偷换成 quantityChanged / noLongerObserved。
+        let identity = makeIdentity(section: "buildings", dataID: 8)
+        let oldItems = [
+            makeItem(identity: identity, level: 10, count: 1, display: wallBinding()),
+            makeItem(identity: identity, level: 12, count: 1, display: wallBinding())
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 11, count: 1, display: wallBinding())
+        ]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: newItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            )
+        )
+
+        XCTAssertEqual(diff.changes.count, 1)
+        let change = try XCTUnwrap(diff.changes.first)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.evidence, .unknown)
+        XCTAssertEqual(change.oldQuantity, 2)
+        XCTAssertEqual(change.newQuantity, 1)
+        XCTAssertNil(change.movedQuantity)
+        XCTAssertNil(change.levelDelta)
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .levelIncreased })
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .levelDecreased })
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .quantityChanged })
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .noLongerObserved })
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .insufficientCoverage })
+    }
+
+    func testHistogramNewSideResidualFailsClosed() throws {
+        // A：Lv.11 ×1 → B：Lv.10 ×1 + Lv.12 ×1。
+        // 唯一可配对的是 11→10（降级），新侧 Lv.12 也无法解释：
+        // 整体 fail-closed 为 unknown。
+        let identity = makeIdentity(section: "buildings", dataID: 8)
+        let oldItems = [
+            makeItem(identity: identity, level: 11, count: 1, display: wallBinding())
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 10, count: 1, display: wallBinding()),
+            makeItem(identity: identity, level: 12, count: 1, display: wallBinding())
+        ]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: newItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            )
+        )
+
+        XCTAssertEqual(diff.changes.count, 1)
+        let change = try XCTUnwrap(diff.changes.first)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.oldQuantity, 1)
+        XCTAssertEqual(change.newQuantity, 2)
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .levelDecreased })
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .quantityChanged })
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .insufficientCoverage })
+    }
+
+    func testHistogramNonMonotonicDistributionFailsClosed() throws {
+        // Issue #174 原例：A：Lv.10 ×1 + Lv.12 ×1 → B：Lv.11 ×2。
+        // 贪心配对先消耗 10→11，但 Lv.12 只能降到 Lv.11；
+        // 必须整体降级为 unknown，不能保留一个看似合理的 Lv.10→Lv.11。
+        let identity = makeIdentity(section: "buildings", dataID: 8)
+        let oldItems = [
+            makeItem(identity: identity, level: 10, count: 1, display: wallBinding()),
+            makeItem(identity: identity, level: 12, count: 1, display: wallBinding())
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 11, count: 1, display: wallBinding()),
+            makeItem(identity: identity, level: 11, count: 1, display: wallBinding())
+        ]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: newItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            )
+        )
+
+        XCTAssertEqual(diff.changes.count, 1)
+        let change = try XCTUnwrap(diff.changes.first)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.oldQuantity, 2)
+        XCTAssertEqual(change.newQuantity, 2)
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .levelIncreased })
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .levelDecreased })
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .quantityChanged })
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .insufficientCoverage })
+    }
+
+    func testHistogramConservationFailureGolden() throws {
+        // golden：锁定守恒失败 fail-closed 的完整输出结构（排序后的
+        // change、coverage、diagnostic 与 residual 明细）。
+        let identity = makeIdentity(section: "buildings", dataID: 8)
+        let oldItems = [
+            makeItem(identity: identity, level: 10, count: 1, display: wallBinding()),
+            makeItem(identity: identity, level: 12, count: 1, display: wallBinding())
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 11, count: 1, display: wallBinding()),
+            makeItem(identity: identity, level: 11, count: 1, display: wallBinding())
+        ]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: newItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            )
+        )
+
+        XCTAssertEqual(diff.comparisonState, .insufficientCoverage)
+        XCTAssertEqual(diff.changes.count, 1)
+        let change = try XCTUnwrap(diff.changes.single)
+        XCTAssertEqual(change.identity, identity)
+        XCTAssertEqual(change.displayName, "城墙")
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.evidence, .unknown)
+        // 守恒失败是分布冲突而非证据不足：coverage 保持 complete。
+        XCTAssertEqual(change.coverage.state, .complete)
+        XCTAssertEqual(change.oldQuantity, 2)
+        XCTAssertEqual(change.newQuantity, 2)
+        XCTAssertNil(change.movedQuantity)
+        XCTAssertNil(change.levelDelta)
+        XCTAssertTrue(change.coverage.reasons.contains { $0.contains("无法守恒解释") })
+        XCTAssertTrue(change.coverage.reasons.contains { $0.contains("旧侧未配对：Lv.12 ×1") })
+        XCTAssertTrue(change.coverage.reasons.contains { $0.contains("新侧未配对：Lv.11 ×1") })
+        XCTAssertEqual(diff.diagnostics.count, 1)
+        let diagnostic = try XCTUnwrap(diff.diagnostics.single)
+        XCTAssertEqual(diagnostic.kind, .insufficientCoverage)
+        XCTAssertTrue(diagnostic.message.contains("无法守恒解释"))
+        XCTAssertTrue(diagnostic.message.contains("旧侧未配对：Lv.12 ×1"))
+        XCTAssertTrue(diagnostic.message.contains("新侧未配对：Lv.11 ×1"))
+        XCTAssertEqual(diagnostic.rawSection, "buildings")
+    }
+
+    func testHistogramPureLevelDecreaseFailsClosed() throws {
+        // 单调迁移规则只允许升级：Lv.13 ×1 → Lv.12 ×1 无法守恒解释，fail-closed。
+        let identity = makeIdentity(section: "buildings", dataID: 8)
+        let oldItems = [
+            makeItem(identity: identity, level: 13, count: 1, display: wallBinding())
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 12, count: 1, display: wallBinding())
+        ]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: newItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            )
+        )
+
+        XCTAssertEqual(diff.changes.count, 1)
+        let change = try XCTUnwrap(diff.changes.first)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.oldQuantity, 1)
+        XCTAssertEqual(change.newQuantity, 1)
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .levelDecreased })
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .insufficientCoverage })
+    }
+
+    func testHistogramResidualFailsClosedIsOrderIndependent() throws {
+        // residual 反例也必须与数组顺序无关：交换两侧数组顺序后 SnapshotDiff 完全相等。
+        let identity = makeIdentity(section: "buildings", dataID: 8)
+        let oldItems = [
+            makeItem(identity: identity, level: 10, count: 1, display: wallBinding()),
+            makeItem(identity: identity, level: 12, count: 1, display: wallBinding())
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 11, count: 1, display: wallBinding())
+        ]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: newItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            )
+        )
+        XCTAssertEqual(diff.changes.count, 1)
+
+        let reordered = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems.reversed(),
+                section: "buildings",
+                states: ["cnt": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: newItems.reversed(),
+                section: "buildings",
+                states: ["cnt": .complete]
+            )
+        )
+        XCTAssertEqual(reordered, diff)
+    }
+
+    func testHistogramTotalIncreaseWithResidualFailsClosed() throws {
+        // total 增加 + new side residual：Lv.10 ×1 → Lv.11 ×1 + Lv.12 ×1。
+        // 不得输出 quantityChanged 或 partial level growth，整体 unknown。
+        let identity = makeIdentity(section: "buildings", dataID: 8)
+        let oldItems = [
+            makeItem(identity: identity, level: 10, count: 1, display: wallBinding())
+        ]
+        let newItems = [
+            makeItem(identity: identity, level: 11, count: 1, display: wallBinding()),
+            makeItem(identity: identity, level: 12, count: 1, display: wallBinding())
+        ]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: oldItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                items: newItems,
+                section: "buildings",
+                states: ["cnt": .complete]
+            )
+        )
+
+        XCTAssertEqual(diff.changes.count, 1)
+        let change = try XCTUnwrap(diff.changes.first)
+        XCTAssertEqual(change.changeKind, .unknown)
+        XCTAssertEqual(change.oldQuantity, 1)
+        XCTAssertEqual(change.newQuantity, 2)
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .quantityChanged })
+        XCTAssertFalse(diff.changes.contains { $0.changeKind == .levelIncreased })
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .insufficientCoverage })
     }
 
     func testHistogramMissingCountIsUnknownAndNeverTreatedAsOne() throws {

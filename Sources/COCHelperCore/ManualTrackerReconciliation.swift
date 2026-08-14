@@ -663,7 +663,10 @@ public enum ManualTrackerReconciliationService {
         if dominates(previousDistribution, observed) {
             return .manualAhead
         }
-        if changes.contains(where: { $0.changeKind == .unknown || $0.coverage.state != .complete }) {
+        if changes.contains(where: { $0.coverage.state != .complete }) {
+            // 任一侧字段/section coverage 不完整 → 证据不足，不能断言冲突。
+            // 守恒失败的 unknown change 保持 coverage.state == .complete，
+            // 因此不会落到这里，而是按分布冲突处理（下方 .conflict）。
             return .unknown
         }
         return .conflict

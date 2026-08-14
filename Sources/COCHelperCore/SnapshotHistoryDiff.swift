@@ -1741,8 +1741,8 @@ public enum SnapshotDiffEngine {
     }
 
     /// 字段的契约规格。v4+ entry 用冻结的 schema；v3 及更早 entry 没有
-    /// 冻结契约，其 evidence 语义 = 默认 seconds/remaining（无范围）。
-    /// v4 无契约（显式 nil）保持 fail-closed：nil 与默认规格不同，
+    /// 冻结契约，其 evidence 语义 = 默认 seconds/remaining、非负无上限。
+    /// v4 无契约（显式 nil）保持 fail-closed：nil 与任何有规格的字段不兼容，
     /// 不允许把「无 evidence」当作业务转换。
     private static func timerSpec(
         for field: String,
@@ -1751,11 +1751,11 @@ public enum SnapshotDiffEngine {
         if entry.observationVersion >= SnapshotHistorySchema.observation {
             return entry.timerSchema?.fields[field]
         }
-        return SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)
+        return SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining, minValue: 0)
     }
 
-    /// 两侧 entry 对 evidence 字段的契约规格必须一致（v3 及更早按默认
-    /// seconds/remaining 规范化参与比较）。不一致时不得做任何状态转换。
+    /// 两侧 entry 对 evidence 字段的契约规格必须兼容（v3 及更早按默认
+    /// seconds/remaining、非负无上限参与比较）。不一致时不得做任何状态转换。
     private static func timerSpecsAreConsistent(
         from: SnapshotHistoryEntry,
         to: SnapshotHistoryEntry,
@@ -1764,9 +1764,30 @@ public enum SnapshotDiffEngine {
         for field in fields {
             let oldSpec = timerSpec(for: field, in: from)
             let newSpec = timerSpec(for: field, in: to)
-            if oldSpec != newSpec { return false }
+            switch (oldSpec, newSpec) {
+            case (nil, nil):
+                continue
+            case (nil, _), (_, nil):
+                // v4 无契约（显式 nil）与任何有规格的字段不兼容 → fail-closed
+                return false
+            case let (old?, new?):
+                if !timerSpecsAreCompatible(old, new) { return false }
+            }
         }
         return true
+    }
+
+    /// 语义兼容：单位/语义相同，且范围约束不收紧 legacy 默认语义
+    /// （非负、无上限）。minValue 的 nil 与 0 等价（timerNumber 本就
+    /// 要求非负）；任何显式正数下限或显式上限都会改变可接受数值集合。
+    private static func timerSpecsAreCompatible(
+        _ lhs: SnapshotTimerFieldSpec,
+        _ rhs: SnapshotTimerFieldSpec
+    ) -> Bool {
+        guard lhs.unit == rhs.unit, lhs.semantics == rhs.semantics else { return false }
+        func lowerBound(_ spec: SnapshotTimerFieldSpec) -> Int64 { spec.minValue ?? 0 }
+        if lhs.maxValue != rhs.maxValue { return false }
+        return lowerBound(lhs) == lowerBound(rhs)
     }
 
     /// 规范化 timer 比较（unique 与 aggregate 共用）：

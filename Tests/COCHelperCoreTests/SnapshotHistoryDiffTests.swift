@@ -1172,6 +1172,88 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(diff.changes.single?.changeKind, .timerEndedObserved, "absolute 毫秒时间戳越过结束点必须产生结束事件")
     }
 
+    func testV3ToV4RealAdapterSchemaTransitionsSmoothly() throws {
+        // Issue #175 review：v3 默认语义（非负/秒/remaining）必须与真实
+        // AccountSnapshotImporter.timerSchema（minValue: 0）兼容，
+        // v3→v4 过渡不得因范围表示差异降级 unknown。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                observationVersion: 3
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(85)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: AccountSnapshotImporter.timerSchema
+            )
+        )
+        XCTAssertTrue(diff.changes.isEmpty, "v3→v4 真实 adapter 契约：自然倒计时不得产生变化或降级 unknown")
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testV3ToV4TightenedRangeIsUnknown() throws {
+        // Issue #175 review：v4 契约收紧范围（minValue > 0 或显式上限）
+        // 会改变可接受数值集合，与 v3 默认语义不兼容 → fail-closed。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let tightened = SnapshotTimerSchema(
+            version: "tightened-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(
+                unit: .seconds,
+                semantics: .remaining,
+                minValue: 5
+            )]
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                observationVersion: 3
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(85)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: tightened
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown, "范围收紧与 v3 默认语义不兼容必须 fail-closed")
+    }
+
     func testUniqueTimerNaturalCountdownDoesNotCreateChange() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeItem(

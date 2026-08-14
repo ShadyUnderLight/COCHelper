@@ -1085,53 +1085,106 @@ public enum SnapshotDiffEngine {
         let newLevels = newRemaining.keys.filter { (newRemaining[$0] ?? 0) > 0 }.sorted()
         var oldIndex = 0
         var newIndex = 0
+        var pendingChanges: [SnapshotChange] = []
         while oldIndex < oldLevels.count && newIndex < newLevels.count {
             let oldLevel = oldLevels[oldIndex]
             let newLevel = newLevels[newIndex]
+            let delta = newLevel - oldLevel
+            // 单调迁移规则只允许升级；同级剩余已在 unchanged 消除中处理，
+            // 任何降级都意味着分布无法逐级解释，立即停止配对。
+            guard delta > 0 else { break }
             let moved = min(oldRemaining[oldLevel] ?? 0, newRemaining[newLevel] ?? 0)
-            if moved > 0 && oldLevel != newLevel {
-                let delta = newLevel - oldLevel
-                if delta > 0 { anyLevelUp = true }
-                let kind: SnapshotChangeKind = delta > 0 ? .levelIncreased : .levelDecreased
-                changes.append(makeChange(
-                    identity: identity,
-                    old: oldItems.first,
-                    new: newItems.first,
-                    oldLevel: oldLevel,
-                    newLevel: newLevel,
-                    oldQuantity: oldHistogram.levels[oldLevel],
-                    newQuantity: newHistogram.levels[newLevel],
-                    movedQuantity: moved,
-                    levelDelta: delta,
-                    changeKind: kind,
-                    related: [],
-                    evidence: .aggregateInferred,
-                    coverage: coverage
-                ))
-            }
+            anyLevelUp = true
+            pendingChanges.append(makeChange(
+                identity: identity,
+                old: oldItems.first,
+                new: newItems.first,
+                oldLevel: oldLevel,
+                newLevel: newLevel,
+                oldQuantity: oldHistogram.levels[oldLevel],
+                newQuantity: newHistogram.levels[newLevel],
+                movedQuantity: moved,
+                levelDelta: delta,
+                changeKind: .levelIncreased,
+                related: [],
+                evidence: .aggregateInferred,
+                coverage: coverage
+            ))
             oldRemaining[oldLevel, default: 0] -= moved
             newRemaining[newLevel, default: 0] -= moved
             if oldRemaining[oldLevel, default: 0] == 0 { oldIndex += 1 }
             if newRemaining[newLevel, default: 0] == 0 { newIndex += 1 }
         }
 
-        if oldHistogram.total != newHistogram.total {
-            changes.append(makeChange(
+        // 守恒校验：配对结束后两侧都不得有剩余量。任何未配对的剩余
+        // （或配对中发现的降级冲突）都表示证据不足或分布冲突，必须
+        // fail-closed 为 unknown，不得输出部分 level growth、quantity
+        // 变化、deletion 或 new item。timer 事件在其自身证据完整时
+        // 可以独立保留，但不能把等级迁移标成 confirmed。
+        let oldResidual = oldRemaining.values.contains { $0 > 0 }
+        let newResidual = newRemaining.values.contains { $0 > 0 }
+        guard !oldResidual, !newResidual else {
+            let timerResult = aggregateTimerTransition(
+                oldItems: oldItems,
+                newItems: newItems,
+                from: from,
+                to: to,
+                hasCredibleLevelUp: false,
+                sectionProofComplete: sectionProofComplete
+            )
+            if timerResult.kind != nil || timerResult.isUnknown {
+                appendAggregateTimerChange(
+                    timerResult,
+                    identity: identity,
+                    oldItems: oldItems,
+                    newItems: newItems,
+                    from: from,
+                    to: to,
+                    changes: &changes,
+                    diagnostics: &diagnostics
+                )
+            }
+            let oldSummary = oldRemaining
+                .filter { $0.value > 0 }
+                .sorted { $0.key < $1.key }
+                .map { "Lv.\($0.key) ×\($0.value)" }
+                .joined(separator: "、")
+            let newSummary = newRemaining
+                .filter { $0.value > 0 }
+                .sorted { $0.key < $1.key }
+                .map { "Lv.\($0.key) ×\($0.value)" }
+                .joined(separator: "、")
+            var residualParts: [String] = []
+            if !oldSummary.isEmpty { residualParts.append("旧侧未配对：\(oldSummary)") }
+            if !newSummary.isEmpty { residualParts.append("新侧未配对：\(newSummary)") }
+            let reason = "重复建筑/城墙 histogram 无法守恒解释（\(residualParts.joined(separator: "；"))），fail-closed。"
+            // 守恒失败是分布冲突而非证据不足：字段/section coverage 本身完整，
+            // 保持 coverage.state = .complete 并追加 reason，使下游（如手动对账
+            // 的 conflict 判定）能区分"证据不足"与"分布冲突"两种 unknown。
+            let unknownCoverage = coverage.addingReason(reason, degradingTo: .complete)
+            // 代表 item 按 (level, count) 确定性选取，保证结果与数组顺序无关。
+            let representativeOld = histogramRepresentative(oldItems)
+            let representativeNew = histogramRepresentative(newItems)
+            changes.append(unknownChange(
                 identity: identity,
-                old: oldItems.first,
-                new: newItems.first,
-                oldLevel: nil,
-                newLevel: nil,
+                old: representativeOld,
+                new: representativeNew,
                 oldQuantity: oldHistogram.total,
                 newQuantity: newHistogram.total,
-                movedQuantity: nil,
-                levelDelta: nil,
-                changeKind: .quantityChanged,
-                related: [],
-                evidence: .aggregateInferred,
-                coverage: coverage
+                coverage: unknownCoverage,
+                reason: reason,
+                degradeCoverageTo: .complete
             ))
+            diagnostics.append(SnapshotDiffDiagnostic(
+                kind: .insufficientCoverage,
+                message: reason,
+                identity: identity,
+                rawSection: identity.rawSection
+            ))
+            return
         }
+
+        changes.append(contentsOf: pendingChanges)
 
         let timerResult = aggregateTimerTransition(
             oldItems: oldItems,
@@ -1282,9 +1335,10 @@ public enum SnapshotDiffEngine {
         newQuantity: Int? = nil,
         coverage: SnapshotDiffCoverage,
         reason: String,
-        related: [SnapshotChangeKind] = []
+        related: [SnapshotChangeKind] = [],
+        degradeCoverageTo minimum: SnapshotDiffCoverage.State = .partial
     ) -> SnapshotChange {
-        let finalCoverage = coverage.addingReason(reason, degradingTo: .partial)
+        let finalCoverage = coverage.addingReason(reason, degradingTo: minimum)
         return makeChange(
             identity: identity,
             old: old,
@@ -1441,6 +1495,16 @@ public enum SnapshotDiffEngine {
             "buildings", "buildings2", "traps", "traps2", "units", "units2",
             "spells", "heroes", "heroes2", "pets", "equipment", "siege_machines"
         ].contains(identity.rawSection)
+    }
+
+    /// 按 (level, count) 确定性选取代表 item，保证结果与数组顺序无关；
+    /// 用于 fail-closed 的 unknown change 展示（display/level 不具迁移语义）。
+    private static func histogramRepresentative(_ items: [SnapshotObservationItem]) -> SnapshotObservationItem? {
+        items.min { lhs, rhs in
+            let lhsKey = (lhs.level ?? Int.max, lhs.count ?? 0)
+            let rhsKey = (rhs.level ?? Int.max, rhs.count ?? 0)
+            return lhsKey < rhsKey
+        }
     }
 
     private static func histogram(_ items: [SnapshotObservationItem]) -> Histogram? {

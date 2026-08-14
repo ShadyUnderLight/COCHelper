@@ -1048,6 +1048,130 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(diff.changes.single?.changeKind, .timerEndedObserved, "absolute 时间戳越过结束点必须产生结束事件")
     }
 
+    func testV3ToV4TransitionUsesDefaultSecondsSemantics() throws {
+        // Issue #175 review：v3 entry 无冻结契约，但语义 = 默认 seconds/remaining；
+        // 与 v4 legacy 秒契约比较时按默认语义规范化，v3→v4 过渡不得降级 unknown。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let v4Schema = SnapshotTimerSchema(
+            version: "account-json-timer-1",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)]
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                observationVersion: 3
+                // v3 entry：timerSchema = nil
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(85)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: v4Schema
+            )
+        )
+        XCTAssertTrue(diff.changes.isEmpty, "v3→v4 平滑过渡：自然倒计时不得产生变化，也不得降级 unknown")
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testV4WithoutSchemaAgainstV3StaysFailClosed() throws {
+        // Issue #175 review：v4 无契约时字段名不再权威，与 v3 entry 比较
+        // 不得把「无 evidence」当作 timer 消失（timerEndedObserved），必须 unknown。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let v3Item = SnapshotObservationItem(
+            identity: identity,
+            level: 1,
+            rawTimerEvidence: ["timer": .number("90")],
+            display: binding
+        )
+        let v4NoSchemaItem = SnapshotObservationItem(
+            identity: identity,
+            level: 1,
+            rawTimerEvidence: [:],
+            display: binding
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [v3Item],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                observationVersion: 3
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [v4NoSchemaItem],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: nil,
+                observationVersion: 4
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown, "v4 无契约不得把无 evidence 推断为 timer 结束")
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+    }
+
+    func testAbsoluteMillisecondsExpiresAgainstSourceTimestamp() throws {
+        // Issue #175 review：absolute 毫秒时间戳必须按字段单位换算观测时刻。
+        // 结束时间 110000ms = 110s；观测 100s→120s 已越过 → timerEndedObserved。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let schema = SnapshotTimerSchema(
+            version: "absolute-ms-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .absolute)]
+        )
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(110_000)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 120,
+                items: [item(110_000)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 120),
+                timerSchema: schema
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .timerEndedObserved, "absolute 毫秒时间戳越过结束点必须产生结束事件")
+    }
+
     func testUniqueTimerNaturalCountdownDoesNotCreateChange() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeItem(
@@ -2566,7 +2690,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         lineageID: UUID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
         sourceTimestamp: Date? = nil,
         isBaseline: Bool = false,
-        timerSchema: SnapshotTimerSchema? = nil
+        timerSchema: SnapshotTimerSchema? = nil,
+        observationVersion: Int = SnapshotHistorySchema.observation
     ) -> SnapshotHistoryEntry {
         let coverage: SnapshotObservationCoverage
         if let section {
@@ -2596,6 +2721,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             coverage = SnapshotObservationCoverage(fields: [], diagnostics: diagnostics)
         }
         return SnapshotHistoryEntry(
+            observationVersion: observationVersion,
             snapshotID: UUID(uuidString: id)!,
             villageID: villageID,
             lineageID: lineageID,

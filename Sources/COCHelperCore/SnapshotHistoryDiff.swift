@@ -1591,10 +1591,15 @@ public enum SnapshotDiffEngine {
             guard let value = evidence[key],
                   let number = timerNumber(value, spec: schema?.fields[key]) else { return .unknown }
             if schema?.fields[key]?.semantics == .absolute {
-                // 结束时间戳：必须与观测时刻（sourceTimestamp）比较。
-                // 观测时刻缺失时无法判断是否过期 → fail-closed，不猜测。
+                // 结束时间戳：必须与观测时刻（sourceTimestamp）比较，
+                // 观测时刻按字段单位换算。观测时刻缺失时无法判断是否
+                // 过期 → fail-closed，不猜测。
                 guard let sourceTimestamp else { return .unknown }
-                if number > Int64(sourceTimestamp.timeIntervalSince1970) {
+                let unit = schema?.fields[key]?.unit ?? .seconds
+                let observed: Int64 = unit == .milliseconds
+                    ? Int64(sourceTimestamp.timeIntervalSince1970 * 1000)
+                    : Int64(sourceTimestamp.timeIntervalSince1970)
+                if number > observed {
                     hasActive = true
                 }
             } else if number > 0 {
@@ -1735,16 +1740,30 @@ public enum SnapshotDiffEngine {
         case unstable(String)
     }
 
-    /// 两侧 entry 对 evidence 字段的契约规格必须一致（nil schema 按默认
-    /// seconds/remaining 语义参与比较）。不一致时不得做任何状态转换。
+    /// 字段的契约规格。v4+ entry 用冻结的 schema；v3 及更早 entry 没有
+    /// 冻结契约，其 evidence 语义 = 默认 seconds/remaining（无范围）。
+    /// v4 无契约（显式 nil）保持 fail-closed：nil 与默认规格不同，
+    /// 不允许把「无 evidence」当作业务转换。
+    private static func timerSpec(
+        for field: String,
+        in entry: SnapshotHistoryEntry
+    ) -> SnapshotTimerFieldSpec? {
+        if entry.observationVersion >= SnapshotHistorySchema.observation {
+            return entry.timerSchema?.fields[field]
+        }
+        return SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)
+    }
+
+    /// 两侧 entry 对 evidence 字段的契约规格必须一致（v3 及更早按默认
+    /// seconds/remaining 规范化参与比较）。不一致时不得做任何状态转换。
     private static func timerSpecsAreConsistent(
         from: SnapshotHistoryEntry,
         to: SnapshotHistoryEntry,
         fields: [String]
     ) -> Bool {
         for field in fields {
-            let oldSpec = from.timerSchema?.fields[field]
-            let newSpec = to.timerSchema?.fields[field]
+            let oldSpec = timerSpec(for: field, in: from)
+            let newSpec = timerSpec(for: field, in: to)
             if oldSpec != newSpec { return false }
         }
         return true

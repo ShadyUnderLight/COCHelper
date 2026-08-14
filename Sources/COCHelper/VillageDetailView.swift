@@ -26,6 +26,8 @@ struct VillageDetailView: View {
     @State private var actionSheet: ManualUpgradeActionSheet?
     // Issue #145：本地队列容量配置面板。
     @State private var showQueueCapacitySettings = false
+    // Issue #183：导入观察的本地队列映射面板。
+    @State private var showQueueAssignmentSettings = false
     // Issue #61：快捷「粘贴并更新」的确认 sheet 与失败提示载体。
     // prepareQuickImport 是纯函数（不写状态），结果分派到这两个载体之一。
     @State private var quickImportPreview: QuickImportPreview?
@@ -70,6 +72,13 @@ struct VillageDetailView: View {
             ManualQueueCapacitySettingsView(
                 villageID: villageID,
                 onDone: { showQueueCapacitySettings = false }
+            )
+        }
+        // Issue #183：导入观察的本地队列映射。
+        .sheet(isPresented: $showQueueAssignmentSettings) {
+            QueueAssignmentSettingsView(
+                villageID: villageID,
+                onDone: { showQueueAssignmentSettings = false }
             )
         }
         // Issue #61：快捷「粘贴并更新」预览确认 sheet（复用账号数据页的
@@ -866,6 +875,15 @@ struct VillageDetailView: View {
                 .controlSize(.small)
                 .help("配置本地队列容量（只约束本地手动升级）")
                 .accessibilityLabel("配置本地队列容量")
+                Button {
+                    showQueueAssignmentSettings = true
+                } label: {
+                    Label("导入观察队列", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .help("确认导入观察属于哪个本地队列（不影响游戏）")
+                .accessibilityLabel("配置导入观察的本地队列映射")
             }
             Spacer()
         }

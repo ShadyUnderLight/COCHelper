@@ -18,7 +18,7 @@ struct ManualQueueCapacitySettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("本地队列容量")
                 .font(.title2.weight(.bold))
-            Text("容量只约束本地手动升级的开始操作，不代表游戏实际队列；导入快照中的升级计时不计入容量。")
+            Text("容量只约束本地手动升级的开始操作，不代表游戏实际队列；未确认的导入计时不计入容量。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Divider()
@@ -62,10 +62,17 @@ struct ManualQueueCapacitySettingsView: View {
             Text("个同时升级")
             Spacer()
             if occupancy.isCapacityConfigured {
-                Text("占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                if occupancy.confirmedImportedCount > 0 {
+                    Text("占用 \(occupancy.activeManualCount)+\(occupancy.confirmedImportedCount)（手动+已确认导入）/\(occupancy.capacity ?? 0)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                } else {
+                    Text("占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
             }
         }
     }

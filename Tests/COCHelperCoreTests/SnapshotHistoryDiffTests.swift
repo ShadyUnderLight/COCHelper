@@ -1612,12 +1612,137 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             calendar: Calendar(identifier: .gregorian),
             timeZone: TimeZone(secondsFromGMT: 0)!
         )
-        // aggregateInferred 事件不污染 confirmed 完成数
+        // aggregateInferred 事件不污染 confirmed 完成数（confirmed 口径只数已确认完成）
         XCTAssertEqual(statistics.today.buildingUpgradeCompletions.value, 0)
         XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .available)
+        // 同一 aggregate 的 level migration + timer disappearance 只计 1 次聚合完成
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingUpgradeCompletions.value, 1)
         // level 迁移与 timer 完成是两个独立事件，各计一次
         XCTAssertEqual(statistics.today.aggregateInferredEventCount.value, 2)
         XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.value, 2)
+    }
+
+    func testHistogramTimerStartedWithoutCountStatsDoNotShowZero() throws {
+        // 缺少 cnt 时 histogram level/count 不可比；timer started 只支撑事件数，
+        // 不得让建筑 completion/level growth 显示为 available(0)。
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, display: binding)],
+            section: "buildings",
+            states: ["timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 14, timer: 900, display: binding)],
+            section: "buildings",
+            states: ["timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        XCTAssertEqual(diff.changes.single?.changeKind, .upgradeStarted)
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        // timer 证据完整 → timer/event 指标可显示
+        XCTAssertEqual(statistics.today.aggregateInferredEventCount.state, .available)
+        XCTAssertEqual(statistics.today.aggregateInferredEventCount.value, 1)
+        // 缺少 cnt → level/count 指标为数据不足，不得显示 0
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .insufficientData)
+        XCTAssertEqual(statistics.today.buildingLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingUpgradeCompletions.state, .insufficientData)
+    }
+
+    func testTimerEndedObservedIsNotAggregateCompletion() throws {
+        // timer 消失但无 level migration → timerEndedObserved，不计为聚合完成。
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 2, timer: 90, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 14, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete, "timer": .complete]
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        XCTAssertEqual(diff.changes.single?.changeKind, .timerEndedObserved)
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.aggregateInferredEventCount.value, 1)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingUpgradeCompletions.state, .available)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingUpgradeCompletions.value, 0)
+    }
+
+    func testBuildingHistogramUnknownDoesNotPolluteHeroStatistics() throws {
+        // building section 的缺 cnt unknown 只影响建筑类指标，
+        // 不得污染同窗口内证据完整的 hero confirmed 增长。
+        let buildingIdentity = makeIdentity(section: "buildings", dataID: 2)
+        let buildingBinding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let heroIdentity = makeIdentity(section: "heroes", dataID: 1)
+        let heroBinding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+
+        // 缺 cnt + timer started 的 building diff（level/count 不可比）
+        let buildingOld = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: buildingIdentity, level: 14, display: buildingBinding)],
+            section: "buildings",
+            states: ["timer": .complete]
+        )
+        let buildingNew = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: buildingIdentity, level: 14, timer: 900, display: buildingBinding)],
+            section: "buildings",
+            states: ["timer": .complete]
+        )
+        let buildingDiff = SnapshotDiffEngine.compare(from: buildingOld, to: buildingNew)
+        XCTAssertEqual(buildingDiff.changes.single?.changeKind, .upgradeStarted)
+
+        // 证据完整的 hero confirmed 增长 diff
+        let heroOld = makeEntry(
+            id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            date: 100,
+            items: [makeItem(identity: heroIdentity, level: 1, display: heroBinding)],
+            section: "heroes",
+            sourceTimestamp: Date(timeIntervalSince1970: 1)
+        )
+        let heroNew = makeEntry(
+            id: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD",
+            date: 200,
+            items: [makeItem(identity: heroIdentity, level: 2, display: heroBinding)],
+            section: "heroes",
+            sourceTimestamp: Date(timeIntervalSince1970: 2)
+        )
+        let heroDiff = SnapshotDiffEngine.compare(from: heroOld, to: heroNew)
+        XCTAssertTrue(heroDiff.changes.contains { $0.changeKind == .levelIncreased && $0.evidence == .confirmed })
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [buildingDiff, heroDiff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .available)
+        XCTAssertEqual(statistics.today.heroLevelGrowth.value, 1)
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .insufficientData)
     }
 
     func testRealisticBuildingAndTrapTimerFixtureDiffs() throws {

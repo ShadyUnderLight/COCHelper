@@ -1002,6 +1002,19 @@ public enum SnapshotDiffEngine {
                     changes: &changes,
                     diagnostics: &diagnostics
                 )
+                // Issue #176：timer 事件独立保留，但 histogram 的 level/count
+                // 因缺 cnt 无法构造时，等级/数量指标必须显式标记数据不足，
+                // 不得被 timer 事件"带成"可用 0。isUnknown 时
+                // appendAggregateTimerChange 已附加 diagnostic，不重复输出。
+                if timerResult.kind != nil {
+                    let reason = "重复建筑/城墙 histogram 的 level/count 无效或总量溢出；等级/数量指标数据不足。"
+                    diagnostics.append(SnapshotDiffDiagnostic(
+                        kind: .insufficientCoverage,
+                        message: reason,
+                        identity: identity,
+                        rawSection: identity.rawSection
+                    ))
+                }
                 return
             }
             let reason = "重复建筑/城墙 histogram 的 level/count 无效或总量溢出。"
@@ -2010,7 +2023,11 @@ public struct SnapshotStatisticValue: Codable, Hashable, Sendable {
 public struct SnapshotHistoryStatisticsWindow: Codable, Hashable, Sendable {
     public let start: Date
     public let end: Date
+    /// 已确认建筑升级完成：只统计证据满足 confirmed 口径的完成。
     public let buildingUpgradeCompletions: SnapshotStatisticValue
+    /// 聚合推断建筑升级完成：同一 aggregate 的 level migration + timer
+    /// disappearance 只计 1 次；与 confirmed 口径独立，UI 不得混用标题。
+    public let aggregateInferredBuildingUpgradeCompletions: SnapshotStatisticValue
     public let buildingLevelGrowth: SnapshotStatisticValue
     public let aggregateInferredBuildingLevelGrowth: SnapshotStatisticValue
     public let wallLevelGrowth: SnapshotStatisticValue
@@ -2047,6 +2064,7 @@ public struct SnapshotHistoryStatisticsWindow: Codable, Hashable, Sendable {
         start: Date,
         end: Date,
         buildingUpgradeCompletions: SnapshotStatisticValue,
+        aggregateInferredBuildingUpgradeCompletions: SnapshotStatisticValue,
         buildingLevelGrowth: SnapshotStatisticValue,
         aggregateInferredBuildingLevelGrowth: SnapshotStatisticValue,
         wallLevelGrowth: SnapshotStatisticValue,
@@ -2061,6 +2079,7 @@ public struct SnapshotHistoryStatisticsWindow: Codable, Hashable, Sendable {
         self.start = start
         self.end = end
         self.buildingUpgradeCompletions = buildingUpgradeCompletions
+        self.aggregateInferredBuildingUpgradeCompletions = aggregateInferredBuildingUpgradeCompletions
         self.buildingLevelGrowth = buildingLevelGrowth
         self.aggregateInferredBuildingLevelGrowth = aggregateInferredBuildingLevelGrowth
         self.wallLevelGrowth = wallLevelGrowth
@@ -2164,6 +2183,7 @@ public struct SnapshotHistoryStatistics: Codable, Hashable, Sendable {
             start: start,
             end: end,
             buildingUpgradeCompletions: accumulators.buildingCompletions.result(),
+            aggregateInferredBuildingUpgradeCompletions: accumulators.aggregateBuildingCompletions.result(),
             buildingLevelGrowth: accumulators.buildingGrowth.result(),
             aggregateInferredBuildingLevelGrowth: accumulators.aggregateBuildingGrowth.result(),
             wallLevelGrowth: accumulators.wallGrowth.result(),
@@ -2221,6 +2241,7 @@ private struct MetricAccumulator {
 
 private struct MetricAccumulators {
     var buildingCompletions = MetricAccumulator()
+    var aggregateBuildingCompletions = MetricAccumulator()
     var buildingGrowth = MetricAccumulator()
     var aggregateBuildingGrowth = MetricAccumulator()
     var wallGrowth = MetricAccumulator()
@@ -2253,9 +2274,14 @@ private struct MetricAccumulators {
 
     private mutating func markComparable(for diff: SnapshotDiff) {
         let hasSectionCoverage = !diff.sectionCoverage.isEmpty
-        func hasKnownChange(_ metricCategory: SnapshotMetricCategory) -> Bool {
+        // 只有带 levelDelta 的 level migration/completion 类 change 才能支撑
+        // 等级/数量指标的 comparability；timer-only 的 upgradeStarted/
+        // timerChanged/timerEndedObserved 只支撑事件数，不能单独让缺少
+        // level/count 证据的 metric 变成可用 0。
+        func hasLevelCountEvidence(_ metricCategory: SnapshotMetricCategory) -> Bool {
             diff.changes.contains { change in
                 guard change.evidence != .unknown else { return false }
+                guard change.levelDelta != nil else { return false }
                 return MetricAccumulators.category(for: change) == metricCategory
             }
         }
@@ -2279,14 +2305,15 @@ private struct MetricAccumulators {
         let petComplete = complete(["pets"], levelFields)
         let equipmentComplete = complete(["equipment"], levelFields)
         func shouldMark(_ complete: Bool, _ metricCategory: SnapshotMetricCategory) -> Bool {
-            // A directly observed unique level/timer change can be counted from
+            // A directly observed unique level change can be counted from
             // field evidence alone.  Section proof is still mandatory for
             // absence-based and histogram changes, which the Diff engine emits
             // as unknown when the universe is not proven complete.
-            complete || hasKnownChange(metricCategory)
+            complete || hasLevelCountEvidence(metricCategory)
         }
         if shouldMark(buildingHistogramComplete, .building) {
             buildingCompletions.markComparable()
+            aggregateBuildingCompletions.markComparable()
             buildingGrowth.markComparable()
             aggregateBuildingGrowth.markComparable()
         }
@@ -2315,6 +2342,12 @@ private struct MetricAccumulators {
         let positiveLevelDelta = change.levelDelta.flatMap { $0 > 0 ? $0 : nil }
         if change.evidence == .aggregateInferred {
             aggregateEvents.add(1)
+            // 聚合完成的唯一计数点：一条 .upgradeCompleted change 对应一次
+            // aggregate 完成（level migration 那条不计 completion）；无 level
+            // migration 的 timer 消失是 timerEndedObserved，也不计 completion。
+            if category == .building && change.changeKind == .upgradeCompleted {
+                aggregateBuildingCompletions.add(1)
+            }
             guard let positiveLevelDelta, let moved = change.movedQuantity else {
                 return
             }
@@ -2385,12 +2418,14 @@ private struct MetricAccumulators {
             switch section {
             case "buildings":
                 buildingCompletions.markUnknown()
+                aggregateBuildingCompletions.markUnknown()
                 buildingGrowth.markUnknown()
                 wallGrowth.markUnknown()
                 aggregateBuildingGrowth.markUnknown()
                 aggregateWallGrowth.markUnknown()
             case "traps":
                 buildingCompletions.markUnknown()
+                aggregateBuildingCompletions.markUnknown()
                 buildingGrowth.markUnknown()
                 aggregateBuildingGrowth.markUnknown()
             case "heroes": heroGrowth.markUnknown()
@@ -2430,12 +2465,14 @@ private struct MetricAccumulators {
         switch section {
         case "buildings":
             buildingCompletions.markUnknown()
+            aggregateBuildingCompletions.markUnknown()
             buildingGrowth.markUnknown()
             aggregateBuildingGrowth.markUnknown()
             wallGrowth.markUnknown()
             aggregateWallGrowth.markUnknown()
         case "traps":
             buildingCompletions.markUnknown()
+            aggregateBuildingCompletions.markUnknown()
             buildingGrowth.markUnknown()
             aggregateBuildingGrowth.markUnknown()
         case "heroes": heroGrowth.markUnknown()
@@ -2449,6 +2486,7 @@ private struct MetricAccumulators {
 
     private mutating func markAllUnknown() {
         buildingCompletions.markUnknown()
+        aggregateBuildingCompletions.markUnknown()
         buildingGrowth.markUnknown()
         aggregateBuildingGrowth.markUnknown()
         wallGrowth.markUnknown()
@@ -2465,6 +2503,7 @@ private struct MetricAccumulators {
         case .building:
             buildingGrowth.markUnknown()
             buildingCompletions.markUnknown()
+            aggregateBuildingCompletions.markUnknown()
             aggregateBuildingGrowth.markUnknown()
         case .wall:
             wallGrowth.markUnknown()

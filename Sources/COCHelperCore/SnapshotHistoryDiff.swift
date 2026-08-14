@@ -1214,10 +1214,29 @@ public enum SnapshotDiffEngine {
         from: SnapshotHistoryEntry,
         to: SnapshotHistoryEntry
     ) -> TimerResult {
-        let oldState = timerState(old.rawTimerEvidence)
-        let newState = timerState(new.rawTimerEvidence)
+        let oldState = timerState(
+            old.rawTimerEvidence,
+            schema: from.timerSchema,
+            sourceTimestamp: from.sourceTimestamp
+        )
+        let newState = timerState(
+            new.rawTimerEvidence,
+            schema: to.timerSchema,
+            sourceTimestamp: to.sourceTimestamp
+        )
         let fields = Set(old.rawTimerEvidence.keys).union(new.rawTimerEvidence.keys).sorted()
         guard !fields.isEmpty else { return TimerResult() }
+        // Issue #175 review：契约规格不一致必须在任何状态转换（含
+        // active→inactive / inactive→active）前 fail-closed，不能只拦
+        // active→active 的数值比较。
+        guard timerSpecsAreConsistent(from: from, to: to, fields: fields) else {
+            return TimerResult(
+                kind: nil,
+                isUnknown: true,
+                reason: "两侧 timer 契约规格不一致，不能确认 timer 变化。",
+                requiredFields: fields
+            )
+        }
 
         let coverage = coverageFor(
             identity: old.identity,
@@ -1239,8 +1258,8 @@ public enum SnapshotDiffEngine {
             return TimerResult(kind: .upgradeStarted, requiredFields: fields)
         case (.active, .active):
             switch normalizedTimerComparison(
-                oldNumbersByField: timerNumbersByField(old.rawTimerEvidence),
-                newNumbersByField: timerNumbersByField(new.rawTimerEvidence),
+                oldNumbersByField: timerNumbersByField(old.rawTimerEvidence, schema: from.timerSchema),
+                newNumbersByField: timerNumbersByField(new.rawTimerEvidence, schema: to.timerSchema),
                 from: from,
                 to: to
             ) {
@@ -1561,19 +1580,43 @@ public enum SnapshotDiffEngine {
         SnapshotHistoryKnownSections.timerFields.contains(field)
     }
 
-    private static func timerState(_ evidence: [String: CanonicalJSONValue]) -> TimerState {
+    private static func timerState(
+        _ evidence: [String: CanonicalJSONValue],
+        schema: SnapshotTimerSchema?,
+        sourceTimestamp: Date?
+    ) -> TimerState {
         guard !evidence.isEmpty else { return .absent }
         var hasActive = false
         for key in evidence.keys.sorted() {
-            guard let value = evidence[key], let number = timerNumber(value) else { return .unknown }
-            if number > 0 { hasActive = true }
+            guard let value = evidence[key],
+                  let number = timerNumber(value, spec: schema?.fields[key]) else { return .unknown }
+            if schema?.fields[key]?.semantics == .absolute {
+                // 结束时间戳：必须与观测时刻（sourceTimestamp）比较，
+                // 观测时刻按字段单位换算。观测时刻缺失时无法判断是否
+                // 过期 → fail-closed，不猜测。
+                guard let sourceTimestamp else { return .unknown }
+                let unit = schema?.fields[key]?.unit ?? .seconds
+                let observed: Int64 = unit == .milliseconds
+                    ? Int64(sourceTimestamp.timeIntervalSince1970 * 1000)
+                    : Int64(sourceTimestamp.timeIntervalSince1970)
+                if number > observed {
+                    hasActive = true
+                }
+            } else if number > 0 {
+                hasActive = true
+            }
         }
         return hasActive ? .active : .inactive
     }
 
-    private static func timerNumber(_ value: CanonicalJSONValue) -> Int64? {
+    private static func timerNumber(
+        _ value: CanonicalJSONValue,
+        spec: SnapshotTimerFieldSpec?
+    ) -> Int64? {
         guard case .number(let raw) = value else { return nil }
         guard let number = Int64(raw), number >= 0 else { return nil }
+        if let minValue = spec?.minValue, number < minValue { return nil }
+        if let maxValue = spec?.maxValue, number > maxValue { return nil }
         return number
     }
 
@@ -1583,13 +1626,17 @@ public enum SnapshotDiffEngine {
 
     /// 聚合多个重复实例的 timer 状态：任一 evidence 无法解析 → unknown；
     /// 任一 active（>0）→ active；全部为空 → absent；否则 inactive。
-    private static func aggregateTimerState(_ items: [SnapshotObservationItem]) -> TimerState {
+    private static func aggregateTimerState(
+        _ items: [SnapshotObservationItem],
+        schema: SnapshotTimerSchema?,
+        sourceTimestamp: Date?
+    ) -> TimerState {
         var hasEvidence = false
         var hasActive = false
         for item in items {
             if item.rawTimerEvidence.isEmpty { continue }
             hasEvidence = true
-            switch timerState(item.rawTimerEvidence) {
+            switch timerState(item.rawTimerEvidence, schema: schema, sourceTimestamp: sourceTimestamp) {
             case .unknown:
                 return .unknown
             case .active:
@@ -1615,13 +1662,30 @@ public enum SnapshotDiffEngine {
         hasCredibleLevelUp: Bool,
         sectionProofComplete: Bool
     ) -> TimerResult {
-        let oldState = aggregateTimerState(oldItems)
-        let newState = aggregateTimerState(newItems)
+        let oldState = aggregateTimerState(
+            oldItems,
+            schema: from.timerSchema,
+            sourceTimestamp: from.sourceTimestamp
+        )
+        let newState = aggregateTimerState(
+            newItems,
+            schema: to.timerSchema,
+            sourceTimestamp: to.sourceTimestamp
+        )
         let fields = Set(oldItems.flatMap { $0.rawTimerEvidence.keys })
             .union(newItems.flatMap { $0.rawTimerEvidence.keys })
             .sorted()
         guard !fields.isEmpty else { return TimerResult() }
         guard let identity = (newItems.first ?? oldItems.first)?.identity else { return TimerResult() }
+        // Issue #175 review：契约规格不一致必须在任何状态转换前 fail-closed。
+        guard timerSpecsAreConsistent(from: from, to: to, fields: fields) else {
+            return TimerResult(
+                kind: nil,
+                isUnknown: true,
+                reason: "两侧 timer 契约规格不一致，不能确认 timer 变化。",
+                requiredFields: fields
+            )
+        }
 
         let coverage = coverageFor(identity: identity, from: from, to: to, fields: fields)
         if oldState == .unknown || newState == .unknown || coverage.state != .complete {
@@ -1638,8 +1702,8 @@ public enum SnapshotDiffEngine {
             return TimerResult(kind: .upgradeStarted, requiredFields: fields)
         case (.active, .active):
             switch normalizedTimerComparison(
-                oldNumbersByField: aggregateTimerNumbersByField(oldItems),
-                newNumbersByField: aggregateTimerNumbersByField(newItems),
+                oldNumbersByField: aggregateTimerNumbersByField(oldItems, schema: from.timerSchema),
+                newNumbersByField: aggregateTimerNumbersByField(newItems, schema: to.timerSchema),
                 from: from,
                 to: to
             ) {
@@ -1676,11 +1740,64 @@ public enum SnapshotDiffEngine {
         case unstable(String)
     }
 
-    /// 规范化 remaining timer 比较（unique 与 aggregate 共用）：
+    /// 字段的契约规格。v4+ entry 用冻结的 schema；v3 及更早 entry 没有
+    /// 冻结契约，其 evidence 语义 = 默认 seconds/remaining、非负无上限。
+    /// v4 无契约（显式 nil）保持 fail-closed：nil 与任何有规格的字段不兼容，
+    /// 不允许把「无 evidence」当作业务转换。
+    private static func timerSpec(
+        for field: String,
+        in entry: SnapshotHistoryEntry
+    ) -> SnapshotTimerFieldSpec? {
+        if entry.observationVersion >= SnapshotHistorySchema.observation {
+            return entry.timerSchema?.fields[field]
+        }
+        return SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining, minValue: 0)
+    }
+
+    /// 两侧 entry 对 evidence 字段的契约规格必须兼容（v3 及更早按默认
+    /// seconds/remaining、非负无上限参与比较）。不一致时不得做任何状态转换。
+    private static func timerSpecsAreConsistent(
+        from: SnapshotHistoryEntry,
+        to: SnapshotHistoryEntry,
+        fields: [String]
+    ) -> Bool {
+        for field in fields {
+            let oldSpec = timerSpec(for: field, in: from)
+            let newSpec = timerSpec(for: field, in: to)
+            switch (oldSpec, newSpec) {
+            case (nil, nil):
+                continue
+            case (nil, _), (_, nil):
+                // v4 无契约（显式 nil）与任何有规格的字段不兼容 → fail-closed
+                return false
+            case let (old?, new?):
+                if !timerSpecsAreCompatible(old, new) { return false }
+            }
+        }
+        return true
+    }
+
+    /// 语义兼容：单位/语义相同，且范围约束不收紧 legacy 默认语义
+    /// （非负、无上限）。minValue 的 nil 与 0 等价（timerNumber 本就
+    /// 要求非负）；任何显式正数下限或显式上限都会改变可接受数值集合。
+    private static func timerSpecsAreCompatible(
+        _ lhs: SnapshotTimerFieldSpec,
+        _ rhs: SnapshotTimerFieldSpec
+    ) -> Bool {
+        guard lhs.unit == rhs.unit, lhs.semantics == rhs.semantics else { return false }
+        func lowerBound(_ spec: SnapshotTimerFieldSpec) -> Int64 { spec.minValue ?? 0 }
+        if lhs.maxValue != rhs.maxValue { return false }
+        return lowerBound(lhs) == lowerBound(rhs)
+    }
+
+    /// 规范化 timer 比较（unique 与 aggregate 共用）：
     /// - 时间证据：sourceTimestamp 缺失/非法（≤ 0）/倒序 → unstable，不得猜测；
     /// - 字段证据：timer 字段集合不一致（某字段仅单侧出现）→ unstable；
     /// - 数量证据：同字段实例数量不一致 → unstable（无法稳定配对）；
-    /// - 数值证据：|new − (old − elapsed)| 超过容差 → changed；全部自然流逝 → unchanged。
+    /// - 数值证据：remaining 按 `old − elapsed`（按单位换算）、absolute 按 `old`
+    ///   规范化，偏差超过容差 → changed；全部自然 → unchanged。
+    ///   v3 及更早 entry（无冻结契约）按默认秒/remaining 语义处理。
+    ///   两侧契约规格一致性由调用方在状态转换前统一校验。
     private static func normalizedTimerComparison(
         oldNumbersByField: [String: [Int64]],
         newNumbersByField: [String: [Int64]],
@@ -1691,11 +1808,11 @@ public enum SnapshotDiffEngine {
               let toTime = to.sourceTimestamp,
               fromTime.timeIntervalSince1970 > 0,
               toTime.timeIntervalSince1970 > 0 else {
-            return .unstable("source timestamp 缺失或非法，无法规范化 remaining timer。")
+            return .unstable("source timestamp 缺失或非法，无法规范化 timer。")
         }
         let elapsed = toTime.timeIntervalSince(fromTime)
         guard elapsed >= 0 else {
-            return .unstable("source timestamp 倒序，无法规范化 remaining timer。")
+            return .unstable("source timestamp 倒序，无法规范化 timer。")
         }
         let fields = Set(oldNumbersByField.keys).union(newNumbersByField.keys)
         for field in fields.sorted() {
@@ -1703,12 +1820,24 @@ public enum SnapshotDiffEngine {
                   let newNumbers = newNumbersByField[field], !newNumbers.isEmpty else {
                 return .unstable("timer 字段 \(field) 仅在一侧出现，无法确认 timer 变化。")
             }
+            let oldSpec = from.timerSchema?.fields[field]
             guard oldNumbers.count == newNumbers.count else {
                 return .unstable("timer 字段 \(field) 的实例数量不一致，无法稳定配对。")
             }
+            let isMilliseconds = oldSpec?.unit == .milliseconds
+            let elapsedInUnit = isMilliseconds ? elapsed * 1000 : elapsed
+            let tolerance = isMilliseconds ? timerElapsedTolerance * 1000 : timerElapsedTolerance
             for (oldNumber, newNumber) in zip(oldNumbers, newNumbers) {
-                let expected = Double(oldNumber) - elapsed
-                if abs(Double(newNumber) - expected) > timerElapsedTolerance {
+                let expected: Double
+                switch oldSpec?.semantics {
+                case .absolute:
+                    // 绝对结束时间戳不随流逝减少；值稳定不变是自然状态。
+                    expected = Double(oldNumber)
+                case .remaining, nil:
+                    // 默认 remaining 语义（v3 及更早 entry 与无契约字段）。
+                    expected = Double(oldNumber) - elapsedInUnit
+                }
+                if abs(Double(newNumber) - expected) > tolerance {
                     return .changed
                 }
             }
@@ -1718,11 +1847,12 @@ public enum SnapshotDiffEngine {
 
     /// 按字段收集可解析的 timer 数值（unique 场景每字段至多一个）。
     private static func timerNumbersByField(
-        _ evidence: [String: CanonicalJSONValue]
+        _ evidence: [String: CanonicalJSONValue],
+        schema: SnapshotTimerSchema?
     ) -> [String: [Int64]] {
         var result: [String: [Int64]] = [:]
         for key in evidence.keys.sorted() {
-            if let number = evidence[key].flatMap(timerNumber) {
+            if let number = evidence[key].flatMap({ timerNumber($0, spec: schema?.fields[key]) }) {
                 result[key] = [number]
             }
         }
@@ -1731,12 +1861,14 @@ public enum SnapshotDiffEngine {
 
     /// 按字段收集所有实例的可解析 timer 数值（aggregate 场景）。
     private static func aggregateTimerNumbersByField(
-        _ items: [SnapshotObservationItem]
+        _ items: [SnapshotObservationItem],
+        schema: SnapshotTimerSchema?
     ) -> [String: [Int64]] {
         var result: [String: [Int64]] = [:]
         for item in items {
             for key in item.rawTimerEvidence.keys {
-                guard let number = item.rawTimerEvidence[key].flatMap(timerNumber) else { continue }
+                guard let number = item.rawTimerEvidence[key]
+                    .flatMap({ timerNumber($0, spec: schema?.fields[key]) }) else { continue }
                 result[key, default: []].append(number)
             }
         }

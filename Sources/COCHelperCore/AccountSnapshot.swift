@@ -255,6 +255,30 @@ public enum AccountSnapshotImportError: Error, LocalizedError, Equatable, Sendab
 public enum AccountSnapshotImporter {
     public static let parserVersion = "account-json-0.1"
 
+    /// Issue #175 source timer schema 契约：legacy 账号 JSON 的版本化声明。
+    /// 只有契约声明的字段、单位、语义和取值范围能进入 timer 业务 reducer；
+    /// 变更契约必须升版本（历史 entry 重建用 entry 内冻结的契约）。
+    public static let timerSchema = SnapshotTimerSchema(
+        version: "account-json-timer-1",
+        fields: [
+            "timer": SnapshotTimerFieldSpec(
+                unit: .seconds,
+                semantics: .remaining,
+                minValue: 0
+            ),
+            "helper_timer": SnapshotTimerFieldSpec(
+                unit: .seconds,
+                semantics: .remaining,
+                minValue: 0
+            ),
+            "helper_cooldown": SnapshotTimerFieldSpec(
+                unit: .seconds,
+                semantics: .remaining,
+                minValue: 0
+            )
+        ]
+    )
+
     public static func parse(_ text: String, now: Date = Date()) throws -> AccountSnapshot {
         let originalText = text
         let prepared = prepare(text)

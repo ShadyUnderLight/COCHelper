@@ -743,6 +743,517 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(unavailable.changes.single?.evidence, .unknown)
     }
 
+    func testSchemaMillisecondsRemainingCountdownDoesNotCreateChange() throws {
+        // Issue #175：契约声明毫秒单位时，自然倒计时按 elapsed*1000 规范化。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let schema = SnapshotTimerSchema(
+            version: "ms-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .remaining)]
+        )
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90_000)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(85_000)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: schema
+            )
+        )
+        XCTAssertTrue(diff.changes.isEmpty, "毫秒 remaining 自然倒计时（90s→85s）不得产生变化")
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testSchemaAbsoluteSemanticsDoesNotCountDown() throws {
+        // Issue #175：absolute 语义是结束时间戳，不随时间流逝减少；
+        // 值保持不变是自然状态，只有超过容差的变化才是业务变化。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let schema = SnapshotTimerSchema(
+            version: "absolute-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .absolute)]
+        )
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let unchanged = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(1_700_000_900)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(1_700_000_900)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: schema
+            )
+        )
+        XCTAssertTrue(unchanged.changes.isEmpty, "absolute 值不变不得产生变化")
+        XCTAssertEqual(unchanged.comparisonState, .comparable)
+
+        let changed = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(1_700_000_900)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(1_700_000_500)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: schema
+            )
+        )
+        XCTAssertEqual(changed.changes.single?.changeKind, .timerChanged, "absolute 值明显变化应报 timerChanged")
+    }
+
+    func testSchemaFieldRangeViolationIsUnknown() throws {
+        // Issue #175：契约声明取值范围，超出范围的值不可解析 → fail-closed。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let schema = SnapshotTimerSchema(
+            version: "range-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(
+                unit: .seconds,
+                semantics: .remaining,
+                minValue: 0,
+                maxValue: 3_600
+            )]
+        )
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(5_000)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: schema
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown, "超出契约范围的 timer 值必须 fail-closed")
+    }
+
+    func testSchemaMismatchBetweenEntriesIsUnknown() throws {
+        // Issue #175：两侧 entry 契约字段集合/规格不一致时不得猜测。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let secondsSchema = SnapshotTimerSchema(
+            version: "seconds-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)]
+        )
+        let millisSchema = SnapshotTimerSchema(
+            version: "millis-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .remaining)]
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: secondsSchema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(85)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: millisSchema
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown, "契约不一致必须 fail-closed")
+    }
+
+    func testSchemaMismatchBeforeStateTransitionIsUnknown() throws {
+        // Issue #175 review：契约规格不一致必须在任何状态转换（含
+        // active→inactive / inactive→active）前 fail-closed，不能只拦
+        // active→active 的数值比较。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let secondsSchema = SnapshotTimerSchema(
+            version: "seconds-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)]
+        )
+        let millisSchema = SnapshotTimerSchema(
+            version: "millis-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .remaining)]
+        )
+        // 1) active → inactive（timer 归零）：契约不一致也必须 unknown，
+        //    不能输出 timerEndedObserved。
+        let ended = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: secondsSchema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(0)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: millisSchema
+            )
+        )
+        XCTAssertEqual(ended.changes.single?.changeKind, .unknown, "active→inactive 时契约不一致必须 fail-closed")
+        XCTAssertEqual(ended.changes.single?.evidence, .unknown)
+
+        // 2) inactive → active（timer 出现）：契约不一致也必须 unknown，
+        //    不能输出 upgradeStarted。
+        let started = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(0)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: secondsSchema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: millisSchema
+            )
+        )
+        XCTAssertEqual(started.changes.single?.changeKind, .unknown, "inactive→active 时契约不一致必须 fail-closed")
+        XCTAssertEqual(started.changes.single?.evidence, .unknown)
+    }
+
+    func testAbsoluteSemanticsExpiresAgainstSourceTimestamp() throws {
+        // Issue #175 review：absolute 结束时间戳必须与观测时刻
+        // （sourceTimestamp）比较判定 active/inactive；观测时刻越过
+        // 结束时间戳后应产生结束事件，而不是永远 active。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let schema = SnapshotTimerSchema(
+            version: "absolute-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .absolute)]
+        )
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        // 结束时间戳 110：观测 100 时 active；观测 120 时已过期 → inactive。
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(110)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 120,
+                items: [item(110)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 120),
+                timerSchema: schema
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .timerEndedObserved, "absolute 时间戳越过结束点必须产生结束事件")
+    }
+
+    func testV3ToV4TransitionUsesDefaultSecondsSemantics() throws {
+        // Issue #175 review：v3 entry 无冻结契约，但语义 = 默认 seconds/remaining；
+        // 与 v4 legacy 秒契约比较时按默认语义规范化，v3→v4 过渡不得降级 unknown。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let v4Schema = SnapshotTimerSchema(
+            version: "account-json-timer-1",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)]
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                observationVersion: 3
+                // v3 entry：timerSchema = nil
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(85)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: v4Schema
+            )
+        )
+        XCTAssertTrue(diff.changes.isEmpty, "v3→v4 平滑过渡：自然倒计时不得产生变化，也不得降级 unknown")
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testV4WithoutSchemaAgainstV3StaysFailClosed() throws {
+        // Issue #175 review：v4 无契约时字段名不再权威，与 v3 entry 比较
+        // 不得把「无 evidence」当作 timer 消失（timerEndedObserved），必须 unknown。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let v3Item = SnapshotObservationItem(
+            identity: identity,
+            level: 1,
+            rawTimerEvidence: ["timer": .number("90")],
+            display: binding
+        )
+        let v4NoSchemaItem = SnapshotObservationItem(
+            identity: identity,
+            level: 1,
+            rawTimerEvidence: [:],
+            display: binding
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [v3Item],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                observationVersion: 3
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [v4NoSchemaItem],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: nil,
+                observationVersion: 4
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown, "v4 无契约不得把无 evidence 推断为 timer 结束")
+        XCTAssertEqual(diff.changes.single?.evidence, .unknown)
+    }
+
+    func testAbsoluteMillisecondsExpiresAgainstSourceTimestamp() throws {
+        // Issue #175 review：absolute 毫秒时间戳必须按字段单位换算观测时刻。
+        // 结束时间 110000ms = 110s；观测 100s→120s 已越过 → timerEndedObserved。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let schema = SnapshotTimerSchema(
+            version: "absolute-ms-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .absolute)]
+        )
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(110_000)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 120,
+                items: [item(110_000)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 120),
+                timerSchema: schema
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .timerEndedObserved, "absolute 毫秒时间戳越过结束点必须产生结束事件")
+    }
+
+    func testV3ToV4RealAdapterSchemaTransitionsSmoothly() throws {
+        // Issue #175 review：v3 默认语义（非负/秒/remaining）必须与真实
+        // AccountSnapshotImporter.timerSchema（minValue: 0）兼容，
+        // v3→v4 过渡不得因范围表示差异降级 unknown。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                observationVersion: 3
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(85)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: AccountSnapshotImporter.timerSchema
+            )
+        )
+        XCTAssertTrue(diff.changes.isEmpty, "v3→v4 真实 adapter 契约：自然倒计时不得产生变化或降级 unknown")
+        XCTAssertEqual(diff.comparisonState, .comparable)
+    }
+
+    func testV3ToV4TightenedRangeIsUnknown() throws {
+        // Issue #175 review：v4 契约收紧范围（minValue > 0 或显式上限）
+        // 会改变可接受数值集合，与 v3 默认语义不兼容 → fail-closed。
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        func item(_ timer: Int) -> SnapshotObservationItem {
+            SnapshotObservationItem(
+                identity: identity,
+                level: 1,
+                rawTimerEvidence: ["timer": .number(String(timer))],
+                display: binding
+            )
+        }
+        let tightened = SnapshotTimerSchema(
+            version: "tightened-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(
+                unit: .seconds,
+                semantics: .remaining,
+                minValue: 5
+            )]
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item(90)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                observationVersion: 3
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item(85)],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: tightened
+            )
+        )
+        XCTAssertEqual(diff.changes.single?.changeKind, .unknown, "范围收紧与 v3 默认语义不兼容必须 fail-closed")
+    }
+
     func testUniqueTimerNaturalCountdownDoesNotCreateChange() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeItem(
@@ -2260,7 +2771,9 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         villageID: UUID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
         lineageID: UUID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
         sourceTimestamp: Date? = nil,
-        isBaseline: Bool = false
+        isBaseline: Bool = false,
+        timerSchema: SnapshotTimerSchema? = nil,
+        observationVersion: Int = SnapshotHistorySchema.observation
     ) -> SnapshotHistoryEntry {
         let coverage: SnapshotObservationCoverage
         if let section {
@@ -2290,6 +2803,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             coverage = SnapshotObservationCoverage(fields: [], diagnostics: diagnostics)
         }
         return SnapshotHistoryEntry(
+            observationVersion: observationVersion,
             snapshotID: UUID(uuidString: id)!,
             villageID: villageID,
             lineageID: lineageID,
@@ -2302,7 +2816,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             observation: CanonicalSnapshotObservation(rawTopLevelFields: [:], items: items),
             coverage: coverage,
             isBaseline: isBaseline,
-            baselineReason: isBaseline ? .initial : nil
+            baselineReason: isBaseline ? .initial : nil,
+            timerSchema: timerSchema
         )
     }
 

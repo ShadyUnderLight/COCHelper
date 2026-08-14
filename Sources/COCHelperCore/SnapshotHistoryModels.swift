@@ -14,9 +14,53 @@ public enum SnapshotHistorySchema {
     /// v3 引入 timer evidence allowlist（Issue #175）：canonicalizer 只把
     /// `timerFields` 内的字段收集进 rawTimerEvidence；v2 及更早的 entry
     /// 重建时沿用宽松匹配，保证旧历史 fingerprint 稳定。
-    public static let observation = 3
+    /// v4 引入 source timer schema 契约：收集由 adapter 声明的字段集合、
+    /// 单位、remaining/absolute 语义与取值范围决定，无契约时 fail-closed。
+    public static let observation = 4
     public static let fingerprint = 1
     public static let integrity = 1
+}
+
+/// Issue #175 source timer schema 契约：由 source adapter 版本化声明。
+public struct SnapshotTimerSchema: Codable, Hashable, Sendable {
+    public let version: String
+    public let fields: [String: SnapshotTimerFieldSpec]
+
+    public init(version: String, fields: [String: SnapshotTimerFieldSpec]) {
+        self.version = version
+        self.fields = fields
+    }
+}
+
+public struct SnapshotTimerFieldSpec: Codable, Hashable, Sendable {
+    public let unit: SnapshotTimerUnit
+    public let semantics: SnapshotTimerSemantics
+    public let minValue: Int64?
+    public let maxValue: Int64?
+
+    public init(
+        unit: SnapshotTimerUnit,
+        semantics: SnapshotTimerSemantics,
+        minValue: Int64? = nil,
+        maxValue: Int64? = nil
+    ) {
+        self.unit = unit
+        self.semantics = semantics
+        self.minValue = minValue
+        self.maxValue = maxValue
+    }
+}
+
+public enum SnapshotTimerUnit: String, Codable, Hashable, Sendable {
+    case seconds
+    case milliseconds
+}
+
+public enum SnapshotTimerSemantics: String, Codable, Hashable, Sendable {
+    /// 剩余时长：随真实时间自然减少，比较时按 elapsed 规范化。
+    case remaining
+    /// 绝对结束时间戳：不随流逝减少，值不变是自然状态。
+    case absolute
 }
 
 public enum SnapshotHistoryBase: String, Codable, Hashable, Sendable {
@@ -601,6 +645,9 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
     public let coverage: SnapshotObservationCoverage
     public let isBaseline: Bool
     public let baselineReason: SnapshotLineageReason?
+    /// Issue #175：v4+ entry 冻结的 source timer schema 契约（provenance）。
+    /// 旧版本 entry 解码时缺省为 nil。
+    public let timerSchema: SnapshotTimerSchema?
     public let integrityFingerprint: String
 
     public init(
@@ -621,6 +668,7 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
         coverage: SnapshotObservationCoverage,
         isBaseline: Bool,
         baselineReason: SnapshotLineageReason?,
+        timerSchema: SnapshotTimerSchema? = nil,
         integrityFingerprint: String? = nil
     ) {
         self.schemaVersion = schemaVersion
@@ -640,6 +688,7 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
         self.coverage = coverage
         self.isBaseline = isBaseline
         self.baselineReason = baselineReason
+        self.timerSchema = timerSchema
         self.integrityFingerprint = integrityFingerprint ?? SnapshotHistoryCanonicalizer.integrityFingerprint(
             integrityVersion: integrityVersion,
             schemaVersion: schemaVersion,
@@ -657,7 +706,8 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
             observation: observation,
             coverage: coverage,
             isBaseline: isBaseline,
-            baselineReason: baselineReason
+            baselineReason: baselineReason,
+            timerSchema: timerSchema
         )
     }
 

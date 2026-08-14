@@ -124,6 +124,97 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertTrue(diff.changes.isEmpty, "未知 timer-like 字段不得驱动业务变化")
     }
 
+    func testObservationVersionFourCollectsOnlySchemaDeclaredTimerFields() throws {
+        // Issue #175：v4 的 timer evidence 由 source adapter 的版本化契约决定，
+        // 只有契约声明的字段进入 rawTimerEvidence；未声明字段（即使名字含
+        // timer/cooldown）只保留在 unknownFields。
+        let snapshot = try makeSnapshot(
+            #"{"timestamp":1700000000,"buildings":[{"data":1000001,"timer":90,"helper_timer":30,"helper_cooldown":60,"timer_state":"upgrading","cooldown_left":12}]}"#
+        )
+        let schema = SnapshotTimerSchema(
+            version: "test-schema-1",
+            fields: [
+                "timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining),
+                "helper_timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)
+            ]
+        )
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
+            timerSchema: schema
+        )
+        XCTAssertEqual(entry.observationVersion, SnapshotHistorySchema.observation)
+        let evidence = entry.observation.items.first?.rawTimerEvidence ?? [:]
+        XCTAssertEqual(evidence, [
+            "timer": .number("90"),
+            "helper_timer": .number("30")
+        ])
+        XCTAssertEqual(entry.observation.items.first?.unknownFields["timer_state"], .string("upgrading"))
+        XCTAssertEqual(entry.observation.items.first?.unknownFields["cooldown_left"], .number("12"))
+        XCTAssertEqual(entry.timerSchema, schema, "契约必须冻结进 entry 供 provenance 审计")
+    }
+
+    func testObservationVersionFourWithoutSchemaCollectsNoTimerEvidence() throws {
+        // Issue #175：v4 下 source 未声明 timer 契约时 fail-closed——
+        // 字段名不再自动权威，rawTimerEvidence 为空，不得驱动业务判定。
+        let snapshot = try makeSnapshot(
+            #"{"timestamp":1700000000,"buildings":[{"data":1000001,"timer":90,"helper_cooldown":60,"cooldown_left":12}]}"#
+        )
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
+            timerSchema: nil
+        )
+        XCTAssertTrue(
+            entry.observation.items.first?.rawTimerEvidence.isEmpty ?? false,
+            "无契约时必须 fail-closed，不收集任何 timer 字段"
+        )
+        XCTAssertEqual(entry.observation.items.first?.unknownFields["cooldown_left"], .number("12"))
+        XCTAssertNil(
+            entry.observation.items.first?.unknownFields["timer"],
+            "timer 是已知 item 字段；无契约时只是不作为 timer evidence，不按未知字段处理"
+        )
+        XCTAssertNil(entry.timerSchema, "无契约时 entry 不冻结 schema")
+    }
+
+    func testObservationVersionThreeKeepsGlobalAllowlistCollection() throws {
+        // Issue #175：v3 entry（全局 timerFields allowlist）重建必须沿用
+        // v3 规则，否则历史 fingerprint 漂移。契约字段集合 = 全局 allowlist
+        // 时，v3 与 v4 的收集结果一致。
+        let snapshot = try makeSnapshot(
+            #"{"timestamp":1700000000,"buildings":[{"data":1000001,"timer":90,"helper_timer":30,"timer_state":"upgrading"}]}"#
+        )
+        let v3 = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
+            observationVersion: 3
+        )
+        XCTAssertEqual(v3.observationVersion, 3)
+        XCTAssertEqual(v3.observation.items.first?.rawTimerEvidence["timer"], .number("90"))
+        XCTAssertEqual(v3.observation.items.first?.rawTimerEvidence["helper_timer"], .number("30"))
+        XCTAssertNil(v3.observation.items.first?.rawTimerEvidence["timer_state"])
+        XCTAssertNil(v3.timerSchema, "v3 entry 不冻结契约字段")
+
+        let rebuilt = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
+            observationVersion: 3
+        )
+        XCTAssertEqual(rebuilt.canonicalFingerprint, v3.canonicalFingerprint)
+    }
+
     func testObservationVersionTwoKeepsLegacyLooseTimerCollection() throws {
         // Issue #175 review P1：v2 历史 entry 保存时使用宽松匹配收集
         // rawTimerEvidence。canonicalizer 必须按 observationVersion 分叉，

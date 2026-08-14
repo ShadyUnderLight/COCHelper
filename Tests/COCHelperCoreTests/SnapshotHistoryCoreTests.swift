@@ -67,6 +67,63 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(secondEntry.observation.items.first?.rawTimerEvidence["timer"], .number("91"))
     }
 
+    func testUnknownTimerLikeItemFieldsStayOutOfRawTimerEvidence() throws {
+        // Issue #175：rawTimerEvidence 只收 source contract 确认的 timer 字段，
+        // 未知 key 即使名字包含 timer/cooldown 也不能进入，只保留在 unknownFields。
+        let snapshot = try makeSnapshot(
+            #"{"timestamp":1700000000,"buildings":[{"data":1000001,"timer":90,"timer_state":"upgrading","cooldown_remaining":5}],"buildings2":[{"data":1000002,"timer":300,"cooldown_left":12}],"traps":[{"data":2000001,"helper_timer":45,"cooldown_remaining":9}],"traps2":[{"data":2000002,"helper_cooldown":60,"timer_state":"idle"}]}"#
+        )
+        let entry = try canonicalize(snapshot)
+
+        let building = try XCTUnwrap(entry.observation.items.first { $0.identity.dataID == 1000001 })
+        XCTAssertEqual(building.rawTimerEvidence, ["timer": .number("90")])
+        XCTAssertEqual(building.unknownFields["timer_state"], .string("upgrading"))
+        XCTAssertEqual(building.unknownFields["cooldown_remaining"], .number("5"))
+
+        let builderBuilding = try XCTUnwrap(entry.observation.items.first { $0.identity.dataID == 1000002 })
+        XCTAssertEqual(builderBuilding.rawTimerEvidence, ["timer": .number("300")])
+        XCTAssertEqual(builderBuilding.unknownFields["cooldown_left"], .number("12"))
+
+        let trap = try XCTUnwrap(entry.observation.items.first { $0.identity.dataID == 2000001 })
+        XCTAssertEqual(trap.rawTimerEvidence, ["helper_timer": .number("45")])
+        XCTAssertEqual(trap.unknownFields["cooldown_remaining"], .number("9"))
+
+        let builderTrap = try XCTUnwrap(entry.observation.items.first { $0.identity.dataID == 2000002 })
+        XCTAssertEqual(builderTrap.rawTimerEvidence, ["helper_cooldown": .number("60")])
+        XCTAssertEqual(builderTrap.unknownFields["timer_state"], .string("idle"))
+    }
+
+    func testUnknownTimerLikeFieldsDoNotDriveBusinessChangesAfterCanonicalization() throws {
+        // Issue #175：canonicalize 后未知 timer-like 字段不进入 rawTimerEvidence，
+        // 真实 timer 的自然倒计时不产生业务变化（也不会被未知字段降级为 unknown）。
+        let old = try makeSnapshot(
+            #"{"timestamp":1700000000,"heroes":[{"data":1000001,"lvl":1,"timer":90,"timer_state":"upgrading","cooldown_remaining":5}]}"#,
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let new = try makeSnapshot(
+            #"{"timestamp":1700000005,"heroes":[{"data":1000001,"lvl":1,"timer":85,"timer_state":"upgrading","cooldown_remaining":5}]}"#,
+            now: Date(timeIntervalSince1970: 1_700_000_005)
+        )
+
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: old,
+            villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!
+        )
+        let newEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: new,
+            villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_005),
+            snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333332")!
+        )
+        let diff = SnapshotDiffEngine.compare(from: oldEntry, to: newEntry)
+
+        XCTAssertTrue(diff.changes.isEmpty, "未知 timer-like 字段不得驱动业务变化")
+    }
+
     func testStableIdentitySeparatesBasesNestedKindsAndRootsWithoutArrayIndexes() throws {
         let snapshot = try makeSnapshot(
             """

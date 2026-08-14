@@ -272,9 +272,11 @@ public enum SnapshotHistoryCanonicalizer {
 
         let knownFields = SnapshotHistoryKnownSections.itemFields
         let unknownFields = object.filter { key, _ in !knownFields.contains(key) }
+        // Issue #175：只有 source contract（allowlist）确认的 timer 字段才能进入
+        // rawTimerEvidence。名字包含 timer/cooldown 的未知字段只留在 unknownFields，
+        // 不得驱动后续的业务 timer 判定。
         let timerEvidence = object.filter { key, _ in
-            let normalized = key.lowercased()
-            return normalized.contains("timer") || normalized.contains("cooldown")
+            SnapshotHistoryKnownSections.timerFields.contains(key)
         }
 
         items.append(SnapshotObservationItem(
@@ -1030,7 +1032,7 @@ public enum SnapshotHistoryCanonicalizer {
     }
 
     private static func isTimerField(_ field: String) -> Bool {
-        field == "timer" || field == "helper_timer" || field == "helper_cooldown"
+        SnapshotHistoryKnownSections.timerFields.contains(field)
     }
 
     private static func fingerprintValue(for item: SnapshotObservationItem) -> CanonicalJSONValue {

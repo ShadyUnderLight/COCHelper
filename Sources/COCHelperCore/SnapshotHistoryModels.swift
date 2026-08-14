@@ -856,6 +856,12 @@ enum SnapshotHistoryKnownSections {
     static let home: Set<String> = object.union(numeric).filter { !$0.hasSuffix("2") }
     static let all: Set<String> = object.union(numeric)
     static let topLevelMetadata: Set<String> = ["tag", "timestamp", "boosts"]
+    /// Issue #175 source contract：唯一允许进入 timer 业务 reducer 的字段。
+    /// 名字相似但不在契约内的未知字段（如 timer_state、cooldown_remaining）
+    /// 只保留在 unknownFields / raw JSON，不得驱动升级/完成判定。
+    static let timerFields: Set<String> = [
+        "timer", "helper_timer", "helper_cooldown"
+    ]
     static let itemFields: Set<String> = [
         "data", "lvl", "cnt", "timer", "helper_timer", "helper_cooldown",
         "helper_recurrent", "gear_up", "weapon", "types", "modules"

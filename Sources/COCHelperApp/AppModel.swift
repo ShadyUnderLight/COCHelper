@@ -129,7 +129,13 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
     case unreconciledSnapshot
     case coreRejected(String)
     case queueCapacityInvalid
-    case queueCapacityFull(queueKind: LocalQueueKind, activeCount: Int, capacity: Int)
+    case queueCapacityFull(
+        queueKind: LocalQueueKind,
+        activeCount: Int,
+        confirmedImportedCount: Int,
+        capacity: Int
+    )
+    case itemNotImportedObservation
 
     public var errorDescription: String? {
         switch self {
@@ -151,10 +157,36 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
             "升级命令被拒绝：" + message
         case .queueCapacityInvalid:
             "队列容量配置无效（必须为 0 到 10000 的整数）。"
-        case .queueCapacityFull(let queueKind, let activeCount, let capacity):
-            "本地容量已满：\(queueKind.displayName) 队列已占用 \(activeCount)/\(capacity)。"
+        case .queueCapacityFull(
+            let queueKind, let activeCount, let confirmedImportedCount, let capacity
+        ):
+            "本地容量已满：\(queueKind.displayName) 队列本地占用 \(activeCount) 个、已确认导入 \(confirmedImportedCount) 个，容量 \(capacity)。"
+        case .itemNotImportedObservation:
+            "该条目不是导入观察，不能确认本地队列映射。"
         }
     }
+}
+
+/// Issue #183：UI 展示用的导入观察分配候选。
+public struct ImportedObservationCandidate: Identifiable, Hashable, Sendable {
+    public let itemKey: TrackerItemKey
+    public let displayName: String
+    public let hasTimer: Bool
+    public let assignment: QueueAssignmentDecision?
+
+    public init(
+        itemKey: TrackerItemKey,
+        displayName: String,
+        hasTimer: Bool,
+        assignment: QueueAssignmentDecision?
+    ) {
+        self.itemKey = itemKey
+        self.displayName = displayName
+        self.hasTimer = hasTimer
+        self.assignment = assignment
+    }
+
+    public var id: String { itemKey.stableID }
 }
 
 @MainActor
@@ -604,7 +636,8 @@ public final class AppModel: ObservableObject {
             lastImportAt: previousState?.lastImportAt,
             diagnostics: previousState?.diagnostics ?? [],
             reconciliationHistory: previousState?.reconciliationHistory ?? [],
-            queueCapacityConfigs: previousState?.queueCapacityConfigs ?? []
+            queueCapacityConfigs: previousState?.queueCapacityConfigs ?? [],
+            queueAssignments: previousState?.queueAssignments ?? []
         )
         var candidate = currentEnvelope
         try candidate.upsert(state)
@@ -653,7 +686,8 @@ public final class AppModel: ObservableObject {
                     lastImportAt: previousState.lastImportAt,
                     diagnostics: previousState.diagnostics,
                     reconciliationHistory: previousState.reconciliationHistory,
-                    queueCapacityConfigs: previousState.queueCapacityConfigs
+                    queueCapacityConfigs: previousState.queueCapacityConfigs,
+                    queueAssignments: previousState.queueAssignments
                 )
                 try candidate.upsert(state)
                 settledCount += settled.count
@@ -727,7 +761,8 @@ public final class AppModel: ObservableObject {
             lastImportAt: previousState?.lastImportAt,
             diagnostics: previousState?.diagnostics ?? [],
             reconciliationHistory: previousState?.reconciliationHistory ?? [],
-            queueCapacityConfigs: configs
+            queueCapacityConfigs: configs,
+            queueAssignments: previousState?.queueAssignments ?? []
         )
         try candidate.upsert(state)
         do {
@@ -775,7 +810,8 @@ public final class AppModel: ObservableObject {
             reconciliationHistory: previousState.reconciliationHistory,
             queueCapacityConfigs: previousState.queueCapacityConfigs.filter {
                 $0.queueKind != queueKind
-            }
+            },
+            queueAssignments: previousState.queueAssignments
         )
         try candidate.upsert(state)
         do {
@@ -859,7 +895,8 @@ public final class AppModel: ObservableObject {
             lastImportAt: previousState?.lastImportAt,
             diagnostics: previousState?.diagnostics ?? [],
             reconciliationHistory: previousState?.reconciliationHistory ?? [],
-            queueCapacityConfigs: configs
+            queueCapacityConfigs: configs,
+            queueAssignments: previousState?.queueAssignments ?? []
         )
         var candidate = currentEnvelope
         try candidate.upsert(state)
@@ -876,21 +913,189 @@ public final class AppModel: ObservableObject {
 
     /// 某个村庄×队列类别的本地占用投影（未配置容量时 capacity == nil）。
     /// `at now` 用于排除已到期未 settle 的 active 记录（与 Start 校验同口径）。
+    /// Issue #183：占用计入当前 lineage 的 userAssigned overlay。
     public func queueOccupancy(
         for villageID: UUID,
         queueKind: LocalQueueKind,
         at now: Date = Date()
     ) -> LocalQueueOccupancy {
         guard let state = manualTrackerEnvelope?.state(for: villageID) else {
-            return LocalQueueOccupancy(queueKind: queueKind, activeManualCount: 0, capacity: nil)
+            return LocalQueueOccupancy(
+                queueKind: queueKind, activeManualCount: 0, capacity: nil
+            )
         }
         let config = state.queueCapacityConfigs.first { $0.queueKind == queueKind }
+        let currentLineage = state.core.baselineReference?.lineageID
+        let confirmed = state.queueAssignments.filter {
+            $0.status == .userAssigned
+                && $0.queueKind == queueKind
+                && $0.baselineReference.lineageID == currentLineage
+        }
         return LocalQueueOccupancyResolver.occupancy(
             queueKind: queueKind,
             activeRecords: state.core.activeRecords,
+            confirmedAssignments: confirmed,
             capacityConfig: config,
             at: now
         )
+    }
+
+    // MARK: - Issue #183 导入观察队列映射
+
+    /// 当前村庄的 queueAssignments 只读查询（按决策时间排序）。
+    public func queueAssignments(for villageID: UUID) throws -> [QueueAssignmentDecision] {
+        guard let state = manualTrackerEnvelope?.state(for: villageID) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄的手动升级状态尚未可用。")
+        }
+        return state.queueAssignments.sorted { $0.decidedAt < $1.decidedAt }
+    }
+
+    /// 用户确认某条导入观察属于本地队列（userConfigured overlay）。
+    ///
+    /// - 只允许对已导入观察（`ManualItemState.importedObservation != nil`）的
+    ///   item 分配；
+    /// - 同 itemKey 同 lineage 重复分配 = 更新 queueKind（幂等，不重复创建）；
+    /// - 旧 lineage 的历史映射保留，不被覆盖。
+    @discardableResult
+    public func assignQueueToImportedObservation(
+        for villageID: UUID,
+        itemKey: TrackerItemKey,
+        queueKind: LocalQueueKind,
+        now: Date = Date()
+    ) throws -> QueueAssignmentDecision {
+        guard villages.contains(where: { $0.id == villageID }) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄不存在。")
+        }
+        guard let currentEnvelope = manualTrackerEnvelope,
+              manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualTrackerStoreError.unavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        guard now.timeIntervalSinceReferenceDate.isFinite else {
+            throw ManualTrackerStoreError.invalidEnvelope("更新时间无效。")
+        }
+        guard let previousState = currentEnvelope.state(for: villageID) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄的手动升级状态尚未可用。")
+        }
+        guard previousState.core.itemStates.contains(where: {
+            $0.itemKey == itemKey && $0.importedObservation != nil
+        }) else {
+            throw ManualUpgradeCommandError.itemNotImportedObservation
+        }
+        guard let coreBaseline = previousState.core.baselineReference else {
+            throw ManualUpgradeCommandError.unreconciledSnapshot
+        }
+        var assignments = previousState.queueAssignments.filter {
+            !($0.itemKey == itemKey
+                && $0.baselineReference.lineageID == coreBaseline.lineageID)
+        }
+        let decision = try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: itemKey,
+            baselineReference: coreBaseline,
+            queueKind: queueKind,
+            decidedAt: now
+        )
+        assignments.append(decision)
+        assignments.sort { $0.decidedAt < $1.decidedAt }
+
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: previousState.core,
+            stateUpdatedAt: now,
+            lastSettleAt: previousState.lastSettleAt,
+            lastImportAt: previousState.lastImportAt,
+            diagnostics: previousState.diagnostics,
+            reconciliationHistory: previousState.reconciliationHistory,
+            queueCapacityConfigs: previousState.queueCapacityConfigs,
+            queueAssignments: assignments
+        )
+        var candidate = currentEnvelope
+        try candidate.upsert(state)
+        do {
+            try manualTrackerStore.save(candidate)
+        } catch {
+            markManualTrackerUnavailable(error)
+            throw error
+        }
+        installManualTrackerEnvelope(candidate)
+        return decision
+    }
+
+    /// 用户解除某条导入观察的本地队列映射（删除该 itemKey 全部 overlay）。
+    /// timer 消失本身不会触发本命令；本命令只由用户显式发起。
+    public func unassignQueueFromImportedObservation(
+        for villageID: UUID,
+        itemKey: TrackerItemKey,
+        now: Date = Date()
+    ) throws {
+        guard villages.contains(where: { $0.id == villageID }) else {
+            throw ManualTrackerStoreError.unavailable("目标村庄不存在。")
+        }
+        guard let currentEnvelope = manualTrackerEnvelope,
+              manualTrackerStatus != .unavailable,
+              manualTrackerStatus != .migrationRequired else {
+            throw ManualTrackerStoreError.unavailable(
+                manualTrackerError ?? "手动升级存储尚未可用。"
+            )
+        }
+        guard let previousState = currentEnvelope.state(for: villageID) else { return }
+        let remaining = previousState.queueAssignments.filter { $0.itemKey != itemKey }
+        guard remaining.count != previousState.queueAssignments.count else { return }
+
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: previousState.core,
+            stateUpdatedAt: now,
+            lastSettleAt: previousState.lastSettleAt,
+            lastImportAt: previousState.lastImportAt,
+            diagnostics: previousState.diagnostics,
+            reconciliationHistory: previousState.reconciliationHistory,
+            queueCapacityConfigs: previousState.queueCapacityConfigs,
+            queueAssignments: remaining
+        )
+        var candidate = currentEnvelope
+        try candidate.upsert(state)
+        do {
+            try manualTrackerStore.save(candidate)
+        } catch {
+            markManualTrackerUnavailable(error)
+            throw error
+        }
+        installManualTrackerEnvelope(candidate)
+    }
+
+    /// Issue #183：村庄全部导入观察的分配候选（含显示名与当前状态）。
+    /// 供 UI 分配面板使用；未找到目录显示名时回退稳定 ID。
+    public func queueAssignmentCandidates(
+        for villageID: UUID
+    ) -> [ImportedObservationCandidate] {
+        guard let state = manualTrackerEnvelope?.state(for: villageID) else { return [] }
+        let catalog = gameCatalog
+        let currentLineage = state.core.baselineReference?.lineageID
+        return state.core.itemStates
+            .filter { $0.importedObservation != nil }
+            .map { itemState in
+                let name = catalog?.item(
+                    section: itemState.itemKey.rawSection,
+                    dataID: itemState.itemKey.dataID
+                )?.name ?? itemState.itemKey.stableID
+                let assignment = state.queueAssignments.first {
+                    $0.itemKey == itemState.itemKey
+                        && $0.baselineReference.lineageID == currentLineage
+                }
+                return ImportedObservationCandidate(
+                    itemKey: itemState.itemKey,
+                    displayName: name,
+                    hasTimer: itemState.importedObservation?.sourceTimestamp != nil,
+                    assignment: assignment
+                )
+            }
+            .sorted {
+                $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+            }
     }
 
     // MARK: - Issue #144 类型化手动升级命令
@@ -932,14 +1137,22 @@ public final class AppModel: ObservableObject {
         }
         // Issue #145：容量校验只约束 future local manual start。
         // 未配置容量或 queueKind == nil（不归类）时不校验；
-        // imported active 从不计入本地占用（occupancy 只统计 local records）。
+        // 未确认的 imported timer 从不计入本地占用；
+        // Issue #183：用户确认（userAssigned 且当前 lineage）的 overlay 计入。
         if let queueKind {
-            let capacityConfigs = currentEnvelope.state(for: villageID)?
-                .queueCapacityConfigs ?? []
+            let state = currentEnvelope.state(for: villageID)
+            let capacityConfigs = state?.queueCapacityConfigs ?? []
             if let config = capacityConfigs.first(where: { $0.queueKind == queueKind }) {
+                let currentLineage = core.baselineReference?.lineageID
+                let confirmed = state?.queueAssignments.filter {
+                    $0.status == .userAssigned
+                        && $0.queueKind == queueKind
+                        && $0.baselineReference.lineageID == currentLineage
+                } ?? []
                 let occupancy = LocalQueueOccupancyResolver.occupancy(
                     queueKind: queueKind,
                     activeRecords: core.activeRecords,
+                    confirmedAssignments: confirmed,
                     capacityConfig: config,
                     at: now
                 )
@@ -947,6 +1160,7 @@ public final class AppModel: ObservableObject {
                     throw ManualUpgradeCommandError.queueCapacityFull(
                         queueKind: queueKind,
                         activeCount: occupancy.activeManualCount,
+                        confirmedImportedCount: occupancy.confirmedImportedCount,
                         capacity: config.capacity
                     )
                 }

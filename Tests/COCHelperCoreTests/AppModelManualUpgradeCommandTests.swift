@@ -1645,7 +1645,10 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         ) { error in
             XCTAssertEqual(
                 error as? ManualUpgradeCommandError,
-                .queueCapacityFull(queueKind: .builder, activeCount: 1, capacity: 1)
+                .queueCapacityFull(
+                    queueKind: .builder, activeCount: 1,
+                    confirmedImportedCount: 0, capacity: 1
+                )
             )
         }
     }
@@ -1708,7 +1711,10 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         ) { error in
             XCTAssertEqual(
                 error as? ManualUpgradeCommandError,
-                .queueCapacityFull(queueKind: .builder, activeCount: 0, capacity: 0)
+                .queueCapacityFull(
+                    queueKind: .builder, activeCount: 0,
+                    confirmedImportedCount: 0, capacity: 0
+                )
             )
         }
     }
@@ -1859,5 +1865,245 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertEqual(
             model.queueOccupancy(for: villageID, queueKind: .builder).activeManualCount, 1
         )
+    }
+
+    // MARK: - Issue #183 导入观察队列映射命令
+
+    @MainActor
+    private func importedObservationKey(
+        in model: AppModel,
+        villageID: UUID
+    ) throws -> TrackerItemKey {
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let state = try XCTUnwrap(
+            core.itemStates.first { $0.importedObservation != nil }
+        )
+        return state.itemKey
+    }
+
+    @MainActor
+    func testAssignQueueToImportedObservationPersists() throws {
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel()
+        let key = try importedObservationKey(in: model, villageID: villageID)
+
+        let decision = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+        XCTAssertEqual(decision.status, .userAssigned)
+        XCTAssertEqual(decision.queueKind, .builder)
+        XCTAssertEqual(decision.source, .userConfigured)
+
+        let all = try model.queueAssignments(for: villageID)
+        XCTAssertEqual(all.map(\.decisionID), [decision.decisionID])
+
+        // 重启后保留（同一 store 文件重新加载，villageID 保持原样）。
+        let snapshot = snapshot(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let reloaded = AppModel(
+            defaults: UserDefaults(suiteName: suiteName)!,
+            historyStore: TestSnapshotHistoryStore(),
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(
+                data: try JSONEncoder().encode([
+                    VillageProfile(id: villageID, name: "测试村庄", accountSnapshot: snapshot),
+                ])
+            )
+        )
+        let persisted = try reloaded.queueAssignments(for: villageID)
+        XCTAssertEqual(persisted.map(\.decisionID), [decision.decisionID])
+        XCTAssertEqual(persisted[0].queueKind, .builder)
+    }
+
+    @MainActor
+    func testAssignSameItemKeyUpdatesQueueKindInsteadOfDuplicating() throws {
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel()
+        let key = try importedObservationKey(in: model, villageID: villageID)
+
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+        let second = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .laboratory
+        )
+        let all = try model.queueAssignments(for: villageID)
+        XCTAssertEqual(all.count, 1, "同一 itemKey 重复分配不得产生重复映射")
+        XCTAssertEqual(all[0].queueKind, .laboratory)
+        XCTAssertEqual(all[0].decisionID, second.decisionID)
+    }
+
+    @MainActor
+    func testUnassignQueueRemovesDecision() throws {
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel()
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+        XCTAssertEqual(try model.queueAssignments(for: villageID).count, 1)
+
+        try model.unassignQueueFromImportedObservation(for: villageID, itemKey: key)
+        XCTAssertEqual(try model.queueAssignments(for: villageID), [])
+    }
+
+    @MainActor
+    func testAssignRejectsUnknownItemKey() throws {
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel()
+        let unknownKey = TrackerItemKey.root(
+            base: .home, rawSection: "buildings", dataID: 999_999
+        )
+        XCTAssertThrowsError(
+            try model.assignQueueToImportedObservation(
+                for: villageID, itemKey: unknownKey, queueKind: .builder
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError, .itemNotImportedObservation
+            )
+        }
+    }
+
+    @MainActor
+    func testStartCapacityIncludesConfirmedImportedOverlay() throws {
+        let (model, villageID, action, _) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 1)
+        // 用户确认某条导入观察属于 builder 队列 → 占 1 个容量。
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+        XCTAssertThrowsError(
+            try model.startManualUpgrade(
+                for: villageID, action: action, startedAt: Date(), queueKind: .builder
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError,
+                .queueCapacityFull(
+                    queueKind: .builder, activeCount: 0,
+                    confirmedImportedCount: 1, capacity: 1
+                )
+            )
+        }
+    }
+
+    @MainActor
+    func testStartIgnoresObservedOnlyOverlayInCapacity() throws {
+        // 自建共享 history：model A 安装 observed state 并 assign，
+        // 降级后保存 store，model B（同一 history + store）验证投影口径。
+        let snapshot = snapshot(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                item(section: "buildings", dataID: 1_000_003, level: 1, path: "2"),
+            ],
+        ])
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let village = VillageProfile(name: "测试村庄", accountSnapshot: snapshot)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore()
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        try Self.installObservedStates(
+            in: model, villageID: villageID, dataIDs: [1_000_002, 1_000_003],
+            levels: [1, 1], history: history
+        )
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 1)
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+
+        // 模拟对账降级：用户映射变为 observedOnly（如 timer 消失）。
+        var envelope = try XCTUnwrap(try store.load())
+        let state = try XCTUnwrap(envelope.state(for: villageID))
+        let core = state.core
+        let degraded = try QueueAssignmentDecision(
+            decisionID: state.queueAssignments[0].decisionID,
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: core.baselineReference!,
+            queueKind: .builder,
+            decidedAt: state.queueAssignments[0].decidedAt,
+            status: .observedOnly
+        )
+        let updatedState = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: state.stateUpdatedAt,
+            lastSettleAt: state.lastSettleAt,
+            lastImportAt: state.lastImportAt,
+            diagnostics: state.diagnostics,
+            reconciliationHistory: state.reconciliationHistory,
+            queueCapacityConfigs: state.queueCapacityConfigs,
+            queueAssignments: [degraded]
+        )
+        try envelope.upsert(updatedState)
+        try store.save(envelope)
+
+        // 重载 model（同一 history + store + villageID）。
+        let reloaded = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(
+                data: try JSONEncoder().encode([
+                    VillageProfile(id: villageID, name: "测试村庄", accountSnapshot: snapshot),
+                ])
+            ),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        XCTAssertEqual(
+            reloaded.queueOccupancy(for: villageID, queueKind: .builder).confirmedImportedCount, 0
+        )
+        // observedOnly 不占容量：仍可启动。
+        let core2 = try XCTUnwrap(reloaded.manualUpgradeCore(for: villageID))
+        let projection = VillageCatalogProjection.project(
+            village: VillageProfile(id: villageID, name: "测试村庄", accountSnapshot: snapshot),
+            catalog: catalog,
+            base: .home,
+            now: importedAt,
+            manualUpgradeCore: core2
+        )
+        let target = try XCTUnwrap(projection.items.first { $0.dataID == 1_000_002 })
+        let freshAction = try XCTUnwrap(
+            UpgradeActionProjection.action(
+                for: target, catalog: catalog, catalogIsUsable: true,
+                manualUpgradeCore: core2, coverage: .complete, now: importedAt
+            )
+        )
+        let record = try reloaded.startManualUpgrade(
+            for: villageID, action: freshAction, startedAt: Date(), queueKind: .builder
+        )
+        XCTAssertEqual(record.status, .active)
+    }
+
+    @MainActor
+    func testQueueOccupancySeparatesManualAndConfirmedImported() throws {
+        let (model, villageID, first, _) = try makeTwoStartableItemsModel()
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 3)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+        _ = try model.startManualUpgrade(
+            for: villageID, action: first, startedAt: Date(), queueKind: .builder
+        )
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.activeManualCount, 1)
+        XCTAssertEqual(occupancy.confirmedImportedCount, 1)
+        XCTAssertEqual(occupancy.totalOccupancyCount, 2)
+        XCTAssertEqual(occupancy.availableSlots, 1)
     }
 }

@@ -73,6 +73,9 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
     public var lastImportAt: Date?
     public var diagnostics: [ManualTrackerDiagnostic]
     public var reconciliationHistory: [ManualReconciliationRecord]
+    /// Issue #145：用户配置的本地队列容量（source = userConfigured）。
+    /// 只约束未来 local manual start，不修改历史 record 或 imported 快照。
+    public var queueCapacityConfigs: [LocalQueueCapacityConfig]
 
     /// The source snapshot reference currently used by the manual ledger.
     /// Reconciliation outcomes remain separately auditable in history.
@@ -86,7 +89,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         lastSettleAt: Date? = nil,
         lastImportAt: Date? = nil,
         diagnostics: [ManualTrackerDiagnostic] = [],
-        reconciliationHistory: [ManualReconciliationRecord] = []
+        reconciliationHistory: [ManualReconciliationRecord] = [],
+        queueCapacityConfigs: [LocalQueueCapacityConfig] = []
     ) throws {
         guard stateUpdatedAt.timeIntervalSinceReferenceDate.isFinite else {
             throw ManualTrackerStoreError.invalidEnvelope("stateUpdatedAt 无效。")
@@ -116,6 +120,23 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
                 == reconciliationHistory.count else {
             throw ManualTrackerStoreError.invalidEnvelope("存在重复的 reconciliationID。")
         }
+        guard queueCapacityConfigs.count <= 64 else {
+            throw ManualTrackerStoreError.invalidEnvelope("队列容量配置数量超过上限。")
+        }
+        for config in queueCapacityConfigs {
+            guard config.villageID == villageID else {
+                throw ManualTrackerStoreError.invalidEnvelope(
+                    "队列容量配置的村庄与所属村庄不一致。"
+                )
+            }
+            guard config.updatedAt.timeIntervalSinceReferenceDate.isFinite else {
+                throw ManualTrackerStoreError.invalidEnvelope("队列容量配置时间无效。")
+            }
+        }
+        guard Set(queueCapacityConfigs.map(\.queueKind.rawValue)).count
+                == queueCapacityConfigs.count else {
+            throw ManualTrackerStoreError.invalidEnvelope("存在重复的队列类别容量配置。")
+        }
 
         let references = Set(
             core.itemStates.map(\.baselineReference)
@@ -141,6 +162,7 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         self.lastImportAt = lastImportAt
         self.diagnostics = diagnostics
         self.reconciliationHistory = reconciliationHistory
+        self.queueCapacityConfigs = queueCapacityConfigs
     }
 
     public init(from decoder: Decoder) throws {
@@ -168,6 +190,10 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
             reconciliationHistory: try container.decodeIfPresent(
                 [ManualReconciliationRecord].self,
                 forKey: .reconciliationHistory
+            ) ?? [],
+            queueCapacityConfigs: try container.decodeIfPresent(
+                [LocalQueueCapacityConfig].self,
+                forKey: .queueCapacityConfigs
             ) ?? []
         )
         guard self.baselineReference == decodedBaseline else {
@@ -183,7 +209,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         lastSettleAt: Date? = nil,
         lastImportAt: Date? = nil,
         diagnostics: [ManualTrackerDiagnostic] = [],
-        reconciliationHistory: [ManualReconciliationRecord] = []
+        reconciliationHistory: [ManualReconciliationRecord] = [],
+        queueCapacityConfigs: [LocalQueueCapacityConfig] = []
     ) throws {
         try self.init(
             villageID: villageID,
@@ -192,7 +219,8 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
             lastSettleAt: lastSettleAt,
             lastImportAt: lastImportAt,
             diagnostics: diagnostics,
-            reconciliationHistory: reconciliationHistory
+            reconciliationHistory: reconciliationHistory,
+            queueCapacityConfigs: queueCapacityConfigs
         )
     }
 
@@ -213,6 +241,7 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
         case lastImportAt
         case diagnostics
         case reconciliationHistory
+        case queueCapacityConfigs
     }
 }
 

@@ -438,7 +438,8 @@ public enum ManualTrackerReconciliationService {
             lastSettleAt: currentState.lastSettleAt,
             lastImportAt: appliedAt,
             diagnostics: diagnostics,
-            reconciliationHistory: currentState.reconciliationHistory + [record]
+            reconciliationHistory: currentState.reconciliationHistory + [record],
+            queueCapacityConfigs: currentState.queueCapacityConfigs
         )
         return ManualReconciliationPlan(preview: preview, state: state)
     }

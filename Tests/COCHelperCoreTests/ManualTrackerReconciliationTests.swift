@@ -124,6 +124,40 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         return state
     }
 
+    func testReconcileKeepsQueueCapacityConfigs() throws {
+        let raw = ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##
+        let context = try history(raw)
+        let base = try activeState(reference: context.reference)
+        let config = try LocalQueueCapacityConfig(
+            villageID: villageID, queueKind: .builder, capacity: 3,
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_010)
+        )
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: base.core,
+            queueCapacityConfigs: [config]
+        )
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##,
+            from: context
+        )
+        XCTAssertTrue(next.duplicate)
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(
+            plan.state.queueCapacityConfigs, [config],
+            "reimport 对账重建 village state 不得丢失用户配置的容量"
+        )
+    }
+
     func testDuplicateRebasesWithoutRestartingOrDuplicatingRecords() throws {
         let raw = ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##
         let context = try history(raw)

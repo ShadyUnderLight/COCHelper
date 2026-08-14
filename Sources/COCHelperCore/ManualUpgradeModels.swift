@@ -420,11 +420,16 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
     /// sufficiently observable; it must not be interpreted as zero.
     public let levelDistribution: ManualLevelDistribution?
     public let sourceTimestamp: Date?
+    /// Issue #183 review P1：本次导入是否观察到该条目的进行中计时证据。
+    /// 只有 `observedTimer == true` 且覆盖完整的观察才允许用户确认本地队列
+    /// 映射（`QueueAssignmentDecision.userAssigned`）。默认 false，旧数据兼容。
+    public let observedTimer: Bool
 
     public init(
         reference: ManualBaselineReference,
         levelDistribution: ManualLevelDistribution?,
-        sourceTimestamp: Date? = nil
+        sourceTimestamp: Date? = nil,
+        observedTimer: Bool = false
     ) throws {
         guard reference.isStructurallyValid else {
             throw ManualUpgradeError.invalidBaselineReference
@@ -432,6 +437,7 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
         self.reference = reference
         self.levelDistribution = levelDistribution
         self.sourceTimestamp = sourceTimestamp
+        self.observedTimer = observedTimer
     }
 
     public init(from decoder: Decoder) throws {
@@ -440,7 +446,9 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
             reference: try container.decode(ManualBaselineReference.self, forKey: .reference),
             levelDistribution: try container.decodeIfPresent(
                 ManualLevelDistribution.self, forKey: .levelDistribution),
-            sourceTimestamp: try container.decodeIfPresent(Date.self, forKey: .sourceTimestamp)
+            sourceTimestamp: try container.decodeIfPresent(Date.self, forKey: .sourceTimestamp),
+            observedTimer: try container.decodeIfPresent(
+                Bool.self, forKey: .observedTimer) ?? false
         )
     }
 
@@ -448,6 +456,7 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
         case reference
         case levelDistribution
         case sourceTimestamp
+        case observedTimer
     }
 }
 

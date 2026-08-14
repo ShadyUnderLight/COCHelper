@@ -94,6 +94,16 @@ struct QueueAssignmentSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            // Issue #183 review P2：旧 lineage 历史映射必须可见（审计证据，
+            // 不占当前容量；解除操作只作用于当前 lineage）。
+            if !candidate.historicalAssignments.isEmpty {
+                let kinds = candidate.historicalAssignments
+                    .map { $0.queueKind.displayName }
+                    .joined(separator: "、")
+                Text("历史映射（旧账号/旧身份，不占当前容量）：\(kinds)")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
         }
         .padding(8)
         .background(Color.cocBackground.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))

@@ -136,6 +136,7 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
         capacity: Int
     )
     case itemNotImportedObservation
+    case importedObservationWithoutTimer
 
     public var errorDescription: String? {
         switch self {
@@ -163,6 +164,8 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
             "本地容量已满：\(queueKind.displayName) 队列本地占用 \(activeCount) 个、已确认导入 \(confirmedImportedCount) 个，容量 \(capacity)。"
         case .itemNotImportedObservation:
             "该条目不是导入观察，不能确认本地队列映射。"
+        case .importedObservationWithoutTimer:
+            "该导入观察没有进行中计时证据，不能确认本地队列映射。"
         }
     }
 }
@@ -173,17 +176,21 @@ public struct ImportedObservationCandidate: Identifiable, Hashable, Sendable {
     public let displayName: String
     public let hasTimer: Bool
     public let assignment: QueueAssignmentDecision?
+    /// review P2：非当前 lineage 的历史映射（保留为审计证据，不占容量）。
+    public let historicalAssignments: [QueueAssignmentDecision]
 
     public init(
         itemKey: TrackerItemKey,
         displayName: String,
         hasTimer: Bool,
-        assignment: QueueAssignmentDecision?
+        assignment: QueueAssignmentDecision?,
+        historicalAssignments: [QueueAssignmentDecision] = []
     ) {
         self.itemKey = itemKey
         self.displayName = displayName
         self.hasTimer = hasTimer
         self.assignment = assignment
+        self.historicalAssignments = historicalAssignments
     }
 
     public var id: String { itemKey.stableID }
@@ -984,6 +991,13 @@ public final class AppModel: ObservableObject {
         }) else {
             throw ManualUpgradeCommandError.itemNotImportedObservation
         }
+        guard let observed = previousState.core.itemStates.first(where: {
+            $0.itemKey == itemKey
+        })?.importedObservation, observed.observedTimer else {
+            // review P1：没有进行中计时证据的导入观察不得确认映射，
+            // 否则已结束或证据不足的条目会错误占用容量、阻塞 Start。
+            throw ManualUpgradeCommandError.importedObservationWithoutTimer
+        }
         guard let coreBaseline = previousState.core.baselineReference else {
             throw ManualUpgradeCommandError.unreconciledSnapshot
         }
@@ -1017,15 +1031,17 @@ public final class AppModel: ObservableObject {
         do {
             try manualTrackerStore.save(candidate)
         } catch {
-            markManualTrackerUnavailable(error)
+            // review P2：保存失败不标记 unavailable，保留内存旧状态可重试
+            // （与 replaceQueueCapacities 同语义）。
             throw error
         }
         installManualTrackerEnvelope(candidate)
         return decision
     }
 
-    /// 用户解除某条导入观察的本地队列映射（删除该 itemKey 全部 overlay）。
-    /// timer 消失本身不会触发本命令；本命令只由用户显式发起。
+    /// 用户解除某条导入观察的本地队列映射（只删除当前 lineage 的 overlay，
+    /// 旧 lineage 的历史证据保留为 `unknown`）。timer 消失本身不会触发本
+    /// 命令；本命令只由用户显式发起。
     public func unassignQueueFromImportedObservation(
         for villageID: UUID,
         itemKey: TrackerItemKey,
@@ -1042,7 +1058,11 @@ public final class AppModel: ObservableObject {
             )
         }
         guard let previousState = currentEnvelope.state(for: villageID) else { return }
-        let remaining = previousState.queueAssignments.filter { $0.itemKey != itemKey }
+        let currentLineage = previousState.core.baselineReference?.lineageID
+        let remaining = previousState.queueAssignments.filter {
+            !($0.itemKey == itemKey
+                && $0.baselineReference.lineageID == currentLineage)
+        }
         guard remaining.count != previousState.queueAssignments.count else { return }
 
         let state = try ManualTrackerVillageState(
@@ -1061,7 +1081,8 @@ public final class AppModel: ObservableObject {
         do {
             try manualTrackerStore.save(candidate)
         } catch {
-            markManualTrackerUnavailable(error)
+            // review P2：保存失败不标记 unavailable，保留内存旧状态可重试
+            // （与 replaceQueueCapacities 同语义）。
             throw error
         }
         installManualTrackerEnvelope(candidate)
@@ -1069,6 +1090,8 @@ public final class AppModel: ObservableObject {
 
     /// Issue #183：村庄全部导入观察的分配候选（含显示名与当前状态）。
     /// 供 UI 分配面板使用；未找到目录显示名时回退稳定 ID。
+    /// review P1：`hasTimer` 使用导入观察的 `observedTimer` 证据，
+    /// 不是 sourceTimestamp（快照来源时间 ≠ 计时证据）。
     public func queueAssignmentCandidates(
         for villageID: UUID
     ) -> [ImportedObservationCandidate] {
@@ -1086,11 +1109,18 @@ public final class AppModel: ObservableObject {
                     $0.itemKey == itemState.itemKey
                         && $0.baselineReference.lineageID == currentLineage
                 }
+                // review P2：旧 lineage 的历史映射也一并返回，UI 可见，
+                // 不作为当前占用，但保留审计证据。
+                let historicalAssignments = state.queueAssignments.filter {
+                    $0.itemKey == itemState.itemKey
+                        && $0.baselineReference.lineageID != currentLineage
+                }
                 return ImportedObservationCandidate(
                     itemKey: itemState.itemKey,
                     displayName: name,
-                    hasTimer: itemState.importedObservation?.sourceTimestamp != nil,
-                    assignment: assignment
+                    hasTimer: itemState.importedObservation?.observedTimer ?? false,
+                    assignment: assignment,
+                    historicalAssignments: historicalAssignments
                 )
             }
             .sorted {

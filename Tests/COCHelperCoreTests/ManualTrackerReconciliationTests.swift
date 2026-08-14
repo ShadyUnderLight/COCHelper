@@ -901,6 +901,34 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         XCTAssertTrue(plan.state.queueAssignments.isEmpty,
             "导入计时从未被自动分配到任何队列")
     }
+
+    func testReconcileDegradesAssignmentWhenCoverageIncomplete() throws {
+        // Issue #183 review P1：同 section 另一条目缺 lvl → 该 section 覆盖
+        // 不完整，即使 timer 仍存在也不能保持 userAssigned 占用容量。
+        let raw = ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60},{"data":101,"lvl":10,"cnt":1}]}"##
+        let context = try history(raw)
+        let state = try stateWithAssignment(
+            reference: context.reference, distribution: [10: 1]
+        )
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":10,"cnt":1,"timer":60},{"data":101,"cnt":1}]}"##,
+            from: context
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(plan.state.queueAssignments.count, 1,
+            "覆盖不完整不得删除映射，保留记录")
+        XCTAssertEqual(plan.state.queueAssignments[0].status, .observedOnly,
+            "覆盖不完整时 timer 存在也不能保持 userAssigned")
+    }
 }
 
 private final class MemoryHistoryStore: SnapshotHistoryStore, @unchecked Sendable {

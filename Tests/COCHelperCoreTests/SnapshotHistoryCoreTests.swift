@@ -124,6 +124,37 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertTrue(diff.changes.isEmpty, "未知 timer-like 字段不得驱动业务变化")
     }
 
+    func testObservationVersionTwoKeepsLegacyLooseTimerCollection() throws {
+        // Issue #175 review P1：v2 历史 entry 保存时使用宽松匹配收集
+        // rawTimerEvidence。canonicalizer 必须按 observationVersion 分叉，
+        // 旧版本重建时沿用旧规则，否则 load 校验的 fingerprint 会漂移。
+        let snapshot = try makeSnapshot(
+            #"{"timestamp":1700000000,"buildings":[{"data":1000001,"timer":90,"timer_state":"upgrading"}]}"#
+        )
+        func canonicalizeV2() throws -> SnapshotHistoryEntry {
+            try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot,
+                villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+                lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+                appliedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
+                observationVersion: 2
+            )
+        }
+
+        let v2 = try canonicalizeV2()
+        XCTAssertEqual(v2.observation.schemaVersion, 2)
+        XCTAssertEqual(v2.observation.items.first?.rawTimerEvidence["timer"], .number("90"))
+        XCTAssertEqual(
+            v2.observation.items.first?.rawTimerEvidence["timer_state"],
+            .string("upgrading"),
+            "v2 语义必须保留宽松匹配，才能与旧历史 entry 的 fingerprint 一致"
+        )
+
+        let rebuilt = try canonicalizeV2()
+        XCTAssertEqual(rebuilt.canonicalFingerprint, v2.canonicalFingerprint)
+    }
+
     func testStableIdentitySeparatesBasesNestedKindsAndRootsWithoutArrayIndexes() throws {
         let snapshot = try makeSnapshot(
             """

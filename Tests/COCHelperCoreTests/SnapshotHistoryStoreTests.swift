@@ -533,6 +533,45 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertNil(restoredEntry.coverage.section(base: .home, rawSection: "heroes"))
     }
 
+    func testObservationVersionTwoEntryWithUnknownTimerFieldsSurvivesReload() throws {
+        // Issue #175 review P1：v2 历史 entry 由宽松匹配保存，可能包含
+        // 未知 timer-like 字段。升级后 load() 必须按 entry 的 observationVersion
+        // 用旧规则重建，否则 rawJSON 与 canonicalFingerprint 校验会拒绝加载。
+        let store = TestSnapshotHistoryStore()
+        let raw = "{\"tag\":\"\(firstTag)\",\"timestamp\":100,\"buildings\":[{\"data\":1,\"lvl\":2,\"timer\":90,\"timer_state\":\"upgrading\"}]}"
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: raw),
+            villageID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            appliedAt: Date(timeIntervalSince1970: 1),
+            snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
+            observationVersion: 2
+        )
+        XCTAssertEqual(
+            entry.observation.items.first?.rawTimerEvidence["timer_state"],
+            .string("upgrading"),
+            "前置条件：v2 语义必须把未知字段收进 rawTimerEvidence"
+        )
+        let envelope = SnapshotHistoryEnvelope(
+            entries: [entry],
+            lineages: [SnapshotHistoryLineageMetadata(
+                villageID: entry.villageID,
+                lineageID: entry.lineageID,
+                normalizedPlayerTag: entry.normalizedPlayerTag,
+                lastEntryID: entry.snapshotID,
+                lastFingerprint: entry.canonicalFingerprint,
+                lastAppliedAt: entry.appliedAt,
+                hasConflict: false
+            )],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
+        )
+
+        try store.writeRawData(envelope.encodedData())
+        let restored = try XCTUnwrap(try store.load())
+        XCTAssertEqual(restored.entries.first?.observationVersion, 2)
+        XCTAssertEqual(restored.entries.first?.canonicalFingerprint, entry.canonicalFingerprint)
+    }
+
     func testFullIntegrityDigestRejectsMetadataDisplayAndCoverageTampering() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("COCHelper-SnapshotHistoryIntegrityTests-\(UUID().uuidString)", isDirectory: true)

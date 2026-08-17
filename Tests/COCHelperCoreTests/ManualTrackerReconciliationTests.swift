@@ -413,6 +413,40 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         XCTAssertNil(rebased.importedObservation?.levelDistribution)
     }
 
+    func testNewTimerOnlyObservationIsRetainedAsImportedEvidence() throws {
+        // A timer-only item can be new to the manual core and still needs to
+        // reach the queue-assignment UI. Its distribution is intentionally nil
+        // because coverage is incomplete, but the timer evidence must survive
+        // reconciliation as `observedTimer == true`.
+        let context = try history(
+            ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##
+        )
+        let state = ManualTrackerVillageState.empty(
+            villageID: villageID,
+            now: Date(timeIntervalSince1970: 1_700_000_010)
+        )
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":10,"cnt":1},{"data":101,"lvl":10,"timer":60}]}"##,
+            from: context
+        )
+        let timerKey = TrackerItemKey.root(
+            base: .home, rawSection: "buildings", dataID: 101
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: .acceptObserved,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+        let rebased = try XCTUnwrap(plan.state.core.itemState(for: timerKey))
+        XCTAssertEqual(rebased.status, .observed)
+        XCTAssertTrue(rebased.importedObservation?.observedTimer == true)
+        XCTAssertNil(rebased.importedObservation?.levelDistribution)
+    }
+
     func testPartialCountOrTimerCoverageRemainsUnknown() throws {
         let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##)
         let state = try observedState(reference: context.reference, distribution: [10: 1])

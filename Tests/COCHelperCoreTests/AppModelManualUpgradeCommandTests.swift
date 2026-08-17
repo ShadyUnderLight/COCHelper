@@ -3385,9 +3385,23 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     /// `currentManualBaselineReference` 对冲突 lineage 返回 nil，
     /// `isBaselineReconciled` 为 false——容量投影必须 fail-closed。
     @MainActor
-    private func makeHistoryConflictModel() throws -> (
-        model: AppModel, villageID: UUID
-    ) {
+    /// 当前 baseline 不可确定的场景（Issue #192 review P2）。
+    ///
+    /// 这些场景 `currentManualBaselineReference` 返回 nil（history 加载失败、
+    /// 无 active lineage、tag 不一致、lineage 冲突），容量投影应归为
+    /// `.unavailable`（历史/身份不可用），而非 `.unreconciled`
+    /// （stored != current 的「尚未对账」）。
+    private enum UnavailableBaselineKind: Sendable {
+        case historyLoadFailed
+        case noActiveLineage
+        case tagMismatch
+        case conflict
+    }
+
+    @MainActor
+    private func makeUnavailableBaselineModel(
+        kind: UnavailableBaselineKind
+    ) throws -> (model: AppModel, villageID: UUID) {
         let villageID = UUID()
         let lineageB = UUID()
         let entryB = try makeHistoryEntry(
@@ -3396,24 +3410,41 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             lineageID: lineageB,
             appliedAt: Date(timeIntervalSince1970: 1_600)
         )
-        let historyEnvelope = SnapshotHistoryEnvelope(
-            entries: [entryB],
-            lineages: [
-                SnapshotHistoryLineageMetadata(
-                    villageID: villageID,
-                    lineageID: lineageB,
-                    normalizedPlayerTag: "#TEST",
-                    lastEntryID: entryB.snapshotID,
-                    lastFingerprint: entryB.canonicalFingerprint,
-                    lastAppliedAt: entryB.appliedAt,
-                    hasConflict: true,
-                    isActive: true
-                ),
-            ],
-            migrationMarker: SnapshotHistoryMigrationMarker(
-                completedAt: Date(timeIntervalSince1970: 1)
+        let normalizedTag: String
+        let hasConflict: Bool
+        let isActive: Bool
+        switch kind {
+        case .historyLoadFailed:
+            normalizedTag = "#TEST"; hasConflict = false; isActive = true
+        case .noActiveLineage:
+            normalizedTag = "#TEST"; hasConflict = false; isActive = false
+        case .tagMismatch:
+            normalizedTag = "#OLD"; hasConflict = false; isActive = true
+        case .conflict:
+            normalizedTag = "#TEST"; hasConflict = true; isActive = true
+        }
+
+        var historyEnvelope: SnapshotHistoryEnvelope?
+        if kind != .historyLoadFailed {
+            historyEnvelope = SnapshotHistoryEnvelope(
+                entries: [entryB],
+                lineages: [
+                    SnapshotHistoryLineageMetadata(
+                        villageID: villageID,
+                        lineageID: lineageB,
+                        normalizedPlayerTag: normalizedTag,
+                        lastEntryID: entryB.snapshotID,
+                        lastFingerprint: entryB.canonicalFingerprint,
+                        lastAppliedAt: entryB.appliedAt,
+                        hasConflict: hasConflict,
+                        isActive: isActive
+                    ),
+                ],
+                migrationMarker: SnapshotHistoryMigrationMarker(
+                    completedAt: Date(timeIntervalSince1970: 1)
+                )
             )
-        )
+        }
 
         let village = VillageProfile(
             id: villageID,
@@ -3474,7 +3505,14 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         let villagesData = try JSONEncoder().encode([village])
-        let history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        let history: TestSnapshotHistoryStore
+        if kind == .historyLoadFailed {
+            let failing = TestSnapshotHistoryStore()
+            failing.failLoad = true
+            history = failing
+        } else {
+            history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        }
         try store.save(manualEnvelope)
 
         let model = AppModel(
@@ -3489,17 +3527,24 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
-    func testQueueOccupancyUnreconciledWhenHistoryHasConflict() throws {
-        // Issue #192 验收：history 冲突（当前 lineage 身份冲突）时当前占用
-        // 不可比较，容量投影 fail-closed——不显示数字/容量满结论。
-        let (model, villageID) = try makeHistoryConflictModel()
-        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
-        XCTAssertEqual(occupancy.status, .unreconciled,
-            "lineage 冲突时投影必须是 unreconciled")
-        XCTAssertEqual(occupancy.activeManualCount, 0)
-        XCTAssertEqual(occupancy.confirmedImportedCount, 0)
-        XCTAssertFalse(occupancy.isFull)
-        XCTAssertEqual(occupancy.capacity, 1, "容量配置本身保留")
-        XCTAssertTrue(occupancy.isCapacityConfigured)
+    func testQueueOccupancyUnavailableWhenCurrentBaselineUnknowable() throws {
+        // Issue #192 review P2：history 加载失败 / 无 active lineage /
+        // tag 不一致 / lineage 冲突 时当前 baseline 不可确定，容量投影应归为
+        // `.unavailable`（历史/身份不可用，无法投影），而非 `.unreconciled`
+        // （stored != current 的「尚未对账」）。仍 fail-closed：不显示数字/容量满。
+        let kinds: [UnavailableBaselineKind] = [
+            .historyLoadFailed, .noActiveLineage, .tagMismatch, .conflict
+        ]
+        for kind in kinds {
+            let (model, villageID) = try makeUnavailableBaselineModel(kind: kind)
+            let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+            XCTAssertEqual(occupancy.status, .unavailable,
+                "\(kind)：当前 baseline 不可确定应为 unavailable")
+            XCTAssertEqual(occupancy.activeManualCount, 0)
+            XCTAssertEqual(occupancy.confirmedImportedCount, 0)
+            XCTAssertFalse(occupancy.isFull)
+            XCTAssertEqual(occupancy.capacity, 1, "容量配置本身保留")
+            XCTAssertTrue(occupancy.isCapacityConfigured)
+        }
     }
 }

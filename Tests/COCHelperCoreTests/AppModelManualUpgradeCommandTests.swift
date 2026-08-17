@@ -2985,7 +2985,9 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     /// 该 fixture 验证：未对账时容量投影不得把旧 baseline 的 overlay 或
     /// 旧 manual active 记录当作「当前占用」显示。
     @MainActor
-    private func makeUnreconciledWithCapacityOverlay() throws -> (
+    private func makeUnreconciledWithCapacityOverlay(
+        capacity: Int = 1
+    ) throws -> (
         model: AppModel, villageID: UUID
     ) {
         let villageID = UUID()
@@ -3096,7 +3098,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         let config = try LocalQueueCapacityConfig(
             villageID: villageID,
             queueKind: .builder,
-            capacity: 1,
+            capacity: capacity,
             updatedAt: Date(timeIntervalSince1970: 1_000)
         )
         let stateTime = Date()
@@ -3159,6 +3161,24 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         // 且 status 字段缺失。这里显式验证「未知」不会被静默当作空闲数字。
         XCTAssertEqual(occupancy.totalOccupancyCount, 0,
             "未知占用不提供数字，由 status 标记可信度")
+    }
+
+    @MainActor
+    func testQueueOccupancyUnreconciledZeroCapacityDoesNotClaimFull() throws {
+        // Issue #194：未对账 + 旧配置 capacity=0 时，`isFull` 不得用
+        // `0 >= 0` 误判「容量已满」（这正是 #192 语义的剩余漏洞），
+        // `availableSlots` 不得返回看似可用的 0。
+        let (model, villageID) = try makeUnreconciledWithCapacityOverlay(capacity: 0)
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.status, .unreconciled)
+        XCTAssertEqual(occupancy.activeManualCount, 0)
+        XCTAssertEqual(occupancy.confirmedImportedCount, 0)
+        XCTAssertFalse(occupancy.isFull,
+            "未对账时不得基于旧 capacity=0 给出「容量已满」结论")
+        XCTAssertNil(occupancy.availableSlots,
+            "未对账时不得返回看似可用的数字")
+        XCTAssertEqual(occupancy.capacity, 0, "容量配置本身仍保留")
+        XCTAssertTrue(occupancy.isCapacityConfigured)
     }
 
     /// 构造「已对账（core baseline = 当前 lineage B）+ 混合 lineage overlay」
@@ -3400,7 +3420,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
 
     @MainActor
     private func makeUnavailableBaselineModel(
-        kind: UnavailableBaselineKind
+        kind: UnavailableBaselineKind,
+        capacity: Int = 1
     ) throws -> (model: AppModel, villageID: UUID) {
         let villageID = UUID()
         let lineageB = UUID()
@@ -3479,7 +3500,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         let config = try LocalQueueCapacityConfig(
             villageID: villageID,
             queueKind: .builder,
-            capacity: 1,
+            capacity: capacity,
             updatedAt: Date(timeIntervalSince1970: 1_000)
         )
         let stateTime = Date()
@@ -3546,5 +3567,25 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             XCTAssertEqual(occupancy.capacity, 1, "容量配置本身保留")
             XCTAssertTrue(occupancy.isCapacityConfigured)
         }
+    }
+
+    @MainActor
+    func testQueueOccupancyUnavailableZeroCapacityDoesNotClaimFull() throws {
+        // Issue #194：当前 baseline 不可确定（unavailable）但配置了 capacity=0 时，
+        // `isFull` 不得用 `0 >= 0` 误判「容量已满」，`availableSlots` 不得返回 0。
+        // 取 .conflict 作为代表场景（status 逻辑对四种 unknowable 场景一致）。
+        let (model, villageID) = try makeUnavailableBaselineModel(
+            kind: .conflict, capacity: 0
+        )
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.status, .unavailable)
+        XCTAssertEqual(occupancy.activeManualCount, 0)
+        XCTAssertEqual(occupancy.confirmedImportedCount, 0)
+        XCTAssertFalse(occupancy.isFull,
+            "不可用时不得基于旧 capacity=0 给出「容量已满」结论")
+        XCTAssertNil(occupancy.availableSlots,
+            "不可用时不得返回看似可用的数字")
+        XCTAssertEqual(occupancy.capacity, 0, "容量配置本身保留")
+        XCTAssertTrue(occupancy.isCapacityConfigured)
     }
 }

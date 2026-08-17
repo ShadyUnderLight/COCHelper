@@ -200,6 +200,62 @@ final class LocalQueueCapacityTests: XCTestCase {
         XCTAssertEqual(occupancy.availableSlots, 0)
     }
 
+    // MARK: - Issue #194 status-aware isFull / availableSlots
+
+    func testOccupancyUnreconciledZeroCapacityDoesNotClaimFull() {
+        // Issue #194：未对账（unreconciled）时占用未知，即使旧配置 capacity=0，
+        // 也绝不能基于旧数字给出「容量已满」结论（0 >= 0 是假比较）。
+        let occupancy = LocalQueueOccupancy(
+            queueKind: .builder,
+            activeManualCount: 0,
+            confirmedImportedCount: 0,
+            capacity: 0,
+            status: .unreconciled
+        )
+        XCTAssertFalse(occupancy.isFull,
+            "未对账时不得基于旧 capacity=0 给出「容量已满」结论")
+        XCTAssertNil(occupancy.availableSlots,
+            "未对账时不得返回看似可用的数字")
+    }
+
+    func testOccupancyUnreconciledPositiveCapacityDoesNotClaimFullNorSlots() {
+        let occupancy = LocalQueueOccupancy(
+            queueKind: .builder,
+            activeManualCount: 0,
+            confirmedImportedCount: 0,
+            capacity: 3,
+            status: .unreconciled
+        )
+        XCTAssertFalse(occupancy.isFull, "未对账时任何 capacity 都不得给出满结论")
+        XCTAssertNil(occupancy.availableSlots)
+    }
+
+    func testOccupancyUnavailableZeroCapacityDoesNotClaimFull() {
+        // Issue #194：存储/历史不可用（unavailable）时同样不得给出容量满结论。
+        let occupancy = LocalQueueOccupancy(
+            queueKind: .builder,
+            activeManualCount: 0,
+            confirmedImportedCount: 0,
+            capacity: 0,
+            status: .unavailable
+        )
+        XCTAssertFalse(occupancy.isFull,
+            "不可用时不得基于旧 capacity=0 给出「容量已满」结论")
+        XCTAssertNil(occupancy.availableSlots)
+    }
+
+    func testOccupancyUnavailablePositiveCapacityDoesNotClaimFullNorSlots() {
+        let occupancy = LocalQueueOccupancy(
+            queueKind: .builder,
+            activeManualCount: 0,
+            confirmedImportedCount: 0,
+            capacity: 3,
+            status: .unavailable
+        )
+        XCTAssertFalse(occupancy.isFull, "不可用时任何 capacity 都不得给出满结论")
+        XCTAssertNil(occupancy.availableSlots)
+    }
+
     func testOccupancyIgnoresNonActiveRecords() throws {
         let occupancy = LocalQueueOccupancyResolver.occupancy(
             queueKind: .builder,

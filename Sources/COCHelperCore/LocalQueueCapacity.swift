@@ -196,15 +196,18 @@ public struct LocalQueueOccupancy: Codable, Hashable, Sendable {
 
     public var isCapacityConfigured: Bool { capacity != nil }
 
-    /// 本地容量已满（仅当配置了容量时判定）。
+    /// 本地容量已满（仅当 `.available` 且配置了容量时判定）。
+    /// Issue #194：非 `.available` 时占用未知（未对账/存储不可用），
+    /// 不得基于旧数字给出「容量已满」结论，一律返回 false。
     public var isFull: Bool {
-        guard let capacity else { return false }
+        guard status == .available, let capacity else { return false }
         return totalOccupancyCount >= capacity
     }
 
-    /// 剩余可启动数量；未配置容量时 nil。
+    /// 剩余可启动数量；仅 `.available` 且配置了容量时提供。
+    /// Issue #194：非 `.available` 时返回 nil，不给出看似可用的数字。
     public var availableSlots: Int? {
-        guard let capacity else { return nil }
+        guard status == .available, let capacity else { return nil }
         return max(0, capacity - totalOccupancyCount)
     }
 }

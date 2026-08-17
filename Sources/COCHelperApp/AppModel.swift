@@ -137,6 +137,7 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
     )
     case itemNotImportedObservation
     case importedObservationWithoutTimer
+    case importedObservationIncompleteCoverage
 
     public var errorDescription: String? {
         switch self {
@@ -166,6 +167,8 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
             "该条目不是导入观察，不能确认本地队列映射。"
         case .importedObservationWithoutTimer:
             "该导入观察没有进行中计时证据，不能确认本地队列映射。"
+        case .importedObservationIncompleteCoverage:
+            "该导入观察的等级/数量覆盖不完整，不能确认本地队列映射。"
         }
     }
 }
@@ -997,6 +1000,14 @@ public final class AppModel: ObservableObject {
             // review P1：没有进行中计时证据的导入观察不得确认映射，
             // 否则已结束或证据不足的条目会错误占用容量、阻塞 Start。
             throw ManualUpgradeCommandError.importedObservationWithoutTimer
+        }
+        guard observed.levelDistribution != nil else {
+            // Issue #188 review P1：只有 timer 但等级/数量覆盖不完整的导入
+            // 观察不得确认映射——`levelDistribution == nil` 恰好等价于对账
+            // 时 `coverageComplete == false`（distribution 仅当 coverage 完整
+            // 时非 nil），确认后会错误占用本地容量、阻塞 Start。fail-closed，
+            // 旧数据缺省 `observedTimer == false` 同样不可确认。
+            throw ManualUpgradeCommandError.importedObservationIncompleteCoverage
         }
         guard let coreBaseline = previousState.core.baselineReference else {
             throw ManualUpgradeCommandError.unreconciledSnapshot

@@ -339,7 +339,11 @@ struct SnapshotHistoryView: View {
 
     private func statisticMetrics(window: SnapshotHistoryStatisticsWindow) -> [StatisticMetric] {
         [
-            StatisticMetric(title: "建筑升级完成", value: window.buildingUpgradeCompletions),
+            StatisticMetric(title: "建筑升级完成（已确认）", value: window.buildingUpgradeCompletions),
+            StatisticMetric(
+                title: "建筑升级完成（聚合推断）",
+                value: window.aggregateInferredBuildingUpgradeCompletions
+            ),
             StatisticMetric(title: "建筑等级增长（已确认）", value: window.buildingLevelGrowth),
             StatisticMetric(
                 title: "建筑等级增长（聚合推断）",

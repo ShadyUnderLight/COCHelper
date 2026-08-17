@@ -98,8 +98,14 @@ struct QueueAssignmentSettingsView: View {
         switch assignment?.status {
         case .userAssigned:
             if let assignment {
+                // Issue #189 review P2：userAssigned 但当前证据不足（如异常
+                // 持久化或重导入后覆盖不完整）时，容量投影（
+                // capacityConfirmingAssignments）已排除其占用；UI 必须与
+                // 口径一致地提示"不计入容量"，不能仍显示"已确认"。
                 HStack(spacing: 8) {
-                    Text("已分配：\(assignment.queueKind.displayName)")
+                    Text(candidate.isConfirmable
+                        ? "已分配：\(assignment.queueKind.displayName)"
+                        : "已分配：\(assignment.queueKind.displayName)（证据不足，不计入容量）")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Button("解除分配", role: .destructive) {
@@ -107,6 +113,12 @@ struct QueueAssignmentSettingsView: View {
                     }
                     .font(.caption)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    candidate.isConfirmable
+                        ? "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，可解除分配"
+                        : "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，但当前证据不足，不计入本地容量，可解除分配"
+                )
             }
         case .observedOnly:
             if candidate.isConfirmable {
@@ -207,12 +219,23 @@ struct QueueAssignmentSettingsView: View {
         }
         switch assignment.status {
         case .userAssigned:
-            return Text("已确认")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.green)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.green.opacity(0.15), in: Capsule())
+            if candidate.isConfirmable {
+                return Text("已确认")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.15), in: Capsule())
+            } else {
+                // Issue #189 review P2：userAssigned 但证据不足时不占容量，
+                // 与容量投影口径一致地提示，避免 UI 误导。
+                return Text("已确认（不计入容量）")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+            }
         case .observedOnly:
             if candidate.isConfirmable {
                 // Issue #189：证据已恢复但尚未重新确认。

@@ -1039,7 +1039,11 @@ public final class AppModel: ObservableObject {
             // 不可确认。
             throw ManualUpgradeCommandError.importedObservationIncompleteCoverage
         }
-        guard let coreBaseline = previousState.core.baselineReference else {
+        // Issue #189 review P1：与 start/cancel/adjust 同口径，必须当前
+        // baseline 已对账才能写入映射——否则会把 userAssigned 绑定到过期
+        // lineage 的 baselineReference，投影时被当作旧 lineage 处理。
+        guard isBaselineReconciled(for: villageID, core: previousState.core),
+              let coreBaseline = previousState.core.baselineReference else {
             throw ManualUpgradeCommandError.unreconciledSnapshot
         }
         var assignments = previousState.queueAssignments.filter {
@@ -1135,10 +1139,14 @@ public final class AppModel: ObservableObject {
     /// 不是 sourceTimestamp（快照来源时间 ≠ 计时证据）。
     /// Issue #189：`isConfirmable`/`unconfirmableReason` 是 UI 显示资格的
     /// 唯一投影——直接基于 Core 谓词，UI 不得自行推断 coverage。
+    /// Issue #189 review P1：未对账（core baseline ≠ 当前快照 lineage）时
+    /// 返回空，与 `manualUpgradeCores` 的 gated 投影语义一致，不渲染任何
+    /// 可确认候选，避免 UI 展示点击后才失败的确认菜单。
     public func queueAssignmentCandidates(
         for villageID: UUID
     ) -> [ImportedObservationCandidate] {
         guard let state = manualTrackerEnvelope?.state(for: villageID) else { return [] }
+        guard isBaselineReconciled(for: villageID, core: state.core) else { return [] }
         let catalog = gameCatalog
         let currentLineage = state.core.baselineReference?.lineageID
         return state.core.itemStates

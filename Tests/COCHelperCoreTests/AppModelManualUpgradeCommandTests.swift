@@ -2974,4 +2974,577 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             "拒绝时 assignment 数量不变（仅保留预置历史映射）"
         )
     }
+
+    // MARK: - Issue #192：未对账时容量投影 fail-closed
+
+    /// 构造「未对账 + 旧 lineage userAssigned overlay + 容量配置」的村庄：
+    /// history 当前 active lineage 是 B（#TEST），但 core baseline 是旧
+    /// lineage A；存在一条 `userAssigned` overlay 绑定 lineage A（旧 core
+    /// 的 `capacityConfirmingAssignments` 会把它误算为当前 lineage 占用），
+    /// 另有一条未到期的 builder active record 与容量 1 配置。
+    /// 该 fixture 验证：未对账时容量投影不得把旧 baseline 的 overlay 或
+    /// 旧 manual active 记录当作「当前占用」显示。
+    @MainActor
+    private func makeUnreconciledWithCapacityOverlay() throws -> (
+        model: AppModel, villageID: UUID
+    ) {
+        let villageID = UUID()
+        let lineageA = UUID()
+        let lineageB = UUID()
+        let entryA = try makeHistoryEntry(
+            tag: "#OLD",
+            villageID: villageID,
+            lineageID: lineageA,
+            appliedAt: Date(timeIntervalSince1970: 800),
+            isBaseline: true
+        )
+        let entryB = try makeHistoryEntry(
+            tag: "#TEST",
+            villageID: villageID,
+            lineageID: lineageB,
+            appliedAt: Date(timeIntervalSince1970: 1_600)
+        )
+        let historyEnvelope = SnapshotHistoryEnvelope(
+            entries: [entryA, entryB],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageA,
+                    normalizedPlayerTag: "#OLD",
+                    lastEntryID: entryA.snapshotID,
+                    lastFingerprint: entryA.canonicalFingerprint,
+                    lastAppliedAt: entryA.appliedAt,
+                    hasConflict: false,
+                    isActive: false
+                ),
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageB,
+                    normalizedPlayerTag: "#TEST",
+                    lastEntryID: entryB.snapshotID,
+                    lastFingerprint: entryB.canonicalFingerprint,
+                    lastAppliedAt: entryB.appliedAt,
+                    hasConflict: false,
+                    isActive: true
+                ),
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let village = VillageProfile(
+            id: villageID,
+            name: "测试村庄",
+            accountSnapshot: snapshot(objectSections: [
+                "buildings": [
+                    item(section: "buildings", dataID: 1_000_001, level: 18),
+                    item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                ],
+            ])
+        )
+        let baselineA = ManualBaselineReference(
+            revision: entryA.snapshotID.uuidString,
+            fingerprint: entryA.canonicalFingerprint,
+            lineageID: lineageA.uuidString
+        )
+        let key = TrackerItemKey.root(
+            base: .home, rawSection: "buildings", dataID: 1_000_002
+        )
+        // 旧 lineage userAssigned overlay：在未对账实现前，
+        // `capacityConfirmingAssignments` 以 core 的 lineageA 当 currentLineage，
+        // 会把这条误算为当前占用。
+        let overlay = try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: baselineA,
+            queueKind: .builder,
+            decidedAt: Date(timeIntervalSince1970: 500),
+            status: .userAssigned
+        )
+        // 未到期的 builder active record（在 `Date()` 时仍占用本地容量）。
+        let startedAt = Date(timeIntervalSinceNow: -2_000)
+        let record = try ManualUpgradeRecord(
+            recordID: UUID(),
+            itemKey: key,
+            fromLevel: 1,
+            targetLevel: 2,
+            quantity: 1,
+            startedAt: startedAt,
+            expectedEndAt: startedAt.addingTimeInterval(5_000),
+            durationSeconds: 5_000,
+            durationKind: .timed,
+            frozenCosts: nil,
+            catalogProvenance: ManualCatalogProvenance(catalog: catalog),
+            baselineReference: baselineA,
+            queueKind: "builder",
+            status: .active
+        )
+        let state = try ManualItemState(
+            itemKey: key,
+            baselineReference: baselineA,
+            importedObservation: ManualImportedObservation(
+                reference: baselineA,
+                levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+                sourceTimestamp: Date(timeIntervalSince1970: 1_000),
+                observedTimer: true
+            ),
+            manualCompletedDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+            status: .manualCompleted
+        )
+        let core = try ManualUpgradeCore(itemStates: [state], records: [record])
+        let config = try LocalQueueCapacityConfig(
+            villageID: villageID,
+            queueKind: .builder,
+            capacity: 1,
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let stateTime = Date()
+        let manualEnvelope = try ManualTrackerEnvelope(
+            villages: [
+                ManualTrackerVillageState(
+                    villageID: villageID,
+                    core: core,
+                    stateUpdatedAt: stateTime,
+                    lastSettleAt: stateTime,
+                    lastImportAt: stateTime,
+                    diagnostics: [],
+                    reconciliationHistory: [],
+                    queueCapacityConfigs: [config],
+                    queueAssignments: [overlay]
+                ),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        try store.save(manualEnvelope)
+
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        return (model, villageID)
+    }
+
+    @MainActor
+    func testQueueOccupancyUnreconciledDoesNotShowLegacyOverlay() throws {
+        // Issue #192：未对账（core baseline A ≠ 当前快照 lineage B）时，
+        // 容量投影必须 fail-closed——不得把旧 lineage 的 userAssigned overlay
+        // 或旧 manual active 记录当作当前占用，也不得把「未知」压成 0 显示；
+        // `status == .unreconciled` 是 UI 区分「已知 0」与「当前未知」的依据。
+        let (model, villageID) = try makeUnreconciledWithCapacityOverlay()
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.status, .unreconciled,
+            "未对账时投影状态必须是 unreconciled（不是 available 的已知 0）")
+        XCTAssertEqual(occupancy.confirmedImportedCount, 0,
+            "未对账时不得把旧 lineage 的 userAssigned overlay 算作当前占用")
+        XCTAssertEqual(occupancy.activeManualCount, 0,
+            "未对账时不得把旧 baseline 的 manual active 记录算作当前占用")
+        XCTAssertFalse(occupancy.isFull,
+            "未对账时不得基于旧 overlay 给出「容量已满」结论")
+        XCTAssertEqual(occupancy.capacity, 1,
+            "本地容量配置本身仍保留（未对账不抹掉 userConfigured 配置）")
+        XCTAssertTrue(occupancy.isCapacityConfigured)
+        // 对照：未对账实现前，旧 overlay + active record 会把 total 算成 2，
+        // 且 status 字段缺失。这里显式验证「未知」不会被静默当作空闲数字。
+        XCTAssertEqual(occupancy.totalOccupancyCount, 0,
+            "未知占用不提供数字，由 status 标记可信度")
+    }
+
+    /// 构造「已对账（core baseline = 当前 lineage B）+ 混合 lineage overlay」
+    /// 的村庄：当前 lineage B 的 userAssigned overlay 计入容量，旧 lineage A
+    /// 的 userAssigned 仅作历史证据不计入；另有一条未到期的 builder active
+    /// 记录与容量 1 配置。验证对账完成后恢复正常口径。
+    @MainActor
+    private func makeReconciledWithMixedLineageOverlay() throws -> (
+        model: AppModel, villageID: UUID
+    ) {
+        let villageID = UUID()
+        let lineageA = UUID()
+        let lineageB = UUID()
+        let entryA = try makeHistoryEntry(
+            tag: "#OLD",
+            villageID: villageID,
+            lineageID: lineageA,
+            appliedAt: Date(timeIntervalSince1970: 800),
+            isBaseline: true
+        )
+        let entryB = try makeHistoryEntry(
+            tag: "#TEST",
+            villageID: villageID,
+            lineageID: lineageB,
+            appliedAt: Date(timeIntervalSince1970: 1_600)
+        )
+        let historyEnvelope = SnapshotHistoryEnvelope(
+            entries: [entryA, entryB],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageA,
+                    normalizedPlayerTag: "#OLD",
+                    lastEntryID: entryA.snapshotID,
+                    lastFingerprint: entryA.canonicalFingerprint,
+                    lastAppliedAt: entryA.appliedAt,
+                    hasConflict: false,
+                    isActive: false
+                ),
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageB,
+                    normalizedPlayerTag: "#TEST",
+                    lastEntryID: entryB.snapshotID,
+                    lastFingerprint: entryB.canonicalFingerprint,
+                    lastAppliedAt: entryB.appliedAt,
+                    hasConflict: false,
+                    isActive: true
+                ),
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let village = VillageProfile(
+            id: villageID,
+            name: "测试村庄",
+            accountSnapshot: snapshot(objectSections: [
+                "buildings": [
+                    item(section: "buildings", dataID: 1_000_001, level: 18),
+                    item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                ],
+            ])
+        )
+        let baselineA = ManualBaselineReference(
+            revision: entryA.snapshotID.uuidString,
+            fingerprint: entryA.canonicalFingerprint,
+            lineageID: lineageA.uuidString
+        )
+        let baselineB = ManualBaselineReference(
+            revision: entryB.snapshotID.uuidString,
+            fingerprint: entryB.canonicalFingerprint,
+            lineageID: lineageB.uuidString
+        )
+        let key = TrackerItemKey.root(
+            base: .home, rawSection: "buildings", dataID: 1_000_002
+        )
+        // 当前 lineage B 的 userAssigned overlay：计入容量。
+        let currentOverlay = try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: baselineB,
+            queueKind: .builder,
+            decidedAt: Date(timeIntervalSince1970: 500),
+            status: .userAssigned
+        )
+        // 旧 lineage A 的 userAssigned overlay：历史证据，不计入。
+        let legacyOverlay = try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: baselineA,
+            queueKind: .builder,
+            decidedAt: Date(timeIntervalSince1970: 400),
+            status: .userAssigned
+        )
+        // 未到期的 builder active record（已对账，占用当前容量）。
+        let startedAt = Date(timeIntervalSinceNow: -2_000)
+        let record = try ManualUpgradeRecord(
+            recordID: UUID(),
+            itemKey: key,
+            fromLevel: 1,
+            targetLevel: 2,
+            quantity: 1,
+            startedAt: startedAt,
+            expectedEndAt: startedAt.addingTimeInterval(5_000),
+            durationSeconds: 5_000,
+            durationKind: .timed,
+            frozenCosts: nil,
+            catalogProvenance: ManualCatalogProvenance(catalog: catalog),
+            baselineReference: baselineB,
+            queueKind: "builder",
+            status: .active
+        )
+        let state = try ManualItemState(
+            itemKey: key,
+            baselineReference: baselineB,
+            importedObservation: ManualImportedObservation(
+                reference: baselineB,
+                levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+                sourceTimestamp: Date(timeIntervalSince1970: 1_600),
+                observedTimer: true
+            ),
+            manualCompletedDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+            status: .manualCompleted
+        )
+        let core = try ManualUpgradeCore(itemStates: [state], records: [record])
+        let config = try LocalQueueCapacityConfig(
+            villageID: villageID,
+            queueKind: .builder,
+            capacity: 1,
+            updatedAt: Date(timeIntervalSince1970: 1_600)
+        )
+        let stateTime = Date()
+        let manualEnvelope = try ManualTrackerEnvelope(
+            villages: [
+                ManualTrackerVillageState(
+                    villageID: villageID,
+                    core: core,
+                    stateUpdatedAt: stateTime,
+                    lastSettleAt: stateTime,
+                    lastImportAt: stateTime,
+                    diagnostics: [],
+                    reconciliationHistory: [],
+                    queueCapacityConfigs: [config],
+                    queueAssignments: [currentOverlay, legacyOverlay]
+                ),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        try store.save(manualEnvelope)
+
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        return (model, villageID)
+    }
+
+    @MainActor
+    func testQueueOccupancyAfterReconciliationRestoresCurrentLineageOverlay() throws {
+        // Issue #192 验收：对账完成后恢复正常口径——当前 lineage 且资格
+        // 仍然有效的 userAssigned 重新计入；旧 lineage 映射保持历史证据不计入。
+        let (model, villageID) = try makeReconciledWithMixedLineageOverlay()
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.status, .available,
+            "已对账时投影状态恢复为 available（数字可用于容量视图）")
+        XCTAssertEqual(occupancy.confirmedImportedCount, 1,
+            "只计当前 lineage B 的 userAssigned；旧 lineage A 不计入")
+        XCTAssertEqual(occupancy.activeManualCount, 1,
+            "已对账时 manual active 记录恢复计入")
+        XCTAssertEqual(occupancy.totalOccupancyCount, 2)
+        XCTAssertTrue(occupancy.isFull,
+            "对账完成后容量满结论恢复（1 + 1 ≥ capacity 1）")
+        XCTAssertEqual(occupancy.capacity, 1)
+    }
+
+    @MainActor
+    func testQueueOccupancyUnavailableWhenStoreCorrupt() throws {
+        // Issue #192：存储/历史不可用（损坏 store → envelope nil）时投影
+        // 必须返回 `.unavailable`，不能把「未知」静默当成数字 0 的 available。
+        let snapshot = snapshot(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let villagesData = try JSONEncoder().encode([
+            VillageProfile(name: "测试村庄", accountSnapshot: snapshot),
+        ])
+        try Data("corrupt".utf8).write(to: storeURL)
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: TestSnapshotHistoryStore(),
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData)
+        )
+        XCTAssertEqual(model.manualTrackerStatus, .unavailable)
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.status, .unavailable,
+            "存储不可用时投影状态必须是 unavailable")
+        XCTAssertEqual(occupancy.activeManualCount, 0)
+        XCTAssertEqual(occupancy.confirmedImportedCount, 0)
+        XCTAssertNil(occupancy.capacity, "存储不可用时配置也无法读取")
+        XCTAssertFalse(occupancy.isFull)
+    }
+
+    /// 构造「history 当前 lineage 存在身份冲突（hasConflict = true）→
+    /// 当前 baseline 不可比较」的村庄：core 非空，配置了容量 1。
+    /// `currentManualBaselineReference` 对冲突 lineage 返回 nil，
+    /// `isBaselineReconciled` 为 false——容量投影必须 fail-closed。
+    @MainActor
+    /// 当前 baseline 不可确定的场景（Issue #192 review P2）。
+    ///
+    /// 这些场景 `currentManualBaselineReference` 返回 nil（history 加载失败、
+    /// 无 active lineage、tag 不一致、lineage 冲突），容量投影应归为
+    /// `.unavailable`（历史/身份不可用），而非 `.unreconciled`
+    /// （stored != current 的「尚未对账」）。
+    private enum UnavailableBaselineKind: Sendable {
+        case historyLoadFailed
+        case noActiveLineage
+        case tagMismatch
+        case conflict
+    }
+
+    @MainActor
+    private func makeUnavailableBaselineModel(
+        kind: UnavailableBaselineKind
+    ) throws -> (model: AppModel, villageID: UUID) {
+        let villageID = UUID()
+        let lineageB = UUID()
+        let entryB = try makeHistoryEntry(
+            tag: "#TEST",
+            villageID: villageID,
+            lineageID: lineageB,
+            appliedAt: Date(timeIntervalSince1970: 1_600)
+        )
+        let normalizedTag: String
+        let hasConflict: Bool
+        let isActive: Bool
+        switch kind {
+        case .historyLoadFailed:
+            normalizedTag = "#TEST"; hasConflict = false; isActive = true
+        case .noActiveLineage:
+            normalizedTag = "#TEST"; hasConflict = false; isActive = false
+        case .tagMismatch:
+            normalizedTag = "#OLD"; hasConflict = false; isActive = true
+        case .conflict:
+            normalizedTag = "#TEST"; hasConflict = true; isActive = true
+        }
+
+        var historyEnvelope: SnapshotHistoryEnvelope?
+        if kind != .historyLoadFailed {
+            historyEnvelope = SnapshotHistoryEnvelope(
+                entries: [entryB],
+                lineages: [
+                    SnapshotHistoryLineageMetadata(
+                        villageID: villageID,
+                        lineageID: lineageB,
+                        normalizedPlayerTag: normalizedTag,
+                        lastEntryID: entryB.snapshotID,
+                        lastFingerprint: entryB.canonicalFingerprint,
+                        lastAppliedAt: entryB.appliedAt,
+                        hasConflict: hasConflict,
+                        isActive: isActive
+                    ),
+                ],
+                migrationMarker: SnapshotHistoryMigrationMarker(
+                    completedAt: Date(timeIntervalSince1970: 1)
+                )
+            )
+        }
+
+        let village = VillageProfile(
+            id: villageID,
+            name: "测试村庄",
+            accountSnapshot: snapshot(objectSections: [
+                "buildings": [
+                    item(section: "buildings", dataID: 1_000_001, level: 18),
+                    item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                ],
+            ])
+        )
+        let baselineB = ManualBaselineReference(
+            revision: entryB.snapshotID.uuidString,
+            fingerprint: entryB.canonicalFingerprint,
+            lineageID: lineageB.uuidString
+        )
+        let key = TrackerItemKey.root(
+            base: .home, rawSection: "buildings", dataID: 1_000_002
+        )
+        let state = try ManualItemState(
+            itemKey: key,
+            baselineReference: baselineB,
+            importedObservation: ManualImportedObservation(
+                reference: baselineB,
+                levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+                sourceTimestamp: Date(timeIntervalSince1970: 1_000),
+                observedTimer: true
+            ),
+            status: .observed
+        )
+        let core = try ManualUpgradeCore(itemStates: [state])
+        let config = try LocalQueueCapacityConfig(
+            villageID: villageID,
+            queueKind: .builder,
+            capacity: 1,
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let stateTime = Date()
+        let manualEnvelope = try ManualTrackerEnvelope(
+            villages: [
+                ManualTrackerVillageState(
+                    villageID: villageID,
+                    core: core,
+                    stateUpdatedAt: stateTime,
+                    lastSettleAt: stateTime,
+                    lastImportAt: stateTime,
+                    diagnostics: [],
+                    reconciliationHistory: [],
+                    queueCapacityConfigs: [config],
+                    queueAssignments: []
+                ),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let villagesData = try JSONEncoder().encode([village])
+        let history: TestSnapshotHistoryStore
+        if kind == .historyLoadFailed {
+            let failing = TestSnapshotHistoryStore()
+            failing.failLoad = true
+            history = failing
+        } else {
+            history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        }
+        try store.save(manualEnvelope)
+
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        return (model, villageID)
+    }
+
+    @MainActor
+    func testQueueOccupancyUnavailableWhenCurrentBaselineUnknowable() throws {
+        // Issue #192 review P2：history 加载失败 / 无 active lineage /
+        // tag 不一致 / lineage 冲突 时当前 baseline 不可确定，容量投影应归为
+        // `.unavailable`（历史/身份不可用，无法投影），而非 `.unreconciled`
+        // （stored != current 的「尚未对账」）。仍 fail-closed：不显示数字/容量满。
+        let kinds: [UnavailableBaselineKind] = [
+            .historyLoadFailed, .noActiveLineage, .tagMismatch, .conflict
+        ]
+        for kind in kinds {
+            let (model, villageID) = try makeUnavailableBaselineModel(kind: kind)
+            let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+            XCTAssertEqual(occupancy.status, .unavailable,
+                "\(kind)：当前 baseline 不可确定应为 unavailable")
+            XCTAssertEqual(occupancy.activeManualCount, 0)
+            XCTAssertEqual(occupancy.confirmedImportedCount, 0)
+            XCTAssertFalse(occupancy.isFull)
+            XCTAssertEqual(occupancy.capacity, 1, "容量配置本身保留")
+            XCTAssertTrue(occupancy.isCapacityConfigured)
+        }
+    }
 }

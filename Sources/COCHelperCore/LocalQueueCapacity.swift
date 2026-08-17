@@ -127,6 +127,20 @@ public enum LocalQueueCapacityConfigError: Error, Equatable, Sendable {
     case invalidTimestamp
 }
 
+/// Issue #192：本地队列占用投影的可信度状态。
+///
+/// 区分「已知 0」（available）与「当前未知」（unreconciled/unavailable），
+/// 禁止把未知占用静默压成数字 0 或解释成空闲。UI 只在 available 时渲染
+/// 占用数字与容量满结论。
+public enum LocalQueueOccupancyStatus: String, Codable, Hashable, Sendable {
+    /// 当前基线已对账，数字可用于容量视图。
+    case available
+    /// 配置可能存在，但当前占用来源不可比较（快照尚未对账）。
+    case unreconciled
+    /// 存储/历史不可用，无法投影。
+    case unavailable
+}
+
 /// Issue #145：某个本地队列的占用摘要（纯投影，不写任何状态）。
 public struct LocalQueueOccupancy: Codable, Hashable, Sendable {
     public let queueKind: LocalQueueKind
@@ -137,17 +151,44 @@ public struct LocalQueueOccupancy: Codable, Hashable, Sendable {
     public let confirmedImportedCount: Int
     /// 用户配置的容量；nil = 未配置（不做容量校验）。
     public let capacity: Int?
+    /// Issue #192：投影可信度状态。非 `.available` 时数字不反映当前事实，
+    /// UI 不得渲染占用/容量满结论。
+    public let status: LocalQueueOccupancyStatus
 
     public init(
         queueKind: LocalQueueKind,
         activeManualCount: Int,
         confirmedImportedCount: Int = 0,
-        capacity: Int?
+        capacity: Int?,
+        status: LocalQueueOccupancyStatus = .available
     ) {
         self.queueKind = queueKind
         self.activeManualCount = activeManualCount
         self.confirmedImportedCount = confirmedImportedCount
         self.capacity = capacity
+        self.status = status
+    }
+
+    // 兼容旧编码数据：`status` 是 Issue #192 新增字段，缺失时按
+    // `.available`（旧投影语义）处理，避免旧 JSON 解码失败。
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.queueKind = try container.decode(LocalQueueKind.self, forKey: .queueKind)
+        self.activeManualCount = try container.decode(Int.self, forKey: .activeManualCount)
+        self.confirmedImportedCount = try container.decode(
+            Int.self, forKey: .confirmedImportedCount)
+        self.capacity = try container.decodeIfPresent(Int.self, forKey: .capacity)
+        self.status = try container.decodeIfPresent(
+            LocalQueueOccupancyStatus.self, forKey: .status
+        ) ?? .available
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case queueKind
+        case activeManualCount
+        case confirmedImportedCount
+        case capacity
+        case status
     }
 
     /// 手动 active + 用户确认的导入 overlay 总数。

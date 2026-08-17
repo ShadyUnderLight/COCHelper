@@ -61,18 +61,33 @@ struct ManualQueueCapacitySettingsView: View {
             .frame(width: 80)
             Text("个同时升级")
             Spacer()
-            if occupancy.isCapacityConfigured {
-                if occupancy.confirmedImportedCount > 0 {
-                    Text("占用 \(occupancy.activeManualCount)+\(occupancy.confirmedImportedCount)（手动+已确认导入）/\(occupancy.capacity ?? 0)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                } else {
-                    Text("占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+            if occupancy.status == .available {
+                if occupancy.isCapacityConfigured {
+                    if occupancy.confirmedImportedCount > 0 {
+                        Text("占用 \(occupancy.activeManualCount)+\(occupancy.confirmedImportedCount)（手动+已确认导入）/\(occupancy.capacity ?? 0)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    } else {
+                        Text("占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 }
+            } else if occupancy.status == .unreconciled {
+                // Issue #192：未对账时不展示旧 overlay 占用数字，明确显示
+                // 「尚未对账」，不把未知压成 0。
+                Text("快照尚未对账，当前容量占用暂不可确认")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else {
+                // Issue #192 review P2：存储/历史不可用（`.unavailable`）时
+                // 配置不可读、占用不可投影，显示独立诊断而不是隐藏或误标
+                // 「尚未对账」。
+                Text("手动升级存储不可用，暂无法确认占用")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
         }
     }

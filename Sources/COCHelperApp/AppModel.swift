@@ -181,19 +181,30 @@ public struct ImportedObservationCandidate: Identifiable, Hashable, Sendable {
     public let assignment: QueueAssignmentDecision?
     /// review P2：非当前 lineage 的历史映射（保留为审计证据，不占容量）。
     public let historicalAssignments: [QueueAssignmentDecision]
+    /// Issue #189：是否具备"确认/重新确认本地队列映射"资格。直接投影 Core
+    /// 谓词 `ManualItemState.isQueueAssignmentConfirmable`（timer + 覆盖完整），
+    /// 不在 UI 中自行推断 observedTimer/levelDistribution/coverage 组合。
+    public let isConfirmable: Bool
+    /// Issue #189：不可确认时的原因文案（nil = 可确认）。由 AppModel 依据
+    /// 证据状态生成，UI 只消费展示。
+    public let unconfirmableReason: String?
 
     public init(
         itemKey: TrackerItemKey,
         displayName: String,
         hasTimer: Bool,
         assignment: QueueAssignmentDecision?,
-        historicalAssignments: [QueueAssignmentDecision] = []
+        historicalAssignments: [QueueAssignmentDecision] = [],
+        isConfirmable: Bool,
+        unconfirmableReason: String?
     ) {
         self.itemKey = itemKey
         self.displayName = displayName
         self.hasTimer = hasTimer
         self.assignment = assignment
         self.historicalAssignments = historicalAssignments
+        self.isConfirmable = isConfirmable
+        self.unconfirmableReason = unconfirmableReason
     }
 
     public var id: String { itemKey.stableID }
@@ -1122,6 +1133,8 @@ public final class AppModel: ObservableObject {
     /// 供 UI 分配面板使用；未找到目录显示名时回退稳定 ID。
     /// review P1：`hasTimer` 使用导入观察的 `observedTimer` 证据，
     /// 不是 sourceTimestamp（快照来源时间 ≠ 计时证据）。
+    /// Issue #189：`isConfirmable`/`unconfirmableReason` 是 UI 显示资格的
+    /// 唯一投影——直接基于 Core 谓词，UI 不得自行推断 coverage。
     public func queueAssignmentCandidates(
         for villageID: UUID
     ) -> [ImportedObservationCandidate] {
@@ -1145,12 +1158,26 @@ public final class AppModel: ObservableObject {
                     $0.itemKey == itemState.itemKey
                         && $0.baselineReference.lineageID != currentLineage
                 }
+                // Issue #189：资格唯一来源是 Core 谓词（timer + 覆盖完整）；
+                // 原因细分供 UI 展示，与命令拒绝路径的语义保持一致
+                // （importedObservationWithoutTimer / incompleteCoverage）。
+                let isConfirmable = itemState.isQueueAssignmentConfirmable
+                let unconfirmableReason: String?
+                if isConfirmable {
+                    unconfirmableReason = nil
+                } else if itemState.importedObservation?.observedTimer != true {
+                    unconfirmableReason = "没有进行中计时证据"
+                } else {
+                    unconfirmableReason = "观察证据不完整，暂不能确认"
+                }
                 return ImportedObservationCandidate(
                     itemKey: itemState.itemKey,
                     displayName: name,
                     hasTimer: itemState.importedObservation?.observedTimer ?? false,
                     assignment: assignment,
-                    historicalAssignments: historicalAssignments
+                    historicalAssignments: historicalAssignments,
+                    isConfirmable: isConfirmable,
+                    unconfirmableReason: unconfirmableReason
                 )
             }
             .sorted {

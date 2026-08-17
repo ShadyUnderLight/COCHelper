@@ -2515,4 +2515,182 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertEqual(candidate.historicalAssignments[0].status, .unknown)
         XCTAssertEqual(candidate.historicalAssignments[0].queueKind, .laboratory)
     }
+
+    // MARK: - Issue #189 队列映射面板资格投影
+
+    @MainActor
+    func testQueueAssignmentCandidatesExposeConfirmableEligibility() throws {
+        // Issue #189：UI 必须能预先知道"是否可以确认"，而不是点击后才收到
+        // 命令错误。无 timer 证据的候选项不可确认，且给出原因。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel()
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertFalse(candidate.hasTimer, "fixture 默认无 timer")
+        XCTAssertFalse(candidate.isConfirmable, "无 timer 的候选项不可确认")
+        XCTAssertNotNil(candidate.unconfirmableReason, "不可确认时必须有原因")
+    }
+
+    @MainActor
+    func testQueueAssignmentCandidateConfirmableWhenTimerAndCoverageComplete() throws {
+        // Issue #189：timer + 完整覆盖的候选项可确认，无原因。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertTrue(candidate.hasTimer)
+        XCTAssertTrue(candidate.isConfirmable, "timer + 完整覆盖应可确认")
+        XCTAssertNil(candidate.unconfirmableReason, "可确认时无不可确认原因")
+    }
+
+    @MainActor
+    func testQueueAssignmentCandidateConfirmableReasonDistinguishesCoverage() throws {
+        // Issue #189：有 timer 但覆盖不完整（distribution nil）→ 不可确认，
+        // 原因与"无 timer"区分，UI 可显示"观察证据不完整"。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let itemState = try XCTUnwrap(core.itemStates.first { $0.itemKey == key })
+        let partial = try ManualItemState(
+            itemKey: itemState.itemKey,
+            baselineReference: itemState.baselineReference,
+            importedObservation: ManualImportedObservation(
+                reference: itemState.importedObservation!.reference,
+                levelDistribution: nil,
+                sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
+                observedTimer: true
+            ),
+            manualCompletedDistribution: itemState.manualCompletedDistribution,
+            status: itemState.status
+        )
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try ManualUpgradeCore(
+                itemStates: core.itemStates.map { $0.itemKey == key ? partial : $0 },
+                records: core.records
+            )
+        }
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertTrue(candidate.hasTimer, "fixture 有 timer 但覆盖不完整")
+        XCTAssertFalse(candidate.isConfirmable, "覆盖不完整不可确认")
+        let reason = try XCTUnwrap(candidate.unconfirmableReason)
+        XCTAssertFalse(reason.contains("计时"), "覆盖不足原因应与无 timer 原因区分：\(reason)")
+        XCTAssertTrue(reason.contains("证据不完整"), "覆盖不足原因应说明证据不完整：\(reason)")
+    }
+
+    @MainActor
+    func testAssignOnObservedOnlyRestoresUserAssignedWithoutUnassign() throws {
+        // Issue #189：observedOnly 的映射在证据恢复后可直接重新确认
+        // （复用幂等 assign 命令），不需要先解除再分配；不产生重复映射。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+
+        // 模拟对账降级：mapping 变为 observedOnly（如 timer 消失后新快照出现）。
+        var envelope = try XCTUnwrap(try store.load())
+        let state = try XCTUnwrap(envelope.state(for: villageID))
+        let core = state.core
+        let degraded = try QueueAssignmentDecision(
+            decisionID: state.queueAssignments[0].decisionID,
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: core.baselineReference!,
+            queueKind: .builder,
+            decidedAt: state.queueAssignments[0].decidedAt,
+            status: .observedOnly
+        )
+        let degradedState = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: state.stateUpdatedAt,
+            lastSettleAt: state.lastSettleAt,
+            lastImportAt: state.lastImportAt,
+            diagnostics: state.diagnostics,
+            reconciliationHistory: state.reconciliationHistory,
+            queueCapacityConfigs: state.queueCapacityConfigs,
+            queueAssignments: [degraded]
+        )
+        try envelope.upsert(degradedState)
+        try store.save(envelope)
+
+        // 证据恢复（当前 itemState 仍 timer + 覆盖完整）后直接重新确认：
+        // 复用现有 assign 命令，无需先 unassign。
+        let decision = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .laboratory
+        )
+        XCTAssertEqual(decision.status, .userAssigned)
+        XCTAssertEqual(decision.queueKind, .laboratory)
+        let all = try model.queueAssignments(for: villageID)
+        XCTAssertEqual(all.count, 1, "重新确认不产生重复映射")
+        XCTAssertEqual(all[0].status, .userAssigned)
+    }
+
+    @MainActor
+    func testQueueAssignmentCandidateObservedOnlyVisibleWithRestoredEligibility() throws {
+        // Issue #189：observedOnly 映射在证据恢复后，candidate 同时暴露
+        // observedOnly 状态（可显示"重新确认"）与 isConfirmable 资格。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+
+        var envelope = try XCTUnwrap(try store.load())
+        let state = try XCTUnwrap(envelope.state(for: villageID))
+        let core = state.core
+        let degraded = try QueueAssignmentDecision(
+            decisionID: state.queueAssignments[0].decisionID,
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: core.baselineReference!,
+            queueKind: .builder,
+            decidedAt: state.queueAssignments[0].decidedAt,
+            status: .observedOnly
+        )
+        let degradedState = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: state.stateUpdatedAt,
+            lastSettleAt: state.lastSettleAt,
+            lastImportAt: state.lastImportAt,
+            diagnostics: state.diagnostics,
+            reconciliationHistory: state.reconciliationHistory,
+            queueCapacityConfigs: state.queueCapacityConfigs,
+            queueAssignments: [degraded]
+        )
+        try envelope.upsert(degradedState)
+        try store.save(envelope)
+
+        let reloaded = AppModel(
+            defaults: UserDefaults(suiteName: suiteName)!,
+            historyStore: TestSnapshotHistoryStore(),
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(
+                data: try JSONEncoder().encode([
+                    VillageProfile(
+                        id: villageID,
+                        name: "测试村庄",
+                        accountSnapshot: snapshot(objectSections: [
+                            "buildings": [
+                                item(section: "buildings", dataID: 1_000_001, level: 18),
+                                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                                item(section: "buildings", dataID: 1_000_003, level: 1, path: "2"),
+                            ],
+                        ])
+                    ),
+                ])
+            )
+        )
+        let candidate = try XCTUnwrap(
+            reloaded.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertEqual(candidate.assignment?.status, .observedOnly)
+        XCTAssertTrue(candidate.isConfirmable, "证据恢复后 observedOnly 可重新确认")
+        XCTAssertNil(candidate.unconfirmableReason)
+    }
 }

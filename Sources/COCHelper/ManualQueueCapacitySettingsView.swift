@@ -62,16 +62,24 @@ struct ManualQueueCapacitySettingsView: View {
             Text("个同时升级")
             Spacer()
             if occupancy.isCapacityConfigured {
-                if occupancy.confirmedImportedCount > 0 {
-                    Text("占用 \(occupancy.activeManualCount)+\(occupancy.confirmedImportedCount)（手动+已确认导入）/\(occupancy.capacity ?? 0)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                if occupancy.status == .available {
+                    if occupancy.confirmedImportedCount > 0 {
+                        Text("占用 \(occupancy.activeManualCount)+\(occupancy.confirmedImportedCount)（手动+已确认导入）/\(occupancy.capacity ?? 0)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    } else {
+                        Text("占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 } else {
-                    Text("占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)")
+                    // Issue #192：未对账/不可用时不展示旧 overlay 占用数字，
+                    // 明确显示「尚未对账」，不把未知压成 0。
+                    Text("快照尚未对账，当前容量占用暂不可确认")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                        .foregroundStyle(.orange)
                 }
             }
         }

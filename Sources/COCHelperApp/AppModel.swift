@@ -935,6 +935,10 @@ public final class AppModel: ObservableObject {
     /// 某个村庄×队列类别的本地占用投影（未配置容量时 capacity == nil）。
     /// `at now` 用于排除已到期未 settle 的 active 记录（与 Start 校验同口径）。
     /// Issue #183：占用计入当前 lineage 的 userAssigned overlay。
+    /// Issue #192：未对账（`isBaselineReconciled == false`）时不得把旧
+    /// baseline 的 overlay/active 当作当前占用——投影返回 `.unreconciled`，
+    /// 数字不提供（由 status 区分「已知 0」与「当前未知」）；存储/历史不可用
+    /// 时返回 `.unavailable`。Start 仍使用命令级 `unreconciledSnapshot` gate。
     public func queueOccupancy(
         for villageID: UUID,
         queueKind: LocalQueueKind,
@@ -942,10 +946,22 @@ public final class AppModel: ObservableObject {
     ) -> LocalQueueOccupancy {
         guard let state = manualTrackerEnvelope?.state(for: villageID) else {
             return LocalQueueOccupancy(
-                queueKind: queueKind, activeManualCount: 0, capacity: nil
+                queueKind: queueKind,
+                activeManualCount: 0,
+                capacity: nil,
+                status: .unavailable
             )
         }
         let config = state.queueCapacityConfigs.first { $0.queueKind == queueKind }
+        guard isBaselineReconciled(for: villageID, core: state.core) else {
+            return LocalQueueOccupancy(
+                queueKind: queueKind,
+                activeManualCount: 0,
+                confirmedImportedCount: 0,
+                capacity: config?.capacity,
+                status: .unreconciled
+            )
+        }
         let confirmed = capacityConfirmingAssignments(in: state, queueKind: queueKind)
         return LocalQueueOccupancyResolver.occupancy(
             queueKind: queueKind,

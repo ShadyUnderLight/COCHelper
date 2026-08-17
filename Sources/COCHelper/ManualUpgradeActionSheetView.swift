@@ -205,22 +205,41 @@ struct ManualUpgradeActionSheetView: View {
             .pickerStyle(.menu)
             .frame(maxWidth: 240)
             if let occupancy = selectedOccupancy {
-                if occupancy.isCapacityConfigured {
+                switch occupancy.status {
+                case .available:
+                    if occupancy.isCapacityConfigured {
+                        Label(
+                            "本地占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)",
+                            systemImage: "rectangle.stack.badge.person.crop"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(occupancy.isFull ? .red : .secondary)
+                        if occupancy.isFull {
+                            Text("本地容量已满，不能开始新的本地升级。")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    } else {
+                        Label("未配置容量，不限制本地升级。", systemImage: "rectangle.stack")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                case .unreconciled:
+                    // Issue #192：未对账时不得显示旧 overlay/manual 占用数字，
+                    // 也不得给出「容量已满」结论；明确提示尚未对账。
                     Label(
-                        "本地占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)",
-                        systemImage: "rectangle.stack.badge.person.crop"
+                        "快照尚未对账，当前容量占用暂不可确认",
+                        systemImage: "exclamationmark.triangle"
                     )
                     .font(.caption)
-                    .foregroundStyle(occupancy.isFull ? .red : .secondary)
-                    if occupancy.isFull {
-                        Text("本地容量已满，不能开始新的本地升级。")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                } else {
-                    Label("未配置容量，不限制本地升级。", systemImage: "rectangle.stack")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .foregroundStyle(.orange)
+                case .unavailable:
+                    Label(
+                        "手动升级存储不可用，暂无法确认占用",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
                 }
             }
             Label(

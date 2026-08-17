@@ -425,6 +425,19 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
     /// 映射（`QueueAssignmentDecision.userAssigned`）。默认 false，旧数据兼容。
     public let observedTimer: Bool
 
+    /// Issue #188 review P2：导入观察的等级/数量覆盖是否完整，能否支撑本地
+    /// 队列映射确认。
+    ///
+    /// 与对账 `coverageComplete` 同语义的稳定推导：reconciliation 只在 coverage
+    /// 完整时产出非空 distribution（`distribution = valid ? ... : nil`，valid
+    /// 要求 items 非空且至少一个 level/quantity）。**空 distribution 视为覆盖
+    /// 不足**——`ManualLevelDistribution.empty` 是合法值，模型构造不校验非空，
+    /// 持久化状态可能被异常写入；nil 与空都不得确认。
+    public var hasCompleteCoverage: Bool {
+        guard let levelDistribution, !levelDistribution.isEmpty else { return false }
+        return true
+    }
+
     public init(
         reference: ManualBaselineReference,
         levelDistribution: ManualLevelDistribution?,
@@ -485,6 +498,15 @@ public struct ManualItemState: Codable, Hashable, Sendable {
         }
         return importedObservation.reference.isStructurallyValid
             && importedObservation.reference == baselineReference
+    }
+
+    /// Issue #188：该 item 的导入观察是否具备本地队列映射确认资格
+    /// （timer 证据 + 等级/数量覆盖完整）。AppModel 确认命令与容量投影
+    /// 共用此单一 Core 谓词，不再各自推断 coverage。
+    public var isQueueAssignmentConfirmable: Bool {
+        guard let importedObservation else { return false }
+        return importedObservation.observedTimer
+            && importedObservation.hasCompleteCoverage
     }
 
     public init(

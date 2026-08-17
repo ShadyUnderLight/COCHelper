@@ -2025,6 +2025,165 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
+    func testAssignRejectsObservationWithIncompleteCoverage() throws {
+        // Issue #188 review P1：有 timer 但等级/数量覆盖不完整
+        // （`levelDistribution == nil`，等价于对账 coverage 不完整）的导入
+        // 观察不得确认映射；拒绝时 assignment、stateUpdatedAt、磁盘字节均不变
+        // （fail-closed，零副作用）。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let itemState = try XCTUnwrap(core.itemStates.first { $0.itemKey == key })
+        XCTAssertTrue(itemState.importedObservation?.observedTimer ?? false,
+            "测试 fixture 必须带 timer 证据")
+
+        // 模拟真实导入：条目有 timer，但所在 section 的 lvl/cnt 覆盖不完整，
+        // 对账只产出 distribution == nil 的观察（ManualTrackerReconciliation
+        // 中 `distribution = valid ? ... : nil`）。
+        let partial = try ManualItemState(
+            itemKey: itemState.itemKey,
+            baselineReference: itemState.baselineReference,
+            importedObservation: ManualImportedObservation(
+                reference: itemState.importedObservation!.reference,
+                levelDistribution: nil,
+                sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
+                observedTimer: true
+            ),
+            manualCompletedDistribution: itemState.manualCompletedDistribution,
+            status: itemState.status
+        )
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try ManualUpgradeCore(
+                itemStates: core.itemStates.map { $0.itemKey == key ? partial : $0 },
+                records: core.records
+            )
+        }
+
+        // 拒绝前快照：磁盘字节、stateUpdatedAt、assignment 数量。
+        let bytesBefore = try Data(contentsOf: storeURL)
+        let updatedAtBefore = try XCTUnwrap(
+            try store.load()?.state(for: villageID)
+        ).stateUpdatedAt
+
+        XCTAssertThrowsError(
+            try model.assignQueueToImportedObservation(
+                for: villageID, itemKey: key, queueKind: .builder
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError,
+                .importedObservationIncompleteCoverage
+            )
+        }
+
+        // 零副作用：磁盘字节、stateUpdatedAt、assignment 数量均不变。
+        XCTAssertEqual(try Data(contentsOf: storeURL), bytesBefore)
+        let updatedAtAfter = try XCTUnwrap(
+            try store.load()?.state(for: villageID)
+        ).stateUpdatedAt
+        XCTAssertEqual(updatedAtAfter, updatedAtBefore)
+        XCTAssertEqual(try model.queueAssignments(for: villageID), [])
+    }
+
+    @MainActor
+    func testAssignRejectsObservationWithEmptyDistribution() throws {
+        // Issue #188 review P2：`ManualLevelDistribution.empty` 是合法模型值
+        // （构造/解码不校验非空），`levelDistribution != nil` 不能证明覆盖
+        // 完整——空 distribution 必须同样拒绝确认（fail-closed）。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let itemState = try XCTUnwrap(core.itemStates.first { $0.itemKey == key })
+
+        let emptyCoverage = try ManualItemState(
+            itemKey: itemState.itemKey,
+            baselineReference: itemState.baselineReference,
+            importedObservation: ManualImportedObservation(
+                reference: itemState.importedObservation!.reference,
+                levelDistribution: .empty,
+                sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
+                observedTimer: true
+            ),
+            manualCompletedDistribution: itemState.manualCompletedDistribution,
+            status: itemState.status
+        )
+        XCTAssertFalse(emptyCoverage.isQueueAssignmentConfirmable,
+            "空 distribution 的导入观察不具备确认资格")
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try ManualUpgradeCore(
+                itemStates: core.itemStates.map { $0.itemKey == key ? emptyCoverage : $0 },
+                records: core.records
+            )
+        }
+
+        XCTAssertThrowsError(
+            try model.assignQueueToImportedObservation(
+                for: villageID, itemKey: key, queueKind: .builder
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError,
+                .importedObservationIncompleteCoverage
+            )
+        }
+        XCTAssertEqual(try model.queueAssignments(for: villageID), [])
+    }
+
+    @MainActor
+    func testOccupancyIgnoresUserAssignedWithoutConfirmableCoverage() throws {
+        // Issue #188 review P2：即使持久化状态异常（userAssigned overlay 仍
+        // 存在，但对应 itemState 的导入观察覆盖不足/空 distribution），
+        // queueOccupancy 与 Start 容量校验也按 Core 资格谓词排除，不占容量。
+        let (model, villageID, _, second) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+        try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 1)
+
+        // 正例：正常确认后占用 1。
+        XCTAssertEqual(
+            model.queueOccupancy(for: villageID, queueKind: .builder).confirmedImportedCount,
+            1
+        )
+
+        // 把 itemState 的导入观察改成空 distribution（模拟异常持久化/旧数据
+        // 未被降级），userAssigned overlay 仍在 → 投影必须排除。
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let itemState = try XCTUnwrap(core.itemStates.first { $0.itemKey == key })
+        let degraded = try ManualItemState(
+            itemKey: itemState.itemKey,
+            baselineReference: itemState.baselineReference,
+            importedObservation: ManualImportedObservation(
+                reference: itemState.importedObservation!.reference,
+                levelDistribution: .empty,
+                sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
+                observedTimer: true
+            ),
+            manualCompletedDistribution: itemState.manualCompletedDistribution,
+            status: itemState.status
+        )
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try ManualUpgradeCore(
+                itemStates: core.itemStates.map { $0.itemKey == key ? degraded : $0 },
+                records: core.records
+            )
+        }
+
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.confirmedImportedCount, 0,
+            "资格不足的 userAssigned overlay 不得占容量")
+        XCTAssertFalse(occupancy.isFull)
+
+        // Start 校验同口径：另一个 item（箭塔，itemState 未动）不因残留
+        // userAssigned 而阻塞。
+        let record = try model.startManualUpgrade(
+            for: villageID, action: second, startedAt: Date(), queueKind: .builder
+        )
+        XCTAssertEqual(record.status, .active)
+    }
+
+    @MainActor
     func testQueueAssignmentCandidatesHasTimerUsesObservedTimer() throws {
         // Issue #183 review P1：hasTimer 必须来自 observedTimer 证据，
         // 不能把 sourceTimestamp（快照来源时间）当成 timer。

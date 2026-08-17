@@ -98,14 +98,15 @@ struct QueueAssignmentSettingsView: View {
         switch assignment?.status {
         case .userAssigned:
             if let assignment {
-                // Issue #189 review P2：userAssigned 但当前证据不足（如异常
-                // 持久化或重导入后覆盖不完整）时，容量投影（
-                // capacityConfirmingAssignments）已排除其占用；UI 必须与
-                // 口径一致地提示"不计入容量"，不能仍显示"已确认"。
+                // Issue #189 review P2：userAssigned 但当前证据不足/未对账时，
+                // 容量投影（capacityConfirmingAssignments）已排除其占用；UI
+                // 必须与口径一致地提示"不计入容量"，不能仍显示"已确认"。
+                // 原因文案来自 candidate.unconfirmableReason（AppModel 生成，
+                // 区分证据不足与尚未对账），View 不自行推断。
                 HStack(spacing: 8) {
                     Text(candidate.isConfirmable
                         ? "已分配：\(assignment.queueKind.displayName)"
-                        : "已分配：\(assignment.queueKind.displayName)（证据不足，不计入容量）")
+                        : "已分配：\(assignment.queueKind.displayName)（\(candidate.unconfirmableReason ?? "证据不足")，不计入容量）")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Button("解除分配", role: .destructive) {
@@ -117,7 +118,7 @@ struct QueueAssignmentSettingsView: View {
                 .accessibilityLabel(
                     candidate.isConfirmable
                         ? "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，可解除分配"
-                        : "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，但当前证据不足，不计入本地容量，可解除分配"
+                        : "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，但\(candidate.unconfirmableReason ?? "证据不足")，不计入本地容量，可解除分配"
                 )
             }
         case .observedOnly:

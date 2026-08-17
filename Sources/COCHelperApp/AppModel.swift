@@ -1139,14 +1139,15 @@ public final class AppModel: ObservableObject {
     /// 不是 sourceTimestamp（快照来源时间 ≠ 计时证据）。
     /// Issue #189：`isConfirmable`/`unconfirmableReason` 是 UI 显示资格的
     /// 唯一投影——直接基于 Core 谓词，UI 不得自行推断 coverage。
-    /// Issue #189 review P1：未对账（core baseline ≠ 当前快照 lineage）时
-    /// 返回空，与 `manualUpgradeCores` 的 gated 投影语义一致，不渲染任何
-    /// 可确认候选，避免 UI 展示点击后才失败的确认菜单。
+    /// Issue #189 review P1/P3：未对账（core baseline ≠ 当前快照 lineage）
+    /// 时不提供任何确认资格（fail-closed，与 assign 命令 gate 同口径），
+    /// 但候选项与历史 overlay 证据仍然可见并给出原因，满足验收
+    /// 「baseline 未对账显示原因、unknown/旧 lineage 历史仍可见」。
     public func queueAssignmentCandidates(
         for villageID: UUID
     ) -> [ImportedObservationCandidate] {
         guard let state = manualTrackerEnvelope?.state(for: villageID) else { return [] }
-        guard isBaselineReconciled(for: villageID, core: state.core) else { return [] }
+        let isReconciled = isBaselineReconciled(for: villageID, core: state.core)
         let catalog = gameCatalog
         let currentLineage = state.core.baselineReference?.lineageID
         return state.core.itemStates
@@ -1166,12 +1167,17 @@ public final class AppModel: ObservableObject {
                     $0.itemKey == itemState.itemKey
                         && $0.baselineReference.lineageID != currentLineage
                 }
-                // Issue #189：资格唯一来源是 Core 谓词（timer + 覆盖完整）；
-                // 原因细分供 UI 展示，与命令拒绝路径的语义保持一致
-                // （importedObservationWithoutTimer / incompleteCoverage）。
-                let isConfirmable = itemState.isQueueAssignmentConfirmable
+                // Issue #189：资格唯一来源是 Core 谓词（timer + 覆盖完整），
+                // 未对账时强制不可确认（与命令 gate 同口径）；原因细分供
+                // UI 展示，与命令拒绝路径的语义保持一致
+                // （unreconciledSnapshot / importedObservationWithoutTimer /
+                // incompleteCoverage）。
+                let evidenceConfirmable = itemState.isQueueAssignmentConfirmable
+                let isConfirmable = isReconciled && evidenceConfirmable
                 let unconfirmableReason: String?
-                if isConfirmable {
+                if !isReconciled {
+                    unconfirmableReason = "快照尚未对账，暂不能确认"
+                } else if evidenceConfirmable {
                     unconfirmableReason = nil
                 } else if itemState.importedObservation?.observedTimer != true {
                     unconfirmableReason = "没有进行中计时证据"

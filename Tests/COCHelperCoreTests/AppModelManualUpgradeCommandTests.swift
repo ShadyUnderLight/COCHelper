@@ -2798,48 +2798,157 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     /// 构造未对账村庄：manual core baseline 属于旧 lineage（lineageA），
     /// 当前快照 active lineage 是 lineageB；itemState 带完整 timer + coverage
     /// 证据（否则 assign 会先被 importedObservationWithoutTimer 拒绝，测不到
-    /// baseline gate）。
+    /// baseline gate）。同时写入一条旧 lineage 的历史映射，验证未对账时
+    /// 历史 overlay 证据仍可见。
+    ///
+    /// 注意：历史映射必须在 AppModel init 前写入 store（model 内存 envelope
+    /// 只从 init 时的 store 加载，事后 store.save 不会更新已创建的 model）。
     @MainActor
     private func makeUnreconciledWithConfirmableObservation() throws -> (
         model: AppModel, villageID: UUID, key: TrackerItemKey
     ) {
-        let (model, villageID, _) = try makeUnreconciledModel { baseline, _ in
-            try ManualUpgradeCore(itemStates: [
-                ManualItemState(
-                    itemKey: TrackerItemKey.root(
-                        base: .home, rawSection: "buildings", dataID: 1_000_002
-                    ),
-                    baselineReference: baseline,
-                    importedObservation: ManualImportedObservation(
-                        reference: baseline,
-                        levelDistribution: try ManualLevelDistribution(
-                            levelQuantities: [1: 1]
-                        ),
-                        sourceTimestamp: Date(timeIntervalSince1970: 1_000),
-                        observedTimer: true
-                    ),
-                    manualCompletedDistribution: .empty,
-                    status: .observed
+        let villageID = UUID()
+        let lineageA = UUID()
+        let lineageB = UUID()
+        let entryA = try makeHistoryEntry(
+            tag: "#OLD",
+            villageID: villageID,
+            lineageID: lineageA,
+            appliedAt: Date(timeIntervalSince1970: 800),
+            isBaseline: true
+        )
+        let entryB = try makeHistoryEntry(
+            tag: "#TEST",
+            villageID: villageID,
+            lineageID: lineageB,
+            appliedAt: Date(timeIntervalSince1970: 1_600)
+        )
+        let historyEnvelope = SnapshotHistoryEnvelope(
+            entries: [entryA, entryB],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageA,
+                    normalizedPlayerTag: "#OLD",
+                    lastEntryID: entryA.snapshotID,
+                    lastFingerprint: entryA.canonicalFingerprint,
+                    lastAppliedAt: entryA.appliedAt,
+                    hasConflict: false,
+                    isActive: false
                 ),
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageB,
+                    normalizedPlayerTag: "#TEST",
+                    lastEntryID: entryB.snapshotID,
+                    lastFingerprint: entryB.canonicalFingerprint,
+                    lastAppliedAt: entryB.appliedAt,
+                    hasConflict: false,
+                    isActive: true
+                ),
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let village = VillageProfile(
+            id: villageID,
+            name: "测试村庄",
+            accountSnapshot: snapshot(objectSections: [
+                "buildings": [
+                    item(section: "buildings", dataID: 1_000_001, level: 18),
+                    item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                ],
             ])
-        }
+        )
+        let baselineA = ManualBaselineReference(
+            revision: entryA.snapshotID.uuidString,
+            fingerprint: entryA.canonicalFingerprint,
+            lineageID: lineageA.uuidString
+        )
         let key = TrackerItemKey.root(
             base: .home, rawSection: "buildings", dataID: 1_000_002
+        )
+        let core = try ManualUpgradeCore(itemStates: [
+            ManualItemState(
+                itemKey: key,
+                baselineReference: baselineA,
+                importedObservation: ManualImportedObservation(
+                    reference: baselineA,
+                    levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+                    sourceTimestamp: Date(timeIntervalSince1970: 1_000),
+                    observedTimer: true
+                ),
+                manualCompletedDistribution: .empty,
+                status: .observed
+            ),
+        ])
+        let stateTime = Date()
+        // 历史映射：旧 lineage（≠ core 的 lineageA 与当前 lineageB），
+        // 未对账时也必须可见（审计证据，不占容量）。
+        let historical = try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: ManualBaselineReference(
+                revision: "old-rev", fingerprint: "old-fp", lineageID: "old-lineage"
+            ),
+            queueKind: .laboratory,
+            decidedAt: Date(timeIntervalSince1970: 500),
+            status: .unknown
+        )
+        let manualEnvelope = try ManualTrackerEnvelope(
+            villages: [
+                ManualTrackerVillageState(
+                    villageID: villageID,
+                    core: core,
+                    stateUpdatedAt: stateTime,
+                    lastSettleAt: stateTime,
+                    lastImportAt: stateTime,
+                    diagnostics: [],
+                    reconciliationHistory: [],
+                    queueAssignments: [historical]
+                ),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        try store.save(manualEnvelope)
+
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
         )
         return (model, villageID, key)
     }
 
     @MainActor
-    func testQueueAssignmentCandidatesEmptyWhenBaselineUnreconciled() throws {
-        // Issue #189 review P1：候选投影必须与 manualUpgradeCores 一致地
-        // fail-closed——未对账（core baseline ≠ 当前快照 lineage）时不得渲染
-        // 任何候选项，否则 UI 会展示可执行的确认菜单，点击后才收到
-        // unreconciledSnapshot 命令错误。
-        let (model, villageID, _) = try makeUnreconciledWithConfirmableObservation()
-        XCTAssertTrue(
-            model.queueAssignmentCandidates(for: villageID).isEmpty,
-            "未对账时不提供任何候选确认入口"
+    func testQueueAssignmentCandidatesIneligibleWithReasonWhenBaselineUnreconciled() throws {
+        // Issue #189 review P1/P3：未对账（core baseline ≠ 当前快照 lineage）
+        // 时候选可见但全部不可确认，显示「快照尚未对账」原因；历史 overlay
+        // 证据保留可见。fail-closed（不提供可执行确认菜单）的同时满足验收
+        // 「baseline 未对账显示原因、unknown/旧 lineage 历史仍可见」。
+        let (model, villageID, key) = try makeUnreconciledWithConfirmableObservation()
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
         )
+        XCTAssertTrue(candidate.hasTimer, "fixture 证据完整（timer + coverage）")
+        XCTAssertFalse(candidate.isConfirmable, "未对账时不可确认")
+        XCTAssertEqual(candidate.unconfirmableReason, "快照尚未对账，暂不能确认")
+        XCTAssertEqual(candidate.historicalAssignments.count, 1,
+            "未对账时历史 overlay 证据必须可见")
+        XCTAssertEqual(candidate.historicalAssignments[0].status, .unknown)
+        XCTAssertEqual(candidate.historicalAssignments[0].queueKind, .laboratory)
     }
 
     @MainActor
@@ -2848,6 +2957,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         // （与 start/cancel/adjust 同口径），未对账时拒绝写入，零副作用——
         // 否则会把 userAssigned 绑到过期 lineage 的 baselineReference。
         let (model, villageID, key) = try makeUnreconciledWithConfirmableObservation()
+        let assignmentsBefore = try model.queueAssignments(for: villageID)
         let bytesBefore = try Data(contentsOf: storeURL)
         XCTAssertThrowsError(
             try model.assignQueueToImportedObservation(
@@ -2859,6 +2969,9 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             )
         }
         XCTAssertEqual(try Data(contentsOf: storeURL), bytesBefore, "拒绝时磁盘字节不变")
-        XCTAssertEqual(try model.queueAssignments(for: villageID), [])
+        XCTAssertEqual(
+            try model.queueAssignments(for: villageID), assignmentsBefore,
+            "拒绝时 assignment 数量不变（仅保留预置历史映射）"
+        )
     }
 }

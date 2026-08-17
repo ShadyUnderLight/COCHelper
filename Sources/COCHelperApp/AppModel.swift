@@ -935,12 +935,7 @@ public final class AppModel: ObservableObject {
             )
         }
         let config = state.queueCapacityConfigs.first { $0.queueKind == queueKind }
-        let currentLineage = state.core.baselineReference?.lineageID
-        let confirmed = state.queueAssignments.filter {
-            $0.status == .userAssigned
-                && $0.queueKind == queueKind
-                && $0.baselineReference.lineageID == currentLineage
-        }
+        let confirmed = capacityConfirmingAssignments(in: state, queueKind: queueKind)
         return LocalQueueOccupancyResolver.occupancy(
             queueKind: queueKind,
             activeRecords: state.core.activeRecords,
@@ -948,6 +943,28 @@ public final class AppModel: ObservableObject {
             capacityConfig: config,
             at: now
         )
+    }
+
+    /// Issue #188：占用本地容量的已确认映射唯一口径——`userAssigned`、当前
+    /// lineage、且对应 itemState 仍具备确认资格（Core 谓词
+    /// `isQueueAssignmentConfirmable`）。即使持久化状态被异常写入（如空
+    /// distribution 的 userAssigned overlay），也不得占容量；`queueOccupancy`
+    /// 与 Start 校验共用此谓词，不在 UI/投影中各自推断 coverage。
+    private func capacityConfirmingAssignments(
+        in state: ManualTrackerVillageState,
+        queueKind: LocalQueueKind
+    ) -> [QueueAssignmentDecision] {
+        let currentLineage = state.core.baselineReference?.lineageID
+        return state.queueAssignments.filter { assignment in
+            guard assignment.status == .userAssigned,
+                  assignment.queueKind == queueKind,
+                  assignment.baselineReference.lineageID == currentLineage else {
+                return false
+            }
+            return state.core.itemStates
+                .first { $0.itemKey == assignment.itemKey }?
+                .isQueueAssignmentConfirmable == true
+        }
     }
 
     // MARK: - Issue #183 导入观察队列映射
@@ -1001,12 +1018,14 @@ public final class AppModel: ObservableObject {
             // 否则已结束或证据不足的条目会错误占用容量、阻塞 Start。
             throw ManualUpgradeCommandError.importedObservationWithoutTimer
         }
-        guard observed.levelDistribution != nil else {
+        guard observed.hasCompleteCoverage else {
             // Issue #188 review P1：只有 timer 但等级/数量覆盖不完整的导入
-            // 观察不得确认映射——`levelDistribution == nil` 恰好等价于对账
-            // 时 `coverageComplete == false`（distribution 仅当 coverage 完整
-            // 时非 nil），确认后会错误占用本地容量、阻塞 Start。fail-closed，
-            // 旧数据缺省 `observedTimer == false` 同样不可确认。
+            // 观察不得确认映射。`hasCompleteCoverage` 是 Core 统一资格谓词：
+            // 对账只在 coverage 完整时产出非空 distribution，nil 或空
+            // distribution 都视为覆盖不足（空 distribution 是合法模型值，
+            // 持久化状态可能被异常写入）。确认后会错误占用本地容量、阻塞
+            // Start。fail-closed，旧数据缺省 `observedTimer == false` 同样
+            // 不可确认。
             throw ManualUpgradeCommandError.importedObservationIncompleteCoverage
         }
         guard let coreBaseline = previousState.core.baselineReference else {
@@ -1184,11 +1203,8 @@ public final class AppModel: ObservableObject {
             let state = currentEnvelope.state(for: villageID)
             let capacityConfigs = state?.queueCapacityConfigs ?? []
             if let config = capacityConfigs.first(where: { $0.queueKind == queueKind }) {
-                let currentLineage = core.baselineReference?.lineageID
-                let confirmed = state?.queueAssignments.filter {
-                    $0.status == .userAssigned
-                        && $0.queueKind == queueKind
-                        && $0.baselineReference.lineageID == currentLineage
+                let confirmed = state.map {
+                    capacityConfirmingAssignments(in: $0, queueKind: queueKind)
                 } ?? []
                 let occupancy = LocalQueueOccupancyResolver.occupancy(
                     queueKind: queueKind,

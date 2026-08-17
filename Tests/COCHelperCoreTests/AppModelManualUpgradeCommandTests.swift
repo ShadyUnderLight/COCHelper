@@ -1564,6 +1564,23 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         now: Date? = nil,
         observedTimer: Bool = false
     ) throws -> (model: AppModel, villageID: UUID, first: UpgradeAction, second: UpgradeAction) {
+        let (model, villageID, first, second, _) = try makeTwoStartableItemsModelWithHistory(
+            now: now, observedTimer: observedTimer
+        )
+        return (model, villageID, first, second)
+    }
+
+    /// 同 `makeTwoStartableItemsModel`，额外返回共享 history store。
+    /// reload 场景必须复用同一 history 实例，否则未对账
+    /// （`isBaselineReconciled == false`），候选投影/命令会被 gate。
+    @MainActor
+    private func makeTwoStartableItemsModelWithHistory(
+        now: Date? = nil,
+        observedTimer: Bool = false
+    ) throws -> (
+        model: AppModel, villageID: UUID, first: UpgradeAction, second: UpgradeAction,
+        history: TestSnapshotHistoryStore
+    ) {
         let snapshot = snapshot(objectSections: [
             "buildings": [
                 item(section: "buildings", dataID: 1_000_001, level: 18),
@@ -1612,7 +1629,10 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             XCTAssertTrue(action.isStartable, "fixture must produce startable action: \(action.disabledReason ?? "")")
             return action
         }
-        return (model, villageID, try action(for: 1_000_002), try action(for: 1_000_003))
+        return (
+            model, villageID, try action(for: 1_000_002), try action(for: 1_000_003),
+            history
+        )
     }
 
     @MainActor
@@ -2184,6 +2204,47 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
+    func testQueueAssignmentCandidateUserAssignedIneligibleExposesReason() throws {
+        // Issue #189 review P2：userAssigned 但当前证据不足（异常持久化）
+        // 的候选，UI 投影必须暴露不可确认资格 + 原因，与容量投影
+        // （capacityConfirmingAssignments 排除）口径一致，UI 才能显示
+        // "不计入容量"而非绿色"已确认"。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let itemState = try XCTUnwrap(core.itemStates.first { $0.itemKey == key })
+        let degraded = try ManualItemState(
+            itemKey: itemState.itemKey,
+            baselineReference: itemState.baselineReference,
+            importedObservation: ManualImportedObservation(
+                reference: itemState.importedObservation!.reference,
+                levelDistribution: .empty,
+                sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
+                observedTimer: true
+            ),
+            manualCompletedDistribution: itemState.manualCompletedDistribution,
+            status: itemState.status
+        )
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try ManualUpgradeCore(
+                itemStates: core.itemStates.map { $0.itemKey == key ? degraded : $0 },
+                records: core.records
+            )
+        }
+
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertEqual(candidate.assignment?.status, .userAssigned)
+        XCTAssertFalse(candidate.isConfirmable, "userAssigned 但证据不足 → 不可确认")
+        XCTAssertEqual(candidate.unconfirmableReason, "观察证据不完整，暂不能确认")
+    }
+
+    @MainActor
     func testQueueAssignmentCandidatesHasTimerUsesObservedTimer() throws {
         // Issue #183 review P1：hasTimer 必须来自 observedTimer 证据，
         // 不能把 sourceTimestamp（快照来源时间）当成 timer。
@@ -2459,7 +2520,9 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     @MainActor
     func testQueueAssignmentCandidatesExposeHistoricalAssignments() throws {
         // review P2：UI 候选必须暴露旧 lineage 历史映射，不能隐藏。
-        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let (model, villageID, _, _, history) = try makeTwoStartableItemsModelWithHistory(
+            observedTimer: true
+        )
         let key = try importedObservationKey(in: model, villageID: villageID)
         _ = try model.assignQueueToImportedObservation(
             for: villageID, itemKey: key, queueKind: .builder
@@ -2490,15 +2553,18 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         try envelope.upsert(withHistory)
         try store.save(envelope)
 
+        // reload 必须复用同一 history store（Issue #189 review P1：未对账时
+        // 候选投影 fail-closed 返回空；对账才能看到历史映射）。
         let snapshot = snapshot(objectSections: [
             "buildings": [
                 item(section: "buildings", dataID: 1_000_001, level: 18),
                 item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                item(section: "buildings", dataID: 1_000_003, level: 1, path: "2"),
             ],
         ])
         let reloaded = AppModel(
             defaults: UserDefaults(suiteName: suiteName)!,
-            historyStore: TestSnapshotHistoryStore(),
+            historyStore: history,
             manualTrackerStore: store,
             currentVillagePersistence: TestCurrentVillagePersistence(
                 data: try JSONEncoder().encode([
@@ -2514,5 +2580,398 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertEqual(candidate.historicalAssignments.count, 1)
         XCTAssertEqual(candidate.historicalAssignments[0].status, .unknown)
         XCTAssertEqual(candidate.historicalAssignments[0].queueKind, .laboratory)
+    }
+
+    // MARK: - Issue #189 队列映射面板资格投影
+
+    @MainActor
+    func testQueueAssignmentCandidatesExposeConfirmableEligibility() throws {
+        // Issue #189：UI 必须能预先知道"是否可以确认"，而不是点击后才收到
+        // 命令错误。无 timer 证据的候选项不可确认，且给出原因。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel()
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertFalse(candidate.hasTimer, "fixture 默认无 timer")
+        XCTAssertFalse(candidate.isConfirmable, "无 timer 的候选项不可确认")
+        XCTAssertNotNil(candidate.unconfirmableReason, "不可确认时必须有原因")
+    }
+
+    @MainActor
+    func testQueueAssignmentCandidateConfirmableWhenTimerAndCoverageComplete() throws {
+        // Issue #189：timer + 完整覆盖的候选项可确认，无原因。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertTrue(candidate.hasTimer)
+        XCTAssertTrue(candidate.isConfirmable, "timer + 完整覆盖应可确认")
+        XCTAssertNil(candidate.unconfirmableReason, "可确认时无不可确认原因")
+    }
+
+    @MainActor
+    func testQueueAssignmentCandidateConfirmableReasonDistinguishesCoverage() throws {
+        // Issue #189：有 timer 但覆盖不完整（distribution nil）→ 不可确认，
+        // 原因与"无 timer"区分，UI 可显示"观察证据不完整"。
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let itemState = try XCTUnwrap(core.itemStates.first { $0.itemKey == key })
+        let partial = try ManualItemState(
+            itemKey: itemState.itemKey,
+            baselineReference: itemState.baselineReference,
+            importedObservation: ManualImportedObservation(
+                reference: itemState.importedObservation!.reference,
+                levelDistribution: nil,
+                sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
+                observedTimer: true
+            ),
+            manualCompletedDistribution: itemState.manualCompletedDistribution,
+            status: itemState.status
+        )
+        try model.updateManualUpgradeCore(for: villageID) { core in
+            core = try ManualUpgradeCore(
+                itemStates: core.itemStates.map { $0.itemKey == key ? partial : $0 },
+                records: core.records
+            )
+        }
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertTrue(candidate.hasTimer, "fixture 有 timer 但覆盖不完整")
+        XCTAssertFalse(candidate.isConfirmable, "覆盖不完整不可确认")
+        let reason = try XCTUnwrap(candidate.unconfirmableReason)
+        XCTAssertFalse(reason.contains("计时"), "覆盖不足原因应与无 timer 原因区分：\(reason)")
+        XCTAssertTrue(reason.contains("证据不完整"), "覆盖不足原因应说明证据不完整：\(reason)")
+    }
+
+    @MainActor
+    func testAssignOnObservedOnlyRestoresUserAssignedWithoutUnassign() throws {
+        // Issue #189：observedOnly 的映射在证据恢复后可直接重新确认
+        // （复用幂等 assign 命令），不需要先解除再分配；不产生重复映射。
+        // review P2：必须在降级写入磁盘后 reload AppModel（内存 envelope
+        // 才会更新为 observedOnly），否则命令仍走内存旧状态（误测）。
+        let (model, villageID, _, _, history) = try makeTwoStartableItemsModelWithHistory(
+            observedTimer: true
+        )
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+
+        // 模拟对账降级：mapping 变为 observedOnly（如 timer 消失后新快照出现）。
+        var envelope = try XCTUnwrap(try store.load())
+        let state = try XCTUnwrap(envelope.state(for: villageID))
+        let core = state.core
+        let degraded = try QueueAssignmentDecision(
+            decisionID: state.queueAssignments[0].decisionID,
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: core.baselineReference!,
+            queueKind: .builder,
+            decidedAt: state.queueAssignments[0].decidedAt,
+            status: .observedOnly
+        )
+        let degradedState = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: state.stateUpdatedAt,
+            lastSettleAt: state.lastSettleAt,
+            lastImportAt: state.lastImportAt,
+            diagnostics: state.diagnostics,
+            reconciliationHistory: state.reconciliationHistory,
+            queueCapacityConfigs: state.queueCapacityConfigs,
+            queueAssignments: [degraded]
+        )
+        try envelope.upsert(degradedState)
+        try store.save(envelope)
+
+        // reload 复用同一 history（否则未对账，assign 被 unreconciledSnapshot 拒绝）。
+        let reloaded = AppModel(
+            defaults: UserDefaults(suiteName: suiteName)!,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(
+                data: try JSONEncoder().encode([
+                    VillageProfile(
+                        id: villageID,
+                        name: "测试村庄",
+                        accountSnapshot: snapshot(objectSections: [
+                            "buildings": [
+                                item(section: "buildings", dataID: 1_000_001, level: 18),
+                                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                                item(section: "buildings", dataID: 1_000_003, level: 1, path: "2"),
+                            ],
+                        ])
+                    ),
+                ])
+            )
+        )
+        XCTAssertEqual(
+            try reloaded.queueAssignments(for: villageID).first?.status, .observedOnly,
+            "fixture：reload 后必须是 observedOnly"
+        )
+
+        // 证据恢复（当前 itemState 仍 timer + 覆盖完整）后直接重新确认：
+        // 复用现有 assign 命令，无需先 unassign。
+        let decision = try reloaded.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .laboratory
+        )
+        XCTAssertEqual(decision.status, .userAssigned)
+        XCTAssertEqual(decision.queueKind, .laboratory)
+        let all = try reloaded.queueAssignments(for: villageID)
+        XCTAssertEqual(all.count, 1, "重新确认不产生重复映射")
+        XCTAssertEqual(all[0].status, .userAssigned)
+    }
+
+    @MainActor
+    func testQueueAssignmentCandidateObservedOnlyVisibleWithRestoredEligibility() throws {
+        // Issue #189：observedOnly 映射在证据恢复后，candidate 同时暴露
+        // observedOnly 状态（可显示"重新确认"）与 isConfirmable 资格。
+        let (model, villageID, _, _, history) = try makeTwoStartableItemsModelWithHistory(
+            observedTimer: true
+        )
+        let key = try importedObservationKey(in: model, villageID: villageID)
+        _ = try model.assignQueueToImportedObservation(
+            for: villageID, itemKey: key, queueKind: .builder
+        )
+
+        var envelope = try XCTUnwrap(try store.load())
+        let state = try XCTUnwrap(envelope.state(for: villageID))
+        let core = state.core
+        let degraded = try QueueAssignmentDecision(
+            decisionID: state.queueAssignments[0].decisionID,
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: core.baselineReference!,
+            queueKind: .builder,
+            decidedAt: state.queueAssignments[0].decidedAt,
+            status: .observedOnly
+        )
+        let degradedState = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: core,
+            stateUpdatedAt: state.stateUpdatedAt,
+            lastSettleAt: state.lastSettleAt,
+            lastImportAt: state.lastImportAt,
+            diagnostics: state.diagnostics,
+            reconciliationHistory: state.reconciliationHistory,
+            queueCapacityConfigs: state.queueCapacityConfigs,
+            queueAssignments: [degraded]
+        )
+        try envelope.upsert(degradedState)
+        try store.save(envelope)
+
+        // reload 复用同一 history（否则未对账，候选投影 fail-closed 为空）。
+        let reloaded = AppModel(
+            defaults: UserDefaults(suiteName: suiteName)!,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(
+                data: try JSONEncoder().encode([
+                    VillageProfile(
+                        id: villageID,
+                        name: "测试村庄",
+                        accountSnapshot: snapshot(objectSections: [
+                            "buildings": [
+                                item(section: "buildings", dataID: 1_000_001, level: 18),
+                                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                                item(section: "buildings", dataID: 1_000_003, level: 1, path: "2"),
+                            ],
+                        ])
+                    ),
+                ])
+            )
+        )
+        let candidate = try XCTUnwrap(
+            reloaded.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertEqual(candidate.assignment?.status, .observedOnly)
+        XCTAssertTrue(candidate.isConfirmable, "证据恢复后 observedOnly 可重新确认")
+        XCTAssertNil(candidate.unconfirmableReason)
+    }
+
+    // MARK: - Issue #189 review P1：未对账 baseline 拒绝
+
+    /// 构造未对账村庄：manual core baseline 属于旧 lineage（lineageA），
+    /// 当前快照 active lineage 是 lineageB；itemState 带完整 timer + coverage
+    /// 证据（否则 assign 会先被 importedObservationWithoutTimer 拒绝，测不到
+    /// baseline gate）。同时写入一条旧 lineage 的历史映射，验证未对账时
+    /// 历史 overlay 证据仍可见。
+    ///
+    /// 注意：历史映射必须在 AppModel init 前写入 store（model 内存 envelope
+    /// 只从 init 时的 store 加载，事后 store.save 不会更新已创建的 model）。
+    @MainActor
+    private func makeUnreconciledWithConfirmableObservation() throws -> (
+        model: AppModel, villageID: UUID, key: TrackerItemKey
+    ) {
+        let villageID = UUID()
+        let lineageA = UUID()
+        let lineageB = UUID()
+        let entryA = try makeHistoryEntry(
+            tag: "#OLD",
+            villageID: villageID,
+            lineageID: lineageA,
+            appliedAt: Date(timeIntervalSince1970: 800),
+            isBaseline: true
+        )
+        let entryB = try makeHistoryEntry(
+            tag: "#TEST",
+            villageID: villageID,
+            lineageID: lineageB,
+            appliedAt: Date(timeIntervalSince1970: 1_600)
+        )
+        let historyEnvelope = SnapshotHistoryEnvelope(
+            entries: [entryA, entryB],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageA,
+                    normalizedPlayerTag: "#OLD",
+                    lastEntryID: entryA.snapshotID,
+                    lastFingerprint: entryA.canonicalFingerprint,
+                    lastAppliedAt: entryA.appliedAt,
+                    hasConflict: false,
+                    isActive: false
+                ),
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageB,
+                    normalizedPlayerTag: "#TEST",
+                    lastEntryID: entryB.snapshotID,
+                    lastFingerprint: entryB.canonicalFingerprint,
+                    lastAppliedAt: entryB.appliedAt,
+                    hasConflict: false,
+                    isActive: true
+                ),
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let village = VillageProfile(
+            id: villageID,
+            name: "测试村庄",
+            accountSnapshot: snapshot(objectSections: [
+                "buildings": [
+                    item(section: "buildings", dataID: 1_000_001, level: 18),
+                    item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+                ],
+            ])
+        )
+        let baselineA = ManualBaselineReference(
+            revision: entryA.snapshotID.uuidString,
+            fingerprint: entryA.canonicalFingerprint,
+            lineageID: lineageA.uuidString
+        )
+        let key = TrackerItemKey.root(
+            base: .home, rawSection: "buildings", dataID: 1_000_002
+        )
+        let core = try ManualUpgradeCore(itemStates: [
+            ManualItemState(
+                itemKey: key,
+                baselineReference: baselineA,
+                importedObservation: ManualImportedObservation(
+                    reference: baselineA,
+                    levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+                    sourceTimestamp: Date(timeIntervalSince1970: 1_000),
+                    observedTimer: true
+                ),
+                manualCompletedDistribution: .empty,
+                status: .observed
+            ),
+        ])
+        let stateTime = Date()
+        // 历史映射：旧 lineage（≠ core 的 lineageA 与当前 lineageB），
+        // 未对账时也必须可见（审计证据，不占容量）。
+        let historical = try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: key,
+            baselineReference: ManualBaselineReference(
+                revision: "old-rev", fingerprint: "old-fp", lineageID: "old-lineage"
+            ),
+            queueKind: .laboratory,
+            decidedAt: Date(timeIntervalSince1970: 500),
+            status: .unknown
+        )
+        let manualEnvelope = try ManualTrackerEnvelope(
+            villages: [
+                ManualTrackerVillageState(
+                    villageID: villageID,
+                    core: core,
+                    stateUpdatedAt: stateTime,
+                    lastSettleAt: stateTime,
+                    lastImportAt: stateTime,
+                    diagnostics: [],
+                    reconciliationHistory: [],
+                    queueAssignments: [historical]
+                ),
+            ],
+            migrationMarker: ManualTrackerMigrationMarker(
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore(envelope: historyEnvelope)
+        try store.save(manualEnvelope)
+
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction.json")
+        )
+        return (model, villageID, key)
+    }
+
+    @MainActor
+    func testQueueAssignmentCandidatesIneligibleWithReasonWhenBaselineUnreconciled() throws {
+        // Issue #189 review P1/P3：未对账（core baseline ≠ 当前快照 lineage）
+        // 时候选可见但全部不可确认，显示「快照尚未对账」原因；历史 overlay
+        // 证据保留可见。fail-closed（不提供可执行确认菜单）的同时满足验收
+        // 「baseline 未对账显示原因、unknown/旧 lineage 历史仍可见」。
+        let (model, villageID, key) = try makeUnreconciledWithConfirmableObservation()
+        let candidate = try XCTUnwrap(
+            model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
+        )
+        XCTAssertTrue(candidate.hasTimer, "fixture 证据完整（timer + coverage）")
+        XCTAssertFalse(candidate.isConfirmable, "未对账时不可确认")
+        XCTAssertEqual(candidate.unconfirmableReason, "快照尚未对账，暂不能确认")
+        XCTAssertEqual(candidate.historicalAssignments.count, 1,
+            "未对账时历史 overlay 证据必须可见")
+        XCTAssertEqual(candidate.historicalAssignments[0].status, .unknown)
+        XCTAssertEqual(candidate.historicalAssignments[0].queueKind, .laboratory)
+    }
+
+    @MainActor
+    func testAssignRejectedWhenBaselineUnreconciled() throws {
+        // Issue #189 review P1：assign 命令必须复用 isBaselineReconciled gate
+        // （与 start/cancel/adjust 同口径），未对账时拒绝写入，零副作用——
+        // 否则会把 userAssigned 绑到过期 lineage 的 baselineReference。
+        let (model, villageID, key) = try makeUnreconciledWithConfirmableObservation()
+        let assignmentsBefore = try model.queueAssignments(for: villageID)
+        let bytesBefore = try Data(contentsOf: storeURL)
+        XCTAssertThrowsError(
+            try model.assignQueueToImportedObservation(
+                for: villageID, itemKey: key, queueKind: .builder
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError, .unreconciledSnapshot
+            )
+        }
+        XCTAssertEqual(try Data(contentsOf: storeURL), bytesBefore, "拒绝时磁盘字节不变")
+        XCTAssertEqual(
+            try model.queueAssignments(for: villageID), assignmentsBefore,
+            "拒绝时 assignment 数量不变（仅保留预置历史映射）"
+        )
     }
 }

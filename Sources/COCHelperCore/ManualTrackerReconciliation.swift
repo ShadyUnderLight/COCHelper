@@ -548,12 +548,18 @@ public enum ManualTrackerReconciliationService {
                 hasActiveRecord: hasActiveRecord
             )
 
-            if old == nil, let distribution = observation?.distribution {
+            // Keep every newly observed item as imported provenance, including
+            // timer-only / partial observations whose distribution is nil.
+            // A source timer is still useful UI evidence even when coverage is
+            // insufficient for a queue assignment; dropping this branch behind
+            // `guard let old` loses `observedTimer` before Issue #188/#189 can
+            // project the fail-closed reason.
+            if old == nil, let observation {
                 let imported = try ManualImportedObservation(
                     reference: newReference,
-                    levelDistribution: distribution,
+                    levelDistribution: observation.distribution,
                     sourceTimestamp: sourceTimestamp,
-                    observedTimer: observation?.hasTimer ?? false
+                    observedTimer: observation.hasTimer
                 )
                 states.append(try ManualItemState(
                     itemKey: key,

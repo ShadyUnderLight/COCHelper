@@ -4,9 +4,11 @@ import COCHelperCore
 
 /// Issue #183：导入观察的本地队列映射面板。
 ///
-/// 列出当前村庄所有导入观察项；未分配时显示「未分配本地队列」，提供
-/// 「确认分配 / 解除分配」操作。这是用户显式的本地工作流判断，不代表
-/// 游戏官方队列事实；映射不修改任何导入原始数据。
+/// 列出当前村庄所有导入观察项；按 Issue #189 的证据资格投影展示可执行
+/// 操作：未分配且证据合格时提供「确认分配」；`observedOnly` 且证据恢复时
+/// 提供「重新确认」；证据不足时只显示原因，不让用户点击后才收到预期内
+/// 的命令错误。这是用户显式的本地工作流判断，不代表游戏官方队列事实；
+/// 映射不修改任何导入原始数据。
 struct QueueAssignmentSettingsView: View {
     @EnvironmentObject private var model: AppModel
     let villageID: UUID
@@ -67,33 +69,7 @@ struct QueueAssignmentSettingsView: View {
                 Spacer()
                 statusBadge(candidate)
             }
-            if let assignment {
-                HStack(spacing: 8) {
-                    Text("已分配：\(assignment.queueKind.displayName)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("解除分配", role: .destructive) {
-                        unassign(candidate)
-                    }
-                    .font(.caption)
-                }
-            } else {
-                HStack(spacing: 8) {
-                    Menu {
-                        ForEach(LocalQueueKind.knownKinds, id: \.self) { kind in
-                            Button(kind.displayName) {
-                                assign(candidate, queueKind: kind)
-                            }
-                        }
-                    } label: {
-                        Label("确认分配到队列…", systemImage: "plus.circle")
-                            .font(.caption)
-                    }
-                    Text("未分配本地队列")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            actionRow(candidate, assignment: assignment)
             // Issue #183 review P2：旧 lineage 历史映射必须可见（审计证据，
             // 不占当前容量；解除操作只作用于当前 lineage）。
             if !candidate.historicalAssignments.isEmpty {
@@ -109,6 +85,130 @@ struct QueueAssignmentSettingsView: View {
         .background(Color.cocBackground.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
     }
 
+    /// Issue #189：按「当前候选状态 + 证据资格」投影可执行操作。
+    ///
+    /// 资格（`candidate.isConfirmable`）由 AppModel 基于 Core 谓词提供，
+    /// View 不自行推断 timer/coverage。证据不足时不渲染可执行菜单，只显示
+    /// 原因，避免用户点击后才收到预期内的命令错误。
+    @ViewBuilder
+    private func actionRow(
+        _ candidate: ImportedObservationCandidate,
+        assignment: QueueAssignmentDecision?
+    ) -> some View {
+        switch assignment?.status {
+        case .userAssigned:
+            if let assignment {
+                // Issue #189 review P2：userAssigned 但当前证据不足/未对账时，
+                // 容量投影（capacityConfirmingAssignments）已排除其占用；UI
+                // 必须与口径一致地提示"不计入容量"，不能仍显示"已确认"。
+                // 原因文案来自 candidate.unconfirmableReason（AppModel 生成，
+                // 区分证据不足与尚未对账），View 不自行推断。
+                HStack(spacing: 8) {
+                    Text(candidate.isConfirmable
+                        ? "已分配：\(assignment.queueKind.displayName)"
+                        : "已分配：\(assignment.queueKind.displayName)（\(candidate.unconfirmableReason ?? "证据不足")，不计入容量）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("解除分配", role: .destructive) {
+                        unassign(candidate)
+                    }
+                    .font(.caption)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    candidate.isConfirmable
+                        ? "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，可解除分配"
+                        : "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，但\(candidate.unconfirmableReason ?? "证据不足")，不计入本地容量，可解除分配"
+                )
+            }
+        case .observedOnly:
+            if candidate.isConfirmable {
+                HStack(spacing: 8) {
+                    Text("证据已恢复，重新确认前不占容量")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Menu {
+                        ForEach(LocalQueueKind.knownKinds, id: \.self) { kind in
+                            Button(kind.displayName) {
+                                assign(candidate, queueKind: kind)
+                            }
+                        }
+                    } label: {
+                        Label("重新确认到队列…", systemImage: "checkmark.circle")
+                            .font(.caption)
+                    }
+                    Button("解除分配", role: .destructive) {
+                        unassign(candidate)
+                    }
+                    .font(.caption)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(candidate.displayName)：观察已结束，证据已恢复，可重新确认到本地队列；重新确认前不占本地容量"
+                )
+            } else {
+                HStack(spacing: 8) {
+                    Text(candidate.unconfirmableReason ?? "等待完整观察/无进行中计时")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("解除分配", role: .destructive) {
+                        unassign(candidate)
+                    }
+                    .font(.caption)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(candidate.displayName)：\(candidate.unconfirmableReason ?? "等待完整观察/无进行中计时")，可解除分配"
+                )
+            }
+        case .unknown:
+            HStack(spacing: 8) {
+                Text("身份不可靠，保留历史证据，不提供当前确认")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("解除分配", role: .destructive) {
+                    unassign(candidate)
+                }
+                .font(.caption)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "\(candidate.displayName)：身份不可靠，保留历史证据，不提供当前确认，可解除分配"
+            )
+        case nil:
+            if candidate.isConfirmable {
+                HStack(spacing: 8) {
+                    Menu {
+                        ForEach(LocalQueueKind.knownKinds, id: \.self) { kind in
+                            Button(kind.displayName) {
+                                assign(candidate, queueKind: kind)
+                            }
+                        }
+                    } label: {
+                        Label("确认分配到队列…", systemImage: "plus.circle")
+                            .font(.caption)
+                    }
+                    Text("未分配本地队列")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Text(candidate.unconfirmableReason ?? "暂不能确认")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("未分配本地队列")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(candidate.displayName)：未分配本地队列，\(candidate.unconfirmableReason ?? "暂不能确认")"
+                )
+            }
+        }
+    }
+
     private func statusBadge(_ candidate: ImportedObservationCandidate) -> some View {
         guard let assignment = candidate.assignment else {
             return Text("未分配")
@@ -120,19 +220,40 @@ struct QueueAssignmentSettingsView: View {
         }
         switch assignment.status {
         case .userAssigned:
-            return Text("已确认")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.green)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.green.opacity(0.15), in: Capsule())
+            if candidate.isConfirmable {
+                return Text("已确认")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.15), in: Capsule())
+            } else {
+                // Issue #189 review P2：userAssigned 但证据不足时不占容量，
+                // 与容量投影口径一致地提示，避免 UI 误导。
+                return Text("已确认（不计入容量）")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+            }
         case .observedOnly:
-            return Text("观察已结束/未确认")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.orange.opacity(0.15), in: Capsule())
+            if candidate.isConfirmable {
+                // Issue #189：证据已恢复但尚未重新确认。
+                return Text("等待重新确认")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+            } else {
+                return Text("观察已结束/未确认")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+            }
         case .unknown:
             return Text("身份不可靠")
                 .font(.caption2.weight(.semibold))

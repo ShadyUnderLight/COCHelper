@@ -1,0 +1,295 @@
+{
+ "items": [
+  {
+   "result": "win",
+   "endTime": "20260730T102000.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260730T102100.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "win",
+   "endTime": "20260730T102200.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260730T102300.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "win",
+   "endTime": "20260730T102400.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260730T102500.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "win",
+   "endTime": "20260730T102600.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260730T102700.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "win",
+   "endTime": "20260730T102800.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260730T102900.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  }
+ ],
+ "paging": {}
+}

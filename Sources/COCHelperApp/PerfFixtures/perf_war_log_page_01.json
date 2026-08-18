@@ -1,0 +1,3620 @@
+{
+ "items": [
+  {
+   "result": "win",
+   "endTime": "20260728T100000.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260728T100100.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "win",
+   "endTime": "20260728T100200.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260728T100300.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "win",
+   "endTime": "20260728T100400.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260728T100500.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "win",
+   "endTime": "20260728T100600.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260728T100700.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "win",
+   "endTime": "20260728T100800.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  },
+  {
+   "result": "lose",
+   "endTime": "20260728T100900.000Z",
+   "teamSize": 30,
+   "attacksPerMember": 2,
+   "battleModifier": "none",
+   "clan": {
+    "tag": "#CLANANONYMIZED",
+    "name": "anonymized-clan",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 12,
+    "attacks": 60,
+    "stars": 95,
+    "destructionPercentage": 100.0,
+    "members": [
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-1",
+      "townhallLevel": 14,
+      "mapPosition": 1,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-2",
+      "townhallLevel": 14,
+      "mapPosition": 2,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-3",
+      "townhallLevel": 14,
+      "mapPosition": 3,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-4",
+      "townhallLevel": 14,
+      "mapPosition": 4,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-5",
+      "townhallLevel": 14,
+      "mapPosition": 5,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-6",
+      "townhallLevel": 14,
+      "mapPosition": 6,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-7",
+      "townhallLevel": 14,
+      "mapPosition": 7,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-8",
+      "townhallLevel": 14,
+      "mapPosition": 8,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-9",
+      "townhallLevel": 14,
+      "mapPosition": 9,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     },
+     {
+      "tag": "#PLAYERANONYMIZED",
+      "name": "anonymized-member-10",
+      "townhallLevel": 14,
+      "mapPosition": 10,
+      "attacks": [
+       {
+        "order": 1,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "duration": 180
+       },
+       {
+        "order": 2,
+        "attackerTag": "#PLAYERANONYMIZED",
+        "defenderTag": "#OPPONENTPLAYERANONYMIZED",
+        "stars": 2,
+        "destructionPercentage": 75,
+        "duration": 170
+       }
+      ],
+      "opponentAttacks": 1,
+      "bestOpponentAttack": {
+       "order": 1,
+       "attackerTag": "#OPPONENTPLAYERANONYMIZED",
+       "defenderTag": "#PLAYERANONYMIZED",
+       "stars": 2,
+       "destructionPercentage": 85,
+       "duration": 175
+      }
+     }
+    ]
+   },
+   "opponent": {
+    "tag": "#OPPONENTANONYMIZED",
+    "name": "anonymized-opponent",
+    "badgeUrls": {
+     "medium": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+    },
+    "clanLevel": 11,
+    "attacks": 58,
+    "stars": 80,
+    "destructionPercentage": 85.0
+   }
+  }
+ ],
+ "paging": {
+  "cursors": {
+   "before": "CURSORBEFORE1",
+   "after": "CURSORAFTER1"
+  }
+ }
+}

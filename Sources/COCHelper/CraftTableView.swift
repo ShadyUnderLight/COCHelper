@@ -154,7 +154,7 @@ private struct CraftTableAssetIcon: View {
     let size: CGFloat
 
     var body: some View {
-        if let url, let image = NSImage(contentsOf: url) {
+        if let url, let image = PerformanceImageDecode.firstDecodable([url]) {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()

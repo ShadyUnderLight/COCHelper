@@ -104,6 +104,13 @@ public enum CraftTableProjection {
         seasonalPhases: SeasonalPhaseTable = .empty,
         now: Date = Date()
     ) -> [CraftTableDefenseState] {
+        // Issue #197：统一 signpost 埋点（只记录整数规模/计数，无敏感数据）。
+        let __perfID = PerformanceSignpost.begin(
+            .craftTableProject,
+            dataScale: village.accountSnapshot?.objectSections.count ?? 0,
+            count: village.accountSnapshot?.objectSections["buildings"]?.count ?? 0
+        )
+        defer { PerformanceSignpost.end(.craftTableProject, id: __perfID) }
         guard base == .home,
               let snapshot = village.accountSnapshot,
               let craftTable = snapshot.objectSections["buildings"]?.first(where: {

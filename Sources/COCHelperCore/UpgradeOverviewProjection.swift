@@ -81,6 +81,15 @@ public enum UpgradeOverviewProjection {
         manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date()
     ) -> (active: [UpgradeDisplayRecord], pending: [UpgradeDisplayRecord]) {
+        // Issue #197：统一 signpost 埋点（只记录整数规模/计数，无敏感数据）。
+        let __perfID = PerformanceSignpost.begin(
+            .upgradeOverviewRecords,
+            dataScale: villages.count,
+            count: villages.reduce(0) {
+                $0 + ($1.accountSnapshot?.objectSections.reduce(0) { $0 + $1.value.count } ?? 0)
+            }
+        )
+        defer { PerformanceSignpost.end(.upgradeOverviewRecords, id: __perfID) }
         let records = allRecords(
             from: villages,
             catalog: catalog,
@@ -296,6 +305,15 @@ extension UpgradeOverviewProjection {
         at now: Date = Date(),
         recentlyCompletedWindow: TimeInterval = 7 * 24 * 3600
     ) -> UpgradeOverviewState {
+        // Issue #197：统一 signpost 埋点（只记录整数规模/计数，无敏感数据）。
+        let __perfID = PerformanceSignpost.begin(
+            .upgradeOverviewState,
+            dataScale: villages.count,
+            count: villages.reduce(0) {
+                $0 + ($1.accountSnapshot?.objectSections.reduce(0) { $0 + $1.value.count } ?? 0)
+            }
+        )
+        defer { PerformanceSignpost.end(.upgradeOverviewState, id: __perfID) }
         let records = allRecords(
             from: villages,
             catalog: catalog,

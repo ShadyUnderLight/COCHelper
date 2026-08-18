@@ -26,12 +26,22 @@ let package = Package(
         .target(
             name: "COCHelperApp",
             dependencies: ["COCHelperCore"],
-            path: "Sources/COCHelperApp"
+            path: "Sources/COCHelperApp",
+            resources: [
+                // Issue #197：性能样本 fixtures（隐藏 seed 路径运行时加载）。
+                // .copy 保留目录结构（与 GameCatalog 同模式）。
+                .copy("PerfFixtures")
+            ]
         ),
         .executableTarget(
             name: "COCHelper",
             dependencies: ["COCHelperCore", "COCHelperApp"],
-            path: "Sources/COCHelper"
+            path: "Sources/COCHelper",
+            swiftSettings: [
+                // Issue #197：隐藏性能样本入口只在 debug 构建编译（#if DEBUG）。
+                // Release 构建不定义 DEBUG → 菜单不进入生产 app。
+                .define("DEBUG", .when(configuration: .debug))
+            ]
         ),
         .executableTarget(
             name: "smoke-api",

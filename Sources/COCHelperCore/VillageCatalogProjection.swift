@@ -308,6 +308,9 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// item-level 的 levelVisual/icon；后两级为 item-level 资产（Issue #34）。
     /// 列表行与详情 sheet 必须共用本解析防漂移。
     public func preferredAssetURLs(version: String) -> [URL] {
+        // Issue #197：统一 signpost 埋点（候选探测计数；解码在 UI 层由
+        // PerformanceImageDecode 埋点采集）。候选链实际 5 个（craftTable + 4 级）。
+        let __perfID = PerformanceSignpost.begin(.assetCandidateProbe, dataScale: 5, count: 0)
         let craftTableAsset: CatalogAssetRef?
         if isNested {
             craftTableAsset = ModuleUpgradeIconCatalog.asset(for: dataID)
@@ -315,10 +318,12 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
         } else {
             craftTableAsset = nil
         }
-        return CatalogAssetRef.availableURLs(
+        let urls = CatalogAssetRef.availableURLs(
             [craftTableAsset, currentLevelVisual, currentLevelIcon, levelVisual, icon],
             version: version
         )
+        PerformanceSignpost.end(.assetCandidateProbe, id: __perfID, count: urls.count)
+        return urls
     }
 
     init(
@@ -552,6 +557,13 @@ public struct VillageCatalogProjection: Sendable {
         now: Date = Date(),
         manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> VillageCatalogProjection {
+        // Issue #197：统一 signpost 埋点（只记录整数规模/计数，无敏感数据）。
+        let __perfID = PerformanceSignpost.begin(
+            .villageCatalogProject,
+            dataScale: village.accountSnapshot?.objectSections.count ?? 0,
+            count: village.accountSnapshot?.objectSections.reduce(0) { $0 + $1.value.count } ?? 0
+        )
+        defer { PerformanceSignpost.end(.villageCatalogProject, id: __perfID) }
         var diagnostics: [AccountDataDiagnostic] = []
         let compatibility = CatalogCompatibility.resolve(
             catalog: catalog, expectedGameVersion: expectedGameVersion)

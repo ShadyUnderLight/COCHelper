@@ -26,7 +26,12 @@ let package = Package(
         .target(
             name: "COCHelperApp",
             dependencies: ["COCHelperCore"],
-            path: "Sources/COCHelperApp"
+            path: "Sources/COCHelperApp",
+            resources: [
+                // Issue #197：性能样本 fixtures（隐藏 seed 路径运行时加载）。
+                // .copy 保留目录结构（与 GameCatalog 同模式）。
+                .copy("PerfFixtures")
+            ]
         ),
         .executableTarget(
             name: "COCHelper",

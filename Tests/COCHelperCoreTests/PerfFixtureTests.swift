@@ -89,7 +89,7 @@ final class PerfFixtureTests: XCTestCase {
             text,
             now: Date(timeIntervalSince1970: 1_785_736_933)
         )
-        XCTAssertEqual(snapshot.tag, "#ANONYMIZED")
+        XCTAssertEqual(snapshot.tag, "#PERF-MIXED")
         // 缺失 spells section → 投影层 partial coverage（数据层契约）。
         XCTAssertNil(snapshot.objectSections["spells"])
         // 计时结束项（needsReimport 信号来源）。
@@ -101,6 +101,35 @@ final class PerfFixtureTests: XCTestCase {
         let unmapped = snapshot.allObjectItems.first { $0.dataID == 9_999_999 }
         XCTAssertNotNil(unmapped)
         XCTAssertNil(unmapped?.displayName)
+    }
+
+    /// 冲突变体：与 home 同 tag（#ANONYMIZED），1000002 分布 {15:2,16:5}
+    /// 相对 home 的 {15:1,16:6,17:1} 互不支配 → 对账 .conflict；
+    /// 顶层 coverage 权威证明（#173/#164：无证明时 fail-closed 为 unknown）。
+    func testPerfAccountSnapshotVariantParsesWithCoverageProofs() throws {
+        let text = try fixtureText("perf_account_snapshot_variant")
+        assertAnonymized(text)
+        let snapshot = try AccountSnapshotImporter.parse(
+            text,
+            now: Date(timeIntervalSince1970: 1_785_736_933)
+        )
+        XCTAssertEqual(snapshot.tag, "#ANONYMIZED")
+        // 1000002 分布 {15:2, 16:5}（无 lvl17）。
+        let buildings = snapshot.objectSections["buildings"] ?? []
+        let c1000002 = buildings.filter { $0.dataID == 1_000_002 }
+        XCTAssertFalse(c1000002.contains { $0.level == 17 })
+        XCTAssertEqual(c1000002.filter { $0.level == 15 }.first?.count, 2)
+        XCTAssertEqual(c1000002.filter { $0.level == 16 }.first?.count, 5)
+        // 顶层 coverage 权威证明（buildings 声明）。
+        let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+        if case .authoritative(source: _, version: _, expectedCount: let expected) = proofs["buildings"] {
+            XCTAssertEqual(
+                expected,
+                snapshot.objectSections["buildings"]?.count ?? 0
+            )
+        } else {
+            XCTFail("variant fixture must carry authoritative coverage proof for buildings")
+        }
     }
 
     // MARK: - 战争日志 / 突袭周末多页缓存
@@ -155,6 +184,7 @@ final class PerfFixtureTests: XCTestCase {
 
     // MARK: - manifest
 
+    /// manifest 的 dataScale 必须与 fixture 实际内容一致（顶层数组元素合计）。
     func testPerfFixtureManifestRecordsEnvironment() throws {
         let manifest = try JSONDecoder().decode(
             PerfFixtureManifest.self, from: fixtureData("perf_fixtures_manifest"))
@@ -165,6 +195,47 @@ final class PerfFixtureTests: XCTestCase {
         XCTAssertFalse(manifest.swiftToolchain.isEmpty)
         XCTAssertFalse(manifest.windowSize.isEmpty)
         XCTAssertFalse(manifest.dataScale.isEmpty)
+
+        // dataScale 与文件内容一致性契约：三个账号 fixture 的顶层数组元素合计。
+        let home = try JSONSerialization.jsonObject(
+            with: fixtureData("perf_account_snapshot_home")) as? [String: Any]
+        let builder = try JSONSerialization.jsonObject(
+            with: fixtureData("perf_account_snapshot_builder")) as? [String: Any]
+        let mixed = try JSONSerialization.jsonObject(
+            with: fixtureData("perf_account_snapshot_mixed")) as? [String: Any]
+        let variant = try JSONSerialization.jsonObject(
+            with: fixtureData("perf_account_snapshot_variant")) as? [String: Any]
+        XCTAssertEqual(
+            manifest.dataScale["perf_account_snapshot_home"],
+            topLevelArrayTotal(home)
+        )
+        XCTAssertEqual(
+            manifest.dataScale["perf_account_snapshot_builder"],
+            topLevelArrayTotal(builder)
+        )
+        XCTAssertEqual(
+            manifest.dataScale["perf_account_snapshot_mixed"],
+            topLevelArrayTotal(mixed)
+        )
+        XCTAssertEqual(
+            manifest.dataScale["perf_account_snapshot_variant"],
+            topLevelArrayTotal(variant)
+        )
+        // 分页 fixture 的 scale 与条目数一致。
+        XCTAssertEqual(manifest.dataScale["perf_war_log_page_01"], 10)
+        XCTAssertEqual(manifest.dataScale["perf_war_log_page_02"], 10)
+        XCTAssertEqual(manifest.dataScale["perf_war_log_page_03"], 10)
+        XCTAssertEqual(manifest.dataScale["perf_capital_raid_page_01"], 6)
+        XCTAssertEqual(manifest.dataScale["perf_capital_raid_page_02"], 6)
+        XCTAssertEqual(manifest.dataScale["perf_capital_raid_page_03"], 5)
+    }
+
+    /// 顶层数组元素合计（与 manifest dataScale 口径一致）。
+    private func topLevelArrayTotal(_ object: [String: Any]?) -> Int {
+        guard let object else { return 0 }
+        return object.values.reduce(0) { total, value in
+            total + ((value as? [Any])?.count ?? 0)
+        }
     }
 }
 

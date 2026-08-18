@@ -214,9 +214,11 @@ struct UpgradeDisplayRow: View {
     /// 同源），避免未来多版本资源错配。
     @ViewBuilder
     private var iconView: some View {
-        if let image = item.preferredAssetURLs(
-            version: record.catalogVersion ?? GameCatalog.defaultBundledVersion
-        ).lazy.compactMap({ NSImage(contentsOf: $0) }).first {
+        if let image = PerformanceImageDecode.firstDecodable(
+            item.preferredAssetURLs(
+                version: record.catalogVersion ?? GameCatalog.defaultBundledVersion
+            )
+        ) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)

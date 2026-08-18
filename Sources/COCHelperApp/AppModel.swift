@@ -2477,6 +2477,233 @@ public final class AppModel: ObservableObject {
         refreshManualTrackerProjection()
     }
 
+    // MARK: - Issue #197 性能样本加载（隐藏 debug seed，确定性重放）
+
+    /// 性能样本 fixture 名（与 Tests/COCHelperCoreTests/Fixtures 同名；
+    /// 运行时从 COCHelperApp bundle 的 PerfFixtures/ 读取）。
+    public enum PerfSampleFixture {
+        public static let home = "perf_account_snapshot_home"
+        public static let builder = "perf_account_snapshot_builder"
+        public static let mixed = "perf_account_snapshot_mixed"
+        public static let variant = "perf_account_snapshot_variant"
+        public static let warLogPage1 = "perf_war_log_page_01"
+        public static let warLogPage2 = "perf_war_log_page_02"
+        public static let warLogPage3 = "perf_war_log_page_03"
+        public static let raidPage1 = "perf_capital_raid_page_01"
+        public static let raidPage2 = "perf_capital_raid_page_02"
+        public static let raidPage3 = "perf_capital_raid_page_03"
+        /// 性能样本跟踪部落 tag（匿名，非真实账号；格式须合法：`#` + 大写字母/数字）。
+        public static let perfClanTag = "#PERFCLAN"
+    }
+
+    /// 加载性能样本（隐藏 debug seed）：
+    /// - 仅当当前无任何村庄数据时执行（避免覆盖用户真实数据）。
+    /// - 导入 home/builder/mixed → 3 村庄（A/B/C）。
+    /// - A 启动 manual active（含 1000002 lvl15→16）+ 2 项过去启动 → settle → completed。
+    /// - 导入 variant（#ANONYMIZED → 更新 A）→ 1000002 分布互不支配 → 对账 .conflict。
+    /// - 清除 B 快照 → unreconciled。
+    /// - 注册跟踪部落 #PERFCLAN + 加载 war log/raid 多页缓存。
+    ///
+    /// `fixtureDirectory` 为 nil 时读取 COCHelperApp bundle 的 PerfFixtures/；
+    /// 测试可注入测试 bundle 的 Fixtures 目录。
+    @discardableResult
+    public func loadPerformanceSample(fixtureDirectory: URL? = nil) -> Bool {
+        // 仅当没有真实导入数据时执行（默认占位村庄允许被 seed 覆盖，不碰用户数据）。
+        guard villages.allSatisfy({ !$0.hasImportedData }) else { return false }
+        guard let directory = fixtureDirectory ?? Self.perfFixtureBundleDirectory() else { return false }
+
+        // 1. 导入 3 个村庄（home 更新默认占位村庄 → A；builder/mixed 新建）。
+        guard perfImport(PerfSampleFixture.home, in: directory),
+              perfImport(PerfSampleFixture.builder, in: directory),
+              perfImport(PerfSampleFixture.mixed, in: directory) else { return false }
+        guard let villageA = villages.first(where: { $0.tag == "#ANONYMIZED" }),
+              let villageB = villages.first(where: { $0.tag == "#PERF-BUILDER" }) else { return false }
+
+        // 2. A 上启动 manual active + 过去启动项 → settle → completed。
+        let now = Date()
+        guard startPerfManualUpgrades(on: villageA.id, now: now) else { return false }
+        settleManualUpgrades(at: now)
+
+        // 3. 导入 variant（#ANONYMIZED → 更新 A）→ 1000002 冲突。
+        _ = perfImport(PerfSampleFixture.variant, in: directory)
+
+        // 4. B 清除快照 → unreconciled。
+        selectVillage(id: villageB.id)
+        clearAccountSnapshot()
+
+        // 5. war log / raid 多页缓存 + 跟踪部落。
+        seedPerfWarLogAndRaid(in: directory)
+
+        // 6. 回到村庄 A 便于测量。
+        selectVillage(id: villageA.id)
+        return true
+    }
+
+    /// COCHelperApp bundle 的 PerfFixtures 目录（运行时 fixture 源）。
+    private static func perfFixtureBundleDirectory() -> URL? {
+        Bundle.module.url(forResource: "PerfFixtures", withExtension: nil)
+            ?? Bundle.module.resourceURL?.appendingPathComponent("PerfFixtures")
+    }
+
+    /// 读取 fixture 文本（bundle 或测试注入目录）。
+    private func perfFixtureText(_ name: String, in directory: URL) throws -> String {
+        let url = directory.appendingPathComponent(name + ".json")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// 用 pending 导入路径导入单个 fixture（同 UI 粘贴路径，确定性）。
+    private func perfImport(_ name: String, in directory: URL) -> Bool {
+        do {
+            importText = try perfFixtureText(name, in: directory)
+        } catch {
+            accountImportError = Self.localizedPersistenceError(error)
+            return false
+        }
+        parseAccountText()
+        guard pendingAccountSnapshot != nil else {
+            return false
+        }
+        return applyPendingAccountSnapshot()
+    }
+
+    /// 在村庄上启动 manual 记录：1000002 lvl15→16（冲突样本）+ 2 项 active
+    /// + 2 项过去启动（settle 后 completed）。
+    private func startPerfManualUpgrades(on villageID: UUID, now: Date) -> Bool {
+        guard let village = villages.first(where: { $0.id == villageID }),
+              let catalog = gameCatalog,
+              let core = manualUpgradeCore(for: villageID) else { return false }
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog,
+            base: .home,
+            now: now,
+            manualUpgradeCore: core
+        )
+        let startable = projection.items.compactMap { item -> UpgradeAction? in
+            UpgradeActionProjection.action(
+                for: item,
+                catalog: catalog,
+                catalogIsUsable: projection.catalogIsUsable,
+                manualUpgradeCore: core,
+                coverage: UpgradeActionProjection.coverage(
+                    for: item,
+                    progressCoverage: projection.progressCoverage
+                ),
+                now: now
+            )
+        }.filter { $0.isStartable }
+
+        // 冲突样本：1000002 lvl15→16。
+        let conflictAction = startable.first {
+            $0.itemKey.dataID == 1_000_002 && $0.fromLevel == 15
+        }
+        let others = startable.filter { $0.itemKey.dataID != 1_000_002 }
+        var started = 0
+        if let conflictAction {
+            do {
+                try startManualUpgrade(
+                    for: villageID,
+                    action: conflictAction,
+                    startedAt: now
+                )
+                started += 1
+            } catch {
+                return false
+            }
+        }
+        for action in others where started < 5 {
+            let startedAt: Date
+            if started >= 3 {
+                // 第 4/5 项过去启动（90 天前）→ settle 立即到期 → completed。
+                // 不能用 1 天：多数建筑升级时长 > 24h，settle 不会完成。
+                startedAt = now.addingTimeInterval(-7_776_000)
+            } else {
+                startedAt = now
+            }
+            do {
+                try startManualUpgrade(
+                    for: villageID,
+                    action: action,
+                    startedAt: startedAt
+                )
+                started += 1
+            } catch {
+                // 个别项目可能因重验证 stale 跳过；seed 只要达到 5 项即可。
+                continue
+            }
+        }
+        return started >= 3
+    }
+
+    /// war log / raid 多页缓存：解码 3 页 → 合并 → 写 API state store + 内存。
+    private func seedPerfWarLogAndRaid(in directory: URL) {
+        let now = Date()
+        do {
+            let warP1 = try JSONDecoder().decode(
+                OfficialWarLogPage.self,
+                from: Data(try perfFixtureText(PerfSampleFixture.warLogPage1, in: directory).utf8)
+            )
+            let warP2 = try JSONDecoder().decode(
+                OfficialWarLogPage.self,
+                from: Data(try perfFixtureText(PerfSampleFixture.warLogPage2, in: directory).utf8)
+            )
+            let warP3 = try JSONDecoder().decode(
+                OfficialWarLogPage.self,
+                from: Data(try perfFixtureText(PerfSampleFixture.warLogPage3, in: directory).utf8)
+            )
+            let warMerged = PaginationMerge.mergedPage(
+                existing: PaginationMerge.mergedPage(existing: warP1.page, fetched: warP2.page),
+                fetched: warP3.page
+            )
+            let warState = ClanWarLogAPIState(
+                status: .success,
+                clanTag: PerfSampleFixture.perfClanTag,
+                fetchedAt: now,
+                parserVersion: OfficialWarLogPage.currentParserVersion,
+                lastGood: OfficialWarLogPage(page: warMerged)
+            )
+            clanWarLogStates[PerfSampleFixture.perfClanTag] = warState
+            persistClanWarLogStates()
+
+            let raidP1 = try JSONDecoder().decode(
+                OfficialCapitalRaidPage.self,
+                from: Data(try perfFixtureText(PerfSampleFixture.raidPage1, in: directory).utf8)
+            )
+            let raidP2 = try JSONDecoder().decode(
+                OfficialCapitalRaidPage.self,
+                from: Data(try perfFixtureText(PerfSampleFixture.raidPage2, in: directory).utf8)
+            )
+            let raidP3 = try JSONDecoder().decode(
+                OfficialCapitalRaidPage.self,
+                from: Data(try perfFixtureText(PerfSampleFixture.raidPage3, in: directory).utf8)
+            )
+            let raidMerged = PaginationMerge.mergedPage(
+                existing: PaginationMerge.mergedPage(existing: raidP1.page, fetched: raidP2.page),
+                fetched: raidP3.page
+            )
+            let raidState = ClanCapitalAPIState(
+                status: .success,
+                clanTag: PerfSampleFixture.perfClanTag,
+                fetchedAt: now,
+                parserVersion: OfficialCapitalRaidPage.currentParserVersion,
+                lastGood: OfficialCapitalRaidPage(page: raidMerged)
+            )
+            clanCapitalStates[PerfSampleFixture.perfClanTag] = raidState
+            persistClanCapitalStates()
+        } catch {
+            // seed 失败不改变用户数据；记录诊断供测量会话排查。
+            accountImportError = Self.localizedPersistenceError(error)
+        }
+
+        // 跟踪部落（war log / raid 卡片入口，无需 token）。
+        if !trackedClans.contains(where: { $0.clanTag == PerfSampleFixture.perfClanTag }) {
+            _ = addTrackedClan(
+                rawTag: PerfSampleFixture.perfClanTag,
+                displayName: "anonymized-perf-clan"
+            )
+        }
+    }
+
     // MARK: - 官方数据刷新
 
     /// 刷新**指定村庄**的官方玩家信息（页面入口必须传显式 villageID）。

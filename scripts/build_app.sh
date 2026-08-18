@@ -21,4 +21,12 @@ if [[ ! -d "$resource_bundle" ]]; then
 fi
 cp -R "$resource_bundle" "$app_dir/"
 
+# Issue #197：COCHelperApp 资源 bundle（PerfFixtures 性能样本，隐藏 seed 运行时加载）。
+app_resource_bundle="$bin_dir/COCHelper_COCHelperApp.bundle"
+if [[ ! -d "$app_resource_bundle" ]]; then
+    echo "Missing SwiftPM resource bundle: $app_resource_bundle" >&2
+    exit 1
+fi
+cp -R "$app_resource_bundle" "$app_dir/"
+
 echo "Built $app_dir"

@@ -18,8 +18,10 @@ public enum PerformanceEvent {
     case upgradeOverviewRecords
     /// UpgradeOverviewProjection.overviewState：升级总览状态面板投影（独立 allRecords）。
     case upgradeOverviewState
-    /// VillageItemState.preferredAssetURLs：图片候选 URL 探测（解码在 UI 层，由 Instruments 采集）。
+    /// VillageItemState.preferredAssetURLs：图片候选 URL 探测（解码在 UI 层，由 PerformanceImageDecode 埋点采集）。
     case assetCandidateProbe
+    /// NSImage(contentsOf:) 解码（app target，滚动路径同步读图点）。
+    case imageDecode
 
     /// 稳定事件名（os_signpost 的 name 必须是 StaticString；测试用 description 校验）。
     /// 静态常量，不携带任何敏感数据。
@@ -31,6 +33,7 @@ public enum PerformanceEvent {
         case .upgradeOverviewRecords: "UpgradeOverviewProjection.overviewRecords"
         case .upgradeOverviewState: "UpgradeOverviewProjection.overviewState"
         case .assetCandidateProbe: "VillageItemState.preferredAssetURLs"
+        case .imageDecode: "NSImage.contentsOf"
         }
     }
 }

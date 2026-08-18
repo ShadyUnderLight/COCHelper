@@ -33,6 +33,10 @@ final class PerformanceSignpostTests: XCTestCase {
             PerformanceEvent.assetCandidateProbe.signpostName.description,
             "VillageItemState.preferredAssetURLs"
         )
+        XCTAssertEqual(
+            PerformanceEvent.imageDecode.signpostName.description,
+            "NSImage.contentsOf"
+        )
     }
 
     func testSignpostFacadeCompilesAndReturnsStableIDs() {

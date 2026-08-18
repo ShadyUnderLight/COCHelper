@@ -125,8 +125,9 @@ struct BuildingGroupCard: View {
     @ViewBuilder
     private func iconView(_ item: VillageItemState) -> some View {
         Group {
-            if let image = item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion)
-                .lazy.compactMap({ NSImage(contentsOf: $0) }).first {
+            if let image = PerformanceImageDecode.firstDecodable(
+                item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion)
+            ) {
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)

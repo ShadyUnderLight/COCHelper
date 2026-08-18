@@ -1,5 +1,5 @@
 {
- "tag": "#PERF-MIXED",
+ "tag": "#ANONYMIZED",
  "timestamp": 1785736333,
  "helpers": [
   {
@@ -139,12 +139,12 @@
   {
    "data": 1000002,
    "lvl": 15,
-   "cnt": 1
+   "cnt": 2
   },
   {
    "data": 1000002,
    "lvl": 16,
-   "cnt": 6
+   "cnt": 5
   },
   {
    "data": 1000003,
@@ -442,11 +442,6 @@
    "cnt": 1
   },
   {
-   "data": 1000002,
-   "lvl": 17,
-   "cnt": 1
-  },
-  {
    "data": 1000003,
    "lvl": 20,
    "cnt": 1
@@ -612,14 +607,9 @@
    "cnt": 1
   },
   {
-   "data": 9999999,
-   "lvl": 3,
-   "cnt": 1
-  },
-  {
-   "data": 1000012,
-   "lvl": 18,
-   "cnt": 1
+   "data": 1000002,
+   "lvl": 16,
+   "timer": 60000000
   }
  ],
  "traps": [
@@ -1362,6 +1352,80 @@
    "lvl": 25
   }
  ],
+ "spells": [
+  {
+   "data": 26000000,
+   "lvl": 13
+  },
+  {
+   "data": 26000001,
+   "lvl": 8
+  },
+  {
+   "data": 26000002,
+   "lvl": 7
+  },
+  {
+   "data": 26000003,
+   "lvl": 5
+  },
+  {
+   "data": 26000005,
+   "lvl": 8
+  },
+  {
+   "data": 26000009,
+   "lvl": 9
+  },
+  {
+   "data": 26000010,
+   "lvl": 8
+  },
+  {
+   "data": 26000011,
+   "lvl": 5
+  },
+  {
+   "data": 26000016,
+   "lvl": 9
+  },
+  {
+   "data": 26000017,
+   "lvl": 8
+  },
+  {
+   "data": 26000028,
+   "lvl": 5
+  },
+  {
+   "data": 26000035,
+   "lvl": 4
+  },
+  {
+   "data": 26000053,
+   "lvl": 7
+  },
+  {
+   "data": 26000070,
+   "lvl": 5
+  },
+  {
+   "data": 26000098,
+   "lvl": 5
+  },
+  {
+   "data": 26000109,
+   "lvl": 5
+  },
+  {
+   "data": 26000120,
+   "lvl": 4
+  },
+  {
+   "data": 26000123,
+   "lvl": 1
+  }
+ ],
  "pets": [
   {
    "data": 73000000,
@@ -1868,111 +1932,6 @@
    "data": 1000082,
    "lvl": 6,
    "cnt": 1
-  },
-  {
-   "data": 1000036,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000037,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000038,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000039,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000040,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000041,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000042,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000043,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000044,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000045,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000046,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000047,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000048,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000049,
-   "lvl": 6,
-   "cnt": 1
-  },
-  {
-   "data": 1000033,
-   "lvl": 9,
-   "cnt": 120
-  },
-  {
-   "data": 1000034,
-   "lvl": 11,
-   "cnt": 2
-  },
-  {
-   "data": 1000035,
-   "lvl": 11,
-   "cnt": 4
-  },
-  {
-   "data": 1000036,
-   "lvl": 11,
-   "cnt": 1
-  },
-  {
-   "data": 1000050,
-   "lvl": 10,
-   "cnt": 1
-  },
-  {
-   "data": 1000033,
-   "lvl": 10,
-   "cnt": 1
-  },
-  {
-   "data": 1000034,
-   "lvl": 10,
-   "cnt": 1
   }
  ],
  "traps2": [
@@ -2117,7 +2076,7 @@
    "kind": "authoritative",
    "source": "perf-fixture",
    "version": "1",
-   "expectedCount": 106
+   "expectedCount": 104
   },
   "traps": {
    "kind": "authoritative",
@@ -2155,6 +2114,12 @@
    "version": "1",
    "expectedCount": 6
   },
+  "spells": {
+   "kind": "authoritative",
+   "source": "perf-fixture",
+   "version": "1",
+   "expectedCount": 18
+  },
   "pets": {
    "kind": "authoritative",
    "source": "perf-fixture",
@@ -2171,7 +2136,7 @@
    "kind": "authoritative",
    "source": "perf-fixture",
    "version": "1",
-   "expectedCount": 55
+   "expectedCount": 34
   },
   "traps2": {
    "kind": "authoritative",

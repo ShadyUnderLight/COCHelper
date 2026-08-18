@@ -167,8 +167,9 @@ struct LevelDetailSheet: View {
     /// buildings:1000000）icon 为 nil 但 levelVisual 可渲染（fireplace_lvl1.png——
     /// 游戏内部导出代号，兵营中心营火）——头部必须与逐级行一致显示真实外观。
     private var headerImage: NSImage? {
-        item.preferredAssetURLs(version: assetVersion)
-            .lazy.compactMap { NSImage(contentsOf: $0) }.first
+        PerformanceImageDecode.firstDecodable(
+            item.preferredAssetURLs(version: assetVersion)
+        )
     }
 
     var body: some View {
@@ -273,8 +274,9 @@ struct LevelDetailSheet: View {
     /// 次选，P2 评审）；全部加载失败 → nil（SF Symbol 兜底，不崩溃）。
     /// 返回原始 `Image`（修饰链在调用处拼装，避免 `some View` 类型歧义）。
     private func levelAssetImage(_ level: CatalogLevel) -> Image? {
-        guard let image = level.preferredAssetURLs(version: assetVersion)
-            .lazy.compactMap({ NSImage(contentsOf: $0) }).first else {
+        guard let image = PerformanceImageDecode.firstDecodable(
+            level.preferredAssetURLs(version: assetVersion)
+        ) else {
             return nil
         }
         return Image(nsImage: image)

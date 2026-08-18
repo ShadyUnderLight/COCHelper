@@ -91,6 +91,8 @@ final class AppModelPerfSeedTests: XCTestCase {
         // 数据未被改动。
         XCTAssertEqual(model.villages.count, 1)
         XCTAssertTrue(model.villages[0].hasImportedData)
-        XCTAssertNil(model.warLogState(for: "#PERF-CLAN"))
+        // 负例必须检查生产常量 tag（#PERFCLAN）；旧 #PERF-CLAN 会假绿。
+        XCTAssertNil(model.warLogState(for: "#PERFCLAN"))
+        XCTAssertFalse(model.trackedClans.contains { $0.clanTag == "#PERFCLAN" })
     }
 }

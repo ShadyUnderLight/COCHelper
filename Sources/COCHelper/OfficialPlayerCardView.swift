@@ -304,7 +304,7 @@ struct OfficialPlayerCardView: View {
         _ icon: OfficialPlayerCardIcon,
         fallbackSystemImage: String
     ) -> some View {
-        if let url = icon.bundledURL(), let image = NSImage(contentsOf: url) {
+        if let url = icon.bundledURL(), let image = PerformanceImageDecode.firstDecodable([url]) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)

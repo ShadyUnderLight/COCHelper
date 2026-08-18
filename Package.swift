@@ -36,7 +36,12 @@ let package = Package(
         .executableTarget(
             name: "COCHelper",
             dependencies: ["COCHelperCore", "COCHelperApp"],
-            path: "Sources/COCHelper"
+            path: "Sources/COCHelper",
+            swiftSettings: [
+                // Issue #197：隐藏性能样本入口只在 debug 构建编译（#if DEBUG）。
+                // Release 构建不定义 DEBUG → 菜单不进入生产 app。
+                .define("DEBUG", .when(configuration: .debug))
+            ]
         ),
         .executableTarget(
             name: "smoke-api",

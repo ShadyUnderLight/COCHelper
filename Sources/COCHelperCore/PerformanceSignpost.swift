@@ -66,16 +66,30 @@ public enum PerformanceSignpost {
         return id
     }
 
-    /// 关闭区间。`cacheHit`（可选布尔，0/1）与 `count`（可选整数）只记录
-    /// 缓存命中/计数，不得记录敏感数据。基线期无缓存，调用方可省略。
+    /// 关闭区间。`cacheHit`（可选布尔，0/1）、`count`（可选整数）与
+    /// `succeeded`（可选布尔，成功/失败）只记录整数/布尔负载，不得记录敏感数据。
+    /// 基线期无缓存，调用方可省略；`succeeded` 用于「成功/失败」语义
+    /// （如解码成功），与 `cacheHit`（缓存命中）区分。
     public static func end(
         _ event: PerformanceEvent,
         id: OSSignpostID,
         cacheHit: Bool? = nil,
-        count: Int? = nil
+        count: Int? = nil,
+        succeeded: Bool? = nil
     ) {
-        switch (cacheHit, count) {
-        case (.some(let ch), .some(let c)):
+        switch (cacheHit, count, succeeded) {
+        case (.some(let ch), .some(let c), .some(let ok)):
+            os_signpost(
+                .end,
+                log: projectionLog,
+                name: event.signpostName,
+                signpostID: id,
+                "cache=%d count=%d ok=%d",
+                ch ? 1 : 0,
+                c,
+                ok ? 1 : 0
+            )
+        case (.some(let ch), .some(let c), .none):
             os_signpost(
                 .end,
                 log: projectionLog,
@@ -85,7 +99,17 @@ public enum PerformanceSignpost {
                 ch ? 1 : 0,
                 c
             )
-        case (.some(let ch), .none):
+        case (.some(let ch), .none, .some(let ok)):
+            os_signpost(
+                .end,
+                log: projectionLog,
+                name: event.signpostName,
+                signpostID: id,
+                "cache=%d ok=%d",
+                ch ? 1 : 0,
+                ok ? 1 : 0
+            )
+        case (.some(let ch), .none, .none):
             os_signpost(
                 .end,
                 log: projectionLog,
@@ -94,7 +118,17 @@ public enum PerformanceSignpost {
                 "cache=%d",
                 ch ? 1 : 0
             )
-        case (.none, .some(let c)):
+        case (.none, .some(let c), .some(let ok)):
+            os_signpost(
+                .end,
+                log: projectionLog,
+                name: event.signpostName,
+                signpostID: id,
+                "count=%d ok=%d",
+                c,
+                ok ? 1 : 0
+            )
+        case (.none, .some(let c), .none):
             os_signpost(
                 .end,
                 log: projectionLog,
@@ -103,7 +137,16 @@ public enum PerformanceSignpost {
                 "count=%d",
                 c
             )
-        case (.none, .none):
+        case (.none, .none, .some(let ok)):
+            os_signpost(
+                .end,
+                log: projectionLog,
+                name: event.signpostName,
+                signpostID: id,
+                "ok=%d",
+                ok ? 1 : 0
+            )
+        case (.none, .none, .none):
             os_signpost(
                 .end,
                 log: projectionLog,

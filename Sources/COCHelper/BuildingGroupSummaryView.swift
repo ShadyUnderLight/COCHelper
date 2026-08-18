@@ -144,8 +144,9 @@ struct BuildingGroupSummaryView: View {
     /// 4 级候选链 asset 首图；firstInstance 缺失或全部加载失败 → nil（SF Symbol 兜底）。
     private func assetImage(_ item: VillageItemState?) -> NSImage? {
         guard let item else { return nil }
-        return item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion)
-            .lazy.compactMap { NSImage(contentsOf: $0) }.first
+        return PerformanceImageDecode.firstDecodable(
+            item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion)
+        )
     }
 
     /// 组图标：第一个实例的 4 级候选链，失败回退 SF Symbol（不崩溃）。

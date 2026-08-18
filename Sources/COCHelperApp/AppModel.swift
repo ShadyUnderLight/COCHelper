@@ -2498,11 +2498,14 @@ public final class AppModel: ObservableObject {
 
     /// 加载性能样本（隐藏 debug seed）：
     /// - 仅当当前无任何村庄数据时执行（避免覆盖用户真实数据）。
+    /// - 预检全部 fixtures（读取 + account parse + war/raid Codable 解码，
+    ///   纯函数、发生在任何状态变更之前）→ 任何 fixture 失败不会留下半成品。
     /// - 导入 home/builder/mixed → 3 村庄（A/B/C）。
     /// - A 启动 manual active（含 1000002 lvl15→16）+ 2 项过去启动 → settle → completed。
     /// - 导入 variant（#ANONYMIZED → 更新 A）→ 1000002 分布互不支配 → 对账 .conflict。
     /// - 清除 B 快照 → unreconciled。
     /// - 注册跟踪部落 #PERFCLAN + 加载 war log/raid 多页缓存。
+    ///   任一执行步骤失败 → 返回 false（不再忽略 variant/war-raid 结果）。
     ///
     /// `fixtureDirectory` 为 nil 时读取 COCHelperApp bundle 的 PerfFixtures/；
     /// 测试可注入测试 bundle 的 Fixtures 目录。
@@ -2511,6 +2514,14 @@ public final class AppModel: ObservableObject {
         // 仅当没有真实导入数据时执行（默认占位村庄允许被 seed 覆盖，不碰用户数据）。
         guard villages.allSatisfy({ !$0.hasImportedData }) else { return false }
         guard let directory = fixtureDirectory ?? Self.perfFixtureBundleDirectory() else { return false }
+
+        // 0. 预检：任何 fixture 读取/解析/解码失败都发生在状态变更之前。
+        do {
+            try perfFixturePreflight(in: directory)
+        } catch {
+            accountImportError = Self.localizedPersistenceError(error)
+            return false
+        }
 
         // 1. 导入 3 个村庄（home 更新默认占位村庄 → A；builder/mixed 新建）。
         guard perfImport(PerfSampleFixture.home, in: directory),
@@ -2524,19 +2535,57 @@ public final class AppModel: ObservableObject {
         guard startPerfManualUpgrades(on: villageA.id, now: now) else { return false }
         settleManualUpgrades(at: now)
 
-        // 3. 导入 variant（#ANONYMIZED → 更新 A）→ 1000002 冲突。
-        _ = perfImport(PerfSampleFixture.variant, in: directory)
+        // 3. 导入 variant（#ANONYMIZED → 更新 A）→ 1000002 冲突（必须成功）。
+        guard perfImport(PerfSampleFixture.variant, in: directory) else { return false }
 
         // 4. B 清除快照 → unreconciled。
         selectVillage(id: villageB.id)
         clearAccountSnapshot()
 
-        // 5. war log / raid 多页缓存 + 跟踪部落。
-        seedPerfWarLogAndRaid(in: directory)
+        // 5. war log / raid 多页缓存 + 跟踪部落（失败 → 返回 false）。
+        guard seedPerfWarLogAndRaid(in: directory) else { return false }
 
         // 6. 回到村庄 A 便于测量。
         selectVillage(id: villageA.id)
         return true
+    }
+
+    /// 预检全部 fixtures（纯函数，不改变任何 AppModel 状态）：
+    /// 读取文本 + `AccountSnapshotImporter.parse` + war/raid `JSONDecoder` 解码。
+    private func perfFixturePreflight(in directory: URL) throws {
+        let accountNames = [
+            PerfSampleFixture.home,
+            PerfSampleFixture.builder,
+            PerfSampleFixture.mixed,
+            PerfSampleFixture.variant,
+        ]
+        for name in accountNames {
+            _ = try AccountSnapshotImporter.parse(try perfFixtureText(name, in: directory))
+        }
+        let warNames = [
+            PerfSampleFixture.warLogPage1,
+            PerfSampleFixture.warLogPage2,
+            PerfSampleFixture.warLogPage3,
+        ]
+        for name in warNames {
+            _ = try decodePerfWarLogPage(try perfFixtureText(name, in: directory))
+        }
+        let raidNames = [
+            PerfSampleFixture.raidPage1,
+            PerfSampleFixture.raidPage2,
+            PerfSampleFixture.raidPage3,
+        ]
+        for name in raidNames {
+            _ = try decodePerfRaidPage(try perfFixtureText(name, in: directory))
+        }
+    }
+
+    private func decodePerfWarLogPage(_ text: String) throws -> OfficialWarLogPage {
+        try JSONDecoder().decode(OfficialWarLogPage.self, from: Data(text.utf8))
+    }
+
+    private func decodePerfRaidPage(_ text: String) throws -> OfficialCapitalRaidPage {
+        try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(text.utf8))
     }
 
     /// COCHelperApp bundle 的 PerfFixtures 目录（运行时 fixture 源）。
@@ -2636,21 +2685,13 @@ public final class AppModel: ObservableObject {
     }
 
     /// war log / raid 多页缓存：解码 3 页 → 合并 → 写 API state store + 内存。
-    private func seedPerfWarLogAndRaid(in directory: URL) {
+    /// 任何解码/持久化失败 → 返回 false（不再忽略结果继续加部落）。
+    private func seedPerfWarLogAndRaid(in directory: URL) -> Bool {
         let now = Date()
         do {
-            let warP1 = try JSONDecoder().decode(
-                OfficialWarLogPage.self,
-                from: Data(try perfFixtureText(PerfSampleFixture.warLogPage1, in: directory).utf8)
-            )
-            let warP2 = try JSONDecoder().decode(
-                OfficialWarLogPage.self,
-                from: Data(try perfFixtureText(PerfSampleFixture.warLogPage2, in: directory).utf8)
-            )
-            let warP3 = try JSONDecoder().decode(
-                OfficialWarLogPage.self,
-                from: Data(try perfFixtureText(PerfSampleFixture.warLogPage3, in: directory).utf8)
-            )
+            let warP1 = try decodePerfWarLogPage(try perfFixtureText(PerfSampleFixture.warLogPage1, in: directory))
+            let warP2 = try decodePerfWarLogPage(try perfFixtureText(PerfSampleFixture.warLogPage2, in: directory))
+            let warP3 = try decodePerfWarLogPage(try perfFixtureText(PerfSampleFixture.warLogPage3, in: directory))
             let warMerged = PaginationMerge.mergedPage(
                 existing: PaginationMerge.mergedPage(existing: warP1.page, fetched: warP2.page),
                 fetched: warP3.page
@@ -2665,18 +2706,9 @@ public final class AppModel: ObservableObject {
             clanWarLogStates[PerfSampleFixture.perfClanTag] = warState
             persistClanWarLogStates()
 
-            let raidP1 = try JSONDecoder().decode(
-                OfficialCapitalRaidPage.self,
-                from: Data(try perfFixtureText(PerfSampleFixture.raidPage1, in: directory).utf8)
-            )
-            let raidP2 = try JSONDecoder().decode(
-                OfficialCapitalRaidPage.self,
-                from: Data(try perfFixtureText(PerfSampleFixture.raidPage2, in: directory).utf8)
-            )
-            let raidP3 = try JSONDecoder().decode(
-                OfficialCapitalRaidPage.self,
-                from: Data(try perfFixtureText(PerfSampleFixture.raidPage3, in: directory).utf8)
-            )
+            let raidP1 = try decodePerfRaidPage(try perfFixtureText(PerfSampleFixture.raidPage1, in: directory))
+            let raidP2 = try decodePerfRaidPage(try perfFixtureText(PerfSampleFixture.raidPage2, in: directory))
+            let raidP3 = try decodePerfRaidPage(try perfFixtureText(PerfSampleFixture.raidPage3, in: directory))
             let raidMerged = PaginationMerge.mergedPage(
                 existing: PaginationMerge.mergedPage(existing: raidP1.page, fetched: raidP2.page),
                 fetched: raidP3.page
@@ -2691,17 +2723,21 @@ public final class AppModel: ObservableObject {
             clanCapitalStates[PerfSampleFixture.perfClanTag] = raidState
             persistClanCapitalStates()
         } catch {
-            // seed 失败不改变用户数据；记录诊断供测量会话排查。
+            // war/raid seed 失败：记录诊断并返回失败（不继续加部落）。
             accountImportError = Self.localizedPersistenceError(error)
+            return false
         }
 
         // 跟踪部落（war log / raid 卡片入口，无需 token）。
         if !trackedClans.contains(where: { $0.clanTag == PerfSampleFixture.perfClanTag }) {
-            _ = addTrackedClan(
+            guard case .success = addTrackedClan(
                 rawTag: PerfSampleFixture.perfClanTag,
                 displayName: "anonymized-perf-clan"
-            )
+            ) else {
+                return false
+            }
         }
+        return true
     }
 
     // MARK: - 官方数据刷新

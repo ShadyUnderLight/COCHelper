@@ -247,6 +247,14 @@ public enum BuildingGroupProjection {
         now: Date = Date(),
         manualUpgradeCore: ManualUpgradeCore? = nil
     ) -> [BuildingGroup] {
+        // Issue #197：统一 signpost 埋点（只记录整数规模/计数，无敏感数据）。
+        let __perfID = PerformanceSignpost.begin(
+            .buildingGroupProject,
+            dataScale: village.accountSnapshot?.objectSections.count ?? 0,
+            count: (village.accountSnapshot?.objectSections["buildings"]?.count ?? 0)
+                + (village.accountSnapshot?.objectSections["buildings2"]?.count ?? 0)
+        )
+        defer { PerformanceSignpost.end(.buildingGroupProject, id: __perfID) }
         let projection = VillageCatalogProjection.project(
             village: village,
             catalog: catalog,

@@ -2498,6 +2498,7 @@ public final class AppModel: ObservableObject {
 
     /// 加载性能样本（隐藏 debug seed）：
     /// - 仅当当前无任何村庄数据时执行（避免覆盖用户真实数据）。
+    /// - 隔离检查：已有 #PERFCLAN 的部落缓存/跟踪时拒绝（合法 tag 可能真实存在）。
     /// - 预检全部 fixtures（读取 + account parse + war/raid Codable 解码，
     ///   纯函数、发生在任何状态变更之前）→ 任何 fixture 失败不会留下半成品。
     /// - 导入 home/builder/mixed → 3 村庄（A/B/C）。
@@ -2507,6 +2508,11 @@ public final class AppModel: ObservableObject {
     /// - 注册跟踪部落 #PERFCLAN + 加载 war log/raid 多页缓存。
     ///   任一执行步骤失败 → 返回 false（不再忽略 variant/war-raid 结果）。
     ///
+    /// 残余边界：执行阶段的 manual/persistence 失败（非 fixture 失败）仍可能在
+    /// 已有写入后返回 false——真正的全量回滚不可行（fresh app 初始 history 为 nil，
+    /// seed 写入后 FileSnapshotHistoryStore 无删除 API）；预检已消除 fixture 失败
+    /// 的半成品，执行阶段失败概率≈0（fixtures 预检通过 + 预设 tag 不拦截）。
+    ///
     /// `fixtureDirectory` 为 nil 时读取 COCHelperApp bundle 的 PerfFixtures/；
     /// 测试可注入测试 bundle 的 Fixtures 目录。
     @discardableResult
@@ -2514,6 +2520,18 @@ public final class AppModel: ObservableObject {
         // 仅当没有真实导入数据时执行（默认占位村庄允许被 seed 覆盖，不碰用户数据）。
         guard villages.allSatisfy({ !$0.hasImportedData }) else { return false }
         guard let directory = fixtureDirectory ?? Self.perfFixtureBundleDirectory() else { return false }
+
+        // 隔离检查：seed 会写 #PERFCLAN 的 war/raid 缓存并添加跟踪部落。
+        // 若用户无村庄快照但已有该 tag 的任何部落缓存/跟踪，拒绝执行，
+        // 避免覆盖已有部落数据（#PERFCLAN 是合法 tag，可能真实存在）。
+        guard !clanWarLogStates.keys.contains(PerfSampleFixture.perfClanTag),
+              !clanCapitalStates.keys.contains(PerfSampleFixture.perfClanTag),
+              !clanWarStates.keys.contains(PerfSampleFixture.perfClanTag),
+              !clanStates.keys.contains(PerfSampleFixture.perfClanTag),
+              !trackedClans.contains(where: { $0.clanTag == PerfSampleFixture.perfClanTag }) else {
+            accountImportError = "已存在部落 #PERFCLAN 的数据，性能样本为避免覆盖而不加载。"
+            return false
+        }
 
         // 0. 预检：任何 fixture 读取/解析/解码失败都发生在状态变更之前。
         do {

@@ -95,4 +95,25 @@ final class AppModelPerfSeedTests: XCTestCase {
         XCTAssertNil(model.warLogState(for: "#PERFCLAN"))
         XCTAssertFalse(model.trackedClans.contains { $0.clanTag == "#PERFCLAN" })
     }
+
+    /// seed 必须拒绝已有 #PERFCLAN 部落跟踪/缓存：合法 tag 可能真实存在，
+    /// 即使无村庄快照也不能覆盖已有部落数据。
+    @MainActor
+    func testLoadPerformanceSampleRefusesExistingPerfClanData() throws {
+        let model = AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
+        let fixtureDirectory = try XCTUnwrap(Bundle.module.resourceURL)
+        // 无村庄数据，但已有 #PERFCLAN 跟踪部落。
+        guard case .success = model.addTrackedClan(rawTag: "#PERFCLAN", displayName: nil) else {
+            XCTFail("addTrackedClan should succeed on empty store")
+            return
+        }
+
+        XCTAssertFalse(model.loadPerformanceSample(fixtureDirectory: fixtureDirectory))
+        // 未被覆盖：村庄仍为占位、跟踪保留、无 war/raid 缓存写入。
+        XCTAssertEqual(model.villages.count, 1)
+        XCTAssertFalse(model.villages[0].hasImportedData)
+        XCTAssertTrue(model.trackedClans.contains { $0.clanTag == "#PERFCLAN" })
+        XCTAssertNil(model.warLogState(for: "#PERFCLAN"))
+        XCTAssertNil(model.capitalState(for: "#PERFCLAN"))
+    }
 }

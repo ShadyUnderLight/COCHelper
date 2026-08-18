@@ -25,9 +25,21 @@
   - `VillageItemState.preferredAssetURLs`
 - 负载只含整数（scale/count）与布尔（cache hit/miss），不得记录账号原文、token、URL 敏感参数、完整唯一 ID。
 
-## 复测命令
+## 复测命令（两步：Debug 加载 seed → Release 测量）
 ```bash
-# Release App（Instruments 可附加）
+# Step 1：Debug App 加载性能样本（唯一含 seed 入口的构建；release 无菜单）
+swift build
+mkdir -p .build/COCHelper.debug.app/Contents/MacOS .build/COCHelper.debug.app/Contents/Resources
+cp .build/arm64-apple-macosx/debug/COCHelper .build/COCHelper.debug.app/Contents/MacOS/COCHelper
+cp Resources/Info.plist .build/COCHelper.debug.app/Contents/Info.plist
+cp Resources/COCHelperAppIcon.icns .build/COCHelper.debug.app/Contents/Resources/COCHelperAppIcon.icns
+cp -R .build/arm64-apple-macosx/debug/COCHelper_COCHelperCore.bundle .build/COCHelper.debug.app/
+cp -R .build/arm64-apple-macosx/debug/COCHelper_COCHelperApp.bundle .build/COCHelper.debug.app/
+open .build/COCHelper.debug.app
+# 菜单「性能样本」→ 加载性能样本（隐藏）（⌘⇧P）→ 自动导入 3 村庄 +
+# manual active/completed + conflict + war/raid 多页缓存（无村庄/部落数据时生效）
+
+# Step 2：Release App 测量（Instruments 可附加，读 Step 1 写入的 seed 数据）
 scripts/build_app.sh
 open .build/COCHelper.app
 
@@ -41,6 +53,9 @@ git diff --check
 # 3. Allocations/VM Tracker：图片解码内存与回收
 # 4. 若启用 OSSignpost：Profile → os_signpost 区间（投影调用次数/耗时）
 ```
+> Debug 与 Release 的 bundle id 相同（com.local.coc-helper），共用 Application Support 数据，
+> 因此 Step 1 写入的 seed 数据可被 Step 2 的 Release app 读取。若用户已有真实村庄/部落数据，
+> seed 会拒绝加载（不覆盖用户数据），此时直接测量用户自己的数据即可。
 
 ## 基线报告存放
 - 每场景记录文件建议：`Tools/perf/results/2026-08-18/<场景>-<冷|热>.md`

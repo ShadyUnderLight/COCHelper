@@ -22,8 +22,12 @@
   - `CraftTableProjection.project`
   - `UpgradeOverviewProjection.overviewRecords`
   - `UpgradeOverviewProjection.overviewState`
-  - `VillageItemState.preferredAssetURLs`
-- 负载只含整数（scale/count）与布尔（cache hit/miss），不得记录账号原文、token、URL 敏感参数、完整唯一 ID。
+  - `VillageItemState.preferredAssetURLs`（候选 URL 探测）
+  - `NSImage.contentsOf`（滚动路径同步图片解码，app target 埋点）
+- 负载只含整数（scale/count）与布尔（cache hit/miss / succeeded/ok）：
+  - 投影/候选探测用 `cache=%d`、`count=%d`；
+  - 图片解码用 `ok=%d`（`PerformanceSignpost.end` 的 `succeeded` 负载，表达解码成功/失败，本路径无缓存概念）。
+  不得记录账号原文、token、URL 敏感参数、完整唯一 ID。
 
 ## 复测命令（两步：Debug 加载 seed → Release 测量）
 ```bash

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import COCHelperCore
+import COCHelperApp
 
 /// Issue #65：精制台专用的 Defense → Module 只读表。
 ///
@@ -153,17 +154,17 @@ private struct CraftTableAssetIcon: View {
     let fallback: String
     let size: CGFloat
 
+    /// Issue #198：同步解码收敛到 `ResourceIconView`（后台 actor + session cache），
+    /// 精制台专用图标与列表/详情共用缓存；回退 SF Symbol 语义不变。
     var body: some View {
-        if let url, let image = PerformanceImageDecode.firstDecodable([url]) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: size, height: size)
-        } else {
-            Image(systemName: fallback)
-                .font(.system(size: size * 0.58, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: size, height: size)
-        }
+        ResourceIconView(
+            urls: url.map { [$0] } ?? [],
+            slotSize: size,
+            systemImage: fallback,
+            tint: .secondary,
+            symbolFont: .system(size: size * 0.58, weight: .semibold),
+            pngHelp: "游戏资源图标",
+            sfHelp: "游戏资源图标"
+        )
     }
 }

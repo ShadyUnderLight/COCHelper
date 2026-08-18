@@ -299,21 +299,22 @@ struct OfficialPlayerCardView: View {
 
     /// APK 原生图标优先；资源丢失或无法解码时回退系统图标，避免官方卡片
     /// 因静态资源问题消失。PNG 自带游戏原色，因此不套用标题的 secondary 色。
-    @ViewBuilder
+    /// Issue #198：同步解码收敛到 `ResourceIconView`（后台 actor + session cache），
+    /// 图标槽位固定（20pt），回退语义不变；装饰性图标对辅助功能隐藏。
     private func sectionIcon(
         _ icon: OfficialPlayerCardIcon,
         fallbackSystemImage: String
     ) -> some View {
-        if let url = icon.bundledURL(), let image = PerformanceImageDecode.firstDecodable([url]) {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 20, height: 20)
-                .accessibilityHidden(true)
-        } else {
-            Image(systemName: fallbackSystemImage)
-        }
+        ResourceIconView(
+            urls: icon.bundledURL().map { [$0] } ?? [],
+            slotSize: 20,
+            systemImage: fallbackSystemImage,
+            tint: .primary,
+            symbolFont: .body,
+            pngHelp: "游戏资源图标",
+            sfHelp: "游戏资源图标"
+        )
+        .accessibilityHidden(true)
     }
 
     /// 参战偏好：官方文档化取值映射（out/in/always/any/never）。

@@ -142,6 +142,31 @@ final class ClanPaginationDecodeTests: XCTestCase {
         )
     }
 
+    /// Issue #199 回归：字典字段（badgeUrls）插入顺序不同、语义相同 → 键必须相同。
+    /// 默认 JSONEncoder 对 Dictionary 迭代顺序不稳定（同键不同插入顺序输出不同
+    /// JSON），`.sortedKeys` 是必要防御。
+    func testIssue199CapitalRaidStableIdentityKeyIgnoresDictionaryInsertionOrder() throws {
+        // 语义相同、仅 badgeUrls 键插入顺序不同的两个赛季（解码后 == 相等）。
+        let jsonA = #"{"items":[{"state":"ended","attackLog":[{"defender":{"name":"x","badgeUrls":{"small":"s","medium":"m","large":"l"}},"attackCount":1}]}]}"#
+        let jsonB = #"{"items":[{"state":"ended","attackLog":[{"defender":{"name":"x","badgeUrls":{"large":"l","medium":"m","small":"s"}},"attackCount":1}]}]}"#
+        let seasonA = try XCTUnwrap(
+            try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(jsonA.utf8)).items.first
+        )
+        let seasonB = try XCTUnwrap(
+            try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(jsonB.utf8)).items.first
+        )
+        XCTAssertEqual(seasonA, seasonB, "回归前提：两个赛季语义必须完全相同")
+
+        // 回归前提：默认编码（无 sortedKeys）对这两个字典确实产生不同输出——
+        // 证明测试环境里两个字典迭代顺序不同，能真正拦截旧实现。
+        let unsortedA = try JSONEncoder().encode(seasonA)
+        let unsortedB = try JSONEncoder().encode(seasonB)
+        XCTAssertNotEqual(unsortedA, unsortedB, "回归前提：默认 JSONEncoder 对字典插入顺序敏感")
+
+        // 契约：stableIdentityKey 必须与字典插入顺序无关。
+        XCTAssertEqual(seasonA.stableIdentityKey, seasonB.stableIdentityKey)
+    }
+
     // MARK: - 突袭周末成员/攻防日志（Issue #20）
 
     func testDecodeCapitalRaidMembers() throws {

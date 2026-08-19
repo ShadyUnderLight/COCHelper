@@ -346,7 +346,12 @@ public extension OfficialCapitalRaidSeason {
     /// defenseLog）保证唯一。跨分页累计不变、确定性（合成 Codable 按键声明
     /// 顺序编码，同版本结构输出稳定）。
     var stableIdentityKey: String {
-        guard let data = try? JSONEncoder().encode(self) else {
+        let encoder = JSONEncoder()
+        // 关键：`.sortedKeys`——完整内容含 `badgeUrls: [String: String]` 等
+        // 字典字段，Swift Dictionary 迭代顺序不稳定（同语义不同插入顺序会
+        // 产生不同 JSON），必须按键排序才能保证「语义相同 → 键相同」。
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(self) else {
             return "season:" + String(reflecting: self)
         }
         return "season:" + data.base64EncodedString()

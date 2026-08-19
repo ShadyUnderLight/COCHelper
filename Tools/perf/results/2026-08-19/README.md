@@ -12,7 +12,10 @@
 | 04 Account Data（含 war/raid 多页） | ☐ | ☐ |
 | 05 窄窗口横向阶梯滚动 | ☐ | ☐ |
 
+> 每份文档的「原始指标摘要」含 60s tick / 导入变化 / manual action / 分页加载独立行——
+> 这些触发源必须单独采样，不得与滚动混成一个数字（#209 要求，见 perf_scenarios.md「记录要求」）。
+
 ## 说明
-- 模板字段结构见 `Tools/perf/baseline_format.md`；场景操作见 `Tools/perf/perf_scenarios.md`。
+- 模板字段结构见 `Tools/perf/baseline_format.md`；场景操作见 `Tools/perf/perf_scenarios.md`；冷/热操作步骤已按采样拆分到各文档。
 - 采样完成后：每份文档回链 #196/#209；后续 #210/#211/#212 合并后用同一 fixture/窗口/场景复测，结果追加到本目录并保持前后对比。
 - 采样产物不得包含真实账号数据、token、cookie 或完整敏感 ID。

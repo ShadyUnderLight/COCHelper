@@ -1,20 +1,20 @@
 # Village Detail：全部分类、默认排序连续滚动（热缓存再次滚动）
 
-> Issue #209 基线采样文档。本文件为模板：静态信息已填，**指标字段待 Instruments 采样后填写**，
+> Issue #209 基线采样文档。静态信息已填，**指标字段待 Instruments 采样后填写**，
 > 采样完成后删除「待采样」标注并回链 #196/#209。
 
 ## 操作步骤
-1. Debug app 加载性能样本（⌘⇧P），Release app 打开村庄 A（#ANONYMIZED）详情页（冷启动 = 首次进入）。
-2. base = 主村、筛选 = 全部、排序默认。
-3. 连续上下滚动 10 秒，覆盖全部建筑组卡与列表行。
+1. 前置：冷启动采样（`01-village-detail-scroll-cold.md`）已完成，app 保持打开，滚动已停止——数据处于热缓存状态。
+2. base = 主村、筛选 = 全部、排序默认，重新进入村庄 A（#ANONYMIZED）详情页。
+3. 滚动停止后再次连续上下滚动 10 秒，覆盖全部建筑组卡与列表行。
 4. 记录：hitch 次数/最长 hitch、主线程阻塞区间、projection 调用次数/耗时、图片候选/解码/失败、内存峰值。
-5. 热缓存：滚动停止后再次滚动 10 秒（本文档对应 热缓存再次滚动）。
+5. 本次仅记录热缓存段；首次进入段见 `01-village-detail-scroll-cold.md`，不得混入同一采样。
 
 ## fixture 与数据规模
 - seed 路径：Debug app「性能样本」菜单（⌘⇧P）加载，3 村庄 + manual active/completed + conflict + war/raid 多页缓存
 - perf_account_snapshot_home: 516 / builder: 467 / mixed: 521 / variant: 516（顶层数组元素合计）
 - perf_war_log_page_01..03: 10 / 10 / 10 条；perf_capital_raid_page_01..03: 6 / 6 / 5 条
-- 未加载任何真实账号数据（fixtures 已匿名）
+- 未加载任何真实账号数据（fixtures 已匿名；若本机已有真实村庄/部落数据，seed 拒绝加载，此时本文件「未加载真实数据」陈述不成立，须在采样备注中说明）
 
 ## 环境和 commit SHA
 - 被测 commit SHA：`origin/main@d3b57e8164f81e292a023b052e455085565c3dbb`（Issue #209 锁定基线）
@@ -35,6 +35,10 @@
 | 图片候选探测 / 成功解码 / 失败候选 | 待采样 | OSSignpost + Allocations |
 | 峰值内存 / 短时分配 / 停止后回收 | 待采样 | Allocations / VM Tracker |
 | 可见行数 / row 构建数 / 重复构建数 | 待采样 | 若可观测 |
+| 60s tick 触发后的阻塞区间（独立记录） | 待采样 | 不得与滚动混计为一个数字 |
+| 导入/账号数据变化后的行为（独立记录） | 待采样 | 触发源单独采样 |
+| manual action 后的行为（独立记录） | 待采样 | 触发源单独采样 |
+| 分页加载后的滚动 hitch 与解码内存（独立记录） | 待采样 | 场景 4 必填；其他场景如有分页同样记录 |
 
 ## 前 3 个主线程热点（待采样）
 1. 待采样
@@ -47,7 +51,29 @@
 
 ## 复测命令
 ```bash
-# Step 1：Debug app 加载性能样本（⌘⇧P）→ Step 2：Release app 测量
-scripts/build_app.sh && open .build/COCHelper.app
-# Instruments：Animation Hitches / Time Profiler / Allocations，滚动 10 秒
+# Step 1：Debug App 加载性能样本（唯一含 seed 入口的构建；release 无菜单）
+swift build
+mkdir -p .build/COCHelper.debug.app/Contents/MacOS .build/COCHelper.debug.app/Contents/Resources
+cp .build/arm64-apple-macosx/debug/COCHelper .build/COCHelper.debug.app/Contents/MacOS/COCHelper
+cp Resources/Info.plist .build/COCHelper.debug.app/Contents/Info.plist
+cp Resources/COCHelperAppIcon.icns .build/COCHelper.debug.app/Contents/Resources/COCHelperAppIcon.icns
+cp -R .build/arm64-apple-macosx/debug/COCHelper_COCHelperCore.bundle .build/COCHelper.debug.app/
+cp -R .build/arm64-apple-macosx/debug/COCHelper_COCHelperApp.bundle .build/COCHelper.debug.app/
+open .build/COCHelper.debug.app
+# 菜单「性能样本」→ 加载性能样本（隐藏）（⌘⇧P）；若已有真实村庄/部落数据 seed 会拒绝加载
+
+# Step 2：Release App 测量（Instruments 可附加，读 Step 1 写入的 seed 数据）
+scripts/build_app.sh
+open .build/COCHelper.app
+
+# 门禁（不设 wall-clock 阈值）
+swift test
+git diff --check
+
+# Instruments（人工，按本文档指标表逐项采集）
+# 1. Animation Hitches：滚动 10 秒场景
+# 2. Time Profiler：主线程热点，取前 3
+# 3. Allocations / VM Tracker：图片解码内存与回收
+# 4. OSSignpost：Profile → os_signpost 区间（投影调用次数/耗时；事件名见 Tools/perf/baseline_format.md）
+# 5. 60s tick / 导入 / manual action / 分页加载：单独采样，不与滚动混计
 ```

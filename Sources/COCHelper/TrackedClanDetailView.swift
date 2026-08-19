@@ -21,7 +21,8 @@ struct TrackedClanDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            // Issue #199：部落详情页容器改为 LazyVStack，卡片按需构建。
+            LazyVStack(alignment: .leading, spacing: 16) {
                 header
                 ClanCardView(clanTag: clanTag)
                 ClanWarCardView(clanTag: clanTag)

@@ -231,7 +231,13 @@ struct VillageDetailView: View {
         )
 
         return ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            // Issue #199：根容器改为 LazyVStack，60s tick / 筛选 / 排序切换时
+            // 只构建可见区域内的 section card，避免全量重建 ~500 项视图树。
+            // groupedRows 保持普通 VStack；BuildingGroupCard.instanceList 已改为
+            // LazyVStack（在 section 不可见时可避免构建），但嵌套在外层 LazyVStack
+            // 内时实例虚拟化可能被完全展开（SwiftUI 已知行为）。
+            // section 级虚拟化是主要收益。
+            LazyVStack(alignment: .leading, spacing: 18) {
                 header(village: village, projection: projection, now: now)
                 officialAPISection()
                 SnapshotHistoryView(
@@ -269,8 +275,7 @@ struct VillageDetailView: View {
                     }
                 }
             }
-            // 撑满窗口宽度：ScrollView 内 VStack(alignment: .leading) 默认按内容
-            // 理想宽度布局（实测 1180pt 窗口内容只占 ~600pt，右侧大片空白）；
+            // 撑满窗口宽度：LazyVStack 内与旧 VStack 同语义——
             // 官方玩家卡等自适布局依赖完整提议宽度（Issue #49 窗口级验收）。
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)

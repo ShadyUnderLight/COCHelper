@@ -37,8 +37,12 @@ struct BuildingGroupCard: View {
     /// 实例区：每条记录一个实例块（头部行 + 内嵌阶梯），实例块间分隔线。
     /// `BuildingInstance` 是 Identifiable（id = 原始快照记录 ID，组内唯一），
     /// 末位判断用 `last?.id` 与 `LevelDetailSheet` 逐级行先例一致。
+    ///
+    /// Issue #199：VStack→LazyVStack，嵌套在外层 LazyVStack 内时实例虚拟化
+    /// 可能被完全展开（SwiftUI 嵌套 lazy 容器已知行为）；section 级虚拟化是主要
+    /// 收益，此处 LazyVStack 保证实例区在 section 不可见时不被构建。
     private var instanceList: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(group.instances) { instance in
                 instanceBlock(instance)
                 if instance.id != group.instances.last?.id {

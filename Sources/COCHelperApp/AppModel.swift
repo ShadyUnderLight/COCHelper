@@ -274,6 +274,73 @@ public final class AppModel: ObservableObject {
     /// 精制台 Defense/Module 目录独立于普通升级目录；缺失时只降级为未知状态。
     public private(set) lazy var craftTableCatalog: CraftTableCatalog? = CraftTableCatalog.loadBundled()
 
+    // MARK: - Issue #200 渲染缓存
+
+    /// 目录/阶段表内容纪元：游戏目录、精制台目录或阶段表热更新时递增，
+    /// 作为投影缓存 key 的一部分。当前 bundled 目录为 lazy 只读（恒 0）；
+    /// 保留递增点供未来热更新路径使用（缓存 key 变化 → 自动重建）。
+    public private(set) var catalogEpoch = 0
+
+    /// 村庄静态投影缓存（key = 内容身份，命中后动态刷新）。
+    /// @MainActor 持有；同步访问，无后台计算。
+    private let projectionCache = VillageProjectionCache()
+
+    /// Issue #200：村庄详情渲染入口（缓存命中 + 动态刷新）。
+    /// 输出与直接 `VillageCatalogProjection.project` 一致。
+    public func villageRender(
+        villageID: UUID, base: TrackerBase, now: Date
+    ) -> VillageProjectionCache.RenderResult? {
+        guard let village = villages.first(where: { $0.id == villageID }) else {
+            return nil
+        }
+        return projectionCache.render(
+            village: village,
+            catalog: gameCatalog,
+            craftTableCatalog: craftTableCatalog,
+            seasonalPhases: seasonalPhases,
+            base: base,
+            now: now,
+            manualUpgradeCore: manualUpgradeCores[villageID],
+            catalogEpoch: catalogEpoch
+        )
+    }
+
+    /// Issue #200：升级总览单趟渲染入口（缓存 provider 注入）。
+    /// 输出与 `overviewRecords` + `overviewState` 一致；村庄投影走缓存
+    /// （每 village×base 一次投影，tick 间动态刷新）。`villages` 限定
+    /// 渲染范围（「全部村庄」传 `self.villages`，「当前村庄」传单元素数组）。
+    public func overviewRender(
+        for villages: [VillageProfile], now: Date
+    ) -> UpgradeOverviewRender {
+        // 局部快照避免闭包捕获 MainActor 隔离属性（Swift 6 并发检查）。
+        let catalog = gameCatalog
+        let craftTableCatalog = craftTableCatalog
+        let seasonalPhases = seasonalPhases
+        let cores = manualUpgradeCores
+        let epoch = catalogEpoch
+        let cache = projectionCache
+        let provider: VillageProjectionProvider = { village, base, now in
+            cache.render(
+                village: village,
+                catalog: catalog,
+                craftTableCatalog: craftTableCatalog,
+                seasonalPhases: seasonalPhases,
+                base: base,
+                now: now,
+                manualUpgradeCore: cores[village.id],
+                catalogEpoch: epoch
+            ).projection
+        }
+        return UpgradeOverviewProjection.overviewRender(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            manualUpgradeCores: cores,
+            at: now,
+            projectionProvider: provider
+        )
+    }
+
     private let defaults: UserDefaults
     private let legacyAccountSnapshotStorageKey = "coc-helper.account-snapshot.v1"
     private let villagesStorageKey = "coc-helper.villages.v1"

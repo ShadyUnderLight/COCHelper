@@ -5,7 +5,7 @@
 
 ## 操作步骤
 1. 前置：冷启动采样（`03-upgrade-overview-cold.md`）已完成，app 保持打开——数据处于热缓存状态。
-2. 重新打开总览页，滚动 active / pending / recently completed / attention 各面板各 10 秒。
+2. 保持当前页（不离开总览页），滚动 active / pending / recently completed / attention 各面板各 10 秒。
 3. 记录各面板 hitch 与投影调用（热缓存段）；首次进入段见 `03-upgrade-overview-cold.md`，不得混入同一采样。
 
 ## fixture 与数据规模
@@ -37,6 +37,13 @@
 | 导入/账号数据变化后的行为（独立记录） | 待采样 | 触发源单独采样 |
 | manual action 后的行为（独立记录） | 待采样 | 触发源单独采样 |
 | 分页加载后的滚动 hitch 与解码内存（独立记录） | 待采样 | 场景 4 必填；其他场景如有分页同样记录 |
+
+## 触发源独立采样（与滚动分开记录）
+每次触发源变更后单独开一次 trace，不得与滚动混进同一次记录：
+- 60s tick：停在当前页不操作，等 Timeline 60 秒 tick 触发，记录该 tick 的投影调用/主线程阻塞；
+- 导入变化：导入/替换一个账号快照后，立即记录重建与首次滚动；热缓存段用同一 fixture 重复导入一次；
+- manual action：新建/完成一个 manual 升级后，记录投影与列表行重建；
+- 分页加载：war log / capital raid 滚动到页尾触发下一页加载，单独记录加载期间的 hitch 与解码内存（场景 4 必填，其他场景如有分页同样记录）。
 
 ## 前 3 个主线程热点（待采样）
 1. 待采样

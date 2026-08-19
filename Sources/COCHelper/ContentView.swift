@@ -675,6 +675,7 @@ struct UpgradeTrackerView: View {
 
                 if let village {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
+                        // Issue #200：走 AppModel 缓存渲染（单趟组合，tick 间动态刷新）。
                         TrackerOverviewContent(
                             villages: [village],
                             catalog: model.gameCatalog,
@@ -682,11 +683,24 @@ struct UpgradeTrackerView: View {
                             manualUpgradeCores: manualUpgradeCores,
                             scopeLabel: "当前村庄",
                             panelTitle: village.name + " · 正在升级",
-                            now: context.date
+                            now: context.date,
+                            overviewProvider: {
+                                model.overviewRender(for: [village], now: $0)
+                            },
+                            projectionProvider: {
+                                model.villageRender(villageID: $0.id, base: $1, now: $2)?.projection
+                                    ?? VillageCatalogProjection.project(
+                                        village: $0, catalog: model.gameCatalog,
+                                        seasonalPhases: model.seasonalPhases,
+                                        base: $1, now: $2,
+                                        manualUpgradeCore: model.manualUpgradeCores[$0.id]
+                                    )
+                            }
                         )
                     }
                 } else if villageID == nil && model.villages.contains(where: \.hasImportedData) {
                     TimelineView(.periodic(from: Date(), by: 60)) { context in
+                        // Issue #200：走 AppModel 缓存渲染（单趟组合，tick 间动态刷新）。
                         TrackerOverviewContent(
                             villages: model.villages,
                             catalog: model.gameCatalog,
@@ -694,7 +708,19 @@ struct UpgradeTrackerView: View {
                             manualUpgradeCores: manualUpgradeCores,
                             scopeLabel: "全部村庄",
                             panelTitle: "全部村庄 · 正在升级",
-                            now: context.date
+                            now: context.date,
+                            overviewProvider: {
+                                model.overviewRender(for: model.villages, now: $0)
+                            },
+                            projectionProvider: {
+                                model.villageRender(villageID: $0.id, base: $1, now: $2)?.projection
+                                    ?? VillageCatalogProjection.project(
+                                        village: $0, catalog: model.gameCatalog,
+                                        seasonalPhases: model.seasonalPhases,
+                                        base: $1, now: $2,
+                                        manualUpgradeCore: model.manualUpgradeCores[$0.id]
+                                    )
+                            }
                         )
                     }
                 } else {
@@ -809,10 +835,16 @@ private struct TrackerOverviewContent: View {
     let scopeLabel: String
     let panelTitle: String
     let now: Date
+    /// Issue #200：单趟组合渲染入口（AppModel 注入缓存版本；nil = 直接计算）。
+    var overviewProvider: ((Date) -> UpgradeOverviewRender)? = nil
+    /// Issue #200 review P1：村庄投影 provider（透传给 TrackerMetricsView
+    /// 的聚合卡，避免每 tick 重跑完整投影；nil = 直接构建）。
+    var projectionProvider: VillageProjectionProvider? = nil
 
     var body: some View {
-        // 单趟投影：active + pending 一次算出，避免 60s tick 双倍投影（review fix）。
-        let combined = UpgradeOverviewProjection.overviewRecords(
+        // Issue #200：单趟组合——active/pending/state 一次齐备
+        //（默认直接计算，与 overviewRecords + overviewState 一致；注入时走缓存）。
+        let render = overviewProvider?(now) ?? UpgradeOverviewProjection.overviewRender(
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
@@ -823,27 +855,22 @@ private struct TrackerOverviewContent: View {
         VStack(alignment: .leading, spacing: 18) {
             TrackerMetricsView(
                 villages: villages,
-                records: combined.active,
+                records: render.active,
                 scopeLabel: scopeLabel,
                 catalog: catalog,
                 seasonalPhases: seasonalPhases,
-                now: now
+                now: now,
+                projectionProvider: projectionProvider
             )
             CatalogStatusNote(catalog: catalog)
             // Issue #144：本地手动升级状态面板（计数/最近完成/关注行）。
             ManualUpgradeStatePanel(
-                state: UpgradeOverviewProjection.overviewState(
-                    from: villages,
-                    catalog: catalog,
-                    seasonalPhases: seasonalPhases,
-                    manualUpgradeCores: manualUpgradeCores,
-                    at: now
-                ),
+                state: render.state,
                 now: now
             )
             ActiveUpgradesPanel(
-                records: combined.active,
-                pendingReimport: combined.pending,
+                records: render.active,
+                pendingReimport: render.pending,
                 now: now,
                 title: panelTitle
             )
@@ -902,6 +929,9 @@ private struct TrackerMetricsView: View {
     let catalog: GameCatalog?
     let seasonalPhases: SeasonalPhaseTable
     let now: Date
+    /// Issue #200 review P1：村庄投影 provider（AppModel 注入缓存版本，
+    /// 聚合卡不重跑完整投影；nil = 直接构建，行为不变）。
+    var projectionProvider: VillageProjectionProvider? = nil
 
     private var importedVillageCount: Int {
         villages.filter(\.hasImportedData).count
@@ -928,7 +958,8 @@ private struct TrackerMetricsView: View {
             from: villages,
             catalog: catalog,
             seasonalPhases: seasonalPhases,
-            now: now
+            now: now,
+            projectionProvider: projectionProvider
         )
     }
 

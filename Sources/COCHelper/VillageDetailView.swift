@@ -45,7 +45,16 @@ struct VillageDetailView: View {
         Group {
             if let village {
                 TimelineView(.periodic(from: Date(), by: 60)) { context in
-                    detailContent(village: village, now: context.date)
+                    // Issue #200：单趟缓存渲染（静态投影 + 组卡 + 精制台一次齐备，
+                    // tick 间动态刷新）。village 来自同一 villages 数组，render 恒非
+                    // nil；防御分支只做占位（理论不可达）。
+                    if let render = model.villageRender(
+                        villageID: village.id, base: selectedBase, now: context.date
+                    ) {
+                        detailContent(village: village, render: render, now: context.date)
+                    } else {
+                        ProgressView()
+                    }
                 }
             } else {
                 ContentUnavailableView(
@@ -131,18 +140,11 @@ struct VillageDetailView: View {
     /// 玩家信息（officialAPISection）→ 完成度/升级列表（metricsBar →
     /// basePicker → 分类筛选 → 分组列表）」。完成度条位于官方玩家信息之后、
     /// 基地选择之前。
-    private func detailContent(village: VillageProfile, now: Date) -> some View {
-        let projection = VillageCatalogProjection.project(
-            village: village,
-            catalog: catalog,
-            seasonalPhases: seasonalPhases,
-            // Issue #98 审核 F1：嵌套精工防御（主目录不 join）回查精制台目录
-            // lifecycle 声明，与精制台投影同口径（防同一防御两投影漂移）。
-            craftTableCatalog: craftTableCatalog,
-            base: selectedBase,
-            now: now,
-            manualUpgradeCore: manualUpgradeCore
-        )
+    private func detailContent(
+        village: VillageProfile, render: VillageProjectionCache.RenderResult, now: Date
+    ) -> some View {
+        // Issue #200：render 来自缓存（静态投影 + 组卡 + 精制台一次齐备）。
+        let projection = render.projection
         // 与升级总览（UpgradeOverviewProjection.allRecords）口径一致：
         // decos/helpers/obstacles 等不参与升级追踪的类别不展示、不计入完成度。
         let trackedItems = projection.items.filter { $0.status != .unavailable }
@@ -187,19 +189,9 @@ struct VillageDetailView: View {
         let groupIDs = groups.map(\.id)
         // Issue #45/#140：同类建筑组卡复用同一有效村庄投影的 rawItems，
         // 不重新从 snapshot 推导 prerequisite、lifecycle 或 manual 状态。
-        let buildingGroups = BuildingGroupProjection.project(
-            projection: projection,
-            catalog: catalog,
-            base: selectedBase,
-            manualUpgradeCore: manualUpgradeCore
-        )
-        let craftTable = CraftTableProjection.project(
-            village: village,
-            catalog: craftTableCatalog,
-            base: selectedBase,
-            seasonalPhases: seasonalPhases,
-            now: now
-        )
+        // Issue #200：组卡随缓存 render 一次齐备（动态刷新后派生）。
+        let buildingGroups = render.buildingGroups
+        let craftTable = render.craftTable
         // 原始快照记录 id → 组。BuildingInstance.id 与 VillageItemState.id 同源
         //（同一条快照记录），但聚合层记录 id 带 agg: 前缀，查找键需归一化
         //（rawRecordID）。快照记录 id 全局唯一，字典 1:1。

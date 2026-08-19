@@ -1059,3 +1059,36 @@ private extension VillageProgressMetrics {
         )
     }
 }
+
+// MARK: - Issue #200 动态刷新
+
+extension EffectiveVillageItemState {
+    /// 复制自身并替换 importedRemainingSeconds（动态刷新专用；不改任何静态字段）。
+    /// 到期/状态翻转由缓存层在 expired 时重建处理（issue #200）。
+    public func withImportedRemainingSeconds(_ newValue: Int64?) -> EffectiveVillageItemState {
+        EffectiveVillageItemState(
+            itemKey: itemKey,
+            rawItemID: rawItemID,
+            importedCurrentLevel: importedCurrentLevel,
+            importedCount: importedCount,
+            importedInstanceWeight: importedInstanceWeight,
+            importedCountOverflowed: importedCountOverflowed,
+            importedCountQuality: importedCountQuality,
+            importedTimerSeconds: importedTimerSeconds,
+            importedRemainingSeconds: newValue,
+            importedDistribution: importedDistribution,
+            manualCompletedDistribution: manualCompletedDistribution,
+            activeManualRecords: activeManualRecords,
+            activeTargetDistribution: activeTargetDistribution,
+            effectiveCompletedDistribution: effectiveCompletedDistribution,
+            status: status,
+            provenance: provenance,
+            diagnostic: diagnostic,
+            catalogDurationState: catalogDurationState,
+            catalogCosts: catalogCosts,
+            catalogNextUpgrade: catalogNextUpgrade,
+            currentStageMaxLevel: currentStageMaxLevel,
+            globalMaxLevel: globalMaxLevel
+        )
+    }
+}

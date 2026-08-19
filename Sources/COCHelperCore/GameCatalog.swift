@@ -384,6 +384,23 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
         availability(forItemKey: key, lifecycle: nil, at: date)
     }
 
+    /// 计算 `date` 所在的 phase 边界区间（Issue #200 投影缓存时间桶）。
+    ///
+    /// 边界集合 = 所有合法阶段（from < until，与 `availability` 判定同口径）
+    /// 的 from/until；空表 → 单一无限区间。区间内任意时刻的
+    /// `availability(forItemKey:lifecycle:at:)` 结果恒定（phase 选择与
+    /// notStarted/active/ended 状态都不跨边界变化），因此作为村庄静态投影
+    /// 缓存的时间维度，`now` 本身不得进入缓存键。
+    public func bucket(at date: Date) -> PhaseBucket {
+        let boundaries = phases
+            .filter { $0.from < $0.until }  // 与 availability 同口径过滤非法区间
+            .flatMap { [$0.from, $0.until] }
+            .sorted()
+        let start = boundaries.last(where: { $0 <= date }) ?? .distantPast
+        let end = boundaries.first(where: { $0 > date }) ?? .distantFuture
+        return PhaseBucket(tableIdentity: hashValue, start: start, end: end)
+    }
+
     /// bundled 加载：`GameCatalog/<version>/seasonal_phases.json`；
     /// 文件缺失或解码失败 → 空表（不报错——阶段信息是增强数据，缺失 = 未配置）。
     public static func loadBundled(version: String) -> SeasonalPhaseTable {
@@ -397,6 +414,29 @@ public struct SeasonalPhaseTable: Codable, Hashable, Sendable {
             return .empty
         }
         return table
+    }
+}
+
+// MARK: - Issue #200 Phase bucket（投影缓存的时间桶）
+
+/// `SeasonalPhaseTable` 在指定时刻的投影时间桶。
+///
+/// bucket = 所有合法阶段（from < until，与 `availability` 判定同口径）的
+/// from/until 边界集合中 `date` 所在区间。区间内任意时刻的
+/// `availability(forItemKey:lifecycle:at:)` 结果恒定，因此作为村庄静态投影
+/// 缓存的时间维度；`now` 本身不得进入缓存键（issue #200 实现要求 1）。
+public struct PhaseBucket: Hashable, Sendable {
+    /// 阶段表内容身份（`hashValue`；表小，直接内容 hash）。
+    public let tableIdentity: Int
+    /// 区间起点（含；无更早边界时为 distantPast）。
+    public let start: Date
+    /// 区间终点（不含；无更晚边界时为 distantFuture）。
+    public let end: Date
+
+    public init(tableIdentity: Int, start: Date, end: Date) {
+        self.tableIdentity = tableIdentity
+        self.start = start
+        self.end = end
     }
 }
 

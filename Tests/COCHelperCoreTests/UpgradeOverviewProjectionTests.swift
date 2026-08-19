@@ -1025,4 +1025,86 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
         XCTAssertTrue(projection.items.allSatisfy { $0.status != .available },
                       "旧目录不得产出宇宙差集项")
     }
+
+    // MARK: - Issue #200 单趟组合入口
+
+    func testOverviewRenderMatchesLegacyAPIs() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let village = makeVillage(name: "A村", tag: "#AAAA", objectSections: [
+            "buildings": [
+                // 升级中：出现在 active。
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 100, path: "0"),
+                // 已完成：不进 active/pending。
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1, path: "1"),
+                // 需重新导入（remaining 归零 + 计时未补齐）→ pending。
+                makeItem(section: "buildings", dataID: 1_000_001, level: 2,
+                         timerSeconds: 0, remainingSeconds: 0, path: "2"),
+            ],
+        ])
+
+        let render = UpgradeOverviewProjection.overviewRender(
+            from: [village], catalog: syntheticCatalog, at: now
+        )
+        let (active, pending) = UpgradeOverviewProjection.overviewRecords(
+            from: [village], catalog: syntheticCatalog, at: now
+        )
+        let state = UpgradeOverviewProjection.overviewState(
+            from: [village], catalog: syntheticCatalog, at: now
+        )
+
+        // active/pending 与旧入口逐条一致。
+        XCTAssertEqual(render.active, active)
+        XCTAssertEqual(render.pending, pending)
+        // state 各字段与旧入口一致（UpgradeOverviewState 非 Equatable，逐字段比）。
+        XCTAssertEqual(render.state.manualActiveCount, state.manualActiveCount)
+        XCTAssertEqual(render.state.importedActiveCount, state.importedActiveCount)
+        XCTAssertEqual(render.state.deduplicatedDisplayCount, state.deduplicatedDisplayCount)
+        XCTAssertEqual(render.state.manualCompletedCount, state.manualCompletedCount)
+        XCTAssertEqual(render.state.completedRecently, state.completedRecently)
+        XCTAssertEqual(render.state.activeRecords, state.activeRecords)
+        XCTAssertEqual(render.state.attentionRecords, state.attentionRecords)
+        XCTAssertEqual(render.state.needsReimportRecords, state.needsReimportRecords)
+        // 组合入口内部 state 的 active 与 render.active 同源。
+        XCTAssertEqual(render.state.activeRecords, render.active)
+    }
+
+    func testOverviewRenderSinglePassProjection() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let villageA = makeVillage(name: "A村", tag: "#AAAA", objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 100, path: "0"),
+            ],
+        ])
+        let villageB = makeVillage(name: "B村", tag: "#BBBB", objectSections: [
+            "buildings": [
+                makeItem(section: "buildings", dataID: 1_000_001, level: 1,
+                         timerSeconds: 600, remainingSeconds: 200, path: "0"),
+            ],
+        ])
+        let villages = [villageA, villageB]
+
+        // 计数 provider：每 village×base 恰好一次投影 → 单趟证明。
+        var callCount = 0
+        let provider: VillageProjectionProvider = { village, base, callNow in
+            callCount += 1
+            return VillageCatalogProjection.project(
+                village: village, catalog: nil, base: base, now: callNow
+            )
+        }
+        let render = UpgradeOverviewProjection.overviewRender(
+            from: villages, catalog: nil, at: now, projectionProvider: provider
+        )
+        XCTAssertEqual(callCount, villages.count * TrackerBase.allCases.count,
+                       "单趟组合：每个村庄×基地只投影一次")
+
+        // golden：自定义 provider 与默认 provider 输出一致。
+        let reference = UpgradeOverviewProjection.overviewRender(
+            from: villages, catalog: nil, at: now
+        )
+        XCTAssertEqual(render.active, reference.active)
+        XCTAssertEqual(render.pending, reference.pending)
+        XCTAssertEqual(render.state.activeRecords, reference.state.activeRecords)
+    }
 }

@@ -285,6 +285,11 @@ public final class AppModel: ObservableObject {
     /// @MainActor 持有；同步访问，无后台计算。
     private let projectionCache = VillageProjectionCache()
 
+    /// Issue #200：投影缓存统计（测试钩子，@testable 可见；生产不消费）。
+    var projectionCacheStats: (buildCount: Int, hitCount: Int) {
+        (projectionCache.buildCount, projectionCache.hitCount)
+    }
+
     /// Issue #200：村庄详情渲染入口（缓存命中 + 动态刷新）。
     /// 输出与直接 `VillageCatalogProjection.project` 一致。
     public func villageRender(
@@ -334,6 +339,7 @@ public final class AppModel: ObservableObject {
         return UpgradeOverviewProjection.overviewRender(
             from: villages,
             catalog: catalog,
+            craftTableCatalog: craftTableCatalog,
             seasonalPhases: seasonalPhases,
             manualUpgradeCores: cores,
             at: now,

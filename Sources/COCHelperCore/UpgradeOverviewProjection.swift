@@ -81,6 +81,7 @@ public enum UpgradeOverviewProjection {
     public static func overviewRender(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog? = nil,
         seasonalPhases: SeasonalPhaseTable = .empty,
         manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date(),
@@ -90,12 +91,14 @@ public enum UpgradeOverviewProjection {
         overviewRenderCore(
             from: villages,
             catalog: catalog,
+            craftTableCatalog: craftTableCatalog,
             seasonalPhases: seasonalPhases,
             manualUpgradeCores: manualUpgradeCores,
             at: now,
             recentlyCompletedWindow: recentlyCompletedWindow,
             projectionProvider: projectionProvider ?? defaultProjectionProvider(
                 catalog: catalog,
+                craftTableCatalog: craftTableCatalog,
                 seasonalPhases: seasonalPhases,
                 manualUpgradeCores: manualUpgradeCores
             )
@@ -105,6 +108,7 @@ public enum UpgradeOverviewProjection {
     /// 默认村庄投影 provider（直接构建，与现状每 tick 全量投影一致）。
     public static func defaultProjectionProvider(
         catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog? = nil,
         seasonalPhases: SeasonalPhaseTable,
         manualUpgradeCores: [UUID: ManualUpgradeCore]
     ) -> VillageProjectionProvider {
@@ -112,7 +116,10 @@ public enum UpgradeOverviewProjection {
             VillageCatalogProjection.project(
                 village: village,
                 catalog: catalog,
+                // Issue #98 审核 F1：嵌套精工防御回查精制台目录（与详情页同口径，
+                // 防同一防御两投影 availability/lifecycle 漂移）。
                 seasonalPhases: seasonalPhases,
+                craftTableCatalog: craftTableCatalog,
                 base: base,
                 now: now,
                 manualUpgradeCore: manualUpgradeCores[village.id]
@@ -124,6 +131,7 @@ public enum UpgradeOverviewProjection {
     private static func overviewRenderCore(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?,
         seasonalPhases: SeasonalPhaseTable,
         manualUpgradeCores: [UUID: ManualUpgradeCore],
         at now: Date,
@@ -133,6 +141,7 @@ public enum UpgradeOverviewProjection {
         let records = allRecords(
             from: villages,
             catalog: catalog,
+            craftTableCatalog: craftTableCatalog,
             seasonalPhases: seasonalPhases,
             manualUpgradeCores: manualUpgradeCores,
             at: now,
@@ -168,6 +177,7 @@ public enum UpgradeOverviewProjection {
     public static func overviewRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog? = nil,
         seasonalPhases: SeasonalPhaseTable = .empty,
         manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date()
@@ -184,6 +194,7 @@ public enum UpgradeOverviewProjection {
         let records = allRecords(
             from: villages,
             catalog: catalog,
+            craftTableCatalog: craftTableCatalog,
             seasonalPhases: seasonalPhases,
             manualUpgradeCores: manualUpgradeCores,
             at: now
@@ -283,6 +294,7 @@ public enum UpgradeOverviewProjection {
     private static func allRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog?,
         seasonalPhases: SeasonalPhaseTable,
         manualUpgradeCores: [UUID: ManualUpgradeCore],
         at now: Date,
@@ -290,6 +302,7 @@ public enum UpgradeOverviewProjection {
     ) -> [UpgradeDisplayRecord] {
         let provider = projectionProvider ?? defaultProjectionProvider(
             catalog: catalog,
+            craftTableCatalog: craftTableCatalog,
             seasonalPhases: seasonalPhases,
             manualUpgradeCores: manualUpgradeCores
         )
@@ -410,6 +423,7 @@ extension UpgradeOverviewProjection {
     public static func overviewState(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
+        craftTableCatalog: CraftTableCatalog? = nil,
         seasonalPhases: SeasonalPhaseTable = .empty,
         manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
         at now: Date = Date(),
@@ -427,6 +441,7 @@ extension UpgradeOverviewProjection {
         let records = allRecords(
             from: villages,
             catalog: catalog,
+            craftTableCatalog: craftTableCatalog,
             seasonalPhases: seasonalPhases,
             manualUpgradeCores: manualUpgradeCores,
             at: now

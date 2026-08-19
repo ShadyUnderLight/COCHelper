@@ -188,7 +188,7 @@ final class PerfFixtureTests: XCTestCase {
     func testPerfFixtureManifestRecordsEnvironment() throws {
         let manifest = try JSONDecoder().decode(
             PerfFixtureManifest.self, from: fixtureData("perf_fixtures_manifest"))
-        XCTAssertEqual(manifest.baselineCommitSHA, "5a553481c67466cf92627caf27d1f18371a1fef8")
+        XCTAssertEqual(manifest.baselineCommitSHA, "d3b57e8164f81e292a023b052e455085565c3dbb")
         XCTAssertFalse(manifest.catalogFingerprint.isEmpty)
         XCTAssertFalse(manifest.macOSVersion.isEmpty)
         XCTAssertFalse(manifest.hardwareArchitecture.isEmpty)

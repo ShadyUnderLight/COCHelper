@@ -1,7 +1,8 @@
-# 性能基线格式与复测命令（Issue #197，供 #198/#199/#200 共用）
+# 性能基线格式与复测命令（Issue #197/#209，供 #210/#211/#212 复测共用）
 
 ## 环境记录（每次采样必填）
-- 基线 commit SHA（本 Issue = `origin/main@5a553481c67466cf92627caf27d1f18371a1fef8`）
+- 基线 commit SHA（本 Issue = `origin/main@d3b57e8164f81e292a023b052e455085565c3dbb`，Issue #209 锁定；
+  #197 初版基线 `5a553481c67466cf92627caf27d1f18371a1fef8` 仅作脚手架历史记录）
 - catalog manifest fingerprint：`Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json` 的 `catalog.json` sha256
 - macOS 版本 / 硬件架构 / Swift toolchain / 窗口尺寸 / 数据规模（fixture 名 + 条目数）
 
@@ -62,8 +63,9 @@ git diff --check
 > seed 会拒绝加载（不覆盖用户数据），此时直接测量用户自己的数据即可。
 
 ## 基线报告存放
-- 每场景记录文件建议：`Tools/perf/results/2026-08-18/<场景>-<冷|热>.md`
+- 每场景记录文件：`Tools/perf/results/2026-08-19/<场景>-<冷|热>.md`（Issue #209 首轮基线已建模板）
 - 内容：操作步骤、数据规模、环境、commit SHA、原始指标摘要、前三个主线程热点（未证明根因标记未知）。
 
 ## 后续 Issue 复测
-- #198 / #199 / #200 完成后，用同一 fixture 与场景重跑，保留前后对比（同格式）。
+- #210 / #211 / #212 完成后，用同一 fixture 与场景重跑，结果追加到 `Tools/perf/results/2026-08-19/`，保留前后对比（同格式）。
+- #198 / #199 / #200 已包含在当前基线 `d3b57e8` 内，无需再作为对比对象。

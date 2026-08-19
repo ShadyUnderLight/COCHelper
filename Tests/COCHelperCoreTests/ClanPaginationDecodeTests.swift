@@ -144,27 +144,54 @@ final class ClanPaginationDecodeTests: XCTestCase {
 
     /// Issue #199 回归：字典字段（badgeUrls）插入顺序不同、语义相同 → 键必须相同。
     /// 默认 JSONEncoder 对 Dictionary 迭代顺序不稳定（同键不同插入顺序输出不同
-    /// JSON），`.sortedKeys` 是必要防御。
+    /// JSON，且随进程 hash seed 变化），`.sortedKeys` 是必要防御。
+    /// 直接构造两个插入顺序不同的字典（不依赖 JSON 解码的字典迭代顺序——
+    /// 那本身不稳定，旧版前置断言已在 exact head 上实测失败）。
     func testIssue199CapitalRaidStableIdentityKeyIgnoresDictionaryInsertionOrder() throws {
-        // 语义相同、仅 badgeUrls 键插入顺序不同的两个赛季（解码后 == 相等）。
-        let jsonA = #"{"items":[{"state":"ended","attackLog":[{"defender":{"name":"x","badgeUrls":{"small":"s","medium":"m","large":"l"}},"attackCount":1}]}]}"#
-        let jsonB = #"{"items":[{"state":"ended","attackLog":[{"defender":{"name":"x","badgeUrls":{"large":"l","medium":"m","small":"s"}},"attackCount":1}]}]}"#
-        let seasonA = try XCTUnwrap(
-            try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(jsonA.utf8)).items.first
-        )
-        let seasonB = try XCTUnwrap(
-            try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(jsonB.utf8)).items.first
-        )
-        XCTAssertEqual(seasonA, seasonB, "回归前提：两个赛季语义必须完全相同")
+        // 语义相同、仅 badgeUrls 插入顺序不同的两个字典。
+        var badgeUrlsA: [String: String] = [:]
+        badgeUrlsA["small"] = "s"
+        badgeUrlsA["medium"] = "m"
+        badgeUrlsA["large"] = "l"
+        var badgeUrlsB: [String: String] = [:]
+        badgeUrlsB["large"] = "l"
+        badgeUrlsB["medium"] = "m"
+        badgeUrlsB["small"] = "s"
 
-        // 回归前提：默认编码（无 sortedKeys）对这两个字典确实产生不同输出——
-        // 证明测试环境里两个字典迭代顺序不同，能真正拦截旧实现。
-        let unsortedA = try JSONEncoder().encode(seasonA)
-        let unsortedB = try JSONEncoder().encode(seasonB)
-        XCTAssertNotEqual(unsortedA, unsortedB, "回归前提：默认 JSONEncoder 对字典插入顺序敏感")
+        func makeSeason(badgeUrls: [String: String]) -> OfficialCapitalRaidSeason {
+            OfficialCapitalRaidSeason(
+                state: "ended",
+                startTime: "20260701T080000.000Z",
+                endTime: "20260703T080000.000Z",
+                capitalTotalLoot: 100,
+                raidsCompleted: 2,
+                totalAttacks: 20,
+                enemyDistrictsDestroyed: 40,
+                offensiveReward: 1000,
+                defensiveReward: 500,
+                members: nil,
+                attackLog: [
+                    CapitalRaidAttackLogEntry(
+                        defender: CapitalRaidClanInfo(
+                            tag: "#TAG", name: "x", level: 8, badgeUrls: badgeUrls
+                        ),
+                        attackCount: 1, districtCount: nil,
+                        districtsDestroyed: nil, districts: nil
+                    ),
+                ],
+                defenseLog: nil
+            )
+        }
 
-        // 契约：stableIdentityKey 必须与字典插入顺序无关。
-        XCTAssertEqual(seasonA.stableIdentityKey, seasonB.stableIdentityKey)
+        let seasonA = makeSeason(badgeUrls: badgeUrlsA)
+        let seasonB = makeSeason(badgeUrls: badgeUrlsB)
+        XCTAssertEqual(seasonA, seasonB, "回归前提：两个赛季语义必须完全相同（Dictionary == 忽略顺序）")
+
+        // 契约：stableIdentityKey 必须与字典插入顺序无关（sortedKeys 保证）。
+        XCTAssertEqual(
+            seasonA.stableIdentityKey, seasonB.stableIdentityKey,
+            "stableIdentityKey 必须与字典插入顺序无关"
+        )
     }
 
     // MARK: - 突袭周末成员/攻防日志（Issue #20）

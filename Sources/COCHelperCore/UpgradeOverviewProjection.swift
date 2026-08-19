@@ -64,7 +64,98 @@ public struct UpgradeDisplayRecord: Identifiable, Hashable, Sendable {
 }
 
 /// 升级总览展示聚合入口。
+/// 村庄投影提供者：给定村庄 × base × now 返回目录投影。
+/// Issue #200 缓存注入点：UI 可注入缓存实现（如 VillageProjectionCache
+/// 的动态刷新包装），默认 provider 与现状一致（直接构建）。
+public typealias VillageProjectionProvider = (VillageProfile, TrackerBase, Date) -> VillageCatalogProjection
+
+/// 升级总览展示聚合入口。
 public enum UpgradeOverviewProjection {
+    /// Issue #200：总览单趟组合入口。一次 `allRecords` 同时产出
+    /// active / pending / state，供 UI 每 60s tick 调用一次。
+    ///
+    /// 输出与 `overviewRecords` + `overviewState` 完全一致（active 同
+    /// `overviewRecords.active`，pending 同 `.pending`，state 各字段同
+    /// `overviewState`）。`projectionProvider` 注入村庄投影来源
+    /// （默认直接构建，语义与现状一致）。
+    public static func overviewRender(
+        from villages: [VillageProfile],
+        catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable = .empty,
+        manualUpgradeCores: [UUID: ManualUpgradeCore] = [:],
+        at now: Date = Date(),
+        recentlyCompletedWindow: TimeInterval = 7 * 24 * 3600,
+        projectionProvider: VillageProjectionProvider? = nil
+    ) -> UpgradeOverviewRender {
+        overviewRenderCore(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
+            at: now,
+            recentlyCompletedWindow: recentlyCompletedWindow,
+            projectionProvider: projectionProvider ?? defaultProjectionProvider(
+                catalog: catalog,
+                seasonalPhases: seasonalPhases,
+                manualUpgradeCores: manualUpgradeCores
+            )
+        )
+    }
+
+    /// 默认村庄投影 provider（直接构建，与现状每 tick 全量投影一致）。
+    public static func defaultProjectionProvider(
+        catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable,
+        manualUpgradeCores: [UUID: ManualUpgradeCore]
+    ) -> VillageProjectionProvider {
+        { village, base, now in
+            VillageCatalogProjection.project(
+                village: village,
+                catalog: catalog,
+                seasonalPhases: seasonalPhases,
+                base: base,
+                now: now,
+                manualUpgradeCore: manualUpgradeCores[village.id]
+            )
+        }
+    }
+
+    /// 实现主体（无默认参数，避免每 tick 构造 provider）。
+    private static func overviewRenderCore(
+        from villages: [VillageProfile],
+        catalog: GameCatalog?,
+        seasonalPhases: SeasonalPhaseTable,
+        manualUpgradeCores: [UUID: ManualUpgradeCore],
+        at now: Date,
+        recentlyCompletedWindow: TimeInterval,
+        projectionProvider: @escaping VillageProjectionProvider
+    ) -> UpgradeOverviewRender {
+        let records = allRecords(
+            from: villages,
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores,
+            at: now,
+            projectionProvider: projectionProvider
+        )
+        let active = records.filter(\.item.isEffectivelyUpgrading)
+            .sorted { activeOrder($0, $1, at: now) }
+        let pending = records.filter(\.item.effectivelyNeedsReimport)
+            .sorted(by: pendingOrder)
+        let state = overviewStateCore(
+            records: records,
+            manualUpgradeCores: manualUpgradeCores,
+            catalog: catalog,
+            at: now,
+            recentlyCompletedWindow: recentlyCompletedWindow
+        )
+        return UpgradeOverviewRender(
+            active: active,
+            pending: pending,
+            state: state
+        )
+    }
+
     /// 单趟投影：一次 `allRecords` 后 split 成 active（升级中）与 pending（需重新导入）。
     ///
     /// UI 每 60s tick 调用一次本方法即可同时拿到两个列表，避免
@@ -194,18 +285,17 @@ public enum UpgradeOverviewProjection {
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable,
         manualUpgradeCores: [UUID: ManualUpgradeCore],
-        at now: Date
+        at now: Date,
+        projectionProvider: VillageProjectionProvider? = nil
     ) -> [UpgradeDisplayRecord] {
-        villages.flatMap { village in
+        let provider = projectionProvider ?? defaultProjectionProvider(
+            catalog: catalog,
+            seasonalPhases: seasonalPhases,
+            manualUpgradeCores: manualUpgradeCores
+        )
+        return villages.flatMap { village in
             TrackerBase.allCases.flatMap { base in
-                let projection = VillageCatalogProjection.project(
-                    village: village,
-                    catalog: catalog,
-                    seasonalPhases: seasonalPhases,
-                    base: base,
-                    now: now,
-                    manualUpgradeCore: manualUpgradeCores[village.id]
-                )
+                let projection = provider(village, base, now)
                 // Issue #70 阶段 2：消费拆分——records 只含「已观测项」
                 //（排除宇宙差集 .available：差集项无升级计时，进总览列表无意义）；
                 // 指标消费 tracked（含 .available），coverage 按投影
@@ -292,6 +382,26 @@ public struct UpgradeOverviewState: Sendable {
     }
 }
 
+/// Issue #200：总览单趟组合输出（active / pending / state 一次投影齐备）。
+public struct UpgradeOverviewRender: Sendable {
+    /// active 展示行（同 `overviewRecords.active`）。
+    public let active: [UpgradeDisplayRecord]
+    /// pending 展示行（同 `overviewRecords.pending`）。
+    public let pending: [UpgradeDisplayRecord]
+    /// 状态面板（同 `overviewState`，含 active/attention/needsReimport）。
+    public let state: UpgradeOverviewState
+
+    public init(
+        active: [UpgradeDisplayRecord],
+        pending: [UpgradeDisplayRecord],
+        state: UpgradeOverviewState
+    ) {
+        self.active = active
+        self.pending = pending
+        self.state = state
+    }
+}
+
 extension UpgradeOverviewProjection {
     /// Issue #144：总览状态面板（单趟投影，消费 `allRecords` + cores）。
     ///
@@ -321,7 +431,23 @@ extension UpgradeOverviewProjection {
             manualUpgradeCores: manualUpgradeCores,
             at: now
         )
+        return overviewStateCore(
+            records: records,
+            manualUpgradeCores: manualUpgradeCores,
+            catalog: catalog,
+            at: now,
+            recentlyCompletedWindow: recentlyCompletedWindow
+        )
+    }
 
+    /// `overviewState` 的 records 之后主体（issue #200 单趟组合复用，避免双跑）。
+    private static func overviewStateCore(
+        records: [UpgradeDisplayRecord],
+        manualUpgradeCores: [UUID: ManualUpgradeCore],
+        catalog: GameCatalog?,
+        at now: Date,
+        recentlyCompletedWindow: TimeInterval
+    ) -> UpgradeOverviewState {
         let active = records.filter(\.item.isEffectivelyUpgrading)
             .sorted { activeOrder($0, $1, at: now) }
         let needsReimport = records.filter(\.item.effectivelyNeedsReimport)

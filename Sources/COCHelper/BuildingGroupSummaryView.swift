@@ -141,32 +141,20 @@ struct BuildingGroupSummaryView: View {
         }
     }
 
-    /// 4 级候选链 asset 首图；firstInstance 缺失或全部加载失败 → nil（SF Symbol 兜底）。
-    private func assetImage(_ item: VillageItemState?) -> NSImage? {
-        guard let item else { return nil }
-        return PerformanceImageDecode.firstDecodable(
-            item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion)
-        )
-    }
-
-    /// 组图标：第一个实例的 4 级候选链，失败回退 SF Symbol（不崩溃）。
+    /// 组图标：第一个实例的 4 级候选链异步加载（`ResourceIconView`，后台
+    /// actor + session cache），失败回退 SF Symbol（不崩溃）。
     /// Review 反馈 P2-1：资产缺失原因叠加警告角标 + help（同 UpgradeDisplayRow 模式）。
-    @ViewBuilder
+    /// Issue #198：同步解码收敛到 `ResourceIconView`，候选链/回退/角标语义不变。
     private var iconView: some View {
-        Group {
-            if let image = assetImage(firstInstance?.item) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 36, height: 36)
-            } else {
-                Image(systemName: group.displayCategory?.systemImage ?? group.category?.systemImage ?? "hammer.fill")
-                    .font(.title2)
-                    .foregroundStyle(group.displayCategory?.tint ?? group.category?.tint ?? Color.secondary)
-                    .frame(width: 36, height: 36)
-            }
-        }
+        ResourceIconView(
+            urls: firstInstance?.item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion) ?? [],
+            slotSize: 36,
+            systemImage: group.displayCategory?.systemImage ?? group.category?.systemImage ?? "hammer.fill",
+            tint: group.displayCategory?.tint ?? group.category?.tint ?? Color.secondary,
+            symbolFont: .title2,
+            pngHelp: iconHelp,
+            sfHelp: iconHelp
+        )
         .overlay(alignment: .bottomTrailing) {
             if firstInstance?.item.assetMissingReason != nil {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -175,7 +163,6 @@ struct BuildingGroupSummaryView: View {
                     .offset(x: 4, y: 4)
             }
         }
-        .help(iconHelp)
     }
 
     /// 组图标 help：资产缺失原因优先（与 UpgradeDisplayRow.iconHelp 同语义）。

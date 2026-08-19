@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import COCHelperCore
+import COCHelperApp
 
 /// Issue #47：升级列表与详情 Sheet 共用的图标/间距常量。
 ///
@@ -212,28 +213,20 @@ struct UpgradeDisplayRow: View {
     /// 显示真实 PNG；首选文件缺失时自动尝试次选（P2 评审），全部加载失败同样
     /// 回退 SF Symbol，不崩溃。版本参数取投影层 catalogVersion（与 `loadBundled()`
     /// 同源），避免未来多版本资源错配。
-    @ViewBuilder
+    /// Issue #198：同步解码收敛到 `ResourceIconView`（后台 actor + session cache），
+    /// body 不再直接执行 `NSImage(contentsOf:)`；候选链/回退/SF 兜底语义不变。
     private var iconView: some View {
-        if let image = PerformanceImageDecode.firstDecodable(
-            item.preferredAssetURLs(
+        ResourceIconView(
+            urls: item.preferredAssetURLs(
                 version: record.catalogVersion ?? GameCatalog.defaultBundledVersion
-            )
-        ) {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: UpgradeDisplayLayout.listIconSize,
-                       height: UpgradeDisplayLayout.listIconSize)
-                .help(pngIconHelp)
-        } else {
-            Image(systemName: iconImageName)
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
-                .frame(width: UpgradeDisplayLayout.listIconSize,
-                       height: UpgradeDisplayLayout.listIconSize)
-                .help(iconHelp)
-        }
+            ),
+            slotSize: UpgradeDisplayLayout.listIconSize,
+            systemImage: iconImageName,
+            tint: item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary,
+            symbolFont: .system(size: 28, weight: .medium),
+            pngHelp: pngIconHelp,
+            sfHelp: iconHelp
+        )
     }
 
     var body: some View {

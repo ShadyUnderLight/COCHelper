@@ -166,33 +166,23 @@ struct LevelDetailSheet: View {
     /// 资产（按 currentLevel 显示对应等级外观）；目录中部分 item（如兵营
     /// buildings:1000000）icon 为 nil 但 levelVisual 可渲染（fireplace_lvl1.png——
     /// 游戏内部导出代号，兵营中心营火）——头部必须与逐级行一致显示真实外观。
-    private var headerImage: NSImage? {
-        PerformanceImageDecode.firstDecodable(
-            item.preferredAssetURLs(version: assetVersion)
-        )
-    }
+    /// Issue #198：同步解码收敛到 `ResourceIconView`（后台 actor + session cache），
+    /// 打开详情 Sheet 复用列表/组卡已缓存资源，不重新全量解码。
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .center, spacing: 12) {
-                        Group {
-                            if let nsImage = headerImage {
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .interpolation(.high)
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: UpgradeDisplayLayout.detailHeaderIconSize,
-                                           height: UpgradeDisplayLayout.detailHeaderIconSize)
-                            } else {
-                                Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
-                                    .font(.system(size: 30, weight: .medium))
-                                    .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
-                                    .frame(width: UpgradeDisplayLayout.detailHeaderIconSize,
-                                           height: UpgradeDisplayLayout.detailHeaderIconSize)
-                            }
-                        }
+                        ResourceIconView(
+                            urls: item.preferredAssetURLs(version: assetVersion),
+                            slotSize: UpgradeDisplayLayout.detailHeaderIconSize,
+                            systemImage: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill",
+                            tint: item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary,
+                            symbolFont: .system(size: 30, weight: .medium),
+                            pngHelp: "游戏资源图标",
+                            sfHelp: "游戏资源图标"
+                        )
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.name)
                                 .font(.title3.weight(.bold))
@@ -272,16 +262,8 @@ struct LevelDetailSheet: View {
     /// 逐级图标：levelVisual → icon 运行时候选（`CatalogLevel.preferredAssetURLs`，
     /// 与列表行/头部共用 `availableURLs` 实现防漂移；首选文件缺失时自动尝试
     /// 次选，P2 评审）；全部加载失败 → nil（SF Symbol 兜底，不崩溃）。
-    /// 返回原始 `Image`（修饰链在调用处拼装，避免 `some View` 类型歧义）。
-    private func levelAssetImage(_ level: CatalogLevel) -> Image? {
-        guard let image = PerformanceImageDecode.firstDecodable(
-            level.preferredAssetURLs(version: assetVersion)
-        ) else {
-            return nil
-        }
-        return Image(nsImage: image)
-    }
-
+    /// Issue #198：同步解码收敛到 `ResourceIconView`（后台 actor + session cache），
+    /// 逐级行与头部共用缓存，打开 Sheet 不重新全量解码。
     private func levelRow(_ level: CatalogLevel) -> some View {
         let isCurrent = item.effectiveCurrentLevel == level.level
         // Issue #68：下一级徽标只消费 nextUpgrade 投影（UI 三处统一，禁止各自
@@ -300,22 +282,15 @@ struct LevelDetailSheet: View {
         }
         let isNext = effectiveNext == level.level
         return HStack(spacing: 12) {
-            Group {
-                if let img = levelAssetImage(level) {
-                    img
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: UpgradeDisplayLayout.detailLevelIconSize,
-                               height: UpgradeDisplayLayout.detailLevelIconSize)
-                } else {
-                    Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
-                        .frame(width: UpgradeDisplayLayout.detailLevelIconSize,
-                               height: UpgradeDisplayLayout.detailLevelIconSize)
-                }
-            }
+            ResourceIconView(
+                urls: level.preferredAssetURLs(version: assetVersion),
+                slotSize: UpgradeDisplayLayout.detailLevelIconSize,
+                systemImage: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill",
+                tint: item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary,
+                symbolFont: .system(size: 22, weight: .medium),
+                pngHelp: "游戏资源图标",
+                sfHelp: "游戏资源图标"
+            )
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(String(level.level) + "级")

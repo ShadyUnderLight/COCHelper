@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import COCHelperCore
+import COCHelperApp
 
 /// Issue #45：同类建筑组卡（Panel + HStack 两区）。
 ///
@@ -118,28 +119,22 @@ struct BuildingGroupCard: View {
         return String(currentLevel) + "级 / --"
     }
 
-    /// 实例图标：4 级候选链 NSImage 加载，失败回退 SF Symbol（同列表行规格）。
+    /// 实例图标：4 级候选链异步加载（`ResourceIconView`，后台 actor + session
+    /// cache），失败回退 SF Symbol（同列表行规格）。
     /// Review 反馈 P2-1：资产缺失原因（assetMissingReason，render_failed /
     /// export_not_found 等）必须可见——叠加警告角标 + help 文案，与
     /// `UpgradeDisplayRow.iconView` 同模式，不得静默回退成普通 SF Symbol。
-    @ViewBuilder
+    /// Issue #198：同步解码收敛到 `ResourceIconView`，候选链/回退/角标语义不变。
     private func iconView(_ item: VillageItemState) -> some View {
-        Group {
-            if let image = PerformanceImageDecode.firstDecodable(
-                item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion)
-            ) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 24, height: 24)
-            } else {
-                Image(systemName: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill")
-                    .font(.body)
-                    .foregroundStyle(item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary)
-                    .frame(width: 24, height: 24)
-            }
-        }
+        ResourceIconView(
+            urls: item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion),
+            slotSize: 24,
+            systemImage: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill",
+            tint: item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary,
+            symbolFont: .body,
+            pngHelp: iconHelp(item),
+            sfHelp: iconHelp(item)
+        )
         .overlay(alignment: .bottomTrailing) {
             if item.assetMissingReason != nil {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -148,7 +143,6 @@ struct BuildingGroupCard: View {
                     .offset(x: 4, y: 4)
             }
         }
-        .help(iconHelp(item))
     }
 
     /// 图标 help 文案：资产缺失原因优先（与 UpgradeDisplayRow.iconHelp 同语义）。

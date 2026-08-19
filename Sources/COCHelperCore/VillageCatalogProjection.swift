@@ -308,8 +308,8 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     /// item-level 的 levelVisual/icon；后两级为 item-level 资产（Issue #34）。
     /// 列表行与详情 sheet 必须共用本解析防漂移。
     public func preferredAssetURLs(version: String) -> [URL] {
-        // Issue #197：统一 signpost 埋点（候选探测计数；解码在 UI 层由
-        // PerformanceImageDecode 埋点采集）。候选链实际 5 个（craftTable + 4 级）。
+        // Issue #197：统一 signpost 埋点（候选探测计数；解码在
+        // ResourceImageLoader 后台边界经 .imageDecode 埋点采集，Issue #198）。候选链实际 5 个（craftTable + 4 级）。
         let __perfID = PerformanceSignpost.begin(.assetCandidateProbe, dataScale: 5, count: 0)
         let craftTableAsset: CatalogAssetRef?
         if isNested {

@@ -387,6 +387,45 @@ public struct VillageItemState: Identifiable, Hashable, Sendable {
     }
 }
 
+// MARK: - Issue #200 动态刷新
+
+extension VillageItemState {
+    /// 复制自身并替换 remainingSeconds（动态刷新专用；不改任何静态字段）。
+    /// 到期/状态翻转由缓存层在 expired 时重建处理（issue #200）。
+    public func withRemainingSeconds(_ newValue: Int64?) -> VillageItemState {
+        VillageItemState(
+            id: id,
+            section: section,
+            dataID: dataID,
+            base: base,
+            name: name,
+            category: category,
+            currentLevel: currentLevel,
+            count: count,
+            timerSeconds: timerSeconds,
+            remainingSeconds: newValue,
+            nextLevel: nextLevel,
+            nextLevelDurationSeconds: nextLevelDurationSeconds,
+            nextLevelDurationState: nextLevelDurationState,
+            maxLevel: maxLevel,
+            currentStageMaxLevel: currentStageMaxLevel,
+            nextUpgrade: nextUpgrade,
+            status: status,
+            missingReason: missingReason,
+            catalogItemMissingReason: catalogItemMissingReason,
+            availability: availability,
+            icon: icon,
+            levelVisual: levelVisual,
+            currentLevelIcon: currentLevelIcon,
+            currentLevelVisual: currentLevelVisual,
+            isNested: isNested,
+            displayCategory: displayCategory,
+            countOverflowed: countOverflowed,
+            effectiveState: effectiveState
+        )
+    }
+}
+
 // MARK: - 解锁建筑（Issue #67 阶段上限）
 
 /// 解锁建筑的快照 dataID（真实目录契约，Task 1 落库锚定）：
@@ -688,6 +727,62 @@ public struct VillageCatalogProjection: Sendable {
             progressMetrics: effective.progressMetrics,
             diagnostics: diagnostics,
             progressCoverage: progressCoverage
+        )
+    }
+
+    // MARK: - Issue #200 动态刷新
+
+    /// 把 remainingSeconds（items/rawItems）与 importedRemainingSeconds
+    /// （effectiveTrackerItems）按 (now - builtAt) 递减后返回副本。
+    ///
+    /// - expired：任一 remaining 从 >0 变 0。到期意味着 active→needsReimport、
+    ///   模块 upgrading→recorded 等「完成事实」翻转——动态 overlay 不得自行
+    ///   推断完成事实（issue #200 验收），调用方应在 expired 时重建静态投影。
+    /// - 时钟回拨（now < builtAt）保持 remaining 不变（clamp delta ≥ 0）。
+    /// - 静态字段（status/nextLevel/nextUpgrade/effectiveState 等）不变。
+    public func refreshingTimers(
+        at now: Date, builtAt: Date
+    ) -> (projection: VillageCatalogProjection, expired: Bool) {
+        let delta = max(0, now.timeIntervalSince(builtAt))
+        var expired = false
+
+        func refreshed(_ item: VillageItemState) -> VillageItemState {
+            guard let remaining = item.remainingSeconds, remaining > 0 else {
+                return item
+            }
+            let newRemaining = max(0, remaining - Int64(delta))
+            if newRemaining == 0 { expired = true }
+            return item.withRemainingSeconds(newRemaining)
+        }
+
+        let refreshedItems = items.map(refreshed)
+        let refreshedRaw = rawItems.map(refreshed)
+        let refreshedEffective = effectiveTrackerItems.map { state in
+            guard let remaining = state.importedRemainingSeconds, remaining > 0 else {
+                return state
+            }
+            let newRemaining = max(0, remaining - Int64(delta))
+            if newRemaining == 0 { expired = true }
+            return state.withImportedRemainingSeconds(newRemaining)
+        }
+
+        return (
+            projection: VillageCatalogProjection(
+                villageID: villageID,
+                villageName: villageName,
+                base: base,
+                catalogVersion: catalogVersion,
+                catalogIsUsable: catalogIsUsable,
+                compatibility: compatibility,
+                items: refreshedItems,
+                rawItems: refreshedRaw,
+                effectiveTrackerItems: refreshedEffective,
+                manualCoverage: manualCoverage,
+                progressMetrics: progressMetrics,
+                diagnostics: diagnostics,
+                progressCoverage: progressCoverage
+            ),
+            expired: expired
         )
     }
 

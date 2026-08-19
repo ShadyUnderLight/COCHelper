@@ -218,3 +218,56 @@ public enum CraftTableProjection {
         )
     }
 }
+
+// MARK: - Issue #200 动态刷新
+
+extension CraftTableModuleState {
+    /// 复制自身并替换 remainingSeconds（动态刷新专用；不改任何静态字段）。
+    /// 到期/状态翻转由缓存层在 expired 时重建处理（issue #200）。
+    public func withRemainingSeconds(_ newValue: Int64?) -> CraftTableModuleState {
+        CraftTableModuleState(
+            id: id,
+            dataID: dataID,
+            name: name,
+            statTypes: statTypes,
+            displayTitles: displayTitles,
+            currentLevel: currentLevel,
+            maxLevel: maxLevel,
+            status: status,
+            timerSeconds: timerSeconds,
+            remainingSeconds: newValue,
+            missingReason: missingReason
+        )
+    }
+}
+
+extension Array where Element == CraftTableDefenseState {
+    /// 精制台模块 remainingSeconds 按 (now - builtAt) 递减。
+    /// expired = 任一模块 remaining 从 >0 变 0（调用方应重建静态投影）。
+    /// 时钟回拨（now < builtAt）保持 remaining 不变（clamp delta ≥ 0）。
+    public func refreshingModules(
+        at now: Date, builtAt: Date
+    ) -> (modules: [CraftTableDefenseState], expired: Bool) {
+        let delta = Swift.max(0, now.timeIntervalSince(builtAt))
+        var expired = false
+        let refreshed = map { defense in
+            let modules = defense.modules.map { module in
+                guard let remaining = module.remainingSeconds, remaining > 0 else {
+                    return module
+                }
+                let newRemaining = Swift.max(0, remaining - Int64(delta))
+                if newRemaining == 0 { expired = true }
+                return module.withRemainingSeconds(newRemaining)
+            }
+            return CraftTableDefenseState(
+                id: defense.id,
+                dataID: defense.dataID,
+                name: defense.name,
+                currentLevel: defense.currentLevel,
+                availability: defense.availability,
+                modules: modules
+            )
+        }
+        return (refreshed, expired)
+    }
+}

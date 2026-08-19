@@ -105,6 +105,43 @@ final class ClanPaginationDecodeTests: XCTestCase {
         XCTAssertEqual(page.items[0].capitalTotalLoot, 123456, "attackLog 存在时摘要仍正确")
     }
 
+    /// Issue #199 回归：完整内容身份键在 #197 fixture 累计 17 条下必须唯一。
+    /// 旧键（startTime|endTime|state）只有 3 个唯一值（多条不同 capitalTotalLoot
+    /// 的记录共享同三元组）→ ForEach identity 碰撞；`stableIdentityKey`
+    /// 编码完整赛季内容（含 members/attackLog/defenseLog），必须 17 个全唯一。
+    func testIssue199CapitalRaidStableIdentityKeyUniqueAcrossMergedPages() throws {
+        let names = ["perf_capital_raid_page_01", "perf_capital_raid_page_02", "perf_capital_raid_page_03"]
+        let pages = try names.map { name -> OfficialCapitalRaidPage in
+            let url = try XCTUnwrap(
+                Bundle.module.url(forResource: name, withExtension: "json"),
+                "fixture \(name) 必须存在（#197 perf fixtures）"
+            )
+            return try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(contentsOf: url))
+        }
+        let items = pages.flatMap(\.items)
+        XCTAssertEqual(items.count, 17, "#197 fixture 合并契约：3 页共 17 条")
+
+        // 回归前提：旧三元组键确实会重复（若 fixture 变化导致该断言失败，
+        // 说明旧键已不碰撞，测试前提需同步更新——碰撞场景消失是好事）。
+        let legacyKeys = items.map {
+            [$0.startTime, $0.endTime, $0.state].compactMap { $0 }.joined(separator: "|")
+        }
+        XCTAssertLessThan(Set(legacyKeys).count, items.count, "回归前提：startTime|endTime|state 三元组必须存在重复")
+
+        // 完整内容键必须唯一。
+        let identityKeys = items.map(\.stableIdentityKey)
+        XCTAssertEqual(Set(identityKeys).count, items.count, "stableIdentityKey 在累计分页数据下必须唯一")
+        // 同一赛季跨加载（重复解码同一页）键稳定（确定性）。
+        let redecoded = try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(contentsOf: try XCTUnwrap(
+            Bundle.module.url(forResource: "perf_capital_raid_page_01", withExtension: "json")
+        )))
+        XCTAssertEqual(
+            redecoded.items.map(\.stableIdentityKey),
+            pages[0].items.map(\.stableIdentityKey),
+            "同内容重复解码必须产生相同身份键（确定性）"
+        )
+    }
+
     // MARK: - 突袭周末成员/攻防日志（Issue #20）
 
     func testDecodeCapitalRaidMembers() throws {

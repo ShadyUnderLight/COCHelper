@@ -168,14 +168,16 @@ struct CapitalRaidCardView: View {
 
     private func seasonList(_ page: OfficialCapitalRaidPage) -> some View {
         // Issue #199：VStack→LazyVStack，分页累计列表按需构建；
-        // identity 用稳定赛季键（不用 offset——分页累计 offset 会随加载变化）。
+        // identity 用完整赛季内容键 stableIdentityKey（不用 offset——
+        // 分页累计 offset 会随加载变化；startTime|endTime|state 三元组
+        // 在真实数据会重复，必须完整内容唯一）。
         LazyVStack(alignment: .leading, spacing: 8) {
             if page.items.isEmpty {
                 Text("没有突袭周末记录")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(page.items, id: \.stableSeasonKey) { season in
+                ForEach(page.items, id: \.stableIdentityKey) { season in
                     seasonRow(season)
                     if season.endTime != page.items.last?.endTime {
                         Divider().padding(.leading, 40)
@@ -401,15 +403,5 @@ struct CapitalRaidCardView: View {
 
     private static func formatted(_ value: Int) -> String {
         value.formatted(.number.grouping(.automatic))
-    }
-}
-
-/// Issue #199：UI 稳定身份（KeyPath 形式供 ForEach 使用）。官方赛季无 ID 字段，
-/// 用 (startTime, endTime, state) 组合——跨分页累计不变，不用 offset。
-private extension OfficialCapitalRaidSeason {
-    var stableSeasonKey: String {
-        [startTime, endTime, state]
-            .compactMap { $0 }
-            .joined(separator: "|")
     }
 }

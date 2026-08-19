@@ -715,8 +715,8 @@ struct VillageDetailView: View {
     private enum DetailFlatRow: Identifiable {
         /// 非精制台 section 头部：标题 + 完成度（Panel）。
         case sectionHeader(group: VillageDetailGroup, stats: VillageCategoryCompletion?)
-        /// 精制台整组：标题 + 表格保留单 Panel 外观。
-        case craftTable(group: VillageDetailGroup, defenses: [CraftTableDefenseState])
+        /// 精制台整组：标题 + 完成度 + 表格保留单 Panel 外观。
+        case craftTable(group: VillageDetailGroup, defenses: [CraftTableDefenseState], stats: VillageCategoryCompletion?)
         /// 组头卡：`BuildingGroupSummaryView` 汇总 + Start/Cancel/Adjust 动作行。
         case groupHeader(group: BuildingGroup)
         /// 单实例块：实例行 + 该记录自己的升级阶梯（leadingDivider = 组内非首个）。
@@ -727,7 +727,7 @@ struct VillageDetailView: View {
         var id: String {
             switch self {
             case .sectionHeader(let group, _): return "section:\(group.id)"
-            case .craftTable(let group, _): return "craft:\(group.id)"
+            case .craftTable(let group, _, _): return "craft:\(group.id)"
             case .groupHeader(let group): return "groupHeader:\(group.id)"
             case .instance(let group, let instance, _): return "instance:\(group.id):\(instance.id)"
             case .legacy(let item, _, _, _): return "legacy:\(item.id)"
@@ -747,7 +747,11 @@ struct VillageDetailView: View {
         var rows: [DetailFlatRow] = []
         for group in displayGroups {
             if group.displayCategory == .craftTable {
-                rows.append(.craftTable(group: group, defenses: craftTable))
+                rows.append(.craftTable(
+                    group: group,
+                    defenses: craftTable,
+                    stats: statsByKey[group.id]
+                ))
                 continue
             }
             rows.append(.sectionHeader(group: group, stats: statsByKey[group.id]))
@@ -810,10 +814,10 @@ struct VillageDetailView: View {
                 sectionTitleRow(group: group, stats: stats)
             }
             .padding(.top, 18)
-        case .craftTable(let group, let defenses):
+        case .craftTable(let group, let defenses, let stats):
             Panel {
                 VStack(alignment: .leading, spacing: 10) {
-                    sectionTitleRow(group: group, stats: nil)
+                    sectionTitleRow(group: group, stats: stats)
                     CraftTableView(
                         defenses: defenses,
                         catalogVersion: craftTableCatalog?.gameVersion

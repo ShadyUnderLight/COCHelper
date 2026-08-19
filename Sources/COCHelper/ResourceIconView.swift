@@ -55,6 +55,9 @@ struct ResourceIconView: View {
         }
         .help(loadedImage != nil ? pngHelp : sfHelp)
         .task(id: request) {
+            // 请求（候选链/尺寸/scale）变化时先清空旧图：稳定行 ID 下资源变化时
+            // 不得短暂显示旧资源（Issue #198 review P2）。
+            loadedImage = nil
             let image = await ResourceImageLoader.shared.image(for: request)
             // 取消守卫：旧请求的结果不得发布到新行/新版本。
             if !Task.isCancelled {

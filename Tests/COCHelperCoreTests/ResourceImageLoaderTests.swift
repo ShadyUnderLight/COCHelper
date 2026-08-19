@@ -38,6 +38,59 @@ final class ResourceImageLoaderTests: XCTestCase {
         }
     }
 
+    /// 解码时序门：让注入解码器的某次解码阻塞，直到测试放行（确定性取消测试用）。
+    private final class DecodeGate: @unchecked Sendable {
+        private let started = DispatchSemaphore(value: 0)
+        private let proceed = DispatchSemaphore(value: 0)
+
+        func signalStarted() {
+            started.signal()
+        }
+
+        func waitStarted(timeout: TimeInterval) -> Bool {
+            started.wait(timeout: .now() + timeout) == .success
+        }
+
+        func signalProceed() {
+            proceed.signal()
+        }
+
+        func waitProceed(timeout: TimeInterval) -> Bool {
+            proceed.wait(timeout: .now() + timeout) == .success
+        }
+    }
+
+    /// 只阻塞第一次解码（之后立即返回）的可计数解码器，配合 DecodeGate 做
+    /// 确定性取消测试。@unchecked Sendable：计数器用 NSLock 保护。
+    private final class GateDecoder: @unchecked Sendable {
+        private let gate: DecodeGate
+        private let lock = NSLock()
+        private var _decodeCount = 0
+        private var _gatedFirst = false
+
+        init(gate: DecodeGate) {
+            self.gate = gate
+        }
+
+        var decodeCount: Int {
+            lock.withLock { _decodeCount }
+        }
+
+        func handler(url: URL, maxPixel: Int) -> NSImage? {
+            lock.lock()
+            _decodeCount += 1
+            let shouldGate = !_gatedFirst
+            _gatedFirst = true
+            lock.unlock()
+            if shouldGate {
+                gate.signalStarted()
+                _ = gate.waitProceed(timeout: 5)
+            }
+            // 每次调用返回新的 NSImage 实例。
+            return NSImage(size: NSSize(width: maxPixel, height: maxPixel))
+        }
+    }
+
     private func makeTempDirectory() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ResourceImageLoaderTests-\(UUID().uuidString)")
@@ -149,32 +202,59 @@ final class ResourceImageLoaderTests: XCTestCase {
 
     // MARK: - 取消安全
 
-    func testCancelledRequestDoesNotCorruptCacheNorCrossKeys() async throws {
+    /// 解码进行中被取消：请求必须返回 nil，且取消期间完成的解码不得写入缓存
+    /// （否则后续同 key 请求会命中旧解码结果）。用 DecodeGate 确定性控制时序。
+    func testCancellationDuringDecodeReturnsNilAndDoesNotCache() async throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("icon-\(UUID().uuidString).png")
+        let gate = DecodeGate()
+        let decoder = GateDecoder(gate: gate)
+        let loader = ResourceImageLoader(decodeHandler: decoder.handler)
+
+        let request = ResourceImageRequest(urls: [url], pixelWidth: 64, pixelHeight: 64, scale: 2.0)
+
+        // 启动请求并等解码真正开始，然后取消。
+        let task = Task { await loader.image(for: request) }
+        XCTAssertTrue(gate.waitStarted(timeout: 2))
+        task.cancel()
+        gate.signalProceed()
+
+        // 取消任务不能仍得到 NSImage。
+        let result = await task.value
+        XCTAssertNil(result)
+
+        // 取消期间完成的解码不得缓存：重新请求会重新解码（decodeCount 2）。
+        let again = await loader.image(for: request)
+        XCTAssertNotNil(again)
+        XCTAssertEqual(decoder.decodeCount, 2)
+    }
+
+    /// 取消的旧请求不能覆盖新 key 的结果：A 取消后，B 返回自己的资源且独立解码。
+    /// 用 DecodeGate 确定性控制 A 的解码时序。
+    func testCancelledRequestDoesNotOverwriteNewKey() async throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let urlA = dir.appendingPathComponent("a-\(UUID().uuidString).png")
         let urlB = dir.appendingPathComponent("b-\(UUID().uuidString).png")
-        let decoder = TestDecoder()
+        let gate = DecodeGate()
+        let decoder = GateDecoder(gate: gate)
         let loader = ResourceImageLoader(decodeHandler: decoder.handler)
 
         let reqA = ResourceImageRequest(urls: [urlA], pixelWidth: 64, pixelHeight: 64, scale: 2.0)
         let reqB = ResourceImageRequest(urls: [urlB], pixelWidth: 64, pixelHeight: 64, scale: 2.0)
 
-        // 启动 A 后立即取消。
+        // 启动 A 并等解码开始，取消 A。
         let taskA = Task { await loader.image(for: reqA) }
+        XCTAssertTrue(gate.waitStarted(timeout: 2))
         taskA.cancel()
-        _ = await taskA.value
+        gate.signalProceed()
+        let resultA = await taskA.value
+        XCTAssertNil(resultA)
 
-        // 取消的旧请求不能污染缓存：重新请求 A 仍返回正确资源。
-        let imageA = await loader.image(for: reqA)
-        XCTAssertNotNil(imageA)
-
-        // 取消的旧请求不能覆盖新 key 的结果：B 返回自己的资源，与 A 不同。
+        // B 返回自己的资源（独立解码），A 的旧结果不串到 B。
         let imageB = await loader.image(for: reqB)
         XCTAssertNotNil(imageB)
-        XCTAssertTrue(imageB !== imageA)
-
-        // A 与 B 各恰好解码一次（取消不产生额外解码，也不串用）。
         XCTAssertEqual(decoder.decodeCount, 2)
     }
 

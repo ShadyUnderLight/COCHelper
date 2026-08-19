@@ -122,13 +122,18 @@ public actor ResourceImageLoader {
             let perfID = PerformanceSignpost.begin(.imageDecode, dataScale: maxPixel, count: 1)
             let image = decodeHandler(url, maxPixel)
             PerformanceSignpost.end(.imageDecode, id: perfID, succeeded: image != nil)
+
+            // 取消发生在解码期间：解码结果必须丢弃——不缓存、不返回。
+            // 否则取消任务仍会得到 NSImage，且旧解码结果会被后续请求命中。
+            if Task.isCancelled {
+                return nil
+            }
             if let image {
                 insert(key, image, cost: imageCost(image))
                 return image
             } else {
                 failedKeys.insert(key)
             }
-            if Task.isCancelled { return nil }
         }
         return nil
     }

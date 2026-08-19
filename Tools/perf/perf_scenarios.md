@@ -1,6 +1,7 @@
 # 滚动性能场景脚本（Issue #197）
 
-基线：`origin/main@5a553481c67466cf92627caf27d1f18371a1fef8`。
+基线：`origin/main@d3b57e8164f81e292a023b052e455085565c3dbb`（Issue #209 锁定，#198/#199/#200 已合并后；
+初版脚手架基线为 `5a553481c67466cf92627caf27d1f18371a1fef8`，见 perf_fixtures_manifest.json 历史记录）。
 每个场景执行**冷启动**与**热缓存**两次，分别记录指标（见 baseline_format.md）。
 
 ## fixture 路径

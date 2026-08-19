@@ -1606,4 +1606,37 @@ final class BuildingGroupProjectionTests: XCTestCase {
             BuildingUpgradeStep(level: 7, upgradeCosts: nil, durationSeconds: nil).durationState)
     }
 
+    // MARK: - Issue #199: 大量实例稳定 ID / 顺序 / count 不伪造（1000+ 场景）
+
+    /// 1000+ 同 dataID 独立记录（如城墙逐段记录）：组内实例 ID 必须等于原始
+    /// 快照记录 id（`section:path`，不是 offset / UUID），顺序保持快照输入序；
+    /// 无 count 字段的每条记录 = 1 个实例，不得伪造额外实例。
+    /// 这是 UI 扁平 render rows 稳定身份的前置契约——ID 漂移会把 manual action /
+    /// 详情 Sheet 目标绑到错误记录。
+    func testIssue199ThousandsOfInstancesKeepStableIDsAndOrder() throws {
+        let itemCount = 1_005
+        let items = (0..<itemCount).map {
+            makeItem(section: "buildings", dataID: 1_000_008, level: ($0 % 12) + 1, path: String($0))
+        }
+        let village = makeVillage(objectSections: ["buildings": items])
+
+        let groups = project(village: village, catalog: syntheticCatalog, base: .home)
+        let group = try XCTUnwrap(groups.first(where: { $0.dataID == 1_000_008 }))
+        XCTAssertEqual(group.instances.count, itemCount)
+        // 稳定 ID = 原始记录 id（buildings:path），组内唯一且与输入顺序一致。
+        XCTAssertEqual(
+            group.instances.map(\.id),
+            (0..<itemCount).map { "buildings:\($0)" }
+        )
+        // 顺序 = 快照输入序。
+        XCTAssertEqual(group.instances.first?.item.currentLevel, 1)
+        XCTAssertEqual(group.instances.last?.item.currentLevel, (itemCount - 1) % 12 + 1)
+        // count 是数量属性：无 count 字段时每条记录按 1 计入，不伪造实例。
+        XCTAssertEqual(group.summary.instanceCount, itemCount)
+        // 实例级阶梯 per-record（不同等级记录各自显示正确阶梯，Issue #45 验收）。
+        let first = try XCTUnwrap(group.instances.first)
+        XCTAssertEqual(first.steps.first?.level, (first.item.currentLevel ?? 0) + 1)
+        let last = try XCTUnwrap(group.instances.last)
+        XCTAssertEqual(last.steps.first?.level, (last.item.currentLevel ?? 0) + 1)
+    }
 }

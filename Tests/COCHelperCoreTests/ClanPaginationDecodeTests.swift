@@ -105,6 +105,95 @@ final class ClanPaginationDecodeTests: XCTestCase {
         XCTAssertEqual(page.items[0].capitalTotalLoot, 123456, "attackLog 存在时摘要仍正确")
     }
 
+    /// Issue #199 回归：完整内容身份键在 #197 fixture 累计 17 条下必须唯一。
+    /// 旧键（startTime|endTime|state）只有 3 个唯一值（多条不同 capitalTotalLoot
+    /// 的记录共享同三元组）→ ForEach identity 碰撞；`stableIdentityKey`
+    /// 编码完整赛季内容（含 members/attackLog/defenseLog），必须 17 个全唯一。
+    func testIssue199CapitalRaidStableIdentityKeyUniqueAcrossMergedPages() throws {
+        let names = ["perf_capital_raid_page_01", "perf_capital_raid_page_02", "perf_capital_raid_page_03"]
+        let pages = try names.map { name -> OfficialCapitalRaidPage in
+            let url = try XCTUnwrap(
+                Bundle.module.url(forResource: name, withExtension: "json"),
+                "fixture \(name) 必须存在（#197 perf fixtures）"
+            )
+            return try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(contentsOf: url))
+        }
+        let items = pages.flatMap(\.items)
+        XCTAssertEqual(items.count, 17, "#197 fixture 合并契约：3 页共 17 条")
+
+        // 回归前提：旧三元组键确实会重复（若 fixture 变化导致该断言失败，
+        // 说明旧键已不碰撞，测试前提需同步更新——碰撞场景消失是好事）。
+        let legacyKeys = items.map {
+            [$0.startTime, $0.endTime, $0.state].compactMap { $0 }.joined(separator: "|")
+        }
+        XCTAssertLessThan(Set(legacyKeys).count, items.count, "回归前提：startTime|endTime|state 三元组必须存在重复")
+
+        // 完整内容键必须唯一。
+        let identityKeys = items.map(\.stableIdentityKey)
+        XCTAssertEqual(Set(identityKeys).count, items.count, "stableIdentityKey 在累计分页数据下必须唯一")
+        // 同一赛季跨加载（重复解码同一页）键稳定（确定性）。
+        let redecoded = try JSONDecoder().decode(OfficialCapitalRaidPage.self, from: Data(contentsOf: try XCTUnwrap(
+            Bundle.module.url(forResource: "perf_capital_raid_page_01", withExtension: "json")
+        )))
+        XCTAssertEqual(
+            redecoded.items.map(\.stableIdentityKey),
+            pages[0].items.map(\.stableIdentityKey),
+            "同内容重复解码必须产生相同身份键（确定性）"
+        )
+    }
+
+    /// Issue #199 回归：字典字段（badgeUrls）插入顺序不同、语义相同 → 键必须相同。
+    /// 默认 JSONEncoder 对 Dictionary 迭代顺序不稳定（同键不同插入顺序输出不同
+    /// JSON，且随进程 hash seed 变化），`.sortedKeys` 是必要防御。
+    /// 直接构造两个插入顺序不同的字典（不依赖 JSON 解码的字典迭代顺序——
+    /// 那本身不稳定，旧版前置断言已在 exact head 上实测失败）。
+    func testIssue199CapitalRaidStableIdentityKeyIgnoresDictionaryInsertionOrder() throws {
+        // 语义相同、仅 badgeUrls 插入顺序不同的两个字典。
+        var badgeUrlsA: [String: String] = [:]
+        badgeUrlsA["small"] = "s"
+        badgeUrlsA["medium"] = "m"
+        badgeUrlsA["large"] = "l"
+        var badgeUrlsB: [String: String] = [:]
+        badgeUrlsB["large"] = "l"
+        badgeUrlsB["medium"] = "m"
+        badgeUrlsB["small"] = "s"
+
+        func makeSeason(badgeUrls: [String: String]) -> OfficialCapitalRaidSeason {
+            OfficialCapitalRaidSeason(
+                state: "ended",
+                startTime: "20260701T080000.000Z",
+                endTime: "20260703T080000.000Z",
+                capitalTotalLoot: 100,
+                raidsCompleted: 2,
+                totalAttacks: 20,
+                enemyDistrictsDestroyed: 40,
+                offensiveReward: 1000,
+                defensiveReward: 500,
+                members: nil,
+                attackLog: [
+                    CapitalRaidAttackLogEntry(
+                        defender: CapitalRaidClanInfo(
+                            tag: "#TAG", name: "x", level: 8, badgeUrls: badgeUrls
+                        ),
+                        attackCount: 1, districtCount: nil,
+                        districtsDestroyed: nil, districts: nil
+                    ),
+                ],
+                defenseLog: nil
+            )
+        }
+
+        let seasonA = makeSeason(badgeUrls: badgeUrlsA)
+        let seasonB = makeSeason(badgeUrls: badgeUrlsB)
+        XCTAssertEqual(seasonA, seasonB, "回归前提：两个赛季语义必须完全相同（Dictionary == 忽略顺序）")
+
+        // 契约：stableIdentityKey 必须与字典插入顺序无关（sortedKeys 保证）。
+        XCTAssertEqual(
+            seasonA.stableIdentityKey, seasonB.stableIdentityKey,
+            "stableIdentityKey 必须与字典插入顺序无关"
+        )
+    }
+
     // MARK: - 突袭周末成员/攻防日志（Issue #20）
 
     func testDecodeCapitalRaidMembers() throws {

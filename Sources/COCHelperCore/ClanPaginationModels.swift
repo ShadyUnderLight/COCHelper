@@ -336,6 +336,28 @@ public struct OfficialCapitalRaidSeason: Codable, Hashable, Sendable {
     }
 }
 
+// MARK: - Issue #199: 突袭周末赛季稳定身份键
+
+public extension OfficialCapitalRaidSeason {
+    /// UI 稳定身份键（ForEach identity）：官方赛季无 ID 字段，且真实数据中
+    /// startTime/endTime/state 三元组可能重复（#197 fixture 17 条累计记录
+    /// 只有 3 个唯一键，多条不同 capitalTotalLoot 的记录共享同三元组），
+    /// 必须用**完整赛季内容**（JSON 编码全部字段，含 members/attackLog/
+    /// defenseLog）保证唯一。跨分页累计不变、确定性（合成 Codable 按键声明
+    /// 顺序编码，同版本结构输出稳定）。
+    var stableIdentityKey: String {
+        let encoder = JSONEncoder()
+        // 关键：`.sortedKeys`——完整内容含 `badgeUrls: [String: String]` 等
+        // 字典字段，Swift Dictionary 迭代顺序不稳定（同语义不同插入顺序会
+        // 产生不同 JSON），必须按键排序才能保证「语义相同 → 键相同」。
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(self) else {
+            return "season:" + String(reflecting: self)
+        }
+        return "season:" + data.base64EncodedString()
+    }
+}
+
 // MARK: - 分页游标逻辑（防无限循环）
 
 /// 分页终结判定（纯函数，可测）。

@@ -230,18 +230,38 @@ struct VillageDetailView: View {
             }
         )
 
+        // Issue #199：扁平 render rows——组头卡 / 实例块 / 旧行都是外层
+        // LazyVStack 的独立行（稳定 ID = 投影/快照 ID，不用 offset/UUID），
+        // 60s tick / 筛选 / 排序切换时只构建可见行；1000+ 实例场景不会
+        // 一次构建全部 offscreen 行（嵌套 LazyVStack 会被完全展开，故必须扁平）。
+        let detailRows = buildDetailRows(
+            displayGroups: displayGroups,
+            statsByKey: statsByKey,
+            groupByInstanceID: groupByInstanceID,
+            craftTable: craftTable
+        )
+
         return ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            // 根容器 LazyVStack + spacing 0：固定 section 用底部 padding 分隔，
+            // 扁平行用自身 padding / Divider 保持原有间距与分隔线语义。
+            LazyVStack(alignment: .leading, spacing: 0) {
                 header(village: village, projection: projection, now: now)
+                    .padding(.bottom, 18)
                 officialAPISection()
+                    .padding(.bottom, 18)
                 SnapshotHistoryView(
                     projection: historyProjection,
                     selectedCategory: $selectedHistoryCategory
                 )
+                .padding(.bottom, 18)
                 metricsBar(metrics: progressMetrics, coverage: projection.progressCoverage)
+                    .padding(.bottom, 18)
                 basePicker()
+                    .padding(.bottom, 18)
                 categoryFilterBar(groups: groups, total: total, statsByKey: statsByKey)
+                    .padding(.bottom, 18)
                 manualUpgradeFilterBar()
+                    .padding(.bottom, 18)
 
                 if displayGroups.isEmpty {
                     Panel {
@@ -255,22 +275,18 @@ struct VillageDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 } else {
-                    ForEach(displayGroups) { group in
-                        sectionCard(
-                            group: group,
+                    ForEach(detailRows) { row in
+                        renderDetailRow(
+                            row,
                             now: now,
-                            stats: statsByKey[group.id],
                             village: village,
-                            groupByInstanceID: groupByInstanceID,
-                            craftTable: craftTable,
                             metrics: progressMetrics,
                             actionsByItemID: actionsByItemID
                         )
                     }
                 }
             }
-            // 撑满窗口宽度：ScrollView 内 VStack(alignment: .leading) 默认按内容
-            // 理想宽度布局（实测 1180pt 窗口内容只占 ~600pt，右侧大片空白）；
+            // 撑满窗口宽度：LazyVStack 内与旧 VStack 同语义——
             // 官方玩家卡等自适布局依赖完整提议宽度（Issue #49 窗口级验收）。
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(28)
@@ -694,49 +710,370 @@ struct VillageDetailView: View {
 
     // MARK: - 列表
 
-    /// 分组卡片：标题 + 完成度（保持现状）；内容按展示分类分派（Issue #45）——
-    /// 精制台整组走旧列表（父子缩进），其余组（buildings/buildings2 平铺记录）
-    /// 接入组卡，无组卡归属的 items（防御性兜底）继续走旧行。
-    private func sectionCard(
-        group: VillageDetailGroup,
-        now: Date,
-        stats: VillageCategoryCompletion?,
-        village: VillageProfile,
+    /// Issue #199：详情页扁平 render row。全部作为外层 LazyVStack 的独立行
+    /// 虚拟化；稳定 ID = 投影/快照 ID（禁止 offset / UUID——跨分页/筛选不变）。
+    private enum DetailFlatRow: Identifiable {
+        /// 非精制台 section 头部：标题 + 完成度（Panel）。
+        case sectionHeader(group: VillageDetailGroup, stats: VillageCategoryCompletion?)
+        /// 精制台整组：标题 + 完成度 + 表格保留单 Panel 外观。
+        case craftTable(group: VillageDetailGroup, defenses: [CraftTableDefenseState], stats: VillageCategoryCompletion?)
+        /// 组头卡：`BuildingGroupSummaryView` 汇总 + Start/Cancel/Adjust 动作行。
+        case groupHeader(group: BuildingGroup)
+        /// 单实例块：实例行 + 该记录自己的升级阶梯（leadingDivider = 组内非首个）。
+        case instance(group: BuildingGroup, instance: BuildingInstance, leadingDivider: Bool)
+        /// 旧列表行（issue #24 父子缩进平铺；leadingDivider = 非 section 内首行）。
+        case legacy(item: VillageItemState, group: VillageDetailGroup, indented: Bool, leadingDivider: Bool)
+
+        var id: String {
+            switch self {
+            case .sectionHeader(let group, _): return "section:\(group.id)"
+            case .craftTable(let group, _, _): return "craft:\(group.id)"
+            case .groupHeader(let group): return "groupHeader:\(group.id)"
+            case .instance(let group, let instance, _): return "instance:\(group.id):\(instance.id)"
+            case .legacy(let item, _, _, _): return "legacy:\(item.id)"
+            }
+        }
+    }
+
+    /// 扁平 render rows 构建：保持旧 sectionCard/groupedRows/legacyRows 的
+    /// 顺序与分隔线语义（组按 items 首现顺序、实例按快照输入序、父项先于
+    /// 缩进子项），只是把「面板嵌套」改为同一 LazyVStack 的独立行。
+    private func buildDetailRows(
+        displayGroups: [VillageDetailGroup],
+        statsByKey: [String: VillageCategoryCompletion],
         groupByInstanceID: [String: BuildingGroup],
-        craftTable: [CraftTableDefenseState],
+        craftTable: [CraftTableDefenseState]
+    ) -> [DetailFlatRow] {
+        var rows: [DetailFlatRow] = []
+        for group in displayGroups {
+            if group.displayCategory == .craftTable {
+                rows.append(.craftTable(
+                    group: group,
+                    defenses: craftTable,
+                    stats: statsByKey[group.id]
+                ))
+                continue
+            }
+            rows.append(.sectionHeader(group: group, stats: statsByKey[group.id]))
+
+            var orderedGroups: [BuildingGroup] = []
+            var seenGroupIDs = Set<String>()
+            var fallbackItems: [VillageItemState] = []
+            for item in group.items {
+                if let buildingGroup = groupByInstanceID[Self.rawRecordID(item.id)] {
+                    if !seenGroupIDs.contains(buildingGroup.id) {
+                        seenGroupIDs.insert(buildingGroup.id)
+                        orderedGroups.append(buildingGroup)
+                    }
+                } else {
+                    fallbackItems.append(item)
+                }
+            }
+            for buildingGroup in orderedGroups {
+                rows.append(.groupHeader(group: buildingGroup))
+                for (index, instance) in buildingGroup.instances.enumerated() {
+                    rows.append(.instance(
+                        group: buildingGroup,
+                        instance: instance,
+                        leadingDivider: index > 0
+                    ))
+                }
+            }
+            // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
+            // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
+            let parented = VillageDetailProjection.parentedRows(from: fallbackItems)
+            for (index, row) in parented.enumerated() {
+                rows.append(.legacy(
+                    item: row.item, group: group,
+                    indented: false, leadingDivider: index > 0
+                ))
+                for child in row.children {
+                    rows.append(.legacy(
+                        item: child, group: group,
+                        indented: true, leadingDivider: true
+                    ))
+                }
+            }
+        }
+        return rows
+    }
+
+    /// 扁平 render row 渲染：section 头部 / 组头卡带 Panel，实例块与旧行
+    /// 用自身 padding 对齐 Panel 内容（水平 18pt），分隔线语义与旧实现一致。
+    @ViewBuilder
+    private func renderDetailRow(
+        _ row: DetailFlatRow,
+        now: Date,
+        village: VillageProfile,
         metrics: VillageProgressMetrics,
         actionsByItemID: [String: UpgradeAction]
     ) -> some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label(
-                        group.displayCategory?.title ?? group.category?.title ?? "其他",
-                        systemImage: group.displayCategory?.systemImage ?? group.category?.systemImage ?? "ellipsis.circle"
-                    )
-                    .font(.headline)
-                    Spacer()
-                    sectionCompletionLabel(stats: stats)
-                }
-
-                if group.displayCategory == .craftTable {
+        switch row {
+        case .sectionHeader(let group, let stats):
+            Panel {
+                sectionTitleRow(group: group, stats: stats)
+            }
+            .padding(.top, 18)
+        case .craftTable(let group, let defenses, let stats):
+            Panel {
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionTitleRow(group: group, stats: stats)
                     CraftTableView(
-                        defenses: craftTable,
+                        defenses: defenses,
                         catalogVersion: craftTableCatalog?.gameVersion
                     )
-                } else {
-                    groupedRows(
-                        items: group.items,
+                }
+            }
+            .padding(.top, 18)
+        case .groupHeader(let group):
+            groupHeaderRow(group)
+                .padding(.top, 10)
+        case .instance(let group, let instance, let leadingDivider):
+            // 实例块是扁平行：外层 VStack + 水平 18pt 对齐旧 Panel 内容缩进，
+            // 组内非首个实例前加分隔线（与旧 instanceList 语义一致）。
+            VStack(alignment: .leading, spacing: 0) {
+                if leadingDivider {
+                    Divider()
+                }
+                instanceBlock(group: group, instance: instance, now: now)
+            }
+            .padding(.horizontal, 18)
+        case .legacy(let item, let group, let indented, let leadingDivider):
+            // 旧行：水平 18pt 对齐 Panel 内容；父项间/子项前分隔线缩进
+            // listDividerLeading（issue #24 语义）；section 内首行补 10pt 间距。
+            VStack(alignment: .leading, spacing: 0) {
+                if leadingDivider {
+                    Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
+                }
+                itemRow(
+                    item, group: group, now: now, village: village,
+                    metrics: metrics, actionsByItemID: actionsByItemID,
+                    indented: indented
+                )
+                .padding(.top, leadingDivider ? 0 : 10)
+            }
+            .padding(.horizontal, 18)
+        }
+    }
+
+    /// section 标题行：标题 + 完成度（旧 sectionCard 头部）。
+    private func sectionTitleRow(
+        group: VillageDetailGroup,
+        stats: VillageCategoryCompletion?
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Label(
+                group.displayCategory?.title ?? group.category?.title ?? "其他",
+                systemImage: group.displayCategory?.systemImage ?? group.category?.systemImage ?? "ellipsis.circle"
+            )
+            .font(.headline)
+            Spacer()
+            sectionCompletionLabel(stats: stats)
+        }
+    }
+
+    /// 组头卡：`BuildingGroupSummaryView` 汇总 + Start/Cancel/Adjust 动作行
+    ///（旧 BuildingGroupCard 的 Panel 部分，实例区改为扁平行）。
+    private func groupHeaderRow(_ group: BuildingGroup) -> some View {
+        let startActions = UpgradeActionProjection.actions(for: group, catalog: catalog)
+        let activeRecords = group.trackerState.activeRecords
+        return Panel {
+            VStack(alignment: .leading, spacing: 8) {
+                BuildingGroupSummaryView(group: group)
+                if !startActions.isEmpty || !activeRecords.isEmpty {
+                    Divider()
+                    groupActionRow(
                         group: group,
-                        groupByInstanceID: groupByInstanceID,
-                        now: now,
-                        village: village,
-                        metrics: metrics,
-                        actionsByItemID: actionsByItemID
+                        startActions: startActions,
+                        activeRecords: activeRecords
                     )
                 }
             }
         }
+    }
+
+    /// 组级动作行（旧 BuildingGroupCard.actionRow）：聚合 action v1 一次启动
+    /// 一个实例；active 记录提供 Cancel/Adjust。
+    private func groupActionRow(
+        group: BuildingGroup,
+        startActions: [UpgradeAction],
+        activeRecords: [ManualUpgradeRecord]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("本地升级")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(startActions, id: \.id) { action in
+                    if action.isStartable {
+                        Button("开始升级 " + Self.levelLabel(action)) {
+                            actionSheet = .start(action)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityLabel("开始升级 " + group.name + " " + Self.levelLabel(action))
+                    } else {
+                        Button("开始升级 " + Self.levelLabel(action)) {}
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(true)
+                            .help(action.disabledReason ?? "不可启动")
+                    }
+                }
+                let diagnostics = group.trackerState.diagnostics
+                if !diagnostics.isEmpty {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help(diagnostics.joined(separator: "\n"))
+                }
+                Spacer()
+            }
+            if !activeRecords.isEmpty {
+                HStack(spacing: 8) {
+                    Text("进行中")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    ForEach(activeRecords) { record in
+                        Text("Lv \(record.fromLevel) → \(record.targetLevel)")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        Button("取消") {
+                            actionSheet = .cancel(record)
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .accessibilityLabel("取消升级 " + group.name + " " + Self.levelLabel(record))
+                        Button("调整时间") {
+                            actionSheet = .adjust(record)
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .accessibilityLabel("调整开始时间 " + group.name + " " + Self.levelLabel(record))
+                    }
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private static func levelLabel(_ record: ManualUpgradeRecord) -> String {
+        "\(record.fromLevel) → \(record.targetLevel)"
+    }
+
+    private static func levelLabel(_ action: UpgradeAction) -> String {
+        guard let from = action.fromLevel, let target = action.targetLevel else { return "" }
+        return "\(from) → \(target)"
+    }
+
+    /// 单实例块：头部行（Button → 打开 LevelDetailSheet）+ 该记录自己的阶梯
+    /// 网格（per-record 阶梯，跨实例并集会破坏语义，Issue #45 验收）。
+    private func instanceBlock(
+        group: BuildingGroup,
+        instance: BuildingInstance,
+        now: Date
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            instanceRow(group: group, instance: instance, now: now)
+            Divider()
+            // 缩进与头部图标列对齐（24pt 图标 + 10pt spacing）。
+            BuildingUpgradeStepGrid(steps: instance.steps, item: instance.item)
+                .padding(.leading, 34)
+                .padding(.vertical, 8)
+        }
+    }
+
+    /// 实例头部行（旧 BuildingGroupCard.instanceRow）：整行 Button 打开详情。
+    private func instanceRow(
+        group: BuildingGroup,
+        instance: BuildingInstance,
+        now: Date
+    ) -> some View {
+        let item = instance.item
+        return Button {
+            selectedItem = instance.item
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                iconView(item)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Text(Self.levelLabel(item))
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                        if let count = item.count, count > 1 {
+                            Text("×" + String(count))
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.white.opacity(0.07), in: Capsule())
+                        }
+                    }
+                    if item.isEffectivelyUpgrading || item.effectivelyNeedsReimport {
+                        HStack(spacing: 6) {
+                            if item.isEffectivelyUpgrading {
+                                StatusBadge(text: "正在升级", tint: .orange)
+                            }
+                            if item.effectivelyNeedsReimport {
+                                StatusBadge(text: "待重新导入确认", tint: .orange)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                if let remainingSeconds = item.effectiveRemainingSeconds(at: now), remainingSeconds > 0 {
+                    Text(AccountDurationFormatter.label(remainingSeconds))
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.orange)
+                }
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 等级标签：currentLevel 缺失 →「等级未记录」；maxLevel 缺失 →「X级 / --」。
+    private static func levelLabel(_ item: VillageItemState) -> String {
+        guard let currentLevel = item.effectiveCurrentLevel else { return "等级未记录" }
+        if let maxLevel = item.maxLevel {
+            return String(currentLevel) + "级 / " + String(maxLevel) + "级"
+        }
+        return String(currentLevel) + "级 / --"
+    }
+
+    /// 实例图标：4 级候选链异步加载（`ResourceIconView`，后台 actor + session
+    /// cache），失败回退 SF Symbol。资产缺失原因叠加警告角标 + help
+    ///（Issue #198：同步解码收敛到 ResourceIconView，候选链/回退/角标语义不变）。
+    @ViewBuilder
+    private func iconView(_ item: VillageItemState) -> some View {
+        ResourceIconView(
+            urls: item.preferredAssetURLs(version: GameCatalog.defaultBundledVersion),
+            slotSize: 24,
+            systemImage: item.displayCategory?.systemImage ?? item.category?.systemImage ?? "hammer.fill",
+            tint: item.displayCategory?.tint ?? item.category?.tint ?? Color.secondary,
+            symbolFont: .body,
+            pngHelp: iconHelp(item),
+            sfHelp: iconHelp(item)
+        )
+        .overlay(alignment: .bottomTrailing) {
+            if item.assetMissingReason != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.orange)
+                    .offset(x: 4, y: 4)
+            }
+        }
+    }
+
+    /// 图标 help 文案：资产缺失原因优先（与 UpgradeDisplayRow.iconHelp 同语义）。
+    private func iconHelp(_ item: VillageItemState) -> String {
+        if let reason = item.assetMissingReason {
+            return "目录图标或等级外观缺失：" + reason
+        }
+        if let missingReason = item.missingReason { return missingReason }
+        return "游戏资源图标"
     }
 
     /// 单行：`UpgradeDisplayRecord` 在按钮外层构造，避免 label 闭包内长表达式
@@ -907,82 +1244,6 @@ struct VillageDetailView: View {
         case .level: "等级"
         case .stageMax: "阶段上限"
         case .recentlyChanged: "最近变更"
-        }
-    }
-
-    /// Issue #45：非精制台分组的组卡内容。有组归属的 items 按 BuildingGroup 聚类
-    /// 渲染组卡（组按 items 首现顺序，组内实例保持快照输入序），无归属的 items
-    ///（防御性兜底：未知 section 项、嵌套后代等）走旧列表行，统一放在组卡下方。
-    /// 聚合行与组卡实例数量可能不同（如同等级墙聚合为 1 行 ×N，组卡按原始记录
-    /// 逐实例展示），chips 计数仍按聚合口径，已知外观差异（Task 4 验证）。
-    private func groupedRows(
-        items: [VillageItemState],
-        group: VillageDetailGroup,
-        groupByInstanceID: [String: BuildingGroup],
-        now: Date,
-        village: VillageProfile,
-        metrics: VillageProgressMetrics,
-        actionsByItemID: [String: UpgradeAction]
-    ) -> some View {
-        var orderedGroups: [BuildingGroup] = []
-        var seenGroupIDs = Set<String>()
-        var fallbackItems: [VillageItemState] = []
-        for item in items {
-            if let buildingGroup = groupByInstanceID[Self.rawRecordID(item.id)] {
-                if !seenGroupIDs.contains(buildingGroup.id) {
-                    seenGroupIDs.insert(buildingGroup.id)
-                    orderedGroups.append(buildingGroup)
-                }
-            } else {
-                fallbackItems.append(item)
-            }
-        }
-
-        return VStack(alignment: .leading, spacing: 10) {
-            ForEach(orderedGroups) { buildingGroup in
-                BuildingGroupCard(
-                    group: buildingGroup,
-                    onOpenDetail: { instance in selectedItem = instance.item },
-                    now: now,
-                    startActions: UpgradeActionProjection.actions(for: buildingGroup, catalog: catalog),
-                    onStart: { action in actionSheet = .start(action) },
-                    onCancel: { record in actionSheet = .cancel(record) },
-                    onAdjust: { record in actionSheet = .adjust(record) }
-                )
-            }
-            if !fallbackItems.isEmpty {
-                legacyRows(
-                    items: fallbackItems, group: group, now: now,
-                    village: village, metrics: metrics,
-                    actionsByItemID: actionsByItemID
-                )
-            }
-        }
-    }
-
-    /// 旧列表行（精制台整组 / 无组卡归属的兜底 items）：issue #24 父子缩进平铺。
-    private func legacyRows(
-        items: [VillageItemState],
-        group: VillageDetailGroup,
-        now: Date,
-        village: VillageProfile,
-        metrics: VillageProgressMetrics,
-        actionsByItemID: [String: UpgradeAction]
-    ) -> some View {
-        LazyVStack(spacing: 0) {
-            // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
-            // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
-            let rows = VillageDetailProjection.parentedRows(from: items)
-            ForEach(rows) { row in
-                itemRow(row.item, group: group, now: now, village: village, metrics: metrics, actionsByItemID: actionsByItemID)
-                ForEach(row.children) { child in
-                    Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
-                    itemRow(child, group: group, now: now, village: village, metrics: metrics, actionsByItemID: actionsByItemID, indented: true)
-                }
-                if row.id != rows.last?.id {
-                    Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
-                }
-            }
         }
     }
 

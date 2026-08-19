@@ -654,7 +654,9 @@ struct UpgradeTrackerView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            // Issue #199：升级总览容器改为 LazyVStack，TimelineView 60s tick
+            // 重建时只构建可见面板。
+            LazyVStack(alignment: .leading, spacing: 20) {
                 // Issue #49 评审 P2：头部在 TimelineView 之外，stale 派生用默认
                 // Date() 不会随 60s tick 重算；包一层同频率 TimelineView 并透传
                 // context.date，跨过 24h stale 阈值后下一分钟即可翻转为「已过期」。
@@ -1067,7 +1069,9 @@ private struct ActiveUpgradesPanel: View {
                     )
                 } else {
                     TrackerTableHeader()
-                    VStack(spacing: 0) {
+                    // Issue #199：active 升级列表改为 LazyVStack，随 TimelineView
+                    // 60s tick 重建时只构建可见行。
+                    LazyVStack(spacing: 0) {
                         ForEach(records) { record in
                             UpgradeDisplayRow(record: record, now: now)
                             if record.id != records.last?.id {
@@ -1099,7 +1103,8 @@ private struct PendingReimportBlock: View {
             Text("有 " + String(records.count) + " 个项目已计时结束，重新导入 JSON 确认实际等级。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            VStack(spacing: 0) {
+            // Issue #199：待重新导入列表改为 LazyVStack。
+            LazyVStack(spacing: 0) {
                 ForEach(records) { record in
                     UpgradeDisplayRow(record: record, now: now)
                     if record.id != records.last?.id {
@@ -1139,7 +1144,8 @@ private struct ManualUpgradeStatePanel: View {
                     Label("最近完成（7 天内）", systemImage: "clock.badge.checkmark.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    VStack(spacing: 0) {
+                    // Issue #199：最近完成列表改为 LazyVStack。
+                    LazyVStack(spacing: 0) {
                         ForEach(state.completedRecently) { completion in
                             HStack {
                                 Text(completion.itemName)
@@ -1163,7 +1169,8 @@ private struct ManualUpgradeStatePanel: View {
                     Label("需要关注", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
-                    VStack(spacing: 0) {
+                    // Issue #199：关注列表改为 LazyVStack。
+                    LazyVStack(spacing: 0) {
                         ForEach(state.attentionRecords) { record in
                             HStack(spacing: 6) {
                                 Text(record.item.name)
@@ -1325,7 +1332,8 @@ struct AccountDataView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            // Issue #199：账号数据页容器改为 LazyVStack，多张卡片按需构建。
+            LazyVStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("账号数据")
                         .font(.system(size: 28, weight: .bold, design: .rounded))

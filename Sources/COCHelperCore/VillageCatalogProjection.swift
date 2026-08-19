@@ -733,24 +733,31 @@ public struct VillageCatalogProjection: Sendable {
     // MARK: - Issue #200 动态刷新
 
     /// 把 remainingSeconds（items/rawItems）与 importedRemainingSeconds
-    /// （effectiveTrackerItems）按 (now - builtAt) 递减后返回副本。
+    /// （effectiveTrackerItems）按「与直接构建一致的 floor 语义」递减后返回副本。
+    ///
+    /// 锚定 `importedAt`（与 `liveRemainingSeconds` 同一锚点）：递减量 =
+    /// `floor(now - importedAt) - floor(builtAt - importedAt)`，与直接构建
+    /// 的 `max(0, remaining - floor(now - importedAt))` 逐位一致——若改用
+    /// `floor(now - builtAt)` 分段取整，builtAt/now 的小数秒会引入 0/1 秒
+    /// 误差，导致到期判定最多延迟一个 tick（外部 review P2）。
     ///
     /// - expired：任一 remaining 从 >0 变 0。到期意味着 active→needsReimport、
     ///   模块 upgrading→recorded 等「完成事实」翻转——动态 overlay 不得自行
     ///   推断完成事实（issue #200 验收），调用方应在 expired 时重建静态投影。
-    /// - 时钟回拨（now < builtAt）保持 remaining 不变（clamp delta ≥ 0）。
+    /// - 时钟回拨（now < builtAt 或 elapsed 归零）保持 remaining 不变
+    ///   （clamp delta ≥ 0）。
     /// - 静态字段（status/nextLevel/nextUpgrade/effectiveState 等）不变。
     public func refreshingTimers(
-        at now: Date, builtAt: Date
+        at now: Date, builtAt: Date, importedAt: Date
     ) -> (projection: VillageCatalogProjection, expired: Bool) {
-        let delta = max(0, now.timeIntervalSince(builtAt))
+        let delta = Self.refreshDelta(at: now, builtAt: builtAt, importedAt: importedAt)
         var expired = false
 
         func refreshed(_ item: VillageItemState) -> VillageItemState {
             guard let remaining = item.remainingSeconds, remaining > 0 else {
                 return item
             }
-            let newRemaining = max(0, remaining - Int64(delta))
+            let newRemaining = max(0, remaining - delta)
             if newRemaining == 0 { expired = true }
             return item.withRemainingSeconds(newRemaining)
         }
@@ -761,7 +768,7 @@ public struct VillageCatalogProjection: Sendable {
             guard let remaining = state.importedRemainingSeconds, remaining > 0 else {
                 return state
             }
-            let newRemaining = max(0, remaining - Int64(delta))
+            let newRemaining = max(0, remaining - delta)
             if newRemaining == 0 { expired = true }
             return state.withImportedRemainingSeconds(newRemaining)
         }
@@ -1486,6 +1493,17 @@ public struct VillageCatalogProjection: Sendable {
             return nil
         }
         return max(0, remaining - elapsed)
+    }
+
+    /// 动态刷新递减量（秒，Int64）：`floor(now - importedAt) - floor(builtAt - importedAt)`，
+    /// clamp ≥ 0。与 `liveRemainingSeconds` 的锚点/取整语义逐位一致（review P2）。
+    static func refreshDelta(at now: Date, builtAt: Date, importedAt: Date) -> Int64 {
+        guard let elapsedNow = safeFloorInt64(now.timeIntervalSince(importedAt)),
+              let elapsedAtBuilt = safeFloorInt64(builtAt.timeIntervalSince(importedAt))
+        else {
+            return 0 // 非有限/越界 fail-closed：不递减（保持原值，调用方重建兜底）
+        }
+        return Swift.max(0, elapsedNow - elapsedAtBuilt)
     }
 
     /// Converts a finite, floored time interval without relying on

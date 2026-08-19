@@ -242,20 +242,22 @@ extension CraftTableModuleState {
 }
 
 extension Array where Element == CraftTableDefenseState {
-    /// 精制台模块 remainingSeconds 按 (now - builtAt) 递减。
+    /// 精制台模块 remainingSeconds 按与直接构建一致的 floor 语义递减
+    /// （锚定 `importedAt`，同 `refreshDelta`——避免 `floor(now - builtAt)`
+    /// 分段取整的小数秒误差导致到期判定延迟，外部 review P2）。
     /// expired = 任一模块 remaining 从 >0 变 0（调用方应重建静态投影）。
-    /// 时钟回拨（now < builtAt）保持 remaining 不变（clamp delta ≥ 0）。
+    /// 时钟回拨（now < builtAt 或 elapsed 归零）保持 remaining 不变（clamp delta ≥ 0）。
     public func refreshingModules(
-        at now: Date, builtAt: Date
+        at now: Date, builtAt: Date, importedAt: Date
     ) -> (modules: [CraftTableDefenseState], expired: Bool) {
-        let delta = Swift.max(0, now.timeIntervalSince(builtAt))
+        let delta = VillageCatalogProjection.refreshDelta(at: now, builtAt: builtAt, importedAt: importedAt)
         var expired = false
         let refreshed = map { defense in
             let modules = defense.modules.map { module in
                 guard let remaining = module.remainingSeconds, remaining > 0 else {
                     return module
                 }
-                let newRemaining = Swift.max(0, remaining - Int64(delta))
+                let newRemaining = Swift.max(0, remaining - delta)
                 if newRemaining == 0 { expired = true }
                 return module.withRemainingSeconds(newRemaining)
             }

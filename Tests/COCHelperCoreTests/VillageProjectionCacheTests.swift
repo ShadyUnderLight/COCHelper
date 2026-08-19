@@ -196,4 +196,65 @@ final class VillageProjectionCacheTests: XCTestCase {
         let _ = render(at: t0.addingTimeInterval(600))
         XCTAssertEqual(cache.buildCount, 1)
     }
+
+    // MARK: - LRU 驱逐（外部 review P2：满容量不得清空全部）
+
+    func testLRUEvictsSingleLeastRecentlyUsedEntry() throws {
+        let small = VillageProjectionCache(maxEntries: 2)
+        // 每次 makeVillage 生成不同 village id → 不同 key。
+        let v1 = try makeVillage(importedAt: t0)
+        let v2 = try makeVillage(importedAt: t0)
+        let v3 = try makeVillage(importedAt: t0)
+
+        func render(_ v: VillageProfile, at now: Date) -> VillageProjectionCache.RenderResult {
+            small.render(
+                village: v, catalog: catalog, craftTableCatalog: craftTableCatalog,
+                seasonalPhases: phases, base: .home, now: now,
+                manualUpgradeCore: nil, catalogEpoch: 0
+            )
+        }
+
+        _ = render(v1, at: t0)                    // 构建 v1
+        _ = render(v2, at: t0)                    // 构建 v2
+        _ = render(v1, at: t0.addingTimeInterval(1)) // 命中 v1 → v1 最新
+        XCTAssertEqual(small.buildCount, 2)
+        _ = render(v3, at: t0)                    // 构建 v3 → 驱逐最久未用（v2）
+        XCTAssertEqual(small.buildCount, 3)
+        XCTAssertEqual(small.hitCount, 1)
+
+        // v2 被驱逐 → 重建（不是全清后 v1 也 miss）。
+        _ = render(v2, at: t0)
+        XCTAssertEqual(small.buildCount, 4)
+        // v1 仍命中（旧实现 removeAll 后此处会是重建）。
+        _ = render(v1, at: t0)
+        XCTAssertEqual(small.buildCount, 4)
+        XCTAssertEqual(small.hitCount, 2)
+    }
+
+    func testLRUEvictionKeepsNewerEntriesAcrossManyBuilds() throws {
+        let small = VillageProjectionCache(maxEntries: 3)
+        var villages: [VillageProfile] = []
+        for _ in 0..<6 {
+            villages.append(try makeVillage(importedAt: t0))
+        }
+        // 依次构建 6 个，now 递增使 lastUsedAt 有序：每超容驱逐最旧，只驱逐一条。
+        for (index, v) in villages.enumerated() {
+            _ = small.render(
+                village: v, catalog: catalog, craftTableCatalog: craftTableCatalog,
+                seasonalPhases: phases, base: .home, now: t0.addingTimeInterval(Double(index)),
+                manualUpgradeCore: nil, catalogEpoch: 0
+            )
+        }
+        XCTAssertEqual(small.buildCount, 6)
+        // 最新的 3 个全部命中（旧实现每次 build 都 removeAll，这里全 miss）。
+        for (offset, v) in villages.dropFirst(3).enumerated() {
+            _ = small.render(
+                village: v, catalog: catalog, craftTableCatalog: craftTableCatalog,
+                seasonalPhases: phases, base: .home, now: t0.addingTimeInterval(Double(offset) + 10),
+                manualUpgradeCore: nil, catalogEpoch: 0
+            )
+        }
+        XCTAssertEqual(small.buildCount, 6)
+        XCTAssertEqual(small.hitCount, 3)
+    }
 }

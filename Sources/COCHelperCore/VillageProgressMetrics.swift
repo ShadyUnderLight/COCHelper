@@ -384,7 +384,10 @@ public enum VillageProgressProjection {
         from villages: [VillageProfile],
         catalog: GameCatalog?,
         seasonalPhases: SeasonalPhaseTable,
-        now: Date = Date()
+        now: Date = Date(),
+        projectionProvider: VillageProjectionProvider? = nil,
+        craftTableCatalog: CraftTableCatalog? = nil,
+        manualUpgradeCores: [UUID: ManualUpgradeCore]? = nil
     ) -> AggregateCoverage? {
         var known = 0
         var observed = 0
@@ -392,13 +395,21 @@ public enum VillageProgressProjection {
         var bbHasObservations = false
         for village in villages where village.hasImportedData {
             for base in TrackerBase.allCases {
-                let projection = VillageCatalogProjection.project(
-                    village: village,
-                    catalog: catalog,
-                    seasonalPhases: seasonalPhases,
-                    base: base,
-                    now: now
-                )
+                // Issue #200 review P1：注入投影缓存（AppModel 层），避免
+                // 总览完整性卡每个 tick 对每村庄×基地重跑完整投影；
+                // 未注入时保持直接构建（行为不变）。craftTableCatalog /
+                // manualUpgradeCores 与详情页（villageRender）同口径透传，
+                // 避免覆盖数值因 manual core 漂移（review 二轮 golden 修复）。
+                let projection = projectionProvider?(village, base, now)
+                    ?? VillageCatalogProjection.project(
+                        village: village,
+                        catalog: catalog,
+                        seasonalPhases: seasonalPhases,
+                        craftTableCatalog: craftTableCatalog,
+                        base: base,
+                        now: now,
+                        manualUpgradeCore: manualUpgradeCores?[village.id]
+                    )
                 if base == .home {
                     homeCoverages.append(projection.progressCoverage)
                 }

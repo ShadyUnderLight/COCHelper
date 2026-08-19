@@ -51,8 +51,13 @@ public final class VillageProjectionCache {
 
     private struct Entry {
         let builtAt: Date
+        /// 计时锚点（与 `liveRemainingSeconds` 同一语义；刷新用
+        /// `floor(now - importedAt) - floor(builtAt - importedAt)` 精确对齐）。
+        let importedAt: Date
         let projection: VillageCatalogProjection
         let craftTable: [CraftTableDefenseState]
+        /// LRU 驱逐时间戳（命中/构建时更新）。
+        var lastUsedAt: Date
     }
 
     // MARK: - 状态
@@ -118,16 +123,21 @@ public final class VillageProjectionCache {
 
         // 命中 → 动态刷新；任何到期 → 重建（完成事实不推断）。
         if let entry = entries[key] {
-            let refreshed = entry.projection.refreshingTimers(at: now, builtAt: entry.builtAt)
-            let craftRefreshed = entry.craftTable.refreshingModules(at: now, builtAt: entry.builtAt)
+            let refreshed = entry.projection.refreshingTimers(
+                at: now, builtAt: entry.builtAt, importedAt: entry.importedAt
+            )
+            let craftRefreshed = entry.craftTable.refreshingModules(
+                at: now, builtAt: entry.builtAt, importedAt: entry.importedAt
+            )
             if refreshed.expired || craftRefreshed.expired {
                 return buildAndStore(
                     village: village, catalog: catalog, craftTableCatalog: craftTableCatalog,
                     seasonalPhases: seasonalPhases, base: base, now: now,
-                    manualUpgradeCore: manualUpgradeCore, key: key
+                    manualUpgradeCore: manualUpgradeCore, importedAt: snapshot.importedAt, key: key
                 )
             }
             hitCount += 1
+            entries[key]?.lastUsedAt = now
             return RenderResult(
                 projection: refreshed.projection,
                 buildingGroups: BuildingGroupProjection.project(
@@ -143,7 +153,7 @@ public final class VillageProjectionCache {
         return buildAndStore(
             village: village, catalog: catalog, craftTableCatalog: craftTableCatalog,
             seasonalPhases: seasonalPhases, base: base, now: now,
-            manualUpgradeCore: manualUpgradeCore, key: key
+            manualUpgradeCore: manualUpgradeCore, importedAt: snapshot.importedAt, key: key
         )
     }
 
@@ -161,6 +171,7 @@ public final class VillageProjectionCache {
         base: TrackerBase,
         now: Date,
         manualUpgradeCore: ManualUpgradeCore?,
+        importedAt: Date,
         key: Key
     ) -> RenderResult {
         let projection = VillageCatalogProjection.project(
@@ -186,10 +197,18 @@ public final class VillageProjectionCache {
             manualUpgradeCore: manualUpgradeCore
         )
 
-        if entries.count >= maxEntries {
-            entries.removeAll(keepingCapacity: true)
+        // 容量满：驱逐最久未命中的单条（LRU），不清空其余条目——
+        // 全清会让 32+ 村庄 × 2 基地（>64 条）在遍历中反复清空、tick 全 miss
+        // （外部 review P2）。
+        if entries.count >= maxEntries,
+           let oldest = entries.min(by: { $0.value.lastUsedAt < $1.value.lastUsedAt }) {
+            entries.removeValue(forKey: oldest.key)
         }
-        entries[key] = Entry(builtAt: now, projection: projection, craftTable: craftTable)
+        entries[key] = Entry(
+            builtAt: now, importedAt: importedAt,
+            projection: projection, craftTable: craftTable,
+            lastUsedAt: now
+        )
         buildCount += 1
 
         return RenderResult(

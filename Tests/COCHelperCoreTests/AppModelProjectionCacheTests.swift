@@ -145,4 +145,58 @@ final class AppModelProjectionCacheTests: XCTestCase {
             cachedVillageCount * TrackerBase.allCases.count
         )
     }
+
+    // MARK: - aggregateCoverage（review P1：完整性卡必须走缓存）
+
+    @MainActor
+    func testAggregateCoverageUsesProjectionCache() throws {
+        let model = try seededModel()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let cachedVillageCount = model.villages.filter { $0.accountSnapshot != nil }.count
+        let expectedBuilds = cachedVillageCount * TrackerBase.allCases.count
+
+        let provider: VillageProjectionProvider = { village, base, now in
+            model.villageRender(villageID: village.id, base: base, now: now)?.projection
+                ?? VillageCatalogProjection.project(
+                    village: village,
+                    catalog: model.gameCatalog,
+                    seasonalPhases: model.seasonalPhases,
+                    base: base,
+                    now: now,
+                    manualUpgradeCore: model.manualUpgradeCores[village.id]
+                )
+        }
+
+        // golden：带 provider（缓存）与直接构建逐位一致
+        //（direct 需同口径透传 craftTableCatalog / manualUpgradeCores——
+        // 二者影响 progressCoverage 与 snapshotCoverage，见 review 二轮）。
+        let viaCache = VillageProgressProjection.aggregateCoverage(
+            from: model.villages,
+            catalog: model.gameCatalog,
+            seasonalPhases: model.seasonalPhases,
+            now: now,
+            projectionProvider: provider
+        )
+        let direct = VillageProgressProjection.aggregateCoverage(
+            from: model.villages,
+            catalog: model.gameCatalog,
+            seasonalPhases: model.seasonalPhases,
+            now: now,
+            craftTableCatalog: model.craftTableCatalog,
+            manualUpgradeCores: model.manualUpgradeCores
+        )
+        XCTAssertEqual(viaCache, direct)
+
+        // 每 village×base 恰好构建一次；第二次调用全命中（不再重跑投影）。
+        XCTAssertEqual(model.projectionCacheStats.buildCount, expectedBuilds)
+        let _ = VillageProgressProjection.aggregateCoverage(
+            from: model.villages,
+            catalog: model.gameCatalog,
+            seasonalPhases: model.seasonalPhases,
+            now: now,
+            projectionProvider: provider
+        )
+        XCTAssertEqual(model.projectionCacheStats.buildCount, expectedBuilds)
+        XCTAssertEqual(model.projectionCacheStats.hitCount, expectedBuilds)
+    }
 }

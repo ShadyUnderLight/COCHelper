@@ -92,7 +92,7 @@ final class VillageProjectionRefreshTests: XCTestCase {
         let upgraded = try! XCTUnwrap(p0.items.first { $0.dataID == 1_000_001 })
         XCTAssertEqual(upgraded.remainingSeconds, 3600)
 
-        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(60), builtAt: builtAt)
+        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(60), builtAt: builtAt, importedAt: builtAt)
         let upgradedNow = try! XCTUnwrap(refreshed.projection.items.first { $0.dataID == 1_000_001 })
         XCTAssertEqual(upgradedNow.remainingSeconds, 3540)
         XCTAssertFalse(refreshed.expired)
@@ -100,7 +100,7 @@ final class VillageProjectionRefreshTests: XCTestCase {
 
     func testTimerExpirationIsDetected() {
         let p0 = project(at: builtAt)
-        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(3600), builtAt: builtAt)
+        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(3600), builtAt: builtAt, importedAt: builtAt)
         XCTAssertTrue(refreshed.expired)
         let upgradedNow = try! XCTUnwrap(refreshed.projection.items.first { $0.dataID == 1_000_001 })
         XCTAssertEqual(upgradedNow.remainingSeconds, 0)
@@ -112,13 +112,13 @@ final class VillageProjectionRefreshTests: XCTestCase {
     func testAlreadyExpiredTimerIsNotReportedAgain() {
         let p0 = project(at: builtAt)
         // 已结束计时（remaining == 0）不触发 expired。
-        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(60), builtAt: builtAt)
+        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(60), builtAt: builtAt, importedAt: builtAt)
         XCTAssertFalse(refreshed.expired)
     }
 
     func testClockRewindKeepsRemainingUnchanged() {
         let p0 = project(at: builtAt)
-        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(-60), builtAt: builtAt)
+        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(-60), builtAt: builtAt, importedAt: builtAt)
         let upgradedNow = try! XCTUnwrap(refreshed.projection.items.first { $0.dataID == 1_000_001 })
         XCTAssertEqual(upgradedNow.remainingSeconds, 3600)
         XCTAssertFalse(refreshed.expired)
@@ -126,7 +126,7 @@ final class VillageProjectionRefreshTests: XCTestCase {
 
     func testEffectiveTrackerItemsRemainingSynchronized() {
         let p0 = project(at: builtAt)
-        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(60), builtAt: builtAt)
+        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(60), builtAt: builtAt, importedAt: builtAt)
         let effective = try! XCTUnwrap(
             refreshed.projection.effectiveTrackerItems.first { $0.itemKey.dataID == 1_000_001 }
         )
@@ -135,7 +135,7 @@ final class VillageProjectionRefreshTests: XCTestCase {
 
     func testRawItemsAlsoRefreshed() {
         let p0 = project(at: builtAt)
-        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(120), builtAt: builtAt)
+        let refreshed = p0.refreshingTimers(at: builtAt.addingTimeInterval(120), builtAt: builtAt, importedAt: builtAt)
         let raw = try! XCTUnwrap(refreshed.projection.rawItems.first { $0.dataID == 1_000_001 })
         XCTAssertEqual(raw.remainingSeconds, 3480)
     }
@@ -185,15 +185,58 @@ final class VillageProjectionRefreshTests: XCTestCase {
         XCTAssertEqual(moduleState.status, .upgrading)
 
         let refreshed = craftTable.refreshingModules(
-            at: builtAt.addingTimeInterval(60), builtAt: builtAt
+            at: builtAt.addingTimeInterval(60), builtAt: builtAt, importedAt: builtAt
         )
         let moduleNow = try XCTUnwrap(refreshed.modules.first?.modules.first)
         XCTAssertEqual(moduleNow.remainingSeconds, 3540)
         XCTAssertFalse(refreshed.expired)
 
         let expired = craftTable.refreshingModules(
-            at: builtAt.addingTimeInterval(3600), builtAt: builtAt
+            at: builtAt.addingTimeInterval(3600), builtAt: builtAt, importedAt: builtAt
         )
         XCTAssertTrue(expired.expired)
+    }
+
+    /// 外部 review P2：刷新必须与直接构建同一 floor 语义（锚定 importedAt）。
+    /// builtAt = importedAt + 10.9、now = importedAt + 11.1：直接构建递减
+    /// floor(11.1) = 11 秒；旧实现 `floor(now - builtAt) = floor(0.2) = 0`
+    /// 只递减 10 秒（相差 1 秒，到期判定最多延迟一个 tick）。
+    func testFractionalSecondRefreshMatchesDirectProjection() throws {
+        let importedAt = Date(timeIntervalSince1970: 1_000_000.3)
+        let builtAt = importedAt.addingTimeInterval(10.9)
+        let now = importedAt.addingTimeInterval(11.1)
+        let snapshot = try makeSnapshot(
+            importedAt: importedAt,
+            buildings: [
+                (dataID: 1_000_001, level: 1, remaining: 3_600),
+                (dataID: 1_000_002, level: 2, remaining: 11), // 即将到期边界
+                (dataID: 1_000_003, level: 3, remaining: nil),
+            ]
+        )
+        let village = VillageProfile(name: "测试村", accountSnapshot: snapshot)
+
+        let p0 = VillageCatalogProjection.project(
+            village: village, catalog: catalog, base: .home, now: builtAt
+        )
+        // 直接构建锚点验证：floor(10.9) = 10
+        let atBuild = try XCTUnwrap(p0.items.first { $0.dataID == 1_000_001 })
+        XCTAssertEqual(atBuild.remainingSeconds, 3_590)
+
+        let refreshed = p0.refreshingTimers(at: now, builtAt: builtAt, importedAt: importedAt)
+        // floor(11.1) = 11 → 递减 11 秒（旧实现只递减 floor(0.2) = 0 秒）
+        let upgradedNow = try XCTUnwrap(refreshed.projection.items.first { $0.dataID == 1_000_001 })
+        XCTAssertEqual(upgradedNow.remainingSeconds, 3_589)
+        // 与直接构建 at now 逐位一致
+        let directNow = VillageCatalogProjection.project(
+            village: village, catalog: catalog, base: .home, now: now
+        )
+        let directUpgraded = try XCTUnwrap(directNow.items.first { $0.dataID == 1_000_001 })
+        XCTAssertEqual(upgradedNow.remainingSeconds, directUpgraded.remainingSeconds)
+
+        // 到期边界：remaining 11，floor(11.1) = 11 → 归零 → expired。
+        // 旧实现 11 - floor(10.9) = 1，再减 floor(0.2) = 0 → 仍为 1 不 expired。
+        XCTAssertTrue(refreshed.expired)
+        let boundaryNow = try XCTUnwrap(refreshed.projection.items.first { $0.dataID == 1_000_002 })
+        XCTAssertEqual(boundaryNow.remainingSeconds, 0)
     }
 }

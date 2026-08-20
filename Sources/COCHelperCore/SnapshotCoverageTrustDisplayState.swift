@@ -23,25 +23,39 @@ public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
     public var detail: String {
         switch self {
         case .verified:
-            "历史中的 verified section 已通过 adapter 重验证，可打开完整比较门禁。"
+            "全部 relevant section 已通过 adapter 重验证，可打开完整比较门禁。"
         case .pendingRevalidation:
             "历史保留了 verified 元数据，但尚未完成运行时信任恢复；比较结果保持保守。"
         case .insufficientCoverage:
-            "缺少可信 verified 覆盖或 section 不完整；不得把缺失变化当作确认删除。"
+            "存在 rejected、无 verified 证明或 section 不完整；不得把缺失变化当作确认删除。"
         }
     }
 
     package static func evaluate(coverage: SnapshotObservationCoverage) -> SnapshotCoverageTrustDisplayState {
-        let verifiedSections = coverage.sections.filter { $0.proof.hasVerifiedWireMetadata }
-        guard !verifiedSections.isEmpty else {
+        let sections = coverage.sections
+        guard !sections.isEmpty else {
             return .insufficientCoverage
         }
-        if verifiedSections.contains(where: { $0.runtimeTrust == .pending }) {
+
+        func sectionBlocksVerifiedDisplay(_ section: SnapshotSectionCoverage) -> Bool {
+            if !section.proof.hasVerifiedWireMetadata { return true }
+            if section.completeness != .complete { return true }
+            if case .rejected = section.runtimeTrust { return true }
+            return false
+        }
+
+        if sections.contains(where: sectionBlocksVerifiedDisplay) {
+            return .insufficientCoverage
+        }
+
+        if sections.contains(where: { $0.runtimeTrust == .pending }) {
             return .pendingRevalidation
         }
-        if verifiedSections.contains(where: { $0.opensTrustGates }) {
+
+        if sections.allSatisfy({ $0.runtimeTrust == .trusted }) {
             return .verified
         }
+
         return .insufficientCoverage
     }
 }

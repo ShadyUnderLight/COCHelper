@@ -109,12 +109,62 @@ final class VillageProjectionCacheTests: XCTestCase {
         XCTAssertEqual(render.projection.rawItems, direct.rawItems)
         XCTAssertEqual(render.projection.effectiveTrackerItems, direct.effectiveTrackerItems)
         XCTAssertEqual(render.projection.progressMetrics, direct.progressMetrics)
+        // Issue #210 验收：身份字段（villageID/villageName）与覆盖字段
+        //（snapshotCoverage）在缓存命中路径与直接 projection 完全一致。
+        XCTAssertEqual(render.projection.villageID, direct.villageID)
+        XCTAssertEqual(render.projection.villageName, direct.villageName)
+        XCTAssertEqual(
+            render.projection.progressMetrics.snapshotCoverage,
+            direct.progressMetrics.snapshotCoverage
+        )
         // diagnostics.id 为随机 UUID，比较内容。
         XCTAssertEqual(
             render.projection.diagnostics.map { "\($0.severity.rawValue)|\($0.path)|\($0.message)" },
             direct.diagnostics.map { "\($0.severity.rawValue)|\($0.path)|\($0.message)" }
         )
         XCTAssertEqual(render.buildingGroups.count, 2)
+    }
+
+    // MARK: - Issue #210 显示身份（改名）失效
+
+    func testRenameChangesVillageNameAndRebuilds() {
+        let _ = render(at: t0)
+        XCTAssertEqual(cache.buildCount, 1)
+        XCTAssertEqual(cache.hitCount, 0)
+        // 缓存命中后改名（同 id、同快照、同 manual/base）：名称是投影身份
+        // 的一部分，必须 miss 重建，不得返回旧 villageName。
+        let renamedVillage = VillageProfile(
+            id: village.id, name: "改名后", accountSnapshot: village.accountSnapshot
+        )
+        village = renamedVillage
+        let renamed = render(at: t0.addingTimeInterval(60))
+        XCTAssertEqual(cache.buildCount, 2, "改名必须使缓存失效并重建")
+        XCTAssertEqual(renamed.projection.villageName, "改名后")
+        // 新名称下再次命中（不重复重建）。
+        let _ = render(at: t0.addingTimeInterval(120))
+        XCTAssertEqual(cache.buildCount, 2)
+        XCTAssertEqual(cache.hitCount, 1)
+    }
+
+    func testRenameRemovesStaleEntryForSameVillage() {
+        // Review P2：改名（villageName 入 key）插入新 key 时须删除同村庄
+        // （villageID + base）的旧 key 条目——否则 32 村 × 2 基地顶满
+        // maxEntries=64 时，改名会让旧条目占位、LRU 驱逐其他村庄。
+        // 验证：改回旧名若命中残留旧条目（buildCount 不增）即失败。
+        let originalName = village.name
+        let _ = render(at: t0)
+        XCTAssertEqual(cache.buildCount, 1)
+        village = VillageProfile(
+            id: village.id, name: "改名后", accountSnapshot: village.accountSnapshot
+        )
+        let _ = render(at: t0.addingTimeInterval(60))
+        XCTAssertEqual(cache.buildCount, 2)
+        // 改回旧名：旧 key 条目必须已删除 → miss 重建。
+        village = VillageProfile(
+            id: village.id, name: originalName, accountSnapshot: village.accountSnapshot
+        )
+        let _ = render(at: t0.addingTimeInterval(120))
+        XCTAssertEqual(cache.buildCount, 3, "插入新 key 时必须删除同村庄旧 key 条目（P2）")
     }
 
     // MARK: - 失效矩阵

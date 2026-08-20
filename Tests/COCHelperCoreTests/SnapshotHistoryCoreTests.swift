@@ -355,7 +355,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
             appliedAt: Date(timeIntervalSince1970: 1_700_100_000),
             sectionProofs: [
-                "heroes": .makeVerified(
+                "heroes": SnapshotHistoryTestCoverage.verified(
                     source: "test-export",
                     expectedCount: 0
                 )

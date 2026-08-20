@@ -285,6 +285,9 @@ public final class AppModel: ObservableObject {
     /// @MainActor 持有；同步访问，无后台计算。
     private let projectionCache = VillageProjectionCache()
 
+    /// perf 导入是否允许将 bundled fixture coverage 提升为 verified。
+    private var perfImportPromotesVerifiedCoverage = false
+
     /// Issue #200：投影缓存统计（测试钩子，@testable 可见；生产不消费）。
     var projectionCacheStats: (buildCount: Int, hitCount: Int) {
         (projectionCache.buildCount, projectionCache.hitCount)
@@ -2592,9 +2595,26 @@ public final class AppModel: ObservableObject {
     /// 测试可注入测试 bundle 的 Fixtures 目录。
     @discardableResult
     public func loadPerformanceSample(fixtureDirectory: URL? = nil) -> Bool {
+        loadPerformanceSample(
+            fixtureDirectory: fixtureDirectory,
+            promoteVerifiedCoverage: nil
+        )
+    }
+
+    /// `@testable` 测试入口：非 bundled perf 目录默认保持 declared，测试可显式
+    /// 请求 verified 提升以复现完整 perf seed 行为。
+    @discardableResult
+    func loadPerformanceSample(
+        fixtureDirectory: URL? = nil,
+        promoteVerifiedCoverage: Bool?
+    ) -> Bool {
         // 仅当没有真实导入数据时执行（默认占位村庄允许被 seed 覆盖，不碰用户数据）。
         guard villages.allSatisfy({ !$0.hasImportedData }) else { return false }
         guard let directory = fixtureDirectory ?? Self.perfFixtureBundleDirectory() else { return false }
+        let shouldPromote = promoteVerifiedCoverage
+            ?? Self.isBundledPerfFixtureDirectory(directory)
+        perfImportPromotesVerifiedCoverage = shouldPromote
+        defer { perfImportPromotesVerifiedCoverage = false }
 
         // 隔离检查：seed 会写 #PERFCLAN 的 war/raid 缓存并添加跟踪部落。
         // 若用户无村庄快照但已有该 tag 的任何部落缓存/跟踪，拒绝执行，
@@ -2687,6 +2707,11 @@ public final class AppModel: ObservableObject {
             ?? Bundle.module.resourceURL?.appendingPathComponent("PerfFixtures")
     }
 
+    private static func isBundledPerfFixtureDirectory(_ directory: URL) -> Bool {
+        guard let bundled = perfFixtureBundleDirectory() else { return false }
+        return directory.standardizedFileURL == bundled.standardizedFileURL
+    }
+
     /// 读取 fixture 文本（bundle 或测试注入目录）。
     private func perfFixtureText(_ name: String, in directory: URL) throws -> String {
         let url = directory.appendingPathComponent(name + ".json")
@@ -2706,23 +2731,24 @@ public final class AppModel: ObservableObject {
             return false
         }
         guard let snapshot = pendingAccountSnapshot else { return false }
-        return applyPendingAccountSnapshot(
-            sectionProofs: Self.perfFixtureVerifiedProofs(for: snapshot)
-        )
+        let sectionProofs = perfImportPromotesVerifiedCoverage
+            ? Self.perfFixtureVerifiedProofs(for: snapshot)
+            : nil
+        return applyPendingAccountSnapshot(sectionProofs: sectionProofs)
     }
 
-    /// Bundled perf fixtures declare `perf-fixture` coverage; promote to verified
-    /// only on the internal perf import path, never for user pasted JSON.
+    /// Bundled perf fixtures only: promote declared `perf-fixture` coverage via
+    /// the frozen verifier registry. Arbitrary fixture directories stay declared.
     private static func perfFixtureVerifiedProofs(
         for snapshot: AccountSnapshot
     ) -> [String: SnapshotCoverageProof] {
         JSONSnapshotCoverageAdapter.proofs(for: snapshot).mapValues { proof in
             switch proof {
             case .declared(let source, let version, let expectedCount)
-                where source == "perf-fixture":
-                return SnapshotCoverageProof.makeVerified(
+                where source == SnapshotCoverageVerifier.perfFixtureAdapterID:
+                return SnapshotCoverageVerifier.issue(
                     source: source,
-                    adapterID: "perf-fixture",
+                    adapterID: SnapshotCoverageVerifier.perfFixtureAdapterID,
                     protocolVersion: version,
                     expectedCount: expectedCount,
                     verificationReason: "bundled perf fixture"

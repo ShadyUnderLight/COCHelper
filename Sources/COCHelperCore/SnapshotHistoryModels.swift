@@ -351,12 +351,20 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
 
     /// Whether this proof may open destructive absence/quantity inference gates.
     public var isVerified: Bool {
-        guard case .verified(let source, let adapterID, let protocolVersion, let expectedCount, _) = self else {
+        guard case .verified(
+            let source,
+            let adapterID,
+            let protocolVersion,
+            let expectedCount,
+            let verificationReason
+        ) = self else {
             return false
         }
-        guard Self.isNonBlankSource(source),
-              Self.isNonBlankSource(adapterID),
-              Self.isParsableProtocolVersion(protocolVersion) else {
+        guard let verificationReason,
+              Self.isNonBlankSource(source),
+              Self.isNonBlankSource(verificationReason),
+              Self.isParsableProtocolVersion(protocolVersion),
+              SnapshotCoverageVerifier.isRegistered(adapterID: adapterID, protocolVersion: protocolVersion) else {
             return false
         }
         return expectedCount == nil || expectedCount! >= 0
@@ -374,23 +382,6 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
         case .verified, .unavailable:
             return false
         }
-    }
-
-    /// Test/fixture helper for injecting verified section proofs.
-    public static func makeVerified(
-        source: String,
-        adapterID: String = "test-fixture",
-        protocolVersion: String = "1",
-        expectedCount: Int? = nil,
-        verificationReason: String? = "test injection"
-    ) -> SnapshotCoverageProof {
-        .verified(
-            source: source,
-            adapterID: adapterID,
-            protocolVersion: protocolVersion,
-            expectedCount: expectedCount,
-            verificationReason: verificationReason
-        )
     }
 
     /// source 必须含非空白字符——纯空白来源没有可审计的标识价值。

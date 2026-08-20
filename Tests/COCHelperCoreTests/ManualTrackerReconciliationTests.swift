@@ -98,8 +98,7 @@ final class ManualTrackerReconciliationTests: XCTestCase {
             } else {
                 expectedCount = nil
             }
-            proofs[section] = .makeVerified(
-                source: "test-export",
+            proofs[section] = SnapshotHistoryTestCoverage.verified(
                 expectedCount: expectedCount
             )
         }
@@ -584,7 +583,7 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         let context = try history(
             ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1},{"data":100,"lvl":12,"cnt":1}]}"##,
             sectionProofs: [
-                "buildings": .makeVerified(source: "test-export", expectedCount: 2)
+                "buildings": SnapshotHistoryTestCoverage.verified(expectedCount: 2)
             ]
         )
         let state = try observedState(reference: context.reference, distribution: [10: 1, 12: 1])
@@ -592,7 +591,7 @@ final class ManualTrackerReconciliationTests: XCTestCase {
             ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":11,"cnt":2}]}"##,
             from: context,
             sectionProofs: [
-                "buildings": .makeVerified(source: "test-export", expectedCount: 1)
+                "buildings": SnapshotHistoryTestCoverage.verified(expectedCount: 1)
             ]
         )
         let preview = try ManualTrackerReconciliationService.preview(
@@ -605,6 +604,34 @@ final class ManualTrackerReconciliationTests: XCTestCase {
 
         XCTAssertEqual(preview.items.single?.classification, .conflict)
         XCTAssertTrue(preview.requiresExplicitDecision)
+    }
+
+    func testDeclaredUniqueLevelIncreaseStaysUnknownWithoutVerifiedSection() throws {
+        let context = try history(
+            ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":9,"cnt":1}]}"##,
+            sectionProofs: [
+                "buildings": .declared(source: "u.coc", version: "1", expectedCount: 1)
+            ],
+            injectVerifiedSectionProofs: false
+        )
+        let state = try observedState(reference: context.reference, distribution: [9: 1])
+        let next = try decision(
+            ##"{"tag":"#P1","timestamp":1700000200,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##,
+            from: context,
+            sectionProofs: [
+                "buildings": .declared(source: "u.coc", version: "1", expectedCount: 1)
+            ],
+            injectVerifiedSectionProofs: false
+        )
+        let preview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: next,
+            currentState: state,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(preview.items.single?.classification, .unknown)
     }
 
     func testNonMonotonicHistogramMovementWithDeclaredProofIsUnknown() throws {

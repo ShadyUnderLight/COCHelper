@@ -29,7 +29,10 @@ final class AppModelPerfSeedTests: XCTestCase {
         let model = AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
         let fixtureDirectory = try XCTUnwrap(Bundle.module.resourceURL)
 
-        XCTAssertTrue(model.loadPerformanceSample(fixtureDirectory: fixtureDirectory))
+        XCTAssertTrue(model.loadPerformanceSample(
+            fixtureDirectory: fixtureDirectory,
+            promoteVerifiedCoverage: true
+        ))
 
         // 3 村庄（home / builder / mixed）。
         XCTAssertEqual(model.villages.count, 3)
@@ -72,6 +75,15 @@ final class AppModelPerfSeedTests: XCTestCase {
         let raidState = try XCTUnwrap(model.capitalState(for: "#PERFCLAN"))
         XCTAssertEqual(raidState.lastGood?.items.count, 17)
         XCTAssertTrue(model.trackedClans.contains { $0.clanTag == "#PERFCLAN" })
+    }
+
+    /// 非 bundled perf 目录默认不得把 `perf-fixture` 声明提升为 verified。
+    @MainActor
+    func testCustomFixtureDirectoryDoesNotAutoPromoteVerifiedCoverage() throws {
+        let model = AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
+        let fixtureDirectory = try XCTUnwrap(Bundle.module.resourceURL)
+
+        XCTAssertFalse(model.loadPerformanceSample(fixtureDirectory: fixtureDirectory))
     }
 
     /// seed 必须拒绝已有真实数据（不覆盖用户数据）。

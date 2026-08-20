@@ -97,3 +97,18 @@ final class TestCurrentVillagePersistence: CurrentVillagePersistence, @unchecked
         self.data = data
     }
 }
+
+enum SnapshotHistoryTestCoverage {
+    static func verified(
+        source: String = "test-export",
+        expectedCount: Int? = nil
+    ) -> SnapshotCoverageProof {
+        SnapshotCoverageVerifier.issue(
+            source: source,
+            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
+            protocolVersion: "1",
+            expectedCount: expectedCount,
+            verificationReason: "test injection"
+        )
+    }
+}

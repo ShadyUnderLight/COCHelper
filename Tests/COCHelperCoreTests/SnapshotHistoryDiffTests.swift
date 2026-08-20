@@ -2175,7 +2175,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             now: Date(timeIntervalSince1970: 200)
         )
         let proof: [String: SnapshotCoverageProof] = [
-            "heroes": .makeVerified(source: "test-export", expectedCount: 0)
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 0)
         ]
         let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: oldSnapshot,
@@ -2184,7 +2184,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: 100),
             snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
             sectionProofs: [
-                "heroes": .makeVerified(source: "test-export", expectedCount: 1)
+                "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
             ]
         )
         let emptyEntry = try SnapshotHistoryCanonicalizer.canonicalize(
@@ -2291,7 +2291,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: 100),
             snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
             sectionProofs: [
-                "heroes": .makeVerified(source: "test-export", expectedCount: 1)
+                "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
             ]
         )
 
@@ -2309,7 +2309,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let proof: [String: SnapshotCoverageProof] = [
-            "buildings": .makeVerified(source: "test-export", expectedCount: 1)
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let oldSnapshot = try AccountSnapshotImporter.parse(
             "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":200}]}]}",
@@ -2350,7 +2350,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let proof: [String: SnapshotCoverageProof] = [
-            "buildings": .makeVerified(source: "test-export", expectedCount: 1)
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let oldSnapshot = try AccountSnapshotImporter.parse(
             "{\"buildings\":[{\"data\":100}]}",
@@ -2393,7 +2393,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let proof: [String: SnapshotCoverageProof] = [
-            "buildings": .makeVerified(source: "test-export", expectedCount: 1)
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let oldSnapshot = try AccountSnapshotImporter.parse(
             "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":200},{\"data\":201}]}]}",
@@ -2433,7 +2433,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let proof: [String: SnapshotCoverageProof] = [
-            "buildings": .makeVerified(source: "test-export", expectedCount: 1)
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let oldSnapshot = try AccountSnapshotImporter.parse(
             "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":201}]}]}",
@@ -2475,7 +2475,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let proof: [String: SnapshotCoverageProof] = [
-            "buildings": .makeVerified(source: "test-export", expectedCount: 1)
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let oldSnapshot = try AccountSnapshotImporter.parse(
             "{\"buildings\":[{\"data\":100,\"types\":[{\"data\":200,\"modules\":[{\"data\":300}]}]}]}",
@@ -2516,7 +2516,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let proof: [String: SnapshotCoverageProof] = [
-            "buildings": .makeVerified(source: "test-export", expectedCount: 1)
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let oldSnapshot = try AccountSnapshotImporter.parse(
             "{\"buildings\":[{\"data\":100,\"modules\":[{\"data\":300}]}]}",
@@ -2574,7 +2574,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: 100),
             snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
             sectionProofs: [
-                "buildings": .makeVerified(source: "test-export", expectedCount: 1)
+                "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
             ]
         )
 
@@ -2962,7 +2962,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 rawSection: section,
                 presence: items.isEmpty ? .presentEmpty : .presentNonEmpty,
                 completeness: .complete,
-                proof: .makeVerified(source: "test", expectedCount: nil),
+                proof: SnapshotHistoryTestCoverage.verified(source: "test", expectedCount: nil),
                 observedCount: items.count
             )
             coverage = SnapshotObservationCoverage(fields: merged.map {

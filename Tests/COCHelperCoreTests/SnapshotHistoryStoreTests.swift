@@ -123,7 +123,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let villageID = UUID()
         let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
         let proof: [String: SnapshotCoverageProof] = [
-            "heroes": .makeVerified(source: "test-export", expectedCount: 1)
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let base = snapshot(tag: firstTag, text: text)
         let envelope = try service.loadOrMigrate(
@@ -628,7 +628,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             villageID: villageID,
             lineageID: lineageID,
             appliedAt: Date(timeIntervalSince1970: 100),
-            sectionProofs: ["heroes": .makeVerified(source: "legacy-export", expectedCount: 1)]
+            sectionProofs: ["heroes": SnapshotHistoryTestCoverage.verified(source: "legacy-export", expectedCount: 1)]
         )
         guard let heroes = verifiedEntry.coverage.section(base: .home, rawSection: "heroes") else {
             return XCTFail("缺少 heroes section")

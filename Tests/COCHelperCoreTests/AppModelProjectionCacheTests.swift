@@ -27,7 +27,10 @@ final class AppModelProjectionCacheTests: XCTestCase {
     private func seededModel() throws -> AppModel {
         let model = AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
         let fixtureDirectory = try XCTUnwrap(Bundle.module.resourceURL)
-        XCTAssertTrue(model.loadPerformanceSample(fixtureDirectory: fixtureDirectory))
+        XCTAssertTrue(model.loadPerformanceSample(
+            fixtureDirectory: fixtureDirectory,
+            promoteVerifiedCoverage: true
+        ))
         return model
     }
 

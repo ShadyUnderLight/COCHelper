@@ -2890,6 +2890,175 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
     }
 
+    func testBuildingWindowStaysInsufficientWhenAnyDiffHasMissingTraps() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let partialNotApplicable = [
+            MetricTestSectionCoverage.notApplicable("buildings2"),
+            MetricTestSectionCoverage.notApplicable("traps2")
+        ]
+        let completeUniverse = partialNotApplicable + [
+            MetricTestSectionCoverage.complete("traps", states: ["cnt": .complete])
+        ]
+        let stableItem = makeItem(identity: identity, level: 14, count: 1, display: binding)
+
+        let completeOld = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [stableItem],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: completeUniverse
+        )
+        let completeNew = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [stableItem],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: completeUniverse
+        )
+        let incompleteOld = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [stableItem],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: partialNotApplicable
+        )
+        let incompleteNew = makeEntry(
+            id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            date: 300,
+            items: [stableItem],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: partialNotApplicable
+        )
+
+        let completeDiff = SnapshotDiffEngine.compare(from: completeOld, to: completeNew)
+        let incompleteDiff = SnapshotDiffEngine.compare(from: incompleteOld, to: incompleteNew)
+        XCTAssertEqual(completeDiff.changes, [])
+        XCTAssertEqual(incompleteDiff.changes, [])
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [completeDiff, incompleteDiff],
+            referenceDate: Date(timeIntervalSince1970: 300),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .insufficientData)
+        XCTAssertEqual(statistics.today.buildingLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingUpgradeCompletions.state, .insufficientData)
+    }
+
+    func testBuildingWindowDoesNotExposeObservedGrowthAcrossIncompleteDiff() throws {
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let partialNotApplicable = [
+            MetricTestSectionCoverage.notApplicable("buildings2"),
+            MetricTestSectionCoverage.notApplicable("traps2")
+        ]
+        let completeUniverse = partialNotApplicable + [
+            MetricTestSectionCoverage.complete("traps", states: ["cnt": .complete])
+        ]
+
+        let completeOld = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 1, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: completeUniverse
+        )
+        let completeNew = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 14, count: 1, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: completeUniverse
+        )
+        let incompleteOld = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 14, count: 1, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: partialNotApplicable
+        )
+        let incompleteNew = makeEntry(
+            id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            date: 300,
+            items: [makeItem(identity: identity, level: 15, count: 1, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: partialNotApplicable
+        )
+
+        let completeDiff = SnapshotDiffEngine.compare(from: completeOld, to: completeNew)
+        let incompleteDiff = SnapshotDiffEngine.compare(from: incompleteOld, to: incompleteNew)
+        XCTAssertEqual(completeDiff.changes, [])
+        XCTAssertTrue(incompleteDiff.changes.contains { $0.changeKind == .levelIncreased })
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [completeDiff, incompleteDiff],
+            referenceDate: Date(timeIntervalSince1970: 300),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.buildingLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingUpgradeCompletions.state, .insufficientData)
+    }
+
+    func testHeroWindowStaysInsufficientWhenAnyDiffHasMissingBuilderHeroes() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let completeUniverse = [MetricTestSectionCoverage.notApplicable("heroes2")]
+
+        let completeOld = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, display: binding)],
+            section: "heroes",
+            additionalSections: completeUniverse
+        )
+        let completeNew = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 1, display: binding)],
+            section: "heroes",
+            additionalSections: completeUniverse
+        )
+        let incompleteOld = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 1, display: binding)],
+            section: "heroes"
+        )
+        let incompleteNew = makeEntry(
+            id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            date: 300,
+            items: [makeItem(identity: identity, level: 2, display: binding)],
+            section: "heroes"
+        )
+
+        let completeDiff = SnapshotDiffEngine.compare(from: completeOld, to: completeNew)
+        let incompleteDiff = SnapshotDiffEngine.compare(from: incompleteOld, to: incompleteNew)
+        XCTAssertEqual(completeDiff.changes, [])
+        XCTAssertTrue(incompleteDiff.changes.contains { $0.changeKind == .levelIncreased })
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [completeDiff, incompleteDiff],
+            referenceDate: Date(timeIntervalSince1970: 300),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
     func testHeroMetricsStayInsufficientWhenBuilderHeroesUnavailable() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeEntry(

@@ -186,6 +186,13 @@ private enum MetricSectionApplicability: Equatable {
     case insufficient
 }
 
+/// Issue #206: aggregate-metric universe coverage for one adjacent diff.
+private enum MetricUniverseState: Equatable {
+    case complete
+    case notApplicable
+    case insufficient
+}
+
 /// Issue #206: every aggregate metric must prove its full applicable universe
 /// before absence-based zero is allowed.  OR-ing any single complete section is
 /// not sufficient when sibling sections are silently missing.
@@ -205,20 +212,92 @@ private struct MetricApplicabilityEvaluator {
         return .insufficient
     }
 
-    func universeSatisfied(sections: Set<String>, fields: Set<String>) -> Bool {
-        guard !sections.isEmpty else { return false }
-        var sawApplicableSection = false
+    func universeState(sections: Set<String>, fields: Set<String>) -> MetricUniverseState {
+        guard !sections.isEmpty else { return .insufficient }
+        var sawComplete = false
         for section in sections.sorted() {
             switch applicability(for: section, fields: fields) {
             case .complete:
-                sawApplicableSection = true
+                sawComplete = true
             case .notApplicable:
                 break
             case .insufficient:
-                return false
+                return .insufficient
             }
         }
-        return sawApplicableSection
+        return sawComplete ? .complete : .notApplicable
+    }
+
+    func universeSatisfied(sections: Set<String>, fields: Set<String>) -> Bool {
+        universeState(sections: sections, fields: fields) == .complete
+    }
+
+    func isUniverseRelevant(sections: Set<String>, in diff: SnapshotDiff) -> Bool {
+        for section in sections {
+            guard let coverage = sectionCoverage.first(where: { $0.rawSection == section }) else {
+                continue
+            }
+            if coverage.fromObservedItemCount > 0 || coverage.toObservedItemCount > 0 {
+                return true
+            }
+        }
+        let normalizedSections = Set(sections.map {
+            $0.hasSuffix("2") ? String($0.dropLast()) : $0
+        })
+        for change in diff.changes {
+            let section = change.identity.rawSection.hasSuffix("2")
+                ? String(change.identity.rawSection.dropLast())
+                : change.identity.rawSection
+            if normalizedSections.contains(section) {
+                return true
+            }
+        }
+        return false
+    }
+}
+
+private struct DiffMetricApplicability {
+    let building: MetricUniverseState
+    let wall: MetricUniverseState
+    let hero: MetricUniverseState
+    let troop: MetricUniverseState
+    let spell: MetricUniverseState
+    let pet: MetricUniverseState
+    let equipment: MetricUniverseState
+    let hasSectionCoverage: Bool
+    let hasChanges: Bool
+
+    init(diff: SnapshotDiff) {
+        let evaluator = MetricApplicabilityEvaluator(sectionCoverage: diff.sectionCoverage)
+        let levelFields: Set<String> = ["presence", "data", "lvl"]
+        let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
+        let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
+        let wallSections: Set<String> = ["buildings", "buildings2"]
+        let heroSections: Set<String> = ["heroes", "heroes2"]
+        let troopSections: Set<String> = ["units", "units2"]
+        building = evaluator.isUniverseRelevant(sections: buildingSections, in: diff)
+            ? evaluator.universeState(sections: buildingSections, fields: histogramFields)
+            : .notApplicable
+        wall = evaluator.isUniverseRelevant(sections: wallSections, in: diff)
+            ? evaluator.universeState(sections: wallSections, fields: histogramFields)
+            : .notApplicable
+        hero = evaluator.isUniverseRelevant(sections: heroSections, in: diff)
+            ? evaluator.universeState(sections: heroSections, fields: levelFields)
+            : .notApplicable
+        troop = evaluator.isUniverseRelevant(sections: troopSections, in: diff)
+            ? evaluator.universeState(sections: troopSections, fields: levelFields)
+            : .notApplicable
+        spell = evaluator.isUniverseRelevant(sections: ["spells"], in: diff)
+            ? evaluator.universeState(sections: ["spells"], fields: levelFields)
+            : .notApplicable
+        pet = evaluator.isUniverseRelevant(sections: ["pets"], in: diff)
+            ? evaluator.universeState(sections: ["pets"], fields: levelFields)
+            : .notApplicable
+        equipment = evaluator.isUniverseRelevant(sections: ["equipment"], in: diff)
+            ? evaluator.universeState(sections: ["equipment"], fields: levelFields)
+            : .notApplicable
+        hasSectionCoverage = !diff.sectionCoverage.isEmpty
+        hasChanges = !diff.changes.isEmpty
     }
 }
 
@@ -2324,9 +2403,10 @@ private struct MetricAccumulators {
                 markUnknownForDiagnostics(in: diff)
                 continue
             }
-            markComparable(for: diff)
+            let diffApplicability = DiffMetricApplicability(diff: diff)
+            applyDiffApplicability(diffApplicability)
             for change in diff.changes {
-                apply(change)
+                apply(change, diffApplicability: diffApplicability)
             }
             markUnknownForUnclassified(in: diff.changes)
             markUnknownForUnknownCategories(in: diff.changes)
@@ -2334,46 +2414,95 @@ private struct MetricAccumulators {
         }
     }
 
-    private mutating func markComparable(for diff: SnapshotDiff) {
-        let hasSectionCoverage = !diff.sectionCoverage.isEmpty
-        let applicability = MetricApplicabilityEvaluator(sectionCoverage: diff.sectionCoverage)
-        let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
-        let wallSections: Set<String> = ["buildings", "buildings2"]
-        let heroSections: Set<String> = ["heroes", "heroes2"]
-        let troopSections: Set<String> = ["units", "units2"]
-        let levelFields: Set<String> = ["presence", "data", "lvl"]
-        let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
-        if applicability.universeSatisfied(sections: buildingSections, fields: histogramFields) {
+    private mutating func applyDiffApplicability(_ applicability: DiffMetricApplicability) {
+        switch applicability.building {
+        case .complete:
             buildingCompletions.markComparable()
             aggregateBuildingCompletions.markComparable()
             buildingGrowth.markComparable()
             aggregateBuildingGrowth.markComparable()
+        case .insufficient:
+            buildingCompletions.markUnknown()
+            aggregateBuildingCompletions.markUnknown()
+            buildingGrowth.markUnknown()
+            aggregateBuildingGrowth.markUnknown()
+        case .notApplicable:
+            break
         }
-        if applicability.universeSatisfied(sections: wallSections, fields: histogramFields) {
+        switch applicability.wall {
+        case .complete:
             wallGrowth.markComparable()
             aggregateWallGrowth.markComparable()
+        case .insufficient:
+            wallGrowth.markUnknown()
+            aggregateWallGrowth.markUnknown()
+        case .notApplicable:
+            break
         }
-        if applicability.universeSatisfied(sections: heroSections, fields: levelFields) {
+        switch applicability.hero {
+        case .complete:
             heroGrowth.markComparable()
+        case .insufficient:
+            heroGrowth.markUnknown()
+        case .notApplicable:
+            break
         }
-        if applicability.universeSatisfied(sections: troopSections, fields: levelFields) {
+        switch applicability.troop {
+        case .complete:
             troopGrowth.markComparable()
+        case .insufficient:
+            troopGrowth.markUnknown()
+        case .notApplicable:
+            break
         }
-        if applicability.universeSatisfied(sections: ["spells"], fields: levelFields) {
+        switch applicability.spell {
+        case .complete:
             spellGrowth.markComparable()
+        case .insufficient:
+            spellGrowth.markUnknown()
+        case .notApplicable:
+            break
         }
-        if applicability.universeSatisfied(sections: ["pets"], fields: levelFields) {
+        switch applicability.pet {
+        case .complete:
             petGrowth.markComparable()
+        case .insufficient:
+            petGrowth.markUnknown()
+        case .notApplicable:
+            break
         }
-        if applicability.universeSatisfied(sections: ["equipment"], fields: levelFields) {
+        switch applicability.equipment {
+        case .complete:
             equipmentGrowth.markComparable()
+        case .insufficient:
+            equipmentGrowth.markUnknown()
+        case .notApplicable:
+            break
         }
-        if hasSectionCoverage || !diff.changes.isEmpty {
+        if applicability.hasSectionCoverage || applicability.hasChanges {
             aggregateEvents.markComparable()
         }
     }
 
-    private mutating func apply(_ change: SnapshotChange) {
+    private func universeState(
+        for category: SnapshotMetricCategory,
+        in applicability: DiffMetricApplicability
+    ) -> MetricUniverseState {
+        switch category {
+        case .building: return applicability.building
+        case .wall: return applicability.wall
+        case .hero: return applicability.hero
+        case .troop: return applicability.troop
+        case .spell: return applicability.spell
+        case .pet: return applicability.pet
+        case .equipment: return applicability.equipment
+        }
+    }
+
+    private mutating func apply(
+        _ change: SnapshotChange,
+        diffApplicability: DiffMetricApplicability
+    ) {
         guard let category = Self.category(for: change) else {
             // An unknown category is intentionally not guessed from the
             // current catalog.  It remains a diagnostic rather than being
@@ -2384,6 +2513,9 @@ private struct MetricAccumulators {
         let positiveLevelDelta = change.levelDelta.flatMap { $0 > 0 ? $0 : nil }
         if change.evidence == .aggregateInferred {
             aggregateEvents.add(1)
+            guard universeState(for: category, in: diffApplicability) == .complete else {
+                return
+            }
             // 聚合完成的唯一计数点：一条 .upgradeCompleted change 对应一次
             // aggregate 完成（level migration 那条不计 completion）；无 level
             // migration 的 timer 消失是 timerEndedObserved，也不计 completion。
@@ -2417,6 +2549,10 @@ private struct MetricAccumulators {
             if change.changeKind == .unknown || change.levelDelta != nil {
                 markUnknown(category: category)
             }
+            return
+        }
+
+        guard universeState(for: category, in: diffApplicability) == .complete else {
             return
         }
 

@@ -154,12 +154,12 @@ final class ManualUpgradeCoreTests: XCTestCase {
         )
         let beforeCore = core
         let beforeFingerprint = core.contentFingerprint
-        ManualUpgradeCore.resetFingerprintComputationCountForTesting()
+        let refreshCountBefore = core.fingerprintRefreshCountForTesting
 
         XCTAssertTrue(try core.settleDue(at: date(1_009)).isEmpty)
         XCTAssertEqual(core, beforeCore)
         XCTAssertEqual(core.contentFingerprint, beforeFingerprint)
-        XCTAssertEqual(ManualUpgradeCore.fingerprintComputationCountForTesting, 0)
+        XCTAssertEqual(core.fingerprintRefreshCountForTesting, refreshCountBefore)
     }
 
     func testSettleDueRealSettleRecomputesFingerprintOnce() throws {
@@ -182,13 +182,13 @@ final class ManualUpgradeCoreTests: XCTestCase {
             now: date(1_000)
         )
         let beforeFingerprint = core.contentFingerprint
-        ManualUpgradeCore.resetFingerprintComputationCountForTesting()
+        let refreshCountBefore = core.fingerprintRefreshCountForTesting
 
         let settled = try core.settleDue(at: date(1_010))
         XCTAssertEqual(settled.count, 1)
         XCTAssertEqual(settled.first?.status, .completed)
         XCTAssertNotEqual(core.contentFingerprint, beforeFingerprint)
-        XCTAssertEqual(ManualUpgradeCore.fingerprintComputationCountForTesting, 1)
+        XCTAssertEqual(core.fingerprintRefreshCountForTesting, refreshCountBefore + 1)
     }
 
     func testContentFingerprintSurvivesCodableRoundTrip() throws {

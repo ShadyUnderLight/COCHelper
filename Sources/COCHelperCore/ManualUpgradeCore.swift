@@ -232,16 +232,16 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
 
     /// Issue #220：仅供测试观察 `refreshContentFingerprint()` 调用次数；
     /// 不参与 Codable / Equatable / Hashable。
-    nonisolated(unsafe) internal private(set) static var fingerprintComputationCountForTesting = 0
-
-    internal static func resetFingerprintComputationCountForTesting() {
-        fingerprintComputationCountForTesting = 0
-    }
+    #if DEBUG
+    internal private(set) var fingerprintRefreshCountForTesting = 0
+    #endif
 
     /// Issue #210：mutating 操作后重算内容指纹（缓存 key 依赖它识别
     /// manual 状态变化；tick 只读路径不重算）。
     private mutating func refreshContentFingerprint() {
-        Self.fingerprintComputationCountForTesting += 1
+        #if DEBUG
+        fingerprintRefreshCountForTesting += 1
+        #endif
         contentFingerprint = Self.fingerprint(itemStates: itemStates, records: records)
     }
 

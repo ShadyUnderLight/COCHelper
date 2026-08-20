@@ -58,6 +58,94 @@ final class ManualUpgradeCoreTests: XCTestCase {
         ])
     }
 
+    // MARK: - Issue #210 内容指纹（投影缓存轻量 key）
+
+    func testContentFingerprintIsDeterministic() throws {
+        let coreA = try core(
+            imported: try distribution([(1, 2)]), manual: .empty, status: .observed
+        )
+        let coreB = try core(
+            imported: try distribution([(1, 2)]), manual: .empty, status: .observed
+        )
+        XCTAssertEqual(coreA.contentFingerprint, coreB.contentFingerprint)
+    }
+
+    func testContentFingerprintInvalidatesAfterManualMutation() throws {
+        var core = try core(
+            imported: try distribution([(12, 100)]), manual: .empty, status: .observed
+        )
+        let recordID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        // 预热指纹缓存，再 mutating：startUpgrade 必须让指纹失效并重算
+        //（缓存 key 依赖它识别 manual 状态变化，issue #210 失效边界）。
+        let before = core.contentFingerprint
+        _ = try core.startUpgrade(
+            itemKey: key,
+            fromLevel: 12,
+            targetLevel: 13,
+            quantity: 1,
+            startedAt: date(1_000),
+            durationState: .timed(seconds: 10),
+            frozenCosts: [cost()],
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: recordID,
+            now: date(1_000)
+        )
+        XCTAssertNotEqual(before, core.contentFingerprint)
+
+        // 内容稳定时指纹稳定（两次读取同值，tick 间查找不重算）。
+        let stable = core.contentFingerprint
+        XCTAssertEqual(stable, core.contentFingerprint)
+
+        // cancel（释放预留）同样使指纹失效并重算（review P3 补齐路径）。
+        let beforeCancel = core.contentFingerprint
+        _ = try core.cancelUpgrade(recordID: recordID)
+        XCTAssertNotEqual(beforeCancel, core.contentFingerprint)
+
+        // adjust（改 start/end 时间）同样使指纹失效并重算（review P3 补齐路径）。
+        // 注意：cancel 的 record 留在 records 历史中，需新 recordID。
+        let adjustRecordID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        _ = try core.startUpgrade(
+            itemKey: key,
+            fromLevel: 12,
+            targetLevel: 13,
+            quantity: 1,
+            startedAt: date(1_020),
+            durationState: .timed(seconds: 10),
+            frozenCosts: [cost()],
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: adjustRecordID,
+            now: date(1_020)
+        )
+        // adjust 时 now(1025) < 原 end(1030)，不会触发 settle，只改 end。
+        let beforeAdjust = core.contentFingerprint
+        _ = try core.adjustStartTime(
+            recordID: adjustRecordID, startedAt: date(1_025), now: date(1_025)
+        )
+        XCTAssertNotEqual(beforeAdjust, core.contentFingerprint)
+
+        // settle 同样使指纹失效（end 已推至 1035，at 1040 到期）。
+        let beforeSettle = core.contentFingerprint
+        _ = try core.settleDue(at: date(1_040))
+        XCTAssertNotEqual(beforeSettle, core.contentFingerprint)
+    }
+
+    func testContentFingerprintSurvivesCodableRoundTrip() throws {
+        let core = try core(
+            imported: try distribution([(1, 2)]), manual: .empty, status: .observed
+        )
+        let data = try JSONEncoder().encode(core)
+        // 指纹不进入持久化格式（manual tracker JSON 字节语义不变）。
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertFalse(json.contains("contentFingerprint"))
+
+        let decoded = try JSONDecoder().decode(ManualUpgradeCore.self, from: data)
+        XCTAssertEqual(decoded.contentFingerprint, core.contentFingerprint)
+        XCTAssertEqual(decoded.itemStates, core.itemStates)
+        XCTAssertEqual(decoded.records, core.records)
+    }
+
     private func cost(
         resource: String = "Gold",
         amount: Int64? = 500,

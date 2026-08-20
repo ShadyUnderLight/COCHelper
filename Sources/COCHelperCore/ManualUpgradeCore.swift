@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Pure local state machine for manually tracked upgrades.
@@ -8,6 +9,17 @@ import Foundation
 public struct ManualUpgradeCore: Codable, Hashable, Sendable {
     public private(set) var itemStates: [ManualItemState]
     public private(set) var records: [ManualUpgradeRecord]
+
+    /// Issue #210：内容身份指纹（SHA-256 over canonical JSON，`sha256:` 前缀）。
+    ///
+    /// init 与每次 mutating 操作（start/cancel/adjust/settle）后重算：
+    /// manual 状态变化必然得到新指纹，使村庄投影缓存 miss 重建
+    /// （issue #210 失效边界）。tick 之间的只读访问直接读存储值，
+    /// 不重算、不遍历 payload（records 随历史持续增长）。
+    /// 编码时跳过（不进入持久化 JSON）；解码后按内容重算，旧数据无需迁移。
+    /// `==`/`hash(into:)` 手写排除指纹字段：指纹是内容的确定性函数，
+    /// 比较语义不变。
+    public private(set) var contentFingerprint: String
 
     public init(
         itemStates: [ManualItemState] = [],
@@ -50,6 +62,19 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
 
         self.itemStates = sortedStates
         self.records = sortedRecords
+        self.contentFingerprint = Self.fingerprint(
+            itemStates: sortedStates, records: sortedRecords
+        )
+    }
+
+    /// Issue #210：内容相等（排除指纹字段；指纹是内容的确定性函数）。
+    public static func == (lhs: ManualUpgradeCore, rhs: ManualUpgradeCore) -> Bool {
+        lhs.itemStates == rhs.itemStates && lhs.records == rhs.records
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(itemStates)
+        hasher.combine(records)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -158,6 +183,7 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
             now: now
         )
         self = candidate
+        refreshContentFingerprint()
         return result
     }
 
@@ -167,6 +193,7 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
         var candidate = self
         let result = try candidate.cancelUpgradeImpl(recordID: recordID)
         self = candidate
+        refreshContentFingerprint()
         return result
     }
 
@@ -185,6 +212,7 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
             now: now
         )
         self = candidate
+        refreshContentFingerprint()
         return result
     }
 
@@ -196,7 +224,14 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
         var candidate = self
         let settled = try candidate.settleDueImpl(at: at)
         self = candidate
+        refreshContentFingerprint()
         return settled
+    }
+
+    /// Issue #210：mutating 操作后重算内容指纹（缓存 key 依赖它识别
+    /// manual 状态变化；tick 只读路径不重算）。
+    private mutating func refreshContentFingerprint() {
+        contentFingerprint = Self.fingerprint(itemStates: itemStates, records: records)
     }
 
     /// Returns separate imported, manually maintained, active-target, and
@@ -549,4 +584,27 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
             throw ManualUpgradeError.durationUnavailable(state)
         }
     }
+
+    // MARK: - Issue #210 内容指纹
+
+    /// 确定性内容摘要：`JSONEncoder + .sortedKeys` 的 canonical JSON →
+    /// SHA-256（与 `SnapshotHistoryCanonicalizer.integrityFingerprint` 同机制）。
+    /// 不依赖 Swift 合成 Hashable（每次进程随机种子，跨启动不稳定）。
+    private static func fingerprint(
+        itemStates: [ManualItemState],
+        records: [ManualUpgradeRecord]
+    ) -> String {
+        let material = ManualCoreFingerprintMaterial(itemStates: itemStates, records: records)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try! encoder.encode(material)
+        let digest = SHA256.hash(data: data)
+        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// 内容指纹的 canonical 镜像（与存储字段一致；init 已排序，输出确定）。
+private struct ManualCoreFingerprintMaterial: Encodable {
+    let itemStates: [ManualItemState]
+    let records: [ManualUpgradeRecord]
 }

@@ -221,31 +221,77 @@ public final class CapitalRaidRowCache {
                 continue
             }
 
-            var unmatchedOld = oldGroup
-            var unmatchedNew = newGroup
-
-            var newIndex = 0
-            while newIndex < unmatchedNew.count {
-                let newEntry = unmatchedNew[newIndex]
-                if let oldIndex = unmatchedOld.firstIndex(where: { $0.row.season == newEntry.season }) {
-                    assignment[newEntry.index] = unmatchedOld[oldIndex].row.id
-                    unmatchedOld.remove(at: oldIndex)
-                    unmatchedNew.remove(at: newIndex)
-                } else {
-                    newIndex += 1
-                }
-            }
-
-            if unmatchedOld.count == 1, unmatchedNew.count == 1 {
-                assignment[unmatchedNew[0].index] = unmatchedOld[0].row.id
-                continue
-            }
-            if !unmatchedOld.isEmpty {
+            guard matchDuplicateTripleGroup(
+                oldGroup: oldGroup,
+                newGroup: newGroup,
+                assignment: &assignment
+            ) else {
                 return nil
             }
         }
 
         guard assignment.count == newSeasons.count else { return nil }
         return newSeasons.indices.map { assignment[$0]! }
+    }
+
+    /// duplicate triple group：位置全等则按位保留；否则仅唯一 exact payload 可 anchor。
+    private func matchDuplicateTripleGroup(
+        oldGroup: [(index: Int, row: CapitalRaidSeasonRow)],
+        newGroup: [(index: Int, season: OfficialCapitalRaidSeason)],
+        assignment: inout [Int: String]
+    ) -> Bool {
+        let oldSorted = oldGroup.sorted { $0.index < $1.index }
+        let newSorted = newGroup.sorted { $0.index < $1.index }
+        if oldSorted.count == newSorted.count,
+           zip(oldSorted, newSorted).allSatisfy({
+               $0.index == $1.index && $0.row.season == $1.season
+           }) {
+            for (oldEntry, newEntry) in zip(oldSorted, newSorted) {
+                assignment[newEntry.index] = oldEntry.row.id
+            }
+            return true
+        }
+
+        var unmatchedOld = oldGroup
+        var unmatchedNew = newGroup
+
+        while true {
+            let oldSeasonCounts = seasonPayloadCounts(unmatchedOld.map(\.row.season))
+            let newSeasonCounts = seasonPayloadCounts(unmatchedNew.map(\.season))
+            var foundAnchor = false
+            var stillUnmatchedNew: [(index: Int, season: OfficialCapitalRaidSeason)] = []
+
+            for newEntry in unmatchedNew {
+                let season = newEntry.season
+                guard newSeasonCounts[season] == 1, oldSeasonCounts[season] == 1,
+                      let oldIndex = unmatchedOld.firstIndex(where: { $0.row.season == season })
+                else {
+                    stillUnmatchedNew.append(newEntry)
+                    continue
+                }
+                assignment[newEntry.index] = unmatchedOld[oldIndex].row.id
+                unmatchedOld.remove(at: oldIndex)
+                foundAnchor = true
+            }
+            unmatchedNew = stillUnmatchedNew
+            if !foundAnchor { break }
+        }
+
+        if unmatchedOld.isEmpty, unmatchedNew.isEmpty { return true }
+        if unmatchedOld.count == 1, unmatchedNew.count == 1 {
+            assignment[unmatchedNew[0].index] = unmatchedOld[0].row.id
+            return true
+        }
+        return false
+    }
+
+    private func seasonPayloadCounts(
+        _ seasons: [OfficialCapitalRaidSeason]
+    ) -> [OfficialCapitalRaidSeason: Int] {
+        var counts: [OfficialCapitalRaidSeason: Int] = [:]
+        for season in seasons {
+            counts[season, default: 0] += 1
+        }
+        return counts
     }
 }

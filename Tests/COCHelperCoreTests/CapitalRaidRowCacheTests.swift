@@ -157,6 +157,21 @@ final class CapitalRaidRowCacheTests: XCTestCase {
         XCTAssertNotEqual(cache.rows[1].id, idB, "A' 不得得到 B 的旧 ID")
     }
 
+    func testIdenticalDuplicateThenOneDetailChangesResetsGeneration() {
+        let cache = CapitalRaidRowCache()
+        let a1 = makeSeason(loot: 100_000)
+        let a2 = makeSeason(loot: 100_000)
+        cache.apply(.initial(page: makePage([a1, a2])))
+        let oldIDs = Set(cache.rows.map(\.id))
+        let generationBefore = cache.generation
+
+        let aPrime = makeSeason(loot: 101_000)
+        cache.apply(.refreshSuccess(page: makePage([aPrime, a2])))
+
+        XCTAssertGreaterThan(cache.generation, generationBefore)
+        XCTAssertTrue(oldIDs.isDisjoint(with: cache.rows.map(\.id)), "分化后不得复用上一 generation 的任何旧 ID")
+    }
+
     func testUniqueTripleReorderPreservesIdentity() {
         let cache = CapitalRaidRowCache()
         let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)

@@ -109,6 +109,14 @@ final class VillageProjectionCacheTests: XCTestCase {
         XCTAssertEqual(render.projection.rawItems, direct.rawItems)
         XCTAssertEqual(render.projection.effectiveTrackerItems, direct.effectiveTrackerItems)
         XCTAssertEqual(render.projection.progressMetrics, direct.progressMetrics)
+        // Issue #210 验收：身份字段（villageID/villageName）与覆盖字段
+        //（snapshotCoverage）在缓存命中路径与直接 projection 完全一致。
+        XCTAssertEqual(render.projection.villageID, direct.villageID)
+        XCTAssertEqual(render.projection.villageName, direct.villageName)
+        XCTAssertEqual(
+            render.projection.progressMetrics.snapshotCoverage,
+            direct.progressMetrics.snapshotCoverage
+        )
         // diagnostics.id 为随机 UUID，比较内容。
         XCTAssertEqual(
             render.projection.diagnostics.map { "\($0.severity.rawValue)|\($0.path)|\($0.message)" },
@@ -138,23 +146,25 @@ final class VillageProjectionCacheTests: XCTestCase {
         XCTAssertEqual(cache.hitCount, 1)
     }
 
-    func testSameContentDifferentNamesNeverCollide() throws {
-        // 两个村庄：相同快照/manual/base，仅显示名称不同 → 独立缓存条目。
-        let other = VillageProfile(
-            id: village.id, name: "另一个名字", accountSnapshot: village.accountSnapshot
-        )
+    func testRenameRemovesStaleEntryForSameVillage() {
+        // Review P2：改名（villageName 入 key）插入新 key 时须删除同村庄
+        // （villageID + base）的旧 key 条目——否则 32 村 × 2 基地顶满
+        // maxEntries=64 时，改名会让旧条目占位、LRU 驱逐其他村庄。
+        // 验证：改回旧名若命中残留旧条目（buildCount 不增）即失败。
+        let originalName = village.name
         let _ = render(at: t0)
         XCTAssertEqual(cache.buildCount, 1)
-        let _ = cache.render(
-            village: other, catalog: catalog, craftTableCatalog: craftTableCatalog,
-            seasonalPhases: phases, base: .home, now: t0.addingTimeInterval(60),
-            manualUpgradeCore: nil, catalogEpoch: 0
+        village = VillageProfile(
+            id: village.id, name: "改名后", accountSnapshot: village.accountSnapshot
         )
-        XCTAssertEqual(cache.buildCount, 2, "同名不同村庄（同 id 不同 name）不得互相命中")
-        // 各自回退到原名称仍命中各自的条目。
-        let _ = render(at: t0.addingTimeInterval(120))
+        let _ = render(at: t0.addingTimeInterval(60))
         XCTAssertEqual(cache.buildCount, 2)
-        XCTAssertEqual(cache.hitCount, 1)
+        // 改回旧名：旧 key 条目必须已删除 → miss 重建。
+        village = VillageProfile(
+            id: village.id, name: originalName, accountSnapshot: village.accountSnapshot
+        )
+        let _ = render(at: t0.addingTimeInterval(120))
+        XCTAssertEqual(cache.buildCount, 3, "插入新 key 时必须删除同村庄旧 key 条目（P2）")
     }
 
     // MARK: - 失效矩阵

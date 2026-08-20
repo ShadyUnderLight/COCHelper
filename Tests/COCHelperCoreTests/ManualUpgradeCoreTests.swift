@@ -74,6 +74,7 @@ final class ManualUpgradeCoreTests: XCTestCase {
         var core = try core(
             imported: try distribution([(12, 100)]), manual: .empty, status: .observed
         )
+        let recordID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         // 预热指纹缓存，再 mutating：startUpgrade 必须让指纹失效并重算
         //（缓存 key 依赖它识别 manual 状态变化，issue #210 失效边界）。
         let before = core.contentFingerprint
@@ -87,7 +88,7 @@ final class ManualUpgradeCoreTests: XCTestCase {
             frozenCosts: [cost()],
             catalogProvenance: provenance,
             baselineReference: baseline,
-            recordID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            recordID: recordID,
             now: date(1_000)
         )
         XCTAssertNotEqual(before, core.contentFingerprint)
@@ -96,9 +97,37 @@ final class ManualUpgradeCoreTests: XCTestCase {
         let stable = core.contentFingerprint
         XCTAssertEqual(stable, core.contentFingerprint)
 
-        // settle 同样使指纹失效。
+        // cancel（释放预留）同样使指纹失效并重算（review P3 补齐路径）。
+        let beforeCancel = core.contentFingerprint
+        _ = try core.cancelUpgrade(recordID: recordID)
+        XCTAssertNotEqual(beforeCancel, core.contentFingerprint)
+
+        // adjust（改 start/end 时间）同样使指纹失效并重算（review P3 补齐路径）。
+        // 注意：cancel 的 record 留在 records 历史中，需新 recordID。
+        let adjustRecordID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        _ = try core.startUpgrade(
+            itemKey: key,
+            fromLevel: 12,
+            targetLevel: 13,
+            quantity: 1,
+            startedAt: date(1_020),
+            durationState: .timed(seconds: 10),
+            frozenCosts: [cost()],
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: adjustRecordID,
+            now: date(1_020)
+        )
+        // adjust 时 now(1025) < 原 end(1030)，不会触发 settle，只改 end。
+        let beforeAdjust = core.contentFingerprint
+        _ = try core.adjustStartTime(
+            recordID: adjustRecordID, startedAt: date(1_025), now: date(1_025)
+        )
+        XCTAssertNotEqual(beforeAdjust, core.contentFingerprint)
+
+        // settle 同样使指纹失效（end 已推至 1035，at 1040 到期）。
         let beforeSettle = core.contentFingerprint
-        _ = try core.settleDue(at: date(1_010))
+        _ = try core.settleDue(at: date(1_040))
         XCTAssertNotEqual(beforeSettle, core.contentFingerprint)
     }
 

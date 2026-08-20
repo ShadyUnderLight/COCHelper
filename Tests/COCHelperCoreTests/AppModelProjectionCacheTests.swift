@@ -55,6 +55,13 @@ final class AppModelProjectionCacheTests: XCTestCase {
         XCTAssertEqual(render.projection.rawItems, direct.rawItems)
         XCTAssertEqual(render.projection.effectiveTrackerItems, direct.effectiveTrackerItems)
         XCTAssertEqual(render.projection.progressMetrics, direct.progressMetrics)
+        // Issue #210 验收：身份与覆盖字段 parity（缓存命中路径）。
+        XCTAssertEqual(render.projection.villageID, direct.villageID)
+        XCTAssertEqual(render.projection.villageName, direct.villageName)
+        XCTAssertEqual(
+            render.projection.progressMetrics.snapshotCoverage,
+            direct.progressMetrics.snapshotCoverage
+        )
         // 组卡与精制台不为空（seed 村庄有数据）。
         XCTAssertGreaterThan(render.buildingGroups.count, 0)
     }
@@ -226,13 +233,17 @@ final class AppModelProjectionCacheTests: XCTestCase {
             "改名必须使缓存失效重建，不得返回旧 villageName"
         )
 
-        // 改回原名 → 回到原缓存条目（不重复构建）。
+        // 改回原名 → 旧 key 条目已随改名删除（review P2）→ miss 重建，
+        // 不残留旧条目、不命中陈旧投影。
         model.renameSelectedVillage(village.name)
         let restored = try XCTUnwrap(
             model.villageRender(villageID: village.id, base: .home, now: now.addingTimeInterval(120))
         )
         XCTAssertEqual(restored.projection.villageName, village.name)
-        XCTAssertEqual(model.projectionCacheStats.buildCount, 2)
+        XCTAssertEqual(
+            model.projectionCacheStats.buildCount, 3,
+            "旧名条目必须已删除：改回原名应 miss 重建（P2）"
+        )
     }
 
     @MainActor

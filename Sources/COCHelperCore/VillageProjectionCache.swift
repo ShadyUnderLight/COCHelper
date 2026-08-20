@@ -210,6 +210,16 @@ public final class VillageProjectionCache {
             manualUpgradeCore: manualUpgradeCore
         )
 
+        // Issue #210 review P2：改名（villageName 入 key）插入新 key 时删除
+        // 同村庄（villageID + base）的旧 key 条目——旧名不可能再被请求，
+        // 残留条目会让 32 村 × 2 基地顶满 maxEntries 时触发 LRU 驱逐其他村庄。
+        // （`$0 != key`：到期重建路径 key 已存在，防止误删当前条目。）
+        if let stale = entries.keys.first(where: {
+            $0.villageID == key.villageID && $0.base == key.base && $0 != key
+        }) {
+            entries.removeValue(forKey: stale)
+        }
+
         // 容量满：驱逐最久未命中的单条（LRU），不清空其余条目——
         // 全清会让 32+ 村庄 × 2 基地（>64 条）在遍历中反复清空、tick 全 miss
         // （外部 review P2）。

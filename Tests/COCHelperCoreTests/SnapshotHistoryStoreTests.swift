@@ -151,6 +151,224 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
     }
 
+    func testDuplicateKeyIgnoresParserVersionAndTimestamps() throws {
+        let villageID = UUID()
+        let lineageID = UUID()
+        let base = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: timerJSON(), capturedAt: Date(timeIntervalSince1970: 10)),
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 1),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        )
+        let shifted = SnapshotHistoryEntry(
+            schemaVersion: base.schemaVersion,
+            observationVersion: base.observationVersion,
+            fingerprintVersion: base.fingerprintVersion,
+            integrityVersion: base.integrityVersion,
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            villageID: base.villageID,
+            lineageID: base.lineageID,
+            normalizedPlayerTag: base.normalizedPlayerTag,
+            appliedAt: Date(timeIntervalSince1970: 99),
+            sourceTimestamp: Date(timeIntervalSince1970: 50),
+            parserVersion: "account-json-9.9",
+            canonicalFingerprint: base.canonicalFingerprint,
+            rawJSON: base.rawJSON,
+            observation: base.observation,
+            coverage: base.coverage,
+            isBaseline: base.isBaseline,
+            baselineReason: base.baselineReason,
+            timerSchema: base.timerSchema
+        )
+        XCTAssertEqual(
+            SnapshotHistoryDuplicateKey(entry: base),
+            SnapshotHistoryDuplicateKey(entry: shifted),
+            "parserVersion / appliedAt / sourceTimestamp 不是 Diff 语义，不得拆成新 snapshot"
+        )
+    }
+
+    func testVerifiedCoverageDuplicateKeySurvivesSaveReloadWithoutRuntimeWitness() throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let base = snapshot(tag: firstTag, text: text)
+        let live = try service.loadOrMigrate(
+            villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: base)],
+            now: Date(timeIntervalSince1970: 1),
+            sectionProofs: [villageID: proof]
+        )
+        let liveEntry = try XCTUnwrap(live.entries.first)
+        XCTAssertEqual(live.entries.count, 1)
+        if case .verified(let evidence) = liveEntry.coverage.section(base: .home, rawSection: "heroes")?.proof {
+            XCTAssertEqual(evidence.runtimeWitness, .moduleIssued)
+        } else {
+            XCTFail("live entry 必须带 module-issued verified proof")
+        }
+
+        try store.save(live)
+        let reloaded = try XCTUnwrap(try store.load())
+        let decodedEntry = try XCTUnwrap(reloaded.entries.first)
+        if case .verified(let evidence) = decodedEntry.coverage.section(base: .home, rawSection: "heroes")?.proof {
+            XCTAssertNil(evidence.runtimeWitness, "decode 后 runtime witness 必须丢失")
+        } else {
+            XCTFail("reloaded entry 必须保留 verified wire metadata")
+        }
+        XCTAssertNotEqual(
+            liveEntry.coverage,
+            decodedEntry.coverage,
+            "Hashable coverage 含 runtimeWitness；duplicate key 不得依赖它"
+        )
+        XCTAssertEqual(
+            SnapshotHistoryDuplicateKey(entry: liveEntry),
+            SnapshotHistoryDuplicateKey(entry: decodedEntry)
+        )
+
+        let decision = try service.planImport(
+            snapshot: base,
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: reloaded,
+            appliedAt: Date(timeIntervalSince1970: 2),
+            sectionProofs: proof
+        )
+        XCTAssertTrue(decision.duplicate)
+        XCTAssertFalse(decision.appended)
+        XCTAssertEqual(decision.envelope.entries.count, 1)
+    }
+
+    func testTimerSchemaVersionChangeAppendsAndKeepsOldEntryImmutable() throws {
+        try assertSchemaChangeAppends(
+            previousSchema: timerSchema(version: "account-json-timer-0"),
+            expectedNewSchema: AccountSnapshotImporter.timerSchema
+        )
+    }
+
+    func testTimerUnitChangeAppendsInsteadOfDuplicate() throws {
+        try assertSchemaChangeAppends(
+            previousSchema: timerSchema(version: "account-json-timer-ms", unit: .milliseconds)
+        )
+    }
+
+    func testTimerSemanticsChangeAppendsInsteadOfDuplicate() throws {
+        try assertSchemaChangeAppends(
+            previousSchema: timerSchema(version: "account-json-timer-abs", semantics: .absolute)
+        )
+    }
+
+    func testTimerRangeChangeAppendsEvenWhenCurrentValuesRemainValid() throws {
+        try assertSchemaChangeAppends(
+            previousSchema: timerSchema(version: "account-json-timer-capped", maxValue: 10_000)
+        )
+    }
+
+    func testLegacyV3EntryDoesNotReceiveCurrentTimerSchemaOnReimport() throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let lineageID = UUID()
+        let raw = timerJSON()
+        let v3 = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: raw, capturedAt: Date(timeIntervalSince1970: 100)),
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 1),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            isBaseline: true,
+            baselineReason: .initial,
+            observationVersion: 3
+        )
+        XCTAssertNil(v3.timerSchema)
+        XCTAssertEqual(v3.observationVersion, 3)
+
+        let decision = try service.planImport(
+            snapshot: snapshot(tag: firstTag, text: raw, capturedAt: Date(timeIntervalSince1970: 100)),
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: migratedEnvelope(for: v3),
+            appliedAt: Date(timeIntervalSince1970: 2)
+        )
+
+        XCTAssertTrue(decision.appended)
+        XCTAssertFalse(decision.duplicate)
+        XCTAssertEqual(decision.envelope.entries.count, 2)
+        XCTAssertNil(decision.envelope.entries[0].timerSchema)
+        XCTAssertEqual(decision.envelope.entries[0].observationVersion, 3)
+        XCTAssertEqual(decision.envelope.entries[1].timerSchema, AccountSnapshotImporter.timerSchema)
+        XCTAssertEqual(decision.envelope.entries[1].observationVersion, SnapshotHistorySchema.observation)
+    }
+
+    func testProvenanceOnlyAppendDoesNotFabricateUpgradeThenAllowsLaterContentDiff() throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let lineageID = UUID()
+        let previousSchema = timerSchema(version: "account-json-timer-ms", unit: .milliseconds)
+        let previous = try canonicalizeTimerEntry(
+            villageID: villageID,
+            lineageID: lineageID,
+            schema: previousSchema,
+            json: timerJSON(level: 1)
+        )
+        let provenance = try service.planImport(
+            snapshot: snapshot(tag: firstTag, text: timerJSON(level: 1), capturedAt: Date(timeIntervalSince1970: 100)),
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: migratedEnvelope(for: previous),
+            appliedAt: Date(timeIntervalSince1970: 2)
+        )
+        XCTAssertTrue(provenance.appended)
+        XCTAssertEqual(provenance.envelope.entries[0].timerSchema, previousSchema)
+
+        let diffs = SnapshotDiffEngine.adjacentDiffs(in: provenance.envelope)
+        XCTAssertEqual(diffs.count, 1)
+        XCTAssertTrue(diffs[0].changes.isEmpty, "provenance-only append 不得伪造 level/timer change")
+        XCTAssertEqual(diffs[0].comparisonState, .comparable)
+        XCTAssertEqual(diffs[0].diagnostics.filter { $0.kind == .incomparableTimerSchema }.count, 1)
+
+        let projection = SnapshotHistoryProjection.project(
+            envelope: provenance.envelope,
+            villageID: villageID,
+            hasCurrentSnapshot: true,
+            referenceDate: Date(timeIntervalSince1970: 2),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(projection.timeline[0].summary, "没有可确认变化")
+        XCTAssertFalse(projection.timeline[0].changes.contains { $0.changeKind == .levelIncreased || $0.changeKind == .upgradeCompleted })
+        XCTAssertTrue(
+            projection.statistics.today.heroLevelGrowth.state == .insufficientData
+                || projection.statistics.today.heroLevelGrowth.value == 0,
+            "provenance-only append 不得进入升级统计"
+        )
+
+        let content = try service.planImport(
+            snapshot: snapshot(tag: firstTag, text: timerJSON(level: 2), capturedAt: Date(timeIntervalSince1970: 100)),
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: provenance.envelope,
+            appliedAt: Date(timeIntervalSince1970: 3)
+        )
+        XCTAssertTrue(content.appended)
+        XCTAssertEqual(content.envelope.entries.count, 3)
+        let contentDiff = SnapshotDiffEngine.compare(
+            from: content.envelope.entries[1],
+            to: content.envelope.entries[2]
+        )
+        XCTAssertEqual(contentDiff.changes.count, 1)
+        XCTAssertEqual(contentDiff.changes.first?.changeKind, .levelIncreased)
+        XCTAssertEqual(content.envelope.entries[1].timerSchema, AccountSnapshotImporter.timerSchema)
+        XCTAssertEqual(content.envelope.entries[2].timerSchema, AccountSnapshotImporter.timerSchema)
+    }
+
     func testChangedContentAppendsAndTagChangeStartsNewActiveLineage() throws {
         let store = TestSnapshotHistoryStore()
         let service = SnapshotHistoryService(store: store)
@@ -697,6 +915,10 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             decision.entry.canonicalFingerprint
         )
         XCTAssertNotEqual(envelope.entries.first?.coverage, decision.entry.coverage)
+        XCTAssertNotEqual(
+            SnapshotHistoryDuplicateKey(entry: try XCTUnwrap(envelope.entries.first)),
+            SnapshotHistoryDuplicateKey(entry: decision.entry)
+        )
         XCTAssertEqual(
             decision.entry.coverage.section(base: .home, rawSection: "buildings")?.proof,
             .declared(source: "u.coc", version: "1", expectedCount: 1)
@@ -911,6 +1133,111 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 hasConflict: false
             )],
             migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
+        )
+    }
+
+    private func assertSchemaChangeAppends(
+        previousSchema: SnapshotTimerSchema,
+        expectedNewSchema: SnapshotTimerSchema = AccountSnapshotImporter.timerSchema
+    ) throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let lineageID = UUID()
+        let raw = timerJSON()
+        let previous = try canonicalizeTimerEntry(
+            villageID: villageID,
+            lineageID: lineageID,
+            schema: previousSchema,
+            json: raw
+        )
+        XCTAssertEqual(previous.timerSchema, previousSchema)
+        XCTAssertNotEqual(previous.timerSchema, expectedNewSchema)
+
+        let decision = try service.planImport(
+            snapshot: snapshot(tag: firstTag, text: raw, capturedAt: Date(timeIntervalSince1970: 100)),
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: migratedEnvelope(for: previous),
+            appliedAt: Date(timeIntervalSince1970: 2)
+        )
+
+        XCTAssertTrue(decision.appended)
+        XCTAssertFalse(decision.duplicate)
+        XCTAssertEqual(decision.envelope.entries.count, 2)
+        XCTAssertEqual(decision.envelope.entries[0].snapshotID, previous.snapshotID)
+        XCTAssertEqual(decision.envelope.entries[0].timerSchema, previousSchema)
+        XCTAssertEqual(decision.envelope.entries[0].parserVersion, previous.parserVersion)
+        XCTAssertEqual(decision.envelope.entries[1].timerSchema, expectedNewSchema)
+        XCTAssertEqual(decision.envelope.entries[0].canonicalFingerprint, decision.envelope.entries[1].canonicalFingerprint)
+        XCTAssertEqual(decision.envelope.entries[0].coverage, decision.envelope.entries[1].coverage)
+        XCTAssertNotEqual(
+            SnapshotHistoryDuplicateKey(entry: decision.envelope.entries[0]),
+            SnapshotHistoryDuplicateKey(entry: decision.envelope.entries[1])
+        )
+    }
+
+    private func canonicalizeTimerEntry(
+        villageID: UUID,
+        lineageID: UUID,
+        schema: SnapshotTimerSchema,
+        json: String
+    ) throws -> SnapshotHistoryEntry {
+        try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: json, capturedAt: Date(timeIntervalSince1970: 100)),
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 1),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            isBaseline: true,
+            baselineReason: .initial,
+            timerSchema: schema
+        )
+    }
+
+    private func migratedEnvelope(for entry: SnapshotHistoryEntry) -> SnapshotHistoryEnvelope {
+        SnapshotHistoryEnvelope(
+            entries: [entry],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: entry.villageID,
+                    lineageID: entry.lineageID,
+                    normalizedPlayerTag: entry.normalizedPlayerTag,
+                    lastEntryID: entry.snapshotID,
+                    lastFingerprint: entry.canonicalFingerprint,
+                    lastAppliedAt: entry.appliedAt,
+                    hasConflict: false
+                )
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
+        )
+    }
+
+    private func timerJSON(level: Int = 1) -> String {
+        "{\"tag\":\"\(firstTag)\",\"timestamp\":100,\"heroes\":[{\"data\":1,\"lvl\":\(level),\"timer\":90}]}"
+    }
+
+    private func timerSchema(
+        version: String,
+        unit: SnapshotTimerUnit = .seconds,
+        semantics: SnapshotTimerSemantics = .remaining,
+        minValue: Int64? = 0,
+        maxValue: Int64? = nil
+    ) -> SnapshotTimerSchema {
+        let spec = SnapshotTimerFieldSpec(
+            unit: unit,
+            semantics: semantics,
+            minValue: minValue,
+            maxValue: maxValue
+        )
+        return SnapshotTimerSchema(
+            version: version,
+            fields: [
+                "timer": spec,
+                "helper_timer": spec,
+                "helper_cooldown": spec
+            ]
         )
     }
 

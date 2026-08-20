@@ -426,6 +426,29 @@ public enum SnapshotHistoryServiceError: Error, LocalizedError, Equatable, Senda
     }
 }
 
+/// 导入 duplicate 身份（Issue #207）。
+///
+/// Duplicate 表示「Diff 解释不变」，不是「原文逐字节相同」。
+/// coverage 只用 `SnapshotHistoryCoverageDuplicateKey`：可序列化 proof metadata，
+/// 不含 `runtimeWitness`。`parserVersion` 只是 source adapter 标签；canonicalizer
+/// 分叉已经通过 fingerprint 里的 `observation.schemaVersion` 表达。
+/// `appliedAt` / source timestamp 也不进 identity。
+public struct SnapshotHistoryDuplicateKey: Hashable, Sendable {
+    public let canonicalFingerprint: String
+    public let coverage: SnapshotHistoryCoverageDuplicateKey
+    public let timerSchema: SnapshotTimerSchema?
+
+    public init(entry: SnapshotHistoryEntry) {
+        self.canonicalFingerprint = entry.canonicalFingerprint
+        self.coverage = SnapshotHistoryCoverageDuplicateKey(entry.coverage)
+        self.timerSchema = entry.timerSchema
+    }
+
+    public static func matches(_ lhs: SnapshotHistoryEntry, _ rhs: SnapshotHistoryEntry) -> Bool {
+        SnapshotHistoryDuplicateKey(entry: lhs) == SnapshotHistoryDuplicateKey(entry: rhs)
+    }
+}
+
 public struct SnapshotHistoryImportDecision: Sendable {
     public let envelope: SnapshotHistoryEnvelope
     public let entry: SnapshotHistoryEntry
@@ -544,8 +567,7 @@ public struct SnapshotHistoryService: Sendable {
         if lineage.outcome == .continued,
            let active,
            let previousEntry = envelope.entry(id: active.lastEntryID),
-           previousEntry.canonicalFingerprint == candidate.canonicalFingerprint,
-           previousEntry.coverage == candidate.coverage {
+           SnapshotHistoryDuplicateKey.matches(previousEntry, candidate) {
             let key = previousEntry.snapshotID.uuidString
             let previousMetadata = updated.duplicateMetadata[key]
             updated.duplicateMetadata[key] = SnapshotHistoryDuplicateMetadata(

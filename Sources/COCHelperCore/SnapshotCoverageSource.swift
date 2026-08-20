@@ -9,7 +9,7 @@ import Foundation
 ///   一律 fail-closed 为 `unavailable`。
 /// - `expectedCount` 与 observed 不一致时的 partial 降级由
 ///   `SnapshotHistoryCanonicalizer` 在 canonicalize 时完成(仅 verified proof)。
-/// - 未来受信任 adapter 通过 `sectionProofs` 注入 `verified` proof。
+/// - 未来受信任 adapter 通过 module/package 内部受控代码路径注入 `verified` proof。
 public enum JSONSnapshotCoverageAdapter {
     /// 顶层声明字段名。
     public static let contractField = "coverage"

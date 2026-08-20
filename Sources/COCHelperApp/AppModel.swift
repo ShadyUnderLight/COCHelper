@@ -2445,6 +2445,16 @@ public final class AppModel: ObservableObject {
 
     @discardableResult
     public func applyPendingAccountSnapshot(
+        decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
+    ) -> Bool {
+        applyPendingAccountSnapshot(
+            decision: reconciliationDecision,
+            sectionProofs: nil
+        )
+    }
+
+    @discardableResult
+    func applyPendingAccountSnapshot(
         decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting,
         sectionProofs: [String: SnapshotCoverageProof]? = nil
     ) -> Bool {
@@ -2732,31 +2742,11 @@ public final class AppModel: ObservableObject {
         }
         guard let snapshot = pendingAccountSnapshot else { return false }
         let sectionProofs = perfImportPromotesVerifiedCoverage
-            ? Self.perfFixtureVerifiedProofs(for: snapshot)
+            ? SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
+                JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            )
             : nil
         return applyPendingAccountSnapshot(sectionProofs: sectionProofs)
-    }
-
-    /// Bundled perf fixtures only: promote declared `perf-fixture` coverage via
-    /// the frozen verifier registry. Arbitrary fixture directories stay declared.
-    private static func perfFixtureVerifiedProofs(
-        for snapshot: AccountSnapshot
-    ) -> [String: SnapshotCoverageProof] {
-        JSONSnapshotCoverageAdapter.proofs(for: snapshot).mapValues { proof in
-            switch proof {
-            case .declared(let source, let version, let expectedCount)
-                where source == "perf-fixture":
-                return SnapshotCoverageVerifier.issue(
-                    source: source,
-                    adapterID: "perf-fixture",
-                    protocolVersion: version,
-                    expectedCount: expectedCount,
-                    verificationReason: "bundled perf fixture"
-                )
-            default:
-                return proof
-            }
-        }
     }
 
     /// 在村庄上启动 manual 记录：1000002 lvl15→16（冲突样本）+ 2 项 active

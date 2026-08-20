@@ -2,38 +2,29 @@ import XCTest
 @testable import COCHelperCore
 
 final class SnapshotCoverageVerifierTests: XCTestCase {
-    func testRegisteredAdapterIssuesVerifiedProof() {
-        let proof = SnapshotCoverageVerifier.issue(
+    func testTestFixtureFactoryIssuesVerifiedProof() {
+        let proof = SnapshotCoverageVerifier.issueTestFixture(
             source: "test-export",
-            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
-            protocolVersion: "1",
-            expectedCount: 2,
-            verificationReason: "test injection"
+            expectedCount: 2
         )
         XCTAssertTrue(proof.isVerified)
     }
 
-    func testUnknownAdapterFailsClosed() {
-        let proof = SnapshotCoverageVerifier.issue(
-            source: "evil",
-            adapterID: "evil",
+    func testPerfFixtureFactoryIssuesVerifiedProof() {
+        let proof = SnapshotCoverageVerifier.issuePerfFixture(
+            source: "perf-fixture",
             protocolVersion: "1",
             expectedCount: 1,
-            verificationReason: "forged"
+            verificationReason: "bundled perf fixture"
         )
-        guard case .unavailable = proof else {
-            return XCTFail("未注册 adapter 应 fail-closed 为 unavailable")
-        }
-        XCTAssertFalse(proof.isVerified)
+        XCTAssertTrue(proof.isVerified)
     }
 
     func testUnsupportedProtocolVersionFailsClosed() {
-        let proof = SnapshotCoverageVerifier.issue(
+        let proof = SnapshotCoverageVerifier.issueTestFixture(
             source: "test-export",
-            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
             protocolVersion: "99",
-            expectedCount: 1,
-            verificationReason: "test injection"
+            expectedCount: 1
         )
         guard case .unavailable = proof else {
             return XCTFail("不支持的协议版本应 fail-closed")
@@ -41,28 +32,12 @@ final class SnapshotCoverageVerifierTests: XCTestCase {
         XCTAssertFalse(proof.isVerified)
     }
 
-    func testDirectVerifiedConstructionWithUnregisteredAdapterIsNotTrusted() throws {
-        let proof = SnapshotCoverageProof.verified(
-            source: "evil",
-            adapterID: "evil",
-            protocolVersion: "1",
-            expectedCount: 1,
-            verificationReason: "forged",
-            verificationDigest: nil
-        )
+    func testDecodedVerifiedWireWithRegisteredAdapterIsNotTrusted() throws {
+        let json = """
+        {"kind":"verified","source":"evil","adapterID":"perf-fixture","protocolVersion":"1","expectedCount":1,"verificationReason":"forged"}
+        """.data(using: .utf8)!
+        let proof = try JSONDecoder().decode(SnapshotCoverageProof.self, from: json)
         XCTAssertFalse(proof.isVerified)
-    }
-
-    func testDirectVerifiedConstructionCannotImpersonateRegisteredAdapter() {
-        let forged = SnapshotCoverageProof.verified(
-            source: "evil",
-            adapterID: SnapshotCoverageVerifier.perfFixtureAdapterID,
-            protocolVersion: "1",
-            expectedCount: 1,
-            verificationReason: "forged",
-            verificationDigest: nil
-        )
-        XCTAssertFalse(forged.isVerified)
     }
 
     func testDecodedVerifiedWireWithUnregisteredAdapterIsNotTrusted() throws {
@@ -73,44 +48,23 @@ final class SnapshotCoverageVerifierTests: XCTestCase {
         XCTAssertFalse(proof.isVerified)
     }
 
-    func testDecodedVerifiedWireWithRegisteredAdapterButNoDigestIsNotTrusted() throws {
-        let json = """
-        {"kind":"verified","source":"evil","adapterID":"perf-fixture","protocolVersion":"1","expectedCount":1,"verificationReason":"forged"}
-        """.data(using: .utf8)!
-        let proof = try JSONDecoder().decode(SnapshotCoverageProof.self, from: json)
-        XCTAssertFalse(proof.isVerified)
-    }
-
-    func testIssuedVerifiedProofRoundTripsThroughJSON() throws {
-        let issued = SnapshotCoverageVerifier.issue(
+    func testIssuedVerifiedProofRoundTripsWireMetadataButLosesRuntimeTrust() throws {
+        let issued = SnapshotCoverageVerifier.issueTestFixture(
             source: "test-export",
-            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
-            protocolVersion: "1",
-            expectedCount: 2,
-            verificationReason: "test injection"
+            expectedCount: 2
         )
         let data = try JSONEncoder().encode(issued)
         let decoded = try JSONDecoder().decode(SnapshotCoverageProof.self, from: data)
-        XCTAssertTrue(decoded.isVerified)
-    }
-
-    func testMissingVerificationReasonIsNotTrusted() {
-        let proof = SnapshotCoverageProof.verified(
-            source: "test-export",
-            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
-            protocolVersion: "1",
-            expectedCount: 1,
-            verificationReason: nil,
-            verificationDigest: nil
-        )
-        XCTAssertFalse(proof.isVerified)
+        guard case .verified(let evidence) = decoded else {
+            return XCTFail("verified wire metadata 应保留")
+        }
+        XCTAssertEqual(evidence.adapterID, SnapshotCoverageVerifier.testFixtureAdapterID)
+        XCTAssertFalse(decoded.isVerified)
     }
 
     func testBlankVerificationReasonIsNotTrusted() {
-        let proof = SnapshotCoverageVerifier.issue(
+        let proof = SnapshotCoverageVerifier.issueTestFixture(
             source: "test-export",
-            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
-            protocolVersion: "1",
             expectedCount: 1,
             verificationReason: "   "
         )

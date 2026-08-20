@@ -103,12 +103,9 @@ enum SnapshotHistoryTestCoverage {
         source: String = "test-export",
         expectedCount: Int? = nil
     ) -> SnapshotCoverageProof {
-        SnapshotCoverageVerifier.issue(
+        SnapshotCoverageVerifier.issueTestFixture(
             source: source,
-            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
-            protocolVersion: "1",
-            expectedCount: expectedCount,
-            verificationReason: "test injection"
+            expectedCount: expectedCount
         )
     }
 }

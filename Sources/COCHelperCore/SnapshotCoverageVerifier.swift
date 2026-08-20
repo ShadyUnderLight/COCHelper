@@ -1,13 +1,11 @@
-import CryptoKit
 import Foundation
 
-/// Issue #205: frozen registry for trusted coverage adapters.
+/// Issue #205: module-internal factories for trusted coverage proofs.
 ///
-/// Only proofs returned by `issue(...)` carry a module-private verification
-/// digest and may evaluate to `isVerified == true`. Direct construction of
-/// `.verified(...)`, pasted JSON, and wire payloads without a valid digest
-/// remain fail-closed even when adapter IDs are registered.
-public enum SnapshotCoverageVerifier {
+/// Trust comes from code-path provenance, not wire metadata or caller-supplied
+/// adapter IDs. Only proofs returned by the factories below carry a runtime witness
+/// and may evaluate to `isVerified == true`.
+package enum SnapshotCoverageVerifier {
     static let testFixtureAdapterID = "test-fixture"
     static let perfFixtureAdapterID = "perf-fixture"
 
@@ -16,15 +14,71 @@ public enum SnapshotCoverageVerifier {
         perfFixtureAdapterID: ["1"],
     ]
 
-    private static let digestSeed = Data("COCHelper.SnapshotCoverageVerifier.v1".utf8)
-
-    static func isRegistered(adapterID: String, protocolVersion: String) -> Bool {
-        guard let versions = registeredProtocols[adapterID] else { return false }
-        return versions.contains(protocolVersion)
+    static func issueTestFixture(
+        source: String = "test-export",
+        protocolVersion: String = "1",
+        expectedCount: Int? = nil,
+        verificationReason: String = "test injection"
+    ) -> SnapshotCoverageProof {
+        issueVerified(
+            source: source,
+            adapterID: testFixtureAdapterID,
+            protocolVersion: protocolVersion,
+            expectedCount: expectedCount,
+            verificationReason: verificationReason
+        )
     }
 
-    /// Issue verified coverage proof for a registered adapter/protocol pair.
-    public static func issue(
+    static func issuePerfFixture(
+        source: String,
+        protocolVersion: String,
+        expectedCount: Int?,
+        verificationReason: String
+    ) -> SnapshotCoverageProof {
+        issueVerified(
+            source: source,
+            adapterID: perfFixtureAdapterID,
+            protocolVersion: protocolVersion,
+            expectedCount: expectedCount,
+            verificationReason: verificationReason
+        )
+    }
+
+    package static func promoteBundledPerfFixtureDeclaredProofs(
+        _ proofs: [String: SnapshotCoverageProof]
+    ) -> [String: SnapshotCoverageProof] {
+        proofs.mapValues { proof in
+            switch proof {
+            case .declared(let source, let version, let expectedCount)
+                where source == perfFixtureAdapterID:
+                return issuePerfFixture(
+                    source: source,
+                    protocolVersion: version,
+                    expectedCount: expectedCount,
+                    verificationReason: "bundled perf fixture"
+                )
+            default:
+                return proof
+            }
+        }
+    }
+
+    static func validatesVerifiedProof(_ proof: SnapshotCoverageProof) -> Bool {
+        guard case .verified(let evidence) = proof,
+              evidence.runtimeWitness == .moduleIssued,
+              let verificationReason = evidence.verificationReason else {
+            return false
+        }
+        guard isNonBlank(evidence.source),
+              isNonBlank(verificationReason),
+              isParsableProtocolVersion(evidence.protocolVersion),
+              isRegistered(adapterID: evidence.adapterID, protocolVersion: evidence.protocolVersion) else {
+            return false
+        }
+        return evidence.expectedCount == nil || evidence.expectedCount! >= 0
+    }
+
+    private static func issueVerified(
         source: String,
         adapterID: String,
         protocolVersion: String,
@@ -42,74 +96,21 @@ public enum SnapshotCoverageVerifier {
               isNonBlank(verificationReason) else {
             return .unavailable(reason: "verified coverage 证据格式无效。")
         }
-        let digest = makeVerificationDigest(
-            source: source,
-            adapterID: adapterID,
-            protocolVersion: protocolVersion,
-            expectedCount: expectedCount,
-            verificationReason: verificationReason
-        )
         return .verified(
-            source: source,
-            adapterID: adapterID,
-            protocolVersion: protocolVersion,
-            expectedCount: expectedCount,
-            verificationReason: verificationReason,
-            verificationDigest: digest
+            VerifiedCoverageEvidence(
+                source: source,
+                adapterID: adapterID,
+                protocolVersion: protocolVersion,
+                expectedCount: expectedCount,
+                verificationReason: verificationReason,
+                runtimeWitness: .moduleIssued
+            )
         )
     }
 
-    static func validatesVerifiedProof(_ proof: SnapshotCoverageProof) -> Bool {
-        guard case .verified(
-            let source,
-            let adapterID,
-            let protocolVersion,
-            let expectedCount,
-            let verificationReason,
-            let verificationDigest
-        ) = proof else {
-            return false
-        }
-        guard let verificationReason,
-              isNonBlank(source),
-              isNonBlank(verificationReason),
-              isParsableProtocolVersion(protocolVersion),
-              isRegistered(adapterID: adapterID, protocolVersion: protocolVersion),
-              expectedCount == nil || expectedCount! >= 0 else {
-            return false
-        }
-        return verificationDigest == makeVerificationDigest(
-            source: source,
-            adapterID: adapterID,
-            protocolVersion: protocolVersion,
-            expectedCount: expectedCount,
-            verificationReason: verificationReason
-        )
-    }
-
-    private static func makeVerificationDigest(
-        source: String,
-        adapterID: String,
-        protocolVersion: String,
-        expectedCount: Int?,
-        verificationReason: String
-    ) -> String {
-        var material = Data()
-        material.append(Data("v1|".utf8))
-        material.append(Data(adapterID.utf8))
-        material.append(0x1C)
-        material.append(Data(protocolVersion.utf8))
-        material.append(0x1C)
-        material.append(Data(source.utf8))
-        material.append(0x1C)
-        material.append(Data(verificationReason.utf8))
-        material.append(0x1C)
-        if let expectedCount {
-            material.append(Data(String(expectedCount).utf8))
-        }
-        let key = SymmetricKey(data: digestSeed)
-        let mac = HMAC<SHA256>.authenticationCode(for: material, using: key)
-        return "hmac-sha256:" + mac.map { String(format: "%02x", $0) }.joined()
+    private static func isRegistered(adapterID: String, protocolVersion: String) -> Bool {
+        guard let versions = registeredProtocols[adapterID] else { return false }
+        return versions.contains(protocolVersion)
     }
 
     private static func isNonBlank(_ value: String) -> Bool {

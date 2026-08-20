@@ -371,7 +371,15 @@ final class SnapshotHistoryCoreTests: XCTestCase {
 
         let encoded = try JSONEncoder().encode(verifiedSection)
         let restored = try JSONDecoder().decode(SnapshotSectionCoverage.self, from: encoded)
-        XCTAssertEqual(restored, verifiedSection)
+        XCTAssertEqual(restored.presence, verifiedSection.presence)
+        XCTAssertEqual(restored.completeness, verifiedSection.completeness)
+        guard case .verified(let evidence) = restored.proof else {
+            return XCTFail("verified wire metadata 应保留")
+        }
+        XCTAssertEqual(evidence.adapterID, "test-fixture")
+        XCTAssertNil(evidence.runtimeWitness)
+        XCTAssertFalse(restored.proof.isVerified)
+        XCTAssertFalse(restored.isComplete)
 
         let invalid = try canonicalize(
             makeRawSnapshot("{\"heroes\":{}}")

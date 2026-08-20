@@ -252,22 +252,15 @@ public enum SnapshotSectionPresence: String, Codable, Hashable, Sendable {
 ///
 /// - `declared`: pasted JSON or exporter self-assertion; auditable but not
 ///   verified. Must not open destructive diff or manual reconciliation gates.
-/// - `verified`: produced only by trusted adapters/tests with explicit adapter
-///   identity and protocol version.
+/// - `verified`: auditable adapter metadata. Runtime trust requires a module-issued
+///   witness from `SnapshotCoverageVerifier`; wire decode alone is fail-closed.
 /// - `legacyAuthoritative`: frozen history wire `kind: authoritative` before
 ///   the trust model. Runtime trust equals `declared`; encode preserves legacy
 ///   wire shape so integrity fingerprints stay stable.
 /// - `unavailable`: no usable declaration.
 public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
     case declared(source: String, version: String, expectedCount: Int?)
-    case verified(
-        source: String,
-        adapterID: String,
-        protocolVersion: String,
-        expectedCount: Int?,
-        verificationReason: String?,
-        verificationDigest: String?
-    )
+    case verified(VerifiedCoverageEvidence)
     case legacyAuthoritative(source: String, version: String, expectedCount: Int?)
     case unavailable(reason: String)
 
@@ -280,7 +273,6 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
         case adapterID
         case protocolVersion
         case verificationReason
-        case verificationDigest
     }
 
     private enum Kind: String, Codable {
@@ -298,21 +290,13 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
             try container.encode(source, forKey: .source)
             try container.encode(version, forKey: .version)
             try container.encodeIfPresent(expectedCount, forKey: .expectedCount)
-        case .verified(
-            let source,
-            let adapterID,
-            let protocolVersion,
-            let expectedCount,
-            let verificationReason,
-            let verificationDigest
-        ):
+        case .verified(let evidence):
             try container.encode(Kind.verified, forKey: .kind)
-            try container.encode(source, forKey: .source)
-            try container.encode(adapterID, forKey: .adapterID)
-            try container.encode(protocolVersion, forKey: .protocolVersion)
-            try container.encodeIfPresent(expectedCount, forKey: .expectedCount)
-            try container.encodeIfPresent(verificationReason, forKey: .verificationReason)
-            try container.encodeIfPresent(verificationDigest, forKey: .verificationDigest)
+            try container.encode(evidence.source, forKey: .source)
+            try container.encode(evidence.adapterID, forKey: .adapterID)
+            try container.encode(evidence.protocolVersion, forKey: .protocolVersion)
+            try container.encodeIfPresent(evidence.expectedCount, forKey: .expectedCount)
+            try container.encodeIfPresent(evidence.verificationReason, forKey: .verificationReason)
         case .legacyAuthoritative(let source, let version, let expectedCount):
             // Preserve pre-#205 wire bytes for immutable history integrity.
             try container.encode(Kind.authoritative, forKey: .kind)
@@ -342,12 +326,13 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
             )
         case .verified:
             self = .verified(
-                source: try container.decode(String.self, forKey: .source),
-                adapterID: try container.decode(String.self, forKey: .adapterID),
-                protocolVersion: try container.decode(String.self, forKey: .protocolVersion),
-                expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount),
-                verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason),
-                verificationDigest: try container.decodeIfPresent(String.self, forKey: .verificationDigest)
+                VerifiedCoverageEvidence(
+                    decodedWire: try container.decode(String.self, forKey: .source),
+                    adapterID: try container.decode(String.self, forKey: .adapterID),
+                    protocolVersion: try container.decode(String.self, forKey: .protocolVersion),
+                    expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount),
+                    verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason)
+                )
             )
         case .unavailable:
             self = .unavailable(reason: try container.decode(String.self, forKey: .reason))
@@ -390,9 +375,10 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
     static func expectedCount(of proof: SnapshotCoverageProof) -> Int? {
         switch proof {
         case .declared(_, _, let expectedCount),
-             .legacyAuthoritative(_, _, let expectedCount),
-             .verified(_, _, _, let expectedCount, _, _):
+             .legacyAuthoritative(_, _, let expectedCount):
             return expectedCount
+        case .verified(let evidence):
+            return evidence.expectedCount
         case .unavailable:
             return nil
         }

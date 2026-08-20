@@ -724,7 +724,7 @@ public enum SnapshotHistoryCanonicalizer {
             )
         }
 
-        guard proof.isAuthoritative else {
+        guard proof.isVerified else {
             return SectionCoverageAnalysis(
                 completeness: .unavailable,
                 proof: proof,
@@ -732,8 +732,7 @@ public enum SnapshotHistoryCanonicalizer {
             )
         }
 
-        if case .authoritative(_, _, let expectedCount) = proof,
-           let expectedCount,
+        if let expectedCount = SnapshotCoverageProof.expectedCount(of: proof),
            expectedCount != values.count {
             return SectionCoverageAnalysis(
                 completeness: .partial,

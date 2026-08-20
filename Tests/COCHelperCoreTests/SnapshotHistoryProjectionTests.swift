@@ -509,7 +509,7 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
                         ? .presentNonEmpty
                         : .presentEmpty,
                     completeness: .complete,
-                    proof: .authoritative(source: "test", version: "1", expectedCount: nil),
+                    proof: .makeVerified(source: "test", expectedCount: nil),
                     observedCount: items.filter { $0.identity.rawSection == section }.count
                 )
             },

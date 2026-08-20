@@ -355,28 +355,23 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
             appliedAt: Date(timeIntervalSince1970: 1_700_100_000),
             sectionProofs: [
-                "heroes": .authoritative(
+                "heroes": .makeVerified(
                     source: "test-export",
-                    version: "1",
                     expectedCount: 0
                 )
             ]
         )
-        let authoritative = try XCTUnwrap(
+        let verifiedSection = try XCTUnwrap(
             withProof.coverage.section(base: .home, rawSection: "heroes")
         )
-        XCTAssertEqual(authoritative.presence, .presentEmpty)
-        XCTAssertEqual(authoritative.completeness, .complete)
-        XCTAssertTrue(authoritative.isComplete)
-        XCTAssertEqual(authoritative.proof, .authoritative(
-            source: "test-export",
-            version: "1",
-            expectedCount: 0
-        ))
+        XCTAssertEqual(verifiedSection.presence, .presentEmpty)
+        XCTAssertEqual(verifiedSection.completeness, .complete)
+        XCTAssertTrue(verifiedSection.isComplete)
+        XCTAssertTrue(verifiedSection.proof.isVerified)
 
-        let encoded = try JSONEncoder().encode(authoritative)
+        let encoded = try JSONEncoder().encode(verifiedSection)
         let restored = try JSONDecoder().decode(SnapshotSectionCoverage.self, from: encoded)
-        XCTAssertEqual(restored, authoritative)
+        XCTAssertEqual(restored, verifiedSection)
 
         let invalid = try canonicalize(
             makeRawSnapshot("{\"heroes\":{}}")

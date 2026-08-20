@@ -1,18 +1,15 @@
 import Foundation
 
-/// Issue #173 source coverage contract。
+/// Issue #173 / #205 source coverage contract。
 ///
 /// 来源契约(可冻结、可审计):
-/// - 账号 JSON 顶层可选的 `coverage` 字段声明各 section 的完整性证明,
-///   值为 `SnapshotCoverageProof` 的 Codable 编码:
-///   `{"kind": "authoritative", "source": ..., "version": ..., "expectedCount": ...}`
-///   或 `{"kind": "unavailable", "reason": ...}`。
+/// - 账号 JSON 顶层可选的 `coverage` 字段声明各 section 的完整性证明。
+/// - Pasted JSON 只能产出 `declared` proof,永远不能产出 `verified`。
 /// - 没有 `coverage` 字段、字段类型无效、section 未提及或声明不可解码的,
-///   一律 fail-closed 为 `unavailable`。adapter 不根据数组存在、空数组、
-///   当前目录或当前时间推断完整性;expectedCount 与 observed 不一致时的
-///   partial 降级由 `SnapshotHistoryCanonicalizer` 在 canonicalize 时完成。
-/// - 未来官方 API snapshot adapter 复用同一 `[String: SnapshotCoverageProof]`
-///   输出契约,由各自来源显式产生证明。
+///   一律 fail-closed 为 `unavailable`。
+/// - `expectedCount` 与 observed 不一致时的 partial 降级由
+///   `SnapshotHistoryCanonicalizer` 在 canonicalize 时完成(仅 verified proof)。
+/// - 未来受信任 adapter 通过 `sectionProofs` 注入 `verified` proof。
 public enum JSONSnapshotCoverageAdapter {
     /// 顶层声明字段名。
     public static let contractField = "coverage"
@@ -60,22 +57,50 @@ public enum JSONSnapshotCoverageAdapter {
         _ declaration: Any,
         section: String
     ) -> SnapshotCoverageProof {
-        guard JSONSerialization.isValidJSONObject(declaration) else {
+        guard JSONSerialization.isValidJSONObject(declaration),
+              let object = declaration as? [String: Any],
+              let kind = object["kind"] as? String else {
             return .unavailable(reason: "section 完整性声明无法解析：\(section)。")
         }
-        do {
-            let data = try JSONSerialization.data(withJSONObject: declaration)
-            return try JSONDecoder().decode(SnapshotCoverageProof.self, from: data)
-        } catch {
+        switch kind {
+        case "unavailable":
+            guard let reason = object["reason"] as? String else {
+                return .unavailable(
+                    reason: "section 完整性声明不可解码，按无证明处理：\(section)。"
+                )
+            }
+            return .unavailable(reason: reason)
+        case "verified":
             return .unavailable(
-                reason: "section 完整性声明不可解码，按无证明处理：\(section)。"
+                reason: "粘贴 JSON 不能声明已验证完整性，按无证明处理：\(section)。"
+            )
+        case "authoritative", "declared":
+            guard let source = object["source"] as? String,
+                  let version = object["version"] as? String else {
+                return .unavailable(
+                    reason: "section 完整性声明不可解码，按无证明处理：\(section)。"
+                )
+            }
+            let expectedCount = object["expectedCount"] as? Int
+            let proof = SnapshotCoverageProof.declared(
+                source: source,
+                version: version,
+                expectedCount: expectedCount
+            )
+            guard proof.isWellFormedDeclaration else {
+                return .unavailable(
+                    reason: "section 完整性声明格式无效，按无证明处理：\(section)。"
+                )
+            }
+            return proof
+        default:
+            return .unavailable(
+                reason: "section 完整性声明类型无效，按无证明处理：\(section)。"
             )
         }
     }
 
     private static func topLevelObject(of text: String) throws -> [String: Any] {
-        // 与导入器同源清洗(去除 Markdown code fence),否则合法围栏输入
-        // 会解析失败并把来源声明降级为 unavailable。
         let prepared = AccountSnapshotImporter.prepare(text).text
         guard let data = prepared.data(using: .utf8),
               let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {

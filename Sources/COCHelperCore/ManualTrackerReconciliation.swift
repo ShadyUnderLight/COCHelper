@@ -879,6 +879,10 @@ public enum ManualTrackerReconciliationService {
             let histogram = isHistogram(key)
             let base = snapshotBase(key.base)
             let requiredFields = ["presence", "data"]
+            let trustedSectionComplete = entry.coverage.section(
+                base: base,
+                rawSection: key.rawSection
+            )?.isComplete == true
             let coverageComplete = requiredFields.allSatisfy {
                 entry.coverage.state(
                     base: base,
@@ -904,7 +908,10 @@ public enum ManualTrackerReconciliationService {
             var quantities: [Int: Int64] = [:]
             var levelCoverageComplete = true
             var countCoverageComplete = true
-            var valid = coverageComplete && sectionSafetyCoverageComplete && !items.isEmpty
+            var valid = trustedSectionComplete
+                && coverageComplete
+                && sectionSafetyCoverageComplete
+                && !items.isEmpty
             let countCoverageState = entry.coverage.state(
                 base: base,
                 rawSection: key.rawSection,

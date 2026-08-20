@@ -2442,7 +2442,8 @@ public final class AppModel: ObservableObject {
 
     @discardableResult
     public func applyPendingAccountSnapshot(
-        decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
+        decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting,
+        sectionProofs: [String: SnapshotCoverageProof]? = nil
     ) -> Bool {
         guard let snapshot = pendingAccountSnapshot else { return false }
 
@@ -2506,7 +2507,8 @@ public final class AppModel: ObservableObject {
                 appliedAt: appliedAt,
                 manualEnvelope: manualEnvelopeForCreate,
                 expectedPreview: pendingReconciliationPreview,
-                reconciliationDecision: reconciliationDecision
+                reconciliationDecision: reconciliationDecision,
+                sectionProofs: sectionProofs
             )
         } catch {
             accountImportError = Self.localizedPersistenceError(error)
@@ -2703,7 +2705,32 @@ public final class AppModel: ObservableObject {
         guard pendingAccountSnapshot != nil else {
             return false
         }
-        return applyPendingAccountSnapshot()
+        guard let snapshot = pendingAccountSnapshot else { return false }
+        return applyPendingAccountSnapshot(
+            sectionProofs: Self.perfFixtureVerifiedProofs(for: snapshot)
+        )
+    }
+
+    /// Bundled perf fixtures declare `perf-fixture` coverage; promote to verified
+    /// only on the internal perf import path, never for user pasted JSON.
+    private static func perfFixtureVerifiedProofs(
+        for snapshot: AccountSnapshot
+    ) -> [String: SnapshotCoverageProof] {
+        JSONSnapshotCoverageAdapter.proofs(for: snapshot).mapValues { proof in
+            switch proof {
+            case .declared(let source, let version, let expectedCount)
+                where source == "perf-fixture":
+                return SnapshotCoverageProof.makeVerified(
+                    source: source,
+                    adapterID: "perf-fixture",
+                    protocolVersion: version,
+                    expectedCount: expectedCount,
+                    verificationReason: "bundled perf fixture"
+                )
+            default:
+                return proof
+            }
+        }
     }
 
     /// 在村庄上启动 manual 记录：1000002 lvl15→16（冲突样本）+ 2 项 active
@@ -3836,7 +3863,8 @@ public final class AppModel: ObservableObject {
         appliedAt: Date,
         manualEnvelope: ManualTrackerEnvelope? = nil,
         expectedPreview: ManualReconciliationPreview? = nil,
-        reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
+        reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting,
+        sectionProofs: [String: SnapshotCoverageProof]? = nil
     ) throws {
         try ensureVillageStoreWritable()
         guard let historyEnvelope else {
@@ -3858,7 +3886,7 @@ public final class AppModel: ObservableObject {
             appliedAt: appliedAt,
             catalog: gameCatalog,
             craftTableCatalog: craftTableCatalog,
-            sectionProofs: JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            sectionProofs: sectionProofs ?? JSONSnapshotCoverageAdapter.proofs(for: snapshot)
         )
         guard var candidateManualEnvelope = manualEnvelope ?? manualTrackerEnvelope else {
             throw ManualTrackerStoreError.unavailable("导入前未找到可用的手动升级状态。")

@@ -77,8 +77,8 @@ struct CapitalRaidCardView: View {
                 .foregroundStyle(.secondary)
         } else if let state = capitalState, let clanTag {
             statusLine(state)
-            if let page = state.lastGood {
-                seasonList(page)
+            if state.lastGood != nil {
+                seasonList(clanTag)
                 if hasMore {
                     loadMoreButton("加载更多突袭周末", tag: clanTag)
                 }
@@ -166,14 +166,9 @@ struct CapitalRaidCardView: View {
         }
     }
 
-    private func seasonList(_ page: OfficialCapitalRaidPage) -> some View {
-        // Issue #211：预计算轻量 row identity（tripleKey#seq），不在 View body
-        // 执行完整赛季 JSON 编码。分页累计、详情刷新、缓存重建时 ID 稳定，
-        // 重复三元组仍通过序号区分，详情字段变化不改 ID。
-        // - 仍使用 LazyVStack 按需构建，不新增嵌套垂直 ScrollView；
-        // - 不自动触发网络请求/分页请求/状态刷新；
-        // - 来源顺序（page.items 顺序）即呈现顺序，序号按此顺序计数。
-        let rows = CapitalRaidRowIdentity.rows(for: page)
+    private func seasonList(_ clanTag: String) -> some View {
+        // Issue #221：消费 AppModel 已缓存的 row lifecycle，不在 View render 路径重算 row identity。
+        let rows = model.capitalRaidRows(for: clanTag)
         return LazyVStack(alignment: .leading, spacing: 8) {
             if rows.isEmpty {
                 Text("没有突袭周末记录")

@@ -772,6 +772,107 @@ extension AppModelTests {
         XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2, "失败不得清空累计页")
         XCTAssertEqual(model.currentCapitalState?.lastHTTPStatus, 500)
     }
+
+    /// Issue #221：load more 后旧 row ID 保留，新行 append。
+    @MainActor
+    func testLoadMoreCapitalPreservesExistingRowIDs() async throws {
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            let body: Data
+            if request.url?.query(percentEncoded: true)?.contains("after=") != true {
+                body = fullCapitalRaidPageData()
+            } else {
+                body = Data(#"{"items":[{"state":"ended","startTime":"20260617T080000.000Z","endTime":"20260619T080000.000Z","capitalTotalLoot":50000,"raidsCompleted":4,"totalAttacks":40,"enemyDistrictsDestroyed":80,"offensiveReward":3000,"defensiveReward":1000}],"paging":{"cursors":{"before":"B2","after":"RAIDCURSORAFTER2"}}}"#.utf8)
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        let idsAfterFirstPage = model.capitalRaidRows(for: "#CLANA").map(\.id)
+        XCTAssertEqual(idsAfterFirstPage.count, 2)
+
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        let idsAfterLoadMore = model.capitalRaidRows(for: "#CLANA").map(\.id)
+
+        XCTAssertEqual(Array(idsAfterLoadMore.prefix(2)), idsAfterFirstPage)
+        XCTAssertEqual(idsAfterLoadMore.count, 3)
+    }
+
+    /// Issue #221：刷新失败保留 last-good 时 row state 不变。
+    @MainActor
+    func testRefreshCapitalFailureKeepsRowIDs() async throws {
+        let failFlag = FailFlag()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            if failFlag.shouldFail {
+                return (HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        let idsBeforeFailure = model.capitalRaidRows(for: "#CLANA").map(\.id)
+
+        failFlag.shouldFail = true
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.capitalRaidRows(for: "#CLANA").map(\.id), idsBeforeFailure)
+    }
+
+    /// Issue #221：跨 parser 版本重建时 row generation 改变。
+    @MainActor
+    func testParserVersionRebuildChangesCapitalRowGeneration() async throws {
+        let oldSeason = OfficialCapitalRaidSeason(
+            state: "ended", startTime: "20260701T080000.000Z", endTime: "20260703T080000.000Z",
+            capitalTotalLoot: 123456, raidsCompleted: 6, totalAttacks: 60,
+            enemyDistrictsDestroyed: 120, offensiveReward: 5000, defensiveReward: 2500,
+            members: nil, attackLog: nil, defenseLog: nil
+        )
+        let oldState = ClanCapitalAPIState(
+            status: .success,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            parserVersion: "clan-capital-0.2",
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: [oldSeason], before: nil, after: "RAIDCURSORAFTER1")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": oldState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            _ = request
+            return (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+        let idsAfterLoad = model.capitalRaidRows(for: "#CLANA").map(\.id)
+
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        let idsAfterRebuild = model.capitalRaidRows(for: "#CLANA").map(\.id)
+
+        XCTAssertNotEqual(idsAfterLoad, idsAfterRebuild)
+    }
 }
 
 // MARK: - P1-3 端到端（外部复核补充）

@@ -288,6 +288,9 @@ public final class AppModel: ObservableObject {
     /// Issue #212：详情页扁平 row 元数据缓存（与投影 render 身份对齐）。
     private let detailFlatRowCache = VillageDetailFlatRowCache()
 
+    /// Issue #221：突袭周末 row identity 生命周期缓存（按 clan tag 隔离，不持久化）。
+    private var capitalRaidRowCaches: [String: CapitalRaidRowCache] = [:]
+
     /// perf 导入是否允许将 bundled fixture coverage 提升为 verified。
     private var perfImportPromotesVerifiedCoverage = false
 
@@ -734,6 +737,7 @@ public final class AppModel: ObservableObject {
         // 自动结算需要当前快照基线（Issue #170 gate）：history 已加载，
         // 只结算基线一致的村庄，未对账村庄保持原状。
         _ = settleManualUpgrades(at: Date())
+        seedCapitalRaidRowCachesFromPersistedStates()
     }
 
     /// Returns the persisted local tracker core for an explicit village.
@@ -1872,6 +1876,12 @@ public final class AppModel: ObservableObject {
         clanCapitalStates[clanTag]
     }
 
+    /// 指定部落 tag 的突袭周末渲染行（Issue #221：缓存 lifecycle，View 不得重算 identity）。
+    public func capitalRaidRows(for clanTag: String) -> [CapitalRaidSeasonRow] {
+        guard let page = capitalState(for: clanTag)?.lastGood else { return [] }
+        return capitalRaidRowCache(for: clanTag).rows(for: page)
+    }
+
     /// 部落档案已知战争日志不公开（无档案/未知 → false）。
     public func isWarLogKnownNotPublic(for clanTag: String) -> Bool {
         clanState(for: clanTag)?.lastGood?.isWarLogPublic == false
@@ -2908,6 +2918,12 @@ public final class AppModel: ObservableObject {
                 lastGood: OfficialCapitalRaidPage(page: raidMerged)
             )
             clanCapitalStates[PerfSampleFixture.perfClanTag] = raidState
+            if let raidPage = raidState.lastGood {
+                updateCapitalRaidRowCache(
+                    tag: PerfSampleFixture.perfClanTag,
+                    update: .initial(page: raidPage)
+                )
+            }
             persistClanCapitalStates()
         } catch {
             // war/raid seed 失败：记录诊断并返回失败（不继续加部落）。
@@ -3185,6 +3201,13 @@ public final class AppModel: ObservableObject {
                 OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
             }
             self.clanCapitalStates[tag] = state
+            self.updateCapitalRaidRowCacheAfterFetch(
+                tag: tag,
+                state: state,
+                previous: previous,
+                parserVersion: parserVersion,
+                mergedPage: nil
+            )
             self.persistClanCapitalStates()
         }
     }
@@ -3226,11 +3249,71 @@ public final class AppModel: ObservableObject {
                     page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
                 )
                 self.clanCapitalStates[tag] = merged
+                self.updateCapitalRaidRowCacheAfterFetch(
+                    tag: tag,
+                    state: merged,
+                    previous: current,
+                    parserVersion: parserVersion,
+                    mergedPage: merged.lastGood
+                )
             } else {
                 // 失败保留 last-good（previous）；跨版本重建直接采用新页。
                 self.clanCapitalStates[tag] = state
+                self.updateCapitalRaidRowCacheAfterFetch(
+                    tag: tag,
+                    state: state,
+                    previous: current,
+                    parserVersion: parserVersion,
+                    mergedPage: nil
+                )
             }
             self.persistClanCapitalStates()
+        }
+    }
+
+    // MARK: - Issue #221 Capital Raid row identity lifecycle
+
+    private func capitalRaidRowCache(for tag: String) -> CapitalRaidRowCache {
+        if let cache = capitalRaidRowCaches[tag] { return cache }
+        let cache = CapitalRaidRowCache()
+        capitalRaidRowCaches[tag] = cache
+        return cache
+    }
+
+    private func seedCapitalRaidRowCachesFromPersistedStates() {
+        for (tag, state) in clanCapitalStates {
+            guard let page = state.lastGood else { continue }
+            capitalRaidRowCache(for: tag).apply(.initial(page: page))
+        }
+    }
+
+    private func updateCapitalRaidRowCache(tag: String, update: CapitalRaidRowCache.Update) {
+        capitalRaidRowCache(for: tag).apply(update)
+    }
+
+    private func updateCapitalRaidRowCacheAfterFetch(
+        tag: String,
+        state: ClanCapitalAPIState,
+        previous: ClanCapitalAPIState?,
+        parserVersion: String,
+        mergedPage: OfficialCapitalRaidPage?
+    ) {
+        let needsRebuild = previous?.parserVersion != parserVersion
+        switch state.status {
+        case .success:
+            if let page = mergedPage ?? state.lastGood {
+                if needsRebuild {
+                    updateCapitalRaidRowCache(tag: tag, update: .parserRebuild(page: page))
+                } else if mergedPage != nil {
+                    updateCapitalRaidRowCache(tag: tag, update: .loadMoreSuccess(page: page))
+                } else {
+                    updateCapitalRaidRowCache(tag: tag, update: .refreshSuccess(page: page))
+                }
+            }
+        case .failed:
+            updateCapitalRaidRowCache(tag: tag, update: .failureRetain)
+        default:
+            break
         }
     }
 

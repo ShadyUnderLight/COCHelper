@@ -319,6 +319,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         )
 
         XCTAssertEqual(withoutEntry.canonicalFingerprint, withEntry.canonicalFingerprint)
+        XCTAssertEqual(withEntry.observationVersion, SnapshotHistorySchema.observationWithoutCoverageMetadata)
         XCTAssertNil(withEntry.observation.unknownTopLevelFields["coverage"])
         XCTAssertNil(withEntry.observation.rawTopLevelFields["coverage"])
         XCTAssertFalse(withEntry.coverage.fields.contains {
@@ -346,6 +347,39 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(unknownEntry.observation.unknownTopLevelFields["future_field"], .bool(true))
         XCTAssertNil(unknownEntry.observation.unknownTopLevelFields["coverage"])
         XCTAssertNotEqual(unknownEntry.canonicalFingerprint, withEntry.canonicalFingerprint)
+    }
+
+    func testObservationVersionFourKeepsCoverageInUnknownTopLevelFields() throws {
+        let withCoverage = try makeSnapshot(
+            """
+            {"buildings":[{"data":1,"lvl":1}],\
+            "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+            """
+        )
+        let withoutCoverage = try makeSnapshot("{\"buildings\":[{\"data\":1,\"lvl\":1}]}")
+        let v4With = try canonicalize(
+            withCoverage,
+            observationVersion: SnapshotHistorySchema.observationWithTimerSchema,
+            sectionProofs: JSONSnapshotCoverageAdapter.proofs(for: withCoverage)
+        )
+        let v4Without = try canonicalize(
+            withoutCoverage,
+            observationVersion: SnapshotHistorySchema.observationWithTimerSchema
+        )
+
+        XCTAssertEqual(v4With.observationVersion, SnapshotHistorySchema.observationWithTimerSchema)
+        XCTAssertNotNil(v4With.observation.unknownTopLevelFields["coverage"])
+        XCTAssertNotNil(v4With.observation.rawTopLevelFields["coverage"])
+        XCTAssertTrue(v4With.coverage.fields.contains {
+            $0.base == .unknown
+                && $0.rawSection == "$topLevel"
+                && $0.field == "coverage"
+        })
+        XCTAssertNotEqual(v4With.canonicalFingerprint, v4Without.canonicalFingerprint)
+        XCTAssertEqual(
+            v4With.coverage.section(base: .home, rawSection: "buildings")?.proof,
+            .declared(source: "u.coc", version: "1", expectedCount: 1)
+        )
     }
 
     func testCoverageDistinguishesCompletePartialUnavailableAndUnknownFields() throws {
@@ -821,6 +855,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         _ snapshot: AccountSnapshot,
         catalog: GameCatalog? = nil,
         craftTableCatalog: CraftTableCatalog? = nil,
+        observationVersion: Int = SnapshotHistorySchema.observation,
         sectionProofs: [String: SnapshotCoverageProof] = [:]
     ) throws -> SnapshotHistoryEntry {
         try SnapshotHistoryCanonicalizer.canonicalize(
@@ -831,7 +866,8 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
-            sectionProofs: sectionProofs
+            sectionProofs: sectionProofs,
+            observationVersion: observationVersion
         )
     }
 

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum AccountDataDiagnosticSeverity: String, Codable, Hashable, Sendable, Identifiable {
@@ -144,6 +145,15 @@ public struct AccountSnapshot: Codable, Hashable, Sendable {
     public let unknownTopLevelKeys: [String]
     public let diagnostics: [AccountDataDiagnostic]
 
+    /// Issue #210：内容身份指纹（SHA-256 over canonical JSON，`sha256:` 前缀）。
+    ///
+    /// 在 init 一次性生成（导入/解码边界），供投影缓存做轻量 key 查找，
+    /// 避免每次 tick 全量 Hash 快照（含 `originalText` 大字符串）。
+    /// 编码时跳过（不进入持久化 JSON）；解码后按内容重算，旧数据无需迁移。
+    /// diagnostics 的随机 id 不属于内容身份，指纹排除（同一导出两次解析
+    /// 的判定字段一致 → 指纹一致）。
+    public let contentFingerprint: String
+
     public init(
         tag: String?,
         capturedAt: Date?,
@@ -166,6 +176,91 @@ public struct AccountSnapshot: Codable, Hashable, Sendable {
         self.boosts = boosts
         self.unknownTopLevelKeys = unknownTopLevelKeys
         self.diagnostics = diagnostics
+        self.contentFingerprint = Self.fingerprint(
+            tag: tag, capturedAt: capturedAt, importedAt: importedAt,
+            ageSeconds: ageSeconds, originalText: originalText,
+            objectSections: objectSections, numericSections: numericSections,
+            boosts: boosts, unknownTopLevelKeys: unknownTopLevelKeys,
+            diagnostics: diagnostics
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tag
+        case capturedAt
+        case importedAt
+        case ageSeconds
+        case originalText
+        case objectSections
+        case numericSections
+        case boosts
+        case unknownTopLevelKeys
+        case diagnostics
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            tag: try container.decodeIfPresent(String.self, forKey: .tag),
+            capturedAt: try container.decodeIfPresent(Date.self, forKey: .capturedAt),
+            importedAt: try container.decode(Date.self, forKey: .importedAt),
+            ageSeconds: try container.decodeIfPresent(Int64.self, forKey: .ageSeconds),
+            originalText: try container.decode(String.self, forKey: .originalText),
+            objectSections: try container.decode([String: [AccountItem]].self, forKey: .objectSections),
+            numericSections: try container.decode([String: [Int64]].self, forKey: .numericSections),
+            boosts: try container.decode([String: Int64].self, forKey: .boosts),
+            unknownTopLevelKeys: try container.decode([String].self, forKey: .unknownTopLevelKeys),
+            diagnostics: try container.decode([AccountDataDiagnostic].self, forKey: .diagnostics)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(tag, forKey: .tag)
+        try container.encodeIfPresent(capturedAt, forKey: .capturedAt)
+        try container.encode(importedAt, forKey: .importedAt)
+        try container.encodeIfPresent(ageSeconds, forKey: .ageSeconds)
+        try container.encode(originalText, forKey: .originalText)
+        try container.encode(objectSections, forKey: .objectSections)
+        try container.encode(numericSections, forKey: .numericSections)
+        try container.encode(boosts, forKey: .boosts)
+        try container.encode(unknownTopLevelKeys, forKey: .unknownTopLevelKeys)
+        try container.encode(diagnostics, forKey: .diagnostics)
+    }
+
+    // MARK: - Issue #210 内容指纹
+
+    /// 确定性内容摘要：`JSONEncoder + .sortedKeys` 的 canonical JSON →
+    /// SHA-256（与 `SnapshotHistoryCanonicalizer.integrityFingerprint` 同机制）。
+    /// 不依赖 Swift 合成 Hashable（每次进程随机种子，跨启动不稳定）。
+    private static func fingerprint(
+        tag: String?,
+        capturedAt: Date?,
+        importedAt: Date,
+        ageSeconds: Int64?,
+        originalText: String,
+        objectSections: [String: [AccountItem]],
+        numericSections: [String: [Int64]],
+        boosts: [String: Int64],
+        unknownTopLevelKeys: [String],
+        diagnostics: [AccountDataDiagnostic]
+    ) -> String {
+        let material = ContentFingerprintMaterial(
+            tag: tag, capturedAt: capturedAt, importedAt: importedAt,
+            ageSeconds: ageSeconds, originalText: originalText,
+            objectSections: objectSections, numericSections: numericSections,
+            boosts: boosts, unknownTopLevelKeys: unknownTopLevelKeys,
+            diagnostics: diagnostics.map {
+                ContentFingerprintMaterial.DiagnosticContent(
+                    severity: $0.severity, path: $0.path, message: $0.message
+                )
+            }
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try! encoder.encode(material)
+        let digest = SHA256.hash(data: data)
+        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
     public var objectItemCount: Int {
@@ -232,6 +327,26 @@ public struct AccountSnapshot: Codable, Hashable, Sendable {
 
     private static func isBuilderBaseSection(_ section: String) -> Bool {
         section.hasSuffix("2")
+    }
+}
+
+/// 内容指纹的 canonical 镜像（排除 diagnostics 的随机 id；其余与存储字段一致）。
+private struct ContentFingerprintMaterial: Encodable {
+    let tag: String?
+    let capturedAt: Date?
+    let importedAt: Date
+    let ageSeconds: Int64?
+    let originalText: String
+    let objectSections: [String: [AccountItem]]
+    let numericSections: [String: [Int64]]
+    let boosts: [String: Int64]
+    let unknownTopLevelKeys: [String]
+    let diagnostics: [DiagnosticContent]
+
+    struct DiagnosticContent: Encodable {
+        let severity: AccountDataDiagnosticSeverity
+        let path: String
+        let message: String
     }
 }
 

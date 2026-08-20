@@ -335,6 +335,7 @@ public final class AppModel: ObservableObject {
         let buildingGroups = render.buildingGroups
         guard let renderKey = VillageDetailFlatRowCache.RenderIdentityKey(
             village: village,
+            render: render,
             base: base,
             now: now,
             manualUpgradeCore: manualUpgradeCores[village.id],

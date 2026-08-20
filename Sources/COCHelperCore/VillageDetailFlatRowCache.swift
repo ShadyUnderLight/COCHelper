@@ -6,7 +6,7 @@ import Foundation
 /// miss。`.remaining` 排序依赖 `now`，tick 间不缓存。View body 仍由
 /// LazyVStack 按需构建；本缓存只避免重复分配 row descriptor 数组。
 public final class VillageDetailFlatRowCache {
-    /// 与投影缓存对齐的静态输入身份（不含 now）。
+    /// 与投影缓存对齐的静态输入身份（不含 now）+ 投影构建代次。
     public struct RenderIdentityKey: Hashable, Sendable {
         public let villageID: UUID
         public let villageName: String
@@ -16,6 +16,8 @@ public final class VillageDetailFlatRowCache {
         public let catalogEpoch: Int
         public let catalogVersion: String?
         public let phaseBucket: PhaseBucket
+        /// 与 `VillageProjectionCache.RenderResult.projectionGeneration` 对齐。
+        public let projectionGeneration: UInt64
 
         public init(
             villageID: UUID,
@@ -25,7 +27,8 @@ public final class VillageDetailFlatRowCache {
             manualFingerprint: String?,
             catalogEpoch: Int,
             catalogVersion: String?,
-            phaseBucket: PhaseBucket
+            phaseBucket: PhaseBucket,
+            projectionGeneration: UInt64
         ) {
             self.villageID = villageID
             self.villageName = villageName
@@ -35,10 +38,13 @@ public final class VillageDetailFlatRowCache {
             self.catalogEpoch = catalogEpoch
             self.catalogVersion = catalogVersion
             self.phaseBucket = phaseBucket
+            self.projectionGeneration = projectionGeneration
         }
 
+        /// 从当前 render 结果派生身份键（含 projection generation）。
         public init?(
             village: VillageProfile,
+            render: VillageProjectionCache.RenderResult,
             base: TrackerBase,
             now: Date,
             manualUpgradeCore: ManualUpgradeCore?,
@@ -55,6 +61,7 @@ public final class VillageDetailFlatRowCache {
             self.catalogEpoch = catalogEpoch
             self.catalogVersion = catalog?.gameVersion
             self.phaseBucket = seasonalPhases.bucket(at: now)
+            self.projectionGeneration = render.projectionGeneration
         }
     }
 

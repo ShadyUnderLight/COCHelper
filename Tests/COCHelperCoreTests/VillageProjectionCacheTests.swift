@@ -77,27 +77,32 @@ final class VillageProjectionCacheTests: XCTestCase {
         let first = render(at: t0)
         XCTAssertEqual(first.projection.items.count, 2)
         XCTAssertEqual(cache.buildCount, 1)
+        XCTAssertEqual(first.projectionGeneration, 1)
 
         let second = render(at: t0.addingTimeInterval(60))
         XCTAssertEqual(cache.buildCount, 1)
         XCTAssertEqual(cache.hitCount, 1)
+        XCTAssertEqual(second.projectionGeneration, first.projectionGeneration)
         // 动态刷新：remaining 递减。
         let upgraded = try! XCTUnwrap(second.projection.items.first { $0.dataID == 1_000_001 })
         XCTAssertEqual(upgraded.remainingSeconds, 3540)
     }
 
     func testExpirationRebuildsAndFlipsState() {
-        let _ = render(at: t0)
+        let first = render(at: t0)
+        XCTAssertEqual(first.projectionGeneration, 1)
         XCTAssertEqual(cache.buildCount, 1)
         // 到期（3600s 后）。
         let expiredRender = render(at: t0.addingTimeInterval(3600))
         XCTAssertEqual(cache.buildCount, 2)
+        XCTAssertGreaterThan(expiredRender.projectionGeneration, first.projectionGeneration)
         let upgraded = try! XCTUnwrap(expiredRender.projection.items.first { $0.dataID == 1_000_001 })
         XCTAssertEqual(upgraded.remainingSeconds, 0)
         XCTAssertTrue(upgraded.needsReimport)
-        // 重建后的新缓存再次命中。
-        let _ = render(at: t0.addingTimeInterval(3660))
+        // 重建后的新缓存再次命中（generation 不变）。
+        let refreshed = render(at: t0.addingTimeInterval(3660))
         XCTAssertEqual(cache.buildCount, 2)
+        XCTAssertEqual(refreshed.projectionGeneration, expiredRender.projectionGeneration)
     }
 
     func testGoldenParityWithDirectProjection() {

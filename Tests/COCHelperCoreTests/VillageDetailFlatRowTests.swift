@@ -61,9 +61,11 @@ final class VillageDetailFlatRowTests: XCTestCase {
         village = makeVillage(items: [
             makeAccountItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0"),
         ])
+        let projectionCache = VillageProjectionCache()
         let cache = VillageDetailFlatRowCache()
+        let bundle = makeDisplayBundle(village: village, at: t0, projectionCache: projectionCache)
         let renderKey = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
-            village: village, base: .home, now: t0,
+            village: village, render: bundle.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
             catalog: catalog, seasonalPhases: .empty
         ))
@@ -71,7 +73,6 @@ final class VillageDetailFlatRowTests: XCTestCase {
             searchText: "", stateFilter: nil, sortOrder: .categoryName,
             categoryFilterKey: "all"
         )
-        let bundle = makeDisplayBundle(village: village, at: t0)
 
         _ = cache.rows(
             renderKey: renderKey, filterKey: filterKey, sortDependsOnNow: false,
@@ -80,10 +81,22 @@ final class VillageDetailFlatRowTests: XCTestCase {
         )
         XCTAssertEqual(cache.buildCount, 1)
 
+        let bundleTick = makeDisplayBundle(
+            village: village, at: t0.addingTimeInterval(60), projectionCache: projectionCache
+        )
+        XCTAssertEqual(bundleTick.render.projectionGeneration, bundle.render.projectionGeneration)
+        let renderKeyTick = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
+            village: village, render: bundleTick.render, base: .home,
+            now: t0.addingTimeInterval(60),
+            manualUpgradeCore: nil, catalogEpoch: 0,
+            catalog: catalog, seasonalPhases: .empty
+        ))
+        XCTAssertEqual(renderKey, renderKeyTick)
+
         _ = cache.rows(
-            renderKey: renderKey, filterKey: filterKey, sortDependsOnNow: false,
-            displayGroups: bundle.displayGroups, statsByKey: bundle.statsByKey,
-            buildingGroups: bundle.render.buildingGroups
+            renderKey: renderKeyTick, filterKey: filterKey, sortDependsOnNow: false,
+            displayGroups: bundleTick.displayGroups, statsByKey: bundleTick.statsByKey,
+            buildingGroups: bundleTick.render.buildingGroups
         )
         XCTAssertEqual(cache.buildCount, 1)
         XCTAssertEqual(cache.hitCount, 1,
@@ -94,13 +107,14 @@ final class VillageDetailFlatRowTests: XCTestCase {
         village = makeVillage(items: [
             makeAccountItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0"),
         ])
+        let projectionCache = VillageProjectionCache()
         let cache = VillageDetailFlatRowCache()
+        let bundle = makeDisplayBundle(village: village, at: t0, projectionCache: projectionCache)
         let renderKey = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
-            village: village, base: .home, now: t0,
+            village: village, render: bundle.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
             catalog: catalog, seasonalPhases: .empty
         ))
-        let bundle = makeDisplayBundle(village: village, at: t0)
 
         _ = cache.rows(
             renderKey: renderKey,
@@ -131,9 +145,13 @@ final class VillageDetailFlatRowTests: XCTestCase {
             makeAccountItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0",
                             timerSeconds: 3600, remainingSeconds: 3600),
         ])
+        let projectionCache = VillageProjectionCache()
         let cache = VillageDetailFlatRowCache()
+        let bundleA = makeDisplayBundle(
+            village: village, at: t0, sort: .remaining, projectionCache: projectionCache
+        )
         let renderKey = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
-            village: village, base: .home, now: t0,
+            village: village, render: bundleA.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
             catalog: catalog, seasonalPhases: .empty
         ))
@@ -141,8 +159,10 @@ final class VillageDetailFlatRowTests: XCTestCase {
             searchText: "", stateFilter: nil, sortOrder: .remaining,
             categoryFilterKey: "all"
         )
-        let bundleA = makeDisplayBundle(village: village, at: t0, sort: .remaining)
-        let bundleB = makeDisplayBundle(village: village, at: t0.addingTimeInterval(30), sort: .remaining)
+        let bundleB = makeDisplayBundle(
+            village: village, at: t0.addingTimeInterval(30), sort: .remaining,
+            projectionCache: projectionCache
+        )
 
         _ = cache.rows(
             renderKey: renderKey, filterKey: filterKey, sortDependsOnNow: true,
@@ -162,17 +182,18 @@ final class VillageDetailFlatRowTests: XCTestCase {
         village = makeVillage(name: "旧名", items: [
             makeAccountItem(section: "buildings", dataID: 1_000_001, level: 2, path: "0"),
         ])
+        let projectionCache = VillageProjectionCache()
         let cache = VillageDetailFlatRowCache()
         let filterKey = VillageDetailFlatRowCache.FilterKey(
             searchText: "", stateFilter: nil, sortOrder: .categoryName,
             categoryFilterKey: "all"
         )
+        let bundle = makeDisplayBundle(village: village, at: t0, projectionCache: projectionCache)
         let keyOld = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
-            village: village, base: .home, now: t0,
+            village: village, render: bundle.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
             catalog: catalog, seasonalPhases: .empty
         ))
-        let bundle = makeDisplayBundle(village: village, at: t0)
         _ = cache.rows(
             renderKey: keyOld, filterKey: filterKey, sortDependsOnNow: false,
             displayGroups: bundle.displayGroups, statsByKey: bundle.statsByKey,
@@ -181,18 +202,115 @@ final class VillageDetailFlatRowTests: XCTestCase {
 
         var renamed = village!
         renamed.name = "新名"
+        let bundleRenamed = makeDisplayBundle(village: renamed, at: t0, projectionCache: projectionCache)
         let keyNew = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
-            village: renamed, base: .home, now: t0,
+            village: renamed, render: bundleRenamed.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
             catalog: catalog, seasonalPhases: .empty
         ))
         XCTAssertNotEqual(keyOld, keyNew)
         _ = cache.rows(
             renderKey: keyNew, filterKey: filterKey, sortDependsOnNow: false,
-            displayGroups: bundle.displayGroups, statsByKey: bundle.statsByKey,
-            buildingGroups: bundle.render.buildingGroups
+            displayGroups: bundleRenamed.displayGroups, statsByKey: bundleRenamed.statsByKey,
+            buildingGroups: bundleRenamed.render.buildingGroups
         )
         XCTAssertEqual(cache.buildCount, 2)
+    }
+
+    /// timer expiry 后上游 projection 在相同 static identity 下 rebuild，
+    /// flat-row cache 必须因 generation 变化而 miss，不得继续展示旧 importedActive rows。
+    func testTimerExpiryRebuildInvalidatesFlatRowCacheForImportedActiveFilter() throws {
+        village = makeVillage(items: [
+            makeAccountItem(
+                section: "buildings", dataID: 1_000_001, level: 1, path: "0",
+                timerSeconds: 30, remainingSeconds: 30
+            ),
+        ])
+        let projectionCache = VillageProjectionCache()
+        let flatCache = VillageDetailFlatRowCache()
+        let filterKey = VillageDetailFlatRowCache.FilterKey(
+            searchText: "", stateFilter: .importedActive, sortOrder: .categoryName,
+            categoryFilterKey: "all"
+        )
+        let groupID = "home:buildings:1000001"
+
+        let bundleActive = makeDisplayBundle(
+            village: village, at: t0, stateFilter: .importedActive,
+            projectionCache: projectionCache
+        )
+        let itemActive = try XCTUnwrap(
+            bundleActive.render.projection.items.first { $0.dataID == 1_000_001 }
+        )
+        XCTAssertEqual(UpgradeActionProjection.displayState(of: itemActive), .importedActive)
+
+        let renderKeyActive = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
+            village: village, render: bundleActive.render, base: .home, now: t0,
+            manualUpgradeCore: nil, catalogEpoch: 0,
+            catalog: catalog, seasonalPhases: .empty
+        ))
+        let rowsActive = flatCache.rows(
+            renderKey: renderKeyActive, filterKey: filterKey, sortDependsOnNow: false,
+            displayGroups: bundleActive.displayGroups, statsByKey: bundleActive.statsByKey,
+            buildingGroups: bundleActive.render.buildingGroups
+        ).rows
+        XCTAssertTrue(rowsActive.contains {
+            if case .instance(let id, _, _) = $0 { return id == groupID }
+            return false
+        })
+
+        let tExpired = t0.addingTimeInterval(30)
+        let bundleExpired = makeDisplayBundle(
+            village: village, at: tExpired, stateFilter: .importedActive,
+            projectionCache: projectionCache
+        )
+        let itemExpired = try XCTUnwrap(
+            bundleExpired.render.projection.items.first { $0.dataID == 1_000_001 }
+        )
+        XCTAssertEqual(UpgradeActionProjection.displayState(of: itemExpired), .needsReimport)
+        XCTAssertGreaterThan(
+            bundleExpired.render.projectionGeneration,
+            bundleActive.render.projectionGeneration
+        )
+
+        let renderKeyExpired = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
+            village: village, render: bundleExpired.render, base: .home, now: tExpired,
+            manualUpgradeCore: nil, catalogEpoch: 0,
+            catalog: catalog, seasonalPhases: .empty
+        ))
+        XCTAssertNotEqual(renderKeyActive, renderKeyExpired)
+
+        let rowsExpiredImported = flatCache.rows(
+            renderKey: renderKeyExpired, filterKey: filterKey, sortDependsOnNow: false,
+            displayGroups: bundleExpired.displayGroups, statsByKey: bundleExpired.statsByKey,
+            buildingGroups: bundleExpired.render.buildingGroups
+        ).rows
+        XCTAssertFalse(rowsExpiredImported.contains {
+            if case .groupHeader(let id) = $0 { return id == groupID }
+            if case .instance(let id, _, _) = $0 { return id == groupID }
+            return false
+        })
+        XCTAssertEqual(flatCache.buildCount, 2)
+        XCTAssertEqual(flatCache.hitCount, 0)
+
+        let needsReimportKey = VillageDetailFlatRowCache.FilterKey(
+            searchText: "", stateFilter: .needsReimport, sortOrder: .categoryName,
+            categoryFilterKey: "all"
+        )
+        let bundleNeedsReimport = makeDisplayBundle(
+            village: village, at: tExpired, stateFilter: .needsReimport,
+            projectionCache: projectionCache
+        )
+        let rowsNeedsReimport = flatCache.rows(
+            renderKey: renderKeyExpired, filterKey: needsReimportKey, sortDependsOnNow: false,
+            displayGroups: bundleNeedsReimport.displayGroups,
+            statsByKey: bundleNeedsReimport.statsByKey,
+            buildingGroups: bundleNeedsReimport.render.buildingGroups
+        ).rows
+        XCTAssertTrue(rowsNeedsReimport.contains {
+            if case .instance(let id, _, _) = $0 { return id == groupID }
+            if case .groupHeader(let id) = $0 { return id == groupID }
+            return false
+        })
     }
 
     // MARK: - Helpers
@@ -206,14 +324,16 @@ final class VillageDetailFlatRowTests: XCTestCase {
     private func makeDisplayBundle(
         village: VillageProfile,
         at now: Date,
-        sort: UpgradeDisplaySort = .categoryName
+        sort: UpgradeDisplaySort = .categoryName,
+        stateFilter: UpgradeDisplayStateFilter? = nil,
+        projectionCache: VillageProjectionCache? = nil
     ) -> DisplayBundle {
-        let render = projectRender(village: village, at: now)
+        let render = projectRender(village: village, at: now, projectionCache: projectionCache)
         let projection = render.projection
         let displayItems = projection.items.filter { $0.status != .unavailable && $0.status != .available }
         let filtered = UpgradeActionProjection.filtered(
             displayItems,
-            filter: UpgradeDisplayFilter(sort: sort),
+            filter: UpgradeDisplayFilter(state: stateFilter, sort: sort),
             at: now
         )
         let groups = VillageDetailProjection.groups(from: filtered)
@@ -226,9 +346,12 @@ final class VillageDetailFlatRowTests: XCTestCase {
     }
 
     private func projectRender(
-        village: VillageProfile, at now: Date
+        village: VillageProfile,
+        at now: Date,
+        projectionCache: VillageProjectionCache? = nil
     ) -> VillageProjectionCache.RenderResult {
-        VillageProjectionCache().render(
+        let cache = projectionCache ?? VillageProjectionCache()
+        return cache.render(
             village: village, catalog: catalog, craftTableCatalog: nil,
             seasonalPhases: .empty, base: .home, now: now,
             manualUpgradeCore: nil, catalogEpoch: 0

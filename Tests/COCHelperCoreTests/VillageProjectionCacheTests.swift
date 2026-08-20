@@ -117,6 +117,46 @@ final class VillageProjectionCacheTests: XCTestCase {
         XCTAssertEqual(render.buildingGroups.count, 2)
     }
 
+    // MARK: - Issue #210 显示身份（改名）失效
+
+    func testRenameChangesVillageNameAndRebuilds() {
+        let _ = render(at: t0)
+        XCTAssertEqual(cache.buildCount, 1)
+        XCTAssertEqual(cache.hitCount, 0)
+        // 缓存命中后改名（同 id、同快照、同 manual/base）：名称是投影身份
+        // 的一部分，必须 miss 重建，不得返回旧 villageName。
+        let renamedVillage = VillageProfile(
+            id: village.id, name: "改名后", accountSnapshot: village.accountSnapshot
+        )
+        village = renamedVillage
+        let renamed = render(at: t0.addingTimeInterval(60))
+        XCTAssertEqual(cache.buildCount, 2, "改名必须使缓存失效并重建")
+        XCTAssertEqual(renamed.projection.villageName, "改名后")
+        // 新名称下再次命中（不重复重建）。
+        let _ = render(at: t0.addingTimeInterval(120))
+        XCTAssertEqual(cache.buildCount, 2)
+        XCTAssertEqual(cache.hitCount, 1)
+    }
+
+    func testSameContentDifferentNamesNeverCollide() throws {
+        // 两个村庄：相同快照/manual/base，仅显示名称不同 → 独立缓存条目。
+        let other = VillageProfile(
+            id: village.id, name: "另一个名字", accountSnapshot: village.accountSnapshot
+        )
+        let _ = render(at: t0)
+        XCTAssertEqual(cache.buildCount, 1)
+        let _ = cache.render(
+            village: other, catalog: catalog, craftTableCatalog: craftTableCatalog,
+            seasonalPhases: phases, base: .home, now: t0.addingTimeInterval(60),
+            manualUpgradeCore: nil, catalogEpoch: 0
+        )
+        XCTAssertEqual(cache.buildCount, 2, "同名不同村庄（同 id 不同 name）不得互相命中")
+        // 各自回退到原名称仍命中各自的条目。
+        let _ = render(at: t0.addingTimeInterval(120))
+        XCTAssertEqual(cache.buildCount, 2)
+        XCTAssertEqual(cache.hitCount, 1)
+    }
+
     // MARK: - 失效矩阵
 
     func testSnapshotChangeRebuilds() {

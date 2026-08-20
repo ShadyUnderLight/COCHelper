@@ -1,10 +1,11 @@
 //  Issue #200：静态村庄投影缓存。
+//  Issue #210：key 轻量化（内容指纹 + 显示名称），改名自然 miss。
 import Foundation
 //
 //  Village Detail 每 60s tick 会完整重跑 目录投影 + 组卡投影 + 精制台投影。
 //  其中绝大部分（目录解析、effective state、进度、诊断）在「内容身份」
-//  （快照、manual core、目录 epoch、base、seasonal phase bucket）不变时是
-//  幂等的——真正随时间变化的只有 remainingSeconds 递减与到期翻转。
+//  （快照、manual core、目录 epoch、base、seasonal phase bucket、显示名称）
+//  不变时是幂等的——真正随时间变化的只有 remainingSeconds 递减与到期翻转。
 //
 //  本缓存：相同 key 只构建一次静态投影，tick 之间做 O(records) 的动态刷新；
 //  到期（remaining >0 → 0）意味着「完成事实」翻转，立即重建（与现状每 tick
@@ -16,7 +17,11 @@ import Foundation
 //    availability 恒定），命中后在 builtAt 基础上动态刷新。
 //  - buildingGroups 不入条目：每 tick 从刷新后的 projection 派生
 //    （O(records)），保证与 detail/overview 消费一致。
-//  - 内容身份变化 → 自动 miss → 重建，无需显式 invalidate。
+//  - 内容身份变化 → 自动 miss → 重建，无需显式 invalidate：
+//    key 用 AccountSnapshot.contentFingerprint / ManualUpgradeCore
+//    .contentFingerprint（init 一次性生成）表示快照与 manual 身份，
+//    villageName 直接入 key（改名 → 重建），tick 查找不再 Hash 完整
+//    payload（issue #210 目标 3）。
 //  - 不修改 snapshotHistoryProjectionCache / 历史缓存语义（#200 范围外）。
 public final class VillageProjectionCache {
     // MARK: - 类型
@@ -38,12 +43,19 @@ public final class VillageProjectionCache {
         }
     }
 
-    /// 内容身份 key（不含 now）。
+    /// 内容身份 key（不含 now；Issue #210：轻量身份，不用完整值类型）。
+    ///
+    /// 快照/manual core 用「init 时一次性生成的 contentFingerprint」表示
+    /// 内容身份：每次 tick 的字典查找只 Hash 两个短字符串 + 小标量，
+    /// 不遍历快照（含 originalText 大字符串）与 manual core（records 增长）。
+    /// villageName 属于显示身份：改名 → 新 key → 自然 miss 重建。
+    /// （不得用 updatedAt/Date/数组地址冒充内容身份——issue #210 红线。）
     struct Key: Hashable {
         let villageID: UUID
-        let snapshot: AccountSnapshot
+        let villageName: String
+        let snapshotFingerprint: String
         let base: TrackerBase
-        let manualCore: ManualUpgradeCore?
+        let manualFingerprint: String?
         let catalogEpoch: Int
         let catalogVersion: String?
         let phaseBucket: PhaseBucket
@@ -113,9 +125,10 @@ public final class VillageProjectionCache {
 
         let key = Key(
             villageID: village.id,
-            snapshot: snapshot,
+            villageName: village.name,
+            snapshotFingerprint: snapshot.contentFingerprint,
             base: base,
-            manualCore: manualUpgradeCore,
+            manualFingerprint: manualUpgradeCore?.contentFingerprint,
             catalogEpoch: catalogEpoch,
             catalogVersion: catalog?.gameVersion,
             phaseBucket: seasonalPhases.bucket(at: now)

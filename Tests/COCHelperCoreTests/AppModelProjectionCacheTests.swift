@@ -199,4 +199,73 @@ final class AppModelProjectionCacheTests: XCTestCase {
         XCTAssertEqual(model.projectionCacheStats.buildCount, expectedBuilds)
         XCTAssertEqual(model.projectionCacheStats.hitCount, expectedBuilds)
     }
+
+    // MARK: - Issue #210 改名 → 缓存身份失效
+
+    @MainActor
+    func testRenameSelectedVillageRefreshesCachedProjection() throws {
+        let model = try seededModel()
+        let village = try XCTUnwrap(model.villages.first(where: { $0.tag == "#ANONYMIZED" }))
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        model.selectVillage(id: village.id)
+        let first = try XCTUnwrap(
+            model.villageRender(villageID: village.id, base: .home, now: now)
+        )
+        XCTAssertEqual(first.projection.villageName, village.name)
+        XCTAssertEqual(model.projectionCacheStats.buildCount, 1)
+
+        // 真实改名路径（同 id、同快照）：投影必须立即返回新名称。
+        model.renameSelectedVillage("改名后的村庄")
+        let renamed = try XCTUnwrap(
+            model.villageRender(villageID: village.id, base: .home, now: now.addingTimeInterval(60))
+        )
+        XCTAssertEqual(renamed.projection.villageName, "改名后的村庄")
+        XCTAssertEqual(
+            model.projectionCacheStats.buildCount, 2,
+            "改名必须使缓存失效重建，不得返回旧 villageName"
+        )
+
+        // 改回原名 → 回到原缓存条目（不重复构建）。
+        model.renameSelectedVillage(village.name)
+        let restored = try XCTUnwrap(
+            model.villageRender(villageID: village.id, base: .home, now: now.addingTimeInterval(120))
+        )
+        XCTAssertEqual(restored.projection.villageName, village.name)
+        XCTAssertEqual(model.projectionCacheStats.buildCount, 2)
+    }
+
+    @MainActor
+    func testRenameSelectedVillageKeepsOverviewRecordsFresh() throws {
+        let model = try seededModel()
+        let village = try XCTUnwrap(model.villages.first(where: { $0.tag == "#ANONYMIZED" }))
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        model.selectVillage(id: village.id)
+        let _ = model.overviewRender(for: [village], now: now)
+        model.renameSelectedVillage("总览新名字")
+
+        // overview 记录与投影都必须消费同一份正确 identity（issue #210 目标 5）。
+        // 记录显示名直接来自 village.name（新鲜）；断言其与缓存投影一致且为新名。
+        // 注意：village 是值类型，必须从 model 重取改名后的实例传入 overview。
+        let renamedVillage = try XCTUnwrap(model.villages.first(where: { $0.id == village.id }))
+        XCTAssertEqual(renamedVillage.name, "总览新名字")
+        let render = model.overviewRender(
+            for: [renamedVillage], now: now.addingTimeInterval(60)
+        )
+        let villageActive = render.state.activeRecords.filter { $0.villageID == village.id }
+        XCTAssertFalse(villageActive.isEmpty, "seed 村庄应有 manual active 记录")
+        XCTAssertTrue(
+            villageActive.allSatisfy { $0.villageName == "总览新名字" },
+            "overview active 记录不得显示旧村庄名称"
+        )
+        XCTAssertTrue(
+            render.active.allSatisfy { $0.villageID != village.id || $0.villageName == "总览新名字" },
+            "overview 展示行不得包含旧村庄名称"
+        )
+        let cached = try XCTUnwrap(
+            model.villageRender(villageID: village.id, base: .home, now: now.addingTimeInterval(60))
+        )
+        XCTAssertEqual(cached.projection.villageName, "总览新名字")
+    }
 }

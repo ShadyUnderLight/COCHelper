@@ -1,9 +1,14 @@
-# 04 Account Data：账号与分页卡片
+# 04 partial/proxy AX replay：Account Data 外层列表
 
 ## 回放条件
 
 - 匿名账号快照、官方玩家空态、部落、war log/raid 多页 seed 已加载。
-- 进入 Account Data，进行主列表 top/bottom 往返；分页加载没有单独触发。
+- 进入 Account Data，进行主列表 top/bottom 往返；分页加载没有单独触发，因此不等价于 #209 场景 4。
+
+## 覆盖边界
+
+- 实际覆盖：进入 Account Data、外层列表 `AXScrollToBottom/AXScrollToTop` ×3。
+- 未覆盖：war/raid 分页触发、分页后滚动、独立触发源和分页内存观测。
 
 ## 观测指标
 

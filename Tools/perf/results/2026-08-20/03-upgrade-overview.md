@@ -1,9 +1,14 @@
-# 03 Upgrade Overview：多村庄汇总
+# 03 partial/proxy AX replay：Upgrade Overview 外层列表
 
 ## 回放条件
 
 - 3 个匿名 seed 村庄和 manual 状态已加载，进入 Upgrade Overview。
-- 进行 3 次 Accessibility 主列表 top/bottom 往返。
+- 进行 3 次 Accessibility 主列表 top/bottom 往返；不等价于各 overview 面板分别滚动。
+
+## 覆盖边界
+
+- 实际覆盖：进入 Upgrade Overview、外层列表 `AXScrollToBottom/AXScrollToTop` ×3。
+- 未覆盖：active/pending/recently-completed/attention 面板的独立滚动和独立触发源。
 
 ## 观测指标
 

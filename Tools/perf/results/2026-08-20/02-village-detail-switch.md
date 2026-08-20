@@ -1,9 +1,14 @@
-# 02 Village Detail：切换基地与滚动
+# 02 partial/proxy AX replay：Village 切换与外层列表
 
 ## 回放条件
 
 - 先进入村庄 A，再切换建筑大师基地；随后进行 3 次 Accessibility 主列表 top/bottom 往返。
-- 筛选和展开面板没有在本次 trace 中独立拆分。
+- 筛选和展开面板没有在本次 proxy replay 中运行；因此不等价于 #209 场景 2。
+
+## 覆盖边界
+
+- 实际覆盖：进入村庄 A、切换基地/村庄、外层列表 `AXScrollToBottom/AXScrollToTop` ×3。
+- 未覆盖：搜索/状态筛选、历史面板展开收起、手动队列面板展开收起、独立触发源。
 
 ## 观测指标
 

@@ -1,10 +1,15 @@
-# 01 Village Detail：全部分类、默认排序
+# 01 partial/proxy AX replay：Village Detail 外层列表
 
 ## 回放条件
 
 - Release App，村庄 A（`#ANONYMIZED`），家乡村庄，全部分类，默认排序。
-- 3 次 Accessibility 主列表 top/bottom 往返；不是人工连续滚轮。
+- 3 次 Accessibility 主列表 top/bottom 往返；这是 proxy workload，不是 #209 固定场景的同场景回放。
 - 默认窗口设置为 1180x820；本轮未把窗口几何作为可比指标导出。
+
+## 覆盖边界
+
+- 实际覆盖：进入匿名村庄 A、外层列表 `AXScrollToBottom/AXScrollToTop` ×3。
+- 未覆盖：人工连续滚动、冷/热拆分、详情内建筑组卡横向滚动、独立触发源。
 
 ## 观测指标
 

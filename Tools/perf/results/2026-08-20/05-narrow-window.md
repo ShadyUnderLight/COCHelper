@@ -1,9 +1,14 @@
-# 05 窄窗口：详情列表回放
+# 05 partial/proxy AX replay：窄窗口详情外层列表
 
 ## 回放条件
 
-- Village Detail 建筑大师基地，窗口缩至约 800px 截图宽度后回放。
-- 进行 3 次 Accessibility 主列表 top/bottom 往返；未单独驱动建筑组卡内部横向滚动。
+- Village Detail 建筑大师基地，窗口缩至约 800px 截图宽度后回放；精确 window bounds 未保留。
+- 进行 3 次 Accessibility 主列表 top/bottom 往返；未单独驱动建筑组卡内部横向滚动，因此不等价于 #209 场景 5。
+
+## 覆盖边界
+
+- 实际覆盖：约 800px 窄窗口、外层列表 `AXScrollToBottom/AXScrollToTop` ×3。
+- 未覆盖：精确窗口 bounds、建筑组卡横向阶梯滚动、长中文换行专项 workload。
 
 ## 观测指标
 

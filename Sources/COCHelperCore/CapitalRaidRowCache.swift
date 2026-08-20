@@ -256,21 +256,25 @@ public final class CapitalRaidRowCache {
         var unmatchedNew = newGroup
 
         while true {
-            let oldSeasonCounts = seasonPayloadCounts(unmatchedOld.map(\.row.season))
-            let newSeasonCounts = seasonPayloadCounts(unmatchedNew.map(\.season))
             var foundAnchor = false
             var stillUnmatchedNew: [(index: Int, season: OfficialCapitalRaidSeason)] = []
 
             for newEntry in unmatchedNew {
                 let season = newEntry.season
-                guard newSeasonCounts[season] == 1, oldSeasonCounts[season] == 1,
-                      let oldIndex = unmatchedOld.firstIndex(where: { $0.row.season == season })
-                else {
+                let newOccurrences = occurrenceCount(of: season, in: unmatchedNew.map(\.season))
+                guard newOccurrences == 1 else {
                     stillUnmatchedNew.append(newEntry)
                     continue
                 }
-                assignment[newEntry.index] = unmatchedOld[oldIndex].row.id
-                unmatchedOld.remove(at: oldIndex)
+                let oldMatchIndices = unmatchedOld.indices.filter {
+                    unmatchedOld[$0].row.season == season
+                }
+                guard oldMatchIndices.count == 1 else {
+                    stillUnmatchedNew.append(newEntry)
+                    continue
+                }
+                assignment[newEntry.index] = unmatchedOld[oldMatchIndices[0]].row.id
+                unmatchedOld.remove(at: oldMatchIndices[0])
                 foundAnchor = true
             }
             unmatchedNew = stillUnmatchedNew
@@ -285,13 +289,15 @@ public final class CapitalRaidRowCache {
         return false
     }
 
-    private func seasonPayloadCounts(
-        _ seasons: [OfficialCapitalRaidSeason]
-    ) -> [OfficialCapitalRaidSeason: Int] {
-        var counts: [OfficialCapitalRaidSeason: Int] = [:]
-        for season in seasons {
-            counts[season, default: 0] += 1
+    /// duplicate group 内 exact payload 出现次数（`Equatable`，不 hash 完整赛季）。
+    private func occurrenceCount(
+        of season: OfficialCapitalRaidSeason,
+        in seasons: [OfficialCapitalRaidSeason]
+    ) -> Int {
+        var count = 0
+        for candidate in seasons where candidate == season {
+            count += 1
         }
-        return counts
+        return count
     }
 }

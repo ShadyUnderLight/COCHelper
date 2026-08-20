@@ -187,10 +187,13 @@ public enum SnapshotHistoryCanonicalizer {
             throw SnapshotHistoryCanonicalizationError.topLevelMustBeObject
         }
 
-        // Player tag and source timestamp are stored as entry metadata.  They
-        // are not observations and therefore cannot change a content digest.
+        // Player tag, source timestamp, and coverage declarations are entry
+        // metadata: tag/timestamp live on the history entry, coverage is frozen
+        // as section proofs. They are not game observations and therefore
+        // cannot change the content digest. Audit remains in rawJSON + proofs.
         fields.removeValue(forKey: "tag")
         fields.removeValue(forKey: "timestamp")
+        fields.removeValue(forKey: JSONSnapshotCoverageAdapter.contractField)
         let unknown = fields.filter { key, _ in
             !SnapshotHistoryKnownSections.all.contains(key)
                 && key != "boosts"

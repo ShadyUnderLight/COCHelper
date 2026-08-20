@@ -210,9 +210,10 @@ public struct SnapshotObservationItem: Codable, Hashable, Sendable, Identifiable
 }
 
 /// Canonical, order-independent representation of the source observation.
-/// `rawTopLevelFields` retains known and unknown source sections after only
-/// removing volatile `tag` and `timestamp` metadata.  This gives future
-/// consumers an auditable escape hatch without silently dropping new fields.
+/// `rawTopLevelFields` retains known and unknown source sections after removing
+/// volatile entry metadata (`tag`, `timestamp`, and `coverage`). Coverage is
+/// audited via `rawJSON` and frozen section proofs, not as observation content.
+/// Remaining unknown fields stay here so future consumers can inspect them.
 public struct CanonicalSnapshotObservation: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let rawTopLevelFields: [String: CanonicalJSONValue]

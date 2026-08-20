@@ -292,6 +292,13 @@ final class SnapshotCoverageSourceTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: 1),
             sectionProofs: proofs
         )
+        XCTAssertNil(entry.observation.unknownTopLevelFields["coverage"])
+        XCTAssertNil(entry.observation.rawTopLevelFields["coverage"])
+        XCTAssertFalse(entry.coverage.fields.contains {
+            $0.base == .unknown
+                && $0.rawSection == "$topLevel"
+                && $0.field == "coverage"
+        })
         let buildings = try XCTUnwrap(entry.coverage.section(base: .home, rawSection: "buildings"))
         XCTAssertEqual(buildings.proof, .declared(source: "u.coc", version: "1", expectedCount: 1))
         XCTAssertEqual(buildings.completeness, .unavailable)

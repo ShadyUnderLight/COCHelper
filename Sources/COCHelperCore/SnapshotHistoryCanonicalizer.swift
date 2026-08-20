@@ -25,7 +25,10 @@ public enum SnapshotHistoryCanonicalizer {
         observationVersion: Int = SnapshotHistorySchema.observation,
         timerSchema: SnapshotTimerSchema? = AccountSnapshotImporter.timerSchema
     ) throws -> SnapshotHistoryEntry {
-        let source = try canonicalSource(snapshot.originalText)
+        let source = try canonicalSource(
+            snapshot.originalText,
+            observationVersion: observationVersion
+        )
         let observation = makeObservation(
             source: source,
             catalog: catalog,
@@ -64,7 +67,7 @@ public enum SnapshotHistoryCanonicalizer {
             coverage: coverage,
             isBaseline: isBaseline,
             baselineReason: baselineReason,
-            timerSchema: observationVersion >= SnapshotHistorySchema.observation ? timerSchema : nil
+            timerSchema: observationVersion >= SnapshotHistorySchema.observationWithTimerSchema ? timerSchema : nil
         )
     }
 
@@ -167,7 +170,10 @@ public enum SnapshotHistoryCanonicalizer {
         let diagnostics: [String]
     }
 
-    private static func canonicalSource(_ originalText: String) throws -> CanonicalSource {
+    private static func canonicalSource(
+        _ originalText: String,
+        observationVersion: Int
+    ) throws -> CanonicalSource {
         let prepared = prepare(originalText)
         guard !prepared.isEmpty else { throw SnapshotHistoryCanonicalizationError.emptySource }
 
@@ -187,10 +193,15 @@ public enum SnapshotHistoryCanonicalizer {
             throw SnapshotHistoryCanonicalizationError.topLevelMustBeObject
         }
 
-        // Player tag and source timestamp are stored as entry metadata.  They
-        // are not observations and therefore cannot change a content digest.
+        // Player tag and source timestamp are entry metadata, not observations.
         fields.removeValue(forKey: "tag")
         fields.removeValue(forKey: "timestamp")
+        // Issue #208：v5+ 把 coverage 视为 snapshot metadata，从 observation
+        // 中移除以免进入 canonicalFingerprint。v4 及更早必须保留，才能按
+        // 已持久化 bytes 原样复现 fingerprint。
+        if observationVersion >= SnapshotHistorySchema.observationWithoutCoverageMetadata {
+            fields.removeValue(forKey: JSONSnapshotCoverageAdapter.contractField)
+        }
         let unknown = fields.filter { key, _ in
             !SnapshotHistoryKnownSections.all.contains(key)
                 && key != "boosts"
@@ -292,10 +303,10 @@ public enum SnapshotHistoryCanonicalizer {
         // fail-closed（字段名不再自动权威）；v3 用全局 timerFields allowlist；
         // v2 及更早沿用宽松匹配（历史 entry 重建必须稳定）。
         let timerEvidence = object.filter { key, _ in
-            if observationVersion >= SnapshotHistorySchema.observation {
+            if observationVersion >= SnapshotHistorySchema.observationWithTimerSchema {
                 return timerSchema?.fields.keys.contains(key) ?? false
             }
-            if observationVersion >= 3 {
+            if observationVersion >= SnapshotHistorySchema.observationWithTimerAllowlist {
                 return SnapshotHistoryKnownSections.timerFields.contains(key)
             }
             let normalized = key.lowercased()

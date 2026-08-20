@@ -1843,7 +1843,7 @@ public enum SnapshotDiffEngine {
         for field: String,
         in entry: SnapshotHistoryEntry
     ) -> SnapshotTimerFieldSpec? {
-        if entry.observationVersion >= SnapshotHistorySchema.observation {
+        if entry.observationVersion >= SnapshotHistorySchema.observationWithTimerSchema {
             return entry.timerSchema?.fields[field]
         }
         return SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining, minValue: 0)

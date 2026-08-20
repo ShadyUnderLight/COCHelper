@@ -14,9 +14,15 @@ public enum SnapshotHistorySchema {
     /// v3 引入 timer evidence allowlist（Issue #175）：canonicalizer 只把
     /// `timerFields` 内的字段收集进 rawTimerEvidence；v2 及更早的 entry
     /// 重建时沿用宽松匹配，保证旧历史 fingerprint 稳定。
+    public static let observationWithTimerAllowlist = 3
     /// v4 引入 source timer schema 契约：收集由 adapter 声明的字段集合、
     /// 单位、remaining/absolute 语义与取值范围决定，无契约时 fail-closed。
-    public static let observation = 4
+    public static let observationWithTimerSchema = 4
+    /// v5：顶层 `coverage` 从 observation 中移除，作为 snapshot metadata
+    /// （Issue #208）。v4 及更早的 entry 重建时必须保留 coverage，才能复现
+    /// 已持久化的 canonicalFingerprint。
+    public static let observationWithoutCoverageMetadata = 5
+    public static let observation = 5
     public static let fingerprint = 1
     public static let integrity = 1
 }
@@ -210,9 +216,12 @@ public struct SnapshotObservationItem: Codable, Hashable, Sendable, Identifiable
 }
 
 /// Canonical, order-independent representation of the source observation.
-/// `rawTopLevelFields` retains known and unknown source sections after only
-/// removing volatile `tag` and `timestamp` metadata.  This gives future
-/// consumers an auditable escape hatch without silently dropping new fields.
+/// `rawTopLevelFields` retains known and unknown source sections after removing
+/// volatile entry metadata. `tag` / `timestamp` are always stripped; `coverage`
+/// is stripped from observation v5+ (Issue #208) and kept in v4- so persisted
+/// fingerprints can be rebuilt. Coverage is audited via `rawJSON` and frozen
+/// section proofs. Remaining unknown fields stay here so future consumers
+/// can inspect them.
 public struct CanonicalSnapshotObservation: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let rawTopLevelFields: [String: CanonicalJSONValue]

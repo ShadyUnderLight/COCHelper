@@ -65,6 +65,8 @@ final class PerfFixtureTests: XCTestCase {
             $0.hasTimer && ($0.remainingSeconds ?? 0) == 0
         }
         XCTAssertGreaterThanOrEqual(ended.count, 2)
+        XCTAssertFalse(snapshot.unknownTopLevelKeys.contains("coverage"))
+        XCTAssertNil(snapshot.objectSections["coverage"])
     }
 
     func testPerfAccountSnapshotBuilderParses() throws {
@@ -131,6 +133,13 @@ final class PerfFixtureTests: XCTestCase {
         } else {
             XCTFail("variant fixture must carry declared coverage proof for buildings")
         }
+        XCTAssertFalse(snapshot.unknownTopLevelKeys.contains("coverage"))
+        XCTAssertNil(snapshot.objectSections["coverage"])
+        XCTAssertFalse(snapshot.diagnostics.contains {
+            $0.path == "顶层" && $0.severity == .warning
+                && $0.message.contains("未识别字段")
+                && $0.message.contains("coverage")
+        })
     }
 
     // MARK: - 战争日志 / 突袭周末多页缓存

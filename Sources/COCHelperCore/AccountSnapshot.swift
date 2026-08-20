@@ -688,6 +688,11 @@ private struct RawAccountDocument: Decodable {
                 timestamp = try Self.decodeInt64(container, forKey: key)
             case "boosts":
                 boosts = try container.decodeIfPresent([String: Int64].self, forKey: key) ?? [:]
+            case JSONSnapshotCoverageAdapter.contractField:
+                // Issue #208：coverage 是已知 snapshot metadata，不是游戏对象
+                // section。跳过键、不解码值——类型错误仍由 adapter fail-closed，
+                // 不得让 importer 把合法协议误报成未知字段，也不得在此硬失败。
+                break
             default:
                 if Self.objectSectionNames.contains(name) {
                     objectSections[name] = try container.decodeIfPresent([RawAccountItem].self, forKey: key) ?? []

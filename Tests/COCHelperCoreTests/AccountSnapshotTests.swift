@@ -48,6 +48,114 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.unknownTopLevelKeys, ["future_field"])
         XCTAssertTrue(snapshot.diagnostics.contains { $0.path == "顶层" && $0.severity == .warning })
         XCTAssertTrue(snapshot.originalText.contains("future_field"))
+        XCTAssertTrue(hasUnrecognizedFieldWarning(snapshot, field: "future_field"))
+    }
+
+    // MARK: - Issue #208：coverage 是已知元数据，不得误报为未知字段
+
+    func testValidCoverageIsKnownMetadataAndStillReadableByAdapter() throws {
+        let snapshot = try AccountSnapshotImporter.parse(
+            """
+            {
+              "buildings": [],
+              "coverage": {
+                "buildings": {
+                  "kind": "authoritative",
+                  "source": "trusted-adapter",
+                  "version": "1"
+                }
+              }
+            }
+            """,
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        XCTAssertEqual(snapshot.unknownTopLevelKeys, [])
+        XCTAssertNil(snapshot.objectSections["coverage"])
+        XCTAssertNil(snapshot.numericSections["coverage"])
+        XCTAssertFalse(hasUnrecognizedFieldWarning(snapshot, field: "coverage"))
+        XCTAssertEqual(
+            JSONSnapshotCoverageAdapter.proofs(for: snapshot)["buildings"],
+            .declared(source: "trusted-adapter", version: "1", expectedCount: nil)
+        )
+
+        let decoded = try JSONDecoder().decode(
+            AccountSnapshot.self,
+            from: try JSONEncoder().encode(snapshot)
+        )
+        XCTAssertEqual(decoded.unknownTopLevelKeys, [])
+        XCTAssertEqual(
+            JSONSnapshotCoverageAdapter.proofs(for: decoded)["buildings"],
+            .declared(source: "trusted-adapter", version: "1", expectedCount: nil)
+        )
+    }
+
+    func testValidCoverageDoesNotHideOtherUnknownTopLevelKeys() throws {
+        let snapshot = try AccountSnapshotImporter.parse(
+            """
+            {
+              "buildings": [],
+              "coverage": {
+                "buildings": {
+                  "kind": "authoritative",
+                  "source": "trusted-adapter",
+                  "version": "1"
+                }
+              },
+              "future_field": {"value": true}
+            }
+            """,
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        XCTAssertEqual(snapshot.unknownTopLevelKeys, ["future_field"])
+        XCTAssertTrue(hasUnrecognizedFieldWarning(snapshot, field: "future_field"))
+        XCTAssertFalse(hasUnrecognizedFieldWarning(snapshot, field: "coverage"))
+        XCTAssertEqual(
+            JSONSnapshotCoverageAdapter.proofs(for: snapshot)["buildings"],
+            .declared(source: "trusted-adapter", version: "1", expectedCount: nil)
+        )
+    }
+
+    func testInvalidCoverageTypeFailsClosedInAdapterWithoutUnknownFieldWarning() throws {
+        let cases = [
+            "{\"buildings\":[],\"coverage\":\"full\"}",
+            "{\"buildings\":[],\"coverage\":[1,2]}",
+            "{\"buildings\":[],\"coverage\":true}"
+        ]
+        for text in cases {
+            let snapshot = try AccountSnapshotImporter.parse(
+                text,
+                now: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+            XCTAssertEqual(snapshot.unknownTopLevelKeys, [], text)
+            XCTAssertNil(snapshot.objectSections["coverage"])
+            XCTAssertFalse(hasUnrecognizedFieldWarning(snapshot, field: "coverage"), text)
+            let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            guard case .unavailable = proofs["buildings"] else {
+                return XCTFail("无效 coverage 仍应由 adapter fail-closed：\(text)")
+            }
+        }
+    }
+
+    func testFencedCoverageKeepsKnownMetadataAndDeclaredProof() throws {
+        let snapshot = try AccountSnapshotImporter.parse(
+            """
+            ```json
+            {"buildings":[{"data":1000000,"timer":90}],"coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+            ```
+            """,
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        XCTAssertEqual(snapshot.unknownTopLevelKeys, [])
+        XCTAssertFalse(hasUnrecognizedFieldWarning(snapshot, field: "coverage"))
+        XCTAssertTrue(snapshot.diagnostics.contains { $0.path == "文本" && $0.severity == .info })
+        XCTAssertEqual(snapshot.objectSections["buildings"]?.first?.remainingSeconds, 90)
+        XCTAssertEqual(
+            JSONSnapshotCoverageAdapter.proofs(for: snapshot)["buildings"],
+            .declared(source: "u.coc", version: "1", expectedCount: 1)
+        )
     }
 
     func testCodeFenceAndMissingTimestampProduceUsefulDiagnostics() throws {
@@ -160,6 +268,8 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.numericItemCount, 99)
         XCTAssertEqual(snapshot.activeItemCount, 10)
         XCTAssertEqual(snapshot.warningCount, 0)
+        XCTAssertEqual(snapshot.unknownTopLevelKeys, [])
+        XCTAssertFalse(hasUnrecognizedFieldWarning(snapshot, field: "coverage"))
         XCTAssertEqual(snapshot.objectSections["buildings"]?.count, 49)
         XCTAssertEqual(snapshot.objectSections["buildings2"]?.count, 34)
         XCTAssertEqual(snapshot.objectSections["helpers"]?.first?.helperCooldownSeconds, 2_312)
@@ -299,6 +409,15 @@ final class AccountSnapshotTests: XCTestCase {
 
         let unknown = AccountItem(id: "buildings:0", section: "buildings", dataID: 9_999_999)
         XCTAssertEqual(unknown.nameLabel, "#9999999")
+    }
+
+    private func hasUnrecognizedFieldWarning(_ snapshot: AccountSnapshot, field: String) -> Bool {
+        snapshot.diagnostics.contains {
+            $0.path == "顶层"
+                && $0.severity == .warning
+                && $0.message.contains("未识别字段")
+                && $0.message.contains(field)
+        }
     }
 
     private func fixtureText() throws -> String {

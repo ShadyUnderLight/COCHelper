@@ -808,9 +808,10 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             lineageID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
             appliedAt: Date(timeIntervalSince1970: 1),
             snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
+            observationVersion: SnapshotHistorySchema.observationWithTimerSchema,
             timerSchema: schema
         )
-        XCTAssertEqual(entry.observationVersion, SnapshotHistorySchema.observation)
+        XCTAssertEqual(entry.observationVersion, SnapshotHistorySchema.observationWithTimerSchema)
         XCTAssertEqual(entry.timerSchema, schema)
         XCTAssertNil(entry.observation.items.first?.rawTimerEvidence["timer_state"])
         let envelope = SnapshotHistoryEnvelope(
@@ -831,6 +832,97 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let restored = try XCTUnwrap(try store.load())
         XCTAssertEqual(restored.entries.first?.timerSchema, schema)
         XCTAssertEqual(restored.entries.first?.canonicalFingerprint, entry.canonicalFingerprint)
+    }
+
+    func testObservationVersionFourCoverageEntrySurvivesReload() throws {
+        let store = TestSnapshotHistoryStore()
+        let envelope = try makePreIssue218V4CoverageEnvelope()
+        let entry = envelope.entries[0]
+        XCTAssertEqual(entry.observationVersion, SnapshotHistorySchema.observationWithTimerSchema)
+        XCTAssertNotNil(entry.observation.unknownTopLevelFields["coverage"])
+        XCTAssertNotNil(entry.observation.rawTopLevelFields["coverage"])
+
+        try store.writeRawData(envelope.encodedData())
+        let restored = try XCTUnwrap(try store.load())
+        XCTAssertEqual(restored.entries.first?.observationVersion, 4)
+        XCTAssertEqual(restored.entries.first?.canonicalFingerprint, entry.canonicalFingerprint)
+        XCTAssertNotNil(restored.entries.first?.observation.unknownTopLevelFields["coverage"])
+    }
+
+    func testPreIssue218V4CoverageFixtureSurvivesUpgrade() throws {
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: "history_v4_coverage_entry", withExtension: "json")
+        )
+        let data = try Data(contentsOf: url)
+        let store = TestSnapshotHistoryStore()
+        try store.writeRawData(data)
+
+        let restored = try XCTUnwrap(try store.load())
+        let entry = try XCTUnwrap(restored.entries.first)
+        XCTAssertEqual(entry.observationVersion, 4)
+        XCTAssertEqual(
+            entry.canonicalFingerprint,
+            "sha256:795c19ff99cf854725e1b23205c8c5e247f2b8df721030c03f3c95061c10c777"
+        )
+        XCTAssertNotNil(entry.observation.unknownTopLevelFields["coverage"])
+        XCTAssertNotNil(entry.observation.rawTopLevelFields["coverage"])
+        XCTAssertTrue(entry.coverage.fields.contains {
+            $0.base == .unknown && $0.rawSection == "$topLevel" && $0.field == "coverage"
+        })
+        XCTAssertTrue(entry.rawJSON.contains("\"coverage\""))
+        XCTAssertEqual(
+            entry.coverage.section(base: .home, rawSection: "buildings")?.proof,
+            .declared(source: "u.coc", version: "1", expectedCount: 1)
+        )
+    }
+
+    func testV5IdenticalBuildingsDifferentCoverageDeclarationAppends() throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let without = snapshot(
+            tag: firstTag,
+            text: "{\"tag\":\"\(firstTag)\",\"buildings\":[{\"data\":1,\"lvl\":1}]}"
+        )
+        let withCoverage = snapshot(
+            tag: firstTag,
+            text: """
+            {"tag":"\(firstTag)","buildings":[{"data":1,"lvl":1}],\
+            "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+            """
+        )
+        let envelope = try service.loadOrMigrate(
+            villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: without)],
+            now: Date(timeIntervalSince1970: 1)
+        )
+        let proofs = JSONSnapshotCoverageAdapter.proofs(for: withCoverage)
+        let decision = try service.planImport(
+            snapshot: withCoverage,
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: envelope,
+            appliedAt: Date(timeIntervalSince1970: 2),
+            sectionProofs: proofs
+        )
+
+        XCTAssertEqual(envelope.entries.first?.observationVersion, SnapshotHistorySchema.observation)
+        XCTAssertTrue(decision.appended)
+        XCTAssertFalse(decision.duplicate)
+        XCTAssertEqual(decision.envelope.entries.count, 2)
+        XCTAssertEqual(
+            envelope.entries.first?.canonicalFingerprint,
+            decision.entry.canonicalFingerprint
+        )
+        XCTAssertNotEqual(envelope.entries.first?.coverage, decision.entry.coverage)
+        XCTAssertNotEqual(
+            SnapshotHistoryDuplicateKey(entry: try XCTUnwrap(envelope.entries.first)),
+            SnapshotHistoryDuplicateKey(entry: decision.entry)
+        )
+        XCTAssertEqual(
+            decision.entry.coverage.section(base: .home, rawSection: "buildings")?.proof,
+            .declared(source: "u.coc", version: "1", expectedCount: 1)
+        )
     }
 
     func testLegacyAuthoritativeProofPreservesIntegrityFingerprintOnLoad() throws {
@@ -1011,6 +1103,37 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 )
             }
         }
+    }
+
+    private func makePreIssue218V4CoverageEnvelope() throws -> SnapshotHistoryEnvelope {
+        let raw = """
+        {"tag":"\(firstTag)","timestamp":100,"buildings":[{"data":1,"lvl":1}],\
+        "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+        """
+        let snapshot = snapshot(tag: firstTag, text: raw, capturedAt: Date(timeIntervalSince1970: 100))
+        let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!,
+            lineageID: UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!,
+            sectionProofs: proofs,
+            observationVersion: SnapshotHistorySchema.observationWithTimerSchema
+        )
+        return SnapshotHistoryEnvelope(
+            entries: [entry],
+            lineages: [SnapshotHistoryLineageMetadata(
+                villageID: entry.villageID,
+                lineageID: entry.lineageID,
+                normalizedPlayerTag: entry.normalizedPlayerTag,
+                lastEntryID: entry.snapshotID,
+                lastFingerprint: entry.canonicalFingerprint,
+                lastAppliedAt: entry.appliedAt,
+                hasConflict: false
+            )],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
+        )
     }
 
     private func assertSchemaChangeAppends(

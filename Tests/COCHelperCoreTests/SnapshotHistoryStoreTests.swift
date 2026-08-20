@@ -259,6 +259,42 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(decision.envelope.entries.count, 1)
     }
 
+    func testRestartAcceptanceProjectionReportsVerifiedTrustAfterDoubleLoad() throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let base = snapshot(tag: firstTag, text: text)
+        let live = try service.loadOrMigrate(
+            villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: base)],
+            now: Date(timeIntervalSince1970: 1),
+            sectionProofs: [villageID: proof]
+        )
+        try store.save(live)
+
+        let firstReload = try XCTUnwrap(try store.load())
+        try store.save(firstReload)
+        let secondReload = try XCTUnwrap(try store.load())
+
+        let projection = SnapshotHistoryProjection.project(
+            envelope: secondReload,
+            villageID: villageID,
+            hasCurrentSnapshot: true,
+            referenceDate: Date(timeIntervalSince1970: 2),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(projection.coverageTrustState, .verified)
+        let heroes = try XCTUnwrap(
+            secondReload.entries.first?.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertEqual(heroes.runtimeTrust, .trusted)
+        XCTAssertTrue(heroes.opensTrustGates)
+    }
+
     func testVerifiedCoverageWireDecodeWithoutLoadHydrationStaysFailClosed() throws {
         let villageID = UUID()
         let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"

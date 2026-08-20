@@ -420,6 +420,61 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         XCTAssertFalse(result.latestSummary?.contains("英雄 +1") == true)
     }
 
+    func testCoverageTrustStateReflectsLatestEntryRuntimeTrust() {
+        let trustedEntry = makeEntry(
+            id: "D1000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 400,
+            items: [hero(level: 2)]
+        )
+        let envelope = makeEnvelope(
+            entries: [trustedEntry],
+            activeEntries: [(villageA, trustedEntry)]
+        )
+        XCTAssertEqual(projection(envelope: envelope, referenceDate: 400).coverageTrustState, .verified)
+
+        let pendingHeroes = trustedEntry.coverage.sections.map { section in
+            guard section.rawSection == "heroes" else { return section }
+            return SnapshotSectionCoverage(
+                base: section.base,
+                rawSection: section.rawSection,
+                presence: section.presence,
+                completeness: section.completeness,
+                proof: section.proof,
+                observedCount: section.observedCount,
+                runtimeTrust: .pending
+            )
+        }
+        let pendingEntry = SnapshotHistoryEntry(
+            snapshotID: trustedEntry.snapshotID,
+            villageID: trustedEntry.villageID,
+            lineageID: trustedEntry.lineageID,
+            normalizedPlayerTag: trustedEntry.normalizedPlayerTag,
+            appliedAt: trustedEntry.appliedAt,
+            sourceTimestamp: trustedEntry.sourceTimestamp,
+            parserVersion: trustedEntry.parserVersion,
+            canonicalFingerprint: trustedEntry.canonicalFingerprint,
+            rawJSON: trustedEntry.rawJSON,
+            observation: trustedEntry.observation,
+            coverage: SnapshotObservationCoverage(
+                fields: trustedEntry.coverage.fields,
+                sections: pendingHeroes,
+                diagnostics: trustedEntry.coverage.diagnostics
+            ),
+            isBaseline: trustedEntry.isBaseline,
+            baselineReason: trustedEntry.baselineReason
+        )
+        let pendingEnvelope = makeEnvelope(
+            entries: [pendingEntry],
+            activeEntries: [(villageA, pendingEntry)]
+        )
+        XCTAssertEqual(
+            projection(envelope: pendingEnvelope, referenceDate: 400).coverageTrustState,
+            .pendingRevalidation
+        )
+    }
+
     func testUnavailableProjectionPreservesTypedFailure() {
         let projection = SnapshotHistoryProjection.unavailable(
             villageID: villageA,
@@ -432,6 +487,7 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         XCTAssertEqual(projection.availability, .corrupt("历史文件损坏：测试"))
         XCTAssertEqual(projection.timeline, [])
         XCTAssertEqual(projection.statistics.today.wallLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(projection.coverageTrustState, .insufficientCoverage)
     }
 
     private func projection(

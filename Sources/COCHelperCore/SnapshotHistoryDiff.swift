@@ -280,6 +280,8 @@ public enum SnapshotDiffDiagnosticKind: String, Codable, Hashable, Sendable {
     case unknownIdentity
     case malformedObservation
     case mixedLineageInput
+    /// 观察内容未变，仅 timer schema/provenance 不可比较。
+    case incomparableTimerSchema
 }
 
 public struct SnapshotDiffDiagnostic: Codable, Hashable, Sendable, Identifiable {
@@ -514,6 +516,27 @@ public enum SnapshotDiffEngine {
                 toAppliedAt: to.appliedAt,
                 comparisonState: .suppressed,
                 sectionCoverage: sectionCoverage,
+                diagnostics: diagnostics
+            )
+        }
+
+        if isProvenanceOnlyPair(from: from, to: to) {
+            if !timerSpecsAreConsistent(from: from, to: to, fields: provenanceTimerFields(from: from, to: to)) {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .incomparableTimerSchema,
+                    message: "观察内容未变，但两侧 timer 契约不一致，不能确认 timer 变化。"
+                ))
+            }
+            return SnapshotDiff(
+                fromSnapshotID: from.snapshotID,
+                toSnapshotID: to.snapshotID,
+                villageID: from.villageID,
+                lineageID: from.lineageID,
+                fromAppliedAt: from.appliedAt,
+                toAppliedAt: to.appliedAt,
+                comparisonState: .comparable,
+                sectionCoverage: sectionCoverage,
+                changes: [],
                 diagnostics: diagnostics
             )
         }
@@ -1753,6 +1776,62 @@ public enum SnapshotDiffEngine {
         case unstable(String)
     }
 
+    /// Issue #207：observation + coverage 相同、仅 timer schema 不同的相邻 pair。
+    /// 不得走 remaining/absolute 数值比较，否则会把 provenance 当成 timerChanged。
+    /// 比较 observation 内容而不是 canonicalFingerprint：测试夹具常用占位 fingerprint。
+    private static func isProvenanceOnlyPair(
+        from: SnapshotHistoryEntry,
+        to: SnapshotHistoryEntry
+    ) -> Bool {
+        guard from.timerSchema != to.timerSchema else { return false }
+        guard from.coverage == to.coverage else { return false }
+        return observationIdentityMatches(from.observation, to.observation)
+    }
+
+    private static func observationIdentityMatches(
+        _ lhs: CanonicalSnapshotObservation,
+        _ rhs: CanonicalSnapshotObservation
+    ) -> Bool {
+        guard lhs.schemaVersion == rhs.schemaVersion,
+              lhs.rawTopLevelFields == rhs.rawTopLevelFields,
+              lhs.unknownTopLevelFields == rhs.unknownTopLevelFields,
+              lhs.items.count == rhs.items.count else {
+            return false
+        }
+        let left = lhs.items.sorted { $0.identity.key < $1.identity.key }
+        let right = rhs.items.sorted { $0.identity.key < $1.identity.key }
+        return zip(left, right).allSatisfy { lhsItem, rhsItem in
+            lhsItem.identity == rhsItem.identity
+                && lhsItem.level == rhsItem.level
+                && lhsItem.count == rhsItem.count
+                && lhsItem.rawTimerEvidence == rhsItem.rawTimerEvidence
+                && lhsItem.helperRecurrent == rhsItem.helperRecurrent
+                && lhsItem.gearUp == rhsItem.gearUp
+                && lhsItem.weapon == rhsItem.weapon
+                && lhsItem.unknownFields == rhsItem.unknownFields
+        }
+    }
+
+    private static func provenanceTimerFields(
+        from: SnapshotHistoryEntry,
+        to: SnapshotHistoryEntry
+    ) -> [String] {
+        var fields = Set<String>()
+        if let keys = from.timerSchema?.fields.keys {
+            fields.formUnion(keys)
+        }
+        if let keys = to.timerSchema?.fields.keys {
+            fields.formUnion(keys)
+        }
+        for item in from.observation.items {
+            fields.formUnion(item.rawTimerEvidence.keys)
+        }
+        for item in to.observation.items {
+            fields.formUnion(item.rawTimerEvidence.keys)
+        }
+        return fields.sorted()
+    }
+
     /// 字段的契约规格。v4+ entry 用冻结的 schema；v3 及更早 entry 没有
     /// 冻结契约，其 evidence 语义 = 默认 seconds/remaining、非负无上限。
     /// v4 无契约（显式 nil）保持 fail-closed：nil 与任何有规格的字段不兼容，
@@ -2443,7 +2522,7 @@ private struct MetricAccumulators {
             switch $0.kind {
             case .insufficientCoverage, .unknownIdentity, .malformedObservation:
                 return true
-            case .baseline, .villageMismatch, .lineageMismatch, .duplicateSnapshotID, .mixedLineageInput:
+            case .baseline, .villageMismatch, .lineageMismatch, .duplicateSnapshotID, .mixedLineageInput, .incomparableTimerSchema:
                 return false
             }
         }

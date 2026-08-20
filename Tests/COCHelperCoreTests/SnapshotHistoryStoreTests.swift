@@ -145,9 +145,18 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertTrue(decision.appended)
         XCTAssertFalse(decision.duplicate)
         XCTAssertEqual(decision.envelope.entries.count, 2)
+        let expectedProof = try XCTUnwrap(
+            try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: base,
+                villageID: villageID,
+                lineageID: try XCTUnwrap(decision.envelope.activeLineage(for: villageID)?.lineageID),
+                appliedAt: Date(timeIntervalSince1970: 2),
+                sectionProofs: proof
+            ).coverage.section(base: .home, rawSection: "heroes")?.proof
+        )
         XCTAssertEqual(
             decision.entry.coverage.section(base: .home, rawSection: "heroes")?.proof,
-            proof["heroes"]
+            expectedProof
         )
     }
 
@@ -188,7 +197,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
     }
 
-    func testVerifiedCoverageDuplicateKeySurvivesSaveReloadWithoutRuntimeWitness() throws {
+    func testVerifiedCoverageSurvivesSaveReloadWithPersistedRevalidation() throws {
         let store = TestSnapshotHistoryStore()
         let service = SnapshotHistoryService(store: store)
         let villageID = UUID()
@@ -204,8 +213,12 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
         let liveEntry = try XCTUnwrap(live.entries.first)
         XCTAssertEqual(live.entries.count, 1)
-        if case .verified(let evidence) = liveEntry.coverage.section(base: .home, rawSection: "heroes")?.proof {
+        let liveHeroes = try XCTUnwrap(liveEntry.coverage.section(base: .home, rawSection: "heroes"))
+        XCTAssertTrue(liveHeroes.isComplete)
+        if case .verified(let evidence) = liveHeroes.proof {
             XCTAssertEqual(evidence.runtimeWitness, .moduleIssued)
+            XCTAssertEqual(evidence.verificationRuleVersion, "1")
+            XCTAssertNotNil(evidence.inputBinding)
         } else {
             XCTFail("live entry 必须带 module-issued verified proof")
         }
@@ -213,16 +226,18 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         try store.save(live)
         let reloaded = try XCTUnwrap(try store.load())
         let decodedEntry = try XCTUnwrap(reloaded.entries.first)
-        if case .verified(let evidence) = decodedEntry.coverage.section(base: .home, rawSection: "heroes")?.proof {
-            XCTAssertNil(evidence.runtimeWitness, "decode 后 runtime witness 必须丢失")
+        let reloadedHeroes = try XCTUnwrap(
+            decodedEntry.coverage.section(base: .home, rawSection: "heroes")
+        )
+        if case .verified(let evidence) = reloadedHeroes.proof {
+            XCTAssertEqual(evidence.runtimeWitness, .moduleIssued, "load 后应通过 persisted revalidation 恢复 trust")
+            if case .verified(let liveEvidence) = liveHeroes.proof {
+                XCTAssertEqual(evidence.inputBinding, liveEvidence.inputBinding)
+            }
         } else {
             XCTFail("reloaded entry 必须保留 verified wire metadata")
         }
-        XCTAssertNotEqual(
-            liveEntry.coverage,
-            decodedEntry.coverage,
-            "Hashable coverage 含 runtimeWitness；duplicate key 不得依赖它"
-        )
+        XCTAssertTrue(reloadedHeroes.isComplete)
         XCTAssertEqual(
             SnapshotHistoryDuplicateKey(entry: liveEntry),
             SnapshotHistoryDuplicateKey(entry: decodedEntry)
@@ -240,6 +255,90 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertTrue(decision.duplicate)
         XCTAssertFalse(decision.appended)
         XCTAssertEqual(decision.envelope.entries.count, 1)
+    }
+
+    func testVerifiedCoverageWireDecodeWithoutLoadHydrationStaysFailClosed() throws {
+        let villageID = UUID()
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: text),
+            villageID: villageID,
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proof
+        )
+        let data = try JSONEncoder().encode(entry)
+        let decoded = try JSONDecoder().decode(SnapshotHistoryEntry.self, from: data)
+        let heroes = try XCTUnwrap(decoded.coverage.section(base: .home, rawSection: "heroes"))
+        if case .verified(let evidence) = heroes.proof {
+            XCTAssertNil(evidence.runtimeWitness, "裸 decode 不得直接恢复 runtime witness")
+            XCTAssertEqual(evidence.persistedTrust, .pendingRevalidation)
+        } else {
+            XCTFail("wire metadata 应保留")
+        }
+        XCTAssertFalse(heroes.isComplete)
+    }
+
+    func testVerifiedCoverageTamperedBindingFailsRevalidation() throws {
+        let text = "{\"tag\":\"#ABC123\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: "#ABC123", text: text),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proof
+        )
+        guard case .verified(let evidence) = entry.coverage.section(
+            base: .home,
+            rawSection: "heroes"
+        )?.proof else {
+            return XCTFail("expected verified proof")
+        }
+        let tampered: SnapshotCoverageProof = .verified(
+            VerifiedCoverageEvidence(
+                decodedWire: evidence.source,
+                adapterID: evidence.adapterID,
+                protocolVersion: evidence.protocolVersion,
+                expectedCount: evidence.expectedCount,
+                verificationReason: evidence.verificationReason,
+                verificationRuleVersion: evidence.verificationRuleVersion,
+                inputBinding: "sha256:deadbeef"
+            )
+        )
+        let result = SnapshotCoverageVerifier.revalidatePersistedProof(
+            tampered,
+            rawJSON: text,
+            section: "heroes"
+        )
+        if case .unavailable = result {
+            XCTAssertTrue(true)
+        } else {
+            XCTFail("篡改 binding 后 revalidation 必须 fail-closed")
+        }
+    }
+
+    func testLegacyVerifiedWireWithoutPersistedEvidenceStaysFailClosed() throws {
+        let json = """
+        {"kind":"verified","source":"test-export","adapterID":"test-fixture","protocolVersion":"1","expectedCount":1,"verificationReason":"legacy"}
+        """.data(using: .utf8)!
+        let proof = try JSONDecoder().decode(SnapshotCoverageProof.self, from: json)
+        let result = SnapshotCoverageVerifier.revalidatePersistedProof(
+            proof,
+            rawJSON: "{\"heroes\":[{\"data\":1,\"lvl\":1}]}",
+            section: "heroes"
+        )
+        if case .verified(let evidence) = result {
+            XCTAssertNil(evidence.runtimeWitness)
+            XCTAssertFalse(result.isVerified)
+        } else {
+            XCTFail("legacy wire metadata 应保留为 verified 形态但不恢复 trust")
+        }
     }
 
     func testTimerSchemaVersionChangeAppendsAndKeepsOldEntryImmutable() throws {

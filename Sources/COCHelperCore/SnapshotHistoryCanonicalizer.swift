@@ -38,6 +38,7 @@ public enum SnapshotHistoryCanonicalizer {
         )
         let coverage = makeCoverage(
             source: source,
+            originalText: snapshot.originalText,
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
             sectionProofs: sectionProofs,
@@ -471,6 +472,7 @@ public enum SnapshotHistoryCanonicalizer {
 
     private static func makeCoverage(
         source: CanonicalSource,
+        originalText: String,
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
         sectionProofs: [String: SnapshotCoverageProof],
@@ -529,12 +531,17 @@ public enum SnapshotHistoryCanonicalizer {
                 values: values,
                 proof: sectionProofs[section]
             )
+            let boundProof = SnapshotCoverageVerifier.attachPersistedBinding(
+                to: sectionAnalysis.proof,
+                rawJSON: originalText,
+                section: section
+            )
             sections.append(SnapshotSectionCoverage(
                 base: base,
                 rawSection: section,
                 presence: values.isEmpty ? .presentEmpty : .presentNonEmpty,
                 completeness: sectionAnalysis.completeness,
-                proof: sectionAnalysis.proof,
+                proof: boundProof,
                 observedCount: values.count
             ))
             diagnostics.append(contentsOf: sectionAnalysis.diagnostics)
@@ -675,12 +682,17 @@ public enum SnapshotHistoryCanonicalizer {
                 values: values,
                 proof: sectionProofs[section]
             )
+            let boundProof = SnapshotCoverageVerifier.attachPersistedBinding(
+                to: sectionAnalysis.proof,
+                rawJSON: originalText,
+                section: section
+            )
             sections.append(SnapshotSectionCoverage(
                 base: base,
                 rawSection: section,
                 presence: values.isEmpty ? .presentEmpty : .presentNonEmpty,
                 completeness: sectionAnalysis.completeness,
-                proof: sectionAnalysis.proof,
+                proof: boundProof,
                 observedCount: values.count
             ))
             diagnostics.append(contentsOf: sectionAnalysis.diagnostics)

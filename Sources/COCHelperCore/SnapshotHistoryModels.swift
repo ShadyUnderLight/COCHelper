@@ -282,6 +282,8 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
         case adapterID
         case protocolVersion
         case verificationReason
+        case verificationRuleVersion
+        case inputBinding
     }
 
     private enum Kind: String, Codable {
@@ -306,6 +308,8 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
             try container.encode(evidence.protocolVersion, forKey: .protocolVersion)
             try container.encodeIfPresent(evidence.expectedCount, forKey: .expectedCount)
             try container.encodeIfPresent(evidence.verificationReason, forKey: .verificationReason)
+            try container.encodeIfPresent(evidence.verificationRuleVersion, forKey: .verificationRuleVersion)
+            try container.encodeIfPresent(evidence.inputBinding, forKey: .inputBinding)
         case .legacyAuthoritative(let source, let version, let expectedCount):
             // Preserve pre-#205 wire bytes for immutable history integrity.
             try container.encode(Kind.authoritative, forKey: .kind)
@@ -340,7 +344,12 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
                     adapterID: try container.decode(String.self, forKey: .adapterID),
                     protocolVersion: try container.decode(String.self, forKey: .protocolVersion),
                     expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount),
-                    verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason)
+                    verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason),
+                    verificationRuleVersion: try container.decodeIfPresent(
+                        String.self,
+                        forKey: .verificationRuleVersion
+                    ),
+                    inputBinding: try container.decodeIfPresent(String.self, forKey: .inputBinding)
                 )
             )
         case .unavailable:
@@ -425,6 +434,12 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
 
     public var isComplete: Bool {
         completeness == .complete && proof.isVerified
+    }
+
+    /// Issue #224: wire completeness vs runtime trust for verified sections.
+    public var verifiedPersistedTrust: VerifiedCoveragePersistedTrust? {
+        guard case .verified(let evidence) = proof else { return nil }
+        return evidence.persistedTrust
     }
 }
 
@@ -569,7 +584,9 @@ public enum SnapshotHistoryProofDuplicateKey: Hashable, Sendable {
         adapterID: String,
         protocolVersion: String,
         expectedCount: Int?,
-        verificationReason: String?
+        verificationReason: String?,
+        verificationRuleVersion: String?,
+        inputBinding: String?
     )
     case legacyAuthoritative(source: String, version: String, expectedCount: Int?)
     case unavailable(reason: String)
@@ -584,7 +601,9 @@ public enum SnapshotHistoryProofDuplicateKey: Hashable, Sendable {
                 adapterID: evidence.adapterID,
                 protocolVersion: evidence.protocolVersion,
                 expectedCount: evidence.expectedCount,
-                verificationReason: evidence.verificationReason
+                verificationReason: evidence.verificationReason,
+                verificationRuleVersion: evidence.verificationRuleVersion,
+                inputBinding: evidence.inputBinding
             )
         case .legacyAuthoritative(let source, let version, let expectedCount):
             self = .legacyAuthoritative(source: source, version: version, expectedCount: expectedCount)

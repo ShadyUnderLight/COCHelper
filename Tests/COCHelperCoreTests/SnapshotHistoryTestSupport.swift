@@ -29,7 +29,9 @@ final class TestSnapshotHistoryStore: SnapshotHistoryStore, @unchecked Sendable 
         }
         guard let rawData else { return nil }
         do {
-            return try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: rawData).validated()
+            return try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: rawData)
+                .validated()
+                .hydratingVerifiedCoverage()
         } catch let error as SnapshotHistoryStoreError {
             throw error
         } catch {

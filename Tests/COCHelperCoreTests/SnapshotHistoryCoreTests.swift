@@ -456,9 +456,20 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             return XCTFail("verified wire metadata 应保留")
         }
         XCTAssertEqual(evidence.adapterID, "test-fixture")
+        XCTAssertNotNil(evidence.inputBinding)
+        XCTAssertEqual(evidence.verificationRuleVersion, "1")
         XCTAssertNil(evidence.runtimeWitness)
+        XCTAssertEqual(evidence.persistedTrust, .pendingRevalidation)
         XCTAssertFalse(restored.proof.isVerified)
         XCTAssertFalse(restored.isComplete)
+
+        let encodedEntry = try JSONEncoder().encode(withProof)
+        let decodedEntry = try JSONDecoder().decode(SnapshotHistoryEntry.self, from: encodedEntry)
+        let hydratedEntry = SnapshotCoverageTrustHydration.hydrate(entry: decodedEntry)
+        let hydratedSection = try XCTUnwrap(
+            hydratedEntry.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertTrue(hydratedSection.isComplete)
 
         let invalid = try canonicalize(
             makeRawSnapshot("{\"heroes\":{}}")

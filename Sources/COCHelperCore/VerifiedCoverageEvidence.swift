@@ -7,6 +7,16 @@ enum VerifiedCoverageRuntimeWitness: Hashable, Sendable {
     case moduleIssued
 }
 
+/// Persisted trust decode outcome for verified wire metadata (Issue #224).
+public enum VerifiedCoveragePersistedTrust: Equatable, Sendable {
+    /// Module-issued witness present; destructive gates may open when completeness allows.
+    case runtimeTrusted
+    /// Wire metadata has persisted revalidation material but no runtime witness yet.
+    case pendingRevalidation
+    /// Persisted history lacks rule version or input binding; fail-closed.
+    case insufficientPersistedEvidence
+}
+
 /// Auditable verified-coverage metadata. Construction is module-internal; callers outside
 /// COCHelperCore cannot attach `moduleIssued` and therefore cannot satisfy `isVerified`.
 public struct VerifiedCoverageEvidence: Hashable, Sendable {
@@ -15,6 +25,10 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
     public let protocolVersion: String
     public let expectedCount: Int?
     public let verificationReason: String?
+    /// Frozen verification rule set used when the proof was issued.
+    public let verificationRuleVersion: String?
+    /// SHA-256 digest of the source section JSON array/object at issuance time.
+    public let inputBinding: String?
 
     let runtimeWitness: VerifiedCoverageRuntimeWitness?
 
@@ -24,6 +38,8 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         protocolVersion: String,
         expectedCount: Int?,
         verificationReason: String?,
+        verificationRuleVersion: String?,
+        inputBinding: String?,
         runtimeWitness: VerifiedCoverageRuntimeWitness
     ) {
         self.source = source
@@ -31,6 +47,8 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         self.protocolVersion = protocolVersion
         self.expectedCount = expectedCount
         self.verificationReason = verificationReason
+        self.verificationRuleVersion = verificationRuleVersion
+        self.inputBinding = inputBinding
         self.runtimeWitness = runtimeWitness
     }
 
@@ -38,13 +56,28 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
          adapterID: String,
          protocolVersion: String,
          expectedCount: Int?,
-         verificationReason: String?) {
+         verificationReason: String?,
+         verificationRuleVersion: String?,
+         inputBinding: String?) {
         self.source = source
         self.adapterID = adapterID
         self.protocolVersion = protocolVersion
         self.expectedCount = expectedCount
         self.verificationReason = verificationReason
+        self.verificationRuleVersion = verificationRuleVersion
+        self.inputBinding = inputBinding
         self.runtimeWitness = nil
+    }
+
+    /// Separates wire metadata from runtime trust (Issue #224).
+    public var persistedTrust: VerifiedCoveragePersistedTrust {
+        if runtimeWitness == .moduleIssued {
+            return .runtimeTrusted
+        }
+        if verificationRuleVersion == nil || inputBinding == nil {
+            return .insufficientPersistedEvidence
+        }
+        return .pendingRevalidation
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -53,6 +86,8 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         case protocolVersion
         case expectedCount
         case verificationReason
+        case verificationRuleVersion
+        case inputBinding
     }
 }
 
@@ -64,7 +99,9 @@ extension VerifiedCoverageEvidence: Codable {
             adapterID: try container.decode(String.self, forKey: .adapterID),
             protocolVersion: try container.decode(String.self, forKey: .protocolVersion),
             expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount),
-            verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason)
+            verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason),
+            verificationRuleVersion: try container.decodeIfPresent(String.self, forKey: .verificationRuleVersion),
+            inputBinding: try container.decodeIfPresent(String.self, forKey: .inputBinding)
         )
     }
 
@@ -75,5 +112,7 @@ extension VerifiedCoverageEvidence: Codable {
         try container.encode(protocolVersion, forKey: .protocolVersion)
         try container.encodeIfPresent(expectedCount, forKey: .expectedCount)
         try container.encodeIfPresent(verificationReason, forKey: .verificationReason)
+        try container.encodeIfPresent(verificationRuleVersion, forKey: .verificationRuleVersion)
+        try container.encodeIfPresent(inputBinding, forKey: .inputBinding)
     }
 }

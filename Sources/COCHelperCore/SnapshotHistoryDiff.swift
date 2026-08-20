@@ -90,15 +90,15 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
             fromDataState == .complete && toDataState == .complete &&
             fromSectionCompleteness == .complete &&
             toSectionCompleteness == .complete &&
-            fromProof?.isAuthoritative == true &&
-            toProof?.isAuthoritative == true
+            fromProof?.isVerified == true &&
+            toProof?.isVerified == true
     }
 
     public func isComplete(for fields: Set<String>) -> Bool {
         guard fromSectionCompleteness == .complete,
               toSectionCompleteness == .complete,
-              fromProof?.isAuthoritative == true,
-              toProof?.isAuthoritative == true else {
+              fromProof?.isVerified == true,
+              toProof?.isVerified == true else {
             return false
         }
         return fields.allSatisfy {

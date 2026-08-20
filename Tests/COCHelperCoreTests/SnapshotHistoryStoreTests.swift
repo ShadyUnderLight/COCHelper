@@ -123,7 +123,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let villageID = UUID()
         let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
         let proof: [String: SnapshotCoverageProof] = [
-            "heroes": .authoritative(source: "test-export", version: "1", expectedCount: 1)
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let base = snapshot(tag: firstTag, text: text)
         let envelope = try service.loadOrMigrate(
@@ -613,6 +613,106 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let restored = try XCTUnwrap(try store.load())
         XCTAssertEqual(restored.entries.first?.timerSchema, schema)
         XCTAssertEqual(restored.entries.first?.canonicalFingerprint, entry.canonicalFingerprint)
+    }
+
+    func testLegacyAuthoritativeProofPreservesIntegrityFingerprintOnLoad() throws {
+        let store = TestSnapshotHistoryStore()
+        let villageID = UUID()
+        let lineageID = UUID()
+        let snapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[{\"data\":1,\"lvl\":1}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let verifiedEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            sectionProofs: ["heroes": SnapshotHistoryTestCoverage.verified(source: "legacy-export", expectedCount: 1)]
+        )
+        guard let heroes = verifiedEntry.coverage.section(base: .home, rawSection: "heroes") else {
+            return XCTFail("缺少 heroes section")
+        }
+        let legacySection = SnapshotSectionCoverage(
+            base: heroes.base,
+            rawSection: heroes.rawSection,
+            presence: heroes.presence,
+            completeness: .complete,
+            proof: .legacyAuthoritative(source: "legacy-export", version: "1", expectedCount: 1),
+            observedCount: heroes.observedCount
+        )
+        let legacyCoverage = SnapshotObservationCoverage(
+            schemaVersion: verifiedEntry.coverage.schemaVersion,
+            fields: verifiedEntry.coverage.fields,
+            sections: verifiedEntry.coverage.sections.map {
+                $0.base == heroes.base && $0.rawSection == heroes.rawSection ? legacySection : $0
+            },
+            diagnostics: verifiedEntry.coverage.diagnostics
+        )
+        let legacyEntry = SnapshotHistoryEntry(
+            schemaVersion: verifiedEntry.schemaVersion,
+            observationVersion: verifiedEntry.observationVersion,
+            fingerprintVersion: verifiedEntry.fingerprintVersion,
+            integrityVersion: verifiedEntry.integrityVersion,
+            snapshotID: verifiedEntry.snapshotID,
+            villageID: verifiedEntry.villageID,
+            lineageID: verifiedEntry.lineageID,
+            normalizedPlayerTag: verifiedEntry.normalizedPlayerTag,
+            appliedAt: verifiedEntry.appliedAt,
+            sourceTimestamp: verifiedEntry.sourceTimestamp,
+            parserVersion: verifiedEntry.parserVersion,
+            canonicalFingerprint: verifiedEntry.canonicalFingerprint,
+            rawJSON: verifiedEntry.rawJSON,
+            observation: verifiedEntry.observation,
+            coverage: legacyCoverage,
+            isBaseline: verifiedEntry.isBaseline,
+            baselineReason: verifiedEntry.baselineReason,
+            timerSchema: verifiedEntry.timerSchema,
+            integrityFingerprint: SnapshotHistoryCanonicalizer.integrityFingerprint(
+                integrityVersion: verifiedEntry.integrityVersion,
+                schemaVersion: verifiedEntry.schemaVersion,
+                observationVersion: verifiedEntry.observationVersion,
+                fingerprintVersion: verifiedEntry.fingerprintVersion,
+                snapshotID: verifiedEntry.snapshotID,
+                villageID: verifiedEntry.villageID,
+                lineageID: verifiedEntry.lineageID,
+                normalizedPlayerTag: verifiedEntry.normalizedPlayerTag,
+                appliedAt: verifiedEntry.appliedAt,
+                sourceTimestamp: verifiedEntry.sourceTimestamp,
+                parserVersion: verifiedEntry.parserVersion,
+                canonicalFingerprint: verifiedEntry.canonicalFingerprint,
+                rawJSON: verifiedEntry.rawJSON,
+                observation: verifiedEntry.observation,
+                coverage: legacyCoverage,
+                isBaseline: verifiedEntry.isBaseline,
+                baselineReason: verifiedEntry.baselineReason,
+                timerSchema: verifiedEntry.timerSchema
+            )
+        )
+        XCTAssertFalse(legacyEntry.coverage.section(base: .home, rawSection: "heroes")?.isComplete ?? true)
+
+        let envelope = SnapshotHistoryEnvelope(
+            entries: [legacyEntry],
+            lineages: [SnapshotHistoryLineageMetadata(
+                villageID: legacyEntry.villageID,
+                lineageID: legacyEntry.lineageID,
+                normalizedPlayerTag: legacyEntry.normalizedPlayerTag,
+                lastEntryID: legacyEntry.snapshotID,
+                lastFingerprint: legacyEntry.canonicalFingerprint,
+                lastAppliedAt: legacyEntry.appliedAt,
+                hasConflict: false
+            )],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: legacyEntry.appliedAt)
+        )
+        try store.writeRawData(try envelope.encodedData())
+        let restored = try XCTUnwrap(try store.load())
+        XCTAssertEqual(restored.entries.count, 1)
+        guard case .legacyAuthoritative = restored.entries[0]
+            .coverage
+            .section(base: .home, rawSection: "heroes")?
+            .proof else {
+            return XCTFail("legacy authoritative wire 应解码为 legacyAuthoritative")
+        }
     }
 
     func testFullIntegrityDigestRejectsMetadataDisplayAndCoverageTampering() throws {

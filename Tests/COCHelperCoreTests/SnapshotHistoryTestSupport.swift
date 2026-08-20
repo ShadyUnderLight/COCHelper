@@ -97,3 +97,15 @@ final class TestCurrentVillagePersistence: CurrentVillagePersistence, @unchecked
         self.data = data
     }
 }
+
+enum SnapshotHistoryTestCoverage {
+    static func verified(
+        source: String = "test-export",
+        expectedCount: Int? = nil
+    ) -> SnapshotCoverageProof {
+        SnapshotCoverageVerifier.issueTestFixture(
+            source: source,
+            expectedCount: expectedCount
+        )
+    }
+}

@@ -248,12 +248,20 @@ public enum SnapshotSectionPresence: String, Codable, Hashable, Sendable {
     case invalid
 }
 
-/// Evidence that permits absence to be interpreted as a real observation.
-/// The current account JSON adapter has no such source-level proof and uses
-/// `unavailable`; future adapters may provide an explicit authoritative
-/// protocol and version.
+/// Section coverage trust contract (Issue #205).
+///
+/// - `declared`: pasted JSON or exporter self-assertion; auditable but not
+///   verified. Must not open destructive diff or manual reconciliation gates.
+/// - `verified`: auditable adapter metadata. Runtime trust requires a module-issued
+///   witness from `SnapshotCoverageVerifier`; wire decode alone is fail-closed.
+/// - `legacyAuthoritative`: frozen history wire `kind: authoritative` before
+///   the trust model. Runtime trust equals `declared`; encode preserves legacy
+///   wire shape so integrity fingerprints stay stable.
+/// - `unavailable`: no usable declaration.
 public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
-    case authoritative(source: String, version: String, expectedCount: Int?)
+    case declared(source: String, version: String, expectedCount: Int?)
+    case verified(VerifiedCoverageEvidence)
+    case legacyAuthoritative(source: String, version: String, expectedCount: Int?)
     case unavailable(reason: String)
 
     private enum CodingKeys: String, CodingKey {
@@ -262,17 +270,35 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
         case version
         case expectedCount
         case reason
+        case adapterID
+        case protocolVersion
+        case verificationReason
     }
 
     private enum Kind: String, Codable {
         case authoritative
+        case declared
+        case verified
         case unavailable
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .authoritative(let source, let version, let expectedCount):
+        case .declared(let source, let version, let expectedCount):
+            try container.encode(Kind.declared, forKey: .kind)
+            try container.encode(source, forKey: .source)
+            try container.encode(version, forKey: .version)
+            try container.encodeIfPresent(expectedCount, forKey: .expectedCount)
+        case .verified(let evidence):
+            try container.encode(Kind.verified, forKey: .kind)
+            try container.encode(evidence.source, forKey: .source)
+            try container.encode(evidence.adapterID, forKey: .adapterID)
+            try container.encode(evidence.protocolVersion, forKey: .protocolVersion)
+            try container.encodeIfPresent(evidence.expectedCount, forKey: .expectedCount)
+            try container.encodeIfPresent(evidence.verificationReason, forKey: .verificationReason)
+        case .legacyAuthoritative(let source, let version, let expectedCount):
+            // Preserve pre-#205 wire bytes for immutable history integrity.
             try container.encode(Kind.authoritative, forKey: .kind)
             try container.encode(source, forKey: .source)
             try container.encode(version, forKey: .version)
@@ -287,24 +313,49 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Kind.self, forKey: .kind) {
         case .authoritative:
-            self = .authoritative(
+            self = .legacyAuthoritative(
                 source: try container.decode(String.self, forKey: .source),
                 version: try container.decode(String.self, forKey: .version),
                 expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount)
+            )
+        case .declared:
+            self = .declared(
+                source: try container.decode(String.self, forKey: .source),
+                version: try container.decode(String.self, forKey: .version),
+                expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount)
+            )
+        case .verified:
+            self = .verified(
+                VerifiedCoverageEvidence(
+                    decodedWire: try container.decode(String.self, forKey: .source),
+                    adapterID: try container.decode(String.self, forKey: .adapterID),
+                    protocolVersion: try container.decode(String.self, forKey: .protocolVersion),
+                    expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount),
+                    verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason)
+                )
             )
         case .unavailable:
             self = .unavailable(reason: try container.decode(String.self, forKey: .reason))
         }
     }
 
-    public var isAuthoritative: Bool {
-        guard case .authoritative(let source, let version, let expectedCount) = self else {
+    /// Whether this proof may open destructive absence/quantity inference gates.
+    public var isVerified: Bool {
+        SnapshotCoverageVerifier.validatesVerifiedProof(self)
+    }
+
+    /// Whether a declaration is syntactically well-formed (not the same as verified).
+    public var isWellFormedDeclaration: Bool {
+        switch self {
+        case .declared(let source, let version, let expectedCount),
+             .legacyAuthoritative(let source, let version, let expectedCount):
+            guard Self.isNonBlankSource(source), Self.isParsableProtocolVersion(version) else {
+                return false
+            }
+            return expectedCount == nil || expectedCount! >= 0
+        case .verified, .unavailable:
             return false
         }
-        guard Self.isNonBlankSource(source), Self.isParsableProtocolVersion(version) else {
-            return false
-        }
-        return expectedCount == nil || expectedCount! >= 0
     }
 
     /// source 必须含非空白字符——纯空白来源没有可审计的标识价值。
@@ -313,14 +364,23 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
     }
 
     /// 协议版本必须是 1–3 段 ASCII 数字("1"、"1.2"、"1.2.3")。
-    /// 空白段、4+ 段、非 ASCII 数字(如全角"１")、字母混入("v1"、
-    /// "1.2-beta")均按不可信处理——Issue #173 fail-closed:
-    /// source version 不可信 → unavailable。
     private static func isParsableProtocolVersion(_ version: String) -> Bool {
         let components = version.split(separator: ".", omittingEmptySubsequences: false)
         guard (1...3).contains(components.count) else { return false }
         return components.allSatisfy {
             !$0.isEmpty && $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber)
+        }
+    }
+
+    static func expectedCount(of proof: SnapshotCoverageProof) -> Int? {
+        switch proof {
+        case .declared(_, _, let expectedCount),
+             .legacyAuthoritative(_, _, let expectedCount):
+            return expectedCount
+        case .verified(let evidence):
+            return evidence.expectedCount
+        case .unavailable:
+            return nil
         }
     }
 }
@@ -355,7 +415,7 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
     }
 
     public var isComplete: Bool {
-        completeness == .complete && proof.isAuthoritative
+        completeness == .complete && proof.isVerified
     }
 }
 

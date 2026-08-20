@@ -291,12 +291,12 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
             entry.coverage.section(base: .home, rawSection: "buildings")
         )
         XCTAssertFalse(buildings.isComplete, "无来源协议时不得声称 complete")
-        XCTAssertFalse(buildings.proof.isAuthoritative)
+        XCTAssertFalse(buildings.proof.isVerified)
     }
 
-    /// 账号导入路径：带 coverage 声明的 JSON 的 proof 必须到达 immutable entry。
+    /// 账号导入路径：带 coverage 声明的 JSON 冻结 declared proof，但不 complete。
     @MainActor
-    func testAccountImportWithCoverageDeclarationReachesCompleteEntry() throws {
+    func testAccountImportWithCoverageDeclarationFreezesDeclaredProofWithoutComplete() throws {
         let raw = """
         {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
          "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
@@ -312,16 +312,17 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         let buildings = try XCTUnwrap(
             entry.coverage.section(base: .home, rawSection: "buildings")
         )
-        XCTAssertEqual(buildings.completeness, .complete)
+        XCTAssertEqual(buildings.completeness, .unavailable)
+        XCTAssertFalse(buildings.isComplete)
         XCTAssertEqual(
             buildings.proof,
-            .authoritative(source: "u.coc", version: "1", expectedCount: 1)
+            .declared(source: "u.coc", version: "1", expectedCount: 1)
         )
     }
 
     /// 快捷导入路径（预览 + 提交）同样经过 source coverage adapter。
     @MainActor
-    func testQuickImportWithCoverageDeclarationReachesCompleteEntry() throws {
+    func testQuickImportWithCoverageDeclarationFreezesDeclaredProofWithoutComplete() throws {
         let raw = """
         {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
          "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
@@ -343,12 +344,13 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         let buildings = try XCTUnwrap(
             entry.coverage.section(base: .home, rawSection: "buildings")
         )
-        XCTAssertEqual(buildings.completeness, .complete)
+        XCTAssertEqual(buildings.completeness, .unavailable)
+        XCTAssertFalse(buildings.isComplete)
     }
 
     /// 启动迁移路径（loadOrMigrate）也按村庄传入 source coverage proof。
     @MainActor
-    func testStartupMigrationWithCoverageDeclarationReachesCompleteEntry() throws {
+    func testStartupMigrationWithCoverageDeclarationFreezesDeclaredProofWithoutComplete() throws {
         let raw = """
         {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
          "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
@@ -366,10 +368,11 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         let buildings = try XCTUnwrap(
             entry.coverage.section(base: .home, rawSection: "buildings")
         )
-        XCTAssertEqual(buildings.completeness, .complete)
+        XCTAssertEqual(buildings.completeness, .unavailable)
+        XCTAssertFalse(buildings.isComplete)
     }
 
-    /// Issue #173 手工验证等价项:两个真实村庄连续导入。
+    /// Issue #173 / #205 手工验证等价项:两个真实村庄连续导入。
     /// 无协议的真实 fixture → 双村 buildings proof 均 unavailable;
     /// 对村 A 导入带 coverage 声明的 JSON → 村 A complete、村 B 保持
     /// unavailable(per-village 隔离,证明不会跨村庄借用)。
@@ -426,7 +429,7 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
             "村庄 B 无协议不得 complete"
         )
 
-        // 村 A 快捷导入带 coverage 声明的 JSON → 村 A complete,村 B 不变。
+        // 村 A 快捷导入带 coverage 声明的 JSON → 村 A 冻结 declared 但不 complete,村 B 不变。
         guard case .success(let preview) = model.prepareQuickImport(for: idA) else {
             return XCTFail("有效快照应能生成快捷导入预览")
         }
@@ -438,10 +441,15 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         entryB = try XCTUnwrap(
             envelope.entry(id: XCTUnwrap(envelope.activeLineage(for: idB)?.lastEntryID))
         )
-        XCTAssertEqual(
-            try XCTUnwrap(entryA.coverage.section(base: .home, rawSection: "buildings")).completeness,
-            .complete
+        let villageABuildings = try XCTUnwrap(
+            entryA.coverage.section(base: .home, rawSection: "buildings")
         )
+        XCTAssertEqual(
+            villageABuildings.proof,
+            .declared(source: "u.coc", version: "1", expectedCount: 1)
+        )
+        XCTAssertEqual(villageABuildings.completeness, .unavailable)
+        XCTAssertFalse(villageABuildings.isComplete)
         XCTAssertFalse(
             try XCTUnwrap(entryB.coverage.section(base: .home, rawSection: "buildings")).isComplete,
             "村庄 B 不得借用村庄 A 的证明"

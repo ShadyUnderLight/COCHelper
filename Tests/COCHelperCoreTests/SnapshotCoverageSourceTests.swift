@@ -2,12 +2,7 @@ import Foundation
 import XCTest
 @testable import COCHelperCore
 
-/// Issue #173: 真实导入接入可审计的 section coverage proof。
-///
-/// 来源契约:账号 JSON 顶层可选的 `coverage` 字段声明各 section 的
-/// 完整性证明(格式为 `SnapshotCoverageProof` 的 Codable 编码)。
-/// 没有声明、声明无效或未提及的 section 一律 fail-closed 为
-/// `unavailable`,禁止根据数组存在/空数组/目录猜测完整性。
+/// Issue #173 / #205: pasted JSON coverage is declarative only.
 final class SnapshotCoverageSourceTests: XCTestCase {
     private func snapshot(text: String) -> AccountSnapshot {
         AccountSnapshot(
@@ -38,14 +33,14 @@ final class SnapshotCoverageSourceTests: XCTestCase {
             guard let proof = proofs[section] else {
                 return XCTFail("缺少 section 的 proof: \(section)")
             }
-            XCTAssertFalse(proof.isAuthoritative, "无来源协议时 \(section) 不得为 authoritative")
+            XCTAssertFalse(proof.isVerified, "无来源协议时 \(section) 不得为 verified")
             guard case .unavailable = proof else {
                 return XCTFail("无来源协议时 \(section) 应为 unavailable,得到 \(proof)")
             }
         }
     }
 
-    func testCoverageDeclarationProducesAuthoritativeProofForDeclaredSections() throws {
+    func testCoverageDeclarationProducesDeclaredProofForDeclaredSections() throws {
         let text = """
         {
           "tag": "#2QJQ8J88",
@@ -65,11 +60,33 @@ final class SnapshotCoverageSourceTests: XCTestCase {
 
         XCTAssertEqual(
             proofs["buildings"],
-            .authoritative(source: "u.coc", version: "1", expectedCount: 1)
+            .declared(source: "u.coc", version: "1", expectedCount: 1)
         )
-        // 未提及的 section 保持 fail-closed。
+        XCTAssertFalse(proofs["buildings"]?.isVerified ?? true)
+        XCTAssertTrue(proofs["buildings"]?.isWellFormedDeclaration ?? false)
         guard case .unavailable = proofs["heroes"] else {
             return XCTFail("未声明的 heroes 应为 unavailable,得到 \(String(describing: proofs["heroes"]))")
+        }
+    }
+
+    func testPastedVerifiedKindFailsClosedToUnavailable() throws {
+        let text = """
+        {
+          "tag": "#2QJQ8J88",
+          "buildings": [{"data": 1, "lvl": 1}],
+          "coverage": {
+            "buildings": {
+              "kind": "verified",
+              "source": "u.coc",
+              "adapterID": "evil",
+              "protocolVersion": "1"
+            }
+          }
+        }
+        """
+        let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot(text: text))
+        guard case .unavailable = proofs["buildings"] else {
+            return XCTFail("粘贴 JSON 的 verified 声明应 fail-closed")
         }
     }
 
@@ -105,7 +122,7 @@ final class SnapshotCoverageSourceTests: XCTestCase {
             guard case .unavailable = proofs["buildings"] else {
                 return XCTFail("无效 coverage 字段应 fail-closed,得到 \(String(describing: proofs["buildings"]))")
             }
-            XCTAssertFalse(proofs["buildings"]?.isAuthoritative ?? false)
+            XCTAssertFalse(proofs["buildings"]?.isVerified ?? true)
         }
     }
 
@@ -121,15 +138,12 @@ final class SnapshotCoverageSourceTests: XCTestCase {
         """
         let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot(text: text))
 
-        // 缺少 source/version 的 authoritative 声明不可解码为合法 proof → unavailable。
         guard case .unavailable = proofs["buildings"] else {
-            return XCTFail("缺字段的 authoritative 声明应 fail-closed,得到 \(String(describing: proofs["buildings"]))")
+            return XCTFail("缺字段的声明应 fail-closed,得到 \(String(describing: proofs["buildings"]))")
         }
     }
 
-    func testAuthoritativeProofWithExpectedCountMismatchIsStillDecodedFidelity() throws {
-        // adapter 忠实解码来源声明;expectedCount 与 observed 不一致时的
-        // partial 降级发生在 canonicalizer(canonicalize 时校验)。
+    func testDeclaredProofWithExpectedCountMismatchIsStillDecodedFidelity() throws {
         let text = """
         {
           "tag": "#2QJQ8J88",
@@ -148,13 +162,11 @@ final class SnapshotCoverageSourceTests: XCTestCase {
 
         XCTAssertEqual(
             proofs["buildings"],
-            .authoritative(source: "u.coc", version: "1", expectedCount: 3)
+            .declared(source: "u.coc", version: "1", expectedCount: 3)
         )
     }
 
     func testMarkdownFencedJSONKeepsDeclaredProof() throws {
-        // 导入器支持去除 Markdown code fence;adapter 必须用同样的清洗逻辑,
-        // 否则合法输入(带 ```json 围栏)会解析失败并把 proof 降级为 unavailable。
         let inner = """
         {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
          "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
@@ -165,15 +177,12 @@ final class SnapshotCoverageSourceTests: XCTestCase {
 
         XCTAssertEqual(
             proofs["buildings"],
-            .authoritative(source: "u.coc", version: "1", expectedCount: 1),
+            .declared(source: "u.coc", version: "1", expectedCount: 1),
             "带 code fence 的合法输入不得丢失 coverage 声明"
         )
     }
 
-    func testUnrecognizedProtocolVersionFailsClosedToUnavailable() throws {
-        // Issue #173: source version 不可信 → 不得产生 authoritative。
-        // version 必须是数字点分语义版本("1"、"1.2");"unrecognized" 等
-        // 不可解析版本按 fail-closed 处理。
+    func testUnrecognizedProtocolVersionFailsClosedForDeclarations() throws {
         let cases: [(String, String)] = [
             ("unrecognized", "1"),
             ("v1", "1"),
@@ -181,14 +190,14 @@ final class SnapshotCoverageSourceTests: XCTestCase {
             ("", "1")
         ]
         for (version, source) in cases {
-            let proof = SnapshotCoverageProof.authoritative(
+            let proof = SnapshotCoverageProof.declared(
                 source: source,
                 version: version,
                 expectedCount: 1
             )
             XCTAssertFalse(
-                proof.isAuthoritative,
-                "不可解析的协议版本 \(version.debugDescription) 不得为 authoritative"
+                proof.isWellFormedDeclaration,
+                "不可解析的协议版本 \(version.debugDescription) 不得为 well-formed declaration"
             )
         }
 
@@ -198,35 +207,34 @@ final class SnapshotCoverageSourceTests: XCTestCase {
             ("1.2.3", "u.coc")
         ]
         for (version, source) in validCases {
-            let proof = SnapshotCoverageProof.authoritative(
+            let proof = SnapshotCoverageProof.declared(
                 source: source,
                 version: version,
                 expectedCount: 1
             )
-            XCTAssertTrue(proof.isAuthoritative, "合法语义版本 \(version) 应为 authoritative")
+            XCTAssertTrue(proof.isWellFormedDeclaration, "合法语义版本 \(version) 应为 well-formed declaration")
+            XCTAssertFalse(proof.isVerified)
         }
     }
 
     func testBlankSourceAndOverSegmentedVersionFailsClosed() throws {
-        // 复审 P2:source 纯空白无审计价值、version 超出 1–3 段语义版本
-        // 惯例(主.次.补丁)或含非 ASCII 数字,一律 fail-closed。
         let invalid: [(source: String, version: String)] = [
             ("   ", "1"),
             ("\n\t", "1"),
             ("u.coc", "1.2.3.4"),
             ("u.coc", "1.2.3.4.5"),
-            ("u.coc", "１"),       // 全角数字不是 ASCII 数字
+            ("u.coc", "１"),
             ("u.coc", "1.２.3")
         ]
         for case (let source, let version) in invalid {
-            let proof = SnapshotCoverageProof.authoritative(
+            let proof = SnapshotCoverageProof.declared(
                 source: source,
                 version: version,
                 expectedCount: 1
             )
             XCTAssertFalse(
-                proof.isAuthoritative,
-                "source=\(source.debugDescription) version=\(version.debugDescription) 不得为 authoritative"
+                proof.isWellFormedDeclaration,
+                "source=\(source.debugDescription) version=\(version.debugDescription) 不得为 well-formed"
             )
         }
 
@@ -237,12 +245,50 @@ final class SnapshotCoverageSourceTests: XCTestCase {
             ("official-api", "2026.08.13")
         ]
         for case (let source, let version) in valid {
-            let proof = SnapshotCoverageProof.authoritative(
+            let proof = SnapshotCoverageProof.declared(
                 source: source,
                 version: version,
                 expectedCount: 1
             )
-            XCTAssertTrue(proof.isAuthoritative, "合法 source/version 应为 authoritative")
+            XCTAssertTrue(proof.isWellFormedDeclaration)
+            XCTAssertFalse(proof.isVerified)
         }
+    }
+
+    func testLegacyAuthoritativeWireRoundTripPreservesIntegrityBytes() throws {
+        let legacyJSON = """
+        {"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(SnapshotCoverageProof.self, from: legacyJSON)
+        guard case .legacyAuthoritative = decoded else {
+            return XCTFail("旧 wire authoritative 应解码为 legacyAuthoritative,得到 \(decoded)")
+        }
+        XCTAssertFalse(decoded.isVerified)
+
+        let reencoded = try JSONEncoder().encode(decoded)
+        let roundtrip = try JSONDecoder().decode(SnapshotCoverageProof.self, from: reencoded)
+        XCTAssertEqual(roundtrip, decoded)
+        let wire = try JSONSerialization.jsonObject(with: reencoded) as? [String: Any]
+        XCTAssertEqual(wire?["kind"] as? String, "authoritative")
+    }
+
+    func testPastedDeclarationDoesNotOpenCanonicalCompleteSection() throws {
+        let text = """
+        {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
+         "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
+        """
+        let snapshot = try AccountSnapshotImporter.parse(text, now: Date(timeIntervalSince1970: 1))
+        let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proofs
+        )
+        let buildings = try XCTUnwrap(entry.coverage.section(base: .home, rawSection: "buildings"))
+        XCTAssertEqual(buildings.proof, .declared(source: "u.coc", version: "1", expectedCount: 1))
+        XCTAssertEqual(buildings.completeness, .unavailable)
+        XCTAssertFalse(buildings.isComplete)
     }
 }

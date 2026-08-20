@@ -182,7 +182,8 @@ public final class VillageProjectionCache {
 
     public func removeAll() {
         entries.removeAll()
-        nextProjectionGeneration = 1
+        // Issue #212 review P2：不重置 generation——它是跨 cache 的 invalidation
+        // token；重置可能导致 flat-row cache 与重建后的 projection 碰撞。
     }
 
     // MARK: - 内部

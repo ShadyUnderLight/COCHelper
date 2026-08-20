@@ -285,9 +285,17 @@ public final class AppModel: ObservableObject {
     /// @MainActor 持有；同步访问，无后台计算。
     private let projectionCache = VillageProjectionCache()
 
+    /// Issue #212：详情页扁平 row 元数据缓存（与投影 render 身份对齐）。
+    private let detailFlatRowCache = VillageDetailFlatRowCache()
+
     /// Issue #200：投影缓存统计（测试钩子，@testable 可见；生产不消费）。
     var projectionCacheStats: (buildCount: Int, hitCount: Int) {
         (projectionCache.buildCount, projectionCache.hitCount)
+    }
+
+    /// Issue #212：扁平 row 缓存统计（测试钩子）。
+    var detailFlatRowCacheStats: (buildCount: Int, hitCount: Int) {
+        (detailFlatRowCache.buildCount, detailFlatRowCache.hitCount)
     }
 
     /// Issue #200：村庄详情渲染入口（缓存命中 + 动态刷新）。
@@ -307,6 +315,50 @@ public final class AppModel: ObservableObject {
             now: now,
             manualUpgradeCore: manualUpgradeCores[villageID],
             catalogEpoch: catalogEpoch
+        )
+    }
+
+    /// Issue #212：村庄详情扁平 row 元数据（缓存 + 动态 group 回查）。
+    ///
+    /// row 元数据在 render/筛选身份不变时复用；`sortDependsOnNow` 为 true
+    /// （如 `.remaining`）时每次重建。View body 仍由 LazyVStack 按需构建。
+    public func villageDetailFlatRows(
+        village: VillageProfile,
+        render: VillageProjectionCache.RenderResult,
+        base: TrackerBase,
+        now: Date,
+        displayGroups: [VillageDetailGroup],
+        statsByKey: [String: VillageCategoryCompletion],
+        filterKey: VillageDetailFlatRowCache.FilterKey,
+        sortDependsOnNow: Bool
+    ) -> (rows: [VillageDetailFlatRow], groupByInstanceID: [String: BuildingGroup]) {
+        let buildingGroups = render.buildingGroups
+        guard let renderKey = VillageDetailFlatRowCache.RenderIdentityKey(
+            village: village,
+            base: base,
+            now: now,
+            manualUpgradeCore: manualUpgradeCores[village.id],
+            catalogEpoch: catalogEpoch,
+            catalog: gameCatalog,
+            seasonalPhases: seasonalPhases
+        ) else {
+            let groupByInstanceID = VillageDetailFlatRowProjection.groupByInstanceID(
+                from: buildingGroups
+            )
+            let rows = VillageDetailFlatRowProjection.build(
+                displayGroups: displayGroups,
+                statsByKey: statsByKey,
+                groupByInstanceID: groupByInstanceID
+            )
+            return (rows, groupByInstanceID)
+        }
+        return detailFlatRowCache.rows(
+            renderKey: renderKey,
+            filterKey: filterKey,
+            sortDependsOnNow: sortDependsOnNow,
+            displayGroups: displayGroups,
+            statsByKey: statsByKey,
+            buildingGroups: buildingGroups
         )
     }
 

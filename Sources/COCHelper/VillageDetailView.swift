@@ -192,13 +192,6 @@ struct VillageDetailView: View {
         // Issue #200：组卡随缓存 render 一次齐备（动态刷新后派生）。
         let buildingGroups = render.buildingGroups
         let craftTable = render.craftTable
-        // 原始快照记录 id → 组。BuildingInstance.id 与 VillageItemState.id 同源
-        //（同一条快照记录），但聚合层记录 id 带 agg: 前缀，查找键需归一化
-        //（rawRecordID）。快照记录 id 全局唯一，字典 1:1。
-        let groupByInstanceID = Dictionary(
-            buildingGroups.flatMap { group in group.instances.map { ($0.id, group) } },
-            uniquingKeysWith: { first, _ in first }
-        )
         let historyProjection = model.snapshotHistoryProjection(
             for: villageID,
             category: selectedHistoryCategory,
@@ -222,16 +215,35 @@ struct VillageDetailView: View {
             }
         )
 
-        // Issue #199：扁平 render rows——组头卡 / 实例块 / 旧行都是外层
-        // LazyVStack 的独立行（稳定 ID = 投影/快照 ID，不用 offset/UUID），
-        // 60s tick / 筛选 / 排序切换时只构建可见行；1000+ 实例场景不会
-        // 一次构建全部 offscreen 行（嵌套 LazyVStack 会被完全展开，故必须扁平）。
-        let detailRows = buildDetailRows(
+        // Issue #212：扁平 render row 元数据——组头卡 / 实例块 / 旧行都是外层
+        // LazyVStack 的独立行（稳定 ID = 投影/快照 ID）。row descriptor 在
+        // render/筛选身份不变时缓存复用；View body 仍由 LazyVStack 按需构建。
+        let buildingGroupByID = Dictionary(
+            uniqueKeysWithValues: buildingGroups.map { ($0.id, $0) }
+        )
+        let displayGroupByID = Dictionary(
+            uniqueKeysWithValues: displayGroups.map { ($0.id, $0) }
+        )
+        let itemByID = Dictionary(
+            uniqueKeysWithValues: filteredDisplayItems.map { ($0.id, $0) }
+        )
+        let flatRowFilterKey = VillageDetailFlatRowCache.FilterKey(
+            searchText: searchText,
+            stateFilter: stateFilter,
+            sortOrder: sortOrder,
+            categoryFilterKey: Self.categoryFilterKey(selectedFilter)
+        )
+        let flatRowBundle = model.villageDetailFlatRows(
+            village: village,
+            render: render,
+            base: selectedBase,
+            now: now,
             displayGroups: displayGroups,
             statsByKey: statsByKey,
-            groupByInstanceID: groupByInstanceID,
-            craftTable: craftTable
+            filterKey: flatRowFilterKey,
+            sortDependsOnNow: sortOrder == .remaining
         )
+        let detailRows = flatRowBundle.rows
 
         return ScrollView {
             // 根容器 LazyVStack + spacing 0：固定 section 用底部 padding 分隔，
@@ -273,7 +285,11 @@ struct VillageDetailView: View {
                             now: now,
                             village: village,
                             metrics: progressMetrics,
-                            actionsByItemID: actionsByItemID
+                            actionsByItemID: actionsByItemID,
+                            buildingGroupByID: buildingGroupByID,
+                            displayGroupByID: displayGroupByID,
+                            itemByID: itemByID,
+                            craftTable: craftTable
                         )
                     }
                 }
@@ -702,149 +718,72 @@ struct VillageDetailView: View {
 
     // MARK: - 列表
 
-    /// Issue #199：详情页扁平 render row。全部作为外层 LazyVStack 的独立行
-    /// 虚拟化；稳定 ID = 投影/快照 ID（禁止 offset / UUID——跨分页/筛选不变）。
-    private enum DetailFlatRow: Identifiable {
-        /// 非精制台 section 头部：标题 + 完成度（Panel）。
-        case sectionHeader(group: VillageDetailGroup, stats: VillageCategoryCompletion?)
-        /// 精制台整组：标题 + 完成度 + 表格保留单 Panel 外观。
-        case craftTable(group: VillageDetailGroup, defenses: [CraftTableDefenseState], stats: VillageCategoryCompletion?)
-        /// 组头卡：`BuildingGroupSummaryView` 汇总 + Start/Cancel/Adjust 动作行。
-        case groupHeader(group: BuildingGroup)
-        /// 单实例块：实例行 + 该记录自己的升级阶梯（leadingDivider = 组内非首个）。
-        case instance(group: BuildingGroup, instance: BuildingInstance, leadingDivider: Bool)
-        /// 旧列表行（issue #24 父子缩进平铺；leadingDivider = 非 section 内首行）。
-        case legacy(item: VillageItemState, group: VillageDetailGroup, indented: Bool, leadingDivider: Bool)
-
-        var id: String {
-            switch self {
-            case .sectionHeader(let group, _): return "section:\(group.id)"
-            case .craftTable(let group, _, _): return "craft:\(group.id)"
-            case .groupHeader(let group): return "groupHeader:\(group.id)"
-            case .instance(let group, let instance, _): return "instance:\(group.id):\(instance.id)"
-            case .legacy(let item, _, _, _): return "legacy:\(item.id)"
-            }
-        }
-    }
-
-    /// 扁平 render rows 构建：保持旧 sectionCard/groupedRows/legacyRows 的
-    /// 顺序与分隔线语义（组按 items 首现顺序、实例按快照输入序、父项先于
-    /// 缩进子项），只是把「面板嵌套」改为同一 LazyVStack 的独立行。
-    private func buildDetailRows(
-        displayGroups: [VillageDetailGroup],
-        statsByKey: [String: VillageCategoryCompletion],
-        groupByInstanceID: [String: BuildingGroup],
-        craftTable: [CraftTableDefenseState]
-    ) -> [DetailFlatRow] {
-        var rows: [DetailFlatRow] = []
-        for group in displayGroups {
-            if group.displayCategory == .craftTable {
-                rows.append(.craftTable(
-                    group: group,
-                    defenses: craftTable,
-                    stats: statsByKey[group.id]
-                ))
-                continue
-            }
-            rows.append(.sectionHeader(group: group, stats: statsByKey[group.id]))
-
-            var orderedGroups: [BuildingGroup] = []
-            var seenGroupIDs = Set<String>()
-            var fallbackItems: [VillageItemState] = []
-            for item in group.items {
-                if let buildingGroup = groupByInstanceID[Self.rawRecordID(item.id)] {
-                    if !seenGroupIDs.contains(buildingGroup.id) {
-                        seenGroupIDs.insert(buildingGroup.id)
-                        orderedGroups.append(buildingGroup)
-                    }
-                } else {
-                    fallbackItems.append(item)
-                }
-            }
-            for buildingGroup in orderedGroups {
-                rows.append(.groupHeader(group: buildingGroup))
-                for (index, instance) in buildingGroup.instances.enumerated() {
-                    rows.append(.instance(
-                        group: buildingGroup,
-                        instance: instance,
-                        leadingDivider: index > 0
-                    ))
-                }
-            }
-            // issue #24：嵌套 types/modules 归入根父的「类型/模块」区域——
-            // 父项行正常展示，嵌套后代缩进平铺（保持输入相对顺序）。
-            let parented = VillageDetailProjection.parentedRows(from: fallbackItems)
-            for (index, row) in parented.enumerated() {
-                rows.append(.legacy(
-                    item: row.item, group: group,
-                    indented: false, leadingDivider: index > 0
-                ))
-                for child in row.children {
-                    rows.append(.legacy(
-                        item: child, group: group,
-                        indented: true, leadingDivider: true
-                    ))
-                }
-            }
-        }
-        return rows
-    }
-
     /// 扁平 render row 渲染：section 头部 / 组头卡带 Panel，实例块与旧行
     /// 用自身 padding 对齐 Panel 内容（水平 18pt），分隔线语义与旧实现一致。
     @ViewBuilder
     private func renderDetailRow(
-        _ row: DetailFlatRow,
+        _ row: VillageDetailFlatRow,
         now: Date,
         village: VillageProfile,
         metrics: VillageProgressMetrics,
-        actionsByItemID: [String: UpgradeAction]
+        actionsByItemID: [String: UpgradeAction],
+        buildingGroupByID: [String: BuildingGroup],
+        displayGroupByID: [String: VillageDetailGroup],
+        itemByID: [String: VillageItemState],
+        craftTable: [CraftTableDefenseState]
     ) -> some View {
         switch row {
-        case .sectionHeader(let group, let stats):
-            Panel {
-                sectionTitleRow(group: group, stats: stats)
-            }
-            .padding(.top, 18)
-        case .craftTable(let group, let defenses, let stats):
-            Panel {
-                VStack(alignment: .leading, spacing: 10) {
+        case .sectionHeader(let groupID, let stats):
+            if let group = displayGroupByID[groupID] {
+                Panel {
                     sectionTitleRow(group: group, stats: stats)
-                    CraftTableView(
-                        defenses: defenses,
-                        catalogVersion: craftTableCatalog?.gameVersion
+                }
+                .padding(.top, 18)
+            }
+        case .craftTable(let groupID, let stats):
+            if let group = displayGroupByID[groupID] {
+                Panel {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionTitleRow(group: group, stats: stats)
+                        CraftTableView(
+                            defenses: craftTable,
+                            catalogVersion: craftTableCatalog?.gameVersion
+                        )
+                    }
+                }
+                .padding(.top, 18)
+            }
+        case .groupHeader(let groupID):
+            if let group = buildingGroupByID[groupID] {
+                groupHeaderRow(group)
+                    .padding(.top, 10)
+            }
+        case .instance(let groupID, let instanceID, let leadingDivider):
+            if let group = buildingGroupByID[groupID],
+               let instance = group.instances.first(where: { $0.id == instanceID }) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if leadingDivider {
+                        Divider()
+                    }
+                    instanceBlock(group: group, instance: instance, now: now)
+                }
+                .padding(.horizontal, 18)
+            }
+        case .legacy(let itemID, let groupID, let indented, let leadingDivider):
+            if let item = itemByID[itemID], let group = displayGroupByID[groupID] {
+                VStack(alignment: .leading, spacing: 0) {
+                    if leadingDivider {
+                        Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
+                    }
+                    itemRow(
+                        item, group: group, now: now, village: village,
+                        metrics: metrics, actionsByItemID: actionsByItemID,
+                        indented: indented
                     )
+                    .padding(.top, leadingDivider ? 0 : 10)
                 }
+                .padding(.horizontal, 18)
             }
-            .padding(.top, 18)
-        case .groupHeader(let group):
-            groupHeaderRow(group)
-                .padding(.top, 10)
-        case .instance(let group, let instance, let leadingDivider):
-            // 实例块是扁平行：外层 VStack + 水平 18pt 对齐旧 Panel 内容缩进，
-            // 组内非首个实例前加分隔线（与旧 instanceList 语义一致）。
-            VStack(alignment: .leading, spacing: 0) {
-                if leadingDivider {
-                    Divider()
-                }
-                instanceBlock(group: group, instance: instance, now: now)
-            }
-            .padding(.horizontal, 18)
-        case .legacy(let item, let group, let indented, let leadingDivider):
-            // 旧行：水平 18pt 对齐 Panel 内容；父项间/子项前分隔线缩进
-            // listDividerLeading（issue #24 语义）；section 内首行补 10pt 间距。
-            VStack(alignment: .leading, spacing: 0) {
-                if leadingDivider {
-                    Divider().padding(.leading, UpgradeDisplayLayout.listDividerLeading)
-                }
-                itemRow(
-                    item, group: group, now: now, village: village,
-                    metrics: metrics, actionsByItemID: actionsByItemID,
-                    indented: indented
-                )
-                .padding(.top, leadingDivider ? 0 : 10)
-            }
-            .padding(.horizontal, 18)
         }
     }
 
@@ -1239,15 +1178,14 @@ struct VillageDetailView: View {
         }
     }
 
-    /// 聚合记录 id 归一化：`agg:` 前缀 → 原始快照记录 id。VillageDetailProjection
-    /// 的 items 来自聚合层（aggregate 对静态记录统一加 agg: 前缀），而
-    /// BuildingGroupProjection 的实例 id 是原始记录层 id——查找键不归一化会
-    /// 全部 miss，组卡只剩升级中记录（Issue #45 组卡聚类键）。
-    /// 剥离安全前提：原始快照 id 由解析器生成为 `section:path` 形态
-    /// （AccountSnapshot），结构上不可能以 `agg:` 开头，故剥离只映射聚合行
-    /// 回其源记录，不会误伤原始 id。
-    private static func rawRecordID(_ id: String) -> String {
-        id.hasPrefix("agg:") ? String(id.dropFirst(4)) : id
+    /// 分类筛选的稳定缓存键（Issue #212）。
+    private static func categoryFilterKey(_ filter: CategoryFilter) -> String {
+        switch filter {
+        case .all: "all"
+        case .display(let category): "display:\(category.rawValue)"
+        case .category(let category): "category:\(category.rawValue)"
+        case .other: "other"
+        }
     }
 
     private func sectionCompletionLabel(stats: VillageCategoryCompletion?) -> some View {

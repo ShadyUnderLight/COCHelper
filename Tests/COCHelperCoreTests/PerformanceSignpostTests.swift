@@ -37,6 +37,10 @@ final class PerformanceSignpostTests: XCTestCase {
             PerformanceEvent.imageDecode.signpostName.description,
             "NSImage.contentsOf"
         )
+        XCTAssertEqual(
+            PerformanceEvent.villageDetailFlatRowsBuild.signpostName.description,
+            "VillageDetailFlatRowProjection.build"
+        )
     }
 
     func testSignpostFacadeCompilesAndReturnsStableIDs() {

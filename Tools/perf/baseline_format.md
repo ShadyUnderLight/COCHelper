@@ -25,6 +25,7 @@
   - `UpgradeOverviewProjection.overviewState`
   - `VillageItemState.preferredAssetURLs`（候选 URL 探测）
   - `NSImage.contentsOf`（滚动路径同步图片解码，app target 埋点）
+  - `VillageDetailFlatRowProjection.build`（详情页扁平 row 元数据构建，Issue #212）
 - 负载只含整数（scale/count）与布尔（cache hit/miss / succeeded/ok）：
   - 投影/候选探测用 `cache=%d`、`count=%d`；
   - 图片解码用 `ok=%d`（`PerformanceSignpost.end` 的 `succeeded` 负载，表达解码成功/失败，本路径无缓存概念）。

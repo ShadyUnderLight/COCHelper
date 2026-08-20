@@ -24,6 +24,8 @@ public enum PerformanceEvent {
     /// NSImage 解码（app target，滚动路径图片解码；Issue #198 起由
     /// ResourceImageLoader 在后台 actor 边界发出，含 cacheHit/succeeded 负载）。
     case imageDecode
+    /// VillageDetailFlatRowProjection.build：详情页扁平 row 元数据构建（Issue #212）。
+    case villageDetailFlatRowsBuild
 
     /// 稳定事件名（os_signpost 的 name 必须是 StaticString；测试用 description 校验）。
     /// 静态常量，不携带任何敏感数据。
@@ -36,6 +38,7 @@ public enum PerformanceEvent {
         case .upgradeOverviewState: "UpgradeOverviewProjection.overviewState"
         case .assetCandidateProbe: "VillageItemState.preferredAssetURLs"
         case .imageDecode: "NSImage.contentsOf"
+        case .villageDetailFlatRowsBuild: "VillageDetailFlatRowProjection.build"
         }
     }
 }

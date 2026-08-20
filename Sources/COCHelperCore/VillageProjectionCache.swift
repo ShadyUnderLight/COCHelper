@@ -31,15 +31,20 @@ public final class VillageProjectionCache {
         public let projection: VillageCatalogProjection
         public let buildingGroups: [BuildingGroup]
         public let craftTable: [CraftTableDefenseState]
+        /// Issue #212：静态投影构建代次。普通 timer refresh 不变；`buildAndStore`
+        ///（含 timer expiry）递增，供 flat-row cache 与动态语义重建对齐。
+        public let projectionGeneration: UInt64
 
         public init(
             projection: VillageCatalogProjection,
             buildingGroups: [BuildingGroup],
-            craftTable: [CraftTableDefenseState]
+            craftTable: [CraftTableDefenseState],
+            projectionGeneration: UInt64
         ) {
             self.projection = projection
             self.buildingGroups = buildingGroups
             self.craftTable = craftTable
+            self.projectionGeneration = projectionGeneration
         }
     }
 
@@ -68,6 +73,8 @@ public final class VillageProjectionCache {
         let importedAt: Date
         let projection: VillageCatalogProjection
         let craftTable: [CraftTableDefenseState]
+        /// 本条目最后一次 `buildAndStore` 的代次（timer refresh 不递增）。
+        let projectionGeneration: UInt64
         /// LRU 驱逐时间戳（命中/构建时更新）。
         var lastUsedAt: Date
     }
@@ -75,6 +82,7 @@ public final class VillageProjectionCache {
     // MARK: - 状态
 
     private var entries: [Key: Entry] = [:]
+    private var nextProjectionGeneration: UInt64 = 1
 
     /// 静态投影构建次数（测试断言用）。
     public private(set) var buildCount = 0
@@ -119,7 +127,8 @@ public final class VillageProjectionCache {
                     base: base,
                     manualUpgradeCore: manualUpgradeCore
                 ),
-                craftTable: []
+                craftTable: [],
+                projectionGeneration: allocateProjectionGeneration()
             )
         }
 
@@ -159,7 +168,8 @@ public final class VillageProjectionCache {
                     base: base,
                     manualUpgradeCore: manualUpgradeCore
                 ),
-                craftTable: craftRefreshed.modules
+                craftTable: craftRefreshed.modules,
+                projectionGeneration: entry.projectionGeneration
             )
         }
 
@@ -172,9 +182,17 @@ public final class VillageProjectionCache {
 
     public func removeAll() {
         entries.removeAll()
+        // Issue #212 review P2：不重置 generation——它是跨 cache 的 invalidation
+        // token；重置可能导致 flat-row cache 与重建后的 projection 碰撞。
     }
 
     // MARK: - 内部
+
+    private func allocateProjectionGeneration() -> UInt64 {
+        let generation = nextProjectionGeneration
+        nextProjectionGeneration += 1
+        return generation
+    }
 
     private func buildAndStore(
         village: VillageProfile,
@@ -227,9 +245,11 @@ public final class VillageProjectionCache {
            let oldest = entries.min(by: { $0.value.lastUsedAt < $1.value.lastUsedAt }) {
             entries.removeValue(forKey: oldest.key)
         }
+        let projectionGeneration = allocateProjectionGeneration()
         entries[key] = Entry(
             builtAt: now, importedAt: importedAt,
             projection: projection, craftTable: craftTable,
+            projectionGeneration: projectionGeneration,
             lastUsedAt: now
         )
         buildCount += 1
@@ -237,7 +257,8 @@ public final class VillageProjectionCache {
         return RenderResult(
             projection: projection,
             buildingGroups: buildingGroups,
-            craftTable: craftTable
+            craftTable: craftTable,
+            projectionGeneration: projectionGeneration
         )
     }
 }

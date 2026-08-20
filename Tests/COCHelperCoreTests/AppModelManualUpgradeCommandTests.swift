@@ -982,6 +982,90 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
+    func testSettleNoOpForReconciledVillageDoesNotPersist() throws {
+        let countingStore = CountingManualTrackerStore(fileURL: storeURL)
+        let snapshot = snapshot(objectSections: [
+            "buildings": [
+                item(section: "buildings", dataID: 1_000_001, level: 18),
+                item(section: "buildings", dataID: 1_000_002, level: 1, path: "1"),
+            ],
+        ])
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let village = VillageProfile(name: "测试村庄", accountSnapshot: snapshot)
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore()
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: countingStore,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("test-transaction-counting.json")
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        try Self.installObservedState(
+            in: model, villageID: villageID, dataID: 1_000_002, level: 1, history: history
+        )
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let projection = VillageCatalogProjection.project(
+            village: village, catalog: catalog, base: .home,
+            now: importedAt, manualUpgradeCore: core
+        )
+        let cannon = try XCTUnwrap(projection.items.first { $0.dataID == 1_000_002 })
+        let action = try XCTUnwrap(UpgradeActionProjection.action(
+            for: cannon, catalog: catalog, catalogIsUsable: true,
+            manualUpgradeCore: core, coverage: .complete, now: importedAt
+        ))
+
+        let start = Date(timeIntervalSince1970: 5_000)
+        _ = try model.startManualUpgrade(
+            for: villageID,
+            action: action,
+            startedAt: start,
+            now: start
+        )
+        let rawDataBefore = try countingStore.readRawData()
+        let stateBefore = try XCTUnwrap(try countingStore.load()?.state(for: villageID))
+        let saveCountBefore = countingStore.saveCount
+
+        XCTAssertEqual(
+            model.settleManualUpgrades(at: start.addingTimeInterval(1)),
+            0
+        )
+        XCTAssertEqual(countingStore.saveCount, saveCountBefore)
+        XCTAssertEqual(try countingStore.readRawData(), rawDataBefore)
+        let after = try XCTUnwrap(try countingStore.load()?.state(for: villageID))
+        XCTAssertEqual(after.core, stateBefore.core)
+        XCTAssertEqual(after.stateUpdatedAt, stateBefore.stateUpdatedAt)
+        XCTAssertEqual(after.lastSettleAt, stateBefore.lastSettleAt)
+    }
+
+    /// 统计 save 次数的 store 包装（Issue #220 no-op settle 回归）。
+    private final class CountingManualTrackerStore: ManualTrackerStore, @unchecked Sendable {
+        private let underlying: FileManualTrackerStore
+        var transactionJournalURL: URL? { underlying.transactionJournalURL }
+        private(set) var saveCount = 0
+
+        init(fileURL: URL) {
+            underlying = FileManualTrackerStore(fileURL: fileURL)
+        }
+
+        func load() throws -> ManualTrackerEnvelope? { try underlying.load() }
+
+        func save(_ envelope: ManualTrackerEnvelope) throws {
+            saveCount += 1
+            try underlying.save(envelope)
+        }
+
+        func readRawData() throws -> Data? { try underlying.readRawData() }
+
+        func writeRawData(_ data: Data) throws { try underlying.writeRawData(data) }
+
+        func restoreRawData(_ data: Data?) throws { try underlying.restoreRawData(data) }
+    }
+
+    @MainActor
     func testSettleSkipsUnreconciledVillage() throws {
         let (model, villageID, recordID) = try makeUnreconciledModel(
             coreBuilder: { try makeBoundCore(baselineReference: $0, recordID: $1) }

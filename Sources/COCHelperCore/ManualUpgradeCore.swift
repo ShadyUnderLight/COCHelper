@@ -223,14 +223,25 @@ public struct ManualUpgradeCore: Codable, Hashable, Sendable {
     public mutating func settleDue(at: Date) throws -> [ManualUpgradeRecord] {
         var candidate = self
         let settled = try candidate.settleDueImpl(at: at)
+        // Issue #220：empty settled means candidate is semantically unchanged.
+        guard !settled.isEmpty else { return [] }
         self = candidate
         refreshContentFingerprint()
         return settled
     }
 
+    /// Issue #220：仅供测试观察 `refreshContentFingerprint()` 调用次数；
+    /// 不参与 Codable / Equatable / Hashable。
+    #if DEBUG
+    internal private(set) var fingerprintRefreshCountForTesting = 0
+    #endif
+
     /// Issue #210：mutating 操作后重算内容指纹（缓存 key 依赖它识别
     /// manual 状态变化；tick 只读路径不重算）。
     private mutating func refreshContentFingerprint() {
+        #if DEBUG
+        fingerprintRefreshCountForTesting += 1
+        #endif
         contentFingerprint = Self.fingerprint(itemStates: itemStates, records: records)
     }
 

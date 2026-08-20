@@ -131,6 +131,66 @@ final class ManualUpgradeCoreTests: XCTestCase {
         XCTAssertNotEqual(beforeSettle, core.contentFingerprint)
     }
 
+    // MARK: - Issue #220 settleDue no-op fingerprint
+
+    func testSettleDueNoOpDoesNotRecomputeFingerprint() throws {
+        var core = try core(
+            imported: distribution([(12, 100)]),
+            status: .observed
+        )
+        let recordID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        _ = try core.startUpgrade(
+            itemKey: key,
+            fromLevel: 12,
+            targetLevel: 13,
+            quantity: 1,
+            startedAt: date(1_000),
+            durationState: .timed(seconds: 10),
+            frozenCosts: [cost()],
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: recordID,
+            now: date(1_000)
+        )
+        let beforeCore = core
+        let beforeFingerprint = core.contentFingerprint
+        let refreshCountBefore = core.fingerprintRefreshCountForTesting
+
+        XCTAssertTrue(try core.settleDue(at: date(1_009)).isEmpty)
+        XCTAssertEqual(core, beforeCore)
+        XCTAssertEqual(core.contentFingerprint, beforeFingerprint)
+        XCTAssertEqual(core.fingerprintRefreshCountForTesting, refreshCountBefore)
+    }
+
+    func testSettleDueRealSettleRecomputesFingerprintOnce() throws {
+        var core = try core(
+            imported: distribution([(12, 100)]),
+            status: .observed
+        )
+        let recordID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        _ = try core.startUpgrade(
+            itemKey: key,
+            fromLevel: 12,
+            targetLevel: 13,
+            quantity: 1,
+            startedAt: date(1_000),
+            durationState: .timed(seconds: 10),
+            frozenCosts: [cost()],
+            catalogProvenance: provenance,
+            baselineReference: baseline,
+            recordID: recordID,
+            now: date(1_000)
+        )
+        let beforeFingerprint = core.contentFingerprint
+        let refreshCountBefore = core.fingerprintRefreshCountForTesting
+
+        let settled = try core.settleDue(at: date(1_010))
+        XCTAssertEqual(settled.count, 1)
+        XCTAssertEqual(settled.first?.status, .completed)
+        XCTAssertNotEqual(core.contentFingerprint, beforeFingerprint)
+        XCTAssertEqual(core.fingerprintRefreshCountForTesting, refreshCountBefore + 1)
+    }
+
     func testContentFingerprintSurvivesCodableRoundTrip() throws {
         let core = try core(
             imported: try distribution([(1, 2)]), manual: .empty, status: .observed

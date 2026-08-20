@@ -873,6 +873,60 @@ extension AppModelTests {
 
         XCTAssertNotEqual(idsAfterLoad, idsAfterRebuild)
     }
+
+    /// Issue #221：load more 后 refresh 首屏，仍存在的行保留 row ID。
+    @MainActor
+    func testRefreshAfterLoadMorePreservesPrefixRowIDs() async throws {
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            let query = request.url?.query(percentEncoded: true) ?? ""
+            let body: Data
+            if query.contains("after=RAIDCURSORAFTER1") {
+                body = Data(#"{"items":[{"state":"ended","startTime":"20260617T080000.000Z","endTime":"20260619T080000.000Z","capitalTotalLoot":50000,"raidsCompleted":4,"totalAttacks":40,"enemyDistrictsDestroyed":80,"offensiveReward":3000,"defensiveReward":1000}],"paging":{"cursors":{"before":"B2","after":"RAIDCURSORAFTER2"}}}"#.utf8)
+            } else {
+                body = fullCapitalRaidPageData()
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertEqual(model.capitalRaidRows(for: "#CLANA").count, 3)
+
+        let prefixIDs = model.capitalRaidRows(for: "#CLANA").prefix(2).map(\.id)
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.capitalRaidRows(for: "#CLANA").count, 2)
+        XCTAssertEqual(model.capitalRaidRows(for: "#CLANA").map(\.id), Array(prefixIDs))
+    }
+
+    /// Issue #221：View 重复读取不应触发 reconcile/rebuild。
+    @MainActor
+    func testRepeatedCapitalRaidRowReadsDoNotRebuild() async throws {
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            _ = request
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        let first = model.capitalRaidRows(for: "#CLANA").map(\.id)
+        let second = model.capitalRaidRows(for: "#CLANA").map(\.id)
+        XCTAssertEqual(first, second)
+    }
 }
 
 // MARK: - P1-3 端到端（外部复核补充）

@@ -1876,10 +1876,13 @@ public final class AppModel: ObservableObject {
         clanCapitalStates[clanTag]
     }
 
-    /// 指定部落 tag 的突袭周末渲染行（Issue #221：缓存 lifecycle，View 不得重算 identity）。
+    /// 指定部落 tag 的突袭周末渲染行（Issue #221：只读状态转换阶段维护好的 cache）。
     public func capitalRaidRows(for clanTag: String) -> [CapitalRaidSeasonRow] {
+        if let cache = capitalRaidRowCaches[clanTag] {
+            return cache.rows
+        }
         guard let page = capitalState(for: clanTag)?.lastGood else { return [] }
-        return capitalRaidRowCache(for: clanTag).rows(for: page)
+        return capitalRaidRowCache(for: clanTag).apply(.initial(page: page))
     }
 
     /// 部落档案已知战争日志不公开（无档案/未知 → false）。

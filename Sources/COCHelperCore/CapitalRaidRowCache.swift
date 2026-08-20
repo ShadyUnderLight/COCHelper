@@ -6,7 +6,7 @@ import Foundation
 /// - load more 增量 append，旧行 ID 不变；
 /// - refresh 仅做可证明匹配并更新 payload；
 /// - duplicate/reorder 歧义时 bump generation 并 fail-closed 重建；
-/// - View 重复读取同一 page 时不重复分配 row wrapper。
+/// - View 只读取已维护好的 `rows`，不在 render path 重算或深比较 page。
 public final class CapitalRaidRowCache {
     /// 缓存更新语义（由 AppModel 在状态转换点调用）。
     public enum Update: Sendable {
@@ -27,22 +27,10 @@ public final class CapitalRaidRowCache {
     public private(set) var generation: UInt64 = 0
     public private(set) var rows: [CapitalRaidSeasonRow] = []
     public private(set) var buildCount = 0
-    public private(set) var hitCount = 0
 
     private var nextSequenceByTriple: [String: Int] = [:]
-    private var cachedPage: OfficialCapitalRaidPage?
 
     public init() {}
-
-    /// View 读取路径：同一 `OfficialCapitalRaidPage` 重复读取只计 hit，不重建。
-    public func rows(for page: OfficialCapitalRaidPage) -> [CapitalRaidSeasonRow] {
-        if let cachedPage, cachedPage == page {
-            hitCount += 1
-            return rows
-        }
-        _ = apply(.refreshSuccess(page: page))
-        return rows
-    }
 
     @discardableResult
     public func apply(_ update: Update) -> [CapitalRaidSeasonRow] {
@@ -53,25 +41,15 @@ public final class CapitalRaidRowCache {
             generation = 0
             rows = []
             nextSequenceByTriple = [:]
-            cachedPage = nil
             return rows
         case .initial(let page), .parserRebuild(let page):
             resetAndBuild(from: page.items)
-            cachedPage = page
             return rows
         case .refreshSuccess(let page):
-            if let cachedPage, cachedPage == page {
-                return rows
-            }
             reconcileRefresh(with: page.items)
-            cachedPage = page
             return rows
         case .loadMoreSuccess(let page):
-            if let cachedPage, cachedPage == page {
-                return rows
-            }
             reconcileLoadMore(with: page.items)
-            cachedPage = page
             return rows
         }
     }
@@ -84,6 +62,13 @@ public final class CapitalRaidRowCache {
             return
         }
         if seasons.count < rows.count {
+            let oldPrefix = Array(rows.prefix(seasons.count))
+            if canSafelyReconcile(oldRows: oldPrefix, newSeasons: seasons) {
+                rows = matchedRows(oldRows: oldPrefix, newSeasons: seasons)
+                syncNextSequenceFromRows()
+                buildCount += 1
+                return
+            }
             resetAndBuild(from: seasons)
             return
         }
@@ -146,6 +131,21 @@ public final class CapitalRaidRowCache {
         return CapitalRaidSeasonRow(id: id, season: season)
     }
 
+    private func syncNextSequenceFromRows() {
+        nextSequenceByTriple = [:]
+        for row in rows {
+            let tripleKey = CapitalRaidRowIdentity.tripleKey(for: row.season)
+            guard let seq = parseSequence(from: row.id) else { continue }
+            nextSequenceByTriple[tripleKey] = max(nextSequenceByTriple[tripleKey, default: 0], seq + 1)
+        }
+    }
+
+    private func parseSequence(from id: String) -> Int? {
+        guard let hashIndex = id.lastIndex(of: "#") else { return nil }
+        let suffix = id[id.index(after: hashIndex)...]
+        return Int(suffix)
+    }
+
     private func positionalTripleMatch(
         _ oldRows: [CapitalRaidSeasonRow],
         _ newSeasons: [OfficialCapitalRaidSeason]
@@ -169,56 +169,83 @@ public final class CapitalRaidRowCache {
         return counts
     }
 
+    /// 可证明匹配时返回 new 顺序下的旧 row ID；歧义时 nil（fail-closed）。
     private func canSafelyReconcile(
         oldRows: [CapitalRaidSeasonRow],
         newSeasons: [OfficialCapitalRaidSeason]
     ) -> Bool {
-        guard oldRows.count == newSeasons.count else { return false }
-
-        let oldTriples = oldRows.map { CapitalRaidRowIdentity.tripleKey(for: $0.season) }
-        let newTriples = newSeasons.map { CapitalRaidRowIdentity.tripleKey(for: $0) }
-        guard oldTriples == newTriples else {
-            let oldCounts = tripleKeyCounts(for: oldRows.map(\.season))
-            let newCounts = tripleKeyCounts(for: newSeasons)
-            guard oldCounts == newCounts else { return false }
-            return oldCounts.values.allSatisfy { $0 == 1 }
-        }
-
-        let hasDuplicateTriples = tripleKeyCounts(for: newSeasons).values.contains { $0 > 1 }
-        guard hasDuplicateTriples else { return true }
-
-        // duplicate triple：若新位置的数据与另一旧行完全一致，视为重排/歧义 → fail-closed。
-        for index in newSeasons.indices {
-            if oldRows[index].season == newSeasons[index] { continue }
-            let moved = oldRows.enumerated().contains { otherIndex, row in
-                otherIndex != index
-                    && CapitalRaidRowIdentity.tripleKey(for: row.season)
-                        == CapitalRaidRowIdentity.tripleKey(for: newSeasons[index])
-                    && row.season == newSeasons[index]
-            }
-            if moved { return false }
-        }
-        return true
+        matchRowIDs(oldRows: oldRows, newSeasons: newSeasons) != nil
     }
 
     private func matchedRows(
         oldRows: [CapitalRaidSeasonRow],
         newSeasons: [OfficialCapitalRaidSeason]
     ) -> [CapitalRaidSeasonRow] {
-        let oldTriples = oldRows.map { CapitalRaidRowIdentity.tripleKey(for: $0.season) }
-        let newTriples = newSeasons.map { CapitalRaidRowIdentity.tripleKey(for: $0) }
-        if oldTriples == newTriples {
-            return zip(oldRows, newSeasons).map { CapitalRaidSeasonRow(id: $0.id, season: $1) }
+        guard let ids = matchRowIDs(oldRows: oldRows, newSeasons: newSeasons) else {
+            return newSeasons.map { CapitalRaidSeasonRow(id: makeRow(for: $0).id, season: $0) }
+        }
+        return zip(ids, newSeasons).map { CapitalRaidSeasonRow(id: $0, season: $1) }
+    }
+
+    /// duplicate-triple group：先锚定完全相等的 entry，再处理 1↔1 剩余；2+↔2+ 视为歧义。
+    private func matchRowIDs(
+        oldRows: [CapitalRaidSeasonRow],
+        newSeasons: [OfficialCapitalRaidSeason]
+    ) -> [String]? {
+        guard oldRows.count == newSeasons.count else { return nil }
+        guard tripleKeyCounts(for: oldRows.map(\.season)) == tripleKeyCounts(for: newSeasons) else {
+            return nil
         }
 
-        var idByTriple: [String: String] = [:]
-        for row in oldRows {
-            idByTriple[CapitalRaidRowIdentity.tripleKey(for: row.season)] = row.id
+        var oldByTriple: [String: [(index: Int, row: CapitalRaidSeasonRow)]] = [:]
+        var newByTriple: [String: [(index: Int, season: OfficialCapitalRaidSeason)]] = [:]
+        for (index, row) in oldRows.enumerated() {
+            let key = CapitalRaidRowIdentity.tripleKey(for: row.season)
+            oldByTriple[key, default: []].append((index, row))
         }
-        return newSeasons.map { season in
-            let tripleKey = CapitalRaidRowIdentity.tripleKey(for: season)
-            let id = idByTriple[tripleKey] ?? makeRow(for: season).id
-            return CapitalRaidSeasonRow(id: id, season: season)
+        for (index, season) in newSeasons.enumerated() {
+            let key = CapitalRaidRowIdentity.tripleKey(for: season)
+            newByTriple[key, default: []].append((index, season))
         }
+
+        var assignment: [Int: String] = [:]
+
+        for triple in oldByTriple.keys.sorted() {
+            guard let oldGroup = oldByTriple[triple], let newGroup = newByTriple[triple] else {
+                return nil
+            }
+            guard oldGroup.count == newGroup.count else { return nil }
+
+            if oldGroup.count == 1 {
+                assignment[newGroup[0].index] = oldGroup[0].row.id
+                continue
+            }
+
+            var unmatchedOld = oldGroup
+            var unmatchedNew = newGroup
+
+            var newIndex = 0
+            while newIndex < unmatchedNew.count {
+                let newEntry = unmatchedNew[newIndex]
+                if let oldIndex = unmatchedOld.firstIndex(where: { $0.row.season == newEntry.season }) {
+                    assignment[newEntry.index] = unmatchedOld[oldIndex].row.id
+                    unmatchedOld.remove(at: oldIndex)
+                    unmatchedNew.remove(at: newIndex)
+                } else {
+                    newIndex += 1
+                }
+            }
+
+            if unmatchedOld.count == 1, unmatchedNew.count == 1 {
+                assignment[unmatchedNew[0].index] = unmatchedOld[0].row.id
+                continue
+            }
+            if !unmatchedOld.isEmpty {
+                return nil
+            }
+        }
+
+        guard assignment.count == newSeasons.count else { return nil }
+        return newSeasons.indices.map { assignment[$0]! }
     }
 }

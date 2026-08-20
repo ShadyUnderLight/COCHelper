@@ -123,16 +123,38 @@ final class CapitalRaidRowCacheTests: XCTestCase {
         XCTAssertFalse(oldIDs.contains(cache.rows[0].id), "新插入行不得复用旧 ID")
     }
 
-    func testDuplicateTripleReorderResetsGeneration() {
+    func testDuplicateTriplePureReorderPreservesIdentityViaAnchors() {
         let cache = CapitalRaidRowCache()
         let a = makeSeason(loot: 100_000)
         let b = makeSeason(loot: 100_500)
         cache.apply(.initial(page: makePage([a, b])))
+        let idA = cache.rows[0].id
+        let idB = cache.rows[1].id
         let generationBefore = cache.generation
 
         cache.apply(.refreshSuccess(page: makePage([b, a])))
 
+        XCTAssertEqual(cache.generation, generationBefore, "payload 未变的纯重排可通过锚点安全匹配")
+        XCTAssertEqual(cache.rows[0].id, idB)
+        XCTAssertEqual(cache.rows[1].id, idA)
+    }
+
+    func testDuplicateReorderWithDetailChangesResetsGeneration() {
+        let cache = CapitalRaidRowCache()
+        let a = makeSeason(loot: 100_000)
+        let b = makeSeason(loot: 200_000)
+        cache.apply(.initial(page: makePage([a, b])))
+        let idA = cache.rows[0].id
+        let idB = cache.rows[1].id
+        let generationBefore = cache.generation
+
+        let bPrime = makeSeason(loot: 201_000)
+        let aPrime = makeSeason(loot: 101_000)
+        cache.apply(.refreshSuccess(page: makePage([bPrime, aPrime])))
+
         XCTAssertGreaterThan(cache.generation, generationBefore)
+        XCTAssertNotEqual(cache.rows[0].id, idA, "B' 不得得到 A 的旧 ID")
+        XCTAssertNotEqual(cache.rows[1].id, idB, "A' 不得得到 B 的旧 ID")
     }
 
     func testUniqueTripleReorderPreservesIdentity() {
@@ -195,30 +217,38 @@ final class CapitalRaidRowCacheTests: XCTestCase {
         XCTAssertGreaterThan(cache.generation, generationBefore)
     }
 
-    func testRepeatedReadHitsCacheWithoutRebuild() {
+    func testRepeatedRowReadsDoNotRebuild() {
         let cache = CapitalRaidRowCache()
         let page = makePage([makeSeason()])
         cache.apply(.initial(page: page))
         let buildAfterUpdate = cache.buildCount
-        _ = cache.rows(for: page)
-        _ = cache.rows(for: page)
+        _ = cache.rows
+        _ = cache.rows
         XCTAssertEqual(cache.buildCount, buildAfterUpdate)
-        XCTAssertEqual(cache.hitCount, 2)
     }
 
-    func testRefreshReplacingAccumulatedListResetsGeneration() {
+    func testRefreshAfterLoadMorePreservesPrefixIDs() {
         let cache = CapitalRaidRowCache()
-        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z")
-        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z")
-        cache.apply(.initial(page: makePage([a, b])))
-        cache.apply(.loadMoreSuccess(page: makePage([a, b, makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z")])))
-        XCTAssertEqual(cache.rows.count, 3)
+        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        let d = makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 400_000)
+        cache.apply(.initial(page: makePage([a, b], after: "CURSOR")))
+        cache.apply(.loadMoreSuccess(page: makePage([a, b, c, d], after: nil)))
+        XCTAssertEqual(cache.rows.count, 4)
+        let idA = cache.rows[0].id
+        let idB = cache.rows[1].id
         let generationBefore = cache.generation
 
-        cache.apply(.refreshSuccess(page: makePage([a])))
+        let aPrime = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 111_111)
+        let bPrime = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 222_222)
+        cache.apply(.refreshSuccess(page: makePage([aPrime, bPrime], after: "CURSOR")))
 
-        XCTAssertGreaterThan(cache.generation, generationBefore)
-        XCTAssertEqual(cache.rows.count, 1)
+        XCTAssertEqual(cache.generation, generationBefore, "首屏 refresh 不应仅因列表缩短而 bump generation")
+        XCTAssertEqual(cache.rows.count, 2)
+        XCTAssertEqual(cache.rows[0].id, idA)
+        XCTAssertEqual(cache.rows[1].id, idB)
+        XCTAssertEqual(cache.rows[0].season.capitalTotalLoot, 111_111)
     }
 
     func testViewDoesNotCallRowIdentityBuilder() throws {

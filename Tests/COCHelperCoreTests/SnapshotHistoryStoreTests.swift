@@ -229,8 +229,10 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let reloadedHeroes = try XCTUnwrap(
             decodedEntry.coverage.section(base: .home, rawSection: "heroes")
         )
+        XCTAssertEqual(reloadedHeroes.runtimeTrust, .trusted)
+        XCTAssertTrue(reloadedHeroes.opensTrustGates)
         if case .verified(let evidence) = reloadedHeroes.proof {
-            XCTAssertEqual(evidence.runtimeWitness, .moduleIssued, "load 后应通过 persisted revalidation 恢复 trust")
+            XCTAssertNil(evidence.runtimeWitness, "witness 仍不序列化；runtime trust 在 section 层")
             if case .verified(let liveEvidence) = liveHeroes.proof {
                 XCTAssertEqual(evidence.inputBinding, liveEvidence.inputBinding)
             }
@@ -275,7 +277,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let heroes = try XCTUnwrap(decoded.coverage.section(base: .home, rawSection: "heroes"))
         if case .verified(let evidence) = heroes.proof {
             XCTAssertNil(evidence.runtimeWitness, "裸 decode 不得直接恢复 runtime witness")
-            XCTAssertEqual(evidence.persistedTrust, .pendingRevalidation)
+            XCTAssertEqual(heroes.runtimeTrust, .pending)
+            XCTAssertEqual(heroes.verifiedPersistedTrust, .pendingRevalidation)
         } else {
             XCTFail("wire metadata 应保留")
         }
@@ -300,23 +303,29 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )?.proof else {
             return XCTFail("expected verified proof")
         }
-        let tampered: SnapshotCoverageProof = .verified(
-            VerifiedCoverageEvidence(
-                decodedWire: evidence.source,
-                adapterID: evidence.adapterID,
-                protocolVersion: evidence.protocolVersion,
-                expectedCount: evidence.expectedCount,
-                verificationReason: evidence.verificationReason,
-                verificationRuleVersion: evidence.verificationRuleVersion,
-                inputBinding: "sha256:deadbeef"
-            )
-        )
-        let result = SnapshotCoverageVerifier.revalidatePersistedProof(
-            tampered,
+        let trust = SnapshotCoverageProofRevalidators.revalidate(
+            evidence: evidence,
             rawJSON: text,
-            section: "heroes"
+            section: "heroes",
+            policy: .testsAllowTestFixture
         )
-        if case .unavailable = result {
+        XCTAssertEqual(trust, .trusted)
+        let tamperedEvidence = VerifiedCoverageEvidence(
+            decodedWire: evidence.source,
+            adapterID: evidence.adapterID,
+            protocolVersion: evidence.protocolVersion,
+            expectedCount: evidence.expectedCount,
+            verificationReason: evidence.verificationReason,
+            verificationRuleVersion: evidence.verificationRuleVersion,
+            inputBinding: "sha256:deadbeef"
+        )
+        let tamperedTrust = SnapshotCoverageProofRevalidators.revalidate(
+            evidence: tamperedEvidence,
+            rawJSON: text,
+            section: "heroes",
+            policy: .testsAllowTestFixture
+        )
+        if case .rejected = tamperedTrust {
             XCTAssertTrue(true)
         } else {
             XCTFail("篡改 binding 后 revalidation 必须 fail-closed")
@@ -328,17 +337,185 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         {"kind":"verified","source":"test-export","adapterID":"test-fixture","protocolVersion":"1","expectedCount":1,"verificationReason":"legacy"}
         """.data(using: .utf8)!
         let proof = try JSONDecoder().decode(SnapshotCoverageProof.self, from: json)
-        let result = SnapshotCoverageVerifier.revalidatePersistedProof(
-            proof,
-            rawJSON: "{\"heroes\":[{\"data\":1,\"lvl\":1}]}",
-            section: "heroes"
-        )
-        if case .verified(let evidence) = result {
-            XCTAssertNil(evidence.runtimeWitness)
-            XCTAssertFalse(result.isVerified)
-        } else {
-            XCTFail("legacy wire metadata 应保留为 verified 形态但不恢复 trust")
+        guard case .verified(let evidence) = proof else {
+            return XCTFail("expected verified wire")
         }
+        let trust = SnapshotCoverageProofRevalidators.revalidate(
+            evidence: evidence,
+            rawJSON: "{\"heroes\":[{\"data\":1,\"lvl\":1}]}",
+            section: "heroes",
+            policy: .testsAllowTestFixture
+        )
+        if case .rejected = trust {
+            XCTAssertTrue(true)
+        } else {
+            XCTFail("legacy wire 缺 persisted 材料不得恢复 trust")
+        }
+        XCTAssertFalse(proof.isVerified)
+    }
+
+    func testProductionLoadRejectsTestFixtureVerifiedHistoryEvenWithValidBinding() throws {
+        let text = "{\"tag\":\"#ABC123\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: "#ABC123", text: text),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proof
+        )
+        let raw = try JSONEncoder().encode(entry)
+        let decodedEntry = try JSONDecoder().decode(SnapshotHistoryEntry.self, from: raw)
+        let envelope = try SnapshotHistoryEnvelope(
+            entries: [decodedEntry],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: entry.villageID,
+                    lineageID: entry.lineageID,
+                    normalizedPlayerTag: entry.normalizedPlayerTag,
+                    lastEntryID: entry.snapshotID,
+                    lastFingerprint: entry.canonicalFingerprint,
+                    lastAppliedAt: entry.appliedAt,
+                    hasConflict: false
+                )
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: Date(timeIntervalSince1970: 1))
+        ).validated()
+        let hydrated = envelope.hydratingVerifiedCoverage(policy: .production)
+        let heroes = try XCTUnwrap(
+            hydrated.entries.first?.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertTrue(heroes.proof.hasVerifiedWireMetadata)
+        XCTAssertFalse(heroes.opensTrustGates)
+        if case .rejected = heroes.runtimeTrust {
+            XCTAssertTrue(true)
+        } else {
+            XCTFail("production load 不得信任 test-fixture verified metadata")
+        }
+    }
+
+    func testProductionLoadRejectsForgedPerfFixtureWithoutBundledProvenance() throws {
+        let text = "{\"tag\":\"#ABC123\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let binding = try XCTUnwrap(
+            SnapshotCoverageTrustHydration.sectionInputBinding(rawJSON: text, section: "heroes")
+        )
+        let proof: SnapshotCoverageProof = .verified(
+            VerifiedCoverageEvidence(
+                decodedWire: SnapshotCoverageVerifier.perfFixtureAdapterID,
+                adapterID: SnapshotCoverageVerifier.perfFixtureAdapterID,
+                protocolVersion: "1",
+                expectedCount: 1,
+                verificationReason: "bundled perf fixture",
+                verificationRuleVersion: "1",
+                inputBinding: binding
+            )
+        )
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: "#ABC123", text: text),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: [:]
+        )
+        let forgedCoverage = SnapshotObservationCoverage(
+            schemaVersion: entry.coverage.schemaVersion,
+            fields: entry.coverage.fields,
+            sections: entry.coverage.sections.map { section in
+                guard section.rawSection == "heroes" else { return section }
+                return SnapshotSectionCoverage(
+                    base: section.base,
+                    rawSection: section.rawSection,
+                    presence: .presentNonEmpty,
+                    completeness: .complete,
+                    proof: proof,
+                    observedCount: 1
+                )
+            },
+            diagnostics: entry.coverage.diagnostics
+        )
+        let forgedEntry = SnapshotHistoryEntry(
+            schemaVersion: entry.schemaVersion,
+            observationVersion: entry.observationVersion,
+            fingerprintVersion: entry.fingerprintVersion,
+            integrityVersion: entry.integrityVersion,
+            snapshotID: entry.snapshotID,
+            villageID: entry.villageID,
+            lineageID: entry.lineageID,
+            normalizedPlayerTag: entry.normalizedPlayerTag,
+            appliedAt: entry.appliedAt,
+            sourceTimestamp: entry.sourceTimestamp,
+            parserVersion: entry.parserVersion,
+            canonicalFingerprint: entry.canonicalFingerprint,
+            rawJSON: text,
+            observation: entry.observation,
+            coverage: forgedCoverage,
+            isBaseline: entry.isBaseline,
+            baselineReason: entry.baselineReason,
+            timerSchema: entry.timerSchema
+        )
+        let raw = try JSONEncoder().encode(forgedEntry)
+        let decodedEntry = try JSONDecoder().decode(SnapshotHistoryEntry.self, from: raw)
+        let envelope = try SnapshotHistoryEnvelope(
+            entries: [decodedEntry],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: forgedEntry.villageID,
+                    lineageID: forgedEntry.lineageID,
+                    normalizedPlayerTag: forgedEntry.normalizedPlayerTag,
+                    lastEntryID: forgedEntry.snapshotID,
+                    lastFingerprint: forgedEntry.canonicalFingerprint,
+                    lastAppliedAt: forgedEntry.appliedAt,
+                    hasConflict: false
+                )
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: Date(timeIntervalSince1970: 1))
+        ).validated()
+        let hydrated = envelope.hydratingVerifiedCoverage(policy: .production)
+        let heroes = try XCTUnwrap(
+            hydrated.entries.first?.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertFalse(heroes.opensTrustGates)
+        if case .rejected = heroes.runtimeTrust {
+            XCTAssertTrue(true)
+        } else {
+            XCTFail("非 bundled perf fixture 不得恢复 perf-fixture trust")
+        }
+    }
+
+    func testFailedProductionRevalidationPreservesPersistedEvidenceAndSaveRoundTrip() throws {
+        let store = TestSnapshotHistoryStore()
+        let villageID = UUID()
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let live = try SnapshotHistoryService(store: store).loadOrMigrate(
+            villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: snapshot(tag: firstTag, text: text))],
+            now: Date(timeIntervalSince1970: 1),
+            sectionProofs: [villageID: proof]
+        )
+        try store.save(live)
+        let raw = try XCTUnwrap(store.readRawData())
+        let decodedEnvelope = try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: raw).validated()
+        let productionHydrated = decodedEnvelope.hydratingVerifiedCoverage(policy: .production)
+        let heroes = try XCTUnwrap(
+            productionHydrated.entries.first?.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertTrue(heroes.proof.hasVerifiedWireMetadata)
+        XCTAssertFalse(heroes.opensTrustGates)
+        try store.save(productionHydrated)
+        let reloaded = try XCTUnwrap(try store.load())
+        XCTAssertEqual(
+            reloaded.entries.first?.integrityFingerprint,
+            productionHydrated.entries.first?.integrityFingerprint
+        )
+        let testReloadedHeroes = try XCTUnwrap(
+            reloaded.entries.first?.coverage.section(base: .home, rawSection: "heroes")
+        )
+        XCTAssertEqual(testReloadedHeroes.runtimeTrust, .trusted)
+        XCTAssertTrue(testReloadedHeroes.opensTrustGates)
     }
 
     func testTimerSchemaVersionChangeAppendsAndKeepsOldEntryImmutable() throws {

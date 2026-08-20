@@ -2344,7 +2344,20 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
             sectionProofs: proofEmpty
         )
-        let liveDiff = SnapshotDiffEngine.compare(from: oldEntry, to: emptyEntry)
+        func postLoadEntry(_ entry: SnapshotHistoryEntry) throws -> SnapshotHistoryEntry {
+            let decoded = try JSONDecoder().decode(
+                SnapshotHistoryEntry.self,
+                from: try JSONEncoder().encode(entry)
+            )
+            return SnapshotCoverageTrustHydration.hydrate(
+                entry: decoded,
+                policy: .testsAllowTestFixture
+            )
+        }
+        let liveDiff = SnapshotDiffEngine.compare(
+            from: try postLoadEntry(oldEntry),
+            to: try postLoadEntry(emptyEntry)
+        )
         var envelope = SnapshotHistoryEnvelope(
             entries: [oldEntry, emptyEntry],
             lineages: [

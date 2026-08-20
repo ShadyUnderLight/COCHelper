@@ -359,7 +359,12 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
 
     /// Whether this proof may open destructive absence/quantity inference gates.
     public var isVerified: Bool {
-        SnapshotCoverageVerifier.validatesVerifiedProof(self)
+        SnapshotCoverageVerifier.validatesModuleIssuedProof(self)
+    }
+
+    /// Persisted verified wire metadata (not sufficient alone for trust gates).
+    public var hasVerifiedWireMetadata: Bool {
+        SnapshotCoverageVerifier.isWellFormedVerifiedWireProof(self)
     }
 
     /// Whether a declaration is syntactically well-formed (not the same as verified).
@@ -411,6 +416,8 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
     public let completeness: SnapshotCoverageState
     public let proof: SnapshotCoverageProof
     public let observedCount: Int
+    /// Runtime trust; not serialized and excluded from duplicate / integrity identity.
+    package var runtimeTrust: SectionCoverageRuntimeTrust
 
     public init(
         base: SnapshotHistoryBase,
@@ -418,7 +425,8 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
         presence: SnapshotSectionPresence,
         completeness: SnapshotCoverageState,
         proof: SnapshotCoverageProof,
-        observedCount: Int
+        observedCount: Int,
+        runtimeTrust: SectionCoverageRuntimeTrust? = nil
     ) {
         self.base = base
         self.rawSection = rawSection
@@ -426,20 +434,100 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
         self.completeness = completeness
         self.proof = proof
         self.observedCount = max(0, observedCount)
+        if let runtimeTrust {
+            self.runtimeTrust = runtimeTrust
+        } else {
+            self.runtimeTrust = Self.defaultRuntimeTrust(for: proof)
+        }
     }
 
     public var id: String {
         [base.rawValue, rawSection].map { String($0.utf8.count) + ":" + $0 }.joined(separator: "|")
     }
 
-    public var isComplete: Bool {
-        completeness == .complete && proof.isVerified
+    public var opensTrustGates: Bool {
+        proof.hasVerifiedWireMetadata && runtimeTrust.opensTrustGates
     }
 
-    /// Issue #224: wire completeness vs runtime trust for verified sections.
+    public var isComplete: Bool {
+        completeness == .complete && opensTrustGates
+    }
+
+    /// Issue #224: persisted wire metadata vs runtime trust.
     public var verifiedPersistedTrust: VerifiedCoveragePersistedTrust? {
-        guard case .verified(let evidence) = proof else { return nil }
-        return evidence.persistedTrust
+        guard proof.hasVerifiedWireMetadata else { return nil }
+        switch runtimeTrust {
+        case .trusted:
+            return .runtimeTrusted
+        case .pending:
+            return .pendingRevalidation
+        case .rejected:
+            return .insufficientPersistedEvidence
+        case .notApplicable:
+            return .insufficientPersistedEvidence
+        }
+    }
+
+    package static func defaultRuntimeTrust(for proof: SnapshotCoverageProof) -> SectionCoverageRuntimeTrust {
+        switch proof {
+        case .verified(let evidence):
+            if evidence.runtimeWitness == .moduleIssued {
+                return .trusted
+            }
+            return .pending
+        default:
+            return .notApplicable
+        }
+    }
+
+    public static func == (lhs: SnapshotSectionCoverage, rhs: SnapshotSectionCoverage) -> Bool {
+        lhs.base == rhs.base
+            && lhs.rawSection == rhs.rawSection
+            && lhs.presence == rhs.presence
+            && lhs.completeness == rhs.completeness
+            && lhs.proof == rhs.proof
+            && lhs.observedCount == rhs.observedCount
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(base)
+        hasher.combine(rawSection)
+        hasher.combine(presence)
+        hasher.combine(completeness)
+        hasher.combine(proof)
+        hasher.combine(observedCount)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case base
+        case rawSection
+        case presence
+        case completeness
+        case proof
+        case observedCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let proof = try container.decode(SnapshotCoverageProof.self, forKey: .proof)
+        self.init(
+            base: try container.decode(SnapshotHistoryBase.self, forKey: .base),
+            rawSection: try container.decode(String.self, forKey: .rawSection),
+            presence: try container.decode(SnapshotSectionPresence.self, forKey: .presence),
+            completeness: try container.decode(SnapshotCoverageState.self, forKey: .completeness),
+            proof: proof,
+            observedCount: try container.decode(Int.self, forKey: .observedCount)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(base, forKey: .base)
+        try container.encode(rawSection, forKey: .rawSection)
+        try container.encode(presence, forKey: .presence)
+        try container.encode(completeness, forKey: .completeness)
+        try container.encode(proof, forKey: .proof)
+        try container.encode(observedCount, forKey: .observedCount)
     }
 }
 

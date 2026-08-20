@@ -465,11 +465,15 @@ final class SnapshotHistoryCoreTests: XCTestCase {
 
         let encodedEntry = try JSONEncoder().encode(withProof)
         let decodedEntry = try JSONDecoder().decode(SnapshotHistoryEntry.self, from: encodedEntry)
-        let hydratedEntry = SnapshotCoverageTrustHydration.hydrate(entry: decodedEntry)
+        let hydratedEntry = SnapshotCoverageTrustHydration.hydrate(
+            entry: decodedEntry,
+            policy: .testsAllowTestFixture
+        )
         let hydratedSection = try XCTUnwrap(
             hydratedEntry.coverage.section(base: .home, rawSection: "heroes")
         )
-        XCTAssertTrue(hydratedSection.isComplete)
+        XCTAssertEqual(hydratedSection.runtimeTrust, .trusted)
+        XCTAssertTrue(hydratedSection.opensTrustGates)
 
         let invalid = try canonicalize(
             makeRawSnapshot("{\"heroes\":{}}")

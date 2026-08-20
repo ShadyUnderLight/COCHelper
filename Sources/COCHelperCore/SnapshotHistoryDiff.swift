@@ -44,6 +44,8 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
     public let toSectionCompleteness: SnapshotCoverageState
     public let fromProof: SnapshotCoverageProof?
     public let toProof: SnapshotCoverageProof?
+    public let fromTrustTrusted: Bool
+    public let toTrustTrusted: Bool
     public let fromFieldStates: [String: SnapshotCoverageState]
     public let toFieldStates: [String: SnapshotCoverageState]
     public let fromObservedItemCount: Int
@@ -60,6 +62,8 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
         toSectionCompleteness: SnapshotCoverageState = .unavailable,
         fromProof: SnapshotCoverageProof? = nil,
         toProof: SnapshotCoverageProof? = nil,
+        fromTrustTrusted: Bool = false,
+        toTrustTrusted: Bool = false,
         fromFieldStates: [String: SnapshotCoverageState] = [:],
         toFieldStates: [String: SnapshotCoverageState] = [:],
         fromObservedItemCount: Int = 0,
@@ -75,6 +79,8 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
         self.toSectionCompleteness = toSectionCompleteness
         self.fromProof = fromProof
         self.toProof = toProof
+        self.fromTrustTrusted = fromTrustTrusted
+        self.toTrustTrusted = toTrustTrusted
         self.fromFieldStates = fromFieldStates
         self.toFieldStates = toFieldStates
         self.fromObservedItemCount = fromObservedItemCount
@@ -90,15 +96,15 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
             fromDataState == .complete && toDataState == .complete &&
             fromSectionCompleteness == .complete &&
             toSectionCompleteness == .complete &&
-            fromProof?.isVerified == true &&
-            toProof?.isVerified == true
+            fromTrustTrusted &&
+            toTrustTrusted
     }
 
     public func isComplete(for fields: Set<String>) -> Bool {
         guard fromSectionCompleteness == .complete,
               toSectionCompleteness == .complete,
-              fromProof?.isVerified == true,
-              toProof?.isVerified == true else {
+              fromTrustTrusted,
+              toTrustTrusted else {
             return false
         }
         return fields.allSatisfy {
@@ -164,8 +170,8 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
     fileprivate var isNotApplicableForMetrics: Bool {
         guard fromSectionCompleteness == .complete,
               toSectionCompleteness == .complete,
-              fromProof?.isVerified == true,
-              toProof?.isVerified == true,
+              fromTrustTrusted,
+              toTrustTrusted,
               fromObservedItemCount == 0,
               toObservedItemCount == 0,
               let fromProof,
@@ -1669,6 +1675,8 @@ public enum SnapshotDiffEngine {
     ) -> [SnapshotDiffSectionCoverage] {
         SnapshotHistoryKnownSections.all.sorted().map { section in
             let base = SnapshotHistoryBase(section: section)
+            let fromSection = from.coverage.section(base: base, rawSection: section)
+            let toSection = to.coverage.section(base: base, rawSection: section)
             return SnapshotDiffSectionCoverage(
                 base: base,
                 rawSection: section,
@@ -1676,10 +1684,12 @@ public enum SnapshotDiffEngine {
                 toState: to.coverage.state(base: base, rawSection: section, field: "presence") ?? .unavailable,
                 fromDataState: from.coverage.state(base: base, rawSection: section, field: "data") ?? .unavailable,
                 toDataState: to.coverage.state(base: base, rawSection: section, field: "data") ?? .unavailable,
-                fromSectionCompleteness: from.coverage.section(base: base, rawSection: section)?.completeness ?? .unavailable,
-                toSectionCompleteness: to.coverage.section(base: base, rawSection: section)?.completeness ?? .unavailable,
-                fromProof: from.coverage.section(base: base, rawSection: section)?.proof,
-                toProof: to.coverage.section(base: base, rawSection: section)?.proof,
+                fromSectionCompleteness: fromSection?.completeness ?? .unavailable,
+                toSectionCompleteness: toSection?.completeness ?? .unavailable,
+                fromProof: fromSection?.proof,
+                toProof: toSection?.proof,
+                fromTrustTrusted: fromSection?.opensTrustGates ?? false,
+                toTrustTrusted: toSection?.opensTrustGates ?? false,
                 fromFieldStates: Dictionary(uniqueKeysWithValues: (Array(SnapshotHistoryKnownSections.itemFields) + ["presence"]).map {
                     ($0, from.coverage.state(base: base, rawSection: section, field: $0) ?? .unavailable)
                 }),

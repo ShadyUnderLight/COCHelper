@@ -31,7 +31,7 @@ final class TestSnapshotHistoryStore: SnapshotHistoryStore, @unchecked Sendable 
         do {
             return try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: rawData)
                 .validated()
-                .hydratingVerifiedCoverage()
+                .hydratingVerifiedCoverage(policy: .testsAllowTestFixture)
         } catch let error as SnapshotHistoryStoreError {
             throw error
         } catch {

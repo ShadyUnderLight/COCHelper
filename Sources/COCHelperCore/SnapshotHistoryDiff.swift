@@ -2337,73 +2337,37 @@ private struct MetricAccumulators {
     private mutating func markComparable(for diff: SnapshotDiff) {
         let hasSectionCoverage = !diff.sectionCoverage.isEmpty
         let applicability = MetricApplicabilityEvaluator(sectionCoverage: diff.sectionCoverage)
-        // 只有带 levelDelta 的 level migration/completion 类 change 才能支撑
-        // 等级/数量指标的 comparability；timer-only 的 upgradeStarted/
-        // timerChanged/timerEndedObserved 只支撑事件数，不能单独让缺少
-        // level/count 证据的 metric 变成可用 0。
-        func hasLevelCountEvidence(_ metricCategory: SnapshotMetricCategory) -> Bool {
-            diff.changes.contains { change in
-                guard change.evidence != .unknown else { return false }
-                guard change.levelDelta != nil else { return false }
-                return MetricAccumulators.category(for: change) == metricCategory
-            }
-        }
         let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
         let wallSections: Set<String> = ["buildings", "buildings2"]
         let heroSections: Set<String> = ["heroes", "heroes2"]
         let troopSections: Set<String> = ["units", "units2"]
         let levelFields: Set<String> = ["presence", "data", "lvl"]
         let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
-        let buildingHistogramComplete = applicability.universeSatisfied(
-            sections: buildingSections,
-            fields: histogramFields
-        )
-        let wallHistogramComplete = applicability.universeSatisfied(
-            sections: wallSections,
-            fields: histogramFields
-        )
-        let heroComplete = applicability.universeSatisfied(
-            sections: heroSections,
-            fields: levelFields
-        )
-        let troopComplete = applicability.universeSatisfied(
-            sections: troopSections,
-            fields: levelFields
-        )
-        let spellComplete = applicability.universeSatisfied(
-            sections: ["spells"],
-            fields: levelFields
-        )
-        let petComplete = applicability.universeSatisfied(
-            sections: ["pets"],
-            fields: levelFields
-        )
-        let equipmentComplete = applicability.universeSatisfied(
-            sections: ["equipment"],
-            fields: levelFields
-        )
-        func shouldMark(_ complete: Bool, _ metricCategory: SnapshotMetricCategory) -> Bool {
-            // A directly observed unique level change can be counted from
-            // field evidence alone.  Section proof is still mandatory for
-            // absence-based and histogram changes, which the Diff engine emits
-            // as unknown when the universe is not proven complete.
-            complete || hasLevelCountEvidence(metricCategory)
-        }
-        if shouldMark(buildingHistogramComplete, .building) {
+        if applicability.universeSatisfied(sections: buildingSections, fields: histogramFields) {
             buildingCompletions.markComparable()
             aggregateBuildingCompletions.markComparable()
             buildingGrowth.markComparable()
             aggregateBuildingGrowth.markComparable()
         }
-        if shouldMark(wallHistogramComplete, .wall) {
+        if applicability.universeSatisfied(sections: wallSections, fields: histogramFields) {
             wallGrowth.markComparable()
             aggregateWallGrowth.markComparable()
         }
-        if shouldMark(heroComplete, .hero) { heroGrowth.markComparable() }
-        if shouldMark(troopComplete, .troop) { troopGrowth.markComparable() }
-        if shouldMark(spellComplete, .spell) { spellGrowth.markComparable() }
-        if shouldMark(petComplete, .pet) { petGrowth.markComparable() }
-        if shouldMark(equipmentComplete, .equipment) { equipmentGrowth.markComparable() }
+        if applicability.universeSatisfied(sections: heroSections, fields: levelFields) {
+            heroGrowth.markComparable()
+        }
+        if applicability.universeSatisfied(sections: troopSections, fields: levelFields) {
+            troopGrowth.markComparable()
+        }
+        if applicability.universeSatisfied(sections: ["spells"], fields: levelFields) {
+            spellGrowth.markComparable()
+        }
+        if applicability.universeSatisfied(sections: ["pets"], fields: levelFields) {
+            petGrowth.markComparable()
+        }
+        if applicability.universeSatisfied(sections: ["equipment"], fields: levelFields) {
+            equipmentGrowth.markComparable()
+        }
         if hasSectionCoverage || !diff.changes.isEmpty {
             aggregateEvents.markComparable()
         }

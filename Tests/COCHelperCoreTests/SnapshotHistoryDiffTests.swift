@@ -1590,19 +1590,22 @@ final class SnapshotHistoryDiffTests: XCTestCase {
     func testHistogramTimerCompletionStatisticsNotDoubleCounted() throws {
         let identity = makeIdentity(section: "buildings", dataID: 1)
         let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let buildingUniverseNotApplicable = MetricTestSectionCoverage.buildingUniverseNotApplicable
         let old = makeEntry(
             id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
             date: 100,
             items: [makeItem(identity: identity, level: 14, count: 2, timer: 90, display: binding)],
             section: "buildings",
-            states: ["cnt": .complete, "timer": .complete]
+            states: ["cnt": .complete, "timer": .complete],
+            additionalSections: buildingUniverseNotApplicable
         )
         let new = makeEntry(
             id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
             date: 200,
             items: [makeItem(identity: identity, level: 15, count: 2, display: binding)],
             section: "buildings",
-            states: ["cnt": .complete, "timer": .complete]
+            states: ["cnt": .complete, "timer": .complete],
+            additionalSections: buildingUniverseNotApplicable
         )
         let diff = SnapshotDiffEngine.compare(from: old, to: new)
         XCTAssertTrue(diff.changes.contains { $0.changeKind == .upgradeCompleted })
@@ -1729,6 +1732,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             date: 100,
             items: [makeItem(identity: heroIdentity, level: 1, display: heroBinding)],
             section: "heroes",
+            additionalSections: MetricTestSectionCoverage.heroUniverseNotApplicable,
             sourceTimestamp: Date(timeIntervalSince1970: 1)
         )
         let heroNew = makeEntry(
@@ -1736,6 +1740,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             date: 200,
             items: [makeItem(identity: heroIdentity, level: 2, display: heroBinding)],
             section: "heroes",
+            additionalSections: MetricTestSectionCoverage.heroUniverseNotApplicable,
             sourceTimestamp: Date(timeIntervalSince1970: 2)
         )
         let heroDiff = SnapshotDiffEngine.compare(from: heroOld, to: heroNew)
@@ -1759,6 +1764,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         let wallIdentity = makeIdentity(section: "buildings", dataID: 8)
         let buildingIdentity = makeIdentity(section: "buildings", dataID: 1)
         let buildingBinding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let buildingUniverseNotApplicable = MetricTestSectionCoverage.buildingUniverseNotApplicable
         let old = makeEntry(
             id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
             date: 100,
@@ -1768,7 +1774,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 makeItem(identity: buildingIdentity, level: 1, count: 1, display: buildingBinding)
             ],
             section: "buildings",
-            states: ["cnt": .complete]
+            states: ["cnt": .complete],
+            additionalSections: buildingUniverseNotApplicable
         )
         let new = makeEntry(
             id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
@@ -1780,7 +1787,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 makeItem(identity: buildingIdentity, level: 2, count: 1, display: buildingBinding)
             ],
             section: "buildings",
-            states: ["cnt": .complete]
+            states: ["cnt": .complete],
+            additionalSections: buildingUniverseNotApplicable
         )
         let diff = SnapshotDiffEngine.compare(from: old, to: new)
         XCTAssertTrue(diff.changes.contains { $0.changeKind == .unknown && $0.identity == wallIdentity })
@@ -2663,9 +2671,10 @@ final class SnapshotHistoryDiffTests: XCTestCase {
     func testStatisticsUseAppliedAtTimezoneAndKeepAggregateEvidenceSeparate() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         func pair(id1: String, id2: String, fromDate: Date, toDate: Date, oldLevel: Int, newLevel: Int) -> SnapshotDiff {
-            SnapshotDiffEngine.compare(
-                from: makeEntry(id: id1, date: fromDate.timeIntervalSince1970, items: [makeItem(identity: identity, level: oldLevel, display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes"))], section: "heroes", sourceTimestamp: Date(timeIntervalSince1970: 1)),
-                to: makeEntry(id: id2, date: toDate.timeIntervalSince1970, items: [makeItem(identity: identity, level: newLevel, display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes"))], section: "heroes", sourceTimestamp: Date(timeIntervalSince1970: 2))
+            let notApplicable = MetricTestSectionCoverage.heroUniverseNotApplicable
+            return SnapshotDiffEngine.compare(
+                from: makeEntry(id: id1, date: fromDate.timeIntervalSince1970, items: [makeItem(identity: identity, level: oldLevel, display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes"))], section: "heroes", additionalSections: notApplicable, sourceTimestamp: Date(timeIntervalSince1970: 1)),
+                to: makeEntry(id: id2, date: toDate.timeIntervalSince1970, items: [makeItem(identity: identity, level: newLevel, display: SnapshotDisplayBinding(displayName: "英雄", category: "heroes"))], section: "heroes", additionalSections: notApplicable, sourceTimestamp: Date(timeIntervalSince1970: 2))
             )
         }
 
@@ -2818,6 +2827,69 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(statistics.today.buildingLevelGrowth.value, 0)
     }
 
+    func testBuildingMigrationStaysInsufficientWhenTrapsSilentlyMissing() throws {
+        // Issue #206: observed building migration must not bypass incomplete universe.
+        let identity = makeIdentity(section: "buildings", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let notApplicable = [
+            MetricTestSectionCoverage.notApplicable("buildings2"),
+            MetricTestSectionCoverage.notApplicable("traps2")
+        ]
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 14, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: notApplicable
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 15, count: 2, display: binding)],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: notApplicable
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        XCTAssertTrue(diff.changes.contains { $0.changeKind == .levelIncreased && $0.identity == identity })
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.buildingUpgradeCompletions.state, .insufficientData)
+        XCTAssertEqual(statistics.today.buildingLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingLevelGrowth.state, .insufficientData)
+        XCTAssertEqual(statistics.today.aggregateInferredBuildingUpgradeCompletions.state, .insufficientData)
+    }
+
+    func testHeroLevelChangeStaysInsufficientWhenBuilderHeroesUnavailable() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let old = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1)],
+            section: "heroes"
+        )
+        let new = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 2)],
+            section: "heroes"
+        )
+        let diff = SnapshotDiffEngine.compare(from: old, to: new)
+        XCTAssertTrue(diff.changes.contains { $0.changeKind == .levelIncreased })
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 200),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
     func testHeroMetricsStayInsufficientWhenBuilderHeroesUnavailable() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeEntry(
@@ -2941,6 +3013,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
 
     func testWallHistogramStatisticsKeepAggregateEvidenceSeparate() throws {
         let identity = makeIdentity(section: "buildings", dataID: 8)
+        let wallUniverseNotApplicable = MetricTestSectionCoverage.wallUniverseNotApplicable
         let old = makeEntry(
             id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
             date: 100,
@@ -2949,7 +3022,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 makeItem(identity: identity, level: 13, count: 50, display: wallBinding())
             ],
             section: "buildings",
-            states: ["cnt": .complete]
+            states: ["cnt": .complete],
+            additionalSections: wallUniverseNotApplicable
         )
         let new = makeEntry(
             id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
@@ -2959,7 +3033,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 makeItem(identity: identity, level: 13, count: 70, display: wallBinding())
             ],
             section: "buildings",
-            states: ["cnt": .complete]
+            states: ["cnt": .complete],
+            additionalSections: wallUniverseNotApplicable
         )
         let diff = SnapshotDiffEngine.compare(from: old, to: new)
         let statistics = SnapshotHistoryStatistics.calculate(
@@ -2977,6 +3052,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
 
     func testTrapHistogramFeedsBuildingStatisticsAndUnknownCoverage() throws {
         let identity = makeIdentity(section: "traps", dataID: 9)
+        let trapUniverseNotApplicable = MetricTestSectionCoverage.trapBuildingUniverseNotApplicable
         let old = makeEntry(
             id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
             date: 100,
@@ -2987,7 +3063,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 display: SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
             )],
             section: "traps",
-            states: ["cnt": .complete]
+            states: ["cnt": .complete],
+            additionalSections: trapUniverseNotApplicable
         )
         let new = makeEntry(
             id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
@@ -2999,7 +3076,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 display: SnapshotDisplayBinding(displayName: "陷阱", category: "traps")
             )],
             section: "traps",
-            states: ["cnt": .complete]
+            states: ["cnt": .complete],
+            additionalSections: trapUniverseNotApplicable
         )
 
         let diff = SnapshotDiffEngine.compare(from: old, to: new)
@@ -3041,6 +3119,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
     func testIncompleteTrapCoverageDoesNotDegradeCompleteWallStatistics() throws {
         let wallIdentity = makeIdentity(section: "buildings", dataID: 8)
         let trapIdentity = makeIdentity(section: "traps", dataID: 9)
+        let wallUniverseNotApplicable = MetricTestSectionCoverage.wallUniverseNotApplicable
         let old = makeEntry(
             id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
             date: 100,
@@ -3054,7 +3133,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 )
             ],
             section: "buildings",
-            states: ["cnt": .complete]
+            states: ["cnt": .complete],
+            additionalSections: wallUniverseNotApplicable
         )
         let new = makeEntry(
             id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
@@ -3068,7 +3148,8 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 )
             ],
             section: "buildings",
-            states: ["cnt": .complete]
+            states: ["cnt": .complete],
+            additionalSections: wallUniverseNotApplicable
         )
 
         let diff = SnapshotDiffEngine.compare(from: old, to: new)
@@ -3136,6 +3217,22 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 proof: SnapshotHistoryTestCoverage.verified(expectedCount: 0),
                 presence: .presentEmpty
             )
+        }
+
+        static var buildingUniverseNotApplicable: [MetricTestSectionCoverage] {
+            [notApplicable("traps"), notApplicable("buildings2"), notApplicable("traps2")]
+        }
+
+        static var heroUniverseNotApplicable: [MetricTestSectionCoverage] {
+            [notApplicable("heroes2")]
+        }
+
+        static var wallUniverseNotApplicable: [MetricTestSectionCoverage] {
+            [notApplicable("buildings2")]
+        }
+
+        static var trapBuildingUniverseNotApplicable: [MetricTestSectionCoverage] {
+            [notApplicable("buildings"), notApplicable("buildings2"), notApplicable("traps2")]
         }
     }
 

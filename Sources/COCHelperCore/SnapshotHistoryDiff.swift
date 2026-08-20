@@ -158,6 +158,68 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
         if state == .complete { return true }
         return observedItemCount == 0 && state == .unavailable && field != "presence" && field != "data"
     }
+
+    /// Issue #206: a section is explicitly out of scope for aggregate metrics
+    /// when both sides carry verified proof of an empty universe.
+    fileprivate var isNotApplicableForMetrics: Bool {
+        guard fromSectionCompleteness == .complete,
+              toSectionCompleteness == .complete,
+              fromProof?.isVerified == true,
+              toProof?.isVerified == true,
+              fromObservedItemCount == 0,
+              toObservedItemCount == 0,
+              let fromProof,
+              let toProof else {
+            return false
+        }
+        guard SnapshotCoverageProof.expectedCount(of: fromProof) == 0,
+              SnapshotCoverageProof.expectedCount(of: toProof) == 0 else {
+            return false
+        }
+        return true
+    }
+}
+
+private enum MetricSectionApplicability: Equatable {
+    case complete
+    case notApplicable
+    case insufficient
+}
+
+/// Issue #206: every aggregate metric must prove its full applicable universe
+/// before absence-based zero is allowed.  OR-ing any single complete section is
+/// not sufficient when sibling sections are silently missing.
+private struct MetricApplicabilityEvaluator {
+    let sectionCoverage: [SnapshotDiffSectionCoverage]
+
+    func applicability(for section: String, fields: Set<String>) -> MetricSectionApplicability {
+        guard let coverage = sectionCoverage.first(where: { $0.rawSection == section }) else {
+            return .insufficient
+        }
+        if coverage.isNotApplicableForMetrics {
+            return .notApplicable
+        }
+        if coverage.isComplete(for: fields) {
+            return .complete
+        }
+        return .insufficient
+    }
+
+    func universeSatisfied(sections: Set<String>, fields: Set<String>) -> Bool {
+        guard !sections.isEmpty else { return false }
+        var sawApplicableSection = false
+        for section in sections.sorted() {
+            switch applicability(for: section, fields: fields) {
+            case .complete:
+                sawApplicableSection = true
+            case .notApplicable:
+                break
+            case .insufficient:
+                return false
+            }
+        }
+        return sawApplicableSection
+    }
 }
 
 /// Field-level provenance for one change.  Raw coverage is retained so an
@@ -2274,6 +2336,7 @@ private struct MetricAccumulators {
 
     private mutating func markComparable(for diff: SnapshotDiff) {
         let hasSectionCoverage = !diff.sectionCoverage.isEmpty
+        let applicability = MetricApplicabilityEvaluator(sectionCoverage: diff.sectionCoverage)
         // 只有带 levelDelta 的 level migration/completion 类 change 才能支撑
         // 等级/数量指标的 comparability；timer-only 的 upgradeStarted/
         // timerChanged/timerEndedObserved 只支撑事件数，不能单独让缺少
@@ -2285,25 +2348,40 @@ private struct MetricAccumulators {
                 return MetricAccumulators.category(for: change) == metricCategory
             }
         }
-        func complete(_ sections: Set<String>, _ fields: Set<String>) -> Bool {
-            guard hasSectionCoverage else { return false }
-            return sections.contains { section in
-                diff.sectionCoverage.first(where: { $0.rawSection == section })?.isComplete(for: fields) == true
-            }
-        }
         let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
         let wallSections: Set<String> = ["buildings", "buildings2"]
         let heroSections: Set<String> = ["heroes", "heroes2"]
         let troopSections: Set<String> = ["units", "units2"]
         let levelFields: Set<String> = ["presence", "data", "lvl"]
         let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
-        let buildingHistogramComplete = complete(buildingSections, histogramFields)
-        let wallHistogramComplete = complete(wallSections, histogramFields)
-        let heroComplete = complete(heroSections, levelFields)
-        let troopComplete = complete(troopSections, levelFields)
-        let spellComplete = complete(["spells"], levelFields)
-        let petComplete = complete(["pets"], levelFields)
-        let equipmentComplete = complete(["equipment"], levelFields)
+        let buildingHistogramComplete = applicability.universeSatisfied(
+            sections: buildingSections,
+            fields: histogramFields
+        )
+        let wallHistogramComplete = applicability.universeSatisfied(
+            sections: wallSections,
+            fields: histogramFields
+        )
+        let heroComplete = applicability.universeSatisfied(
+            sections: heroSections,
+            fields: levelFields
+        )
+        let troopComplete = applicability.universeSatisfied(
+            sections: troopSections,
+            fields: levelFields
+        )
+        let spellComplete = applicability.universeSatisfied(
+            sections: ["spells"],
+            fields: levelFields
+        )
+        let petComplete = applicability.universeSatisfied(
+            sections: ["pets"],
+            fields: levelFields
+        )
+        let equipmentComplete = applicability.universeSatisfied(
+            sections: ["equipment"],
+            fields: levelFields
+        )
         func shouldMark(_ complete: Bool, _ metricCategory: SnapshotMetricCategory) -> Bool {
             // A directly observed unique level change can be counted from
             // field evidence alone.  Section proof is still mandatory for

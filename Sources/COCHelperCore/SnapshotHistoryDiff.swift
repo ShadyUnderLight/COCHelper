@@ -191,6 +191,8 @@ private enum MetricUniverseState: Equatable {
     case complete
     case notApplicable
     case insufficient
+  /// This diff does not observe or declare any section in the metric universe.
+    case irrelevant
 }
 
 /// Issue #206: every aggregate metric must prove its full applicable universe
@@ -237,7 +239,7 @@ private struct MetricApplicabilityEvaluator {
             guard let coverage = sectionCoverage.first(where: { $0.rawSection == section }) else {
                 continue
             }
-            if coverage.fromObservedItemCount > 0 || coverage.toObservedItemCount > 0 {
+            if isSectionRelevant(coverage) {
                 return true
             }
         }
@@ -251,6 +253,20 @@ private struct MetricApplicabilityEvaluator {
             if normalizedSections.contains(section) {
                 return true
             }
+        }
+        return false
+    }
+
+    private func isSectionRelevant(_ coverage: SnapshotDiffSectionCoverage) -> Bool {
+        if coverage.fromObservedItemCount > 0 || coverage.toObservedItemCount > 0 {
+            return true
+        }
+        if coverage.fromState != .unavailable || coverage.toState != .unavailable {
+            return true
+        }
+        if coverage.fromSectionCompleteness != .unavailable ||
+            coverage.toSectionCompleteness != .unavailable {
+            return true
         }
         return false
     }
@@ -277,25 +293,25 @@ private struct DiffMetricApplicability {
         let troopSections: Set<String> = ["units", "units2"]
         building = evaluator.isUniverseRelevant(sections: buildingSections, in: diff)
             ? evaluator.universeState(sections: buildingSections, fields: histogramFields)
-            : .notApplicable
+            : .irrelevant
         wall = evaluator.isUniverseRelevant(sections: wallSections, in: diff)
             ? evaluator.universeState(sections: wallSections, fields: histogramFields)
-            : .notApplicable
+            : .irrelevant
         hero = evaluator.isUniverseRelevant(sections: heroSections, in: diff)
             ? evaluator.universeState(sections: heroSections, fields: levelFields)
-            : .notApplicable
+            : .irrelevant
         troop = evaluator.isUniverseRelevant(sections: troopSections, in: diff)
             ? evaluator.universeState(sections: troopSections, fields: levelFields)
-            : .notApplicable
+            : .irrelevant
         spell = evaluator.isUniverseRelevant(sections: ["spells"], in: diff)
             ? evaluator.universeState(sections: ["spells"], fields: levelFields)
-            : .notApplicable
+            : .irrelevant
         pet = evaluator.isUniverseRelevant(sections: ["pets"], in: diff)
             ? evaluator.universeState(sections: ["pets"], fields: levelFields)
-            : .notApplicable
+            : .irrelevant
         equipment = evaluator.isUniverseRelevant(sections: ["equipment"], in: diff)
             ? evaluator.universeState(sections: ["equipment"], fields: levelFields)
-            : .notApplicable
+            : .irrelevant
         hasSectionCoverage = !diff.sectionCoverage.isEmpty
         hasChanges = !diff.changes.isEmpty
     }
@@ -2426,7 +2442,7 @@ private struct MetricAccumulators {
             aggregateBuildingCompletions.markUnknown()
             buildingGrowth.markUnknown()
             aggregateBuildingGrowth.markUnknown()
-        case .notApplicable:
+        case .notApplicable, .irrelevant:
             break
         }
         switch applicability.wall {
@@ -2436,7 +2452,7 @@ private struct MetricAccumulators {
         case .insufficient:
             wallGrowth.markUnknown()
             aggregateWallGrowth.markUnknown()
-        case .notApplicable:
+        case .notApplicable, .irrelevant:
             break
         }
         switch applicability.hero {
@@ -2444,7 +2460,7 @@ private struct MetricAccumulators {
             heroGrowth.markComparable()
         case .insufficient:
             heroGrowth.markUnknown()
-        case .notApplicable:
+        case .notApplicable, .irrelevant:
             break
         }
         switch applicability.troop {
@@ -2452,7 +2468,7 @@ private struct MetricAccumulators {
             troopGrowth.markComparable()
         case .insufficient:
             troopGrowth.markUnknown()
-        case .notApplicable:
+        case .notApplicable, .irrelevant:
             break
         }
         switch applicability.spell {
@@ -2460,7 +2476,7 @@ private struct MetricAccumulators {
             spellGrowth.markComparable()
         case .insufficient:
             spellGrowth.markUnknown()
-        case .notApplicable:
+        case .notApplicable, .irrelevant:
             break
         }
         switch applicability.pet {
@@ -2468,7 +2484,7 @@ private struct MetricAccumulators {
             petGrowth.markComparable()
         case .insufficient:
             petGrowth.markUnknown()
-        case .notApplicable:
+        case .notApplicable, .irrelevant:
             break
         }
         switch applicability.equipment {
@@ -2476,7 +2492,7 @@ private struct MetricAccumulators {
             equipmentGrowth.markComparable()
         case .insufficient:
             equipmentGrowth.markUnknown()
-        case .notApplicable:
+        case .notApplicable, .irrelevant:
             break
         }
         if applicability.hasSectionCoverage || applicability.hasChanges {

@@ -3059,6 +3059,64 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
     }
 
+    func testHeroWindowPoisonsWhenHomeHeroesAreCompleteEmptyAndBuilderHeroesMissing() throws {
+        let heroIdentity = makeIdentity(section: "heroes", dataID: 1)
+        let heroBinding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let buildingIdentity = makeIdentity(section: "buildings", dataID: 1)
+        let buildingBinding = SnapshotDisplayBinding(displayName: "加农炮", category: "buildings")
+        let buildingItem = makeItem(identity: buildingIdentity, level: 14, count: 1, display: buildingBinding)
+        let heroUniverseNotApplicable = [MetricTestSectionCoverage.notApplicable("heroes2")]
+        let buildingUniverseNotApplicable = MetricTestSectionCoverage.buildingUniverseNotApplicable
+
+        let growthOld = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: heroIdentity, level: 1, display: heroBinding)],
+            section: "heroes",
+            additionalSections: heroUniverseNotApplicable
+        )
+        let growthNew = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: heroIdentity, level: 2, display: heroBinding)],
+            section: "heroes",
+            additionalSections: heroUniverseNotApplicable
+        )
+        let hollowOld = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [buildingItem],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: buildingUniverseNotApplicable + [
+                MetricTestSectionCoverage.complete("heroes")
+            ]
+        )
+        let hollowNew = makeEntry(
+            id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            date: 300,
+            items: [buildingItem],
+            section: "buildings",
+            states: ["cnt": .complete],
+            additionalSections: buildingUniverseNotApplicable + [
+                MetricTestSectionCoverage.complete("heroes")
+            ]
+        )
+
+        let growthDiff = SnapshotDiffEngine.compare(from: growthOld, to: growthNew)
+        let hollowDiff = SnapshotDiffEngine.compare(from: hollowOld, to: hollowNew)
+        XCTAssertTrue(growthDiff.changes.contains { $0.changeKind == .levelIncreased })
+        XCTAssertEqual(hollowDiff.changes, [])
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [growthDiff, hollowDiff],
+            referenceDate: Date(timeIntervalSince1970: 300),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
     func testHeroMetricsStayInsufficientWhenBuilderHeroesUnavailable() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeEntry(

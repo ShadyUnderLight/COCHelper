@@ -19,3 +19,18 @@
 - 模板字段结构见 `Tools/perf/baseline_format.md`；场景操作见 `Tools/perf/perf_scenarios.md`；冷/热操作步骤已按采样拆分到各文档。
 - 采样完成后：每份文档回链 #196/#209；后续 #210/#211/#212 合并后用同一 fixture/窗口/场景复测，结果追加到本目录并保持前后对比。
 - 采样产物不得包含真实账号数据、token、cookie 或完整敏感 ID。
+
+## 最新自动化回放检查点
+
+2026-08-20 已基于 `d3b57e8164f81e292a023b052e455085565c3dbb` 与
+`7043c178cab9868a09b2102f4c478689edeef7a3` 分别构建 Release App，并在隔离的
+`CFFIXED_USER_HOME` 中使用匿名 fixture 做了同场景回放。结果见
+`Tools/perf/results/2026-08-20/`。
+
+这批结果是可导出的自动化 replay checkpoint，不是最终 Release 验收门：本轮使用
+Accessibility 的 `AXScrollToTop/AXScrollToBottom` 做确定性滚动，尚未覆盖人工连续
+滚轮/拖动的冷启动与热缓存拆分，也没有把 Allocations/VM Tracker 和 Time Profiler
+前三热点作为已证明数据。之后 `origin/main` 已推进到
+`f310e5ed133424ac3caf6c8ba9569d672c0f5f60`；本 PR 已 rebase 到该最新 base，
+但没有把这批旧 checkpoint 冒充成 `f310e5e` 的新测量。未完成项必须保持 unknown，
+不能勾选上面的最终验收清单。

@@ -158,6 +158,163 @@ public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifi
         if state == .complete { return true }
         return observedItemCount == 0 && state == .unavailable && field != "presence" && field != "data"
     }
+
+    /// Issue #206: a section is explicitly out of scope for aggregate metrics
+    /// when both sides carry verified proof of an empty universe.
+    fileprivate var isNotApplicableForMetrics: Bool {
+        guard fromSectionCompleteness == .complete,
+              toSectionCompleteness == .complete,
+              fromProof?.isVerified == true,
+              toProof?.isVerified == true,
+              fromObservedItemCount == 0,
+              toObservedItemCount == 0,
+              let fromProof,
+              let toProof else {
+            return false
+        }
+        guard SnapshotCoverageProof.expectedCount(of: fromProof) == 0,
+              SnapshotCoverageProof.expectedCount(of: toProof) == 0 else {
+            return false
+        }
+        return true
+    }
+}
+
+private enum MetricSectionApplicability: Equatable {
+    case complete
+    case notApplicable
+    case insufficient
+}
+
+/// Issue #206: aggregate-metric universe coverage for one adjacent diff.
+private enum MetricUniverseState: Equatable {
+    case complete
+    case notApplicable
+    case insufficient
+  /// This diff does not observe or declare any section in the metric universe.
+    case irrelevant
+}
+
+/// Issue #206: every aggregate metric must prove its full applicable universe
+/// before absence-based zero is allowed.  OR-ing any single complete section is
+/// not sufficient when sibling sections are silently missing.
+private struct MetricApplicabilityEvaluator {
+    let sectionCoverage: [SnapshotDiffSectionCoverage]
+
+    func applicability(for section: String, fields: Set<String>) -> MetricSectionApplicability {
+        guard let coverage = sectionCoverage.first(where: { $0.rawSection == section }) else {
+            return .insufficient
+        }
+        if coverage.isNotApplicableForMetrics {
+            return .notApplicable
+        }
+        if coverage.isComplete(for: fields) {
+            return .complete
+        }
+        return .insufficient
+    }
+
+    func universeState(sections: Set<String>, fields: Set<String>) -> MetricUniverseState {
+        guard !sections.isEmpty else { return .insufficient }
+        var sawComplete = false
+        for section in sections.sorted() {
+            switch applicability(for: section, fields: fields) {
+            case .complete:
+                sawComplete = true
+            case .notApplicable:
+                break
+            case .insufficient:
+                return .insufficient
+            }
+        }
+        return sawComplete ? .complete : .notApplicable
+    }
+
+    func universeSatisfied(sections: Set<String>, fields: Set<String>) -> Bool {
+        universeState(sections: sections, fields: fields) == .complete
+    }
+
+    func isUniverseRelevant(sections: Set<String>, in diff: SnapshotDiff) -> Bool {
+        for section in sections {
+            guard let coverage = sectionCoverage.first(where: { $0.rawSection == section }) else {
+                continue
+            }
+            if isSectionRelevant(coverage) {
+                return true
+            }
+        }
+        let normalizedSections = Set(sections.map {
+            $0.hasSuffix("2") ? String($0.dropLast()) : $0
+        })
+        for change in diff.changes {
+            let section = change.identity.rawSection.hasSuffix("2")
+                ? String(change.identity.rawSection.dropLast())
+                : change.identity.rawSection
+            if normalizedSections.contains(section) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func isSectionRelevant(_ coverage: SnapshotDiffSectionCoverage) -> Bool {
+        if coverage.fromObservedItemCount > 0 || coverage.toObservedItemCount > 0 {
+            return true
+        }
+        if coverage.fromState != .unavailable || coverage.toState != .unavailable {
+            return true
+        }
+        if coverage.fromSectionCompleteness != .unavailable ||
+            coverage.toSectionCompleteness != .unavailable {
+            return true
+        }
+        return false
+    }
+}
+
+private struct DiffMetricApplicability {
+    let building: MetricUniverseState
+    let wall: MetricUniverseState
+    let hero: MetricUniverseState
+    let troop: MetricUniverseState
+    let spell: MetricUniverseState
+    let pet: MetricUniverseState
+    let equipment: MetricUniverseState
+    let hasSectionCoverage: Bool
+    let hasChanges: Bool
+
+    init(diff: SnapshotDiff) {
+        let evaluator = MetricApplicabilityEvaluator(sectionCoverage: diff.sectionCoverage)
+        let levelFields: Set<String> = ["presence", "data", "lvl"]
+        let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
+        let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
+        let wallSections: Set<String> = ["buildings", "buildings2"]
+        let heroSections: Set<String> = ["heroes", "heroes2"]
+        let troopSections: Set<String> = ["units", "units2"]
+        building = evaluator.isUniverseRelevant(sections: buildingSections, in: diff)
+            ? evaluator.universeState(sections: buildingSections, fields: histogramFields)
+            : .irrelevant
+        wall = evaluator.isUniverseRelevant(sections: wallSections, in: diff)
+            ? evaluator.universeState(sections: wallSections, fields: histogramFields)
+            : .irrelevant
+        hero = evaluator.isUniverseRelevant(sections: heroSections, in: diff)
+            ? evaluator.universeState(sections: heroSections, fields: levelFields)
+            : .irrelevant
+        troop = evaluator.isUniverseRelevant(sections: troopSections, in: diff)
+            ? evaluator.universeState(sections: troopSections, fields: levelFields)
+            : .irrelevant
+        spell = evaluator.isUniverseRelevant(sections: ["spells"], in: diff)
+            ? evaluator.universeState(sections: ["spells"], fields: levelFields)
+            : .irrelevant
+        pet = evaluator.isUniverseRelevant(sections: ["pets"], in: diff)
+            ? evaluator.universeState(sections: ["pets"], fields: levelFields)
+            : .irrelevant
+        equipment = evaluator.isUniverseRelevant(sections: ["equipment"], in: diff)
+            ? evaluator.universeState(sections: ["equipment"], fields: levelFields)
+            : .irrelevant
+        hasSectionCoverage = !diff.sectionCoverage.isEmpty
+        hasChanges = !diff.changes.isEmpty
+    }
 }
 
 /// Field-level provenance for one change.  Raw coverage is retained so an
@@ -2344,9 +2501,10 @@ private struct MetricAccumulators {
                 markUnknownForDiagnostics(in: diff)
                 continue
             }
-            markComparable(for: diff)
+            let diffApplicability = DiffMetricApplicability(diff: diff)
+            applyDiffApplicability(diffApplicability)
             for change in diff.changes {
-                apply(change)
+                apply(change, diffApplicability: diffApplicability)
             }
             markUnknownForUnclassified(in: diff.changes)
             markUnknownForUnknownCategories(in: diff.changes)
@@ -2354,66 +2512,95 @@ private struct MetricAccumulators {
         }
     }
 
-    private mutating func markComparable(for diff: SnapshotDiff) {
-        let hasSectionCoverage = !diff.sectionCoverage.isEmpty
-        // 只有带 levelDelta 的 level migration/completion 类 change 才能支撑
-        // 等级/数量指标的 comparability；timer-only 的 upgradeStarted/
-        // timerChanged/timerEndedObserved 只支撑事件数，不能单独让缺少
-        // level/count 证据的 metric 变成可用 0。
-        func hasLevelCountEvidence(_ metricCategory: SnapshotMetricCategory) -> Bool {
-            diff.changes.contains { change in
-                guard change.evidence != .unknown else { return false }
-                guard change.levelDelta != nil else { return false }
-                return MetricAccumulators.category(for: change) == metricCategory
-            }
-        }
-        func complete(_ sections: Set<String>, _ fields: Set<String>) -> Bool {
-            guard hasSectionCoverage else { return false }
-            return sections.contains { section in
-                diff.sectionCoverage.first(where: { $0.rawSection == section })?.isComplete(for: fields) == true
-            }
-        }
-        let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
-        let wallSections: Set<String> = ["buildings", "buildings2"]
-        let heroSections: Set<String> = ["heroes", "heroes2"]
-        let troopSections: Set<String> = ["units", "units2"]
-        let levelFields: Set<String> = ["presence", "data", "lvl"]
-        let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
-        let buildingHistogramComplete = complete(buildingSections, histogramFields)
-        let wallHistogramComplete = complete(wallSections, histogramFields)
-        let heroComplete = complete(heroSections, levelFields)
-        let troopComplete = complete(troopSections, levelFields)
-        let spellComplete = complete(["spells"], levelFields)
-        let petComplete = complete(["pets"], levelFields)
-        let equipmentComplete = complete(["equipment"], levelFields)
-        func shouldMark(_ complete: Bool, _ metricCategory: SnapshotMetricCategory) -> Bool {
-            // A directly observed unique level change can be counted from
-            // field evidence alone.  Section proof is still mandatory for
-            // absence-based and histogram changes, which the Diff engine emits
-            // as unknown when the universe is not proven complete.
-            complete || hasLevelCountEvidence(metricCategory)
-        }
-        if shouldMark(buildingHistogramComplete, .building) {
+    private mutating func applyDiffApplicability(_ applicability: DiffMetricApplicability) {
+        switch applicability.building {
+        case .complete:
             buildingCompletions.markComparable()
             aggregateBuildingCompletions.markComparable()
             buildingGrowth.markComparable()
             aggregateBuildingGrowth.markComparable()
+        case .insufficient:
+            buildingCompletions.markUnknown()
+            aggregateBuildingCompletions.markUnknown()
+            buildingGrowth.markUnknown()
+            aggregateBuildingGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
-        if shouldMark(wallHistogramComplete, .wall) {
+        switch applicability.wall {
+        case .complete:
             wallGrowth.markComparable()
             aggregateWallGrowth.markComparable()
+        case .insufficient:
+            wallGrowth.markUnknown()
+            aggregateWallGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
-        if shouldMark(heroComplete, .hero) { heroGrowth.markComparable() }
-        if shouldMark(troopComplete, .troop) { troopGrowth.markComparable() }
-        if shouldMark(spellComplete, .spell) { spellGrowth.markComparable() }
-        if shouldMark(petComplete, .pet) { petGrowth.markComparable() }
-        if shouldMark(equipmentComplete, .equipment) { equipmentGrowth.markComparable() }
-        if hasSectionCoverage || !diff.changes.isEmpty {
+        switch applicability.hero {
+        case .complete:
+            heroGrowth.markComparable()
+        case .insufficient:
+            heroGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch applicability.troop {
+        case .complete:
+            troopGrowth.markComparable()
+        case .insufficient:
+            troopGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch applicability.spell {
+        case .complete:
+            spellGrowth.markComparable()
+        case .insufficient:
+            spellGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch applicability.pet {
+        case .complete:
+            petGrowth.markComparable()
+        case .insufficient:
+            petGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch applicability.equipment {
+        case .complete:
+            equipmentGrowth.markComparable()
+        case .insufficient:
+            equipmentGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        if applicability.hasSectionCoverage || applicability.hasChanges {
             aggregateEvents.markComparable()
         }
     }
 
-    private mutating func apply(_ change: SnapshotChange) {
+    private func universeState(
+        for category: SnapshotMetricCategory,
+        in applicability: DiffMetricApplicability
+    ) -> MetricUniverseState {
+        switch category {
+        case .building: return applicability.building
+        case .wall: return applicability.wall
+        case .hero: return applicability.hero
+        case .troop: return applicability.troop
+        case .spell: return applicability.spell
+        case .pet: return applicability.pet
+        case .equipment: return applicability.equipment
+        }
+    }
+
+    private mutating func apply(
+        _ change: SnapshotChange,
+        diffApplicability: DiffMetricApplicability
+    ) {
         guard let category = Self.category(for: change) else {
             // An unknown category is intentionally not guessed from the
             // current catalog.  It remains a diagnostic rather than being
@@ -2424,6 +2611,9 @@ private struct MetricAccumulators {
         let positiveLevelDelta = change.levelDelta.flatMap { $0 > 0 ? $0 : nil }
         if change.evidence == .aggregateInferred {
             aggregateEvents.add(1)
+            guard universeState(for: category, in: diffApplicability) == .complete else {
+                return
+            }
             // 聚合完成的唯一计数点：一条 .upgradeCompleted change 对应一次
             // aggregate 完成（level migration 那条不计 completion）；无 level
             // migration 的 timer 消失是 timerEndedObserved，也不计 completion。
@@ -2457,6 +2647,10 @@ private struct MetricAccumulators {
             if change.changeKind == .unknown || change.levelDelta != nil {
                 markUnknown(category: category)
             }
+            return
+        }
+
+        guard universeState(for: category, in: diffApplicability) == .complete else {
             return
         }
 

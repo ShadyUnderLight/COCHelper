@@ -483,7 +483,17 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         items: [SnapshotObservationItem],
         levelCoverage: SnapshotCoverageState = .complete
     ) -> SnapshotHistoryEntry {
-        let sections = Set(items.map { $0.identity.rawSection }).union(["heroes", "buildings"])
+        let itemSections = Set(items.map { $0.identity.rawSection }).union(["heroes", "buildings"])
+        let notApplicableSections: Set<String> = {
+            var sections: Set<String> = []
+            if itemSections.contains("heroes") { sections.insert("heroes2") }
+            if itemSections.contains("buildings") || itemSections.contains("traps") {
+                sections.formUnion(["buildings2", "traps", "traps2"])
+            }
+            if itemSections.contains("units") { sections.insert("units2") }
+            return sections
+        }()
+        let sections = itemSections.union(notApplicableSections)
         var fields: [SnapshotCoverageField] = []
         for section in sections {
             let base = SnapshotHistoryBase(section: section)
@@ -502,15 +512,17 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         let coverage = SnapshotObservationCoverage(
             fields: fields,
             sections: sections.map { section in
-                SnapshotSectionCoverage(
+                let observedCount = items.filter { $0.identity.rawSection == section }.count
+                let isNotApplicable = notApplicableSections.contains(section)
+                return SnapshotSectionCoverage(
                     base: SnapshotHistoryBase(section: section),
                     rawSection: section,
-                    presence: items.contains { $0.identity.rawSection == section }
-                        ? .presentNonEmpty
-                        : .presentEmpty,
+                    presence: observedCount > 0 ? .presentNonEmpty : .presentEmpty,
                     completeness: .complete,
-                    proof: SnapshotHistoryTestCoverage.verified(source: "test", expectedCount: nil),
-                    observedCount: items.filter { $0.identity.rawSection == section }.count
+                    proof: isNotApplicable
+                        ? SnapshotHistoryTestCoverage.verified(expectedCount: 0)
+                        : SnapshotHistoryTestCoverage.verified(source: "test", expectedCount: nil),
+                    observedCount: observedCount
                 )
             },
             diagnostics: levelCoverage == .complete ? [] : ["heroes.lvl: 测试覆盖不足。"]

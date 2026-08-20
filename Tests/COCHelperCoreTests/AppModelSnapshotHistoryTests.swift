@@ -33,6 +33,30 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         )
     }
 
+    private func assertCoverageIsKnownMetadata(
+        _ snapshot: AccountSnapshot,
+        file: StaticString = #file,
+        line: UInt = #line
+    ) {
+        XCTAssertFalse(
+            snapshot.unknownTopLevelKeys.contains("coverage"),
+            "coverage 不得进入 unknownTopLevelKeys",
+            file: file,
+            line: line
+        )
+        XCTAssertFalse(
+            snapshot.diagnostics.contains {
+                $0.path == "顶层"
+                    && $0.severity == .warning
+                    && $0.message.contains("未识别字段")
+                    && $0.message.contains("coverage")
+            },
+            "合法 coverage 不得触发未识别字段警告",
+            file: file,
+            line: line
+        )
+    }
+
     @MainActor
     private func makeModel(
         villages: [VillageProfile],
@@ -283,7 +307,11 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         model.importText = raw
         model.parseAccountText()
 
-        XCTAssertNotNil(model.pendingAccountSnapshot)
+        let pending = try XCTUnwrap(model.pendingAccountSnapshot)
+        XCTAssertEqual(pending.unknownTopLevelKeys, [])
+        XCTAssertFalse(pending.diagnostics.contains {
+            $0.path == "顶层" && $0.severity == .warning && $0.message.contains("未识别字段")
+        })
         XCTAssertTrue(model.applyPendingAccountSnapshot())
         let envelope = try XCTUnwrap(historyStore.load())
         let entry = try XCTUnwrap(envelope.entries.first)
@@ -306,6 +334,8 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         model.importText = raw
         model.parseAccountText()
 
+        let pending = try XCTUnwrap(model.pendingAccountSnapshot)
+        assertCoverageIsKnownMetadata(pending)
         XCTAssertTrue(model.applyPendingAccountSnapshot())
         let envelope = try XCTUnwrap(historyStore.load())
         let entry = try XCTUnwrap(envelope.entries.first)
@@ -338,6 +368,7 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         guard case .success(let preview) = model.prepareQuickImport(for: model.villages[0].id) else {
             return XCTFail("有效快照应能生成快捷导入预览")
         }
+        assertCoverageIsKnownMetadata(preview.snapshot)
         XCTAssertTrue(model.applyQuickImport(preview))
         let envelope = try XCTUnwrap(historyStore.load())
         let entry = try XCTUnwrap(envelope.entries.last)
@@ -355,10 +386,12 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         {"tag":"#2QJQ8J88","buildings":[{"data":1,"lvl":1}],
          "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
         """
+        let parsed = try AccountSnapshotImporter.parse(raw, now: Date(timeIntervalSince1970: 1))
+        assertCoverageIsKnownMetadata(parsed)
         let village = VillageProfile(
             id: UUID(),
             name: "主村",
-            accountSnapshot: snapshot(tag: "#2QJQ8J88", text: raw)
+            accountSnapshot: parsed
         )
         let historyStore = TestSnapshotHistoryStore()
         _ = try makeModel(villages: [village], historyStore: historyStore)
@@ -433,6 +466,7 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         guard case .success(let preview) = model.prepareQuickImport(for: idA) else {
             return XCTFail("有效快照应能生成快捷导入预览")
         }
+        assertCoverageIsKnownMetadata(preview.snapshot)
         XCTAssertTrue(model.applyQuickImport(preview))
         envelope = try XCTUnwrap(historyStore.load())
         entryA = try XCTUnwrap(

@@ -278,6 +278,12 @@ final class SnapshotCoverageSourceTests: XCTestCase {
          "coverage":{"buildings":{"kind":"authoritative","source":"u.coc","version":"1","expectedCount":1}}}
         """
         let snapshot = try AccountSnapshotImporter.parse(text, now: Date(timeIntervalSince1970: 1))
+        XCTAssertEqual(snapshot.unknownTopLevelKeys, [])
+        XCTAssertFalse(snapshot.diagnostics.contains {
+            $0.path == "顶层" && $0.severity == .warning
+                && $0.message.contains("未识别字段")
+                && $0.message.contains("coverage")
+        })
         let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
         let entry = try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot,

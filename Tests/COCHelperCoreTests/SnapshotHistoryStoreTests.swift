@@ -188,6 +188,60 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
     }
 
+    func testVerifiedCoverageDuplicateKeySurvivesSaveReloadWithoutRuntimeWitness() throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let base = snapshot(tag: firstTag, text: text)
+        let live = try service.loadOrMigrate(
+            villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: base)],
+            now: Date(timeIntervalSince1970: 1),
+            sectionProofs: [villageID: proof]
+        )
+        let liveEntry = try XCTUnwrap(live.entries.first)
+        XCTAssertEqual(live.entries.count, 1)
+        if case .verified(let evidence) = liveEntry.coverage.section(base: .home, rawSection: "heroes")?.proof {
+            XCTAssertEqual(evidence.runtimeWitness, .moduleIssued)
+        } else {
+            XCTFail("live entry 必须带 module-issued verified proof")
+        }
+
+        try store.save(live)
+        let reloaded = try XCTUnwrap(try store.load())
+        let decodedEntry = try XCTUnwrap(reloaded.entries.first)
+        if case .verified(let evidence) = decodedEntry.coverage.section(base: .home, rawSection: "heroes")?.proof {
+            XCTAssertNil(evidence.runtimeWitness, "decode 后 runtime witness 必须丢失")
+        } else {
+            XCTFail("reloaded entry 必须保留 verified wire metadata")
+        }
+        XCTAssertNotEqual(
+            liveEntry.coverage,
+            decodedEntry.coverage,
+            "Hashable coverage 含 runtimeWitness；duplicate key 不得依赖它"
+        )
+        XCTAssertEqual(
+            SnapshotHistoryDuplicateKey(entry: liveEntry),
+            SnapshotHistoryDuplicateKey(entry: decodedEntry)
+        )
+
+        let decision = try service.planImport(
+            snapshot: base,
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: reloaded,
+            appliedAt: Date(timeIntervalSince1970: 2),
+            sectionProofs: proof
+        )
+        XCTAssertTrue(decision.duplicate)
+        XCTAssertFalse(decision.appended)
+        XCTAssertEqual(decision.envelope.entries.count, 1)
+    }
+
     func testTimerSchemaVersionChangeAppendsAndKeepsOldEntryImmutable() throws {
         try assertSchemaChangeAppends(
             previousSchema: timerSchema(version: "account-json-timer-0"),

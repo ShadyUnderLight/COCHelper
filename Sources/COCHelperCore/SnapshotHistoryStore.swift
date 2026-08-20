@@ -429,18 +429,18 @@ public enum SnapshotHistoryServiceError: Error, LocalizedError, Equatable, Senda
 /// 导入 duplicate 身份（Issue #207）。
 ///
 /// Duplicate 表示「Diff 解释不变」，不是「原文逐字节相同」。
-/// `parserVersion` 只是 source adapter 标签，不是 Diff 输入；canonicalizer 分叉
-/// 已经通过 `canonicalFingerprint` 里的 `observation.schemaVersion` 表达。
-/// `appliedAt` / source timestamp 也不进 identity，避免纯时钟或导出时间变化
-/// 制造新的不可变 snapshot。
+/// coverage 只用 `SnapshotHistoryCoverageDuplicateKey`：可序列化 proof metadata，
+/// 不含 `runtimeWitness`。`parserVersion` 只是 source adapter 标签；canonicalizer
+/// 分叉已经通过 fingerprint 里的 `observation.schemaVersion` 表达。
+/// `appliedAt` / source timestamp 也不进 identity。
 public struct SnapshotHistoryDuplicateKey: Hashable, Sendable {
     public let canonicalFingerprint: String
-    public let coverage: SnapshotObservationCoverage
+    public let coverage: SnapshotHistoryCoverageDuplicateKey
     public let timerSchema: SnapshotTimerSchema?
 
     public init(entry: SnapshotHistoryEntry) {
         self.canonicalFingerprint = entry.canonicalFingerprint
-        self.coverage = entry.coverage
+        self.coverage = SnapshotHistoryCoverageDuplicateKey(entry.coverage)
         self.timerSchema = entry.timerSchema
     }
 

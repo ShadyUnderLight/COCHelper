@@ -1776,15 +1776,18 @@ public enum SnapshotDiffEngine {
         case unstable(String)
     }
 
-    /// Issue #207：observation + coverage 相同、仅 timer schema 不同的相邻 pair。
+    /// Issue #207：observation + 可序列化 coverage 相同、仅 timer schema 不同的相邻 pair。
     /// 不得走 remaining/absolute 数值比较，否则会把 provenance 当成 timerChanged。
-    /// 比较 observation 内容而不是 canonicalFingerprint：测试夹具常用占位 fingerprint。
+    /// coverage 比较排除 runtimeWitness；observation 比较忽略 display。
     private static func isProvenanceOnlyPair(
         from: SnapshotHistoryEntry,
         to: SnapshotHistoryEntry
     ) -> Bool {
         guard from.timerSchema != to.timerSchema else { return false }
-        guard from.coverage == to.coverage else { return false }
+        guard SnapshotHistoryCoverageDuplicateKey(from.coverage)
+                == SnapshotHistoryCoverageDuplicateKey(to.coverage) else {
+            return false
+        }
         return observationIdentityMatches(from.observation, to.observation)
     }
 

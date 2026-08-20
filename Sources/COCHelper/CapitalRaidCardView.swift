@@ -167,19 +167,22 @@ struct CapitalRaidCardView: View {
     }
 
     private func seasonList(_ page: OfficialCapitalRaidPage) -> some View {
-        // Issue #199：VStack→LazyVStack，分页累计列表按需构建；
-        // identity 用完整赛季内容键 stableIdentityKey（不用 offset——
-        // 分页累计 offset 会随加载变化；startTime|endTime|state 三元组
-        // 在真实数据会重复，必须完整内容唯一）。
-        LazyVStack(alignment: .leading, spacing: 8) {
-            if page.items.isEmpty {
+        // Issue #211：预计算轻量 row identity（tripleKey#seq），不在 View body
+        // 执行完整赛季 JSON 编码。分页累计、详情刷新、缓存重建时 ID 稳定，
+        // 重复三元组仍通过序号区分，详情字段变化不改 ID。
+        // - 仍使用 LazyVStack 按需构建，不新增嵌套垂直 ScrollView；
+        // - 不自动触发网络请求/分页请求/状态刷新；
+        // - 来源顺序（page.items 顺序）即呈现顺序，序号按此顺序计数。
+        let rows = CapitalRaidRowIdentity.rows(for: page)
+        return LazyVStack(alignment: .leading, spacing: 8) {
+            if rows.isEmpty {
                 Text("没有突袭周末记录")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(page.items, id: \.stableIdentityKey) { season in
-                    seasonRow(season)
-                    if season.endTime != page.items.last?.endTime {
+                ForEach(rows) { row in
+                    seasonRow(row.season)
+                    if row.season.endTime != rows.last?.season.endTime {
                         Divider().padding(.leading, 40)
                     }
                 }

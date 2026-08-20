@@ -336,15 +336,98 @@ public struct OfficialCapitalRaidSeason: Codable, Hashable, Sendable {
     }
 }
 
-// MARK: - Issue #199: 突袭周末赛季稳定身份键
+// MARK: - Issue #211: 突袭周末行 identity（预计算、轻量）
+//
+//  设计约束（与 #199 互斥）：
+//  - 官方赛季无服务端唯一 ID，三元组 `startTime|endTime|state` 会重复
+//    （#197 fixture 17 条只有 3 个唯一三元组），不能直接用三元组或
+//    数组 offset/UUID/随机值作 ForEach identity。
+//  - 必须在分页合并/渲染层一次生成，不在 View body/diff 路径执行
+//    完整赛季 JSON 编码（含 members/attackLog/defenseLog），也不
+//    得换成另一个同等重型的哈希。
+//  - 详情字段（capitalTotalLoot/members/attackLog/defenseLog 等）
+//    变化时行 ID 保持不变，避免 DisclosureGroup 展开态因详情刷新抖动。
+//  - 重复三元组的不同历史记录仍需不同 ID，且跨分页累计、重建缓存、
+//    重新解码后顺序与 ID 稳定。
+//  - 实现：语义主键（三元组）+ 合并阶段确定性的重复序号。序号按
+//    全局出现顺序对同三元组计数：`key = start|end|state`, `id = key#seq`
+//    （seq 为该 key 此前出现次数，0-based）。该 scheme：
+//    - `#0/#1...` 区分同三元组的多条真实记录；
+//    - 详情变化不影响 key/seq，故 ID 不变；
+//    - 追加分页或一次性合并只要输入顺序一致，结果 ID 一致；
+//    - 重编码/解码后 items 顺序不变则 ID 仍一致；
+//    - 不依赖 offset 语义，局部删除不导致跨 key 的 ID 漂移（只影响
+//      同 key 的后续序号，但该场景要求“出现异常重排时显式重建
+//      row identity”而非静默错位）。
+//  - 异常重排（如服务端返回顺序变化）会导致基于顺序的序号错位，
+//    此时应视为需要重建身份（fail-closed：不静默复用旧 ID 去重
+//    丢记录，也不自动展开/请求）。
+//  - `OfficialCapitalRaidSeason` 的 Codable/Hashable 事实模型保持
+//    原样，不将临时 UI ID 写回持久化 payload。
+
+/// 突袭周末列表的渲染行模型（旁路官方 Codable payload 的 UI identity）。
+public struct CapitalRaidSeasonRow: Identifiable, Hashable, Sendable {
+    /// 稳定行 identity（见 `CapitalRaidRowIdentity` 契约）。
+    public let id: String
+    public let season: OfficialCapitalRaidSeason
+
+    public init(id: String, season: OfficialCapitalRaidSeason) {
+        self.id = id
+        self.season = season
+    }
+}
+
+/// 突袭周末行身份生成（纯函数，确定性，可测）。
+public enum CapitalRaidRowIdentity {
+    /// 语义主键：`startTime|endTime|state`。nil 按空字符串处理。
+    /// 分隔符 `|` 在真实数据（ISO8601 / "ended"/"ongoing"）中不出现，
+    /// 因此无需转义；若未来出现含 `|` 的值，仍保持确定性（仅同输入
+    /// 同输出，不承诺跨格式可逆）。
+    public static func tripleKey(for season: OfficialCapitalRaidSeason) -> String {
+        let start = season.startTime ?? ""
+        let end = season.endTime ?? ""
+        let state = season.state ?? ""
+        return "\(start)|\(end)|\(state)"
+    }
+
+    /// 为已按呈现顺序排好的赛季数组生成稳定行模型。
+    ///
+    /// - 参数 seasons: 按最终呈现顺序（含分页累计、去重后）的赛季列表。
+    /// - 返回: 与输入一一对应的 `CapitalRaidSeasonRow`，ID 满足 #211 契约。
+    ///
+    /// 重复三元组按出现次数编号：
+    /// `id = "\(tripleKey)#\(seq)"`，其中 `seq` 为该 key 此前出现次数。
+    /// 该函数为 O(n) 轻量路径（仅字符串拼接+字典计数），不得执行
+    /// JSON 编码或重型哈希。
+    public static func rows(for seasons: [OfficialCapitalRaidSeason]) -> [CapitalRaidSeasonRow] {
+        var counts: [String: Int] = [:]
+        counts.reserveCapacity(seasons.count)
+        var result: [CapitalRaidSeasonRow] = []
+        result.reserveCapacity(seasons.count)
+        for season in seasons {
+            let key = tripleKey(for: season)
+            let seq = counts[key, default: 0]
+            counts[key] = seq + 1
+            let id = "\(key)#\(seq)"
+            result.append(CapitalRaidSeasonRow(id: id, season: season))
+        }
+        return result
+    }
+
+    /// 已排序/已合并的分页整体的便捷入口。
+    public static func rows(for page: OfficialCapitalRaidPage) -> [CapitalRaidSeasonRow] {
+        rows(for: page.items)
+    }
+}
+
+// MARK: - Issue #199: 突袭周末赛季稳定身份键（保留兼容，View 不应再使用）
 
 public extension OfficialCapitalRaidSeason {
-    /// UI 稳定身份键（ForEach identity）：官方赛季无 ID 字段，且真实数据中
-    /// startTime/endTime/state 三元组可能重复（#197 fixture 17 条累计记录
-    /// 只有 3 个唯一键，多条不同 capitalTotalLoot 的记录共享同三元组），
-    /// 必须用**完整赛季内容**（JSON 编码全部字段，含 members/attackLog/
-    /// defenseLog）保证唯一。跨分页累计不变、确定性（合成 Codable 按键声明
-    /// 顺序编码，同版本结构输出稳定）。
+    /// 旧的 UI 稳定身份键（#199）：完整赛季 JSON 编码（含 members/attackLog/defenseLog）。
+    ///
+    /// - Warning: 该键在 #211 后已视为“重型路径”，`CapitalRaidCardView` 不再在
+    ///   ForEach diff 中调用它。请使用 `CapitalRaidRowIdentity.rows(for:)` 的
+    ///   预计算轻量 ID。若需历史对比，仍可保留此计算属性作迁移参照。
     var stableIdentityKey: String {
         let encoder = JSONEncoder()
         // 关键：`.sortedKeys`——完整内容含 `badgeUrls: [String: String]` 等

@@ -517,6 +517,74 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
     }
 }
 
+/// Duplicate / Diff 用的 coverage 身份：只含可序列化、immutable 的 provenance。
+///
+/// `VerifiedCoverageEvidence.runtimeWitness` 是进程内瞬态状态，encode 后丢失；
+/// 不得进入 duplicate identity，否则 save/reload 会把同一份历史拆成新 snapshot。
+public struct SnapshotHistoryCoverageDuplicateKey: Hashable, Sendable {
+    public let schemaVersion: Int
+    public let fields: [SnapshotCoverageField]
+    public let sections: [SnapshotHistorySectionDuplicateKey]
+    public let diagnostics: [String]
+
+    public init(_ coverage: SnapshotObservationCoverage) {
+        self.schemaVersion = coverage.schemaVersion
+        self.fields = coverage.fields
+        self.sections = coverage.sections.map(SnapshotHistorySectionDuplicateKey.init)
+        self.diagnostics = coverage.diagnostics
+    }
+}
+
+public struct SnapshotHistorySectionDuplicateKey: Hashable, Sendable {
+    public let base: SnapshotHistoryBase
+    public let rawSection: String
+    public let presence: SnapshotSectionPresence
+    public let completeness: SnapshotCoverageState
+    public let proof: SnapshotHistoryProofDuplicateKey
+    public let observedCount: Int
+
+    public init(_ section: SnapshotSectionCoverage) {
+        self.base = section.base
+        self.rawSection = section.rawSection
+        self.presence = section.presence
+        self.completeness = section.completeness
+        self.proof = SnapshotHistoryProofDuplicateKey(section.proof)
+        self.observedCount = section.observedCount
+    }
+}
+
+public enum SnapshotHistoryProofDuplicateKey: Hashable, Sendable {
+    case declared(source: String, version: String, expectedCount: Int?)
+    case verified(
+        source: String,
+        adapterID: String,
+        protocolVersion: String,
+        expectedCount: Int?,
+        verificationReason: String?
+    )
+    case legacyAuthoritative(source: String, version: String, expectedCount: Int?)
+    case unavailable(reason: String)
+
+    public init(_ proof: SnapshotCoverageProof) {
+        switch proof {
+        case .declared(let source, let version, let expectedCount):
+            self = .declared(source: source, version: version, expectedCount: expectedCount)
+        case .verified(let evidence):
+            self = .verified(
+                source: evidence.source,
+                adapterID: evidence.adapterID,
+                protocolVersion: evidence.protocolVersion,
+                expectedCount: evidence.expectedCount,
+                verificationReason: evidence.verificationReason
+            )
+        case .legacyAuthoritative(let source, let version, let expectedCount):
+            self = .legacyAuthoritative(source: source, version: version, expectedCount: expectedCount)
+        case .unavailable(let reason):
+            self = .unavailable(reason: reason)
+        }
+    }
+}
+
 public enum SnapshotLineageOutcome: String, Codable, Hashable, Sendable {
     case initial
     case continued

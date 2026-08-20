@@ -194,10 +194,38 @@ final class CapitalRaidRowIdentityTests: XCTestCase {
     }
 
     func testLastGoodSemanticsPreservedWithRowIdentity() throws {
-        // 模拟 AppModel 的 lastGood 失败保留语义：失败不改 lastGood，rows 仍基于 lastGood
+        // 模拟 AppModel 的 lastGood 失败保留语义：成功后有 lastGood，失败时不改 lastGood
         let p1 = try decodePage("perf_capital_raid_page_01")
-        let rowsSuccess = CapitalRaidRowIdentity.rows(for: p1.items)
-        // 失败场景下 lastGood 不变 → rows 也不变
+        let successState = ClanCapitalAPIState(
+            status: .success,
+            clanTag: "#PERF",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 1_700_000_000),
+            parserVersion: OfficialCapitalRaidPage.currentParserVersion,
+            lastGood: p1,
+            unrecognizedKeys: []
+        )
+        let failedState = ClanCapitalAPIState(
+            status: .failed,
+            clanTag: "#PERF",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 1_700_000_001),
+            lastErrorReason: "network",
+            lastHTTPStatus: 500,
+            parserVersion: OfficialCapitalRaidPage.currentParserVersion,
+            lastGood: p1,
+            unrecognizedKeys: []
+        )
+        // 失败保留 lastGood
+        XCTAssertEqual(successState.lastGood, failedState.lastGood, "失败必须保留 lastGood")
+        guard let successItems = successState.lastGood?.items,
+              let failedItems = failedState.lastGood?.items else {
+            XCTFail("lastGood 必须存在")
+            return
+        }
+        let rowsSuccess = CapitalRaidRowIdentity.rows(for: successItems)
+        let rowsFailedRetains = CapitalRaidRowIdentity.rows(for: failedItems)
+        XCTAssertEqual(rowsSuccess.map(\.id), rowsFailedRetains.map(\.id), "失败保留 lastGood 时 row ID 必须与成功时一致")
         XCTAssertEqual(rowsSuccess.count, p1.items.count)
         XCTAssertEqual(Set(rowsSuccess.map(\.id)).count, rowsSuccess.count)
     }
@@ -257,19 +285,29 @@ final class CapitalRaidRowIdentityTests: XCTestCase {
 
     func testViewDoesNotUseHeavyIdentity() throws {
         // 静态检查：CapitalRaidCardView.swift 不应再包含 stableIdentityKey
-        // 失败意味着重型路径仍在 View 层。
-        // 注意：本测试读取源码文本，非 runtime 行为；在 CI 上若文件路径变化会 skip。
-        let possiblePaths = [
-            Bundle.module.resourceURL?.appendingPathComponent("CapitalRaidCardView.swift"),
+        // 使用 #filePath 定位项目根，避免 cwd 差异导致的 XCTSkip
+        let thisFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = thisFile
+            .deletingLastPathComponent() // CapitalRaidRowIdentityTests.swift
+            .deletingLastPathComponent() // COCHelperCoreTests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // COC助手
+        let primaryURL = projectRoot.appendingPathComponent("Sources/COCHelper/CapitalRaidCardView.swift")
+        let fallbackURLs: [URL] = [
+            primaryURL,
             URL(fileURLWithPath: "Sources/COCHelper/CapitalRaidCardView.swift"),
-        ]
-        for url in possiblePaths.compactMap({ $0 }) where FileManager.default.fileExists(atPath: url.path) {
+            Bundle.module.resourceURL?.appendingPathComponent("CapitalRaidCardView.swift"),
+        ].compactMap { $0 }
+
+        var checked = false
+        for url in fallbackURLs where FileManager.default.fileExists(atPath: url.path) {
             let text = try String(contentsOf: url, encoding: .utf8)
-            XCTAssertFalse(text.contains("stableIdentityKey"), "CapitalRaidCardView 不应在 View 路径使用 stableIdentityKey（重型）")
-            XCTAssertTrue(text.contains("CapitalRaidRowIdentity"), "CapitalRaidCardView 应使用预计算轻量 identity")
-            return
+            XCTAssertFalse(text.contains("stableIdentityKey"), "CapitalRaidCardView 不应在 View 路径使用 stableIdentityKey（重型） @ \(url.path)")
+            XCTAssertTrue(text.contains("CapitalRaidRowIdentity"), "CapitalRaidCardView 应使用预计算轻量 identity @ \(url.path)")
+            XCTAssertTrue(text.contains("row.id != rows.last?.id"), "分隔线应基于 row.id 判定末行，避免共享 endTime 时漏画 Divider @ \(url.path)")
+            checked = true
+            break
         }
-        // 若在测试 bundle 中无法定位源码文件，不阻断（CI 环境差异），但本地开发时应能命中上面路径
-        throw XCTSkip("无法定位 CapitalRaidCardView.swift 源码路径，跳过静态检查（本地可手动验证 git grep）")
+        XCTAssertTrue(checked, "必须至少命中一个 CapitalRaidCardView.swift 路径（primary: \(primaryURL.path)）")
     }
 }

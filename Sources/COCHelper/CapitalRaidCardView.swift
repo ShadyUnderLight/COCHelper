@@ -182,7 +182,7 @@ struct CapitalRaidCardView: View {
             } else {
                 ForEach(rows) { row in
                     seasonRow(row.season)
-                    if row.season.endTime != rows.last?.season.endTime {
+                    if row.id != rows.last?.id {
                         Divider().padding(.leading, 40)
                     }
                 }

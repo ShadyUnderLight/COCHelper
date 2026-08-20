@@ -120,15 +120,16 @@ final class PerfFixtureTests: XCTestCase {
         XCTAssertFalse(c1000002.contains { $0.level == 17 })
         XCTAssertEqual(c1000002.filter { $0.level == 15 }.first?.count, 2)
         XCTAssertEqual(c1000002.filter { $0.level == 16 }.first?.count, 5)
-        // 顶层 coverage 权威证明（buildings 声明）。
+        // 顶层 coverage 声明（buildings declared proof）。
         let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
-        if case .authoritative(source: _, version: _, expectedCount: let expected) = proofs["buildings"] {
+        if case .declared(source: _, version: _, expectedCount: let expected) = proofs["buildings"] {
             XCTAssertEqual(
                 expected,
                 snapshot.objectSections["buildings"]?.count ?? 0
             )
+            XCTAssertFalse(proofs["buildings"]?.isVerified ?? true)
         } else {
-            XCTFail("variant fixture must carry authoritative coverage proof for buildings")
+            XCTFail("variant fixture must carry declared coverage proof for buildings")
         }
     }
 

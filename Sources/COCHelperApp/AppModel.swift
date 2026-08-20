@@ -285,6 +285,9 @@ public final class AppModel: ObservableObject {
     /// @MainActor 持有；同步访问，无后台计算。
     private let projectionCache = VillageProjectionCache()
 
+    /// perf 导入是否允许将 bundled fixture coverage 提升为 verified。
+    private var perfImportPromotesVerifiedCoverage = false
+
     /// Issue #200：投影缓存统计（测试钩子，@testable 可见；生产不消费）。
     var projectionCacheStats: (buildCount: Int, hitCount: Int) {
         (projectionCache.buildCount, projectionCache.hitCount)
@@ -2444,6 +2447,17 @@ public final class AppModel: ObservableObject {
     public func applyPendingAccountSnapshot(
         decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
     ) -> Bool {
+        applyPendingAccountSnapshot(
+            decision: reconciliationDecision,
+            sectionProofs: nil
+        )
+    }
+
+    @discardableResult
+    func applyPendingAccountSnapshot(
+        decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting,
+        sectionProofs: [String: SnapshotCoverageProof]? = nil
+    ) -> Bool {
         guard let snapshot = pendingAccountSnapshot else { return false }
 
         let targetIndex: Int
@@ -2506,7 +2520,8 @@ public final class AppModel: ObservableObject {
                 appliedAt: appliedAt,
                 manualEnvelope: manualEnvelopeForCreate,
                 expectedPreview: pendingReconciliationPreview,
-                reconciliationDecision: reconciliationDecision
+                reconciliationDecision: reconciliationDecision,
+                sectionProofs: sectionProofs
             )
         } catch {
             accountImportError = Self.localizedPersistenceError(error)
@@ -2590,9 +2605,26 @@ public final class AppModel: ObservableObject {
     /// 测试可注入测试 bundle 的 Fixtures 目录。
     @discardableResult
     public func loadPerformanceSample(fixtureDirectory: URL? = nil) -> Bool {
+        loadPerformanceSample(
+            fixtureDirectory: fixtureDirectory,
+            promoteVerifiedCoverage: nil
+        )
+    }
+
+    /// `@testable` 测试入口：非 bundled perf 目录默认保持 declared，测试可显式
+    /// 请求 verified 提升以复现完整 perf seed 行为。
+    @discardableResult
+    func loadPerformanceSample(
+        fixtureDirectory: URL? = nil,
+        promoteVerifiedCoverage: Bool?
+    ) -> Bool {
         // 仅当没有真实导入数据时执行（默认占位村庄允许被 seed 覆盖，不碰用户数据）。
         guard villages.allSatisfy({ !$0.hasImportedData }) else { return false }
         guard let directory = fixtureDirectory ?? Self.perfFixtureBundleDirectory() else { return false }
+        let shouldPromote = promoteVerifiedCoverage
+            ?? Self.isBundledPerfFixtureDirectory(directory)
+        perfImportPromotesVerifiedCoverage = shouldPromote
+        defer { perfImportPromotesVerifiedCoverage = false }
 
         // 隔离检查：seed 会写 #PERFCLAN 的 war/raid 缓存并添加跟踪部落。
         // 若用户无村庄快照但已有该 tag 的任何部落缓存/跟踪，拒绝执行，
@@ -2685,6 +2717,11 @@ public final class AppModel: ObservableObject {
             ?? Bundle.module.resourceURL?.appendingPathComponent("PerfFixtures")
     }
 
+    private static func isBundledPerfFixtureDirectory(_ directory: URL) -> Bool {
+        guard let bundled = perfFixtureBundleDirectory() else { return false }
+        return directory.standardizedFileURL == bundled.standardizedFileURL
+    }
+
     /// 读取 fixture 文本（bundle 或测试注入目录）。
     private func perfFixtureText(_ name: String, in directory: URL) throws -> String {
         let url = directory.appendingPathComponent(name + ".json")
@@ -2703,7 +2740,13 @@ public final class AppModel: ObservableObject {
         guard pendingAccountSnapshot != nil else {
             return false
         }
-        return applyPendingAccountSnapshot()
+        guard let snapshot = pendingAccountSnapshot else { return false }
+        let sectionProofs = perfImportPromotesVerifiedCoverage
+            ? SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
+                JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            )
+            : nil
+        return applyPendingAccountSnapshot(sectionProofs: sectionProofs)
     }
 
     /// 在村庄上启动 manual 记录：1000002 lvl15→16（冲突样本）+ 2 项 active
@@ -3836,7 +3879,8 @@ public final class AppModel: ObservableObject {
         appliedAt: Date,
         manualEnvelope: ManualTrackerEnvelope? = nil,
         expectedPreview: ManualReconciliationPreview? = nil,
-        reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting
+        reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting,
+        sectionProofs: [String: SnapshotCoverageProof]? = nil
     ) throws {
         try ensureVillageStoreWritable()
         guard let historyEnvelope else {
@@ -3858,7 +3902,7 @@ public final class AppModel: ObservableObject {
             appliedAt: appliedAt,
             catalog: gameCatalog,
             craftTableCatalog: craftTableCatalog,
-            sectionProofs: JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            sectionProofs: sectionProofs ?? JSONSnapshotCoverageAdapter.proofs(for: snapshot)
         )
         guard var candidateManualEnvelope = manualEnvelope ?? manualTrackerEnvelope else {
             throw ManualTrackerStoreError.unavailable("导入前未找到可用的手动升级状态。")

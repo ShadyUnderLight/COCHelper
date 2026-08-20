@@ -47,9 +47,22 @@ final class SnapshotCoverageVerifierTests: XCTestCase {
             adapterID: "evil",
             protocolVersion: "1",
             expectedCount: 1,
-            verificationReason: "forged"
+            verificationReason: "forged",
+            verificationDigest: nil
         )
         XCTAssertFalse(proof.isVerified)
+    }
+
+    func testDirectVerifiedConstructionCannotImpersonateRegisteredAdapter() {
+        let forged = SnapshotCoverageProof.verified(
+            source: "evil",
+            adapterID: SnapshotCoverageVerifier.perfFixtureAdapterID,
+            protocolVersion: "1",
+            expectedCount: 1,
+            verificationReason: "forged",
+            verificationDigest: nil
+        )
+        XCTAssertFalse(forged.isVerified)
     }
 
     func testDecodedVerifiedWireWithUnregisteredAdapterIsNotTrusted() throws {
@@ -60,13 +73,35 @@ final class SnapshotCoverageVerifierTests: XCTestCase {
         XCTAssertFalse(proof.isVerified)
     }
 
+    func testDecodedVerifiedWireWithRegisteredAdapterButNoDigestIsNotTrusted() throws {
+        let json = """
+        {"kind":"verified","source":"evil","adapterID":"perf-fixture","protocolVersion":"1","expectedCount":1,"verificationReason":"forged"}
+        """.data(using: .utf8)!
+        let proof = try JSONDecoder().decode(SnapshotCoverageProof.self, from: json)
+        XCTAssertFalse(proof.isVerified)
+    }
+
+    func testIssuedVerifiedProofRoundTripsThroughJSON() throws {
+        let issued = SnapshotCoverageVerifier.issue(
+            source: "test-export",
+            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
+            protocolVersion: "1",
+            expectedCount: 2,
+            verificationReason: "test injection"
+        )
+        let data = try JSONEncoder().encode(issued)
+        let decoded = try JSONDecoder().decode(SnapshotCoverageProof.self, from: data)
+        XCTAssertTrue(decoded.isVerified)
+    }
+
     func testMissingVerificationReasonIsNotTrusted() {
         let proof = SnapshotCoverageProof.verified(
             source: "test-export",
             adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
             protocolVersion: "1",
             expectedCount: 1,
-            verificationReason: nil
+            verificationReason: nil,
+            verificationDigest: nil
         )
         XCTAssertFalse(proof.isVerified)
     }

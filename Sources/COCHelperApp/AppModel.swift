@@ -2745,10 +2745,10 @@ public final class AppModel: ObservableObject {
         JSONSnapshotCoverageAdapter.proofs(for: snapshot).mapValues { proof in
             switch proof {
             case .declared(let source, let version, let expectedCount)
-                where source == SnapshotCoverageVerifier.perfFixtureAdapterID:
+                where source == "perf-fixture":
                 return SnapshotCoverageVerifier.issue(
                     source: source,
-                    adapterID: SnapshotCoverageVerifier.perfFixtureAdapterID,
+                    adapterID: "perf-fixture",
                     protocolVersion: version,
                     expectedCount: expectedCount,
                     verificationReason: "bundled perf fixture"

@@ -437,7 +437,7 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
     }
 
     /// Module-issued verified proof with live runtime witness (Issue #234).
-    package static func moduleIssued(
+    static func moduleIssued(
         base: SnapshotHistoryBase,
         rawSection: String,
         presence: SnapshotSectionPresence,
@@ -460,7 +460,7 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
     }
 
     /// Load-time revalidation or internal hydration (Issue #234).
-    package init(
+    init(
         base: SnapshotHistoryBase,
         rawSection: String,
         presence: SnapshotSectionPresence,

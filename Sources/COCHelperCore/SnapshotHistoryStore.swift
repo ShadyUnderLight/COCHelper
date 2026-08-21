@@ -207,7 +207,7 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
     }
 
     /// Issue #224: restore runtime trust for persisted verified coverage after decode.
-    public func hydratingVerifiedCoverage(
+    func hydratingVerifiedCoverage(
         policy: SnapshotCoverageRevalidationPolicy = .production
     ) -> SnapshotHistoryEnvelope {
         let hydratedEntries = entries.map {

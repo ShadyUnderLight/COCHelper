@@ -62,9 +62,14 @@ public final class CapitalRaidRowCache {
             return
         }
         if seasons.count < rows.count {
-            let oldPrefix = Array(rows.prefix(seasons.count))
-            if canSafelyReconcile(oldRows: oldPrefix, newSeasons: seasons) {
-                rows = matchedRows(oldRows: oldPrefix, newSeasons: seasons)
+            if seasons.isEmpty {
+                resetAndBuild(from: seasons)
+                return
+            }
+            // Issue #230：截短 refresh 必须基于完整旧缓存判断 duplicate 歧义，
+            // 不得先用 prefix 丢掉被截掉行的身份证据。
+            if canSafelyReconcileTruncatedRefresh(oldRows: rows, newSeasons: seasons) {
+                rows = matchedRowsTruncatedRefresh(oldRows: rows, newSeasons: seasons)
                 syncNextSequenceFromRows()
                 buildCount += 1
                 return
@@ -177,11 +182,29 @@ public final class CapitalRaidRowCache {
         matchRowIDs(oldRows: oldRows, newSeasons: newSeasons) != nil
     }
 
+    /// 截短 refresh：完整旧缓存参与 duplicate 歧义判断；仅唯一 exact anchor 可保留 ID。
+    private func canSafelyReconcileTruncatedRefresh(
+        oldRows: [CapitalRaidSeasonRow],
+        newSeasons: [OfficialCapitalRaidSeason]
+    ) -> Bool {
+        matchTruncatedRefreshRowIDs(oldRows: oldRows, newSeasons: newSeasons) != nil
+    }
+
     private func matchedRows(
         oldRows: [CapitalRaidSeasonRow],
         newSeasons: [OfficialCapitalRaidSeason]
     ) -> [CapitalRaidSeasonRow] {
         guard let ids = matchRowIDs(oldRows: oldRows, newSeasons: newSeasons) else {
+            return newSeasons.map { CapitalRaidSeasonRow(id: makeRow(for: $0).id, season: $0) }
+        }
+        return zip(ids, newSeasons).map { CapitalRaidSeasonRow(id: $0, season: $1) }
+    }
+
+    private func matchedRowsTruncatedRefresh(
+        oldRows: [CapitalRaidSeasonRow],
+        newSeasons: [OfficialCapitalRaidSeason]
+    ) -> [CapitalRaidSeasonRow] {
+        guard let ids = matchTruncatedRefreshRowIDs(oldRows: oldRows, newSeasons: newSeasons) else {
             return newSeasons.map { CapitalRaidSeasonRow(id: makeRow(for: $0).id, season: $0) }
         }
         return zip(ids, newSeasons).map { CapitalRaidSeasonRow(id: $0, season: $1) }
@@ -232,6 +255,99 @@ public final class CapitalRaidRowCache {
 
         guard assignment.count == newSeasons.count else { return nil }
         return newSeasons.indices.map { assignment[$0]! }
+    }
+
+    /// 截短 refresh matcher：new 更短时仍用完整 old cache 判断 duplicate 歧义。
+    private func matchTruncatedRefreshRowIDs(
+        oldRows: [CapitalRaidSeasonRow],
+        newSeasons: [OfficialCapitalRaidSeason]
+    ) -> [String]? {
+        guard !newSeasons.isEmpty else { return nil }
+
+        var oldByTriple: [String: [(index: Int, row: CapitalRaidSeasonRow)]] = [:]
+        var newByTriple: [String: [(index: Int, season: OfficialCapitalRaidSeason)]] = [:]
+        for (index, row) in oldRows.enumerated() {
+            let key = CapitalRaidRowIdentity.tripleKey(for: row.season)
+            oldByTriple[key, default: []].append((index, row))
+        }
+        for (index, season) in newSeasons.enumerated() {
+            let key = CapitalRaidRowIdentity.tripleKey(for: season)
+            newByTriple[key, default: []].append((index, season))
+        }
+
+        var assignment: [Int: String] = [:]
+
+        for triple in newByTriple.keys.sorted() {
+            guard let oldGroup = oldByTriple[triple], let newGroup = newByTriple[triple] else {
+                return nil
+            }
+            if newGroup.count > oldGroup.count { return nil }
+
+            if newGroup.count == oldGroup.count {
+                if oldGroup.count == 1 {
+                    assignment[newGroup[0].index] = oldGroup[0].row.id
+                } else {
+                    guard matchDuplicateTripleGroup(
+                        oldGroup: oldGroup,
+                        newGroup: newGroup,
+                        assignment: &assignment
+                    ) else {
+                        return nil
+                    }
+                }
+            } else {
+                guard matchTruncatedDuplicateTripleGroup(
+                    oldGroup: oldGroup,
+                    newGroup: newGroup,
+                    assignment: &assignment
+                ) else {
+                    return nil
+                }
+            }
+        }
+
+        guard assignment.count == newSeasons.count else { return nil }
+        return newSeasons.indices.map { assignment[$0]! }
+    }
+
+    /// duplicate triple 在截短 refresh 中数量减少：仅唯一 exact payload anchor 可保留 ID。
+    private func matchTruncatedDuplicateTripleGroup(
+        oldGroup: [(index: Int, row: CapitalRaidSeasonRow)],
+        newGroup: [(index: Int, season: OfficialCapitalRaidSeason)],
+        assignment: inout [Int: String]
+    ) -> Bool {
+        guard newGroup.count < oldGroup.count else { return false }
+
+        var unmatchedOld = oldGroup
+        var unmatchedNew = newGroup
+
+        while true {
+            var foundAnchor = false
+            var stillUnmatchedNew: [(index: Int, season: OfficialCapitalRaidSeason)] = []
+
+            for newEntry in unmatchedNew {
+                let season = newEntry.season
+                let newOccurrences = occurrenceCount(of: season, in: unmatchedNew.map(\.season))
+                guard newOccurrences == 1 else {
+                    stillUnmatchedNew.append(newEntry)
+                    continue
+                }
+                let oldMatchIndices = unmatchedOld.indices.filter {
+                    unmatchedOld[$0].row.season == season
+                }
+                guard oldMatchIndices.count == 1 else {
+                    stillUnmatchedNew.append(newEntry)
+                    continue
+                }
+                assignment[newEntry.index] = unmatchedOld[oldMatchIndices[0]].row.id
+                unmatchedOld.remove(at: oldMatchIndices[0])
+                foundAnchor = true
+            }
+            unmatchedNew = stillUnmatchedNew
+            if !foundAnchor { break }
+        }
+
+        return unmatchedNew.isEmpty
     }
 
     /// duplicate triple group：位置全等则按位保留；否则仅唯一 exact payload 可 anchor。

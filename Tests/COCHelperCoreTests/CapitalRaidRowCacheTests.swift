@@ -266,6 +266,96 @@ final class CapitalRaidRowCacheTests: XCTestCase {
         XCTAssertEqual(cache.rows[0].season.capitalTotalLoot, 111_111)
     }
 
+    // MARK: - Issue #230 truncated refresh
+
+    func testTruncatedRefreshDuplicateTripleWithoutExactAnchorResetsGeneration() {
+        let cache = CapitalRaidRowCache()
+        let a = makeSeason(loot: 100_000)
+        let b = makeSeason(loot: 100_500)
+        cache.apply(.initial(page: makePage([a, b], after: "CURSOR")))
+        cache.apply(.loadMoreSuccess(page: makePage([a, b, makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)], after: nil)))
+        let idA = cache.rows[0].id
+        let generationBefore = cache.generation
+
+        let bPrime = makeSeason(loot: 200_000)
+        cache.apply(.refreshSuccess(page: makePage([bPrime], after: "CURSOR")))
+
+        XCTAssertGreaterThan(cache.generation, generationBefore)
+        XCTAssertNotEqual(cache.rows[0].id, idA, "无唯一 exact anchor 时不得复用 A 的 row ID")
+    }
+
+    func testTruncatedRefreshDuplicateTripleWithUniqueExactAnchorPreservesCorrectID() {
+        let cache = CapitalRaidRowCache()
+        let a = makeSeason(loot: 100_000)
+        let b = makeSeason(loot: 100_500)
+        cache.apply(.initial(page: makePage([a, b], after: "CURSOR")))
+        cache.apply(.loadMoreSuccess(page: makePage([a, b, makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)], after: nil)))
+        let idA = cache.rows[0].id
+        let idB = cache.rows[1].id
+        let generationBefore = cache.generation
+
+        cache.apply(.refreshSuccess(page: makePage([b], after: "CURSOR")))
+
+        XCTAssertEqual(cache.generation, generationBefore)
+        XCTAssertEqual(cache.rows[0].id, idB, "唯一 exact anchor 应保留 B 的 row ID")
+        XCTAssertNotEqual(cache.rows[0].id, idA, "绝不得复用 A 的 row ID")
+    }
+
+    func testTruncatedRefreshIdenticalDuplicatesResetsGeneration() {
+        let cache = CapitalRaidRowCache()
+        let a1 = makeSeason(loot: 100_000)
+        let a2 = makeSeason(loot: 100_000)
+        cache.apply(.initial(page: makePage([a1, a2], after: "CURSOR")))
+        let oldIDs = Set(cache.rows.map(\.id))
+        let generationBefore = cache.generation
+
+        cache.apply(.refreshSuccess(page: makePage([a1], after: "CURSOR")))
+
+        XCTAssertGreaterThan(cache.generation, generationBefore)
+        XCTAssertTrue(oldIDs.isDisjoint(with: cache.rows.map(\.id)), "identical duplicate 截短后不得复用旧 ID")
+    }
+
+    func testTruncatedRefreshUniqueTriplePreservesID() {
+        let cache = CapitalRaidRowCache()
+        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        let d = makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 400_000)
+        cache.apply(.initial(page: makePage([a, b], after: "CURSOR")))
+        cache.apply(.loadMoreSuccess(page: makePage([a, b, c, d], after: nil)))
+        let idA = cache.rows[0].id
+        let idB = cache.rows[1].id
+        let generationBefore = cache.generation
+
+        cache.apply(.refreshSuccess(page: makePage([a, b], after: "CURSOR")))
+
+        XCTAssertEqual(cache.generation, generationBefore)
+        XCTAssertEqual(cache.rows[0].id, idA)
+        XCTAssertEqual(cache.rows[1].id, idB)
+    }
+
+    func testTruncatedRefreshUniqueTripleDetailUpdatePreservesID() {
+        let cache = CapitalRaidRowCache()
+        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        cache.apply(.initial(page: makePage([a, b], after: "CURSOR")))
+        cache.apply(.loadMoreSuccess(page: makePage([a, b, c], after: nil)))
+        let idA = cache.rows[0].id
+        let idB = cache.rows[1].id
+        let generationBefore = cache.generation
+
+        let aPrime = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 111_111)
+        let bPrime = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 222_222)
+        cache.apply(.refreshSuccess(page: makePage([aPrime, bPrime], after: "CURSOR")))
+
+        XCTAssertEqual(cache.generation, generationBefore)
+        XCTAssertEqual(cache.rows[0].id, idA)
+        XCTAssertEqual(cache.rows[1].id, idB)
+        XCTAssertEqual(cache.rows[0].season.capitalTotalLoot, 111_111)
+        XCTAssertEqual(cache.rows[1].season.capitalTotalLoot, 222_222)
+    }
+
     func testViewDoesNotCallRowIdentityBuilder() throws {
         let thisFile = URL(fileURLWithPath: #filePath)
         let projectRoot = thisFile

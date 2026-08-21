@@ -907,6 +907,57 @@ extension AppModelTests {
         XCTAssertEqual(model.capitalRaidRows(for: "#CLANA").map(\.id), Array(prefixIDs))
     }
 
+    /// Issue #230：duplicate triple 累计后截短 refresh，无 exact anchor 时不得错复用 prefix row ID。
+    @MainActor
+    func testRefreshAfterLoadMoreWithDuplicateTripleResetsAmbiguousRowIDs() async throws {
+        let duplicateFirstPage = Data(
+            #"{"items":[{"state":"ended","startTime":"20260701T080000.000Z","endTime":"20260703T080000.000Z","capitalTotalLoot":100000,"raidsCompleted":6,"totalAttacks":60,"enemyDistrictsDestroyed":120,"offensiveReward":5000,"defensiveReward":2500},{"state":"ended","startTime":"20260701T080000.000Z","endTime":"20260703T080000.000Z","capitalTotalLoot":100500,"raidsCompleted":6,"totalAttacks":60,"enemyDistrictsDestroyed":120,"offensiveReward":5000,"defensiveReward":2500}],"paging":{"cursors":{"after":"RAIDCURSORAFTER1"}}}"#.utf8
+        )
+        let loadMorePage = Data(
+            #"{"items":[{"state":"ended","startTime":"20260617T080000.000Z","endTime":"20260619T080000.000Z","capitalTotalLoot":50000,"raidsCompleted":4,"totalAttacks":40,"enemyDistrictsDestroyed":80,"offensiveReward":3000,"defensiveReward":1000}],"paging":{"cursors":{"before":"B2","after":"RAIDCURSORAFTER2"}}}"#.utf8
+        )
+        let ambiguousRefreshPage = Data(
+            #"{"items":[{"state":"ended","startTime":"20260701T080000.000Z","endTime":"20260703T080000.000Z","capitalTotalLoot":200000,"raidsCompleted":6,"totalAttacks":60,"enemyDistrictsDestroyed":120,"offensiveReward":5000,"defensiveReward":2500}],"paging":{"cursors":{"after":"RAIDCURSORAFTER1"}}}"#.utf8
+        )
+        final class RefreshMode: @unchecked Sendable {
+            var useAmbiguousRefresh = false
+        }
+        let refreshMode = RefreshMode()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            let query = request.url?.query(percentEncoded: true) ?? ""
+            let body: Data
+            if refreshMode.useAmbiguousRefresh {
+                body = ambiguousRefreshPage
+            } else if query.contains("after=RAIDCURSORAFTER1") {
+                body = loadMorePage
+            } else {
+                body = duplicateFirstPage
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertEqual(model.capitalRaidRows(for: "#CLANA").count, 3)
+        let idA = model.capitalRaidRows(for: "#CLANA")[0].id
+        let oldIDs = Set(model.capitalRaidRows(for: "#CLANA").map(\.id))
+
+        refreshMode.useAmbiguousRefresh = true
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.capitalRaidRows(for: "#CLANA").count, 1)
+        XCTAssertNotEqual(model.capitalRaidRows(for: "#CLANA")[0].id, idA, "截短 refresh 不得把 duplicate A 的 row ID 错给新首屏行")
+        XCTAssertTrue(oldIDs.isDisjoint(with: model.capitalRaidRows(for: "#CLANA").map(\.id)), "歧义截短 refresh 应 reset row IDs")
+    }
+
     /// Issue #221：View 重复读取不应触发 reconcile/rebuild。
     @MainActor
     func testRepeatedCapitalRaidRowReadsDoNotRebuild() async throws {

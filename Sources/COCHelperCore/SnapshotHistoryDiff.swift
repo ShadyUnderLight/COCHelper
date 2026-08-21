@@ -772,6 +772,7 @@ public enum SnapshotDiffEngine {
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
                 comparisonState: .provenanceOnly,
+                contentState: .provenanceOnly,
                 sectionCoverage: sectionCoverage,
                 changes: [],
                 diagnostics: diagnostics

@@ -1291,6 +1291,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         )
         XCTAssertTrue(diff.changes.isEmpty, "兼容 version bump 不得伪造 timer/level change")
         XCTAssertEqual(diff.comparisonState, .provenanceOnly)
+        XCTAssertEqual(diff.contentState, .provenanceOnly)
         XCTAssertFalse(diff.diagnostics.contains { $0.kind == .incomparableTimerSchema })
     }
 
@@ -1332,6 +1333,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         let diff = SnapshotDiffEngine.compare(from: from, to: to)
         XCTAssertTrue(diff.changes.isEmpty, "observation 未变时不得输出 timerChanged/upgrade")
         XCTAssertEqual(diff.comparisonState, .provenanceOnly)
+        XCTAssertEqual(diff.contentState, .provenanceOnly)
         XCTAssertEqual(diff.diagnostics.filter { $0.kind == .incomparableTimerSchema }.count, 1)
         XCTAssertFalse(diff.diagnostics.contains { $0.kind == .insufficientCoverage || $0.kind == .malformedObservation })
 
@@ -1717,6 +1719,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         )
         let provenanceDiff = SnapshotDiffEngine.compare(from: provenanceOld, to: provenanceNew)
         XCTAssertEqual(provenanceDiff.comparisonState, .provenanceOnly)
+        XCTAssertEqual(provenanceDiff.contentState, .provenanceOnly)
 
         let before = SnapshotHistoryStatistics.calculate(
             diffs: [normalDiff],

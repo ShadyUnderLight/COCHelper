@@ -2,6 +2,31 @@ import Foundation
 
 /// Issue #230/#231：Capital Raid 赛季 identity 匹配（refresh / load-more overlap 共用）。
 enum CapitalRaidSeasonMatcher {
+    /// boundary overlap 候选的匹配分类（load-more 专用）。
+    enum BoundaryOverlapMatch: Equatable {
+        /// suffix/prefix 可证明一一映射。
+        case matched
+        /// 是 overlap 候选，但 duplicate-triple 等无法证明对应关系。
+        case ambiguous
+        /// 不是有效 overlap 窗口（如 triple multiset 不一致），可尝试更短 overlap。
+        case notCandidate
+    }
+
+    /// 等长 suffix/prefix 的 boundary overlap 分类。
+    static func classifyBoundaryOverlap(
+        oldSeasons: [OfficialCapitalRaidSeason],
+        newSeasons: [OfficialCapitalRaidSeason]
+    ) -> BoundaryOverlapMatch {
+        guard oldSeasons.count == newSeasons.count else { return .notCandidate }
+        guard tripleKeyCounts(for: oldSeasons) == tripleKeyCounts(for: newSeasons) else {
+            return .notCandidate
+        }
+        if matchOldIndices(oldSeasons: oldSeasons, newSeasons: newSeasons) != nil {
+            return .matched
+        }
+        return .ambiguous
+    }
+
     /// 等长列表能否安全建立 old ↔ new 映射。
     static func canSafelyMatch(
         oldSeasons: [OfficialCapitalRaidSeason],

@@ -447,4 +447,55 @@ final class CapitalRaidRowCacheTests: XCTestCase {
         XCTAssertNotEqual(cache.rows[2].id, oldIDs[0])
         XCTAssertNotEqual(cache.rows[2].id, oldIDs[1])
     }
+
+    func testLoadMoreTerminalOverlapPreservesLastRowID() {
+        let cache = CapitalRaidRowCache()
+        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        cache.apply(.initial(page: makePage([a, b, c], after: "CURSOR")))
+        let idC = cache.rows[2].id
+        let generationBefore = cache.generation
+
+        let cPrime = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 999_999)
+        let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+            existing: makePage([a, b, c], after: "CURSOR").page,
+            fetched: makePage([cPrime], after: nil).page
+        )
+        cache.apply(.loadMoreSuccess(page: makePage(mergeResult.page.items, after: mergeResult.page.after)))
+
+        XCTAssertEqual(cache.rows.count, 3)
+        XCTAssertEqual(cache.rows[2].id, idC)
+        XCTAssertEqual(cache.rows[2].season.capitalTotalLoot, 999_999)
+        XCTAssertEqual(cache.generation, generationBefore)
+    }
+
+    func testLoadMorePartialOverlapAmbiguousResetsGenerationWithoutExtraDuplicateRows() {
+        let cache = CapitalRaidRowCache()
+        let anchor = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 10_000)
+        let k1 = makeSeason(loot: 100_000)
+        let k2 = makeSeason(loot: 100_500)
+        let d = makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 400_000)
+        cache.apply(.initial(page: makePage([anchor, k1, k2], after: "CURSOR")))
+        let oldIDs = Set(cache.rows.map(\.id))
+        let generationBefore = cache.generation
+
+        let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+            existing: makePage([anchor, k1, k2], after: "CURSOR").page,
+            fetched: makePage(
+                [makeSeason(loot: 101_000), makeSeason(loot: 102_000), d],
+                after: "CURSOR2"
+            ).page
+        )
+        cache.apply(.loadMoreSuccess(
+            page: makePage(mergeResult.page.items, after: mergeResult.page.after),
+            reconciliation: mergeResult.reconciliation
+        ))
+
+        XCTAssertEqual(mergeResult.reconciliation, .ambiguous)
+        XCTAssertEqual(cache.generation, generationBefore + 1)
+        XCTAssertEqual(cache.rows.count, 4)
+        XCTAssertTrue(oldIDs.isDisjoint(with: cache.rows.map(\.id)))
+        XCTAssertEqual(Set(cache.rows.map(\.id)).count, cache.rows.count)
+    }
 }

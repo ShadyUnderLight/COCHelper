@@ -580,27 +580,30 @@ public enum CapitalRaidPaginationMerge {
                 guard hasTripleOverlap(existing: existing, newPage: newPage, overlap: overlap) else {
                     continue
                 }
-                guard shouldApplyOverlap(
-                    overlap: overlap,
-                    existingCount: existing.count,
-                    newPageCount: newPage.count
-                ) else {
+                switch CapitalRaidSeasonMatcher.classifyBoundaryOverlap(
+                    oldSeasons: suffix,
+                    newSeasons: prefix
+                ) {
+                case .notCandidate:
                     continue
-                }
-                if CapitalRaidSeasonMatcher.canSafelyMatch(oldSeasons: suffix, newSeasons: prefix) {
+                case .ambiguous:
+                    return (
+                        Array(existing.dropLast(overlap)) + newPage,
+                        .ambiguous
+                    )
+                case .matched:
+                    guard shouldApplyOverlapCandidate(
+                        existing: existing,
+                        newPage: newPage,
+                        overlap: overlap
+                    ) else {
+                        continue
+                    }
                     return mergeWithOverlap(
                         existing: existing,
                         newPage: newPage,
                         overlap: overlap,
                         reconciliation: .identityPreserving
-                    )
-                }
-                if overlap == maxOverlap,
-                   existing.count == newPage.count,
-                   tripleKeyCounts(for: suffix) == tripleKeyCounts(for: prefix) {
-                    return (
-                        Array(existing.dropLast(overlap)) + newPage,
-                        .ambiguous
                     )
                 }
             }
@@ -633,15 +636,33 @@ public enum CapitalRaidPaginationMerge {
         return (merged, .identityPreserving)
     }
 
-    /// 单条 incoming 且 existing 更长时，不得把 genuine same-triple occurrence 误判为 overlap update。
-    private static func shouldApplyOverlap(
-        overlap: Int,
-        existingCount: Int,
-        newPageCount: Int
+    /// 是否应把该 overlap 当作 pagination boundary 更新（而非 append 新 occurrence）。
+    private static func shouldApplyOverlapCandidate(
+        existing: [OfficialCapitalRaidSeason],
+        newPage: [OfficialCapitalRaidSeason],
+        overlap: Int
     ) -> Bool {
-        if newPageCount > overlap { return true }
-        if newPageCount == overlap && existingCount == overlap { return true }
-        return false
+        if newPage.count > overlap { return true }
+
+        guard newPage.count == overlap else { return false }
+
+        if overlap == 1 {
+            let boundaryTriple = CapitalRaidRowIdentity.tripleKey(for: existing[existing.count - 1])
+            return tripleOccurrenceCount(of: boundaryTriple, in: existing) == 1
+        }
+
+        return existing.count == newPage.count && overlap == newPage.count
+    }
+
+    private static func tripleOccurrenceCount(
+        of triple: String,
+        in seasons: [OfficialCapitalRaidSeason]
+    ) -> Int {
+        seasons.reduce(into: 0) { count, season in
+            if CapitalRaidRowIdentity.tripleKey(for: season) == triple {
+                count += 1
+            }
+        }
     }
 
     /// suffix/prefix 在 triple 语义上存在重叠（而非仅长度相等）。

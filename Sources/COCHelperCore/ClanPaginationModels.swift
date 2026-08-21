@@ -491,3 +491,253 @@ public enum PaginationMerge {
         )
     }
 }
+
+// MARK: - Issue #231: Capital Raid load-more identity-aware merge
+
+/// Capital Raid 专用分页合并：load-more overlap 复用 #230 identity matcher，不改 generic `PaginationMerge`。
+public enum CapitalRaidPaginationMerge {
+    /// load-more 合并后的 row identity 处置。
+    public enum LoadMoreReconciliation: Sendable, Equatable {
+        /// prefix identity 可证明匹配，row cache 增量 reconcile。
+        case identityPreserving
+        /// overlap 歧义：row cache fail-closed reset（单次 generation bump）。
+        case ambiguous
+    }
+
+    public struct LoadMoreResult: Sendable, Equatable {
+        public let page: OfficialPaginatedPage<OfficialCapitalRaidSeason>
+        public let reconciliation: LoadMoreReconciliation
+
+        public init(
+            page: OfficialPaginatedPage<OfficialCapitalRaidSeason>,
+            reconciliation: LoadMoreReconciliation
+        ) {
+            self.page = page
+            self.reconciliation = reconciliation
+        }
+    }
+
+    /// 加载更多后的累计页面（Capital Raid 专用）：
+    /// - suffix/prefix overlap 用 identity matcher 更新 payload，而非 `Equatable` 去重；
+    /// - 游标停滞语义与 generic merge 一致。
+    public static func mergedLoadMorePage(
+        existing: OfficialPaginatedPage<OfficialCapitalRaidSeason>,
+        fetched: OfficialPaginatedPage<OfficialCapitalRaidSeason>
+    ) -> LoadMoreResult {
+        let stalled: Bool = {
+            guard let fetchedAfter = fetched.after, let existingAfter = existing.after else {
+                return false
+            }
+            return fetchedAfter == existingAfter
+        }()
+        let (items, reconciliation) = mergedLoadMoreItems(
+            existing: existing.items,
+            newPage: fetched.items
+        )
+        return LoadMoreResult(
+            page: OfficialPaginatedPage(
+                items: items,
+                before: fetched.before ?? existing.before,
+                after: stalled ? nil : fetched.after
+            ),
+            reconciliation: reconciliation
+        )
+    }
+
+    /// 纯函数：identity-aware load-more items 合并（可单测）。
+    static func mergedLoadMoreItems(
+        existing: [OfficialCapitalRaidSeason],
+        newPage: [OfficialCapitalRaidSeason]
+    ) -> (items: [OfficialCapitalRaidSeason], reconciliation: LoadMoreReconciliation) {
+        if newPage.isEmpty {
+            return (existing, .identityPreserving)
+        }
+
+        if existing.count == 1 && newPage.count == 1 {
+            if CapitalRaidSeasonMatcher.canSafelyMatch(oldSeasons: existing, newSeasons: newPage) {
+                return (newPage, .identityPreserving)
+            }
+            if tripleKeyCounts(for: existing) == tripleKeyCounts(for: newPage) {
+                return (newPage, .ambiguous)
+            }
+            return appendItems(existing: existing, newPage: newPage)
+        }
+
+        if existing.count == newPage.count && existing.count > 1,
+           CapitalRaidRowIdentity.tripleKey(for: existing[0])
+               == CapitalRaidRowIdentity.tripleKey(for: newPage[0]),
+           CapitalRaidSeasonMatcher.canSafelyMatch(oldSeasons: existing, newSeasons: newPage) {
+            return (newPage, .identityPreserving)
+        }
+
+        if existing.count == newPage.count && existing.count > 1,
+           CapitalRaidRowIdentity.tripleKey(for: existing[existing.count - 1])
+               == CapitalRaidRowIdentity.tripleKey(for: newPage[0]),
+           hasPositionalTripleOverlap(existing: existing, newPage: newPage, overlap: existing.count),
+           tripleKeyCounts(for: existing) == tripleKeyCounts(for: newPage),
+           CapitalRaidSeasonMatcher.classifyBoundaryOverlap(
+               oldSeasons: existing,
+               newSeasons: newPage
+           ) == .ambiguous {
+            return (newPage, .ambiguous)
+        }
+
+        let maxOverlap = min(existing.count, newPage.count)
+        for overlap in stride(from: maxOverlap, through: 1, by: -1) {
+            guard isPaginationOverlapCandidate(
+                existing: existing,
+                newPage: newPage,
+                overlap: overlap
+            ) else {
+                continue
+            }
+            let suffix = Array(existing.suffix(overlap))
+            let prefix = Array(newPage.prefix(overlap))
+            switch CapitalRaidSeasonMatcher.classifyBoundaryOverlap(
+                oldSeasons: suffix,
+                newSeasons: prefix
+            ) {
+            case .notCandidate:
+                continue
+            case .ambiguous:
+                return (
+                    Array(existing.dropLast(overlap)) + newPage,
+                    .ambiguous
+                )
+            case .matched:
+                guard shouldApplyOverlapCandidate(
+                    existing: existing,
+                    newPage: newPage,
+                    overlap: overlap
+                ) else {
+                    continue
+                }
+                return mergeWithOverlap(
+                    existing: existing,
+                    newPage: newPage,
+                    overlap: overlap,
+                    reconciliation: .identityPreserving
+                )
+            }
+        }
+
+        return appendItems(existing: existing, newPage: newPage)
+    }
+
+    private static func mergeWithOverlap(
+        existing: [OfficialCapitalRaidSeason],
+        newPage: [OfficialCapitalRaidSeason],
+        overlap: Int,
+        reconciliation: LoadMoreReconciliation
+    ) -> (items: [OfficialCapitalRaidSeason], reconciliation: LoadMoreReconciliation) {
+        var merged = Array(existing.dropLast(overlap)) + Array(newPage.prefix(overlap))
+        for item in newPage.dropFirst(overlap) where !merged.contains(item) {
+            merged.append(item)
+        }
+        return (merged, reconciliation)
+    }
+
+    private static func appendItems(
+        existing: [OfficialCapitalRaidSeason],
+        newPage: [OfficialCapitalRaidSeason]
+    ) -> (items: [OfficialCapitalRaidSeason], reconciliation: LoadMoreReconciliation) {
+        var merged = existing
+        for item in newPage where !merged.contains(item) {
+            merged.append(item)
+        }
+        return (merged, .identityPreserving)
+    }
+
+    /// 是否应把该 overlap 当作 pagination boundary 更新（而非 append 新 occurrence）。
+    private static func shouldApplyOverlapCandidate(
+        existing: [OfficialCapitalRaidSeason],
+        newPage: [OfficialCapitalRaidSeason],
+        overlap: Int
+    ) -> Bool {
+        if newPage.count > overlap { return true }
+
+        guard newPage.count == overlap else { return false }
+
+        let suffix = Array(existing.suffix(overlap))
+        if CapitalRaidSeasonMatcher.hasUniqueExactPayloadBoundaryAnchor(
+            oldSeasons: existing,
+            newSeasons: newPage,
+            overlap: overlap
+        ) {
+            return true
+        }
+        for triple in Set(suffix.map(CapitalRaidRowIdentity.tripleKey(for:))) {
+            let countInExisting = tripleOccurrenceCount(of: triple, in: existing)
+            let countInSuffix = tripleOccurrenceCount(of: triple, in: suffix)
+            if countInExisting != countInSuffix {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func tripleOccurrenceCount(
+        of triple: String,
+        in seasons: [OfficialCapitalRaidSeason]
+    ) -> Int {
+        seasons.reduce(into: 0) { count, season in
+            if CapitalRaidRowIdentity.tripleKey(for: season) == triple {
+                count += 1
+            }
+        }
+    }
+
+    /// suffix/prefix 是否为 pagination boundary overlap 候选（positional triple + 非页内重复模式）。
+    private static func isPaginationOverlapCandidate(
+        existing: [OfficialCapitalRaidSeason],
+        newPage: [OfficialCapitalRaidSeason],
+        overlap: Int
+    ) -> Bool {
+        guard overlap > 0 else { return false }
+        guard hasPositionalTripleOverlap(existing: existing, newPage: newPage, overlap: overlap) else {
+            return false
+        }
+        let priorEnd = existing.count - overlap
+        guard priorEnd > 0 else { return false }
+        if CapitalRaidSeasonMatcher.hasUniqueExactPayloadBoundaryAnchor(
+            oldSeasons: existing,
+            newSeasons: newPage,
+            overlap: overlap
+        ) {
+            return true
+        }
+        let priorCounts = tripleKeyCounts(for: Array(existing.prefix(priorEnd)))
+        let suffixCounts = tripleKeyCounts(for: Array(existing.suffix(overlap)))
+        for (triple, suffixCount) in suffixCounts {
+            if priorCounts[triple, default: 0] >= suffixCount {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func hasPositionalTripleOverlap(
+        existing: [OfficialCapitalRaidSeason],
+        newPage: [OfficialCapitalRaidSeason],
+        overlap: Int
+    ) -> Bool {
+        guard overlap > 0 else { return false }
+        for index in 0..<overlap {
+            let existingIndex = existing.count - overlap + index
+            if CapitalRaidRowIdentity.tripleKey(for: existing[existingIndex])
+                != CapitalRaidRowIdentity.tripleKey(for: newPage[index]) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func tripleKeyCounts(for seasons: [OfficialCapitalRaidSeason]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for season in seasons {
+            let key = CapitalRaidRowIdentity.tripleKey(for: season)
+            counts[key, default: 0] += 1
+        }
+        return counts
+    }
+}

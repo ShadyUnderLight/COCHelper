@@ -239,6 +239,29 @@ enum CapitalRaidSeasonMatcher {
         return false
     }
 
+    /// overlap suffix/prefix 是否存在唯一 exact payload boundary anchor（可跳过 prior-count 防误判）。
+    static func hasUniqueExactPayloadBoundaryAnchor(
+        oldSeasons: [OfficialCapitalRaidSeason],
+        newSeasons: [OfficialCapitalRaidSeason],
+        overlap: Int
+    ) -> Bool {
+        guard overlap > 0,
+              oldSeasons.count >= overlap,
+              newSeasons.count >= overlap else {
+            return false
+        }
+        let suffixStart = oldSeasons.count - overlap
+        let prefix = Array(newSeasons.prefix(overlap))
+        for (prefixIndex, newSeason) in prefix.enumerated() {
+            let exactMatchIndices = oldSeasons.indices.filter { oldSeasons[$0] == newSeason }
+            guard exactMatchIndices.count == 1 else { continue }
+            let matchedIndex = exactMatchIndices[0]
+            guard matchedIndex == suffixStart + prefixIndex else { continue }
+            return true
+        }
+        return false
+    }
+
     private static func occurrenceCount(
         of season: OfficialCapitalRaidSeason,
         in seasons: [OfficialCapitalRaidSeason]

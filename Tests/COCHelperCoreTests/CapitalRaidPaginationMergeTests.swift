@@ -117,6 +117,46 @@ final class CapitalRaidPaginationMergeTests: XCTestCase {
         XCTAssertEqual(result.reconciliation, .identityPreserving)
     }
 
+    func testLoadMorePriorTripleOverlapWithExactAnchorMergesWithoutDuplicateRows() {
+        let k0 = makeSeason(loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let k1 = makeSeason(loot: 101_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        let existing = makePage([k0, b, k1, c], after: "CURSOR")
+        let cPrime = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 333_333)
+        let d = makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 400_000)
+        let fetched = makePage([k1, cPrime, d], after: "CURSOR2")
+
+        let result = CapitalRaidPaginationMerge.mergedLoadMorePage(existing: existing, fetched: fetched)
+
+        XCTAssertEqual(result.page.items.count, 5)
+        XCTAssertEqual(
+            result.page.items.map(\.capitalTotalLoot),
+            [100_000, 200_000, 101_000, 333_333, 400_000]
+        )
+        XCTAssertEqual(result.reconciliation, .identityPreserving)
+    }
+
+    func testLoadMoreTerminalPriorTripleOverlapWithExactAnchorUpdatesWithoutAppending() {
+        let k0 = makeSeason(loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let k1 = makeSeason(loot: 101_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        let existing = makePage([k0, b, k1, c], after: "CURSOR")
+        let cPrime = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 333_333)
+        let fetched = makePage([k1, cPrime], after: nil)
+
+        let result = CapitalRaidPaginationMerge.mergedLoadMorePage(existing: existing, fetched: fetched)
+
+        XCTAssertEqual(result.page.items.count, 4)
+        XCTAssertEqual(
+            result.page.items.map(\.capitalTotalLoot),
+            [100_000, 200_000, 101_000, 333_333]
+        )
+        XCTAssertNil(result.page.after)
+        XCTAssertEqual(result.reconciliation, .identityPreserving)
+    }
+
     // MARK: - Case 3: fully ambiguous equal-count overlap
 
     func testLoadMoreAmbiguousEqualCountOverlapMarksReconciliationAmbiguous() {

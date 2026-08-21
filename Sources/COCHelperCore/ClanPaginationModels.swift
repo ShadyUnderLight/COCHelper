@@ -659,6 +659,13 @@ public enum CapitalRaidPaginationMerge {
         guard newPage.count == overlap else { return false }
 
         let suffix = Array(existing.suffix(overlap))
+        if CapitalRaidSeasonMatcher.hasUniqueExactPayloadBoundaryAnchor(
+            oldSeasons: existing,
+            newSeasons: newPage,
+            overlap: overlap
+        ) {
+            return true
+        }
         for triple in Set(suffix.map(CapitalRaidRowIdentity.tripleKey(for:))) {
             let countInExisting = tripleOccurrenceCount(of: triple, in: existing)
             let countInSuffix = tripleOccurrenceCount(of: triple, in: suffix)
@@ -692,6 +699,13 @@ public enum CapitalRaidPaginationMerge {
         }
         let priorEnd = existing.count - overlap
         guard priorEnd > 0 else { return false }
+        if CapitalRaidSeasonMatcher.hasUniqueExactPayloadBoundaryAnchor(
+            oldSeasons: existing,
+            newSeasons: newPage,
+            overlap: overlap
+        ) {
+            return true
+        }
         let priorCounts = tripleKeyCounts(for: Array(existing.prefix(priorEnd)))
         let suffixCounts = tripleKeyCounts(for: Array(existing.suffix(overlap)))
         for (triple, suffixCount) in suffixCounts {

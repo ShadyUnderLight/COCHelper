@@ -76,8 +76,8 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
                     rawSection: "buildings",
                     proof: .unavailable(reason: "源 JSON 缺少 section。"),
                     completeness: .unavailable,
-                    runtimeTrust: .notApplicable,
-                    presence: .missing
+                    presence: .missing,
+                    runtimeTrust: .notApplicable
                 )
             ],
             diagnostics: [],

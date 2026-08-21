@@ -736,7 +736,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(beforeDiffs.count, 1)
         XCTAssertEqual(beforeDiffs.first?.comparisonState, .provenanceOnly)
         XCTAssertEqual(afterDiffs.first?.comparisonState, .provenanceOnly)
-        XCTAssertEqual(beforeStats.today.heroLevelGrowth, afterStats.today.heroLevelGrowth)
+        XCTAssertEqual(beforeStats, afterStats)
     }
 
     private func productionHydratedEnvelope(

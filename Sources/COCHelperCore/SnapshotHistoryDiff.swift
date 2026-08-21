@@ -266,6 +266,36 @@ private struct MetricApplicabilityEvaluator {
         return false
     }
 
+    /// Issue #235: provenance-only may certify a definite zero without requiring
+    /// every sibling section in the metric universe, but only when every
+    /// observed/relevant section is complete+trusted.  Missing/unavailable
+    /// siblings are ignored; partial/untrusted relevant sections fail closed.
+    func neutralMetricEligibility(
+        sections: Set<String>,
+        fields: Set<String>,
+        in diff: SnapshotDiff
+    ) -> MetricUniverseState {
+        guard isUniverseRelevant(sections: sections, in: diff) else { return .irrelevant }
+        var sawComplete = false
+        for section in sections.sorted() {
+            guard let coverage = sectionCoverage.first(where: { $0.rawSection == section }) else {
+                continue
+            }
+            if coverage.isNotApplicableForMetrics {
+                continue
+            }
+            guard isSectionRelevant(coverage) else {
+                continue
+            }
+            if coverage.isComplete(for: fields) {
+                sawComplete = true
+            } else {
+                return .insufficient
+            }
+        }
+        return sawComplete ? .complete : .notApplicable
+    }
+
     private func isSectionRelevant(_ coverage: SnapshotDiffSectionCoverage) -> Bool {
         if coverage.fromObservedItemCount > 0 || coverage.toObservedItemCount > 0 {
             return true
@@ -692,6 +722,19 @@ public enum SnapshotDiffEngine {
                     kind: .incomparableTimerSchema,
                     message: "观察内容未变，但两侧 timer 契约不一致，不能确认 timer 变化。"
                 ))
+            }
+            var seenIdentities = Set<String>()
+            for item in from.observation.items {
+                guard seenIdentities.insert(item.identity.key).inserted else { continue }
+                guard isUsableIdentity(item.identity) else {
+                    diagnostics.append(SnapshotDiffDiagnostic(
+                        kind: .unknownIdentity,
+                        message: "发现无法确认的历史 identity。",
+                        identity: item.identity,
+                        rawSection: item.identity.rawSection
+                    ))
+                    continue
+                }
             }
             return SnapshotDiff(
                 fromSnapshotID: from.snapshotID,
@@ -2513,6 +2556,7 @@ private struct MetricAccumulators {
             switch diff.comparisonState {
             case .provenanceOnly:
                 applyProvenanceOnlyContribution(for: diff)
+                markUnknownForDiagnostics(in: diff)
             case .comparable:
                 let diffApplicability = DiffMetricApplicability(diff: diff)
                 applyDiffApplicability(diffApplicability)
@@ -2530,37 +2574,76 @@ private struct MetricAccumulators {
 
     /// Issue #235: provenance-only audit append must not re-run #206 universe
     /// applicability (which would poison metrics) or fabricate growth/events.
-    /// It may only mark relevant growth metrics comparable so a definite zero
-    /// can surface when no prior unknown exists in the window.
+    /// It may only mark relevant growth metrics comparable when neutral
+    /// eligibility proves complete+trusted observed sections.
     private mutating func applyProvenanceOnlyContribution(for diff: SnapshotDiff) {
         let evaluator = MetricApplicabilityEvaluator(sectionCoverage: diff.sectionCoverage)
+        let levelFields: Set<String> = ["presence", "data", "lvl"]
+        let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
         let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
         let wallSections: Set<String> = ["buildings", "buildings2"]
         let heroSections: Set<String> = ["heroes", "heroes2"]
         let troopSections: Set<String> = ["units", "units2"]
 
-        if evaluator.isUniverseRelevant(sections: buildingSections, in: diff) {
+        switch evaluator.neutralMetricEligibility(sections: buildingSections, fields: histogramFields, in: diff) {
+        case .complete:
             buildingGrowth.markComparable()
             aggregateBuildingGrowth.markComparable()
+        case .insufficient:
+            buildingGrowth.markUnknown()
+            aggregateBuildingGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
-        if evaluator.isUniverseRelevant(sections: wallSections, in: diff) {
+        switch evaluator.neutralMetricEligibility(sections: wallSections, fields: histogramFields, in: diff) {
+        case .complete:
             wallGrowth.markComparable()
             aggregateWallGrowth.markComparable()
+        case .insufficient:
+            wallGrowth.markUnknown()
+            aggregateWallGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
-        if evaluator.isUniverseRelevant(sections: heroSections, in: diff) {
+        switch evaluator.neutralMetricEligibility(sections: heroSections, fields: levelFields, in: diff) {
+        case .complete:
             heroGrowth.markComparable()
+        case .insufficient:
+            heroGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
-        if evaluator.isUniverseRelevant(sections: troopSections, in: diff) {
+        switch evaluator.neutralMetricEligibility(sections: troopSections, fields: levelFields, in: diff) {
+        case .complete:
             troopGrowth.markComparable()
+        case .insufficient:
+            troopGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
-        if evaluator.isUniverseRelevant(sections: ["spells"], in: diff) {
+        switch evaluator.neutralMetricEligibility(sections: ["spells"], fields: levelFields, in: diff) {
+        case .complete:
             spellGrowth.markComparable()
+        case .insufficient:
+            spellGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
-        if evaluator.isUniverseRelevant(sections: ["pets"], in: diff) {
+        switch evaluator.neutralMetricEligibility(sections: ["pets"], fields: levelFields, in: diff) {
+        case .complete:
             petGrowth.markComparable()
+        case .insufficient:
+            petGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
-        if evaluator.isUniverseRelevant(sections: ["equipment"], in: diff) {
+        switch evaluator.neutralMetricEligibility(sections: ["equipment"], fields: levelFields, in: diff) {
+        case .complete:
             equipmentGrowth.markComparable()
+        case .insufficient:
+            equipmentGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
     }
 

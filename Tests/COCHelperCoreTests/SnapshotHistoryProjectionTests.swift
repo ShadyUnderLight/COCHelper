@@ -354,7 +354,53 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         XCTAssertEqual(result.statistics.today.heroLevelGrowth.value, 0)
     }
 
-    func testProvenanceOnlyRowKeepsTimelineDiagnosticSummaryAndStatistics() {
+    func testCompatibleProvenanceOnlyRowStaysOutOfUnknownFilter() {
+        let heroItem = SnapshotObservationItem(
+            identity: SnapshotItemIdentity(base: .home, rawSection: "heroes", dataID: 1),
+            level: 1,
+            count: 1,
+            rawTimerEvidence: ["timer": .number("90")],
+            unknownFields: [:],
+            display: SnapshotDisplayBinding(displayName: "历史英雄名", category: "heroes")
+        )
+        func schema(_ version: String) -> SnapshotTimerSchema {
+            SnapshotTimerSchema(
+                version: version,
+                fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining, minValue: 0)]
+            )
+        }
+        let baseline = makeEntry(
+            id: "A0000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 100,
+            isBaseline: true,
+            items: [heroItem],
+            timerSchema: schema("timer-1")
+        )
+        let provenance = makeEntry(
+            id: "A1000000-0000-0000-0000-000000000000",
+            villageID: villageA,
+            lineageID: lineageA,
+            appliedAt: 200,
+            items: [heroItem],
+            timerSchema: schema("timer-2")
+        )
+        let envelope = makeEnvelope(entries: [baseline, provenance], activeEntries: [(villageA, provenance)])
+
+        let all = projection(envelope: envelope, referenceDate: 200)
+        XCTAssertEqual(all.timeline[0].comparisonState, .provenanceOnly)
+        XCTAssertEqual(all.timeline[0].summary, "来源信息变化，无业务变化")
+        XCTAssertTrue(all.timeline[0].diagnostics.isEmpty)
+        XCTAssertEqual(all.statistics.today.heroLevelGrowth.state, .available)
+        XCTAssertEqual(all.statistics.today.heroLevelGrowth.value, 0)
+
+        let unknownFilter = projection(envelope: envelope, category: .unknown, referenceDate: 200)
+        XCTAssertTrue(unknownFilter.filterIsEmpty)
+        XCTAssertEqual(unknownFilter.timeline, [])
+    }
+
+    func testIncompatibleProvenanceOnlyRowAppearsInUnknownFilter() {
         let heroItem = SnapshotObservationItem(
             identity: SnapshotItemIdentity(base: .home, rawSection: "heroes", dataID: 1),
             level: 1,
@@ -399,9 +445,14 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
         XCTAssertEqual(all.statistics.today.heroLevelGrowth.state, .available)
         XCTAssertEqual(all.statistics.today.heroLevelGrowth.value, 0)
 
-        let filtered = projection(envelope: envelope, category: .heroes, referenceDate: 200)
-        XCTAssertEqual(filtered.statistics.today.heroLevelGrowth.state, .available)
-        XCTAssertEqual(filtered.statistics.today.heroLevelGrowth.value, 0)
+        let heroesFilter = projection(envelope: envelope, category: .heroes, referenceDate: 200)
+        XCTAssertEqual(heroesFilter.statistics.today.heroLevelGrowth.state, .available)
+        XCTAssertEqual(heroesFilter.statistics.today.heroLevelGrowth.value, 0)
+
+        let unknownFilter = projection(envelope: envelope, category: .unknown, referenceDate: 200)
+        XCTAssertFalse(unknownFilter.filterIsEmpty)
+        XCTAssertEqual(unknownFilter.timeline.count, 1)
+        XCTAssertFalse(unknownFilter.timeline[0].diagnostics.isEmpty)
     }
 
     func testUnknownFilterKeepsCoverageDiagnosticsWithoutClaimingDeletion() {

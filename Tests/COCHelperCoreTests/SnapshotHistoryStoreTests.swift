@@ -621,12 +621,16 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let service = SnapshotHistoryService(store: store)
         let villageID = UUID()
         let lineageID = UUID()
+        let heroProof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
         let previousSchema = timerSchema(version: "account-json-timer-ms", unit: .milliseconds)
         let previous = try canonicalizeTimerEntry(
             villageID: villageID,
             lineageID: lineageID,
             schema: previousSchema,
-            json: timerJSON(level: 1)
+            json: timerJSON(level: 1),
+            sectionProofs: heroProof
         )
         let provenance = try service.planImport(
             snapshot: snapshot(tag: firstTag, text: timerJSON(level: 1), capturedAt: Date(timeIntervalSince1970: 100)),
@@ -634,7 +638,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             currentTag: firstTag,
             hasCurrentSnapshot: true,
             envelope: migratedEnvelope(for: previous),
-            appliedAt: Date(timeIntervalSince1970: 2)
+            appliedAt: Date(timeIntervalSince1970: 2),
+            sectionProofs: heroProof
         )
         XCTAssertTrue(provenance.appended)
         XCTAssertEqual(provenance.envelope.entries[0].timerSchema, previousSchema)
@@ -646,7 +651,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(diffs[0].diagnostics.filter { $0.kind == .incomparableTimerSchema }.count, 1)
 
         let projection = SnapshotHistoryProjection.project(
-            envelope: provenance.envelope,
+            envelope: provenance.envelope.hydratingVerifiedCoverage(policy: .production),
             villageID: villageID,
             hasCurrentSnapshot: true,
             referenceDate: Date(timeIntervalSince1970: 2),
@@ -1491,7 +1496,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         villageID: UUID,
         lineageID: UUID,
         schema: SnapshotTimerSchema,
-        json: String
+        json: String,
+        sectionProofs: [String: SnapshotCoverageProof] = [:]
     ) throws -> SnapshotHistoryEntry {
         try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot(tag: firstTag, text: json, capturedAt: Date(timeIntervalSince1970: 100)),
@@ -1501,6 +1507,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
             isBaseline: true,
             baselineReason: .initial,
+            sectionProofs: sectionProofs,
             timerSchema: schema
         )
     }

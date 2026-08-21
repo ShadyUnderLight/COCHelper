@@ -270,9 +270,7 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
 
         let visibleChanges = unfilteredChanges.filter(category.matches)
         let includesCoverageDiagnostics = category == .unknown
-            && (comparisonState == .insufficientCoverage
-                || comparisonState == .provenanceOnly
-                || !unfilteredDiagnostics.isEmpty)
+            && (comparisonState == .insufficientCoverage || !unfilteredDiagnostics.isEmpty)
         guard !visibleChanges.isEmpty || includesCoverageDiagnostics else { return nil }
 
         return SnapshotHistoryRow(

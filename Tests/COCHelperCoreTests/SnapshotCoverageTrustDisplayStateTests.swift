@@ -47,6 +47,7 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
                     rawSection: "buildings",
                     proof: .unavailable(reason: "来源未提供 section 完整性证明。"),
                     completeness: .unavailable,
+                    presence: .presentEmpty,
                     runtimeTrust: .notApplicable
                 )
             ],
@@ -73,6 +74,60 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
         )
         XCTAssertEqual(
             SnapshotCoverageTrustDisplayState.evaluate(coverage: unavailableOnly),
+            .insufficientCoverage
+        )
+    }
+
+    func testEvaluateVerifiedWhenUnprovedMissingSectionsAreOutsideRelevantUniverse() {
+        let coverage = SnapshotObservationCoverage(
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                ),
+                makeSection(
+                    rawSection: "heroes2",
+                    proof: .unavailable(reason: "源中不存在该 section。"),
+                    completeness: .unavailable,
+                    presence: .missing,
+                    runtimeTrust: .notApplicable
+                )
+            ],
+            diagnostics: []
+        )
+
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
+            .verified
+        )
+    }
+
+    func testEvaluateInsufficientWhenRelevantMissingSectionHasVerifiedProof() {
+        let coverage = SnapshotObservationCoverage(
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                ),
+                makeSection(
+                    rawSection: "heroes2",
+                    proof: SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+                    completeness: .unavailable,
+                    presence: .missing,
+                    runtimeTrust: .trusted
+                )
+            ],
+            diagnostics: []
+        )
+
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
             .insufficientCoverage
         )
     }
@@ -114,12 +169,13 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
         rawSection: String,
         proof: SnapshotCoverageProof,
         completeness: SnapshotCoverageState,
+        presence: SnapshotSectionPresence = .presentNonEmpty,
         runtimeTrust: SectionCoverageRuntimeTrust
     ) -> SnapshotSectionCoverage {
         SnapshotSectionCoverage(
             base: .home,
             rawSection: rawSection,
-            presence: .presentNonEmpty,
+            presence: presence,
             completeness: completeness,
             proof: proof,
             observedCount: 1,

@@ -26,6 +26,10 @@ public enum SnapshotHistoryCanonicalizer {
         observationVersion: Int = SnapshotHistorySchema.observation,
         timerSchema: SnapshotTimerSchema? = AccountSnapshotImporter.timerSchema
     ) throws -> SnapshotHistoryEntry {
+        if sourceUniverse != nil,
+           observationVersion < SnapshotHistorySchema.observationWithSourceUniverse {
+            throw SnapshotHistoryCanonicalizationError.sourceUniverseRequiresObservationV6
+        }
         let source = try canonicalSource(
             snapshot.originalText,
             observationVersion: observationVersion
@@ -754,9 +758,7 @@ public enum SnapshotHistoryCanonicalizer {
         }
 
         return SnapshotObservationCoverage(
-            schemaVersion: sourceUniverse == nil
-                ? schemaVersion
-                : max(schemaVersion, SnapshotHistorySchema.observationWithSourceUniverse),
+            schemaVersion: schemaVersion,
             fields: fields,
             sections: sections,
             diagnostics: diagnostics,

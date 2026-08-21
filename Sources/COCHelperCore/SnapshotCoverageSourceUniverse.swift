@@ -1,5 +1,10 @@
 import Foundation
 
+/// Runtime-only witness that a source universe was issued by module-trusted code paths.
+enum SourceUniverseRuntimeWitness: Hashable, Sendable {
+    case moduleIssued
+}
+
 /// Whether a section belongs to a trusted source's coverage universe (Issue #236).
 public enum SnapshotSectionRelevance: String, Codable, Hashable, Sendable {
     /// Source contract requires this section.
@@ -30,11 +35,12 @@ public struct SnapshotCoverageSourceSectionRelevance: Codable, Hashable, Sendabl
     }
 }
 
-/// Frozen, module-issued source universe contract (Issue #236).
-public struct SnapshotCoverageSourceUniverse: Codable, Hashable, Sendable {
+/// Frozen source universe contract (Issue #236).
+public struct SnapshotCoverageSourceUniverse: Hashable, Sendable {
     public let adapterID: String
     public let protocolVersion: String
     public let sections: [SnapshotCoverageSourceSectionRelevance]
+    let runtimeWitness: SourceUniverseRuntimeWitness?
 
     public init(
         adapterID: String,
@@ -44,28 +50,80 @@ public struct SnapshotCoverageSourceUniverse: Codable, Hashable, Sendable {
         self.adapterID = adapterID
         self.protocolVersion = protocolVersion
         self.sections = sections.sorted { $0.id < $1.id }
+        self.runtimeWitness = nil
+    }
+
+    init(
+        adapterID: String,
+        protocolVersion: String,
+        sections: [SnapshotCoverageSourceSectionRelevance],
+        runtimeWitness: SourceUniverseRuntimeWitness
+    ) {
+        self.adapterID = adapterID
+        self.protocolVersion = protocolVersion
+        self.sections = sections.sorted { $0.id < $1.id }
+        self.runtimeWitness = runtimeWitness
     }
 
     public func relevance(for rawSection: String) -> SnapshotSectionRelevance {
         sections.first { $0.rawSection == rawSection }?.relevance ?? .unknown
     }
 
-    package var isModuleIssued: Bool {
+    package var hasRequiredSection: Bool {
+        sections.contains { $0.relevance == .required }
+    }
+
+    package var isWellFormedWireContract: Bool {
         SnapshotCoverageSourceUniverseIssuer.isRegistered(
             adapterID: adapterID,
             protocolVersion: protocolVersion
         )
     }
 
-    package var hasRequiredSection: Bool {
-        sections.contains { $0.relevance == .required }
+    public static func == (lhs: SnapshotCoverageSourceUniverse, rhs: SnapshotCoverageSourceUniverse) -> Bool {
+        lhs.adapterID == rhs.adapterID
+            && lhs.protocolVersion == rhs.protocolVersion
+            && lhs.sections == rhs.sections
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(adapterID)
+        hasher.combine(protocolVersion)
+        hasher.combine(sections)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case adapterID
+        case protocolVersion
+        case sections
+    }
+}
+
+extension SnapshotCoverageSourceUniverse: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            adapterID: try container.decode(String.self, forKey: .adapterID),
+            protocolVersion: try container.decode(String.self, forKey: .protocolVersion),
+            sections: try container.decode(
+                [SnapshotCoverageSourceSectionRelevance].self,
+                forKey: .sections
+            )
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(adapterID, forKey: .adapterID)
+        try container.encode(protocolVersion, forKey: .protocolVersion)
+        try container.encode(sections, forKey: .sections)
     }
 }
 
 /// Module-controlled factories for trusted source universe contracts.
 package enum SnapshotCoverageSourceUniverseIssuer {
     static func issueTestFixture(requiredSections: Set<String>) -> SnapshotCoverageSourceUniverse {
-        issue(
+        issueModuleIssued(
             adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
             protocolVersion: "1",
             requiredSections: requiredSections
@@ -89,14 +147,14 @@ package enum SnapshotCoverageSourceUniverseIssuer {
             }
         )
         guard !requiredSections.isEmpty else { return nil }
-        return issue(
+        return issueModuleIssued(
             adapterID: SnapshotCoverageVerifier.perfFixtureAdapterID,
             protocolVersion: "1",
             requiredSections: requiredSections
         )
     }
 
-    static func issue(
+    private static func issueModuleIssued(
         adapterID: String,
         protocolVersion: String,
         requiredSections: Set<String>
@@ -114,7 +172,8 @@ package enum SnapshotCoverageSourceUniverseIssuer {
         return SnapshotCoverageSourceUniverse(
             adapterID: adapterID,
             protocolVersion: protocolVersion,
-            sections: sections
+            sections: sections,
+            runtimeWitness: .moduleIssued
         )
     }
 
@@ -134,39 +193,53 @@ enum SnapshotCoverageSourceUniverseRevalidators {
     static func revalidate(
         universe: SnapshotCoverageSourceUniverse,
         snapshot: AccountSnapshot,
+        coverage: SnapshotObservationCoverage,
         policy: SnapshotCoverageRevalidationPolicy
-    ) -> Bool {
-        guard universe.isModuleIssued else { return false }
+    ) -> SourceUniverseRuntimeTrust {
+        guard universe.isWellFormedWireContract else {
+            return .rejected("source universe wire contract 无效。")
+        }
         switch universe.adapterID {
         case SnapshotCoverageVerifier.testFixtureAdapterID:
-            guard policy == .testsAllowTestFixture else { return false }
-            return revalidateTestFixture(universe: universe)
+            guard policy == .testsAllowTestFixture else {
+                return .rejected("production load 不得恢复 test-fixture source universe。")
+            }
+            return revalidateTestFixture(universe: universe, coverage: coverage)
         case SnapshotCoverageVerifier.perfFixtureAdapterID:
             return revalidatePerfFixture(universe: universe, snapshot: snapshot)
         default:
-            return false
+            return .rejected("未注册的 source universe adapter。")
         }
     }
 
-    private static func revalidateTestFixture(universe: SnapshotCoverageSourceUniverse) -> Bool {
-        let required = Set(
-            universe.sections.compactMap { entry in
-                entry.relevance == .required ? entry.rawSection : nil
+    private static func revalidateTestFixture(
+        universe: SnapshotCoverageSourceUniverse,
+        coverage: SnapshotObservationCoverage
+    ) -> SourceUniverseRuntimeTrust {
+        let authorizedRequired = Set(
+            coverage.sections.compactMap { section in
+                section.proof.hasVerifiedWireMetadata ? section.rawSection : nil
             }
         )
         let expected = SnapshotCoverageSourceUniverseIssuer.issueTestFixture(
-            requiredSections: required
+            requiredSections: authorizedRequired
         )
-        return expected == universe
+        guard expected == universe else {
+            return .rejected("test-fixture source universe 与 verified section proofs 不一致。")
+        }
+        return .trusted
     }
 
     private static func revalidatePerfFixture(
         universe: SnapshotCoverageSourceUniverse,
         snapshot: AccountSnapshot
-    ) -> Bool {
+    ) -> SourceUniverseRuntimeTrust {
         guard let expected = SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot) else {
-            return false
+            return .rejected("rawJSON 不是受信任的 bundled perf fixture。")
         }
-        return expected == universe
+        guard expected == universe else {
+            return .rejected("perf fixture source universe 与 adapter 契约不一致。")
+        }
+        return .trusted
     }
 }

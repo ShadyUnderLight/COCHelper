@@ -562,7 +562,8 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
                 fields: trustedEntry.coverage.fields,
                 sections: pendingHeroes,
                 diagnostics: trustedEntry.coverage.diagnostics,
-                sourceUniverse: trustedEntry.coverage.sourceUniverse
+                sourceUniverse: trustedEntry.coverage.sourceUniverse,
+                sourceUniverseRuntimeTrust: .pending
             ),
             isBaseline: trustedEntry.isBaseline,
             baselineReason: trustedEntry.baselineReason

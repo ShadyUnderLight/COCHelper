@@ -243,6 +243,58 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
         )
     }
 
+    func testEvaluatePendingWhenUniverseWireMetadataPendingAndSectionsTrusted() {
+        let proofs: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let coverage = SnapshotObservationCoverage(
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: proofs["heroes"]!,
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                )
+            ],
+            diagnostics: [],
+            sourceUniverse: SnapshotCoverageSourceUniverse(
+                adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
+                protocolVersion: "1",
+                sections: SnapshotHistoryTestCoverage.testFixtureUniverse(for: proofs).sections
+            ),
+            sourceUniverseRuntimeTrust: .pending
+        )
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
+            .pendingRevalidation
+        )
+    }
+
+    func testEvaluateInsufficientWhenUniverseRejectedEvenIfSectionsTrusted() {
+        let proofs: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let coverage = SnapshotObservationCoverage(
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: proofs["heroes"]!,
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                )
+            ],
+            diagnostics: [],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(for: proofs),
+            sourceUniverseRuntimeTrust: .rejected("tampered")
+        )
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
+            .insufficientCoverage
+        )
+    }
+
     func testEvaluateInsufficientWhenSectionsEmpty() {
         XCTAssertEqual(
             SnapshotCoverageTrustDisplayState.evaluate(

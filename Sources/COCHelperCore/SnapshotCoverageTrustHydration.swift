@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Issue #224: persisted verified-coverage revalidation and load-time hydration.
+/// Issue #224 / #236: persisted verified-coverage and source-universe revalidation.
 enum SnapshotCoverageTrustHydration {
     static func hydrate(
         entry: SnapshotHistoryEntry,
@@ -12,10 +12,7 @@ enum SnapshotCoverageTrustHydration {
             rawJSON: entry.rawJSON,
             policy: policy
         )
-        guard runtimeTrustChanged(
-            from: entry.coverage.sections,
-            to: hydratedCoverage.sections
-        ) else {
+        guard coverageTrustChanged(from: entry.coverage, to: hydratedCoverage) else {
             return entry
         }
         return SnapshotHistoryEntry(
@@ -46,8 +43,23 @@ enum SnapshotCoverageTrustHydration {
         rawJSON: String,
         policy: SnapshotCoverageRevalidationPolicy
     ) -> SnapshotObservationCoverage {
+        let snapshot = try? AccountSnapshotImporter.parse(rawJSON, now: Date(timeIntervalSince1970: 1))
+        var universeTrust = coverage.sourceUniverseRuntimeTrust
+        if let universe = coverage.sourceUniverse, universeTrust != .trusted {
+            if let snapshot {
+                universeTrust = SnapshotCoverageSourceUniverseRevalidators.revalidate(
+                    universe: universe,
+                    snapshot: snapshot,
+                    coverage: coverage,
+                    policy: policy
+                )
+            } else if universeTrust == .pending {
+                universeTrust = .rejected("无法解析 source JSON 以重验证 source universe。")
+            }
+        }
+
         var sections = coverage.sections
-        var changed = false
+        var sectionsChanged = false
         for index in sections.indices {
             let section = sections[index]
             guard case .verified(let evidence) = section.proof else { continue }
@@ -70,15 +82,19 @@ enum SnapshotCoverageTrustHydration {
                 observedCount: section.observedCount,
                 runtimeTrust: trust
             )
-            changed = true
+            sectionsChanged = true
         }
-        guard changed else { return coverage }
+
+        guard sectionsChanged || universeTrust != coverage.sourceUniverseRuntimeTrust else {
+            return coverage
+        }
         return SnapshotObservationCoverage(
             schemaVersion: coverage.schemaVersion,
             fields: coverage.fields,
             sections: sections,
             diagnostics: coverage.diagnostics,
-            sourceUniverse: coverage.sourceUniverse
+            sourceUniverse: coverage.sourceUniverse,
+            sourceUniverseRuntimeTrust: universeTrust
         )
     }
 
@@ -98,12 +114,15 @@ enum SnapshotCoverageTrustHydration {
         return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func runtimeTrustChanged(
-        from: [SnapshotSectionCoverage],
-        to: [SnapshotSectionCoverage]
+    private static func coverageTrustChanged(
+        from: SnapshotObservationCoverage,
+        to: SnapshotObservationCoverage
     ) -> Bool {
-        guard from.count == to.count else { return true }
-        for (lhs, rhs) in zip(from, to) where lhs.runtimeTrust != rhs.runtimeTrust {
+        if from.sourceUniverseRuntimeTrust != to.sourceUniverseRuntimeTrust {
+            return true
+        }
+        guard from.sections.count == to.sections.count else { return true }
+        for (lhs, rhs) in zip(from.sections, to.sections) where lhs.runtimeTrust != rhs.runtimeTrust {
             return true
         }
         return false

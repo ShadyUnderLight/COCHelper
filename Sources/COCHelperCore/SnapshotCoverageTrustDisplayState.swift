@@ -38,9 +38,18 @@ public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
         }
 
         guard let sourceUniverse = coverage.sourceUniverse,
-              sourceUniverse.isModuleIssued,
+              sourceUniverse.isWellFormedWireContract,
               sourceUniverse.hasRequiredSection else {
             return .insufficientCoverage
+        }
+
+        switch coverage.sourceUniverseRuntimeTrust {
+        case .notApplicable, .rejected:
+            return .insufficientCoverage
+        case .pending:
+            return .pendingRevalidation
+        case .trusted:
+            break
         }
 
         let relevantSections = sections.filter {

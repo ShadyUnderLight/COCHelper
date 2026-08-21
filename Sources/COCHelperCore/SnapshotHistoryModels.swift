@@ -589,19 +589,47 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
     public let diagnostics: [String]
     /// Module-issued source universe contract (Issue #236). Absent for v1–v5 history.
     public let sourceUniverse: SnapshotCoverageSourceUniverse?
+    /// Runtime trust for `sourceUniverse`; not serialized or part of duplicate identity.
+    package var sourceUniverseRuntimeTrust: SourceUniverseRuntimeTrust
 
     public init(
         schemaVersion: Int = SnapshotHistorySchema.observation,
         fields: [SnapshotCoverageField],
         sections: [SnapshotSectionCoverage] = [],
         diagnostics: [String] = [],
-        sourceUniverse: SnapshotCoverageSourceUniverse? = nil
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil,
+        sourceUniverseRuntimeTrust: SourceUniverseRuntimeTrust? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.fields = fields.sorted { $0.id < $1.id }
         self.sections = sections.sorted { $0.id < $1.id }
         self.diagnostics = diagnostics.sorted()
         self.sourceUniverse = sourceUniverse
+        self.sourceUniverseRuntimeTrust = sourceUniverseRuntimeTrust
+            ?? Self.initialUniverseTrust(for: sourceUniverse)
+    }
+
+    package static func initialUniverseTrust(
+        for universe: SnapshotCoverageSourceUniverse?
+    ) -> SourceUniverseRuntimeTrust {
+        guard let universe else { return .notApplicable }
+        return universe.runtimeWitness == .moduleIssued ? .trusted : .pending
+    }
+
+    public static func == (lhs: SnapshotObservationCoverage, rhs: SnapshotObservationCoverage) -> Bool {
+        lhs.schemaVersion == rhs.schemaVersion
+            && lhs.fields == rhs.fields
+            && lhs.sections == rhs.sections
+            && lhs.diagnostics == rhs.diagnostics
+            && lhs.sourceUniverse == rhs.sourceUniverse
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(schemaVersion)
+        hasher.combine(fields)
+        hasher.combine(sections)
+        hasher.combine(diagnostics)
+        hasher.combine(sourceUniverse)
     }
 
     public func state(
@@ -1005,6 +1033,7 @@ public enum SnapshotHistoryCanonicalizationError: Error, LocalizedError, Equatab
     case emptySource
     case topLevelMustBeObject
     case invalidJSON(String)
+    case sourceUniverseRequiresObservationV6
 
     public var errorDescription: String? {
         switch self {
@@ -1014,6 +1043,8 @@ public enum SnapshotHistoryCanonicalizationError: Error, LocalizedError, Equatab
             "快照原文顶层必须是对象。"
         case .invalidJSON(let message):
             "快照原文不是有效 JSON：" + message
+        case .sourceUniverseRequiresObservationV6:
+            "source universe 需要 observation v6 或更高版本。"
         }
     }
 }

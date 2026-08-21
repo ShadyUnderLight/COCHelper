@@ -15,6 +15,21 @@ public enum SectionCoverageRuntimeTrust: Equatable, Sendable {
     }
 }
 
+/// Runtime trust for a frozen source-universe contract (Issue #236).
+///
+/// Wire decode alone must not open UI trust projection; only live module issuance
+/// or load-time revalidation may restore `.trusted`.
+public enum SourceUniverseRuntimeTrust: Equatable, Sendable {
+    case notApplicable
+    case pending
+    case trusted
+    case rejected(String)
+
+    package var opensTrustProjection: Bool {
+        self == .trusted
+    }
+}
+
 /// Policy for which adapter revalidators may run during history load hydration.
 enum SnapshotCoverageRevalidationPolicy: Sendable {
     /// Production load: only adapters with replayable provenance (bundled perf fixtures).

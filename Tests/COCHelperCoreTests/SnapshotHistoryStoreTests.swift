@@ -325,6 +325,98 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             XCTFail("wire metadata 应保留")
         }
         XCTAssertFalse(heroes.isComplete)
+        XCTAssertEqual(decoded.coverage.sourceUniverseRuntimeTrust, .pending)
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: decoded.coverage),
+            .pendingRevalidation
+        )
+    }
+
+    func testSourceUniverseRequiresObservationV6AtCanonicalize() throws {
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        XCTAssertThrowsError(
+            try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot(
+                    tag: firstTag,
+                    text: "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+                ),
+                villageID: UUID(),
+                lineageID: UUID(),
+                appliedAt: Date(timeIntervalSince1970: 1),
+                sectionProofs: proof,
+                sourceUniverse: testSourceUniverse(for: proof),
+                observationVersion: SnapshotHistorySchema.observationWithoutCoverageMetadata
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? SnapshotHistoryCanonicalizationError,
+                .sourceUniverseRequiresObservationV6
+            )
+        }
+    }
+
+    func testTamperedSourceUniverseShrinksRequiredSectionsFailsTrustProjection() throws {
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}],\"buildings\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let live = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: text),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proof,
+            sourceUniverse: testSourceUniverse(for: proof)
+        )
+        let decoded = try JSONDecoder().decode(
+            SnapshotHistoryEntry.self,
+            from: try JSONEncoder().encode(live)
+        )
+        let tamperedUniverse = SnapshotCoverageSourceUniverse(
+            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
+            protocolVersion: "1",
+            sections: SnapshotHistoryTestCoverage.testFixtureUniverse(
+                requiredSections: ["heroes"]
+            ).sections
+        )
+        let tamperedCoverage = SnapshotObservationCoverage(
+            schemaVersion: decoded.coverage.schemaVersion,
+            fields: decoded.coverage.fields,
+            sections: decoded.coverage.sections.map { section in
+                SnapshotSectionCoverage(
+                    base: section.base,
+                    rawSection: section.rawSection,
+                    presence: section.presence,
+                    completeness: section.completeness,
+                    proof: section.proof,
+                    observedCount: section.observedCount,
+                    runtimeTrust: .trusted
+                )
+            },
+            diagnostics: decoded.coverage.diagnostics,
+            sourceUniverse: tamperedUniverse
+        )
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: tamperedCoverage),
+            .pendingRevalidation
+        )
+        let hydrated = SnapshotCoverageTrustHydration.hydrate(
+            coverage: tamperedCoverage,
+            rawJSON: text,
+            policy: .testsAllowTestFixture
+        )
+        if case .rejected = hydrated.sourceUniverseRuntimeTrust {
+            XCTAssertTrue(true)
+        } else {
+            XCTFail("tampered universe 应被拒绝")
+        }
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: hydrated),
+            .insufficientCoverage
+        )
     }
 
     func testVerifiedCoverageTamperedBindingFailsRevalidation() throws {
@@ -550,6 +642,16 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
         XCTAssertTrue(heroes.proof.hasVerifiedWireMetadata)
         XCTAssertFalse(heroes.opensTrustGates)
+        let productionCoverage = try XCTUnwrap(productionHydrated.entries.first?.coverage)
+        if case .rejected = productionCoverage.sourceUniverseRuntimeTrust {
+            XCTAssertTrue(true)
+        } else {
+            XCTFail("production load 不得恢复 test-fixture source universe")
+        }
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: productionCoverage),
+            .insufficientCoverage
+        )
         try store.save(productionHydrated)
         let reloaded = try XCTUnwrap(try store.load())
         XCTAssertEqual(

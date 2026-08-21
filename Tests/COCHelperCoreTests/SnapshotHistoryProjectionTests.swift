@@ -570,7 +570,7 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
             sections: sections.map { section in
                 let observedCount = items.filter { $0.identity.rawSection == section }.count
                 let isNotApplicable = notApplicableSections.contains(section)
-                return SnapshotSectionCoverage(
+                return SnapshotHistoryTestCoverage.trustedSection(
                     base: SnapshotHistoryBase(section: section),
                     rawSection: section,
                     presence: observedCount > 0 ? .presentNonEmpty : .presentEmpty,

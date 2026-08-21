@@ -110,4 +110,24 @@ enum SnapshotHistoryTestCoverage {
             expectedCount: expectedCount
         )
     }
+
+    /// Test helper: module-issued verified section with runtime trust restored.
+    static func trustedSection(
+        base: SnapshotHistoryBase,
+        rawSection: String,
+        presence: SnapshotSectionPresence,
+        completeness: SnapshotCoverageState,
+        proof: SnapshotCoverageProof? = nil,
+        observedCount: Int
+    ) -> SnapshotSectionCoverage {
+        let resolvedProof = proof ?? verified()
+        return SnapshotSectionCoverage.moduleIssued(
+            base: base,
+            rawSection: rawSection,
+            presence: presence,
+            completeness: completeness,
+            proof: resolvedProof,
+            observedCount: observedCount
+        )
+    }
 }

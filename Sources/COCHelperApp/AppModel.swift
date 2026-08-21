@@ -2909,10 +2909,14 @@ public final class AppModel: ObservableObject {
             let raidP1 = try decodePerfRaidPage(try perfFixtureText(PerfSampleFixture.raidPage1, in: directory))
             let raidP2 = try decodePerfRaidPage(try perfFixtureText(PerfSampleFixture.raidPage2, in: directory))
             let raidP3 = try decodePerfRaidPage(try perfFixtureText(PerfSampleFixture.raidPage3, in: directory))
-            let raidMerged = PaginationMerge.mergedPage(
-                existing: PaginationMerge.mergedPage(existing: raidP1.page, fetched: raidP2.page),
+            let raidMerged12 = CapitalRaidPaginationMerge.mergedLoadMorePage(
+                existing: raidP1.page,
+                fetched: raidP2.page
+            ).page
+            let raidMerged = CapitalRaidPaginationMerge.mergedLoadMorePage(
+                existing: raidMerged12,
                 fetched: raidP3.page
-            )
+            ).page
             let raidState = ClanCapitalAPIState(
                 status: .success,
                 clanTag: PerfSampleFixture.perfClanTag,
@@ -3248,16 +3252,19 @@ public final class AppModel: ObservableObject {
                let existing = current.lastGood,
                !needsRebuild {
                 var merged = state
-                merged.lastGood = OfficialCapitalRaidPage(
-                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                let loadMoreResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+                    existing: existing.page,
+                    fetched: fetched.page
                 )
+                merged.lastGood = OfficialCapitalRaidPage(page: loadMoreResult.page)
                 self.clanCapitalStates[tag] = merged
                 self.updateCapitalRaidRowCacheAfterFetch(
                     tag: tag,
                     state: merged,
                     previous: current,
                     parserVersion: parserVersion,
-                    mergedPage: merged.lastGood
+                    mergedPage: merged.lastGood,
+                    loadMoreReconciliation: loadMoreResult.reconciliation
                 )
             } else {
                 // 失败保留 last-good（previous）；跨版本重建直接采用新页。
@@ -3299,7 +3306,8 @@ public final class AppModel: ObservableObject {
         state: ClanCapitalAPIState,
         previous: ClanCapitalAPIState?,
         parserVersion: String,
-        mergedPage: OfficialCapitalRaidPage?
+        mergedPage: OfficialCapitalRaidPage?,
+        loadMoreReconciliation: CapitalRaidPaginationMerge.LoadMoreReconciliation = .identityPreserving
     ) {
         let needsRebuild = previous?.parserVersion != parserVersion
         switch state.status {
@@ -3308,7 +3316,10 @@ public final class AppModel: ObservableObject {
                 if needsRebuild {
                     updateCapitalRaidRowCache(tag: tag, update: .parserRebuild(page: page))
                 } else if mergedPage != nil {
-                    updateCapitalRaidRowCache(tag: tag, update: .loadMoreSuccess(page: page))
+                    updateCapitalRaidRowCache(
+                        tag: tag,
+                        update: .loadMoreSuccess(page: page, reconciliation: loadMoreReconciliation)
+                    )
                 } else {
                     updateCapitalRaidRowCache(tag: tag, update: .refreshSuccess(page: page))
                 }

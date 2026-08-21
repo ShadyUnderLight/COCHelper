@@ -630,10 +630,11 @@ public enum CapitalRaidPaginationMerge {
         overlap: Int,
         reconciliation: LoadMoreReconciliation
     ) -> (items: [OfficialCapitalRaidSeason], reconciliation: LoadMoreReconciliation) {
-        var merged = Array(existing.dropLast(overlap)) + Array(newPage.prefix(overlap))
-        for item in newPage.dropFirst(overlap) where !merged.contains(item) {
-            merged.append(item)
-        }
+        // Once the suffix/prefix boundary has been identified, every item after
+        // that boundary is a new page occurrence. Do not run whole-payload
+        // de-duplication over the suffix: an identical payload can still be a
+        // distinct row occurrence later in the paginated sequence.
+        let merged = Array(existing.dropLast(overlap)) + newPage
         return (merged, reconciliation)
     }
 

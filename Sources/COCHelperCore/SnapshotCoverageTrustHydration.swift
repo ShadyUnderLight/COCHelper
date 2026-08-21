@@ -77,7 +77,8 @@ enum SnapshotCoverageTrustHydration {
             schemaVersion: coverage.schemaVersion,
             fields: coverage.fields,
             sections: sections,
-            diagnostics: coverage.diagnostics
+            diagnostics: coverage.diagnostics,
+            sourceUniverse: coverage.sourceUniverse
         )
     }
 

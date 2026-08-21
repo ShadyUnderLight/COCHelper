@@ -22,6 +22,7 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog? = nil,
         craftTableCatalog: CraftTableCatalog? = nil,
         sectionProofs: [String: SnapshotCoverageProof] = [:],
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil,
         observationVersion: Int = SnapshotHistorySchema.observation,
         timerSchema: SnapshotTimerSchema? = AccountSnapshotImporter.timerSchema
     ) throws -> SnapshotHistoryEntry {
@@ -42,6 +43,7 @@ public enum SnapshotHistoryCanonicalizer {
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
             sectionProofs: sectionProofs,
+            sourceUniverse: sourceUniverse,
             schemaVersion: observationVersion,
             timerSchema: timerSchema
         )
@@ -81,6 +83,7 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog? = nil,
         craftTableCatalog: CraftTableCatalog? = nil,
         sectionProofs: [String: SnapshotCoverageProof] = [:],
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil,
         observationVersion: Int = SnapshotHistorySchema.observation,
         timerSchema: SnapshotTimerSchema? = AccountSnapshotImporter.timerSchema
     ) throws -> SnapshotHistoryEntry {
@@ -95,6 +98,7 @@ public enum SnapshotHistoryCanonicalizer {
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
             sectionProofs: sectionProofs,
+            sourceUniverse: sourceUniverse,
             observationVersion: observationVersion,
             timerSchema: timerSchema
         )
@@ -504,6 +508,7 @@ public enum SnapshotHistoryCanonicalizer {
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
         sectionProofs: [String: SnapshotCoverageProof],
+        sourceUniverse: SnapshotCoverageSourceUniverse?,
         schemaVersion: Int,
         timerSchema: SnapshotTimerSchema?
     ) -> SnapshotObservationCoverage {
@@ -749,10 +754,13 @@ public enum SnapshotHistoryCanonicalizer {
         }
 
         return SnapshotObservationCoverage(
-            schemaVersion: schemaVersion,
+            schemaVersion: sourceUniverse == nil
+                ? schemaVersion
+                : max(schemaVersion, SnapshotHistorySchema.observationWithSourceUniverse),
             fields: fields,
             sections: sections,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            sourceUniverse: sourceUniverse
         )
     }
 

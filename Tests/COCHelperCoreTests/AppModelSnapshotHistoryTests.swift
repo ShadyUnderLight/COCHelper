@@ -587,6 +587,14 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
                 JSONSnapshotCoverageAdapter.proofs(for: snapshot)
             )
             : nil
-        XCTAssertTrue(model.applyPendingAccountSnapshot(sectionProofs: sectionProofs))
+        let sourceUniverse = promoteVerified
+            ? SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot)
+            : nil
+        XCTAssertTrue(
+            model.applyPendingAccountSnapshot(
+                sectionProofs: sectionProofs,
+                sourceUniverse: sourceUniverse
+            )
+        )
     }
 }

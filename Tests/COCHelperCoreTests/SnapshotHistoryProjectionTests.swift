@@ -561,7 +561,8 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
             coverage: SnapshotObservationCoverage(
                 fields: trustedEntry.coverage.fields,
                 sections: pendingHeroes,
-                diagnostics: trustedEntry.coverage.diagnostics
+                diagnostics: trustedEntry.coverage.diagnostics,
+                sourceUniverse: trustedEntry.coverage.sourceUniverse
             ),
             isBaseline: trustedEntry.isBaseline,
             baselineReason: trustedEntry.baselineReason
@@ -651,6 +652,7 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
             if itemSections.contains("units") { sections.insert("units2") }
             return sections
         }()
+        let requiredSections = itemSections.subtracting(notApplicableSections)
         let sections = itemSections.union(notApplicableSections)
         var fields: [SnapshotCoverageField] = []
         for section in sections {
@@ -683,7 +685,10 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
                     observedCount: observedCount
                 )
             },
-            diagnostics: levelCoverage == .complete ? [] : ["heroes.lvl: 测试覆盖不足。"]
+            diagnostics: levelCoverage == .complete ? [] : ["heroes.lvl: 测试覆盖不足。"],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(
+                requiredSections: requiredSections
+            )
         )
         let fingerprintSeed = UUID(uuidString: id)?.uuidString.replacingOccurrences(of: "-", with: "") ?? id
         let fingerprint = "sha256:" + String(String(repeating: fingerprintSeed.lowercased(), count: 4).prefix(64))

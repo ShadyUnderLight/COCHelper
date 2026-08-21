@@ -22,7 +22,10 @@ public enum SnapshotHistorySchema {
     /// （Issue #208）。v4 及更早的 entry 重建时必须保留 coverage，才能复现
     /// 已持久化的 canonicalFingerprint。
     public static let observationWithoutCoverageMetadata = 5
-    public static let observation = 5
+    /// v6：coverage 冻结 module-issued source universe 契约（Issue #236）。
+    /// v5 及更早 entry 无 source universe，UI trust 保持保守 fail-closed。
+    public static let observationWithSourceUniverse = 6
+    public static let observation = 6
     public static let fingerprint = 1
     public static let integrity = 1
 }
@@ -584,17 +587,21 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
     public let fields: [SnapshotCoverageField]
     public let sections: [SnapshotSectionCoverage]
     public let diagnostics: [String]
+    /// Module-issued source universe contract (Issue #236). Absent for v1–v5 history.
+    public let sourceUniverse: SnapshotCoverageSourceUniverse?
 
     public init(
         schemaVersion: Int = SnapshotHistorySchema.observation,
         fields: [SnapshotCoverageField],
         sections: [SnapshotSectionCoverage] = [],
-        diagnostics: [String] = []
+        diagnostics: [String] = [],
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.fields = fields.sorted { $0.id < $1.id }
         self.sections = sections.sorted { $0.id < $1.id }
         self.diagnostics = diagnostics.sorted()
+        self.sourceUniverse = sourceUniverse
     }
 
     public func state(
@@ -625,6 +632,7 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
         case fields
         case sections
         case diagnostics
+        case sourceUniverse
     }
 
     public init(from decoder: Decoder) throws {
@@ -635,7 +643,11 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
             fields: try container.decode([SnapshotCoverageField].self, forKey: .fields),
             sections: try container.decodeIfPresent([SnapshotSectionCoverage].self, forKey: .sections)
                 ?? [],
-            diagnostics: try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
+            diagnostics: try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? [],
+            sourceUniverse: try container.decodeIfPresent(
+                SnapshotCoverageSourceUniverse.self,
+                forKey: .sourceUniverse
+            )
         )
     }
 
@@ -651,6 +663,10 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
             try container.encode(sections, forKey: .sections)
         }
         try container.encode(diagnostics, forKey: .diagnostics)
+        if schemaVersion >= SnapshotHistorySchema.observationWithSourceUniverse,
+           let sourceUniverse {
+            try container.encode(sourceUniverse, forKey: .sourceUniverse)
+        }
     }
 }
 
@@ -663,12 +679,14 @@ public struct SnapshotHistoryCoverageDuplicateKey: Hashable, Sendable {
     public let fields: [SnapshotCoverageField]
     public let sections: [SnapshotHistorySectionDuplicateKey]
     public let diagnostics: [String]
+    public let sourceUniverse: SnapshotCoverageSourceUniverse?
 
     public init(_ coverage: SnapshotObservationCoverage) {
         self.schemaVersion = coverage.schemaVersion
         self.fields = coverage.fields
         self.sections = coverage.sections.map(SnapshotHistorySectionDuplicateKey.init)
         self.diagnostics = coverage.diagnostics
+        self.sourceUniverse = coverage.sourceUniverse
     }
 }
 

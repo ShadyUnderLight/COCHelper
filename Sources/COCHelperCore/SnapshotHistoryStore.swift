@@ -505,7 +505,8 @@ public struct SnapshotHistoryService: Sendable {
         now: Date = Date(),
         catalog: GameCatalog? = nil,
         craftTableCatalog: CraftTableCatalog? = nil,
-        sectionProofs: [UUID: [String: SnapshotCoverageProof]] = [:]
+        sectionProofs: [UUID: [String: SnapshotCoverageProof]] = [:],
+        sourceUniverses: [UUID: SnapshotCoverageSourceUniverse] = [:]
     ) throws -> SnapshotHistoryEnvelope {
         if let existing = try store.load() {
             if existing.isMigrated { return existing }
@@ -528,7 +529,8 @@ public struct SnapshotHistoryService: Sendable {
                 appliedAt: now,
                 catalog: catalog,
                 craftTableCatalog: craftTableCatalog,
-                sectionProofs: sectionProofs[village.id] ?? [:]
+                sectionProofs: sectionProofs[village.id] ?? [:],
+                sourceUniverse: sourceUniverses[village.id]
             )
             envelope.append(entry: entry, lineage: lineage)
         }
@@ -547,7 +549,8 @@ public struct SnapshotHistoryService: Sendable {
         appliedAt: Date = Date(),
         catalog: GameCatalog? = nil,
         craftTableCatalog: CraftTableCatalog? = nil,
-        sectionProofs: [String: SnapshotCoverageProof] = [:]
+        sectionProofs: [String: SnapshotCoverageProof] = [:],
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil
     ) throws -> SnapshotHistoryImportDecision {
         guard envelope.isMigrated else {
             throw SnapshotHistoryServiceError.historyUnavailable("历史尚未完成迁移。")
@@ -582,7 +585,8 @@ public struct SnapshotHistoryService: Sendable {
             appliedAt: appliedAt,
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
-            sectionProofs: sectionProofs
+            sectionProofs: sectionProofs,
+            sourceUniverse: sourceUniverse
         )
 
         var updated = envelope

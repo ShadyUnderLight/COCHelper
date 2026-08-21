@@ -281,11 +281,11 @@ final class CapitalRaidRowIdentityTests: XCTestCase {
         XCTAssertEqual(viaPage.map(\.season), viaArray.map(\.season))
     }
 
-    // MARK: - 10. View 不再使用 stableIdentityKey 的静态检查（源码级）
+    // MARK: - 10. View 不再在 render 路径重算 row identity（源码级）
 
     func testViewDoesNotUseHeavyIdentity() throws {
-        // 静态检查：CapitalRaidCardView.swift 不应再包含 stableIdentityKey
-        // 使用 #filePath 定位项目根，避免 cwd 差异导致的 XCTSkip
+        // 静态检查：CapitalRaidCardView.swift 不应再包含 stableIdentityKey，
+        // 也不应在 View body 调用 CapitalRaidRowIdentity.rows(for:)。
         let thisFile = URL(fileURLWithPath: #filePath)
         let projectRoot = thisFile
             .deletingLastPathComponent() // CapitalRaidRowIdentityTests.swift
@@ -303,7 +303,8 @@ final class CapitalRaidRowIdentityTests: XCTestCase {
         for url in fallbackURLs where FileManager.default.fileExists(atPath: url.path) {
             let text = try String(contentsOf: url, encoding: .utf8)
             XCTAssertFalse(text.contains("stableIdentityKey"), "CapitalRaidCardView 不应在 View 路径使用 stableIdentityKey（重型） @ \(url.path)")
-            XCTAssertTrue(text.contains("CapitalRaidRowIdentity"), "CapitalRaidCardView 应使用预计算轻量 identity @ \(url.path)")
+            XCTAssertFalse(text.contains("CapitalRaidRowIdentity.rows(for:"), "CapitalRaidCardView 不应在 render 路径重算 row identity @ \(url.path)")
+            XCTAssertTrue(text.contains("capitalRaidRows(for:"), "CapitalRaidCardView 应消费 AppModel 缓存 rows @ \(url.path)")
             XCTAssertTrue(text.contains("row.id != rows.last?.id"), "分隔线应基于 row.id 判定末行，避免共享 endTime 时漏画 Divider @ \(url.path)")
             checked = true
             break

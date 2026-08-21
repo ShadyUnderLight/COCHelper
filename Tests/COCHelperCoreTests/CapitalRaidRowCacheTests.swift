@@ -448,24 +448,28 @@ final class CapitalRaidRowCacheTests: XCTestCase {
         XCTAssertNotEqual(cache.rows[2].id, oldIDs[1])
     }
 
-    func testLoadMoreOverlapKeepsIdenticalPayloadAfterBoundaryAsNewRow() {
+    func testLoadMoreOverlapKeepsIdenticalPayloadAfterBoundaryButResetsIdentity() {
         let cache = CapitalRaidRowCache()
         let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
         let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
         cache.apply(.initial(page: makePage([a, b], after: "CURSOR")))
         let oldIDs = cache.rows.map(\.id)
+        let generationBefore = cache.generation
 
         let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
             existing: makePage([a, b], after: "CURSOR").page,
             fetched: makePage([b, a], after: "CURSOR2").page
         )
-        cache.apply(.loadMoreSuccess(page: makePage(mergeResult.page.items, after: mergeResult.page.after)))
+        cache.apply(.loadMoreSuccess(
+            page: makePage(mergeResult.page.items, after: mergeResult.page.after),
+            reconciliation: mergeResult.reconciliation
+        ))
 
-        XCTAssertEqual(mergeResult.reconciliation, .identityPreserving)
+        XCTAssertEqual(mergeResult.reconciliation, .ambiguous)
+        XCTAssertEqual(cache.generation, generationBefore + 1)
         XCTAssertEqual(cache.rows.count, 3)
-        XCTAssertEqual(Array(cache.rows.map(\.id).prefix(2)), oldIDs)
         XCTAssertEqual(cache.rows[2].season, a)
-        XCTAssertNotEqual(cache.rows[2].id, oldIDs[0])
+        XCTAssertTrue(Set(oldIDs).isDisjoint(with: cache.rows.map(\.id)))
         XCTAssertEqual(Set(cache.rows.map(\.id)).count, cache.rows.count)
     }
 

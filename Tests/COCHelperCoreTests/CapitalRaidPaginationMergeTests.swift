@@ -79,7 +79,7 @@ final class CapitalRaidPaginationMergeTests: XCTestCase {
         XCTAssertEqual(result.reconciliation, .identityPreserving)
     }
 
-    func testLoadMoreOverlapKeepsExactPayloadAfterBoundaryAsNewOccurrence() {
+    func testLoadMoreOverlapKeepsExactPayloadAfterBoundaryButMarksReorderAmbiguous() {
         let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
         let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
         let existing = makePage([a, b], after: "CURSOR")
@@ -89,7 +89,20 @@ final class CapitalRaidPaginationMergeTests: XCTestCase {
 
         XCTAssertEqual(result.page.items.count, 3)
         XCTAssertEqual(result.page.items, [a, b, a])
-        XCTAssertEqual(result.reconciliation, .identityPreserving)
+        XCTAssertEqual(result.reconciliation, .ambiguous)
+    }
+
+    func testLoadMoreReorderedThreeItemPageKeepsOccurrencesButResetsIdentity() {
+        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        let existing = makePage([a, b, c], after: "CURSOR")
+        let fetched = makePage([c, a, b], after: "CURSOR2")
+
+        let result = CapitalRaidPaginationMerge.mergedLoadMorePage(existing: existing, fetched: fetched)
+
+        XCTAssertEqual(result.page.items, [a, b, c, a, b])
+        XCTAssertEqual(result.reconciliation, .ambiguous)
     }
 
     func testLoadMoreTerminalTwoItemOverlapUpdatesWithoutAppending() {

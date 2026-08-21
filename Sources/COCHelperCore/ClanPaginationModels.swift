@@ -631,11 +631,22 @@ public enum CapitalRaidPaginationMerge {
         reconciliation: LoadMoreReconciliation
     ) -> (items: [OfficialCapitalRaidSeason], reconciliation: LoadMoreReconciliation) {
         // Once the suffix/prefix boundary has been identified, every item after
-        // that boundary is a new page occurrence. Do not run whole-payload
-        // de-duplication over the suffix: an identical payload can still be a
-        // distinct row occurrence later in the paginated sequence.
+        // that boundary is retained as a new page occurrence. Do not run
+        // whole-payload de-duplication over the suffix: an identical payload
+        // can still be a distinct row occurrence later in the paginated
+        // sequence. However, an exact collision with the pre-boundary prefix
+        // makes reorder and new-occurrence interpretations indistinguishable;
+        // retain the data but force row identity reconciliation to reset.
         let merged = Array(existing.dropLast(overlap)) + newPage
-        return (merged, reconciliation)
+        let prior = Array(existing.dropLast(overlap))
+        let tail = Array(newPage.dropFirst(overlap))
+        let hasExactTailCollision = tail.contains { item in
+            prior.contains(item)
+        }
+        return (
+            merged,
+            hasExactTailCollision ? .ambiguous : reconciliation
+        )
     }
 
     private static func appendItems(

@@ -683,6 +683,70 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(content.envelope.entries[2].timerSchema, AccountSnapshotImporter.timerSchema)
     }
 
+    func testProvenanceOnlyDiffAndStatisticsStableAcrossSaveLoad() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("COCHelper-ProvenanceSaveLoad-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("history.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = FileSnapshotHistoryStore(fileURL: url)
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let lineageID = UUID()
+        let heroProof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let previousSchema = timerSchema(version: "account-json-timer-ms", unit: .milliseconds)
+        let previous = try canonicalizeTimerEntry(
+            villageID: villageID,
+            lineageID: lineageID,
+            schema: previousSchema,
+            json: timerJSON(level: 1),
+            sectionProofs: heroProof
+        )
+        let provenance = try service.planImport(
+            snapshot: snapshot(tag: firstTag, text: timerJSON(level: 1), capturedAt: Date(timeIntervalSince1970: 100)),
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: migratedEnvelope(for: previous),
+            appliedAt: Date(timeIntervalSince1970: 2),
+            sectionProofs: heroProof
+        )
+        let beforeEnvelope = try productionHydratedEnvelope(provenance.envelope)
+        let beforeDiffs = SnapshotDiffEngine.adjacentDiffs(in: beforeEnvelope.entries)
+        let beforeStats = SnapshotHistoryStatistics.calculate(
+            diffs: beforeDiffs,
+            referenceDate: Date(timeIntervalSince1970: 2),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        try store.save(provenance.envelope.validated())
+        let afterEnvelope = try XCTUnwrap(try store.load())
+        let afterDiffs = SnapshotDiffEngine.adjacentDiffs(in: afterEnvelope.entries)
+        let afterStats = SnapshotHistoryStatistics.calculate(
+            diffs: afterDiffs,
+            referenceDate: Date(timeIntervalSince1970: 2),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        XCTAssertEqual(beforeDiffs, afterDiffs)
+        XCTAssertEqual(beforeDiffs.count, 1)
+        XCTAssertEqual(beforeDiffs.first?.comparisonState, .provenanceOnly)
+        XCTAssertEqual(afterDiffs.first?.comparisonState, .provenanceOnly)
+        XCTAssertEqual(beforeStats.today.heroLevelGrowth, afterStats.today.heroLevelGrowth)
+    }
+
+    private func productionHydratedEnvelope(
+        _ envelope: SnapshotHistoryEnvelope
+    ) throws -> SnapshotHistoryEnvelope {
+        let data = try envelope.validated().encodedData()
+        let decoded = try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: data)
+        return try decoded.validated().hydratingVerifiedCoverage(policy: .production)
+    }
+
     func testChangedContentAppendsAndTagChangeStartsNewActiveLineage() throws {
         let store = TestSnapshotHistoryStore()
         let service = SnapshotHistoryService(store: store)

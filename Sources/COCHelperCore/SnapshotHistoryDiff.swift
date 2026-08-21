@@ -723,19 +723,7 @@ public enum SnapshotDiffEngine {
                     message: "观察内容未变，但两侧 timer 契约不一致，不能确认 timer 变化。"
                 ))
             }
-            var seenIdentities = Set<String>()
-            for item in from.observation.items {
-                guard seenIdentities.insert(item.identity.key).inserted else { continue }
-                guard isUsableIdentity(item.identity) else {
-                    diagnostics.append(SnapshotDiffDiagnostic(
-                        kind: .unknownIdentity,
-                        message: "发现无法确认的历史 identity。",
-                        identity: item.identity,
-                        rawSection: item.identity.rawSection
-                    ))
-                    continue
-                }
-            }
+            diagnostics.append(contentsOf: blockingObservationDiagnostics(in: from))
             return SnapshotDiff(
                 fromSnapshotID: from.snapshotID,
                 toSnapshotID: to.snapshotID,
@@ -1752,6 +1740,71 @@ public enum SnapshotDiffEngine {
         identity.base != .unknown && !identity.rawSection.isEmpty && identity.dataID > 0 && identity.nestedKind != .unknown &&
             (identity.nestedRootDataID == nil || identity.nestedRootDataID! > 0) &&
             identity.nestedParentPath.allSatisfy { $0.dataID > 0 && $0.kind != .unknown }
+    }
+
+    /// Issue #235: provenance-only must not bypass observation validation that the
+    /// normal diff path would fail-closed on.  Emits blocking diagnostics only.
+    private static func blockingObservationDiagnostics(
+        in entry: SnapshotHistoryEntry
+    ) -> [SnapshotDiffDiagnostic] {
+        var diagnostics: [SnapshotDiffDiagnostic] = []
+        let groups = Dictionary(grouping: entry.observation.items, by: { $0.identity.key })
+        for key in groups.keys.sorted() {
+            let items = groups[key] ?? []
+            guard let representative = items.first else { continue }
+            let identity = representative.identity
+
+            guard isUsableIdentity(identity) else {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .unknownIdentity,
+                    message: "发现无法确认的历史 identity。",
+                    identity: identity,
+                    rawSection: identity.rawSection
+                ))
+                continue
+            }
+
+            if isHistogramIdentity(identity) {
+                if !items.isEmpty, histogram(items) == nil {
+                    diagnostics.append(SnapshotDiffDiagnostic(
+                        kind: .malformedObservation,
+                        message: "重复建筑/城墙 histogram 的 level/count 无效或总量溢出。",
+                        identity: identity,
+                        rawSection: identity.rawSection
+                    ))
+                }
+                continue
+            }
+
+            if items.count > 1 {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .malformedObservation,
+                    message: "唯一 identity 出现重复记录，已保留为 unknown。",
+                    identity: identity,
+                    rawSection: identity.rawSection
+                ))
+                continue
+            }
+
+            guard let item = items.first else { continue }
+            if requiresLevel(identity), validLevel(item.level) == nil {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .insufficientCoverage,
+                    message: "level 缺失或非法。",
+                    identity: identity,
+                    rawSection: identity.rawSection
+                ))
+            }
+            if item.count != nil, validQuantity(item.count) == nil {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .insufficientCoverage,
+                    message: "count 缺失或非法。",
+                    identity: identity,
+                    rawSection: identity.rawSection
+                ))
+            }
+        }
+        return diagnostics
     }
 
     private static func isHistogramIdentity(_ identity: SnapshotItemIdentity) -> Bool {

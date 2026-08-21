@@ -621,12 +621,16 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let service = SnapshotHistoryService(store: store)
         let villageID = UUID()
         let lineageID = UUID()
+        let heroProof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
         let previousSchema = timerSchema(version: "account-json-timer-ms", unit: .milliseconds)
         let previous = try canonicalizeTimerEntry(
             villageID: villageID,
             lineageID: lineageID,
             schema: previousSchema,
-            json: timerJSON(level: 1)
+            json: timerJSON(level: 1),
+            sectionProofs: heroProof
         )
         let provenance = try service.planImport(
             snapshot: snapshot(tag: firstTag, text: timerJSON(level: 1), capturedAt: Date(timeIntervalSince1970: 100)),
@@ -634,7 +638,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             currentTag: firstTag,
             hasCurrentSnapshot: true,
             envelope: migratedEnvelope(for: previous),
-            appliedAt: Date(timeIntervalSince1970: 2)
+            appliedAt: Date(timeIntervalSince1970: 2),
+            sectionProofs: heroProof
         )
         XCTAssertTrue(provenance.appended)
         XCTAssertEqual(provenance.envelope.entries[0].timerSchema, previousSchema)
@@ -642,24 +647,21 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let diffs = SnapshotDiffEngine.adjacentDiffs(in: provenance.envelope)
         XCTAssertEqual(diffs.count, 1)
         XCTAssertTrue(diffs[0].changes.isEmpty, "provenance-only append 不得伪造 level/timer change")
-        XCTAssertEqual(diffs[0].comparisonState, .comparable)
+        XCTAssertEqual(diffs[0].comparisonState, .provenanceOnly)
         XCTAssertEqual(diffs[0].diagnostics.filter { $0.kind == .incomparableTimerSchema }.count, 1)
 
         let projection = SnapshotHistoryProjection.project(
-            envelope: provenance.envelope,
+            envelope: provenance.envelope.hydratingVerifiedCoverage(policy: .production),
             villageID: villageID,
             hasCurrentSnapshot: true,
             referenceDate: Date(timeIntervalSince1970: 2),
             calendar: Calendar(identifier: .gregorian),
             timeZone: TimeZone(secondsFromGMT: 0)!
         )
-        XCTAssertEqual(projection.timeline[0].summary, "没有可确认变化")
+        XCTAssertEqual(projection.timeline[0].summary, "来源信息变化，无业务变化")
         XCTAssertFalse(projection.timeline[0].changes.contains { $0.changeKind == .levelIncreased || $0.changeKind == .upgradeCompleted })
-        XCTAssertTrue(
-            projection.statistics.today.heroLevelGrowth.state == .insufficientData
-                || projection.statistics.today.heroLevelGrowth.value == 0,
-            "provenance-only append 不得进入升级统计"
-        )
+        XCTAssertEqual(projection.statistics.today.heroLevelGrowth.state, .available)
+        XCTAssertEqual(projection.statistics.today.heroLevelGrowth.value, 0)
 
         let content = try service.planImport(
             snapshot: snapshot(tag: firstTag, text: timerJSON(level: 2), capturedAt: Date(timeIntervalSince1970: 100)),
@@ -679,6 +681,70 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(contentDiff.changes.first?.changeKind, .levelIncreased)
         XCTAssertEqual(content.envelope.entries[1].timerSchema, AccountSnapshotImporter.timerSchema)
         XCTAssertEqual(content.envelope.entries[2].timerSchema, AccountSnapshotImporter.timerSchema)
+    }
+
+    func testProvenanceOnlyDiffAndStatisticsStableAcrossSaveLoad() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("COCHelper-ProvenanceSaveLoad-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("history.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = FileSnapshotHistoryStore(fileURL: url)
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+        let lineageID = UUID()
+        let heroProof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let previousSchema = timerSchema(version: "account-json-timer-ms", unit: .milliseconds)
+        let previous = try canonicalizeTimerEntry(
+            villageID: villageID,
+            lineageID: lineageID,
+            schema: previousSchema,
+            json: timerJSON(level: 1),
+            sectionProofs: heroProof
+        )
+        let provenance = try service.planImport(
+            snapshot: snapshot(tag: firstTag, text: timerJSON(level: 1), capturedAt: Date(timeIntervalSince1970: 100)),
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: migratedEnvelope(for: previous),
+            appliedAt: Date(timeIntervalSince1970: 2),
+            sectionProofs: heroProof
+        )
+        let beforeEnvelope = try productionHydratedEnvelope(provenance.envelope)
+        let beforeDiffs = SnapshotDiffEngine.adjacentDiffs(in: beforeEnvelope.entries)
+        let beforeStats = SnapshotHistoryStatistics.calculate(
+            diffs: beforeDiffs,
+            referenceDate: Date(timeIntervalSince1970: 2),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        try store.save(provenance.envelope.validated())
+        let afterEnvelope = try XCTUnwrap(try store.load())
+        let afterDiffs = SnapshotDiffEngine.adjacentDiffs(in: afterEnvelope.entries)
+        let afterStats = SnapshotHistoryStatistics.calculate(
+            diffs: afterDiffs,
+            referenceDate: Date(timeIntervalSince1970: 2),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        XCTAssertEqual(beforeDiffs, afterDiffs)
+        XCTAssertEqual(beforeDiffs.count, 1)
+        XCTAssertEqual(beforeDiffs.first?.comparisonState, .provenanceOnly)
+        XCTAssertEqual(afterDiffs.first?.comparisonState, .provenanceOnly)
+        XCTAssertEqual(beforeStats, afterStats)
+    }
+
+    private func productionHydratedEnvelope(
+        _ envelope: SnapshotHistoryEnvelope
+    ) throws -> SnapshotHistoryEnvelope {
+        let data = try envelope.validated().encodedData()
+        let decoded = try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: data)
+        return try decoded.validated().hydratingVerifiedCoverage(policy: .production)
     }
 
     func testChangedContentAppendsAndTagChangeStartsNewActiveLineage() throws {
@@ -1494,7 +1560,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         villageID: UUID,
         lineageID: UUID,
         schema: SnapshotTimerSchema,
-        json: String
+        json: String,
+        sectionProofs: [String: SnapshotCoverageProof] = [:]
     ) throws -> SnapshotHistoryEntry {
         try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot(tag: firstTag, text: json, capturedAt: Date(timeIntervalSince1970: 100)),
@@ -1504,6 +1571,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
             isBaseline: true,
             baselineReason: .initial,
+            sectionProofs: sectionProofs,
             timerSchema: schema
         )
     }

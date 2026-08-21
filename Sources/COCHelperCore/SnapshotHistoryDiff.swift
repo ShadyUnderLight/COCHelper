@@ -29,6 +29,9 @@ public enum SnapshotChangeEvidence: String, Codable, Hashable, Sendable {
 
 public enum SnapshotDiffComparisonState: String, Codable, Hashable, Sendable {
     case comparable
+    /// Issue #235: observation + coverage unchanged; only timer schema/provenance
+    /// differs.  Statistics must treat this as a neutral audit interval.
+    case provenanceOnly
     case insufficientCoverage
     case suppressed
 }
@@ -261,6 +264,36 @@ private struct MetricApplicabilityEvaluator {
             }
         }
         return false
+    }
+
+    /// Issue #235: provenance-only may certify a definite zero without requiring
+    /// every sibling section in the metric universe, but only when every
+    /// observed/relevant section is complete+trusted.  Missing/unavailable
+    /// siblings are ignored; partial/untrusted relevant sections fail closed.
+    func neutralMetricEligibility(
+        sections: Set<String>,
+        fields: Set<String>,
+        in diff: SnapshotDiff
+    ) -> MetricUniverseState {
+        guard isUniverseRelevant(sections: sections, in: diff) else { return .irrelevant }
+        var sawComplete = false
+        for section in sections.sorted() {
+            guard let coverage = sectionCoverage.first(where: { $0.rawSection == section }) else {
+                continue
+            }
+            if coverage.isNotApplicableForMetrics {
+                continue
+            }
+            guard isSectionRelevant(coverage) else {
+                continue
+            }
+            if coverage.isComplete(for: fields) {
+                sawComplete = true
+            } else {
+                return .insufficient
+            }
+        }
+        return sawComplete ? .complete : .notApplicable
     }
 
     private func isSectionRelevant(_ coverage: SnapshotDiffSectionCoverage) -> Bool {
@@ -690,6 +723,7 @@ public enum SnapshotDiffEngine {
                     message: "观察内容未变，但两侧 timer 契约不一致，不能确认 timer 变化。"
                 ))
             }
+            diagnostics.append(contentsOf: blockingObservationDiagnostics(in: from))
             return SnapshotDiff(
                 fromSnapshotID: from.snapshotID,
                 toSnapshotID: to.snapshotID,
@@ -697,7 +731,7 @@ public enum SnapshotDiffEngine {
                 lineageID: from.lineageID,
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
-                comparisonState: .comparable,
+                comparisonState: .provenanceOnly,
                 sectionCoverage: sectionCoverage,
                 changes: [],
                 diagnostics: diagnostics
@@ -1708,6 +1742,71 @@ public enum SnapshotDiffEngine {
             identity.nestedParentPath.allSatisfy { $0.dataID > 0 && $0.kind != .unknown }
     }
 
+    /// Issue #235: provenance-only must not bypass observation validation that the
+    /// normal diff path would fail-closed on.  Emits blocking diagnostics only.
+    private static func blockingObservationDiagnostics(
+        in entry: SnapshotHistoryEntry
+    ) -> [SnapshotDiffDiagnostic] {
+        var diagnostics: [SnapshotDiffDiagnostic] = []
+        let groups = Dictionary(grouping: entry.observation.items, by: { $0.identity.key })
+        for key in groups.keys.sorted() {
+            let items = groups[key] ?? []
+            guard let representative = items.first else { continue }
+            let identity = representative.identity
+
+            guard isUsableIdentity(identity) else {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .unknownIdentity,
+                    message: "发现无法确认的历史 identity。",
+                    identity: identity,
+                    rawSection: identity.rawSection
+                ))
+                continue
+            }
+
+            if isHistogramIdentity(identity) {
+                if !items.isEmpty, histogram(items) == nil {
+                    diagnostics.append(SnapshotDiffDiagnostic(
+                        kind: .malformedObservation,
+                        message: "重复建筑/城墙 histogram 的 level/count 无效或总量溢出。",
+                        identity: identity,
+                        rawSection: identity.rawSection
+                    ))
+                }
+                continue
+            }
+
+            if items.count > 1 {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .malformedObservation,
+                    message: "唯一 identity 出现重复记录，已保留为 unknown。",
+                    identity: identity,
+                    rawSection: identity.rawSection
+                ))
+                continue
+            }
+
+            guard let item = items.first else { continue }
+            if requiresLevel(identity), validLevel(item.level) == nil {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .insufficientCoverage,
+                    message: "level 缺失或非法。",
+                    identity: identity,
+                    rawSection: identity.rawSection
+                ))
+            }
+            if item.count != nil, validQuantity(item.count) == nil {
+                diagnostics.append(SnapshotDiffDiagnostic(
+                    kind: .insufficientCoverage,
+                    message: "count 缺失或非法。",
+                    identity: identity,
+                    rawSection: identity.rawSection
+                ))
+            }
+        }
+        return diagnostics
+    }
+
     private static func isHistogramIdentity(_ identity: SnapshotItemIdentity) -> Bool {
         identity.nestedKind == .root && ["buildings", "buildings2", "traps", "traps2"].contains(identity.rawSection)
     }
@@ -2507,18 +2606,97 @@ private struct MetricAccumulators {
         _ = end
         _ = calendar
         for diff in diffs {
-            guard diff.comparisonState == .comparable else {
+            switch diff.comparisonState {
+            case .provenanceOnly:
+                applyProvenanceOnlyContribution(for: diff)
                 markUnknownForDiagnostics(in: diff)
-                continue
+            case .comparable:
+                let diffApplicability = DiffMetricApplicability(diff: diff)
+                applyDiffApplicability(diffApplicability)
+                for change in diff.changes {
+                    apply(change, diffApplicability: diffApplicability)
+                }
+                markUnknownForUnclassified(in: diff.changes)
+                markUnknownForUnknownCategories(in: diff.changes)
+                markUnknownForDiagnostics(in: diff)
+            case .insufficientCoverage, .suppressed:
+                markUnknownForDiagnostics(in: diff)
             }
-            let diffApplicability = DiffMetricApplicability(diff: diff)
-            applyDiffApplicability(diffApplicability)
-            for change in diff.changes {
-                apply(change, diffApplicability: diffApplicability)
-            }
-            markUnknownForUnclassified(in: diff.changes)
-            markUnknownForUnknownCategories(in: diff.changes)
-            markUnknownForDiagnostics(in: diff)
+        }
+    }
+
+    /// Issue #235: provenance-only audit append must not re-run #206 universe
+    /// applicability (which would poison metrics) or fabricate growth/events.
+    /// It may only mark relevant growth metrics comparable when neutral
+    /// eligibility proves complete+trusted observed sections.
+    private mutating func applyProvenanceOnlyContribution(for diff: SnapshotDiff) {
+        let evaluator = MetricApplicabilityEvaluator(sectionCoverage: diff.sectionCoverage)
+        let levelFields: Set<String> = ["presence", "data", "lvl"]
+        let histogramFields: Set<String> = ["presence", "data", "lvl", "cnt"]
+        let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
+        let wallSections: Set<String> = ["buildings", "buildings2"]
+        let heroSections: Set<String> = ["heroes", "heroes2"]
+        let troopSections: Set<String> = ["units", "units2"]
+
+        switch evaluator.neutralMetricEligibility(sections: buildingSections, fields: histogramFields, in: diff) {
+        case .complete:
+            buildingGrowth.markComparable()
+            aggregateBuildingGrowth.markComparable()
+        case .insufficient:
+            buildingGrowth.markUnknown()
+            aggregateBuildingGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch evaluator.neutralMetricEligibility(sections: wallSections, fields: histogramFields, in: diff) {
+        case .complete:
+            wallGrowth.markComparable()
+            aggregateWallGrowth.markComparable()
+        case .insufficient:
+            wallGrowth.markUnknown()
+            aggregateWallGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch evaluator.neutralMetricEligibility(sections: heroSections, fields: levelFields, in: diff) {
+        case .complete:
+            heroGrowth.markComparable()
+        case .insufficient:
+            heroGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch evaluator.neutralMetricEligibility(sections: troopSections, fields: levelFields, in: diff) {
+        case .complete:
+            troopGrowth.markComparable()
+        case .insufficient:
+            troopGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch evaluator.neutralMetricEligibility(sections: ["spells"], fields: levelFields, in: diff) {
+        case .complete:
+            spellGrowth.markComparable()
+        case .insufficient:
+            spellGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch evaluator.neutralMetricEligibility(sections: ["pets"], fields: levelFields, in: diff) {
+        case .complete:
+            petGrowth.markComparable()
+        case .insufficient:
+            petGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
+        }
+        switch evaluator.neutralMetricEligibility(sections: ["equipment"], fields: levelFields, in: diff) {
+        case .complete:
+            equipmentGrowth.markComparable()
+        case .insufficient:
+            equipmentGrowth.markUnknown()
+        case .notApplicable, .irrelevant:
+            break
         }
     }
 

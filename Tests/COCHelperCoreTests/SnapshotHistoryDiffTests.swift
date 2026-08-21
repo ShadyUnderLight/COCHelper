@@ -1290,7 +1290,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             )
         )
         XCTAssertTrue(diff.changes.isEmpty, "兼容 version bump 不得伪造 timer/level change")
-        XCTAssertEqual(diff.comparisonState, .comparable)
+        XCTAssertEqual(diff.comparisonState, .provenanceOnly)
         XCTAssertFalse(diff.diagnostics.contains { $0.kind == .incomparableTimerSchema })
     }
 
@@ -1331,7 +1331,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         )
         let diff = SnapshotDiffEngine.compare(from: from, to: to)
         XCTAssertTrue(diff.changes.isEmpty, "observation 未变时不得输出 timerChanged/upgrade")
-        XCTAssertEqual(diff.comparisonState, .comparable)
+        XCTAssertEqual(diff.comparisonState, .provenanceOnly)
         XCTAssertEqual(diff.diagnostics.filter { $0.kind == .incomparableTimerSchema }.count, 1)
         XCTAssertFalse(diff.diagnostics.contains { $0.kind == .insufficientCoverage || $0.kind == .malformedObservation })
 
@@ -1344,6 +1344,326 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(statistics.today.heroLevelGrowth.state, .available)
         XCTAssertEqual(statistics.today.heroLevelGrowth.value, 0)
         XCTAssertEqual(statistics.today.buildingLevelGrowth.state, .insufficientData)
+    }
+
+    func testProvenanceOnlyDoesNotClearPriorHeroUnknownFromIncompleteBusinessDiff() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let seconds = SnapshotTimerSchema(
+            version: "seconds-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)]
+        )
+        let millis = SnapshotTimerSchema(
+            version: "millis-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .remaining)]
+        )
+        func entry(
+            id: String,
+            date: TimeInterval,
+            level: Int,
+            schema: SnapshotTimerSchema
+        ) -> SnapshotHistoryEntry {
+            makeEntry(
+                id: id,
+                date: date,
+                items: [SnapshotObservationItem(
+                    identity: identity,
+                    level: level,
+                    rawTimerEvidence: ["timer": .number("90")],
+                    display: binding
+                )],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: date),
+                timerSchema: schema
+            )
+        }
+
+        let incompleteDiff = SnapshotDiffEngine.compare(
+            from: entry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                level: 1,
+                schema: seconds
+            ),
+            to: entry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                level: 2,
+                schema: seconds
+            )
+        )
+        XCTAssertTrue(incompleteDiff.changes.contains { $0.changeKind == .levelIncreased })
+        XCTAssertEqual(incompleteDiff.comparisonState, .comparable)
+
+        let provenanceDiff = SnapshotDiffEngine.compare(
+            from: entry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 200,
+                level: 2,
+                schema: seconds
+            ),
+            to: entry(
+                id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+                date: 300,
+                level: 2,
+                schema: millis
+            )
+        )
+        XCTAssertTrue(provenanceDiff.changes.isEmpty)
+        XCTAssertEqual(provenanceDiff.comparisonState, .provenanceOnly)
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [incompleteDiff, provenanceDiff],
+            referenceDate: Date(timeIntervalSince1970: 300),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
+    func testProvenanceOnlyWithPartialHeroCoverageStaysInsufficient() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let item = SnapshotObservationItem(
+            identity: identity,
+            level: 1,
+            rawTimerEvidence: ["timer": .number("90")],
+            display: binding
+        )
+        let seconds = SnapshotTimerSchema(
+            version: "seconds-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)]
+        )
+        let millis = SnapshotTimerSchema(
+            version: "millis-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .remaining)]
+        )
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item],
+                section: "heroes",
+                states: ["lvl": .partial, "timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: seconds
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item],
+                section: "heroes",
+                states: ["lvl": .partial, "timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: millis
+            )
+        )
+        XCTAssertEqual(diff.comparisonState, .provenanceOnly)
+        XCTAssertTrue(diff.changes.isEmpty)
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 105),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
+    func testProvenanceOnlyWithMalformedCoverageDiagnosticStaysInsufficient() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let item = SnapshotObservationItem(
+            identity: identity,
+            level: 1,
+            rawTimerEvidence: ["timer": .number("90")],
+            display: binding
+        )
+        func schema(_ version: String) -> SnapshotTimerSchema {
+            SnapshotTimerSchema(
+                version: version,
+                fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining, minValue: 0)]
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item],
+                section: "heroes",
+                states: ["timer": .complete],
+                diagnostics: ["heroes[0].data: unknown dataID"],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema("timer-1")
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item],
+                section: "heroes",
+                states: ["timer": .complete],
+                diagnostics: ["heroes[0].data: unknown dataID"],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: schema("timer-2")
+            )
+        )
+        XCTAssertEqual(diff.comparisonState, .provenanceOnly)
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .malformedObservation })
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 105),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
+    func testProvenanceOnlyWithUnusableIdentityStaysInsufficient() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 0)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let item = SnapshotObservationItem(
+            identity: identity,
+            level: 1,
+            rawTimerEvidence: ["timer": .number("90")],
+            display: binding
+        )
+        func schema(_ version: String) -> SnapshotTimerSchema {
+            SnapshotTimerSchema(
+                version: version,
+                fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining, minValue: 0)]
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema("timer-1")
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: schema("timer-2")
+            )
+        )
+        XCTAssertEqual(diff.comparisonState, .provenanceOnly)
+        XCTAssertTrue(diff.diagnostics.contains { $0.kind == .unknownIdentity })
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 105),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
+    func testProvenanceOnlyWithDuplicateUniqueIdentityStaysInsufficient() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let item = SnapshotObservationItem(
+            identity: identity,
+            level: 10,
+            rawTimerEvidence: ["timer": .number("90")],
+            display: binding
+        )
+        func schema(_ version: String) -> SnapshotTimerSchema {
+            SnapshotTimerSchema(
+                version: version,
+                fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining, minValue: 0)]
+            )
+        }
+        let items = [item, item]
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: items,
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema("timer-1")
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: items,
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: schema("timer-2")
+            )
+        )
+        XCTAssertEqual(diff.comparisonState, .provenanceOnly)
+        XCTAssertTrue(diff.diagnostics.contains {
+            $0.kind == .malformedObservation && $0.message.contains("重复记录")
+        })
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 105),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
+    }
+
+    func testProvenanceOnlyWithInvalidHeroLevelStaysInsufficient() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let item = SnapshotObservationItem(
+            identity: identity,
+            level: -1,
+            rawTimerEvidence: ["timer": .number("90")],
+            display: binding
+        )
+        func schema(_ version: String) -> SnapshotTimerSchema {
+            SnapshotTimerSchema(
+                version: version,
+                fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining, minValue: 0)]
+            )
+        }
+        let diff = SnapshotDiffEngine.compare(
+            from: makeEntry(
+                id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                date: 100,
+                items: [item],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 100),
+                timerSchema: schema("timer-1")
+            ),
+            to: makeEntry(
+                id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                date: 105,
+                items: [item],
+                section: "heroes",
+                states: ["timer": .complete],
+                sourceTimestamp: Date(timeIntervalSince1970: 105),
+                timerSchema: schema("timer-2")
+            )
+        )
+        XCTAssertEqual(diff.comparisonState, .provenanceOnly)
+        XCTAssertTrue(diff.diagnostics.contains {
+            $0.kind == .insufficientCoverage && $0.message.contains("level 缺失或非法")
+        })
+
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: [diff],
+            referenceDate: Date(timeIntervalSince1970: 105),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
     }
 
     func testUniqueTimerNaturalCountdownDoesNotCreateChange() throws {

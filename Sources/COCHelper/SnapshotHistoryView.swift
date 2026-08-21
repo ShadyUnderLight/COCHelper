@@ -216,6 +216,8 @@ struct SnapshotHistoryView: View {
                     if row.changes.isEmpty {
                         Text(row.comparisonState == .insufficientCoverage
                              ? "覆盖不足，无法确认具体变化。"
+                             : row.comparisonState == .provenanceOnly
+                             ? "来源信息变化，无业务变化。"
                              : "本次导入没有可确认变化。")
                             .font(.caption)
                             .foregroundStyle(.secondary)

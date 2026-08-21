@@ -489,4 +489,104 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
             "村庄 B 不得借用村庄 A 的证明"
         )
     }
+
+    /// Issue #224 受控验收：A 导入 → 模拟 App 重启（新 AppModel + File 历史）→
+    /// 确认 trust / Diff / statistics → B 连续导入。
+    @MainActor
+    func testRestartAcceptanceControlledABImportWithFileHistoryStore() throws {
+        let historyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("issue-224-restart-\(UUID().uuidString).json")
+        let historyStore = FileSnapshotHistoryStore(fileURL: historyURL)
+        let fixtureDirectory = try XCTUnwrap(Bundle.module.resourceURL)
+
+        let modelA = AppModel(defaults: defaults, historyStore: historyStore)
+        try importPerfFixture(
+            AppModel.PerfSampleFixture.home,
+            in: fixtureDirectory,
+            model: modelA,
+            promoteVerified: true
+        )
+        let villageA = try XCTUnwrap(modelA.villages.first(where: { $0.tag == "#ANONYMIZED" }))
+        let projectionAfterA = modelA.snapshotHistoryProjection(for: villageA.id)
+        XCTAssertEqual(projectionAfterA.availability, .baselineOnly)
+        XCTAssertEqual(
+            projectionAfterA.coverageTrustState,
+            .insufficientCoverage,
+            "perf home 含未 verified 的 section；UI 不得误报已验证"
+        )
+        XCTAssertEqual(projectionAfterA.timeline.count, 1)
+        XCTAssertTrue(projectionAfterA.timeline[0].isBaseline)
+
+        // 模拟退出并重开 App：新 AppModel + 同一 UserDefaults 与历史文件。
+        let modelRestart = AppModel(defaults: defaults, historyStore: FileSnapshotHistoryStore(fileURL: historyURL))
+        let projectionAfterRestart = modelRestart.snapshotHistoryProjection(for: villageA.id)
+        XCTAssertEqual(
+            projectionAfterRestart.coverageTrustState,
+            projectionAfterA.coverageTrustState,
+            "重启后 trust display 应与导入后一致"
+        )
+        XCTAssertEqual(projectionAfterRestart.totalSnapshotCount, 1)
+        XCTAssertEqual(projectionAfterRestart.timeline.count, 1)
+        XCTAssertEqual(
+            projectionAfterRestart.statistics.today.heroLevelGrowth.state,
+            .insufficientData,
+            "基线单快照尚无相邻比较，统计应保持保守"
+        )
+        let envelopeAfterRestart = try XCTUnwrap(try FileSnapshotHistoryStore(fileURL: historyURL).load())
+        XCTAssertTrue(
+            envelopeAfterRestart.entries.first?.coverage.sections.contains(where: \.opensTrustGates) == true,
+            "production hydration 仍应恢复部分 perf-fixture section 的 runtime trust"
+        )
+
+        try importPerfFixture(
+            AppModel.PerfSampleFixture.variant,
+            in: fixtureDirectory,
+            model: modelRestart,
+            promoteVerified: true
+        )
+        let projectionAfterB = modelRestart.snapshotHistoryProjection(for: villageA.id)
+        XCTAssertGreaterThanOrEqual(projectionAfterB.totalSnapshotCount, 2)
+        XCTAssertEqual(
+            projectionAfterB.coverageTrustState,
+            .verified,
+            "最新 entry（variant）全部 section 通过时 UI 方可显示已验证"
+        )
+        XCTAssertGreaterThanOrEqual(projectionAfterB.timeline.count, 2)
+        let latestRow = try XCTUnwrap(projectionAfterB.timeline.first)
+        XCTAssertFalse(latestRow.isBaseline)
+        XCTAssertFalse(latestRow.changes.isEmpty, "variant 导入应产生可展示变化行")
+
+        let envelope = try XCTUnwrap(try historyStore.load())
+        XCTAssertGreaterThanOrEqual(envelope.entries.count, 2)
+        let latestEntry = try XCTUnwrap(envelope.entries.max(by: { $0.appliedAt < $1.appliedAt }))
+        XCTAssertTrue(
+            latestEntry.coverage.sections.contains(where: \.opensTrustGates),
+            "production load 后 latest entry 应恢复至少一个 section 的 runtime trust"
+        )
+    }
+
+    @MainActor
+    private func importPerfFixture(
+        _ name: String,
+        in directory: URL,
+        model: AppModel,
+        promoteVerified: Bool
+    ) throws {
+        let text = try String(
+            contentsOf: directory.appendingPathComponent(name + ".json"),
+            encoding: .utf8
+        )
+        model.importText = text
+        model.parseAccountText()
+        guard let snapshot = model.pendingAccountSnapshot else {
+            XCTFail("perf fixture \(name) 解析失败")
+            return
+        }
+        let sectionProofs = promoteVerified
+            ? SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
+                JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            )
+            : nil
+        XCTAssertTrue(model.applyPendingAccountSnapshot(sectionProofs: sectionProofs))
+    }
 }

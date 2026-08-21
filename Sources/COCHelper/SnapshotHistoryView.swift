@@ -104,6 +104,7 @@ struct SnapshotHistoryView: View {
 
     private var summaryBlock: some View {
         VStack(alignment: .leading, spacing: 7) {
+            coverageTrustNote
             if let appliedAt = projection.latestAppliedAt {
                 Text("最近应用：" + appliedAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption.monospacedDigit())
@@ -121,6 +122,29 @@ struct SnapshotHistoryView: View {
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private var coverageTrustNote: some View {
+        let state = projection.coverageTrustState
+        let tint: Color = switch state {
+        case .verified: .green
+        case .pendingRevalidation: .orange
+        case .insufficientCoverage: .orange
+        }
+        return statusNote(
+            title: state.title,
+            systemImage: coverageTrustIcon(state),
+            message: state.detail,
+            tint: tint
+        )
+    }
+
+    private func coverageTrustIcon(_ state: SnapshotCoverageTrustDisplayState) -> String {
+        switch state {
+        case .verified: "checkmark.shield"
+        case .pendingRevalidation: "clock.badge.exclamationmark"
+        case .insufficientCoverage: "shield.slash"
         }
     }
 

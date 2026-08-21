@@ -388,6 +388,8 @@ public struct SnapshotHistoryProjection: Hashable, Sendable {
     public let selectedCategory: SnapshotHistoryCategory
     public let statistics: SnapshotHistoryStatistics
     public let diagnostics: [String]
+    /// Issue #224: latest entry verified-coverage trust for UI.
+    public let coverageTrustState: SnapshotCoverageTrustDisplayState
     fileprivate let unfilteredTimeline: [SnapshotHistoryRow]
 
     public var filterIsEmpty: Bool {
@@ -477,6 +479,13 @@ public struct SnapshotHistoryProjection: Hashable, Sendable {
             availability = .available
         }
 
+        let latestEntry = rows.first.flatMap { row in
+            entries.first { $0.snapshotID == row.snapshotID }
+        }
+        let coverageTrustState = latestEntry.map {
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: $0.coverage)
+        } ?? .insufficientCoverage
+
         let allProjection = SnapshotHistoryProjection(
             villageID: villageID,
             activeLineageID: activeLineage.lineageID,
@@ -494,6 +503,7 @@ public struct SnapshotHistoryProjection: Hashable, Sendable {
                 timeZone: timeZone
             ),
             diagnostics: diagnostics,
+            coverageTrustState: coverageTrustState,
             unfilteredTimeline: rows
         )
         return allProjection.applying(category: selectedCategory)
@@ -533,6 +543,7 @@ public struct SnapshotHistoryProjection: Hashable, Sendable {
                 selectedCategory: .all,
                 statistics: statistics,
                 diagnostics: diagnostics,
+                coverageTrustState: coverageTrustState,
                 unfilteredTimeline: unfilteredTimeline
             )
         }
@@ -548,6 +559,7 @@ public struct SnapshotHistoryProjection: Hashable, Sendable {
             selectedCategory: category,
             statistics: statistics,
             diagnostics: diagnostics,
+            coverageTrustState: coverageTrustState,
             unfilteredTimeline: unfilteredTimeline
         )
     }
@@ -579,6 +591,7 @@ public struct SnapshotHistoryProjection: Hashable, Sendable {
                 timeZone: timeZone
             ),
             diagnostics: diagnostics,
+            coverageTrustState: .insufficientCoverage,
             unfilteredTimeline: []
         )
     }

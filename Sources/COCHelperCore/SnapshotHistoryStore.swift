@@ -206,6 +206,28 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
         return self
     }
 
+    /// Issue #224: restore runtime trust for persisted verified coverage after decode.
+    public func hydratingVerifiedCoverage(
+        policy: SnapshotCoverageRevalidationPolicy = .production
+    ) -> SnapshotHistoryEnvelope {
+        let hydratedEntries = entries.map {
+            SnapshotCoverageTrustHydration.hydrate(entry: $0, policy: policy)
+        }
+        guard !zip(entries, hydratedEntries).allSatisfy({
+            $0.coverage.sections.map(\.runtimeTrust) == $1.coverage.sections.map(\.runtimeTrust)
+        }) else {
+            return self
+        }
+        return SnapshotHistoryEnvelope(
+            schemaVersion: schemaVersion,
+            entries: hydratedEntries,
+            lineages: lineages,
+            duplicateMetadata: duplicateMetadata,
+            migrationMarker: migrationMarker,
+            lastDiagnostic: lastDiagnostic
+        )
+    }
+
     public func encodedData() throws -> Data {
         try JSONEncoder().encode(try validated())
     }
@@ -347,7 +369,7 @@ public final class FileSnapshotHistoryStore: SnapshotHistoryStore, @unchecked Se
         guard let data = try readRawData() else { return nil }
         do {
             let envelope = try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: data)
-            return try envelope.validated()
+            return try envelope.validated().hydratingVerifiedCoverage(policy: .production)
         } catch let error as SnapshotHistoryStoreError {
             throw error
         } catch {

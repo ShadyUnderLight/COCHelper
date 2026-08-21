@@ -2310,6 +2310,77 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(diff.comparisonState, .comparable)
     }
 
+    func testVerifiedDiffStableAcrossSaveReload() throws {
+        let store = TestSnapshotHistoryStore()
+        let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let oldSnapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[{\"data\":1,\"lvl\":1}]}",
+            now: Date(timeIntervalSince1970: 100)
+        )
+        let emptySnapshot = try AccountSnapshotImporter.parse(
+            "{\"heroes\":[]}",
+            now: Date(timeIntervalSince1970: 200)
+        )
+        let proofOld: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let proofEmpty: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 0)
+        ]
+        let oldEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: oldSnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 100),
+            snapshotID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            sectionProofs: proofOld
+        )
+        let emptyEntry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: emptySnapshot,
+            villageID: villageID,
+            lineageID: lineageID,
+            appliedAt: Date(timeIntervalSince1970: 200),
+            snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            sectionProofs: proofEmpty
+        )
+        func postLoadEntry(_ entry: SnapshotHistoryEntry) throws -> SnapshotHistoryEntry {
+            let decoded = try JSONDecoder().decode(
+                SnapshotHistoryEntry.self,
+                from: try JSONEncoder().encode(entry)
+            )
+            return SnapshotCoverageTrustHydration.hydrate(
+                entry: decoded,
+                policy: .testsAllowTestFixture
+            )
+        }
+        let liveDiff = SnapshotDiffEngine.compare(
+            from: try postLoadEntry(oldEntry),
+            to: try postLoadEntry(emptyEntry)
+        )
+        var envelope = SnapshotHistoryEnvelope(
+            entries: [oldEntry, emptyEntry],
+            lineages: [
+                SnapshotHistoryLineageMetadata(
+                    villageID: villageID,
+                    lineageID: lineageID,
+                    normalizedPlayerTag: nil,
+                    lastEntryID: emptyEntry.snapshotID,
+                    lastFingerprint: emptyEntry.canonicalFingerprint,
+                    lastAppliedAt: emptyEntry.appliedAt,
+                    hasConflict: false
+                )
+            ],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: Date(timeIntervalSince1970: 200))
+        )
+        try store.save(envelope.validated())
+        let reloaded = try XCTUnwrap(try store.load())
+        let reloadedOld = try XCTUnwrap(reloaded.entry(id: oldEntry.snapshotID))
+        let reloadedEmpty = try XCTUnwrap(reloaded.entry(id: emptyEntry.snapshotID))
+        let reloadedDiff = SnapshotDiffEngine.compare(from: reloadedOld, to: reloadedEmpty)
+        XCTAssertEqual(reloadedDiff, liveDiff)
+    }
+
     func testCanonicalPresentNonEmptyWithoutProofDoesNotConfirmNewlyObserved() throws {
         let villageID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let lineageID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

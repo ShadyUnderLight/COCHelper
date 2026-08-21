@@ -448,6 +448,92 @@ final class CapitalRaidRowCacheTests: XCTestCase {
         XCTAssertNotEqual(cache.rows[2].id, oldIDs[1])
     }
 
+    func testLoadMoreDuplicateTripleExactAnchorReorderPreservesMapping() {
+        let cache = CapitalRaidRowCache()
+        let k1 = makeSeason(loot: 100_000)
+        let k2 = makeSeason(loot: 100_500)
+        cache.apply(.initial(page: makePage([k1, k2], after: "CURSOR")))
+        let idK1 = cache.rows[0].id
+        let idK2 = cache.rows[1].id
+        let generationBefore = cache.generation
+
+        let k1Prime = makeSeason(loot: 101_000)
+        let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+            existing: makePage([k1, k2], after: "CURSOR").page,
+            fetched: makePage([k2, k1Prime], after: "CURSOR2").page
+        )
+        cache.apply(.loadMoreSuccess(page: makePage(mergeResult.page.items, after: mergeResult.page.after)))
+
+        XCTAssertEqual(cache.rows.count, 2)
+        XCTAssertEqual(cache.rows[0].season.capitalTotalLoot, 100_500)
+        XCTAssertEqual(cache.rows[0].id, idK2)
+        XCTAssertEqual(cache.rows[1].season.capitalTotalLoot, 101_000)
+        XCTAssertEqual(cache.rows[1].id, idK1)
+        XCTAssertEqual(cache.generation, generationBefore)
+    }
+
+    func testLoadMoreTwoItemOverlapPreservesRowIDs() {
+        let cache = CapitalRaidRowCache()
+        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        cache.apply(.initial(page: makePage([a, b, c], after: "CURSOR")))
+        let idB = cache.rows[1].id
+        let idC = cache.rows[2].id
+        let generationBefore = cache.generation
+
+        let d = makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 400_000)
+        let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+            existing: makePage([a, b, c], after: "CURSOR").page,
+            fetched: makePage(
+                [
+                    makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 222_222),
+                    makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 333_333),
+                    d,
+                ],
+                after: "CURSOR2"
+            ).page
+        )
+        cache.apply(.loadMoreSuccess(page: makePage(mergeResult.page.items, after: mergeResult.page.after)))
+
+        XCTAssertEqual(cache.rows.count, 4)
+        XCTAssertEqual(cache.rows[1].id, idB)
+        XCTAssertEqual(cache.rows[1].season.capitalTotalLoot, 222_222)
+        XCTAssertEqual(cache.rows[2].id, idC)
+        XCTAssertEqual(cache.rows[2].season.capitalTotalLoot, 333_333)
+        XCTAssertEqual(cache.generation, generationBefore)
+    }
+
+    func testLoadMoreDuplicateTripleOverlapWithTailPreservesAnchoredIDs() {
+        let cache = CapitalRaidRowCache()
+        let anchor = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 10_000)
+        let k1 = makeSeason(loot: 100_000)
+        let k2 = makeSeason(loot: 100_500)
+        cache.apply(.initial(page: makePage([anchor, k1, k2], after: "CURSOR")))
+        let idK1 = cache.rows[1].id
+        let idK2 = cache.rows[2].id
+        let generationBefore = cache.generation
+
+        let k1Prime = makeSeason(loot: 101_000)
+        let d = makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 400_000)
+        let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+            existing: makePage([anchor, k1, k2], after: "CURSOR").page,
+            fetched: makePage([k2, k1Prime, d], after: "CURSOR2").page
+        )
+        cache.apply(.loadMoreSuccess(page: makePage(mergeResult.page.items, after: mergeResult.page.after)))
+
+        XCTAssertEqual(cache.rows.count, 4)
+        XCTAssertEqual(cache.rows[0].season.capitalTotalLoot, 10_000)
+        XCTAssertEqual(cache.rows[1].season.capitalTotalLoot, 100_500)
+        XCTAssertEqual(cache.rows[1].id, idK2)
+        XCTAssertEqual(cache.rows[2].season.capitalTotalLoot, 101_000)
+        XCTAssertEqual(cache.rows[2].id, idK1)
+        XCTAssertNotEqual(cache.rows[3].id, idK1)
+        XCTAssertNotEqual(cache.rows[3].id, idK2)
+        XCTAssertEqual(cache.rows[3].season.capitalTotalLoot, 400_000)
+        XCTAssertEqual(cache.generation, generationBefore)
+    }
+
     func testLoadMoreTerminalOverlapPreservesLastRowID() {
         let cache = CapitalRaidRowCache()
         let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)

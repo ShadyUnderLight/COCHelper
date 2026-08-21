@@ -57,6 +57,50 @@ final class CapitalRaidPaginationMergeTests: XCTestCase {
         XCTAssertEqual(result.reconciliation, .identityPreserving)
     }
 
+    func testLoadMoreTwoItemSuffixPrefixOverlapUpdatesWithoutDuplicates() {
+        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        let d = makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 400_000)
+        let existing = makePage([a, b, c], after: "CURSOR")
+        let fetched = makePage(
+            [
+                makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 222_222),
+                makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 333_333),
+                d,
+            ],
+            after: "CURSOR2"
+        )
+
+        let result = CapitalRaidPaginationMerge.mergedLoadMorePage(existing: existing, fetched: fetched)
+
+        XCTAssertEqual(result.page.items.count, 4)
+        XCTAssertEqual(result.page.items.map(\.capitalTotalLoot), [100_000, 222_222, 333_333, 400_000])
+        XCTAssertEqual(result.reconciliation, .identityPreserving)
+    }
+
+    func testLoadMoreTerminalTwoItemOverlapUpdatesWithoutAppending() {
+        let a = makeSeason(start: "20260701T080000.000Z", end: "20260703T080000.000Z", loot: 100_000)
+        let b = makeSeason(start: "20260702T080000.000Z", end: "20260704T080000.000Z", loot: 200_000)
+        let c = makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 300_000)
+        let d = makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 400_000)
+        let existing = makePage([a, b, c, d], after: "CURSOR")
+        let fetched = makePage(
+            [
+                makeSeason(start: "20260703T080000.000Z", end: "20260705T080000.000Z", loot: 333_333),
+                makeSeason(start: "20260704T080000.000Z", end: "20260706T080000.000Z", loot: 444_444),
+            ],
+            after: nil
+        )
+
+        let result = CapitalRaidPaginationMerge.mergedLoadMorePage(existing: existing, fetched: fetched)
+
+        XCTAssertEqual(result.page.items.count, 4)
+        XCTAssertEqual(result.page.items.map(\.capitalTotalLoot), [100_000, 200_000, 333_333, 444_444])
+        XCTAssertNil(result.page.after)
+        XCTAssertEqual(result.reconciliation, .identityPreserving)
+    }
+
     // MARK: - Case 2: duplicate triple with exact anchor
 
     func testLoadMoreDuplicateTripleWithExactAnchorUpdatesMatchedEntry() {

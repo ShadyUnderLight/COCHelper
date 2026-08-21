@@ -103,8 +103,9 @@ public final class CapitalRaidRowCache {
             return
         }
         if seasons.count == rows.count {
-            if positionalTripleMatch(rows, seasons) {
-                rows = zip(rows, seasons).map { CapitalRaidSeasonRow(id: $0.id, season: $1) }
+            if canSafelyReconcile(oldRows: rows, newSeasons: seasons) {
+                rows = matchedRows(oldRows: rows, newSeasons: seasons)
+                buildCount += 1
                 return
             }
             resetAndBuild(from: seasons)
@@ -115,16 +116,16 @@ public final class CapitalRaidRowCache {
             return
         }
         let prefix = Array(seasons.prefix(rows.count))
-        guard positionalTripleMatch(rows, prefix) else {
-            resetAndBuild(from: seasons)
+        if canSafelyReconcile(oldRows: rows, newSeasons: prefix) {
+            var updated = matchedRows(oldRows: rows, newSeasons: prefix)
+            for season in seasons[rows.count...] {
+                updated.append(makeRow(for: season))
+            }
+            rows = updated
+            buildCount += 1
             return
         }
-        var updated = rows
-        for season in seasons[rows.count...] {
-            updated.append(makeRow(for: season))
-        }
-        rows = updated
-        buildCount += 1
+        resetAndBuild(from: seasons)
     }
 
     private func resetAndBuild(from seasons: [OfficialCapitalRaidSeason]) {

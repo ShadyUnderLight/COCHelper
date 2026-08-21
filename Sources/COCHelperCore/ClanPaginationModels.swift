@@ -570,42 +570,54 @@ public enum CapitalRaidPaginationMerge {
             return (newPage, .identityPreserving)
         }
 
-        let boundaryAligned = CapitalRaidRowIdentity.tripleKey(for: existing[existing.count - 1])
-            == CapitalRaidRowIdentity.tripleKey(for: newPage[0])
-        if boundaryAligned {
-            let maxOverlap = min(existing.count, newPage.count)
-            for overlap in stride(from: maxOverlap, through: 1, by: -1) {
-                let suffix = Array(existing.suffix(overlap))
-                let prefix = Array(newPage.prefix(overlap))
-                guard hasTripleOverlap(existing: existing, newPage: newPage, overlap: overlap) else {
+        if existing.count == newPage.count && existing.count > 1,
+           CapitalRaidRowIdentity.tripleKey(for: existing[existing.count - 1])
+               == CapitalRaidRowIdentity.tripleKey(for: newPage[0]),
+           hasPositionalTripleOverlap(existing: existing, newPage: newPage, overlap: existing.count),
+           tripleKeyCounts(for: existing) == tripleKeyCounts(for: newPage),
+           CapitalRaidSeasonMatcher.classifyBoundaryOverlap(
+               oldSeasons: existing,
+               newSeasons: newPage
+           ) == .ambiguous {
+            return (newPage, .ambiguous)
+        }
+
+        let maxOverlap = min(existing.count, newPage.count)
+        for overlap in stride(from: maxOverlap, through: 1, by: -1) {
+            guard isPaginationOverlapCandidate(
+                existing: existing,
+                newPage: newPage,
+                overlap: overlap
+            ) else {
+                continue
+            }
+            let suffix = Array(existing.suffix(overlap))
+            let prefix = Array(newPage.prefix(overlap))
+            switch CapitalRaidSeasonMatcher.classifyBoundaryOverlap(
+                oldSeasons: suffix,
+                newSeasons: prefix
+            ) {
+            case .notCandidate:
+                continue
+            case .ambiguous:
+                return (
+                    Array(existing.dropLast(overlap)) + newPage,
+                    .ambiguous
+                )
+            case .matched:
+                guard shouldApplyOverlapCandidate(
+                    existing: existing,
+                    newPage: newPage,
+                    overlap: overlap
+                ) else {
                     continue
                 }
-                switch CapitalRaidSeasonMatcher.classifyBoundaryOverlap(
-                    oldSeasons: suffix,
-                    newSeasons: prefix
-                ) {
-                case .notCandidate:
-                    continue
-                case .ambiguous:
-                    return (
-                        Array(existing.dropLast(overlap)) + newPage,
-                        .ambiguous
-                    )
-                case .matched:
-                    guard shouldApplyOverlapCandidate(
-                        existing: existing,
-                        newPage: newPage,
-                        overlap: overlap
-                    ) else {
-                        continue
-                    }
-                    return mergeWithOverlap(
-                        existing: existing,
-                        newPage: newPage,
-                        overlap: overlap,
-                        reconciliation: .identityPreserving
-                    )
-                }
+                return mergeWithOverlap(
+                    existing: existing,
+                    newPage: newPage,
+                    overlap: overlap,
+                    reconciliation: .identityPreserving
+                )
             }
         }
 
@@ -646,12 +658,15 @@ public enum CapitalRaidPaginationMerge {
 
         guard newPage.count == overlap else { return false }
 
-        if overlap == 1 {
-            let boundaryTriple = CapitalRaidRowIdentity.tripleKey(for: existing[existing.count - 1])
-            return tripleOccurrenceCount(of: boundaryTriple, in: existing) == 1
+        let suffix = Array(existing.suffix(overlap))
+        for triple in Set(suffix.map(CapitalRaidRowIdentity.tripleKey(for:))) {
+            let countInExisting = tripleOccurrenceCount(of: triple, in: existing)
+            let countInSuffix = tripleOccurrenceCount(of: triple, in: suffix)
+            if countInExisting != countInSuffix {
+                return false
+            }
         }
-
-        return existing.count == newPage.count && overlap == newPage.count
+        return true
     }
 
     private static func tripleOccurrenceCount(
@@ -665,16 +680,42 @@ public enum CapitalRaidPaginationMerge {
         }
     }
 
-    /// suffix/prefix 在 triple 语义上存在重叠（而非仅长度相等）。
-    private static func hasTripleOverlap(
+    /// suffix/prefix 是否为 pagination boundary overlap 候选（positional triple + 非页内重复模式）。
+    private static func isPaginationOverlapCandidate(
         existing: [OfficialCapitalRaidSeason],
         newPage: [OfficialCapitalRaidSeason],
         overlap: Int
     ) -> Bool {
         guard overlap > 0 else { return false }
-        let suffixKeys = Set(Array(existing.suffix(overlap)).map(CapitalRaidRowIdentity.tripleKey(for:)))
-        let prefixKeys = Set(Array(newPage.prefix(overlap)).map(CapitalRaidRowIdentity.tripleKey(for:)))
-        return !suffixKeys.isDisjoint(with: prefixKeys)
+        guard hasPositionalTripleOverlap(existing: existing, newPage: newPage, overlap: overlap) else {
+            return false
+        }
+        let priorEnd = existing.count - overlap
+        guard priorEnd > 0 else { return false }
+        let priorCounts = tripleKeyCounts(for: Array(existing.prefix(priorEnd)))
+        let suffixCounts = tripleKeyCounts(for: Array(existing.suffix(overlap)))
+        for (triple, suffixCount) in suffixCounts {
+            if priorCounts[triple, default: 0] >= suffixCount {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func hasPositionalTripleOverlap(
+        existing: [OfficialCapitalRaidSeason],
+        newPage: [OfficialCapitalRaidSeason],
+        overlap: Int
+    ) -> Bool {
+        guard overlap > 0 else { return false }
+        for index in 0..<overlap {
+            let existingIndex = existing.count - overlap + index
+            if CapitalRaidRowIdentity.tripleKey(for: existing[existingIndex])
+                != CapitalRaidRowIdentity.tripleKey(for: newPage[index]) {
+                return false
+            }
+        }
+        return true
     }
 
     private static func tripleKeyCounts(for seasons: [OfficialCapitalRaidSeason]) -> [String: Int] {

@@ -55,6 +55,11 @@ let package = Package(
             resources: [
                 .process("Fixtures")
             ]
+        ),
+        .testTarget(
+            name: "COCHelperCorePublicAPITests",
+            dependencies: ["COCHelperCore"],
+            path: "Tests/COCHelperCorePublicAPITests"
         )
     ]
 )

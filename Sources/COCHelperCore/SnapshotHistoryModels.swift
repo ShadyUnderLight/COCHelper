@@ -425,8 +425,7 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
         presence: SnapshotSectionPresence,
         completeness: SnapshotCoverageState,
         proof: SnapshotCoverageProof,
-        observedCount: Int,
-        runtimeTrust: SectionCoverageRuntimeTrust? = nil
+        observedCount: Int
     ) {
         self.base = base
         self.rawSection = rawSection
@@ -434,11 +433,49 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
         self.completeness = completeness
         self.proof = proof
         self.observedCount = max(0, observedCount)
-        if let runtimeTrust {
-            self.runtimeTrust = runtimeTrust
-        } else {
-            self.runtimeTrust = Self.defaultRuntimeTrust(for: proof)
+        self.runtimeTrust = proof.hasVerifiedWireMetadata ? .pending : .notApplicable
+    }
+
+    /// Module-issued verified proof with live runtime witness (Issue #234).
+    static func moduleIssued(
+        base: SnapshotHistoryBase,
+        rawSection: String,
+        presence: SnapshotSectionPresence,
+        completeness: SnapshotCoverageState,
+        proof: SnapshotCoverageProof,
+        observedCount: Int
+    ) -> SnapshotSectionCoverage {
+        guard SnapshotCoverageVerifier.validatesModuleIssuedProof(proof) else {
+            preconditionFailure("moduleIssued factory requires module-issued verified proof")
         }
+        return SnapshotSectionCoverage(
+            base: base,
+            rawSection: rawSection,
+            presence: presence,
+            completeness: completeness,
+            proof: proof,
+            observedCount: observedCount,
+            runtimeTrust: .trusted
+        )
+    }
+
+    /// Load-time revalidation or internal hydration (Issue #234).
+    init(
+        base: SnapshotHistoryBase,
+        rawSection: String,
+        presence: SnapshotSectionPresence,
+        completeness: SnapshotCoverageState,
+        proof: SnapshotCoverageProof,
+        observedCount: Int,
+        runtimeTrust: SectionCoverageRuntimeTrust
+    ) {
+        self.base = base
+        self.rawSection = rawSection
+        self.presence = presence
+        self.completeness = completeness
+        self.proof = proof
+        self.observedCount = max(0, observedCount)
+        self.runtimeTrust = runtimeTrust
     }
 
     public var id: String {
@@ -465,18 +502,6 @@ public struct SnapshotSectionCoverage: Codable, Hashable, Sendable, Identifiable
             return .insufficientPersistedEvidence
         case .notApplicable:
             return .insufficientPersistedEvidence
-        }
-    }
-
-    package static func defaultRuntimeTrust(for proof: SnapshotCoverageProof) -> SectionCoverageRuntimeTrust {
-        switch proof {
-        case .verified(let evidence):
-            if evidence.runtimeWitness == .moduleIssued {
-                return .trusted
-            }
-            return .pending
-        default:
-            return .notApplicable
         }
     }
 

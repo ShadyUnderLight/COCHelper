@@ -470,6 +470,34 @@ public enum SnapshotHistoryCanonicalizer {
         )
     }
 
+    private static func makeSectionCoverage(
+        base: SnapshotHistoryBase,
+        rawSection: String,
+        presence: SnapshotSectionPresence,
+        completeness: SnapshotCoverageState,
+        proof: SnapshotCoverageProof,
+        observedCount: Int
+    ) -> SnapshotSectionCoverage {
+        if SnapshotCoverageVerifier.validatesModuleIssuedProof(proof) {
+            return SnapshotSectionCoverage.moduleIssued(
+                base: base,
+                rawSection: rawSection,
+                presence: presence,
+                completeness: completeness,
+                proof: proof,
+                observedCount: observedCount
+            )
+        }
+        return SnapshotSectionCoverage(
+            base: base,
+            rawSection: rawSection,
+            presence: presence,
+            completeness: completeness,
+            proof: proof,
+            observedCount: observedCount
+        )
+    }
+
     private static func makeCoverage(
         source: CanonicalSource,
         originalText: String,
@@ -486,7 +514,7 @@ public enum SnapshotHistoryCanonicalizer {
         for section in SnapshotHistoryKnownSections.object.sorted() {
             let base = SnapshotHistoryBase(section: section)
             guard let value = source.fields[section] else {
-                sections.append(SnapshotSectionCoverage(
+                sections.append(makeSectionCoverage(
                     base: base,
                     rawSection: section,
                     presence: .missing,
@@ -503,7 +531,7 @@ public enum SnapshotHistoryCanonicalizer {
             }
 
             guard case .array(let values) = value else {
-                sections.append(SnapshotSectionCoverage(
+                sections.append(makeSectionCoverage(
                     base: base,
                     rawSection: section,
                     presence: .invalid,
@@ -536,7 +564,7 @@ public enum SnapshotHistoryCanonicalizer {
                 rawJSON: originalText,
                 section: section
             )
-            sections.append(SnapshotSectionCoverage(
+            sections.append(makeSectionCoverage(
                 base: base,
                 rawSection: section,
                 presence: values.isEmpty ? .presentEmpty : .presentNonEmpty,
@@ -625,7 +653,7 @@ public enum SnapshotHistoryCanonicalizer {
         for section in SnapshotHistoryKnownSections.numeric.sorted() {
             let base = SnapshotHistoryBase(section: section)
             guard let value = source.fields[section] else {
-                sections.append(SnapshotSectionCoverage(
+                sections.append(makeSectionCoverage(
                     base: base,
                     rawSection: section,
                     presence: .missing,
@@ -648,7 +676,7 @@ public enum SnapshotHistoryCanonicalizer {
                 continue
             }
             guard case .array(let values) = value else {
-                sections.append(SnapshotSectionCoverage(
+                sections.append(makeSectionCoverage(
                     base: base,
                     rawSection: section,
                     presence: .invalid,
@@ -687,7 +715,7 @@ public enum SnapshotHistoryCanonicalizer {
                 rawJSON: originalText,
                 section: section
             )
-            sections.append(SnapshotSectionCoverage(
+            sections.append(makeSectionCoverage(
                 base: base,
                 rawSection: section,
                 presence: values.isEmpty ? .presentEmpty : .presentNonEmpty,

@@ -3655,14 +3655,17 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                 let merged = defaults.merging(spec.states) { _, new in new }
                 let observedCount = items.filter { $0.identity.rawSection == spec.section }.count
                 let presence = observedCount == 0 ? spec.presence : .presentNonEmpty
-                sectionCoverages.append(SnapshotSectionCoverage(
-                    base: SnapshotHistoryBase(section: spec.section),
-                    rawSection: spec.section,
-                    presence: presence,
-                    completeness: .complete,
-                    proof: spec.proof,
-                    observedCount: observedCount
-                ))
+                let base = SnapshotHistoryBase(section: spec.section)
+                sectionCoverages.append(
+                    SnapshotHistoryTestCoverage.trustedSection(
+                        base: base,
+                        rawSection: spec.section,
+                        presence: presence,
+                        completeness: .complete,
+                        proof: spec.proof,
+                        observedCount: observedCount
+                    )
+                )
                 fields.append(contentsOf: merged.map {
                     SnapshotCoverageField(
                         base: SnapshotHistoryBase(section: spec.section),

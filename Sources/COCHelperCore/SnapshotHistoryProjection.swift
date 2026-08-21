@@ -270,7 +270,9 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
 
         let visibleChanges = unfilteredChanges.filter(category.matches)
         let includesCoverageDiagnostics = category == .unknown
-            && (comparisonState == .insufficientCoverage || !unfilteredDiagnostics.isEmpty)
+            && (comparisonState == .insufficientCoverage
+                || comparisonState == .provenanceOnly
+                || !unfilteredDiagnostics.isEmpty)
         guard !visibleChanges.isEmpty || includesCoverageDiagnostics else { return nil }
 
         return SnapshotHistoryRow(
@@ -310,9 +312,14 @@ public struct SnapshotHistoryRow: Hashable, Identifiable, Sendable {
     ) -> String {
         if isBaseline { return "初始基线（不计变化）" }
         if changes.isEmpty {
-            return comparisonState == .insufficientCoverage
-                ? "覆盖不足，无法确认变化"
-                : "没有可确认变化"
+            switch comparisonState {
+            case .insufficientCoverage:
+                return "覆盖不足，无法确认变化"
+            case .provenanceOnly:
+                return "来源信息变化，无业务变化"
+            default:
+                return "没有可确认变化"
+            }
         }
 
         let confirmedChanges = changes.filter {
@@ -470,7 +477,9 @@ public struct SnapshotHistoryProjection: Hashable, Sendable {
             availability = .baselineOnly
         } else if diffs.isEmpty {
             availability = .insufficient("没有可比较的相邻快照。")
-        } else if diffs.allSatisfy({ $0.comparisonState != .comparable }) {
+        } else if diffs.allSatisfy({
+            $0.comparisonState != .comparable && $0.comparisonState != .provenanceOnly
+        }) {
             availability = .insufficient("相邻快照覆盖不足，无法确认完整变化。")
         } else if rows.first?.comparisonState == .insufficientCoverage
                     || rows.first?.containsUncertainChanges == true {

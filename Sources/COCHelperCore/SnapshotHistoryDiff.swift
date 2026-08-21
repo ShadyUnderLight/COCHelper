@@ -29,6 +29,9 @@ public enum SnapshotChangeEvidence: String, Codable, Hashable, Sendable {
 
 public enum SnapshotDiffComparisonState: String, Codable, Hashable, Sendable {
     case comparable
+    /// Issue #235: observation + coverage unchanged; only timer schema/provenance
+    /// differs.  Statistics must treat this as a neutral audit interval.
+    case provenanceOnly
     case insufficientCoverage
     case suppressed
 }
@@ -697,7 +700,7 @@ public enum SnapshotDiffEngine {
                 lineageID: from.lineageID,
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
-                comparisonState: .comparable,
+                comparisonState: .provenanceOnly,
                 sectionCoverage: sectionCoverage,
                 changes: [],
                 diagnostics: diagnostics
@@ -2507,18 +2510,57 @@ private struct MetricAccumulators {
         _ = end
         _ = calendar
         for diff in diffs {
-            guard diff.comparisonState == .comparable else {
+            switch diff.comparisonState {
+            case .provenanceOnly:
+                applyProvenanceOnlyContribution(for: diff)
+            case .comparable:
+                let diffApplicability = DiffMetricApplicability(diff: diff)
+                applyDiffApplicability(diffApplicability)
+                for change in diff.changes {
+                    apply(change, diffApplicability: diffApplicability)
+                }
+                markUnknownForUnclassified(in: diff.changes)
+                markUnknownForUnknownCategories(in: diff.changes)
                 markUnknownForDiagnostics(in: diff)
-                continue
+            case .insufficientCoverage, .suppressed:
+                markUnknownForDiagnostics(in: diff)
             }
-            let diffApplicability = DiffMetricApplicability(diff: diff)
-            applyDiffApplicability(diffApplicability)
-            for change in diff.changes {
-                apply(change, diffApplicability: diffApplicability)
-            }
-            markUnknownForUnclassified(in: diff.changes)
-            markUnknownForUnknownCategories(in: diff.changes)
-            markUnknownForDiagnostics(in: diff)
+        }
+    }
+
+    /// Issue #235: provenance-only audit append must not re-run #206 universe
+    /// applicability (which would poison metrics) or fabricate growth/events.
+    /// It may only mark relevant growth metrics comparable so a definite zero
+    /// can surface when no prior unknown exists in the window.
+    private mutating func applyProvenanceOnlyContribution(for diff: SnapshotDiff) {
+        let evaluator = MetricApplicabilityEvaluator(sectionCoverage: diff.sectionCoverage)
+        let buildingSections: Set<String> = ["buildings", "buildings2", "traps", "traps2"]
+        let wallSections: Set<String> = ["buildings", "buildings2"]
+        let heroSections: Set<String> = ["heroes", "heroes2"]
+        let troopSections: Set<String> = ["units", "units2"]
+
+        if evaluator.isUniverseRelevant(sections: buildingSections, in: diff) {
+            buildingGrowth.markComparable()
+            aggregateBuildingGrowth.markComparable()
+        }
+        if evaluator.isUniverseRelevant(sections: wallSections, in: diff) {
+            wallGrowth.markComparable()
+            aggregateWallGrowth.markComparable()
+        }
+        if evaluator.isUniverseRelevant(sections: heroSections, in: diff) {
+            heroGrowth.markComparable()
+        }
+        if evaluator.isUniverseRelevant(sections: troopSections, in: diff) {
+            troopGrowth.markComparable()
+        }
+        if evaluator.isUniverseRelevant(sections: ["spells"], in: diff) {
+            spellGrowth.markComparable()
+        }
+        if evaluator.isUniverseRelevant(sections: ["pets"], in: diff) {
+            petGrowth.markComparable()
+        }
+        if evaluator.isUniverseRelevant(sections: ["equipment"], in: diff) {
+            equipmentGrowth.markComparable()
         }
     }
 

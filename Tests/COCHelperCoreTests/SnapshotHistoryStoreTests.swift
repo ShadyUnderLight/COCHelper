@@ -642,7 +642,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let diffs = SnapshotDiffEngine.adjacentDiffs(in: provenance.envelope)
         XCTAssertEqual(diffs.count, 1)
         XCTAssertTrue(diffs[0].changes.isEmpty, "provenance-only append 不得伪造 level/timer change")
-        XCTAssertEqual(diffs[0].comparisonState, .comparable)
+        XCTAssertEqual(diffs[0].comparisonState, .provenanceOnly)
         XCTAssertEqual(diffs[0].diagnostics.filter { $0.kind == .incomparableTimerSchema }.count, 1)
 
         let projection = SnapshotHistoryProjection.project(
@@ -653,13 +653,10 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             calendar: Calendar(identifier: .gregorian),
             timeZone: TimeZone(secondsFromGMT: 0)!
         )
-        XCTAssertEqual(projection.timeline[0].summary, "没有可确认变化")
+        XCTAssertEqual(projection.timeline[0].summary, "来源信息变化，无业务变化")
         XCTAssertFalse(projection.timeline[0].changes.contains { $0.changeKind == .levelIncreased || $0.changeKind == .upgradeCompleted })
-        XCTAssertTrue(
-            projection.statistics.today.heroLevelGrowth.state == .insufficientData
-                || projection.statistics.today.heroLevelGrowth.value == 0,
-            "provenance-only append 不得进入升级统计"
-        )
+        XCTAssertEqual(projection.statistics.today.heroLevelGrowth.state, .available)
+        XCTAssertEqual(projection.statistics.today.heroLevelGrowth.value, 0)
 
         let content = try service.planImport(
             snapshot: snapshot(tag: firstTag, text: timerJSON(level: 2), capturedAt: Date(timeIntervalSince1970: 100)),

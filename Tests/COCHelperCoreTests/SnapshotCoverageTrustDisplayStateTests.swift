@@ -132,6 +132,53 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
         )
     }
 
+    func testEvaluateInsufficientWhenMalformedExplicitProofIsMissing() {
+        let malformedVerified = SnapshotCoverageProof.verified(
+            VerifiedCoverageEvidence(
+                decodedWire: "",
+                adapterID: "",
+                protocolVersion: "invalid",
+                expectedCount: nil,
+                verificationReason: nil,
+                verificationRuleVersion: nil,
+                inputBinding: nil
+            )
+        )
+        let coverage = SnapshotObservationCoverage(
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                ),
+                makeSection(
+                    rawSection: "heroes2",
+                    proof: .declared(source: "", version: "invalid", expectedCount: nil),
+                    completeness: .unavailable,
+                    presence: .missing,
+                    observedCount: 0,
+                    runtimeTrust: .notApplicable
+                ),
+                makeSection(
+                    rawSection: "units2",
+                    proof: malformedVerified,
+                    completeness: .unavailable,
+                    presence: .missing,
+                    observedCount: 0,
+                    runtimeTrust: .notApplicable
+                )
+            ],
+            diagnostics: []
+        )
+
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
+            .insufficientCoverage
+        )
+    }
+
     func testEvaluateInsufficientWhenSectionsEmpty() {
         XCTAssertEqual(
             SnapshotCoverageTrustDisplayState.evaluate(
@@ -170,6 +217,7 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
         proof: SnapshotCoverageProof,
         completeness: SnapshotCoverageState,
         presence: SnapshotSectionPresence = .presentNonEmpty,
+        observedCount: Int = 1,
         runtimeTrust: SectionCoverageRuntimeTrust
     ) -> SnapshotSectionCoverage {
         SnapshotSectionCoverage(
@@ -178,7 +226,7 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
             presence: presence,
             completeness: completeness,
             proof: proof,
-            observedCount: 1,
+            observedCount: observedCount,
             runtimeTrust: runtimeTrust
         )
     }

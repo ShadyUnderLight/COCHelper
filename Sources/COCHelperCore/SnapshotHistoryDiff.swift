@@ -275,7 +275,7 @@ private struct MetricApplicabilityEvaluator {
             }
         }
         if sawComplete { return .complete }
-        return sawRelevant ? .insufficient : .irrelevant
+        return sawRelevant ? .notApplicable : .irrelevant
     }
 
     func universeSatisfied(sections: Set<String>, fields: Set<String>) -> Bool {

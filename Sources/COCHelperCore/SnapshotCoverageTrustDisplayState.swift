@@ -43,8 +43,7 @@ public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
         // that source, while an explicit proof or present section is relevant
         // and must still block verified display when it is not trusted.
         let relevantSections = sections.filter { section in
-            section.proof.hasVerifiedWireMetadata
-                || section.proof.isWellFormedDeclaration
+            hasExplicitProof(section.proof)
                 || section.presence != .missing
                 || section.completeness != .unavailable
         }
@@ -72,5 +71,14 @@ public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
         }
 
         return .insufficientCoverage
+    }
+
+    private static func hasExplicitProof(_ proof: SnapshotCoverageProof) -> Bool {
+        switch proof {
+        case .declared, .legacyAuthoritative, .verified:
+            return true
+        case .unavailable:
+            return false
+        }
     }
 }

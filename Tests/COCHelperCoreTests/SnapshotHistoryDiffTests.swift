@@ -1666,6 +1666,75 @@ final class SnapshotHistoryDiffTests: XCTestCase {
         XCTAssertEqual(statistics.today.heroLevelGrowth.state, .insufficientData)
     }
 
+    func testProvenanceOnlyExplicitEmptyUniverseDoesNotPoisonExistingStatistics() throws {
+        let identity = makeIdentity(section: "heroes", dataID: 1)
+        let binding = SnapshotDisplayBinding(displayName: "英雄", category: "heroes")
+        let normalOld = makeEntry(
+            id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            date: 100,
+            items: [makeItem(identity: identity, level: 1, display: binding)],
+            section: "heroes",
+            additionalSections: MetricTestSectionCoverage.heroUniverseNotApplicable
+        )
+        let normalNew = makeEntry(
+            id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            date: 200,
+            items: [makeItem(identity: identity, level: 2, display: binding)],
+            section: "heroes",
+            additionalSections: MetricTestSectionCoverage.heroUniverseNotApplicable
+        )
+        let normalDiff = SnapshotDiffEngine.compare(from: normalOld, to: normalNew)
+
+        let seconds = SnapshotTimerSchema(
+            version: "seconds-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .seconds, semantics: .remaining)]
+        )
+        let millis = SnapshotTimerSchema(
+            version: "millis-schema",
+            fields: ["timer": SnapshotTimerFieldSpec(unit: .milliseconds, semantics: .remaining)]
+        )
+        let provenanceOld = makeEntry(
+            id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            date: 200,
+            items: [],
+            section: "other",
+            additionalSections: [
+                .notApplicable("heroes"),
+                .notApplicable("heroes2")
+            ],
+            timerSchema: seconds
+        )
+        let provenanceNew = makeEntry(
+            id: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD",
+            date: 300,
+            items: [],
+            section: "other",
+            additionalSections: [
+                .notApplicable("heroes"),
+                .notApplicable("heroes2")
+            ],
+            timerSchema: millis
+        )
+        let provenanceDiff = SnapshotDiffEngine.compare(from: provenanceOld, to: provenanceNew)
+        XCTAssertEqual(provenanceDiff.comparisonState, .provenanceOnly)
+
+        let before = SnapshotHistoryStatistics.calculate(
+            diffs: [normalDiff],
+            referenceDate: Date(timeIntervalSince1970: 300),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        let after = SnapshotHistoryStatistics.calculate(
+            diffs: [normalDiff, provenanceDiff],
+            referenceDate: Date(timeIntervalSince1970: 300),
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        XCTAssertEqual(before.today.heroLevelGrowth, .available(1))
+        XCTAssertEqual(after.today.heroLevelGrowth, before.today.heroLevelGrowth)
+    }
+
     func testUniqueTimerNaturalCountdownDoesNotCreateChange() throws {
         let identity = makeIdentity(section: "heroes", dataID: 1)
         let old = makeItem(

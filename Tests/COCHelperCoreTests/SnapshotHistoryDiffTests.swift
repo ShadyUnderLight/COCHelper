@@ -1317,6 +1317,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             items: [item],
             section: "heroes",
             states: ["timer": .complete],
+            additionalSections: MetricTestSectionCoverage.heroUniverseNotApplicable,
             sourceTimestamp: Date(timeIntervalSince1970: 100),
             timerSchema: seconds
         )
@@ -1326,6 +1327,7 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             items: [item],
             section: "heroes",
             states: ["timer": .complete],
+            additionalSections: MetricTestSectionCoverage.heroUniverseNotApplicable,
             sourceTimestamp: Date(timeIntervalSince1970: 105),
             timerSchema: millis
         )

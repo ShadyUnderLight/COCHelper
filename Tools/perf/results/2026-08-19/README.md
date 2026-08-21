@@ -36,3 +36,12 @@ Time Profiler 前三热点作为已证明数据。之后 `origin/main` 已推进
 `f310e5ed133424ac3caf6c8ba9569d672c0f5f60`；本 PR 已 rebase 到该最新 base，
 但没有把这批旧 checkpoint 冒充成 `f310e5e` 的新测量。未完成项必须保持 unknown，
 不能勾选上面的最终验收清单。
+
+## 2026-08-22 Release 回放
+
+Tools/perf/results/2026-08-22/ 记录了 d3b57e8 与当前 98a2d1a 的匿名
+Release 回放矩阵。该批数据补齐了大部分 Animation Hitches trace 的
+duration 和导出行数，但仍使用 Accessibility 分页动作，且 OSSignpost、
+Allocations、60s tick、导入/manual/pagination 的独立证据为 unknown。
+因此本 README 的最终验收清单继续保持未勾选；详见
+2026-08-22/README.md 与 2026-08-22/replay_protocol.md。

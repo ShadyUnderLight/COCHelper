@@ -82,9 +82,9 @@ final class CapitalRaidRowCacheTests: XCTestCase {
 
         let incremental = CapitalRaidRowCache()
         incremental.apply(.initial(page: p1))
-        let m12 = PaginationMerge.mergedPage(existing: p1.page, fetched: p2.page)
+        let m12 = CapitalRaidPaginationMerge.mergedLoadMorePage(existing: p1.page, fetched: p2.page).page
         incremental.apply(.loadMoreSuccess(page: OfficialCapitalRaidPage(page: m12)))
-        let m123 = PaginationMerge.mergedPage(existing: m12, fetched: p3.page)
+        let m123 = CapitalRaidPaginationMerge.mergedLoadMorePage(existing: m12, fetched: p3.page).page
         incremental.apply(.loadMoreSuccess(page: OfficialCapitalRaidPage(page: m123)))
 
         let oneShot = CapitalRaidRowCache()
@@ -205,7 +205,7 @@ final class CapitalRaidRowCacheTests: XCTestCase {
         let before = cache.rows
 
         let fetched = OfficialPaginatedPage(items: [season], before: nil, after: "CURSOR")
-        let merged = PaginationMerge.mergedPage(existing: existing, fetched: fetched)
+        let merged = CapitalRaidPaginationMerge.mergedLoadMorePage(existing: existing, fetched: fetched).page
         cache.apply(.loadMoreSuccess(page: OfficialCapitalRaidPage(page: merged)))
 
         XCTAssertEqual(cache.rows.map(\.id), before.map(\.id))
@@ -377,5 +377,74 @@ final class CapitalRaidRowCacheTests: XCTestCase {
             break
         }
         XCTAssertTrue(checked)
+    }
+
+    // MARK: - Issue #231 load-more overlap + row cache
+
+    func testLoadMoreOverlapWithChangedDetailsPreservesRowID() {
+        let cache = CapitalRaidRowCache()
+        let a = makeSeason(loot: 100_000)
+        cache.apply(.initial(page: makePage([a], after: "CURSOR")))
+        let oldID = cache.rows[0].id
+        let generationBefore = cache.generation
+
+        let aPrime = makeSeason(loot: 999_999)
+        let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+            existing: makePage([a], after: "CURSOR").page,
+            fetched: makePage([aPrime], after: "CURSOR2").page
+        )
+        cache.apply(.loadMoreSuccess(page: makePage(mergeResult.page.items, after: mergeResult.page.after)))
+
+        XCTAssertEqual(cache.rows.count, 1)
+        XCTAssertEqual(cache.rows[0].id, oldID)
+        XCTAssertEqual(cache.rows[0].season.capitalTotalLoot, 999_999)
+        XCTAssertEqual(cache.generation, generationBefore)
+        XCTAssertEqual(mergeResult.reconciliation, .identityPreserving)
+    }
+
+    func testLoadMoreAmbiguousOverlapResetsGenerationOnce() {
+        let cache = CapitalRaidRowCache()
+        let a1 = makeSeason(loot: 100_000)
+        let a2 = makeSeason(loot: 100_500)
+        cache.apply(.initial(page: makePage([a1, a2], after: "CURSOR")))
+        let oldIDs = Set(cache.rows.map(\.id))
+        let generationBefore = cache.generation
+
+        let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+            existing: makePage([a1, a2], after: "CURSOR").page,
+            fetched: makePage(
+                [makeSeason(loot: 102_000), makeSeason(loot: 101_000)],
+                after: "CURSOR2"
+            ).page
+        )
+        cache.apply(.loadMoreSuccess(
+            page: makePage(mergeResult.page.items, after: mergeResult.page.after),
+            reconciliation: mergeResult.reconciliation
+        ))
+
+        XCTAssertEqual(mergeResult.reconciliation, .ambiguous)
+        XCTAssertEqual(cache.generation, generationBefore + 1)
+        XCTAssertTrue(oldIDs.isDisjoint(with: cache.rows.map(\.id)))
+        XCTAssertEqual(Set(cache.rows.map(\.id)).count, cache.rows.count)
+    }
+
+    func testLoadMoreGenuineSameTripleOccurrenceAppendsNewRow() {
+        let cache = CapitalRaidRowCache()
+        let a1 = makeSeason(loot: 100_000)
+        let a2 = makeSeason(loot: 100_500)
+        cache.apply(.initial(page: makePage([a1, a2], after: "CURSOR")))
+        let oldIDs = cache.rows.map(\.id)
+
+        let a3 = makeSeason(loot: 50_000)
+        let mergeResult = CapitalRaidPaginationMerge.mergedLoadMorePage(
+            existing: makePage([a1, a2], after: "CURSOR").page,
+            fetched: makePage([a3], after: "CURSOR2").page
+        )
+        cache.apply(.loadMoreSuccess(page: makePage(mergeResult.page.items, after: mergeResult.page.after)))
+
+        XCTAssertEqual(cache.rows.count, 3)
+        XCTAssertEqual(Array(cache.rows.map(\.id).prefix(2)), oldIDs)
+        XCTAssertNotEqual(cache.rows[2].id, oldIDs[0])
+        XCTAssertNotEqual(cache.rows[2].id, oldIDs[1])
     }
 }

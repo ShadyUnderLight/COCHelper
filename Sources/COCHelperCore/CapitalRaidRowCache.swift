@@ -14,8 +14,11 @@ public final class CapitalRaidRowCache {
         case initial(page: OfficialCapitalRaidPage)
         /// 首屏刷新成功（同 parser 版本）：尝试 reconcile，歧义则 reset。
         case refreshSuccess(page: OfficialCapitalRaidPage)
-        /// 加载更多成功：prefix 匹配则 append，否则 reset。
-        case loadMoreSuccess(page: OfficialCapitalRaidPage)
+        /// 加载更多成功：prefix 匹配则 append；overlap 歧义时 reset。
+        case loadMoreSuccess(
+            page: OfficialCapitalRaidPage,
+            reconciliation: CapitalRaidPaginationMerge.LoadMoreReconciliation = .identityPreserving
+        )
         /// 跨 parser 版本重建：明确 bump generation。
         case parserRebuild(page: OfficialCapitalRaidPage)
         /// 请求失败保留 last-good：row state 不变。
@@ -48,8 +51,12 @@ public final class CapitalRaidRowCache {
         case .refreshSuccess(let page):
             reconcileRefresh(with: page.items)
             return rows
-        case .loadMoreSuccess(let page):
-            reconcileLoadMore(with: page.items)
+        case .loadMoreSuccess(let page, let reconciliation):
+            if reconciliation == .ambiguous {
+                resetAndBuild(from: page.items)
+            } else {
+                reconcileLoadMore(with: page.items)
+            }
             return rows
         }
     }
@@ -165,21 +172,15 @@ public final class CapitalRaidRowCache {
         return true
     }
 
-    private func tripleKeyCounts(for seasons: [OfficialCapitalRaidSeason]) -> [String: Int] {
-        var counts: [String: Int] = [:]
-        for season in seasons {
-            let key = CapitalRaidRowIdentity.tripleKey(for: season)
-            counts[key, default: 0] += 1
-        }
-        return counts
-    }
-
     /// 可证明匹配时返回 new 顺序下的旧 row ID；歧义时 nil（fail-closed）。
     private func canSafelyReconcile(
         oldRows: [CapitalRaidSeasonRow],
         newSeasons: [OfficialCapitalRaidSeason]
     ) -> Bool {
-        matchRowIDs(oldRows: oldRows, newSeasons: newSeasons) != nil
+        CapitalRaidSeasonMatcher.canSafelyMatch(
+            oldSeasons: oldRows.map(\.season),
+            newSeasons: newSeasons
+        )
     }
 
     /// 截短 refresh：完整旧缓存参与 duplicate 歧义判断；仅唯一 exact anchor 可保留 ID。
@@ -187,233 +188,35 @@ public final class CapitalRaidRowCache {
         oldRows: [CapitalRaidSeasonRow],
         newSeasons: [OfficialCapitalRaidSeason]
     ) -> Bool {
-        matchTruncatedRefreshRowIDs(oldRows: oldRows, newSeasons: newSeasons) != nil
+        CapitalRaidSeasonMatcher.matchTruncatedRefreshOldIndices(
+            oldSeasons: oldRows.map(\.season),
+            newSeasons: newSeasons
+        ) != nil
     }
 
     private func matchedRows(
         oldRows: [CapitalRaidSeasonRow],
         newSeasons: [OfficialCapitalRaidSeason]
     ) -> [CapitalRaidSeasonRow] {
-        guard let ids = matchRowIDs(oldRows: oldRows, newSeasons: newSeasons) else {
+        guard let oldIndices = CapitalRaidSeasonMatcher.matchOldIndices(
+            oldSeasons: oldRows.map(\.season),
+            newSeasons: newSeasons
+        ) else {
             return newSeasons.map { CapitalRaidSeasonRow(id: makeRow(for: $0).id, season: $0) }
         }
-        return zip(ids, newSeasons).map { CapitalRaidSeasonRow(id: $0, season: $1) }
+        return zip(oldIndices, newSeasons).map { CapitalRaidSeasonRow(id: oldRows[$0].id, season: $1) }
     }
 
     private func matchedRowsTruncatedRefresh(
         oldRows: [CapitalRaidSeasonRow],
         newSeasons: [OfficialCapitalRaidSeason]
     ) -> [CapitalRaidSeasonRow] {
-        guard let ids = matchTruncatedRefreshRowIDs(oldRows: oldRows, newSeasons: newSeasons) else {
+        guard let oldIndices = CapitalRaidSeasonMatcher.matchTruncatedRefreshOldIndices(
+            oldSeasons: oldRows.map(\.season),
+            newSeasons: newSeasons
+        ) else {
             return newSeasons.map { CapitalRaidSeasonRow(id: makeRow(for: $0).id, season: $0) }
         }
-        return zip(ids, newSeasons).map { CapitalRaidSeasonRow(id: $0, season: $1) }
-    }
-
-    /// duplicate-triple group：先锚定完全相等的 entry，再处理 1↔1 剩余；2+↔2+ 视为歧义。
-    private func matchRowIDs(
-        oldRows: [CapitalRaidSeasonRow],
-        newSeasons: [OfficialCapitalRaidSeason]
-    ) -> [String]? {
-        guard oldRows.count == newSeasons.count else { return nil }
-        guard tripleKeyCounts(for: oldRows.map(\.season)) == tripleKeyCounts(for: newSeasons) else {
-            return nil
-        }
-
-        var oldByTriple: [String: [(index: Int, row: CapitalRaidSeasonRow)]] = [:]
-        var newByTriple: [String: [(index: Int, season: OfficialCapitalRaidSeason)]] = [:]
-        for (index, row) in oldRows.enumerated() {
-            let key = CapitalRaidRowIdentity.tripleKey(for: row.season)
-            oldByTriple[key, default: []].append((index, row))
-        }
-        for (index, season) in newSeasons.enumerated() {
-            let key = CapitalRaidRowIdentity.tripleKey(for: season)
-            newByTriple[key, default: []].append((index, season))
-        }
-
-        var assignment: [Int: String] = [:]
-
-        for triple in oldByTriple.keys.sorted() {
-            guard let oldGroup = oldByTriple[triple], let newGroup = newByTriple[triple] else {
-                return nil
-            }
-            guard oldGroup.count == newGroup.count else { return nil }
-
-            if oldGroup.count == 1 {
-                assignment[newGroup[0].index] = oldGroup[0].row.id
-                continue
-            }
-
-            guard matchDuplicateTripleGroup(
-                oldGroup: oldGroup,
-                newGroup: newGroup,
-                assignment: &assignment
-            ) else {
-                return nil
-            }
-        }
-
-        guard assignment.count == newSeasons.count else { return nil }
-        return newSeasons.indices.map { assignment[$0]! }
-    }
-
-    /// 截短 refresh matcher：new 更短时仍用完整 old cache 判断 duplicate 歧义。
-    private func matchTruncatedRefreshRowIDs(
-        oldRows: [CapitalRaidSeasonRow],
-        newSeasons: [OfficialCapitalRaidSeason]
-    ) -> [String]? {
-        guard !newSeasons.isEmpty else { return nil }
-
-        var oldByTriple: [String: [(index: Int, row: CapitalRaidSeasonRow)]] = [:]
-        var newByTriple: [String: [(index: Int, season: OfficialCapitalRaidSeason)]] = [:]
-        for (index, row) in oldRows.enumerated() {
-            let key = CapitalRaidRowIdentity.tripleKey(for: row.season)
-            oldByTriple[key, default: []].append((index, row))
-        }
-        for (index, season) in newSeasons.enumerated() {
-            let key = CapitalRaidRowIdentity.tripleKey(for: season)
-            newByTriple[key, default: []].append((index, season))
-        }
-
-        var assignment: [Int: String] = [:]
-
-        for triple in newByTriple.keys.sorted() {
-            guard let oldGroup = oldByTriple[triple], let newGroup = newByTriple[triple] else {
-                return nil
-            }
-            if newGroup.count > oldGroup.count { return nil }
-
-            if newGroup.count == oldGroup.count {
-                if oldGroup.count == 1 {
-                    assignment[newGroup[0].index] = oldGroup[0].row.id
-                } else {
-                    guard matchDuplicateTripleGroup(
-                        oldGroup: oldGroup,
-                        newGroup: newGroup,
-                        assignment: &assignment
-                    ) else {
-                        return nil
-                    }
-                }
-            } else {
-                guard matchTruncatedDuplicateTripleGroup(
-                    oldGroup: oldGroup,
-                    newGroup: newGroup,
-                    assignment: &assignment
-                ) else {
-                    return nil
-                }
-            }
-        }
-
-        guard assignment.count == newSeasons.count else { return nil }
-        return newSeasons.indices.map { assignment[$0]! }
-    }
-
-    /// duplicate triple 在截短 refresh 中数量减少：仅唯一 exact payload anchor 可保留 ID。
-    private func matchTruncatedDuplicateTripleGroup(
-        oldGroup: [(index: Int, row: CapitalRaidSeasonRow)],
-        newGroup: [(index: Int, season: OfficialCapitalRaidSeason)],
-        assignment: inout [Int: String]
-    ) -> Bool {
-        guard newGroup.count < oldGroup.count else { return false }
-
-        var unmatchedOld = oldGroup
-        var unmatchedNew = newGroup
-
-        while true {
-            var foundAnchor = false
-            var stillUnmatchedNew: [(index: Int, season: OfficialCapitalRaidSeason)] = []
-
-            for newEntry in unmatchedNew {
-                let season = newEntry.season
-                let newOccurrences = occurrenceCount(of: season, in: unmatchedNew.map(\.season))
-                guard newOccurrences == 1 else {
-                    stillUnmatchedNew.append(newEntry)
-                    continue
-                }
-                let oldMatchIndices = unmatchedOld.indices.filter {
-                    unmatchedOld[$0].row.season == season
-                }
-                guard oldMatchIndices.count == 1 else {
-                    stillUnmatchedNew.append(newEntry)
-                    continue
-                }
-                assignment[newEntry.index] = unmatchedOld[oldMatchIndices[0]].row.id
-                unmatchedOld.remove(at: oldMatchIndices[0])
-                foundAnchor = true
-            }
-            unmatchedNew = stillUnmatchedNew
-            if !foundAnchor { break }
-        }
-
-        return unmatchedNew.isEmpty
-    }
-
-    /// duplicate triple group：位置全等则按位保留；否则仅唯一 exact payload 可 anchor。
-    private func matchDuplicateTripleGroup(
-        oldGroup: [(index: Int, row: CapitalRaidSeasonRow)],
-        newGroup: [(index: Int, season: OfficialCapitalRaidSeason)],
-        assignment: inout [Int: String]
-    ) -> Bool {
-        let oldSorted = oldGroup.sorted { $0.index < $1.index }
-        let newSorted = newGroup.sorted { $0.index < $1.index }
-        if oldSorted.count == newSorted.count,
-           zip(oldSorted, newSorted).allSatisfy({
-               $0.index == $1.index && $0.row.season == $1.season
-           }) {
-            for (oldEntry, newEntry) in zip(oldSorted, newSorted) {
-                assignment[newEntry.index] = oldEntry.row.id
-            }
-            return true
-        }
-
-        var unmatchedOld = oldGroup
-        var unmatchedNew = newGroup
-
-        while true {
-            var foundAnchor = false
-            var stillUnmatchedNew: [(index: Int, season: OfficialCapitalRaidSeason)] = []
-
-            for newEntry in unmatchedNew {
-                let season = newEntry.season
-                let newOccurrences = occurrenceCount(of: season, in: unmatchedNew.map(\.season))
-                guard newOccurrences == 1 else {
-                    stillUnmatchedNew.append(newEntry)
-                    continue
-                }
-                let oldMatchIndices = unmatchedOld.indices.filter {
-                    unmatchedOld[$0].row.season == season
-                }
-                guard oldMatchIndices.count == 1 else {
-                    stillUnmatchedNew.append(newEntry)
-                    continue
-                }
-                assignment[newEntry.index] = unmatchedOld[oldMatchIndices[0]].row.id
-                unmatchedOld.remove(at: oldMatchIndices[0])
-                foundAnchor = true
-            }
-            unmatchedNew = stillUnmatchedNew
-            if !foundAnchor { break }
-        }
-
-        if unmatchedOld.isEmpty, unmatchedNew.isEmpty { return true }
-        if unmatchedOld.count == 1, unmatchedNew.count == 1 {
-            assignment[unmatchedNew[0].index] = unmatchedOld[0].row.id
-            return true
-        }
-        return false
-    }
-
-    /// duplicate group 内 exact payload 出现次数（`Equatable`，不 hash 完整赛季）。
-    private func occurrenceCount(
-        of season: OfficialCapitalRaidSeason,
-        in seasons: [OfficialCapitalRaidSeason]
-    ) -> Int {
-        var count = 0
-        for candidate in seasons where candidate == season {
-            count += 1
-        }
-        return count
+        return zip(oldIndices, newSeasons).map { CapitalRaidSeasonRow(id: oldRows[$0].id, season: $1) }
     }
 }

@@ -36,6 +36,17 @@ public enum SnapshotDiffComparisonState: String, Codable, Hashable, Sendable {
     case suppressed
 }
 
+/// Typed content outcome kept separate from comparison availability.
+///
+/// A provenance-only pair is comparable for timeline purposes, but must not
+/// be routed through the ordinary business-change metric applicability path.
+public enum SnapshotDiffContentState: String, Codable, Hashable, Sendable {
+    case contentChanged
+    case provenanceOnly
+    case contentInsufficient
+    case comparableNoChange
+}
+
 public struct SnapshotDiffSectionCoverage: Codable, Hashable, Sendable, Identifiable {
     public let base: SnapshotHistoryBase
     public let rawSection: String
@@ -239,6 +250,34 @@ private struct MetricApplicabilityEvaluator {
         return sawComplete ? .complete : .notApplicable
     }
 
+    /// Provenance-only pairs have no business observation delta.  They may
+    /// establish a zero for a section that is actually observed and complete,
+    /// while absent sibling sections remain outside this pair's evidence
+    /// rather than poisoning that no-op metric.  Real content changes still
+    /// use `universeState` above and therefore keep #206 fail-closed behavior.
+    func provenanceOnlyState(sections: Set<String>, fields: Set<String>) -> MetricUniverseState {
+        guard !sections.isEmpty else { return .insufficient }
+        var sawRelevant = false
+        var sawComplete = false
+        for section in sections.sorted() {
+            guard let coverage = sectionCoverage.first(where: { $0.rawSection == section }),
+                  isSectionRelevant(coverage) else {
+                continue
+            }
+            sawRelevant = true
+            switch applicability(for: section, fields: fields) {
+            case .complete:
+                sawComplete = true
+            case .notApplicable:
+                break
+            case .insufficient:
+                return .insufficient
+            }
+        }
+        if sawComplete { return .complete }
+        return sawRelevant ? .notApplicable : .irrelevant
+    }
+
     func universeSatisfied(sections: Set<String>, fields: Set<String>) -> Bool {
         universeState(sections: sections, fields: fields) == .complete
     }
@@ -330,27 +369,21 @@ private struct DiffMetricApplicability {
         let wallSections: Set<String> = ["buildings", "buildings2"]
         let heroSections: Set<String> = ["heroes", "heroes2"]
         let troopSections: Set<String> = ["units", "units2"]
-        building = evaluator.isUniverseRelevant(sections: buildingSections, in: diff)
-            ? evaluator.universeState(sections: buildingSections, fields: histogramFields)
-            : .irrelevant
-        wall = evaluator.isUniverseRelevant(sections: wallSections, in: diff)
-            ? evaluator.universeState(sections: wallSections, fields: histogramFields)
-            : .irrelevant
-        hero = evaluator.isUniverseRelevant(sections: heroSections, in: diff)
-            ? evaluator.universeState(sections: heroSections, fields: levelFields)
-            : .irrelevant
-        troop = evaluator.isUniverseRelevant(sections: troopSections, in: diff)
-            ? evaluator.universeState(sections: troopSections, fields: levelFields)
-            : .irrelevant
-        spell = evaluator.isUniverseRelevant(sections: ["spells"], in: diff)
-            ? evaluator.universeState(sections: ["spells"], fields: levelFields)
-            : .irrelevant
-        pet = evaluator.isUniverseRelevant(sections: ["pets"], in: diff)
-            ? evaluator.universeState(sections: ["pets"], fields: levelFields)
-            : .irrelevant
-        equipment = evaluator.isUniverseRelevant(sections: ["equipment"], in: diff)
-            ? evaluator.universeState(sections: ["equipment"], fields: levelFields)
-            : .irrelevant
+        func state(sections: Set<String>, fields: Set<String>) -> MetricUniverseState {
+            if diff.contentState == .provenanceOnly {
+                return evaluator.provenanceOnlyState(sections: sections, fields: fields)
+            }
+            return evaluator.isUniverseRelevant(sections: sections, in: diff)
+                ? evaluator.universeState(sections: sections, fields: fields)
+                : .irrelevant
+        }
+        building = state(sections: buildingSections, fields: histogramFields)
+        wall = state(sections: wallSections, fields: histogramFields)
+        hero = state(sections: heroSections, fields: levelFields)
+        troop = state(sections: troopSections, fields: levelFields)
+        spell = state(sections: ["spells"], fields: levelFields)
+        pet = state(sections: ["pets"], fields: levelFields)
+        equipment = state(sections: ["equipment"], fields: levelFields)
         hasSectionCoverage = !diff.sectionCoverage.isEmpty
         hasChanges = !diff.changes.isEmpty
     }
@@ -582,6 +615,7 @@ public struct SnapshotDiff: Codable, Hashable, Sendable {
     public let toAppliedAt: Date
     public let algorithmVersion: String
     public let comparisonState: SnapshotDiffComparisonState
+    public let contentState: SnapshotDiffContentState
     public let sectionCoverage: [SnapshotDiffSectionCoverage]
     public let changes: [SnapshotChange]
     public let diagnostics: [SnapshotDiffDiagnostic]
@@ -595,6 +629,7 @@ public struct SnapshotDiff: Codable, Hashable, Sendable {
         toAppliedAt: Date = .distantPast,
         algorithmVersion: String = SnapshotDiffAlgorithm.version,
         comparisonState: SnapshotDiffComparisonState = .comparable,
+        contentState: SnapshotDiffContentState = .contentChanged,
         sectionCoverage: [SnapshotDiffSectionCoverage] = [],
         changes: [SnapshotChange] = [],
         diagnostics: [SnapshotDiffDiagnostic] = []
@@ -607,6 +642,7 @@ public struct SnapshotDiff: Codable, Hashable, Sendable {
         self.toAppliedAt = toAppliedAt
         self.algorithmVersion = algorithmVersion
         self.comparisonState = comparisonState
+        self.contentState = contentState
         self.sectionCoverage = sectionCoverage.sorted { $0.id < $1.id }
         self.changes = changes.sorted(by: SnapshotDiffOrdering.change)
         self.diagnostics = diagnostics.sorted { $0.id < $1.id }
@@ -657,6 +693,7 @@ public enum SnapshotDiffEngine {
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
                 comparisonState: .suppressed,
+                contentState: .contentInsufficient,
                 sectionCoverage: sectionCoverage,
                 diagnostics: diagnostics
             )
@@ -675,6 +712,7 @@ public enum SnapshotDiffEngine {
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
                 comparisonState: .suppressed,
+                contentState: .contentInsufficient,
                 sectionCoverage: sectionCoverage,
                 diagnostics: diagnostics
             )
@@ -693,6 +731,7 @@ public enum SnapshotDiffEngine {
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
                 comparisonState: .suppressed,
+                contentState: .contentInsufficient,
                 sectionCoverage: sectionCoverage,
                 diagnostics: diagnostics
             )
@@ -711,6 +750,7 @@ public enum SnapshotDiffEngine {
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
                 comparisonState: .suppressed,
+                contentState: .contentInsufficient,
                 sectionCoverage: sectionCoverage,
                 diagnostics: diagnostics
             )
@@ -732,6 +772,7 @@ public enum SnapshotDiffEngine {
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
                 comparisonState: .provenanceOnly,
+                contentState: .provenanceOnly,
                 sectionCoverage: sectionCoverage,
                 changes: [],
                 diagnostics: diagnostics
@@ -752,6 +793,7 @@ public enum SnapshotDiffEngine {
                 fromAppliedAt: from.appliedAt,
                 toAppliedAt: to.appliedAt,
                 comparisonState: .insufficientCoverage,
+                contentState: .contentInsufficient,
                 sectionCoverage: sectionCoverage,
                 diagnostics: diagnostics
             )
@@ -841,6 +883,14 @@ public enum SnapshotDiffEngine {
         let state: SnapshotDiffComparisonState = !hasKnownChange && hasInsufficientDiagnostic
             ? .insufficientCoverage
             : .comparable
+        let contentState: SnapshotDiffContentState
+        if state == .insufficientCoverage {
+            contentState = .contentInsufficient
+        } else if !changes.isEmpty {
+            contentState = .contentChanged
+        } else {
+            contentState = .comparableNoChange
+        }
 
         return SnapshotDiff(
             fromSnapshotID: from.snapshotID,
@@ -850,6 +900,7 @@ public enum SnapshotDiffEngine {
             fromAppliedAt: from.appliedAt,
             toAppliedAt: to.appliedAt,
             comparisonState: state,
+            contentState: contentState,
             sectionCoverage: sectionCoverage,
             changes: changes,
             diagnostics: diagnostics

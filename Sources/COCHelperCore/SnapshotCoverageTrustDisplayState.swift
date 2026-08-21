@@ -37,6 +37,20 @@ public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
             return .insufficientCoverage
         }
 
+        // Canonicalization materializes every known section so Diff can keep
+        // absence fail-closed. A source adapter's trusted proof set is the
+        // frozen relevant universe: an absent section with no proof is outside
+        // that source, while an explicit proof or present section is relevant
+        // and must still block verified display when it is not trusted.
+        let relevantSections = sections.filter { section in
+            hasExplicitProof(section.proof)
+                || section.presence != .missing
+                || section.completeness != .unavailable
+        }
+        guard !relevantSections.isEmpty else {
+            return .insufficientCoverage
+        }
+
         func sectionBlocksVerifiedDisplay(_ section: SnapshotSectionCoverage) -> Bool {
             if !section.proof.hasVerifiedWireMetadata { return true }
             if section.completeness != .complete { return true }
@@ -44,18 +58,27 @@ public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
             return false
         }
 
-        if sections.contains(where: sectionBlocksVerifiedDisplay) {
+        if relevantSections.contains(where: sectionBlocksVerifiedDisplay) {
             return .insufficientCoverage
         }
 
-        if sections.contains(where: { $0.runtimeTrust == .pending }) {
+        if relevantSections.contains(where: { $0.runtimeTrust == .pending }) {
             return .pendingRevalidation
         }
 
-        if sections.allSatisfy({ $0.runtimeTrust == .trusted }) {
+        if relevantSections.allSatisfy({ $0.runtimeTrust == .trusted }) {
             return .verified
         }
 
         return .insufficientCoverage
+    }
+
+    private static func hasExplicitProof(_ proof: SnapshotCoverageProof) -> Bool {
+        switch proof {
+        case .declared, .legacyAuthoritative, .verified:
+            return true
+        case .unavailable:
+            return false
+        }
     }
 }

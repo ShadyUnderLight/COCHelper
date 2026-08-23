@@ -419,6 +419,116 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
     }
 
+    func testObservationV5WireIgnoresInjectedSourceUniverse() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle.module.url(
+                forResource: "perf_account_snapshot_home",
+                withExtension: "json"
+            )
+        )
+        let text = try String(contentsOf: fixtureURL, encoding: .utf8)
+        let snapshot = try AccountSnapshotImporter.parse(text, now: Date(timeIntervalSince1970: 1))
+        let proofs = SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
+            JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+        )
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proofs,
+            observationVersion: SnapshotHistorySchema.observationWithoutCoverageMetadata
+        )
+        XCTAssertNil(entry.coverage.sourceUniverse)
+        XCTAssertEqual(entry.observationVersion, SnapshotHistorySchema.observationWithoutCoverageMetadata)
+
+        var envelopeObject = try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(
+                SnapshotHistoryEnvelope(
+                    entries: [entry],
+                    lineages: [],
+                    migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
+                )
+            )
+        ) as! [String: Any]
+        var entries = envelopeObject["entries"] as! [[String: Any]]
+        var coverage = entries[0]["coverage"] as! [String: Any]
+        coverage["sourceUniverse"] = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(
+                try XCTUnwrap(SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot))
+            )
+        )
+        entries[0]["coverage"] = coverage
+        envelopeObject["entries"] = entries
+        let tamperedData = try JSONSerialization.data(
+            withJSONObject: envelopeObject,
+            options: [.sortedKeys]
+        )
+
+        let decoded = try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: tamperedData)
+        let decodedEntry = try XCTUnwrap(decoded.entries.first)
+        XCTAssertNil(decodedEntry.coverage.sourceUniverse)
+        XCTAssertEqual(decodedEntry.coverage.sourceUniverseRuntimeTrust, .notApplicable)
+        let hydrated = decoded.hydratingVerifiedCoverage(policy: .production)
+        XCTAssertNil(hydrated.entries.first?.coverage.sourceUniverse)
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(
+                coverage: try XCTUnwrap(hydrated.entries.first?.coverage)
+            ),
+            .insufficientCoverage
+        )
+    }
+
+    func testObservationV5EntryWithSourceUniverseRejectedByValidation() throws {
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: text),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proof,
+            observationVersion: SnapshotHistorySchema.observationWithoutCoverageMetadata
+        )
+        let tamperedCoverage = SnapshotObservationCoverage(
+            schemaVersion: entry.coverage.schemaVersion,
+            fields: entry.coverage.fields,
+            sections: entry.coverage.sections,
+            diagnostics: entry.coverage.diagnostics,
+            sourceUniverse: testSourceUniverse(for: proof),
+            sourceUniverseRuntimeTrust: .pending
+        )
+        let tamperedEntry = SnapshotHistoryEntry(
+            observationVersion: entry.observationVersion,
+            snapshotID: entry.snapshotID,
+            villageID: entry.villageID,
+            lineageID: entry.lineageID,
+            normalizedPlayerTag: entry.normalizedPlayerTag,
+            appliedAt: entry.appliedAt,
+            sourceTimestamp: entry.sourceTimestamp,
+            parserVersion: entry.parserVersion,
+            canonicalFingerprint: entry.canonicalFingerprint,
+            rawJSON: entry.rawJSON,
+            observation: entry.observation,
+            coverage: tamperedCoverage,
+            isBaseline: entry.isBaseline,
+            baselineReason: entry.baselineReason
+        )
+        let envelope = SnapshotHistoryEnvelope(
+            entries: [tamperedEntry],
+            lineages: [],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
+        )
+        XCTAssertThrowsError(try envelope.validated()) { error in
+            guard case SnapshotHistoryStoreError.invalidEntry(let message) = error else {
+                return XCTFail("expected invalidEntry, got \(error)")
+            }
+            XCTAssertTrue(message.contains("source universe"))
+        }
+    }
+
     func testVerifiedCoverageTamperedBindingFailsRevalidation() throws {
         let text = "{\"tag\":\"#ABC123\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
         let proof: [String: SnapshotCoverageProof] = [

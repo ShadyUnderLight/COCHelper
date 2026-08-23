@@ -149,6 +149,12 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
                     "历史 entry 的 observation v2+ 缺少 section 完整性证据。"
                 )
             }
+            if entry.observationVersion < SnapshotHistorySchema.observationWithSourceUniverse,
+               entry.coverage.sourceUniverse != nil {
+                throw SnapshotHistoryStoreError.invalidEntry(
+                    "observation v5 及更早的 entry 不得携带 source universe。"
+                )
+            }
             guard entry.fingerprintVersion == SnapshotHistorySchema.fingerprint else {
                 throw SnapshotHistoryStoreError.unsupportedSchema(entry.fingerprintVersion)
             }
@@ -215,6 +221,7 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
         }
         guard !zip(entries, hydratedEntries).allSatisfy({
             $0.coverage.sections.map(\.runtimeTrust) == $1.coverage.sections.map(\.runtimeTrust)
+                && $0.coverage.sourceUniverseRuntimeTrust == $1.coverage.sourceUniverseRuntimeTrust
         }) else {
             return self
         }

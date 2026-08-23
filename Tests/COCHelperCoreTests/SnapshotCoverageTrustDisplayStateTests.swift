@@ -248,6 +248,7 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
             "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let coverage = SnapshotObservationCoverage(
+            schemaVersion: SnapshotHistorySchema.observation,
             fields: [],
             sections: [
                 makeSection(
@@ -276,6 +277,7 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
             "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
         ]
         let coverage = SnapshotObservationCoverage(
+            schemaVersion: SnapshotHistorySchema.observation,
             fields: [],
             sections: [
                 makeSection(

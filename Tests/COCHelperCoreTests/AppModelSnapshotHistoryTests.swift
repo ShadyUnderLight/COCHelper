@@ -533,6 +533,11 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
             "基线单快照尚无相邻比较，统计应保持保守"
         )
         let envelopeAfterRestart = try XCTUnwrap(try FileSnapshotHistoryStore(fileURL: historyURL).load())
+        XCTAssertEqual(
+            envelopeAfterRestart.entries.first?.coverage.sourceUniverseRuntimeTrust,
+            .trusted,
+            "production hydration 应恢复 perf-fixture source universe runtime trust"
+        )
         XCTAssertTrue(
             envelopeAfterRestart.entries.first?.coverage.sections.contains(where: \.opensTrustGates) == true,
             "production hydration 仍应恢复部分 perf-fixture section 的 runtime trust"
@@ -563,6 +568,29 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
             latestEntry.coverage.sections.contains(where: \.opensTrustGates),
             "production load 后 latest entry 应恢复至少一个 section 的 runtime trust"
         )
+        XCTAssertEqual(
+            latestEntry.coverage.sourceUniverseRuntimeTrust,
+            .trusted,
+            "variant live import 后 source universe 应为 runtime trusted"
+        )
+
+        let modelRestartAgain = AppModel(
+            defaults: defaults,
+            historyStore: FileSnapshotHistoryStore(fileURL: historyURL)
+        )
+        let projectionAfterSecondRestart = modelRestartAgain.snapshotHistoryProjection(for: villageA.id)
+        XCTAssertEqual(
+            projectionAfterSecondRestart.coverageTrustState,
+            .verified,
+            "variant 持久化后第二次重启仍应显示已验证"
+        )
+        let envelopeAfterSecondRestart = try XCTUnwrap(
+            try FileSnapshotHistoryStore(fileURL: historyURL).load()
+        )
+        let persistedLatest = try XCTUnwrap(
+            envelopeAfterSecondRestart.entries.max(by: { $0.appliedAt < $1.appliedAt })
+        )
+        XCTAssertEqual(persistedLatest.coverage.sourceUniverseRuntimeTrust, .trusted)
     }
 
     @MainActor

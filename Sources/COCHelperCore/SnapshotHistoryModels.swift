@@ -597,8 +597,24 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
         fields: [SnapshotCoverageField],
         sections: [SnapshotSectionCoverage] = [],
         diagnostics: [String] = [],
-        sourceUniverse: SnapshotCoverageSourceUniverse? = nil,
-        sourceUniverseRuntimeTrust: SourceUniverseRuntimeTrust? = nil
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil
+    ) {
+        self.schemaVersion = schemaVersion
+        self.fields = fields.sorted { $0.id < $1.id }
+        self.sections = sections.sorted { $0.id < $1.id }
+        self.diagnostics = diagnostics.sorted()
+        self.sourceUniverse = sourceUniverse
+        self.sourceUniverseRuntimeTrust = Self.initialUniverseTrust(for: sourceUniverse)
+    }
+
+    /// Load-time hydration and internal tests only.
+    package init(
+        schemaVersion: Int,
+        fields: [SnapshotCoverageField],
+        sections: [SnapshotSectionCoverage],
+        diagnostics: [String],
+        sourceUniverse: SnapshotCoverageSourceUniverse?,
+        sourceUniverseRuntimeTrust: SourceUniverseRuntimeTrust
     ) {
         self.schemaVersion = schemaVersion
         self.fields = fields.sorted { $0.id < $1.id }
@@ -606,7 +622,6 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
         self.diagnostics = diagnostics.sorted()
         self.sourceUniverse = sourceUniverse
         self.sourceUniverseRuntimeTrust = sourceUniverseRuntimeTrust
-            ?? Self.initialUniverseTrust(for: sourceUniverse)
     }
 
     package static func initialUniverseTrust(
@@ -665,17 +680,24 @@ public struct SnapshotObservationCoverage: Codable, Hashable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+            ?? SnapshotHistorySchema.observation
+        let sourceUniverse: SnapshotCoverageSourceUniverse?
+        if schemaVersion >= SnapshotHistorySchema.observationWithSourceUniverse {
+            sourceUniverse = try container.decodeIfPresent(
+                SnapshotCoverageSourceUniverse.self,
+                forKey: .sourceUniverse
+            )
+        } else {
+            sourceUniverse = nil
+        }
         self.init(
-            schemaVersion: try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
-                ?? SnapshotHistorySchema.observation,
+            schemaVersion: schemaVersion,
             fields: try container.decode([SnapshotCoverageField].self, forKey: .fields),
             sections: try container.decodeIfPresent([SnapshotSectionCoverage].self, forKey: .sections)
                 ?? [],
             diagnostics: try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? [],
-            sourceUniverse: try container.decodeIfPresent(
-                SnapshotCoverageSourceUniverse.self,
-                forKey: .sourceUniverse
-            )
+            sourceUniverse: sourceUniverse
         )
     }
 

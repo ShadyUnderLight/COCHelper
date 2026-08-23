@@ -559,6 +559,7 @@ final class SnapshotHistoryProjectionTests: XCTestCase {
             rawJSON: trustedEntry.rawJSON,
             observation: trustedEntry.observation,
             coverage: SnapshotObservationCoverage(
+                schemaVersion: trustedEntry.coverage.schemaVersion,
                 fields: trustedEntry.coverage.fields,
                 sections: pendingHeroes,
                 diagnostics: trustedEntry.coverage.diagnostics,

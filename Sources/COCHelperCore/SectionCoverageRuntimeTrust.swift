@@ -19,7 +19,7 @@ public enum SectionCoverageRuntimeTrust: Equatable, Sendable {
 ///
 /// Wire decode alone must not open UI trust projection; only live module issuance
 /// or load-time revalidation may restore `.trusted`.
-public enum SourceUniverseRuntimeTrust: Equatable, Sendable {
+package enum SourceUniverseRuntimeTrust: Equatable, Sendable {
     case notApplicable
     case pending
     case trusted

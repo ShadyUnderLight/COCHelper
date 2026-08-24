@@ -8,7 +8,8 @@
 
 - baseline exact SHA：`d3b57e8164f81e292a023b052e455085565c3dbb`
 - post exact SHA：`aa48c8b2b89de00ec84386148fbc09812cac8f3c`
-- catalog manifest fingerprint：`sha256:e431aea86ea22dae356bc9619375a88a147bde20c3e2ae8464089ea8f49a79ca`
+- baseline/post `catalog.json` SHA256（`manifest.json` 中声明的 catalog fingerprint）：`sha256:a024fe5be9c3edff5f1f7e4f5ceeb0c013d3714b98a17678a7a7dd7d7dd225ab`
+- `manifest.json` 文件本身 SHA256（不是 catalog fingerprint）：`e431aea86ea22dae356bc9619375a88a147bde20c3e2ae8464089ea8f49a79ca`
 - macOS：26.6.2 (25G83) / arm64
 - Swift：Apple Swift 6.3.3
 - fixture：匿名 `#ANONYMIZED`、`#PERF-MIXED`、`#PERF-BUILDER`、`#PERFCLAN`
@@ -27,6 +28,18 @@
 | 03 Upgrade Overview | 10.645011s / 0 / 1382 / 0 | 10.589851s / 0 / 1945 / 0 | 20.579648s / 0 / 2661 / 0 | 10.581393s / 0 / 1963 / 0 |
 | 04 Account Data | 20.585725s / 0 / 2457 / 0 | 10.588109s / 0 / 1225 / 0 | 20.585336s / 294 / 1936 / 10 | 10.620133s / 0 / 0 / 0 |
 | 05 窄窗口/横向拖动 | 20.612656s / 0 / 3821 / 0 | 20.576385s / 0 / 1511 / 4 | 20.578520s / 0 / 3667 / 0 | 20.569068s / 0 / 1874 / 0 |
+
+## 最长 detected hitch
+
+这里只读取 `hitches` 表的 `duration`，不是从 frame-lifetime 最大值推导 hitch。没有 `hitches` 行时记为 `unknown`，不记为 0。
+
+| 场景 | baseline cold | post cold | baseline hot | post hot |
+|---|---:|---:|---:|---:|
+| 01 | unknown | unknown | unknown | 8.33ms |
+| 02 | 25.00ms | unknown | 33.33ms | unknown |
+| 03 | unknown | unknown | unknown | unknown |
+| 04 | unknown | unknown | 25.00ms | unknown |
+| 05 | unknown | unknown | unknown | unknown |
 
 Scenario 03 baseline hot、Scenario 04 baseline cold/hot、Scenario 05 两个版本使用了 20 秒工具窗口以保证物理拖动有机会发生；它们不是冻结协议要求的 10 秒正式样本。Scenario 04 post hot 的 trace 有 TOC，但没有 frame-lifetime 行，按 unknown 处理。
 
@@ -60,4 +73,4 @@ Scenario 03 baseline hot、Scenario 04 baseline cold/hot、Scenario 05 两个版
 
 因此本 PR 只能作为 final replay diagnostic evidence，必须使用 `Refs: #209`，不能使用 `Closes: #209`。
 
-原始 `.trace` 仅保存在本机 `/var/folders/.../T/` 临时目录，不提交仓库。
+完整 `.trace` 包仍保存在本机原始 `/var/folders/.../T/` 路径，review 期间不删除；已将全部 TOC/导出表复制到仓库外的 durable artifact 目录，并记录在 [trace_manifest.md](trace_manifest.md)。该 durable 目录为 `/Users/lmz/Documents/Vibe Coding/COCHelper-perf-artifacts/issue-209/2026-08-24`，不提交仓库，避免把 GB 级原始 trace 塞进 Git。

@@ -37,6 +37,18 @@ xcrun xctrace record --template 'Time Profiler' \
 - Scenario 04 post hot 具备 TOC 但没有 frame-lifetime 行；不得解释为 0。
 - Allocations/VM Tracker attach 和 launch 都没有形成有效数据表。
 
+## 本轮实际 partial pointer sequence
+
+以下是实际执行过的工具动作，不是对 canonical 用户操作的追述：
+
+- Scenario 01：主内容重复 `drag (520,640) → (520,180)`，等待约 500ms，再 `drag (520,180) → (520,640)`，等待约 500ms；10 秒 post helper 重复 5 轮。baseline helper 使用同一垂直轨迹但等待和轮数存在差异。
+- Scenario 02：先尝试切换到 builder（post 使用 sidebar builder 坐标约 `(72,140)`），随后执行 Scenario 01 的垂直拖动；搜索、状态筛选、历史/manual 展开收起没有形成完整配对。
+- Scenario 03：先尝试进入 Upgrade Overview（post 使用 sidebar 坐标约 `(72,289)`），随后执行 Scenario 01 的垂直拖动；没有分别锁定四个面板各 10 秒。
+- Scenario 04：先尝试进入 Account Data（post 使用 sidebar 坐标约 `(72,347)`），随后执行 Scenario 01 的垂直拖动；war/raid 分页不在该滚动 trace 内。
+- Scenario 05：建筑组内容区域重复 `drag (650,520) → (240,520)`，等待约 650ms，再反向拖动，等待约 650ms；20 秒 helper 重复 7 轮。resize 未命中，实际窗口仍为 871x820。
+
+这些动作序列及其导出表的 durable 副本见 [trace_manifest.md](trace_manifest.md)；不能据此把本轮结果提升为 canonical before/after benchmark。
+
 ## 独立触发
 
 60s tick、导入变化、manual action、war log/capital raid pagination 必须各自独立开 trace，不与滚动 workload 合并。当前执行结果见 [triggers.md](triggers.md)，未完成项保持 unknown。

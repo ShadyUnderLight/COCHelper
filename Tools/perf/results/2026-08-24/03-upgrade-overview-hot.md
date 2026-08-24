@@ -14,5 +14,6 @@
 | Trace duration | 20.579648s | 10.581393s |
 | `hitches` rows | 0 | 0 |
 | `hitches-frame-lifetimes` rows | 2661 | 1963 |
+| Longest detected hitch | unknown | unknown |
 | `os-signpost-interval` rows | 0 | 0 |
 | Time Profiler / custom signpost / memory | unknown | unknown |

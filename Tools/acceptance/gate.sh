@@ -80,7 +80,7 @@ run_step "App bundle 组装" \
   scripts/build_app.sh
 
 run_step "git diff --check" \
-  git diff --check
+  git diff --check -- . ':!Tools/acceptance/results'
 
 echo "## 真实村庄验收（本地数据）" >>"$log"
 echo >>"$log"

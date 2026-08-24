@@ -434,7 +434,6 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         )
 
         XCTAssertEqual(preview.items.single?.classification, .unknown)
-        XCTAssertFalse(preview.items.single?.coverageComplete ?? true)
         XCTAssertNil(preview.items.single?.observedDistribution)
 
         let plan = try ManualTrackerReconciliationService.reconcile(
@@ -518,7 +517,8 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         XCTAssertEqual(timerCoveragePreview.items.single?.classification, .unknown)
     }
 
-    func testPartialSectionCoveragePoisonsSiblingKeys() throws {
+    func testPartialSectionCoverageDoesNotBlockCompleteSiblingItems() throws {
+        let siblingKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 101)
         let cases: [(name: String, old: String, new: String)] = [
             (
                 "level",
@@ -548,11 +548,34 @@ final class ManualTrackerReconciliationTests: XCTestCase {
                 currentState: state,
                 appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
             )
-            let item = try XCTUnwrap(preview.items.first { $0.itemKey == key }, testCase.name)
+            let completeItem = try XCTUnwrap(preview.items.first { $0.itemKey == key }, testCase.name)
+            let incompleteSibling = try XCTUnwrap(
+                preview.items.first { $0.itemKey == siblingKey },
+                testCase.name
+            )
 
-            XCTAssertEqual(item.classification, .unknown, testCase.name)
-            XCTAssertFalse(item.coverageComplete, testCase.name)
-            XCTAssertNil(item.observedDistribution, testCase.name)
+            XCTAssertEqual(completeItem.classification, .observedAhead, testCase.name)
+            XCTAssertFalse(completeItem.coverageComplete, testCase.name)
+            XCTAssertEqual(
+                completeItem.observedDistribution,
+                try ManualLevelDistribution(levelQuantities: [11: 1]),
+                testCase.name
+            )
+
+            switch testCase.name {
+            case "timer":
+                XCTAssertEqual(incompleteSibling.classification, .newObservation, testCase.name)
+                XCTAssertFalse(incompleteSibling.coverageComplete, testCase.name)
+                XCTAssertEqual(
+                    incompleteSibling.observedDistribution,
+                    try ManualLevelDistribution(levelQuantities: [10: 1]),
+                    testCase.name
+                )
+            default:
+                XCTAssertEqual(incompleteSibling.classification, .unknown, testCase.name)
+                XCTAssertFalse(incompleteSibling.coverageComplete, testCase.name)
+                XCTAssertNil(incompleteSibling.observedDistribution, testCase.name)
+            }
         }
     }
 
@@ -816,11 +839,375 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         )
         let building = try XCTUnwrap(preview.items.first { $0.itemKey == buildingKey })
 
-        // The content is a duplicate, but its section-level partial coverage
-        // still prevents treating the parsed distribution as authoritative.
+        // Duplicate imports still surface section-level partial coverage, but a
+        // complete item keeps its own distribution for local Start evidence.
         XCTAssertEqual(building.classification, .duplicate)
         XCTAssertFalse(building.coverageComplete)
-        XCTAssertNil(building.observedDistribution)
+        XCTAssertEqual(
+            building.observedDistribution,
+            try ManualLevelDistribution(levelQuantities: [14: 4])
+        )
+    }
+
+    func testIssue245CompleteHistogramItemSurvivesSiblingTimerOnlyRows() throws {
+        let initialRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787556915,
+          "buildings": [
+            {"data": 1000001, "lvl": 9, "timer": 64145},
+            {"data": 1000006, "lvl": 10, "timer": 81532},
+            {"data": 1000026, "lvl": 2, "timer": 45463}
+          ]
+        }
+        """##
+        let updatedRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787557000,
+          "buildings": [
+            {"data": 1000001, "lvl": 9, "timer": 64145},
+            {"data": 1000006, "lvl": 10, "timer": 81532},
+            {"data": 1000026, "lvl": 2, "timer": 45463},
+            {"data": 1000023, "lvl": 1, "cnt": 3}
+          ]
+        }
+        """##
+        let drillKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_023)
+        let timerOnlyKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+
+        let context = try history(initialRaw, injectVerifiedSectionProofs: false)
+        let next = try decision(
+            updatedRaw,
+            from: context,
+            currentTag: "#TEST",
+            injectVerifiedSectionProofs: false
+        )
+        let emptyState = ManualTrackerVillageState.empty(
+            villageID: villageID,
+            now: Date(timeIntervalSince1970: 1_700_000_010)
+        )
+
+        let preview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: next,
+            currentState: emptyState,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let drillPreview = try XCTUnwrap(preview.items.first { $0.itemKey == drillKey })
+        let timerOnlyPreview = try XCTUnwrap(preview.items.first { $0.itemKey == timerOnlyKey })
+
+        XCTAssertEqual(drillPreview.classification, .newObservation)
+        XCTAssertFalse(drillPreview.coverageComplete)
+        XCTAssertEqual(
+            drillPreview.observedDistribution,
+            try ManualLevelDistribution(levelQuantities: [1: 3])
+        )
+        XCTAssertEqual(timerOnlyPreview.classification, .unknown)
+        XCTAssertNil(timerOnlyPreview.observedDistribution)
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: emptyState,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let rebased = try XCTUnwrap(plan.state.core.itemState(for: drillKey))
+        XCTAssertEqual(rebased.status, .observed)
+        XCTAssertEqual(
+            rebased.importedObservation?.levelDistribution,
+            try ManualLevelDistribution(levelQuantities: [1: 3])
+        )
+        XCTAssertEqual(
+            plan.state.core.effectiveState(for: drillKey)?.effectiveCompletedDistribution,
+            try ManualLevelDistribution(levelQuantities: [1: 3])
+        )
+
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let accountSnapshot = try AccountSnapshotImporter.parse(
+            updatedRaw,
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        let village = VillageProfile(
+            id: villageID,
+            name: "主村",
+            accountSnapshot: accountSnapshot
+        )
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog,
+            base: .home,
+            now: Date(timeIntervalSince1970: 1_785_557_000),
+            manualUpgradeCore: plan.state.core
+        )
+        let groups = BuildingGroupProjection.project(
+            projection: projection,
+            catalog: catalog,
+            base: .home,
+            manualUpgradeCore: plan.state.core
+        )
+        let group = try XCTUnwrap(groups.first { $0.trackerState.itemKey == drillKey })
+        let action = try XCTUnwrap(
+            UpgradeActionProjection.actions(for: group, catalog: catalog)
+                .first { $0.fromLevel == 1 && $0.targetLevel == 2 }
+        )
+        XCTAssertTrue(action.isStartable, action.disabledReason ?? "")
+        XCTAssertEqual(action.fromLevel, 1)
+        XCTAssertEqual(action.targetLevel, 2)
+        XCTAssertEqual(action.quantity, 1)
+    }
+
+    func testNonHistogramLevelOnlyItemsProduceDistributionBesidePartialHistogramSection() throws {
+        let initialRaw = ##"""
+        {
+          "tag": "#P1",
+          "timestamp": 1700000000,
+          "buildings": [{"data": 1000001, "lvl": 9, "timer": 64145}]
+        }
+        """##
+        let updatedRaw = ##"""
+        {
+          "tag": "#P1",
+          "timestamp": 1700000100,
+          "buildings": [{"data": 1000001, "lvl": 9, "timer": 64145}],
+          "heroes": [{"data": 1000001, "lvl": 30}],
+          "units": [{"data": 4000000, "lvl": 8}],
+          "spells": [{"data": 26000000, "lvl": 5}],
+          "equipment": [{"data": 106000000, "lvl": 15}]
+        }
+        """##
+        let cases: [(section: String, dataID: Int64, level: Int)] = [
+            ("heroes", 1_000_001, 30),
+            ("units", 4_000_000, 8),
+            ("spells", 26_000_000, 5),
+            ("equipment", 106_000_000, 15),
+        ]
+
+        let context = try history(initialRaw, injectVerifiedSectionProofs: false)
+        let next = try decision(
+            updatedRaw,
+            from: context,
+            injectVerifiedSectionProofs: false
+        )
+        let preview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: next,
+            currentState: ManualTrackerVillageState.empty(
+                villageID: villageID,
+                now: Date(timeIntervalSince1970: 1_700_000_010)
+            ),
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+
+        for testCase in cases {
+            let itemKey = TrackerItemKey.root(
+                base: .home,
+                rawSection: testCase.section,
+                dataID: testCase.dataID
+            )
+            let item = try XCTUnwrap(
+                preview.items.first { $0.itemKey == itemKey },
+                testCase.section
+            )
+            XCTAssertEqual(item.classification, .newObservation, testCase.section)
+            XCTAssertEqual(
+                item.observedDistribution,
+                try ManualLevelDistribution(levelQuantities: [testCase.level: 1]),
+                testCase.section
+            )
+        }
+    }
+
+    func testIssue245PlaceholderObservedStateAdoptsCompleteItemWithoutCoverageField() throws {
+        let initialRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787556915,
+          "buildings": [
+            {"data": 1000001, "lvl": 9, "timer": 64145},
+            {"data": 1000006, "lvl": 10, "timer": 81532},
+            {"data": 1000026, "lvl": 2, "timer": 45463}
+          ]
+        }
+        """##
+        let updatedRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787557000,
+          "buildings": [
+            {"data": 1000001, "lvl": 9, "timer": 64145},
+            {"data": 1000006, "lvl": 10, "timer": 81532},
+            {"data": 1000026, "lvl": 2, "timer": 45463},
+            {"data": 1000023, "lvl": 1, "cnt": 3}
+          ]
+        }
+        """##
+        let drillKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_023)
+        let context = try history(initialRaw, injectVerifiedSectionProofs: false)
+        let placeholder = try ManualItemState(
+            itemKey: drillKey,
+            baselineReference: context.reference,
+            importedObservation: ManualImportedObservation(
+                reference: context.reference,
+                levelDistribution: nil,
+                sourceTimestamp: Date(timeIntervalSince1970: 1_785_557_000)
+            ),
+            status: .observed
+        )
+        let currentState = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: ManualUpgradeCore(itemStates: [placeholder]),
+            stateUpdatedAt: Date(timeIntervalSince1970: 1_700_000_010),
+            lastImportAt: Date(timeIntervalSince1970: 1_700_000_010)
+        )
+        let next = try decision(
+            updatedRaw,
+            from: context,
+            currentTag: "#TEST",
+            injectVerifiedSectionProofs: false
+        )
+
+        let preview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: next,
+            currentState: currentState,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let drillPreview = try XCTUnwrap(preview.items.first { $0.itemKey == drillKey })
+        XCTAssertEqual(drillPreview.classification, .newObservation)
+        XCTAssertEqual(
+            drillPreview.observedDistribution,
+            try ManualLevelDistribution(levelQuantities: [1: 3])
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: currentState,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let rebased = try XCTUnwrap(plan.state.core.itemState(for: drillKey))
+        XCTAssertEqual(
+            rebased.importedObservation?.levelDistribution,
+            try ManualLevelDistribution(levelQuantities: [1: 3])
+        )
+    }
+
+    func testIssue245TimerItemIsNotQueueConfirmableWhenSectionTimerCoveragePartial() throws {
+        let raw = ##"""
+        {
+          "tag": "#P1",
+          "timestamp": 1700000000,
+          "buildings": [
+            {"data": 100, "lvl": 10, "cnt": 1, "timer": 60},
+            {"data": 101, "lvl": 10, "cnt": 1}
+          ]
+        }
+        """##
+        let timerKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 100)
+        let context = try history(raw, injectVerifiedSectionProofs: false)
+        let next = try decision(
+            raw.replacingOccurrences(of: "1700000000", with: "1700000100"),
+            from: context,
+            injectVerifiedSectionProofs: false
+        )
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: ManualTrackerVillageState.empty(
+                villageID: villageID,
+                now: Date(timeIntervalSince1970: 1_700_000_010)
+            ),
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+        let timerItem = try XCTUnwrap(plan.state.core.itemState(for: timerKey))
+        XCTAssertTrue(timerItem.importedObservation?.observedTimer == true)
+        XCTAssertNotNil(timerItem.importedObservation?.levelDistribution)
+        XCTAssertFalse(timerItem.isQueueAssignmentConfirmable)
+    }
+
+    func testAttentionUnknownStateStaysUnknownWithoutVerifiedSectionTrust() throws {
+        try assertAttentionStateRemainsUnknownWithoutTrust(status: .unknown)
+    }
+
+    func testAttentionConflictStateStaysUnknownWithoutVerifiedSectionTrust() throws {
+        try assertAttentionStateRemainsUnknownWithoutTrust(status: .conflict)
+    }
+
+    private func assertAttentionStateRemainsUnknownWithoutTrust(
+        status: ManualItemStatus
+    ) throws {
+        let initialRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787556915,
+          "buildings": [{"data": 1000023, "lvl": 1, "cnt": 1}]
+        }
+        """##
+        let updatedRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787557000,
+          "buildings": [{"data": 1000023, "lvl": 1, "cnt": 3}]
+        }
+        """##
+        let drillKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_023)
+        let context = try history(initialRaw, injectVerifiedSectionProofs: false)
+        let attention = try ManualItemState(
+            itemKey: drillKey,
+            baselineReference: context.reference,
+            importedObservation: ManualImportedObservation(
+                reference: context.reference,
+                levelDistribution: nil,
+                sourceTimestamp: Date(timeIntervalSince1970: 1_785_557_000)
+            ),
+            status: status
+        )
+        let currentState = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: ManualUpgradeCore(itemStates: [attention]),
+            stateUpdatedAt: Date(timeIntervalSince1970: 1_700_000_010),
+            lastImportAt: Date(timeIntervalSince1970: 1_700_000_010)
+        )
+        let next = try decision(
+            updatedRaw,
+            from: context,
+            currentTag: "#TEST",
+            injectVerifiedSectionProofs: false
+        )
+        let preview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: next,
+            currentState: currentState,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let drillPreview = try XCTUnwrap(preview.items.first { $0.itemKey == drillKey })
+
+        XCTAssertEqual(drillPreview.classification, .unknown)
+        XCTAssertTrue(drillPreview.classification.needsAttention)
+        XCTAssertTrue(preview.requiresExplicitDecision)
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: currentState,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let rebased = try XCTUnwrap(plan.state.core.itemState(for: drillKey))
+        XCTAssertEqual(rebased.status, status)
+        XCTAssertNil(rebased.importedObservation?.levelDistribution)
     }
 
     func testStalePreviewIsRejectedBeforeStateMutation() throws {

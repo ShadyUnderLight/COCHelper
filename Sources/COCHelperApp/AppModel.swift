@@ -1177,34 +1177,20 @@ public final class AppModel: ObservableObject {
         guard let previousState = currentEnvelope.state(for: villageID) else {
             throw ManualTrackerStoreError.unavailable("目标村庄的手动升级状态尚未可用。")
         }
-        guard previousState.core.itemStates.contains(where: {
-            $0.itemKey == itemKey && $0.importedObservation != nil
+        guard let itemState = previousState.core.itemStates.first(where: {
+            $0.itemKey == itemKey
         }) else {
             throw ManualUpgradeCommandError.itemNotImportedObservation
         }
-        guard let observed = previousState.core.itemStates.first(where: {
-            $0.itemKey == itemKey
-        })?.importedObservation, observed.observedTimer else {
-            // review P1：没有进行中计时证据的导入观察不得确认映射，
-            // 否则已结束或证据不足的条目会错误占用容量、阻塞 Start。
-            throw ManualUpgradeCommandError.importedObservationWithoutTimer
-        }
-        guard observed.hasCompleteCoverage else {
-            // Issue #188 review P1：只有 timer 但等级/数量覆盖不完整的导入
-            // 观察不得确认映射。`hasCompleteCoverage` 是 Core 统一资格谓词：
-            // 对账只在 coverage 完整时产出非空 distribution，nil 或空
-            // distribution 都视为覆盖不足（空 distribution 是合法模型值，
-            // 持久化状态可能被异常写入）。确认后会错误占用本地容量、阻塞
-            // Start。fail-closed，旧数据缺省 `observedTimer == false` 同样
-            // 不可确认。
-            throw ManualUpgradeCommandError.importedObservationIncompleteCoverage
-        }
-        // Issue #189 review P1：与 start/cancel/adjust 同口径，必须当前
-        // baseline 已对账才能写入映射——否则会把 userAssigned 绑定到过期
-        // lineage 的 baselineReference，投影时被当作旧 lineage 处理。
         guard isBaselineReconciled(for: villageID, core: previousState.core),
               let coreBaseline = previousState.core.baselineReference else {
             throw ManualUpgradeCommandError.unreconciledSnapshot
+        }
+        guard itemState.isQueueAssignmentConfirmable else {
+            if itemState.importedObservation?.observedTimer != true {
+                throw ManualUpgradeCommandError.importedObservationWithoutTimer
+            }
+            throw ManualUpgradeCommandError.importedObservationIncompleteCoverage
         }
         var assignments = previousState.queueAssignments.filter {
             !($0.itemKey == itemKey

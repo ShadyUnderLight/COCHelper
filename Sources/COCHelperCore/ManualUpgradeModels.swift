@@ -425,6 +425,10 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
     /// 映射（`QueueAssignmentDecision.userAssigned`）。默认 false，旧数据兼容。
     public let observedTimer: Bool
 
+    /// 只有 `observedTimer == true` 且 timer 字段覆盖完整时才为 true。
+    /// 默认 false，旧数据 fail-closed。
+    public let observedTimerCoverageComplete: Bool
+
     /// Issue #188 review P2：导入观察的等级/数量覆盖是否完整，能否支撑本地
     /// 队列映射确认。
     ///
@@ -442,7 +446,8 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
         reference: ManualBaselineReference,
         levelDistribution: ManualLevelDistribution?,
         sourceTimestamp: Date? = nil,
-        observedTimer: Bool = false
+        observedTimer: Bool = false,
+        observedTimerCoverageComplete: Bool = false
     ) throws {
         guard reference.isStructurallyValid else {
             throw ManualUpgradeError.invalidBaselineReference
@@ -451,6 +456,7 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
         self.levelDistribution = levelDistribution
         self.sourceTimestamp = sourceTimestamp
         self.observedTimer = observedTimer
+        self.observedTimerCoverageComplete = observedTimerCoverageComplete
     }
 
     public init(from decoder: Decoder) throws {
@@ -461,7 +467,9 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
                 ManualLevelDistribution.self, forKey: .levelDistribution),
             sourceTimestamp: try container.decodeIfPresent(Date.self, forKey: .sourceTimestamp),
             observedTimer: try container.decodeIfPresent(
-                Bool.self, forKey: .observedTimer) ?? false
+                Bool.self, forKey: .observedTimer) ?? false,
+            observedTimerCoverageComplete: try container.decodeIfPresent(
+                Bool.self, forKey: .observedTimerCoverageComplete) ?? false
         )
     }
 
@@ -470,6 +478,7 @@ public struct ManualImportedObservation: Codable, Hashable, Sendable {
         case levelDistribution
         case sourceTimestamp
         case observedTimer
+        case observedTimerCoverageComplete
     }
 }
 
@@ -506,6 +515,7 @@ public struct ManualItemState: Codable, Hashable, Sendable {
     public var isQueueAssignmentConfirmable: Bool {
         guard let importedObservation else { return false }
         return importedObservation.observedTimer
+            && importedObservation.observedTimerCoverageComplete
             && importedObservation.hasCompleteCoverage
     }
 

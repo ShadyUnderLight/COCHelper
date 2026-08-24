@@ -179,7 +179,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     reference: currentBaseline,
                     levelDistribution: try ManualLevelDistribution(levelQuantities: [level: 1]),
                     sourceTimestamp: Date(timeIntervalSince1970: 1_000),
-                    observedTimer: observedTimer
+                    observedTimer: observedTimer,
+                    observedTimerCoverageComplete: observedTimer
                 ),
                 manualCompletedDistribution: .empty,
                 status: .observed
@@ -2111,7 +2112,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: itemState.importedObservation!.reference,
                 levelDistribution: itemState.importedObservation?.levelDistribution,
                 sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             manualCompletedDistribution: itemState.manualCompletedDistribution,
             status: itemState.status
@@ -2151,7 +2153,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: itemState.importedObservation!.reference,
                 levelDistribution: nil,
                 sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             manualCompletedDistribution: itemState.manualCompletedDistribution,
             status: itemState.status
@@ -2206,7 +2209,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: itemState.importedObservation!.reference,
                 levelDistribution: .empty,
                 sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             manualCompletedDistribution: itemState.manualCompletedDistribution,
             status: itemState.status
@@ -2262,7 +2266,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: itemState.importedObservation!.reference,
                 levelDistribution: .empty,
                 sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             manualCompletedDistribution: itemState.manualCompletedDistribution,
             status: itemState.status
@@ -2308,7 +2313,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: itemState.importedObservation!.reference,
                 levelDistribution: .empty,
                 sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             manualCompletedDistribution: itemState.manualCompletedDistribution,
             status: itemState.status
@@ -2710,7 +2716,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: itemState.importedObservation!.reference,
                 levelDistribution: nil,
                 sourceTimestamp: itemState.importedObservation?.sourceTimestamp,
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             manualCompletedDistribution: itemState.manualCompletedDistribution,
             status: itemState.status
@@ -3173,7 +3180,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: baselineA,
                 levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
                 sourceTimestamp: Date(timeIntervalSince1970: 1_000),
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             manualCompletedDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
             status: .manualCompleted
@@ -3384,7 +3392,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: baselineB,
                 levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
                 sourceTimestamp: Date(timeIntervalSince1970: 1_600),
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             manualCompletedDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
             status: .manualCompleted
@@ -3576,7 +3585,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                 reference: baselineB,
                 levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
                 sourceTimestamp: Date(timeIntervalSince1970: 1_000),
-                observedTimer: true
+                observedTimer: true,
+                observedTimerCoverageComplete: true
             ),
             status: .observed
         )
@@ -3671,5 +3681,89 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             "不可用时不得返回看似可用的数字")
         XCTAssertEqual(occupancy.capacity, 0, "容量配置本身保留")
         XCTAssertTrue(occupancy.isCapacityConfigured)
+    }
+
+    @MainActor
+    func testIssue245ReimportApplySafeStartsDrillThroughAppModel() throws {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let village = VillageProfile(name: "主村")
+        let villagesData = try JSONEncoder().encode([village])
+        let history = TestSnapshotHistoryStore()
+        let model = AppModel(
+            defaults: defaults,
+            historyStore: history,
+            manualTrackerStore: store,
+            currentVillagePersistence: TestCurrentVillagePersistence(data: villagesData),
+            transactionJournalURL: storeURL.deletingLastPathComponent()
+                .appendingPathComponent("issue245-transaction.json")
+        )
+        let villageID = try XCTUnwrap(model.villages.first?.id)
+        let initialRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787556915,
+          "buildings": [
+            {"data": 1000001, "lvl": 9, "timer": 64145},
+            {"data": 1000006, "lvl": 10, "timer": 81532},
+            {"data": 1000026, "lvl": 2, "timer": 45463}
+          ]
+        }
+        """##
+        let updatedRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787557000,
+          "buildings": [
+            {"data": 1000001, "lvl": 9, "timer": 64145},
+            {"data": 1000006, "lvl": 10, "timer": 81532},
+            {"data": 1000026, "lvl": 2, "timer": 45463},
+            {"data": 1000023, "lvl": 1, "cnt": 3}
+          ]
+        }
+        """##
+
+        model.importText = initialRaw
+        model.parseAccountText()
+        XCTAssertTrue(model.applyPendingAccountSnapshot())
+
+        model.importText = updatedRaw
+        model.parseAccountText()
+        XCTAssertTrue(model.applyPendingAccountSnapshot(decision: .applyNonConflicting))
+
+        let villageProfile = try XCTUnwrap(model.villages.first { $0.id == villageID })
+        let core = try XCTUnwrap(model.manualUpgradeCore(for: villageID))
+        let catalog = try XCTUnwrap(model.gameCatalog)
+        let projection = VillageCatalogProjection.project(
+            village: villageProfile,
+            catalog: catalog,
+            base: .home,
+            now: Date(timeIntervalSince1970: 1_785_557_000),
+            manualUpgradeCore: core
+        )
+        let drillKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_023)
+        let group = try XCTUnwrap(
+            BuildingGroupProjection.project(
+                projection: projection,
+                catalog: catalog,
+                base: .home,
+                manualUpgradeCore: core
+            ).first { $0.trackerState.itemKey == drillKey }
+        )
+        let action = try XCTUnwrap(
+            UpgradeActionProjection.actions(for: group, catalog: catalog)
+                .first { $0.fromLevel == 1 && $0.targetLevel == 2 }
+        )
+        XCTAssertTrue(action.isStartable, action.disabledReason ?? "")
+
+        let record = try model.startManualUpgrade(
+            for: villageID,
+            action: action,
+            startedAt: Date(timeIntervalSince1970: 1_785_557_000),
+            now: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        XCTAssertEqual(record.status, ManualUpgradeRecordStatus.active)
+        XCTAssertEqual(record.fromLevel, 1)
+        XCTAssertEqual(record.targetLevel, 2)
     }
 }

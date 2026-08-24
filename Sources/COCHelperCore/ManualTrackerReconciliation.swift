@@ -326,6 +326,10 @@ public enum ManualTrackerReconciliationService {
                 lineageComparable: lineageComparable,
                 timeConfidence: timeConfidence,
                 hasExistingState: state != nil,
+                hasProtectableLocalState: hasLocalState(
+                    state: state,
+                    records: records
+                ) || previousDistribution != nil,
                 previousDistribution: previousDistribution,
                 observation: observation,
                 previousObservation: previousObservation,
@@ -561,11 +565,10 @@ public enum ManualTrackerReconciliationService {
             // `guard let old` loses `observedTimer` before Issue #188/#189 can
             // project the fail-closed reason.
             if old == nil, let observation {
-                let imported = try ManualImportedObservation(
+                let imported = try importedObservation(
                     reference: newReference,
-                    levelDistribution: observation.distribution,
-                    sourceTimestamp: sourceTimestamp,
-                    observedTimer: observation.hasTimer
+                    from: observation,
+                    sourceTimestamp: sourceTimestamp
                 )
                 states.append(try ManualItemState(
                     itemKey: key,
@@ -586,7 +589,10 @@ public enum ManualTrackerReconciliationService {
                     reference: newReference,
                     levelDistribution: nil,
                     sourceTimestamp: sourceTimestamp,
-                    observedTimer: observation?.hasTimer ?? false
+                    observedTimer: observation?.hasTimer ?? false,
+                    observedTimerCoverageComplete: observation.map {
+                        $0.hasTimer && $0.timerCoverageComplete
+                    } ?? false
                 )
                 let status: ManualItemStatus
                 switch old.status {
@@ -606,12 +612,11 @@ public enum ManualTrackerReconciliationService {
                 continue
             }
 
-            if !hasLocal, adopt, let distribution = observation?.distribution {
-                let imported = try ManualImportedObservation(
+            if !hasLocal, adopt, let observation, let distribution = observation.distribution {
+                let imported = try importedObservation(
                     reference: newReference,
-                    levelDistribution: distribution,
-                    sourceTimestamp: sourceTimestamp,
-                    observedTimer: observation?.hasTimer ?? false
+                    from: observation,
+                    sourceTimestamp: sourceTimestamp
                 )
                 states.append(try ManualItemState(
                     itemKey: key,
@@ -676,6 +681,7 @@ public enum ManualTrackerReconciliationService {
         lineageComparable: Bool,
         timeConfidence: ManualReconciliationTimeConfidence,
         hasExistingState: Bool,
+        hasProtectableLocalState: Bool,
         previousDistribution: ManualLevelDistribution?,
         observation: Observation?,
         previousObservation: Observation?,
@@ -695,11 +701,15 @@ public enum ManualTrackerReconciliationService {
               let observed = observation.distribution else {
             return .unknown
         }
-        guard hasExistingState else { return .newObservation }
+        if !hasProtectableLocalState {
+            return .newObservation
+        }
         if observation.sectionTrustGatesOpen == false {
             return .unknown
         }
-        guard let previousDistribution else { return .newObservation }
+        guard let previousDistribution else {
+            return .unknown
+        }
 
         let timerEnded = (previousObservation?.hasTimer ?? false) && !observation.hasTimer
         if timerEnded {
@@ -812,6 +822,20 @@ public enum ManualTrackerReconciliationService {
             confirmed.append(record.recordID)
         }
         return confirmed
+    }
+
+    private static func importedObservation(
+        reference: ManualBaselineReference,
+        from observation: Observation,
+        sourceTimestamp: Date?
+    ) throws -> ManualImportedObservation {
+        try ManualImportedObservation(
+            reference: reference,
+            levelDistribution: observation.distribution,
+            sourceTimestamp: sourceTimestamp,
+            observedTimer: observation.hasTimer,
+            observedTimerCoverageComplete: observation.hasTimer && observation.timerCoverageComplete
+        )
     }
 
     private static func dominates(
@@ -928,6 +952,11 @@ public enum ManualTrackerReconciliationService {
                 && coverageComplete
                 && sectionSafetyCoverageComplete
                 && timerCoverageComplete
+            let countCoverageState = entry.coverage.state(
+                base: base,
+                rawSection: key.rawSection,
+                field: "cnt"
+            )
             var quantities: [Int: Int64] = [:]
             var itemLevelCoverageComplete = true
             var itemCountCoverageComplete = true
@@ -947,11 +976,15 @@ public enum ManualTrackerReconciliationService {
                     }
                     quantity = Int64(count)
                 } else {
-                    guard let count = item.count, count > 0 else {
+                    if item.count == nil, countCoverageState == .partial {
                         itemCountCoverageComplete = false
                         continue
                     }
-                    quantity = Int64(count)
+                    if let count = item.count, count <= 0 {
+                        itemCountCoverageComplete = false
+                        continue
+                    }
+                    quantity = Int64(max(item.count ?? 1, 1))
                 }
                 let (sum, overflow) = (quantities[level] ?? 0).addingReportingOverflow(quantity)
                 guard !overflow else {

@@ -1,13 +1,13 @@
 # Issue #226 验收证据索引（2026-08-24）
 
 基线：`origin/main@256c065`（#234/#235/#236 已合并）  
-工具链 HEAD：`1879ec4`（统计全量签名 + final restart duplicate 持久化 + paired 大 histogram 1005）
+工具链 HEAD：`83fd27c`（lastSeenAt/latestCheckedAt 持久化 + paired fail-closed 单 row 语义）
 
 ## 自动化门禁
 
 | 项目 | 状态 | 证据 |
 |---|---|---|
-| `AppModelSnapshotHistoryTests` | 通过 | [automated-gate.md](automated-gate.md)（commit `1879ec4`，working tree clean 已验证） |
+| `AppModelSnapshotHistoryTests` | 通过 | [automated-gate.md](automated-gate.md)（commit `83fd27c`，working tree clean 已验证） |
 | `swift test --parallel --num-workers 1` | 通过 | 同上 |
 | Release build + `scripts/build_app.sh` | 通过 | 同上 |
 | `git diff --check` | 通过 | 同上（排除 `Tools/acceptance/results`） |

@@ -1,6 +1,6 @@
 # Issue #226 自动化验收门禁
 
-- commit: `1879ec454db2322f0756a75efa9150b05c0f6135`
+- commit: `83fd27cd90435f447c44ff862d140e1dd8d07ae8`
 - date: 2026-08-24
 - working tree: clean（已验证 git diff / diff --cached / untracked，不含 results）
 - macOS: 26.6.2 (arm64)
@@ -9,10 +9,10 @@
 ## AppModelSnapshotHistoryTests
 
 ```text
-Test Suite 'COCHelperPackageTests.xctest' passed at 2026-08-24 13:24:16.724.
-	 Executed 14 tests, with 0 failures (0 unexpected) in 24.659 (24.660) seconds
-Test Suite 'Selected tests' passed at 2026-08-24 13:24:16.724.
-	 Executed 14 tests, with 0 failures (0 unexpected) in 24.659 (24.661) seconds
+Test Suite 'COCHelperPackageTests.xctest' passed at 2026-08-24 14:20:01.412.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 24.582 (24.583) seconds
+Test Suite 'Selected tests' passed at 2026-08-24 14:20:01.412.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 24.582 (24.583) seconds
 ◇ Test run started.
 ↳ Testing Library Version: 1902
 ↳ Target Platform: arm64e-apple-macos14.0
@@ -46,7 +46,7 @@ Building for production...
 [3/4] Compiling acceptance_runner main.swift
 [3/5] Write Objects.LinkFileList
 [4/5] Linking acceptance-runner
-Build complete! (3.17s)
+Build complete! (3.86s)
 ```
 
 结果: **通过**
@@ -57,7 +57,7 @@ Build complete! (3.17s)
 [0/1] Planning build
 Building for production...
 [0/4] Write swift-version--58304C5D6DBC2206.txt
-Build complete! (0.17s)
+Build complete! (0.22s)
 Built /Users/lmz/Documents/Vibe Coding/COC助手/.worktrees/issue-226-acceptance/scripts/../.build/COCHelper.app
 ```
 

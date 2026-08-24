@@ -4,12 +4,14 @@
 
 ## 固定信息
 
-- commit: `256c065`（PR 分支 HEAD，基于 `origin/main`）
-- fixture: `perf_account_snapshot_large_walls.json`
+- commit: `d5e569b`（PR 分支 HEAD，已含 runner 硬校验与 gate provenance 修复，基于 `origin/main@256c065`）
+- fixture: `Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls.json`（唯一来源；`Sources/COCHelperApp/PerfFixtures` 中的 dead duplicate 已删除）
 - tag: `#PERF-LARGE-WALLS`（匿名）
 - 城墙段数: 1005（逐段 `cnt: 1`）
+- 生成：`python3 Tools/acceptance/generate_large_walls_fixture.py`（仅写 Tests Fixtures）
 - macOS: 待填写
 - Release build: `scripts/build_app.sh` 产出 `.build/COCHelper.app`
+- 加载方式：仅**账号数据页粘贴**（方式 A）；Debug seed 方式 B 已删除（其 `loadPerformanceSample()` 不加载本 fixture，旧文档误导已修正）
 
 ## 场景结果（人工填写）
 

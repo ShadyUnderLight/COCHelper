@@ -47,9 +47,9 @@
 - today / 7 / 30 天：缺数据显示「数据不足」，不显示伪造 0。
 - 升级开始/完成、timer changed/ended、unknown 文案边界。
 
-## 5. 性能（Release App，paired）
+## 5. 性能（Release App，paired，可展开大变化 row 且保持 fail-closed）
 
-见 `large_walls_perf_scenario.md`。使用 **paired** `perf_account_snapshot_large_walls_before.json` / `perf_account_snapshot_large_walls_after.json`（各 1005 段，同 tag `#LARGEWALL01` 合法，同 lineage，`lvl` 偏移确保大量 Wall 变化；两步粘贴才有可展开的大变化 row。单文件 `large_walls.json` 保留兼容）。
+见 `large_walls_perf_scenario.md`。使用 **paired** `perf_account_snapshot_large_walls_before.json`（1005 段全 `Lv1`） / `perf_account_snapshot_large_walls_after.json`（1005 段全 `Lv12`，同 tag `#LARGEWALL01` 合法，同 lineage，raw histogram 偏移 1005；两步粘贴产生非 duplicate 的确定性大变化 history row，但仍为 `insufficientCoverage` 时不伪造 verified migration。单文件 `large_walls.json` 保留兼容）。
 
 ## 6. 自动化辅助
 

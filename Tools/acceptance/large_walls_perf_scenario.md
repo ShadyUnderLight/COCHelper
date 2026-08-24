@@ -5,12 +5,12 @@
 ## Fixture
 
 - 单快照（兼容旧测试）：`Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls.json`（tag `#PERF-LARGE-WALLS`，hyphen 非法，仅作单快照 benchmark；history 场景请用 paired）
-- **Paired（推荐，history 大变化 row）**：
-  - `perf_account_snapshot_large_walls_before.json`（1005 段，`lvl = (i %12)+1`，tag `#LARGEWALL01` 合法）
-  - `perf_account_snapshot_large_walls_after.json`（1005 段，`lvl = ((i+6)%12)+1`，同 tag `#LARGEWALL01`，保证同 lineage continued，大量 Wall 等级位移）
-  - 均由 `python3 Tools/acceptance/generate_large_walls_fixture.py` 生成（单文件 + paired 同步）
+- **Paired（推荐，history 大变化 row，可稳定展开场景 3）**：
+  - `perf_account_snapshot_large_walls_before.json`（1005 段，`lvl = 1` 全量，tag `#LARGEWALL01` 合法，同 lineage baseline）
+  - `perf_account_snapshot_large_walls_after.json`（1005 段，`lvl = 12` 全量，同 tag `#LARGEWALL01`，保证同 lineage continued，raw histogram 偏移 1005，Diff 产生大量 Wall 等级变化但仍为 `insufficientCoverage/unknown` 时保持 fail-closed）
+  - 均由 `python3 Tools/acceptance/generate_large_walls_fixture.py` 生成（单文件 + paired 同步）；`lvl` 全量极值保证 histogram 抵消后残余 1005（旧 offset 6 仅 3 段残余，已修正）
 - Tag 说明：`#LARGEWALL01` 为合法 synthetic tag（`OfficialPlayerTagValidator.isValid`），避免 hyphen 导致 `unknown` lineage；`#PERF-LARGE-WALLS` 保留仅为兼容旧单文件测试，不应用于 history Diff 验收
-- 规模：1005 段城墙（`data: 1000008`，逐段 `cnt: 1`）
+- 规模：1005 段城墙（`data: 1000008`，逐段 `cnt: 1`）— paired 的“大量变化”指 **输入经过 import/history/diff/projection 路径并产生可展开的非 duplicate history row**，而非伪造 `verified` migration；无 coverage proof 时仍保持 `insufficientCoverage` 语义
 
 ## 加载方式
 

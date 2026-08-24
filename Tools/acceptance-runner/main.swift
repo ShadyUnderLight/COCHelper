@@ -127,6 +127,9 @@ struct AcceptanceRunner {
             try assertEqual(lhs.statistics7Days, rhs.statistics7Days, "\(context) statistics 7d 应一致")
             try assertEqual(lhs.statistics30Days, rhs.statistics30Days, "\(context) statistics 30d 应一致")
             try assertEqual(lhs.duplicateImportCount, rhs.duplicateImportCount, "\(context) duplicateImportCount 应一致")
+            try assertEqual(lhs.statisticsSignature, rhs.statisticsSignature, "\(context) statisticsSignature 应一致（所有指标 state/value/reason）")
+            try assertEqual(lhs.timelineSignatures, rhs.timelineSignatures, "\(context) timelineSignatures 应一致（isBaseline/comparisonState/diagnostics/duplicate/totalChange）")
+            try assertEqual(lhs.diagnostics, rhs.diagnostics, "\(context) diagnostics 应一致")
         }
 
         func accountImport(_ name: String, model: AppModel) throws {
@@ -358,11 +361,27 @@ struct AcceptanceRunner {
         try assertEqual(dupImportAfterB2Dup, dupImportBeforeB2Dup + 1, "B2 duplicate 后 duplicateImportCount 应严格 +1")
         try assertSanitizedEqual(sanitized(model.snapshotHistoryProjection(for: villageAID)), sanABeforeB2Dup, "B2 duplicate 后 A 应保持不变")
 
-        // 串档检查：A/B lineage 隔离
+        // 串档检查 + 最终 restart duplicate 持久化（覆盖 P1 duplicate 跨 restart）
+        let envelopeBeforeFinalRestart = try XCTUnwrapWrapper(try currentEnvelope())
+        let sanABeforeFinalRestart = sanitized(model.snapshotHistoryProjection(for: villageAID))
+        let sanBBeforeFinalRestart = sanitized(model.snapshotHistoryProjection(for: villageBID))
+        let dupCountBeforeFinalRestart = envelopeBeforeFinalRestart.duplicateMetadata.count
+        let lineageIDA_BeforeFinalRestart = envelopeBeforeFinalRestart.activeLineage(for: villageAID)?.lineageID
+        let lineageIDB_BeforeFinalRestart = envelopeBeforeFinalRestart.activeLineage(for: villageBID)?.lineageID
         model = restart()
         let projectionA = model.snapshotHistoryProjection(for: villageAID)
         let projectionB = model.snapshotHistoryProjection(for: villageBID)
         let envelope = try XCTUnwrapWrapper(try currentEnvelope())
+        // final restart persistence：duplicate / trust / statistics / baseline / diagnostics 均应一致
+        try assertEqual(envelope.entries.count, envelopeBeforeFinalRestart.entries.count, "final restart 前后 entries 应一致")
+        try assertEqual(envelope.lineages.count, envelopeBeforeFinalRestart.lineages.count, "final restart 前后 lineages 应一致")
+        try assertEqual(envelope.duplicateMetadata.count, dupCountBeforeFinalRestart, "final restart 前后 duplicateMetadata 应一致")
+        try assertSanitizedEqual(sanitized(projectionA), sanABeforeFinalRestart, "A final restart")
+        try assertSanitizedEqual(sanitized(projectionB), sanBBeforeFinalRestart, "B final restart")
+        try assertTrue(envelope.activeLineage(for: villageAID)?.lineageID == lineageIDA_BeforeFinalRestart, "A final restart 后 lineageID 应不变")
+        try assertTrue(envelope.activeLineage(for: villageBID)?.lineageID == lineageIDB_BeforeFinalRestart, "B final restart 后 lineageID 应不变")
+        try assertEqual(projectionA.timeline.first?.duplicateImportCount, 1, "A final restart 后 duplicateImportCount 仍为 1")
+        try assertEqual(projectionB.timeline.first?.duplicateImportCount, 1, "B final restart 后 duplicateImportCount 仍为 1")
         let lineageA = envelope.activeLineage(for: villageAID)
         let lineageB = envelope.activeLineage(for: villageBID)
         guard let lineageA, let lineageB else {
@@ -462,6 +481,74 @@ private struct AcceptanceFinalState: Encodable {
     let villageBCount: Int
 }
 
+private struct SanitizedStatValue: Encodable, Equatable {
+    let state: String
+    let value: Int?
+    let reason: String?
+    init(_ v: SnapshotStatisticValue) {
+        state = v.state.rawValue
+        value = v.value
+        reason = v.reason
+    }
+}
+
+private struct SanitizedWindowSignature: Encodable, Equatable {
+    let buildingUpgradeCompletions: SanitizedStatValue
+    let aggregateInferredBuildingUpgradeCompletions: SanitizedStatValue
+    let buildingLevelGrowth: SanitizedStatValue
+    let aggregateInferredBuildingLevelGrowth: SanitizedStatValue
+    let wallLevelGrowth: SanitizedStatValue
+    let aggregateInferredWallLevelGrowth: SanitizedStatValue
+    let heroLevelGrowth: SanitizedStatValue
+    let troopLevelGrowth: SanitizedStatValue
+    let spellLevelGrowth: SanitizedStatValue
+    let petLevelGrowth: SanitizedStatValue
+    let heroEquipmentLevelGrowth: SanitizedStatValue
+    let aggregateInferredEventCount: SanitizedStatValue
+    init(_ w: SnapshotHistoryStatisticsWindow) {
+        buildingUpgradeCompletions = SanitizedStatValue(w.buildingUpgradeCompletions)
+        aggregateInferredBuildingUpgradeCompletions = SanitizedStatValue(w.aggregateInferredBuildingUpgradeCompletions)
+        buildingLevelGrowth = SanitizedStatValue(w.buildingLevelGrowth)
+        aggregateInferredBuildingLevelGrowth = SanitizedStatValue(w.aggregateInferredBuildingLevelGrowth)
+        wallLevelGrowth = SanitizedStatValue(w.wallLevelGrowth)
+        aggregateInferredWallLevelGrowth = SanitizedStatValue(w.aggregateInferredWallLevelGrowth)
+        heroLevelGrowth = SanitizedStatValue(w.heroLevelGrowth)
+        troopLevelGrowth = SanitizedStatValue(w.troopLevelGrowth)
+        spellLevelGrowth = SanitizedStatValue(w.spellLevelGrowth)
+        petLevelGrowth = SanitizedStatValue(w.petLevelGrowth)
+        heroEquipmentLevelGrowth = SanitizedStatValue(w.heroEquipmentLevelGrowth)
+        aggregateInferredEventCount = SanitizedStatValue(w.aggregateInferredEventCount)
+    }
+}
+
+private struct SanitizedStatisticsSignature: Encodable, Equatable {
+    let today: SanitizedWindowSignature
+    let last7Days: SanitizedWindowSignature
+    let last30Days: SanitizedWindowSignature
+    let diagnostics: [String]
+    init(_ s: SnapshotHistoryStatistics) {
+        today = SanitizedWindowSignature(s.today)
+        last7Days = SanitizedWindowSignature(s.last7Days)
+        last30Days = SanitizedWindowSignature(s.last30Days)
+        diagnostics = s.diagnostics
+    }
+}
+
+private struct SanitizedTimelineRow: Encodable, Equatable {
+    let isBaseline: Bool
+    let comparisonState: String?
+    let diagnostics: [String]
+    let duplicateImportCount: Int
+    let totalChangeCount: Int
+    init(_ r: SnapshotHistoryRow) {
+        isBaseline = r.isBaseline
+        comparisonState = r.comparisonState.map { String(describing: $0) }
+        diagnostics = r.diagnostics
+        duplicateImportCount = r.duplicateImportCount
+        totalChangeCount = r.totalChangeCount
+    }
+}
+
 private struct SanitizedProjection: Encodable {
     let availability: String
     let totalSnapshotCount: Int
@@ -471,6 +558,9 @@ private struct SanitizedProjection: Encodable {
     let statisticsToday: String
     let statistics7Days: String
     let statistics30Days: String
+    let statisticsSignature: SanitizedStatisticsSignature
+    let timelineSignatures: [SanitizedTimelineRow]
+    let diagnostics: [String]
 
     init(_ projection: SnapshotHistoryProjection) {
         availability = String(describing: projection.availability)
@@ -481,6 +571,9 @@ private struct SanitizedProjection: Encodable {
         statisticsToday = SanitizedProjection.statState(projection.statistics.today.heroLevelGrowth.state)
         statistics7Days = SanitizedProjection.statState(projection.statistics.last7Days.heroLevelGrowth.state)
         statistics30Days = SanitizedProjection.statState(projection.statistics.last30Days.heroLevelGrowth.state)
+        statisticsSignature = SanitizedStatisticsSignature(projection.statistics)
+        timelineSignatures = projection.timeline.map(SanitizedTimelineRow.init)
+        diagnostics = projection.diagnostics
     }
 
     private static func statState(_ state: SnapshotStatisticValueState) -> String {

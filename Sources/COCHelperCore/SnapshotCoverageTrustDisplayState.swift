@@ -1,6 +1,6 @@
 import Foundation
 
-/// UI-facing trust label for persisted verified coverage (Issue #224).
+/// UI-facing trust label for persisted verified coverage (Issue #224 / #236).
 public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
     /// Runtime trust restored; destructive gates may open when completeness allows.
     case verified
@@ -37,15 +37,23 @@ public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
             return .insufficientCoverage
         }
 
-        // Canonicalization materializes every known section so Diff can keep
-        // absence fail-closed. A source adapter's trusted proof set is the
-        // frozen relevant universe: an absent section with no proof is outside
-        // that source, while an explicit proof or present section is relevant
-        // and must still block verified display when it is not trusted.
-        let relevantSections = sections.filter { section in
-            hasExplicitProof(section.proof)
-                || section.presence != .missing
-                || section.completeness != .unavailable
+        guard let sourceUniverse = coverage.sourceUniverse,
+              sourceUniverse.isWellFormedWireContract,
+              sourceUniverse.hasRequiredSection else {
+            return .insufficientCoverage
+        }
+
+        switch coverage.sourceUniverseRuntimeTrust {
+        case .notApplicable, .rejected:
+            return .insufficientCoverage
+        case .pending:
+            return .pendingRevalidation
+        case .trusted:
+            break
+        }
+
+        let relevantSections = sections.filter {
+            sourceUniverse.relevance(for: $0.rawSection) == .required
         }
         guard !relevantSections.isEmpty else {
             return .insufficientCoverage
@@ -71,14 +79,5 @@ public enum SnapshotCoverageTrustDisplayState: Equatable, Sendable {
         }
 
         return .insufficientCoverage
-    }
-
-    private static func hasExplicitProof(_ proof: SnapshotCoverageProof) -> Bool {
-        switch proof {
-        case .declared, .legacyAuthoritative, .verified:
-            return true
-        case .unavailable:
-            return false
-        }
     }
 }

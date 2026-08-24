@@ -51,7 +51,64 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
                     runtimeTrust: .notApplicable
                 )
             ],
-            diagnostics: []
+            diagnostics: [],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(
+                requiredSections: ["heroes", "buildings"]
+            )
+        )
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
+            .insufficientCoverage
+        )
+    }
+
+    func testEvaluateVerifiedWhenIrrelevantSectionAbsent() {
+        let coverage = SnapshotObservationCoverage(
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                ),
+                makeSection(
+                    rawSection: "buildings",
+                    proof: .unavailable(reason: "源 JSON 缺少 section。"),
+                    completeness: .unavailable,
+                    presence: .missing,
+                    runtimeTrust: .notApplicable
+                )
+            ],
+            diagnostics: [],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(requiredSections: ["heroes"])
+        )
+        XCTAssertEqual(SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage), .verified)
+    }
+
+    func testEvaluateInsufficientWhenUniverseMissing() {
+        let proofs: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 2)
+        ]
+        let coverage = SnapshotObservationCoverage(
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: proofs["heroes"]!,
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                ),
+                makeSection(
+                    rawSection: "buildings",
+                    proof: proofs["buildings"]!,
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                )
+            ],
+            diagnostics: [],
+            sourceUniverse: nil
         )
         XCTAssertEqual(
             SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
@@ -96,7 +153,8 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
                     runtimeTrust: .notApplicable
                 )
             ],
-            diagnostics: []
+            diagnostics: [],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(requiredSections: ["heroes"])
         )
 
         XCTAssertEqual(
@@ -123,7 +181,10 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
                     runtimeTrust: .trusted
                 )
             ],
-            diagnostics: []
+            diagnostics: [],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(
+                requiredSections: ["heroes", "heroes2"]
+            )
         )
 
         XCTAssertEqual(
@@ -170,9 +231,66 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
                     runtimeTrust: .notApplicable
                 )
             ],
-            diagnostics: []
+            diagnostics: [],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(
+                requiredSections: ["heroes", "heroes2", "units2"]
+            )
         )
 
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
+            .insufficientCoverage
+        )
+    }
+
+    func testEvaluatePendingWhenUniverseWireMetadataPendingAndSectionsTrusted() {
+        let proofs: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let coverage = SnapshotObservationCoverage(
+            schemaVersion: SnapshotHistorySchema.observation,
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: proofs["heroes"]!,
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                )
+            ],
+            diagnostics: [],
+            sourceUniverse: SnapshotCoverageSourceUniverse(
+                adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
+                protocolVersion: "1",
+                sections: SnapshotHistoryTestCoverage.testFixtureUniverse(for: proofs).sections
+            ),
+            sourceUniverseRuntimeTrust: .pending
+        )
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
+            .pendingRevalidation
+        )
+    }
+
+    func testEvaluateInsufficientWhenUniverseRejectedEvenIfSectionsTrusted() {
+        let proofs: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let coverage = SnapshotObservationCoverage(
+            schemaVersion: SnapshotHistorySchema.observation,
+            fields: [],
+            sections: [
+                makeSection(
+                    rawSection: "heroes",
+                    proof: proofs["heroes"]!,
+                    completeness: .complete,
+                    runtimeTrust: .trusted
+                )
+            ],
+            diagnostics: [],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(for: proofs),
+            sourceUniverseRuntimeTrust: .rejected("tampered")
+        )
         XCTAssertEqual(
             SnapshotCoverageTrustDisplayState.evaluate(coverage: coverage),
             .insufficientCoverage
@@ -192,23 +310,28 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
         heroesTrust: SectionCoverageRuntimeTrust,
         buildingsTrust: SectionCoverageRuntimeTrust
     ) -> SnapshotObservationCoverage {
-        SnapshotObservationCoverage(
+        let proofs: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 2)
+        ]
+        return SnapshotObservationCoverage(
             fields: [],
             sections: [
                 makeSection(
                     rawSection: "heroes",
-                    proof: SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+                    proof: proofs["heroes"]!,
                     completeness: .complete,
                     runtimeTrust: heroesTrust
                 ),
                 makeSection(
                     rawSection: "buildings",
-                    proof: SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 2),
+                    proof: proofs["buildings"]!,
                     completeness: .complete,
                     runtimeTrust: buildingsTrust
                 )
             ],
-            diagnostics: []
+            diagnostics: [],
+            sourceUniverse: SnapshotHistoryTestCoverage.testFixtureUniverse(for: proofs)
         )
     }
 

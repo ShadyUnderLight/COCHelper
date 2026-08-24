@@ -139,7 +139,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             hasCurrentSnapshot: true,
             envelope: envelope,
             appliedAt: Date(timeIntervalSince1970: 2),
-            sectionProofs: proof
+            sectionProofs: proof,
+            sourceUniverse: testSourceUniverse(for: proof)
         )
 
         XCTAssertTrue(decision.appended)
@@ -151,7 +152,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 villageID: villageID,
                 lineageID: try XCTUnwrap(decision.envelope.activeLineage(for: villageID)?.lineageID),
                 appliedAt: Date(timeIntervalSince1970: 2),
-                sectionProofs: proof
+                sectionProofs: proof,
+                sourceUniverse: testSourceUniverse(for: proof)
             ).coverage.section(base: .home, rawSection: "heroes")?.proof
         )
         XCTAssertEqual(
@@ -209,7 +211,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let live = try service.loadOrMigrate(
             villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: base)],
             now: Date(timeIntervalSince1970: 1),
-            sectionProofs: [villageID: proof]
+            sectionProofs: [villageID: proof],
+            sourceUniverses: testSourceUniverses(from: [villageID: proof])
         )
         let liveEntry = try XCTUnwrap(live.entries.first)
         XCTAssertEqual(live.entries.count, 1)
@@ -252,7 +255,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             hasCurrentSnapshot: true,
             envelope: reloaded,
             appliedAt: Date(timeIntervalSince1970: 2),
-            sectionProofs: proof
+            sectionProofs: proof,
+            sourceUniverse: testSourceUniverse(for: proof)
         )
         XCTAssertTrue(decision.duplicate)
         XCTAssertFalse(decision.appended)
@@ -271,7 +275,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let live = try service.loadOrMigrate(
             villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: base)],
             now: Date(timeIntervalSince1970: 1),
-            sectionProofs: [villageID: proof]
+            sectionProofs: [villageID: proof],
+            sourceUniverses: testSourceUniverses(from: [villageID: proof])
         )
         try store.save(live)
 
@@ -306,7 +311,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             villageID: villageID,
             lineageID: UUID(),
             appliedAt: Date(timeIntervalSince1970: 1),
-            sectionProofs: proof
+            sectionProofs: proof,
+            sourceUniverse: testSourceUniverse(for: proof)
         )
         let data = try JSONEncoder().encode(entry)
         let decoded = try JSONDecoder().decode(SnapshotHistoryEntry.self, from: data)
@@ -319,6 +325,208 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             XCTFail("wire metadata 应保留")
         }
         XCTAssertFalse(heroes.isComplete)
+        XCTAssertEqual(decoded.coverage.sourceUniverseRuntimeTrust, .pending)
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: decoded.coverage),
+            .pendingRevalidation
+        )
+    }
+
+    func testSourceUniverseRequiresObservationV6AtCanonicalize() throws {
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        XCTAssertThrowsError(
+            try SnapshotHistoryCanonicalizer.canonicalize(
+                snapshot: snapshot(
+                    tag: firstTag,
+                    text: "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+                ),
+                villageID: UUID(),
+                lineageID: UUID(),
+                appliedAt: Date(timeIntervalSince1970: 1),
+                sectionProofs: proof,
+                sourceUniverse: testSourceUniverse(for: proof),
+                observationVersion: SnapshotHistorySchema.observationWithoutCoverageMetadata
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? SnapshotHistoryCanonicalizationError,
+                .sourceUniverseRequiresObservationV6
+            )
+        }
+    }
+
+    func testTamperedSourceUniverseShrinksRequiredSectionsFailsTrustProjection() throws {
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}],\"buildings\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1),
+            "buildings": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let live = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: text),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proof,
+            sourceUniverse: testSourceUniverse(for: proof)
+        )
+        let decoded = try JSONDecoder().decode(
+            SnapshotHistoryEntry.self,
+            from: try JSONEncoder().encode(live)
+        )
+        let tamperedUniverse = SnapshotCoverageSourceUniverse(
+            adapterID: SnapshotCoverageVerifier.testFixtureAdapterID,
+            protocolVersion: "1",
+            sections: SnapshotHistoryTestCoverage.testFixtureUniverse(
+                requiredSections: ["heroes"]
+            ).sections
+        )
+        let tamperedCoverage = SnapshotObservationCoverage(
+            schemaVersion: decoded.coverage.schemaVersion,
+            fields: decoded.coverage.fields,
+            sections: decoded.coverage.sections.map { section in
+                SnapshotSectionCoverage(
+                    base: section.base,
+                    rawSection: section.rawSection,
+                    presence: section.presence,
+                    completeness: section.completeness,
+                    proof: section.proof,
+                    observedCount: section.observedCount,
+                    runtimeTrust: .trusted
+                )
+            },
+            diagnostics: decoded.coverage.diagnostics,
+            sourceUniverse: tamperedUniverse
+        )
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: tamperedCoverage),
+            .pendingRevalidation
+        )
+        let hydrated = SnapshotCoverageTrustHydration.hydrate(
+            coverage: tamperedCoverage,
+            rawJSON: text,
+            policy: .testsAllowTestFixture
+        )
+        if case .rejected = hydrated.sourceUniverseRuntimeTrust {
+            XCTAssertTrue(true)
+        } else {
+            XCTFail("tampered universe 应被拒绝")
+        }
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: hydrated),
+            .insufficientCoverage
+        )
+    }
+
+    func testObservationV5WireIgnoresInjectedSourceUniverse() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle.module.url(
+                forResource: "perf_account_snapshot_home",
+                withExtension: "json"
+            )
+        )
+        let text = try String(contentsOf: fixtureURL, encoding: .utf8)
+        let snapshot = try AccountSnapshotImporter.parse(text, now: Date(timeIntervalSince1970: 1))
+        let proofs = SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
+            JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+        )
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proofs,
+            observationVersion: SnapshotHistorySchema.observationWithoutCoverageMetadata
+        )
+        XCTAssertNil(entry.coverage.sourceUniverse)
+        XCTAssertEqual(entry.observationVersion, SnapshotHistorySchema.observationWithoutCoverageMetadata)
+
+        var envelopeObject = try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(
+                SnapshotHistoryEnvelope(
+                    entries: [entry],
+                    lineages: [],
+                    migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
+                )
+            )
+        ) as! [String: Any]
+        var entries = envelopeObject["entries"] as! [[String: Any]]
+        var coverage = entries[0]["coverage"] as! [String: Any]
+        coverage["sourceUniverse"] = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(
+                try XCTUnwrap(SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot))
+            )
+        )
+        entries[0]["coverage"] = coverage
+        envelopeObject["entries"] = entries
+        let tamperedData = try JSONSerialization.data(
+            withJSONObject: envelopeObject,
+            options: [.sortedKeys]
+        )
+
+        let decoded = try JSONDecoder().decode(SnapshotHistoryEnvelope.self, from: tamperedData)
+        let decodedEntry = try XCTUnwrap(decoded.entries.first)
+        XCTAssertNil(decodedEntry.coverage.sourceUniverse)
+        XCTAssertEqual(decodedEntry.coverage.sourceUniverseRuntimeTrust, .notApplicable)
+        let hydrated = decoded.hydratingVerifiedCoverage(policy: .production)
+        XCTAssertNil(hydrated.entries.first?.coverage.sourceUniverse)
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(
+                coverage: try XCTUnwrap(hydrated.entries.first?.coverage)
+            ),
+            .insufficientCoverage
+        )
+    }
+
+    func testObservationV5EntryWithSourceUniverseRejectedByValidation() throws {
+        let text = "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
+        let proof: [String: SnapshotCoverageProof] = [
+            "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
+        ]
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot(tag: firstTag, text: text),
+            villageID: UUID(),
+            lineageID: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1),
+            sectionProofs: proof,
+            observationVersion: SnapshotHistorySchema.observationWithoutCoverageMetadata
+        )
+        let tamperedCoverage = SnapshotObservationCoverage(
+            schemaVersion: entry.coverage.schemaVersion,
+            fields: entry.coverage.fields,
+            sections: entry.coverage.sections,
+            diagnostics: entry.coverage.diagnostics,
+            sourceUniverse: testSourceUniverse(for: proof),
+            sourceUniverseRuntimeTrust: .pending
+        )
+        let tamperedEntry = SnapshotHistoryEntry(
+            observationVersion: entry.observationVersion,
+            snapshotID: entry.snapshotID,
+            villageID: entry.villageID,
+            lineageID: entry.lineageID,
+            normalizedPlayerTag: entry.normalizedPlayerTag,
+            appliedAt: entry.appliedAt,
+            sourceTimestamp: entry.sourceTimestamp,
+            parserVersion: entry.parserVersion,
+            canonicalFingerprint: entry.canonicalFingerprint,
+            rawJSON: entry.rawJSON,
+            observation: entry.observation,
+            coverage: tamperedCoverage,
+            isBaseline: entry.isBaseline,
+            baselineReason: entry.baselineReason
+        )
+        let envelope = SnapshotHistoryEnvelope(
+            entries: [tamperedEntry],
+            lineages: [],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
+        )
+        XCTAssertThrowsError(try envelope.validated()) { error in
+            guard case SnapshotHistoryStoreError.invalidEntry(let message) = error else {
+                return XCTFail("expected invalidEntry, got \(error)")
+            }
+            XCTAssertTrue(message.contains("source universe"))
+        }
     }
 
     func testVerifiedCoverageTamperedBindingFailsRevalidation() throws {
@@ -331,7 +539,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             villageID: UUID(),
             lineageID: UUID(),
             appliedAt: Date(timeIntervalSince1970: 1),
-            sectionProofs: proof
+            sectionProofs: proof,
+            sourceUniverse: testSourceUniverse(for: proof)
         )
         guard case .verified(let evidence) = entry.coverage.section(
             base: .home,
@@ -400,7 +609,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             villageID: UUID(),
             lineageID: UUID(),
             appliedAt: Date(timeIntervalSince1970: 1),
-            sectionProofs: proof
+            sectionProofs: proof,
+            sourceUniverse: testSourceUniverse(for: proof)
         )
         let raw = try JSONEncoder().encode(entry)
         let decodedEntry = try JSONDecoder().decode(SnapshotHistoryEntry.self, from: raw)
@@ -530,7 +740,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let live = try SnapshotHistoryService(store: store).loadOrMigrate(
             villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: snapshot(tag: firstTag, text: text))],
             now: Date(timeIntervalSince1970: 1),
-            sectionProofs: [villageID: proof]
+            sectionProofs: [villageID: proof],
+            sourceUniverses: testSourceUniverses(from: [villageID: proof])
         )
         try store.save(live)
         let raw = try XCTUnwrap(store.readRawData())
@@ -541,6 +752,16 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
         XCTAssertTrue(heroes.proof.hasVerifiedWireMetadata)
         XCTAssertFalse(heroes.opensTrustGates)
+        let productionCoverage = try XCTUnwrap(productionHydrated.entries.first?.coverage)
+        if case .rejected = productionCoverage.sourceUniverseRuntimeTrust {
+            XCTAssertTrue(true)
+        } else {
+            XCTFail("production load 不得恢复 test-fixture source universe")
+        }
+        XCTAssertEqual(
+            SnapshotCoverageTrustDisplayState.evaluate(coverage: productionCoverage),
+            .insufficientCoverage
+        )
         try store.save(productionHydrated)
         let reloaded = try XCTUnwrap(try store.load())
         XCTAssertEqual(
@@ -630,7 +851,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             lineageID: lineageID,
             schema: previousSchema,
             json: timerJSON(level: 1),
-            sectionProofs: heroProof
+            sectionProofs: heroProof,
+            sourceUniverse: testSourceUniverse(for: heroProof)
         )
         let provenance = try service.planImport(
             snapshot: snapshot(tag: firstTag, text: timerJSON(level: 1), capturedAt: Date(timeIntervalSince1970: 100)),
@@ -639,7 +861,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             hasCurrentSnapshot: true,
             envelope: migratedEnvelope(for: previous),
             appliedAt: Date(timeIntervalSince1970: 2),
-            sectionProofs: heroProof
+            sectionProofs: heroProof,
+            sourceUniverse: testSourceUniverse(for: heroProof)
         )
         XCTAssertTrue(provenance.appended)
         XCTAssertEqual(provenance.envelope.entries[0].timerSchema, previousSchema)
@@ -702,7 +925,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             lineageID: lineageID,
             schema: previousSchema,
             json: timerJSON(level: 1),
-            sectionProofs: heroProof
+            sectionProofs: heroProof,
+            sourceUniverse: testSourceUniverse(for: heroProof)
         )
         let provenance = try service.planImport(
             snapshot: snapshot(tag: firstTag, text: timerJSON(level: 1), capturedAt: Date(timeIntervalSince1970: 100)),
@@ -711,7 +935,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             hasCurrentSnapshot: true,
             envelope: migratedEnvelope(for: previous),
             appliedAt: Date(timeIntervalSince1970: 2),
-            sectionProofs: heroProof
+            sectionProofs: heroProof,
+            sourceUniverse: testSourceUniverse(for: heroProof)
         )
         let beforeEnvelope = try productionHydratedEnvelope(provenance.envelope)
         let beforeDiffs = SnapshotDiffEngine.adjacentDiffs(in: beforeEnvelope.entries)
@@ -1311,12 +1536,14 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             "{\"heroes\":[{\"data\":1,\"lvl\":1}]}",
             now: Date(timeIntervalSince1970: 100)
         )
+        let legacyProof = ["heroes": SnapshotHistoryTestCoverage.verified(source: "legacy-export", expectedCount: 1)]
         let verifiedEntry = try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot,
             villageID: villageID,
             lineageID: lineageID,
             appliedAt: Date(timeIntervalSince1970: 100),
-            sectionProofs: ["heroes": SnapshotHistoryTestCoverage.verified(source: "legacy-export", expectedCount: 1)]
+            sectionProofs: legacyProof,
+            sourceUniverse: testSourceUniverse(for: legacyProof)
         )
         guard let heroes = verifiedEntry.coverage.section(base: .home, rawSection: "heroes") else {
             return XCTFail("缺少 heroes section")
@@ -1561,7 +1788,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         lineageID: UUID,
         schema: SnapshotTimerSchema,
         json: String,
-        sectionProofs: [String: SnapshotCoverageProof] = [:]
+        sectionProofs: [String: SnapshotCoverageProof] = [:],
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil
     ) throws -> SnapshotHistoryEntry {
         try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot(tag: firstTag, text: json, capturedAt: Date(timeIntervalSince1970: 100)),
@@ -1572,6 +1800,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             isBaseline: true,
             baselineReason: .initial,
             sectionProofs: sectionProofs,
+            sourceUniverse: sourceUniverse ?? testSourceUniverse(for: sectionProofs),
             timerSchema: schema
         )
     }
@@ -1619,6 +1848,22 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 "helper_cooldown": spec
             ]
         )
+    }
+
+    private func testSourceUniverse(
+        for sectionProofs: [String: SnapshotCoverageProof]
+    ) -> SnapshotCoverageSourceUniverse? {
+        let required = sectionProofs.contains { _, proof in
+            SnapshotCoverageVerifier.validatesModuleIssuedProof(proof)
+        }
+        guard required else { return nil }
+        return SnapshotHistoryTestCoverage.testFixtureUniverse(for: sectionProofs)
+    }
+
+    private func testSourceUniverses(
+        from proofs: [UUID: [String: SnapshotCoverageProof]]
+    ) -> [UUID: SnapshotCoverageSourceUniverse] {
+        proofs.compactMapValues(testSourceUniverse(for:))
     }
 
     private func copy(

@@ -111,6 +111,23 @@ enum SnapshotHistoryTestCoverage {
         )
     }
 
+    static func testFixtureUniverse(
+        requiredSections: Set<String>
+    ) -> SnapshotCoverageSourceUniverse {
+        SnapshotCoverageSourceUniverseIssuer.issueTestFixture(requiredSections: requiredSections)
+    }
+
+    static func testFixtureUniverse(
+        for sectionProofs: [String: SnapshotCoverageProof]
+    ) -> SnapshotCoverageSourceUniverse {
+        let required = Set(
+            sectionProofs.compactMap { section, proof in
+                SnapshotCoverageVerifier.validatesModuleIssuedProof(proof) ? section : nil
+            }
+        )
+        return testFixtureUniverse(requiredSections: required)
+    }
+
     /// Test helper: module-issued verified section with runtime trust restored.
     static func trustedSection(
         base: SnapshotHistoryBase,

@@ -719,7 +719,8 @@ public final class AppModel: ObservableObject {
                     now: Date(),
                     catalog: gameCatalog,
                     craftTableCatalog: craftTableCatalog,
-                    sectionProofs: Self.coverageProofs(for: initialVillages)
+                    sectionProofs: Self.coverageProofs(for: initialVillages),
+                    sourceUniverses: Self.coverageSourceUniverses(for: initialVillages)
                 )
                 snapshotHistoryError = nil
                 historyLoadFailure = nil
@@ -2522,7 +2523,8 @@ public final class AppModel: ObservableObject {
     @discardableResult
     func applyPendingAccountSnapshot(
         decision reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting,
-        sectionProofs: [String: SnapshotCoverageProof]? = nil
+        sectionProofs: [String: SnapshotCoverageProof]? = nil,
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil
     ) -> Bool {
         guard let snapshot = pendingAccountSnapshot else { return false }
 
@@ -2587,7 +2589,8 @@ public final class AppModel: ObservableObject {
                 manualEnvelope: manualEnvelopeForCreate,
                 expectedPreview: pendingReconciliationPreview,
                 reconciliationDecision: reconciliationDecision,
-                sectionProofs: sectionProofs
+                sectionProofs: sectionProofs,
+                sourceUniverse: sourceUniverse
             )
         } catch {
             accountImportError = Self.localizedPersistenceError(error)
@@ -2812,7 +2815,13 @@ public final class AppModel: ObservableObject {
                 JSONSnapshotCoverageAdapter.proofs(for: snapshot)
             )
             : nil
-        return applyPendingAccountSnapshot(sectionProofs: sectionProofs)
+        let sourceUniverse = perfImportPromotesVerifiedCoverage
+            ? SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot)
+            : nil
+        return applyPendingAccountSnapshot(
+            sectionProofs: sectionProofs,
+            sourceUniverse: sourceUniverse
+        )
     }
 
     /// 在村庄上启动 manual 记录：1000002 lvl15→16（冲突样本）+ 2 项 active
@@ -4030,7 +4039,8 @@ public final class AppModel: ObservableObject {
         manualEnvelope: ManualTrackerEnvelope? = nil,
         expectedPreview: ManualReconciliationPreview? = nil,
         reconciliationDecision: ManualReconciliationDecision = .applyNonConflicting,
-        sectionProofs: [String: SnapshotCoverageProof]? = nil
+        sectionProofs: [String: SnapshotCoverageProof]? = nil,
+        sourceUniverse: SnapshotCoverageSourceUniverse? = nil
     ) throws {
         try ensureVillageStoreWritable()
         guard let historyEnvelope else {
@@ -4052,7 +4062,8 @@ public final class AppModel: ObservableObject {
             appliedAt: appliedAt,
             catalog: gameCatalog,
             craftTableCatalog: craftTableCatalog,
-            sectionProofs: sectionProofs ?? JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            sectionProofs: sectionProofs ?? JSONSnapshotCoverageAdapter.proofs(for: snapshot),
+            sourceUniverse: sourceUniverse
         )
         guard var candidateManualEnvelope = manualEnvelope ?? manualTrackerEnvelope else {
             throw ManualTrackerStoreError.unavailable("导入前未找到可用的手动升级状态。")
@@ -4316,7 +4327,8 @@ public final class AppModel: ObservableObject {
                 now: Date(),
                 catalog: gameCatalog,
                 craftTableCatalog: craftTableCatalog,
-                sectionProofs: Self.coverageProofs(for: normalizedVillages)
+                sectionProofs: Self.coverageProofs(for: normalizedVillages),
+                sourceUniverses: Self.coverageSourceUniverses(for: normalizedVillages)
             )
         } catch {
             snapshotHistoryError = Self.localizedPersistenceError(error)
@@ -4348,6 +4360,20 @@ public final class AppModel: ObservableObject {
             proofs[village.id] = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
         }
         return proofs
+    }
+
+    /// Issue #236: bundled perf fixture 可冻结 module-issued source universe。
+    private static func coverageSourceUniverses(
+        for villages: [VillageProfile]
+    ) -> [UUID: SnapshotCoverageSourceUniverse] {
+        var universes: [UUID: SnapshotCoverageSourceUniverse] = [:]
+        for village in villages {
+            guard let snapshot = village.accountSnapshot else { continue }
+            if let universe = SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot) {
+                universes[village.id] = universe
+            }
+        }
+        return universes
     }
 
     private func pendingSnapshotTarget(for snapshot: AccountSnapshot) -> PendingSnapshotTarget {

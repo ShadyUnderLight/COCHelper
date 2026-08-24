@@ -319,7 +319,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         )
 
         XCTAssertEqual(withoutEntry.canonicalFingerprint, withEntry.canonicalFingerprint)
-        XCTAssertEqual(withEntry.observationVersion, SnapshotHistorySchema.observationWithoutCoverageMetadata)
+        XCTAssertEqual(withEntry.observationVersion, SnapshotHistorySchema.observation)
         XCTAssertNil(withEntry.observation.unknownTopLevelFields["coverage"])
         XCTAssertNil(withEntry.observation.rawTopLevelFields["coverage"])
         XCTAssertFalse(withEntry.coverage.fields.contains {

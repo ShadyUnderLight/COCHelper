@@ -226,13 +226,12 @@ struct AcceptanceRunner {
         try recordStep("A2-duplicate-account-import", model: model, villageID: villageAID)
         try assertEqual(envelopeAfterA2Dup.entries.count, entryCountBeforeA2Dup, "A2 duplicate 后 history entries 应不变")
         try assertEqual(envelopeAfterA2Dup.duplicateMetadata.count, duplicateCountBeforeA2Dup + 1, "A2 duplicate 后 duplicateMetadata 应 +1")
-        // 具体 lineage 的 duplicateMetadata 检查：应对应上一次 entry 的 snapshotID
-        if let lastAIDupEntry = envelopeAfterA2.entries.first(where: { $0.villageID == villageAID }),
-           let _ = envelopeAfterA2Dup.entries.first(where: { $0.snapshotID == lastAIDupEntry.snapshotID }) {
-            // 至少存在一个 duplicate key 的 count 增加
-            let dupKey = lastAIDupEntry.snapshotID.uuidString
-            let dupMeta = envelopeAfterA2Dup.duplicateMetadata[dupKey]
+        // 具体 lineage 的 duplicateMetadata 检查：应对应 A2 的 snapshotID（即 duplicate 前的 active lastEntryID）
+        if let expectedDupKey = envelopeAfterA2.activeLineage(for: villageAID)?.lastEntryID.uuidString {
+            let dupMeta = envelopeAfterA2Dup.duplicateMetadata[expectedDupKey]
             try assertTrue(dupMeta != nil && dupMeta!.duplicateImportCount >= 1, "A2 duplicate 应记录对应 snapshot 的 duplicate metadata")
+        } else {
+            throw AcceptanceError.validationFailed("无法确定 A2 duplicate 的 expected key")
         }
         try assertEqual(envelopeAfterA2Dup.lineages.count, lineageCountAfterA1, "A2 duplicate 后 lineage 数量应不变")
         try assertTrue(envelopeAfterA2Dup.activeLineage(for: villageAID)?.lineageID == lineageIDAfterA1, "A2 duplicate 后 lineageID 应不变")

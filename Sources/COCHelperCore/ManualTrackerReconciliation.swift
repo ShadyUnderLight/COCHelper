@@ -238,7 +238,12 @@ public enum ManualTrackerReconciliationService {
         let distribution: ManualLevelDistribution?
         let displayName: String
         let hasTimer: Bool
+        /// Section-level coverage for reconcile preview diagnostics.
         let coverageComplete: Bool
+        /// Item-level evidence sufficient for local Start / safe apply.
+        let distributionComplete: Bool
+        /// Verified section proof with runtime trust gates open.
+        let sectionTrustGatesOpen: Bool
         let timerCoverageComplete: Bool
     }
 
@@ -468,7 +473,8 @@ public enum ManualTrackerReconciliationService {
             // 缺失）不得保持 userAssigned——证据不足不能占容量。
             let observation = observations[assignment.itemKey]
             let timerStillObserved = observation?.hasTimer == true
-                && observation?.coverageComplete == true
+                && observation?.distributionComplete == true
+                && observation?.timerCoverageComplete == true
             let newStatus: QueueAssignmentStatus
             if lineageChanged {
                 newStatus = .unknown
@@ -685,11 +691,14 @@ public enum ManualTrackerReconciliationService {
            confirmedRecordIDs.isEmpty {
             return .possibleDuplicate
         }
-        guard let observation, observation.coverageComplete,
+        guard let observation, observation.distributionComplete,
               let observed = observation.distribution else {
             return .unknown
         }
         guard hasExistingState else { return .newObservation }
+        if observation.sectionTrustGatesOpen == false {
+            return .unknown
+        }
         guard let previousDistribution else { return .newObservation }
 
         let timerEnded = (previousObservation?.hasTimer ?? false) && !observation.hasTimer
@@ -883,6 +892,10 @@ public enum ManualTrackerReconciliationService {
                 base: base,
                 rawSection: key.rawSection
             )?.isComplete == true
+            let sectionTrustGatesOpen = entry.coverage.section(
+                base: base,
+                rawSection: key.rawSection
+            )?.opensTrustGates == true
             let coverageComplete = requiredFields.allSatisfy {
                 entry.coverage.state(
                     base: base,
@@ -890,11 +903,9 @@ public enum ManualTrackerReconciliationService {
                     field: $0
                 ) == .complete
             }
-            // Coverage is recorded for a whole source section, while the
-            // reconciliation map is keyed by one dataID.  A partial lvl/cnt
-            // or timer field therefore invalidates every key in that section;
-            // allowing a complete-looking key to pass would turn a sibling's
-            // missing field into a false observedAhead/manual completion.
+            // Section-level coverage remains fail-closed for preview diagnostics
+            // and history/universe semantics. Local Start / safe apply instead
+            // rely on item-level distribution evidence below.
             let sectionSafetyCoverageComplete = (
                 ["lvl", "cnt"] + SnapshotHistoryKnownSections.timerFields.sorted()
             ).allSatisfy { field in
@@ -905,18 +916,6 @@ public enum ManualTrackerReconciliationService {
                 ) else { return false }
                 return state != .partial
             }
-            var quantities: [Int: Int64] = [:]
-            var levelCoverageComplete = true
-            var countCoverageComplete = true
-            var valid = trustedSectionComplete
-                && coverageComplete
-                && sectionSafetyCoverageComplete
-                && !items.isEmpty
-            let countCoverageState = entry.coverage.state(
-                base: base,
-                rawSection: key.rawSection,
-                field: "cnt"
-            )
             let timerCoverageComplete = SnapshotHistoryKnownSections.timerFields.allSatisfy { field in
                 guard let state = entry.coverage.state(
                     base: base,
@@ -925,10 +924,16 @@ public enum ManualTrackerReconciliationService {
                 ) else { return false }
                 return state == .complete || state == .unavailable
             }
+            let sectionCoverageComplete = trustedSectionComplete
+                && coverageComplete
+                && sectionSafetyCoverageComplete
+                && timerCoverageComplete
+            var quantities: [Int: Int64] = [:]
+            var itemLevelCoverageComplete = true
+            var itemCountCoverageComplete = true
             for item in items {
                 guard let level = item.level, level >= 0 else {
-                    levelCoverageComplete = false
-                    valid = false
+                    itemLevelCoverageComplete = false
                     continue
                 }
                 let quantity: Int64
@@ -937,23 +942,16 @@ public enum ManualTrackerReconciliationService {
                         continue
                     }
                     guard let count = item.count, count > 0 else {
-                        countCoverageComplete = false
-                        valid = false
+                        itemCountCoverageComplete = false
                         continue
                     }
                     quantity = Int64(count)
                 } else {
-                    if item.count == nil, countCoverageState == .partial {
-                        countCoverageComplete = false
-                        valid = false
+                    guard let count = item.count, count > 0 else {
+                        itemCountCoverageComplete = false
                         continue
                     }
-                    if let count = item.count, count <= 0 {
-                        countCoverageComplete = false
-                        valid = false
-                        continue
-                    }
-                    quantity = Int64(max(item.count ?? 1, 1))
+                    quantity = Int64(count)
                 }
                 let (sum, overflow) = (quantities[level] ?? 0).addingReportingOverflow(quantity)
                 guard !overflow else {
@@ -961,23 +959,20 @@ public enum ManualTrackerReconciliationService {
                 }
                 quantities[level] = sum
             }
-            if quantities.isEmpty {
-                valid = false
-            }
-            if histogram, countCoverageState != .complete {
-                // Timer-only histogram rows may explain why `cnt` is partial,
-                // but the section-level partial state still makes all sibling
-                // observations non-authoritative for automatic reconciliation.
-                countCoverageComplete = false
-            }
-            valid = valid && timerCoverageComplete
-            valid = valid && levelCoverageComplete && countCoverageComplete
-            let distribution = valid ? try ManualLevelDistribution(levelQuantities: quantities) : nil
+            let distributionComplete = !items.isEmpty
+                && itemLevelCoverageComplete
+                && itemCountCoverageComplete
+                && !quantities.isEmpty
+            let distribution = distributionComplete
+                ? try ManualLevelDistribution(levelQuantities: quantities)
+                : nil
             result[key] = Observation(
                 distribution: distribution,
                 displayName: items.compactMap(\.display.displayName).first ?? key.stableID,
                 hasTimer: items.contains { !$0.rawTimerEvidence.isEmpty },
-                coverageComplete: valid,
+                coverageComplete: sectionCoverageComplete,
+                distributionComplete: distributionComplete,
+                sectionTrustGatesOpen: sectionTrustGatesOpen,
                 timerCoverageComplete: timerCoverageComplete
             )
         }

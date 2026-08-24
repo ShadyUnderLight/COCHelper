@@ -434,7 +434,6 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         )
 
         XCTAssertEqual(preview.items.single?.classification, .unknown)
-        XCTAssertFalse(preview.items.single?.coverageComplete ?? true)
         XCTAssertNil(preview.items.single?.observedDistribution)
 
         let plan = try ManualTrackerReconciliationService.reconcile(
@@ -518,7 +517,8 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         XCTAssertEqual(timerCoveragePreview.items.single?.classification, .unknown)
     }
 
-    func testPartialSectionCoveragePoisonsSiblingKeys() throws {
+    func testPartialSectionCoverageDoesNotBlockCompleteSiblingItems() throws {
+        let siblingKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 101)
         let cases: [(name: String, old: String, new: String)] = [
             (
                 "level",
@@ -548,11 +548,34 @@ final class ManualTrackerReconciliationTests: XCTestCase {
                 currentState: state,
                 appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
             )
-            let item = try XCTUnwrap(preview.items.first { $0.itemKey == key }, testCase.name)
+            let completeItem = try XCTUnwrap(preview.items.first { $0.itemKey == key }, testCase.name)
+            let incompleteSibling = try XCTUnwrap(
+                preview.items.first { $0.itemKey == siblingKey },
+                testCase.name
+            )
 
-            XCTAssertEqual(item.classification, .unknown, testCase.name)
-            XCTAssertFalse(item.coverageComplete, testCase.name)
-            XCTAssertNil(item.observedDistribution, testCase.name)
+            XCTAssertEqual(completeItem.classification, .observedAhead, testCase.name)
+            XCTAssertFalse(completeItem.coverageComplete, testCase.name)
+            XCTAssertEqual(
+                completeItem.observedDistribution,
+                try ManualLevelDistribution(levelQuantities: [11: 1]),
+                testCase.name
+            )
+
+            switch testCase.name {
+            case "timer":
+                XCTAssertEqual(incompleteSibling.classification, .newObservation, testCase.name)
+                XCTAssertFalse(incompleteSibling.coverageComplete, testCase.name)
+                XCTAssertEqual(
+                    incompleteSibling.observedDistribution,
+                    try ManualLevelDistribution(levelQuantities: [10: 1]),
+                    testCase.name
+                )
+            default:
+                XCTAssertEqual(incompleteSibling.classification, .unknown, testCase.name)
+                XCTAssertFalse(incompleteSibling.coverageComplete, testCase.name)
+                XCTAssertNil(incompleteSibling.observedDistribution, testCase.name)
+            }
         }
     }
 
@@ -816,11 +839,127 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         )
         let building = try XCTUnwrap(preview.items.first { $0.itemKey == buildingKey })
 
-        // The content is a duplicate, but its section-level partial coverage
-        // still prevents treating the parsed distribution as authoritative.
+        // Duplicate imports still surface section-level partial coverage, but a
+        // complete item keeps its own distribution for local Start evidence.
         XCTAssertEqual(building.classification, .duplicate)
         XCTAssertFalse(building.coverageComplete)
-        XCTAssertNil(building.observedDistribution)
+        XCTAssertEqual(
+            building.observedDistribution,
+            try ManualLevelDistribution(levelQuantities: [14: 4])
+        )
+    }
+
+    func testIssue245CompleteHistogramItemSurvivesSiblingTimerOnlyRows() throws {
+        let initialRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787556915,
+          "buildings": [
+            {"data": 1000001, "lvl": 9, "timer": 64145},
+            {"data": 1000006, "lvl": 10, "timer": 81532},
+            {"data": 1000026, "lvl": 2, "timer": 45463}
+          ]
+        }
+        """##
+        let updatedRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787557000,
+          "buildings": [
+            {"data": 1000001, "lvl": 9, "timer": 64145},
+            {"data": 1000006, "lvl": 10, "timer": 81532},
+            {"data": 1000026, "lvl": 2, "timer": 45463},
+            {"data": 1000023, "lvl": 1, "cnt": 3}
+          ]
+        }
+        """##
+        let drillKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_023)
+        let timerOnlyKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_001)
+
+        let context = try history(initialRaw, injectVerifiedSectionProofs: false)
+        let next = try decision(
+            updatedRaw,
+            from: context,
+            currentTag: "#TEST",
+            injectVerifiedSectionProofs: false
+        )
+        let emptyState = ManualTrackerVillageState.empty(
+            villageID: villageID,
+            now: Date(timeIntervalSince1970: 1_700_000_010)
+        )
+
+        let preview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: next,
+            currentState: emptyState,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let drillPreview = try XCTUnwrap(preview.items.first { $0.itemKey == drillKey })
+        let timerOnlyPreview = try XCTUnwrap(preview.items.first { $0.itemKey == timerOnlyKey })
+
+        XCTAssertEqual(drillPreview.classification, .newObservation)
+        XCTAssertFalse(drillPreview.coverageComplete)
+        XCTAssertEqual(
+            drillPreview.observedDistribution,
+            try ManualLevelDistribution(levelQuantities: [1: 3])
+        )
+        XCTAssertEqual(timerOnlyPreview.classification, .unknown)
+        XCTAssertNil(timerOnlyPreview.observedDistribution)
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: emptyState,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let rebased = try XCTUnwrap(plan.state.core.itemState(for: drillKey))
+        XCTAssertEqual(rebased.status, .observed)
+        XCTAssertEqual(
+            rebased.importedObservation?.levelDistribution,
+            try ManualLevelDistribution(levelQuantities: [1: 3])
+        )
+        XCTAssertEqual(
+            plan.state.core.effectiveState(for: drillKey)?.effectiveCompletedDistribution,
+            try ManualLevelDistribution(levelQuantities: [1: 3])
+        )
+
+        let catalog = try XCTUnwrap(GameCatalog.loadBundled())
+        let accountSnapshot = try AccountSnapshotImporter.parse(
+            updatedRaw,
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        let village = VillageProfile(
+            id: villageID,
+            name: "主村",
+            accountSnapshot: accountSnapshot
+        )
+        let projection = VillageCatalogProjection.project(
+            village: village,
+            catalog: catalog,
+            base: .home,
+            now: Date(timeIntervalSince1970: 1_785_557_000),
+            manualUpgradeCore: plan.state.core
+        )
+        let drillItem: VillageItemState = try XCTUnwrap(
+            projection.items.first { $0.dataID == 1_000_023 }
+        )
+        let action = try XCTUnwrap(
+            UpgradeActionProjection.action(
+                for: drillItem,
+                catalog: catalog,
+                catalogIsUsable: true,
+                manualUpgradeCore: plan.state.core,
+                coverage: .complete,
+                now: Date(timeIntervalSince1970: 1_785_557_000)
+            )
+        )
+        XCTAssertTrue(action.isStartable, action.disabledReason ?? "")
+        XCTAssertEqual(action.fromLevel, 1)
+        XCTAssertEqual(action.targetLevel, 2)
+        XCTAssertEqual(action.quantity, 1)
     }
 
     func testStalePreviewIsRejectedBeforeStateMutation() throws {

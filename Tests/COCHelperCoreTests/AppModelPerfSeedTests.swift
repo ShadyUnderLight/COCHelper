@@ -80,10 +80,18 @@ final class AppModelPerfSeedTests: XCTestCase {
     /// 非 bundled perf 目录默认不得把 `perf-fixture` 声明提升为 verified。
     @MainActor
     func testCustomFixtureDirectoryDoesNotAutoPromoteVerifiedCoverage() throws {
-        let model = AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
+        let historyStore = TestSnapshotHistoryStore()
+        let model = AppModel(defaults: defaults, historyStore: historyStore)
         let fixtureDirectory = try XCTUnwrap(Bundle.module.resourceURL)
 
-        XCTAssertFalse(model.loadPerformanceSample(fixtureDirectory: fixtureDirectory))
+        XCTAssertTrue(model.loadPerformanceSample(fixtureDirectory: fixtureDirectory))
+
+        let villageA = try XCTUnwrap(model.villages.first(where: { $0.tag == "#ANONYMIZED" }))
+        let envelope = try XCTUnwrap(historyStore.load())
+        let lineage = try XCTUnwrap(envelope.activeLineage(for: villageA.id))
+        let entry = try XCTUnwrap(envelope.entry(id: lineage.lastEntryID))
+        let buildings = entry.coverage.section(base: .home, rawSection: "buildings")
+        XCTAssertFalse(buildings?.opensTrustGates ?? true)
     }
 
     /// seed 必须拒绝已有真实数据（不覆盖用户数据）。

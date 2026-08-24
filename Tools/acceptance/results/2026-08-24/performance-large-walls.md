@@ -4,14 +4,17 @@
 
 ## 固定信息
 
-- commit: `c31f7ce`（PR 分支 HEAD，已含 runner 硬校验、duplicate key 修复与 gate provenance，基于 `origin/main@256c065`）
-- fixture: `Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls.json`（唯一来源；`Sources/COCHelperApp/PerfFixtures` 中的 dead duplicate 已删除）
-- tag: `#PERF-LARGE-WALLS`（匿名）
-- 城墙段数: 1005（逐段 `cnt: 1`）
-- 生成：`python3 Tools/acceptance/generate_large_walls_fixture.py`（仅写 Tests Fixtures）
+- commit: `3a25e98`（含 A1/B1 → 共同 restart → A2/B2 交错、duplicate 严格 +1、B restart 对称校验、paired large-wall 修复，基于 `origin/main@256c065`）
+- fixture（paired，history 大变化 row）：
+  - `perf_account_snapshot_large_walls_before.json`（1005 段，`#LARGEWALL01` 合法，同 lineage baseline）
+  - `perf_account_snapshot_large_walls_after.json`（1005 段，同 tag 同 lineage，`lvl` 偏移 6，确保大量 Wall 等级变化）
+  - 单文件 `perf_account_snapshot_large_walls.json`（`#PERF-LARGE-WALLS` hyphen 保留仅为兼容旧测试，不用于 history 场景）
+- tag: `#LARGEWALL01`（合法 synthetic，`OfficialPlayerTagValidator.isValid`）
+- 城墙段数: 1005 / 1005（逐段 `cnt: 1`，等级分布位移）
+- 生成：`python3 Tools/acceptance/generate_large_walls_fixture.py`（写 Tests Fixtures，含 single + paired）
 - macOS: 待填写
 - Release build: `scripts/build_app.sh` 产出 `.build/COCHelper.app`
-- 加载方式：仅**账号数据页粘贴**（方式 A）；Debug seed 方式 B 已删除（其 `loadPerformanceSample()` 不加载本 fixture，旧文档误导已修正）
+- 加载方式：**账号数据页两步粘贴**（先 before 再 after，同村同 tag，产生可展开的大变化 row；见 `large_walls_perf_scenario.md`）— 单次粘贴仅 baseline，无法稳定复现场景 3
 
 ## 场景结果（人工填写）
 

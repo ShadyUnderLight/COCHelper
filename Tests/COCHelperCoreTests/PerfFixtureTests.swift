@@ -69,6 +69,20 @@ final class PerfFixtureTests: XCTestCase {
         XCTAssertNil(snapshot.objectSections["coverage"])
     }
 
+    func testPerfAccountSnapshotLargeWallsHas1000PlusSegments() throws {
+        let text = try fixtureText("perf_account_snapshot_large_walls")
+        assertAnonymized(text)
+        let snapshot = try AccountSnapshotImporter.parse(
+            text,
+            now: Date(timeIntervalSince1970: 1_785_736_933)
+        )
+        XCTAssertEqual(snapshot.tag, "#PERF-LARGE-WALLS")
+        let walls = (snapshot.objectSections["buildings"] ?? []).filter { $0.dataID == 1_000_008 }
+        let segmentCount = walls.reduce(0) { $0 + ($1.count ?? 1) }
+        XCTAssertGreaterThanOrEqual(segmentCount, 1_000, "Issue #226 perf gate needs >=1000 wall segments")
+        XCTAssertFalse(snapshot.unknownTopLevelKeys.contains("coverage"))
+    }
+
     func testPerfAccountSnapshotBuilderParses() throws {
         let text = try fixtureText("perf_account_snapshot_builder")
         assertAnonymized(text)

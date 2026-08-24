@@ -26,6 +26,20 @@ Time Profiler：
 - 每次 cold/hot 单独 attach，trace 不跨场景复用。
 - 这不是物理滚轮或拖动，不能替代最终 Release 验收。
 
+## Final canonical rerun freeze
+
+以下协议用于后续真正的 #209 final rerun；本目录的 AX replay 不宣称已经执行了它。
+
+- cold：同一 commit 下新启动 Release App，使用同一新建临时 HOME 和同一匿名 seed；在该进程首次进入目标页面前 attach trace。不得先访问目标页面或执行热身滚动。
+- hot：沿用 cold 的同一进程、同一 fixture、同一窗口和同一页面状态；cold workload 停止并空闲 5 秒后重复同一动作序列，不重新导入、不重启。
+- 每个 workload 的正式采样窗口固定为 10 秒；setup、导航、fixture seed 和窗口 resize 不计入这 10 秒。baseline/post 使用相同动作次数和相同起止状态。
+- Scenario 01：Village Detail home/全部/默认排序，连续上下滚动 10 秒。
+- Scenario 02：home ↔ builder、搜索/状态筛选、历史与 manual 面板展开/收起；每个状态切换后按固定顺序连续滚动 10 秒。
+- Scenario 03：Upgrade Overview 的 active、pending、recently completed、attention 面板各滚动 10 秒。
+- Scenario 04：Account Data 摘要、官方玩家、部落、战争、war log 和 capital raid；war/raid 多页加载后的滚动单独开 trace。
+- Scenario 05：窗口约 800pt 宽，执行建筑组卡横向阶梯滚动，覆盖长中文名称换行，持续 10 秒。
+- 60s tick、导入变化、manual action、分页加载分别单独开 trace，不与上述滚动窗口合并。
+
 ## 未完成项
 
 - baseline 场景 04 cold trace 在 xctrace 收尾阶段没有生成可导出 TOC，已记为 unknown。

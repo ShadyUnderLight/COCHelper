@@ -1,5 +1,13 @@
 # 03 Upgrade Overview（cold）
 
+## Evidence metadata
+
+- baseline exact SHA: d3b57e8164f81e292a023b052e455085565c3dbb；post exact SHA: 98a2d1a582f4d2dcb461e9d6e0b47d1ab41d4864
+- environment/fixture: 见同目录 README 的固定环境；匿名 fixture，UI 实际显示 2 个已导入村庄及本地升级状态。
+- scenario state: cold 为进程启动后的首次进入 Upgrade Overview；本 checkpoint 只回放 active/pending 汇总列表。
+- workload status: partial；recently completed/attention 各面板未按 canonical 各 10 秒执行。
+- raw trace status: baseline/post Animation Hitches trace 均可导出 TOC；hitches 表各 0 行。
+
 操作：首次进入升级总览，回放 active/pending 汇总列表上下分页。
 
 | 指标 | baseline d3b57e8 | post 98a2d1a |

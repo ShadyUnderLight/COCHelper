@@ -1,5 +1,13 @@
 # 01 Village Detail 全部滚动（cold）
 
+## Evidence metadata
+
+- baseline exact SHA: d3b57e8164f81e292a023b052e455085565c3dbb；post exact SHA: 98a2d1a582f4d2dcb461e9d6e0b47d1ab41d4864
+- environment/fixture: 见同目录 README 的固定环境；匿名 #ANONYMIZED，home/全部/分类名称。
+- scenario state: cold 为进程启动后的首次进入详情页；本文件只记录首次进入段。
+- workload status: partial；本 checkpoint 使用 Accessibility 分页，不是 canonical 连续滚轮/拖动 10 秒。
+- raw trace status: baseline/post Animation Hitches trace 均可导出 TOC；hitches 表各 0 行；原始 trace 只保存在本机临时目录。
+
 操作：Release App 首次进入 #ANONYMIZED Village Detail，默认 home/全部/分类名称，再执行上下分页回放。
 
 | 指标 | baseline d3b57e8 | post 98a2d1a |

@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Show toolchain
         run: |
           sw_vers
@@ -24,5 +26,7 @@ jobs:
         run: swift test --parallel --num-workers 1
       - name: Release App bundle
         run: scripts/build_app.sh
-      - name: Whitespace check
-        run: git diff --check
+      - name: Whitespace check against main
+        run: |
+          git fetch --no-tags origin main
+          git diff --check origin/main...HEAD

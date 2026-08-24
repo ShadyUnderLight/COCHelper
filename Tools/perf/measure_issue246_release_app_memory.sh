@@ -269,6 +269,7 @@ meta="$(python3 - <<PY
 import json, platform, subprocess
 print(json.dumps({
   "commit": "$sha",
+  "measured_commit": "$sha",
   "app": ".build/COCHelper.app",
   "bundle_id": "com.local.coc-helper",
   "macos": subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip(),
@@ -278,7 +279,7 @@ print(json.dumps({
   "history_bytes": int("$history_bytes"),
   "idle_seconds": 5,
   "isolated_home": True,
-  "notes": "Release App binary with SwiftUI window; HOME/CFFIXED_USER_HOME isolated; no raw account JSON in this artifact",
+  "notes": "Idle phys_footprint of Release App process after history load. Not account-data UI clicks, Diff, UI expand, or import peak. Isolated HOME; no raw account JSON in this artifact.",
 }, ensure_ascii=False))
 PY
 )"
@@ -338,15 +339,19 @@ def rss(sample):
 lines = [
     "# Issue #246 Release App 内存证据",
     "",
-    "状态：Release App + SwiftUI 窗口实测。隔离 `HOME` / `CFFIXED_USER_HOME`，**不提交**真实历史 JSON / tag / token。",
+    "## 证据范围（合并声明）",
+    "",
+    "本文件只证明 Release App 进程加载历史后的 idle `phys_footprint`。",
+    "不证明账号数据页点击、Diff / UI 展开，或导入/完整 UI 流程的 peak footprint。",
+    "隔离 `HOME` / `CFFIXED_USER_HOME`，**不提交**真实历史 JSON / tag / token。",
     "",
     "## 环境",
     "",
-    f"- commit：`{meta.get('commit')}`",
+    f"- 实测 commit：`{meta.get('measured_commit') or meta.get('commit')}`",
     f"- App：`{meta.get('app')}`（`{meta.get('bundle_id')}`）",
     f"- macOS：{meta.get('macos')} / {meta.get('arch')}",
     f"- Swift：{meta.get('swift')}",
-    f"- idle：{meta.get('idle_seconds')} 秒",
+    f"- idle：{meta.get('idle_seconds')} 秒（idle，不是导入 peak）",
     f"- 24 条历史：{meta.get('history_entries')} entries，{meta.get('history_bytes')} bytes（仅本地 Application Support 副本，未入库）",
     "- 1005 Wall：AppModel 导入 before/after/after 到隔离 HOME，再启动 Release App 加载并 idle",
     "",
@@ -374,9 +379,12 @@ lines += [
     "",
     "## 门禁对照",
     "",
-    "- 24 条历史不得再出现两位数 GB `phys_footprint`。",
-    "- 连续两次相同 load/import 不得单调涨到 GB 级。",
-    "- 本文件不含账号原文、token、cookie、原始 Tag。",
+    "- [x] 24 条历史不得再出现两位数 GB idle `phys_footprint`。",
+    "- [x] 连续两次相同 load 不得单调涨到 GB 级。",
+    "- [x] 本文件不含账号原文、token、cookie、原始 Tag。",
+    "- [ ] 账号数据页点击导入",
+    "- [ ] Diff / UI 展开",
+    "- [ ] 导入或完整 UI 流程的 peak `phys_footprint`",
     "",
 ]
 Path(report_path).write_text("\n".join(lines) + "\n", encoding="utf-8")

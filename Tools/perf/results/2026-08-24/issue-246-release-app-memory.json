@@ -1,6 +1,7 @@
 {
   "meta": {
-    "commit": "68bc8d593c0bdf3ea0d121ce8fbe957d07533b4f",
+    "measured_commit": "68bc8d593c0bdf3ea0d121ce8fbe957d07533b4f",
+    "sources_tests_unchanged_after_measurement": true,
     "app": ".build/COCHelper.app",
     "bundle_id": "com.local.coc-helper",
     "macos": "26.6.2",
@@ -10,7 +11,7 @@
     "history_bytes": 4586265,
     "idle_seconds": 5,
     "isolated_home": true,
-    "notes": "Release App binary with SwiftUI window; HOME/CFFIXED_USER_HOME isolated; no raw account JSON in this artifact"
+    "notes": "Idle phys_footprint of Release App process after history load. Not account-data UI clicks, Diff, UI expand, or import peak. Measurement SHA 68bc8d5; later commits did not change Sources/ or Tests/."
   },
   "history_load_1": {
     "label": "history-load-1",

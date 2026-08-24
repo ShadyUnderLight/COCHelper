@@ -1184,9 +1184,7 @@ public enum CanonicalJSONValue: Codable, Hashable, Sendable {
             return self
         case .array(let values):
             let normalized = values.map(\.canonicalized)
-            return .array(normalized.sorted {
-                $0.canonicalData.lexicographicallyPrecedes($1.canonicalData)
-            })
+            return .array(Self.sortedByCanonicalData(normalized))
         case .object(let values):
             return .object(values.mapValues(\.canonicalized))
         }
@@ -1217,13 +1215,62 @@ public enum CanonicalJSONValue: Codable, Hashable, Sendable {
         }
     }
 
+    /// Sort by a precomputed canonical-data key so comparators never
+    /// re-serialize the same value on each comparison.
+    static func sortedByCanonicalData(_ values: [CanonicalJSONValue]) -> [CanonicalJSONValue] {
+        sortedByCanonicalData(values, representing: { $0 })
+    }
+
+    static func sortedByCanonicalData<T>(
+        _ items: [T],
+        representing: (T) -> CanonicalJSONValue
+    ) -> [T] {
+        items
+            .map { item -> (Data, T) in (representing(item).canonicalData, item) }
+            .sorted { $0.0.lexicographicallyPrecedes($1.0) }
+            .map(\.1)
+    }
+
+    /// Deterministic JSON string encoding matching `JSONSerialization`
+    /// compact output, without allocating an `_NSJSONWriter` per string.
     private static func jsonStringData(_ value: String) -> Data {
-        // Encoding a one-element array avoids relying on fragment support on
-        // older Foundation implementations; remove only the outer brackets.
-        guard let data = try? JSONSerialization.data(withJSONObject: [value]) else {
-            return Data("\"\"".utf8)
+        var result = Data()
+        result.reserveCapacity(value.utf8.count + 2)
+        result.append(0x22)
+        for byte in value.utf8 {
+            switch byte {
+            case 0x22:
+                result.append(contentsOf: [0x5C, 0x22])
+            case 0x2F:
+                // Apple JSONSerialization 会转义 solidus（\/）；必须逐字节一致，
+                // 否则已有历史的 fingerprint 会对不上。
+                result.append(contentsOf: [0x5C, 0x2F])
+            case 0x5C:
+                result.append(contentsOf: [0x5C, 0x5C])
+            case 0x08:
+                result.append(contentsOf: [0x5C, 0x62])
+            case 0x09:
+                result.append(contentsOf: [0x5C, 0x74])
+            case 0x0A:
+                result.append(contentsOf: [0x5C, 0x6E])
+            case 0x0C:
+                result.append(contentsOf: [0x5C, 0x66])
+            case 0x0D:
+                result.append(contentsOf: [0x5C, 0x72])
+            case 0x00...0x1F:
+                result.append(contentsOf: [0x5C, 0x75, 0x30, 0x30])
+                result.append(hexNibble(byte >> 4))
+                result.append(hexNibble(byte & 0x0F))
+            default:
+                result.append(byte)
+            }
         }
-        return Data(data.dropFirst().dropLast())
+        result.append(0x22)
+        return result
+    }
+
+    private static func hexNibble(_ value: UInt8) -> UInt8 {
+        value < 10 ? (0x30 as UInt8) + value : (0x61 as UInt8) + (value - 10)
     }
 
     private static func joined(_ values: [Data], open: String, close: String) -> Data {

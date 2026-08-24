@@ -170,7 +170,12 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
             guard Self.isSHA256Fingerprint(entry.integrityFingerprint) else {
                 throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的完整性摘要格式无效。")
             }
-            try Self.validateIntegrity(of: entry)
+            // Issue #246：Foundation JSON writer / Data 临时对象会滞留在
+            // 外层 autorelease pool。按 entry 排空，避免启动加载整份历史时
+            // 峰值随条数线性堆到数十 GB。
+            try autoreleasepool {
+                try Self.validateIntegrity(of: entry)
+            }
         }
 
         var lineageIDs = Set<UUID>()

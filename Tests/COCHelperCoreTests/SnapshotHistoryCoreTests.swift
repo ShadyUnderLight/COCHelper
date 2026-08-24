@@ -49,6 +49,69 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertNotEqual(first.diagnostics.first?.id, second.diagnostics.first?.id)
     }
 
+    func testCanonicalJSONStringEscapingMatchesJSONSerialization() throws {
+        var samples: [String] = [
+            "",
+            "plain",
+            #"quote " slash / backslash \ tab\#t newline"#,
+            "路径/城墙",
+            "emoji 🏰",
+            String(UnicodeScalar(0x7F)!),
+            String(UnicodeScalar(0x2028)!),
+            String(UnicodeScalar(0x2029)!),
+        ]
+        for scalar in 0...0x1F {
+            samples.append(String(UnicodeScalar(scalar)!))
+        }
+
+        for sample in samples {
+            let expected = try foundationJSONStringData(sample)
+            XCTAssertEqual(
+                CanonicalJSONValue.string(sample).canonicalData,
+                expected,
+                "canonical string bytes 必须与 JSONSerialization 一致: \(Array(sample.unicodeScalars))"
+            )
+        }
+    }
+
+    func testCanonicalJSONArrayOrderDuplicatesAndNestedObjectKeys() throws {
+        let scrambled = try CanonicalJSONValue.fromJSONData(Data("""
+        {"z":[{"b":2,"a":1},1,1,{"a":1,"b":2}],"a":[2,1,1]}
+        """.utf8))
+        let canonical = scrambled.canonicalized
+
+        XCTAssertEqual(
+            String(data: canonical.canonicalData, encoding: .utf8),
+            #"{"a":[1,1,2],"z":[1,1,{"a":1,"b":2},{"a":1,"b":2}]}"#
+        )
+
+        let duplicates = try CanonicalJSONValue.fromJSONData(Data("[1,1]".utf8)).canonicalized
+        let singleton = try CanonicalJSONValue.fromJSONData(Data("[1]".utf8)).canonicalized
+        XCTAssertNotEqual(duplicates.canonicalData, singleton.canonicalData)
+
+        let reorderedDuplicates = try CanonicalJSONValue.fromJSONData(Data("[1,2,1]".utf8))
+        let otherOrder = try CanonicalJSONValue.fromJSONData(Data("[2,1,1]".utf8))
+        XCTAssertEqual(
+            reorderedDuplicates.canonicalized.canonicalData,
+            otherOrder.canonicalized.canonicalData
+        )
+    }
+
+    func testLargeWallsCanonicalizeFingerprintIsStable() throws {
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: "perf_account_snapshot_large_walls_before", withExtension: "json")
+        )
+        let text = try String(contentsOf: url, encoding: .utf8)
+        let snapshot = try makeSnapshot(text)
+        let first = try canonicalize(snapshot)
+        let second = try canonicalize(snapshot)
+        XCTAssertEqual(first.canonicalFingerprint, second.canonicalFingerprint)
+        XCTAssertEqual(
+            SnapshotHistoryCanonicalizer.fingerprint(for: first.observation),
+            first.canonicalFingerprint
+        )
+    }
+
     func testRawTimerDifferenceChangesFingerprint() throws {
         let first = try makeSnapshot(
             "{\"timestamp\":1700000000,\"buildings\":[{\"data\":1000001,\"timer\":90}]}",
@@ -864,6 +927,11 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(restored, entry)
         XCTAssertEqual(restored.rawJSON, snapshot.originalText)
         XCTAssertEqual(restored.appliedAt, appliedAt)
+    }
+
+    private func foundationJSONStringData(_ value: String) throws -> Data {
+        let encoded = try JSONSerialization.data(withJSONObject: [value])
+        return Data(encoded.dropFirst().dropLast())
     }
 
     private func canonicalize(

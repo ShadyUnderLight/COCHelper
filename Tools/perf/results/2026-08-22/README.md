@@ -2,12 +2,12 @@
 
 状态：**partial，不能作为关闭 #209 的最终验收**。
 
-本目录记录同一匿名 fixture 在锁定基线和当前主线上的 Release App 回放。回放使用 Accessibility 分页动作驱动列表，未使用人工连续滚轮或拖动，因此只能作为可审计的诊断证据，不能宣称用户感知的滚动性能收益。
+本目录记录同一匿名 fixture 在锁定基线和 2026-08-22 采样时 post checkpoint 上的 Release App 回放。回放使用 Accessibility 分页动作驱动列表，未使用人工连续滚轮或拖动，因此只能作为可审计的诊断证据，不能宣称用户感知的滚动性能收益。
 
 ## 固定环境
 
 - baseline：d3b57e8164f81e292a023b052e455085565c3dbb
-- post：98a2d1a582f4d2dcb461e9d6e0b47d1ab41d4864
+- post checkpoint：98a2d1a582f4d2dcb461e9d6e0b47d1ab41d4864（2026-08-22 采样时主线）
 - catalog fingerprint：sha256:a024fe5be9c3edff5f1f7e4f5ceeb0c013d3714b98a17678a7a7dd7d7dd225ab
 - macOS：26.6.2 (25G83) / arm64 / Apple Swift 6.3.3
 - 默认窗口：约 1172x820；窄窗口：约 814x820

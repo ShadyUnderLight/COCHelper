@@ -4,10 +4,10 @@
 
 1. 在 /private/tmp/cochelper-base-d3 detached worktree 构建 d3b57e8 Release App。
 2. 用唯一 bundle ID 和临时 HOME/CFFIXED_USER_HOME 加载 Debug 性能样本，再用相同 bundle ID 的 Release App 测量。
-3. 当前主线使用本 worktree 的 Release App，commit 为 98a2d1a。
+3. post checkpoint 使用本 worktree 的 Release App，采样时主线 commit 为 98a2d1a；之后 main 已继续推进，本目录不把该 checkpoint 改写成新 main。
 4. 两个版本都只加载匿名 fixture；没有读取真实账号 JSON、token、cookie 或完整敏感 ID。
 
-## Trace 命令
+## 2026-08-22 AX checkpoint commands（历史实际命令）
 
 Animation Hitches：
 
@@ -16,6 +16,16 @@ Animation Hitches：
 Time Profiler：
 
     xcrun xctrace record --template 'Time Profiler' --attach "$PID" --time-limit 8s --output "$TRACE" --no-prompt
+
+以上 8 秒命令是本目录已经记录的数据实际使用的命令；不要把历史 trace 解释成 10 秒采样。
+
+## Final canonical rerun commands
+
+正式 rerun 的 workload 和 Instruments 采样窗口都固定为 10 秒：
+
+    TRACE_SECONDS=10s
+    xcrun xctrace record --template 'Animation Hitches' --instrument os_signpost --attach "$PID" --time-limit "$TRACE_SECONDS" --output "$TRACE" --no-prompt
+    xcrun xctrace record --template 'Time Profiler' --attach "$PID" --time-limit "$TRACE_SECONDS" --output "$TRACE" --no-prompt
 
 每个 trace 先用 xcrun xctrace export --toc 验证 duration/end-reason，再导出 hitches-frame-lifetimes、os-signpost-interval 或 time-profile。xctrace 过程会报告 Fatal logging system error: The log archive is corrupt or incomplete and cannot be read，但只要 trace 目录存在且 TOC/目标表可导出，就保留为可部分审查证据；不能把退出码当成业务指标。
 

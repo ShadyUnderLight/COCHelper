@@ -118,6 +118,17 @@ struct AcceptanceRunner {
             }
         }
 
+        func assertSanitizedEqual(_ lhs: SanitizedProjection, _ rhs: SanitizedProjection, _ context: String) throws {
+            try assertEqual(lhs.availability, rhs.availability, "\(context) availability 应一致")
+            try assertEqual(lhs.totalSnapshotCount, rhs.totalSnapshotCount, "\(context) totalSnapshotCount 应一致")
+            try assertEqual(lhs.timelineCount, rhs.timelineCount, "\(context) timelineCount 应一致")
+            try assertEqual(lhs.coverageTrustState, rhs.coverageTrustState, "\(context) trust 应一致")
+            try assertEqual(lhs.statisticsToday, rhs.statisticsToday, "\(context) statistics today 应一致")
+            try assertEqual(lhs.statistics7Days, rhs.statistics7Days, "\(context) statistics 7d 应一致")
+            try assertEqual(lhs.statistics30Days, rhs.statistics30Days, "\(context) statistics 30d 应一致")
+            try assertEqual(lhs.duplicateImportCount, rhs.duplicateImportCount, "\(context) duplicateImportCount 应一致")
+        }
+
         func accountImport(_ name: String, model: AppModel) throws {
             model.importText = try loadText(name)
             model.parseAccountText()
@@ -150,7 +161,7 @@ struct AcceptanceRunner {
             AppModel(defaults: defaults, historyStore: historyStore, manualTrackerStore: manualStore)
         }
 
-        // 村庄 A：账号数据页完整导入 A1
+        // 初始：单村庄（默认占位），导入 A1 后再创建 B，保证 A1 在单村庄环境下准确路由
         var model = makeModel()
         try accountImport("village-a-1", model: model)
         let villageAID = try requireVillageID(model: model, index: 0, label: "A")
@@ -169,100 +180,23 @@ struct AcceptanceRunner {
         try assertTrue(projectionAfterA1.totalSnapshotCount == 1, "A1 后 projection totalSnapshotCount 应为 1")
         try assertTrue(projectionAfterA1.timeline.count == 1, "A1 后 timeline 应为 1")
 
-        // 重启后导入 A2 — 先验证重启前后状态一致
-        let envelopeBeforeRestartA = try XCTUnwrapWrapper(try currentEnvelope())
-        let projectionBeforeRestartA = model.snapshotHistoryProjection(for: villageAID)
-        model = restart()
-        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "重启后村庄 A 的 villageID 应保持不变")
-        try assertTrue(model.villages.count == 1, "重启后村庄数量应仍为 1")
-        let envelopeAfterRestartA = try XCTUnwrapWrapper(try currentEnvelope())
-        let projectionAfterRestartA = model.snapshotHistoryProjection(for: villageAID)
-        try assertEqual(envelopeAfterRestartA.entries.count, envelopeBeforeRestartA.entries.count, "重启前后 history entry 数量应一致")
-        try assertEqual(envelopeAfterRestartA.lineages.count, envelopeBeforeRestartA.lineages.count, "重启前后 lineage 数量应一致")
-        try assertEqual(envelopeAfterRestartA.duplicateMetadata.count, envelopeBeforeRestartA.duplicateMetadata.count, "重启前后 duplicate metadata 数量应一致")
-        try assertEqual(sanitized(projectionAfterRestartA).totalSnapshotCount, sanitized(projectionBeforeRestartA).totalSnapshotCount, "重启前后 projection totalSnapshotCount 应一致")
-        try assertEqual(sanitized(projectionAfterRestartA).timelineCount, sanitized(projectionBeforeRestartA).timelineCount, "重启前后 timelineCount 应一致")
-        try assertEqual(sanitized(projectionAfterRestartA).coverageTrustState, sanitized(projectionBeforeRestartA).coverageTrustState, "重启前后 trust 状态应一致")
-        try assertEqual(sanitized(projectionAfterRestartA).availability, sanitized(projectionBeforeRestartA).availability, "重启前后 availability 应一致")
-        try assertEqual(sanitized(projectionAfterRestartA).statisticsToday, sanitized(projectionBeforeRestartA).statisticsToday, "重启前后 statistics today 应一致")
-        try assertEqual(sanitized(projectionAfterRestartA).statistics7Days, sanitized(projectionBeforeRestartA).statistics7Days, "重启前后 statistics 7d 应一致")
-        try assertEqual(sanitized(projectionAfterRestartA).statistics30Days, sanitized(projectionBeforeRestartA).statistics30Days, "重启前后 statistics 30d 应一致")
-        try assertTrue(envelopeAfterRestartA.activeLineage(for: villageAID)?.lineageID == lineageIDAfterA1, "重启前后 A 的 lineageID 应不变")
-        try recordStep("after-restart-before-A2", model: model, villageID: villageAID)
-
-        // A2 正常导入 — 验证村庄 ID 不变、entry+1、lineage 连续
-        let villagesBeforeA2 = model.villages
-        let lineageBeforeA2 = envelopeAfterRestartA.activeLineage(for: villageAID)
-        try accountImport("village-a-2", model: model)
-        // A2 后目标村庄仍是原来的 A
-        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "A2 后村庄 A 的 villageID 应保持不变")
-        try assertTrue(model.villages.count == villagesBeforeA2.count, "A2 后村庄数量不应变化（同账号连续导入不应新建村庄）")
-        // 检查是否错误新建了其他村庄
-        let currentVillageAfterA2 = try XCTUnwrapWrapper(model.villages.first(where: { $0.id == villageAID }))
-        _ = currentVillageAfterA2
-        try recordStep("A2-account-import", model: model, villageID: villageAID)
-        let envelopeAfterA2 = try XCTUnwrapWrapper(try currentEnvelope())
-        let projectionAfterA2 = model.snapshotHistoryProjection(for: villageAID)
-        let lineageAfterA2 = envelopeAfterA2.activeLineage(for: villageAID)
-        try assertTrue(lineageAfterA2 != nil, "A2 后应存在 active lineage")
-        try assertEqual(envelopeAfterA2.entries.count, entryCountAfterA1 + 1, "A2 正常导入后 history entries 应 +1")
-        try assertEqual(envelopeAfterA2.duplicateMetadata.count, duplicateCountAfterA1, "A2 正常导入不应增加 duplicate metadata")
-        try assertEqual(envelopeAfterA2.lineages.count, lineageCountAfterA1, "A2 同村连续导入 lineage 数量应不变（continued）")
-        try assertTrue(lineageAfterA2?.lineageID == lineageIDAfterA1, "A2 同账号导入应保持 continued lineageID")
-        try assertEqual(lineageAfterA2?.villageID, villageAID, "A2 后 lineage villageID 应仍为 A")
-        try assertTrue(lineageBeforeA2?.lineageID == lineageIDAfterA1, "A2 前 lineageID 校验")
-        try assertEqual(projectionAfterA2.totalSnapshotCount, sanitizedAfterA1.totalSnapshotCount + 1, "A2 后 projection totalSnapshotCount 应 +1")
-        try assertTrue(projectionAfterA2.timeline.count == sanitizedAfterA1.timelineCount + 1, "A2 后 timeline 应 +1")
-        // 重复前记录 duplicate 计数
-        let duplicateCountBeforeA2Dup = envelopeAfterA2.duplicateMetadata.count
-        let entryCountBeforeA2Dup = envelopeAfterA2.entries.count
-        let projectionDupBeforeA2 = sanitized(projectionAfterA2)
-        let duplicateImportCountBeforeA2Dup = projectionAfterA2.timeline.first?.duplicateImportCount ?? 0
-
-        // 重复 A2 → duplicate：不新增 entry，duplicate count +1
-        try accountImport("village-a-2", model: model)
-        let envelopeAfterA2Dup = try XCTUnwrapWrapper(try currentEnvelope())
-        let projectionAfterA2Dup = model.snapshotHistoryProjection(for: villageAID)
-        try recordStep("A2-duplicate-account-import", model: model, villageID: villageAID)
-        try assertEqual(envelopeAfterA2Dup.entries.count, entryCountBeforeA2Dup, "A2 duplicate 后 history entries 应不变")
-        try assertEqual(envelopeAfterA2Dup.duplicateMetadata.count, duplicateCountBeforeA2Dup + 1, "A2 duplicate 后 duplicateMetadata 应 +1")
-        // 具体 lineage 的 duplicateMetadata 检查：应对应 A2 的 snapshotID（即 duplicate 前的 active lastEntryID）
-        if let expectedDupKey = envelopeAfterA2.activeLineage(for: villageAID)?.lastEntryID.uuidString {
-            let dupMeta = envelopeAfterA2Dup.duplicateMetadata[expectedDupKey]
-            try assertTrue(dupMeta != nil && dupMeta!.duplicateImportCount >= 1, "A2 duplicate 应记录对应 snapshot 的 duplicate metadata")
-        } else {
-            throw AcceptanceError.validationFailed("无法确定 A2 duplicate 的 expected key")
-        }
-        try assertEqual(envelopeAfterA2Dup.lineages.count, lineageCountAfterA1, "A2 duplicate 后 lineage 数量应不变")
-        try assertTrue(envelopeAfterA2Dup.activeLineage(for: villageAID)?.lineageID == lineageIDAfterA1, "A2 duplicate 后 lineageID 应不变")
-        try assertEqual(projectionAfterA2Dup.totalSnapshotCount, projectionDupBeforeA2.totalSnapshotCount, "A2 duplicate 后 totalSnapshotCount 应不变")
-        try assertEqual(projectionAfterA2Dup.timeline.count, projectionDupBeforeA2.timelineCount, "A2 duplicate 后 timeline 行数应不变")
-        let dupCountAfterA2Dup = projectionAfterA2Dup.timeline.first?.duplicateImportCount ?? 0
-        try assertTrue(dupCountAfterA2Dup == duplicateImportCountBeforeA2Dup + 1 || dupCountAfterA2Dup >= 1, "A2 duplicate 后 duplicateImportCount 应 +1")
-        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "A2 duplicate 后村庄 A ID 仍应存在")
-        try assertTrue(model.villages.count == 1, "A2 duplicate 后村庄数量仍为 1")
-
-        // 预置村庄 B（走正常 AppModel 创建路径，复用 file-backed manual store）
+        // 创建村庄 B（走正常 AppModel 路径），此时 A 已有历史，B 为空
         model.addVillageForImport()
         let createdBID = model.selectedVillageID
         try assertTrue(model.villages.count == 2, "创建村庄 B 后村庄数应为 2")
         model.renameSelectedVillage("村庄 B")
         let renamedB = model.villages.first(where: { $0.id == createdBID })
         try assertTrue(renamedB?.name == "村庄 B", "村庄 B 重命名应成功")
-        model = restart()
-        guard let villageBID = model.villages.first(where: { $0.name == "村庄 B" })?.id else {
-            throw AcceptanceError.importFailed("村庄 B 未创建或重启后丢失")
-        }
-        try assertEqual(villageBID, createdBID, "重启前后村庄 B 的 villageID 应不变")
-        try assertTrue(model.villages.count == 2, "重启后村庄数仍为 2")
-        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "重启后村庄 A 仍应存在")
-        let envelopeBeforeB1 = try XCTUnwrapWrapper(try currentEnvelope())
-        try assertEqual(envelopeBeforeB1.entries.count, envelopeAfterA2Dup.entries.count, "创建 B 并重启后 history entries 应与 A2 duplicate 后一致")
-        try assertEqual(envelopeBeforeB1.lineages.count, lineageCountAfterA1, "创建 B 后尚未导入，lineage 数应仍为 1（仅 A）")
+        let villageBID = createdBID
+        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "创建 B 后 A 仍应存在")
+        let envelopeAfterCreateB = try XCTUnwrapWrapper(try currentEnvelope())
+        try assertEqual(envelopeAfterCreateB.entries.count, entryCountAfterA1, "创建 B 后 entries 应不变")
+        try assertEqual(envelopeAfterCreateB.lineages.count, lineageCountAfterA1, "创建 B 后 lineage 应不变")
+        try assertEqual(envelopeAfterCreateB.duplicateMetadata.count, duplicateCountAfterA1, "创建 B 后 duplicate 应不变")
 
-        // B1 快捷导入
-        let entryCountBeforeB1 = envelopeBeforeB1.entries.count
-        let lineageCountBeforeB1 = envelopeBeforeB1.lineages.count
+        // B1 快捷导入（与 A1 同处于首次 restart 前，构成 A1→B1 交错）
+        let entryCountBeforeB1 = envelopeAfterCreateB.entries.count
+        let lineageCountBeforeB1 = envelopeAfterCreateB.lineages.count
         try quickImport("village-b-1", villageID: villageBID, model: &model)
         try assertTrue(model.villages.contains(where: { $0.id == villageBID }), "B1 后村庄 B ID 应不变")
         try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "B1 后村庄 A ID 仍应存在")
@@ -278,65 +212,151 @@ struct AcceptanceRunner {
         try assertTrue(projectionAfterB1.totalSnapshotCount == 1, "B1 后 B 的 projection totalSnapshotCount 应为 1")
         try assertTrue(projectionAfterB1.timeline.count == 1, "B1 后 B 的 timeline 应为 1")
         let lineageIDAfterB1 = try XCTUnwrapWrapper(lineageAfterB1).lineageID
-        let sanitizedAfterB1 = sanitized(projectionAfterB1)
+        _ = sanitized(projectionAfterB1)
+        // B1 后 A 的 projection 应保持不变（交错不应影响对方）
+        let projAAfterB1 = model.snapshotHistoryProjection(for: villageAID)
+        try assertSanitizedEqual(sanitized(projAAfterB1), sanitizedAfterA1, "B1 后 A")
+        // 为 restart 前保存两边完整快照
+        let envelopeBeforeRestart = try XCTUnwrapWrapper(try currentEnvelope())
+        let projABeforeRestart = model.snapshotHistoryProjection(for: villageAID)
+        let projBBeforeRestart = model.snapshotHistoryProjection(for: villageBID)
+        let sanABeforeRestart = sanitized(projABeforeRestart)
+        let sanBBeforeRestart = sanitized(projBBeforeRestart)
+        let lineageIDA_BeforeRestart = envelopeBeforeRestart.activeLineage(for: villageAID)?.lineageID
+        let lineageIDB_BeforeRestart = envelopeBeforeRestart.activeLineage(for: villageBID)?.lineageID
+        try assertTrue(lineageIDA_BeforeRestart == lineageIDAfterA1, "restart 前 A lineageID 应仍为 A1 的 lineage")
+        try assertTrue(lineageIDB_BeforeRestart == lineageIDAfterB1, "restart 前 B lineageID 应仍为 B1 的 lineage")
 
-        // 重启后 B2 — 验证重启前后状态一致（B 与 A 都检查）
-        let envelopeBeforeRestartB = try XCTUnwrapWrapper(try currentEnvelope())
-        let projectionBBeforeRestartB = model.snapshotHistoryProjection(for: villageBID)
-        let projectionABeforeRestartB = model.snapshotHistoryProjection(for: villageAID)
+        // 共同 restart：A1/B1 都存在后重启，验证两边同时一致（交错边界）
         model = restart()
+        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "重启后村庄 A ID 应不变")
         try assertTrue(model.villages.contains(where: { $0.id == villageBID }), "重启后村庄 B ID 应不变")
-        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "重启后村庄 A ID 仍应存在")
-        let envelopeAfterRestartB = try XCTUnwrapWrapper(try currentEnvelope())
-        let projectionBAfterRestartB = model.snapshotHistoryProjection(for: villageBID)
-        let projectionAAfterRestartB = model.snapshotHistoryProjection(for: villageAID)
-        try assertEqual(envelopeAfterRestartB.entries.count, envelopeBeforeRestartB.entries.count, "B 重启前后 entries 数量应一致")
-        try assertEqual(envelopeAfterRestartB.lineages.count, envelopeBeforeRestartB.lineages.count, "B 重启前后 lineage 数量应一致")
-        try assertEqual(envelopeAfterRestartB.duplicateMetadata.count, envelopeBeforeRestartB.duplicateMetadata.count, "B 重启前后 duplicate 数量应一致")
-        try assertEqual(sanitized(projectionBAfterRestartB).totalSnapshotCount, sanitized(projectionBBeforeRestartB).totalSnapshotCount, "B 重启前后 totalSnapshotCount 应一致")
-        try assertEqual(sanitized(projectionBAfterRestartB).timelineCount, sanitized(projectionBBeforeRestartB).timelineCount, "B 重启前后 timelineCount 应一致")
-        try assertEqual(sanitized(projectionBAfterRestartB).coverageTrustState, sanitized(projectionBBeforeRestartB).coverageTrustState, "B 重启前后 trust 状态应一致")
-        try assertEqual(sanitized(projectionAAfterRestartB).totalSnapshotCount, sanitized(projectionABeforeRestartB).totalSnapshotCount, "B 重启前后 A 的 totalSnapshotCount 应一致")
-        try assertTrue(envelopeAfterRestartB.activeLineage(for: villageBID)?.lineageID == lineageIDAfterB1, "B 重启前后 lineageID 应不变")
-        try recordStep("after-restart-before-B2", model: model, villageID: villageBID)
+        try assertTrue(model.villages.count == 2, "重启后村庄数应仍为 2")
+        let envelopeAfterRestart = try XCTUnwrapWrapper(try currentEnvelope())
+        let projAAfterRestart = model.snapshotHistoryProjection(for: villageAID)
+        let projBAfterRestart = model.snapshotHistoryProjection(for: villageBID)
+        let sanAAfterRestart = sanitized(projAAfterRestart)
+        let sanBAfterRestart = sanitized(projBAfterRestart)
+        try assertEqual(envelopeAfterRestart.entries.count, envelopeBeforeRestart.entries.count, "交错 restart 前后 entries 应一致")
+        try assertEqual(envelopeAfterRestart.lineages.count, envelopeBeforeRestart.lineages.count, "交错 restart 前后 lineage 应一致")
+        try assertEqual(envelopeAfterRestart.duplicateMetadata.count, envelopeBeforeRestart.duplicateMetadata.count, "交错 restart 前后 duplicate 应一致")
+        try assertSanitizedEqual(sanAAfterRestart, sanABeforeRestart, "A 交错 restart")
+        try assertSanitizedEqual(sanBAfterRestart, sanBBeforeRestart, "B 交错 restart")
+        try assertTrue(envelopeAfterRestart.activeLineage(for: villageAID)?.lineageID == lineageIDA_BeforeRestart, "A 交错 restart 后 lineageID 应不变")
+        try assertTrue(envelopeAfterRestart.activeLineage(for: villageBID)?.lineageID == lineageIDB_BeforeRestart, "B 交错 restart 后 lineageID 应不变")
+        try recordStep("after-restart-before-A2B2", model: model, villageID: villageAID)
+        // 额外记录 B 的 after-restart 证据（脱敏 JSON 中保留两边）
+        try recordStep("after-restart-before-A2B2-B", model: model, villageID: villageBID)
 
-        // B2 正常导入 — 验证村庄 ID 不变、entry+1、lineage 连续
-        let entryCountBeforeB2 = envelopeAfterRestartB.entries.count
-        let lineageCountBeforeB2 = envelopeAfterRestartB.lineages.count
-        let dupCountBeforeB2 = envelopeAfterRestartB.duplicateMetadata.count
+        // A2 正常导入（交错后先 A2）
+        let entryCountBeforeA2 = envelopeAfterRestart.entries.count
+        let dupCountBeforeA2 = envelopeAfterRestart.duplicateMetadata.count
+        let lineageCountBeforeA2 = envelopeAfterRestart.lineages.count
+        let villagesBeforeA2 = model.villages
+        try accountImport("village-a-2", model: model)
+        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "A2 后村庄 A 的 villageID 应保持不变")
+        try assertTrue(model.villages.count == villagesBeforeA2.count, "A2 后村庄数量不应变化")
+        let currentVillageAfterA2 = try XCTUnwrapWrapper(model.villages.first(where: { $0.id == villageAID }))
+        _ = currentVillageAfterA2
+        try recordStep("A2-account-import", model: model, villageID: villageAID)
+        let envelopeAfterA2 = try XCTUnwrapWrapper(try currentEnvelope())
+        let projectionAfterA2 = model.snapshotHistoryProjection(for: villageAID)
+        let lineageAfterA2 = envelopeAfterA2.activeLineage(for: villageAID)
+        let sanAfterA2 = sanitized(projectionAfterA2)
+        try assertTrue(lineageAfterA2 != nil, "A2 后应存在 active lineage")
+        try assertEqual(envelopeAfterA2.entries.count, entryCountBeforeA2 + 1, "A2 正常导入后 history entries 应 +1")
+        try assertEqual(envelopeAfterA2.duplicateMetadata.count, dupCountBeforeA2, "A2 正常导入不应增加 duplicate")
+        try assertEqual(envelopeAfterA2.lineages.count, lineageCountBeforeA2, "A2 同村连续导入 lineage 数量应不变")
+        try assertTrue(lineageAfterA2?.lineageID == lineageIDAfterA1, "A2 同账号导入应保持 continued lineageID")
+        try assertEqual(lineageAfterA2?.villageID, villageAID, "A2 后 lineage villageID 应仍为 A")
+        try assertEqual(sanAfterA2.totalSnapshotCount, sanAAfterRestart.totalSnapshotCount + 1, "A2 后 A totalSnapshotCount 应 +1")
+        try assertEqual(sanAfterA2.timelineCount, sanAAfterRestart.timelineCount + 1, "A2 后 A timeline 应 +1")
+        // B 在 A2 后应保持不变
+        let projBAfterA2 = model.snapshotHistoryProjection(for: villageBID)
+        try assertSanitizedEqual(sanitized(projBAfterA2), sanBAfterRestart, "A2 后 B 应保持不变")
+        try assertTrue(envelopeAfterA2.activeLineage(for: villageBID)?.lineageID == lineageIDAfterB1, "A2 后 B lineageID 应不变")
+
+        // B2 正常导入（交错后紧跟 B2）
+        let entryCountBeforeB2 = envelopeAfterA2.entries.count
+        let dupCountBeforeB2 = envelopeAfterA2.duplicateMetadata.count
+        let lineageCountBeforeB2 = envelopeAfterA2.lineages.count
+        let sanBBeforeB2 = sanitized(model.snapshotHistoryProjection(for: villageBID))
         try quickImport("village-b-2", villageID: villageBID, model: &model)
         try assertTrue(model.villages.contains(where: { $0.id == villageBID }), "B2 后村庄 B ID 应不变")
-        try assertTrue(model.villages.count == 2, "B2 后村庄数量仍为 2")
+        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "B2 后 A 仍应存在")
+        try assertEqual(model.villages.count, 2, "B2 后村庄数量应仍为 2")
         try recordStep("B2-quick-import", model: model, villageID: villageBID)
         let envelopeAfterB2 = try XCTUnwrapWrapper(try currentEnvelope())
         let projectionAfterB2 = model.snapshotHistoryProjection(for: villageBID)
         let lineageAfterB2 = envelopeAfterB2.activeLineage(for: villageBID)
+        let sanAfterB2 = sanitized(projectionAfterB2)
         try assertTrue(lineageAfterB2 != nil, "B2 后应存在 active lineage")
         try assertEqual(envelopeAfterB2.entries.count, entryCountBeforeB2 + 1, "B2 正常导入后 entries 应 +1")
         try assertEqual(envelopeAfterB2.duplicateMetadata.count, dupCountBeforeB2, "B2 正常导入不应增加 duplicate")
         try assertEqual(envelopeAfterB2.lineages.count, lineageCountBeforeB2, "B2 同村连续导入 lineage 数应不变")
         try assertTrue(lineageAfterB2?.lineageID == lineageIDAfterB1, "B2 同账号导入应保持 continued lineage")
-        try assertEqual(projectionAfterB2.totalSnapshotCount, sanitizedAfterB1.totalSnapshotCount + 1, "B2 后 B 的 totalSnapshotCount 应 +1")
-        let dupCountBeforeB2Dup = envelopeAfterB2.duplicateMetadata.count
-        let entryCountBeforeB2Dup = envelopeAfterB2.entries.count
-        let projectionBeforeB2DupSan = sanitized(projectionAfterB2)
-        let dupImportBeforeB2Dup = projectionAfterB2.timeline.first?.duplicateImportCount ?? 0
+        try assertEqual(sanAfterB2.totalSnapshotCount, sanBBeforeB2.totalSnapshotCount + 1, "B2 后 B totalSnapshotCount 应 +1")
+        try assertEqual(sanAfterB2.timelineCount, sanBBeforeB2.timelineCount + 1, "B2 后 B timeline 应 +1")
+        // A 在 B2 后应保持不变
+        let projAAfterB2 = model.snapshotHistoryProjection(for: villageAID)
+        try assertSanitizedEqual(sanitized(projAAfterB2), sanAfterA2, "B2 后 A 应保持不变")
+        try assertTrue(envelopeAfterB2.activeLineage(for: villageAID)?.lineageID == lineageIDAfterA1, "B2 后 A lineageID 应不变")
 
-        // 重复 B2 → duplicate
+        // 重复前快照
+        let dupCountBeforeA2Dup = envelopeAfterB2.duplicateMetadata.count
+        let entryCountBeforeA2Dup = envelopeAfterB2.entries.count
+        let dupImportBeforeA2Dup = model.snapshotHistoryProjection(for: villageAID).timeline.first?.duplicateImportCount ?? 0
+        let sanABeforeDup = sanitized(model.snapshotHistoryProjection(for: villageAID))
+        let sanBBeforeDup = sanitized(model.snapshotHistoryProjection(for: villageBID))
+
+        // A2 duplicate：不新增 entry，duplicate +1，严格 +1
+        try accountImport("village-a-2", model: model)
+        let envelopeAfterA2Dup = try XCTUnwrapWrapper(try currentEnvelope())
+        let projectionAfterA2Dup = model.snapshotHistoryProjection(for: villageAID)
+        let sanAfterA2Dup = sanitized(projectionAfterA2Dup)
+        try recordStep("A2-duplicate-account-import", model: model, villageID: villageAID)
+        try assertEqual(envelopeAfterA2Dup.entries.count, entryCountBeforeA2Dup, "A2 duplicate 后 history entries 应不变")
+        try assertEqual(envelopeAfterA2Dup.duplicateMetadata.count, dupCountBeforeA2Dup + 1, "A2 duplicate 后 duplicateMetadata 应 +1")
+        if let expectedDupKey = envelopeAfterB2.activeLineage(for: villageAID)?.lastEntryID.uuidString {
+            let dupMeta = envelopeAfterA2Dup.duplicateMetadata[expectedDupKey]
+            try assertTrue(dupMeta != nil && dupMeta!.duplicateImportCount >= 1, "A2 duplicate 应记录对应 snapshot 的 duplicate metadata")
+        } else {
+            throw AcceptanceError.validationFailed("无法确定 A2 duplicate 的 expected key")
+        }
+        try assertEqual(envelopeAfterA2Dup.lineages.count, lineageCountBeforeB2, "A2 duplicate 后 lineage 数量应不变")
+        try assertTrue(envelopeAfterA2Dup.activeLineage(for: villageAID)?.lineageID == lineageIDAfterA1, "A2 duplicate 后 lineageID 应不变")
+        try assertEqual(sanAfterA2Dup.totalSnapshotCount, sanABeforeDup.totalSnapshotCount, "A2 duplicate 后 totalSnapshotCount 应不变")
+        try assertEqual(sanAfterA2Dup.timelineCount, sanABeforeDup.timelineCount, "A2 duplicate 后 timeline 行数应不变")
+        let dupCountAfterA2Dup = projectionAfterA2Dup.timeline.first?.duplicateImportCount ?? 0
+        try assertEqual(dupCountAfterA2Dup, dupImportBeforeA2Dup + 1, "A2 duplicate 后 duplicateImportCount 应严格 +1")
+        try assertSanitizedEqual(sanitized(model.snapshotHistoryProjection(for: villageBID)), sanBBeforeDup, "A2 duplicate 后 B 应保持不变")
+        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "A2 duplicate 后 A ID 仍应存在")
+        try assertTrue(model.villages.contains(where: { $0.id == villageBID }), "A2 duplicate 后 B ID 仍应存在")
+
+        // B2 duplicate
+        let dupCountBeforeB2Dup = envelopeAfterA2Dup.duplicateMetadata.count
+        let entryCountBeforeB2Dup = envelopeAfterA2Dup.entries.count
+        let dupImportBeforeB2Dup = model.snapshotHistoryProjection(for: villageBID).timeline.first?.duplicateImportCount ?? 0
+        let sanABeforeB2Dup = sanitized(model.snapshotHistoryProjection(for: villageAID))
         try quickImport("village-b-2", villageID: villageBID, model: &model)
         let envelopeAfterB2Dup = try XCTUnwrapWrapper(try currentEnvelope())
         let projectionAfterB2Dup = model.snapshotHistoryProjection(for: villageBID)
+        let sanAfterB2Dup = sanitized(projectionAfterB2Dup)
         try recordStep("B2-duplicate-quick-import", model: model, villageID: villageBID)
         try assertEqual(envelopeAfterB2Dup.entries.count, entryCountBeforeB2Dup, "B2 duplicate 后 entries 应不变")
         try assertEqual(envelopeAfterB2Dup.duplicateMetadata.count, dupCountBeforeB2Dup + 1, "B2 duplicate 后 duplicate 应 +1")
+        if let expectedDupKeyB = envelopeAfterA2Dup.activeLineage(for: villageBID)?.lastEntryID.uuidString {
+            let dupMetaB = envelopeAfterB2Dup.duplicateMetadata[expectedDupKeyB]
+            try assertTrue(dupMetaB != nil && dupMetaB!.duplicateImportCount >= 1, "B2 duplicate 应记录对应 snapshot 的 duplicate metadata")
+        }
         try assertEqual(envelopeAfterB2Dup.lineages.count, lineageCountBeforeB2, "B2 duplicate 后 lineage 数应不变")
         try assertTrue(envelopeAfterB2Dup.activeLineage(for: villageBID)?.lineageID == lineageIDAfterB1, "B2 duplicate 后 lineageID 应不变")
-        try assertEqual(sanitized(projectionAfterB2Dup).totalSnapshotCount, projectionBeforeB2DupSan.totalSnapshotCount, "B2 duplicate 后 totalSnapshotCount 应不变")
-        try assertEqual(sanitized(projectionAfterB2Dup).timelineCount, projectionBeforeB2DupSan.timelineCount, "B2 duplicate 后 timeline 应不变")
+        let sanBBeforeB2Dup = sanBBeforeDup // B 在 A2 duplicate 后未变，复用
+        try assertEqual(sanAfterB2Dup.totalSnapshotCount, sanBBeforeB2Dup.totalSnapshotCount, "B2 duplicate 后 totalSnapshotCount 应不变")
+        try assertEqual(sanAfterB2Dup.timelineCount, sanBBeforeB2Dup.timelineCount, "B2 duplicate 后 timeline 应不变")
         let dupImportAfterB2Dup = projectionAfterB2Dup.timeline.first?.duplicateImportCount ?? 0
-        try assertTrue(dupImportAfterB2Dup == dupImportBeforeB2Dup + 1 || dupImportAfterB2Dup >= 1, "B2 duplicate 后 duplicateImportCount 应 +1")
-        try assertTrue(model.villages.contains(where: { $0.id == villageBID }), "B2 duplicate 后 B ID 仍应存在")
-        try assertTrue(model.villages.contains(where: { $0.id == villageAID }), "B2 duplicate 后 A ID 仍应存在")
+        try assertEqual(dupImportAfterB2Dup, dupImportBeforeB2Dup + 1, "B2 duplicate 后 duplicateImportCount 应严格 +1")
+        try assertSanitizedEqual(sanitized(model.snapshotHistoryProjection(for: villageAID)), sanABeforeB2Dup, "B2 duplicate 后 A 应保持不变")
 
         // 串档检查：A/B lineage 隔离
         model = restart()
@@ -362,16 +382,19 @@ struct AcceptanceRunner {
         guard Set(entriesA.map(\.snapshotID)).isDisjoint(with: Set(entriesB.map(\.snapshotID))) else {
             throw AcceptanceError.validationFailed("A/B history entry 交叉")
         }
-        // 额外隔离检查：villageID 集合与 lineageID 集合无交叉
         let villageIDs = Set([villageAID, villageBID])
         try assertTrue(villageIDs.count == 2, "A/B villageID 应不同")
-        // 确保各自 entry 的 lineageID 与 active lineage 一致（continued）
         for entry in entriesA {
             try assertTrue(entry.lineageID == lineageA.lineageID, "A 的 history entry lineageID 应与 active lineage 一致")
         }
         for entry in entriesB {
             try assertTrue(entry.lineageID == lineageB.lineageID, "B 的 history entry lineageID 应与 active lineage 一致")
         }
+        // 额外：交错后两边 timeline 均应为 2（A1/A2 与 B1/B2，各含 baseline+一变化）
+        try assertEqual(projectionA.totalSnapshotCount, 2, "最终 A totalSnapshotCount 应为 2")
+        try assertEqual(projectionB.totalSnapshotCount, 2, "最终 B totalSnapshotCount 应为 2")
+        try assertEqual(projectionA.timeline.count, 2, "最终 A timeline 应为 2")
+        try assertEqual(projectionB.timeline.count, 2, "最终 B timeline 应为 2")
 
         return AcceptanceReport(
             generatedAt: ISO8601DateFormatter().string(from: Date()),

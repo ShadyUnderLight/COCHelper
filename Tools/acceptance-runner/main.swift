@@ -228,7 +228,7 @@ struct AcceptanceRunner {
         try assertEqual(envelopeAfterA2Dup.duplicateMetadata.count, duplicateCountBeforeA2Dup + 1, "A2 duplicate 后 duplicateMetadata 应 +1")
         // 具体 lineage 的 duplicateMetadata 检查：应对应上一次 entry 的 snapshotID
         if let lastAIDupEntry = envelopeAfterA2.entries.first(where: { $0.villageID == villageAID }),
-           let lastA2Entry = envelopeAfterA2Dup.entries.first(where: { $0.snapshotID == lastAIDupEntry.snapshotID }) {
+           let _ = envelopeAfterA2Dup.entries.first(where: { $0.snapshotID == lastAIDupEntry.snapshotID }) {
             // 至少存在一个 duplicate key 的 count 增加
             let dupKey = lastAIDupEntry.snapshotID.uuidString
             let dupMeta = envelopeAfterA2Dup.duplicateMetadata[dupKey]

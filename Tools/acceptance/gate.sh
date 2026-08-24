@@ -6,20 +6,21 @@ project_dir="${0:A:h}/../.."
 cd "$project_dir"
 
 # P1/Blocking：证据必须对应可追溯的 clean commit。gate 写入任何输出前先 fail on dirty worktree。
-if ! git diff --quiet; then
-  echo "错误: working tree 有未提交的修改（git diff），证据无法对应到 clean commit。请先提交。" >&2
+# results 目录是本工具的输出产物，允许在 gate 运行期间被覆写，因此 dirty 检查排除该路径。
+if ! git diff --quiet -- . ':!Tools/acceptance/results'; then
+  echo "错误: working tree 有未提交的修改（git diff，不含 results），证据无法对应到 clean commit。请先提交。" >&2
   git status --short >&2
   exit 1
 fi
-if ! git diff --cached --quiet; then
-  echo "错误: index 有已暂存但未提交的修改（git diff --cached），请先提交。" >&2
+if ! git diff --cached --quiet -- . ':!Tools/acceptance/results'; then
+  echo "错误: index 有已暂存但未提交的修改（git diff --cached，不含 results），请先提交。" >&2
   git status --short >&2
   exit 1
 fi
 # 未跟踪文件同样视为 dirty，但本工具产生的 results 目录除外（首次生成时为 untracked）。
-untracked="$(git status --porcelain --untracked-files=normal | grep -v "^?? Tools/acceptance/results" || true)"
+untracked="$(git status --porcelain --untracked-files=normal | grep -v "Tools/acceptance/results" || true)"
 if [[ -n "$untracked" ]]; then
-  echo "错误: 存在未跟踪文件，请先提交或加入 .gitignore：" >&2
+  echo "错误: 存在未跟踪/未提交文件（除 results 外），请先提交或加入 .gitignore：" >&2
   echo "$untracked" >&2
   exit 1
 fi

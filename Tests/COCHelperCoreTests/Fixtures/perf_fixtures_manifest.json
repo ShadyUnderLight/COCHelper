@@ -10,6 +10,7 @@
   "perf_account_snapshot_builder": 467,
   "perf_account_snapshot_mixed": 521,
   "perf_account_snapshot_variant": 516,
+  "perf_account_snapshot_large_walls": 1517,
   "perf_war_log_page_01": 10,
   "perf_war_log_page_02": 10,
   "perf_war_log_page_03": 10,

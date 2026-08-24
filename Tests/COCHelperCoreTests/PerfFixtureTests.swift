@@ -69,6 +69,56 @@ final class PerfFixtureTests: XCTestCase {
         XCTAssertNil(snapshot.objectSections["coverage"])
     }
 
+    func testPerfAccountSnapshotLargeWallsHas1000PlusSegments() throws {
+        let text = try fixtureText("perf_account_snapshot_large_walls")
+        assertAnonymized(text)
+        let snapshot = try AccountSnapshotImporter.parse(
+            text,
+            now: Date(timeIntervalSince1970: 1_785_736_933)
+        )
+        XCTAssertEqual(snapshot.tag, "#PERF-LARGE-WALLS")
+        let walls = (snapshot.objectSections["buildings"] ?? []).filter { $0.dataID == 1_000_008 }
+        let segmentCount = walls.reduce(0) { $0 + ($1.count ?? 1) }
+        XCTAssertGreaterThanOrEqual(segmentCount, 1_000, "Issue #226 perf gate needs >=1000 wall segments")
+        XCTAssertFalse(snapshot.unknownTopLevelKeys.contains("coverage"))
+    }
+
+    func testPerfAccountSnapshotLargeWallsPairedHasSameValidTagAndLargeHistogramDelta() throws {
+        let beforeText = try fixtureText("perf_account_snapshot_large_walls_before")
+        let afterText = try fixtureText("perf_account_snapshot_large_walls_after")
+        assertAnonymized(beforeText)
+        assertAnonymized(afterText)
+        let before = try AccountSnapshotImporter.parse(
+            beforeText,
+            now: Date(timeIntervalSince1970: 1_785_736_933)
+        )
+        let after = try AccountSnapshotImporter.parse(
+            afterText,
+            now: Date(timeIntervalSince1970: 1_785_736_934)
+        )
+        // Paired 必须同合法 tag，保证同 lineage continued，且合法性符合 validator
+        XCTAssertEqual(before.tag, "#LARGEWALL01")
+        XCTAssertEqual(after.tag, "#LARGEWALL01")
+        XCTAssertTrue(OfficialPlayerTagValidator.isValid(before.tag ?? ""), "paired tag 必须合法")
+        let beforeWalls = (before.objectSections["buildings"] ?? []).filter { $0.dataID == 1_000_008 }
+        let afterWalls = (after.objectSections["buildings"] ?? []).filter { $0.dataID == 1_000_008 }
+        XCTAssertEqual(beforeWalls.reduce(0) { $0 + ($1.count ?? 1) }, 1_005)
+        XCTAssertEqual(afterWalls.reduce(0) { $0 + ($1.count ?? 1) }, 1_005)
+        // Paired 的“大量变化”指 raw histogram 大幅偏移，而非 verified migration；
+        // before 全 Lv1、after 全 Lv12，抵消后残余 1005，可稳定产生非 duplicate 的大变化 row
+        let beforeByLvl = Dictionary(grouping: beforeWalls, by: \.level).mapValues { $0.reduce(0) { $0 + ($1.count ?? 1) } }
+        let afterByLvl = Dictionary(grouping: afterWalls, by: \.level).mapValues { $0.reduce(0) { $0 + ($1.count ?? 1) } }
+        XCTAssertEqual(beforeByLvl[1], 1_005)
+        XCTAssertEqual(afterByLvl[12], 1_005)
+        let positiveDelta = Set(beforeByLvl.keys).union(afterByLvl.keys).reduce(0) { acc, lvl in
+            acc + max(0, (afterByLvl[lvl] ?? 0) - (beforeByLvl[lvl] ?? 0))
+        }
+        XCTAssertGreaterThanOrEqual(positiveDelta, 1_000, "paired before/after 需有 ≥1000 段 raw 差异以产生大变化 row")
+        // 非 duplicate：fingerprint 必须不同
+        XCTAssertFalse(beforeText == afterText)
+        XCTAssertFalse(beforeWalls == afterWalls)
+    }
+
     func testPerfAccountSnapshotBuilderParses() throws {
         let text = try fixtureText("perf_account_snapshot_builder")
         assertAnonymized(text)

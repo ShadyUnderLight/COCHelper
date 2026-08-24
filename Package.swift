@@ -10,7 +10,8 @@ let package = Package(
     products: [
         .library(name: "COCHelperCore", targets: ["COCHelperCore"]),
         .executable(name: "COCHelper", targets: ["COCHelper"]),
-        .executable(name: "smoke-api", targets: ["smoke-api"])
+        .executable(name: "smoke-api", targets: ["smoke-api"]),
+        .executable(name: "acceptance-runner", targets: ["acceptance-runner"])
     ],
     targets: [
         .target(
@@ -47,6 +48,11 @@ let package = Package(
             name: "smoke-api",
             dependencies: ["COCHelperCore"],
             path: "Tools/smoke-api"
+        ),
+        .executableTarget(
+            name: "acceptance-runner",
+            dependencies: ["COCHelperCore", "COCHelperApp"],
+            path: "Tools/acceptance-runner"
         ),
         .testTarget(
             name: "COCHelperCoreTests",

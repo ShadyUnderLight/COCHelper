@@ -109,8 +109,9 @@ public enum SnapshotHistoryCanonicalizer {
     }
 
     public static func fingerprint(for observation: CanonicalSnapshotObservation) -> String {
-        var items = observation.items.map(fingerprintValue(for:))
-        items.sort { $0.canonicalData.lexicographicallyPrecedes($1.canonicalData) }
+        let items = CanonicalJSONValue.sortedByCanonicalData(
+            observation.items.map(fingerprintValue(for:))
+        )
 
         let material: CanonicalJSONValue = .object([
             "observationSchemaVersion": .number(String(observation.schemaVersion)),
@@ -267,16 +268,15 @@ public enum SnapshotHistoryCanonicalizer {
             }
         }
 
-        items.sort { lhs, rhs in
-            let left = fingerprintValue(for: lhs).canonicalData
-            let right = fingerprintValue(for: rhs).canonicalData
-            return left.lexicographicallyPrecedes(right)
-        }
+        let sortedItems = CanonicalJSONValue.sortedByCanonicalData(
+            items,
+            representing: fingerprintValue(for:)
+        )
 
         return CanonicalSnapshotObservation(
             rawTopLevelFields: source.fields,
             unknownTopLevelFields: source.unknownFields,
-            items: items
+            items: sortedItems
         )
     }
 

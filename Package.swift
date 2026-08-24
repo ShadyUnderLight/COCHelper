@@ -11,7 +11,8 @@ let package = Package(
         .library(name: "COCHelperCore", targets: ["COCHelperCore"]),
         .executable(name: "COCHelper", targets: ["COCHelper"]),
         .executable(name: "smoke-api", targets: ["smoke-api"]),
-        .executable(name: "acceptance-runner", targets: ["acceptance-runner"])
+        .executable(name: "acceptance-runner", targets: ["acceptance-runner"]),
+        .executable(name: "history-memory-seed", targets: ["history-memory-seed"])
     ],
     targets: [
         .target(
@@ -53,6 +54,11 @@ let package = Package(
             name: "acceptance-runner",
             dependencies: ["COCHelperCore", "COCHelperApp"],
             path: "Tools/acceptance-runner"
+        ),
+        .executableTarget(
+            name: "history-memory-seed",
+            dependencies: ["COCHelperCore", "COCHelperApp"],
+            path: "Tools/perf/history-memory-seed"
         ),
         .testTarget(
             name: "COCHelperCoreTests",

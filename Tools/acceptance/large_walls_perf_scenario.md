@@ -11,16 +11,14 @@
 
 ## 加载方式
 
-### 方式 A：账号数据页粘贴（推荐，不需改 App seed）
+### 账号数据页粘贴（唯一推荐，不需改 App seed）
 
 1. `scripts/build_app.sh` 构建 Release App。
 2. 打开 Release App → 账号数据页。
 3. 粘贴 `perf_account_snapshot_large_walls.json` 全文并导入。
 4. 进入对应村庄详情页与 Snapshot History。
 
-### 方式 B：Debug seed + Release 测量（仅空数据环境）
-
-若 Application Support 无现有村庄，可用 Debug App 的 perf seed 流程（见 `Tools/perf/baseline_format.md`），但 **不得** 将 perf seed 的多村庄状态当作 #226 真实村庄验收。
+> 注意：`AppModel.loadPerformanceSample()` / Debug perf seed 当前仅加载 home/builder/mixed/variant 及 war/raid 多页 fixture，**不会**加载 `perf_account_snapshot_large_walls.json`。不要使用 Debug seed 作为本 1000+ 城墙场景的加载路径，否则测不到目标数据却误以为完成 #226 性能门禁。
 
 ## 操作清单（Release App）
 

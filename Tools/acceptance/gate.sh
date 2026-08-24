@@ -5,6 +5,25 @@ set -euo pipefail
 project_dir="${0:A:h}/../.."
 cd "$project_dir"
 
+# P1/Blocking：证据必须对应可追溯的 clean commit。gate 写入任何输出前先 fail on dirty worktree。
+if ! git diff --quiet; then
+  echo "错误: working tree 有未提交的修改（git diff），证据无法对应到 clean commit。请先提交。" >&2
+  git status --short >&2
+  exit 1
+fi
+if ! git diff --cached --quiet; then
+  echo "错误: index 有已暂存但未提交的修改（git diff --cached），请先提交。" >&2
+  git status --short >&2
+  exit 1
+fi
+# 未跟踪文件同样视为 dirty，但本工具产生的 results 目录除外（首次生成时为 untracked）。
+untracked="$(git status --porcelain --untracked-files=normal | grep -v "^?? Tools/acceptance/results" || true)"
+if [[ -n "$untracked" ]]; then
+  echo "错误: 存在未跟踪文件，请先提交或加入 .gitignore：" >&2
+  echo "$untracked" >&2
+  exit 1
+fi
+
 commit_sha="$(git rev-parse HEAD)"
 date_stamp="$(date +%Y-%m-%d)"
 results_dir="Tools/acceptance/results/${date_stamp}"
@@ -18,6 +37,7 @@ tmp_out="$(mktemp)"
   echo
   echo "- commit: \`${commit_sha}\`"
   echo "- date: ${date_stamp}"
+  echo "- working tree: clean（已验证 git diff / diff --cached / untracked，不含 results）"
   echo "- macOS: $(sw_vers -productVersion) ($(uname -m))"
   echo "- swift: $(swift --version | head -1)"
   echo

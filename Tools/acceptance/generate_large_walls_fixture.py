@@ -10,7 +10,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SOURCE = REPO_ROOT / "Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_home.json"
 TARGETS = [
     REPO_ROOT / "Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls.json",
-    REPO_ROOT / "Sources/COCHelperApp/PerfFixtures/perf_account_snapshot_large_walls.json",
 ]
 WALL_DATA_ID = 1_000_008
 WALL_SEGMENT_COUNT = 1_005

@@ -62,6 +62,10 @@ swift run acceptance-runner Tools/acceptance/local
 
 `acceptance-runner` 在 headless 环境复现 A/B 双入口 + 重启 + duplicate + lineage 隔离，输出脱敏 JSON。**不能替代** Release UI 与真实剪贴板路径的人工验收。
 
+- Runner 对关键 invariant 做硬校验（失败则 `exit 1`，不会“假绿”）：A2/B2 后目标 `villageID` 不变、正常二次导入 `history entries +1 / duplicate 不变 / lineage continued`、重复导入 `entries 不变 / duplicate +1 / timeline 不新增`、重启前后 `history/trust/statistics` 一致、同账号连续导入保持预期 lineage。`gate.sh` 仅在 runner `exit 0` 且 `working tree clean` 时标记通过。
+- 重启语义：`acceptance-runner` 通过临时 `FileSnapshotHistoryStore` + `FileManualTrackerStore`（同一临时目录，跨所有 `AppModel` 实例复用）重放 `current + history + manual` 事务，比早期 `InMemoryManualTrackerStore` 更接近生产；但仍不覆盖系统剪贴板与 App UI 刷新路径。
+- 村庄 B 创建走正常 `AppModel.addVillageForImport()` / `renameSelectedVillage` 路径，不再直接编码 `UserDefaults`。
+
 ## 7. 失败处理
 
 - 记录为独立 issue，附脱敏复现步骤。

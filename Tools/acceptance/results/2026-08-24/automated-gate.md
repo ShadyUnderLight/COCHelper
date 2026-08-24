@@ -1,6 +1,6 @@
 # Issue #226 自动化验收门禁
 
-- commit: `d5e569bb2caae57288829bed5648bc1fe004437c`
+- commit: `c31f7ced133324705027a732ae7b239ea730db68`
 - date: 2026-08-24
 - working tree: clean（已验证 git diff / diff --cached / untracked，不含 results）
 - macOS: 26.6.2 (arm64)

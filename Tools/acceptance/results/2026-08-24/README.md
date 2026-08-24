@@ -1,13 +1,13 @@
 # Issue #226 验收证据索引（2026-08-24）
 
 基线：`origin/main@256c065`（#234/#235/#236 已合并）  
-工具链 HEAD：`d5e569b`（已含 runner 硬校验、file-backed manual Store、gate clean-worktree 与 perf 文档修复）
+工具链 HEAD：`c31f7ce`（已含 runner 硬校验、duplicate key 修复、file-backed manual Store、gate clean-worktree 与 perf 文档修复）
 
 ## 自动化门禁
 
 | 项目 | 状态 | 证据 |
 |---|---|---|
-| `AppModelSnapshotHistoryTests` | 通过 | [automated-gate.md](automated-gate.md)（commit `d5e569b`，working tree clean 已验证） |
+| `AppModelSnapshotHistoryTests` | 通过 | [automated-gate.md](automated-gate.md)（commit `c31f7ce`，working tree clean 已验证） |
 | `swift test --parallel --num-workers 1` | 通过 | 同上 |
 | Release build + `scripts/build_app.sh` | 通过 | 同上 |
 | `git diff --check` | 通过 | 同上（排除 `Tools/acceptance/results`） |

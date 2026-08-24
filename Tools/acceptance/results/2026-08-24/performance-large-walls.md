@@ -4,7 +4,7 @@
 
 ## 固定信息
 
-- commit: `d5e569b`（PR 分支 HEAD，已含 runner 硬校验与 gate provenance 修复，基于 `origin/main@256c065`）
+- commit: `c31f7ce`（PR 分支 HEAD，已含 runner 硬校验、duplicate key 修复与 gate provenance，基于 `origin/main@256c065`）
 - fixture: `Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls.json`（唯一来源；`Sources/COCHelperApp/PerfFixtures` 中的 dead duplicate 已删除）
 - tag: `#PERF-LARGE-WALLS`（匿名）
 - 城墙段数: 1005（逐段 `cnt: 1`）

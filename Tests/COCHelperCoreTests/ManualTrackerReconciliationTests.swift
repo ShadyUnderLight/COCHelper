@@ -1135,6 +1135,81 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         XCTAssertFalse(timerItem.isQueueAssignmentConfirmable)
     }
 
+    func testAttentionUnknownStateStaysUnknownWithoutVerifiedSectionTrust() throws {
+        try assertAttentionStateRemainsUnknownWithoutTrust(status: .unknown)
+    }
+
+    func testAttentionConflictStateStaysUnknownWithoutVerifiedSectionTrust() throws {
+        try assertAttentionStateRemainsUnknownWithoutTrust(status: .conflict)
+    }
+
+    private func assertAttentionStateRemainsUnknownWithoutTrust(
+        status: ManualItemStatus
+    ) throws {
+        let initialRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787556915,
+          "buildings": [{"data": 1000023, "lvl": 1, "cnt": 1}]
+        }
+        """##
+        let updatedRaw = ##"""
+        {
+          "tag": "#TEST",
+          "timestamp": 1787557000,
+          "buildings": [{"data": 1000023, "lvl": 1, "cnt": 3}]
+        }
+        """##
+        let drillKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_023)
+        let context = try history(initialRaw, injectVerifiedSectionProofs: false)
+        let attention = try ManualItemState(
+            itemKey: drillKey,
+            baselineReference: context.reference,
+            importedObservation: ManualImportedObservation(
+                reference: context.reference,
+                levelDistribution: nil,
+                sourceTimestamp: Date(timeIntervalSince1970: 1_785_557_000)
+            ),
+            status: status
+        )
+        let currentState = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: ManualUpgradeCore(itemStates: [attention]),
+            stateUpdatedAt: Date(timeIntervalSince1970: 1_700_000_010),
+            lastImportAt: Date(timeIntervalSince1970: 1_700_000_010)
+        )
+        let next = try decision(
+            updatedRaw,
+            from: context,
+            currentTag: "#TEST",
+            injectVerifiedSectionProofs: false
+        )
+        let preview = try ManualTrackerReconciliationService.preview(
+            villageID: villageID,
+            previousEntry: context.entry,
+            decision: next,
+            currentState: currentState,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let drillPreview = try XCTUnwrap(preview.items.first { $0.itemKey == drillKey })
+
+        XCTAssertEqual(drillPreview.classification, .unknown)
+        XCTAssertTrue(drillPreview.classification.needsAttention)
+        XCTAssertTrue(preview.requiresExplicitDecision)
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: currentState,
+            decision: .applyNonConflicting,
+            appliedAt: Date(timeIntervalSince1970: 1_785_557_000)
+        )
+        let rebased = try XCTUnwrap(plan.state.core.itemState(for: drillKey))
+        XCTAssertEqual(rebased.status, status)
+        XCTAssertNil(rebased.importedObservation?.levelDistribution)
+    }
+
     func testStalePreviewIsRejectedBeforeStateMutation() throws {
         let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##)
         let state = try observedState(reference: context.reference, distribution: [10: 1])

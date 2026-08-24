@@ -326,10 +326,11 @@ public enum ManualTrackerReconciliationService {
                 lineageComparable: lineageComparable,
                 timeConfidence: timeConfidence,
                 hasExistingState: state != nil,
-                hasProtectableLocalState: hasLocalState(
+                hasProtectableLocalState: hasProtectableLocalState(
                     state: state,
-                    records: records
-                ) || previousDistribution != nil,
+                    records: records,
+                    previousDistribution: previousDistribution
+                ),
                 previousDistribution: previousDistribution,
                 observation: observation,
                 previousObservation: previousObservation,
@@ -612,7 +613,26 @@ public enum ManualTrackerReconciliationService {
                 continue
             }
 
-            if !hasLocal, adopt, let observation, let distribution = observation.distribution {
+            if !hasLocal, !adopt, old.status == .unknown || old.status == .conflict {
+                let imported = try ManualImportedObservation(
+                    reference: newReference,
+                    levelDistribution: nil,
+                    sourceTimestamp: sourceTimestamp,
+                    observedTimer: observation?.hasTimer ?? false,
+                    observedTimerCoverageComplete: observation.map {
+                        $0.hasTimer && $0.timerCoverageComplete
+                    } ?? false
+                )
+                states.append(try ManualItemState(
+                    itemKey: key,
+                    baselineReference: newReference,
+                    importedObservation: imported,
+                    status: old.status
+                ))
+                continue
+            }
+
+            if !hasLocal, adopt, let observation, observation.distribution != nil {
                 let imported = try importedObservation(
                     reference: newReference,
                     from: observation,
@@ -855,6 +875,23 @@ public enum ManualTrackerReconciliationService {
         records: [ManualUpgradeRecord]
     ) -> Bool {
         state?.status == .manualCompleted || !records.isEmpty
+    }
+
+    /// Placeholder `.observed` rows with nil distribution may adopt item-level
+    /// evidence on reimport, but attention statuses must stay fail-closed.
+    private static func hasProtectableLocalState(
+        state: ManualItemState?,
+        records: [ManualUpgradeRecord],
+        previousDistribution: ManualLevelDistribution?
+    ) -> Bool {
+        if hasLocalState(state: state, records: records) { return true }
+        if previousDistribution != nil { return true }
+        switch state?.status {
+        case .unknown, .conflict:
+            return true
+        case .observed, .manualCompleted, .none:
+            return false
+        }
     }
 
     private static func effectiveDistribution(

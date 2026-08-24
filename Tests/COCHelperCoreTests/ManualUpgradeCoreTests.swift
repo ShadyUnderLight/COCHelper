@@ -481,6 +481,32 @@ final class ManualUpgradeCoreTests: XCTestCase {
             ManualImportedObservation.self, from: Data(json.utf8)
         )
         XCTAssertFalse(decoded.observedTimer)
+        XCTAssertFalse(decoded.observedTimerCoverageComplete)
+    }
+
+    func testImportedObservationDecodesLegacyDataWithoutTimerCoverageField() throws {
+        let json = """
+        {"reference":{"revision":"snapshot-1"},"levelDistribution":[],"observedTimer":true}
+        """
+        let decoded = try JSONDecoder().decode(
+            ManualImportedObservation.self, from: Data(json.utf8)
+        )
+        XCTAssertTrue(decoded.observedTimer)
+        XCTAssertFalse(decoded.observedTimerCoverageComplete)
+    }
+
+    func testImportedObservationPreservesObservedTimerCoverageComplete() throws {
+        let observation = try ManualImportedObservation(
+            reference: baseline,
+            levelDistribution: try distribution([(10, 1)]),
+            observedTimer: true,
+            observedTimerCoverageComplete: true
+        )
+        let decoded = try JSONDecoder().decode(
+            ManualImportedObservation.self,
+            from: JSONEncoder().encode(observation)
+        )
+        XCTAssertTrue(decoded.observedTimerCoverageComplete)
     }
 
     func testTimedUpgradeReservesSourceAndSettlesIdempotently() throws {

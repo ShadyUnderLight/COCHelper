@@ -128,8 +128,10 @@ struct AcceptanceRunner {
             try assertEqual(lhs.statistics30Days, rhs.statistics30Days, "\(context) statistics 30d 应一致")
             try assertEqual(lhs.duplicateImportCount, rhs.duplicateImportCount, "\(context) duplicateImportCount 应一致")
             try assertEqual(lhs.statisticsSignature, rhs.statisticsSignature, "\(context) statisticsSignature 应一致（所有指标 state/value/reason）")
-            try assertEqual(lhs.timelineSignatures, rhs.timelineSignatures, "\(context) timelineSignatures 应一致（isBaseline/comparisonState/diagnostics/duplicate/totalChange）")
+            try assertEqual(lhs.timelineSignatures, rhs.timelineSignatures, "\(context) timelineSignatures 应一致（isBaseline/comparisonState/diagnostics/duplicate/totalChange/lastSeenAt）")
             try assertEqual(lhs.diagnostics, rhs.diagnostics, "\(context) diagnostics 应一致")
+            try assertEqual(lhs.latestCheckedAt, rhs.latestCheckedAt, "\(context) latestCheckedAt 应一致（duplicate 最近检查）")
+            try assertEqual(lhs.latestAppliedAt, rhs.latestAppliedAt, "\(context) latestAppliedAt 应一致")
         }
 
         func accountImport(_ name: String, model: AppModel) throws {
@@ -540,12 +542,14 @@ private struct SanitizedTimelineRow: Encodable, Equatable {
     let diagnostics: [String]
     let duplicateImportCount: Int
     let totalChangeCount: Int
+    let lastSeenAt: Date?
     init(_ r: SnapshotHistoryRow) {
         isBaseline = r.isBaseline
         comparisonState = r.comparisonState.map { String(describing: $0) }
         diagnostics = r.diagnostics
         duplicateImportCount = r.duplicateImportCount
         totalChangeCount = r.totalChangeCount
+        lastSeenAt = r.lastSeenAt
     }
 }
 
@@ -561,6 +565,8 @@ private struct SanitizedProjection: Encodable {
     let statisticsSignature: SanitizedStatisticsSignature
     let timelineSignatures: [SanitizedTimelineRow]
     let diagnostics: [String]
+    let latestCheckedAt: Date?
+    let latestAppliedAt: Date?
 
     init(_ projection: SnapshotHistoryProjection) {
         availability = String(describing: projection.availability)
@@ -574,6 +580,8 @@ private struct SanitizedProjection: Encodable {
         statisticsSignature = SanitizedStatisticsSignature(projection.statistics)
         timelineSignatures = projection.timeline.map(SanitizedTimelineRow.init)
         diagnostics = projection.diagnostics
+        latestCheckedAt = projection.latestCheckedAt
+        latestAppliedAt = projection.latestAppliedAt
     }
 
     private static func statState(_ state: SnapshotStatisticValueState) -> String {

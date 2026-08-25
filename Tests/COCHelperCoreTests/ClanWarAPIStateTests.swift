@@ -109,6 +109,12 @@ final class ClanWarAPIStateTests: XCTestCase {
                 fetchedAt: Bool.random(using: &rng) ? Date(timeIntervalSince1970: Double.random(in: 0...4_000_000_000, using: &rng)) : nil,
                 lastErrorReason: Bool.random(using: &rng) ? "reason-\(Int.random(in: 0...9, using: &rng))" : nil,
                 lastHTTPStatus: Bool.random(using: &rng) ? [401, 403, 404, 429, 500].randomElement(using: &rng) : nil,
+                // Issue #252：结构化失败类别纳入泛型 round-trip 覆盖。
+                failureKind: Bool.random(using: &rng)
+                    ? [OfficialEndpointFailureKind.missingCredentials, .unauthorized, .accessDenied,
+                       .notFound, .rateLimited, .serverError, .timeout, .network,
+                       .malformedResponse, .cancelled].randomElement(using: &rng)!
+                    : nil,
                 lastGood: Bool.random(using: &rng) ? OfficialClanWarSnapshot(
                     state: ["notInWar", "preparation", "inWar", "warEnded"].randomElement(using: &rng),
                     teamSize: Int.random(in: 1...50, using: &rng), attacksPerMember: Int.random(in: 1...2, using: &rng),

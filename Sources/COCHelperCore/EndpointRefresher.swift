@@ -102,6 +102,7 @@ public enum EndpointRefresher {
                 lastAttemptAt: now,
                 lastErrorReason: error.userFacingReason,
                 lastHTTPStatus: error.httpStatus,
+                failureKind: error.kind,
                 parserVersion: retainedParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []
@@ -114,6 +115,7 @@ public enum EndpointRefresher {
                 lastAttemptAt: now,
                 lastErrorReason: "已取消",
                 lastHTTPStatus: nil,
+                failureKind: .cancelled,
                 parserVersion: retainedParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []
@@ -126,6 +128,7 @@ public enum EndpointRefresher {
                 lastAttemptAt: now,
                 lastErrorReason: "已取消",
                 lastHTTPStatus: nil,
+                failureKind: .cancelled,
                 parserVersion: retainedParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []
@@ -138,6 +141,8 @@ public enum EndpointRefresher {
                 lastAttemptAt: now,
                 lastErrorReason: "未知错误：\(type(of: error))",
                 lastHTTPStatus: nil,
+                // 保持旧行为：mapFailedState 对 nil HTTP status 统一归为 .network。
+                failureKind: .network,
                 parserVersion: retainedParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []

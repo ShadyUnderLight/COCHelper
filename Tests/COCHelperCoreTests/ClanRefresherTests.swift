@@ -28,13 +28,14 @@ final class ClanRefresherTests: XCTestCase {
     }
 
     private func makeRefresher(
-        handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
+        handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? = nil,
+        token: @escaping @Sendable () -> String? = { "fake-token" }
     ) -> ClanRefresher {
         MockURLProtocol.handler = handler
         return ClanRefresher(client: CoAPIClient(
             config: CoAPIConfig(maxRetryCount: 0),
             session: MockURLProtocol.makeSession()
-        ) { "fake-token" })
+        ) { token() })
     }
 
     private func sampleClanState(tag: String, name: String) -> ClanAPIState {
@@ -155,6 +156,38 @@ final class ClanRefresherTests: XCTestCase {
         XCTAssertEqual(result["#NEWCLAN"]?.status, .failed)
         XCTAssertNil(result["#NEWCLAN"]?.lastGood, "首次失败没有 last-good")
         XCTAssertEqual(result["#NEWCLAN"]?.lastHTTPStatus, 500)
+    }
+
+    /// Issue #252：失败状态必须携带结构化错误类别（由 `CoAPIError` 直接写入），
+    /// 使等待复用路径不再靠 HTTP 状态码 + 中文文案反向猜测。
+    func testFailedRefreshCarriesStructuredFailureKind() async throws {
+        // 429 → CoAPIError.rateLimited → .rateLimited
+        do {
+            let refresher = makeRefresher { request in
+                (clanMockResponse(429, url: request.url!), Data())
+            }
+            let result = await refresher.refreshClans(villageClanTags: ["#NEWCLAN"], previous: [:])
+            XCTAssertEqual(result["#NEWCLAN"]?.failureKind, .rateLimited, "429 必须携带 .rateLimited")
+            XCTAssertEqual(result["#NEWCLAN"]?.lastHTTPStatus, 429)
+        }
+        // 5xx → CoAPIError.serverError → .serverError
+        do {
+            let refresher = makeRefresher { request in
+                (clanMockResponse(503, url: request.url!), Data())
+            }
+            let result = await refresher.refreshClans(villageClanTags: ["#NEWCLAN"], previous: [:])
+            XCTAssertEqual(result["#NEWCLAN"]?.failureKind, .serverError, "5xx 必须携带 .serverError")
+        }
+        // 缺 token → CoAPIError.missingCredentials → .missingCredentials（无 HTTP status）
+        do {
+            let refresher = makeRefresher(handler: { request in
+                XCTFail("缺 token 不应发起请求")
+                return (clanMockResponse(200, url: request.url!), Data())
+            }, token: { nil })
+            let result = await refresher.refreshClans(villageClanTags: ["#NEWCLAN"], previous: [:])
+            XCTAssertEqual(result["#NEWCLAN"]?.failureKind, .missingCredentials, "缺 token 必须携带 .missingCredentials")
+            XCTAssertNil(result["#NEWCLAN"]?.lastHTTPStatus)
+        }
     }
 
     /// 换部落语义：本次只请求新 tag；refresher 不管理未被请求的 tag

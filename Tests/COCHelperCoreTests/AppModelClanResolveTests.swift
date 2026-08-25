@@ -316,6 +316,64 @@ final class AppModelClanResolveTests: XCTestCase {
         XCTAssertEqual(counter.count, 1, "single-flight：失败也不得发起第二个请求")
     }
 
+    // MARK: - Issue #252 等待复用路径的结构化错误分类回归
+
+    /// 缺 token：等待复用路径必须与直接路径返回同一 `.missingToken`。
+    /// 旧逻辑对 nil HTTP status 统一归为 .network，是本次 bug 的原型。
+    @MainActor
+    func testResolveClanReusesInFlightRefreshMissingToken() async throws {
+        let model = try makeModel(tokenProvider: { nil }) { request in
+            XCTFail("无 token 不应发起请求")
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        model.refreshClan(tag: "#2QJQ8J88")
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.missingToken), "等待复用路径：缺 token 必须与直接路径一致映射为 .missingToken")
+    }
+
+    /// malformed：等待复用路径必须与直接路径返回同一 `.malformed`。
+    @MainActor
+    func testResolveClanReusesInFlightRefreshMalformed() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            counter.record(tag: request.url?.path ?? "")
+            return clanResolveResponse(200, url: request.url!, body: Data("not-json".utf8))
+        }
+        model.refreshClan(tag: "#2QJQ8J88")
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.malformed), "等待复用路径：malformed 必须与直接路径一致映射为 .malformed")
+        XCTAssertEqual(counter.count, 1, "single-flight：失败也不得发起第二个请求")
+    }
+
+    /// network：等待复用路径必须与直接路径返回同一 `.network`。
+    @MainActor
+    func testResolveClanReusesInFlightRefreshNetwork() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { _ in
+            counter.record(tag: "#2QJQ8J88")
+            throw URLError(.notConnectedToInternet)
+        }
+        model.refreshClan(tag: "#2QJQ8J88")
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.network), "等待复用路径：网络错误必须与直接路径一致映射为 .network")
+        XCTAssertEqual(counter.count, 1, "single-flight：失败也不得发起第二个请求")
+    }
+
+    /// timeout：等待复用路径必须与直接路径返回同一 `.network`
+    /// （`CoAPIError.timeout` 与 `.network` 在 `ClanResolveError` 层面同为 .network）。
+    @MainActor
+    func testResolveClanReusesInFlightRefreshTimeout() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { _ in
+            counter.record(tag: "#2QJQ8J88")
+            throw URLError(.timedOut)
+        }
+        model.refreshClan(tag: "#2QJQ8J88")
+        let result = await model.resolveClan(rawTag: "#2QJQ8J88")
+        XCTAssertEqual(result, .failure(.network), "等待复用路径：timeout 必须与直接路径一致映射为 .network")
+        XCTAssertEqual(counter.count, 1, "single-flight：失败也不得发起第二个请求")
+    }
+
     /// waitedForBatch 负例：**无在途批次**时，即使 clanStates 已有该 tag 的
     /// 成功缓存（上次解析/刷新遗留），也必须重新请求——解析语义是获取最新，
     /// 不得误复用旧缓存。锁定"仅确实等待过批次才复用"的核心语义。

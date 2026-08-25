@@ -7,6 +7,41 @@ public protocol EndpointParserVersioning {
     static var currentParserVersion: String { get }
 }
 
+/// 官方端点失败的**结构化错误类别**（Issue #252）。
+///
+/// 与 `CoAPIError`（传输语义）一一对应，但**不含 associated value**：
+/// 作为 `OfficialEndpointState.failureKind` 持久化时，不会把
+/// `reason` / `detail` / `underlying` / `statusCode` 等脱敏细节写进稳定协议，
+/// 也不会因为文案措辞变动而让持久化格式失效。展示层仍由
+/// `lastErrorReason`（脱敏文本）承担，本类型只用于**分类判定**。
+///
+/// 契约：
+/// - 成功状态不携带失败类别（`failureKind` 为 nil）。
+/// - 旧持久化数据缺该字段时解码为 nil，调用方走 fail-closed 兜底。
+/// - 与 `CoAPIError` 一一对应：`CoAPIError.kind` 提供反向映射。
+public enum OfficialEndpointFailureKind: String, Codable, Hashable, Sendable {
+    /// 缺少 API token（`CoAPIError.missingCredentials`）
+    case missingCredentials
+    /// 401 Unauthorized
+    case unauthorized
+    /// 403 Forbidden
+    case accessDenied
+    /// 404 Not Found
+    case notFound
+    /// 429 Too Many Requests
+    case rateLimited
+    /// 5xx Server Error
+    case serverError
+    /// 请求超时
+    case timeout
+    /// 一般网络错误
+    case network
+    /// 响应解析失败
+    case malformedResponse
+    /// 请求被取消
+    case cancelled
+}
+
 /// 官方 API 端点状态的**泛型实现**（Issue #7 stage 3c 泛化前置承诺）。
 ///
 /// 3a/3b 的 `ClanAPIState`/`ClanWarAPIState` 是同构拷贝；第三、四个端点
@@ -31,6 +66,15 @@ public struct OfficialEndpointState<Snapshot: Codable & Hashable & Sendable & En
     public var lastErrorReason: String?
     /// 最近失败的 HTTP 状态码（若来自传输层则为 nil）。
     public var lastHTTPStatus: Int?
+    /// 最近失败的**结构化类别**（Issue #252）。
+    ///
+    /// 成功状态为 nil；失败状态由 `EndpointRefresher` 从 `CoAPIError`
+    /// 直接写入，等待复用路径（`mapFailedState`）读取此字段精确分类，
+    /// 不再通过 HTTP 状态码与中文原因字符串反向猜测。
+    ///
+    /// Optional：旧持久化数据缺该字段时 `decodeIfPresent` 解码为 nil，
+    /// 调用方走 fail-closed 兜底（`mapFailedStateLegacy`），旧行为不回归。
+    public var failureKind: OfficialEndpointFailureKind?
     /// 解码器版本（各端点约束扩展提供当前值；构造时传入并持久化）。
     public var parserVersion: String
     /// 最近一次成功解码的快照（失败后保留）。
@@ -52,6 +96,7 @@ public struct OfficialEndpointState<Snapshot: Codable & Hashable & Sendable & En
         lastAttemptAt: Date? = nil,
         lastErrorReason: String? = nil,
         lastHTTPStatus: Int? = nil,
+        failureKind: OfficialEndpointFailureKind? = nil,
         parserVersion: String = Snapshot.currentParserVersion,
         lastGood: Snapshot? = nil,
         unrecognizedKeys: [String] = []
@@ -62,6 +107,7 @@ public struct OfficialEndpointState<Snapshot: Codable & Hashable & Sendable & En
         self.lastAttemptAt = lastAttemptAt
         self.lastErrorReason = lastErrorReason
         self.lastHTTPStatus = lastHTTPStatus
+        self.failureKind = failureKind
         self.parserVersion = parserVersion
         self.lastGood = lastGood
         self.unrecognizedKeys = unrecognizedKeys

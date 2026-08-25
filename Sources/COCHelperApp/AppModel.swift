@@ -135,6 +135,7 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
         confirmedImportedCount: Int,
         capacity: Int
     )
+    case invalidQueueKind
     case itemNotImportedObservation
     case importedObservationWithoutTimer
     case importedObservationIncompleteCoverage
@@ -158,17 +159,19 @@ public enum ManualUpgradeCommandError: Error, LocalizedError, Equatable, Sendabl
         case .coreRejected(let message):
             "升级命令被拒绝：" + message
         case .queueCapacityInvalid:
-            "队列容量配置无效（必须为 0 到 10000 的整数）。"
+            "本地容量配置无效（必须为 0 到 10000 的整数）。"
         case .queueCapacityFull(
             let queueKind, let activeCount, let confirmedImportedCount, let capacity
         ):
-            "本地容量已满：\(queueKind.displayName) 队列本地占用 \(activeCount) 个、已确认导入 \(confirmedImportedCount) 个，容量 \(capacity)。"
+            "本地容量已满：\(queueKind.displayName)占用 \(activeCount) 个、已确认导入 \(confirmedImportedCount) 个，容量 \(capacity)。"
+        case .invalidQueueKind:
+            "该项目不能计入所选的本地容量类别。"
         case .itemNotImportedObservation:
-            "该条目不是导入观察，不能确认本地队列映射。"
+            "该条目不是导入观察，不能确认本地容量映射。"
         case .importedObservationWithoutTimer:
-            "该导入观察没有进行中计时证据，不能确认本地队列映射。"
+            "该导入观察没有进行中计时证据，不能确认本地容量映射。"
         case .importedObservationIncompleteCoverage:
-            "该导入观察的等级/数量覆盖不完整，不能确认本地队列映射。"
+            "该导入观察的等级/数量覆盖不完整，不能确认本地容量映射。"
         }
     }
 }
@@ -178,10 +181,12 @@ public struct ImportedObservationCandidate: Identifiable, Hashable, Sendable {
     public let itemKey: TrackerItemKey
     public let displayName: String
     public let hasTimer: Bool
+    /// 已知项目类型对应的本地容量类别；nil = 当前模型不覆盖该项目。
+    public let inferredQueueKind: LocalQueueKind?
     public let assignment: QueueAssignmentDecision?
     /// review P2：非当前 lineage 的历史映射（保留为审计证据，不占容量）。
     public let historicalAssignments: [QueueAssignmentDecision]
-    /// Issue #189：是否具备"确认/重新确认本地队列映射"资格。直接投影 Core
+    /// Issue #189：是否具备"确认/重新确认本地容量映射"资格。直接投影 Core
     /// 谓词 `ManualItemState.isQueueAssignmentConfirmable`（timer + 覆盖完整），
     /// 不在 UI 中自行推断 observedTimer/levelDistribution/coverage 组合。
     public let isConfirmable: Bool
@@ -193,6 +198,7 @@ public struct ImportedObservationCandidate: Identifiable, Hashable, Sendable {
         itemKey: TrackerItemKey,
         displayName: String,
         hasTimer: Bool,
+        inferredQueueKind: LocalQueueKind?,
         assignment: QueueAssignmentDecision?,
         historicalAssignments: [QueueAssignmentDecision] = [],
         isConfirmable: Bool,
@@ -201,6 +207,7 @@ public struct ImportedObservationCandidate: Identifiable, Hashable, Sendable {
         self.itemKey = itemKey
         self.displayName = displayName
         self.hasTimer = hasTimer
+        self.inferredQueueKind = inferredQueueKind
         self.assignment = assignment
         self.historicalAssignments = historicalAssignments
         self.isConfirmable = isConfirmable
@@ -858,9 +865,9 @@ public final class AppModel: ObservableObject {
         return settledCount
     }
 
-    // MARK: - Issue #145 队列容量配置
+    // MARK: - Issue #145 计时容量配置
 
-    /// 设置/更新某个队列类别的本地容量（userConfigured）。
+    /// 设置/更新某个计时容量类别的本地容量（userConfigured）。
     /// 只影响未来 local manual start 的容量校验，不修改历史 record。
     @discardableResult
     public func setQueueCapacity(
@@ -930,7 +937,7 @@ public final class AppModel: ObservableObject {
         return config
     }
 
-    /// 清除某个队列类别的本地容量配置（回到未配置状态）。
+    /// 清除某个计时容量类别的本地容量配置（回到未配置状态）。
     public func clearQueueCapacity(
         for villageID: UUID,
         queueKind: LocalQueueKind,
@@ -1066,7 +1073,7 @@ public final class AppModel: ObservableObject {
         return configs
     }
 
-    /// 某个村庄×队列类别的本地占用投影（未配置容量时 capacity == nil）。
+    /// 某个村庄×计时容量类别的本地占用投影（未配置容量时 capacity == nil）。
     /// `at now` 用于排除已到期未 settle 的 active 记录（与 Start 校验同口径）。
     /// Issue #183：占用计入当前 lineage 的 userAssigned overlay。
     /// Issue #192：未对账（`isBaselineReconciled == false`）时不得把旧
@@ -1128,8 +1135,10 @@ public final class AppModel: ObservableObject {
         let currentLineage = state.core.baselineReference?.lineageID
         return state.queueAssignments.filter { assignment in
             guard assignment.status == .userAssigned,
-                  assignment.queueKind == queueKind,
                   assignment.baselineReference.lineageID == currentLineage else {
+                return false
+            }
+            guard LocalQueueKindResolver.effective(for: assignment) == queueKind else {
                 return false
             }
             return state.core.itemStates
@@ -1138,7 +1147,7 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: - Issue #183 导入观察队列映射
+    // MARK: - Issue #183 导入观察容量映射
 
     /// 当前村庄的 queueAssignments 只读查询（按决策时间排序）。
     public func queueAssignments(for villageID: UUID) throws -> [QueueAssignmentDecision] {
@@ -1148,7 +1157,7 @@ public final class AppModel: ObservableObject {
         return state.queueAssignments.sorted { $0.decidedAt < $1.decidedAt }
     }
 
-    /// 用户确认某条导入观察属于本地队列（userConfigured overlay）。
+    /// 用户确认某条导入观察计入本地容量（userConfigured overlay）。
     ///
     /// - 只允许对已导入观察（`ManualItemState.importedObservation != nil`）的
     ///   item 分配；
@@ -1192,6 +1201,10 @@ public final class AppModel: ObservableObject {
             }
             throw ManualUpgradeCommandError.importedObservationIncompleteCoverage
         }
+        guard let inferredQueueKind = LocalQueueKindResolver.inferred(for: itemKey),
+              queueKind == inferredQueueKind else {
+            throw ManualUpgradeCommandError.invalidQueueKind
+        }
         var assignments = previousState.queueAssignments.filter {
             !($0.itemKey == itemKey
                 && $0.baselineReference.lineageID == coreBaseline.lineageID)
@@ -1200,7 +1213,7 @@ public final class AppModel: ObservableObject {
             villageID: villageID,
             itemKey: itemKey,
             baselineReference: coreBaseline,
-            queueKind: queueKind,
+            queueKind: inferredQueueKind,
             decidedAt: now
         )
         assignments.append(decision)
@@ -1230,7 +1243,7 @@ public final class AppModel: ObservableObject {
         return decision
     }
 
-    /// 用户解除某条导入观察的本地队列映射（只删除当前 lineage 的 overlay，
+    /// 用户解除某条导入观察的本地容量映射（只删除当前 lineage 的 overlay，
     /// 旧 lineage 的历史证据保留为 `unknown`）。timer 消失本身不会触发本
     /// 命令；本命令只由用户显式发起。
     public func unassignQueueFromImportedObservation(
@@ -1319,21 +1332,27 @@ public final class AppModel: ObservableObject {
                 // （unreconciledSnapshot / importedObservationWithoutTimer /
                 // incompleteCoverage）。
                 let evidenceConfirmable = itemState.isQueueAssignmentConfirmable
-                let isConfirmable = isReconciled && evidenceConfirmable
+                let inferredQueueKind = LocalQueueKindResolver.inferred(for: itemState.itemKey)
+                let isConfirmable = isReconciled
+                    && evidenceConfirmable
+                    && inferredQueueKind != nil
                 let unconfirmableReason: String?
                 if !isReconciled {
                     unconfirmableReason = "快照尚未对账，暂不能确认"
-                } else if evidenceConfirmable {
-                    unconfirmableReason = nil
                 } else if itemState.importedObservation?.observedTimer != true {
                     unconfirmableReason = "没有进行中计时证据"
-                } else {
+                } else if !evidenceConfirmable {
                     unconfirmableReason = "观察证据不完整，暂不能确认"
+                } else if inferredQueueKind == nil {
+                    unconfirmableReason = "该项目没有可用的本地计时容量类别"
+                } else {
+                    unconfirmableReason = nil
                 }
                 return ImportedObservationCandidate(
                     itemKey: itemState.itemKey,
                     displayName: name,
                     hasTimer: itemState.importedObservation?.observedTimer ?? false,
+                    inferredQueueKind: inferredQueueKind,
                     assignment: assignment,
                     historicalAssignments: historicalAssignments,
                     isConfirmable: isConfirmable,
@@ -1382,34 +1401,6 @@ public final class AppModel: ObservableObject {
         guard isBaselineReconciled(for: villageID, core: core) else {
             throw ManualUpgradeCommandError.unreconciledSnapshot
         }
-        // Issue #145：容量校验只约束 future local manual start。
-        // 未配置容量或 queueKind == nil（不归类）时不校验；
-        // 未确认的 imported timer 从不计入本地占用；
-        // Issue #183：用户确认（userAssigned 且当前 lineage）的 overlay 计入。
-        if let queueKind {
-            let state = currentEnvelope.state(for: villageID)
-            let capacityConfigs = state?.queueCapacityConfigs ?? []
-            if let config = capacityConfigs.first(where: { $0.queueKind == queueKind }) {
-                let confirmed = state.map {
-                    capacityConfirmingAssignments(in: $0, queueKind: queueKind)
-                } ?? []
-                let occupancy = LocalQueueOccupancyResolver.occupancy(
-                    queueKind: queueKind,
-                    activeRecords: core.activeRecords,
-                    confirmedAssignments: confirmed,
-                    capacityConfig: config,
-                    at: now
-                )
-                guard !occupancy.isFull else {
-                    throw ManualUpgradeCommandError.queueCapacityFull(
-                        queueKind: queueKind,
-                        activeCount: occupancy.activeManualCount,
-                        confirmedImportedCount: occupancy.confirmedImportedCount,
-                        capacity: config.capacity
-                    )
-                }
-            }
-        }
         let freshAction = try revalidatedAction(
             for: action,
             village: village,
@@ -1421,6 +1412,41 @@ public final class AppModel: ObservableObject {
               let baseline = freshAction.baselineReference,
               let provenance = freshAction.catalogProvenance else {
             throw ManualUpgradeCommandError.staleAction
+        }
+        let inferredQueueKind = LocalQueueKindResolver.inferred(
+            for: freshAction.itemKey,
+            durationState: freshAction.durationState
+        )
+        if let queueKind, queueKind != inferredQueueKind {
+            throw ManualUpgradeCommandError.invalidQueueKind
+        }
+
+        // Issue #145：容量校验只约束 future local manual start。
+        // queueKind 由项目类型自动推导；未确认的 imported timer 从不计入本地
+        // 占用；Issue #183：用户确认（userAssigned 且当前 lineage）的 overlay 计入。
+        if let inferredQueueKind {
+            let state = currentEnvelope.state(for: villageID)
+            let capacityConfigs = state?.queueCapacityConfigs ?? []
+            if let config = capacityConfigs.first(where: { $0.queueKind == inferredQueueKind }) {
+                let confirmed = state.map {
+                    capacityConfirmingAssignments(in: $0, queueKind: inferredQueueKind)
+                } ?? []
+                let occupancy = LocalQueueOccupancyResolver.occupancy(
+                    queueKind: inferredQueueKind,
+                    activeRecords: core.activeRecords,
+                    confirmedAssignments: confirmed,
+                    capacityConfig: config,
+                    at: now
+                )
+                guard !occupancy.isFull else {
+                    throw ManualUpgradeCommandError.queueCapacityFull(
+                        queueKind: inferredQueueKind,
+                        activeCount: occupancy.activeManualCount,
+                        confirmedImportedCount: occupancy.confirmedImportedCount,
+                        capacity: config.capacity
+                    )
+                }
+            }
         }
 
         var created: ManualUpgradeRecord?
@@ -1436,7 +1462,7 @@ public final class AppModel: ObservableObject {
                     frozenCosts: freshAction.frozenCosts,
                     catalogProvenance: provenance,
                     baselineReference: baseline,
-                    queueKind: queueKind?.rawValue,
+                    queueKind: inferredQueueKind?.rawValue,
                     now: now
                 )
             }

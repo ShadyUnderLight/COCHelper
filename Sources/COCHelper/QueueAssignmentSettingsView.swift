@@ -2,7 +2,7 @@ import SwiftUI
 import COCHelperApp
 import COCHelperCore
 
-/// Issue #183：导入观察的本地队列映射面板。
+/// Issue #183：导入观察的本地容量映射面板。
 ///
 /// 列出当前村庄所有导入观察项；按 Issue #189 的证据资格投影展示可执行
 /// 操作：未分配且证据合格时提供「确认分配」；`observedOnly` 且证据恢复时
@@ -19,7 +19,7 @@ struct QueueAssignmentSettingsView: View {
     var body: some View {
         let candidates = model.queueAssignmentCandidates(for: villageID)
         VStack(alignment: .leading, spacing: 12) {
-            Text("导入观察的本地队列")
+            Text("导入观察的本地容量")
                 .font(.title2.weight(.bold))
             Text("确认后，该导入计时作为本地规划占用计入容量；这是本地记录，不是游戏官方队列事实。未确认的导入计时永不占用容量。")
                 .font(.caption)
@@ -74,9 +74,9 @@ struct QueueAssignmentSettingsView: View {
             // 不占当前容量；解除操作只作用于当前 lineage）。
             if !candidate.historicalAssignments.isEmpty {
                 let kinds = candidate.historicalAssignments
-                    .map { $0.queueKind.displayName }
+                    .map { displayKind(for: candidate, assignment: $0) }
                     .joined(separator: "、")
-                Text("历史映射（旧账号/旧身份，不占当前容量）：\(kinds)")
+                Text("历史容量映射（旧账号/旧身份，不占当前容量）：\(kinds)")
                     .font(.caption2)
                     .foregroundStyle(.orange)
             }
@@ -98,6 +98,7 @@ struct QueueAssignmentSettingsView: View {
         switch assignment?.status {
         case .userAssigned:
             if let assignment {
+                let kind = displayKind(for: candidate, assignment: assignment)
                 // Issue #189 review P2：userAssigned 但当前证据不足/未对账时，
                 // 容量投影（capacityConfirmingAssignments）已排除其占用；UI
                 // 必须与口径一致地提示"不计入容量"，不能仍显示"已确认"。
@@ -105,8 +106,8 @@ struct QueueAssignmentSettingsView: View {
                 // 区分证据不足与尚未对账），View 不自行推断。
                 HStack(spacing: 8) {
                     Text(candidate.isConfirmable
-                        ? "已分配：\(assignment.queueKind.displayName)"
-                        : "已分配：\(assignment.queueKind.displayName)（\(candidate.unconfirmableReason ?? "证据不足")，不计入容量）")
+                        ? "已计入：\(kind)容量"
+                        : "已计入：\(kind)容量（\(candidate.unconfirmableReason ?? "证据不足")，不计入容量）")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Button("解除分配", role: .destructive) {
@@ -117,26 +118,20 @@ struct QueueAssignmentSettingsView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
                     candidate.isConfirmable
-                        ? "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，可解除分配"
-                        : "\(candidate.displayName)：已分配到\(assignment.queueKind.displayName)队列，但\(candidate.unconfirmableReason ?? "证据不足")，不计入本地容量，可解除分配"
+                        ? "\(candidate.displayName)：已计入\(kind)容量，可解除分配"
+                        : "\(candidate.displayName)：已计入\(kind)容量，但\(candidate.unconfirmableReason ?? "证据不足")，不计入本地容量，可解除分配"
                 )
             }
         case .observedOnly:
-            if candidate.isConfirmable {
+            if candidate.isConfirmable, let kind = candidate.inferredQueueKind {
                 HStack(spacing: 8) {
                     Text("证据已恢复，重新确认前不占容量")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Menu {
-                        ForEach(LocalQueueKind.knownKinds, id: \.self) { kind in
-                            Button(kind.displayName) {
-                                assign(candidate, queueKind: kind)
-                            }
-                        }
-                    } label: {
-                        Label("重新确认到队列…", systemImage: "checkmark.circle")
-                            .font(.caption)
+                    Button("确认计入\(kind.displayName)容量") {
+                        assign(candidate)
                     }
+                    .font(.caption)
                     Button("解除分配", role: .destructive) {
                         unassign(candidate)
                     }
@@ -144,7 +139,7 @@ struct QueueAssignmentSettingsView: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
-                    "\(candidate.displayName)：观察已结束，证据已恢复，可重新确认到本地队列；重新确认前不占本地容量"
+                    "\(candidate.displayName)：观察已结束，证据已恢复，可重新确认计入\(kind.displayName)容量；重新确认前不占本地容量"
                 )
             } else {
                 HStack(spacing: 8) {
@@ -176,19 +171,15 @@ struct QueueAssignmentSettingsView: View {
                 "\(candidate.displayName)：身份不可靠，保留历史证据，不提供当前确认，可解除分配"
             )
         case nil:
-            if candidate.isConfirmable {
+            if candidate.isConfirmable, let kind = candidate.inferredQueueKind {
                 HStack(spacing: 8) {
-                    Menu {
-                        ForEach(LocalQueueKind.knownKinds, id: \.self) { kind in
-                            Button(kind.displayName) {
-                                assign(candidate, queueKind: kind)
-                            }
-                        }
+                    Button {
+                        assign(candidate)
                     } label: {
-                        Label("确认分配到队列…", systemImage: "plus.circle")
+                        Label("确认计入\(kind.displayName)容量", systemImage: "plus.circle")
                             .font(.caption)
                     }
-                    Text("未分配本地队列")
+                    Text("尚未计入本地容量")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -197,16 +188,25 @@ struct QueueAssignmentSettingsView: View {
                     Text(candidate.unconfirmableReason ?? "暂不能确认")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("未分配本地队列")
+                    Text("未计入本地容量")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
-                    "\(candidate.displayName)：未分配本地队列，\(candidate.unconfirmableReason ?? "暂不能确认")"
+                    "\(candidate.displayName)：未计入本地容量，\(candidate.unconfirmableReason ?? "暂不能确认")"
                 )
             }
         }
+    }
+
+    private func displayKind(
+        for candidate: ImportedObservationCandidate,
+        assignment: QueueAssignmentDecision
+    ) -> String {
+        LocalQueueKindResolver.effective(for: assignment)?.displayName
+            ?? candidate.inferredQueueKind?.displayName
+            ?? assignment.queueKind.displayName
     }
 
     private func statusBadge(_ candidate: ImportedObservationCandidate) -> some View {
@@ -264,7 +264,8 @@ struct QueueAssignmentSettingsView: View {
         }
     }
 
-    private func assign(_ candidate: ImportedObservationCandidate, queueKind: LocalQueueKind) {
+    private func assign(_ candidate: ImportedObservationCandidate) {
+        guard let queueKind = candidate.inferredQueueKind else { return }
         do {
             try model.assignQueueToImportedObservation(
                 for: villageID, itemKey: candidate.itemKey, queueKind: queueKind

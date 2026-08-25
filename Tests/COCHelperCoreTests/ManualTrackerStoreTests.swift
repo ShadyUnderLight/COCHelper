@@ -957,7 +957,7 @@ final class ManualTrackerStoreTests: XCTestCase {
         ) { error in
             XCTAssertEqual(
                 error as? ManualTrackerStoreError,
-                .invalidEnvelope("队列容量配置的村庄与所属村庄不一致。")
+                .invalidEnvelope("本地容量配置的村庄与所属村庄不一致。")
             )
         }
     }
@@ -975,7 +975,7 @@ final class ManualTrackerStoreTests: XCTestCase {
         ) { error in
             XCTAssertEqual(
                 error as? ManualTrackerStoreError,
-                .invalidEnvelope("存在重复的队列类别容量配置。")
+                .invalidEnvelope("存在重复的本地容量类别配置。")
             )
         }
     }

@@ -33,8 +33,6 @@ struct ManualUpgradeActionSheetView: View {
     @State private var adjustDate: Date = Date()
     @State private var errorMessage: String?
     @State private var busy = false
-    // Issue #145：Start 队列类别选择（"" = 不归类）。
-    @State private var selectedQueueRawValue: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -71,8 +69,7 @@ struct ManualUpgradeActionSheetView: View {
             identityRow(action)
             Divider()
             detailGrid(action)
-            Divider()
-            queueKindBlock
+            capacityStatus(action)
             Divider()
             costBlock(action)
             Divider()
@@ -86,7 +83,7 @@ struct ManualUpgradeActionSheetView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.cocAccent)
-                .disabled(busy || isSelectedQueueFull)
+                .disabled(busy || isQueueFull(for: action))
             }
         }
     }
@@ -176,78 +173,56 @@ struct ManualUpgradeActionSheetView: View {
             .foregroundStyle(.secondary)
     }
 
-    // MARK: - Issue #145 队列类别与容量
+    // MARK: - Issue #145 自动容量类别与容量状态
 
-    private var selectedQueueKind: LocalQueueKind? {
-        selectedQueueRawValue.isEmpty
-            ? nil
-            : LocalQueueKind(rawValue: selectedQueueRawValue)
+    private func queueKind(for action: UpgradeAction) -> LocalQueueKind? {
+        LocalQueueKindResolver.inferred(
+            for: action.itemKey,
+            durationState: action.durationState
+        )
     }
 
-    /// 已选队列的占用投影；未归类时为 nil。
-    private var selectedOccupancy: LocalQueueOccupancy? {
-        selectedQueueKind.map { model.queueOccupancy(for: villageID, queueKind: $0) }
+    private func isQueueFull(for action: UpgradeAction) -> Bool {
+        guard let queueKind = queueKind(for: action) else { return false }
+        return model.queueOccupancy(for: villageID, queueKind: queueKind).isFull
     }
 
-    private var isSelectedQueueFull: Bool {
-        selectedOccupancy?.isFull ?? false
-    }
-
-    /// 队列类别选择 + 本地占用/容量摘要 + imported 不占用的固定诊断。
-    private var queueKindBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker("队列类别", selection: $selectedQueueRawValue) {
-                Text("不归类").tag("")
-                ForEach(LocalQueueKind.knownKinds, id: \.self) { kind in
-                    Text(kind.displayName).tag(kind.rawValue)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(maxWidth: 240)
-            if let occupancy = selectedOccupancy {
-                switch occupancy.status {
-                case .available:
-                    if occupancy.isCapacityConfigured {
-                        Label(
-                            "本地占用 \(occupancy.activeManualCount)/\(occupancy.capacity ?? 0)",
-                            systemImage: "rectangle.stack.badge.person.crop"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(occupancy.isFull ? .red : .secondary)
-                        if occupancy.isFull {
-                            Text("本地容量已满，不能开始新的本地升级。")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                    } else {
-                        Label("未配置容量，不限制本地升级。", systemImage: "rectangle.stack")
+    @ViewBuilder
+    private func capacityStatus(_ action: UpgradeAction) -> some View {
+        if let queueKind = queueKind(for: action) {
+            let occupancy = model.queueOccupancy(for: villageID, queueKind: queueKind)
+            switch occupancy.status {
+            case .available where occupancy.isCapacityConfigured:
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(
+                        "本地容量占用 \(occupancy.totalOccupancyCount)/\(occupancy.capacity ?? 0)",
+                        systemImage: "rectangle.stack.badge.person.crop"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(occupancy.isFull ? .red : .secondary)
+                    if occupancy.isFull {
+                        Text("\(queueKind.displayName)容量已满，不能开始新的本地升级。")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.red)
                     }
-                case .unreconciled:
-                    // Issue #192：未对账时不得显示旧 overlay/manual 占用数字，
-                    // 也不得给出「容量已满」结论；明确提示尚未对账。
-                    Label(
-                        "快照尚未对账，当前容量占用暂不可确认",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                case .unavailable:
-                    Label(
-                        "手动升级存储不可用，暂无法确认占用",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.orange)
                 }
+            case .unreconciled:
+                Label(
+                    "快照尚未对账，当前容量占用暂不可确认",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            case .unavailable:
+                Label(
+                    "手动升级存储不可用，暂无法确认占用",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            default:
+                EmptyView()
             }
-            Label(
-                "导入快照中的升级计时不计入本地容量；本地记录与导入计时相互独立。",
-                systemImage: "arrow.triangle.2.circlepath"
-            )
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
         }
     }
 
@@ -257,8 +232,7 @@ struct ManualUpgradeActionSheetView: View {
             let record = try model.startManualUpgrade(
                 for: villageID,
                 action: action,
-                startedAt: Date(),
-                queueKind: selectedQueueKind
+                startedAt: Date()
             )
             if record.status == .completed {
                 onDone()

@@ -1274,8 +1274,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertEqual(occupancy.capacity, 3)
         XCTAssertEqual(occupancy.activeManualCount, 0)
         XCTAssertFalse(occupancy.isFull)
-        // 其他类别不受影响
-        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .hero).capacity)
+        // 其他有效类别不受影响
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity)
     }
 
     @MainActor
@@ -1393,20 +1393,16 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             updates: [
                 .builder: .set(3),
                 .laboratory: .set(0),
-                .hero: .set(2),
-                .equipment: .clear,
             ],
             now: now
         )
 
         XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 3)
         XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity, 0)
-        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .hero).capacity, 2)
-        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .equipment).capacity)
         // 只产生一次有效 state 保存：stateUpdatedAt 统一为本次 now。
         let persisted = try XCTUnwrap(try store.load()?.state(for: villageID))
         XCTAssertEqual(persisted.stateUpdatedAt, now)
-        XCTAssertEqual(persisted.queueCapacityConfigs.count, 3)
+        XCTAssertEqual(persisted.queueCapacityConfigs.count, 2)
     }
 
     @MainActor
@@ -1447,7 +1443,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertThrowsError(
             try model.replaceQueueCapacities(
                 for: villageID,
-                updates: [.builder: .set(3), .hero: .set(-1)]
+                updates: [.builder: .set(3), .laboratory: .set(-1)]
             )
         ) { error in
             guard case ManualUpgradeCommandError.queueCapacityInvalid = error else {
@@ -1470,8 +1466,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             switch kind {
             case .builder: updates[kind] = .clear
             case .laboratory: updates[kind] = .set(3)
-            case .hero: updates[kind] = .set(1)
-            case .equipment: updates[kind] = .set(0)
             default: break
             }
         }
@@ -1479,10 +1473,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
 
         XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .builder).capacity)
         XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity, 3)
-        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .hero).capacity, 1)
-        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .equipment).capacity, 0)
         let persisted = try XCTUnwrap(try store.load()?.state(for: villageID))
-        XCTAssertEqual(persisted.queueCapacityConfigs.count, 3)
+        XCTAssertEqual(persisted.queueCapacityConfigs.count, 1)
     }
 
     @MainActor
@@ -1565,7 +1557,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertThrowsError(
             try model.replaceQueueCapacities(
                 for: villageID,
-                updates: [.builder: .set(3), .hero: .set(2)]
+                updates: [.builder: .set(3), .laboratory: .set(2)]
             )
         ) { error in
             XCTAssertNotNil(
@@ -1581,7 +1573,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertEqual(model.manualTrackerStatus, beforeStatus)
         XCTAssertNotEqual(model.manualTrackerStatus, .unavailable)
         XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 5)
-        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .hero).capacity)
+        XCTAssertNil(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity)
         // store bytes 与已持久化 stateUpdatedAt 不变，且只尝试一次持久化。
         XCTAssertEqual(failingStore.rawData, beforeBytes)
         let afterState = try XCTUnwrap(try failingStore.load()?.state(for: villageID))
@@ -1594,10 +1586,10 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         // 重试：存储恢复后同一次编辑可直接再次提交成功。
         try model.replaceQueueCapacities(
             for: villageID,
-            updates: [.builder: .set(3), .hero: .set(2)]
+            updates: [.builder: .set(3), .laboratory: .set(2)]
         )
         XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 3)
-        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .hero).capacity, 2)
+        XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .laboratory).capacity, 2)
         let retried = try XCTUnwrap(try failingStore.load()?.state(for: villageID))
         XCTAssertEqual(retried.queueCapacityConfigs.first {
             $0.queueKind == .builder
@@ -1632,13 +1624,13 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
 
         try model.replaceQueueCapacities(
             for: villageID,
-            updates: [.builder: .set(3), .hero: .set(1)]
+            updates: [.builder: .set(3), .laboratory: .set(1)]
         )
 
         // 村庄1 更新；村庄2 仍无任何容量配置。
         XCTAssertEqual(model.queueOccupancy(for: villageID, queueKind: .builder).capacity, 3)
         XCTAssertNil(model2.queueOccupancy(for: village2ID, queueKind: .builder).capacity)
-        XCTAssertNil(model2.queueOccupancy(for: village2ID, queueKind: .hero).capacity)
+        XCTAssertNil(model2.queueOccupancy(for: village2ID, queueKind: .laboratory).capacity)
     }
 
     // MARK: - Issue #145 Start 队列归类与容量校验
@@ -1721,10 +1713,10 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
-    func testStartWithQueueKindStoresQueueKind() throws {
+    func testStartAutomaticallyStoresBuilderQueueKind() throws {
         let (model, villageID, action, _) = try makeTwoStartableItemsModel()
         let record = try model.startManualUpgrade(
-            for: villageID, action: action, startedAt: Date(), queueKind: .builder
+            for: villageID, action: action, startedAt: Date()
         )
         XCTAssertEqual(record.queueKind, LocalQueueKind.builder.rawValue)
         XCTAssertEqual(
@@ -1733,12 +1725,24 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
-    func testStartWithoutQueueKindStoresNil() throws {
+    func testStartWithoutExplicitQueueKindStillStoresBuilder() throws {
         let (model, villageID, action, _) = try makeTwoStartableItemsModel()
         let record = try model.startManualUpgrade(
             for: villageID, action: action, startedAt: Date(), queueKind: nil
         )
-        XCTAssertNil(record.queueKind)
+        XCTAssertEqual(record.queueKind, LocalQueueKind.builder.rawValue)
+    }
+
+    @MainActor
+    func testStartRejectsExplicitWrongQueueKind() throws {
+        let (model, villageID, action, _) = try makeTwoStartableItemsModel()
+        XCTAssertThrowsError(
+            try model.startManualUpgrade(
+                for: villageID, action: action, startedAt: Date(), queueKind: .laboratory
+            )
+        ) { error in
+            XCTAssertEqual(error as? ManualUpgradeCommandError, .invalidQueueKind)
+        }
     }
 
     @MainActor
@@ -1797,17 +1801,24 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
-    func testStartWithNilQueueKindSkipsCapacityCheck() throws {
+    func testStartWithNilQueueKindStillChecksInferredCapacity() throws {
         let (model, villageID, first, second) = try makeTwoStartableItemsModel()
         try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 0)
-        _ = try model.startManualUpgrade(
-            for: villageID, action: first, startedAt: Date(), queueKind: nil
-        )
-        // 不归类 → 不参与容量校验
-        let record = try model.startManualUpgrade(
-            for: villageID, action: second, startedAt: Date(), queueKind: nil
-        )
-        XCTAssertEqual(record.status, .active)
+        // nil 只表示由命令层自动推导，不能绕过 builder 容量。
+        XCTAssertThrowsError(
+            try model.startManualUpgrade(
+                for: villageID, action: first, startedAt: Date(), queueKind: nil
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError,
+                .queueCapacityFull(
+                    queueKind: .builder, activeCount: 0,
+                    confirmedImportedCount: 0, capacity: 0
+                )
+            )
+        }
+        _ = second
     }
 
     @MainActor
@@ -1881,20 +1892,23 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
-    func testDifferentQueueKindNotBlockedByFullOtherKind() throws {
-        let (model, villageID, first, second) = try makeTwoStartableItemsModel()
+    func testStartAutomaticallyUsesBuilderCapacity() throws {
+        let (model, villageID, first, _) = try makeTwoStartableItemsModel()
         try model.setQueueCapacity(for: villageID, queueKind: .builder, capacity: 0)
-        // hero 类别未配置容量，不受 builder 的 capacity 0 影响
-        let record = try model.startManualUpgrade(
-            for: villageID, action: first, startedAt: Date(), queueKind: .hero
-        )
-        XCTAssertEqual(record.status, .active)
-        // builder 类别仍被拒绝
+        // UI 不再传入类别；建筑项目自动使用 builder 容量。
         XCTAssertThrowsError(
             try model.startManualUpgrade(
-                for: villageID, action: second, startedAt: Date(), queueKind: .builder
+                for: villageID, action: first, startedAt: Date()
             )
-        )
+        ) { error in
+            XCTAssertEqual(
+                error as? ManualUpgradeCommandError,
+                .queueCapacityFull(
+                    queueKind: .builder, activeCount: 0,
+                    confirmedImportedCount: 0, capacity: 0
+                )
+            )
+        }
     }
 
     @MainActor
@@ -2029,7 +2043,22 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     }
 
     @MainActor
-    func testAssignSameItemKeyUpdatesQueueKindInsteadOfDuplicating() throws {
+    func testAssignRejectsWrongInferredQueueKind() throws {
+        let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
+        let key = try importedObservationKey(in: model, villageID: villageID)
+
+        XCTAssertThrowsError(
+            try model.assignQueueToImportedObservation(
+                for: villageID, itemKey: key, queueKind: .laboratory
+            )
+        ) { error in
+            XCTAssertEqual(error as? ManualUpgradeCommandError, .invalidQueueKind)
+        }
+        XCTAssertEqual(try model.queueAssignments(for: villageID), [])
+    }
+
+    @MainActor
+    func testAssignSameItemKeyKeepsInferredQueueKindWithoutDuplicating() throws {
         let (model, villageID, _, _) = try makeTwoStartableItemsModel(observedTimer: true)
         let key = try importedObservationKey(in: model, villageID: villageID)
 
@@ -2037,11 +2066,11 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             for: villageID, itemKey: key, queueKind: .builder
         )
         let second = try model.assignQueueToImportedObservation(
-            for: villageID, itemKey: key, queueKind: .laboratory
+            for: villageID, itemKey: key, queueKind: .builder
         )
         let all = try model.queueAssignments(for: villageID)
         XCTAssertEqual(all.count, 1, "同一 itemKey 重复分配不得产生重复映射")
-        XCTAssertEqual(all[0].queueKind, .laboratory)
+        XCTAssertEqual(all[0].queueKind, .builder)
         XCTAssertEqual(all[0].decisionID, second.decisionID)
     }
 
@@ -2697,6 +2726,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             model.queueAssignmentCandidates(for: villageID).first { $0.itemKey == key }
         )
         XCTAssertTrue(candidate.hasTimer)
+        XCTAssertEqual(candidate.inferredQueueKind, .builder)
         XCTAssertTrue(candidate.isConfirmable, "timer + 完整覆盖应可确认")
         XCTAssertNil(candidate.unconfirmableReason, "可确认时无不可确认原因")
     }
@@ -2808,10 +2838,10 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         // 证据恢复（当前 itemState 仍 timer + 覆盖完整）后直接重新确认：
         // 复用现有 assign 命令，无需先 unassign。
         let decision = try reloaded.assignQueueToImportedObservation(
-            for: villageID, itemKey: key, queueKind: .laboratory
+            for: villageID, itemKey: key, queueKind: .builder
         )
         XCTAssertEqual(decision.status, .userAssigned)
-        XCTAssertEqual(decision.queueKind, .laboratory)
+        XCTAssertEqual(decision.queueKind, .builder)
         let all = try reloaded.queueAssignments(for: villageID)
         XCTAssertEqual(all.count, 1, "重新确认不产生重复映射")
         XCTAssertEqual(all[0].status, .userAssigned)

@@ -978,6 +978,53 @@ extension AppModelTests {
         let second = model.capitalRaidRows(for: "#CLANA").map(\.id)
         XCTAssertEqual(first, second)
     }
+
+    /// 加载更多失败：保留 last-good 与游标，capitalHasMore 仍为 true（可重试），
+    /// 重试成功后恢复 .success 并合并新页（Issue #251 验收：
+    /// 与 War Log #124 对齐，加载更多失败时按钮仍可用于重试，不得误显"没有更多"）。
+    @MainActor
+    func testLoadMoreCapitalFailureKeepsRetryableAndRecovers() async throws {
+        let counter = RequestCounter()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            counter.count += 1
+            if counter.count == 2 {
+                // 第二页：加载更多失败（429）
+                return (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            if counter.count == 3 {
+                // 重试成功：第二页数据（1 条新条目 + 推进游标）
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                        Data(#"{"items":[{"state":"ended","startTime":"20260617T080000.000Z","endTime":"20260619T080000.000Z","capitalTotalLoot":50000,"raidsCompleted":4,"totalAttacks":40,"enemyDistrictsDestroyed":80,"offensiveReward":3000,"defensiveReward":1000}],"paging":{"cursors":{"before":"B2","after":"RAIDCURSORAFTER2"}}}"#.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        // 首屏成功（2 条 + after=RAIDCURSORAFTER1）
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertTrue(model.currentCapitalHasMore)
+
+        // 加载更多失败 → last-good 与游标保留，hasMore 仍为 true（可重试）
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2, "失败保留已累计的 last-good")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1", "失败保留游标")
+        XCTAssertTrue(model.currentCapitalHasMore, "失败后仍可重试（Issue #251 验收）")
+
+        // 重试成功 → 恢复 .success 并合并新页
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 3, "重试成功后合并新页")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER2", "重试成功后游标推进")
+    }
 }
 
 // MARK: - P1-3 端到端（外部复核补充）

@@ -1913,9 +1913,12 @@ public final class AppModel: ObservableObject {
         return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
     }
 
-    /// 指定部落的突袭周末是否还有更多页。
+    /// 指定部落的突袭周末是否还有更多页（分页按钮可用性）。
+    /// 成功或失败（保留 last-good 的加载更多失败）且有游标 → 可继续翻页/重试
+    /// （Issue #251：与 War Log #124 对齐，加载更多失败时按钮仍可用于重试，不得误显"没有更多"）。
     public func capitalHasMore(for clanTag: String) -> Bool {
-        guard let state = capitalState(for: clanTag), state.status == .success,
+        guard let state = capitalState(for: clanTag),
+              state.status == .success || state.status == .failed,
               let cursor = state.lastGood?.after else { return false }
         return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
     }
@@ -3255,11 +3258,12 @@ public final class AppModel: ObservableObject {
     }
 
     /// 按显式 Tag 突袭周末加载更多（手动部落入口；入参规范化，非法输入 no-op）。
+    /// 允许 `.success` 与保留 last-good 的 `.failed`（失败重试，Issue #251，与 War Log #124 对齐）。
     public func loadMoreCapitalRaid(tag: String) {
         guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingCapitalData else { return }
         guard let current = clanCapitalStates[tag],
-              current.status == .success,
+              current.status == .success || current.status == .failed,
               let cursor = current.lastGood?.after else { return }
         refreshingCapitalTags = [tag]
         let client = clanLogClient

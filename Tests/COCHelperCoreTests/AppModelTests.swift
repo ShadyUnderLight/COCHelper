@@ -1195,6 +1195,105 @@ extension AppModelTests {
             }
         }
     }
+
+    /// Issue #251 review blocker：旧版本可能把 poisoned state 落盘
+    /// （.failed + 旧 parser lastGood + parserVersion 被错误升级为当前版本）。
+    /// 启动时 legacy migration 必须把这种状态的 parserVersion 重置，
+    /// 强制下一次 loadMore 走无 cursor rebuild，而不是用旧 cursor 把新 parser
+    /// 页 merge 到旧 parser 页。
+    @MainActor
+    func testLegacyPoisonedFailedStateTriggersRebuildAfterMigration() async throws {
+        let recorder = TagRecorder()
+        // 预置 poisoned state：status=.failed，parserVersion 已被旧版本错误升级为
+        // 当前版本 clan-capital-0.3，但 lastGood 实际是旧 parser 数据 + after=RAIDCURSORAFTER1。
+        let oldSeason = OfficialCapitalRaidSeason(
+            state: "ended", startTime: "20260701T080000.000Z", endTime: "20260703T080000.000Z",
+            capitalTotalLoot: 123456, raidsCompleted: 6, totalAttacks: 60,
+            enemyDistrictsDestroyed: 120, offensiveReward: 5000, defensiveReward: 2500,
+            members: nil, attackLog: nil, defenseLog: nil
+        )
+        let poisonedState = ClanCapitalAPIState(
+            status: .failed,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 1_700_000_500),
+            lastErrorReason: "请求被限流（429），请稍后再试。",
+            lastHTTPStatus: 429,
+            parserVersion: "clan-capital-0.3", // 被旧版本错误升级的 metadata
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: [oldSeason], before: nil, after: "RAIDCURSORAFTER1")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": poisonedState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            // rebuild 成功：返回当前 parser 的首页
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        // migration 后：parserVersion 被重置为 legacy 标记（不再等于当前版本）
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertNotEqual(model.currentCapitalState?.parserVersion, "clan-capital-0.3",
+                          "migration 必须重置 poisoned state 的 parserVersion")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1",
+                       "migration 不得修改 lastGood 数据")
+        XCTAssertTrue(model.currentCapitalHasMore, "failed + lastGood + after → hasMore=true")
+
+        // 调用 loadMore：因为 parserVersion != current，needsRebuild=true → 无 cursor 首屏 rebuild
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.parserVersion, "clan-capital-0.3",
+                       "rebuild 成功后 parserVersion 升级为当前版本")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2,
+                       "rebuild 替换为新首页（不残留旧 poisoned 条目）")
+
+        // 关键断言：请求必须是无 cursor 的首屏 rebuild，不得带 after=RAIDCURSORAFTER1
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 1, "只有一次 rebuild 请求")
+        XCTAssertFalse(queries[0].contains("after="),
+                       "poisoned state 修复后必须走无 cursor rebuild，不得用旧 cursor 翻页: \(queries[0])")
+    }
+
+    /// Issue #251 migration 不得影响合法的 success 状态：parserVersion 保持不变。
+    @MainActor
+    func testLegacyMigrationDoesNotAffectSuccessStates() async throws {
+        let successState = ClanCapitalAPIState(
+            status: .success,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            parserVersion: "clan-capital-0.3",
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: [], before: nil, after: "RAIDCURSORAFTER1")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": successState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) }
+        )
+
+        // success 状态的 parserVersion 不得被 migration 修改
+        XCTAssertEqual(model.currentCapitalState?.parserVersion, "clan-capital-0.3",
+                       "migration 不得修改 success 状态的 parserVersion")
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+    }
 }
 
 // MARK: - P1-3 端到端（外部复核补充）

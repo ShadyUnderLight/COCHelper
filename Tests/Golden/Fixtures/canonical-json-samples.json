@@ -1,0 +1,15 @@
+{
+  "description": "Issue #265 E0-02 golden samples: canonical JSON (wire-contract-v1.md WA-2). Each sample id maps to input JSON; expected canonical bytes are frozen in canonical-json-expected.json.",
+  "samples": {
+    "solidus": "a/b",
+    "quote-and-backslash": "say \"hi\" \\ ok",
+    "control-chars": "\u0001\t\n\u001f",
+    "cjk-and-emoji-passthrough": "城堡🏰北京",
+    "del-u2028-u2029-not-escaped": "  x",
+    "object-key-sorting": { "z": 1, "a": { "m": 1, "A": 2 }, "B": 3 },
+    "array-sorted-by-bytes-duplicates-kept": [10, 2, 10, "x", "a", [1], [0], { "k": 1 }, true, null],
+    "number-forms": { "floatOne": 1.0, "negativeFloat": -2.5, "bigInteger": 9007199254740993, "exponent": 1e2, "zero": 0 },
+    "nested-empty": { "obj": {}, "arr": [], "str": "" },
+    "bool-null-scalars": { "t": true, "f": false, "n": null }
+  }
+}

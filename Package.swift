@@ -72,6 +72,16 @@ let package = Package(
             name: "COCHelperCorePublicAPITests",
             dependencies: ["COCHelperCore"],
             path: "Tests/COCHelperCorePublicAPITests"
+        ),
+        .testTarget(
+            // Issue #265 E0-02：golden 契约冻结。fixtures 冻结 canonical bytes、
+            // parser 指纹与 encoded-byte 期望值，作为 Electron 重写的验收基线。
+            name: "GoldenContractTests",
+            dependencies: ["COCHelperCore"],
+            path: "Tests/Golden",
+            resources: [
+                .process("Fixtures")
+            ]
         )
     ]
 )

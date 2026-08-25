@@ -136,4 +136,75 @@ final class AppModelPerfSeedTests: XCTestCase {
         XCTAssertNil(model.warLogState(for: "#PERFCLAN"))
         XCTAssertNil(model.capitalState(for: "#PERFCLAN"))
     }
+
+    // MARK: - Issue #253：perf seed 写入同样受保留上限约束
+
+    /// 复制 bundled fixtures 到临时目录并把 warlog/capital 首页替换为
+    /// 超限内容（limit=nil 时服务端单响应可超过客户端上限）。
+    private func makeOversizedFixtureDirectory(
+        warItemCount: Int,
+        capitalSeasonCount: Int
+    ) throws -> URL {
+        let source = try XCTUnwrap(Bundle.module.resourceURL)
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("perf-seed-retention-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.copyItem(at: source, to: temp)
+
+        let warItem = { index -> String in
+            "{\"result\":\"win\",\"endTime\":\"war-\(String(format: "%04d", index))\"}"
+        }
+        let warItems = (0..<warItemCount).map(warItem).joined(separator: ",")
+        let warJSON = "{\"items\":[\(warItems)],\"paging\":{\"cursors\":{\"after\":\"OVERSIZE\"}}}"
+        try warJSON.write(
+            to: temp.appendingPathComponent("perf_war_log_page_01.json"),
+            atomically: true, encoding: .utf8)
+
+        let season = { index -> String in
+            "{\"state\":\"ended\",\"startTime\":\"\(String(format: "p%04d", index))\",\"endTime\":\"e\"}"
+        }
+        let seasons = (0..<capitalSeasonCount).map(season).joined(separator: ",")
+        let capitalJSON = "{\"items\":[\(seasons)],\"paging\":{\"cursors\":{\"after\":\"OVERSIZEC\"}}}"
+        try capitalJSON.write(
+            to: temp.appendingPathComponent("perf_capital_raid_page_01.json"),
+            atomically: true, encoding: .utf8)
+
+        return temp
+    }
+
+    /// perf seed 的 warlog/capital 写入不得绕过 retention 归一化：
+    /// 超限自定义 fixture 在 seed 时立即收敛（内存 + 落盘 + row cache），
+    /// 不得依赖下一次启动自愈。
+    @MainActor
+    func testLoadPerformanceSampleNormalizesOversizedFixturesToRetentionCap() throws {
+        let warCap = CacheRetentionPolicy.maxWarLogItemsPerTag
+        let capitalCap = CacheRetentionPolicy.maxCapitalSeasonsPerTag
+        // 首页自身超限 → 合并结果必然超限；若实现漏掉归一化，断言会红。
+        let fixtureDirectory = try makeOversizedFixtureDirectory(
+            warItemCount: warCap + 15,
+            capitalSeasonCount: capitalCap + 5)
+        defer { try? FileManager.default.removeItem(at: fixtureDirectory) }
+
+        let model = AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
+        XCTAssertTrue(model.loadPerformanceSample(fixtureDirectory: fixtureDirectory))
+
+        // 内存视图。
+        XCTAssertEqual(model.warLogState(for: "#PERFCLAN")?.lastGood?.items.count, warCap,
+                       "perf seed warlog 必须收敛到保留上限（不得绕过 retentionNormalized）")
+        XCTAssertEqual(model.capitalState(for: "#PERFCLAN")?.lastGood?.items.count, capitalCap,
+                       "perf seed capital 必须收敛到保留上限")
+
+        // 落盘视图（seed 内部已 persist）。
+        let persistedWar = try JSONDecoder().decode(
+            ClanWarLogStateStore.self,
+            from: XCTUnwrap(defaults.data(forKey: "coc-helper.clan-war-logs.v1")))
+        XCTAssertEqual(persistedWar.states["#PERFCLAN"]?.lastGood?.items.count, warCap)
+        let persistedCapital = try JSONDecoder().decode(
+            ClanCapitalStateStore.self,
+            from: XCTUnwrap(defaults.data(forKey: "coc-helper.clan-capitals.v1")))
+        XCTAssertEqual(persistedCapital.states["#PERFCLAN"]?.lastGood?.items.count, capitalCap)
+
+        // row cache 与归一化后的 state 同步。
+        let rows = model.capitalRaidRows(for: "#PERFCLAN")
+        XCTAssertEqual(rows.count, capitalCap)
+    }
 }

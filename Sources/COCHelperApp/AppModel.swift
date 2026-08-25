@@ -2938,7 +2938,10 @@ public final class AppModel: ObservableObject {
                 parserVersion: OfficialWarLogPage.currentParserVersion,
                 lastGood: OfficialWarLogPage(page: warMerged)
             )
-            clanWarLogStates[PerfSampleFixture.perfClanTag] = warState
+            // Issue #253：perf seed 与其他成功写入路径一样受保留上限约束，
+            // 不得成为绕过 retentionNormalized 的旁路。
+            let normalizedWarState = retentionNormalized(warState)
+            clanWarLogStates[PerfSampleFixture.perfClanTag] = normalizedWarState
             persistClanWarLogStates()
 
             let raidP1 = try decodePerfRaidPage(try perfFixtureText(PerfSampleFixture.raidPage1, in: directory))
@@ -2959,8 +2962,11 @@ public final class AppModel: ObservableObject {
                 parserVersion: OfficialCapitalRaidPage.currentParserVersion,
                 lastGood: OfficialCapitalRaidPage(page: raidMerged)
             )
-            clanCapitalStates[PerfSampleFixture.perfClanTag] = raidState
-            if let raidPage = raidState.lastGood {
+            // Issue #253：同 warlog，perf seed 写入前统一归一化；row cache
+            // 消费同一归一化后的 state。
+            let normalizedRaidState = retentionNormalized(raidState)
+            clanCapitalStates[PerfSampleFixture.perfClanTag] = normalizedRaidState
+            if let raidPage = normalizedRaidState.lastGood {
                 updateCapitalRaidRowCache(
                     tag: PerfSampleFixture.perfClanTag,
                     update: .initial(page: raidPage)

@@ -10,6 +10,9 @@ import Foundation
 /// - 相同 tag 一次请求（Set 去重 + sorted 顺序执行）。
 /// - 无效/缺失 tag 被忽略。
 /// - 失败保留 `previous` 中该 tag 的 last-good；首次失败无 last-good。
+/// - 失败保留 last-good 时也保留 `previous.parserVersion`（invariant：
+///   parserVersion 描述 last-good 由哪个 parser 生成；保留旧数据却写新版本
+///   会使 `isCurrentParserVersion` 误判，破坏跨 parser rebuild 契约）。
 /// - `CancellationError` / `URLError(.cancelled)` → "已取消"（不泄漏类型名）。
 /// - 只返回本次请求过的 tag；未请求的 tag 由调用方决定保留。
 public enum EndpointRefresher {
@@ -73,6 +76,11 @@ public enum EndpointRefresher {
         fetch: @Sendable (String) async throws -> Snapshot
     ) async -> OfficialEndpointState<Snapshot>
     where Snapshot: Codable & Hashable & Sendable & UnrecognizedKeysProviding & EndpointParserVersioning {
+        // 失败时若保留 previous.lastGood，则 parserVersion 也必须保留 previous 的版本，
+        // 否则 isCurrentParserVersion 误判为当前版本，导致跨 parser rebuild 契约被破坏
+        // （旧 0.2 lastGood + 失败后 parserVersion 被写成 0.3 → 再加载更多时 needsRebuild=false
+        // → 用旧 cursor 翻页 → 把 0.3 新页 merge 到 0.2 旧页）。
+        let retainedParserVersion = previous?.lastGood != nil ? previous!.parserVersion : parserVersion
         do {
             let snapshot = try await fetch(tag)
             return OfficialEndpointState(
@@ -94,7 +102,7 @@ public enum EndpointRefresher {
                 lastAttemptAt: now,
                 lastErrorReason: error.userFacingReason,
                 lastHTTPStatus: error.httpStatus,
-                parserVersion: parserVersion,
+                parserVersion: retainedParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []
             )
@@ -106,7 +114,7 @@ public enum EndpointRefresher {
                 lastAttemptAt: now,
                 lastErrorReason: "已取消",
                 lastHTTPStatus: nil,
-                parserVersion: parserVersion,
+                parserVersion: retainedParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []
             )
@@ -118,7 +126,7 @@ public enum EndpointRefresher {
                 lastAttemptAt: now,
                 lastErrorReason: "已取消",
                 lastHTTPStatus: nil,
-                parserVersion: parserVersion,
+                parserVersion: retainedParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []
             )
@@ -130,7 +138,7 @@ public enum EndpointRefresher {
                 lastAttemptAt: now,
                 lastErrorReason: "未知错误：\(type(of: error))",
                 lastHTTPStatus: nil,
-                parserVersion: parserVersion,
+                parserVersion: retainedParserVersion,
                 lastGood: previous?.lastGood,
                 unrecognizedKeys: previous?.unrecognizedKeys ?? []
             )

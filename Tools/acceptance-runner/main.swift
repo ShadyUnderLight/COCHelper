@@ -611,7 +611,12 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
         }) {
             availability = .insufficient
         } else if let latestDiff = diffs.first(where: { $0.toSnapshotID == latestEntry?.snapshotID }),
-                  latestDiff.comparisonState == .insufficientCoverage {
+                  latestDiff.comparisonState == .insufficientCoverage ||
+                  latestDiff.changes.contains(where: {
+                      // P1(#260 review round 4)：复用旧 projection containsUncertainChanges 规则
+                      // changeKind==.unknown || evidence==.unknown || coverage.state != .complete
+                      $0.changeKind == .unknown || $0.evidence == .unknown || $0.coverage.state != .complete
+                  }) {
             availability = .insufficient
         } else {
             availability = .available

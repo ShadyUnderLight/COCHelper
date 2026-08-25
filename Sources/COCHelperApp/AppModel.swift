@@ -3912,13 +3912,43 @@ public final class AppModel: ObservableObject {
     }
 
     /// 批次失败状态 → 解析错误分类（single-flight 复用路径）。
-    /// `ClanAPIState` 只保留脱敏 HTTP 状态码与原因字符串，按码映射；
-    /// 传输层失败/解析失败/缺 token 的 `lastHTTPStatus` 均为 nil，统一
-    /// 归为 .network（与直接路径的精确分类有差距：malformed/missingToken
-    /// 无法从状态区分——完整修复需在 `OfficialEndpointState` 增加结构化
-    /// 错误类别字段，记 follow-up）。"已取消"是 `EndpointRefresher` 写死的
-    /// 稳定文案，可精确识别。
+    ///
+    /// Issue #252：优先读取 `failureKind`（结构化类别，由 `EndpointRefresher`
+    /// 从 `CoAPIError` 直接写入），不再通过 HTTP 状态码与中文原因字符串
+    /// 反向猜测——缺 token / malformed / timeout / 一般网络错误没有 HTTP
+    /// status，旧逻辑统一归为 .network，与直接路径的精确分类有差距。
+    ///
+    /// 旧持久化数据缺 `failureKind`（解码为 nil）时走 `mapFailedStateLegacy`
+    /// 兜底，保持 fail-closed 的旧行为（HTTP 状态码 + "已取消" 文案识别）。
+    /// 新数据由 `EndpointRefresher` 写入 `failureKind`，不再依赖文案字符串。
     private static func mapFailedState(_ state: ClanAPIState) -> ClanResolveError {
+        if let kind = state.failureKind {
+            return Self.mapFailureKind(kind)
+        }
+        return Self.mapFailedStateLegacy(state)
+    }
+
+    /// 结构化失败类别 → 解析错误（Issue #252）。
+    ///
+    /// 与直接路径 `mapResolveError(_:)` 逐 case 对齐，保证同一错误条件
+    /// 在"直接请求"与"等待已有刷新"两条路径返回同一 `ClanResolveError`。
+    private static func mapFailureKind(_ kind: OfficialEndpointFailureKind) -> ClanResolveError {
+        switch kind {
+        case .missingCredentials: return .missingToken
+        case .unauthorized, .accessDenied: return .accessDenied
+        case .notFound: return .notFound
+        case .rateLimited: return .rateLimited
+        case .serverError: return .server
+        case .timeout, .network: return .network
+        case .malformedResponse: return .malformed
+        case .cancelled: return .cancelled
+        }
+    }
+
+    /// 旧数据兜底（无 `failureKind` 字段）：保持 fail-closed 的旧行为。
+    /// `lastErrorReason` 只作展示，不作为稳定协议——此处仅用于兼容旧持久化
+    /// 数据（"已取消"是 `EndpointRefresher` 写死的稳定文案）。
+    private static func mapFailedStateLegacy(_ state: ClanAPIState) -> ClanResolveError {
         if state.lastErrorReason == "已取消" {
             return .cancelled
         }

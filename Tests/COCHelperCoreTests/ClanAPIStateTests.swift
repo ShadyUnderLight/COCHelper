@@ -160,6 +160,12 @@ final class ClanAPIStateTests: XCTestCase {
                 lastAttemptAt: Bool.random(using: &rng) ? Date(timeIntervalSince1970: Double.random(in: 0...4_000_000_000, using: &rng)) : nil,
                 lastErrorReason: Bool.random(using: &rng) ? "reason-\(Int.random(in: 0...9, using: &rng))" : nil,
                 lastHTTPStatus: Bool.random(using: &rng) ? [401, 403, 404, 429, 500].randomElement(using: &rng) : nil,
+                // Issue #252：结构化失败类别也纳入 round-trip 覆盖。
+                failureKind: Bool.random(using: &rng)
+                    ? [OfficialEndpointFailureKind.missingCredentials, .unauthorized, .accessDenied,
+                       .notFound, .rateLimited, .serverError, .timeout, .network,
+                       .malformedResponse, .cancelled].randomElement(using: &rng)!
+                    : nil,
                 lastGood: Bool.random(using: &rng) ? OfficialClanSnapshot(
                     tag: "#CLAN", name: "clan-\(Int.random(in: 0...99, using: &rng))", type: nil,
                     description: nil, clanLevel: Int.random(in: 1...50, using: &rng),

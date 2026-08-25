@@ -51,6 +51,69 @@ final class GenericEndpointStateTests: XCTestCase {
         XCTAssertEqual(json?["parserVersion"] as? String, "clan-snapshot-0.4")
     }
 
+    // MARK: - 结构化失败类别（Issue #252）
+
+    /// `failureKind` 非 nil 时必须编码进 JSON，且 round-trip 保持。
+    func testFailureKindEncodedWhenSetAndRoundTrips() throws {
+        let state = OfficialEndpointState<OfficialClanSnapshot>(
+            status: .failed,
+            clanTag: "#CLAN",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastErrorReason: "请求被限流（429），请稍后再试",
+            lastHTTPStatus: 429,
+            failureKind: .rateLimited,
+            parserVersion: ClanAPIState.currentParserVersion,
+            lastGood: clanSnapshot(),
+            unrecognizedKeys: []
+        )
+        let data = try JSONEncoder().encode(state)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertEqual(json?["failureKind"] as? String, "rateLimited", "failureKind 非 nil 时必须编码进 JSON")
+
+        let decoded = try JSONDecoder().decode(OfficialEndpointState<OfficialClanSnapshot>.self, from: data)
+        XCTAssertEqual(decoded, state)
+        XCTAssertEqual(decoded.failureKind, .rateLimited)
+    }
+
+    /// 成功状态不携带失败类别（编码时省略键）。
+    func testSuccessStateOmitsFailureKind() throws {
+        let state = OfficialEndpointState<OfficialClanSnapshot>(
+            status: .success,
+            clanTag: "#CLAN",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 1_700_000_000),
+            parserVersion: ClanAPIState.currentParserVersion,
+            lastGood: clanSnapshot(),
+            unrecognizedKeys: []
+        )
+        let json = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(state)
+        ) as? [String: Any]
+        XCTAssertNil(json?["failureKind"], "成功状态不得编码 failureKind 键")
+    }
+
+    /// 旧持久化数据缺 `failureKind` 键时必须安全解码为 nil（不崩溃），
+    /// 且其余字段正常恢复——这是"旧数据可读 + fail-closed 兜底"的契约基础。
+    func testOldStateWithoutFailureKindDecodesSafely() throws {
+        let legacyJSON = """
+        {
+            "status": "failed",
+            "clanTag": "#CLAN",
+            "lastErrorReason": "请求超时",
+            "parserVersion": "clan-snapshot-0.4",
+            "unrecognizedKeys": []
+        }
+        """
+        let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(OfficialEndpointState<OfficialClanSnapshot>.self, from: data)
+        XCTAssertNil(decoded.failureKind, "旧数据缺 failureKind 时必须解码为 nil（不崩溃）")
+        XCTAssertEqual(decoded.status, .failed)
+        XCTAssertEqual(decoded.clanTag, "#CLAN")
+        XCTAssertEqual(decoded.lastErrorReason, "请求超时")
+        XCTAssertEqual(decoded.parserVersion, "clan-snapshot-0.4")
+    }
+
     /// typealias：ClanAPIState 就是泛型实例化（编译期验证 + 行为一致）。
     func testTypealiasesResolveToGenericType() {
         let clanState = ClanAPIState(status: .never, clanTag: "#A")

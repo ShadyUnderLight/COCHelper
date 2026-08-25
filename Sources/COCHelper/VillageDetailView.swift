@@ -17,7 +17,6 @@ struct VillageDetailView: View {
 
     @State private var selectedBase: TrackerBase = .home
     @State private var selectedFilter: CategoryFilter = .all
-    @State private var selectedHistoryCategory: SnapshotHistoryCategory = .all
     @State private var selectedItem: VillageItemState?
     // Issue #144：搜索 / 状态筛选 / 排序（纯投影消费，不重跑解析）。
     @State private var searchText = ""
@@ -192,11 +191,6 @@ struct VillageDetailView: View {
         // Issue #200：组卡随缓存 render 一次齐备（动态刷新后派生）。
         let buildingGroups = render.buildingGroups
         let craftTable = render.craftTable
-        let historyProjection = model.snapshotHistoryProjection(
-            for: villageID,
-            category: selectedHistoryCategory,
-            at: now
-        )
         // Issue #144：行级 canonical action（嵌套项/Craft Table 只读 → 无 action）。
         let actionsByItemID = Dictionary(
             uniqueKeysWithValues: filteredDisplayItems.compactMap { item -> (String, UpgradeAction)? in
@@ -253,11 +247,6 @@ struct VillageDetailView: View {
                     .padding(.bottom, 18)
                 officialAPISection()
                     .padding(.bottom, 18)
-                SnapshotHistoryView(
-                    projection: historyProjection,
-                    selectedCategory: $selectedHistoryCategory
-                )
-                .padding(.bottom, 18)
                 metricsBar(metrics: progressMetrics, coverage: projection.progressCoverage)
                     .padding(.bottom, 18)
                 basePicker()

@@ -97,10 +97,7 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         let firstEnvelope = try XCTUnwrap(historyStore.load())
         XCTAssertEqual(firstEnvelope.entries.count, 1)
         XCTAssertEqual(firstEnvelope.entries[0].rawJSON, raw)
-        let baselineProjection = model.snapshotHistoryProjection(for: targetID)
-        XCTAssertEqual(baselineProjection.availability, .baselineOnly)
-        XCTAssertEqual(baselineProjection.timeline.count, 1)
-        XCTAssertTrue(baselineProjection.timeline[0].isBaseline)
+        XCTAssertTrue(firstEnvelope.entries[0].isBaseline)
 
         guard case .success(let secondPreview) = model.prepareQuickImport(for: targetID) else {
             return XCTFail("重复导入仍应能生成快捷导入预览")
@@ -109,12 +106,9 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         let secondEnvelope = try XCTUnwrap(historyStore.load())
         XCTAssertEqual(secondEnvelope.entries.count, 1)
         XCTAssertEqual(secondEnvelope.duplicateMetadata.count, 1)
-        XCTAssertEqual(secondEnvelope.duplicateMetadata.values.first?.duplicateImportCount, 1)
-        let duplicateProjection = model.snapshotHistoryProjection(for: targetID)
-        XCTAssertEqual(duplicateProjection.totalSnapshotCount, 1)
-        XCTAssertEqual(duplicateProjection.timeline.count, 1)
-        XCTAssertEqual(duplicateProjection.timeline[0].duplicateImportCount, 1)
-        XCTAssertNotNil(duplicateProjection.latestCheckedAt)
+        let duplicateMeta = try XCTUnwrap(secondEnvelope.duplicateMetadata.values.first)
+        XCTAssertEqual(duplicateMeta.duplicateImportCount, 1)
+        XCTAssertNotNil(duplicateMeta.lastSeenAt)
     }
 
     @MainActor
@@ -235,9 +229,7 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         guard case .failure(.historyUnavailable) = model.prepareQuickImport(for: model.villages[0].id) else {
             return XCTFail("历史读取失败时快捷导入不得生成没有对账预览的确认页")
         }
-        guard case .unavailable = model.snapshotHistoryProjection(for: model.villages[0].id).availability else {
-            return XCTFail("历史读取失败必须映射为不可用，而不是空历史。")
-        }
+        XCTAssertNotNil(model.snapshotHistoryError, "历史读取失败必须设置错误状态，而不是空历史。")
         XCTAssertNil(model.villages[0].accountSnapshot)
         XCTAssertEqual(defaults.data(forKey: "coc-helper.villages.v1"), beforeCurrent)
     }
@@ -263,9 +255,6 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         let beforeCurrent = defaults.data(forKey: "coc-helper.villages.v1")
 
         XCTAssertNotNil(model.snapshotHistoryError)
-        guard case .corrupt = model.snapshotHistoryProjection(for: model.villages[0].id).availability else {
-            return XCTFail("损坏事务记录必须映射为 corrupt 历史状态。")
-        }
         guard case .failure(.historyUnavailable) = model.prepareQuickImport(for: model.villages[0].id) else {
             return XCTFail("事务日志损坏时快捷导入不得生成没有对账预览的确认页")
         }
@@ -507,32 +496,22 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
             promoteVerified: true
         )
         let villageA = try XCTUnwrap(modelA.villages.first(where: { $0.tag == "#ANONYMIZED" }))
-        let projectionAfterA = modelA.snapshotHistoryProjection(for: villageA.id)
-        XCTAssertEqual(projectionAfterA.availability, .baselineOnly)
-        XCTAssertEqual(
-            projectionAfterA.coverageTrustState,
-            .insufficientCoverage,
-            "perf home 含未 verified 的 section；UI 不得误报已验证"
-        )
-        XCTAssertEqual(projectionAfterA.timeline.count, 1)
-        XCTAssertTrue(projectionAfterA.timeline[0].isBaseline)
+        let envelopeAfterA = try XCTUnwrap(try historyStore.load())
+        let villageAEntriesA = envelopeAfterA.entries.filter { $0.villageID == villageA.id }
+        XCTAssertEqual(villageAEntriesA.count, 1)
+        XCTAssertTrue(villageAEntriesA[0].isBaseline)
+        let coverageAfterA = villageAEntriesA[0].coverage
 
         // 模拟退出并重开 App：新 AppModel + 同一 UserDefaults 与历史文件。
         let modelRestart = AppModel(defaults: defaults, historyStore: FileSnapshotHistoryStore(fileURL: historyURL))
-        let projectionAfterRestart = modelRestart.snapshotHistoryProjection(for: villageA.id)
-        XCTAssertEqual(
-            projectionAfterRestart.coverageTrustState,
-            projectionAfterA.coverageTrustState,
-            "重启后 trust display 应与导入后一致"
-        )
-        XCTAssertEqual(projectionAfterRestart.totalSnapshotCount, 1)
-        XCTAssertEqual(projectionAfterRestart.timeline.count, 1)
-        XCTAssertEqual(
-            projectionAfterRestart.statistics.today.heroLevelGrowth.state,
-            .insufficientData,
-            "基线单快照尚无相邻比较，统计应保持保守"
-        )
         let envelopeAfterRestart = try XCTUnwrap(try FileSnapshotHistoryStore(fileURL: historyURL).load())
+        let villageAEntriesRestart = envelopeAfterRestart.entries.filter { $0.villageID == villageA.id }
+        XCTAssertEqual(villageAEntriesRestart.count, 1)
+        XCTAssertEqual(
+            villageAEntriesRestart[0].coverage.sourceUniverseRuntimeTrust,
+            coverageAfterA.sourceUniverseRuntimeTrust,
+            "重启后 trust 应与导入后一致"
+        )
         XCTAssertEqual(
             envelopeAfterRestart.entries.first?.coverage.sourceUniverseRuntimeTrust,
             .trusted,
@@ -549,21 +528,11 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
             model: modelRestart,
             promoteVerified: true
         )
-        let projectionAfterB = modelRestart.snapshotHistoryProjection(for: villageA.id)
-        XCTAssertGreaterThanOrEqual(projectionAfterB.totalSnapshotCount, 2)
-        XCTAssertEqual(
-            projectionAfterB.coverageTrustState,
-            .verified,
-            "最新 entry（variant）全部 section 通过时 UI 方可显示已验证"
-        )
-        XCTAssertGreaterThanOrEqual(projectionAfterB.timeline.count, 2)
-        let latestRow = try XCTUnwrap(projectionAfterB.timeline.first)
-        XCTAssertFalse(latestRow.isBaseline)
-        XCTAssertFalse(latestRow.changes.isEmpty, "variant 导入应产生可展示变化行")
-
         let envelope = try XCTUnwrap(try historyStore.load())
-        XCTAssertGreaterThanOrEqual(envelope.entries.count, 2)
-        let latestEntry = try XCTUnwrap(envelope.entries.max(by: { $0.appliedAt < $1.appliedAt }))
+        let villageAEntriesB = envelope.entries.filter { $0.villageID == villageA.id }
+        XCTAssertGreaterThanOrEqual(villageAEntriesB.count, 2)
+        let latestEntry = try XCTUnwrap(villageAEntriesB.max(by: { $0.appliedAt < $1.appliedAt }))
+        XCTAssertFalse(latestEntry.isBaseline, "variant 导入应产生非基线 entry")
         XCTAssertTrue(
             latestEntry.coverage.sections.contains(where: \.opensTrustGates),
             "production load 后 latest entry 应恢复至少一个 section 的 runtime trust"
@@ -578,19 +547,16 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
             defaults: defaults,
             historyStore: FileSnapshotHistoryStore(fileURL: historyURL)
         )
-        let projectionAfterSecondRestart = modelRestartAgain.snapshotHistoryProjection(for: villageA.id)
-        XCTAssertEqual(
-            projectionAfterSecondRestart.coverageTrustState,
-            .verified,
-            "variant 持久化后第二次重启仍应显示已验证"
-        )
         let envelopeAfterSecondRestart = try XCTUnwrap(
             try FileSnapshotHistoryStore(fileURL: historyURL).load()
         )
         let persistedLatest = try XCTUnwrap(
-            envelopeAfterSecondRestart.entries.max(by: { $0.appliedAt < $1.appliedAt })
+            envelopeAfterSecondRestart.entries
+                .filter { $0.villageID == villageA.id }
+                .max(by: { $0.appliedAt < $1.appliedAt })
         )
-        XCTAssertEqual(persistedLatest.coverage.sourceUniverseRuntimeTrust, .trusted)
+        XCTAssertEqual(persistedLatest.coverage.sourceUniverseRuntimeTrust, .trusted,
+            "variant 持久化后第二次重启仍应保持 runtime trusted")
     }
 
     @MainActor

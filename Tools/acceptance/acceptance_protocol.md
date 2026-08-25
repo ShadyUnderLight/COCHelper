@@ -42,14 +42,16 @@
 
 人工核对（截图/录屏须遮盖 tag 与个人信息）：
 
-- Village Detail：最近更新时间、历史数量、时间线摘要。
-- Snapshot History：trust、duplicate「最近检查」、category filter、provenance-only。
-- today / 7 / 30 天：缺数据显示「数据不足」，不显示伪造 0。
-- 升级开始/完成、timer changed/ended、unknown 文案边界。
+- Village Detail：最近更新时间（如仍有 UI 展示）。
+- 内部 envelope/Diff/trust：通过 `acceptance-runner` 输出的脱敏 JSON 校验 trust、duplicate「最近检查」、statistics signature、availability、comparisonState、diff diagnostics。
+- today / 7 / 30 天：缺数据显示「数据不足」，不显示伪造 0（如仍有 UI 展示）。
+- 升级开始/完成、timer changed/ended、unknown 文案边界（如仍有 UI 展示）。
 
-## 5. 性能（Release App，paired，1005 段 raw workload + fail-closed 可展开 row）
+> 注：#259 已移除用户可见的 Snapshot History 时间线 UI；历史存储/导入/去重/lineage 隔离/Diff/coverage-trust/手动升级对账均保留，由 acceptance-runner 做 headless 校验。
 
-见 `large_walls_perf_scenario.md`。使用 **paired** `perf_account_snapshot_large_walls_before.json`（1005 段全 `Lv1`） / `perf_account_snapshot_large_walls_after.json`（1005 段全 `Lv12`，同 tag `#LARGEWALL01` 合法，同 lineage，raw histogram 偏移 1005；无 verified coverage 时 Diff 仅产生 1 个 `unknownChange`（`oldQuantity 1005 → newQuantity 1005，impact 1`）的 `insufficientCoverage` 可展开 row，而非 1005 个 confirmed rows——这已满足 #226 “1000+ Wall 输入规模”性能目标。单文件 `large_walls.json` 保留兼容）。
+## 5. 性能（Release App，paired，1005 段 raw workload + fail-closed Diff 路径）
+
+见 `large_walls_perf_scenario.md`。使用 **paired** `perf_account_snapshot_large_walls_before.json`（1005 段全 `Lv1`） / `perf_account_snapshot_large_walls_after.json`（1005 段全 `Lv12`，同 tag `#LARGEWALL01` 合法，同 lineage，raw histogram 偏移 1005；无 verified coverage 时 Diff 仅产生 1 个 `unknownChange`（`oldQuantity 1005 → newQuantity 1005，impact 1`）的 `insufficientCoverage` 结果，而非 1005 个 confirmed changes——这已满足 #226 "1000+ Wall 输入规模"性能目标。单文件 `large_walls.json` 保留兼容）。
 
 ## 6. 自动化辅助
 

@@ -284,15 +284,9 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         try store.save(firstReload)
         let secondReload = try XCTUnwrap(try store.load())
 
-        let projection = SnapshotHistoryProjection.project(
-            envelope: secondReload,
-            villageID: villageID,
-            hasCurrentSnapshot: true,
-            referenceDate: Date(timeIntervalSince1970: 2),
-            calendar: Calendar(identifier: .gregorian),
-            timeZone: TimeZone(secondsFromGMT: 0)!
-        )
-        XCTAssertEqual(projection.coverageTrustState, .verified)
+        let entry = try XCTUnwrap(secondReload.entries.first)
+        XCTAssertEqual(entry.coverage.sourceUniverseRuntimeTrust, .trusted,
+            "两次 load 后 source universe runtime trust 应恢复为 trusted")
         let heroes = try XCTUnwrap(
             secondReload.entries.first?.coverage.section(base: .home, rawSection: "heroes")
         )
@@ -873,18 +867,15 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(diffs[0].comparisonState, .provenanceOnly)
         XCTAssertEqual(diffs[0].diagnostics.filter { $0.kind == .incomparableTimerSchema }.count, 1)
 
-        let projection = SnapshotHistoryProjection.project(
-            envelope: provenance.envelope.hydratingVerifiedCoverage(policy: .production),
-            villageID: villageID,
-            hasCurrentSnapshot: true,
+        // provenance-only diff 不产生升级统计；直接通过 Statistics.calculate 验证。
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: diffs,
             referenceDate: Date(timeIntervalSince1970: 2),
             calendar: Calendar(identifier: .gregorian),
             timeZone: TimeZone(secondsFromGMT: 0)!
         )
-        XCTAssertEqual(projection.timeline[0].summary, "来源信息变化，无业务变化")
-        XCTAssertFalse(projection.timeline[0].changes.contains { $0.changeKind == .levelIncreased || $0.changeKind == .upgradeCompleted })
-        XCTAssertEqual(projection.statistics.today.heroLevelGrowth.state, .available)
-        XCTAssertEqual(projection.statistics.today.heroLevelGrowth.value, 0)
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .available)
+        XCTAssertEqual(statistics.today.heroLevelGrowth.value, 0)
 
         let content = try service.planImport(
             snapshot: snapshot(tag: firstTag, text: timerJSON(level: 2), capturedAt: Date(timeIntervalSince1970: 100)),
@@ -1864,6 +1855,147 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         from proofs: [UUID: [String: SnapshotCoverageProof]]
     ) -> [UUID: SnapshotCoverageSourceUniverse] {
         proofs.compactMapValues(testSourceUniverse(for:))
+    }
+
+    // MARK: - #260 review: lineage 隔离与 diff 方向回归测试
+
+    /// tag 变化创建新 lineage 后，active-lineage 过滤必须排除旧 lineage 的 entries。
+    /// 旧 SnapshotHistoryProjection 有 testProjectionShowsOnlyActiveLineageAfterTagChange 覆盖此语义，
+    /// 移除 UI projection 后在此以 envelope/Diff Engine 直接验证。
+    func testActiveLineageFilterExcludesInactiveLineageAfterTagChange() throws {
+        let store = TestSnapshotHistoryStore()
+        let service = SnapshotHistoryService(store: store)
+        let villageID = UUID()
+
+        // 导入 tag A → baseline，创建 lineage 1
+        let base = snapshot(
+            tag: firstTag,
+            text: "{\"tag\":\"\(firstTag)\",\"heroes\":[{\"data\":1,\"lvl\":1}]}",
+            capturedAt: Date(timeIntervalSince1970: 10)
+        )
+        let envelopeAfterA = try service.loadOrMigrate(
+            villages: [VillageProfile(id: villageID, name: "主村", accountSnapshot: base)],
+            now: Date(timeIntervalSince1970: 20)
+        )
+        let lineage1ID = try XCTUnwrap(envelopeAfterA.activeLineage(for: villageID)?.lineageID)
+
+        // 导入 tag B（currentTag=A）→ 创建新 lineage 2，lineage 1 变为 inactive
+        let decisionB = try service.planImport(
+            snapshot: snapshot(
+                tag: secondTag,
+                text: "{\"tag\":\"\(secondTag)\",\"heroes\":[{\"data\":1,\"lvl\":2}]}",
+                capturedAt: Date(timeIntervalSince1970: 30)
+            ),
+            villageID: villageID,
+            currentTag: firstTag,
+            hasCurrentSnapshot: true,
+            envelope: envelopeAfterA,
+            appliedAt: Date(timeIntervalSince1970: 31)
+        )
+        XCTAssertTrue(decisionB.appended, "tag 变化应追加新 entry 而非 duplicate")
+        let envelopeAfterB = decisionB.envelope
+        let activeLineageID = try XCTUnwrap(envelopeAfterB.activeLineage(for: villageID)?.lineageID)
+        XCTAssertNotEqual(activeLineageID, lineage1ID, "tag 变化应创建新 active lineage")
+        XCTAssertEqual(envelopeAfterB.lineages.count, 2, "应保留旧 lineage 记录")
+
+        // 过滤 active lineage 后只包含新 lineage 的 entries
+        let activeEntries = envelopeAfterB.entries.filter {
+            $0.villageID == villageID && $0.lineageID == activeLineageID
+        }
+        XCTAssertEqual(activeEntries.count, 1)
+        XCTAssertEqual(activeEntries[0].normalizedPlayerTag, secondTag)
+
+        // 旧 lineage 的 entry 仍存在但不属于 active lineage
+        let inactiveEntries = envelopeAfterB.entries.filter {
+            $0.villageID == villageID && $0.lineageID == lineage1ID
+        }
+        XCTAssertEqual(inactiveEntries.count, 1)
+        XCTAssertEqual(inactiveEntries[0].normalizedPlayerTag, firstTag)
+
+        // adjacent diff 只在 active lineage 内比较，不得跨 lineage
+        let diffs = SnapshotDiffEngine.adjacentDiffs(in: envelopeAfterB, villageID: villageID, lineageID: activeLineageID)
+        XCTAssertEqual(diffs.count, 0, "active lineage 只有一个 entry，不应产生 diff")
+    }
+
+    /// adjacent diff 必须吃 envelope append order（旧→新），增长统计方向不得反转。
+    /// #260 review 发现 SanitizedVillageHistory 先按 appliedAt 倒序再 adjacentDiffs，
+    /// 会把 A1→A2 比较成 A2→A1，levelDelta 从 +1 变成 -1。
+    func testAdjacentDiffDirectionPreservesGrowthSign() throws {
+        let villageID = UUID()
+        let lineageID = UUID()
+        let identity = SnapshotItemIdentity(base: .home, rawSection: "buildings", dataID: 1)
+        let display = SnapshotDisplayBinding(displayName: "城墙", category: "buildings", displayCategory: "walls")
+
+        // 构造完整的 buildings coverage（trusted + complete + cnt），确保 Diff 引擎输出可比变化。
+        let fields = ["presence", "data", "lvl", "cnt"].map {
+            SnapshotCoverageField(base: .home, rawSection: "buildings", field: $0, state: .complete)
+        }
+        let section = SnapshotHistoryTestCoverage.trustedSection(
+            base: .home,
+            rawSection: "buildings",
+            presence: .presentNonEmpty,
+            completeness: .complete,
+            proof: SnapshotHistoryTestCoverage.verified(),
+            observedCount: 2
+        )
+        let coverage = SnapshotObservationCoverage(fields: fields, sections: [section])
+
+        // baseline: Lv.12 ×100 + Lv.13 ×50（append order 第一个，总数 150）
+        let itemOld1 = SnapshotObservationItem(identity: identity, level: 12, count: 100, display: display)
+        let itemOld2 = SnapshotObservationItem(identity: identity, level: 13, count: 50, display: display)
+        let entry1 = SnapshotHistoryEntry(
+            snapshotID: UUID(),
+            villageID: villageID,
+            lineageID: lineageID,
+            normalizedPlayerTag: "#TEST",
+            appliedAt: Date(timeIntervalSince1970: 10),
+            sourceTimestamp: nil,
+            parserVersion: "test",
+            canonicalFingerprint: "test",
+            rawJSON: "{}",
+            observation: CanonicalSnapshotObservation(rawTopLevelFields: [:], items: [itemOld1, itemOld2]),
+            coverage: coverage,
+            isBaseline: false,
+            baselineReason: nil
+        )
+        // second: Lv.13 ×70 + Lv.12 ×80（append order 第二个，总数 150，Lv.12→Lv.13 迁移 20）
+        let itemNew1 = SnapshotObservationItem(identity: identity, level: 13, count: 70, display: display)
+        let itemNew2 = SnapshotObservationItem(identity: identity, level: 12, count: 80, display: display)
+        let entry2 = SnapshotHistoryEntry(
+            snapshotID: UUID(),
+            villageID: villageID,
+            lineageID: lineageID,
+            normalizedPlayerTag: "#TEST",
+            appliedAt: Date(timeIntervalSince1970: 20),
+            sourceTimestamp: nil,
+            parserVersion: "test",
+            canonicalFingerprint: "test",
+            rawJSON: "{}",
+            observation: CanonicalSnapshotObservation(rawTopLevelFields: [:], items: [itemNew1, itemNew2]),
+            coverage: coverage,
+            isBaseline: false,
+            baselineReason: nil
+        )
+
+        // adjacent diff 吃 append order：[entry1(level12), entry2(level13)]
+        let diffs: [SnapshotDiff] = SnapshotDiffEngine.adjacentDiffs(in: [entry1, entry2])
+        XCTAssertEqual(diffs.count, 1)
+        let diff: SnapshotDiff = diffs[0]
+        let wallChanges: [SnapshotChange] = diff.changes.filter { $0.identity == identity }
+        XCTAssertEqual(wallChanges.count, 1, "应检测到唯一的 wall level 迁移变化")
+        let wallChange = try XCTUnwrap(wallChanges.first)
+        XCTAssertEqual(wallChange.changeKind, .levelIncreased, "Lv.12→Lv.13 迁移 20 个，应为 levelIncreased")
+        XCTAssertEqual(wallChange.oldLevel, 12)
+        XCTAssertEqual(wallChange.newLevel, 13)
+        XCTAssertEqual(wallChange.levelDelta, 1, "levelDelta 应为 +1；若先倒序再 diff 会变成 -1")
+        XCTAssertEqual(wallChange.movedQuantity, 20)
+
+        // 反向验证：倒序传入时结果方向必须与正向不同，证明顺序确实影响 diff 语义。
+        let reversedDiffs: [SnapshotDiff] = SnapshotDiffEngine.adjacentDiffs(in: [entry2, entry1])
+        let reversedWallChanges = reversedDiffs.first?.changes.filter { $0.identity == identity } ?? []
+        let reversedWallChange = try XCTUnwrap(reversedWallChanges.first)
+        XCTAssertNotEqual(reversedWallChange.changeKind, .levelIncreased, "倒序传入时不应仍是 levelIncreased")
+        XCTAssertNotEqual(reversedWallChange.levelDelta, 1, "倒序传入时 levelDelta 不应仍是 +1")
     }
 
     private func copy(

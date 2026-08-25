@@ -15,6 +15,10 @@
 
 ### BE-1.1 VillageStore（UserDefaults blob `coc-helper.villages.v1`）
 
+下表描述的是 `VillageStoreCodec.load` 的 **VillageStoreLoadResult** 分类（missing / loaded /
+corrupt(rawData:message:) / unsupportedSchema(rawData:schemaVersion:)，VillageStore.swift:53-57,
+80-96）及其 UI 状态映射；throw 出去的错误枚举见 §ER-6。
+
 | 盘上状态 | 行为 | 出处 |
 |---|---|---|
 | missing（key 不存在） | 合成默认村庄（有 legacy 快照则带 tag），status=`.missing`，立即落盘 | AppModel.swift:581-592 |
@@ -144,13 +148,13 @@ committed journal 在用户选择的恢复之上重放，同时保留证据（Ap
 
 | 规则 | 出处 |
 |---|---|
-| lineage resolution 纯函数：同 village + 同合法 tag → `.continued`（复用 lineageID，可比较）；tag 变化 → `.newLineage`（新 UUID、baseline、禁止比较）；tag 缺失/无效/village 变化/前序 conflict → `.unknown`（baseline，禁止比较）——未确认身份永不 join 前序记录 | Models.swift:871-943（注释 :915-917） |
-| entry append-only immutable；active lineage 是可变索引 metadata；每次推进先把该村其他 lineage 全部 isActive=false 再 upsert lastEntryID/lastFingerprint/lastAppliedAt/hasConflict | Models.swift:55-56; SnapshotHistoryStore.swift:660-689 |
+| lineage resolution 纯函数：同 village + 同合法 tag → `.continued`（复用 lineageID，可比较）；tag 变化 → `.newLineage`（新 UUID、baseline、禁止比较）；tag 缺失/无效/village 变化/前序 conflict → `.unknown`（baseline，禁止比较）——未确认身份永不 join 前序记录 | SnapshotHistoryModels.swift:871-943（注释 :915-917） |
+| entry append-only immutable；active lineage 是可变索引 metadata；每次推进先把该村其他 lineage 全部 isActive=false 再 upsert lastEntryID/lastFingerprint/lastAppliedAt/hasConflict | SnapshotHistoryModels.swift:55-56; SnapshotHistoryStore.swift:660-689 |
 | 导入门 fail-closed：当前村庄 tag 与 active lineage 的 normalizedPlayerTag 不一致 → 整个 import 抛 `lineageConflict` | SnapshotHistoryStore.swift:572-578 |
 | duplicate 定义 =「Diff 解释不变」，判定键 `(canonicalFingerprint, coverage duplicate key, timerSchema)`；appliedAt/source timestamp/parserVersion/runtimeTrust 均不进身份 | SnapshotHistoryStore.swift:463-484 |
 | 同 fingerprint 再导入：不 append 新 entry，只更新 duplicateMetadata（lastSeenAt=appliedAt、lastSourceTimestamp=capturedAt、duplicateImportCount+1），返回 appended:false/duplicate:true | SnapshotHistoryStore.swift:605-623 |
 | 反例：同 fingerprint 但 coverage 声明变化 → DuplicateKey 不同 → 正常 append 新 entry（锁定测试 `testV5IdenticalBuildingsDifferentCoverageDeclarationAppends`） | SnapshotHistoryStoreTests.swift:1480-1520 |
-| baseline entry：isBaseline/baselineReason 由 resolution 决定（initial/unknown/newLineage → true），参与 F2 指纹；对账侧 UI「账号或 lineage 已变化，禁止自动匹配旧手动记录」 | Models.swift:983-984, 835-855; ContentView.swift:1850-1854 |
+| baseline entry：isBaseline/baselineReason 由 resolution 决定（initial/unknown/newLineage → true），参与 F2 指纹；对账侧 UI「账号或 lineage 已变化，禁止自动匹配旧手动记录」 | SnapshotHistoryModels.swift:983-984, 835-855; ContentView.swift:1850-1854 |
 
 ## BE-4 分页契约
 
@@ -158,10 +162,10 @@ committed journal 在用户选择的恢复之上重放，同时保留证据（Ap
 
 见 §WA-8。items 必填 fail-loud。
 
-### BE-4.2 游标与合并（ClanPaginationModels.swift）
+### BE-4.2 游标与合并（ClanPaginationSnapshotHistoryModels.swift）
 
 - 终结判定 `PaginationLogic.hasMore`：responseAfter nil → false；`responseAfter != requestedCursor`
-  才 true——游标未前进即终结，防无限循环（ClanPaginationModels.swift:452-455）。
+  才 true——游标未前进即终结，防无限循环（ClanPaginationSnapshotHistoryModels.swift:452-455）。
 - 累计合并 `PaginationMerge.mergedPage`：首屏直接采用 fetched；续页 items Equatable 去重合并 +
   after 推进为最新响应值；**游标停滞（双非 nil 且相等）→ after 清空视为末页终止**；
   before 保留最新响应值（476-492, 462-468, 481-486）。
@@ -232,9 +236,9 @@ duplicate/newObservation；applyNonConflicting 对 observedAhead+active 且无 c
 ### BE-5.3 队列分配与容量（Issue #183/#194）
 
 - QueueAssignmentStatus：userAssigned（占容量）/ observedOnly（保留不占）/ unknown；
-  无记录 = unassigned 不持久化（QueueAssignmentModels.swift:11-15）。
+  无记录 = unassigned 不持久化（QueueAssignmentSnapshotHistoryModels.swift:11-15）。
 - overlay 对账只降级从不创建/删除；绑定可审计观察身份（itemKey + baseline revision/fingerprint/
-  lineage）（QueueAssignmentModels.swift:17-59; ManualTrackerReconciliation.swift:462-503）。
+  lineage）（QueueAssignmentSnapshotHistoryModels.swift:17-59; ManualTrackerReconciliation.swift:462-503）。
 - LocalQueueKind 映射：buildings/traps/heroes→builder，troops/spells/siege→laboratory，
   equipment/pets/guardians→nil（fail-closed）；即时动作不占容量（LocalQueueCapacity.swift:8-86）。
 - capacity ∈ [0,10000]，0 合法；占用投影 = active manual（expectedEndAt > now）+ userAssigned

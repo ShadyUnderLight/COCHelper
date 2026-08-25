@@ -19,11 +19,13 @@ final class ParserGoldenTests: XCTestCase {
     private struct ExpectedFingerprints: Decodable {
         struct AccountSnapshotExpectations: Decodable {
             let contentFingerprint: String
+            let encodedJSONHex: String
         }
 
         struct HistoryEntryExpectations: Decodable {
             let canonicalFingerprint: String
             let integrityFingerprint: String
+            let encodedJSONHex: String
         }
 
         let accountSnapshot: AccountSnapshotExpectations
@@ -45,6 +47,33 @@ final class ParserGoldenTests: XCTestCase {
         return try JSONDecoder().decode(ExpectedFingerprints.self, from: Data(contentsOf: url))
     }
 
+    private func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func sortedKeysEncodedJSONHex<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return hex(try encoder.encode(value))
+    }
+
+    /// AccountSnapshot 持久化 wire 包含 `diagnostics[].id`——每次解析随机生成的
+    /// UUID（§WA-5：F3 指纹排除它，但 Codable 持久化形状包含它）。冻结时把该
+    /// 唯一已知的非确定性槽位替换为占位符；TS 侧必须把它当作不透明随机值，
+    /// 其余字节（JSONEncoder 的 Date/optional omission/键序行为）逐字节锁定。
+    private func maskedSnapshotWireHex(_ wireHex: String) throws -> String {
+        let chars = Array(wireHex)
+        let bytes = stride(from: 0, to: chars.count, by: 2).map {
+            UInt8(String(chars[$0..<$0 + 2]), radix: 16)!
+        }
+        let json = try XCTUnwrap(String(data: Data(bytes), encoding: .utf8))
+        let pattern = "\"id\":\"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\""
+        let regex = try NSRegularExpression(pattern: pattern)
+        let range = NSRange(json.startIndex..., in: json)
+        let masked = regex.stringByReplacingMatches(in: json, range: range, withTemplate: "\"id\":\"<RANDOM_DIAGNOSTIC_UUID>\"")
+        return hex(Data(masked.utf8))
+    }
+
     /// 正例 + 时间双纪元边界：解析结构必须精确匹配冻结事实。
     func testAccountSnapshotGoldenStructureAndTimeDomains() throws {
         let snapshot = try loadGoldenSnapshot()
@@ -64,11 +93,32 @@ final class ParserGoldenTests: XCTestCase {
 
     func testAccountSnapshotContentFingerprintMatchesGolden() throws {
         let snapshot = try loadGoldenSnapshot()
-        let expected = try loadExpected().accountSnapshot.contentFingerprint
-        XCTAssertFalse(expected.isEmpty, "期望值未回填；实测 contentFingerprint：\n\(snapshot.contentFingerprint)")
+        let expected = try loadExpected().accountSnapshot
+        if expected.contentFingerprint.isEmpty || expected.encodedJSONHex.isEmpty {
+            XCTFail("""
+            期望值未回填。实测：
+            contentFingerprint = \(snapshot.contentFingerprint)
+            masked encoded JSON hex = \(try maskedSnapshotWireHex(sortedKeysEncodedJSONHex(snapshot)))
+            """)
+            return
+        }
         XCTAssertEqual(
-            snapshot.contentFingerprint, expected,
+            snapshot.contentFingerprint, expected.contentFingerprint,
             "contentFingerprint 与冻结期望值不一致。实测：\n\(snapshot.contentFingerprint)"
+        )
+    }
+
+    /// wire shape 冻结：JSONEncoder(.sortedKeys) 的 encoded bytes（Date 编码策略、
+    /// optional omission、键集与键序）。diagnostics[].id 是已知随机槽位，按
+    /// maskedSnapshotWireHex 掩码后比较；TS 侧 parity 需逐字节复刻其余行为。
+    func testAccountSnapshotEncodedJSONMatchesGolden() throws {
+        let snapshot = try loadGoldenSnapshot()
+        let expected = try loadExpected().accountSnapshot.encodedJSONHex
+        let actual = try maskedSnapshotWireHex(sortedKeysEncodedJSONHex(snapshot))
+        XCTAssertFalse(expected.isEmpty, "期望值未回填；实测 masked encoded JSON hex：\n\(actual)")
+        XCTAssertEqual(
+            actual, expected,
+            "AccountSnapshot encoded JSON 与冻结期望值不一致（wire shape 漂移）。实测：\n\(actual)"
         )
     }
 
@@ -91,11 +141,35 @@ final class ParserGoldenTests: XCTestCase {
             期望值未回填。实测：
             canonicalFingerprint = \(entry.canonicalFingerprint)
             integrityFingerprint = \(entry.integrityFingerprint)
+            encoded JSON hex = \(try sortedKeysEncodedJSONHex(entry))
             """)
             return
         }
         XCTAssertEqual(entry.canonicalFingerprint, expected.canonicalFingerprint)
         XCTAssertEqual(entry.integrityFingerprint, expected.integrityFingerprint)
+    }
+
+    /// wire shape 冻结：HistoryEntryV1（observation v6 + coverage + 全部版本号）
+    /// 经 JSONEncoder(.sortedKeys) 的 encoded bytes。
+    func testHistoryEntryEncodedJSONMatchesGolden() throws {
+        let snapshot = try loadGoldenSnapshot()
+        let entry = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: Self.villageID,
+            lineageID: Self.lineageID,
+            appliedAt: Self.appliedAt,
+            snapshotID: Self.snapshotID,
+            isBaseline: false,
+            baselineReason: nil,
+            observationVersion: SnapshotHistorySchema.observation
+        )
+        let expected = try loadExpected().historyEntry.encodedJSONHex
+        let actual = try sortedKeysEncodedJSONHex(entry)
+        XCTAssertFalse(expected.isEmpty, "期望值未回填；实测 encoded JSON hex：\n\(actual)")
+        XCTAssertEqual(
+            actual, expected,
+            "SnapshotHistoryEntry encoded JSON 与冻结期望值不一致（wire shape 漂移）。实测：\n\(actual)"
+        )
     }
 
     /// 负例：指纹格式门 + 完整性敏感性（任一字段变化必须改变 integrityFingerprint）。

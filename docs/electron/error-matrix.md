@@ -109,11 +109,16 @@ coverage 收窄规则：整村 partial 时仅 item 自身 section（去掉 "2" �
 
 | 枚举 | case | 触发要点 |
 |---|---|---|
-| VillageStoreError | unavailable / corrupt(rawData,message) / unsupportedSchema(schemaVersion) / writeFailed | §BE-1.1 |
+| VillageStoreError | corrupt(String) / unsupportedSchema(Int) / invalid(String) / writeFailed(String) / unavailable(String)（VillageStore.swift:30-50；文案「村庄存储损坏：/版本不受支持：/内容无效：/写入失败：/不可用：」） | `invalid` 已声明但**当前无构造点**（保留枚举面，TS 同样保留该 case）；corrupt/unsupportedSchema 由 `VillageStoreCodec.validate` 从 LoadResult 映射抛出（VillageStore.swift:104-113），writeFailed 在编码失败/读回不一致路径、unavailable 在恢复门禁路径 |
 | SnapshotHistoryStoreError | unavailable / corrupt / unsupportedSchema / invalidEntry / writeFailed | §BE-1.2; SnapshotHistoryStore.swift:320-341 |
 | ManualTrackerStoreError | unavailable / corrupt / unsupportedSchema / invalidEnvelope / writeFailed | §BE-1.3; ManualTrackerStore.swift:450-471 |
 | SnapshotImportTransactionError | rollbackFailed / journalCorrupt（journal 写失败也归此类） | §BE-2; SnapshotImportTransaction.swift:173-185, 421 |
 | ManualTrackerTransactionError | rollbackFailed / journalCorrupt / journalWriteFailed | ManualTrackerTransaction.swift:184-199 |
+
+⚠️ 区分两个同名概念：**加载分类**是 `VillageStoreLoadResult`（missing / loaded(villages，含空数组) /
+corrupt(rawData:message:) / unsupportedSchema(rawData:schemaVersion:)，VillageStore.swift:53-57），
+§BE-1.1 的四态矩阵描述的是它 + UI 状态映射；上表的 **VillageStoreError 是 throw 出去的错误枚举**，
+两者形状不同不得混同。
 
 UI 状态枚举映射：manual tracker corrupt → `.unavailable`、future-schema → `.migrationRequired`
 （§BE-1.3）；village 各态见 §BE-1.1。

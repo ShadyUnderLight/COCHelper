@@ -753,6 +753,9 @@ public final class AppModel: ObservableObject {
         // 但 parserVersion 被错误升级为当前版本）。必须在 seed row cache 之前执行，
         // 且只执行一次；此时所有 stored properties 已初始化完毕。
         migrateLegacyFailedParserVersionsIfNeeded()
+        // Issue #253：对旧版本累积的超限分页缓存做保留上限自愈（收敛 + 回写）。
+        // 同样必须在 seed row cache 之前执行，保证投影从已裁剪的 state 冷启动。
+        applyCacheRetentionPolicyToLoadedStates()
         seedCapitalRaidRowCachesFromPersistedStates()
     }
 
@@ -3221,8 +3224,13 @@ public final class AppModel: ObservableObject {
                let existing = current.lastGood,
                !needsRebuild {
                 var merged = state
+                // Issue #253：合并后执行保留上限（裁最旧尾部，游标不触碰），
+                // 防止 load-more 累计无界增长。
                 merged.lastGood = OfficialWarLogPage(
-                    page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
+                    page: CacheRetentionPolicy.trimmedPage(
+                        page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page),
+                        limit: CacheRetentionPolicy.maxWarLogItemsPerTag
+                    )
                 )
                 self.clanWarLogStates[tag] = merged
             } else {
@@ -3303,7 +3311,16 @@ public final class AppModel: ObservableObject {
                     existing: existing.page,
                     fetched: fetched.page
                 )
-                merged.lastGood = OfficialCapitalRaidPage(page: loadMoreResult.page)
+                // Issue #253：合并后执行保留上限（裁最旧尾部，游标不触碰）。
+                // row cache 更新消费同一裁剪后的页，state 与投影保持一致；
+                // 首次突破上限时页缩短会走 row cache 的 fail-closed reset
+                // （generation bump），稳态在 cap 处条目不变、ID 不漂移。
+                merged.lastGood = OfficialCapitalRaidPage(
+                    page: CacheRetentionPolicy.trimmedPage(
+                        page: loadMoreResult.page,
+                        limit: CacheRetentionPolicy.maxCapitalSeasonsPerTag
+                    )
+                )
                 self.clanCapitalStates[tag] = merged
                 self.updateCapitalRaidRowCacheAfterFetch(
                     tag: tag,
@@ -3389,6 +3406,45 @@ public final class AppModel: ObservableObject {
         if warLogChanged { persistClanWarLogStates() }
 
         defaults.set(true, forKey: Self.legacyFailedParserVersionMigrationKey)
+    }
+
+    /// Issue #253：启动时对分页累计缓存执行保留上限自愈。
+    ///
+    /// 旧版本落盘的 warlog/capital 累计页没有上限；本方法在 init 时把超限
+    /// Tag 的 lastGood 收敛到 `CacheRetentionPolicy` 上限（裁最旧尾部、游标
+    /// 不触碰），仅在发生变化时回写 UserDefaults（一次性收敛，幂等确定）。
+    /// 未超限条目原样保留，不株连其他 Tag。
+    private func applyCacheRetentionPolicyToLoadedStates() {
+        var warLogChanged = false
+        for (tag, state) in clanWarLogStates {
+            guard let wrapped = state.lastGood else { continue }
+            let trimmed = CacheRetentionPolicy.trimmedPage(
+                page: wrapped.page,
+                limit: CacheRetentionPolicy.maxWarLogItemsPerTag
+            )
+            guard trimmed != wrapped.page else { continue }
+            var mutated = state
+            mutated.lastGood = OfficialWarLogPage(page: trimmed)
+            clanWarLogStates[tag] = mutated
+            warLogChanged = true
+        }
+
+        var capitalChanged = false
+        for (tag, state) in clanCapitalStates {
+            guard let wrapped = state.lastGood else { continue }
+            let trimmed = CacheRetentionPolicy.trimmedPage(
+                page: wrapped.page,
+                limit: CacheRetentionPolicy.maxCapitalSeasonsPerTag
+            )
+            guard trimmed != wrapped.page else { continue }
+            var mutated = state
+            mutated.lastGood = OfficialCapitalRaidPage(page: trimmed)
+            clanCapitalStates[tag] = mutated
+            capitalChanged = true
+        }
+
+        if warLogChanged { persistClanWarLogStates() }
+        if capitalChanged { persistClanCapitalStates() }
     }
 
     private func seedCapitalRaidRowCachesFromPersistedStates() {

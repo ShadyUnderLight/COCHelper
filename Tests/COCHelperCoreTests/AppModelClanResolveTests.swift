@@ -535,6 +535,163 @@ final class AppModelClanResolveTests: XCTestCase {
         XCTAssertTrue(AppModel.isClanRefreshPending(inFlightTags: [], queuedTags: [], queuedAll: false, villageClanTags: [], tag: "#R", resolvingTags: ["#R"]))
         XCTAssertFalse(AppModel.isClanRefreshPending(inFlightTags: [], queuedTags: [], queuedAll: false, villageClanTags: [], tag: "#X", resolvingTags: ["#R"]))
     }
+
+    // MARK: - Issue #250 P1 失败路径 single-flight（不写 clanStates 也需共享）
+
+    @MainActor
+    func testResolveResolveFailureSingleFlight() async throws {
+        for (status, expectedError) in [(404, AppModel.ClanResolveError.notFound), (500, AppModel.ClanResolveError.server)] {
+            let counter = ResolveRequestCounter()
+            let model = try makeModel { request in
+                counter.record(tag: request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? "")
+                Thread.sleep(forTimeInterval: 0.3)
+                return clanResolveResponse(status, url: request.url!)
+            }
+            let t1 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            let t2 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+            let r1 = await t1.value
+            let r2 = await t2.value
+            XCTAssertEqual(r1, .failure(expectedError), "HTTP \(status) 应映射 \(expectedError)")
+            XCTAssertEqual(r2, .failure(expectedError))
+            XCTAssertEqual(counter.count(forTag: "#2QJQ8J88"), 1, "失败路径也需 single-flight 1 次")
+            XCTAssertNil(model.clanStates["#2QJQ8J88"], "失败不得写 clanStates")
+        }
+    }
+
+    @MainActor
+    func testResolveResolveMalformedAndNetworkSingleFlight() async throws {
+        // malformed
+        do {
+            let counter = ResolveRequestCounter()
+            let model = try makeModel { request in
+                counter.record(tag: request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? "")
+                Thread.sleep(forTimeInterval: 0.2)
+                return clanResolveResponse(200, url: request.url!, body: Data("not-json".utf8))
+            }
+            let t1 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            let t2 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+            let r1 = await t1.value
+            let r2 = await t2.value
+            XCTAssertEqual(r1, .failure(.malformed))
+            XCTAssertEqual(r2, .failure(.malformed))
+            XCTAssertEqual(counter.count(forTag: "#2QJQ8J88"), 1)
+        }
+        // network
+        do {
+            let counter = ResolveRequestCounter()
+            let model = try makeModel { _ in
+                counter.record(tag: "#2QJQ8J88")
+                Thread.sleep(forTimeInterval: 0.2)
+                throw URLError(.notConnectedToInternet)
+            }
+            let t1 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            let t2 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+            let r1 = await t1.value
+            let r2 = await t2.value
+            XCTAssertEqual(r1, .failure(.network))
+            XCTAssertEqual(r2, .failure(.network))
+            XCTAssertEqual(counter.count(forTag: "#2QJQ8J88"), 1)
+        }
+    }
+
+    @MainActor
+    func testResolveResolveCancelledDoesNotLeakSecondRequest() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel(maxRetryCount: 1, baseRetryDelay: 2) { request in
+            counter.record(tag: request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? "")
+            return clanResolveResponse(429, url: request.url!)
+        }
+        let t1 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        let t2 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        t1.cancel()
+        // t2 未取消，应仍共享同一 Task 结果（取消传播后 t2 也会看到 cancelled，因为共享 Task 被取消）
+        // 验收：不产生第二个隐式请求
+        _ = await t1.value
+        _ = await t2.value
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(counter.count(forTag: "#2QJQ8J88"), 1, "取消路径不产生第二请求")
+    }
+
+    // MARK: - Issue #250 P1 unrelated batch drain race
+
+    @MainActor
+    func testUnrelatedRefreshDoesNotDrainPendingForResolvingTag() async throws {
+        // 场景：resolve A 800ms, queued refresh A, refresh B 100ms
+        // B 完成后 pending A 必须仍保留，forced refresh A 必须等 A 结束后才开始，maxConcurrent A ==1
+        let tracker = ConcurrentCounter()
+        let model = try makeModel { request in
+            let tag = request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? ""
+            tracker.start(tag: tag)
+            defer { tracker.finish(tag: tag) }
+            if tag == "#AAAA" { Thread.sleep(forTimeInterval: 0.6) }
+            else if tag == "#BBBB" { Thread.sleep(forTimeInterval: 0.1) }
+            let data = Data("{\"tag\":\"\(tag)\",\"name\":\"c\",\"clanLevel\":1,\"members\":1,\"type\":\"open\",\"requiredTrophies\":0,\"warWins\":0,\"warLosses\":0,\"warTies\":0,\"warWinStreak\":0,\"isWarLogPublic\":true,\"badgeUrls\":{}}".utf8)
+            return clanResolveResponse(200, url: request.url!, body: data)
+        }
+        let tA = Task { await model.resolveClan(rawTag: "#AAAA") }
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        model.refreshClan(tag: "#AAAA") // queued
+        model.refreshClan(tag: "#BBBB") // 不同 Tag，应立即执行
+        let rA = await tA.value
+        XCTAssertNotNil(rA.successOrNil)
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertEqual(tracker.count(forTag: "#AAAA"), 2, "A 应有 resolve + forced refresh 2 次")
+        XCTAssertEqual(tracker.count(forTag: "#BBBB"), 1)
+        XCTAssertEqual(tracker.maxConcurrent(forTag: "#AAAA"), 1, "同 Tag 最大并发必须为 1，无重叠")
+        XCTAssertEqual(tracker.maxConcurrent(forTag: "#BBBB"), 1)
+        // 验证时序：B 的完成早于 A 的 forced 开始
+        if let bFinish = tracker.finishTimes["#BBBB"]?.first, let aSecondStart = tracker.startTimes["#AAAA"]?.dropFirst().first {
+            XCTAssertTrue(bFinish < aSecondStart, "B 完成后，A 的 forced 才开始，但 A 仍不可与原 resolve 重叠")
+        }
+    }
+
+    // MARK: - Issue #250 P2 refreshAll 不被无关 resolve 阻塞
+
+    @MainActor
+    func testRefreshAllNotBlockedByUnrelatedResolve() async throws {
+        // 村庄 A -> #VILLAGE_B，resolve #AAAA 无关 Tag，refreshAll 应立即执行 B
+        let village = VillageProfile(name: "A", accountSnapshot: AccountSnapshot(tag: "#P", capturedAt: nil, importedAt: Date(), ageSeconds: nil, originalText: "{}", objectSections: [:], numericSections: [:], boosts: [:], unknownTopLevelKeys: [], diagnostics: []), officialAPIState: OfficialAPIState(status: .success, lastGood: OfficialPlayerSnapshot(tag: "#P", name: "p", townHallLevel: nil, townHallWeaponLevel: nil, builderHallLevel: nil, expLevel: nil, trophies: nil, bestTrophies: nil, warStars: nil, attackWins: nil, defenseWins: nil, builderBaseTrophies: nil, versusBattleWins: nil, legendStatistics: nil, clan: PlayerClan(tag: "#VILLAGEB", name: "c", clanLevel: nil, badgeUrls: nil), role: nil, warPreference: nil, donations: nil, donationsReceived: nil, clanCapitalContributions: nil, league: nil, builderBaseLeague: nil, achievements: nil, labels: nil, playerHouse: nil, troops: nil, heroes: nil, spells: nil, heroEquipment: nil, unrecognizedKeys: [])))
+        defaults.set(try JSONEncoder().encode([village]), forKey: "coc-helper.villages.v1")
+        let tracker = ConcurrentCounter()
+        let model = try makeModel { request in
+            let tag = request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? ""
+            tracker.start(tag: tag)
+            defer { tracker.finish(tag: tag) }
+            if tag == "#AAAA" { Thread.sleep(forTimeInterval: 0.5) }
+            else if tag == "#VILLAGEB" { Thread.sleep(forTimeInterval: 0.15) }
+            let data = Data("{\"tag\":\"\(tag)\",\"name\":\"c\",\"clanLevel\":1,\"members\":1,\"type\":\"open\",\"requiredTrophies\":0,\"warWins\":0,\"warLosses\":0,\"warTies\":0,\"warWinStreak\":0,\"isWarLogPublic\":true,\"badgeUrls\":{}}".utf8)
+            return clanResolveResponse(200, url: request.url!, body: data)
+        }
+        let tA = Task { await model.resolveClan(rawTag: "#AAAA") }
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        model.refreshAllClans() // 目标 #VILLAGEB 与 #AAAA 无交集，不应排队
+        let rA = await tA.value
+        XCTAssertNotNil(rA.successOrNil)
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertEqual(tracker.count(forTag: "#VILLAGEB"), 1, "无关 Tag 的 refreshAll 不应被阻塞")
+        XCTAssertEqual(tracker.count(forTag: "#AAAA"), 1)
+        // 若有交集则应排队（对照）
+        let counter2 = ResolveRequestCounter()
+        // 重新以有关 Tag 验证排队语义
+        defaults.set(try JSONEncoder().encode([VillageProfile(name: "A", accountSnapshot: village.accountSnapshot, officialAPIState: village.officialAPIState)]), forKey: "coc-helper.villages.v1")
+        let model2 = try makeModel { request in
+            let tag = request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? ""
+            counter2.record(tag: tag)
+            if tag == "#VILLAGEB" { Thread.sleep(forTimeInterval: 0.4) }
+            return clanResolveResponse(200, url: request.url!, body: Data("{\"tag\":\"\(tag)\",\"name\":\"c\",\"clanLevel\":1,\"members\":1,\"type\":\"open\",\"requiredTrophies\":0,\"warWins\":0,\"warLosses\":0,\"warTies\":0,\"warWinStreak\":0,\"isWarLogPublic\":true,\"badgeUrls\":{}}".utf8))
+        }
+        let tB = Task { await model2.resolveClan(rawTag: "#VILLAGEB") }
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        model2.refreshAllClans() // 有交集，应排队
+        _ = await tB.value
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertEqual(counter2.count(forTag: "#VILLAGEB"), 2, "有交集的 refreshAll 应排队强制刷新")
+    }
 }
 
 private extension Result {
@@ -562,5 +719,37 @@ private final class ResolveRequestCounter: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return countsByTag[tag] ?? 0
+    }
+}
+
+/// 并发计数：记录同 Tag 的当前并发与最大并发、起止时间，用于“无重叠”断言。
+private final class ConcurrentCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+    private var current: [String: Int] = [:]
+    private var maxConc: [String: Int] = [:]
+    var startTimes: [String: [Date]] = [:]
+    var finishTimes: [String: [Date]] = [:]
+
+    func start(tag: String) {
+        lock.lock()
+        counts[tag, default: 0] += 1
+        let cur = (current[tag] ?? 0) + 1
+        current[tag] = cur
+        maxConc[tag] = max(maxConc[tag] ?? 0, cur)
+        startTimes[tag, default: []].append(Date())
+        lock.unlock()
+    }
+    func finish(tag: String) {
+        lock.lock()
+        current[tag] = (current[tag] ?? 1) - 1
+        finishTimes[tag, default: []].append(Date())
+        lock.unlock()
+    }
+    func count(forTag tag: String) -> Int {
+        lock.lock(); defer { lock.unlock() }; return counts[tag] ?? 0
+    }
+    func maxConcurrent(forTag tag: String) -> Int {
+        lock.lock(); defer { lock.unlock() }; return maxConc[tag] ?? 0
     }
 }

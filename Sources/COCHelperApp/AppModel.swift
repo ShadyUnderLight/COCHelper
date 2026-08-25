@@ -3108,7 +3108,7 @@ public final class AppModel: ObservableObject {
         guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         // Issue #250：若同 Tag 的解析预览已在途，不允许重叠请求，
         // 排队一次强制刷新而非 join（保证显式刷新一定有新请求）。
-        if resolvingClanTags.contains(tag) {
+        if clanResolveTasks[tag] != nil {
             pendingClanRefreshTags.insert(tag)
             return
         }
@@ -3375,10 +3375,14 @@ public final class AppModel: ObservableObject {
     ///   补跑 = 村庄 tags ∪ 排队手动 tags；手动 tag 不再被静默丢弃）。
     private var pendingClanRefreshAll = false
     private var pendingClanRefreshTags: Set<String> = []
-    /// Issue #250 统一契约：解析预览在途集合。`resolveClan` 直接走 `fetchClan`，
-    /// 需与 `refreshingClanTags` 共享同一协调边界，否则 `resolve → refresh`
-    /// 同 Tag 会产生重叠请求。`refreshClan` 遇到该集合不 join 而是排队强制刷新。
-    private var resolvingClanTags: Set<String> = []
+    /// Issue #250 统一契约：解析预览在途集合与结果共享注册表。
+    /// `resolveClan` 直接走 `fetchClan`，需与 `refreshingClanTags` 共享同一协调边界，
+    /// 否则 `resolve → refresh` 同 Tag 会产生重叠请求。`refreshClan` 遇到该集合不 join 而是排队强制刷新。
+    /// `clanResolveTasks` 以 Task 共享结果（含失败/取消），保证 `resolve → resolve` 同 Tag
+    /// 在失败/404/malformed 等不写 `clanStates` 的路径也能 single-flight 为 1 次请求。
+    private var clanResolveTasks: [String: Task<Result<OfficialClanSnapshot, ClanResolveError>, Never>] = [:]
+    /// 兼容旧 `resolvingClanTags` 语义的只读投影（测试与旧谓词使用）。
+    private var resolvingClanTags: Set<String> { Set(clanResolveTasks.keys) }
 
     /// 刷新当前选中村庄所属部落的档案（UI 按钮入口）。
     public func refreshCurrentClan() {
@@ -3396,10 +3400,14 @@ public final class AppModel: ObservableObject {
 
     /// 批量刷新所有已导入村庄所属部落（同 clan tag 只请求一次，顺序执行）。
     /// 玩家批量刷新完成后由 `refreshAllOfficialPlayers` 联动调用。
+    /// Issue #250：仅当村庄目标 tags 与解析在途有交集时才排队，避免无关 Tag 被全局阻塞。
     public func refreshAllClans() {
-        if isRefreshingClanData || !resolvingClanTags.isEmpty {
+        let villageTags = villages.compactMap { $0.officialAPIState?.currentClanTag }
+            .compactMap { ClanTagNormalizer.normalize($0) }
+        let hasOverlap = villageTags.contains { clanResolveTasks[$0] != nil }
+        if isRefreshingClanData || hasOverlap {
             // 排队补跑：联动/手动请求不会因当前批次占用而被静默丢弃。
-            // Issue #250：解析预览在途时也需排队全量联动，避免同 Tag 重叠。
+            // Issue #250：有交集时排队，避免同 Tag 重叠；无交集则允许独立执行。
             pendingClanRefreshAll = true
             return
         }
@@ -3429,22 +3437,47 @@ public final class AppModel: ObservableObject {
             )
             self.mergeClanStates(refreshed, batchStart: batchStart)
             self.refreshingClanTags.removeAll()
-            // 排队补跑：pendingClanRefreshAll（村庄全量联动）∪ pendingClanRefreshTags（含手动 tag）。
-            // 补跑集合 = 村庄 tags ∪ 排队的手动 tags（去重；已清空的 refreshingClanTags
-            // 保证补跑直接进入 performClanRefresh，不重复请求）。
-            if self.pendingClanRefreshAll || !self.pendingClanRefreshTags.isEmpty {
-                var tags: [String?] = []
-                if self.pendingClanRefreshAll {
-                    tags = self.villages.compactMap { $0.officialAPIState?.currentClanTag }
-                }
-                for tag in self.pendingClanRefreshTags where !tags.contains(tag) {
-                    tags.append(tag)
-                }
-                self.pendingClanRefreshAll = false
-                self.pendingClanRefreshTags.removeAll()
-                self.performClanRefresh(villageClanTags: tags)
-            }
+            self.drainPendingClanRefreshesIfPossible()
         }
+    }
+
+    /// 统一排队消费：所有 pending 的起点（刷新批次完成 / 解析完成）均走此路径，
+    /// 按 Tag 判定安全性，避免无关 Tag 的完成提前消费仍在 resolve 的 Tag。
+    private func drainPendingClanRefreshesIfPossible() {
+        guard !isRefreshingClanData else { return }
+        guard pendingClanRefreshAll || !pendingClanRefreshTags.isEmpty else { return }
+        // 仍在解析的 Tag 必须继续留在 pending，不可提前消费（P1 race 修复）
+        let blockedTags = Set(clanResolveTasks.keys)
+        let safePending = pendingClanRefreshTags.subtracting(blockedTags)
+        var shouldDrainAll = false
+        var villageTagsForDrain: [String] = []
+        if pendingClanRefreshAll {
+            let villageTags = villages.compactMap { $0.officialAPIState?.currentClanTag }
+                .compactMap { ClanTagNormalizer.normalize($0) }
+            let blockedVillage = villageTags.filter { blockedTags.contains($0) }
+            if blockedVillage.isEmpty {
+                shouldDrainAll = true
+                villageTagsForDrain = villageTags
+            } else if safePending.isEmpty {
+                // 村庄批量仍有阻塞且无其他安全 pending，暂不消费
+                return
+            }
+            // 否则村庄批量保持 pendingAll，继续向下仅消费 safePending
+        }
+        var tags: [String?] = []
+        if shouldDrainAll {
+            tags = villageTagsForDrain.map { $0 as String? }
+        }
+        for tag in safePending where !tags.contains(tag) {
+            tags.append(tag)
+        }
+        guard !tags.isEmpty else { return }
+        if shouldDrainAll {
+            pendingClanRefreshAll = false
+        }
+        // 仅移除已消费的安全 pending，保留仍阻塞的
+        pendingClanRefreshTags.subtract(safePending)
+        performClanRefresh(villageClanTags: tags)
     }
 
     /// C1 防回退谓词（纯函数，独立可测）：
@@ -3692,13 +3725,22 @@ public final class AppModel: ObservableObject {
     /// 5xx → `.server`；超时/网络 → `.network`；解析 → `.malformed`。
     public func resolveClan(rawTag: String?) async -> Result<OfficialClanSnapshot, ClanResolveError> {
         guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(.invalidTag) }
+        // Issue #250 Task 共享注册表：同 Tag 的并发 resolve 共享同一 Task 结果，
+        // 包含失败/取消/malformed 等不写 clanStates 的路径也能 single-flight 为 1 次。
+        if let existingTask = clanResolveTasks[tag] {
+            // 传播取消：外层取消时取消共享 Task，使重试退避的 Task.sleep 能快速响应
+            return await withTaskCancellationHandler(operation: {
+                await existingTask.value
+            }, onCancel: {
+                existingTask.cancel()
+            })
+        }
         // 等待前记录该 tag 的 lastAttemptAt：用于区分"批次确实处理了该 tag"
         // 与"批次未包含该 tag"（pendingClanRefreshAll 的补跑集合动态读村庄
         // tags，该 tag 可能被丢弃）——只有前者才复用，后者 fallthrough 请求。
-        // Issue #250：同时等待另一解析在途（同 Tag 的 resolve→resolve 也需 single-flight）。
         let previousLastAttempt = clanStates[tag]?.lastAttemptAt
         var waitedForBatch = false
-        while isClanRefreshPending(involving: tag) || resolvingClanTags.contains(tag) {
+        while isClanRefreshPending(involving: tag) {
             waitedForBatch = true
             if Task.isCancelled { return .failure(.cancelled) }
             try? await Task.sleep(nanoseconds: 50_000_000)
@@ -3711,66 +3753,61 @@ public final class AppModel: ObservableObject {
                 return .failure(Self.mapFailedState(existing))
             }
         }
-        // 无可复用批次，需发起新请求。注册解析在途以阻塞同 Tag 的显式刷新（排队强制）。
-        resolvingClanTags.insert(tag)
-        defer {
-            resolvingClanTags.remove(tag)
-            // Issue #250：若显式刷新在解析期间排队，解析结束后立即触发强制刷新
-            // （保证“刷新最新”，重复排队已在 Set 中合并为一次）。
-            if !pendingClanRefreshTags.isEmpty || pendingClanRefreshAll {
-                // 仅当无其他在途（刷新批次已结束且解析集合已清空）才触发，避免重叠
-                if !isRefreshingClanData && resolvingClanTags.isEmpty {
-                    var tags: [String?] = []
-                    if pendingClanRefreshAll {
-                        tags = villages.compactMap { $0.officialAPIState?.currentClanTag }
-                    }
-                    for t in pendingClanRefreshTags where !tags.contains(t) {
-                        tags.append(t)
-                    }
-                    // 至少包含当前 tag 的排队也需触发（tags 可能已含）
-                    if !tags.isEmpty {
-                        pendingClanRefreshAll = false
-                        pendingClanRefreshTags.removeAll()
-                        performClanRefresh(villageClanTags: tags)
-                    }
+        // 无可复用批次，需发起新请求。注册 Task 以共享结果（含失败）并阻塞同 Tag 的显式刷新（排队强制）。
+        let task = Task<Result<OfficialClanSnapshot, ClanResolveError>, Never> { [weak self] in
+            guard let self else { return .failure(.cancelled) }
+            do {
+                let snapshot = try await self.clanRefresher.client.fetchClan(tag: tag)
+                let state = ClanAPIState(
+                    status: .success,
+                    clanTag: tag,
+                    fetchedAt: Date(),
+                    lastAttemptAt: Date(),
+                    lastErrorReason: nil,
+                    lastHTTPStatus: nil,
+                    parserVersion: ClanAPIState.currentParserVersion,
+                    lastGood: snapshot,
+                    unrecognizedKeys: snapshot.unrecognizedKeys
+                )
+                await MainActor.run {
+                    self.mergeClanStates([tag: state])
                 }
+                return .success(snapshot)
+            } catch is CancellationError {
+                return .failure(.cancelled)
+            } catch let error as URLError where error.code == .cancelled {
+                return .failure(.cancelled)
+            } catch let error as CoAPIError {
+                return .failure(Self.mapResolveError(error))
+            } catch {
+                return .failure(.network)
             }
         }
-        do {
-            let snapshot = try await clanRefresher.client.fetchClan(tag: tag)
-            let state = ClanAPIState(
-                status: .success,
-                clanTag: tag,
-                fetchedAt: Date(),
-                lastAttemptAt: Date(),
-                lastErrorReason: nil,
-                lastHTTPStatus: nil,
-                parserVersion: ClanAPIState.currentParserVersion,
-                lastGood: snapshot,
-                unrecognizedKeys: snapshot.unrecognizedKeys
-            )
-            mergeClanStates([tag: state])
-            return .success(snapshot)
-        } catch is CancellationError {
-            // CoAPIClient 显式透传取消（含 URLSession 的 URLError(.cancelled)），
-            // 不得误报为网络错误。
+        clanResolveTasks[tag] = task
+        let result = await withTaskCancellationHandler(operation: {
+            await task.value
+        }, onCancel: {
+            task.cancel()
+        })
+        clanResolveTasks[tag] = nil
+        // Issue #250：若显式刷新在解析期间排队，解析结束后触发强制刷新
+        // （保证“刷新最新”，重复排队已在 Set 中合并为一次），走统一 drain。
+        drainPendingClanRefreshesIfPossible()
+        // 外层在等待 task 期间被取消，task 已因传播取消而返回 .cancelled，
+        // 但 await 仍返回 .cancelled 结果；若外层在 task 完成后才取消，需显式映射
+        if Task.isCancelled, result != .failure(.cancelled) {
             return .failure(.cancelled)
-        } catch let error as URLError where error.code == .cancelled {
-            return .failure(.cancelled)
-        } catch let error as CoAPIError {
-            return .failure(Self.mapResolveError(error))
-        } catch {
-            return .failure(.network)
         }
+        return result
     }
 
     /// single-flight 判定（外部终审 P1）：tag 是否在**当前批次**或**已排队批次**
     /// 中——等待条件必须覆盖 `pendingClanRefreshTags`（显式 tag 排队）与
     /// `pendingClanRefreshAll`（村庄全量联动排队，补跑集合动态读当前村庄 tags）。
-    /// Issue #250：同时覆盖解析在途 `resolvingClanTags`（resolve→resolve 同 Tag 需等待复用）。
+    /// Issue #250：解析在途由 `clanResolveTasks` Task 注册表单独共享，不在此判定；
+    /// 此判定仅覆盖刷新批次的 single-flight。
     private func isClanRefreshPending(involving tag: String) -> Bool {
-        if resolvingClanTags.contains(tag) { return true }
-        return Self.isClanRefreshPending(
+        Self.isClanRefreshPending(
             inFlightTags: refreshingClanTags,
             queuedTags: pendingClanRefreshTags,
             queuedAll: pendingClanRefreshAll,

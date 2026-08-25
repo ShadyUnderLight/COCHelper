@@ -126,6 +126,12 @@ struct AcceptanceRunner {
             try assertEqual(lhs.latestAppliedAt, rhs.latestAppliedAt, "\(context) latestAppliedAt 应一致")
             try assertEqual(lhs.latestCheckedAt, rhs.latestCheckedAt, "\(context) latestCheckedAt 应一致（duplicate 最近检查）")
             try assertEqual(lhs.statisticsSignature, rhs.statisticsSignature, "\(context) statisticsSignature 应一致（所有指标 state/value/reason）")
+            // P1(#260 review round 2)：恢复 trust/availability/comparisonState/diagnostics 校验。
+            try assertEqual(lhs.availability, rhs.availability, "\(context) availability 应一致")
+            try assertEqual(lhs.coverageTrustState, rhs.coverageTrustState, "\(context) coverageTrustState 应一致")
+            try assertEqual(lhs.latestComparisonState, rhs.latestComparisonState, "\(context) latestComparisonState 应一致")
+            try assertEqual(lhs.diffDiagnostics, rhs.diffDiagnostics, "\(context) diffDiagnostics 应一致")
+            try assertEqual(lhs.timelineRowCount, rhs.timelineRowCount, "\(context) timelineRowCount 应一致")
         }
 
         func accountImport(_ name: String, model: AppModel) throws {
@@ -517,6 +523,16 @@ private struct SanitizedStatisticsSignature: Encodable, Equatable {
     }
 }
 
+/// 脱敏 availability（替代已移除的 SnapshotHistoryAvailability，仅用于 acceptance gate）。
+private enum SanitizedAvailability: String, Encodable, Equatable {
+    case noSnapshot
+    case empty
+    case baselineOnly
+    case available
+    case insufficient
+    case corrupt
+}
+
 /// 基于历史 envelope 的村庄级脱敏摘要（替代已移除的 UI projection）。
 private struct SanitizedVillageHistory: Encodable, Equatable {
     let entryCount: Int
@@ -526,6 +542,13 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
     let latestAppliedAt: Date?
     let latestCheckedAt: Date?
     let statisticsSignature: SanitizedStatisticsSignature?
+    // P1(#260 review round 2)：恢复 trust/availability/comparisonState/diagnostics 校验，
+    // 与 #226 协议要求的 restart 前后 invariant 对齐。
+    let availability: SanitizedAvailability
+    let coverageTrustState: String
+    let latestComparisonState: String?
+    let diffDiagnostics: [String]
+    let timelineRowCount: Int
 
     init(envelope: SnapshotHistoryEnvelope, villageID: UUID, referenceDate: Date = Date()) {
         // P1(#260 review)：必须先定位 active lineage，再过滤 villageID + lineageID；
@@ -538,6 +561,11 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
             latestAppliedAt = nil
             latestCheckedAt = nil
             statisticsSignature = nil
+            availability = .insufficient
+            coverageTrustState = "insufficientCoverage"
+            latestComparisonState = nil
+            diffDiagnostics = []
+            timelineRowCount = 0
             return
         }
         // 不排序：adjacentDiffs 必须吃 envelope append order，appliedAt 排序只用于展示。
@@ -567,18 +595,43 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
         latestCheckedAt = entries.compactMap { entry in
             envelope.duplicateMetadata[entry.snapshotID.uuidString]?.lastSeenAt
         }.max()
+
+        // availability：根据 entries 数量和 baseline 状态推断。
+        if entries.isEmpty {
+            availability = .empty
+        } else if entries.count == 1 && entries.first?.isBaseline == true {
+            availability = .baselineOnly
+        } else {
+            availability = .available
+        }
+
+        // coverageTrustState：从 latest entry 的 coverage sections 中提取 runtimeTrust 摘要。
+        if let latestCoverage = latestEntry?.coverage {
+            let sectionTrusts = latestCoverage.sections.map { "\($0.rawSection):\(String(describing: $0.runtimeTrust))" }
+            coverageTrustState = sectionTrusts.isEmpty ? "noSections" : sectionTrusts.sorted().joined(separator: ",")
+        } else {
+            coverageTrustState = "noCoverage"
+        }
+
         // adjacent diff 吃 envelope append order（不排序）。
         if entries.count >= 2 {
             let diffs = SnapshotDiffEngine.adjacentDiffs(in: entries)
+            // P2(#260 review round 2)：使用当前系统时区，而非硬编码 UTC。
             let statistics = SnapshotHistoryStatistics.calculate(
                 diffs: diffs,
                 referenceDate: referenceDate,
-                calendar: Calendar(identifier: .gregorian),
-                timeZone: TimeZone(secondsFromGMT: 0)!
+                calendar: .current,
+                timeZone: .current
             )
             statisticsSignature = SanitizedStatisticsSignature(statistics)
+            latestComparisonState = diffs.last?.comparisonState.rawValue
+            diffDiagnostics = diffs.flatMap { $0.diagnostics.map(\.message) }
+            timelineRowCount = diffs.count
         } else {
             statisticsSignature = nil
+            latestComparisonState = nil
+            diffDiagnostics = []
+            timelineRowCount = 0
         }
     }
 }

@@ -42,10 +42,12 @@
 
 人工核对（截图/录屏须遮盖 tag 与个人信息）：
 
-- Village Detail：最近更新时间、历史数量、时间线摘要。
-- Snapshot History：trust、duplicate「最近检查」、category filter、provenance-only。
+- Village Detail：最近更新时间、历史数量摘要。
+- 内部 envelope/Diff/trust：通过 `acceptance-runner` 输出的脱敏 JSON 校验 trust、duplicate「最近检查」、statistics signature、availability、comparisonState、diff diagnostics。
 - today / 7 / 30 天：缺数据显示「数据不足」，不显示伪造 0。
-- 升级开始/完成、timer changed/ended、unknown 文案边界。
+- 升级开始/完成、timer changed/ended、unknown 文案边界（如仍有 UI 展示）。
+
+> 注：#259 已移除用户可见的 Snapshot History 时间线 UI；历史存储/导入/去重/lineage 隔离/Diff/coverage-trust/手动升级对账均保留，由 acceptance-runner 做 headless 校验。
 
 ## 5. 性能（Release App，paired，1005 段 raw workload + fail-closed 可展开 row）
 

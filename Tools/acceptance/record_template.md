@@ -48,7 +48,7 @@
 | 场景 | 卡顿 | 内存异常 | UI 状态漂移 | 备注 |
 |---|---|---|---|---|
 | Village Detail 滚动 | | | | |
-| Snapshot History 滚动 | | | | |
-| 展开大变化 row | | | | |
-| category filter 切换 | | | | |
+| 导入性能（before/after） | | | | |
+| Diff 计算（大量 Wall） | | | | |
 | today/7/30 切换 | | | | |
+| 重启恢复 | | | | |

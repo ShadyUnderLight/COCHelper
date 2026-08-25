@@ -20,7 +20,7 @@
 2. 打开 Release App → 账号数据页。
 3. 粘贴 `perf_account_snapshot_large_walls_before.json` 全文并导入（baseline，1005 墙）。
 4. 再次粘贴 `perf_account_snapshot_large_walls_after.json` 全文并导入（同村同 tag，触发大量 Wall `lvl` 变化的 history Diff）。
-5. 进入对应村庄详情页与 Snapshot History，此时第二条 history 已为“非 baseline”且含确定性的大量 Wall 变化，可展开验证场景 3。
+5. 通过 `acceptance-runner` 或调试输出验证第二条 history 已为“非 baseline”且含确定性的大量 Wall 变化（Diff 输出 1 个 `unknown/insufficientCoverage` change，而非 1005 个 confirmed rows）。
 
 > 注意：`AppModel.loadPerformanceSample()` / Debug perf seed 当前仅加载 home/builder/mixed/variant 及 war/raid 多页 fixture，**不会**加载 `perf_account_snapshot_large_walls.json`。不要使用 Debug seed 作为本 1000+ 城墙场景的加载路径，否则测不到目标数据却误以为完成 #226 性能门禁。
 
@@ -31,11 +31,11 @@
 | # | 场景 | 操作 |
 |---|---|---|
 | 1 | Village Detail 滚动 | 城墙分类或全部建筑列表上下滚动 |
-| 2 | Snapshot History 滚动 | 历史时间线列表滚动 |
-| 3 | 展开大变化 row | 展开含大量 Wall/建筑变化的 row |
-| 4 | category filter | 切换 all/building/wall/hero 等 |
-| 5 | 统计窗口 | today → 7 天 → 30 天切换 |
-| 6 | 连续展开/折叠 | 同一 row 多次 disclosure 切换 |
+| 2 | 导入性能 | 连续导入 before/after 快照，观察主线程响应 |
+| 3 | Diff 计算性能 | 触发大量 Wall histogram Diff，观察计算耗时 |
+| 4 | 统计窗口 | today → 7 天 → 30 天切换（如仍有 UI 展示） |
+| 5 | 连续导入 | 同一快照多次导入，观察 duplicate 路径性能 |
+| 6 | 重启恢复 | 导入后重启 App，观察 history 加载性能 |
 
 ## 记录要求
 

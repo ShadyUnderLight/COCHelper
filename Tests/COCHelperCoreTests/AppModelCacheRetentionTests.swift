@@ -250,4 +250,150 @@ final class AppModelCacheRetentionTests: XCTestCase {
     private func defaultsSet(_ data: Data, forKey key: String) throws {
         defaults.set(data, forKey: key)
     }
+
+    // MARK: - P2 回归：retention 是所有成功写入路径的统一不变量
+
+    /// 读取 UserDefaults 持久化 warlog store 中指定 tag 的条目数（磁盘侧断言）。
+    private func persistedWarLogItemCount(tag: String) throws -> Int? {
+        let store = try JSONDecoder().decode(
+            ClanWarLogStateStore.self,
+            from: XCTUnwrap(defaults.data(forKey: "coc-helper.clan-war-logs.v1")))
+        return store.states[tag]?.lastGood?.items.count
+    }
+
+    /// 读取 UserDefaults 持久化 capital store 中指定 tag 的条目数。
+    private func persistedCapitalItemCount(tag: String) throws -> Int? {
+        let store = try JSONDecoder().decode(
+            ClanCapitalStateStore.self,
+            from: XCTUnwrap(defaults.data(forKey: "coc-helper.clan-capitals.v1")))
+        return store.states[tag]?.lastGood?.items.count
+    }
+
+    /// refresh 首屏 > cap（limit=nil 时服务端单响应不受客户端约束）：
+    /// 内存与 UserDefaults 必须立即 ≤ cap，不得等下一次 load-more 或重启自愈。
+    @MainActor
+    func testRefreshWarLogFirstPageAboveCapTrimsMemoryAndDisk() async throws {
+        let cap = CacheRetentionPolicy.maxWarLogItemsPerTag
+        _ = makeModel(clanLogHandler: { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+             warLogPageJSON(first: 0, count: cap + 10, after: "A1"))
+        })
+
+        currentModel!.refreshWarLog(tag: "#REFBIG")
+        await waitUntil { [self] in !currentModel!.isRefreshingWarLogData }
+
+        XCTAssertEqual(currentModel!.warLogState(for: "#REFBIG")?.lastGood?.items.count, cap,
+                       "refresh 首屏超限时内存必须立即收敛")
+        XCTAssertEqual(try persistedWarLogItemCount(tag: "#REFBIG"), cap,
+                       "refresh 首屏超限时落盘必须立即收敛")
+    }
+
+    /// load-more 跨 parser 版本 rebuild：新首屏直接采用（else 分支），
+    /// 同样必须收敛——rebuild 不是绕过 retention 的旁路。
+    @MainActor
+    func testLoadMoreWarLogParserRebuildAboveCapTrimsMemoryAndDisk() async throws {
+        let cap = CacheRetentionPolicy.maxWarLogItemsPerTag
+
+        func warEntry(_ index: Int) -> OfficialWarLogEntry {
+            OfficialWarLogEntry(result: nil, endTime: "war-\(index)", teamSize: nil,
+                                attacksPerMember: nil, battleModifier: nil,
+                                clan: nil, opponent: nil)
+        }
+        // 落盘旧 parser 版本 + 带游标的 lastGood → loadMore 触发 rebuild（无 cursor 首屏）。
+        let legacy = OfficialEndpointState<OfficialWarLogPage>(
+            status: .success,
+            parserVersion: "clan-war-log-0.0-legacy-test",
+            lastGood: OfficialWarLogPage(page: OfficialPaginatedPage(
+                items: (0..<3).map(warEntry(_:)), before: nil, after: "OLD")))
+        try defaultsSet(try JSONEncoder().encode(
+            ClanWarLogStateStore(states: ["#REBUILD": legacy])),
+            forKey: "coc-helper.clan-war-logs.v1")
+
+        _ = makeModel(clanLogHandler: { request in
+            XCTAssertFalse(request.url?.query?.contains("after=") == true,
+                           "rebuild 必须无游标请求首屏")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    warLogPageJSON(first: 0, count: cap + 20, after: "NEW"))
+        })
+
+        currentModel!.loadMoreWarLog(tag: "#REBUILD")
+        await waitUntil { [self] in !currentModel!.isRefreshingWarLogData }
+
+        let page = try XCTUnwrap(currentModel!.warLogState(for: "#REBUILD")?.lastGood)
+        XCTAssertEqual(page.items.count, cap, "parser rebuild 新首屏同样必须收敛到上限")
+        XCTAssertEqual(page.after, "NEW")
+        XCTAssertEqual(try persistedWarLogItemCount(tag: "#REBUILD"), cap,
+                       "rebuild 落盘必须立即收敛")
+    }
+
+    /// capital refresh 首屏 > cap：内存 + 磁盘收敛，且 row cache 与裁剪后
+    /// state 同步（row cache 消费归一化后的 state.lastGood）。
+    @MainActor
+    func testRefreshCapitalRaidFirstPageAboveCapTrimsMemoryDiskAndRowCache() async throws {
+        let cap = CacheRetentionPolicy.maxCapitalSeasonsPerTag
+        _ = makeModel(clanLogHandler: { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+             capitalPageJSON(first: 0, count: cap + 5, after: nil))
+        })
+
+        currentModel!.refreshCapitalRaid(tag: "#CAPREF")
+        await waitUntil { [self] in !currentModel!.isRefreshingCapitalData }
+
+        XCTAssertEqual(currentModel!.capitalState(for: "#CAPREF")?.lastGood?.items.count, cap,
+                       "capital refresh 首屏超限时内存必须立即收敛")
+        XCTAssertEqual(try persistedCapitalItemCount(tag: "#CAPREF"), cap,
+                       "capital refresh 首屏超限时落盘必须立即收敛")
+
+        // row cache 与 state 同步（ID 带 raid:gN: 前缀，用后缀对齐）。
+        let page = try XCTUnwrap(currentModel!.capitalState(for: "#CAPREF")?.lastGood)
+        let rows = currentModel!.capitalRaidRows(for: "#CAPREF")
+        XCTAssertEqual(rows.count, cap)
+        for (row, expectedRow) in zip(rows, CapitalRaidRowIdentity.rows(for: page.items)) {
+            XCTAssertTrue(row.id.hasSuffix(expectedRow.id))
+            XCTAssertEqual(row.season, expectedRow.season)
+        }
+    }
+
+    /// capital parser rebuild > cap：与 warlog 对称，else 分支不得旁路 retention；
+    /// row cache 同步断言。
+    @MainActor
+    func testLoadMoreCapitalRaidParserRebuildAboveCapTrimsMemoryDiskAndRowCache() async throws {
+        let cap = CacheRetentionPolicy.maxCapitalSeasonsPerTag
+
+        func season(_ index: Int) -> OfficialCapitalRaidSeason {
+            OfficialCapitalRaidSeason(
+                state: "ended", startTime: String(format: "s%04d", index),
+                endTime: "e", capitalTotalLoot: nil, raidsCompleted: nil,
+                totalAttacks: nil, enemyDistrictsDestroyed: nil,
+                offensiveReward: nil, defensiveReward: nil,
+                members: nil, attackLog: nil, defenseLog: nil)
+        }
+        let legacy = OfficialEndpointState<OfficialCapitalRaidPage>(
+            status: .success,
+            parserVersion: "clan-capital-0.0-legacy-test",
+            lastGood: OfficialCapitalRaidPage(page: OfficialPaginatedPage(
+                items: (0..<2).map(season(_:)), before: nil, after: "OLDC")))
+        try defaultsSet(try JSONEncoder().encode(
+            ClanCapitalStateStore(states: ["#CAPREBUILD": legacy])),
+            forKey: "coc-helper.clan-capitals.v1")
+
+        _ = makeModel(clanLogHandler: { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+             capitalPageJSON(first: 0, count: cap + 7, after: "NEWC"))
+        })
+
+        currentModel!.loadMoreCapitalRaid(tag: "#CAPREBUILD")
+        await waitUntil { [self] in !currentModel!.isRefreshingCapitalData }
+
+        let page = try XCTUnwrap(currentModel!.capitalState(for: "#CAPREBUILD")?.lastGood)
+        XCTAssertEqual(page.items.count, cap, "capital parser rebuild 新首屏同样必须收敛")
+        XCTAssertEqual(try persistedCapitalItemCount(tag: "#CAPREBUILD"), cap)
+
+        let rows = currentModel!.capitalRaidRows(for: "#CAPREBUILD")
+        XCTAssertEqual(rows.count, cap)
+        for (row, expectedRow) in zip(rows, CapitalRaidRowIdentity.rows(for: page.items)) {
+            XCTAssertTrue(row.id.hasSuffix(expectedRow.id))
+            XCTAssertEqual(row.season, expectedRow.season)
+        }
+    }
 }

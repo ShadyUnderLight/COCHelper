@@ -528,21 +528,46 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
     let statisticsSignature: SanitizedStatisticsSignature?
 
     init(envelope: SnapshotHistoryEnvelope, villageID: UUID, referenceDate: Date = Date()) {
-        let entries = envelope.entries
-            .filter { $0.villageID == villageID }
-            .sorted { $0.appliedAt > $1.appliedAt }
+        // P1(#260 review)：必须先定位 active lineage，再过滤 villageID + lineageID；
+        // 不同 lineage 的 entries 不得混入 adjacent diff（Diff Engine 会 suppress + lineageMismatch）。
+        guard let activeLineageID = envelope.activeLineage(for: villageID)?.lineageID else {
+            entryCount = 0
+            baselineCount = 0
+            latestIsBaseline = false
+            duplicateImportCount = nil
+            latestAppliedAt = nil
+            latestCheckedAt = nil
+            statisticsSignature = nil
+            return
+        }
+        // 不排序：adjacentDiffs 必须吃 envelope append order，appliedAt 排序只用于展示。
+        let entries = envelope.entries.filter {
+            $0.villageID == villageID && $0.lineageID == activeLineageID
+        }
         entryCount = entries.count
         baselineCount = entries.filter(\.isBaseline).count
-        latestIsBaseline = entries.first?.isBaseline ?? false
-        latestAppliedAt = entries.first?.appliedAt
-        if let latestSnapshotID = entries.first?.snapshotID,
+        // latest 单独用 max 找（appliedAt 优先，snapshotID 做 tiebreaker）。
+        let latestEntry = entries.max {
+            if $0.appliedAt != $1.appliedAt {
+                return $0.appliedAt < $1.appliedAt
+            }
+            return $0.snapshotID.uuidString > $1.snapshotID.uuidString
+        }
+        latestIsBaseline = latestEntry?.isBaseline ?? false
+        latestAppliedAt = latestEntry?.appliedAt
+        // duplicateImportCount 绑定 latest entry。
+        if let latestSnapshotID = latestEntry?.snapshotID,
            let meta = envelope.duplicateMetadata[latestSnapshotID.uuidString] {
             duplicateImportCount = meta.duplicateImportCount
-            latestCheckedAt = meta.lastSeenAt
         } else {
             duplicateImportCount = nil
-            latestCheckedAt = nil
         }
+        // P2(#260 review)：latestCheckedAt 取 active-lineage 全部 entries 的 duplicate metadata
+        // 中最大 lastSeenAt，而非只看 latest entry——重新导入旧快照会刷新旧 entry 的 lastSeenAt。
+        latestCheckedAt = entries.compactMap { entry in
+            envelope.duplicateMetadata[entry.snapshotID.uuidString]?.lastSeenAt
+        }.max()
+        // adjacent diff 吃 envelope append order（不排序）。
         if entries.count >= 2 {
             let diffs = SnapshotDiffEngine.adjacentDiffs(in: entries)
             let statistics = SnapshotHistoryStatistics.calculate(

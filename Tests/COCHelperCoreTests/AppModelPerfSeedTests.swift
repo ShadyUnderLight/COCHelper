@@ -26,7 +26,8 @@ final class AppModelPerfSeedTests: XCTestCase {
     /// seed 后全部关键状态可重放。
     @MainActor
     func testLoadPerformanceSampleCreatesReplayableStates() throws {
-        let model = AppModel(defaults: defaults, historyStore: TestSnapshotHistoryStore())
+        let historyStore = TestSnapshotHistoryStore()
+        let model = AppModel(defaults: defaults, historyStore: historyStore)
         let fixtureDirectory = try XCTUnwrap(Bundle.module.resourceURL)
 
         XCTAssertTrue(model.loadPerformanceSample(
@@ -45,8 +46,9 @@ final class AppModelPerfSeedTests: XCTestCase {
         XCTAssertNotNil(villageC.accountSnapshot)
 
         // A：Snapshot History 多条相邻快照（home + variant 两次导入）。
-        let history = model.snapshotHistoryProjection(for: villageA.id, at: Date())
-        XCTAssertGreaterThanOrEqual(history.totalSnapshotCount, 2)
+        let historyEnvelope = try XCTUnwrap(historyStore.load())
+        let villageAHistoryEntries = historyEnvelope.entries.filter { $0.villageID == villageA.id }
+        XCTAssertGreaterThanOrEqual(villageAHistoryEntries.count, 2)
 
         // A：manual active + completed。
         let core = try XCTUnwrap(model.manualUpgradeCore(for: villageA.id))

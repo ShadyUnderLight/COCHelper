@@ -284,15 +284,9 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         try store.save(firstReload)
         let secondReload = try XCTUnwrap(try store.load())
 
-        let projection = SnapshotHistoryProjection.project(
-            envelope: secondReload,
-            villageID: villageID,
-            hasCurrentSnapshot: true,
-            referenceDate: Date(timeIntervalSince1970: 2),
-            calendar: Calendar(identifier: .gregorian),
-            timeZone: TimeZone(secondsFromGMT: 0)!
-        )
-        XCTAssertEqual(projection.coverageTrustState, .verified)
+        let entry = try XCTUnwrap(secondReload.entries.first)
+        XCTAssertEqual(entry.coverage.sourceUniverseRuntimeTrust, .trusted,
+            "两次 load 后 source universe runtime trust 应恢复为 trusted")
         let heroes = try XCTUnwrap(
             secondReload.entries.first?.coverage.section(base: .home, rawSection: "heroes")
         )
@@ -873,18 +867,15 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(diffs[0].comparisonState, .provenanceOnly)
         XCTAssertEqual(diffs[0].diagnostics.filter { $0.kind == .incomparableTimerSchema }.count, 1)
 
-        let projection = SnapshotHistoryProjection.project(
-            envelope: provenance.envelope.hydratingVerifiedCoverage(policy: .production),
-            villageID: villageID,
-            hasCurrentSnapshot: true,
+        // provenance-only diff 不产生升级统计；直接通过 Statistics.calculate 验证。
+        let statistics = SnapshotHistoryStatistics.calculate(
+            diffs: diffs,
             referenceDate: Date(timeIntervalSince1970: 2),
             calendar: Calendar(identifier: .gregorian),
             timeZone: TimeZone(secondsFromGMT: 0)!
         )
-        XCTAssertEqual(projection.timeline[0].summary, "来源信息变化，无业务变化")
-        XCTAssertFalse(projection.timeline[0].changes.contains { $0.changeKind == .levelIncreased || $0.changeKind == .upgradeCompleted })
-        XCTAssertEqual(projection.statistics.today.heroLevelGrowth.state, .available)
-        XCTAssertEqual(projection.statistics.today.heroLevelGrowth.value, 0)
+        XCTAssertEqual(statistics.today.heroLevelGrowth.state, .available)
+        XCTAssertEqual(statistics.today.heroLevelGrowth.value, 0)
 
         let content = try service.planImport(
             snapshot: snapshot(tag: firstTag, text: timerJSON(level: 2), capturedAt: Date(timeIntervalSince1970: 100)),

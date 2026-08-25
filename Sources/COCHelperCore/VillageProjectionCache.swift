@@ -22,7 +22,6 @@ import Foundation
 //    .contentFingerprint（init 一次性生成）表示快照与 manual 身份，
 //    villageName 直接入 key（改名 → 重建），tick 查找不再 Hash 完整
 //    payload（issue #210 目标 3）。
-//  - 不修改 snapshotHistoryProjectionCache / 历史缓存语义（#200 范围外）。
 public final class VillageProjectionCache {
     // MARK: - 类型
 

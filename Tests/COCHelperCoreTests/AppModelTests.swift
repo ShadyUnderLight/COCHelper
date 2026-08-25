@@ -1266,6 +1266,87 @@ extension AppModelTests {
                        "poisoned state 修复后必须走无 cursor rebuild，不得用旧 cursor 翻页: \(queries[0])")
     }
 
+    /// Issue #251 P2：migration 对当前-parser 合法 failed cache 也会标记为 legacy，
+    /// 强制下一次 loadMore 走首屏 rebuild，累计历史被替换。这是已知的 fail-closed
+    /// 取舍（无法区分 poisoned 和合法 failed state），此测试锁定该预期行为。
+    @MainActor
+    func testLegacyMigrationForcesRebuildForCurrentParserFailedState() async throws {
+        let recorder = TagRecorder()
+        // 预置合法的当前-parser failed state：累计 3 条记录 + after 游标。
+        let seasons = [
+            OfficialCapitalRaidSeason(
+                state: "ended", startTime: "20260701T080000.000Z", endTime: "20260703T080000.000Z",
+                capitalTotalLoot: 100, raidsCompleted: 1, totalAttacks: 10,
+                enemyDistrictsDestroyed: 10, offensiveReward: 100, defensiveReward: 50,
+                members: nil, attackLog: nil, defenseLog: nil
+            ),
+            OfficialCapitalRaidSeason(
+                state: "ended", startTime: "20260624T080000.000Z", endTime: "20260626T080000.000Z",
+                capitalTotalLoot: 200, raidsCompleted: 2, totalAttacks: 20,
+                enemyDistrictsDestroyed: 20, offensiveReward: 200, defensiveReward: 100,
+                members: nil, attackLog: nil, defenseLog: nil
+            ),
+            OfficialCapitalRaidSeason(
+                state: "ended", startTime: "20260617T080000.000Z", endTime: "20260619T080000.000Z",
+                capitalTotalLoot: 300, raidsCompleted: 3, totalAttacks: 30,
+                enemyDistrictsDestroyed: 30, offensiveReward: 300, defensiveReward: 150,
+                members: nil, attackLog: nil, defenseLog: nil
+            ),
+        ]
+        let failedState = ClanCapitalAPIState(
+            status: .failed,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 1_700_000_500),
+            lastErrorReason: "请求被限流（429），请稍后再试。",
+            lastHTTPStatus: 429,
+            parserVersion: ClanCapitalAPIState.currentParserVersion,
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: seasons, before: nil, after: "RAIDCURSORAFTER2")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": failedState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                fullCapitalRaidPageData()
+            )
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertNotEqual(
+            model.currentCapitalState?.parserVersion,
+            ClanCapitalAPIState.currentParserVersion,
+            "migration 必须把当前-parser failed state 标记为 legacy（fail-closed）"
+        )
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 3,
+                       "migration 不得直接修改 lastGood")
+
+        // parserVersion != current → needsRebuild=true → 无 cursor 首屏 rebuild。
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.parserVersion, ClanCapitalAPIState.currentParserVersion)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2,
+                       "rebuild 替换累计页（已知 fail-closed 数据丢失取舍）")
+
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 1)
+        XCTAssertFalse(queries[0].contains("after="),
+                       "migration 后必须走无 cursor rebuild，不得使用旧 cursor: \(queries[0])")
+    }
+
     /// Issue #251 migration 不得影响合法的 success 状态：parserVersion 保持不变。
     @MainActor
     func testLegacyMigrationDoesNotAffectSuccessStates() async throws {

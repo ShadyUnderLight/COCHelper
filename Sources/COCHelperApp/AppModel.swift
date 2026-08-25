@@ -3346,15 +3346,28 @@ public final class AppModel: ObservableObject {
     /// - `parserVersion` 却等于当前版本（被错误升级）
     ///
     /// 这种状态下 `needsRebuild` 会误判为 false，直接用旧 cursor 把新 parser 页
-    /// merge 到旧 parser 页。本 migration 把所有 `.failed && lastGood != nil` 的
-    /// 分页状态的 `parserVersion` 重置为 legacy 标记，强制下一次 loadMore 走
-    /// 无 cursor rebuild。只执行一次。
+    /// merge 到旧 parser 页。本 migration 把 `parserVersion == current` 的 failed
+    /// 分页状态重置为 legacy 标记，强制下一次 loadMore 走无 cursor 首屏 rebuild。
+    /// `parserVersion != current` 的状态本来就会走 rebuild，因此无需标记。只执行一次。
+    ///
+    /// **Fail-closed 取舍（P2，已知数据丢失）**：
+    /// 从状态本身无法区分旧版本 bug 产生的 poisoned state 与当前 parser 产生的
+    /// 合法 failed cache——两者 metadata 完全相同（`.failed` + 当前 parserVersion
+    /// + lastGood）。因此本 migration 对两者统一标记为 legacy。对于合法的当前-parser
+    /// failed cache，这会导致已加载的累计历史被首屏 rebuild 替换。这是为避免新旧
+    /// parser 数据混合而采取的保守策略，仅发生在首次升级时；rebuild 后用户可重新
+    /// 加载更多恢复历史。
     private func migrateLegacyFailedParserVersionsIfNeeded() {
         guard !defaults.bool(forKey: Self.legacyFailedParserVersionMigrationKey) else { return }
 
         let legacyParserVersion = "legacy-pre-251-rebuild"
+        let capitalCurrentParserVersion = ClanCapitalAPIState.currentParserVersion
+        let warLogCurrentParserVersion = ClanWarLogAPIState.currentParserVersion
         var capitalChanged = false
-        for (tag, state) in clanCapitalStates where state.status == .failed && state.lastGood != nil {
+        for (tag, state) in clanCapitalStates
+        where state.status == .failed
+            && state.lastGood != nil
+            && state.parserVersion == capitalCurrentParserVersion {
             var mutated = state
             mutated.parserVersion = legacyParserVersion
             clanCapitalStates[tag] = mutated
@@ -3362,7 +3375,10 @@ public final class AppModel: ObservableObject {
         }
 
         var warLogChanged = false
-        for (tag, state) in clanWarLogStates where state.status == .failed && state.lastGood != nil {
+        for (tag, state) in clanWarLogStates
+        where state.status == .failed
+            && state.lastGood != nil
+            && state.parserVersion == warLogCurrentParserVersion {
             var mutated = state
             mutated.parserVersion = legacyParserVersion
             clanWarLogStates[tag] = mutated

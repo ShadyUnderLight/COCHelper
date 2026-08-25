@@ -14,7 +14,7 @@
 
 ## 加载方式
 
-### 账号数据页粘贴（唯一推荐，不需改 App seed）— 需两步以产生可展开的大变化 row
+### 账号数据页粘贴（唯一推荐，不需改 App seed）— 需两步以产生大量 Wall histogram Diff
 
 1. `scripts/build_app.sh` 构建 Release App。
 2. 打开 Release App → 账号数据页。
@@ -26,7 +26,7 @@
 
 ## 操作清单（Release App）
 
-每个场景连续操作 ≥10 秒，记录是否出现明显主线程卡顿、重复 projection 构建、内存异常增长、scroll/disclosure 状态漂移。
+每个场景连续操作 ≥10 秒，记录是否出现明显主线程卡顿、重复 projection 构建、内存异常增长、scroll 状态漂移。
 
 | # | 场景 | 操作 |
 |---|---|---|

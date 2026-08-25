@@ -553,7 +553,7 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
     init(envelope: SnapshotHistoryEnvelope, villageID: UUID, referenceDate: Date = Date()) {
         // P1(#260 review)：必须先定位 active lineage，再过滤 villageID + lineageID；
         // 不同 lineage 的 entries 不得混入 adjacent diff（Diff Engine 会 suppress + lineageMismatch）。
-        guard let activeLineageID = envelope.activeLineage(for: villageID)?.lineageID else {
+        guard let activeLineage = envelope.activeLineage(for: villageID) else {
             entryCount = 0
             baselineCount = 0
             latestIsBaseline = false
@@ -568,6 +568,7 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
             timelineRowCount = 0
             return
         }
+        let activeLineageID = activeLineage.lineageID
         // 不排序：adjacentDiffs 必须吃 envelope append order，appliedAt 排序只用于展示。
         let entries = envelope.entries.filter {
             $0.villageID == villageID && $0.lineageID == activeLineageID
@@ -596,26 +597,37 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
             envelope.duplicateMetadata[entry.snapshotID.uuidString]?.lastSeenAt
         }.max()
 
-        // availability：根据 entries 数量和 baseline 状态推断。
-        if entries.isEmpty {
-            availability = .empty
-        } else if entries.count == 1 && entries.first?.isBaseline == true {
+        // P1(#260 review round 3)：availability 复用旧 SnapshotHistoryProjection 语义，
+        // 检查 active-lineage conflict、baseline-only、无 diff、全部 insufficient、最新 insufficient。
+        let diffs = SnapshotDiffEngine.adjacentDiffs(in: entries)
+        if activeLineage.hasConflict {
+            availability = .insufficient
+        } else if entries.count == 1 && entries[0].isBaseline {
             availability = .baselineOnly
+        } else if diffs.isEmpty {
+            availability = .insufficient
+        } else if diffs.allSatisfy({
+            $0.comparisonState != .comparable && $0.comparisonState != .provenanceOnly
+        }) {
+            availability = .insufficient
+        } else if let latestDiff = diffs.first(where: { $0.toSnapshotID == latestEntry?.snapshotID }),
+                  latestDiff.comparisonState == .insufficientCoverage {
+            availability = .insufficient
         } else {
             availability = .available
         }
 
-        // coverageTrustState：从 latest entry 的 coverage sections 中提取 runtimeTrust 摘要。
+        // P1(#260 review round 3)：复用 SnapshotCoverageTrustDisplayState.evaluate，
+        // 包含 source-universe well-formed/required relevance/sourceUniverseRuntimeTrust 检查。
         if let latestCoverage = latestEntry?.coverage {
-            let sectionTrusts = latestCoverage.sections.map { "\($0.rawSection):\(String(describing: $0.runtimeTrust))" }
-            coverageTrustState = sectionTrusts.isEmpty ? "noSections" : sectionTrusts.sorted().joined(separator: ",")
+            let trust = SnapshotCoverageTrustDisplayState.evaluate(coverage: latestCoverage)
+            coverageTrustState = String(describing: trust)
         } else {
-            coverageTrustState = "noCoverage"
+            coverageTrustState = "insufficientCoverage"
         }
 
         // adjacent diff 吃 envelope append order（不排序）。
         if entries.count >= 2 {
-            let diffs = SnapshotDiffEngine.adjacentDiffs(in: entries)
             // P2(#260 review round 2)：使用当前系统时区，而非硬编码 UTC。
             let statistics = SnapshotHistoryStatistics.calculate(
                 diffs: diffs,
@@ -624,14 +636,17 @@ private struct SanitizedVillageHistory: Encodable, Equatable {
                 timeZone: .current
             )
             statisticsSignature = SanitizedStatisticsSignature(statistics)
-            latestComparisonState = diffs.last?.comparisonState.rawValue
+            // P1(#260 review round 3)：latestComparisonState 绑定 latestEntry 对应的 diff
+            // （toSnapshotID == latestEntry.snapshotID），而非 diffs.last。
+            latestComparisonState = diffs.first(where: { $0.toSnapshotID == latestEntry?.snapshotID })?.comparisonState.rawValue
             diffDiagnostics = diffs.flatMap { $0.diagnostics.map(\.message) }
-            timelineRowCount = diffs.count
         } else {
             statisticsSignature = nil
             latestComparisonState = nil
             diffDiagnostics = []
-            timelineRowCount = 0
         }
+        // P1(#260 review round 3)：timelineRowCount = entries.count（旧 projection timeline 包含 baseline 行），
+        // 而非 diffs.count。
+        timelineRowCount = entries.count
     }
 }

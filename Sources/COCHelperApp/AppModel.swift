@@ -3732,11 +3732,9 @@ public final class AppModel: ObservableObject {
         guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(.invalidTag) }
         // Issue #250 Task 共享注册表：同 Tag 的并发 resolve 共享同一 Task 结果，
         // 包含失败/取消/malformed 等不写 clanStates 的路径也能 single-flight 为 1 次。
-        // P2：joiner 的取消只取消该 caller 的等待，不取消共享飞行（ref-counted 语义）。
+        // 当前契约：任意 waiter 取消即取消共享飞行（见 awaitSharedResolveTask）。
         if let existingTask = clanResolveTasks[tag] {
-            let result = await awaitSharedResolveTask(existingTask)
-            // 保持 task 注册直到原飞行完成，joiner 不清理注册表
-            return result
+            return await awaitSharedResolveTask(existingTask)
         }
         // 等待前记录该 tag 的 lastAttemptAt：用于区分"批次确实处理了该 tag"
         // 与"批次未包含该 tag"（pendingClanRefreshAll 的补跑集合动态读村庄
@@ -3791,7 +3789,7 @@ public final class AppModel: ObservableObject {
             }
         }
         clanResolveTasks[tag] = task
-        // 创建者等待：取消仅影响当前 caller，不直接取消共享飞行（除非无其他 waiter，此处简化为不取消飞行）
+        // 当前契约：任意 waiter 取消即取消共享飞行，所有 joiner 将观察到同一 .cancelled 结果
         let result = await awaitSharedResolveTask(task)
         clanResolveTasks[tag] = nil
         // Issue #250：若显式刷新在解析期间排队，解析结束后触发强制刷新
@@ -3923,6 +3921,12 @@ public final class AppModel: ObservableObject {
     public func isCurrentVillageClan(_ tag: String) -> Bool {
         guard let tag = ClanTagNormalizer.normalize(tag) else { return false }
         return currentVillageClanTag == tag
+    }
+
+    /// 测试用 seam：直接替换内存 `villages`（用于运行时村庄变更的并发回归）。
+    /// 仅测试使用，不写盘、不触发持久化。
+    func _testSetVillages(_ villages: [VillageProfile]) {
+        self.villages = villages
     }
 
     private func persistTrackedClans() {

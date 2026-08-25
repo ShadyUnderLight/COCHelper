@@ -722,11 +722,12 @@ final class AppModelClanResolveTests: XCTestCase {
         let t1 = Task { await model.resolveClan(rawTag: "#AAAA") }
         let t2 = Task { await model.resolveClan(rawTag: "#AAAA") }
         try? await Task.sleep(nanoseconds: 80_000_000)
-        // 4) 等待期间村庄变为 #CCCC，pendingAll  drain 时将刷新 #CCCC 而非 #AAAA
+        // 4) 等待期间村庄变为 #CCCC，pendingAll drain 时将刷新 #CCCC 而非 #AAAA
+        // 必须通过内存 seam 修改 model.villages，UserDefaults 不会自动同步到已初始化的 AppModel
         let snapC = AccountSnapshot(tag: "#P2", capturedAt: nil, importedAt: Date(), ageSeconds: nil, originalText: "{}", objectSections: [:], numericSections: [:], boosts: [:], unknownTopLevelKeys: [], diagnostics: [])
         let stateC = OfficialAPIState(status: .success, lastGood: OfficialPlayerSnapshot(tag: "#P2", name: "p2", townHallLevel: nil, townHallWeaponLevel: nil, builderHallLevel: nil, expLevel: nil, trophies: nil, bestTrophies: nil, warStars: nil, attackWins: nil, defenseWins: nil, builderBaseTrophies: nil, versusBattleWins: nil, legendStatistics: nil, clan: PlayerClan(tag: "#CCCC", name: "c2", clanLevel: nil, badgeUrls: nil), role: nil, warPreference: nil, donations: nil, donationsReceived: nil, clanCapitalContributions: nil, league: nil, builderBaseLeague: nil, achievements: nil, labels: nil, playerHouse: nil, troops: nil, heroes: nil, spells: nil, heroEquipment: nil, unrecognizedKeys: []))
         let villageC = VillageProfile(name: "C", accountSnapshot: snapC, officialAPIState: stateC)
-        defaults.set(try JSONEncoder().encode([villageC]), forKey: "coc-helper.villages.v1")
+        model._testSetVillages([villageC])
         // 等待 B 完成 + pendingAll drain 完成 + 两 resolve 完成
         let r1 = await t1.value
         let r2 = await t2.value
@@ -735,6 +736,8 @@ final class AppModelClanResolveTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 600_000_000)
         XCTAssertEqual(tracker.count(forTag: "#AAAA"), 1, "pendingAll 丢弃后双 resolve 仍应 single-flight 1 次")
         XCTAssertEqual(tracker.maxConcurrent(forTag: "#AAAA"), 1, "无重叠")
+        XCTAssertEqual(tracker.count(forTag: "#CCCC"), 1, "pendingAll 应刷新当前村庄 #CCCC 而非已丢弃的 #AAAA，证明二次 acquire 分支被执行")
+        XCTAssertEqual(tracker.count(forTag: "#BBBB"), 1)
     }
 
     // MARK: - P1 phantom pendingAll：空目标 drain 必须清除 pendingAll
@@ -757,17 +760,17 @@ final class AppModelClanResolveTests: XCTestCase {
         model.refreshClan(tag: "#BBBB")
         try? await Task.sleep(nanoseconds: 80_000_000)
         model.refreshAllClans() // pendingAll true, 目标 #AAAA
-        // 2) 等待期间村庄变为空（无 clan）
+        // 2) 等待期间村庄变为空（无 clan）—— 必须通过内存 seam，直接改 defaults 不会同步到 model.villages
         try? await Task.sleep(nanoseconds: 80_000_000)
         let emptyVillage = VillageProfile(name: "Empty", accountSnapshot: snapA, officialAPIState: OfficialAPIState(status: .success, lastGood: OfficialPlayerSnapshot(tag: "#P", name: "p", townHallLevel: nil, townHallWeaponLevel: nil, builderHallLevel: nil, expLevel: nil, trophies: nil, bestTrophies: nil, warStars: nil, attackWins: nil, defenseWins: nil, builderBaseTrophies: nil, versusBattleWins: nil, legendStatistics: nil, clan: nil, role: nil, warPreference: nil, donations: nil, donationsReceived: nil, clanCapitalContributions: nil, league: nil, builderBaseLeague: nil, achievements: nil, labels: nil, playerHouse: nil, troops: nil, heroes: nil, spells: nil, heroEquipment: nil, unrecognizedKeys: [])))
-        defaults.set(try JSONEncoder().encode([emptyVillage]), forKey: "coc-helper.villages.v1")
-        // 等待 B 完成，pendingAll 应被空 drain 清除
+        model._testSetVillages([emptyVillage])
+        // 等待 B 完成，pendingAll 应被空 drain 清除（即使村庄集合为空也清 pendingAll）
         try? await Task.sleep(nanoseconds: 700_000_000)
         // 3) 之后村庄加入 #CCCC，再 resolve #CCCC 不应被旧 phantom pending 卡死
         let snapC = AccountSnapshot(tag: "#P2", capturedAt: nil, importedAt: Date(), ageSeconds: nil, originalText: "{}", objectSections: [:], numericSections: [:], boosts: [:], unknownTopLevelKeys: [], diagnostics: [])
         let stateC = OfficialAPIState(status: .success, lastGood: OfficialPlayerSnapshot(tag: "#P2", name: "p2", townHallLevel: nil, townHallWeaponLevel: nil, builderHallLevel: nil, expLevel: nil, trophies: nil, bestTrophies: nil, warStars: nil, attackWins: nil, defenseWins: nil, builderBaseTrophies: nil, versusBattleWins: nil, legendStatistics: nil, clan: PlayerClan(tag: "#CCCC", name: "c2", clanLevel: nil, badgeUrls: nil), role: nil, warPreference: nil, donations: nil, donationsReceived: nil, clanCapitalContributions: nil, league: nil, builderBaseLeague: nil, achievements: nil, labels: nil, playerHouse: nil, troops: nil, heroes: nil, spells: nil, heroEquipment: nil, unrecognizedKeys: []))
         let villageC = VillageProfile(name: "C", accountSnapshot: snapC, officialAPIState: stateC)
-        defaults.set(try JSONEncoder().encode([villageC]), forKey: "coc-helper.villages.v1")
+        model._testSetVillages([villageC])
         let result = await model.resolveClan(rawTag: "#CCCC")
         XCTAssertNotNil(result.successOrNil, "phantom pendingAll 不应卡死后续 resolve")
         XCTAssertEqual(counter.count(forTag: "#CCCC"), 1)

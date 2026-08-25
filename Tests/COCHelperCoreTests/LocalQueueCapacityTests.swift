@@ -332,15 +332,22 @@ final class LocalQueueCapacityTests: XCTestCase {
         XCTAssertEqual(occupancy.availableSlots, 1)
     }
 
-    func testOccupancyUnknownKindMatchesRawValue() throws {
-        let kind = LocalQueueKind(rawValue: "forge")
+    func testOccupancyIgnoresUnknownSectionLegacyRecordAndAssignment() throws {
         let occupancy = LocalQueueOccupancyResolver.occupancy(
-            queueKind: kind,
-            activeRecords: [try record(queueKind: "forge", rawSection: "future")],
-            capacityConfig: try config(capacity: 1, kind: kind),
+            queueKind: .builder,
+            activeRecords: [try record(queueKind: "builder", rawSection: "future")],
+            confirmedAssignments: [
+                try assignment(queueKind: .builder, rawSection: "future"),
+            ],
+            capacityConfig: try config(capacity: 1),
             at: Date(timeIntervalSince1970: 1_000)
         )
-        XCTAssertTrue(occupancy.isFull)
+        XCTAssertEqual(occupancy.activeManualCount, 0,
+            "未知 section 的旧 active record 不得回退到持久化 queueKind")
+        XCTAssertEqual(occupancy.confirmedImportedCount, 0,
+            "未知 section 的旧 userAssigned 不得回退到持久化 queueKind")
+        XCTAssertFalse(occupancy.isFull)
+        XCTAssertEqual(occupancy.availableSlots, 1)
     }
 
     // MARK: - Issue #183 confirmedImportedCount

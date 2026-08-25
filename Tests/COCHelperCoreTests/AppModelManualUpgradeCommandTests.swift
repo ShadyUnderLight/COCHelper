@@ -3308,7 +3308,9 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     /// 的 userAssigned 仅作历史证据不计入；另有一条未到期的 builder active
     /// 记录与容量 1 配置。验证对账完成后恢复正常口径。
     @MainActor
-    private func makeReconciledWithMixedLineageOverlay() throws -> (
+    private func makeReconciledWithMixedLineageOverlay(
+        includeUnknownLegacyEntries: Bool = false
+    ) throws -> (
         model: AppModel, villageID: UUID
     ) {
         let villageID = UUID()
@@ -3428,7 +3430,50 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             manualCompletedDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
             status: .manualCompleted
         )
-        let core = try ManualUpgradeCore(itemStates: [state], records: [record])
+        let unknownKey = TrackerItemKey.root(
+            base: .home, rawSection: "future", dataID: 9_999_999
+        )
+        let unknownOverlay = try QueueAssignmentDecision(
+            villageID: villageID,
+            itemKey: unknownKey,
+            baselineReference: baselineB,
+            queueKind: .builder,
+            decidedAt: Date(timeIntervalSince1970: 600),
+            status: .userAssigned
+        )
+        let unknownRecord = try ManualUpgradeRecord(
+            recordID: UUID(),
+            itemKey: unknownKey,
+            fromLevel: 1,
+            targetLevel: 2,
+            quantity: 1,
+            startedAt: startedAt,
+            expectedEndAt: startedAt.addingTimeInterval(5_000),
+            durationSeconds: 5_000,
+            durationKind: .timed,
+            frozenCosts: nil,
+            catalogProvenance: ManualCatalogProvenance(catalog: catalog),
+            baselineReference: baselineB,
+            queueKind: "builder",
+            status: .active
+        )
+        let unknownState = try ManualItemState(
+            itemKey: unknownKey,
+            baselineReference: baselineB,
+            importedObservation: ManualImportedObservation(
+                reference: baselineB,
+                levelDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+                sourceTimestamp: Date(timeIntervalSince1970: 1_600),
+                observedTimer: true,
+                observedTimerCoverageComplete: true
+            ),
+            manualCompletedDistribution: try ManualLevelDistribution(levelQuantities: [1: 1]),
+            status: .manualCompleted
+        )
+        let core = try ManualUpgradeCore(
+            itemStates: includeUnknownLegacyEntries ? [state, unknownState] : [state],
+            records: includeUnknownLegacyEntries ? [record, unknownRecord] : [record]
+        )
         let config = try LocalQueueCapacityConfig(
             villageID: villageID,
             queueKind: .builder,
@@ -3447,7 +3492,9 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     diagnostics: [],
                     reconciliationHistory: [],
                     queueCapacityConfigs: [config],
-                    queueAssignments: [currentOverlay, legacyOverlay]
+                    queueAssignments: includeUnknownLegacyEntries
+                        ? [currentOverlay, legacyOverlay, unknownOverlay]
+                        : [currentOverlay, legacyOverlay]
                 ),
             ],
             migrationMarker: ManualTrackerMigrationMarker(
@@ -3488,6 +3535,24 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         XCTAssertTrue(occupancy.isFull,
             "对账完成后容量满结论恢复（1 + 1 ≥ capacity 1）")
         XCTAssertEqual(occupancy.capacity, 1)
+    }
+
+    @MainActor
+    func testQueueOccupancyIgnoresUnknownSectionLegacyEntries() throws {
+        // review P1：未知 rawSection 的旧 record/assignment 即使保留了
+        // builder queueKind，也不能回退到旧标签并阻塞新的 Builder 启动。
+        let (model, villageID) = try makeReconciledWithMixedLineageOverlay(
+            includeUnknownLegacyEntries: true
+        )
+        let occupancy = model.queueOccupancy(for: villageID, queueKind: .builder)
+        XCTAssertEqual(occupancy.status, .available)
+        XCTAssertEqual(occupancy.activeManualCount, 1,
+            "未知 section 的旧 active record 不得计入 AppModel 容量")
+        XCTAssertEqual(occupancy.confirmedImportedCount, 1,
+            "未知 section 的旧 userAssigned 不得计入 AppModel 容量")
+        XCTAssertEqual(occupancy.totalOccupancyCount, 2)
+        XCTAssertTrue(occupancy.isFull,
+            "已知的当前 lineage 占用仍应保留，未知旧映射不能改变结果")
     }
 
     @MainActor

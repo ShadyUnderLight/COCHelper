@@ -73,27 +73,15 @@ public enum LocalQueueKindResolver {
         return inferred(for: itemKey)
     }
 
-    /// 以项目类型为准纠正已持久化的手动记录；未知类型保留显式旧标签。
+    /// 以项目类型为准计算已持久化手动记录的有效容量类别；未知类型 fail-closed。
     public static func effective(for record: ManualUpgradeRecord) -> LocalQueueKind? {
         guard record.durationKind != .instant else { return nil }
-        guard !isExplicitlyUnqueued(record.itemKey) else { return nil }
         return inferred(for: record.itemKey)
-            ?? record.queueKind.map(LocalQueueKind.init(rawValue:))
     }
 
-    /// 以项目类型为准纠正已持久化的导入分配；未知类型保留用户显式标签。
+    /// 以项目类型为准计算已持久化导入分配的有效容量类别；未知类型 fail-closed。
     public static func effective(for assignment: QueueAssignmentDecision) -> LocalQueueKind? {
-        guard !isExplicitlyUnqueued(assignment.itemKey) else { return nil }
-        return inferred(for: assignment.itemKey) ?? assignment.queueKind
-    }
-
-    private static func isExplicitlyUnqueued(_ itemKey: TrackerItemKey) -> Bool {
-        switch TrackerCategory.from(section: itemKey.rawSection) {
-        case .equipment, .pets, .guardians:
-            true
-        default:
-            false
-        }
+        inferred(for: assignment.itemKey)
     }
 }
 

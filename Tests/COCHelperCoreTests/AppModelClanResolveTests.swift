@@ -443,6 +443,98 @@ final class AppModelClanResolveTests: XCTestCase {
             batchStart: batchStart
         ))
     }
+
+    // MARK: - Issue #250 统一契约（排队式强制刷新）
+
+    /// resolve → refresh 同 Tag：不允许重叠，refresh 排队强制刷新
+    /// （resolve 500ms 在途，refresh 到达后排队，resolve 结束后触发第二请求，全程 2 次串行，无并发重叠）。
+    @MainActor
+    func testRefreshQueuedWhileResolvingTriggersForcedRefresh() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            let tag = request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? ""
+            counter.record(tag: tag)
+            if counter.count(forTag: tag) == 1 { Thread.sleep(forTimeInterval: 0.4) }
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        let resolveTask = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        model.refreshClan(tag: "#2QJQ8J88") // 同 Tag 解析在途 → 排队
+        let result = await resolveTask.value
+        XCTAssertNotNil(result.successOrNil)
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        XCTAssertEqual(counter.count(forTag: "#2QJQ8J88"), 2, "resolve + 排队强制刷新应串行 2 次，无并发重叠")
+        XCTAssertFalse(model.isRefreshingClanData)
+    }
+
+    /// 同 Tag 多次刷新在解析期间排队应合并为一次强制刷新（Set 去重）。
+    @MainActor
+    func testDuplicateRefreshWhileResolvingCoalesced() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            let tag = request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? ""
+            counter.record(tag: tag)
+            if counter.count(forTag: tag) == 1 { Thread.sleep(forTimeInterval: 0.4) }
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        let resolveTask = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        model.refreshClan(tag: "#2QJQ8J88")
+        model.refreshClan(tag: "#2QJQ8J88")
+        model.refreshClan(tag: "#2QJQ8J88")
+        _ = await resolveTask.value
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertEqual(counter.count(forTag: "#2QJQ8J88"), 2, "多次排队应合并为一次强制刷新")
+    }
+
+    /// resolve → resolve 同 Tag 应 single-flight（仅 1 次请求，第二 resolve 等待复用）。
+    @MainActor
+    func testResolveResolveSameTagSingleFlight() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            let tag = request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? ""
+            counter.record(tag: tag)
+            Thread.sleep(forTimeInterval: 0.4)
+            return clanResolveResponse(200, url: request.url!, body: fullClanFixtureData())
+        }
+        let t1 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        let t2 = Task { await model.resolveClan(rawTag: "#2QJQ8J88") }
+        let r1 = await t1.value
+        let r2 = await t2.value
+        XCTAssertNotNil(r1.successOrNil)
+        XCTAssertNotNil(r2.successOrNil)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(counter.count(forTag: "#2QJQ8J88"), 1, "同 Tag 并发解析应 single-flight")
+    }
+
+    /// 不同 Tag 的 resolve 与 refresh 不应相互阻塞（可并发）。
+    @MainActor
+    func testDifferentTagsNotBlocked() async throws {
+        let counter = ResolveRequestCounter()
+        let model = try makeModel { request in
+            let tag = request.url?.path.replacingOccurrences(of: "/v1/clans/", with: "") ?? ""
+            counter.record(tag: tag)
+            Thread.sleep(forTimeInterval: 0.3)
+            let data = Data("{\"tag\":\"\(tag)\",\"name\":\"c\",\"clanLevel\":1,\"members\":1,\"type\":\"open\",\"requiredTrophies\":0,\"warWins\":0,\"warLosses\":0,\"warTies\":0,\"warWinStreak\":0,\"isWarLogPublic\":true,\"badgeUrls\":{}}".utf8)
+            return clanResolveResponse(200, url: request.url!, body: data)
+        }
+        let t1 = Task { await model.resolveClan(rawTag: "#AAAA") }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        model.refreshClan(tag: "#BBBB")
+        let r1 = await t1.value
+        XCTAssertNotNil(r1.successOrNil)
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(counter.count(forTag: "#AAAA"), 1)
+        XCTAssertEqual(counter.count(forTag: "#BBBB"), 1)
+    }
+
+    /// 判定谓词新增 resolvingTags 分支覆盖。
+    @MainActor
+    func testIsClanRefreshPendingWithResolvingTags() {
+        XCTAssertTrue(AppModel.isClanRefreshPending(inFlightTags: [], queuedTags: [], queuedAll: false, villageClanTags: [], tag: "#R", resolvingTags: ["#R"]))
+        XCTAssertFalse(AppModel.isClanRefreshPending(inFlightTags: [], queuedTags: [], queuedAll: false, villageClanTags: [], tag: "#X", resolvingTags: ["#R"]))
+    }
 }
 
 private extension Result {

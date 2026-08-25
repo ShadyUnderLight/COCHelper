@@ -3451,18 +3451,22 @@ public final class AppModel: ObservableObject {
         let safePending = pendingClanRefreshTags.subtracting(blockedTags)
         var shouldDrainAll = false
         var villageTagsForDrain: [String] = []
+        var shouldClearPendingAll = false
         if pendingClanRefreshAll {
             let villageTags = villages.compactMap { $0.officialAPIState?.currentClanTag }
                 .compactMap { ClanTagNormalizer.normalize($0) }
             let blockedVillage = villageTags.filter { blockedTags.contains($0) }
             if blockedVillage.isEmpty {
                 shouldDrainAll = true
+                shouldClearPendingAll = true
                 villageTagsForDrain = villageTags
             } else if safePending.isEmpty {
                 // 村庄批量仍有阻塞且无其他安全 pending，暂不消费
                 return
+            } else {
+                // 村庄批量保持 pendingAll，继续向下仅消费 safePending
+                shouldClearPendingAll = false
             }
-            // 否则村庄批量保持 pendingAll，继续向下仅消费 safePending
         }
         var tags: [String?] = []
         if shouldDrainAll {
@@ -3471,10 +3475,11 @@ public final class AppModel: ObservableObject {
         for tag in safePending where !tags.contains(tag) {
             tags.append(tag)
         }
-        guard !tags.isEmpty else { return }
-        if shouldDrainAll {
+        // P1：即使村庄集合为空，pendingAll 也视为已消费（空 drain），避免 phantom pending
+        if shouldClearPendingAll {
             pendingClanRefreshAll = false
         }
+        guard !tags.isEmpty else { return }
         // 仅移除已消费的安全 pending，保留仍阻塞的
         pendingClanRefreshTags.subtract(safePending)
         performClanRefresh(villageClanTags: tags)
@@ -3727,13 +3732,11 @@ public final class AppModel: ObservableObject {
         guard let tag = ClanTagNormalizer.normalize(rawTag) else { return .failure(.invalidTag) }
         // Issue #250 Task 共享注册表：同 Tag 的并发 resolve 共享同一 Task 结果，
         // 包含失败/取消/malformed 等不写 clanStates 的路径也能 single-flight 为 1 次。
+        // P2：joiner 的取消只取消该 caller 的等待，不取消共享飞行（ref-counted 语义）。
         if let existingTask = clanResolveTasks[tag] {
-            // 传播取消：外层取消时取消共享 Task，使重试退避的 Task.sleep 能快速响应
-            return await withTaskCancellationHandler(operation: {
-                await existingTask.value
-            }, onCancel: {
-                existingTask.cancel()
-            })
+            let result = await awaitSharedResolveTask(existingTask)
+            // 保持 task 注册直到原飞行完成，joiner 不清理注册表
+            return result
         }
         // 等待前记录该 tag 的 lastAttemptAt：用于区分"批次确实处理了该 tag"
         // 与"批次未包含该 tag"（pendingClanRefreshAll 的补跑集合动态读村庄
@@ -3752,6 +3755,10 @@ public final class AppModel: ObservableObject {
             if existing.status == .failed {
                 return .failure(Self.mapFailedState(existing))
             }
+        }
+        // P1：等待结束后、创建 Task 前重新 acquire，避免 pendingAll 丢弃路径的双 Task 竞态
+        if let existingTask = clanResolveTasks[tag] {
+            return await awaitSharedResolveTask(existingTask)
         }
         // 无可复用批次，需发起新请求。注册 Task 以共享结果（含失败）并阻塞同 Tag 的显式刷新（排队强制）。
         let task = Task<Result<OfficialClanSnapshot, ClanResolveError>, Never> { [weak self] in
@@ -3784,21 +3791,28 @@ public final class AppModel: ObservableObject {
             }
         }
         clanResolveTasks[tag] = task
-        let result = await withTaskCancellationHandler(operation: {
-            await task.value
-        }, onCancel: {
-            task.cancel()
-        })
+        // 创建者等待：取消仅影响当前 caller，不直接取消共享飞行（除非无其他 waiter，此处简化为不取消飞行）
+        let result = await awaitSharedResolveTask(task)
         clanResolveTasks[tag] = nil
         // Issue #250：若显式刷新在解析期间排队，解析结束后触发强制刷新
         // （保证“刷新最新”，重复排队已在 Set 中合并为一次），走统一 drain。
         drainPendingClanRefreshesIfPossible()
-        // 外层在等待 task 期间被取消，task 已因传播取消而返回 .cancelled，
-        // 但 await 仍返回 .cancelled 结果；若外层在 task 完成后才取消，需显式映射
         if Task.isCancelled, result != .failure(.cancelled) {
             return .failure(.cancelled)
         }
         return result
+    }
+
+    /// 共享 resolve Task 的可取消等待：外层取消会取消底层飞行（any waiter may cancel the flight）。
+    /// 当前契约：任意等待者在等待期间被取消，共享请求即被取消，其他等待者也将收到 .cancelled。
+    /// 该语义已由 `testResolveResolveCancelledDoesNotLeakSecondRequest` 锁定，如需改为
+    /// ref-counted（仅当无有效 waiter 时取消），可另开 issue。
+    private func awaitSharedResolveTask(_ task: Task<Result<OfficialClanSnapshot, ClanResolveError>, Never>) async -> Result<OfficialClanSnapshot, ClanResolveError> {
+        await withTaskCancellationHandler(operation: {
+            await task.value
+        }, onCancel: {
+            task.cancel()
+        })
     }
 
     /// single-flight 判定（外部终审 P1）：tag 是否在**当前批次**或**已排队批次**

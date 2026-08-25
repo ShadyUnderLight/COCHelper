@@ -740,6 +740,9 @@ public final class AppModel: ObservableObject {
         // 但 parserVersion 被错误升级为当前版本）。必须在 seed row cache 之前执行，
         // 且只执行一次；此时所有 stored properties 已初始化完毕。
         migrateLegacyFailedParserVersionsIfNeeded()
+        // Issue #253：对旧版本累积的超限分页缓存做保留上限自愈（收敛 + 回写）。
+        // 同样必须在 seed row cache 之前执行，保证投影从已裁剪的 state 冷启动。
+        applyCacheRetentionPolicyToLoadedStates()
         seedCapitalRaidRowCachesFromPersistedStates()
     }
 
@@ -2859,7 +2862,10 @@ public final class AppModel: ObservableObject {
                 parserVersion: OfficialWarLogPage.currentParserVersion,
                 lastGood: OfficialWarLogPage(page: warMerged)
             )
-            clanWarLogStates[PerfSampleFixture.perfClanTag] = warState
+            // Issue #253：perf seed 与其他成功写入路径一样受保留上限约束，
+            // 不得成为绕过 retentionNormalized 的旁路。
+            let normalizedWarState = retentionNormalized(warState)
+            clanWarLogStates[PerfSampleFixture.perfClanTag] = normalizedWarState
             persistClanWarLogStates()
 
             let raidP1 = try decodePerfRaidPage(try perfFixtureText(PerfSampleFixture.raidPage1, in: directory))
@@ -2880,8 +2886,11 @@ public final class AppModel: ObservableObject {
                 parserVersion: OfficialCapitalRaidPage.currentParserVersion,
                 lastGood: OfficialCapitalRaidPage(page: raidMerged)
             )
-            clanCapitalStates[PerfSampleFixture.perfClanTag] = raidState
-            if let raidPage = raidState.lastGood {
+            // Issue #253：同 warlog，perf seed 写入前统一归一化；row cache
+            // 消费同一归一化后的 state。
+            let normalizedRaidState = retentionNormalized(raidState)
+            clanCapitalStates[PerfSampleFixture.perfClanTag] = normalizedRaidState
+            if let raidPage = normalizedRaidState.lastGood {
                 updateCapitalRaidRowCache(
                     tag: PerfSampleFixture.perfClanTag,
                     update: .initial(page: raidPage)
@@ -3104,7 +3113,8 @@ public final class AppModel: ObservableObject {
             ) { tag in
                 OfficialWarLogPage(page: try await client.fetchWarLog(tag: tag))
             }
-            self.clanWarLogStates[tag] = state
+            // Issue #253：首屏单响应不受客户端 limit 约束，写入前统一归一化。
+            self.clanWarLogStates[tag] = self.retentionNormalized(state)
             self.persistClanWarLogStates()
         }
     }
@@ -3145,13 +3155,16 @@ public final class AppModel: ObservableObject {
                let existing = current.lastGood,
                !needsRebuild {
                 var merged = state
+                // Issue #253：合并累计页（写入前统一经 retentionNormalized 收敛，
+                // 防止 load-more 累计无界增长）。
                 merged.lastGood = OfficialWarLogPage(
                     page: PaginationMerge.mergedPage(existing: existing.page, fetched: fetched.page)
                 )
-                self.clanWarLogStates[tag] = merged
+                self.clanWarLogStates[tag] = self.retentionNormalized(merged)
             } else {
-                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
-                self.clanWarLogStates[tag] = state
+                // 失败保留 last-good（previous，已 ≤ cap → no-op）；
+                // 跨版本重建直接采用新首屏（同样统一归一化，不是旁路）。
+                self.clanWarLogStates[tag] = self.retentionNormalized(state)
             }
             self.persistClanWarLogStates()
         }
@@ -3177,10 +3190,13 @@ public final class AppModel: ObservableObject {
             ) { tag in
                 OfficialCapitalRaidPage(page: try await client.fetchCapitalRaidSeasons(tag: tag))
             }
-            self.clanCapitalStates[tag] = state
+            // Issue #253：首屏单响应不受客户端 limit 约束，写入前统一归一化；
+            // row cache 消费同一归一化后的 state，投影与事实源一致。
+            let normalizedState = self.retentionNormalized(state)
+            self.clanCapitalStates[tag] = normalizedState
             self.updateCapitalRaidRowCacheAfterFetch(
                 tag: tag,
-                state: state,
+                state: normalizedState,
                 previous: previous,
                 parserVersion: parserVersion,
                 mergedPage: nil
@@ -3228,21 +3244,28 @@ public final class AppModel: ObservableObject {
                     fetched: fetched.page
                 )
                 merged.lastGood = OfficialCapitalRaidPage(page: loadMoreResult.page)
-                self.clanCapitalStates[tag] = merged
+                // Issue #253：写入前统一归一化（row cache 消费同一归一化后的
+                // state 与页，投影与事实源一致）。首次突破上限时页缩短会走
+                // row cache 的 fail-closed reset（generation bump），稳态在 cap
+                // 处条目不变、ID 不漂移。
+                let normalizedMerged = self.retentionNormalized(merged)
+                self.clanCapitalStates[tag] = normalizedMerged
                 self.updateCapitalRaidRowCacheAfterFetch(
                     tag: tag,
-                    state: merged,
+                    state: normalizedMerged,
                     previous: current,
                     parserVersion: parserVersion,
-                    mergedPage: merged.lastGood,
+                    mergedPage: normalizedMerged.lastGood,
                     loadMoreReconciliation: loadMoreResult.reconciliation
                 )
             } else {
-                // 失败保留 last-good（previous）；跨版本重建直接采用新页。
-                self.clanCapitalStates[tag] = state
+                // 失败保留 last-good（previous，已 ≤ cap → no-op）；
+                // 跨版本重建直接采用新首屏（同样统一归一化，不是旁路）。
+                let normalizedState = self.retentionNormalized(state)
+                self.clanCapitalStates[tag] = normalizedState
                 self.updateCapitalRaidRowCacheAfterFetch(
                     tag: tag,
-                    state: state,
+                    state: normalizedState,
                     previous: current,
                     parserVersion: parserVersion,
                     mergedPage: nil
@@ -3313,6 +3336,65 @@ public final class AppModel: ObservableObject {
         if warLogChanged { persistClanWarLogStates() }
 
         defaults.set(true, forKey: Self.legacyFailedParserVersionMigrationKey)
+    }
+
+    /// Issue #253（P2 修复）：任何分页状态写入共享层前的**统一**保留上限归一化。
+    ///
+    /// retention 是"per-tag 最大记录数"不变量，必须覆盖全部成功写入路径：
+    /// refresh 首屏、load-more merge、跨 parser 版本 rebuild（else 分支），
+    /// 以及启动加载的旧数据。`limit=nil` 时服务端单响应不受客户端约束，
+    /// 因此不能只在 load-more merge 处裁剪。失败保留的 lastGood 已 ≤ cap
+    /// → no-op；无 lastGood → no-op。游标不触碰。
+    private func retentionNormalized(_ state: ClanWarLogAPIState) -> ClanWarLogAPIState {
+        guard let wrapped = state.lastGood else { return state }
+        let trimmed = CacheRetentionPolicy.trimmedPage(
+            page: wrapped.page,
+            limit: CacheRetentionPolicy.maxWarLogItemsPerTag
+        )
+        guard trimmed != wrapped.page else { return state }
+        var mutated = state
+        mutated.lastGood = OfficialWarLogPage(page: trimmed)
+        return mutated
+    }
+
+    private func retentionNormalized(_ state: ClanCapitalAPIState) -> ClanCapitalAPIState {
+        guard let wrapped = state.lastGood else { return state }
+        let trimmed = CacheRetentionPolicy.trimmedPage(
+            page: wrapped.page,
+            limit: CacheRetentionPolicy.maxCapitalSeasonsPerTag
+        )
+        guard trimmed != wrapped.page else { return state }
+        var mutated = state
+        mutated.lastGood = OfficialCapitalRaidPage(page: trimmed)
+        return mutated
+    }
+
+    /// Issue #253：启动时对分页累计缓存执行保留上限自愈。
+    ///
+    /// 旧版本落盘的 warlog/capital 累计页没有上限；本方法在 init 时把超限
+    /// Tag 收敛到 `CacheRetentionPolicy` 上限，仅在发生变化时回写 UserDefaults
+    /// （一次性收敛，幂等确定）。未超限条目原样保留，不株连其他 Tag。
+    private func applyCacheRetentionPolicyToLoadedStates() {
+        var warLogChanged = false
+        for (tag, state) in clanWarLogStates {
+            let normalized = retentionNormalized(state)
+            if normalized != state {
+                clanWarLogStates[tag] = normalized
+                warLogChanged = true
+            }
+        }
+
+        var capitalChanged = false
+        for (tag, state) in clanCapitalStates {
+            let normalized = retentionNormalized(state)
+            if normalized != state {
+                clanCapitalStates[tag] = normalized
+                capitalChanged = true
+            }
+        }
+
+        if warLogChanged { persistClanWarLogStates() }
+        if capitalChanged { persistClanCapitalStates() }
     }
 
     private func seedCapitalRaidRowCachesFromPersistedStates() {

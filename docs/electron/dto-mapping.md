@@ -23,14 +23,14 @@
 | `AccountSnapshot` | `AccountSnapshotWire` | contentFingerprint 编码时跳过、解码后重算（§WA-3 F3） |
 | `AccountItem`（objectSections 条目） | `AccountItemWire` | dataID 解析走 §WA-6c 三级规则 |
 | `AccountDataDiagnostic` | `AccountDiagnosticWire` | 随机 id 不进指纹；severity/path/message 进 |
-| 导出文本 `originalText` | 原文保留字段 | F1/F2 的输入，不得重排 |
+| 导出文本 `originalText` / entry `rawJSON` | 原文逐字保留字段 | **直接进入 F2 材料**（rawJSON 是 F2 digest 输入）；**F1 仅由其解析后的 canonical observation 派生**——原文的 whitespace/键序/数组序不属于 F1 identity（§WA-2 规则 7、§WA-3 F1）。TS 不得把 raw source bytes 纳入 F1 hash，否则破坏现有历史 fingerprint parity |
 
 ## M-3 快照历史 envelope
 
 | Swift 类型 | 新 wire DTO | 备注 |
 |---|---|---|
 | `SnapshotHistoryEnvelope`（schemaVersion=1 + migrationMarker + entries/lineages/duplicateMetadata） | `HistoryEnvelopeV1` | §BE-1.2 校验全量复刻 |
-| `SnapshotHistoryEntry` | `HistoryEntryV1` | F2 integrityFingerprint 全量字段清单见 §WA-3 |
+| `SnapshotHistoryEntry` | `HistoryEntryV1` | F2 材料字段清单（= entry 全量字段减去 `integrityFingerprint` 本身，见 §WA-3 F2 行） |
 | `CanonicalSnapshotObservation`（observation=6） | `ObservationV6` | v2/v3/v4/v5 版本差量见 §WA-7 |
 | `SnapshotCoverage*`（proof 四态/presence/completeness/duplicate key/sourceUniverse） | `CoverageWire` 族 | runtimeWitness 永不出现在 wire（§WA-3） |
 | `SnapshotLineageResolution` / lineage index | `LineageIndexV1` | append-only entry vs mutable index（§BE-3） |

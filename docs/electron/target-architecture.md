@@ -36,11 +36,11 @@ packages/
 
 | 现有边界 | 规模职责 | 终态归属 |
 |---|---|---|
-| `Sources/COCHelperCore` | 纯计算：解析、canonicalization、投影、对账、容量、分页合并 | `wire` + `domain`（UtilityProcess 可运行） |
-| `Sources/COCHelperApp` | 编排：AppModel、持久化 store、事务 journal、资源加载 | Main process application services |
+| `Sources/COCHelperCore` | 解析、canonicalization、投影、对账、容量、分页合并等纯计算，**以及**文件持久化 store（SnapshotHistoryStore / ManualTrackerStore）与 URLSession HTTP client（CoAPIClient） | 纯计算部分 → `wire` + `domain`（UtilityProcess 可运行）；store 与网络层 → Main process application services |
+| `Sources/COCHelperApp` | 编排：AppModel、UserDefaults store、事务 journal、资源加载 | Main process application services |
 | `Sources/COCHelper` | SwiftUI UI | React renderer（E4-01，#277） |
 | `Tools/`（Python 目录管线 + Swift 验收工具） | catalog 生成、验收 gate、perf seed | Node 工具链（E6-01，#281 迁移并删 Swift） |
-| `Tests/` | ~1,894 XCTest | E1-02（#268）golden parity + TS 测试迁移 |
+| `Tests/` | ~1,880 XCTest（main@f513a35 实测基线） | E1-02（#268）golden parity + TS 测试迁移 |
 
 ## 4. 持久化拓扑（现状冻结）
 
@@ -49,8 +49,8 @@ packages/
 | 村庄列表 | UserDefaults blob | `coc-helper.villages.v1`（恢复副本 `.recovery` 后缀键） | 裸数组无 envelope；未来版本靠顶层声明字段识别（§BE-1.1） |
 | 快照历史 | 文件 | `Application Support/COCHelper/snapshot-history-v1.json` | envelope=1, entry=1, observation=6, fingerprint/integrity=1 |
 | 手动升级 tracker | 文件 | `manual-tracker-v1.json` | envelope/store/village 全 =1 |
-| 官方端点缓存 ×4 | UserDefaults blob | `coc-helper.clans.v1` / `clan-wars.v1` / `clan-war-logs.v1` / `clan-capitals.v1` | 无版本（fail-open 组，§BE-1.5） |
-| 跟踪部落 | UserDefaults blob | `coc-helper.tracked-clans.v1` | 无版本（fail-open 组，§BE-1.6） |
+| 官方端点缓存 ×4 | UserDefaults blob | `coc-helper.clans.v1` / `clan-wars.v1` / `clan-war-logs.v1` / `clan-capitals.v1` | 无版本（fail-open 组，§BE-1.4） |
+| 跟踪部落 | UserDefaults blob | `coc-helper.tracked-clans.v1` | 无版本（fail-open 组，§BE-1.5） |
 | API token | Keychain | 不入 JSON / UserDefaults | — |
 
 数据策略决策门（Issue #265）：默认不做长期兼容层、双写或双读。若必须保留旧 UserDefaults /
@@ -64,12 +64,14 @@ Application Support 文件 / Keychain token，另开一次性 importer；importe
 4. **E1-02（#268)**：Swift oracle + golden parity 框架，直接消费 `Tests/Golden/` fixtures。
 5. **E2-\*（#269–274）**：按 behavior-matrix.md / error-matrix.md 逐域迁移。
 
-## 6. 验收锚点
+## 6. 验收锚点（对照 Issue #265 验收标准，本 PR 为阶段性状态）
 
-- [x] 每个高风险状态有 confirmed output 或显式 unknown 处理 → behavior-matrix.md 各表含
-      「盘上状态 × 行为」列；无法从代码确认的点标注 ⚠️ 待实证。
-- [x] 关键 fixture 冻结 parser / encoded bytes / fingerprint → `Tests/Golden/Fixtures/`
-      + `GoldenContractTests`。projection/diff 级 golden 由 E2-* 在同一目录增量追加。
-- [x] 数值/时间/fingerprint 正例、负例、边界例 → wire-contract-v1.md §WA 各节 +
-      GoldenContractTests 用例分组。
-- [x] 明确哪些旧 UI 只是历史实现、哪些用户可见语义必须保留 → behavior-matrix.md §BE-7。
+| #265 验收标准 | 状态 | 说明 |
+|---|---|---|
+| 每个现有高风险状态有 confirmed output 或显式 unknown 处理 | ✅ 本 PR 完成 | behavior-matrix.md 各表含「盘上状态 × 行为」列；无法从代码确认的点标注 ⚠️ 待实证 |
+| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ⬜ **部分完成** | 已冻结：parser 指纹 + canonical encoded bytes（`Tests/Golden/Fixtures/` + `GoldenContractTests`）。**未冻结：projection / diff / error 场景 fixture**——由 E2-*（#269–274）在同一目录按域增量追加；序列化 HistoryEntryV1 wire-shape fixture 亦未包含（当前冻结的是 fingerprint 输出），#268 parity runner 需要时追加 |
+| 数值/时间/fingerprint 正例、负例、边界例 | ✅ 本 PR 完成 | wire-contract-v1.md §WA 各节 + GoldenContractTests 用例分组 |
+| 明确哪些旧 UI 只是历史实现、哪些用户可见语义必须保留 | ✅ 本 PR 完成 | behavior-matrix.md §BE-7 |
+
+> **关闭门**：在 projection / diff / error 三类 golden fixture 补齐并冻结前，**不得关闭
+> Issue #265**。本 PR 只主张上述表格中标记 ✅ 的部分。

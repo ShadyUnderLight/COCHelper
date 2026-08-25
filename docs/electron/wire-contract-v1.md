@@ -69,7 +69,7 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
 | # | 指纹 | 序列化器 | 输入材料 | 排除项 | 出处 |
 |---|---|---|---|---|---|
 | F1 | canonicalFingerprint（observation 内容指纹） | 自研 canonical bytes（§WA-2） | `{observationSchemaVersion, rawTopLevelFields, unknownTopLevelFields, items(按各自指纹值排序)}` | display 绑定整体剔除；tag/timestamp 在 observation 构建前剥离；v5+ 剥离 coverage 元数据字段，v4− 必须保留以复现旧字节；diagnostics 不在材料内（只存在于 coverage） | Canonicalizer.swift:116-122, 206-214, 1135-1163, 1159-1163 |
-| F2 | integrityFingerprint（entry 完整性摘要） | **JSONEncoder + .sortedKeys**（与 F1 不同！） | 全量 entry 字段：四个版本号 + snapshotID/villageID/lineageID(UUID) + normalizedPlayerTag + appliedAt/sourceTimestamp(Date) + parserVersion + canonicalFingerprint + rawJSON + observation + coverage(含 diagnostics) + isBaseline/baselineReason + timerSchema | 无（全量）；Date 走 Swift 默认策略 = reference-date Double 进哈希字节 | Canonicalizer.swift:146-168, 1213-1231；加载时重算比对 fail-closed：SnapshotHistoryStore.swift:252-316 |
+| F2 | integrityFingerprint（entry 完整性摘要） | **JSONEncoder + .sortedKeys**（与 F1 不同！） | `SnapshotHistoryIntegrityMaterial` 的 18 个字段 = entry 全量字段**减去 `integrityFingerprint` 本身**：四个版本号 + snapshotID/villageID/lineageID(UUID) + normalizedPlayerTag + appliedAt/sourceTimestamp(Date) + parserVersion + canonicalFingerprint + rawJSON + observation + coverage(含 diagnostics) + isBaseline/baselineReason + timerSchema（Canonicalizer.swift:1213-1231） | **`integrityFingerprint` 自身不参与 digest**（材料结构无自引用字段）；Date 走 Swift 默认策略 = reference-date Double 进哈希字节 | Canonicalizer.swift:146-168, 1213-1231；加载时重算比对 fail-closed：SnapshotHistoryStore.swift:252-316 |
 | F3 | AccountSnapshot.contentFingerprint | JSONEncoder + .sortedKeys | tag/capturedAt/importedAt/ageSeconds/originalText/objectSections/numericSections/boosts/unknownTopLevelKeys/diagnostics(severity/path/message 投影) | diagnostics 的随机 id 排除；编码时跳过不持久化，解码后按内容重算 | AccountSnapshot.swift:233-264, 141-152 |
 | F4 | ManualUpgradeCore 内容指纹 | JSONEncoder + .sortedKeys | `{itemStates, records}` | — | ManualUpgradeCore.swift:601-614 |
 
@@ -111,12 +111,20 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
 
 - 格式：Swift 标准**大写连字符** uuidString 进入持久化 JSON；duplicateMetadata 字典键显式走
   uuidString 并用 `UUID(uuidString:)` 回读校验（SnapshotHistoryStore.swift:198-199）。
-- 生成点（默认参数 `UUID()`）：VillageProfile.id、AccountSnapshot.id、ManualUpgradeRecord.recordID、
+- 生成点（默认参数 `UUID()`）：VillageProfile.id、`AccountDataDiagnostic.id`（诊断随机 id，
+  **注意：`AccountSnapshot` 本身没有 id 字段**）、ManualUpgradeRecord.recordID、
   reconciliationID/previewID、QueueAssignmentDecision.decisionID、snapshotID、lineageID 兜底
-  （VillageProfile.swift:24; AccountSnapshot.swift:25; ManualUpgradeCore.swift:167;
+  （VillageProfile.swift:24; AccountSnapshot.swift:18-32; ManualUpgradeCore.swift:167;
   ManualUpgradeModels.swift:636; ManualTrackerReconciliation.swift:128/185;
   QueueAssignmentModels.swift:33; Canonicalizer.swift:19/86; Models.swift:873-938）。
-- UUID 进 F2/F3 类指纹材料（Canonicalizer.swift:151-153），不进 F1 canonicalFingerprint。
+- UUID 进入指纹的字段级归属：
+  - F2 integrityFingerprint：snapshotID / villageID / lineageID 三个 UUID **进入**材料
+    （Canonicalizer.swift:1213-1231）。
+  - F3 contentFingerprint：**无任何 UUID 字段进入**；`AccountDataDiagnostic.id` 是每次解析
+    随机生成的 UUID，被 F3 显式排除——diagnostics 只投影 severity/path/message
+    （AccountSnapshot.swift:247-253）。TS 若把 diagnostic id 计入，同一导出两次解析的
+    contentFingerprint 将互不相同——这是必须避免的 parity 破坏。
+  - F1 canonicalFingerprint：不进（observation 材料不含任何 UUID）。
 - 唯一性硬校验：snapshotID/lineageID 重复即 invalidEntry（SnapshotHistoryStore.swift:133-135,
   184-186）；reconciliationID/decisionID 重复即 invalidEnvelope（ManualTrackerStore.swift:124-127,
   162-165）；村庄 ID 重复即 corrupt（VillageStore.swift:79-84）。
@@ -146,7 +154,7 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 | LeagueTierCatalog.schemaVersion | ==1 | 非 1 → loadBundled 返回 nil（UI 正常降级态） | LeagueTierCatalog.swift:16, 41 |
 | CraftTableCatalog.schemaVersion | ==1 | 非 1 或 manifest integrity 不过 → nil | CraftTableCatalog.swift:59, 103-118 |
 | SeasonalPhaseTable.schemaVersion | ==1 | 非 1/缺文件 → 空表不报错（增强数据） | GameCatalog.swift:321-324, 412-415 |
-| OfficialStateStore ×4 | 无版本 | fail-open 组（§BE-1.5） | OfficialStateStore.swift:17-63 |
+| OfficialStateStore ×4 | 无版本 | fail-open 组（§BE-1.4） | OfficialStateStore.swift:17-63 |
 | TrackedClanStore | 无版本 | fail-open 组；演进红线：新字段必须默认值/decodeIfPresent，否则容错机制把 schema 错误变成整库静默丢失（注释原文即红线） | TrackedClanStore.swift:36-53 |
 
 ## WA-8 官方 API wire 形状要点
@@ -160,12 +168,14 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 - 官方快照 decode 全字段 optional + 任意字符串 CodingKey 遍历（§WA-1.4）。
 - HTTP → CoAPIError 映射与取消透传见 error-matrix.md §ER-1。
 
-## 附录 A：golden fixtures 索引（Tests/Golden/Fixtures/）
+## 附录 A：golden fixtures 索引（Tests/Golden/Fixtures/，本 PR 实际现状）
 
 | fixture | 冻结内容 | 消费测试 |
 |---|---|---|
-| canonical-json-samples.json | §WA-2 转义/排序/数字 token 的正例+边界例（solidus、控制字符、CJK、emoji、0x7F、U+2028/2029、负零、大数、重复数组元素）+ 期望 canonical bytes hex | GoldenContractTests/CanonicalJSONGoldenTests |
-| account_snapshot_golden.json | 匿名 legacy 导出文本 → §WA-6c 解析 + F3 contentFingerprint 硬编码锁定（钉死 importedAt 输入） | GoldenContractTests/ParserGoldenTests |
-| history_entry_golden_v6.json | 同一快照 canonicalize 为 observation v6 entry → F1 canonicalFingerprint + F2 integrityFingerprint 双硬编码锁定 | GoldenContractTests/ParserGoldenTests |
+| canonical-json-samples.json + canonical-json-expected.json | §WA-2 转义/排序/数字 token 的正例+边界例（solidus、控制字符、CJK、emoji、0x7F、U+2028/2029、大数、重复数组元素）+ 期望 canonical bytes hex | GoldenContractTests/CanonicalJSONGoldenTests |
+| account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析 + F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码锁定（钉死 importedAt/appliedAt 输入）。**注意：history entry 侧冻结的是 fingerprint 输出值**（测试运行时 canonicalize 再比对），**没有序列化的 HistoryEntryV1 wire-shape fixture 文件**——#268 parity runner 若需直接消费 entry wire JSON，届时追加该文件并对 encoded bytes 做 golden | GoldenContractTests/ParserGoldenTests |
 | official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md | 既有 ClanPaginationDecodeTests 等 |
+
+尚未覆盖（见 target-architecture.md §6 关闭门）：projection / diff / error 场景 fixture，
+由 E2-* 按域增量追加。
 

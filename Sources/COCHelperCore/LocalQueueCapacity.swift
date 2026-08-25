@@ -1,11 +1,10 @@
 import Foundation
 
-/// Issue #145：本地队列类别。
+/// Issue #145：本地计时容量类别。
 ///
 /// `ManualUpgradeRecord.queueKind` 是自由字符串（#139 引入，仅透传存储）。
 /// 本类型提供已知类别与未知类别的包装，按 `rawValue` 与 record 字段完全兼容。
-/// 这是本地工作流标签，不是游戏官方队列类别；不推断 builder/lab/hero/
-/// equipment 的官方容量和分配规则。
+/// 这是本地计时容量标签，不是游戏官方队列事实。
 public struct LocalQueueKind: Codable, Hashable, Sendable, RawRepresentable, CustomStringConvertible {
     public let rawValue: String
 
@@ -15,11 +14,9 @@ public struct LocalQueueKind: Codable, Hashable, Sendable, RawRepresentable, Cus
 
     public static let builder = LocalQueueKind(rawValue: "builder")
     public static let laboratory = LocalQueueKind(rawValue: "laboratory")
-    public static let hero = LocalQueueKind(rawValue: "hero")
-    public static let equipment = LocalQueueKind(rawValue: "equipment")
 
     /// 已知类别清单（UI 选择器顺序）。
-    public static let knownKinds: [LocalQueueKind] = [.builder, .laboratory, .hero, .equipment]
+    public static let knownKinds: [LocalQueueKind] = [.builder, .laboratory]
 
     public var isKnown: Bool {
         Self.knownKinds.contains(self)
@@ -30,8 +27,6 @@ public struct LocalQueueKind: Codable, Hashable, Sendable, RawRepresentable, Cus
         switch rawValue {
         case "builder": "建筑工人"
         case "laboratory": "实验室"
-        case "hero": "英雄"
-        case "equipment": "装备"
         default: rawValue
         }
     }
@@ -47,6 +42,46 @@ public struct LocalQueueKind: Codable, Hashable, Sendable, RawRepresentable, Cus
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
+    }
+}
+
+/// 将已知项目类型映射到本地计时容量类别。
+///
+/// 这不是对游戏实际 queueID/worker ownership 的推断：
+/// - 手动记录只把项目类型转换为本地规划桶；
+/// - 导入观察仍需用户显式确认是否计入本地容量；
+/// - equipment、pets、guardians 与未知类型不进入当前容量模型。
+public enum LocalQueueKindResolver {
+    /// 根据稳定项目身份推导本地容量类别。
+    public static func inferred(for itemKey: TrackerItemKey) -> LocalQueueKind? {
+        switch TrackerCategory.from(section: itemKey.rawSection) {
+        case .buildings, .traps, .heroes:
+            .builder
+        case .troops, .spells, .siegeMachines:
+            .laboratory
+        case .equipment, .pets, .guardians, .none:
+            nil
+        }
+    }
+
+    /// 即时动作不占用计时容量；其他已知项目沿用类型映射。
+    public static func inferred(
+        for itemKey: TrackerItemKey,
+        durationState: CatalogDurationState?
+    ) -> LocalQueueKind? {
+        guard durationState != .instant else { return nil }
+        return inferred(for: itemKey)
+    }
+
+    /// 以项目类型为准计算已持久化手动记录的有效容量类别；未知类型 fail-closed。
+    public static func effective(for record: ManualUpgradeRecord) -> LocalQueueKind? {
+        guard record.durationKind != .instant else { return nil }
+        return inferred(for: record.itemKey)
+    }
+
+    /// 以项目类型为准计算已持久化导入分配的有效容量类别；未知类型 fail-closed。
+    public static func effective(for assignment: QueueAssignmentDecision) -> LocalQueueKind? {
+        inferred(for: assignment.itemKey)
     }
 }
 
@@ -68,7 +103,7 @@ public enum LocalQueueCapacityUpdate: Hashable, Sendable {
     case clear
 }
 
-/// Issue #145：用户配置的本地队列容量（source = userConfigured）。
+/// Issue #145：用户配置的本地计时容量（source = userConfigured）。
 public struct LocalQueueCapacityConfig: Codable, Hashable, Sendable {
     /// 容量上限（防御性：超过视为非法输入，避免无意义的大数）。
     public static let maximumCapacity = 10_000
@@ -230,12 +265,15 @@ public enum LocalQueueOccupancyResolver {
         let count = activeRecords
             .filter {
                 $0.status == .active
-                    && $0.queueKind == queueKind.rawValue
+                    && LocalQueueKindResolver.effective(for: $0) == queueKind
                     && $0.expectedEndAt > now
             }
             .count
         let confirmed = confirmedAssignments
-            .filter { $0.status == .userAssigned && $0.queueKind == queueKind }
+            .filter {
+                $0.status == .userAssigned
+                    && LocalQueueKindResolver.effective(for: $0) == queueKind
+            }
             .count
         return LocalQueueOccupancy(
             queueKind: queueKind,

@@ -1,7 +1,7 @@
 import XCTest
 @testable import COCHelperCore
 
-/// Issue #145：本地队列类别 / 容量配置 / 占用摘要的纯模型契约。
+/// Issue #145：本地计时容量类别 / 容量配置 / 占用摘要的纯模型契约。
 final class LocalQueueCapacityTests: XCTestCase {
     private let villageID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
@@ -10,10 +10,57 @@ final class LocalQueueCapacityTests: XCTestCase {
     func testQueueKindKnownCategories() {
         XCTAssertTrue(LocalQueueKind.builder.isKnown)
         XCTAssertTrue(LocalQueueKind.laboratory.isKnown)
-        XCTAssertTrue(LocalQueueKind.hero.isKnown)
-        XCTAssertTrue(LocalQueueKind.equipment.isKnown)
-        XCTAssertEqual(LocalQueueKind.knownKinds, [.builder, .laboratory, .hero, .equipment])
+        XCTAssertEqual(LocalQueueKind.knownKinds, [.builder, .laboratory])
         XCTAssertEqual(LocalQueueKind.builder.displayName, "建筑工人")
+    }
+
+    func testQueueKindResolverUsesTimedCapacityBuckets() {
+        let cases: [(String, LocalQueueKind?)] = [
+            ("buildings", .builder),
+            ("buildings2", .builder),
+            ("traps", .builder),
+            ("heroes", .builder),
+            ("heroes2", .builder),
+            ("units", .laboratory),
+            ("units2", .laboratory),
+            ("spells", .laboratory),
+            ("siege_machines", .laboratory),
+            ("equipment", nil),
+            ("pets", nil),
+            ("future", nil),
+        ]
+
+        for (section, expected) in cases {
+            let key = TrackerItemKey.root(base: .home, rawSection: section, dataID: 1)
+            XCTAssertEqual(
+                LocalQueueKindResolver.inferred(for: key), expected,
+                "section \(section) 的容量类别不正确"
+            )
+        }
+    }
+
+    func testQueueKindResolverInstantActionDoesNotConsumeCapacity() {
+        let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1)
+        XCTAssertNil(
+            LocalQueueKindResolver.inferred(for: key, durationState: .instant)
+        )
+        XCTAssertEqual(
+            LocalQueueKindResolver.inferred(for: key, durationState: .timed(seconds: 60)),
+            .builder
+        )
+    }
+
+    func testOccupancyCanonicalizesLegacyHeroAndIgnoresEquipment() throws {
+        let occupancy = LocalQueueOccupancyResolver.occupancy(
+            queueKind: .builder,
+            activeRecords: [
+                try record(queueKind: "hero", rawSection: "heroes"),
+                try record(queueKind: "builder", rawSection: "equipment"),
+            ],
+            capacityConfig: try config(capacity: 2),
+            at: Date(timeIntervalSince1970: 1_000)
+        )
+        XCTAssertEqual(occupancy.activeManualCount, 1)
     }
 
     func testQueueKindUnknownRawValueIsNotKnown() {
@@ -34,8 +81,6 @@ final class LocalQueueCapacityTests: XCTestCase {
         // ManualUpgradeRecord.queueKind 是自由字符串（#139），必须按 rawValue 匹配。
         XCTAssertEqual(LocalQueueKind.builder.rawValue, "builder")
         XCTAssertEqual(LocalQueueKind.laboratory.rawValue, "laboratory")
-        XCTAssertEqual(LocalQueueKind.hero.rawValue, "hero")
-        XCTAssertEqual(LocalQueueKind.equipment.rawValue, "equipment")
     }
 
     // MARK: - LocalQueueCapacityConfig
@@ -117,11 +162,12 @@ final class LocalQueueCapacityTests: XCTestCase {
 
     private func record(
         queueKind: String?,
-        status: ManualUpgradeRecordStatus = .active
+        status: ManualUpgradeRecordStatus = .active,
+        rawSection: String = "buildings"
     ) throws -> ManualUpgradeRecord {
         try ManualUpgradeRecord(
             recordID: UUID(),
-            itemKey: TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_002),
+            itemKey: TrackerItemKey.root(base: .home, rawSection: rawSection, dataID: 1_000_002),
             fromLevel: 1,
             targetLevel: 2,
             quantity: 1,
@@ -158,7 +204,7 @@ final class LocalQueueCapacityTests: XCTestCase {
         XCTAssertNil(occupancy.availableSlots)
     }
 
-    func testOccupancyCountsOnlyMatchingQueueKind() throws {
+    func testOccupancyUsesInferredKindForKnownItems() throws {
         let occupancy = LocalQueueOccupancyResolver.occupancy(
             queueKind: .builder,
             activeRecords: [
@@ -170,7 +216,7 @@ final class LocalQueueCapacityTests: XCTestCase {
             capacityConfig: try config(capacity: 2),
             at: Date(timeIntervalSince1970: 1_000)
         )
-        XCTAssertEqual(occupancy.activeManualCount, 2)
+        XCTAssertEqual(occupancy.activeManualCount, 4)
         XCTAssertEqual(occupancy.capacity, 2)
         XCTAssertTrue(occupancy.isCapacityConfigured)
         XCTAssertTrue(occupancy.isFull)
@@ -286,15 +332,22 @@ final class LocalQueueCapacityTests: XCTestCase {
         XCTAssertEqual(occupancy.availableSlots, 1)
     }
 
-    func testOccupancyUnknownKindMatchesRawValue() throws {
-        let kind = LocalQueueKind(rawValue: "forge")
+    func testOccupancyIgnoresUnknownSectionLegacyRecordAndAssignment() throws {
         let occupancy = LocalQueueOccupancyResolver.occupancy(
-            queueKind: kind,
-            activeRecords: [try record(queueKind: "forge")],
-            capacityConfig: try config(capacity: 1, kind: kind),
+            queueKind: .builder,
+            activeRecords: [try record(queueKind: "builder", rawSection: "future")],
+            confirmedAssignments: [
+                try assignment(queueKind: .builder, rawSection: "future"),
+            ],
+            capacityConfig: try config(capacity: 1),
             at: Date(timeIntervalSince1970: 1_000)
         )
-        XCTAssertTrue(occupancy.isFull)
+        XCTAssertEqual(occupancy.activeManualCount, 0,
+            "未知 section 的旧 active record 不得回退到持久化 queueKind")
+        XCTAssertEqual(occupancy.confirmedImportedCount, 0,
+            "未知 section 的旧 userAssigned 不得回退到持久化 queueKind")
+        XCTAssertFalse(occupancy.isFull)
+        XCTAssertEqual(occupancy.availableSlots, 1)
     }
 
     // MARK: - Issue #183 confirmedImportedCount
@@ -302,11 +355,12 @@ final class LocalQueueCapacityTests: XCTestCase {
     private func assignment(
         queueKind: LocalQueueKind,
         status: QueueAssignmentStatus = .userAssigned,
-        decidedAt: Date = Date(timeIntervalSince1970: 1_000)
+        decidedAt: Date = Date(timeIntervalSince1970: 1_000),
+        rawSection: String = "buildings"
     ) throws -> QueueAssignmentDecision {
         try QueueAssignmentDecision(
             villageID: villageID,
-            itemKey: TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_003),
+            itemKey: TrackerItemKey.root(base: .home, rawSection: rawSection, dataID: 1_000_003),
             baselineReference: ManualBaselineReference(
                 revision: "rev", fingerprint: "fp", lineageID: "lineage-1"),
             queueKind: queueKind,
@@ -323,7 +377,7 @@ final class LocalQueueCapacityTests: XCTestCase {
                 try assignment(queueKind: .builder),
                 try assignment(queueKind: .builder, status: .observedOnly),
                 try assignment(queueKind: .builder, status: .unknown),
-                try assignment(queueKind: .laboratory),
+                try assignment(queueKind: .laboratory, rawSection: "units"),
             ],
             capacityConfig: try config(capacity: 2),
             at: Date(timeIntervalSince1970: 1_000)

@@ -24,9 +24,9 @@ struct VillageDetailView: View {
     @State private var stateFilter: UpgradeDisplayStateFilter?
     @State private var sortOrder: UpgradeDisplaySort = .categoryName
     @State private var actionSheet: ManualUpgradeActionSheet?
-    // Issue #145：本地队列容量配置面板。
+    // Issue #145：本地计时容量配置面板。
     @State private var showQueueCapacitySettings = false
-    // Issue #183：导入观察的本地队列映射面板。
+    // Issue #183：导入观察的本地容量映射面板。
     @State private var showQueueAssignmentSettings = false
     // Issue #61：快捷「粘贴并更新」的确认 sheet 与失败提示载体。
     // prepareQuickImport 是纯函数（不写状态），结果分派到这两个载体之一。
@@ -76,14 +76,14 @@ struct VillageDetailView: View {
                 onDone: { actionSheet = nil }
             )
         }
-        // Issue #145：本地队列容量配置。
+    // Issue #145：本地计时容量配置。
         .sheet(isPresented: $showQueueCapacitySettings) {
             ManualQueueCapacitySettingsView(
                 villageID: villageID,
                 onDone: { showQueueCapacitySettings = false }
             )
         }
-        // Issue #183：导入观察的本地队列映射。
+        // Issue #183：导入观察的本地容量映射。
         .sheet(isPresented: $showQueueAssignmentSettings) {
             QueueAssignmentSettingsView(
                 villageID: villageID,
@@ -1137,21 +1137,21 @@ struct VillageDetailView: View {
                 Button {
                     showQueueCapacitySettings = true
                 } label: {
-                    Label("队列容量", systemImage: "rectangle.stack.badge.person.crop")
+                    Label("计时容量", systemImage: "rectangle.stack.badge.person.crop")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
-                .help("配置本地队列容量（只约束本地手动升级）")
-                .accessibilityLabel("配置本地队列容量")
+                .help("配置本地计时容量（只约束本地手动升级）")
+                .accessibilityLabel("配置本地计时容量")
                 Button {
                     showQueueAssignmentSettings = true
                 } label: {
-                    Label("导入观察队列", systemImage: "arrow.triangle.2.circlepath")
+                    Label("导入观察容量", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
-                .help("确认导入观察属于哪个本地队列（不影响游戏）")
-                .accessibilityLabel("配置导入观察的本地队列映射")
+                .help("确认导入观察计入哪类本地容量（不影响游戏）")
+                .accessibilityLabel("配置导入观察的本地容量映射")
             }
             Spacer()
         }

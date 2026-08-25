@@ -73,7 +73,7 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
     public var lastImportAt: Date?
     public var diagnostics: [ManualTrackerDiagnostic]
     public var reconciliationHistory: [ManualReconciliationRecord]
-    /// Issue #145：用户配置的本地队列容量（source = userConfigured）。
+    /// Issue #145：用户配置的本地计时容量（source = userConfigured）。
     /// 只约束未来 local manual start，不修改历史 record 或 imported 快照。
     public var queueCapacityConfigs: [LocalQueueCapacityConfig]
     /// Issue #183：用户确认的导入观察本地队列映射 overlay。
@@ -126,21 +126,21 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
             throw ManualTrackerStoreError.invalidEnvelope("存在重复的 reconciliationID。")
         }
         guard queueCapacityConfigs.count <= 64 else {
-            throw ManualTrackerStoreError.invalidEnvelope("队列容量配置数量超过上限。")
+            throw ManualTrackerStoreError.invalidEnvelope("本地容量配置数量超过上限。")
         }
         for config in queueCapacityConfigs {
             guard config.villageID == villageID else {
                 throw ManualTrackerStoreError.invalidEnvelope(
-                    "队列容量配置的村庄与所属村庄不一致。"
+                    "本地容量配置的村庄与所属村庄不一致。"
                 )
             }
             guard config.updatedAt.timeIntervalSinceReferenceDate.isFinite else {
-                throw ManualTrackerStoreError.invalidEnvelope("队列容量配置时间无效。")
+                throw ManualTrackerStoreError.invalidEnvelope("本地容量配置时间无效。")
             }
         }
         guard Set(queueCapacityConfigs.map(\.queueKind.rawValue)).count
                 == queueCapacityConfigs.count else {
-            throw ManualTrackerStoreError.invalidEnvelope("存在重复的队列类别容量配置。")
+            throw ManualTrackerStoreError.invalidEnvelope("存在重复的本地容量类别配置。")
         }
         guard queueAssignments.count <= 4096 else {
             throw ManualTrackerStoreError.invalidEnvelope("队列分配数量超过上限。")

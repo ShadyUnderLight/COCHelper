@@ -2,7 +2,7 @@ import SwiftUI
 import COCHelperApp
 import COCHelperCore
 
-/// Issue #145：本地队列容量配置面板。
+/// Issue #145：本地计时容量配置面板。
 ///
 /// 容量是 userConfigured 的本地工作流事实，不代表游戏实际队列；只约束
 /// 未来 local manual start。未配置的类别不做任何容量校验。
@@ -16,9 +16,9 @@ struct ManualQueueCapacitySettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("本地队列容量")
+            Text("本地计时容量")
                 .font(.title2.weight(.bold))
-            Text("容量只约束本地手动升级的开始操作，不代表游戏实际队列；未确认的导入计时不计入容量。")
+            Text("容量只约束本地手动升级的开始操作，不代表游戏内队列；未确认的导入计时不计入容量。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Divider()

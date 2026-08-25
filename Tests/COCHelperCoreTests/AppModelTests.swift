@@ -978,6 +978,403 @@ extension AppModelTests {
         let second = model.capitalRaidRows(for: "#CLANA").map(\.id)
         XCTAssertEqual(first, second)
     }
+
+    /// 加载更多失败：保留 last-good 与游标，capitalHasMore 仍为 true（可重试），
+    /// 重试成功后恢复 .success 并合并新页（Issue #251 验收：
+    /// 与 War Log #124 对齐，加载更多失败时按钮仍可用于重试，不得误显"没有更多"）。
+    /// 关键：失败和重试都必须使用同一个 after 游标，不得退回首屏。
+    @MainActor
+    func testLoadMoreCapitalFailureKeepsRetryableAndRecovers() async throws {
+        let recorder = TagRecorder()
+        let counter = RequestCounter()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            counter.count += 1
+            if counter.count == 2 {
+                // 第二页：加载更多失败（429）
+                return (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            if counter.count == 3 {
+                // 重试成功：第二页数据（1 条新条目 + 推进游标）
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                        Data(#"{"items":[{"state":"ended","startTime":"20260617T080000.000Z","endTime":"20260619T080000.000Z","capitalTotalLoot":50000,"raidsCompleted":4,"totalAttacks":40,"enemyDistrictsDestroyed":80,"offensiveReward":3000,"defensiveReward":1000}],"paging":{"cursors":{"before":"B2","after":"RAIDCURSORAFTER2"}}}"#.utf8))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        // 首屏成功（2 条 + after=RAIDCURSORAFTER1）
+        model.refreshCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertTrue(model.currentCapitalHasMore)
+
+        // 加载更多失败 → last-good 与游标保留，hasMore 仍为 true（可重试）
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2, "失败保留已累计的 last-good")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1", "失败保留游标")
+        XCTAssertTrue(model.currentCapitalHasMore, "失败后仍可重试（Issue #251 验收）")
+
+        // 重试成功 → 恢复 .success 并合并新页
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 3, "重试成功后合并新页")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER2", "重试成功后游标推进")
+
+        // 关键断言：失败请求和重试请求都必须使用同一个 after=RAIDCURSORAFTER1 游标，
+        // 不得退回首屏（无 after）。
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 3, "首屏 + 失败 + 重试共 3 次请求")
+        XCTAssertFalse(queries[0].contains("after="), "首屏请求不带游标")
+        XCTAssertTrue(queries[1].contains("after=RAIDCURSORAFTER1"), "失败请求必须使用原游标: \(queries[1])")
+        XCTAssertTrue(queries[2].contains("after=RAIDCURSORAFTER1"), "重试请求必须使用同一个原游标，不得退回首屏: \(queries[2])")
+    }
+
+    /// 跨 parserVersion rebuild 失败后，必须保留旧 parserVersion，
+    /// 否则再次加载更多会误判 needsRebuild=false，用旧 cursor 把新 parser 页
+    /// merge 到旧 parser 页（Issue #251 review blocker）。
+    @MainActor
+    func testLoadMoreCapitalParserRebuildFailurePreservesParserVersionAndRetriesRebuild() async throws {
+        let recorder = TagRecorder()
+        // 预置「旧版本」缓存：parserVersion 0.2 + 第一页（游标 RAIDCURSORAFTER1）。
+        let oldSeason = OfficialCapitalRaidSeason(
+            state: "ended", startTime: "20260701T080000.000Z", endTime: "20260703T080000.000Z",
+            capitalTotalLoot: 123456, raidsCompleted: 6, totalAttacks: 60,
+            enemyDistrictsDestroyed: 120, offensiveReward: 5000, defensiveReward: 2500,
+            members: nil, attackLog: nil, defenseLog: nil
+        )
+        let oldState = ClanCapitalAPIState(
+            status: .success,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            parserVersion: "clan-capital-0.2",
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: [oldSeason], before: nil, after: "RAIDCURSORAFTER1")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": oldState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let counter = RequestCounter()
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            counter.count += 1
+            if counter.count == 1 {
+                // rebuild 首屏请求失败（429）
+                return (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            // rebuild 重试成功：返回当前 parser 的首页
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        // 旧 0.2 缓存 + 加载更多 → needsRebuild=true → 无 cursor 首屏 rebuild → 失败
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertEqual(model.currentCapitalState?.parserVersion, "clan-capital-0.2",
+                       "rebuild 失败必须保留旧 parserVersion，不得写成当前版本")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 1, "失败保留旧 lastGood")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1", "失败保留旧游标")
+        XCTAssertTrue(model.currentCapitalHasMore, "失败后仍可重试")
+
+        // 再次加载更多 → parserVersion 仍是 0.2 → needsRebuild 仍为 true → 仍走无 cursor 首屏 rebuild
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.parserVersion, "clan-capital-0.3", "rebuild 成功后升级到当前版本")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2, "rebuild 成功后为新首页（不残留旧条目）")
+
+        // 两次请求都必须是无 cursor 的首屏 rebuild，不得有任何一次用 after=RAIDCURSORAFTER1 翻页
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 2, "rebuild 失败 + rebuild 重试共 2 次请求")
+        XCTAssertFalse(queries[0].contains("after="), "第一次 rebuild 必须无游标: \(queries[0])")
+        XCTAssertFalse(queries[1].contains("after="), "第二次 rebuild 也必须无游标，不得误用旧 cursor 翻页: \(queries[1])")
+    }
+
+    /// 失败矩阵 + 连续失败：覆盖 429 / 5xx / malformed / network error，
+    /// 每种错误都验证失败后 hasMore=true、游标保留、重试使用相同 cursor；
+    /// 并验证连续两次失败后第三次仍可重试成功（Issue #251 验收标准）。
+    @MainActor
+    func testLoadMoreCapitalFailureMatrixAndRepeatedFailure() async throws {
+        struct FailureCase: Sendable {
+            let name: String
+            /// 第 2、3 次请求（连续两次失败）的响应构造
+            let failingResponse: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+        }
+        let cases: [FailureCase] = [
+            FailureCase(name: "429 rate-limit") { request in
+                (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data())
+            },
+            FailureCase(name: "5xx server-error") { request in
+                (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!, Data())
+            },
+            FailureCase(name: "malformed-response") { request in
+                // 200 但 items 缺失（解析失败）
+                (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("{}".utf8))
+            },
+            FailureCase(name: "network-error") { request in
+                throw URLError(.notConnectedToInternet)
+            },
+        ]
+
+        for testCase in cases {
+            let recorder = TagRecorder()
+            let counter = RequestCounter()
+            let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+                recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+                counter.count += 1
+                // 第 1 次：首屏成功；第 2、3 次：连续失败；第 4 次：重试成功
+                if counter.count == 1 {
+                    return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                            fullCapitalRaidPageData())
+                }
+                if counter.count == 2 || counter.count == 3 {
+                    return try testCase.failingResponse(request)
+                }
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                        Data(#"{"items":[{"state":"ended","startTime":"20260617T080000.000Z","endTime":"20260619T080000.000Z","capitalTotalLoot":50000,"raidsCompleted":4,"totalAttacks":40,"enemyDistrictsDestroyed":80,"offensiveReward":3000,"defensiveReward":1000}],"paging":{"cursors":{"before":"B2","after":"RAIDCURSORAFTER2"}}}"#.utf8))
+            }
+            let model = try makeModel(
+                playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+                clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+                clanLogHandler: logHandler
+            )
+
+            // 首屏成功
+            model.refreshCurrentCapitalRaid()
+            await waitUntil { !model.isRefreshingCapitalData }
+            XCTAssertTrue(model.currentCapitalHasMore, "[\(testCase.name)] 首屏后有更多")
+
+            // 第一次失败
+            model.loadMoreCurrentCapitalRaid()
+            await waitUntil { !model.isRefreshingCapitalData }
+            XCTAssertEqual(model.currentCapitalState?.status, .failed, "[\(testCase.name)] 第一次失败")
+            XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2, "[\(testCase.name)] 失败保留累计页")
+            XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1", "[\(testCase.name)] 失败保留游标")
+            XCTAssertTrue(model.currentCapitalHasMore, "[\(testCase.name)] 第一次失败后仍可重试")
+
+            // 第二次失败（连续失败）
+            model.loadMoreCurrentCapitalRaid()
+            await waitUntil { !model.isRefreshingCapitalData }
+            XCTAssertEqual(model.currentCapitalState?.status, .failed, "[\(testCase.name)] 第二次失败")
+            XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2, "[\(testCase.name)] 连续失败仍保留累计页")
+            XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1", "[\(testCase.name)] 连续失败仍保留游标")
+            XCTAssertTrue(model.currentCapitalHasMore, "[\(testCase.name)] 连续失败后仍可重试")
+
+            // 第三次重试成功
+            model.loadMoreCurrentCapitalRaid()
+            await waitUntil { !model.isRefreshingCapitalData }
+            XCTAssertEqual(model.currentCapitalState?.status, .success, "[\(testCase.name)] 重试成功")
+            XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 3, "[\(testCase.name)] 重试成功后合并新页")
+            XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER2", "[\(testCase.name)] 重试成功后游标推进")
+
+            // 所有失败/重试请求都必须使用 after=RAIDCURSORAFTER1，不得退回首屏
+            let queries = recorder.snapshot()
+            XCTAssertEqual(queries.count, 4, "[\(testCase.name)] 首屏 + 2次失败 + 重试 = 4次请求")
+            XCTAssertFalse(queries[0].contains("after="), "[\(testCase.name)] 首屏无游标")
+            for i in 1...3 {
+                XCTAssertTrue(queries[i].contains("after=RAIDCURSORAFTER1"),
+                              "[\(testCase.name)] 第 \(i+1) 次请求必须使用原游标: \(queries[i])")
+            }
+        }
+    }
+
+    /// Issue #251 review blocker：旧版本可能把 poisoned state 落盘
+    /// （.failed + 旧 parser lastGood + parserVersion 被错误升级为当前版本）。
+    /// 启动时 legacy migration 必须把这种状态的 parserVersion 重置，
+    /// 强制下一次 loadMore 走无 cursor rebuild，而不是用旧 cursor 把新 parser
+    /// 页 merge 到旧 parser 页。
+    @MainActor
+    func testLegacyPoisonedFailedStateTriggersRebuildAfterMigration() async throws {
+        let recorder = TagRecorder()
+        // 预置 poisoned state：status=.failed，parserVersion 已被旧版本错误升级为
+        // 当前版本 clan-capital-0.3，但 lastGood 实际是旧 parser 数据 + after=RAIDCURSORAFTER1。
+        let oldSeason = OfficialCapitalRaidSeason(
+            state: "ended", startTime: "20260701T080000.000Z", endTime: "20260703T080000.000Z",
+            capitalTotalLoot: 123456, raidsCompleted: 6, totalAttacks: 60,
+            enemyDistrictsDestroyed: 120, offensiveReward: 5000, defensiveReward: 2500,
+            members: nil, attackLog: nil, defenseLog: nil
+        )
+        let poisonedState = ClanCapitalAPIState(
+            status: .failed,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 1_700_000_500),
+            lastErrorReason: "请求被限流（429），请稍后再试。",
+            lastHTTPStatus: 429,
+            parserVersion: "clan-capital-0.3", // 被旧版本错误升级的 metadata
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: [oldSeason], before: nil, after: "RAIDCURSORAFTER1")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": poisonedState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            // rebuild 成功：返回当前 parser 的首页
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    fullCapitalRaidPageData())
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        // migration 后：parserVersion 被重置为 legacy 标记（不再等于当前版本）
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertNotEqual(model.currentCapitalState?.parserVersion, "clan-capital-0.3",
+                          "migration 必须重置 poisoned state 的 parserVersion")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.after, "RAIDCURSORAFTER1",
+                       "migration 不得修改 lastGood 数据")
+        XCTAssertTrue(model.currentCapitalHasMore, "failed + lastGood + after → hasMore=true")
+
+        // 调用 loadMore：因为 parserVersion != current，needsRebuild=true → 无 cursor 首屏 rebuild
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.parserVersion, "clan-capital-0.3",
+                       "rebuild 成功后 parserVersion 升级为当前版本")
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2,
+                       "rebuild 替换为新首页（不残留旧 poisoned 条目）")
+
+        // 关键断言：请求必须是无 cursor 的首屏 rebuild，不得带 after=RAIDCURSORAFTER1
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 1, "只有一次 rebuild 请求")
+        XCTAssertFalse(queries[0].contains("after="),
+                       "poisoned state 修复后必须走无 cursor rebuild，不得用旧 cursor 翻页: \(queries[0])")
+    }
+
+    /// Issue #251 P2：migration 对当前-parser 合法 failed cache 也会标记为 legacy，
+    /// 强制下一次 loadMore 走首屏 rebuild，累计历史被替换。这是已知的 fail-closed
+    /// 取舍（无法区分 poisoned 和合法 failed state），此测试锁定该预期行为。
+    @MainActor
+    func testLegacyMigrationForcesRebuildForCurrentParserFailedState() async throws {
+        let recorder = TagRecorder()
+        // 预置合法的当前-parser failed state：累计 3 条记录 + after 游标。
+        let seasons = [
+            OfficialCapitalRaidSeason(
+                state: "ended", startTime: "20260701T080000.000Z", endTime: "20260703T080000.000Z",
+                capitalTotalLoot: 100, raidsCompleted: 1, totalAttacks: 10,
+                enemyDistrictsDestroyed: 10, offensiveReward: 100, defensiveReward: 50,
+                members: nil, attackLog: nil, defenseLog: nil
+            ),
+            OfficialCapitalRaidSeason(
+                state: "ended", startTime: "20260624T080000.000Z", endTime: "20260626T080000.000Z",
+                capitalTotalLoot: 200, raidsCompleted: 2, totalAttacks: 20,
+                enemyDistrictsDestroyed: 20, offensiveReward: 200, defensiveReward: 100,
+                members: nil, attackLog: nil, defenseLog: nil
+            ),
+            OfficialCapitalRaidSeason(
+                state: "ended", startTime: "20260617T080000.000Z", endTime: "20260619T080000.000Z",
+                capitalTotalLoot: 300, raidsCompleted: 3, totalAttacks: 30,
+                enemyDistrictsDestroyed: 30, offensiveReward: 300, defensiveReward: 150,
+                members: nil, attackLog: nil, defenseLog: nil
+            ),
+        ]
+        let failedState = ClanCapitalAPIState(
+            status: .failed,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 1_700_000_500),
+            lastErrorReason: "请求被限流（429），请稍后再试。",
+            lastHTTPStatus: 429,
+            parserVersion: ClanCapitalAPIState.currentParserVersion,
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: seasons, before: nil, after: "RAIDCURSORAFTER2")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": failedState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let logHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            recorder.record(request.url?.query(percentEncoded: true) ?? "(no-query)")
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                fullCapitalRaidPageData()
+            )
+        }
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: logHandler
+        )
+
+        XCTAssertEqual(model.currentCapitalState?.status, .failed)
+        XCTAssertNotEqual(
+            model.currentCapitalState?.parserVersion,
+            ClanCapitalAPIState.currentParserVersion,
+            "migration 必须把当前-parser failed state 标记为 legacy（fail-closed）"
+        )
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 3,
+                       "migration 不得直接修改 lastGood")
+
+        // parserVersion != current → needsRebuild=true → 无 cursor 首屏 rebuild。
+        model.loadMoreCurrentCapitalRaid()
+        await waitUntil { !model.isRefreshingCapitalData }
+
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+        XCTAssertEqual(model.currentCapitalState?.parserVersion, ClanCapitalAPIState.currentParserVersion)
+        XCTAssertEqual(model.currentCapitalState?.lastGood?.items.count, 2,
+                       "rebuild 替换累计页（已知 fail-closed 数据丢失取舍）")
+
+        let queries = recorder.snapshot()
+        XCTAssertEqual(queries.count, 1)
+        XCTAssertFalse(queries[0].contains("after="),
+                       "migration 后必须走无 cursor rebuild，不得使用旧 cursor: \(queries[0])")
+    }
+
+    /// Issue #251 migration 不得影响合法的 success 状态：parserVersion 保持不变。
+    @MainActor
+    func testLegacyMigrationDoesNotAffectSuccessStates() async throws {
+        let successState = ClanCapitalAPIState(
+            status: .success,
+            clanTag: "#CLANA",
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            parserVersion: "clan-capital-0.3",
+            lastGood: OfficialCapitalRaidPage(
+                page: OfficialPaginatedPage(items: [], before: nil, after: "RAIDCURSORAFTER1")
+            )
+        )
+        defaults.set(
+            try JSONEncoder().encode(ClanCapitalStateStore(states: ["#CLANA": successState])),
+            forKey: "coc-helper.clan-capitals.v1"
+        )
+
+        let model = try makeModel(
+            playerHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) },
+            clanLogHandler: { _ in (HTTPURLResponse(url: URL(string: "https://x/")!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data()) }
+        )
+
+        // success 状态的 parserVersion 不得被 migration 修改
+        XCTAssertEqual(model.currentCapitalState?.parserVersion, "clan-capital-0.3",
+                       "migration 不得修改 success 状态的 parserVersion")
+        XCTAssertEqual(model.currentCapitalState?.status, .success)
+    }
 }
 
 // MARK: - P1-3 端到端（外部复核补充）

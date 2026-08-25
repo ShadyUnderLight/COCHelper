@@ -422,6 +422,10 @@ public final class AppModel: ObservableObject {
     private static let clanWarLogStatesStorageKey = "coc-helper.clan-war-logs.v1"
     private static let clanCapitalStatesStorageKey = "coc-helper.clan-capitals.v1"
     private static let trackedClansStorageKey = "coc-helper.tracked-clans.v1"
+    /// Issue #251：旧版本 EndpointRefresher 在失败时保留 previous.lastGood 但错误地
+    /// 把 parserVersion 写成当前版本，产生 poisoned persisted state（lastGood 是旧
+    /// parser 数据但 metadata 声称是当前版本）。此标记确保 legacy migration 只执行一次。
+    private static let legacyFailedParserVersionMigrationKey = "coc-helper.legacy-failed-parser-version-migration.v1"
     private let refresher: OfficialPlayerRefresher
     private let clanRefresher: ClanRefresher
     private let clanWarRefresher: ClanWarRefresher
@@ -745,6 +749,10 @@ public final class AppModel: ObservableObject {
         // 自动结算需要当前快照基线（Issue #170 gate）：history 已加载，
         // 只结算基线一致的村庄，未对账村庄保持原状。
         _ = settleManualUpgrades(at: Date())
+        // Issue #251：修复旧版本可能落盘的 poisoned state（.failed + 旧 lastGood
+        // 但 parserVersion 被错误升级为当前版本）。必须在 seed row cache 之前执行，
+        // 且只执行一次；此时所有 stored properties 已初始化完毕。
+        migrateLegacyFailedParserVersionsIfNeeded()
         seedCapitalRaidRowCachesFromPersistedStates()
     }
 
@@ -1913,9 +1921,12 @@ public final class AppModel: ObservableObject {
         return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
     }
 
-    /// 指定部落的突袭周末是否还有更多页。
+    /// 指定部落的突袭周末是否还有更多页（分页按钮可用性）。
+    /// 成功或失败（保留 last-good 的加载更多失败）且有游标 → 可继续翻页/重试
+    /// （Issue #251：与 War Log #124 对齐，加载更多失败时按钮仍可用于重试，不得误显"没有更多"）。
     public func capitalHasMore(for clanTag: String) -> Bool {
-        guard let state = capitalState(for: clanTag), state.status == .success,
+        guard let state = capitalState(for: clanTag),
+              state.status == .success || state.status == .failed,
               let cursor = state.lastGood?.after else { return false }
         return PaginationLogic.hasMore(requestedCursor: nil, responseAfter: cursor)
     }
@@ -3255,11 +3266,12 @@ public final class AppModel: ObservableObject {
     }
 
     /// 按显式 Tag 突袭周末加载更多（手动部落入口；入参规范化，非法输入 no-op）。
+    /// 允许 `.success` 与保留 last-good 的 `.failed`（失败重试，Issue #251，与 War Log #124 对齐）。
     public func loadMoreCapitalRaid(tag: String) {
         guard let tag = ClanTagNormalizer.normalize(tag) else { return }
         guard !isRefreshingCapitalData else { return }
         guard let current = clanCapitalStates[tag],
-              current.status == .success,
+              current.status == .success || current.status == .failed,
               let cursor = current.lastGood?.after else { return }
         refreshingCapitalTags = [tag]
         let client = clanLogClient
@@ -3323,6 +3335,60 @@ public final class AppModel: ObservableObject {
         let cache = CapitalRaidRowCache()
         capitalRaidRowCaches[tag] = cache
         return cache
+    }
+
+    /// Issue #251：修复旧版本可能落盘的 poisoned state。
+    ///
+    /// 旧 EndpointRefresher 在失败时保留 `previous.lastGood` 但错误地把
+    /// `parserVersion` 写成当前版本，导致磁盘上可能存在：
+    /// - `status == .failed`
+    /// - `lastGood` 是旧 parser 生成的数据
+    /// - `parserVersion` 却等于当前版本（被错误升级）
+    ///
+    /// 这种状态下 `needsRebuild` 会误判为 false，直接用旧 cursor 把新 parser 页
+    /// merge 到旧 parser 页。本 migration 把 `parserVersion == current` 的 failed
+    /// 分页状态重置为 legacy 标记，强制下一次 loadMore 走无 cursor 首屏 rebuild。
+    /// `parserVersion != current` 的状态本来就会走 rebuild，因此无需标记。只执行一次。
+    ///
+    /// **Fail-closed 取舍（P2，已知数据丢失）**：
+    /// 从状态本身无法区分旧版本 bug 产生的 poisoned state 与当前 parser 产生的
+    /// 合法 failed cache——两者 metadata 完全相同（`.failed` + 当前 parserVersion
+    /// + lastGood）。因此本 migration 对两者统一标记为 legacy。对于合法的当前-parser
+    /// failed cache，这会导致已加载的累计历史被首屏 rebuild 替换。这是为避免新旧
+    /// parser 数据混合而采取的保守策略，仅发生在首次升级时；rebuild 后用户可重新
+    /// 加载更多恢复历史。
+    private func migrateLegacyFailedParserVersionsIfNeeded() {
+        guard !defaults.bool(forKey: Self.legacyFailedParserVersionMigrationKey) else { return }
+
+        let legacyParserVersion = "legacy-pre-251-rebuild"
+        let capitalCurrentParserVersion = ClanCapitalAPIState.currentParserVersion
+        let warLogCurrentParserVersion = ClanWarLogAPIState.currentParserVersion
+        var capitalChanged = false
+        for (tag, state) in clanCapitalStates
+        where state.status == .failed
+            && state.lastGood != nil
+            && state.parserVersion == capitalCurrentParserVersion {
+            var mutated = state
+            mutated.parserVersion = legacyParserVersion
+            clanCapitalStates[tag] = mutated
+            capitalChanged = true
+        }
+
+        var warLogChanged = false
+        for (tag, state) in clanWarLogStates
+        where state.status == .failed
+            && state.lastGood != nil
+            && state.parserVersion == warLogCurrentParserVersion {
+            var mutated = state
+            mutated.parserVersion = legacyParserVersion
+            clanWarLogStates[tag] = mutated
+            warLogChanged = true
+        }
+
+        if capitalChanged { persistClanCapitalStates() }
+        if warLogChanged { persistClanWarLogStates() }
+
+        defaults.set(true, forKey: Self.legacyFailedParserVersionMigrationKey)
     }
 
     private func seedCapitalRaidRowCachesFromPersistedStates() {

@@ -163,21 +163,4 @@ extension CoAPIError {
         case .missingCredentials, .timeout, .network, .malformedResponse: nil
         }
     }
-
-    /// 结构化错误类别（Issue #252）：与本类型一一对应，**不含 associated value**，
-    /// 可作为 `OfficialEndpointState.failureKind` 安全持久化（不泄露
-    /// reason/detail/underlying/code 等脱敏细节，也不依赖中文文案稳定性）。
-    public var kind: OfficialEndpointFailureKind {
-        switch self {
-        case .missingCredentials: return .missingCredentials
-        case .unauthorized: return .unauthorized
-        case .accessDenied: return .accessDenied
-        case .notFound: return .notFound
-        case .rateLimited: return .rateLimited
-        case .serverError: return .serverError
-        case .timeout: return .timeout
-        case .network: return .network
-        case .malformedResponse: return .malformedResponse
-        }
-    }
 }

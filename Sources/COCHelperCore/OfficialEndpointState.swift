@@ -9,16 +9,19 @@ public protocol EndpointParserVersioning {
 
 /// 官方端点失败的**结构化错误类别**（Issue #252）。
 ///
-/// 与 `CoAPIError`（传输语义）一一对应，但**不含 associated value**：
-/// 作为 `OfficialEndpointState.failureKind` 持久化时，不会把
-/// `reason` / `detail` / `underlying` / `statusCode` 等脱敏细节写进稳定协议，
-/// 也不会因为文案措辞变动而让持久化格式失效。展示层仍由
-/// `lastErrorReason`（脱敏文本）承担，本类型只用于**分类判定**。
+/// 覆盖 `CoAPIError`（传输语义）全部 case **外加取消**（`.cancelled`）——
+/// 取消由 `EndpointRefresher` 单独捕获 `CancellationError` / `URLError(.cancelled)`
+/// 得来，不经 `CoAPIError` 传递，故枚举里多出一个 `.cancelled` case。
+/// 与 `CoAPIError` 的 case 一一对应（`CoAPIError.kind` 提供反向映射），
+/// 但**不含 associated value**：作为 `OfficialEndpointState.failureKind`
+/// 持久化时，不会把 `reason` / `detail` / `underlying` / `statusCode`
+/// 等脱敏细节写进稳定协议，也不会因为文案措辞变动而让持久化格式失效。
+/// 展示层仍由 `lastErrorReason`（脱敏文本）承担，本类型只用于**分类判定**。
 ///
 /// 契约：
 /// - 成功状态不携带失败类别（`failureKind` 为 nil）。
 /// - 旧持久化数据缺该字段时解码为 nil，调用方走 fail-closed 兜底。
-/// - 与 `CoAPIError` 一一对应：`CoAPIError.kind` 提供反向映射。
+/// - `CoAPIError.kind` 提供 `CoAPIError` → 本类型的反向映射。
 public enum OfficialEndpointFailureKind: String, Codable, Hashable, Sendable {
     /// 缺少 API token（`CoAPIError.missingCredentials`）
     case missingCredentials

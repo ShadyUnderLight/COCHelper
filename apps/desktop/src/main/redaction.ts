@@ -3,8 +3,8 @@ const MAX_DIAGNOSTIC_LENGTH = 200;
 /** 清洗可展示错误文本，禁止 URL、凭据和控制字符进入 IPC envelope。 */
 export function redactDiagnosticText(value: string): string {
   const redacted = value
+    .replace(/\bauthorization\s*[:=]\s*[^\r\n]*/gi, 'Authorization: [REDACTED]')
     .replace(/https?:\/\/[^\s]+/gi, '[REDACTED_URL]')
-    .replace(/\bauthorization\s*:\s*bearer\s+\S+/gi, 'authorization: [REDACTED]')
     .replace(/\bbearer\s+\S+/gi, 'Bearer [REDACTED]')
     .replace(
       /(["']?(?:token|api[-_]?key|password|secret)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi,

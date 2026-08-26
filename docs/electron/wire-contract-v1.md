@@ -143,6 +143,9 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
   184-186）；reconciliationID/decisionID 重复即 invalidEnvelope（ManualTrackerStore.swift:124-127,
   162-165）；村庄 ID 重复即 corrupt（VillageStore.swift:79-84）。
 
+TS domain 对这两类含义不同的身份使用独立 brand：`StableId` 由语义组件构造，
+`LineageId` 由已校验的 UUID 构造或通过 `UuidSource` 注入；二者不可互换。
+
 ## WA-6 整数与 dataID 解析规则
 
 **三层规则刻意不一致，必须分别冻结：**

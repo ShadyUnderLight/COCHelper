@@ -13,6 +13,8 @@
 | fingerprint 字符串 | `"sha256:" + 64 小写 hex` | `Sha256Fingerprint`（branded string） | §WA-3 格式门：长度 71 |
 | `Int64` | JSON number | `bigint`（domain 层）/ token string（wire 层） | §WA-6 三层解析分别建模 |
 | `UUID` | 大写连字符字符串 | `UuidString` | §WA-5 |
+| Tracker semantic identity | `TrackerItemKey.stableID` 字符串 | `StableId`（domain branded string） | 仅由语义组件构造，不含数组位置或本地化文本 |
+| snapshot lineage identity | `lineageID` UUID | `LineageId`（domain branded UUID） | 进入 F2 integrity material；来源必须可注入/可校验 |
 | `Date` | reference-date Double（T2 域） | `RefEpochSeconds`（number） | §WA-4；与 Unix 秒显式区分 |
 | 官方时间字符串 | 原样字符串 | `OfficialUtcString` | §WA-4 T3；不解析落库 |
 
@@ -60,7 +62,7 @@
 |---|---|---|
 | VillageStore 裸数组 `[VillageProfile]` | `VillageStoreFileV1`（数组 + 未来版本顶层声明识别） | §BE-1.1 四态矩阵 |
 | `EffectiveVillageProjection` / `UpgradeOverviewProjection` / detail flat rows | domain 层投影类型 | 投影级 golden 由 E2-* 追加到 Tests/Golden |
-| 投影 stableID | 字符串拼接规则冻结 | 例：epoch 秒内嵌 §WA-4 |
+| 投影 stableID | `StableId` 字符串拼接规则冻结 | 例：epoch 秒内嵌 §WA-4 |
 
 ## M-7 事务 journal
 

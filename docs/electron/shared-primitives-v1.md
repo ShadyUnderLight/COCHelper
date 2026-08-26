@@ -27,6 +27,10 @@
 `Clock.nowMs()` 唯一表示 Unix epoch 毫秒；domain 不直接读取 `Date.now()`。需要可重放
 身份的操作依赖 `UuidSource.next()`，生产随机 UUID 仍使用 wire 的安全随机实现。
 
+`StableId` 由语义组件按 Swift `TrackerItemKey.stableID` 的 `|` 分隔规则构造；组件
+只能是字符串或 `bigint`，不允许数组位置、展示名称或本地化文本进入身份。`LineageId`
+是带独立语义 brand 的大写连字符 UUID，必须由 `UuidSource` 注入或从已校验文本解析。
+
 `FakeClock` 只接受安全整数毫秒，可以设置、推进或回拨时间。测试随机源固定为
 SplitMix64，输出仅用于 property/fuzz 测试，不得用于生产安全随机。
 

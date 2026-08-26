@@ -8,23 +8,29 @@ export const INT64_MAX = 9223372036854775807n;
 export const UINT64_MAX = 18446744073709551615n;
 
 const INTEGER_TOKEN = /^-?(0|[1-9]\d*)$/;
-const NSDECIMAL_MANTISSA_DIGITS = 38;
+/** NSDecimal 尾数是 8×UInt16 = 128 bit。 */
+const NSDECIMAL_MAX_MANTISSA = (1n << 128n) - 1n;
 const NSDECIMAL_EXPONENT_MIN = -128;
 const NSDECIMAL_EXPONENT_MAX = 127;
 
 /**
  * 把 JSON 数字 token 规范化为 `JSONSerialization` → `NSNumber.stringValue`（WA-1.2）。
  *
- * - 无小数点、无指数：按整数 `NSNumber`（`q`/`Q`）或超出 UInt64 时的十进制整数串。
- * - 有效数字（整数非前导零 + 小数点后全部数字，含尾零）≥ 18：走 `NSDecimalNumber`。
- * - 其余：IEEE 754 double，再按 Darwin `%.16g`（round-ties-to-even）格式化。
+ * - 落入 Int64/UInt64 的整数 token：对应 `q`/`Q`，十进制整数串（`-0` → `0`）。
+ * - 更大的整数，或有效数字 ≥ 18 的小数/指数：`NSDecimalNumber`
+ *   （128-bit 尾数截断、未压缩指数 ∈ [-128, 127]）。
+ * - 其余：IEEE 754 double，再按 Darwin `%.16g`（round-ties-to-even）。
  */
 export function normalizeJsonNumberToken(raw: string): string {
   if (INTEGER_TOKEN.test(raw)) {
     if (raw === '-0') {
       return '0';
     }
-    return BigInt(raw).toString();
+    const integer = BigInt(raw);
+    if (integer >= INT64_MIN && integer <= UINT64_MAX) {
+      return integer.toString();
+    }
+    return formatNSDecimalNumber(raw);
   }
 
   if (significandDigitCount(raw) >= 18) {
@@ -91,65 +97,38 @@ function parseDecimalToken(raw: string): {
 }
 
 /**
- * 对齐 `NSDecimalNumber(string:).stringValue`：固定小数点写出，去掉尾零；
- * 尾数最多 38 位；压缩指数必须落在 NSDecimal 的 Int8 范围。
+ * 对齐 `NSDecimalNumber`：尾数按 128-bit 向零截断；指数用未去掉尾零的 scale 校验；
+ * 零值写出 `0`（不保留负号）。
  */
 function formatNSDecimalNumber(raw: string): string {
   const parsed = parseDecimalToken(raw);
-  const rounded = roundDecimalMantissa(parsed.significand, parsed.scale);
-  if (rounded.significand === 0n) {
-    return parsed.negative ? '-0' : '0';
+  let significand = parsed.significand;
+  let scale = parsed.scale;
+
+  if (significand === 0n) {
+    return '0';
   }
 
-  const compactExp = compactDecimalExponent(rounded.significand, rounded.scale);
-  if (compactExp < NSDECIMAL_EXPONENT_MIN || compactExp > NSDECIMAL_EXPONENT_MAX) {
+  while (significand > NSDECIMAL_MAX_MANTISSA) {
+    significand /= 10n;
+    scale -= 1;
+  }
+
+  const exponent = -scale;
+  if (exponent < NSDECIMAL_EXPONENT_MIN || exponent > NSDECIMAL_EXPONENT_MAX) {
     throw new JsonParseError('数字超出 NSDecimal 指数范围。');
   }
 
   const sign = parsed.negative ? '-' : '';
-  if (rounded.scale <= 0) {
-    return `${sign}${rounded.significand.toString()}${'0'.repeat(-rounded.scale)}`;
+  if (scale <= 0) {
+    return `${sign}${significand.toString()}${'0'.repeat(-scale)}`;
   }
 
-  const digits = rounded.significand.toString().padStart(rounded.scale + 1, '0');
-  const split = digits.length - rounded.scale;
+  const digits = significand.toString().padStart(scale + 1, '0');
+  const split = digits.length - scale;
   const intPart = digits.slice(0, split);
   const fracPart = digits.slice(split);
   return sign + stripTrailingFractionZeros(`${intPart}.${fracPart}`);
-}
-
-function roundDecimalMantissa(
-  significand: bigint,
-  scale: number,
-): { significand: bigint; scale: number } {
-  const digits = significand.toString();
-  if (digits.length <= NSDECIMAL_MANTISSA_DIGITS) {
-    return { significand, scale };
-  }
-
-  const extra = digits.length - NSDECIMAL_MANTISSA_DIGITS;
-  let head = BigInt(digits.slice(0, NSDECIMAL_MANTISSA_DIGITS));
-  const rest = digits.slice(NSDECIMAL_MANTISSA_DIGITS);
-  if (rest[0]! >= '5') {
-    head += 1n;
-  }
-  let roundedDigits = head.toString();
-  let newScale = scale - extra;
-  if (roundedDigits.length > NSDECIMAL_MANTISSA_DIGITS) {
-    roundedDigits = roundedDigits.slice(0, NSDECIMAL_MANTISSA_DIGITS);
-    newScale -= 1;
-  }
-  return { significand: BigInt(roundedDigits), scale: newScale };
-}
-
-function compactDecimalExponent(significand: bigint, scale: number): number {
-  let value = significand;
-  let exponent = -scale;
-  while (value % 10n === 0n) {
-    value /= 10n;
-    exponent += 1;
-  }
-  return exponent;
 }
 
 function roundDoubleToSignificantDigits(

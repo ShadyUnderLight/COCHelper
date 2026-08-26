@@ -11,9 +11,18 @@ describe('NSNumber.stringValue golden（WA-1.2）', () => {
   it('逐 token 对齐 JSONSerialization → NSNumber.stringValue', () => {
     const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
       stringValues: Record<string, string>;
+      rejects: string[];
     };
     for (const [raw, expected] of Object.entries(fixture.stringValues)) {
       expect(normalizeJsonNumberToken(raw), raw).toBe(expected);
+    }
+  });
+
+  it('NSDecimal 指数越界必须拒绝', () => {
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as { rejects: string[] };
+    expect(fixture.rejects.length).toBeGreaterThan(0);
+    for (const raw of fixture.rejects) {
+      expect(() => normalizeJsonNumberToken(raw), raw).toThrow();
     }
   });
 

@@ -18,5 +18,14 @@ final class NSNumberStringValueGoldenTests: XCTestCase {
             let number = try XCTUnwrap(object as? NSNumber, "token \(token) 必须是 JSON number")
             XCTAssertEqual(number.stringValue, expected, "token \(token)")
         }
+
+        let rejects = try XCTUnwrap(root["rejects"] as? [String])
+        XCTAssertFalse(rejects.isEmpty, "必须覆盖 NSDecimal 指数越界拒绝例")
+        for token in rejects {
+            XCTAssertThrowsError(
+                try JSONSerialization.jsonObject(with: Data(token.utf8), options: [.fragmentsAllowed]),
+                "token \(token) 必须被 JSONSerialization 拒绝"
+            )
+        }
     }
 }

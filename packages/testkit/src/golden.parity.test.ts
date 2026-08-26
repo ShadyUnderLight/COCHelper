@@ -38,21 +38,47 @@ describe('golden fixture loader', () => {
 });
 
 describe('fixture 脱敏', () => {
-  it('允许匿名 Tag，拒绝真实 Tag / JWT / Cookie', () => {
+  it('允许匿名 Tag，拒绝真实 Tag / JWT / header Cookie', () => {
+    const bearer = ['Authorization', ': ', 'Bearer', ' ', 'super-secret-value'].join('');
+    const jwt = [
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+      'eyJzdWIiOiIxMjM0NTY3ODkwIn0',
+      'abcdefghij',
+    ].join('.');
     expect(findFixtureSecretHits('{"tag":"#GOLDEN01"}', 'ok.json')).toEqual([]);
     expect(findFixtureSecretHits('{"tag":"#8G9P0Q2L"}', 'bad.json')).toEqual([
       'bad.json → 真实 Tag #8G9P0Q2L',
     ]);
-    expect(() =>
-      assertGoldenPayloadSafe('Authorization: Bearer super-secret-value', 'hdr.txt'),
-    ).toThrow('Authorization Bearer');
-    expect(() =>
-      assertGoldenPayloadSafe(
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghij',
-        'jwt.txt',
-      ),
-    ).toThrow('JWT');
+    expect(() => assertGoldenPayloadSafe(bearer, 'hdr.txt')).toThrow('Authorization Bearer');
+    expect(() => assertGoldenPayloadSafe(jwt, 'jwt.txt')).toThrow('JWT');
     expect(() => assertGoldenPayloadSafe('Cookie: session=abc', 'cookie.txt')).toThrow('Cookie');
+  });
+
+  it('拒绝 JSON 字段里的 cookie / token，不依赖 header 形态', () => {
+    const payload = JSON.stringify({
+      cookie: 'session=real-secret',
+      token: 'real-api-token',
+      authorization: 'Bearer real-secret',
+      nested: { accessToken: 'abc', refreshToken: 'def', apiToken: 'ghi' },
+      list: [{ 'set-cookie': 'sid=1' }],
+    });
+    expect(() => assertGoldenPayloadSafe(payload, 'api.json')).toThrow('JSON 敏感键 $.cookie');
+    expect(() => assertGoldenPayloadSafe(payload, 'api.json')).toThrow('JSON 敏感键 $.token');
+    expect(() => assertGoldenPayloadSafe(payload, 'api.json')).toThrow(
+      'JSON 敏感键 $.authorization',
+    );
+    expect(() => assertGoldenPayloadSafe(payload, 'api.json')).toThrow(
+      'JSON 敏感键 $.nested.accessToken',
+    );
+    expect(() => assertGoldenPayloadSafe(payload, 'api.json')).toThrow(
+      'JSON 敏感键 $.nested.refreshToken',
+    );
+    expect(() => assertGoldenPayloadSafe(payload, 'api.json')).toThrow(
+      'JSON 敏感键 $.nested.apiToken',
+    );
+    expect(() => assertGoldenPayloadSafe(payload, 'api.json')).toThrow(
+      'JSON 敏感键 $.list[0].set-cookie',
+    );
   });
 });
 
@@ -99,7 +125,7 @@ describe('test registry', () => {
 });
 
 describe('parity 差异分类', () => {
-  it('canonical hex 差异归为 wire', () => {
+  it('未声明 defaultKind 的标量差异归为 wire', () => {
     expect(() => compareParity({ expected: 'aabbccdd', actual: 'aabbccde' })).toThrowError(
       ParityMismatchError,
     );
@@ -121,9 +147,12 @@ describe('parity 差异分类', () => {
     expect(() => compareParity({ expected: [1, 2], actual: [2, 1] })).toThrow(/ordering/);
   });
 
-  it('时间字段与 failureKind 分别归为 time / error', () => {
+  it('capturedAt / createdAt 归为 time，failureKind 归为 error', () => {
     expect(() => compareParity({ expected: { capturedAt: 1 }, actual: { capturedAt: 2 } })).toThrow(
       /time @ \$\.capturedAt/,
+    );
+    expect(() => compareParity({ expected: { createdAt: 1 }, actual: { createdAt: 2 } })).toThrow(
+      /time @ \$\.createdAt/,
     );
     expect(() =>
       compareParity({
@@ -131,6 +160,51 @@ describe('parity 差异分类', () => {
         actual: { failureKind: 'network' },
       }),
     ).toThrow(/error @ \$\.failureKind/);
+  });
+
+  it('kind / format / 看起来像 hex 的 id 尊重 defaultKind，不被误报为 error 或 time', () => {
+    expect(() =>
+      compareParity({
+        expected: { kind: 'number' },
+        actual: { kind: 'string' },
+        defaultKind: 'wire',
+      }),
+    ).toThrow(/wire @ \$\.kind/);
+    expect(() =>
+      compareParity({
+        expected: { kind: 'number' },
+        actual: { kind: 'string' },
+        defaultKind: 'projection',
+      }),
+    ).toThrow(/projection @ \$\.kind/);
+    expect(() =>
+      compareParity({
+        expected: { format: 'A' },
+        actual: { format: 'B' },
+        defaultKind: 'projection',
+      }),
+    ).toThrow(/projection @ \$\.format/);
+    expect(() =>
+      compareParity({
+        expected: { stat: 1 },
+        actual: { stat: 2 },
+        defaultKind: 'wire',
+      }),
+    ).toThrow(/wire @ \$\.stat/);
+    expect(() =>
+      compareParity({
+        expected: { message: 'a', code: 1, reason: 'x' },
+        actual: { message: 'b', code: 2, reason: 'y' },
+        defaultKind: 'wire',
+      }),
+    ).toThrow(/wire @ \$\.(?:message|code|reason)/);
+    expect(() =>
+      compareParity({
+        expected: 'deadbeef',
+        actual: 'cafebabe',
+        defaultKind: 'projection',
+      }),
+    ).toThrow(/projection @ \$/);
   });
 
   it('调用方可声明 projection 默认层', () => {

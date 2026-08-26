@@ -34,4 +34,9 @@ export { loadTestRegistry } from './registry';
 export type { TestPortStatus, TestRegistry, TestRegistryEntry } from './registry';
 export { FAULT_REPLAY_STATUS, runFaultReplay } from './replay';
 export { SeededRandom } from './seeded-random';
-export { assertGoldenPayloadSafe, findFixtureSecretHits } from './secrets';
+export {
+  assertGoldenPayloadSafe,
+  findFixtureSecretHits,
+  findSensitiveJsonKeys,
+  isSensitiveJsonKey,
+} from './secrets';

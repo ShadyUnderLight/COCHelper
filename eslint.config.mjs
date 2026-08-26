@@ -38,12 +38,25 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/desktop/src/main/**/*.ts', 'apps/desktop/src/preload/**/*.ts'],
+    files: [
+      'apps/desktop/src/main/**/*.ts',
+      'apps/desktop/src/preload/**/*.ts',
+      'packages/wire/src/**/*.ts',
+      'packages/domain/src/**/*.ts',
+      'packages/contracts/src/**/*.ts',
+    ],
+    ignores: ['**/*.test.ts', '**/*.parity.test.ts', '**/*.replay.test.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
         {
           paths: [{ name: '@coc-helper/testkit', message: 'testkit 不得进入 Electron runtime。' }],
+          patterns: [
+            {
+              group: ['@coc-helper/testkit/*', '@coc-helper/testkit/**', '**/packages/testkit/**'],
+              message: 'testkit 不得进入生产 import。',
+            },
+          ],
         },
       ],
     },
@@ -61,7 +74,13 @@ export default tseslint.config(
             { name: 'child_process', message: 'renderer 不得使用 child_process。' },
             { name: '@coc-helper/testkit', message: 'testkit 不得进入 Electron runtime。' },
           ],
-          patterns: [{ group: ['node:*'], message: 'renderer 不得使用 Node 内置模块。' }],
+          patterns: [
+            { group: ['node:*'], message: 'renderer 不得使用 Node 内置模块。' },
+            {
+              group: ['@coc-helper/testkit/*', '@coc-helper/testkit/**', '**/packages/testkit/**'],
+              message: 'testkit 不得进入 Electron runtime。',
+            },
+          ],
         },
       ],
     },

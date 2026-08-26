@@ -5,6 +5,36 @@ import { fileURLToPath } from 'node:url';
 
 const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FORBIDDEN_PACKAGE = '@coc-helper/testkit';
+const WORKSPACE_PACKAGES = {
+  '@coc-helper/testkit': 'packages/testkit',
+  '@coc-helper/wire': 'packages/wire',
+  '@coc-helper/domain': 'packages/domain',
+  '@coc-helper/contracts': 'packages/contracts',
+  '@coc-helper/desktop': 'apps/desktop',
+};
+
+const PRODUCTION_TREES = [
+  'apps/desktop/src',
+  'packages/wire/src',
+  'packages/domain/src',
+  'packages/contracts/src',
+];
+
+const PRODUCTION_ENTRIES = [
+  'apps/desktop/src/main/index.ts',
+  'apps/desktop/src/preload/index.ts',
+  'apps/desktop/src/renderer/index.ts',
+  'packages/wire/src/index.ts',
+  'packages/domain/src/index.ts',
+  'packages/contracts/src/index.ts',
+];
+
+const SPECIFIER_PATTERNS = [
+  /\bfrom\s+['"]([^'"]+)['"]/g,
+  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+  /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+  /(?:^|[\s;])import\s+['"]([^'"]+)['"]/g,
+];
 
 function walk(dir) {
   if (!existsSync(dir)) {
@@ -24,6 +54,97 @@ function walk(dir) {
     }
   }
   return out;
+}
+
+export function extractImportSpecifiers(text) {
+  const specifiers = new Set();
+  for (const pattern of SPECIFIER_PATTERNS) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) {
+      specifiers.add(match[1]);
+    }
+  }
+  return [...specifiers];
+}
+
+export function isTestkitPackageSpecifier(specifier) {
+  return specifier === FORBIDDEN_PACKAGE || specifier.startsWith(`${FORBIDDEN_PACKAGE}/`);
+}
+
+function posixRelative(root, absolute) {
+  return path.relative(root, absolute).split(path.sep).join('/');
+}
+
+export function isTestkitFilesystemPath(absolute, workspaceRoot = defaultRoot) {
+  const testkitRoot = path.resolve(workspaceRoot, 'packages/testkit');
+  const resolved = path.resolve(absolute);
+  return resolved === testkitRoot || resolved.startsWith(`${testkitRoot}${path.sep}`);
+}
+
+function resolveExistingFile(base) {
+  const candidates = [base, `${base}.ts`, `${base}.js`, path.join(base, 'index.ts'), path.join(base, 'index.js')];
+  for (const candidate of candidates) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) {
+      return path.resolve(candidate);
+    }
+  }
+  return path.resolve(base);
+}
+
+export function resolveWorkspaceSpecifier(fromRelative, specifier, workspaceRoot = defaultRoot) {
+  if (isTestkitPackageSpecifier(specifier) || specifier.split(path.sep).join('/').includes('packages/testkit/')) {
+    if (specifier.startsWith('.')) {
+      return resolveExistingFile(path.join(workspaceRoot, path.dirname(fromRelative), specifier));
+    }
+    const rest = specifier.slice(FORBIDDEN_PACKAGE.length).replace(/^\//, '');
+    const pkgRoot = path.join(workspaceRoot, WORKSPACE_PACKAGES[FORBIDDEN_PACKAGE]);
+    return resolveExistingFile(rest ? path.join(pkgRoot, rest) : path.join(pkgRoot, 'src/index.ts'));
+  }
+
+  const names = Object.keys(WORKSPACE_PACKAGES).sort((left, right) => right.length - left.length);
+  const matched = names.find((name) => specifier === name || specifier.startsWith(`${name}/`));
+  if (matched) {
+    const rest = specifier.slice(matched.length).replace(/^\//, '');
+    const pkgRoot = path.join(workspaceRoot, WORKSPACE_PACKAGES[matched]);
+    if (rest) {
+      return resolveExistingFile(path.join(pkgRoot, rest));
+    }
+    const manifest = JSON.parse(readFileSync(path.join(pkgRoot, 'package.json'), 'utf8'));
+    return resolveExistingFile(path.join(pkgRoot, manifest.main ?? 'src/index.ts'));
+  }
+
+  if (specifier.startsWith('.')) {
+    return resolveExistingFile(path.join(workspaceRoot, path.dirname(fromRelative), specifier));
+  }
+  return null;
+}
+
+export function findForbiddenImportHits(text, fromRelative, workspaceRoot = defaultRoot) {
+  const hits = [];
+  for (const specifier of extractImportSpecifiers(text)) {
+    if (isTestkitPackageSpecifier(specifier)) {
+      hits.push(`${fromRelative} 不得 import ${specifier}`);
+      continue;
+    }
+    const resolved = resolveWorkspaceSpecifier(fromRelative, specifier, workspaceRoot);
+    if (resolved && isTestkitFilesystemPath(resolved, workspaceRoot)) {
+      hits.push(`${fromRelative} 不得解析到 testkit（via ${specifier}）`);
+    }
+  }
+  return hits;
+}
+
+function isProductionSource(relative) {
+  if (!/\.(ts|js|mjs|cjs|tsx)$/.test(relative)) {
+    return false;
+  }
+  if (relative.includes('.test.') || relative.endsWith('.test.ts')) {
+    return false;
+  }
+  if (relative.includes('.parity.') || relative.includes('.replay.')) {
+    return false;
+  }
+  return PRODUCTION_TREES.some((tree) => relative === tree || relative.startsWith(`${tree}/`));
 }
 
 function packageHits(workspaceRoot) {
@@ -47,26 +168,52 @@ function packageHits(workspaceRoot) {
 
 function sourceImportHits(workspaceRoot) {
   const hits = [];
-  const roots = [
-    path.join(workspaceRoot, 'apps/desktop/src'),
-    path.join(workspaceRoot, 'packages/wire/src'),
-    path.join(workspaceRoot, 'packages/domain/src'),
-    path.join(workspaceRoot, 'packages/contracts/src'),
-  ];
-  const importRe = /from\s+['"]@coc-helper\/testkit['"]|require\(\s*['"]@coc-helper\/testkit['"]\s*\)/;
-  for (const dir of roots) {
-    for (const file of walk(dir)) {
-      if (!/\.(ts|js|mjs|cjs|tsx)$/.test(file)) {
+  for (const tree of PRODUCTION_TREES) {
+    for (const file of walk(path.join(workspaceRoot, tree))) {
+      const relative = posixRelative(workspaceRoot, file);
+      if (!isProductionSource(relative)) {
         continue;
       }
-      const relative = path.relative(workspaceRoot, file).split(path.sep).join('/');
-      if (relative.includes('.test.') || relative.endsWith('.test.ts')) {
+      hits.push(
+        ...findForbiddenImportHits(readFileSync(file, 'utf8'), relative, workspaceRoot),
+      );
+    }
+  }
+  return hits;
+}
+
+function productionGraphHits(workspaceRoot) {
+  const hits = [];
+  const seen = new Set();
+  const queue = [...PRODUCTION_ENTRIES];
+  while (queue.length > 0) {
+    const relative = queue.shift();
+    if (seen.has(relative)) {
+      continue;
+    }
+    seen.add(relative);
+    const absolute = path.join(workspaceRoot, relative);
+    if (!existsSync(absolute) || !statSync(absolute).isFile()) {
+      continue;
+    }
+    if (isTestkitFilesystemPath(absolute, workspaceRoot)) {
+      hits.push(`生产入口依赖图到达 testkit：${relative}`);
+      continue;
+    }
+    if (!isProductionSource(relative) && !PRODUCTION_ENTRIES.includes(relative)) {
+      continue;
+    }
+    const specifiers = extractImportSpecifiers(readFileSync(absolute, 'utf8'));
+    for (const specifier of specifiers) {
+      if (isTestkitPackageSpecifier(specifier)) {
+        hits.push(`${relative} 不得 import ${specifier}`);
         continue;
       }
-      const text = readFileSync(file, 'utf8');
-      if (importRe.test(text)) {
-        hits.push(`生产源码不得 import testkit: ${relative}`);
+      const resolved = resolveWorkspaceSpecifier(relative, specifier, workspaceRoot);
+      if (resolved === null) {
+        continue;
       }
+      queue.push(posixRelative(workspaceRoot, resolved));
     }
   }
   return hits;
@@ -78,22 +225,26 @@ function packagedHits(workspaceRoot) {
     path.join(workspaceRoot, 'apps/desktop/out'),
     path.join(workspaceRoot, 'apps/desktop/.webpack'),
   ];
+  const markers = [FORBIDDEN_PACKAGE, 'packages/testkit', 'COCHELPER_SWIFT_ORACLE', 'golden-oracle'];
   for (const dir of outputs) {
     if (!existsSync(dir)) {
       continue;
     }
     for (const file of walk(dir)) {
-      const relative = path.relative(workspaceRoot, file).split(path.sep).join('/');
+      const relative = posixRelative(workspaceRoot, file);
       if (file.endsWith('.swift')) {
         hits.push(`发布产物含 Swift 源：${relative}`);
       }
-      if (relative.includes('golden-oracle')) {
-        hits.push(`发布产物含 golden-oracle：${relative}`);
+      if (relative.includes('golden-oracle') || isTestkitFilesystemPath(file, workspaceRoot)) {
+        hits.push(`发布产物含 golden-oracle / testkit：${relative}`);
       }
       if (/\.(js|mjs|cjs|json)$/.test(file)) {
         const text = readFileSync(file, 'utf8');
-        if (text.includes(FORBIDDEN_PACKAGE)) {
-          hits.push(`发布产物含 testkit：${relative}`);
+        for (const marker of markers) {
+          if (text.includes(marker)) {
+            hits.push(`发布产物含 ${marker}：${relative}`);
+            break;
+          }
         }
       }
     }
@@ -105,11 +256,13 @@ export function collectTestkitIsolationHits(workspaceRoot = defaultRoot) {
   return [
     ...packageHits(workspaceRoot),
     ...sourceImportHits(workspaceRoot),
+    ...productionGraphHits(workspaceRoot),
     ...packagedHits(workspaceRoot),
   ];
 }
 
-const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const invokedDirectly =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
   const hits = collectTestkitIsolationHits();
   if (hits.length > 0) {

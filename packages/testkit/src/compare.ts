@@ -14,11 +14,29 @@ export type CompareParityOptions = {
   readonly defaultKind?: ParityDiffKind;
 };
 
-const TIME_KEY =
-  /(?:Time|Timestamp|At)$|^(?:timestamp|ageSeconds|utcMs|epoch|appliedAt|capturedAt|importedAt|fetchedAt|startedAt|completedAt|recordedAt|lastSeenAt|lastAppliedAt|sourceTimestamp)$/i;
-const ERROR_KEY =
-  /^(?:failureKind|error|errors|diagnostic|diagnostics|message|code|kind|reason|lastErrorReason)$/i;
-const HEX_STRING = /^[0-9a-f]{8,}$/;
+/** 明确的时间字段；不用 /i + At$ 去匹配 format/stat。 */
+const TIME_KEYS = new Set([
+  'timestamp',
+  'ageSeconds',
+  'utcMs',
+  'epoch',
+  'appliedAt',
+  'capturedAt',
+  'importedAt',
+  'fetchedAt',
+  'startedAt',
+  'completedAt',
+  'recordedAt',
+  'lastSeenAt',
+  'lastAppliedAt',
+  'sourceTimestamp',
+  'createdAt',
+  'updatedAt',
+  'stateUpdatedAt',
+]);
+
+/** 只覆盖错误协议字段；kind/code/reason/message 是普通 discriminator，走 defaultKind。 */
+const ERROR_KEYS = new Set(['failureKind', 'lastErrorReason']);
 
 export class ParityMismatchError extends Error {
   readonly diffs: readonly ParityDiff[];
@@ -47,11 +65,6 @@ function walk(
   diffs: ParityDiff[],
 ): void {
   if (Object.is(expected, actual)) {
-    return;
-  }
-
-  if (isHexString(expected) && isHexString(actual) && expected !== actual) {
-    diffs.push(diff('wire', path, expected, actual));
     return;
   }
 
@@ -88,17 +101,13 @@ function classifyPath(path: string, defaultKind: ParityDiffKind): ParityDiffKind
       .split('.')
       .pop()
       ?.replace(/\[\d+\]/g, '') ?? '';
-  if (TIME_KEY.test(leaf)) {
+  if (TIME_KEYS.has(leaf) || /(?:Time|Timestamp|At)$/.test(leaf)) {
     return 'time';
   }
-  if (ERROR_KEY.test(leaf)) {
+  if (ERROR_KEYS.has(leaf)) {
     return 'error';
   }
   return defaultKind;
-}
-
-function isHexString(value: unknown): value is string {
-  return typeof value === 'string' && HEX_STRING.test(value);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

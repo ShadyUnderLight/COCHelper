@@ -182,10 +182,13 @@ GameCatalogTests ManifestValidation 系列锁定。
 ```text
 CatalogManifest {
   schemaVersion: Int          // 支持范围 1...2，出范围 validate() false（fail-closed）
-  gameVersion: String         // ⚠️ 「与目录目录名一致」是生成器侧不变量（Python builder 保证）；
-                              //   运行时 loadBundled(version:) 只校验 manifest.gameVersion ==
-                              //   catalog.gameVersion（GameCatalog.swift:953），不比对传入的
-                              //   目录版本参数——TS 消费侧可实施更严的目录名比对（E2-02 裁量）
+  gameVersion: String         // ⚠️ 「与目录目录名一致」是调用方/打包约定，不是被强制的
+                              //   不变量：generate(output_dir:) 接受任意目录名，
+                              //   validate_catalog 也只比 manifest↔catalog 一致；
+                              //   运行时 loadBundled(version:) 同样只比
+                              //   manifest.gameVersion == catalog.gameVersion
+                              //   （GameCatalog.swift:953），不比对传入的目录版本参数。
+                              //   TS 消费侧可实施更严的目录名比对（E2-02 裁量）
   buildTag: String
   locale: String
   sourceFingerprint: String   // 格式门：sha256: + 64 hex；内容是 APK hash，
@@ -226,9 +229,10 @@ Swift 运行时 `CatalogManifest.validate` 五条（GameCatalog.swift:63-130）�
 missingIcons。
 
 **生成器校验层**（`Tools/game_catalog/validate.py`，产出目录时的独立门禁，与 Swift 层互补）：
-额外校验 missingIcons 对账（:639）、renderedIcons == generatedFiles PNG 计数、blockedIcons
-快照语义格式、displayCategories 一致性（:665-691）。TS 消费侧**不复制**该层——它属于
-E6-01 迁移的工具链。
+额外校验 missingIcons 对账（:639）；renderedIcons / blockedIcons / displayCategories 三键
+**均为「存在才校验、缺失放行」的 optional 语义**（validate.py:664-691 显式 None 门 + 既有
+测试冻结该兼容性；displayCategories 存在时必须与 catalog 实际分布一致）。⚠️ E6-01 迁移
+不得把这些可选字段升级为必填。TS 消费侧**不复制**该层——它属于 E6-01 迁移的工具链。
 
 ### WA-9.3 静态资源引用与两级 missingReason（两个不同值域，不得混同）
 
@@ -248,8 +252,9 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
   movieclip_not_parsed / texture_compressed_astc / texture_external_sctx / zstd_unavailable /
   container_not_found / export_not_found / astc_unsupported / texture_missing / render_failed。
   各活体版本实际出现的子集可随 APK 渲染结果变化——**契约以 producer 词表为准，不冻结单版本
-  观测统计**；统计口径（唯一非空 renderedPath 数、缺失键分布）由 validate_game_catalog.py
-  输出，不写入本文档。
+  观测统计**。工具链当前没有权威的资源观测统计输出（validate_game_catalog.py 只输出
+  coverage / audit / verdict）；如需该类统计，须按明确口径自行重算（唯一非空 renderedPath 数、
+  缺失键分布），或后续在工具链补充输出后再引用。
 
 **b) `CatalogLevel.missingReason`（逐级时长缺失原因，GameCatalog.swift:203-240）**
 

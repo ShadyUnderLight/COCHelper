@@ -1,11 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
-import { bytesToHex, canonicalBytes, canonicalize, parseJson } from './index';
+import { bytesToHex, canonicalBytes, canonicalize, parseJson } from '@coc-helper/wire';
 
-const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/json-raw-samples.json');
+import { compareParity, loadGoldenJson } from './index';
 
 type Sample = {
   id: string;
@@ -24,12 +21,16 @@ type Fixture = {
 };
 
 describe('raw JSON source golden（WA-1 parser parity）', () => {
-  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Fixture;
+  const fixture = loadGoldenJson<Fixture>('json-raw-samples.json');
 
   it('NFC 等价键与 surrogate pair 对齐 CanonicalJSONValue.fromJSONData', () => {
     for (const sample of fixture.samples) {
       const canonical = canonicalize(parseJson(sample.source));
-      expect(bytesToHex(canonicalBytes(canonical)), sample.id).toBe(sample.canonicalHex);
+      compareParity({
+        expected: sample.canonicalHex,
+        actual: bytesToHex(canonicalBytes(canonical)),
+        path: `$.${sample.id}`,
+      });
     }
   });
 

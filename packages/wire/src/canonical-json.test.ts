@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -11,45 +8,6 @@ import {
   jsonNumber,
   parseJson,
 } from './index';
-import type { CanonicalJsonValue } from './json-value';
-
-const fixtureDir = join(process.cwd(), 'Tests/Golden/Fixtures');
-
-describe('canonical JSON golden（WA-2）', () => {
-  it('逐字节对齐 Tests/Golden/Fixtures/canonical-json-expected.json', () => {
-    const samplesRoot = parseJson(readFileSync(join(fixtureDir, 'canonical-json-samples.json')));
-    const expected = JSON.parse(
-      readFileSync(join(fixtureDir, 'canonical-json-expected.json'), 'utf8'),
-    ) as { expectations: Record<string, string> };
-
-    const sampleMap = objectFields(field(samplesRoot, 'samples'));
-    const sampleIds = Object.keys(sampleMap).sort();
-    const expectedIds = Object.keys(expected.expectations).sort();
-    expect(sampleIds).toEqual(expectedIds);
-
-    for (const id of sampleIds) {
-      const canonical = canonicalize(sampleMap[id]!);
-      expect(bytesToHex(canonicalBytes(canonical)), id).toBe(expected.expectations[id]);
-    }
-  });
-
-  it('canonical bytes 重解析后必须幂等', () => {
-    const samplesRoot = parseJson(readFileSync(join(fixtureDir, 'canonical-json-samples.json')));
-    const sampleMap = objectFields(field(samplesRoot, 'samples'));
-    for (const [id, sample] of Object.entries(sampleMap)) {
-      const bytes = canonicalBytes(canonicalize(sample));
-      const reparsed = canonicalize(parseJson(bytes));
-      expect(bytesToHex(canonicalBytes(reparsed)), id).toBe(bytesToHex(bytes));
-    }
-  });
-
-  it('JSON.parse 会丢掉 2^53+1，lossless 解析必须保住', () => {
-    const token = '9007199254740993';
-    expect(JSON.parse(token)).toBe(9007199254740992);
-    const parsed = parseJson(token);
-    expect(parsed).toEqual(jsonNumber(token));
-  });
-});
 
 describe('canonical JSON 排序与转义', () => {
   it('对象键序与数组序无关，重复数组元素保留', () => {
@@ -102,20 +60,6 @@ describe('canonical JSON 排序与转义', () => {
     expect(value.kind === 'array' && value.items.length === 2).toBe(true);
   });
 });
-
-function field(value: CanonicalJsonValue, key: string): CanonicalJsonValue {
-  if (value.kind !== 'object' || value.fields[key] === undefined) {
-    throw new Error(`缺少字段 ${key}`);
-  }
-  return value.fields[key];
-}
-
-function objectFields(value: CanonicalJsonValue): Record<string, CanonicalJsonValue> {
-  if (value.kind !== 'object') {
-    throw new Error('期望对象');
-  }
-  return { ...value.fields };
-}
 
 function jsonEscapeProbe(): string {
   return `"${String.fromCharCode(0x7f)}\u2028\u2029x"`;

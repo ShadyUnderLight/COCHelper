@@ -24,6 +24,8 @@ jobs:
           uname -m
       - name: Swift tests
         run: swift test --parallel --num-workers 1
+      - name: Golden oracle verify
+        run: swift run golden-oracle verify-canonical
       - name: Release App bundle
         run: scripts/build_app.sh
       - name: Whitespace check against main
@@ -54,11 +56,16 @@ jobs:
           pnpm lint
           pnpm typecheck
       - name: Unit tests
-        run: pnpm test
+        run: pnpm test:unit
+      - name: Domain parity
+        run: pnpm test:parity
+      - name: Fault replay
+        run: pnpm test:replay
       - name: Security scans
         run: |
           pnpm check:renderer-isolation
           pnpm check:secrets
+          pnpm check:testkit-isolation
       - name: Package
         run: pnpm package
       - name: Packaged smoke
@@ -66,8 +73,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64 || sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2
           xvfb-run --auto-servernum pnpm smoke
-      - name: Renderer isolation on webpack output
-        run: pnpm check:renderer-isolation
+      - name: Isolation on webpack output
+        run: |
+          pnpm check:renderer-isolation
+          pnpm check:testkit-isolation
 
   electron-macos:
     name: Electron packaged macOS smoke
@@ -86,3 +95,5 @@ jobs:
         run: pnpm package
       - name: Packaged .app smoke
         run: pnpm smoke
+      - name: Isolation on packaged output
+        run: pnpm check:testkit-isolation

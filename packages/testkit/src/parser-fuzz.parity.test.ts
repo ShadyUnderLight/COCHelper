@@ -1,11 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
-import { bytesToHex, canonicalBytes, canonicalize, parseJson } from './index';
+import { bytesToHex, canonicalBytes, canonicalize, parseJson } from '@coc-helper/wire';
 
-const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/primitive-fuzz-corpus.json');
+import { compareParity, loadGoldenJson } from './index';
 
 type ValidCase = {
   id: string;
@@ -24,12 +21,16 @@ type FuzzCorpus = {
 };
 
 describe('共享原语 parser boundary corpus', () => {
-  const corpus = JSON.parse(readFileSync(fixturePath, 'utf8')) as FuzzCorpus;
+  const corpus = loadGoldenJson<FuzzCorpus>('primitive-fuzz-corpus.json');
 
   it('保留深层结构、长整数和 __proto__ 普通键', () => {
     for (const sample of corpus.valid) {
       const canonical = canonicalize(parseJson(sample.source));
-      expect(bytesToHex(canonicalBytes(canonical)), sample.id).toBe(sample.canonicalHex);
+      compareParity({
+        expected: sample.canonicalHex,
+        actual: bytesToHex(canonicalBytes(canonical)),
+        path: `$.${sample.id}`,
+      });
     }
   });
 

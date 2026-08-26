@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,9 +5,9 @@ import {
   sortedObjectKeys,
   swiftStringCompare,
   swiftStringLessThan,
-} from './json-value';
+} from '@coc-helper/wire';
 
-const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/swift-string-compare.json');
+import { compareParity, loadGoldenJson } from './index';
 
 type Pair = {
   left: string;
@@ -26,7 +23,7 @@ type Fixture = {
 };
 
 describe('Swift String < golden（WA-2）', () => {
-  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Fixture;
+  const fixture = loadGoldenJson<Fixture>('swift-string-compare.json');
 
   it('逐对对齐 Swift String.< 与 canonical-equivalence ==', () => {
     for (const pair of fixture.pairs) {
@@ -40,10 +37,18 @@ describe('Swift String < golden（WA-2）', () => {
   });
 
   it('键排序对齐 Swift Array.sorted，且不改写原始拼写', () => {
-    expect([...fixture.inputKeys].sort(swiftStringCompare)).toEqual(fixture.sortedKeys);
-    expect(
-      sortedObjectKeys(Object.fromEntries(fixture.inputKeys.map((key) => [key, jsonNumber('1')]))),
-    ).toEqual(fixture.sortedKeys);
+    compareParity({
+      expected: fixture.sortedKeys,
+      actual: [...fixture.inputKeys].sort(swiftStringCompare),
+      defaultKind: 'ordering',
+    });
+    compareParity({
+      expected: fixture.sortedKeys,
+      actual: sortedObjectKeys(
+        Object.fromEntries(fixture.inputKeys.map((key) => [key, jsonNumber('1')])),
+      ),
+      defaultKind: 'ordering',
+    });
     expect(fixture.sortedKeys.some((key) => key.includes('\u0301'))).toBe(true);
   });
 });

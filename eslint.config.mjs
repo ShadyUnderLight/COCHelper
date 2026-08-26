@@ -38,6 +38,17 @@ export default tseslint.config(
     },
   },
   {
+    files: ['apps/desktop/src/main/**/*.ts', 'apps/desktop/src/preload/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [{ name: '@coc-helper/testkit', message: 'testkit 不得进入 Electron runtime。' }],
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/desktop/src/renderer/**/*.ts'],
     rules: {
       'no-restricted-imports': [
@@ -48,6 +59,7 @@ export default tseslint.config(
             { name: 'fs', message: 'renderer 不得使用 Node fs。' },
             { name: 'path', message: 'renderer 不得使用 Node path。' },
             { name: 'child_process', message: 'renderer 不得使用 child_process。' },
+            { name: '@coc-helper/testkit', message: 'testkit 不得进入 Electron runtime。' },
           ],
           patterns: [{ group: ['node:*'], message: 'renderer 不得使用 Node 内置模块。' }],
         },

@@ -29,7 +29,7 @@ packages/
 ├─ wire        ← lossless JSON、BigInt、日期、canonical JSON、SHA-256、饱和算术（#267）
 ├─ domain      ← Clock/UUID seam + 投影、diff、对账、容量语义
 ├─ contracts   ← Result、错误/诊断、IPC 取消及本目录文档对应的类型定义
-└─ testkit     ← 可重放 Clock/随机 seam + Swift oracle parity 框架（#267/#268）
+└─ testkit     ← Swift oracle / golden parity 框架（Issue #268）；含可重放 Clock/随机 seam
 ```
 
 ## 3. 现有 Swift 边界 → 终态归属映射

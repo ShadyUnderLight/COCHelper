@@ -12,7 +12,8 @@ let package = Package(
         .executable(name: "COCHelper", targets: ["COCHelper"]),
         .executable(name: "smoke-api", targets: ["smoke-api"]),
         .executable(name: "acceptance-runner", targets: ["acceptance-runner"]),
-        .executable(name: "history-memory-seed", targets: ["history-memory-seed"])
+        .executable(name: "history-memory-seed", targets: ["history-memory-seed"]),
+        .executable(name: "golden-oracle", targets: ["golden-oracle"])
     ],
     targets: [
         .target(
@@ -60,6 +61,12 @@ let package = Package(
             dependencies: ["COCHelperCore", "COCHelperApp"],
             path: "Tools/perf/history-memory-seed"
         ),
+        .executableTarget(
+            // Issue #268：迁移期 golden oracle。只生成/核对参考结果，不进入 App 或 Electron runtime。
+            name: "golden-oracle",
+            dependencies: ["COCHelperCore"],
+            path: "Tools/golden-oracle"
+        ),
         .testTarget(
             name: "COCHelperCoreTests",
             dependencies: ["COCHelperCore", "COCHelperApp"],
@@ -79,6 +86,7 @@ let package = Package(
             name: "GoldenContractTests",
             dependencies: ["COCHelperCore"],
             path: "Tests/Golden",
+            exclude: ["manifest.json"],
             resources: [
                 .process("Fixtures")
             ]

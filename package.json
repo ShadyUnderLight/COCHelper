@@ -12,12 +12,16 @@
     "start": "pnpm --filter @coc-helper/desktop start",
     "package": "pnpm --filter @coc-helper/desktop package",
     "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:parity": "vitest run --project parity",
+    "test:replay": "vitest run --project replay",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "check:renderer-isolation": "node scripts/check-renderer-node-isolation.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "check:testkit-isolation": "node scripts/check-testkit-isolation.mjs",
     "smoke": "node scripts/electron-smoke.mjs"
   },
   "devDependencies": {

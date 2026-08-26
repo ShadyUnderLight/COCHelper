@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "description": "Issue #268：Tests/Golden 匿名 fixture manifest。E2-* 按域追加条目；不得写入 token/cookie/JWT/真实 Tag。",
+  "fixtures": [
+    {
+      "id": "canonical-json",
+      "category": "wire",
+      "contract": "WA-2",
+      "inputFiles": ["canonical-json-samples.json"],
+      "outputFiles": ["canonical-json-expected.json"],
+      "inputFingerprint": "sha256:2cfd0e3f3d822940787715beea9306d4a9ce39907f29078970c1bf30879bc8eb",
+      "outputFingerprint": "sha256:73ba5d3fd40bc4c9d6e9181510c898304c15619c0093797157d161abad840038",
+      "schemaVersion": 1,
+      "ownerIssue": 267,
+      "status": "ported"
+    },
+    {
+      "id": "json-raw-samples",
+      "category": "wire",
+      "contract": "WA-1",
+      "inputFiles": ["json-raw-samples.json"],
+      "outputFiles": ["json-raw-samples.json"],
+      "inputFingerprint": "sha256:cbfc4ec0c5b523eee0b3ec24cb2e4fa34a72194ef8016fc788fc089e17f8c8fa",
+      "outputFingerprint": "sha256:cbfc4ec0c5b523eee0b3ec24cb2e4fa34a72194ef8016fc788fc089e17f8c8fa",
+      "schemaVersion": 1,
+      "ownerIssue": 267,
+      "status": "ported"
+    },
+    {
+      "id": "nsnumber-stringvalue",
+      "category": "wire",
+      "contract": "WA-1.2",
+      "inputFiles": ["nsnumber-stringvalue.json"],
+      "outputFiles": ["nsnumber-stringvalue.json"],
+      "inputFingerprint": "sha256:f12e5a9ba2b6abfa6f57a328386c040b1cdc91bcec2a1873dcedeab75e6856f4",
+      "outputFingerprint": "sha256:f12e5a9ba2b6abfa6f57a328386c040b1cdc91bcec2a1873dcedeab75e6856f4",
+      "schemaVersion": 1,
+      "ownerIssue": 267,
+      "status": "ported"
+    },
+    {
+      "id": "swift-string-compare",
+      "category": "wire",
+      "contract": "WA-2",
+      "inputFiles": ["swift-string-compare.json"],
+      "outputFiles": ["swift-string-compare.json"],
+      "inputFingerprint": "sha256:801d153f7e26be19571cbe5693d3d8928b99c5c969f3a25021fec5fcd937a5d9",
+      "outputFingerprint": "sha256:801d153f7e26be19571cbe5693d3d8928b99c5c969f3a25021fec5fcd937a5d9",
+      "schemaVersion": 1,
+      "ownerIssue": 267,
+      "status": "ported"
+    },
+    {
+      "id": "primitive-fuzz-corpus",
+      "category": "wire",
+      "contract": "WA-1",
+      "inputFiles": ["primitive-fuzz-corpus.json"],
+      "outputFiles": ["primitive-fuzz-corpus.json"],
+      "inputFingerprint": "sha256:fd1e5e6ed3fa3a6c6f770d70df6dbae8a32432a315679515015b3b7d20f621a0",
+      "outputFingerprint": "sha256:fd1e5e6ed3fa3a6c6f770d70df6dbae8a32432a315679515015b3b7d20f621a0",
+      "schemaVersion": 1,
+      "ownerIssue": 267,
+      "status": "ported"
+    },
+    {
+      "id": "account-snapshot-parser",
+      "category": "parser",
+      "contract": "WA-3/WA-4/WA-6c",
+      "inputFiles": ["account_snapshot_golden.json"],
+      "outputFiles": ["parser_golden_expected.json"],
+      "inputFingerprint": "sha256:ed8e3e8a4f94d92b2e8af1617f41e0dadfd053b38e9b0f40f7c8f743267fbd37",
+      "outputFingerprint": "sha256:489d7fa307ec3302bb5d07cf7ffa01df5c293e894a2fcbb442a22f197a234d57",
+      "schemaVersion": 1,
+      "ownerIssue": 269,
+      "status": "unported"
+    }
+  ]
+}

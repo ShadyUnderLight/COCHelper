@@ -1,31 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
-import { formatAppleDouble, normalizeJsonNumberToken } from './json-number';
+import { formatAppleDouble } from './json-number';
 
-const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/nsnumber-stringvalue.json');
-
-describe('NSNumber.stringValue golden（WA-1.2）', () => {
-  it('逐 token 对齐 JSONSerialization → NSNumber.stringValue', () => {
-    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
-      stringValues: Record<string, string>;
-      rejects: string[];
-    };
-    for (const [raw, expected] of Object.entries(fixture.stringValues)) {
-      expect(normalizeJsonNumberToken(raw), raw).toBe(expected);
-    }
-  });
-
-  it('NSDecimal 指数越界必须拒绝', () => {
-    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as { rejects: string[] };
-    expect(fixture.rejects.length).toBeGreaterThan(0);
-    for (const raw of fixture.rejects) {
-      expect(() => normalizeJsonNumberToken(raw), raw).toThrow();
-    }
-  });
-
+describe('NSNumber.stringValue 非 fixture 路径', () => {
   it('double 路径对齐 Darwin %.16g', () => {
     expect(formatAppleDouble(1)).toBe('1');
     expect(formatAppleDouble(1e20)).toBe('1e+20');

@@ -1,0 +1,393 @@
+{
+  "schemaVersion": 1,
+  "description": "Issue #268 load-bearing contract test 登记。领域 Issue 交付时必须把对应条目的 tsOwner/status 补齐；不以总测试数量作为关闭条件。",
+  "tests": [
+    {
+      "id": "CanonicalJSONGoldenTests",
+      "swift": "Tests/Golden/CanonicalJSONGoldenTests.swift",
+      "category": "wire",
+      "ownerIssue": 267,
+      "tsOwner": "packages/testkit/src/canonical-json.parity.test.ts",
+      "status": "ported",
+      "loadBearing": true
+    },
+    {
+      "id": "JsonRawSourceGoldenTests",
+      "swift": "Tests/Golden/JsonRawSourceGoldenTests.swift",
+      "category": "wire",
+      "ownerIssue": 267,
+      "tsOwner": "packages/testkit/src/json-parse.parity.test.ts",
+      "status": "ported",
+      "loadBearing": true
+    },
+    {
+      "id": "NSNumberStringValueGoldenTests",
+      "swift": "Tests/Golden/NSNumberStringValueGoldenTests.swift",
+      "category": "wire",
+      "ownerIssue": 267,
+      "tsOwner": "packages/testkit/src/json-number.parity.test.ts",
+      "status": "ported",
+      "loadBearing": true
+    },
+    {
+      "id": "SwiftStringCompareGoldenTests",
+      "swift": "Tests/Golden/SwiftStringCompareGoldenTests.swift",
+      "category": "wire",
+      "ownerIssue": 267,
+      "tsOwner": "packages/testkit/src/json-value.parity.test.ts",
+      "status": "ported",
+      "loadBearing": true
+    },
+    {
+      "id": "ParserGoldenTests",
+      "swift": "Tests/Golden/ParserGoldenTests.swift",
+      "category": "parser",
+      "ownerIssue": 269,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "SaturatingArithmeticTests",
+      "swift": "Tests/COCHelperCoreTests/SaturatingArithmeticTests.swift",
+      "category": "wire",
+      "ownerIssue": 267,
+      "tsOwner": "packages/wire/src/saturating.test.ts",
+      "status": "ported",
+      "loadBearing": true
+    },
+    {
+      "id": "WarLogTimeFormatterTests",
+      "swift": "Tests/COCHelperCoreTests/WarLogTimeFormatterTests.swift",
+      "category": "wire",
+      "ownerIssue": 267,
+      "tsOwner": "packages/wire/src/time.test.ts",
+      "status": "ported",
+      "loadBearing": true
+    },
+    {
+      "id": "AccountSnapshotTests",
+      "swift": "Tests/COCHelperCoreTests/AccountSnapshotTests.swift",
+      "category": "parser",
+      "ownerIssue": 269,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "OfficialPlayerSnapshotTests",
+      "swift": "Tests/COCHelperCoreTests/OfficialPlayerSnapshotTests.swift",
+      "category": "parser",
+      "ownerIssue": 269,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "OfficialPlayerDecodeFuzzTests",
+      "swift": "Tests/COCHelperCoreTests/OfficialPlayerDecodeFuzzTests.swift",
+      "category": "parser",
+      "ownerIssue": 269,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ClanDecodeTests",
+      "swift": "Tests/COCHelperCoreTests/ClanDecodeTests.swift",
+      "category": "parser",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ClanWarDecodeTests",
+      "swift": "Tests/COCHelperCoreTests/ClanWarDecodeTests.swift",
+      "category": "parser",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ClanPaginationDecodeTests",
+      "swift": "Tests/COCHelperCoreTests/ClanPaginationDecodeTests.swift",
+      "category": "parser",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ClanMemberDecodeFuzzTests",
+      "swift": "Tests/COCHelperCoreTests/ClanMemberDecodeFuzzTests.swift",
+      "category": "parser",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "OfficialPlayerTagValidatorTests",
+      "swift": "Tests/COCHelperCoreTests/OfficialPlayerTagValidatorTests.swift",
+      "category": "parser",
+      "ownerIssue": 269,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "VillageCatalogProjectionTests",
+      "swift": "Tests/COCHelperCoreTests/VillageCatalogProjectionTests.swift",
+      "category": "projection",
+      "ownerIssue": 271,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "VillageDetailProjectionTests",
+      "swift": "Tests/COCHelperCoreTests/VillageDetailProjectionTests.swift",
+      "category": "projection",
+      "ownerIssue": 271,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "UpgradeOverviewProjectionTests",
+      "swift": "Tests/COCHelperCoreTests/UpgradeOverviewProjectionTests.swift",
+      "category": "projection",
+      "ownerIssue": 271,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "EffectiveVillageProjectionTests",
+      "swift": "Tests/COCHelperCoreTests/EffectiveVillageProjectionTests.swift",
+      "category": "projection",
+      "ownerIssue": 271,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "VillageProgressMetricsTests",
+      "swift": "Tests/COCHelperCoreTests/VillageProgressMetricsTests.swift",
+      "category": "projection",
+      "ownerIssue": 271,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ClanWarDisplayProjectionTests",
+      "swift": "Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift",
+      "category": "projection",
+      "ownerIssue": 271,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "WarLogDisplayProjectionTests",
+      "swift": "Tests/COCHelperCoreTests/WarLogDisplayProjectionTests.swift",
+      "category": "projection",
+      "ownerIssue": 271,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "UpgradeActionProjectionTests",
+      "swift": "Tests/COCHelperCoreTests/UpgradeActionProjectionTests.swift",
+      "category": "projection",
+      "ownerIssue": 271,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "SnapshotHistoryDiffTests",
+      "swift": "Tests/COCHelperCoreTests/SnapshotHistoryDiffTests.swift",
+      "category": "projection",
+      "ownerIssue": 273,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "SnapshotImportTransactionTests",
+      "swift": "Tests/COCHelperCoreTests/SnapshotImportTransactionTests.swift",
+      "category": "state-machine",
+      "ownerIssue": 269,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "AppModelQuickImportTests",
+      "swift": "Tests/COCHelperCoreTests/AppModelQuickImportTests.swift",
+      "category": "state-machine",
+      "ownerIssue": 269,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "GenericEndpointStateTests",
+      "swift": "Tests/COCHelperCoreTests/GenericEndpointStateTests.swift",
+      "category": "state-machine",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "OfficialAPIStateTests",
+      "swift": "Tests/COCHelperCoreTests/OfficialAPIStateTests.swift",
+      "category": "state-machine",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ManualTrackerReconciliationTests",
+      "swift": "Tests/COCHelperCoreTests/ManualTrackerReconciliationTests.swift",
+      "category": "state-machine",
+      "ownerIssue": 272,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "QueueAssignmentModelsTests",
+      "swift": "Tests/COCHelperCoreTests/QueueAssignmentModelsTests.swift",
+      "category": "state-machine",
+      "ownerIssue": 272,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "VillageStoreTests",
+      "swift": "Tests/COCHelperCoreTests/VillageStoreTests.swift",
+      "category": "storage-fault",
+      "ownerIssue": 275,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "SnapshotHistoryStoreTests",
+      "swift": "Tests/COCHelperCoreTests/SnapshotHistoryStoreTests.swift",
+      "category": "storage-fault",
+      "ownerIssue": 273,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "SnapshotHistoryCoreTests",
+      "swift": "Tests/COCHelperCoreTests/SnapshotHistoryCoreTests.swift",
+      "category": "storage-fault",
+      "ownerIssue": 273,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ManualTrackerStoreTests",
+      "swift": "Tests/COCHelperCoreTests/ManualTrackerStoreTests.swift",
+      "category": "storage-fault",
+      "ownerIssue": 275,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "TrackedClanStoreTests",
+      "swift": "Tests/COCHelperCoreTests/TrackedClanStoreTests.swift",
+      "category": "storage-fault",
+      "ownerIssue": 275,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "CoAPIClientTests",
+      "swift": "Tests/COCHelperCoreTests/CoAPIClientTests.swift",
+      "category": "api",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "CoAPITokenStoreTests",
+      "swift": "Tests/COCHelperCoreTests/CoAPITokenStoreTests.swift",
+      "category": "api",
+      "ownerIssue": 275,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ClanRefresherTests",
+      "swift": "Tests/COCHelperCoreTests/ClanRefresherTests.swift",
+      "category": "api",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "OfficialPlayerRefresherTests",
+      "swift": "Tests/COCHelperCoreTests/OfficialPlayerRefresherTests.swift",
+      "category": "api",
+      "ownerIssue": 274,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "ResourceImageLoaderTests",
+      "swift": "Tests/COCHelperCoreTests/ResourceImageLoaderTests.swift",
+      "category": "renderer",
+      "ownerIssue": 277,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "CatalogResourceLocalizationTests",
+      "swift": "Tests/COCHelperCoreTests/CatalogResourceLocalizationTests.swift",
+      "category": "renderer",
+      "ownerIssue": 277,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "PerfFixtureTests",
+      "swift": "Tests/COCHelperCoreTests/PerfFixtureTests.swift",
+      "category": "e2e",
+      "ownerIssue": 279,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    },
+    {
+      "id": "AppModelPerfSeedTests",
+      "swift": "Tests/COCHelperCoreTests/AppModelPerfSeedTests.swift",
+      "category": "e2e",
+      "ownerIssue": 279,
+      "tsOwner": null,
+      "status": "unported",
+      "loadBearing": true
+    }
+  ]
+}

@@ -145,6 +145,26 @@ describe('parity 差异分类', () => {
       }),
     ).toThrow(/ordering/);
     expect(() => compareParity({ expected: [1, 2], actual: [2, 1] })).toThrow(/ordering/);
+    expect(() => compareParity({ expected: [1n, 2n], actual: [2n, 1n] })).toThrow(/ordering/);
+  });
+
+  it('类型碰撞与 __proto__ / bigint 不得误报 ordering 或抛 TypeError', () => {
+    const assertNotOrdering = (expected: unknown, actual: unknown): void => {
+      try {
+        compareParity({ expected, actual, defaultKind: 'wire' });
+        throw new Error('应当失败');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ParityMismatchError);
+        expect((error as ParityMismatchError).diffs.map((item) => item.kind)).not.toContain(
+          'ordering',
+        );
+      }
+    };
+    assertNotOrdering([1], ['1']);
+    assertNotOrdering([true], ['true']);
+    assertNotOrdering(JSON.parse('{"__proto__":1}'), JSON.parse('{"__proto__":2}'));
+    assertNotOrdering({ x: 1n }, { x: 2n });
+    compareParity({ expected: [1n], actual: [1n] });
   });
 
   it('capturedAt / createdAt 归为 time，failureKind 归为 error', () => {

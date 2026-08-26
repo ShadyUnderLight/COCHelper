@@ -69,7 +69,7 @@ function walk(
   }
 
   if (isPlainObject(expected) && isPlainObject(actual)) {
-    if (sameNormalizedContent(expected, actual) && stringify(expected) !== stringify(actual)) {
+    if (sameContent(expected, actual) && !sameOrder(expected, actual)) {
       diffs.push(diff('ordering', path, expected, actual));
       return;
     }
@@ -81,7 +81,7 @@ function walk(
   }
 
   if (Array.isArray(expected) && Array.isArray(actual)) {
-    if (arrayMultisetEqual(expected, actual) && stringify(expected) !== stringify(actual)) {
+    if (sameContent(expected, actual) && !sameOrder(expected, actual)) {
       diffs.push(diff('ordering', path, expected, actual));
       return;
     }
@@ -114,34 +114,73 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function arrayMultisetEqual(left: readonly unknown[], right: readonly unknown[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-  const keysLeft = left.map((item) => stringify(normalize(item))).sort();
-  const keysRight = right.map((item) => stringify(normalize(item))).sort();
-  return keysLeft.every((key, index) => key === keysRight[index]);
+function sameContent(left: unknown, right: unknown): boolean {
+  return encode(canonicalize(left)) === encode(canonicalize(right));
 }
 
-function sameNormalizedContent(left: unknown, right: unknown): boolean {
-  return stringify(normalize(left)) === stringify(normalize(right));
+function sameOrder(left: unknown, right: unknown): boolean {
+  return encode(preserveOrder(left)) === encode(preserveOrder(right));
 }
 
-function normalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(normalize);
+/** 带 type tag 的稳定编码；object 用 entries，避免 `__proto__` 被当成 setter。 */
+function canonicalize(value: unknown): unknown {
+  return tag(value, { sortKeys: true, sortArray: true });
+}
+
+function preserveOrder(value: unknown): unknown {
+  return tag(value, { sortKeys: false, sortArray: false });
+}
+
+function tag(
+  value: unknown,
+  options: { readonly sortKeys: boolean; readonly sortArray: boolean },
+): unknown {
+  if (value === null) {
+    return ['null'];
   }
-  if (isPlainObject(value)) {
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-      out[key] = normalize(value[key]);
-    }
-    return out;
+  if (typeof value === 'undefined') {
+    return ['undefined'];
+  }
+  if (typeof value === 'boolean') {
+    return ['boolean', value];
+  }
+  if (typeof value === 'number') {
+    return ['number', Object.is(value, -0) ? '-0' : String(value)];
+  }
+  if (typeof value === 'string') {
+    return ['string', value];
   }
   if (typeof value === 'bigint') {
-    return value.toString();
+    return ['bigint', value.toString()];
   }
-  return value;
+  if (Array.isArray(value)) {
+    const items = value.map((item) => tag(item, options));
+    if (options.sortArray) {
+      items.sort(compareEncoded);
+    }
+    return ['array', items];
+  }
+  if (isPlainObject(value)) {
+    const keys = Object.keys(value);
+    if (options.sortKeys) {
+      keys.sort();
+    }
+    return ['object', keys.map((key) => [key, tag(value[key], options)])];
+  }
+  return [typeof value, String(value)];
+}
+
+function encode(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function compareEncoded(left: unknown, right: unknown): number {
+  const a = encode(left);
+  const b = encode(right);
+  if (a === b) {
+    return 0;
+  }
+  return a < b ? -1 : 1;
 }
 
 function uniqueSorted(values: readonly string[]): string[] {
@@ -152,9 +191,14 @@ function joinPath(parent: string, key: string): string {
   return parent === '$' ? `$.${key}` : `${parent}.${key}`;
 }
 
-function stringify(value: unknown): string {
+function dump(value: unknown): string {
+  const text = stringifyForDump(value);
+  return text.length > 240 ? `${text.slice(0, 239)}…` : text;
+}
+
+function stringifyForDump(value: unknown): string {
   if (typeof value === 'bigint') {
-    return value.toString();
+    return `${value}n`;
   }
   if (typeof value === 'string') {
     return value;
@@ -162,12 +206,24 @@ function stringify(value: unknown): string {
   if (value === undefined) {
     return 'undefined';
   }
-  return JSON.stringify(value);
+  return JSON.stringify(jsonReady(value));
 }
 
-function dump(value: unknown): string {
-  const text = stringify(value);
-  return text.length > 240 ? `${text.slice(0, 239)}…` : text;
+function jsonReady(value: unknown): unknown {
+  if (typeof value === 'bigint') {
+    return `${value}n`;
+  }
+  if (Array.isArray(value)) {
+    return value.map(jsonReady);
+  }
+  if (isPlainObject(value)) {
+    const out = Object.create(null) as Record<string, unknown>;
+    for (const key of Object.keys(value)) {
+      out[key] = jsonReady(value[key]);
+    }
+    return out;
+  }
+  return value;
 }
 
 function diff(kind: ParityDiffKind, path: string, expected: unknown, actual: unknown): ParityDiff {

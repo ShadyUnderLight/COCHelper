@@ -27,6 +27,17 @@ describe('testkit isolation', () => {
     expect(extractImportSpecifiers(`require('@coc-helper/testkit/src/oracle');`)).toEqual([
       '@coc-helper/testkit/src/oracle',
     ]);
+    expect(extractImportSpecifiers(`export { runSwiftOracle } from '@coc-helper/testkit';`)).toEqual(
+      ['@coc-helper/testkit'],
+    );
+    expect(
+      extractImportSpecifiers(`
+        const mod = import(
+          /* webpackChunkName: "test" */
+          '@coc-helper/testkit'
+        );
+      `),
+    ).toEqual(['@coc-helper/testkit']);
 
     const fromMain = 'apps/desktop/src/main/index.ts';
     expect(
@@ -36,6 +47,12 @@ describe('testkit isolation', () => {
       ),
     ).not.toEqual([]);
     expect(findForbiddenImportHits(`import('@coc-helper/testkit');`, fromMain)).not.toEqual([]);
+    expect(
+      findForbiddenImportHits(
+        `import(\n  /* webpackChunkName: "test" */\n  '@coc-helper/testkit'\n)`,
+        fromMain,
+      ),
+    ).not.toEqual([]);
     expect(findForbiddenImportHits(`import '@coc-helper/testkit';`, fromMain)).not.toEqual([]);
     expect(
       findForbiddenImportHits(

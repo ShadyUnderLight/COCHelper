@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+const ts = createRequire(import.meta.url)('typescript');
 
 const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FORBIDDEN_PACKAGE = '@coc-helper/testkit';
@@ -29,13 +32,6 @@ const PRODUCTION_ENTRIES = [
   'packages/contracts/src/index.ts',
 ];
 
-const SPECIFIER_PATTERNS = [
-  /\bfrom\s+['"]([^'"]+)['"]/g,
-  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  /(?:^|[\s;])import\s+['"]([^'"]+)['"]/g,
-];
-
 function walk(dir) {
   if (!existsSync(dir)) {
     return [];
@@ -56,15 +52,72 @@ function walk(dir) {
   return out;
 }
 
-export function extractImportSpecifiers(text) {
+export function extractImportSpecifiers(text, fileName = 'module.ts') {
   const specifiers = new Set();
-  for (const pattern of SPECIFIER_PATTERNS) {
-    pattern.lastIndex = 0;
-    for (const match of text.matchAll(pattern)) {
-      specifiers.add(match[1]);
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(fileName),
+  );
+
+  const visit = (node) => {
+    const specifier = specifierFromNode(node);
+    if (specifier !== null) {
+      specifiers.add(specifier);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return [...specifiers];
+}
+
+function scriptKindFor(fileName) {
+  if (fileName.endsWith('.tsx')) {
+    return ts.ScriptKind.TSX;
+  }
+  if (fileName.endsWith('.jsx')) {
+    return ts.ScriptKind.JSX;
+  }
+  if (fileName.endsWith('.mts') || fileName.endsWith('.cts') || fileName.endsWith('.ts')) {
+    return ts.ScriptKind.TS;
+  }
+  return ts.ScriptKind.JS;
+}
+
+function specifierFromNode(node) {
+  if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+    return stringLiteralText(node.moduleSpecifier);
+  }
+  if (
+    ts.isImportEqualsDeclaration(node) &&
+    ts.isExternalModuleReference(node.moduleReference)
+  ) {
+    return stringLiteralText(node.moduleReference.expression);
+  }
+  if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+    return stringLiteralText(node.argument.literal);
+  }
+  if (ts.isCallExpression(node)) {
+    if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      return stringLiteralText(node.arguments[0]);
+    }
+    if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
+      return stringLiteralText(node.arguments[0]);
     }
   }
-  return [...specifiers];
+  return null;
+}
+
+function stringLiteralText(node) {
+  if (!node) {
+    return null;
+  }
+  if (ts.isStringLiteralLike(node)) {
+    return node.text;
+  }
+  return null;
 }
 
 export function isTestkitPackageSpecifier(specifier) {
@@ -121,7 +174,7 @@ export function resolveWorkspaceSpecifier(fromRelative, specifier, workspaceRoot
 
 export function findForbiddenImportHits(text, fromRelative, workspaceRoot = defaultRoot) {
   const hits = [];
-  for (const specifier of extractImportSpecifiers(text)) {
+  for (const specifier of extractImportSpecifiers(text, fromRelative)) {
     if (isTestkitPackageSpecifier(specifier)) {
       hits.push(`${fromRelative} 不得 import ${specifier}`);
       continue;
@@ -203,7 +256,7 @@ function productionGraphHits(workspaceRoot) {
     if (!isProductionSource(relative) && !PRODUCTION_ENTRIES.includes(relative)) {
       continue;
     }
-    const specifiers = extractImportSpecifiers(readFileSync(absolute, 'utf8'));
+    const specifiers = extractImportSpecifiers(readFileSync(absolute, 'utf8'), relative);
     for (const specifier of specifiers) {
       if (isTestkitPackageSpecifier(specifier)) {
         hits.push(`${relative} 不得 import ${specifier}`);

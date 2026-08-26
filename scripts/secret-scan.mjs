@@ -53,9 +53,6 @@ export function listTrackedFiles(root) {
 }
 
 export function findSecretHits(text, relativePath) {
-  if (text.includes('\0')) {
-    return [];
-  }
   const hits = [];
   for (const pattern of SECRET_PATTERNS) {
     if (pattern.re.test(text)) {
@@ -65,21 +62,21 @@ export function findSecretHits(text, relativePath) {
   return hits;
 }
 
+export function scanFileBuffer(buf, relativePath) {
+  return findSecretHits(buf.toString('utf8'), relativePath);
+}
+
 export function scanTrackedFiles(root) {
   const hits = [];
   for (const relativePath of listTrackedFiles(root)) {
     const absolute = path.join(root, relativePath);
-    let text;
+    let buf;
     try {
-      const buf = readFileSync(absolute);
-      if (buf.includes(0)) {
-        continue;
-      }
-      text = buf.toString('utf8');
+      buf = readFileSync(absolute);
     } catch {
       continue;
     }
-    hits.push(...findSecretHits(text, relativePath));
+    hits.push(...scanFileBuffer(buf, relativePath));
   }
   return hits;
 }

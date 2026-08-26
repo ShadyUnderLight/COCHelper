@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { findSecretHits, listTrackedFiles, scanTrackedFiles } from './secret-scan.mjs';
+import { findSecretHits, listTrackedFiles, scanFileBuffer, scanTrackedFiles } from './secret-scan.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -37,6 +37,16 @@ describe('secret scan', () => {
         '.npmrc',
       ),
     ).toEqual([]);
+  });
+
+  it('NUL 不能绕过密钥扫描', () => {
+    const githubPat = ['ghp_', 'a'.repeat(36)].join('');
+    const prefixed = ['\u0000', githubPat].join('');
+    const suffixed = [githubPat, '\u0000'].join('');
+    expect(findSecretHits(prefixed, 'notes.txt')).toEqual(['notes.txt → GitHub PAT']);
+    expect(scanFileBuffer(Buffer.from(suffixed, 'utf8'), 'notes.txt')).toEqual([
+      'notes.txt → GitHub PAT',
+    ]);
   });
 
   it('当前 tracked 文件不含密钥', () => {

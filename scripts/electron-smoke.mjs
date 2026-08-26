@@ -39,6 +39,18 @@ if (binary === null) {
   process.exit(1);
 }
 
+const posix = binary.split(path.sep).join('/');
+if (!posix.includes('/out/')) {
+  console.error(`smoke 必须启动 packaged out/ 产物，实际: ${binary}`);
+  process.exit(1);
+}
+if (process.platform === 'darwin' && !posix.includes('.app/Contents/MacOS/')) {
+  console.error(`macOS smoke 必须启动 .app 内二进制，实际: ${binary}`);
+  process.exit(1);
+}
+
+process.stdout.write(`packaged smoke binary: ${binary}\n`);
+
 const child = spawn(binary, ['--smoke'], {
   env: {
     ...process.env,

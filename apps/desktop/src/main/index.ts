@@ -8,6 +8,11 @@ declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 
 registerAppScheme();
 app.enableSandbox();
+if (process.platform === 'linux' && process.env.CI === 'true') {
+  // GitHub-hosted Linux 没有用户命名空间，Chromium sandbox 无法启动。
+  // 仅 CI Linux 关闭 OS sandbox；macOS packaged app 保持 sandbox。
+  app.commandLine.appendSwitch('no-sandbox');
+}
 
 const smokeMode = process.argv.includes('--smoke') || process.env.COCHELPER_SMOKE === '1';
 

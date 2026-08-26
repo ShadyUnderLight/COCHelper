@@ -1,0 +1,15 @@
+{
+  "tag": "#GOLDEN01",
+  "timestamp": 1785736333,
+  "buildings": [
+    { "data": 1000013, "lvl": 18 },
+    { "data": 1000016, "lvl": 16, "count": 2 }
+  ],
+  "units": [
+    { "data": 4000000, "lvl": 9 }
+  ],
+  "units2": [
+    { "data": 4000072, "lvl": 2, "count": 25 }
+  ],
+  "golden_unknown_field": [1]
+}

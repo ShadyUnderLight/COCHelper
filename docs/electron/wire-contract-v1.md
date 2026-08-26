@@ -32,7 +32,8 @@ null-prototype，否则 `{"__proto__":1}` 会被普通 `{}` 赋值吞掉。孤�
   1. 落入 `Int64`/`UInt64` 的整数 token：对应 `q`/`Q` 十进制整数串（`-0` → `0`）。
   2. 更大的整数，或有效数字 ≥ 18（整数部分去掉前导零 + 小数点后全部数字含尾零）：`NSDecimalNumber`。
      尾数按 128-bit（`2^128-1`）向零截断；指数用未去掉小数尾零的 scale 校验，必须 ∈ `[-128, 127]`，
-     越界则与 `JSONSerialization` 一样拒绝。Decimal 路径的零写出 `0`（不保留 `-0`）。
+     越界则与 `JSONSerialization` 一样拒绝。Decimal 路径的零在指数合法时写出 `0`（不保留 `-0`），
+     指数越界的零（如 `0.000000000000000000e-127`）同样拒绝。
   3. 其余：IEEE 754 double，再按 Darwin `%.16g`（16 位有效数字、round-ties-to-even；
      指数 `e` 至少两位数）。不得用 JS `Number.prototype.toExponential` 代替。
 

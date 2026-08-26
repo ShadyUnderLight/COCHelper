@@ -98,25 +98,27 @@ function parseDecimalToken(raw: string): {
 
 /**
  * 对齐 `NSDecimalNumber`：尾数按 128-bit 向零截断；指数用未去掉尾零的 scale 校验；
- * 零值写出 `0`（不保留负号）。
+ * 零值在指数合法时写出 `0`（不保留负号），越界仍拒绝。
  */
 function formatNSDecimalNumber(raw: string): string {
   const parsed = parseDecimalToken(raw);
   let significand = parsed.significand;
   let scale = parsed.scale;
 
-  if (significand === 0n) {
-    return '0';
-  }
-
-  while (significand > NSDECIMAL_MAX_MANTISSA) {
-    significand /= 10n;
-    scale -= 1;
+  if (significand !== 0n) {
+    while (significand > NSDECIMAL_MAX_MANTISSA) {
+      significand /= 10n;
+      scale -= 1;
+    }
   }
 
   const exponent = -scale;
   if (exponent < NSDECIMAL_EXPONENT_MIN || exponent > NSDECIMAL_EXPONENT_MAX) {
     throw new JsonParseError('数字超出 NSDecimal 指数范围。');
+  }
+
+  if (significand === 0n) {
+    return '0';
   }
 
   const sign = parsed.negative ? '-' : '';

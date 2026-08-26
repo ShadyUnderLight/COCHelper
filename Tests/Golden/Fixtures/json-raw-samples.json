@@ -1,0 +1,48 @@
+{
+  "description": "Raw JSON source strings for WA-1 parser parity. source must remain a JSON string so loading this fixture cannot collapse NFC-equivalent keys.",
+  "samples": [
+    {
+      "id": "nfc-precomposed-then-nfd",
+      "source": "{\"\\u00e9\":1,\"e\\u0301\":2}",
+      "canonicalHex": "7b2265cc81223a327d"
+    },
+    {
+      "id": "nfc-nfd-then-precomposed",
+      "source": "{\"e\\u0301\":1,\"\\u00e9\":2}",
+      "canonicalHex": "7b2265cc81223a317d"
+    },
+    {
+      "id": "nfc-a-ring",
+      "source": "{\"\\u00c5\":1,\"A\\u030A\":2}",
+      "canonicalHex": "7b2241cc8a223a327d"
+    },
+    {
+      "id": "duplicate-identical-keys",
+      "source": "{\"a\":1,\"a\":2}",
+      "canonicalHex": "7b2261223a317d"
+    },
+    {
+      "id": "surrogate-pair",
+      "source": "\"\\uD800\\uDC00\"",
+      "canonicalHex": "22f090808022"
+    }
+  ],
+  "rejects": [
+    {
+      "id": "lone-high-surrogate",
+      "source": "\"\\uD800\""
+    },
+    {
+      "id": "lone-low-surrogate",
+      "source": "\"\\uDC00\""
+    },
+    {
+      "id": "high-surrogate-then-letter",
+      "source": "\"\\uD800a\""
+    },
+    {
+      "id": "high-surrogate-invalid-pair",
+      "source": "\"\\uD800\\u0041\""
+    }
+  ]
+}

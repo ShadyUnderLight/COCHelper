@@ -79,6 +79,8 @@ class JsonParser {
     this.expect('{');
     this.skipWs();
     const fields: Record<string, CanonicalJsonValue> = {};
+    // NFC 身份 → 当前胜出拼写。JS Record 用原始字符串相等，无法单独表达 Swift String ==。
+    const identityKeys = new Map<string, string>();
     if (this.peek() === '}') {
       this.pos += 1;
       return jsonObject(fields);
@@ -92,7 +94,7 @@ class JsonParser {
       this.skipWs();
       this.expect(':');
       this.skipWs();
-      fields[key] = this.parseValue();
+      this.assignObjectField(fields, identityKeys, key, this.parseValue());
       this.skipWs();
       const next = this.peek();
       if (next === ',') {
@@ -106,6 +108,31 @@ class JsonParser {
       throw new JsonParseError('对象语法错误。');
     }
     return jsonObject(fields);
+  }
+
+  /**
+   * 对齐 `JSONSerialization.jsonObject` → `[String: Any]` → `CanonicalJSONValue`。
+   *
+   * NSDictionary 按 NSString 字面值保留重复键；桥接到 Swift Dictionary 时按
+   * `String` 规范化等价合并。实测胜出项是 UTF-16 更长的拼写及其对应值
+   * （NFC vs NFD 时即 NFD）；等长（含完全相同拼写）保留先出现的拼写和值。
+   */
+  private assignObjectField(
+    fields: Record<string, CanonicalJsonValue>,
+    identityKeys: Map<string, string>,
+    key: string,
+    value: CanonicalJsonValue,
+  ): void {
+    const identity = key.normalize('NFC');
+    const stored = identityKeys.get(identity);
+    if (stored !== undefined && key.length <= stored.length) {
+      return;
+    }
+    if (stored !== undefined && stored !== key) {
+      delete fields[stored];
+    }
+    identityKeys.set(identity, key);
+    fields[key] = value;
   }
 
   private parseArray(): CanonicalJsonValue {
@@ -178,14 +205,18 @@ class JsonParser {
       case 'u': {
         const code = this.parseHex4();
         if (code >= 0xd800 && code <= 0xdbff) {
-          if (this.source.startsWith('\\u', this.pos)) {
-            this.pos += 2;
-            const low = this.parseHex4();
-            if (low >= 0xdc00 && low <= 0xdfff) {
-              return String.fromCodePoint(0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00));
-            }
+          if (!this.source.startsWith('\\u', this.pos)) {
+            throw new JsonParseError('孤立的 Unicode 代理项。');
+          }
+          this.pos += 2;
+          const low = this.parseHex4();
+          if (low < 0xdc00 || low > 0xdfff) {
             throw new JsonParseError('非法 Unicode 代理对。');
           }
+          return String.fromCodePoint(0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00));
+        }
+        if (code >= 0xdc00 && code <= 0xdfff) {
+          throw new JsonParseError('孤立的 Unicode 代理项。');
         }
         return String.fromCharCode(code);
       }

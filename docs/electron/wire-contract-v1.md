@@ -14,6 +14,12 @@
 （SnapshotHistoryModels.swift:1074-1083）。**number 的载荷是 String**——持久化形态带 `kind`
 标签，数字 token 与字符串可区分。
 
+对象键身份对齐 `JSONSerialization` → `[String: Any]`（SnapshotHistoryModels.swift:1143-1170）：
+NFC 规范化等价的键合并为同一字段；相同拼写或等长拼写保留首次出现的值；NFC vs NFD 等
+UTF-16 不等长拼写保留更长（分解）拼写及其值。孤立 surrogate（`\uD800` / `\uDC00`）拒绝，
+成对 `\uD800\uDC00` 接受。锁定 fixture：`json-raw-samples.json`（source 必须是 JSON 字符串，
+不能写成 fixture 对象，否则加载 fixture 时就会提前 collapse）。
+
 ### WA-1.2 数字 token 规则
 
 - JSON 解析经 `JSONSerialization`；`NSNumber → .number(number.stringValue)`，
@@ -276,6 +282,7 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
 | fixture | 冻结内容 | 消费测试 |
 |---|---|---|
 | canonical-json-samples.json + canonical-json-expected.json | §WA-2 转义/排序/数字 token 的正例+边界例（solidus、控制字符、CJK、emoji、0x7F、U+2028/2029、大数、重复数组元素）+ 期望 canonical bytes hex | GoldenContractTests/CanonicalJSONGoldenTests |
+| json-raw-samples.json | §WA-1 原始 JSON 源文本：同一 object 内 NFC 等价重复键、相同键首次值、孤立 surrogate 拒绝；source 为 JSON 字符串以免 fixture 加载时提前 collapse | GoldenContractTests/JsonRawSourceGoldenTests |
 | account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。冻结四类输出：F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码 + **AccountSnapshot 与 HistoryEntryV1 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序）**。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | GoldenContractTests/ParserGoldenTests |
 | official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | 既有 ClanPaginationDecodeTests / GameCatalogTests |
 

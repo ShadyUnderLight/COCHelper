@@ -4,6 +4,7 @@ import {
   APP_HEALTH_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
+  isSafeIpcDiagnosticText,
   resultOk,
   type AppHealthResponse,
   type CancelRequest,
@@ -83,11 +84,12 @@ export function appHealthResponse(): AppHealthResponse {
 export function toIpcError(error: unknown): IpcError {
   if (error instanceof IpcValidationError) {
     const definition = validationErrorDefinition(error.code);
+    const message = redactDiagnosticText(error.message);
     return {
       kind: 'validation',
       code: definition.code,
       messageKey: definition.messageKey,
-      message: redactDiagnosticText(error.message),
+      message: isSafeIpcDiagnosticText(message) ? message : '请求参数不合法',
     };
   }
   if (isAbortError(error)) {

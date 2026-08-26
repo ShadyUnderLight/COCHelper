@@ -61,7 +61,18 @@ describe('@coc-helper/contracts Result', () => {
     expect(
       isIpcError({ ...validError, message: JSON.stringify({ Authorization: credential }) }),
     ).toBe(false);
+    expect(
+      isIpcError({
+        ...validError,
+        message: JSON.stringify({
+          headers: [{ name: 'Authorization', value: credential }],
+        }),
+      }),
+    ).toBe(false);
     expect(isIpcError({ ...validError, message: `Cookie: session=${credential}` })).toBe(false);
+    expect(isIpcError({ ...validError, message: 'ftp://user:secret@example.test/private' })).toBe(
+      false,
+    );
     expect(
       isIpcError({
         ...validError,

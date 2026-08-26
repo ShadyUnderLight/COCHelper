@@ -28,15 +28,17 @@ describe('redactDiagnosticText', () => {
   it('移除 JSON 和普通文本中的 Authorization、Cookie、Set-Cookie', () => {
     const credential = 'opaque-credential';
     const jsonMessage = JSON.stringify({
-      Authorization: authorizationMessage('Basic', credential),
-      headers: {
-        Cookie: `session=${credential}`,
-        'Set-Cookie': `session=${credential}; HttpOnly`,
-      },
+      headers: [
+        { name: 'Authorization', value: authorizationMessage('Basic', credential) },
+        { name: 'Cookie', value: `session=${credential}` },
+        { name: 'Set-Cookie', value: `session=${credential}; HttpOnly` },
+      ],
     });
-    const result = redactDiagnosticText(
-      `${jsonMessage}\nCookie: session=${credential}\nSet-Cookie: session=${credential}`,
-    );
+    const result = [
+      redactDiagnosticText(jsonMessage),
+      redactDiagnosticText(`Cookie: session=${credential}`),
+      redactDiagnosticText(`Set-Cookie: session=${credential}`),
+    ].join('\n');
 
     expect(result).not.toContain(credential);
     expect(result).toContain('[REDACTED]');
@@ -44,12 +46,27 @@ describe('redactDiagnosticText', () => {
 
   it('清洗 JSON 嵌套字段和转义 URL', () => {
     const result = redactDiagnosticText(
-      '{"details":{"message":"https:\\/\\/example.test\\/private?token=opaque"}}',
+      [
+        '{"details":{"message":"https:\\/\\/example.test\\/private?token=opaque"}}',
+        'ftp://user:secret@example.test/private',
+        'file:///Users/private/secret.txt',
+        'data:text/plain,private-secret',
+      ].join('\n'),
     );
 
     expect(result).not.toContain('example.test');
-    expect(result).not.toContain('opaque');
+    expect(result).not.toContain('user:secret');
+    expect(result).not.toContain('private-secret');
     expect(result).toContain('[REDACTED_URL]');
+  });
+
+  it('先规范化控制字符再清洗多行 header', () => {
+    const result = redactDiagnosticText(
+      ['Authorization', ': ', 'Basic', '\n', 'multiline-secret'].join(''),
+    );
+
+    expect(result).toBe('Authorization: [REDACTED]');
+    expect(result).not.toContain('multiline-secret');
   });
 
   it('截断过长诊断文本', () => {

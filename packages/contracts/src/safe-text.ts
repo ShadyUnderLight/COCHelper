@@ -12,7 +12,8 @@ const PLAIN_CREDENTIAL_HEADER =
   /\b(authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[^\r\n]*/gi;
 const KEY_VALUE_CREDENTIAL =
   /(["']?(?:token|api[-_]?key|password|secret)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}]+)/gi;
-const URL_PATTERN = /https?:\\?\/\\?[^\s"']+/gi;
+const URL_PATTERN =
+  /\b(?:https?|ftp|file|ws|wss|sftp|ssh|git|blob|javascript):\\?\/\\?[^\s"'<>]+|\b(?:data|mailto):[^\s"'<>]+/gi;
 
 const SENSITIVE_HEADER_NAMES = new Set([
   'authorization',
@@ -23,15 +24,8 @@ const SENSITIVE_HEADER_NAMES = new Set([
 
 /** 清洗 IPC 可展示文本，并移除结构化或普通文本中的凭据。 */
 export function redactIpcDiagnosticText(value: string): string {
-  const structured = redactStructuredJson(value);
-  const redacted = redactPlainText(structured.value)
-    .split('')
-    .map((character) => {
-      const code = character.charCodeAt(0);
-      return code <= 0x1f || code === 0x7f ? ' ' : character;
-    })
-    .join('')
-    .trim();
+  const structured = redactStructuredJson(normalizeControlCharacters(value));
+  const redacted = normalizeControlCharacters(redactPlainText(structured.value)).trim();
 
   return redacted.length > IPC_DIAGNOSTIC_MAX_LENGTH
     ? `${redacted.slice(0, IPC_DIAGNOSTIC_MAX_LENGTH - 1)}…`
@@ -121,8 +115,14 @@ function redactJsonValue(value: unknown, markChanged: () => void): unknown {
   }
 
   const sanitized: Record<string, unknown> = Object.create(null);
+  const isCredentialHeaderEntry =
+    typeof (value as Record<string, unknown>).name === 'string' &&
+    SENSITIVE_HEADER_NAMES.has(((value as Record<string, unknown>).name as string).toLowerCase());
   for (const key of Object.keys(value)) {
-    if (SENSITIVE_HEADER_NAMES.has(key.toLowerCase())) {
+    if (isCredentialHeaderEntry && key.toLowerCase() === 'value') {
+      markChanged();
+      sanitized[key] = '[REDACTED]';
+    } else if (SENSITIVE_HEADER_NAMES.has(key.toLowerCase())) {
       markChanged();
       sanitized[key] = '[REDACTED]';
     } else {
@@ -149,4 +149,14 @@ function canonicalHeaderName(value: string): string {
     default:
       return 'Header';
   }
+}
+
+function normalizeControlCharacters(value: string): string {
+  return value
+    .split('')
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 0x1f || code === 0x7f ? ' ' : character;
+    })
+    .join('');
 }

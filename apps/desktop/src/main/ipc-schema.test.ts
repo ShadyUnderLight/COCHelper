@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { APP_HEALTH_CHANNEL, REQUEST_CANCEL_CHANNEL, type RequestId } from '@coc-helper/contracts';
+import {
+  APP_HEALTH_CHANNEL,
+  REQUEST_CANCEL_CHANNEL,
+  isSafeIpcDiagnosticText,
+  type RequestId,
+} from '@coc-helper/contracts';
 
 import {
   IpcValidationError,
@@ -60,9 +65,11 @@ describe('toIpcError', () => {
       messageKey: 'ipc.internalError',
       message: '宿主内部错误。',
     });
-    expect(
-      toIpcError(new IpcValidationError(`${bearerMessage} https://example.test/body`)).message,
-    ).not.toContain('secret-token');
+    const redacted = toIpcError(
+      new IpcValidationError(`${bearerMessage} https://example.test/body`),
+    );
+    expect(redacted.message).not.toContain('secret-token');
+    expect(isSafeIpcDiagnosticText(redacted.message)).toBe(true);
   });
 
   it('不信任 IpcValidationError 被篡改的 code/messageKey', () => {

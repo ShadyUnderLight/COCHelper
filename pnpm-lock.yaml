@@ -96,9 +96,21 @@ importers:
 
   packages/contracts: {}
 
-  packages/domain: {}
+  packages/domain:
+    dependencies:
+      '@coc-helper/wire':
+        specifier: workspace:*
+        version: link:../wire
 
-  packages/testkit: {}
+  packages/testkit:
+    dependencies:
+      '@coc-helper/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      '@coc-helper/wire':
+        specifier: workspace:*
+        version: link:../wire
 
   packages/wire: {}
 

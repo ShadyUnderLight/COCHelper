@@ -6,5 +6,11 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@coc-helper/domain": "workspace:*"
+  },
+  "devDependencies": {
+    "@coc-helper/wire": "workspace:*"
   }
 }

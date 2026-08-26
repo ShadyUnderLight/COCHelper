@@ -10,6 +10,8 @@ describe('@coc-helper/wire 导出面', () => {
     expect(typeof wire.unixSecondsToRefSeconds).toBe('function');
     expect(typeof wire.parseUuid).toBe('function');
     expect(typeof wire.parseCatalogDataIdKey).toBe('function');
+    expect(typeof wire.saturatingAdd).toBe('function');
+    expect(typeof wire.requireFiniteNumber).toBe('function');
     expect(wire.schemaVersions.snapshotHistory.observation).toBe(6);
   });
 });

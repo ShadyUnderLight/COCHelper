@@ -1,5 +1,4 @@
-/**
- * Swift oracle / golden parity 占位。实现见 Issue #268。
- * 本包在 #266 只建立目录与导出面，不含业务符号。
- */
-export {};
+export { FakeClock } from './fake-clock';
+export { runSeededProperty } from './property';
+export type { SeededProperty, SeededPropertyOptions } from './property';
+export { SeededRandom } from './seeded-random';

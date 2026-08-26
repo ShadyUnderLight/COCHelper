@@ -1,3 +1,5 @@
+import { isFiniteNumber, requireFiniteNumber } from './finite-number';
+
 /** Unix epoch（1970-01-01）到 Swift reference date（2001-01-01）的秒差。 */
 export const UNIX_TO_REF_EPOCH_SECONDS = 978307200;
 
@@ -18,11 +20,7 @@ export function refSecondsToUnixSeconds(refSeconds: number): number {
 
 /** 非有限时间兜底为 reference-date 0（WA-4）。 */
 export function finiteOrReferenceZero(seconds: number): number {
-  return Number.isFinite(seconds) ? seconds : 0;
-}
-
-export function isFiniteNumber(value: number): boolean {
-  return Number.isFinite(value);
+  return isFiniteNumber(seconds) ? seconds : 0;
 }
 
 /**
@@ -61,8 +59,12 @@ export function parseOfficialUtcMs(raw: string): number | undefined {
 }
 
 export function formatBeijing(utcMs: number): string {
+  requireFiniteNumber(utcMs, 'utcMs');
   const shifted = utcMs + 8 * 3600 * 1000;
   const date = new Date(shifted);
+  if (!isFiniteNumber(date.getTime())) {
+    throw new RangeError('utcMs 超出 JavaScript Date 可表示范围。');
+  }
   const year = date.getUTCFullYear();
   const month = date.getUTCMonth() + 1;
   const day = date.getUTCDate();

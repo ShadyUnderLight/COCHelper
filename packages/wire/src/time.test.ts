@@ -67,6 +67,15 @@ describe('官方 UTC 紧凑时间（WA-4 T3）', () => {
     });
   });
 
+  it('合法分数秒进入 instant，不得静默丢毫秒', () => {
+    const base = Date.UTC(2026, 7, 9, 11, 7, 38);
+    expect(parseOfficialUtcMs('20260809T110738Z')).toBe(base);
+    expect(parseOfficialUtcMs('20260809T110738.000Z')).toBe(base);
+    expect(parseOfficialUtcMs('20260809T110738.1Z')).toBe(base + 100);
+    expect(parseOfficialUtcMs('20260809T110738.12Z')).toBe(base + 120);
+    expect(parseOfficialUtcMs('20260809T110738.123Z')).toBe(base + 123);
+  });
+
   it('越界组件、非法格式与年份下限拒绝', () => {
     const bad = [
       '',

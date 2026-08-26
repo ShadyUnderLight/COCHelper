@@ -49,33 +49,36 @@ export function jsonObject(
   return { kind: 'object', fields };
 }
 
-/** 对齐 Swift `String <` 的 Unicode 标量字典序（golden 以 ASCII/CJK/emoji 为主）。 */
-export function swiftStringLessThan(left: string, right: string): boolean {
-  const leftPoints = [...left];
-  const rightPoints = [...right];
+/**
+ * 对齐 Swift `String.<` / `==`（WA-2）：比较用 NFC 后的 Unicode 标量字典序；
+ * 规范化等价（é vs e+combining acute）视为相等。写出时仍使用原始拼写，不改 key。
+ */
+export function swiftStringCompare(left: string, right: string): number {
+  const leftPoints = [...left.normalize('NFC')];
+  const rightPoints = [...right.normalize('NFC')];
   const n = Math.min(leftPoints.length, rightPoints.length);
   for (let i = 0; i < n; i += 1) {
     const a = leftPoints[i]!.codePointAt(0)!;
     const b = rightPoints[i]!.codePointAt(0)!;
     if (a !== b) {
-      return a < b;
+      return a < b ? -1 : 1;
     }
   }
-  return leftPoints.length < rightPoints.length;
+  if (leftPoints.length !== rightPoints.length) {
+    return leftPoints.length < rightPoints.length ? -1 : 1;
+  }
+  return 0;
+}
+
+export function swiftStringLessThan(left: string, right: string): boolean {
+  return swiftStringCompare(left, right) < 0;
 }
 
 export function sortedObjectKeys(fields: Readonly<Record<string, CanonicalJsonValue>>): string[] {
-  return Object.keys(fields).sort((a, b) => {
-    if (a === b) {
-      return 0;
-    }
-    return swiftStringLessThan(a, b) ? -1 : 1;
-  });
+  return Object.keys(fields).sort(swiftStringCompare);
 }
 
-export function isCanonicalObject(
-  value: CanonicalJsonValue,
-): value is {
+export function isCanonicalObject(value: CanonicalJsonValue): value is {
   readonly kind: 'object';
   readonly fields: Readonly<Record<string, CanonicalJsonValue>>;
 } {

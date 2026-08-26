@@ -10,6 +10,9 @@
     "array-sorted-by-bytes-duplicates-kept": [10, 2, 10, "x", "a", [1], [0], { "k": 1 }, true, null],
     "number-forms": { "floatOne": 1.0, "negativeFloat": -2.5, "bigInteger": 9007199254740993, "exponent": 1e2, "zero": 0 },
     "nested-empty": { "obj": {}, "arr": [], "str": "" },
-    "bool-null-scalars": { "t": true, "f": false, "n": null }
+    "bool-null-scalars": { "t": true, "f": false, "n": null },
+    "unicode-precomposed-key-order": { "Z": 1, "Å": 2, "ä": 3, "é": 4, "a": 5, "A": 6 },
+    "unicode-nfd-key-order": { "Z": 1, "A\u030A": 2, "a\u0308": 3, "e\u0301": 4, "a": 5, "A": 6 },
+    "unicode-emoji-key-order": { "👩": 1, "👨‍👩‍👧‍👦": 2, "👨": 3 }
   }
 }

@@ -1,37 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { formatAppleDouble, normalizeJsonNumberToken } from './json-number';
 
-describe('NSNumber.stringValue 数字规范化', () => {
-  it('对齐 JSONSerialization 实测 token', () => {
-    const cases: Array<[string, string]> = [
-      ['0', '0'],
-      ['-0', '0'],
-      ['1', '1'],
-      ['1.0', '1'],
-      ['-2.5', '-2.5'],
-      ['1e2', '100'],
-      ['1E2', '100'],
-      ['1e+2', '100'],
-      ['1e-2', '0.01'],
-      ['9007199254740993', '9007199254740993'],
-      ['9223372036854775807', '9223372036854775807'],
-      ['-9223372036854775808', '-9223372036854775808'],
-      ['9223372036854775808', '9223372036854775808'],
-      ['0.1', '0.1'],
-      ['0.10', '0.1'],
-      ['1.00', '1'],
-      ['1.5e1', '15'],
-      ['2.5e-1', '0.25'],
-      ['1e20', '1e+20'],
-      ['1e6', '1000000'],
-      ['1e-6', '1e-06'],
-      ['1e-20', '9.999999999999999e-21'],
-      ['18446744073709551615', '18446744073709551615'],
-      ['18446744073709551616', '18446744073709551616'],
-      ['-9223372036854775809', '-9223372036854775809'],
-    ];
-    for (const [raw, expected] of cases) {
+const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/nsnumber-stringvalue.json');
+
+describe('NSNumber.stringValue golden（WA-1.2）', () => {
+  it('逐 token 对齐 JSONSerialization → NSNumber.stringValue', () => {
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+      stringValues: Record<string, string>;
+    };
+    for (const [raw, expected] of Object.entries(fixture.stringValues)) {
       expect(normalizeJsonNumberToken(raw), raw).toBe(expected);
     }
   });

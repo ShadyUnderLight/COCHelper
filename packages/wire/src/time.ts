@@ -40,6 +40,8 @@ export function parseOfficialUtcMs(raw: string): number | undefined {
   const hour = Number(match[4]);
   const minute = Number(match[5]);
   const second = Number(match[6]);
+  const fraction = match[7];
+  const millisecond = fraction === undefined ? 0 : Number(fraction.slice(1).padEnd(3, '0'));
   const maxDay = daysInMonth(year, month);
   if (
     year < 1992 ||
@@ -48,11 +50,14 @@ export function parseOfficialUtcMs(raw: string): number | undefined {
     day > maxDay ||
     hour > 23 ||
     minute > 59 ||
-    second > 59
+    second > 59 ||
+    !Number.isInteger(millisecond) ||
+    millisecond < 0 ||
+    millisecond > 999
   ) {
     return undefined;
   }
-  return Date.UTC(year, month - 1, day, hour, minute, second);
+  return Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
 }
 
 export function formatBeijing(utcMs: number): string {

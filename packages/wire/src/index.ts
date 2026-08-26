@@ -24,6 +24,7 @@ export {
   jsonObject,
   jsonString,
   sortedObjectKeys,
+  swiftStringCompare,
   swiftStringLessThan,
 } from './json-value';
 export type { CanonicalJsonValue } from './json-value';

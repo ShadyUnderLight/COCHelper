@@ -27,7 +27,7 @@
 
 | 层 | null vs 缺失 | 出处 |
 |---|---|---|
-| Codable 解码层 | **等同**：`decodeIfPresent` 把 JSON null 与缺失键同样处理，全仓无例外 | ClanSnapshotHistoryModels.swift:114-168 等 |
+| Codable 解码层 | **等同**：`decodeIfPresent` 把 JSON null 与缺失键同样处理，全仓无例外 | ClanModels.swift:114-168 等 |
 | canonical 字节层 | **区分保留**：`{"k":null} ≠ {}`（rawTopLevelFields 来自规范化后的源） | SnapshotHistoryModels.swift:1181-1191 |
 | item 指纹层 | **塌缩**：缺失 optional 显式写 `.null` 进入指纹材料 | SnapshotHistoryCanonicalizer.swift:1142-1156 |
 
@@ -40,11 +40,11 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
 - legacy 导入器：未知顶层键收入 `unknownTopLevelKeys` + warning 诊断「发现未识别字段：…」
   （AccountSnapshot.swift:702, 436-441）。
 - 官方快照：未识别键 sorted 后存入 `unrecognizedKeys` 并**随状态持久化**（审计用途）；
-  round-trip 时若 JSON 已含该键则直接复用（ClanSnapshotHistoryModels.swift:160-167）。
+  round-trip 时若 JSON 已含该键则直接复用（ClanModels.swift:160-167）。
   `knownKeys` 含已知但 deferred 不建模的 `memberList` 与旧别名 `requiredTownHallLevel`，
-  避免审计噪音（ClanSnapshotHistoryModels.swift:99-112）。
+  避免审计噪音（ClanModels.swift:99-112）。
 - encode 只写官方 raw key（如 `requiredTownhallLevel`），Swift 属性名仅源码兼容
-  （ClanSnapshotHistoryModels.swift:182-183）。
+  （ClanModels.swift:182-183）。
 
 ## WA-2 canonical JSON 字节规范
 
@@ -90,7 +90,7 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
 |---|---|---|---|---|
 | T1 | Unix epoch seconds（timeIntervalSince1970） | 导出文本 `timestamp` 字段 = epoch 秒；ageSeconds 在 epoch 域计算；未来时间戳 clamp 为 0 | AccountSnapshot.swift:451, 492 | |
 | T2 | Swift reference-date seconds（2001-01-01 起算的 Double） | **Swift `JSONEncoder` 默认 Date 编码策略**。所有经 Codable 持久化的 Date 字段盘上都是该 Double：VillageProfile.createdAt/updatedAt、AccountSnapshot.importedAt/capturedAt、SnapshotHistoryEntry.appliedAt/sourceTimestamp（**进入 F2 哈希字节**）、history envelope 各 recordedAt/completedAt/lastSeenAt/lastAppliedAt、manual tracker 全部日期字段、OfficialEndpointState.fetchedAt | VillageProfile.swift:20-21; AccountSnapshot.swift:205-222; SnapshotHistoryModels.swift:975-977; SnapshotHistoryStore.swift:13-63; ManualTrackerStore.swift:69-82; OfficialAPIState.swift:47 | |
-| T3 | 官方 API UTC 紧凑字符串 | startTime/endTime/preparationStartTime 等**保持官方字符串原样解码原样持久化**，不是 epoch 数字 | ClanWarSnapshotHistoryModels.swift:22-23; ClanPaginationSnapshotHistoryModels.swift:151, 298-299 | |
+| T3 | 官方 API UTC 紧凑字符串 | startTime/endTime/preparationStartTime 等**保持官方字符串原样解码原样持久化**，不是 epoch 数字 | ClanWarModels.swift:22-23; ClanPaginationModels.swift:151, 298-299 | |
 
 配套规则：
 
@@ -115,8 +115,8 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
   **注意：`AccountSnapshot` 本身没有 id 字段**）、ManualUpgradeRecord.recordID、
   reconciliationID/previewID、QueueAssignmentDecision.decisionID、snapshotID、lineageID 兜底
   （VillageProfile.swift:24; AccountSnapshot.swift:18-32; ManualUpgradeCore.swift:167;
-  ManualUpgradeSnapshotHistoryModels.swift:636; ManualTrackerReconciliation.swift:128/185;
-  QueueAssignmentSnapshotHistoryModels.swift:33; SnapshotHistoryCanonicalizer.swift:19/86; SnapshotHistoryModels.swift:873-938）。
+  ManualUpgradeModels.swift:636; ManualTrackerReconciliation.swift:128/185;
+  QueueAssignmentModels.swift:33; SnapshotHistoryCanonicalizer.swift:19/86; SnapshotHistoryModels.swift:873-938）。
 - UUID 进入指纹的字段级归属：
   - F2 integrityFingerprint：snapshotID / villageID / lineageID 三个 UUID **进入**材料
     （SnapshotHistoryCanonicalizer.swift:1213-1231）。
@@ -160,9 +160,9 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 ## WA-8 官方 API wire 形状要点
 
 - 分页结构 `{items, paging.cursors.after/before}`：**items 必填**，缺失/null → 解码失败 →
-  保留 last-good，「不得静默当作成功空页」（ClanPaginationSnapshotHistoryModels.swift:21-22, 51-52）。
+  保留 last-good，「不得静默当作成功空页」（ClanPaginationModels.swift:21-22, 51-52）。
 - paging/cursors 全可选；after=向后翻页游标（末页 nil）；before 未使用仅透传；
-  两者皆 nil 时 encode 不写 paging 键（ClanPaginationSnapshotHistoryModels.swift:83-88）。
+  两者皆 nil 时 encode 不写 paging 键（ClanPaginationModels.swift:83-88）。
 - 终结判定：responseAfter 为 nil → 无更多；`responseAfter != requestedCursor` 才继续——
   游标未前进即终结（§BE-4.2）。
 - 官方快照 decode 全字段 optional + 任意字符串 CodingKey 遍历（§WA-1.4）。
@@ -171,15 +171,18 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 ## WA-9 catalog manifest 与资源管线契约
 
 实现：GameCatalog.swift:31-130（`CatalogManifest` / `CatalogGeneratedFile` / `CatalogCounts` /
-`validate`）。真实活体 fixture = bundle 内 `Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json`
-（由 `Tools/game_catalog` Python 生成器产出，GameCatalogTests ManifestValidation 系列锁定）。
+`validate`）。活体 fixture：仓库源路径
+`Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json`；运行时 bundle 路径为
+`GameCatalog/18.400.13/manifest.json`（Package 以 `.copy("GameCatalog")` 保留目录结构，
+`.process` 会扁平化子目录故不可用）。由 `Tools/game_catalog` Python 生成器产出，
+GameCatalogTests ManifestValidation 系列锁定。
 
 ### WA-9.1 manifest 形状
 
 ```text
 CatalogManifest {
   schemaVersion: Int          // 支持范围 1...2，出范围 validate() false（fail-closed）
-  gameVersion: String         // 如 "18.400.13"，目录目录名一致
+  gameVersion: String         // 如 "18.400.13"，与目录目录名一致
   buildTag: String
   locale: String
   sourceFingerprint: String   // 格式门：sha256: + 64 hex；内容是 APK hash，
@@ -189,6 +192,15 @@ CatalogManifest {
 }
 CatalogGeneratedFile { path: String, sha256: String?, size: Int?, kind: String?, entries: Int? }
 ```
+
+`counts` 的 Swift 声明字段（GameCatalog.swift `CatalogCounts`）：items / levels 必填，
+missingIcons? / missingTime? / timed? / instant? / notApplicable? / initialLevel? /
+sourceMissing? / parseFailed? 可选（旧 manifest 缺键 → nil 向后兼容）。
+
+**未知 counts 键策略（冻结）**：活体 manifest 实测含 `blockedIcons` / `displayCategories` /
+`renderedIcons` 三个键，Swift `CatalogCounts` **未声明 → Codable 解码静默忽略**，不参与任何
+validate 规则。TS 迁移必须同样容忍并忽略这些键（不得因未知键失败，也不得臆造语义）；
+若未来要把它们纳入契约，须先在 Python 生成器与 Swift 双侧建模并 bump schemaVersion。
 
 ### WA-9.2 validate 五条规则（返回 false = 漂移/篡改，fail-closed 不进「已验证」态）
 
@@ -202,13 +214,33 @@ CatalogGeneratedFile { path: String, sha256: String?, size: Int?, kind: String?,
 
 明确**不校验**：icons 哈希（展示资源，size/存在性由⑤覆盖）、sourceFingerprint 内容。
 
-### WA-9.3 资源路径与缺失原因
+### WA-9.3 静态资源引用与两级 missingReason（两个不同值域，不得混同）
 
-- 静态资源引用（图标等）带 `path` + `missingReason: String?`；**missingReason != nil 表示该引用
-  不可渲染，必须原样暴露给 UI**，不得静默隐藏。
-- 可渲染判定 = path 非空 && missingReason == nil。
-- missingReason 值域由 Python 生成器定义：`export_not_found` / `render_failed` 等；
-  `CatalogLevel.missingReason` 同域并参与 durationState 映射（sourceMissing 桶）。
+**a) `CatalogAssetRef`（图标等静态资源，GameCatalog.swift:145-166）**
+
+```text
+CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?, missingReason: String? }
+```
+
+- 字段名是 **`renderedPath`**（不是 path）。
+- 可渲染判定 `isRenderable` = renderedPath 非 nil 且**非空串** && missingReason == nil
+  （空串路径不可渲染——契约 R2.2/R5.3，与 Python contract.is_renderable 同语义）。
+- **missingReason != nil 表示该引用不可渲染，必须原样暴露给 UI**，不得静默隐藏；
+  UI 依据该属性选择 PNG 或 SF Symbol。
+- 本值域由 Python 生成器定义：`export_not_found` / `render_failed`
+  （18.400.13 实测：1246 个唯一可渲染路径 + 23 个唯一缺失键）。
+
+**b) `CatalogLevel.missingReason`（逐级时长缺失原因，GameCatalog.swift:203-240）**
+
+- 与资源无关的**时间域**值域，映射到 `CatalogDurationState`（唯一映射点
+  `state(durationSeconds:missingReason:)`）：
+  - `min_level_initial_no_upgrade` → `.initialLevel`
+  - `no_time_source` → `.notApplicable`（仅数据源无时长列，不得推断为游戏内无需时间）
+  - `time_invalid` → `.parseFailed`
+  - `time_missing` / `upgrade_data_missing` → `.sourceMissing`
+  - durationSeconds > 0 → `.timed`；== 0 → `.instant`；< 0 → `.unknownReason("negative_duration")`（防御）
+  - 契约外 reason → `.unknownReason(reason)` 防御分支，不修改值域契约
+- 值域定义在 Python 生成器 LEVEL_MISSING_REASONS 与 Swift 映射点两处，双侧同步。
 
 ## 附录 A：golden fixtures 索引（Tests/Golden/Fixtures/，本 PR 实际现状）
 
@@ -216,7 +248,7 @@ CatalogGeneratedFile { path: String, sha256: String?, size: Int?, kind: String?,
 |---|---|---|
 | canonical-json-samples.json + canonical-json-expected.json | §WA-2 转义/排序/数字 token 的正例+边界例（solidus、控制字符、CJK、emoji、0x7F、U+2028/2029、大数、重复数组元素）+ 期望 canonical bytes hex | GoldenContractTests/CanonicalJSONGoldenTests |
 | account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。冻结四类输出：F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码 + **AccountSnapshot 与 HistoryEntryV1 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序）**。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | GoldenContractTests/ParserGoldenTests |
-| official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md；catalog 侧活体 fixture 为 bundle 内 `Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json`（§WA-9） | 既有 ClanPaginationDecodeTests / GameCatalogTests |
+| official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | 既有 ClanPaginationDecodeTests / GameCatalogTests |
 
 尚未覆盖（见 target-architecture.md §6 关闭门）：projection / diff / error 场景 fixture，
 由 E2-* 按域增量追加。

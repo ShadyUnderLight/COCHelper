@@ -162,10 +162,10 @@ committed journal 在用户选择的恢复之上重放，同时保留证据（Ap
 
 见 §WA-8。items 必填 fail-loud。
 
-### BE-4.2 游标与合并（ClanPaginationSnapshotHistoryModels.swift）
+### BE-4.2 游标与合并（ClanPaginationModels.swift）
 
 - 终结判定 `PaginationLogic.hasMore`：responseAfter nil → false；`responseAfter != requestedCursor`
-  才 true——游标未前进即终结，防无限循环（ClanPaginationSnapshotHistoryModels.swift:452-455）。
+  才 true——游标未前进即终结，防无限循环（ClanPaginationModels.swift:452-455）。
 - 累计合并 `PaginationMerge.mergedPage`：首屏直接采用 fetched；续页 items Equatable 去重合并 +
   after 推进为最新响应值；**游标停滞（双非 nil 且相等）→ after 清空视为末页终止**；
   before 保留最新响应值（476-492, 462-468, 481-486）。
@@ -236,9 +236,9 @@ duplicate/newObservation；applyNonConflicting 对 observedAhead+active 且无 c
 ### BE-5.3 队列分配与容量（Issue #183/#194）
 
 - QueueAssignmentStatus：userAssigned（占容量）/ observedOnly（保留不占）/ unknown；
-  无记录 = unassigned 不持久化（QueueAssignmentSnapshotHistoryModels.swift:11-15）。
+  无记录 = unassigned 不持久化（QueueAssignmentModels.swift:11-15）。
 - overlay 对账只降级从不创建/删除；绑定可审计观察身份（itemKey + baseline revision/fingerprint/
-  lineage）（QueueAssignmentSnapshotHistoryModels.swift:17-59; ManualTrackerReconciliation.swift:462-503）。
+  lineage）（QueueAssignmentModels.swift:17-59; ManualTrackerReconciliation.swift:462-503）。
 - LocalQueueKind 映射：buildings/traps/heroes→builder，troops/spells/siege→laboratory，
   equipment/pets/guardians→nil（fail-closed）；即时动作不占容量（LocalQueueCapacity.swift:8-86）。
 - capacity ∈ [0,10000]，0 合法；占用投影 = active manual（expectedEndAt > now）+ userAssigned

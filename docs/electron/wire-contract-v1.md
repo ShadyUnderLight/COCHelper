@@ -182,7 +182,10 @@ GameCatalogTests ManifestValidation 系列锁定。
 ```text
 CatalogManifest {
   schemaVersion: Int          // 支持范围 1...2，出范围 validate() false（fail-closed）
-  gameVersion: String         // 如 "18.400.13"，与目录目录名一致
+  gameVersion: String         // ⚠️ 「与目录目录名一致」是生成器侧不变量（Python builder 保证）；
+                              //   运行时 loadBundled(version:) 只校验 manifest.gameVersion ==
+                              //   catalog.gameVersion（GameCatalog.swift:953），不比对传入的
+                              //   目录版本参数——TS 消费侧可实施更严的目录名比对（E2-02 裁量）
   buildTag: String
   locale: String
   sourceFingerprint: String   // 格式门：sha256: + 64 hex；内容是 APK hash，
@@ -196,23 +199,36 @@ CatalogGeneratedFile { path: String, sha256: String?, size: Int?, kind: String?,
 `counts` 的 Swift 声明字段（GameCatalog.swift `CatalogCounts`）：items / levels 必填，
 missingIcons? / missingTime? / timed? / instant? / notApplicable? / initialLevel? /
 sourceMissing? / parseFailed? 可选（旧 manifest 缺键 → nil 向后兼容）。
+其中 **missingIcons 是 Swift/TS 侧 decode-only 字段**：Swift `validate()` 不校验它，
+但生成器校验层（`Tools/game_catalog/validate.py:639`）会将其与重算值对账。
 
-**未知 counts 键策略（冻结）**：活体 manifest 实测含 `blockedIcons` / `displayCategories` /
-`renderedIcons` 三个键，Swift `CatalogCounts` **未声明 → Codable 解码静默忽略**，不参与任何
-validate 规则。TS 迁移必须同样容忍并忽略这些键（不得因未知键失败，也不得臆造语义）；
-若未来要把它们纳入契约，须先在 Python 生成器与 Swift 双侧建模并 bump schemaVersion。
+**未知 counts 键策略（冻结，范围限定为 Swift runtime / TS 消费侧）**：活体 manifest 实测含
+`blockedIcons` / `displayCategories` / `renderedIcons` 三键，Swift `CatalogCounts` 未声明 →
+Codable 解码静默忽略，不参与 Swift `validate()`。⚠️ 这三键在**生成器校验层并非未知**——
+`Tools/game_catalog/validate.py:665-691` 会校验 renderedIcons（== generatedFiles PNG 计数）、
+blockedIcons（快照语义格式检查）与 displayCategories（Issue #75 工作流 C）。因此 TS 消费侧必须
+容忍并忽略这些键（不得因未知键失败，也不得臆造语义）；若未来要把它们纳入 Swift/TS 消费契约，
+须先双侧建模并 bump schemaVersion。
 
-### WA-9.2 validate 五条规则（返回 false = 漂移/篡改，fail-closed 不进「已验证」态）
+### WA-9.2 校验规则分层（返回 false = 漂移/篡改，fail-closed 不进「已验证」态）
+
+Swift 运行时 `CatalogManifest.validate` 五条（GameCatalog.swift:63-130）：
 
 | # | 规则 | 备注 |
 |---|---|---|
-| ① | counts 与目录内容重算一致：items/levels 必查；missingTime/timed/instant/notApplicable/initialLevel/sourceMissing 等拆分字段**存在才查**（旧 manifest 缺键跳过） | 拆分映射走 CatalogDurationState.state 单一映射点 |
+| ① | counts 与目录内容重算一致：items/levels 必查；missingTime/timed/instant/notApplicable/initialLevel/sourceMissing/parseFailed 拆分字段**存在才查**（旧 manifest 缺键跳过）；**missingIcons 不校验**（decode-only，见 §WA-9.1） | 拆分映射走 CatalogDurationState.state 单一映射点 |
 | ② | generatedFiles 中 path=="catalog.json" 条目的 sha256 与真实文件字节重算一致 | 声明缺失跳过（向后兼容）；声明存在但格式异常（无 sha256: 前缀）→ fail-closed |
 | ③ | schemaVersion ∈ 1...2 | 出范围拒绝 |
-| ④ | sourceFingerprint 格式合法 | 见 WA-9.1 |
+| ④ | sourceFingerprint 格式合法 | 见 §WA-9.1 |
 | ⑤ | fileCheck 注入时：generatedFiles 全部非 directory 条目文件存在且 size 匹配 + 目录引用全部图标 renderedPath 文件存在 | loadBundled 恒注入 Bundle 实现 |
 
-明确**不校验**：icons 哈希（展示资源，size/存在性由⑤覆盖）、sourceFingerprint 内容。
+明确**不校验**：icons 内容哈希（展示资源，size/存在性由⑤覆盖）、sourceFingerprint 内容、
+missingIcons。
+
+**生成器校验层**（`Tools/game_catalog/validate.py`，产出目录时的独立门禁，与 Swift 层互补）：
+额外校验 missingIcons 对账（:639）、renderedIcons == generatedFiles PNG 计数、blockedIcons
+快照语义格式、displayCategories 一致性（:665-691）。TS 消费侧**不复制**该层——它属于
+E6-01 迁移的工具链。
 
 ### WA-9.3 静态资源引用与两级 missingReason（两个不同值域，不得混同）
 
@@ -227,8 +243,13 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
   （空串路径不可渲染——契约 R2.2/R5.3，与 Python contract.is_renderable 同语义）。
 - **missingReason != nil 表示该引用不可渲染，必须原样暴露给 UI**，不得静默隐藏；
   UI 依据该属性选择 PNG 或 SF Symbol。
-- 本值域由 Python 生成器定义：`export_not_found` / `render_failed`
-  （18.400.13 实测：1246 个唯一可渲染路径 + 23 个唯一缺失键）。
+- 资源域值域 = Python 生成器 `ASSET_MISSING_REASONS`（Tools/game_catalog/__init__.py:20）
+  全集 13 值：icons_not_rendered / no_icon_columns / no_visual_columns / sc_parse_failed /
+  movieclip_not_parsed / texture_compressed_astc / texture_external_sctx / zstd_unavailable /
+  container_not_found / export_not_found / astc_unsupported / texture_missing / render_failed。
+  各活体版本实际出现的子集可随 APK 渲染结果变化——**契约以 producer 词表为准，不冻结单版本
+  观测统计**；统计口径（唯一非空 renderedPath 数、缺失键分布）由 validate_game_catalog.py
+  输出，不写入本文档。
 
 **b) `CatalogLevel.missingReason`（逐级时长缺失原因，GameCatalog.swift:203-240）**
 
@@ -241,6 +262,9 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
   - durationSeconds > 0 → `.timed`；== 0 → `.instant`；< 0 → `.unknownReason("negative_duration")`（防御）
   - 契约外 reason → `.unknownReason(reason)` 防御分支，不修改值域契约
 - 值域定义在 Python 生成器 LEVEL_MISSING_REASONS 与 Swift 映射点两处，双侧同步。
+- 相邻的 item/base 域词表（同文件 `ITEM_MISSING_REASONS`=deprecated_in_source、
+  `BASE_MISSING_REASONS`=capital_has_no_base）与资源域 a) 分属不同对象层级，
+  合集 `MISSING_REASONS` 仅用于生成器侧总校验，TS 消费侧按对象层级分别取词表。
 
 ## 附录 A：golden fixtures 索引（Tests/Golden/Fixtures/，本 PR 实际现状）
 

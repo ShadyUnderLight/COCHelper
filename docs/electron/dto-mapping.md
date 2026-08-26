@@ -13,7 +13,7 @@
 | fingerprint 字符串 | `"sha256:" + 64 小写 hex` | `Sha256Fingerprint`（branded string） | §WA-3 格式门：长度 71 |
 | `Int64` | JSON number | `bigint`（domain 层）/ token string（wire 层） | §WA-6 三层解析分别建模 |
 | `UUID` | 大写连字符字符串 | `UuidString` | §WA-5 |
-| Tracker semantic identity | `TrackerItemKey.stableID` 字符串 | `StableId`（domain branded string） | 仅由语义组件构造，不含数组位置或本地化文本 |
+| Tracker semantic printable key | `TrackerItemKey.stableID` 字符串 | `StableId`（domain branded string） | 仅由语义组件构造；复刻 deterministic printable stable ID，不替代 Swift structural persisted identity |
 | snapshot lineage identity | `lineageID` UUID | `LineageId`（domain branded UUID） | 进入 F2 integrity material；来源必须可注入/可校验 |
 | `Date` | reference-date Double（T2 域） | `RefEpochSeconds`（number） | §WA-4；与 Unix 秒显式区分 |
 | 官方时间字符串 | 原样字符串 | `OfficialUtcString` | §WA-4 T3；不解析落库 |

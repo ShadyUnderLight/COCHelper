@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { LineageId, StableId } from './index';
 import {
   createLineageId,
   isLineageId,
@@ -10,6 +11,10 @@ import {
   type UuidSource,
 } from './index';
 import { parseUuid, type UuidString } from '@coc-helper/wire';
+
+// @ts-expect-error LineageId 不得当作 StableId 使用。
+const stableFromLineage: StableId = null as unknown as LineageId;
+void stableFromLineage;
 
 describe('@coc-helper/domain shared seams', () => {
   it('Clock 使用 Unix epoch 毫秒且不隐式读取系统时间', () => {
@@ -34,6 +39,7 @@ describe('@coc-helper/domain shared seams', () => {
     expect(makeStableId(['home', 'buildings', 1n])).toBe(makeStableId(['home', 'buildings', 1n]));
     expect(isStableId(id)).toBe(true);
     expect(isStableId('')).toBe(false);
+    expect(isStableId('|home')).toBe(false);
     expect(isStableId('home|buildings\n1')).toBe(false);
     expect(() => makeStableId([])).toThrow();
     expect(() => makeStableId(['home|buildings'])).toThrow();

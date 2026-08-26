@@ -10,11 +10,13 @@ export interface UuidSource {
   next(): UuidString;
 }
 
-/** 不依赖数组位置、展示名称或本地化文本的稳定身份键。 */
+/** 不依赖数组位置、展示名称或本地化文本的确定性可打印 stable ID。 */
 export type StableId = string & { readonly __brand: 'StableId' };
 
+declare const lineageIdBrand: unique symbol;
+
 /** 进入历史完整性材料的 lineage UUID。 */
-export type LineageId = UuidString & { readonly __brand: 'LineageId' };
+export type LineageId = UuidString & { readonly [lineageIdBrand]: true };
 
 /**
  * 使用 Swift TrackerItemKey 相同的 `|` 分隔规则构造稳定键。
@@ -41,7 +43,12 @@ export function makeStableId(parts: readonly (string | bigint)[]): StableId {
 }
 
 export function isStableId(value: unknown): value is StableId {
-  return typeof value === 'string' && value.length > 0 && !hasControlCharacter(value);
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    !value.startsWith('|') &&
+    !hasControlCharacter(value)
+  );
 }
 
 export function createLineageId(source: UuidSource): LineageId {

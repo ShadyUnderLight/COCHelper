@@ -104,7 +104,7 @@ function redactJsonValue(value: unknown, markChanged: () => void): unknown {
     return value.map((item) => redactJsonValue(item, markChanged));
   }
   if (typeof value === 'string') {
-    const sanitized = redactPlainText(value);
+    const sanitized = redactPlainText(normalizeControlCharacters(value));
     if (sanitized !== value) {
       markChanged();
     }

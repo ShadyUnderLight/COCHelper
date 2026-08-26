@@ -69,6 +69,17 @@ describe('redactDiagnosticText', () => {
     expect(result).not.toContain('multiline-secret');
   });
 
+  it('先归一化嵌套 JSON 字符串中的转义多行 header', () => {
+    const result = redactDiagnosticText(
+      JSON.stringify({
+        details: ['prefix', 'Authorization: Basic', 'nested-multiline-secret', 'suffix'].join('\n'),
+      }),
+    );
+
+    expect(result).not.toContain('nested-multiline-secret');
+    expect(result).toContain('[REDACTED]');
+  });
+
   it('截断过长诊断文本', () => {
     const result = redactDiagnosticText('x'.repeat(300));
     expect(result).toHaveLength(200);

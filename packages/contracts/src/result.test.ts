@@ -76,6 +76,16 @@ describe('@coc-helper/contracts Result', () => {
     expect(
       isIpcError({
         ...validError,
+        message: JSON.stringify({
+          details: ['prefix', 'Authorization: Basic', 'nested-multiline-secret', 'suffix'].join(
+            '\n',
+          ),
+        }),
+      }),
+    ).toBe(false);
+    expect(
+      isIpcError({
+        ...validError,
         diagnostics: [
           {
             severity: 'error',

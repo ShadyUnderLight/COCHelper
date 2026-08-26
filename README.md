@@ -21,6 +21,8 @@
 
 ## 运行
 
+当前发布产品仍是 SwiftUI macOS App：
+
 ```bash
 swift test
 swift run COCHelper
@@ -34,6 +36,18 @@ open .build/COCHelper.app
 ```
 
 也可以直接在 Xcode 中打开 `Package.swift`，选择 `COCHelper` scheme 运行。
+
+### Electron 宿主（Issue #266，迁移中）
+
+需要 Node 24 LTS（见 `.nvmrc`）和 pnpm。开发与打包：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm start
+pnpm package
+```
+
+`pnpm start` 打开开发 App；`pnpm package` 在 `apps/desktop/out/` 生成可启动的本地 App。这是纯 Electron 重写的安全宿主骨架，不包含现有业务功能；Swift 路径在切换完成前保持有效。
 
 ## 重要边界
 

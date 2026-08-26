@@ -6,3 +6,9 @@ DerivedData/
 .worktrees/
 __pycache__/
 *.pyc
+node_modules/
+out/
+.webpack/
+dist/
+*.tsbuildinfo
+.DS_Store

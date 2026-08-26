@@ -39,4 +39,12 @@ describe('raw JSON source golden（WA-1 parser parity）', () => {
       expect(() => parseJson(sample.source), sample.id).toThrow();
     }
   });
+
+  it('JS 字符串重载上的未转义孤立 surrogate 必须拒绝', () => {
+    expect(() => parseJson(`"${String.fromCharCode(0xd800)}"`)).toThrow();
+    expect(() => parseJson(`"${String.fromCharCode(0xdc00)}"`)).toThrow();
+    expect(() => parseJson(`"${String.fromCharCode(0xd800, 0x41)}"`)).toThrow();
+    const pair = parseJson(`"${String.fromCharCode(0xd800, 0xdc00)}"`);
+    expect(pair).toEqual({ kind: 'string', value: '\u{10000}' });
+  });
 });

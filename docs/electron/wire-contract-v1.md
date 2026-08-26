@@ -18,8 +18,9 @@
 NFC 规范化等价的键合并为同一字段。相同拼写保留首次值；UTF-16 更长的拼写覆盖（NFC vs NFD
 时即 NFD）；等长但拼写不同（如 Å U+212B vs Å U+00C5）保留后出现的拼写和值。TS 字段表必须用
 null-prototype，否则 `{"__proto__":1}` 会被普通 `{}` 赋值吞掉。孤立 surrogate（`\uD800` /
-`\uDC00`）拒绝，成对 `\uD800\uDC00` 接受。锁定 fixture：`json-raw-samples.json`（source
-必须是 JSON 字符串，不能写成 fixture 对象，否则加载 fixture 时就会提前 collapse）。
+`\uDC00`，含 JS 字符串重载里未转义的 UTF-16 代理项）拒绝，成对 `\uD800\uDC00` 接受。
+锁定 fixture：`json-raw-samples.json`（source 必须是 JSON 字符串，不能写成 fixture 对象，
+否则加载 fixture 时就会提前 collapse）。
 
 ### WA-1.2 数字 token 规则
 
@@ -27,8 +28,11 @@ null-prototype，否则 `{"__proto__":1}` 会被普通 `{}` 赋值吞掉。孤�
   **原始 token 文本不保留**：源文本 `1.0` 规范化后为数字 token 文本 `1`
   （SnapshotHistoryModels.swift:1155-1160）。
 - bool 判定靠 `NSNumber.objCType ∈ {"c","B"}`，先于 number 分支（SnapshotHistoryModels.swift:1156-1159）。
-- ⚠️ 待实证：大数/科学计数法经 `NSNumber.stringValue` 的渲染形态无测试钉死。
-  TS 实现不得自行发明格式；以 `Tests/Golden` 数字样本的实测输出为准（Issue #267 范围）。
+- `stringValue` 分三条路径（macOS 14+ Foundation 实测，锁定于 `nsnumber-stringvalue.json`）：
+  1. 无小数点、无指数的整数 token：`Int64`/`UInt64` 或超出范围时的十进制整数串（`-0` → `0`）。
+  2. 有效数字 ≥ 18（整数部分去掉前导零 + 小数点后全部数字含尾零）：`NSDecimalNumber` 固定小数点写出。
+  3. 其余：IEEE 754 double，再按 Darwin `%.16g`（16 位有效数字、round-ties-to-even；
+     指数 `e` 至少两位数）。不得用 JS `Number.prototype.toExponential` 代替。
 
 ### WA-1.3 null 与缺失字段的三层语义
 
@@ -284,6 +288,7 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
 |---|---|---|
 | canonical-json-samples.json + canonical-json-expected.json | §WA-2 转义/排序/数字 token 的正例+边界例（solidus、控制字符、CJK、emoji、0x7F、U+2028/2029、大数、重复数组元素）+ 期望 canonical bytes hex | GoldenContractTests/CanonicalJSONGoldenTests |
 | json-raw-samples.json | §WA-1 原始 JSON 源文本：同一 object 内 NFC 等价重复键、`__proto__` 键保留、孤立 surrogate 拒绝；source 为 JSON 字符串以免 fixture 加载时提前 collapse | GoldenContractTests/JsonRawSourceGoldenTests |
+| nsnumber-stringvalue.json | §WA-1.2 `JSONSerialization` → `NSNumber.stringValue`：整数 / NSDecimalNumber / Darwin `%.16g` 三条路径 | GoldenContractTests/NSNumberStringValueGoldenTests |
 | account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。冻结四类输出：F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码 + **AccountSnapshot 与 HistoryEntryV1 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序）**。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | GoldenContractTests/ParserGoldenTests |
 | official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | 既有 ClanPaginationDecodeTests / GameCatalogTests |
 

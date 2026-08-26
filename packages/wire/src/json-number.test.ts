@@ -17,9 +17,10 @@ describe('NSNumber.stringValue golden（WA-1.2）', () => {
     }
   });
 
-  it('double 路径对齐 %.16g', () => {
+  it('double 路径对齐 Darwin %.16g', () => {
     expect(formatAppleDouble(1)).toBe('1');
     expect(formatAppleDouble(1e20)).toBe('1e+20');
     expect(formatAppleDouble(1e-6)).toBe('1e-06');
+    expect(formatAppleDouble(1234567890123456.5)).toBe('1234567890123456');
   });
 });

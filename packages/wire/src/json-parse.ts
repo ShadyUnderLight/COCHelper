@@ -178,8 +178,21 @@ class JsonParser {
         result += this.parseEscape();
         continue;
       }
-      if (ch.charCodeAt(0) < 0x20) {
+      const code = ch.charCodeAt(0);
+      if (code < 0x20) {
         throw new JsonParseError('字符串含有未转义的控制字符。');
+      }
+      if (code >= 0xd800 && code <= 0xdbff) {
+        const low = this.source.charCodeAt(this.pos + 1);
+        if (low >= 0xdc00 && low <= 0xdfff) {
+          result += ch + this.source[this.pos + 1]!;
+          this.pos += 2;
+          continue;
+        }
+        throw new JsonParseError('孤立的 Unicode 代理项。');
+      }
+      if (code >= 0xdc00 && code <= 0xdfff) {
+        throw new JsonParseError('孤立的 Unicode 代理项。');
       }
       result += ch;
       this.pos += 1;

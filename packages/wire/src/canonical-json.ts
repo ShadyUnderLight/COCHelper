@@ -1,4 +1,10 @@
-import { type CanonicalJsonValue, jsonArray, jsonObject, sortedObjectKeys } from './json-value';
+import {
+  type CanonicalJsonValue,
+  emptyJsonObjectFields,
+  jsonArray,
+  jsonObject,
+  sortedObjectKeys,
+} from './json-value';
 
 /** 对象键排序 + 数组按 canonical bytes 排序后的值。 */
 export function canonicalize(value: CanonicalJsonValue): CanonicalJsonValue {
@@ -11,7 +17,7 @@ export function canonicalize(value: CanonicalJsonValue): CanonicalJsonValue {
     case 'array':
       return jsonArray(sortedByCanonicalBytes(value.items.map(canonicalize)));
     case 'object': {
-      const fields: Record<string, CanonicalJsonValue> = {};
+      const fields = emptyJsonObjectFields();
       for (const key of sortedObjectKeys(value.fields)) {
         fields[key] = canonicalize(value.fields[key]!);
       }

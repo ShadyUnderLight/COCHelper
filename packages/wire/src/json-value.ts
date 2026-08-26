@@ -50,6 +50,14 @@ export function jsonObject(
 }
 
 /**
+ * 对象字段表必须用 null-prototype。普通 `{}` 上 `fields['__proto__'] = v`
+ * 会走 legacy setter，键不会成为 own property。
+ */
+export function emptyJsonObjectFields(): Record<string, CanonicalJsonValue> {
+  return Object.create(null) as Record<string, CanonicalJsonValue>;
+}
+
+/**
  * 对齐 Swift `String.<` / `==`（WA-2）：比较用 NFC 后的 Unicode 标量字典序；
  * 规范化等价（é vs e+combining acute）视为相等。写出时仍使用原始拼写，不改 key。
  */

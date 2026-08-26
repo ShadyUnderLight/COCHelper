@@ -22,6 +22,21 @@
       "canonicalHex": "7b2261223a317d"
     },
     {
+      "id": "angstrom-then-a-ring",
+      "source": "{\"\\u212B\":1,\"\\u00C5\":2}",
+      "canonicalHex": "7b22c385223a327d"
+    },
+    {
+      "id": "a-ring-then-angstrom",
+      "source": "{\"\\u00C5\":1,\"\\u212B\":2}",
+      "canonicalHex": "7b22e284ab223a327d"
+    },
+    {
+      "id": "proto-object-key",
+      "source": "{\"__proto__\":1}",
+      "canonicalHex": "7b225f5f70726f746f5f5f223a317d"
+    },
+    {
       "id": "surrogate-pair",
       "source": "\"\\uD800\\uDC00\"",
       "canonicalHex": "22f090808022"

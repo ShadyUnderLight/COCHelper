@@ -1,5 +1,6 @@
 import {
   JsonParseError,
+  emptyJsonObjectFields,
   jsonArray,
   jsonBool,
   jsonNull,
@@ -78,7 +79,7 @@ class JsonParser {
   private parseObject(): CanonicalJsonValue {
     this.expect('{');
     this.skipWs();
-    const fields: Record<string, CanonicalJsonValue> = {};
+    const fields = emptyJsonObjectFields();
     // NFC 身份 → 当前胜出拼写。JS Record 用原始字符串相等，无法单独表达 Swift String ==。
     const identityKeys = new Map<string, string>();
     if (this.peek() === '}') {
@@ -114,8 +115,10 @@ class JsonParser {
    * 对齐 `JSONSerialization.jsonObject` → `[String: Any]` → `CanonicalJSONValue`。
    *
    * NSDictionary 按 NSString 字面值保留重复键；桥接到 Swift Dictionary 时按
-   * `String` 规范化等价合并。实测胜出项是 UTF-16 更长的拼写及其对应值
-   * （NFC vs NFD 时即 NFD）；等长（含完全相同拼写）保留先出现的拼写和值。
+   * `String` 规范化等价合并。实测：
+   * - 相同拼写：JSONSerialization 保留首次值；
+   * - UTF-16 更长的拼写覆盖（NFC vs NFD 时即 NFD）；
+   * - 等长但拼写不同：后出现的拼写和值胜出（Å vs Å）。
    */
   private assignObjectField(
     fields: Record<string, CanonicalJsonValue>,
@@ -125,7 +128,7 @@ class JsonParser {
   ): void {
     const identity = key.normalize('NFC');
     const stored = identityKeys.get(identity);
-    if (stored !== undefined && key.length <= stored.length) {
+    if (stored !== undefined && (key === stored || key.length < stored.length)) {
       return;
     }
     if (stored !== undefined && stored !== key) {

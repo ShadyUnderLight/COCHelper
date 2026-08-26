@@ -1,0 +1,12 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+nodeLinker: hoisted
+engineStrict: false
+# Electron Forge 7 的 @electron/rebuild 仍通过 git 解析 @electron/node-gyp。
+# Forge 8 修复前必须关闭，否则无法安装宿主。
+blockExoticSubdeps: false
+allowBuilds:
+  electron: true
+  esbuild: true

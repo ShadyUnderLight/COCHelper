@@ -30,3 +30,38 @@ jobs:
         run: |
           git fetch --no-tags origin main
           git diff --check origin/main...HEAD
+
+  electron:
+    name: Electron bootstrap
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Show toolchain
+        run: |
+          node --version
+          pnpm --version
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Format, lint, typecheck
+        run: |
+          pnpm format
+          pnpm lint
+          pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: Security scans
+        run: |
+          pnpm check:renderer-isolation
+          pnpm check:secrets
+      - name: Package
+        run: pnpm package
+      - name: Packaged smoke
+        run: pnpm smoke
+      - name: Renderer isolation on webpack output
+        run: pnpm check:renderer-isolation

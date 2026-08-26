@@ -1,5 +1,8 @@
-/**
- * Domain 占位。投影 / diff / 对账等实现由 E2-* 落地。
- * 本包在 #266 只建立目录与导出面，不含业务符号。
- */
-export {};
+export {
+  createLineageId,
+  isLineageId,
+  isStableId,
+  makeStableId,
+  parseLineageId,
+} from './primitives';
+export type { Clock, LineageId, StableId, UuidSource } from './primitives';

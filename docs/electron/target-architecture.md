@@ -26,10 +26,10 @@ Electron Main（权威态）
 Preload
 └─ typed contextBridge API              ← renderer 无 Node.js、无裸 ipcRenderer
 packages/
-├─ wire        ← lossless JSON、BigInt、日期、canonical JSON、SHA-256（Issue #267）
-├─ domain      ← 投影、diff、对账、容量语义
-├─ contracts   ← 本目录文档对应的类型定义
-└─ testkit     ← Swift oracle parity 框架（Issue #268）
+├─ wire        ← lossless JSON、BigInt、日期、canonical JSON、SHA-256、饱和算术（#267）
+├─ domain      ← Clock/UUID seam + 投影、diff、对账、容量语义
+├─ contracts   ← Result、错误/诊断、IPC 取消及本目录文档对应的类型定义
+└─ testkit     ← 可重放 Clock/随机 seam + Swift oracle parity 框架（#267/#268）
 ```
 
 ## 3. 现有 Swift 边界 → 终态归属映射
@@ -60,7 +60,8 @@ Application Support 文件 / Keychain token，另开一次性 importer；importe
 
 1. **E0-02（本 issue）**：冻结契约 + golden fixtures —— 下游一切验收的引用基线。
 2. **E0-03（#266）**：Electron 工程、安全进程边界、CI bootstrap。
-3. **E1-01（#267）**：实现 wire-contract-v1.md §WA-1…§WA-7 的基础层。
+3. **E1-01（#267）**：实现 wire-contract-v1.md §WA-1…§WA-7，并冻结
+   shared-primitives-v1.md 的跨层基础 seam。
 4. **E1-02（#268)**：Swift oracle + golden parity 框架，直接消费 `Tests/Golden/` fixtures。
 5. **E2-\*（#269–274）**：按 behavior-matrix.md / error-matrix.md 逐域迁移。
 

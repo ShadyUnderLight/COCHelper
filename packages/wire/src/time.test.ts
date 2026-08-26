@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   UNIX_TO_REF_EPOCH_SECONDS,
   finiteOrReferenceZero,
+  formatBeijing,
   officialUtcDisplay,
   parseOfficialUtcMs,
   refSecondsToUnixSeconds,
   unixSecondsToRefSeconds,
 } from './time';
+import { isFiniteNumber, requireFiniteNumber } from './finite-number';
 
 describe('时间纪元（WA-4 T1/T2）', () => {
   it('Unix 与 Swift reference-date 偏移 978307200 秒', () => {
@@ -21,6 +23,19 @@ describe('时间纪元（WA-4 T1/T2）', () => {
     expect(finiteOrReferenceZero(Number.NaN)).toBe(0);
     expect(finiteOrReferenceZero(Number.POSITIVE_INFINITY)).toBe(0);
     expect(finiteOrReferenceZero(-12.5)).toBe(-12.5);
+  });
+
+  it('有限数字守卫拒绝 NaN/Infinity，日期格式化对无效范围 fail-closed', () => {
+    expect(isFiniteNumber(1.5)).toBe(true);
+    expect(isFiniteNumber(Number.NaN)).toBe(false);
+    expect(isFiniteNumber('1.5')).toBe(false);
+    expect(requireFiniteNumber(1.5)).toBe(1.5);
+    expect(() => requireFiniteNumber(Number.POSITIVE_INFINITY, 'seconds')).toThrow(
+      'seconds 必须是有限数字',
+    );
+    expect(() => formatBeijing(Number.NaN)).toThrow('utcMs 必须是有限数字');
+    expect(() => formatBeijing(Number.POSITIVE_INFINITY)).toThrow('utcMs 必须是有限数字');
+    expect(() => formatBeijing(8.64e15)).toThrow('JavaScript Date 可表示范围');
   });
 });
 

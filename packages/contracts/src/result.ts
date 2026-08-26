@@ -1,3 +1,5 @@
+import { isSafeIpcDiagnosticText, isSafeIpcIdentifier, isSafeIpcPath } from './safe-text';
+
 export const IPC_ERROR_KINDS = [
   'validation',
   'internal',
@@ -51,19 +53,20 @@ export function resultErr<E>(error: E): Result<never, E> {
 export function isIpcError(value: unknown): value is IpcError {
   if (
     !isRecord(value) ||
-    !hasOnlyKeys(value, ['kind', 'code', 'messageKey', 'message', 'diagnostics'])
+    !hasOnlyKeys(value, ['kind', 'code', 'messageKey', 'message', 'diagnostics']) ||
+    !hasOwnKeys(value, ['kind', 'code', 'messageKey', 'message'])
   ) {
     return false;
   }
   if (
     !isIpcErrorKind(value.kind) ||
-    !isNonEmptyString(value.code) ||
-    !isNonEmptyString(value.messageKey) ||
-    typeof value.message !== 'string'
+    !isSafeIpcIdentifier(value.code) ||
+    !isSafeIpcIdentifier(value.messageKey) ||
+    !isSafeIpcDiagnosticText(value.message)
   ) {
     return false;
   }
-  return value.diagnostics === undefined || isDiagnostics(value.diagnostics);
+  return !Object.hasOwn(value, 'diagnostics') || isDiagnostics(value.diagnostics);
 }
 
 export function isResult<T, E>(
@@ -75,10 +78,20 @@ export function isResult<T, E>(
     return false;
   }
   if (value.ok === true) {
-    return hasOnlyKeys(value, ['ok', 'value']) && 'value' in value && isValue(value.value);
+    return (
+      hasOnlyKeys(value, ['ok', 'value']) &&
+      Object.hasOwn(value, 'ok') &&
+      Object.hasOwn(value, 'value') &&
+      isValue(value.value)
+    );
   }
   if (value.ok === false) {
-    return hasOnlyKeys(value, ['ok', 'error']) && 'error' in value && isError(value.error);
+    return (
+      hasOnlyKeys(value, ['ok', 'error']) &&
+      Object.hasOwn(value, 'ok') &&
+      Object.hasOwn(value, 'error') &&
+      isError(value.error)
+    );
   }
   return false;
 }
@@ -90,11 +103,12 @@ function isDiagnostics(value: unknown): value is readonly IpcDiagnostic[] {
       (diagnostic) =>
         isRecord(diagnostic) &&
         hasOnlyKeys(diagnostic, ['severity', 'code', 'messageKey', 'message', 'path']) &&
+        hasOwnKeys(diagnostic, ['severity', 'code', 'messageKey', 'message']) &&
         isDiagnosticSeverity(diagnostic.severity) &&
-        isNonEmptyString(diagnostic.code) &&
-        isNonEmptyString(diagnostic.messageKey) &&
-        typeof diagnostic.message === 'string' &&
-        (diagnostic.path === undefined || typeof diagnostic.path === 'string'),
+        isSafeIpcIdentifier(diagnostic.code) &&
+        isSafeIpcIdentifier(diagnostic.messageKey) &&
+        isSafeIpcDiagnosticText(diagnostic.message) &&
+        (!Object.hasOwn(diagnostic, 'path') || isSafeIpcPath(diagnostic.path)),
     )
   );
 }
@@ -107,10 +121,6 @@ function isDiagnosticSeverity(value: unknown): value is DiagnosticSeverity {
   return typeof value === 'string' && (DIAGNOSTIC_SEVERITIES as readonly string[]).includes(value);
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || value instanceof Error) {
     return false;
@@ -121,5 +131,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const allowed = new Set(keys);
-  return Object.keys(value).every((key) => allowed.has(key));
+  return Reflect.ownKeys(value).every((key) => typeof key === 'string' && allowed.has(key));
+}
+
+function hasOwnKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return keys.every((key) => Object.hasOwn(value, key));
 }

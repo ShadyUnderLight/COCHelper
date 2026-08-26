@@ -65,6 +65,18 @@ describe('toIpcError', () => {
     ).not.toContain('secret-token');
   });
 
+  it('不信任 IpcValidationError 被篡改的 code/messageKey', () => {
+    const error = new IpcValidationError('请求参数不合法', 'invalidCancelRequest');
+    Object.defineProperty(error, 'code', { value: 'forgedCode' });
+    Object.defineProperty(error, 'messageKey', { value: 'forged.messageKey' });
+
+    expect(toIpcError(error)).toMatchObject({
+      kind: 'validation',
+      code: 'invalidRequest',
+      messageKey: 'ipc.invalidRequest',
+    });
+  });
+
   it('将 AbortError 映射为 cancelled，不传播原始消息', () => {
     const error = new Error('request body secret');
     error.name = 'AbortError';

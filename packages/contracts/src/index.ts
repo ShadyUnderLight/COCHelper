@@ -21,3 +21,10 @@ export {
   resultOk,
 } from './result';
 export type { DiagnosticSeverity, IpcDiagnostic, IpcError, IpcErrorKind, Result } from './result';
+export {
+  IPC_DIAGNOSTIC_MAX_LENGTH,
+  isSafeIpcDiagnosticText,
+  isSafeIpcIdentifier,
+  isSafeIpcPath,
+  redactIpcDiagnosticText,
+} from './safe-text';

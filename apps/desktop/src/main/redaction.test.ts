@@ -25,9 +25,36 @@ describe('redactDiagnosticText', () => {
     }
   });
 
+  it('移除 JSON 和普通文本中的 Authorization、Cookie、Set-Cookie', () => {
+    const credential = 'opaque-credential';
+    const jsonMessage = JSON.stringify({
+      Authorization: authorizationMessage('Basic', credential),
+      headers: {
+        Cookie: `session=${credential}`,
+        'Set-Cookie': `session=${credential}; HttpOnly`,
+      },
+    });
+    const result = redactDiagnosticText(
+      `${jsonMessage}\nCookie: session=${credential}\nSet-Cookie: session=${credential}`,
+    );
+
+    expect(result).not.toContain(credential);
+    expect(result).toContain('[REDACTED]');
+  });
+
+  it('清洗 JSON 嵌套字段和转义 URL', () => {
+    const result = redactDiagnosticText(
+      '{"details":{"message":"https:\\/\\/example.test\\/private?token=opaque"}}',
+    );
+
+    expect(result).not.toContain('example.test');
+    expect(result).not.toContain('opaque');
+    expect(result).toContain('[REDACTED_URL]');
+  });
+
   it('截断过长诊断文本', () => {
     const result = redactDiagnosticText('x'.repeat(300));
-    expect(result).toHaveLength(201);
+    expect(result).toHaveLength(200);
     expect(result.endsWith('…')).toBe(true);
   });
 });

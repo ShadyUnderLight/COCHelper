@@ -24,16 +24,39 @@ const cancelRequestSchema = z
   })
   .strict();
 
+const IPC_VALIDATION_ERROR_DEFINITIONS = {
+  invalidRequest: {
+    code: 'invalidRequest',
+    messageKey: 'ipc.invalidRequest',
+  },
+  invalidCancelRequest: {
+    code: 'invalidCancelRequest',
+    messageKey: 'ipc.invalidCancelRequest',
+  },
+  senderDestroyed: {
+    code: 'senderDestroyed',
+    messageKey: 'ipc.senderDestroyed',
+  },
+  untrustedSender: {
+    code: 'untrustedSender',
+    messageKey: 'ipc.untrustedSender',
+  },
+} as const;
+
+type IpcValidationCode = keyof typeof IPC_VALIDATION_ERROR_DEFINITIONS;
+type IpcValidationDefinition = (typeof IPC_VALIDATION_ERROR_DEFINITIONS)[IpcValidationCode];
+
 export class IpcValidationError extends Error {
   override readonly name = 'IpcValidationError';
   readonly kind = 'validation' as const;
-  readonly code: string;
+  readonly code: IpcValidationCode;
   readonly messageKey: string;
 
-  constructor(message: string, code = 'invalidRequest', messageKey = 'ipc.invalidRequest') {
+  constructor(message: string, code: IpcValidationCode = 'invalidRequest') {
+    const definition = validationErrorDefinition(code);
     super(message);
-    this.code = code;
-    this.messageKey = messageKey;
+    this.code = definition.code;
+    this.messageKey = definition.messageKey;
   }
 }
 
@@ -47,11 +70,7 @@ export function parseAppHealthRequest(payload: unknown): void {
 export function parseCancelRequest(payload: unknown): CancelRequest {
   const result = cancelRequestSchema.safeParse(payload);
   if (!result.success) {
-    throw new IpcValidationError(
-      '取消请求参数不合法',
-      'invalidCancelRequest',
-      'ipc.invalidCancelRequest',
-    );
+    throw new IpcValidationError('取消请求参数不合法', 'invalidCancelRequest');
   }
   return { requestId: result.data.requestId as RequestId };
 }
@@ -63,10 +82,11 @@ export function appHealthResponse(): AppHealthResponse {
 /** 将内部异常收敛成不泄露原始上下文的 IPC 错误。 */
 export function toIpcError(error: unknown): IpcError {
   if (error instanceof IpcValidationError) {
+    const definition = validationErrorDefinition(error.code);
     return {
-      kind: error.kind,
-      code: error.code,
-      messageKey: error.messageKey,
+      kind: 'validation',
+      code: definition.code,
+      messageKey: definition.messageKey,
       message: redactDiagnosticText(error.message),
     };
   }
@@ -96,4 +116,10 @@ function isAbortError(error: unknown): boolean {
       'name' in error &&
       (error as { name?: unknown }).name === 'AbortError')
   );
+}
+
+function validationErrorDefinition(code: string): IpcValidationDefinition {
+  return Object.hasOwn(IPC_VALIDATION_ERROR_DEFINITIONS, code)
+    ? IPC_VALIDATION_ERROR_DEFINITIONS[code as IpcValidationCode]
+    : IPC_VALIDATION_ERROR_DEFINITIONS.invalidRequest;
 }

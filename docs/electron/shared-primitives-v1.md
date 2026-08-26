@@ -17,9 +17,10 @@
 `message` 是当前语言的安全展示文本。可选诊断包含 `severity`、`code`、`messageKey`、
 `message` 和受限 `path`。
 
-错误 envelope 不得包含 `Error`、`stack`、`cause`、URL、headers、response body、token
-或其他凭据。Main 对未知异常只返回通用 `internal`，参数错误只返回静态、经清洗的
-`validation` 文案。官方 API 的 `failureKind` 仍由后续 API 层按
+错误 envelope 不得包含 `Error`、`stack`、`cause`、URL、headers、Cookie、response body、
+token 或其他凭据。`code`/`messageKey` 必须是受限标识符，诊断 `message` 必须是已清洗且
+不超过 200 个字符的文本，`path` 只能由字段名和数组下标组成。Main 的 validation 错误
+只从静态定义选择 `code`/`messageKey`；未知异常只返回通用 `internal`。官方 API 的 `failureKind` 仍由后续 API 层按
 `error-matrix.md` 映射，不与 IPC `kind` 混用。
 
 ## 2. 时间与身份 seam

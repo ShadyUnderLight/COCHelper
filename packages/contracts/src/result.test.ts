@@ -55,4 +55,68 @@ describe('@coc-helper/contracts Result', () => {
     ).toBe(false);
     expect(isIpcError({ ...validError, diagnostics: [{ ...validError }] })).toBe(false);
   });
+
+  it('拒绝未清洗的 diagnostic 文本、凭据路径和超长消息', () => {
+    const credential = ['Authorization', ': ', 'Basic', ' ', 'opaque-credential'].join('');
+    expect(
+      isIpcError({ ...validError, message: JSON.stringify({ Authorization: credential }) }),
+    ).toBe(false);
+    expect(isIpcError({ ...validError, message: `Cookie: session=${credential}` })).toBe(false);
+    expect(
+      isIpcError({
+        ...validError,
+        diagnostics: [
+          {
+            severity: 'error',
+            code: 'invalidRequest',
+            messageKey: 'ipc.invalidRequest',
+            message: '字段不合法。',
+            path: 'headers["Authorization"]',
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isIpcError({
+        ...validError,
+        diagnostics: [
+          {
+            severity: 'error',
+            code: 'invalidRequest',
+            messageKey: 'ipc.invalidRequest',
+            message: 'x'.repeat(201),
+            path: 'snapshot.items[0]',
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('只接受 Result payload 的自有字段，不受 Object.prototype 污染影响', () => {
+    expect(
+      withPrototypeProperty('value', 'ready', () => isResult({ ok: true }, isString, isIpcError)),
+    ).toBe(false);
+    expect(
+      withPrototypeProperty('error', validError, () =>
+        isResult({ ok: false }, isString, isIpcError),
+      ),
+    ).toBe(false);
+  });
 });
+
+function withPrototypeProperty<T>(key: string, value: unknown, callback: () => T): T {
+  const previous = Object.getOwnPropertyDescriptor(Object.prototype, key);
+  try {
+    Object.defineProperty(Object.prototype, key, {
+      configurable: true,
+      value,
+    });
+    return callback();
+  } finally {
+    if (previous === undefined) {
+      Reflect.deleteProperty(Object.prototype, key);
+    } else {
+      Object.defineProperty(Object.prototype, key, previous);
+    }
+  }
+}

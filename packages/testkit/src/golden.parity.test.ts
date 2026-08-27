@@ -50,7 +50,7 @@ describe('fixture 脱敏', () => {
     expect(findFixtureSecretHits('{"tag":"#8G9P0Q2L"}', 'bad.json')).toEqual([
       'bad.json → 真实 Tag #8G9P0Q2L',
     ]);
-    expect(() => assertGoldenPayloadSafe(bearer, 'hdr.txt')).toThrow('Authorization Bearer');
+    expect(() => assertGoldenPayloadSafe(bearer, 'hdr.txt')).toThrow('Authorization');
     expect(() => assertGoldenPayloadSafe(jwt, 'jwt.txt')).toThrow('JWT');
     expect(() => assertGoldenPayloadSafe('Cookie: session=abc', 'cookie.txt')).toThrow('Cookie');
   });
@@ -89,6 +89,12 @@ describe('fixture 脱敏', () => {
         'raw.json',
       ),
     ).toThrow('JSON 敏感键 $.source.token');
+    expect(() =>
+      assertGoldenPayloadSafe(JSON.stringify({ source: 'X-API-Key: real-secret' }), 'raw.json'),
+    ).toThrow('header/键值形态 token');
+    expect(() =>
+      assertGoldenPayloadSafe(JSON.stringify({ source: 'token=real-secret' }), 'raw.json'),
+    ).toThrow('header/键值形态 token');
   });
 });
 

@@ -8,6 +8,7 @@ const ts = createRequire(import.meta.url)('typescript');
 
 const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FORBIDDEN_PACKAGE = '@coc-helper/testkit';
+const PACKAGED_MARKERS = [FORBIDDEN_PACKAGE, 'packages/testkit', 'COCHELPER_SWIFT_ORACLE', 'golden-oracle'];
 const WORKSPACE_PACKAGES = {
   '@coc-helper/testkit': 'packages/testkit',
   '@coc-helper/wire': 'packages/wire',
@@ -138,17 +139,10 @@ function loadsFromNode(node) {
       }
       return loads;
     }
-    if (
-      ts.isCallExpression(node.expression) &&
-      ts.isIdentifier(node.expression.expression) &&
-      node.expression.expression.text === 'createRequire'
-    ) {
-      loads.push({ kind: 'unsafe', reason: 'createRequire(...)()' });
+    if (ts.isIdentifier(node.expression) && node.expression.text === 'createRequire') {
+      loads.push({ kind: 'unsafe', reason: 'createRequire()' });
       return loads;
     }
-  }
-  if (ts.isIdentifier(node) && node.text === 'createRequire') {
-    loads.push({ kind: 'unsafe', reason: 'createRequire' });
   }
   return loads;
 }
@@ -328,7 +322,6 @@ function packagedHits(workspaceRoot) {
     path.join(workspaceRoot, 'apps/desktop/out'),
     path.join(workspaceRoot, 'apps/desktop/.webpack'),
   ];
-  const markers = [FORBIDDEN_PACKAGE, 'packages/testkit', 'COCHELPER_SWIFT_ORACLE', 'golden-oracle'];
   for (const dir of outputs) {
     if (!existsSync(dir)) {
       continue;
@@ -341,18 +334,66 @@ function packagedHits(workspaceRoot) {
       if (relative.includes('golden-oracle') || isTestkitFilesystemPath(file, workspaceRoot)) {
         hits.push(`发布产物含 golden-oracle / testkit：${relative}`);
       }
+      if (file.endsWith('.asar')) {
+        hits.push(...scanAsarArchive(file, relative, workspaceRoot));
+        continue;
+      }
       if (/\.(js|mjs|cjs|json)$/.test(file)) {
-        const text = readFileSync(file, 'utf8');
-        for (const marker of markers) {
-          if (text.includes(marker)) {
-            hits.push(`发布产物含 ${marker}：${relative}`);
-            break;
-          }
-        }
+        hits.push(...markerHitsInText(readFileSync(file, 'utf8'), relative));
       }
     }
   }
   return hits;
+}
+
+export function scanAsarArchive(archivePath, label, workspaceRoot = defaultRoot) {
+  const asar = loadAsarModule(workspaceRoot);
+  const hits = [];
+  const names = asar.listPackage(archivePath, { isPack: false });
+  for (const name of names) {
+    const posix = String(name).split(path.sep).join('/').replace(/^\//, '');
+    if (posix.includes('golden-oracle') || posix.includes('packages/testkit')) {
+      hits.push(`发布产物 ${label} 含 golden-oracle / testkit：${posix}`);
+    }
+    if (posix.endsWith('.swift')) {
+      hits.push(`发布产物 ${label} 含 Swift 源：${posix}`);
+    }
+    if (!/\.(js|mjs|cjs|json)$/.test(posix)) {
+      continue;
+    }
+    let text = '';
+    try {
+      text = asar.extractFile(archivePath, posix).toString('utf8');
+    } catch {
+      continue;
+    }
+    hits.push(...markerHitsInText(text, `${label}:${posix}`));
+  }
+  return hits;
+}
+
+function markerHitsInText(text, label) {
+  const hits = [];
+  for (const marker of PACKAGED_MARKERS) {
+    if (text.includes(marker)) {
+      hits.push(`发布产物含 ${marker}：${label}`);
+      break;
+    }
+  }
+  return hits;
+}
+
+function loadAsarModule(workspaceRoot) {
+  const fromDesktop = path.join(workspaceRoot, 'apps/desktop/package.json');
+  const fromRoot = path.join(workspaceRoot, 'package.json');
+  for (const manifest of [fromDesktop, fromRoot]) {
+    try {
+      return createRequire(manifest)('@electron/asar');
+    } catch {
+      continue;
+    }
+  }
+  throw new Error('无法加载 @electron/asar，无法检查 app.asar');
 }
 
 export function collectTestkitIsolationHits(workspaceRoot = defaultRoot) {

@@ -1,9 +1,13 @@
 const SECRET_PATTERNS: ReadonlyArray<{ re: RegExp; message: string }> = [
   { re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, message: '私钥块' },
-  { re: /Authorization:\s*Bearer\s+\S+/i, message: 'Authorization Bearer' },
+  { re: /Authorization:\s*\S+/i, message: 'Authorization' },
   { re: /\bCookie:\s*\S+/i, message: 'Cookie' },
   { re: /\bSet-Cookie:\s*\S+/i, message: 'Set-Cookie' },
   { re: /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/, message: 'JWT' },
+  {
+    re: /(?:^|[\s"'`])(?:x-)?(?:api[-_]?key|access[-_]?token|refresh[-_]?token|api[-_]?token|token)\s*[:=]\s*\S+/i,
+    message: 'header/键值形态 token',
+  },
 ];
 
 /** 规范化后的 JSON 键；覆盖 header 名与常见 token 字段，不靠值的形态。 */
@@ -38,11 +42,7 @@ export function findSensitiveJsonKeys(value: unknown, label: string, path = '$')
 
 export function findFixtureSecretHits(text: string, label: string): string[] {
   const hits: string[] = [];
-  for (const pattern of SECRET_PATTERNS) {
-    if (pattern.re.test(text)) {
-      hits.push(`${label} → ${pattern.message}`);
-    }
-  }
+  hits.push(...findTextSecretHits(text, label));
   for (const match of text.matchAll(COC_TAG)) {
     const tag = match[0];
     if (!ANONYMOUS_TAG.test(tag)) {
@@ -52,6 +52,16 @@ export function findFixtureSecretHits(text: string, label: string): string[] {
   const parsed = tryParseJson(text);
   if (parsed !== undefined) {
     hits.push(...findSensitiveJsonKeys(parsed, label));
+  }
+  return unique(hits);
+}
+
+function findTextSecretHits(text: string, label: string): string[] {
+  const hits: string[] = [];
+  for (const pattern of SECRET_PATTERNS) {
+    if (pattern.re.test(text)) {
+      hits.push(`${label} → ${pattern.message}`);
+    }
   }
   return hits;
 }
@@ -69,6 +79,7 @@ function walkJson(value: unknown, label: string, path: string, hits: string[]): 
     if (nested !== undefined && nested !== null && typeof nested === 'object') {
       walkJson(nested, label, path, hits);
     }
+    hits.push(...findTextSecretHits(value, `${label} @ ${path}`));
     return;
   }
   if (Array.isArray(value)) {
@@ -95,4 +106,8 @@ function tryParseJson(text: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values)];
 }

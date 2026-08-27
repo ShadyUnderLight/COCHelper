@@ -1,10 +1,18 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   collectTestkitIsolationHits,
   extractImportSpecifiers,
+  extractUnsafeDynamicLoads,
   findForbiddenImportHits,
   isTestkitPackageSpecifier,
+  scanAsarArchive,
 } from './check-testkit-isolation.mjs';
 
 describe('testkit isolation', () => {
@@ -63,14 +71,43 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(`import { parseJson } from '@coc-helper/wire';`, fromMain)).toEqual(
       [],
     );
+    expect(findForbiddenImportHits(`import { createRequire } from 'node:module';`, fromMain)).toEqual(
+      [],
+    );
     expect(
       findForbiddenImportHits(`const pkg = '@coc-helper/testkit'; import(pkg);`, fromMain),
     ).not.toEqual([]);
+    const createRequireHits = findForbiddenImportHits(
+      `import { createRequire } from 'node:module'; createRequire(import.meta.url)(pkg);`,
+      fromMain,
+    );
+    expect(createRequireHits).toEqual([
+      `${fromMain} 不得使用无法静态解析的动态加载（createRequire()）`,
+    ]);
     expect(
-      findForbiddenImportHits(
+      extractUnsafeDynamicLoads(
         `import { createRequire } from 'node:module'; createRequire(import.meta.url)(pkg);`,
-        fromMain,
       ),
-    ).not.toEqual([]);
+    ).toEqual(['createRequire()']);
+  });
+
+  it('会解包扫描 app.asar 内的 js', async () => {
+    const asar = createRequire(fileURLToPath(import.meta.url))('@electron/asar');
+    const root = mkdtempSync(path.join(os.tmpdir(), 'testkit-asar-'));
+    const src = path.join(root, 'src');
+    mkdirSync(src);
+    try {
+      writeFileSync(path.join(src, 'index.js'), 'export const x = 1;\n');
+      const cleanArchive = path.join(root, 'clean.asar');
+      await asar.createPackage(src, cleanArchive);
+      expect(scanAsarArchive(cleanArchive, 'clean.asar')).toEqual([]);
+
+      writeFileSync(path.join(src, 'index.js'), 'import "@coc-helper/testkit";\n');
+      const dirtyArchive = path.join(root, 'app.asar');
+      await asar.createPackage(src, dirtyArchive);
+      expect(scanAsarArchive(dirtyArchive, 'app.asar').join('\n')).toContain('@coc-helper/testkit');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

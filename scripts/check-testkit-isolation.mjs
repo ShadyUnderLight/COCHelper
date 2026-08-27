@@ -202,7 +202,7 @@ function collectModuleLoads(text, fileName) {
       seen.add(unwrapped.text);
       const stored = arrayShapes.get(unwrapped.text);
       if (stored) {
-        return { opaque: stored.opaque, kinds: stored.kinds };
+        return stored;
       }
       return { opaque: true, kinds: [] };
     }
@@ -219,9 +219,7 @@ function collectModuleLoads(text, fileName) {
         requirers.add(name.text);
       }
       if (looksLikeArray(valueExpr)) {
-        const next = shapeFromValue(valueExpr);
-        const prev = arrayShapes.get(name.text);
-        arrayShapes.set(name.text, prev?.opaque ? { opaque: true, kinds: next.kinds } : next);
+        arrayShapes.set(name.text, shapeFromValue(valueExpr));
       } else if (arrayShapes.has(name.text)) {
         arrayShapes.set(name.text, { opaque: true, kinds: [] });
       }
@@ -327,7 +325,7 @@ function collectModuleLoads(text, fileName) {
     if (!shape || shape.opaque) {
       return;
     }
-    arrayShapes.set(expr.text, { opaque: true, kinds: shape.kinds });
+    shape.opaque = true;
   };
 
   const calleeProperty = (expr) => {

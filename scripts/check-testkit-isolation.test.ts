@@ -293,6 +293,30 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(reassignedConcat, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
     );
+    const aliasedRefPush = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      const ref = aliases;
+      ref.push(createRequire);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(aliasedRefPush, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const aliasedRefIndex = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      const ref = aliases;
+      ref[0] = createRequire;
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(aliasedRefIndex, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

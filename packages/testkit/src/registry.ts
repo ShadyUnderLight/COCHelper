@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { TEST_CATEGORIES, type TestCategory } from './manifest';
@@ -106,11 +106,27 @@ function assertSwiftTestOwner(id: string, swift: string, repoRoot: string): void
   if (!resolved.startsWith(prefix)) {
     throw new Error(`${id} 的 swift 路径解析后必须位于 Tests/ 内：${swift}`);
   }
-  if (path.extname(resolved) !== '.swift') {
-    throw new Error(`${id} 的 swift 路径必须指向 .swift 文件：${swift}`);
-  }
-  if (!existsSync(resolved) || !statSync(resolved).isFile()) {
+  let canonicalRoot: string;
+  let canonicalTestsRoot: string;
+  let canonicalFile: string;
+  try {
+    canonicalRoot = realpathSync(root);
+    canonicalTestsRoot = realpathSync(testsRoot);
+    canonicalFile = realpathSync(resolved);
+  } catch {
     throw new Error(`${id} 的 swift 路径不是文件：${swift}`);
+  }
+  if (canonicalTestsRoot !== path.join(canonicalRoot, 'Tests')) {
+    throw new Error(`${id} 的 swift 路径解析后必须位于 Tests/ 内：${swift}`);
+  }
+  const canonicalPrefix = canonicalTestsRoot.endsWith(path.sep)
+    ? canonicalTestsRoot
+    : `${canonicalTestsRoot}${path.sep}`;
+  if (!canonicalFile.startsWith(canonicalPrefix)) {
+    throw new Error(`${id} 的 swift 路径解析后必须位于 Tests/ 内：${swift}`);
+  }
+  if (path.extname(canonicalFile) !== '.swift' || !statSync(canonicalFile).isFile()) {
+    throw new Error(`${id} 的 swift 路径必须指向 .swift 文件：${swift}`);
   }
 }
 

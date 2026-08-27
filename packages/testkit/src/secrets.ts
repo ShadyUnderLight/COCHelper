@@ -5,7 +5,7 @@ const SECRET_PATTERNS: ReadonlyArray<{ re: RegExp; message: string }> = [
   { re: /\bSet-Cookie:\s*\S+/i, message: 'Set-Cookie' },
   { re: /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/, message: 'JWT' },
   {
-    re: /(?:^|[\s"'`?&#])(?:x-)?(?:api[-_]?key|access[-_]?token|refresh[-_]?token|api[-_]?token|token)\s*[:=]\s*\S+/i,
+    re: /(?:^|[\s"'`?&#])(?:(?:x[-_])?api[-_]?key|(?:[a-z0-9]+(?:[-_][a-z0-9]+)*[-_]?)?token)\s*[:=]\s*\S+/i,
     message: 'header/键值形态 token',
   },
 ];
@@ -36,7 +36,7 @@ export function isSensitiveJsonKey(key: string): boolean {
   if (SENSITIVE_JSON_KEYS.has(normalized)) {
     return true;
   }
-  return normalized.startsWith('x') && SENSITIVE_JSON_KEYS.has(normalized.slice(1));
+  return normalized.endsWith('token');
 }
 
 export function findSensitiveJsonKeys(value: unknown, label: string, path = '$'): string[] {

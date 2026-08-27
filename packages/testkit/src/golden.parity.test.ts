@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -36,6 +37,22 @@ describe('golden fixture loader', () => {
     );
     expect(Object.keys(expected.expectations).length).toBeGreaterThan(0);
     expect(loadGoldenText('account_snapshot_golden.json')).toContain('#GOLDEN01');
+  });
+
+  it('拒绝 Fixtures 内指向外部的 symlink', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'golden-fixture-symlink-'));
+    try {
+      mkdirSync(path.join(root, 'Tests/Golden/Fixtures'), { recursive: true });
+      writeFileSync(path.join(root, 'outside.json'), '{}\n');
+      symlinkSync(
+        path.join(root, 'outside.json'),
+        path.join(root, 'Tests/Golden/Fixtures/linked.json'),
+      );
+
+      expect(() => loadGoldenText('linked.json', root)).toThrow('golden 路径逃出 Fixtures 目录');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -114,12 +131,39 @@ describe('fixture 脱敏', () => {
         'raw.json',
       ),
     ).toThrow('header/键值形态 token');
+    expect(
+      findFixtureSecretHits(String.raw`{"source":"\"\\u00238G9P0Q2L\""}`, 'raw.json'),
+    ).toContain('raw.json @ $.source → 真实 Tag #8G9P0Q2L');
+    expect(
+      findFixtureSecretHits(String.raw`{"source":"\"\\u0074oken=real-secret\""}`, 'raw.json'),
+    ).toContain('raw.json @ $.source → header/键值形态 token');
     expect(() =>
       assertGoldenPayloadSafe(
         JSON.stringify({ source: 'https://example.test/api?token=real-secret&scope=golden' }),
         'raw.json',
       ),
     ).toThrow('header/键值形态 token');
+    const commonAuthFields = JSON.stringify({
+      authToken: 'auth-secret',
+      sessionToken: 'session-secret',
+      idToken: 'id-secret',
+      headers: { 'X-Auth-Token': 'header-secret' },
+    });
+    expect(() => assertGoldenPayloadSafe(commonAuthFields, 'auth.json')).toThrow(
+      'JSON 敏感键 $.authToken',
+    );
+    expect(() => assertGoldenPayloadSafe(commonAuthFields, 'auth.json')).toThrow(
+      'JSON 敏感键 $.sessionToken',
+    );
+    expect(() => assertGoldenPayloadSafe(commonAuthFields, 'auth.json')).toThrow(
+      'JSON 敏感键 $.idToken',
+    );
+    expect(() => assertGoldenPayloadSafe(commonAuthFields, 'auth.json')).toThrow(
+      'JSON 敏感键 $.headers.X-Auth-Token',
+    );
+    expect(() => assertGoldenPayloadSafe('X-Auth-Token: header-secret', 'auth.txt')).toThrow(
+      'header/键值形态 token',
+    );
   });
 });
 

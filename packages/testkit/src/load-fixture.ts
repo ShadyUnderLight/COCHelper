@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { findRepoRoot, goldenFixturesRoot } from './paths';
@@ -22,6 +22,27 @@ export function resolveGoldenFixture(relativeName: string, repoRoot = findRepoRo
   const prefix = fixturesRoot.endsWith(path.sep) ? fixturesRoot : `${fixturesRoot}${path.sep}`;
   if (resolved !== fixturesRoot && !resolved.startsWith(prefix)) {
     throw new Error(`golden 路径逃出 Fixtures 目录：${relativeName}`);
+  }
+  let canonicalFixturesRoot: string;
+  let canonicalFile: string;
+  try {
+    const canonicalRoot = realpathSync(path.resolve(repoRoot));
+    canonicalFixturesRoot = realpathSync(fixturesRoot);
+    canonicalFile = realpathSync(resolved);
+    if (canonicalFixturesRoot !== path.join(canonicalRoot, 'Tests', 'Golden', 'Fixtures')) {
+      throw new Error('Fixtures 根目录是 symlink');
+    }
+  } catch {
+    throw new Error(`golden 文件不存在或无法解析：${relativeName}`);
+  }
+  const canonicalPrefix = canonicalFixturesRoot.endsWith(path.sep)
+    ? canonicalFixturesRoot
+    : `${canonicalFixturesRoot}${path.sep}`;
+  if (!canonicalFile.startsWith(canonicalPrefix)) {
+    throw new Error(`golden 路径逃出 Fixtures 目录：${relativeName}`);
+  }
+  if (!statSync(canonicalFile).isFile()) {
+    throw new Error(`golden 路径不是文件：${relativeName}`);
   }
   return resolved;
 }

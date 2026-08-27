@@ -398,6 +398,28 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(boundFactory, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+    const objectSpreadAndConcat = `
+      import { createRequire } from 'node:module';
+      const box = { ...{ make: createRequire } };
+      const { make } = box;
+      const req = make(import.meta.url);
+      req('@coc-helper/' + 'testkit');
+    `;
+    expect(extractImportSpecifiers(objectSpreadAndConcat)).toContain('@coc-helper/testkit');
+    expect(findForbiddenImportHits(objectSpreadAndConcat, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const unknownSpecifierDataFlow = `
+      import { createRequire } from 'node:module';
+      const box = { ...{ make: createRequire } };
+      const { make } = box;
+      const req = make(import.meta.url);
+      const suffix = getPackageName();
+      req('@coc-helper/' + suffix);
+    `;
+    expect(findForbiddenImportHits(unknownSpecifierDataFlow, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非字面量 require()）`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

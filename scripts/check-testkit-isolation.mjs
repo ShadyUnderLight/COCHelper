@@ -323,7 +323,15 @@ function collectModuleLoads(text, fileName) {
   const resolveObjectProperty = (valueExpr, key) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
     if (unwrapped && ts.isObjectLiteralExpression(unwrapped)) {
+      let resolved;
       for (const property of unwrapped.properties) {
+        if (ts.isSpreadAssignment(property)) {
+          const spread = resolveObjectProperty(property.expression, key);
+          if (spread) {
+            resolved = spread;
+          }
+          continue;
+        }
         let propertyKey = null;
         let propertyValue;
         if (ts.isShorthandPropertyAssignment(property)) {
@@ -334,14 +342,14 @@ function collectModuleLoads(text, fileName) {
           propertyValue = property.initializer;
         }
         if (propertyKey === key) {
-          return {
+          resolved = {
             value: propertyValue,
             kind: classifyExpr(propertyValue),
             shape: knownArrayShape(propertyValue),
           };
         }
       }
-      return undefined;
+      return resolved;
     }
     const base = referenceKey(unwrapped);
     if (base === null) {
@@ -371,11 +379,20 @@ function collectModuleLoads(text, fileName) {
 
   const registerObjectArrayShapes = (base, valueExpr, seen = new Set()) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
-    if (!unwrapped || !ts.isObjectLiteralExpression(unwrapped) || seen.has(base)) {
+    if (!unwrapped || !ts.isObjectLiteralExpression(unwrapped) || seen.has(unwrapped)) {
       return;
     }
-    seen.add(base);
+    seen.add(unwrapped);
     for (const property of unwrapped.properties) {
+      if (ts.isSpreadAssignment(property)) {
+        const spread = unwrapExpr(property.expression);
+        const sourceBase = referenceKey(spread);
+        if (sourceBase !== null) {
+          copyObjectArrayShapes(base, sourceBase);
+        }
+        registerObjectArrayShapes(base, spread, seen);
+        continue;
+      }
       let key = null;
       let propertyValue;
       if (ts.isShorthandPropertyAssignment(property)) {
@@ -758,11 +775,19 @@ function scriptKindFor(fileName) {
 }
 
 function stringLiteralText(node) {
-  if (!node) {
+  const expr = unwrapExpr(node);
+  if (!expr) {
     return null;
   }
-  if (ts.isStringLiteralLike(node)) {
-    return node.text;
+  if (ts.isStringLiteralLike(expr)) {
+    return expr.text;
+  }
+  if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = stringLiteralText(expr.left);
+    const right = stringLiteralText(expr.right);
+    if (left !== null && right !== null) {
+      return left + right;
+    }
   }
   return null;
 }
@@ -843,11 +868,17 @@ export function findForbiddenImportHits(text, fromRelative, workspaceRoot = defa
   for (const reason of extractUnsafeDynamicLoads(text, fromRelative)) {
     hits.push(`${fromRelative} 不得使用无法静态解析的动态加载（${reason}）`);
   }
+  const hasExactPackageMarker = text.includes(FORBIDDEN_PACKAGE);
+  const hasPackageFragments = text.includes('@coc-helper') && /\btestkit\b/i.test(text);
   if (
-    text.includes(FORBIDDEN_PACKAGE) &&
+    (hasExactPackageMarker || hasPackageFragments) &&
     !hits.some((hit) => hit.includes(`不得 import ${FORBIDDEN_PACKAGE}`))
   ) {
-    hits.push(`${fromRelative} 不得包含 ${FORBIDDEN_PACKAGE} 字面量`);
+    hits.push(
+      hasExactPackageMarker
+        ? `${fromRelative} 不得包含 ${FORBIDDEN_PACKAGE} 字面量`
+        : `${fromRelative} 不得包含 testkit 包标识或片段`,
+    );
   }
   return hits;
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -37,6 +37,38 @@ describe('test registry tsOwner', () => {
             {
               id: 'forged',
               swift: 'Tests/../Package.swift',
+              category: 'parser',
+              ownerIssue: 1,
+              tsOwner: null,
+              status: 'unported',
+              loadBearing: true,
+            },
+          ],
+        }),
+      );
+
+      expect(() => loadTestRegistry(root)).toThrow('解析后必须位于 Tests/ 内');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('拒绝 Tests/ 内指向外部的 Swift symlink', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'test-registry-symlink-'));
+    try {
+      mkdirSync(path.join(root, 'Tests/Golden'), { recursive: true });
+      mkdirSync(path.join(root, 'packages/testkit'), { recursive: true });
+      writeFileSync(path.join(root, 'Package.swift'), '// outside Tests\n');
+      symlinkSync(path.join(root, 'Package.swift'), path.join(root, 'Tests/Fake.swift'));
+      writeFileSync(
+        path.join(root, 'packages/testkit/registry.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          description: 'test',
+          tests: [
+            {
+              id: 'symlink',
+              swift: 'Tests/Fake.swift',
               category: 'parser',
               ownerIssue: 1,
               tsOwner: null,

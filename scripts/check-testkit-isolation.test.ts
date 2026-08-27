@@ -186,6 +186,36 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(opaqueArray, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
     );
+    const opaqueElement = `
+      import { createRequire } from 'node:module';
+      const aliases = [getCreateRequire()];
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(opaqueElement, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const conditionalElement = `
+      import { createRequire } from 'node:module';
+      const aliases = [flag ? createRequire : fallback];
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(conditionalElement, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const logicalElement = `
+      import { createRequire } from 'node:module';
+      const aliases = [flag && createRequire];
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(logicalElement, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

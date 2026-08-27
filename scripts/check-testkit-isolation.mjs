@@ -175,7 +175,11 @@ function collectModuleLoads(text, fileName) {
           kinds.push(...inner.kinds);
           continue;
         }
-        kinds.push(classifyExpr(el));
+        const kind = classifyExpr(el);
+        if (kind === null) {
+          opaque = true;
+        }
+        kinds.push(kind);
       }
       return { opaque, kinds };
     }

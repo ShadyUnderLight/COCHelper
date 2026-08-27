@@ -1017,6 +1017,21 @@ describe('testkit isolation', () => {
        const req = apply(box.get, box, []); ${load}`,
       `const box = { get() { return require; } };
        const req = Function.prototype.call.call(box.get, box); ${load}`,
+      `const arr = [{ skip: true }];
+       const req = arr.map(() => ({ get() { return require; } }))[0].get(); ${load}`,
+      `const arr = [{ get() { return require; } }]; const i = 0; const req = arr[i].get(); ${load}`,
+      `const req = [[[{ get() { return require; } }]]].flat(2)[0].get(); ${load}`,
+      `function use({ loader }) { return loader; } const req = use({ loader: require }); ${load}`,
+      `function use(loader) { return loader; } const req = use(...[require]); ${load}`,
+      `const box = { get() { return require; } }; const sources = [box];
+       const req = Object.assign({}, ...sources).get(); ${load}`,
+      `const box = { get req() { return require; } }; const req = box.req; ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = aliases.at.bind(aliases)(0); const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = Array.prototype.at.call(...[aliases, 0]); const req = make(import.meta.url); ${load}`,
+      `const box = { get() { return require; } };
+       const req = Reflect.apply(...[box.get, box, []]); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1024,6 +1039,23 @@ describe('testkit isolation', () => {
         expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
       );
     }
+  });
+
+  it('不会把普通回调和同名参数误判为动态加载器', () => {
+    const source = `
+      function redactJsonValue(value, markChanged) {
+        if (Array.isArray(value)) {
+          return value.map((item) => redactJsonValue(item, markChanged));
+        }
+        return value;
+      }
+      function redact(value) {
+        const sanitized = redactJsonValue(parsed, () => {});
+        return JSON.stringify(sanitized);
+      }
+      redact(structured.value);
+    `;
+    expect(extractUnsafeDynamicLoads(source)).toEqual([]);
   });
 
   it('生产源文件通过 symlink 指向 testkit 时按真实路径拒绝', () => {

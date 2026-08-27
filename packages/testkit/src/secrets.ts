@@ -19,6 +19,7 @@ const SENSITIVE_JSON_KEYS = new Set([
   'refreshtoken',
   'apitoken',
   'apikey',
+  'xapikey',
   'token',
 ]);
 
@@ -31,7 +32,11 @@ export function normalizeSecretKey(key: string): string {
 }
 
 export function isSensitiveJsonKey(key: string): boolean {
-  return SENSITIVE_JSON_KEYS.has(normalizeSecretKey(key));
+  const normalized = normalizeSecretKey(key);
+  if (SENSITIVE_JSON_KEYS.has(normalized)) {
+    return true;
+  }
+  return normalized.startsWith('x') && SENSITIVE_JSON_KEYS.has(normalized.slice(1));
 }
 
 export function findSensitiveJsonKeys(value: unknown, label: string, path = '$'): string[] {

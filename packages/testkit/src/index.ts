@@ -12,6 +12,7 @@ export {
   assertFixtureFingerprints,
   assertGoldenFixtureClosure,
   fingerprintGoldenFiles,
+  isIgnoredGoldenFixtureName,
   listGoldenFixtureFiles,
   loadGoldenManifest,
   TEST_CATEGORIES,

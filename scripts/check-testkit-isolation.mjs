@@ -135,15 +135,37 @@ function collectModuleLoads(text, fileName) {
     return classifyCallee(expr);
   };
 
+  const bindPattern = (name, inheritedKind) => {
+    if (ts.isIdentifier(name)) {
+      if (inheritedKind === 'factory') {
+        factories.add(name.text);
+      }
+      if (inheritedKind === 'requirer') {
+        requirers.add(name.text);
+      }
+      return;
+    }
+    if (ts.isObjectBindingPattern(name)) {
+      for (const element of name.elements) {
+        if (!ts.isBindingElement(element)) {
+          continue;
+        }
+        const key = bindingElementKey(element);
+        let kind = inheritedKind;
+        if (key === 'createRequire') {
+          kind = 'factory';
+        }
+        if (key === 'require') {
+          kind = 'requirer';
+        }
+        bindPattern(element.name, kind);
+      }
+    }
+  };
+
   const bindNode = (node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      const kind = classifyExpr(node.initializer);
-      if (kind === 'factory') {
-        factories.add(node.name.text);
-      }
-      if (kind === 'requirer') {
-        requirers.add(node.name.text);
-      }
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      bindPattern(node.name, classifyExpr(node.initializer));
     }
     if (
       ts.isBinaryExpression(node) &&
@@ -228,6 +250,22 @@ function loadsFromNode(node, classifyCallee) {
     }
   }
   return loads;
+}
+
+function bindingElementKey(element) {
+  if (element.propertyName) {
+    if (ts.isIdentifier(element.propertyName)) {
+      return element.propertyName.text;
+    }
+    if (ts.isStringLiteralLike(element.propertyName)) {
+      return element.propertyName.text;
+    }
+    return null;
+  }
+  if (ts.isIdentifier(element.name)) {
+    return element.name.text;
+  }
+  return null;
 }
 
 function scriptKindFor(fileName) {

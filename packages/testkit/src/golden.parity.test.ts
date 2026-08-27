@@ -89,6 +89,12 @@ describe('fixture 脱敏', () => {
     ).toThrow('JSON 敏感键 $.apiKey');
     expect(() =>
       assertGoldenPayloadSafe(
+        JSON.stringify({ headers: { 'X-API-Key': 'real-secret' } }),
+        'api.json',
+      ),
+    ).toThrow('JSON 敏感键 $.headers.X-API-Key');
+    expect(() =>
+      assertGoldenPayloadSafe(
         JSON.stringify({ source: JSON.stringify({ token: 'real-secret' }) }),
         'raw.json',
       ),

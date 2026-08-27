@@ -79,10 +79,16 @@ export function listGoldenFixtureFiles(repoRoot?: string): string[] {
   return walkFixtureFiles(goldenFixturesRoot(repoRoot), goldenFixturesRoot(repoRoot));
 }
 
+const IGNORED_FIXTURE_NAMES = new Set(['.DS_Store', 'Thumbs.db']);
+
+export function isIgnoredGoldenFixtureName(name: string): boolean {
+  return IGNORED_FIXTURE_NAMES.has(name);
+}
+
 function walkFixtureFiles(dir: string, root: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.')) {
+    if (isIgnoredGoldenFixtureName(entry.name)) {
       continue;
     }
     const full = path.join(dir, entry.name);

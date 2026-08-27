@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -923,6 +923,80 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(staticClassFieldCallable, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+  });
+
+  it('会闭合 callable、class 与容器表达式的传播', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const load = `
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      req(pkg);
+    `;
+    const cases = [
+      `const box = { nested: { get() { return require; } } };
+       const { nested: { get } } = box; const req = get(); ${load}`,
+      `const get = () => require; function pick() { return get; }
+       const alias = pick(); const req = alias(); ${load}`,
+      `const get = flag ? (() => require) : safe; const req = get(); ${load}`,
+      `const get = flag && (() => require); const req = get(); ${load}`,
+      `const get = () => require; const box = { get }; const req = box.get(); ${load}`,
+      `const get = () => require; const box = {}; box.get = get;
+       const req = box.get(); ${load}`,
+      `const box = { get() { return require; } };
+       const req = box.get.call(box); ${load}`,
+      `const box = { get() { return require; } };
+       const req = box.get.apply(box, []); ${load}`,
+      `const box = { get() { return require; } };
+       const req = box.get.bind(box)(); ${load}`,
+      `class Box { constructor() { this.get = () => require; } }
+       const box = new Box(); const req = box.get(); ${load}`,
+      `class Base { get() { return require; } } class Box extends Base {}
+       const req = new Box().get(); ${load}`,
+      `class Box { get() { return require; } } const holder = { box: new Box() };
+       const req = holder.box.get(); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = aliases.slice()[0]; const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module';
+       const make = (() => [createRequire])()[0]; const req = make(import.meta.url); ${load}`,
+      `const req = (() => ({ get() { return require; } }))().get(); ${load}`,
+      `function makeBox() { return { get() { return require; } }; }
+       const holder = { box: makeBox() }; const req = holder.box.get(); ${load}`,
+    ];
+
+    for (const source of cases) {
+      expect(findForbiddenImportHits(source, fromMain)).toEqual(
+        expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+      );
+    }
+  });
+
+  it('生产源文件通过 symlink 指向 testkit 时按真实路径拒绝', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'testkit-symlink-'));
+    try {
+      for (const manifest of [
+        'apps/desktop/package.json',
+        'packages/wire/package.json',
+        'packages/domain/package.json',
+        'packages/contracts/package.json',
+      ]) {
+        const file = path.join(root, manifest);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, '{}');
+      }
+      const target = path.join(root, 'packages/testkit/src/escape.ts');
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, 'export const fixture = 1;\n');
+      const link = path.join(root, 'apps/desktop/src/main/escape.ts');
+      mkdirSync(path.dirname(link), { recursive: true });
+      symlinkSync(target, link);
+
+      expect(collectTestkitIsolationHits(root)).toEqual(
+        expect.arrayContaining([
+          '生产源码通过真实路径到达 testkit：apps/desktop/src/main/escape.ts',
+        ]),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

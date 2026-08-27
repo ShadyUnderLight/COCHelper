@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,10 +45,15 @@ const MUTATING_ARRAY_METHODS = new Set([
   'copyWithin',
 ]);
 
-function walk(dir, { includeNodeModules = false } = {}) {
+function walk(dir, { includeNodeModules = false } = {}, seenDirectories = new Set()) {
   if (!existsSync(dir)) {
     return [];
   }
+  const realDirectory = realpathSync(dir);
+  if (seenDirectories.has(realDirectory)) {
+    return [];
+  }
+  seenDirectories.add(realDirectory);
   const out = [];
   for (const entry of readdirSync(dir)) {
     if ((!includeNodeModules && entry === 'node_modules') || (entry.startsWith('.') && entry !== '.webpack')) {
@@ -57,7 +62,7 @@ function walk(dir, { includeNodeModules = false } = {}) {
     const full = path.join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) {
-      out.push(...walk(full, { includeNodeModules }));
+      out.push(...walk(full, { includeNodeModules }, seenDirectories));
     } else {
       out.push(full);
     }
@@ -95,6 +100,8 @@ function collectModuleLoads(text, fileName) {
   const functionReturnShapes = new Map();
   const functionReturnExprs = new Map();
   const classInstances = new Map();
+  const classParents = new Map();
+  const valueExprs = new Map();
 
   const opaqueArrayShape = () => ({ opaque: true, kinds: [] });
 
@@ -513,7 +520,29 @@ function collectModuleLoads(text, fileName) {
   };
 
   const registerClassMethodReturns = (base, classNode) => {
+    const heritage = classNode.heritageClauses?.find(
+      (clause) => clause.token === ts.SyntaxKind.ExtendsKeyword,
+    );
+    const parent = heritage?.types[0] ? referenceKey(heritage.types[0].expression) : null;
+    if (parent !== null) {
+      classParents.set(base, parent);
+    }
     for (const member of classNode.members) {
+      if (ts.isConstructorDeclaration(member) && member.body) {
+        const registerConstructorAssignment = (node) => {
+          if (
+            ts.isBinaryExpression(node) &&
+            node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+          ) {
+            const target = staticMember(node.left);
+            if (target && target.object.kind === ts.SyntaxKind.ThisKeyword) {
+              registerCallableFacts(`${base}.prototype.${target.name}`, node.right);
+            }
+          }
+          ts.forEachChild(node, registerConstructorAssignment);
+        };
+        registerConstructorAssignment(member.body);
+      }
       let funcNode = null;
       if (ts.isMethodDeclaration(member) || ts.isGetAccessorDeclaration(member)) {
         funcNode = member;
@@ -531,6 +560,23 @@ function collectModuleLoads(text, fileName) {
       );
       registerReturnFacts(isStatic ? `${base}.${name}` : `${base}.prototype.${name}`, funcNode);
     }
+  };
+
+  const inheritedFactKey = (key) => {
+    let current = key;
+    const seen = new Set();
+    while (!seen.has(current)) {
+      seen.add(current);
+      if (hasReturnFacts(current) || valueKinds.has(current) || arrayShapes.has(current)) {
+        return current;
+      }
+      const match = /^(.+)\.prototype\.([^.]+)$/.exec(current);
+      if (!match) return current;
+      const parent = classParents.get(match[1]);
+      if (!parent) return current;
+      current = `${parent}.prototype.${match[2]}`;
+    }
+    return key;
   };
 
   const registerFunctionReturn = (node) => {
@@ -641,16 +687,19 @@ function collectModuleLoads(text, fileName) {
     if (!callee) {
       return null;
     }
+    const access = staticMember(callee);
+    if (access?.name === 'call' || access?.name === 'apply') {
+      return callableReturnKind(access.object);
+    }
     const key = callableReferenceKey(callee);
     if (key !== null) {
-      const stored = functionReturns.get(key);
+      const stored = functionReturns.get(inheritedFactKey(key));
       if (stored) return stored;
     }
-    const access = staticMember(callee);
     if (access) {
       return callablePropertyReturnKind(resolveObjectProperty(access.object, access.name));
     }
-    return null;
+    return callableReturnKind(callee);
   };
 
   const storeArrayShape = (key, next) => {
@@ -823,9 +872,16 @@ function collectModuleLoads(text, fileName) {
       return shapeFromValue(unwrapped);
     }
     if (ts.isCallExpression(unwrapped)) {
+      const access = staticMember(unwrapped.expression);
+      if (access?.name === 'slice') {
+        return shapeForValue(access.object);
+      }
       const callee = unwrapExpr(unwrapped.expression);
+      if (isFunctionLikeNode(callee)) {
+        return functionReturnShapeOf(callee);
+      }
       const funcKey = callableReferenceKey(callee);
-      if (funcKey) return functionReturnShapes.get(funcKey);
+      if (funcKey) return functionReturnShapes.get(inheritedFactKey(funcKey));
       return undefined;
     }
     const key = referenceKey(unwrapped);
@@ -834,12 +890,15 @@ function collectModuleLoads(text, fileName) {
 
   const knownArrayShape = (valueExpr) => shapeForValue(valueExpr);
 
-  const resolveObjectProperty = (valueExpr, key) => {
+  const resolveObjectProperty = (valueExpr, key, seen = new Set()) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped || seen.has(unwrapped)) return undefined;
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
     if (unwrapped && ts.isConditionalExpression(unwrapped)) {
       let fallback;
       for (const branch of [unwrapped.whenTrue, unwrapped.whenFalse]) {
-        const resolved = resolveObjectProperty(branch, key);
+        const resolved = resolveObjectProperty(branch, key, nextSeen);
         if (!resolved) continue;
         if (dangerousPropertyKind(resolved) !== null) return resolved;
         if (!fallback) fallback = resolved;
@@ -847,11 +906,10 @@ function collectModuleLoads(text, fileName) {
       return fallback;
     }
     if (unwrapped && ts.isCallExpression(unwrapped)) {
-      const callableKey = callableReferenceKey(unwrapped.expression);
-      const returnExprs = callableKey === null ? undefined : functionReturnExprs.get(callableKey);
+      const returnExprs = returnExprsForCallable(unwrapped.expression);
       let fallback;
-      for (const returnExpr of returnExprs ?? []) {
-        const resolved = resolveObjectProperty(returnExpr, key);
+      for (const returnExpr of returnExprs) {
+        const resolved = resolveObjectProperty(returnExpr, key, nextSeen);
         if (!resolved) continue;
         if (dangerousPropertyKind(resolved) !== null) return resolved;
         if (!fallback) fallback = resolved;
@@ -862,7 +920,7 @@ function collectModuleLoads(text, fileName) {
       let resolved;
       for (const property of unwrapped.properties) {
         if (ts.isSpreadAssignment(property)) {
-          const spread = resolveObjectProperty(property.expression, key);
+          const spread = resolveObjectProperty(property.expression, key, nextSeen);
           if (spread) {
             resolved = spread;
           }
@@ -891,15 +949,132 @@ function collectModuleLoads(text, fileName) {
       }
       return resolved;
     }
+    const sourceKey = referenceKey(unwrapped);
+    const storedValue = sourceKey === null ? undefined : valueExprs.get(sourceKey);
+    if (storedValue && storedValue !== unwrapped) {
+      const resolved = resolveObjectProperty(storedValue, key, nextSeen);
+      if (resolved) return resolved;
+    }
     const propertyKey = callableMemberKey(unwrapped, key);
     if (propertyKey === null) {
       return undefined;
     }
-    const shape = arrayShapes.get(propertyKey);
-    const kind = valueKinds.get(propertyKey);
-    return shape || kind || hasReturnFacts(propertyKey)
-      ? { value: undefined, kind: kind ?? null, shape, callableKey: propertyKey }
+    const factKey = inheritedFactKey(propertyKey);
+    const shape = arrayShapes.get(factKey);
+    const kind = valueKinds.get(factKey);
+    return shape || kind || hasReturnFacts(factKey)
+      ? { value: undefined, kind: kind ?? null, shape, callableKey: factKey }
       : undefined;
+  };
+
+  const returnExprsForCallable = (valueExpr) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped) return [];
+    if (isFunctionLikeNode(unwrapped)) {
+      return collectReturnExprs(unwrapped);
+    }
+    const access = staticMember(unwrapped);
+    if (access?.name === 'call' || access?.name === 'apply') {
+      return returnExprsForCallable(access.object);
+    }
+    const callableKey = callableReferenceKey(unwrapped);
+    if (callableKey === null) return [];
+    return functionReturnExprs.get(inheritedFactKey(callableKey)) ?? [];
+  };
+
+  const callableReturnKind = (valueExpr, seen = new Set()) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped || seen.has(unwrapped)) return null;
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    if (isFunctionLikeNode(unwrapped)) {
+      return functionReturnKind(unwrapped);
+    }
+    if (ts.isConditionalExpression(unwrapped)) {
+      return (
+        callableReturnKind(unwrapped.whenTrue, nextSeen) ??
+        callableReturnKind(unwrapped.whenFalse, nextSeen)
+      );
+    }
+    if (
+      ts.isBinaryExpression(unwrapped) &&
+      (unwrapped.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+        unwrapped.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+        unwrapped.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+    ) {
+      return (
+        callableReturnKind(unwrapped.left, nextSeen) ??
+        callableReturnKind(unwrapped.right, nextSeen)
+      );
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const access = staticMember(unwrapped.expression);
+      if (access?.name === 'bind') {
+        return callableReturnKind(access.object, nextSeen);
+      }
+      for (const returned of returnExprsForCallable(unwrapped.expression)) {
+        const kind = callableReturnKind(returned, nextSeen);
+        if (kind === 'factory' || kind === 'requirer') return kind;
+      }
+      return null;
+    }
+    const member = staticMember(unwrapped);
+    if (member) {
+      const resolved = resolveObjectProperty(member.object, member.name);
+      const kind = callablePropertyReturnKind(resolved);
+      if (kind !== null) return kind;
+      if (resolved?.value) return callableReturnKind(resolved.value, nextSeen);
+    }
+    const callableKey = callableReferenceKey(unwrapped);
+    if (callableKey === null) return null;
+    return functionReturns.get(inheritedFactKey(callableKey)) ?? null;
+  };
+
+  const registerCallableFacts = (targetKey, valueExpr, seen = new Set()) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped || seen.has(unwrapped)) return;
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    if (isFunctionLikeNode(unwrapped)) {
+      registerReturnFacts(targetKey, unwrapped);
+      return;
+    }
+    if (ts.isConditionalExpression(unwrapped)) {
+      registerCallableFacts(targetKey, unwrapped.whenTrue, nextSeen);
+      registerCallableFacts(targetKey, unwrapped.whenFalse, nextSeen);
+      return;
+    }
+    if (
+      ts.isBinaryExpression(unwrapped) &&
+      (unwrapped.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+        unwrapped.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+        unwrapped.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+    ) {
+      registerCallableFacts(targetKey, unwrapped.left, nextSeen);
+      registerCallableFacts(targetKey, unwrapped.right, nextSeen);
+      return;
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const access = staticMember(unwrapped.expression);
+      if (access?.name === 'bind') {
+        registerCallableFacts(targetKey, access.object, nextSeen);
+        return;
+      }
+      for (const returned of returnExprsForCallable(unwrapped.expression)) {
+        registerCallableFacts(targetKey, returned, nextSeen);
+      }
+      return;
+    }
+    const member = staticMember(unwrapped);
+    if (member) {
+      const resolved = resolveObjectProperty(member.object, member.name);
+      if (resolved?.callableKey) copyReturnFacts(targetKey, resolved.callableKey);
+      if (resolved?.value) registerCallableFacts(targetKey, resolved.value, nextSeen);
+    }
+    const sourceKey = callableReferenceKey(unwrapped);
+    if (sourceKey !== null && sourceKey !== targetKey) {
+      copyReturnFacts(targetKey, inheritedFactKey(sourceKey));
+    }
   };
 
   const copyObjectArrayShapes = (targetBase, sourceBase) => {
@@ -927,6 +1102,11 @@ function collectModuleLoads(text, fileName) {
     for (const [key, exprs] of [...functionReturnExprs.entries()]) {
       if (key.startsWith(prefix)) {
         functionReturnExprs.set(`${targetBase}.${key.slice(prefix.length)}`, exprs);
+      }
+    }
+    for (const [key, className] of [...classInstances.entries()]) {
+      if (key.startsWith(prefix)) {
+        classInstances.set(`${targetBase}.${key.slice(prefix.length)}`, className);
       }
     }
   };
@@ -960,7 +1140,14 @@ function collectModuleLoads(text, fileName) {
         continue;
       }
       const propertyBase = `${base}.${key}`;
+      valueExprs.set(propertyBase, propertyValue);
       storeValueKind(propertyBase, classifyExpr(propertyValue));
+      registerCallableFacts(propertyBase, propertyValue);
+      const unwrappedProperty = unwrapExpr(propertyValue);
+      if (unwrappedProperty && ts.isNewExpression(unwrappedProperty)) {
+        const classKey = referenceKey(unwrappedProperty.expression);
+        if (classKey !== null) classInstances.set(propertyBase, classKey);
+      }
       const shape = knownArrayShape(propertyValue);
       if (shape) {
         storeArrayShape(propertyBase, shape);
@@ -972,6 +1159,12 @@ function collectModuleLoads(text, fileName) {
       }
       registerObjectMethodReturns(propertyBase, propertyValue);
       registerObjectArrayShapes(propertyBase, propertyValue, seen);
+      if (unwrappedProperty && ts.isCallExpression(unwrappedProperty)) {
+        for (const returned of returnExprsForCallable(unwrappedProperty.expression)) {
+          registerObjectMethodReturns(propertyBase, returned);
+          registerObjectArrayShapes(propertyBase, returned, seen);
+        }
+      }
     }
   };
 
@@ -1006,9 +1199,13 @@ function collectModuleLoads(text, fileName) {
         }
       }
       const unwrappedValue = valueExpr ? unwrapExpr(valueExpr) : undefined;
+      if (unwrappedValue) {
+        valueExprs.set(name.text, unwrappedValue);
+      }
       if (unwrappedValue && isFunctionLikeNode(unwrappedValue)) {
         registerReturnFacts(name.text, unwrappedValue);
       }
+      registerCallableFacts(name.text, unwrappedValue);
       const sourceCallableKey = callableKeyOverride ?? callableReferenceKey(unwrappedValue);
       if (sourceCallableKey !== null && sourceCallableKey !== name.text) {
         copyReturnFacts(name.text, sourceCallableKey);
@@ -1264,6 +1461,7 @@ function collectModuleLoads(text, fileName) {
       const left = unwrapExpr(node.left);
       const leftKey = referenceKey(left);
       if (leftKey !== null && !ts.isIdentifier(left)) {
+        valueExprs.set(leftKey, unwrapExpr(node.right));
         const kind = classifyExpr(node.right);
         if (kind === 'factory' || kind === 'requirer') {
           storeValueKind(leftKey, kind);
@@ -1275,6 +1473,12 @@ function collectModuleLoads(text, fileName) {
           storeArrayShape(leftKey, shape);
         } else if (arrayShapes.has(leftKey)) {
           markArrayOpaque(left);
+        }
+        registerCallableFacts(leftKey, node.right);
+        const assigned = unwrapExpr(node.right);
+        if (assigned && ts.isNewExpression(assigned)) {
+          const classKey = referenceKey(assigned.expression);
+          if (classKey !== null) classInstances.set(leftKey, classKey);
         }
       }
       bindAssignmentTarget(node.left, classifyExpr(node.right), node.right);
@@ -1306,7 +1510,7 @@ function collectModuleLoads(text, fileName) {
       [...functionReturns.entries()],
     )}|${JSON.stringify([...functionReturnShapes.entries()])}|${JSON.stringify([
       ...classInstances.entries(),
-    ])}`;
+    ])}|${JSON.stringify([...classParents.entries()])}`;
   while (previous !== snapshot()) {
     previous = snapshot();
     bindNode(sourceFile);
@@ -1491,8 +1695,12 @@ export function isTestkitArchivePath(posix) {
 }
 
 export function isTestkitFilesystemPath(absolute, workspaceRoot = defaultRoot) {
-  const testkitRoot = path.resolve(workspaceRoot, 'packages/testkit');
-  const resolved = path.resolve(absolute);
+  const lexicalTestkitRoot = path.resolve(workspaceRoot, 'packages/testkit');
+  const testkitRoot = existsSync(lexicalTestkitRoot)
+    ? realpathSync(lexicalTestkitRoot)
+    : lexicalTestkitRoot;
+  const lexicalResolved = path.resolve(absolute);
+  const resolved = existsSync(lexicalResolved) ? realpathSync(lexicalResolved) : lexicalResolved;
   return resolved === testkitRoot || resolved.startsWith(`${testkitRoot}${path.sep}`);
 }
 
@@ -1602,6 +1810,10 @@ function sourceImportHits(workspaceRoot) {
     for (const file of walk(path.join(workspaceRoot, tree))) {
       const relative = posixRelative(workspaceRoot, file);
       if (!isProductionSource(relative)) {
+        continue;
+      }
+      if (isTestkitFilesystemPath(file, workspaceRoot)) {
+        hits.push(`生产源码通过真实路径到达 testkit：${relative}`);
         continue;
       }
       hits.push(

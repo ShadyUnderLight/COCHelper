@@ -145,56 +145,6 @@ function collectModuleLoads(text, fileName) {
     return null;
   };
 
-  const inlineObjectProperty = (valueExpr, key) => {
-    const object = unwrapExpr(valueExpr);
-    if (!object) return undefined;
-    if (ts.isCallExpression(object)) {
-      const callee = unwrapExpr(object.expression);
-      const funcKey = callableReferenceKey(callee);
-      if (funcKey) {
-        const returnExprs = functionReturnExprs.get(funcKey);
-        if (returnExprs) {
-          let fallback;
-          for (const retExpr of returnExprs) {
-            const result = inlineObjectProperty(retExpr, key);
-            if (!result) continue;
-            const kind = classifyExpr(result.value);
-            if (kind === 'factory' || kind === 'requirer') return result;
-            if (!fallback) fallback = result;
-          }
-          return fallback;
-        }
-      }
-      return undefined;
-    }
-    if (!ts.isObjectLiteralExpression(object)) {
-      return undefined;
-    }
-    let resolved;
-    for (const property of object.properties) {
-      if (ts.isSpreadAssignment(property)) {
-        const spread = inlineObjectProperty(property.expression, key);
-        if (spread) {
-          resolved = spread;
-        }
-        continue;
-      }
-      let propertyKey = null;
-      let propertyValue;
-      if (ts.isShorthandPropertyAssignment(property)) {
-        propertyKey = property.name.text;
-        propertyValue = property.name;
-      } else if (ts.isPropertyAssignment(property)) {
-        propertyKey = propertyNameText(property.name);
-        propertyValue = property.initializer;
-      }
-      if (propertyKey === key) {
-        resolved = { value: propertyValue };
-      }
-    }
-    return resolved;
-  };
-
   const staticStringValue = (expr, seen = new Set()) => {
     const unwrapped = unwrapExpr(expr);
     if (!unwrapped) {
@@ -434,12 +384,9 @@ function collectModuleLoads(text, fileName) {
     }
     const member = staticMember(unwrapped);
     if (member) {
-      const inline = inlineObjectProperty(member.object, member.name);
-      if (inline) {
-        const kind = classifyExpr(inline.value);
-        if (kind !== null) {
-          return kind;
-        }
+      const resolved = resolveObjectProperty(member.object, member.name);
+      if (resolved?.kind !== null && resolved?.kind !== undefined) {
+        return resolved.kind;
       }
     }
     const key = referenceKey(unwrapped);
@@ -533,50 +480,6 @@ function collectModuleLoads(text, fileName) {
     return opaqueArrayShape();
   };
 
-  const inlineObjectMethod = (valueExpr, key) => {
-    const object = unwrapExpr(valueExpr);
-    if (!object) return null;
-    if (ts.isCallExpression(object)) {
-      const callee = unwrapExpr(object.expression);
-      const funcKey = callableReferenceKey(callee);
-      if (funcKey) {
-        const returnExprs = functionReturnExprs.get(funcKey);
-        if (returnExprs) {
-          for (const retExpr of returnExprs) {
-            const method = inlineObjectMethod(retExpr, key);
-            if (method) {
-              const kind = functionReturnKind(method);
-              if (kind === 'factory' || kind === 'requirer') return method;
-            }
-          }
-          for (const retExpr of returnExprs) {
-            const method = inlineObjectMethod(retExpr, key);
-            if (method) return method;
-          }
-        }
-      }
-      return null;
-    }
-    if (!ts.isObjectLiteralExpression(object)) return null;
-    let resolved = null;
-    for (const property of object.properties) {
-      if (ts.isSpreadAssignment(property)) {
-        const spread = inlineObjectMethod(property.expression, key);
-        if (spread) resolved = spread;
-        continue;
-      }
-      if (!property.name) continue;
-      const propKey = propertyNameText(property.name);
-      if (propKey !== key) continue;
-      if (ts.isMethodDeclaration(property) || ts.isGetAccessorDeclaration(property)) {
-        resolved = property;
-      } else if (ts.isPropertyAssignment(property) && isFunctionLikeNode(unwrapExpr(property.initializer))) {
-        resolved = unwrapExpr(property.initializer);
-      }
-    }
-    return resolved;
-  };
-
   const registerReturnFacts = (key, funcNode) => {
     const kind = functionReturnKind(funcNode);
     if (kind !== null) {
@@ -611,15 +514,22 @@ function collectModuleLoads(text, fileName) {
 
   const registerClassMethodReturns = (base, classNode) => {
     for (const member of classNode.members) {
-      if (!ts.isMethodDeclaration(member) && !ts.isGetAccessorDeclaration(member)) {
-        continue;
+      let funcNode = null;
+      if (ts.isMethodDeclaration(member) || ts.isGetAccessorDeclaration(member)) {
+        funcNode = member;
+      } else if (
+        ts.isPropertyDeclaration(member) &&
+        isFunctionLikeNode(unwrapExpr(member.initializer))
+      ) {
+        funcNode = unwrapExpr(member.initializer);
       }
+      if (!funcNode) continue;
       const name = propertyNameText(member.name);
       if (name === null) continue;
       const isStatic = member.modifiers?.some(
         (modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword,
       );
-      registerReturnFacts(isStatic ? `${base}.${name}` : `${base}.prototype.${name}`, member);
+      registerReturnFacts(isStatic ? `${base}.${name}` : `${base}.prototype.${name}`, funcNode);
     }
   };
 
@@ -706,6 +616,23 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
+  const callablePropertyReturnKind = (resolved) => {
+    if (!resolved) return null;
+    if (resolved.callableKey) {
+      const kind = functionReturns.get(resolved.callableKey);
+      if (kind === 'factory' || kind === 'requirer') return kind;
+    }
+    if (isFunctionLikeNode(resolved.value)) {
+      return functionReturnKind(resolved.value);
+    }
+    return null;
+  };
+
+  const dangerousPropertyKind = (resolved) =>
+    resolved?.kind === 'factory' || resolved?.kind === 'requirer'
+      ? resolved.kind
+      : callablePropertyReturnKind(resolved);
+
   const classifyFunctionCall = (expr) => {
     if (!ts.isCallExpression(expr)) {
       return null;
@@ -721,8 +648,7 @@ function collectModuleLoads(text, fileName) {
     }
     const access = staticMember(callee);
     if (access) {
-      const method = inlineObjectMethod(access.object, access.name);
-      if (method) return functionReturnKind(method);
+      return callablePropertyReturnKind(resolveObjectProperty(access.object, access.name));
     }
     return null;
   };
@@ -910,6 +836,16 @@ function collectModuleLoads(text, fileName) {
 
   const resolveObjectProperty = (valueExpr, key) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (unwrapped && ts.isConditionalExpression(unwrapped)) {
+      let fallback;
+      for (const branch of [unwrapped.whenTrue, unwrapped.whenFalse]) {
+        const resolved = resolveObjectProperty(branch, key);
+        if (!resolved) continue;
+        if (dangerousPropertyKind(resolved) !== null) return resolved;
+        if (!fallback) fallback = resolved;
+      }
+      return fallback;
+    }
     if (unwrapped && ts.isCallExpression(unwrapped)) {
       const callableKey = callableReferenceKey(unwrapped.expression);
       const returnExprs = callableKey === null ? undefined : functionReturnExprs.get(callableKey);
@@ -917,12 +853,7 @@ function collectModuleLoads(text, fileName) {
       for (const returnExpr of returnExprs ?? []) {
         const resolved = resolveObjectProperty(returnExpr, key);
         if (!resolved) continue;
-        const returnKind = isFunctionLikeNode(resolved.value)
-          ? functionReturnKind(resolved.value)
-          : resolved.kind;
-        if (returnKind === 'factory' || returnKind === 'requirer') {
-          return resolved;
-        }
+        if (dangerousPropertyKind(resolved) !== null) return resolved;
         if (!fallback) fallback = resolved;
       }
       return fallback;
@@ -1039,6 +970,7 @@ function collectModuleLoads(text, fileName) {
       if (sourceBase !== null) {
         copyObjectArrayShapes(propertyBase, sourceBase);
       }
+      registerObjectMethodReturns(propertyBase, propertyValue);
       registerObjectArrayShapes(propertyBase, propertyValue, seen);
     }
   };

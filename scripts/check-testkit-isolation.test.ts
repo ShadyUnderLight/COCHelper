@@ -750,6 +750,15 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(objectAliasMethodReturn, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+    const nestedObjectMethodReturn = `
+      const box = { nested: { get() { return require; } } };
+      const make = box.nested.get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(nestedObjectMethodReturn, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
     const functionReturnedObjectMethod = `
       function getBox() { return { get() { return require; } }; }
       const make = getBox().get();
@@ -759,12 +768,46 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(functionReturnedObjectMethod, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+    const namedObjectMethodReturn = `
+      const box = { get() { return require; } };
+      function getBox() { return box; }
+      const make = getBox().get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(namedObjectMethodReturn, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
     const multiBranchReturnObject = `
       function getBox(flag) { if (flag) return { f: require }; return { f: safe }; }
       const make = getBox(true).f;
       make('@coc-helper/testkit');
     `;
     expect(findForbiddenImportHits(multiBranchReturnObject, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const conditionalReturnedObject = `
+      function getBox(flag) {
+        return flag ? { f: require } : { f: safe };
+      }
+      const make = getBox(flag).f;
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(conditionalReturnedObject, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const conditionalReturnedObjectMethod = `
+      function getBox(flag) {
+        return flag
+          ? { get() { return require; } }
+          : { get() { return safe; } };
+      }
+      const make = getBox(flag).get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(conditionalReturnedObjectMethod, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
     const destructuredObjectMethod = `
@@ -856,6 +899,28 @@ describe('testkit isolation', () => {
       make('@coc-helper/testkit');
     `;
     expect(findForbiddenImportHits(staticClassMethod, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const classFieldCallable = `
+      class Box {
+        get = () => require;
+      }
+      const make = new Box().get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(classFieldCallable, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const staticClassFieldCallable = `
+      class Box {
+        static get = () => require;
+      }
+      const make = Box.get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(staticClassFieldCallable, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
   });

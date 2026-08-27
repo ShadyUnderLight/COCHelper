@@ -204,7 +204,7 @@ describe('testkit isolation', () => {
       req('@coc-helper/testkit');
     `;
     expect(findForbiddenImportHits(conditionalElement, fromMain)).toEqual(
-      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
     const logicalElement = `
       import { createRequire } from 'node:module';
@@ -214,7 +214,7 @@ describe('testkit isolation', () => {
       req('@coc-helper/testkit');
     `;
     expect(findForbiddenImportHits(logicalElement, fromMain)).toEqual(
-      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
     const mutatedPush = `
       import { createRequire } from 'node:module';
@@ -291,7 +291,7 @@ describe('testkit isolation', () => {
       req('@coc-helper/testkit');
     `;
     expect(findForbiddenImportHits(reassignedConcat, fromMain)).toEqual(
-      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
     const aliasedRefPush = `
       import { createRequire } from 'node:module';
@@ -960,6 +960,34 @@ describe('testkit isolation', () => {
       `const req = (() => ({ get() { return require; } }))().get(); ${load}`,
       `function makeBox() { return { get() { return require; } }; }
        const holder = { box: makeBox() }; const req = holder.box.get(); ${load}`,
+      `const req = flag ? require : safe; ${load}`,
+      `function getRequire(flag) { return flag && require; }
+       const req = getRequire(flag); ${load}`,
+      `const box = { get: flag ? require : safe }; const req = box.get; ${load}`,
+      `class Box { constructor() { this.req = require; } }
+       const req = new Box().req; ${load}`,
+      `class Box { req = require; } const req = new Box().req; ${load}`,
+      `class Base { static get() { return require; } } class Child extends Base {}
+       const req = Child.get(); ${load}`,
+      `class Base { static get = () => require; } class Child extends Base {}
+       const req = Child.get(); ${load}`,
+      `const box = { get() { return require; } };
+       function getBox(flag) { return flag && box; }
+       const req = getBox(flag).get(); ${load}`,
+      `const box = { get() { return require; } };
+       const req = Object.assign({}, box).get(); ${load}`,
+      `const box = { get() { return require; } };
+       const req = Reflect.apply(box.get, box, []); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const { at } = aliases; const make = at(0); const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const at = aliases.at; const make = at(0); const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [];
+       const make = aliases.concat(createRequire)[0]; const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = aliases.map((item) => item)[0]; const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [, createRequire];
+       const make = aliases.slice(1)[0]; const req = make(import.meta.url); ${load}`,
     ];
 
     for (const source of cases) {

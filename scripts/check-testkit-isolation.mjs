@@ -75,6 +75,7 @@ function collectModuleLoads(text, fileName) {
   );
   const factories = new Set();
   const requirers = new Set(['require']);
+  const arrayShapes = new Map();
 
   const seedImports = (node) => {
     if (
@@ -144,9 +145,52 @@ function collectModuleLoads(text, fileName) {
     return classifyExpr(valueExpr) ?? inheritedKind;
   };
 
-  const arrayLiteralElements = (valueExpr) => {
+  const looksLikeArray = (valueExpr) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
-    return unwrapped && ts.isArrayLiteralExpression(unwrapped) ? unwrapped.elements : undefined;
+    if (!unwrapped) {
+      return false;
+    }
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      return true;
+    }
+    return ts.isIdentifier(unwrapped) && arrayShapes.has(unwrapped.text);
+  };
+
+  const shapeFromValue = (valueExpr, seen = new Set()) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped) {
+      return { opaque: true, kinds: [] };
+    }
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      const kinds = [];
+      let opaque = false;
+      for (const el of unwrapped.elements) {
+        if (ts.isOmittedExpression(el)) {
+          kinds.push(null);
+          continue;
+        }
+        if (ts.isSpreadElement(el)) {
+          const inner = shapeFromValue(el.expression, seen);
+          opaque = opaque || inner.opaque;
+          kinds.push(...inner.kinds);
+          continue;
+        }
+        kinds.push(classifyExpr(el));
+      }
+      return { opaque, kinds };
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      if (seen.has(unwrapped.text)) {
+        return { opaque: true, kinds: [] };
+      }
+      seen.add(unwrapped.text);
+      const stored = arrayShapes.get(unwrapped.text);
+      if (stored) {
+        return { opaque: stored.opaque, kinds: stored.kinds };
+      }
+      return { opaque: true, kinds: [] };
+    }
+    return { opaque: true, kinds: [] };
   };
 
   const bindPattern = (name, inheritedKind, valueExpr) => {
@@ -157,6 +201,9 @@ function collectModuleLoads(text, fileName) {
       }
       if (kind === 'requirer') {
         requirers.add(name.text);
+      }
+      if (looksLikeArray(valueExpr)) {
+        arrayShapes.set(name.text, shapeFromValue(valueExpr));
       }
       return;
     }
@@ -178,26 +225,25 @@ function collectModuleLoads(text, fileName) {
       return;
     }
     if (ts.isArrayBindingPattern(name)) {
-      const rhs = arrayLiteralElements(valueExpr);
+      const shape = shapeFromValue(valueExpr);
       name.elements.forEach((element, i) => {
         if (ts.isOmittedExpression(element) || !ts.isBindingElement(element)) {
           return;
         }
         if (element.dotDotDotToken) {
           let kind = inheritedKind;
-          if (rhs) {
-            for (const item of rhs.slice(i)) {
-              kind = kindFromValue(item, kind);
+          if (!shape.opaque) {
+            for (const itemKind of shape.kinds.slice(i)) {
+              if (itemKind) {
+                kind = itemKind;
+              }
             }
           }
           bindPattern(element.name, kind, element.initializer);
           return;
         }
-        const childValue =
-          rhs && i < rhs.length && !ts.isOmittedExpression(rhs[i]) && !ts.isSpreadElement(rhs[i])
-            ? rhs[i]
-            : element.initializer;
-        bindPattern(element.name, kindFromValue(childValue, inheritedKind), childValue);
+        const itemKind = !shape.opaque && i < shape.kinds.length ? shape.kinds[i] : null;
+        bindPattern(element.name, itemKind ?? inheritedKind, element.initializer);
       });
     }
   };
@@ -214,16 +260,13 @@ function collectModuleLoads(text, fileName) {
       return;
     }
     if (ts.isArrayLiteralExpression(target)) {
-      const rhs = arrayLiteralElements(valueExpr);
+      const shape = shapeFromValue(valueExpr);
       target.elements.forEach((element, i) => {
         if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) {
           return;
         }
-        const childValue =
-          rhs && i < rhs.length && !ts.isOmittedExpression(rhs[i]) && !ts.isSpreadElement(rhs[i])
-            ? rhs[i]
-            : undefined;
-        bindAssignmentTarget(element, kindFromValue(childValue, inheritedKind), childValue);
+        const itemKind = !shape.opaque && i < shape.kinds.length ? shape.kinds[i] : null;
+        bindAssignmentTarget(element, itemKind ?? inheritedKind, undefined);
       });
       return;
     }
@@ -265,16 +308,34 @@ function collectModuleLoads(text, fileName) {
     ts.forEachChild(node, bindNode);
   };
 
+  const isOpaqueArrayBind = (node) => {
+    if (ts.isVariableDeclaration(node) && node.initializer && ts.isArrayBindingPattern(node.name)) {
+      return shapeFromValue(node.initializer).opaque;
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const left = unwrapExpr(node.left);
+      if (ts.isArrayLiteralExpression(left) || ts.isArrayBindingPattern(left)) {
+        return shapeFromValue(node.right).opaque;
+      }
+    }
+    return false;
+  };
+
   seedImports(sourceFile);
-  let previous = -1;
-  while (previous !== factories.size + requirers.size) {
-    previous = factories.size + requirers.size;
+  let previous = '';
+  const snapshot = () =>
+    `${factories.size}|${requirers.size}|${JSON.stringify([...arrayShapes.entries()])}`;
+  while (previous !== snapshot()) {
+    previous = snapshot();
     bindNode(sourceFile);
   }
 
   const loads = [];
   const visit = (node) => {
     loads.push(...loadsFromNode(node, classifyCallee));
+    if (isOpaqueArrayBind(node)) {
+      loads.push({ kind: 'unsafe', reason: '非静态数组解构' });
+    }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);

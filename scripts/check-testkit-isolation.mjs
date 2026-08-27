@@ -89,6 +89,40 @@ function collectModuleLoads(text, fileName) {
   const requirers = new Set(['require']);
   const arrayShapes = new Map();
 
+  const opaqueArrayShape = () => ({ opaque: true, kinds: [] });
+
+  const referenceKey = (expr) => {
+    expr = unwrapExpr(expr);
+    if (!expr) {
+      return null;
+    }
+    if (ts.isIdentifier(expr)) {
+      return expr.text;
+    }
+    if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.name)) {
+      const base = referenceKey(expr.expression);
+      return base ? `${base}.${expr.name.text}` : null;
+    }
+    if (ts.isElementAccessExpression(expr)) {
+      const argument = unwrapExpr(expr.argumentExpression);
+      if (!argument || !ts.isStringLiteralLike(argument)) {
+        return null;
+      }
+      const base = referenceKey(expr.expression);
+      return base ? `${base}.${argument.text}` : null;
+    }
+    return null;
+  };
+
+  const storeArrayShape = (key, next) => {
+    const previous = arrayShapes.get(key);
+    if (previous?.opaque) {
+      return previous;
+    }
+    arrayShapes.set(key, next);
+    return next;
+  };
+
   const seedImports = (node) => {
     if (
       ts.isImportDeclaration(node) &&
@@ -157,17 +191,6 @@ function collectModuleLoads(text, fileName) {
     return classifyExpr(valueExpr) ?? inheritedKind;
   };
 
-  const looksLikeArray = (valueExpr) => {
-    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
-    if (!unwrapped) {
-      return false;
-    }
-    if (ts.isArrayLiteralExpression(unwrapped)) {
-      return true;
-    }
-    return ts.isIdentifier(unwrapped) && arrayShapes.has(unwrapped.text);
-  };
-
   const shapeFromValue = (valueExpr, seen = new Set()) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
     if (!unwrapped) {
@@ -195,12 +218,13 @@ function collectModuleLoads(text, fileName) {
       }
       return { opaque, kinds };
     }
-    if (ts.isIdentifier(unwrapped)) {
-      if (seen.has(unwrapped.text)) {
+    const key = referenceKey(unwrapped);
+    if (key !== null) {
+      if (seen.has(key)) {
         return { opaque: true, kinds: [] };
       }
-      seen.add(unwrapped.text);
-      const stored = arrayShapes.get(unwrapped.text);
+      seen.add(key);
+      const stored = arrayShapes.get(key);
       if (stored) {
         return stored;
       }
@@ -209,7 +233,88 @@ function collectModuleLoads(text, fileName) {
     return { opaque: true, kinds: [] };
   };
 
-  const bindPattern = (name, inheritedKind, valueExpr) => {
+  const knownArrayShape = (valueExpr) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped) {
+      return undefined;
+    }
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      return shapeFromValue(unwrapped);
+    }
+    const key = referenceKey(unwrapped);
+    return key === null ? undefined : arrayShapes.get(key);
+  };
+
+  const resolveObjectProperty = (valueExpr, key) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (unwrapped && ts.isObjectLiteralExpression(unwrapped)) {
+      for (const property of unwrapped.properties) {
+        let propertyKey = null;
+        let propertyValue;
+        if (ts.isShorthandPropertyAssignment(property)) {
+          propertyKey = property.name.text;
+          propertyValue = property.name;
+        } else if (ts.isPropertyAssignment(property)) {
+          propertyKey = propertyNameText(property.name);
+          propertyValue = property.initializer;
+        }
+        if (propertyKey === key) {
+          return { value: propertyValue, shape: knownArrayShape(propertyValue) };
+        }
+      }
+      return undefined;
+    }
+    const base = referenceKey(unwrapped);
+    if (base === null) {
+      return undefined;
+    }
+    const shape = arrayShapes.get(`${base}.${key}`);
+    return shape ? { value: undefined, shape } : undefined;
+  };
+
+  const copyObjectArrayShapes = (targetBase, sourceBase) => {
+    const prefix = `${sourceBase}.`;
+    for (const [key, shape] of [...arrayShapes.entries()]) {
+      if (key.startsWith(prefix)) {
+        storeArrayShape(`${targetBase}.${key.slice(prefix.length)}`, shape);
+      }
+    }
+  };
+
+  const registerObjectArrayShapes = (base, valueExpr, seen = new Set()) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped || !ts.isObjectLiteralExpression(unwrapped) || seen.has(base)) {
+      return;
+    }
+    seen.add(base);
+    for (const property of unwrapped.properties) {
+      let key = null;
+      let propertyValue;
+      if (ts.isShorthandPropertyAssignment(property)) {
+        key = property.name.text;
+        propertyValue = property.name;
+      } else if (ts.isPropertyAssignment(property)) {
+        key = propertyNameText(property.name);
+        propertyValue = property.initializer;
+      }
+      if (key === null || propertyValue === undefined) {
+        continue;
+      }
+      const propertyBase = `${base}.${key}`;
+      const shape = knownArrayShape(propertyValue);
+      if (shape) {
+        storeArrayShape(propertyBase, shape);
+        continue;
+      }
+      const sourceBase = referenceKey(propertyValue);
+      if (sourceBase !== null) {
+        copyObjectArrayShapes(propertyBase, sourceBase);
+      }
+      registerObjectArrayShapes(propertyBase, propertyValue, seen);
+    }
+  };
+
+  const bindPattern = (name, inheritedKind, valueExpr, shapeOverride) => {
     if (ts.isIdentifier(name)) {
       const kind = kindFromValue(valueExpr, inheritedKind);
       if (kind === 'factory') {
@@ -218,10 +323,27 @@ function collectModuleLoads(text, fileName) {
       if (kind === 'requirer') {
         requirers.add(name.text);
       }
-      if (looksLikeArray(valueExpr)) {
-        arrayShapes.set(name.text, shapeFromValue(valueExpr));
-      } else if (arrayShapes.has(name.text)) {
-        arrayShapes.set(name.text, { opaque: true, kinds: [] });
+      const shape = shapeOverride ?? knownArrayShape(valueExpr);
+      if (shape) {
+        storeArrayShape(name.text, shape);
+      } else {
+        const valueKey = referenceKey(valueExpr);
+        if (valueKey !== null && !ts.isIdentifier(unwrapExpr(valueExpr))) {
+          const opaque = arrayShapes.get(valueKey) ?? opaqueArrayShape();
+          storeArrayShape(valueKey, opaque);
+          storeArrayShape(name.text, opaque);
+        } else if (arrayShapes.has(name.text)) {
+          storeArrayShape(name.text, opaqueArrayShape());
+        }
+      }
+      const unwrappedValue = valueExpr ? unwrapExpr(valueExpr) : undefined;
+      if (unwrappedValue && ts.isObjectLiteralExpression(unwrappedValue)) {
+        registerObjectArrayShapes(name.text, unwrappedValue);
+      } else {
+        const sourceBase = referenceKey(unwrappedValue);
+        if (sourceBase !== null && shape === undefined) {
+          copyObjectArrayShapes(name.text, sourceBase);
+        }
       }
       return;
     }
@@ -238,7 +360,13 @@ function collectModuleLoads(text, fileName) {
         if (key === 'require') {
           kind = 'requirer';
         }
-        bindPattern(element.name, kind, element.initializer);
+        const source = resolveObjectProperty(valueExpr, key);
+        bindPattern(
+          element.name,
+          kind,
+          source?.value ?? element.initializer,
+          source?.shape,
+        );
       }
       return;
     }
@@ -266,7 +394,7 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
-  const bindAssignmentTarget = (target, inheritedKind, valueExpr) => {
+  const bindAssignmentTarget = (target, inheritedKind, valueExpr, shapeOverride) => {
     target = unwrapExpr(target);
     valueExpr = valueExpr ? unwrapExpr(valueExpr) : undefined;
     if (
@@ -274,7 +402,7 @@ function collectModuleLoads(text, fileName) {
       ts.isObjectBindingPattern(target) ||
       ts.isArrayBindingPattern(target)
     ) {
-      bindPattern(target, inheritedKind, valueExpr);
+      bindPattern(target, inheritedKind, valueExpr, shapeOverride);
       return;
     }
     if (ts.isArrayLiteralExpression(target)) {
@@ -298,7 +426,8 @@ function collectModuleLoads(text, fileName) {
           if (prop.name.text === 'require') {
             kind = 'requirer';
           }
-          bindPattern(prop.name, kind);
+          const source = resolveObjectProperty(valueExpr, prop.name.text);
+          bindAssignmentTarget(prop.name, kind, source?.value, source?.shape);
           continue;
         }
         if (ts.isPropertyAssignment(prop)) {
@@ -310,7 +439,13 @@ function collectModuleLoads(text, fileName) {
           if (key === 'require') {
             kind = 'requirer';
           }
-          bindAssignmentTarget(prop.initializer, kind);
+          const source = resolveObjectProperty(valueExpr, key);
+          bindAssignmentTarget(
+            prop.initializer,
+            kind,
+            source?.value,
+            source?.shape,
+          );
         }
       }
     }
@@ -318,11 +453,13 @@ function collectModuleLoads(text, fileName) {
 
   const markArrayOpaque = (expr) => {
     expr = unwrapExpr(expr);
-    if (!ts.isIdentifier(expr)) {
+    const key = referenceKey(expr);
+    if (key === null) {
       return;
     }
-    const shape = arrayShapes.get(expr.text);
-    if (!shape || shape.opaque) {
+    const shape = arrayShapes.get(key);
+    if (!shape) {
+      arrayShapes.set(key, opaqueArrayShape());
       return;
     }
     shape.opaque = true;
@@ -335,7 +472,7 @@ function collectModuleLoads(text, fileName) {
     }
     if (ts.isElementAccessExpression(expr)) {
       const arg = unwrapExpr(expr.argumentExpression);
-      if (ts.isStringLiteralLike(arg)) {
+      if (arg && ts.isStringLiteralLike(arg)) {
         return { object: expr.expression, name: arg.text };
       }
       return { object: expr.expression, name: null };
@@ -354,7 +491,18 @@ function collectModuleLoads(text, fileName) {
     if (ts.isBinaryExpression(node) && ts.isAssignmentOperator(node.operatorToken.kind)) {
       const left = unwrapExpr(node.left);
       if (ts.isElementAccessExpression(left)) {
-        markArrayOpaque(left.expression);
+        const argument = unwrapExpr(left.argumentExpression);
+        if (ts.isStringLiteralLike(argument)) {
+          markArrayOpaque(left);
+        } else {
+          markArrayOpaque(left.expression);
+        }
+      } else if (ts.isPropertyAccessExpression(left)) {
+        if (left.name.text === 'length') {
+          markArrayOpaque(left.expression);
+        } else {
+          markArrayOpaque(left);
+        }
       }
     }
   };

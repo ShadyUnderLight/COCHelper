@@ -317,6 +317,57 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(aliasedRefIndex, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
     );
+    const objectDestructuredRef = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      const { ref } = { ref: aliases };
+      ref.push(createRequire);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(objectDestructuredRef, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const objectPropertyRef = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      const box = { ref: aliases };
+      const ref = box.ref;
+      ref.push(createRequire);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(objectPropertyRef, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const objectAliasRef = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      const box = { ref: aliases };
+      const otherBox = box;
+      const { ref } = otherBox;
+      ref[0] = createRequire;
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(objectAliasRef, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const opaqueThenRebound = `
+      import { createRequire } from 'node:module';
+      let aliases = [];
+      aliases.push(createRequire);
+      aliases = [];
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(opaqueThenRebound, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

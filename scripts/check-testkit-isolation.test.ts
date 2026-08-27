@@ -1052,6 +1052,22 @@ describe('testkit isolation', () => {
        function getAt() { return aliases.at.bind(aliases); }
        const make = getAt()(0); const req = make(import.meta.url); ${load}`,
       `const req = ${Array.from({ length: 33 }, () => 0).reduce((acc) => `[${acc}]`, '{ get() { return require; } }')}.flat(unknown)[0].get(); ${load}`,
+      `const req = (0, require); ${load}`,
+      `function use(loader) { loader = require; return loader; } const req = use(safe); ${load}`,
+      `import { createRequire } from 'node:module';
+       function get(flag) { return flag ? [createRequire] : []; }
+       const make = get(flag)[0]; const req = make(import.meta.url); ${load}`,
+      `class Box { constructor() { this.inner = { get() { return require; } }; } }
+       const req = new Box().inner.get(); ${load}`,
+      `const box = { get() { return require; } };
+       const req = ({ assign: Object.assign }).assign({}, box).get(); ${load}`,
+      `function getBoxes() { return unknown; }
+       const req = [...getBoxes()][0].get(); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = Array.prototype.at.call(...[aliases, ...getArgs()]);
+       const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = aliases.concat(...unknown)[0]; const req = make(import.meta.url); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1100,6 +1116,14 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(stillHits, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+    const blockShadowed = `
+      const callback = require;
+      {
+        const callback = (match) => match;
+        value.replace(/x/g, callback);
+      }
+    `;
+    expect(extractUnsafeDynamicLoads(blockShadowed)).toEqual([]);
   });
 
   it('生产源文件通过 symlink 指向 testkit 时按真实路径拒绝', () => {

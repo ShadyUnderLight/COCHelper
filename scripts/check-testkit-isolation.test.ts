@@ -588,6 +588,276 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(borrowedFactoryApply, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+    const arrayAtNegative = `
+      import { createRequire } from 'node:module';
+      const aliases = [createRequire];
+      const make = aliases.at(-1);
+      const req = make(import.meta.url);
+      const scope = ['@coc-', 'helper'].join('');
+      const name = ['test', 'kit'].join('');
+      req(scope + '/' + name);
+    `;
+    expect(findForbiddenImportHits(arrayAtNegative, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const arrayAtVariable = `
+      import { createRequire } from 'node:module';
+      const aliases = [createRequire];
+      const idx = 0;
+      const make = aliases.at(idx);
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(arrayAtVariable, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const bracketVariableIndex = `
+      import { createRequire } from 'node:module';
+      const aliases = [createRequire];
+      const idx = 0;
+      const make = aliases[idx];
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(bracketVariableIndex, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const objectMethodReturnsLoader = `
+      const box = {
+        get() { return require; },
+      };
+      const make = box.get();
+      make('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(objectMethodReturnsLoader, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const assignedFunctionReturnsLoader = `
+      let get;
+      get = function () { return require; };
+      const make = get();
+      make('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(assignedFunctionReturnsLoader, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const objectPropertyFunctionReturnsLoader = `
+      import { createRequire } from 'node:module';
+      const box = {
+        make: function () { return createRequire; },
+      };
+      const factory = box.make();
+      const req = factory(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(objectPropertyFunctionReturnsLoader, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const borrowedSpreadVariable = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      const args = [aliases, createRequire];
+      Array.prototype.push.call(...args);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(borrowedSpreadVariable, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const functionReturnedArray = `
+      import { createRequire } from 'node:module';
+      function getAliases() { return [createRequire]; }
+      const make = getAliases()[0];
+      const req = make(import.meta.url);
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      req(pkg);
+    `;
+    expect(findForbiddenImportHits(functionReturnedArray, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const functionReturnedArrayAt = `
+      import { createRequire } from 'node:module';
+      function getAliases() { return [createRequire]; }
+      const make = getAliases().at(0);
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(functionReturnedArrayAt, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const functionReturnedObject = `
+      import { createRequire } from 'node:module';
+      function getBox() { return { f: createRequire }; }
+      const make = getBox().f;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(functionReturnedObject, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const arrowReturnedArray = `
+      import { createRequire } from 'node:module';
+      const getAliases = () => [createRequire];
+      const make = getAliases()[0];
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(arrowReturnedArray, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const inlineObjectMethodCall = `
+      const make = ({ get() { return require; } }).get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(inlineObjectMethodCall, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const inlineObjectPropertyFnCall = `
+      import { createRequire } from 'node:module';
+      const make = ({ f: () => createRequire }).f();
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(inlineObjectPropertyFnCall, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const opaqueShapeKnownIndex = `
+      import { createRequire } from 'node:module';
+      function get(flag) { if (flag) return [createRequire]; return [unknown]; }
+      const make = get(flag)[0];
+      const req = make(import.meta.url);
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      req(pkg);
+    `;
+    expect(findForbiddenImportHits(opaqueShapeKnownIndex, fromMain).length).toBeGreaterThan(0);
+    const opaqueShapeKnownAt = `
+      import { createRequire } from 'node:module';
+      function get(flag) { if (flag) return [createRequire]; return [unknown]; }
+      const make = get(flag).at(0);
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(opaqueShapeKnownAt, fromMain).length).toBeGreaterThan(0);
+    const objectAliasMethodReturn = `
+      const box = { get() { return require; } };
+      const alias = box;
+      const make = alias.get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(objectAliasMethodReturn, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const functionReturnedObjectMethod = `
+      function getBox() { return { get() { return require; } }; }
+      const make = getBox().get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(functionReturnedObjectMethod, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const multiBranchReturnObject = `
+      function getBox(flag) { if (flag) return { f: require }; return { f: safe }; }
+      const make = getBox(true).f;
+      make('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(multiBranchReturnObject, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const destructuredObjectMethod = `
+      const box = { get() { return require; } };
+      const { get } = box;
+      const make = get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(destructuredObjectMethod, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const aliasedFunctionValue = `
+      const box = { get() { return require; } };
+      const { get } = box;
+      const alias = get;
+      const make = alias();
+      make('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(aliasedFunctionValue, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const aliasedFunctionReturningArray = `
+      import { createRequire } from 'node:module';
+      const box = { getAliases() { return [createRequire]; } };
+      const { getAliases } = box;
+      const alias = getAliases;
+      const make = alias()[0];
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(aliasedFunctionReturningArray, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const destructuredReturnedObjectMethod = `
+      function getBox(flag) {
+        if (flag) return { get() { return require; } };
+        return { get() { return safe; } };
+      }
+      const { get } = getBox(flag);
+      const make = get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(destructuredReturnedObjectMethod, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const classInstanceMethod = `
+      class Box {
+        get() { return require; }
+      }
+      const make = new Box().get();
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      make(pkg);
+    `;
+    expect(findForbiddenImportHits(classInstanceMethod, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const aliasedClassInstanceMethod = `
+      class Box {
+        getAliases() { return [require]; }
+      }
+      const box = new Box();
+      const alias = box.getAliases;
+      const make = alias().at(0);
+      make('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(aliasedClassInstanceMethod, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const destructuredClassInstanceMethod = `
+      class Box {
+        get() { return require; }
+      }
+      const { get } = new Box();
+      const alias = get;
+      const make = alias();
+      make('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(destructuredClassInstanceMethod, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const staticClassMethod = `
+      class Box {
+        static get() { return require; }
+      }
+      const alias = Box.get;
+      const make = alias();
+      make('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(staticClassMethod, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

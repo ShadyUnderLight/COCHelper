@@ -249,6 +249,50 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(mutatedSpread, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
     );
+    const computedPush = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      aliases['push'](createRequire);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(computedPush, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const computedUnknown = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      aliases[method](createRequire);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(computedUnknown, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const reassignedUnknown = `
+      import { createRequire } from 'node:module';
+      let aliases = [];
+      aliases = getAliases();
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(reassignedUnknown, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const reassignedConcat = `
+      import { createRequire } from 'node:module';
+      let aliases = [];
+      aliases = aliases.concat(createRequire);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(reassignedConcat, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

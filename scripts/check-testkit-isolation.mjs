@@ -222,6 +222,8 @@ function collectModuleLoads(text, fileName) {
         const next = shapeFromValue(valueExpr);
         const prev = arrayShapes.get(name.text);
         arrayShapes.set(name.text, prev?.opaque ? { opaque: true, kinds: next.kinds } : next);
+      } else if (arrayShapes.has(name.text)) {
+        arrayShapes.set(name.text, { opaque: true, kinds: [] });
       }
       return;
     }
@@ -328,13 +330,26 @@ function collectModuleLoads(text, fileName) {
     arrayShapes.set(expr.text, { opaque: true, kinds: shape.kinds });
   };
 
+  const calleeProperty = (expr) => {
+    expr = unwrapExpr(expr);
+    if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.name)) {
+      return { object: expr.expression, name: expr.name.text };
+    }
+    if (ts.isElementAccessExpression(expr)) {
+      const arg = unwrapExpr(expr.argumentExpression);
+      if (ts.isStringLiteralLike(arg)) {
+        return { object: expr.expression, name: arg.text };
+      }
+      return { object: expr.expression, name: null };
+    }
+    return null;
+  };
+
   const invalidateArrayMutation = (node) => {
     if (ts.isCallExpression(node)) {
-      const callee = unwrapExpr(node.expression);
-      if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) {
-        if (MUTATING_ARRAY_METHODS.has(callee.name.text)) {
-          markArrayOpaque(callee.expression);
-        }
+      const access = calleeProperty(node.expression);
+      if (access && (access.name === null || MUTATING_ARRAY_METHODS.has(access.name))) {
+        markArrayOpaque(access.object);
       }
       return;
     }

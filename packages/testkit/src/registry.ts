@@ -154,6 +154,13 @@ function assertExecutedTsOwner(id: string, tsOwner: string, repoRoot: string): v
   if (canonicalFile !== canonicalRoot && !canonicalFile.startsWith(canonicalPrefix)) {
     throw new Error(`${id} 的 tsOwner 解析后逃出仓库：${tsOwner}`);
   }
+  if (canonicalFile !== file) {
+    throw new Error(`${id} 的 tsOwner 不得是 symlink：${tsOwner}`);
+  }
+  const canonicalRelative = path.relative(canonicalRoot, canonicalFile).split(path.sep).join('/');
+  if (!isVitestExecutedOwner(canonicalRelative)) {
+    throw new Error(`${id} 的 tsOwner 解析后不是 Vitest 会执行的测试文件：${tsOwner}`);
+  }
   if (!statSync(canonicalFile).isFile()) {
     throw new Error(`${id} 的 tsOwner 不是文件：${tsOwner}`);
   }

@@ -421,6 +421,54 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(expressionAliasesAndJoin, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+    const flowSensitiveString = `
+      let pkg = getPackageName();
+      require(pkg);
+      pkg = 'safe';
+    `;
+    expect(findForbiddenImportHits(flowSensitiveString, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非字面量 require()）`]),
+    );
+    const branchSensitiveString = `
+      let pkg = getPackageName();
+      if (flag) {
+        pkg = 'safe';
+      }
+      require(pkg);
+    `;
+    expect(findForbiddenImportHits(branchSensitiveString, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非字面量 require()）`]),
+    );
+    const nestedScopeString = `
+      const pkg = 'safe';
+      {
+        const pkg = 'also-safe';
+        require(pkg);
+      }
+    `;
+    expect(findForbiddenImportHits(nestedScopeString, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非字面量 require()）`]),
+    );
+    const functionReturnedRequirer = `
+      function getRequire() {
+        return require;
+      }
+      const req = getRequire();
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(functionReturnedRequirer, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const functionReturnedFactory = `
+      import { createRequire } from 'node:module';
+      const getFactory = () => createRequire;
+      const make = getFactory();
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(functionReturnedFactory, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
     const inlineObjectProperty = `
       import { createRequire } from 'node:module';
       const req = ({ f: createRequire }).f(import.meta.url);
@@ -437,6 +485,18 @@ describe('testkit isolation', () => {
       req('@coc-helper/testkit');
     `;
     expect(findForbiddenImportHits(assignedObjectProperty, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const computedObjectProperty = `
+      import { createRequire } from 'node:module';
+      const box = {};
+      box.f = createRequire;
+      const key = 'f';
+      const make = box[key];
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(computedObjectProperty, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
     const genericLoaderArgument = `
@@ -487,6 +547,17 @@ describe('testkit isolation', () => {
       req('@coc-helper/testkit');
     `;
     expect(findForbiddenImportHits(borrowedPushApply, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const borrowedPushSpreadArguments = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      Array.prototype.push.call(...[aliases, createRequire]);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(borrowedPushSpreadArguments, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
     );
     const borrowedPushAlias = `

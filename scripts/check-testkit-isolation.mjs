@@ -91,6 +91,7 @@ function collectModuleLoads(text, fileName) {
   const valueKinds = new Map();
   const mutatorAliases = new Set();
   const stringValues = new Map();
+  const functionReturns = new Map();
 
   const opaqueArrayShape = () => ({ opaque: true, kinds: [] });
 
@@ -108,11 +109,12 @@ function collectModuleLoads(text, fileName) {
     }
     if (ts.isElementAccessExpression(expr)) {
       const argument = unwrapExpr(expr.argumentExpression);
-      if (!argument || !ts.isStringLiteralLike(argument)) {
+      const property = argument ? staticStringValue(argument) : null;
+      if (property === null) {
         return null;
       }
       const base = referenceKey(expr.expression);
-      return base ? `${base}.${argument.text}` : null;
+      return base ? `${base}.${property}` : null;
     }
     return null;
   };
@@ -124,8 +126,9 @@ function collectModuleLoads(text, fileName) {
     }
     if (unwrapped && ts.isElementAccessExpression(unwrapped)) {
       const argument = unwrapExpr(unwrapped.argumentExpression);
-      if (argument && ts.isStringLiteralLike(argument)) {
-        return { object: unwrapped.expression, name: argument.text };
+      const property = argument ? staticStringValue(argument) : null;
+      if (property !== null) {
+        return { object: unwrapped.expression, name: property };
       }
     }
     return null;
@@ -211,6 +214,100 @@ function collectModuleLoads(text, fileName) {
       }
     }
     return null;
+  };
+
+  const stringFacts = new Map();
+
+  const stringFactFor = (name) => {
+    const existing = stringFacts.get(name);
+    if (existing) {
+      return existing;
+    }
+    const fact = { declarations: 0, writes: 0, initializer: undefined };
+    stringFacts.set(name, fact);
+    return fact;
+  };
+
+  const recordStringDeclaration = (target, initializer) => {
+    target = unwrapExpr(target);
+    if (target && ts.isIdentifier(target)) {
+      const fact = stringFactFor(target.text);
+      fact.declarations += 1;
+      if (fact.declarations === 1) {
+        fact.initializer = initializer;
+      }
+      return;
+    }
+    if (target && (ts.isObjectBindingPattern(target) || ts.isArrayBindingPattern(target))) {
+      for (const element of target.elements) {
+        if (ts.isBindingElement(element)) {
+          recordStringDeclaration(element.name, undefined);
+        }
+      }
+    }
+  };
+
+  const recordStringWrite = (target) => {
+    target = unwrapExpr(target);
+    if (target && ts.isIdentifier(target)) {
+      stringFactFor(target.text).writes += 1;
+      return;
+    }
+    if (target && (ts.isObjectBindingPattern(target) || ts.isArrayBindingPattern(target))) {
+      for (const element of target.elements) {
+        if (ts.isBindingElement(element)) {
+          recordStringWrite(element.name);
+        }
+      }
+      return;
+    }
+    if (target && ts.isObjectLiteralExpression(target)) {
+      for (const property of target.properties) {
+        if (ts.isShorthandPropertyAssignment(property)) {
+          recordStringWrite(property.name);
+        } else if (ts.isPropertyAssignment(property)) {
+          recordStringWrite(property.initializer);
+        }
+      }
+      return;
+    }
+    if (target && ts.isArrayLiteralExpression(target)) {
+      for (const element of target.elements) {
+        if (!ts.isOmittedExpression(element) && !ts.isSpreadElement(element)) {
+          recordStringWrite(element);
+        }
+      }
+    }
+  };
+
+  const collectStringFacts = (node) => {
+    if (ts.isVariableDeclaration(node)) {
+      recordStringDeclaration(node.name, node.initializer);
+    }
+    if (ts.isParameter(node)) {
+      recordStringDeclaration(node.name, undefined);
+    }
+    if (ts.isBinaryExpression(node) && ts.isAssignmentOperator(node.operatorToken.kind)) {
+      recordStringWrite(node.left);
+    }
+    ts.forEachChild(node, collectStringFacts);
+  };
+
+  const seedStableStringValues = () => {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [name, fact] of stringFacts.entries()) {
+        if (fact.declarations !== 1 || fact.writes !== 0 || !fact.initializer) {
+          continue;
+        }
+        const value = staticStringValue(fact.initializer);
+        if (value !== null && stringValues.get(name) !== value) {
+          stringValues.set(name, value);
+          changed = true;
+        }
+      }
+    }
   };
 
   const isMutatingMethodReference = (expr) => {
@@ -311,6 +408,71 @@ function collectModuleLoads(text, fileName) {
     return classifyExpr(access.object) === 'factory' ? 'requirer' : null;
   };
 
+  const functionReturnKind = (node) => {
+    if (ts.isArrowFunction(node) && !ts.isBlock(node.body)) {
+      const kind = classifyExpr(node.body);
+      return kind === 'factory' || kind === 'requirer' ? kind : null;
+    }
+    if (!node.body) {
+      return null;
+    }
+    const kinds = [];
+    const collectReturns = (child) => {
+      if (child !== node && isFunctionLikeNode(child)) {
+        return;
+      }
+      if (ts.isReturnStatement(child)) {
+        const kind = classifyExpr(child.expression);
+        if (kind !== null) {
+          kinds.push(kind);
+        }
+        return;
+      }
+      ts.forEachChild(child, collectReturns);
+    };
+    collectReturns(node.body);
+    if (kinds.length === 0 || kinds.some((kind) => kind !== kinds[0])) {
+      return null;
+    }
+    return kinds[0] === 'factory' || kinds[0] === 'requirer' ? kinds[0] : null;
+  };
+
+  const registerFunctionReturn = (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      const kind = functionReturnKind(node);
+      if (kind === null) {
+        functionReturns.delete(node.name.text);
+      } else {
+        functionReturns.set(node.name.text, kind);
+      }
+      return;
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isFunctionLikeNode(node.initializer)
+    ) {
+      const kind = functionReturnKind(node.initializer);
+      if (kind === null) {
+        functionReturns.delete(node.name.text);
+      } else {
+        functionReturns.set(node.name.text, kind);
+      }
+    }
+  };
+
+  const classifyFunctionCall = (expr) => {
+    if (!ts.isCallExpression(expr)) {
+      return null;
+    }
+    const callee = unwrapExpr(expr.expression);
+    if (!callee || !ts.isIdentifier(callee)) {
+      return null;
+    }
+    return functionReturns.get(callee.text) ?? null;
+  };
+
   const storeArrayShape = (key, next) => {
     const previous = arrayShapes.get(key);
     if (previous?.opaque) {
@@ -365,6 +527,10 @@ function collectModuleLoads(text, fileName) {
         }
       }
     }
+    const returnedKind = classifyFunctionCall(expr);
+    if (returnedKind !== null) {
+      return returnedKind;
+    }
     const trackedKind = trackedReferenceKind(expr);
     if (trackedKind !== null) {
       return trackedKind;
@@ -405,6 +571,10 @@ function collectModuleLoads(text, fileName) {
     const indirectKind = classifyIndirectCall(expr);
     if (indirectKind !== null) {
       return indirectKind;
+    }
+    const returnedKind = classifyFunctionCall(expr);
+    if (returnedKind !== null) {
+      return returnedKind;
     }
     if (ts.isCallExpression(expr) && classifyCallee(expr.expression) === 'factory') {
       return 'requirer';
@@ -772,7 +942,19 @@ function collectModuleLoads(text, fileName) {
     ) {
       return null;
     }
-    return node.arguments[0] ?? null;
+    const firstArgument = node.arguments[0];
+    if (!firstArgument) {
+      return null;
+    }
+    if (!ts.isSpreadElement(firstArgument)) {
+      return firstArgument;
+    }
+    const spread = unwrapExpr(firstArgument.expression);
+    if (!spread || !ts.isArrayLiteralExpression(spread)) {
+      return null;
+    }
+    const first = spread.elements[0];
+    return first && !ts.isOmittedExpression(first) && !ts.isSpreadElement(first) ? first : null;
   };
 
   const invalidateArrayMutation = (node) => {
@@ -809,27 +991,12 @@ function collectModuleLoads(text, fileName) {
 
   const bindNode = (node) => {
     invalidateArrayMutation(node);
+    registerFunctionReturn(node);
     if (ts.isVariableDeclaration(node) && node.initializer) {
-      if (ts.isIdentifier(node.name)) {
-        const value = staticStringValue(node.initializer);
-        if (value === null) {
-          stringValues.delete(node.name.text);
-        } else {
-          stringValues.set(node.name.text, value);
-        }
-      }
       bindPattern(node.name, classifyExpr(node.initializer), node.initializer);
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const left = unwrapExpr(node.left);
-      if (ts.isIdentifier(left)) {
-        const value = staticStringValue(node.right);
-        if (value === null) {
-          stringValues.delete(left.text);
-        } else {
-          stringValues.set(left.text, value);
-        }
-      }
       const leftKey = referenceKey(left);
       if (leftKey !== null && !ts.isIdentifier(left)) {
         const kind = classifyExpr(node.right);
@@ -863,12 +1030,16 @@ function collectModuleLoads(text, fileName) {
     return false;
   };
 
+  collectStringFacts(sourceFile);
+  seedStableStringValues();
   seedImports(sourceFile);
   let previous = '';
   const snapshot = () =>
     `${factories.size}|${requirers.size}|${JSON.stringify([...arrayShapes.entries()])}|${JSON.stringify(
       [...valueKinds.entries()],
-    )}|${JSON.stringify([...mutatorAliases])}|${JSON.stringify([...stringValues.entries()])}`;
+    )}|${JSON.stringify([...mutatorAliases])}|${JSON.stringify([...stringValues.entries()])}|${JSON.stringify(
+      [...functionReturns.entries()],
+    )}`;
   while (previous !== snapshot()) {
     previous = snapshot();
     bindNode(sourceFile);
@@ -969,6 +1140,19 @@ function unwrapExpr(expr) {
     break;
   }
   return expr;
+}
+
+function isFunctionLikeNode(node) {
+  return Boolean(
+    node &&
+      (ts.isFunctionDeclaration(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isArrowFunction(node) ||
+        ts.isMethodDeclaration(node) ||
+        ts.isGetAccessorDeclaration(node) ||
+        ts.isSetAccessorDeclaration(node) ||
+        ts.isConstructorDeclaration(node)),
+  );
 }
 
 function propertyNameText(name) {

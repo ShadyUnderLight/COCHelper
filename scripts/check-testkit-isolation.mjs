@@ -96,6 +96,7 @@ function collectModuleLoads(text, fileName) {
   };
 
   const classifyCallee = (expr) => {
+    expr = unwrapExpr(expr);
     if (ts.isIdentifier(expr)) {
       if (factories.has(expr.text)) {
         return 'factory';
@@ -120,6 +121,7 @@ function collectModuleLoads(text, fileName) {
   };
 
   const classifyExpr = (expr) => {
+    expr = unwrapExpr(expr);
     if (ts.isIdentifier(expr)) {
       if (factories.has(expr.text)) {
         return 'factory';
@@ -163,22 +165,50 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
+  const bindAssignmentTarget = (target, inheritedKind) => {
+    target = unwrapExpr(target);
+    if (
+      ts.isIdentifier(target) ||
+      ts.isObjectBindingPattern(target) ||
+      ts.isArrayBindingPattern(target)
+    ) {
+      bindPattern(target, inheritedKind);
+      return;
+    }
+    if (ts.isObjectLiteralExpression(target)) {
+      for (const prop of target.properties) {
+        if (ts.isShorthandPropertyAssignment(prop)) {
+          let kind = inheritedKind;
+          if (prop.name.text === 'createRequire') {
+            kind = 'factory';
+          }
+          if (prop.name.text === 'require') {
+            kind = 'requirer';
+          }
+          bindPattern(prop.name, kind);
+          continue;
+        }
+        if (ts.isPropertyAssignment(prop)) {
+          const key = propertyNameText(prop.name);
+          let kind = inheritedKind;
+          if (key === 'createRequire') {
+            kind = 'factory';
+          }
+          if (key === 'require') {
+            kind = 'requirer';
+          }
+          bindAssignmentTarget(prop.initializer, kind);
+        }
+      }
+    }
+  };
+
   const bindNode = (node) => {
     if (ts.isVariableDeclaration(node) && node.initializer) {
       bindPattern(node.name, classifyExpr(node.initializer));
     }
-    if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left)
-    ) {
-      const kind = classifyExpr(node.right);
-      if (kind === 'factory') {
-        factories.add(node.left.text);
-      }
-      if (kind === 'requirer') {
-        requirers.add(node.left.text);
-      }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      bindAssignmentTarget(node.left, classifyExpr(node.right));
     }
     ts.forEachChild(node, bindNode);
   };
@@ -252,15 +282,37 @@ function loadsFromNode(node, classifyCallee) {
   return loads;
 }
 
+function unwrapExpr(expr) {
+  while (expr) {
+    const kind = expr.kind;
+    if (
+      kind === ts.SyntaxKind.ParenthesizedExpression ||
+      kind === ts.SyntaxKind.AsExpression ||
+      kind === ts.SyntaxKind.TypeAssertionExpression ||
+      kind === ts.SyntaxKind.NonNullExpression ||
+      kind === ts.SyntaxKind.SatisfiesExpression
+    ) {
+      expr = expr.expression;
+      continue;
+    }
+    break;
+  }
+  return expr;
+}
+
+function propertyNameText(name) {
+  if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) {
+    return name.text;
+  }
+  if (ts.isComputedPropertyName(name) && ts.isStringLiteralLike(unwrapExpr(name.expression))) {
+    return unwrapExpr(name.expression).text;
+  }
+  return null;
+}
+
 function bindingElementKey(element) {
   if (element.propertyName) {
-    if (ts.isIdentifier(element.propertyName)) {
-      return element.propertyName.text;
-    }
-    if (ts.isStringLiteralLike(element.propertyName)) {
-      return element.propertyName.text;
-    }
-    return null;
+    return propertyNameText(element.propertyName);
   }
   if (ts.isIdentifier(element.name)) {
     return element.name.text;

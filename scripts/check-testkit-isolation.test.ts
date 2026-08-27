@@ -115,6 +115,33 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(destructuredShorthand, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+    const assignmentDestructure = `
+      let cr;
+      ({ createRequire: cr } = mod);
+      const req = cr(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(assignmentDestructure, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const asAlias = `
+      import { createRequire } from 'node:module';
+      const make = createRequire as typeof createRequire;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(asAlias, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const parenAlias = `
+      import { createRequire } from 'node:module';
+      const make = (createRequire);
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(parenAlias, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

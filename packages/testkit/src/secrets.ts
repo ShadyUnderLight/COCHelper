@@ -5,7 +5,7 @@ const SECRET_PATTERNS: ReadonlyArray<{ re: RegExp; message: string }> = [
   { re: /\bSet-Cookie:\s*\S+/i, message: 'Set-Cookie' },
   { re: /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/, message: 'JWT' },
   {
-    re: /(?:^|[\s"'`])(?:x-)?(?:api[-_]?key|access[-_]?token|refresh[-_]?token|api[-_]?token|token)\s*[:=]\s*\S+/i,
+    re: /(?:^|[\s"'`?&#])(?:x-)?(?:api[-_]?key|access[-_]?token|refresh[-_]?token|api[-_]?token|token)\s*[:=]\s*\S+/i,
     message: 'header/键值形态 token',
   },
 ];
@@ -88,7 +88,7 @@ export function assertGoldenPayloadSafe(text: string, label: string): void {
 function walkJson(value: unknown, label: string, path: string, hits: string[]): void {
   if (typeof value === 'string') {
     const nested = tryParseJson(value);
-    if (nested !== undefined && nested !== null && typeof nested === 'object') {
+    if (nested !== undefined && nested !== value) {
       walkJson(nested, label, path, hits);
     }
     hits.push(...findTextSecretHits(value, `${label} @ ${path}`));

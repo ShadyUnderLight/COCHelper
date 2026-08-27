@@ -45,19 +45,19 @@ const MUTATING_ARRAY_METHODS = new Set([
   'copyWithin',
 ]);
 
-function walk(dir) {
+function walk(dir, { includeNodeModules = false } = {}) {
   if (!existsSync(dir)) {
     return [];
   }
   const out = [];
   for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || (entry.startsWith('.') && entry !== '.webpack')) {
+    if ((!includeNodeModules && entry === 'node_modules') || (entry.startsWith('.') && entry !== '.webpack')) {
       continue;
     }
     const full = path.join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) {
-      out.push(...walk(full));
+      out.push(...walk(full, { includeNodeModules }));
     } else {
       out.push(full);
     }
@@ -88,6 +88,7 @@ function collectModuleLoads(text, fileName) {
   const factories = new Set();
   const requirers = new Set(['require']);
   const arrayShapes = new Map();
+  const valueKinds = new Map();
 
   const opaqueArrayShape = () => ({ opaque: true, kinds: [] });
 
@@ -110,6 +111,64 @@ function collectModuleLoads(text, fileName) {
       }
       const base = referenceKey(expr.expression);
       return base ? `${base}.${argument.text}` : null;
+    }
+    return null;
+  };
+
+  const staticArrayIndex = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || !ts.isElementAccessExpression(unwrapped)) {
+      return null;
+    }
+    const argument = unwrapExpr(unwrapped.argumentExpression);
+    if (argument && ts.isNumericLiteral(argument) && Number.isInteger(Number(argument.text))) {
+      return Number(argument.text);
+    }
+    if (argument && ts.isStringLiteralLike(argument) && /^\d+$/.test(argument.text)) {
+      return Number(argument.text);
+    }
+    return null;
+  };
+
+  const storeValueKind = (key, kind) => {
+    if (kind === 'factory' || kind === 'requirer') {
+      valueKinds.set(key, kind);
+    }
+  };
+
+  const trackedReferenceKind = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped) {
+      return null;
+    }
+    const index = staticArrayIndex(unwrapped);
+    if (index !== null) {
+      const arrayKey = referenceKey(unwrapped.expression);
+      const shape = arrayKey === null ? undefined : arrayShapes.get(arrayKey);
+      if (!shape?.opaque && shape?.kinds[index]) {
+        return shape.kinds[index];
+      }
+    }
+    const key = referenceKey(unwrapped);
+    return key === null ? null : valueKinds.get(key) ?? null;
+  };
+
+  const classifyBoundCall = (expr) => {
+    if (!ts.isCallExpression(expr)) {
+      return null;
+    }
+    const callee = unwrapExpr(expr.expression);
+    if (!callee) {
+      return null;
+    }
+    if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'bind') {
+      return classifyExpr(callee.expression);
+    }
+    if (ts.isElementAccessExpression(callee)) {
+      const argument = unwrapExpr(callee.argumentExpression);
+      if (argument && ts.isStringLiteralLike(argument) && argument.text === 'bind') {
+        return classifyExpr(callee.expression);
+      }
     }
     return null;
   };
@@ -161,8 +220,16 @@ function collectModuleLoads(text, fileName) {
         return 'requirer';
       }
     }
+    const trackedKind = trackedReferenceKind(expr);
+    if (trackedKind !== null) {
+      return trackedKind;
+    }
     if (ts.isCallExpression(expr) && classifyCallee(expr.expression) === 'factory') {
       return 'requirer';
+    }
+    const boundKind = classifyBoundCall(expr);
+    if (boundKind !== null) {
+      return boundKind;
     }
     return null;
   };
@@ -177,6 +244,14 @@ function collectModuleLoads(text, fileName) {
         return 'requirer';
       }
       return null;
+    }
+    const trackedKind = trackedReferenceKind(expr);
+    if (trackedKind !== null) {
+      return trackedKind;
+    }
+    const boundKind = classifyBoundCall(expr);
+    if (boundKind !== null) {
+      return boundKind;
     }
     if (ts.isCallExpression(expr) && classifyCallee(expr.expression) === 'factory') {
       return 'requirer';
@@ -259,7 +334,11 @@ function collectModuleLoads(text, fileName) {
           propertyValue = property.initializer;
         }
         if (propertyKey === key) {
-          return { value: propertyValue, shape: knownArrayShape(propertyValue) };
+          return {
+            value: propertyValue,
+            kind: classifyExpr(propertyValue),
+            shape: knownArrayShape(propertyValue),
+          };
         }
       }
       return undefined;
@@ -268,8 +347,12 @@ function collectModuleLoads(text, fileName) {
     if (base === null) {
       return undefined;
     }
-    const shape = arrayShapes.get(`${base}.${key}`);
-    return shape ? { value: undefined, shape } : undefined;
+    const propertyKey = `${base}.${key}`;
+    const shape = arrayShapes.get(propertyKey);
+    const kind = valueKinds.get(propertyKey);
+    return shape || kind
+      ? { value: undefined, kind: kind ?? null, shape }
+      : undefined;
   };
 
   const copyObjectArrayShapes = (targetBase, sourceBase) => {
@@ -277,6 +360,11 @@ function collectModuleLoads(text, fileName) {
     for (const [key, shape] of [...arrayShapes.entries()]) {
       if (key.startsWith(prefix)) {
         storeArrayShape(`${targetBase}.${key.slice(prefix.length)}`, shape);
+      }
+    }
+    for (const [key, kind] of [...valueKinds.entries()]) {
+      if (key.startsWith(prefix)) {
+        storeValueKind(`${targetBase}.${key.slice(prefix.length)}`, kind);
       }
     }
   };
@@ -301,6 +389,7 @@ function collectModuleLoads(text, fileName) {
         continue;
       }
       const propertyBase = `${base}.${key}`;
+      storeValueKind(propertyBase, classifyExpr(propertyValue));
       const shape = knownArrayShape(propertyValue);
       if (shape) {
         storeArrayShape(propertyBase, shape);
@@ -328,7 +417,12 @@ function collectModuleLoads(text, fileName) {
         storeArrayShape(name.text, shape);
       } else {
         const valueKey = referenceKey(valueExpr);
-        if (valueKey !== null && !ts.isIdentifier(unwrapExpr(valueExpr))) {
+        if (
+          kind !== 'factory' &&
+          kind !== 'requirer' &&
+          valueKey !== null &&
+          !ts.isIdentifier(unwrapExpr(valueExpr))
+        ) {
           const opaque = arrayShapes.get(valueKey) ?? opaqueArrayShape();
           storeArrayShape(valueKey, opaque);
           storeArrayShape(name.text, opaque);
@@ -363,7 +457,7 @@ function collectModuleLoads(text, fileName) {
         const source = resolveObjectProperty(valueExpr, key);
         bindPattern(
           element.name,
-          kind,
+          source?.kind ?? kind,
           source?.value ?? element.initializer,
           source?.shape,
         );
@@ -427,7 +521,12 @@ function collectModuleLoads(text, fileName) {
             kind = 'requirer';
           }
           const source = resolveObjectProperty(valueExpr, prop.name.text);
-          bindAssignmentTarget(prop.name, kind, source?.value, source?.shape);
+          bindAssignmentTarget(
+            prop.name,
+            source?.kind ?? kind,
+            source?.value,
+            source?.shape,
+          );
           continue;
         }
         if (ts.isPropertyAssignment(prop)) {
@@ -442,7 +541,7 @@ function collectModuleLoads(text, fileName) {
           const source = resolveObjectProperty(valueExpr, key);
           bindAssignmentTarget(
             prop.initializer,
-            kind,
+            source?.kind ?? kind,
             source?.value,
             source?.shape,
           );
@@ -534,7 +633,9 @@ function collectModuleLoads(text, fileName) {
   seedImports(sourceFile);
   let previous = '';
   const snapshot = () =>
-    `${factories.size}|${requirers.size}|${JSON.stringify([...arrayShapes.entries()])}`;
+    `${factories.size}|${requirers.size}|${JSON.stringify([...arrayShapes.entries()])}|${JSON.stringify(
+      [...valueKinds.entries()],
+    )}`;
   while (previous !== snapshot()) {
     previous = snapshot();
     bindNode(sourceFile);
@@ -742,6 +843,12 @@ export function findForbiddenImportHits(text, fromRelative, workspaceRoot = defa
   for (const reason of extractUnsafeDynamicLoads(text, fromRelative)) {
     hits.push(`${fromRelative} 不得使用无法静态解析的动态加载（${reason}）`);
   }
+  if (
+    text.includes(FORBIDDEN_PACKAGE) &&
+    !hits.some((hit) => hit.includes(`不得 import ${FORBIDDEN_PACKAGE}`))
+  ) {
+    hits.push(`${fromRelative} 不得包含 ${FORBIDDEN_PACKAGE} 字面量`);
+  }
   return hits;
 }
 
@@ -844,7 +951,7 @@ function packagedHits(workspaceRoot) {
     if (!existsSync(dir)) {
       continue;
     }
-    for (const file of walk(dir)) {
+    for (const file of walk(dir, { includeNodeModules: true })) {
       const relative = posixRelative(workspaceRoot, file);
       if (file.endsWith('.swift')) {
         hits.push(`发布产物含 Swift 源：${relative}`);

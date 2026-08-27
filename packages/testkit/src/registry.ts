@@ -71,9 +71,7 @@ function validateRegistryEntry(entry: TestRegistryEntry, repoRoot: string): void
   if (typeof entry.id !== 'string' || entry.id.length === 0) {
     throw new Error('registry id 不能为空。');
   }
-  if (typeof entry.swift !== 'string' || !entry.swift.startsWith('Tests/')) {
-    throw new Error(`${entry.id} 的 swift 路径必须位于 Tests/。`);
-  }
+  assertSwiftTestOwner(entry.id, entry.swift, repoRoot);
   if (!CATEGORY_SET.has(entry.category)) {
     throw new Error(`${entry.id} 的 category 非法：${entry.category}`);
   }
@@ -94,6 +92,25 @@ function validateRegistryEntry(entry: TestRegistryEntry, repoRoot: string): void
     }
   } else {
     throw new Error(`${entry.id} status 必须是 ported 或 unported。`);
+  }
+}
+
+function assertSwiftTestOwner(id: string, swift: string, repoRoot: string): void {
+  if (typeof swift !== 'string' || swift.length === 0 || path.isAbsolute(swift)) {
+    throw new Error(`${id} 的 swift 路径必须位于 Tests/ 内。`);
+  }
+  const root = path.resolve(repoRoot);
+  const testsRoot = path.resolve(root, 'Tests');
+  const resolved = path.resolve(root, swift);
+  const prefix = testsRoot.endsWith(path.sep) ? testsRoot : `${testsRoot}${path.sep}`;
+  if (!resolved.startsWith(prefix)) {
+    throw new Error(`${id} 的 swift 路径解析后必须位于 Tests/ 内：${swift}`);
+  }
+  if (path.extname(resolved) !== '.swift') {
+    throw new Error(`${id} 的 swift 路径必须指向 .swift 文件：${swift}`);
+  }
+  if (!existsSync(resolved) || !statSync(resolved).isFile()) {
+    throw new Error(`${id} 的 swift 路径不是文件：${swift}`);
   }
 }
 

@@ -1,6 +1,10 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-import { isVitestExecutedOwner } from './registry';
+import { isVitestExecutedOwner, loadTestRegistry } from './registry';
 
 describe('test registry tsOwner', () => {
   it('拒绝 package.json 与非测试源码，只接受 Vitest 会跑的测试文件', () => {
@@ -16,5 +20,36 @@ describe('test registry tsOwner', () => {
     expect(isVitestExecutedOwner('apps/desktop/src/main/redaction.test.ts')).toBe(true);
     expect(isVitestExecutedOwner('scripts/check-testkit-isolation.test.ts')).toBe(true);
     expect(isVitestExecutedOwner('packages/testkit/src/fault.replay.test.ts')).toBe(true);
+  });
+
+  it('解析 swift 路径后仍必须位于 Tests/ 且指向存在的 Swift 文件', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'test-registry-'));
+    try {
+      mkdirSync(path.join(root, 'Tests/Golden'), { recursive: true });
+      mkdirSync(path.join(root, 'packages/testkit'), { recursive: true });
+      writeFileSync(path.join(root, 'Package.swift'), '// forged owner\n');
+      writeFileSync(
+        path.join(root, 'packages/testkit/registry.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          description: 'test',
+          tests: [
+            {
+              id: 'forged',
+              swift: 'Tests/../Package.swift',
+              category: 'parser',
+              ownerIssue: 1,
+              tsOwner: null,
+              status: 'unported',
+              loadBearing: true,
+            },
+          ],
+        }),
+      );
+
+      expect(() => loadTestRegistry(root)).toThrow('解析后必须位于 Tests/ 内');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

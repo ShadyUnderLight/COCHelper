@@ -368,6 +368,36 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(opaqueThenRebound, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
     );
+
+    const arrayElementAlias = `
+      import { createRequire } from 'node:module';
+      const aliases = [createRequire];
+      const make = aliases[0];
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(arrayElementAlias, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const objectFunctionDestructure = `
+      import { createRequire } from 'node:module';
+      const box = { make: createRequire };
+      const { make } = box;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(objectFunctionDestructure, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const boundFactory = `
+      import { createRequire } from 'node:module';
+      const make = createRequire.bind(null);
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(boundFactory, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {
@@ -394,6 +424,36 @@ describe('testkit isolation', () => {
       await asar.createPackage(src, nestedArchive);
       expect(scanAsarArchive(nestedArchive, 'nested.asar').join('\n')).toContain(
         'node_modules/@coc-helper/testkit',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('发布产物遍历不会跳过 app.asar.unpacked 下的 node_modules', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'testkit-packaged-'));
+    try {
+      for (const manifest of [
+        'apps/desktop/package.json',
+        'packages/wire/package.json',
+        'packages/domain/package.json',
+        'packages/contracts/package.json',
+      ]) {
+        const file = path.join(root, manifest);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, '{}');
+      }
+      const nested = path.join(
+        root,
+        'apps/desktop/out/app.asar.unpacked/node_modules/@coc-helper/testkit/index.js',
+      );
+      mkdirSync(path.dirname(nested), { recursive: true });
+      writeFileSync(nested, 'export const fixture = 1;\n');
+
+      expect(collectTestkitIsolationHits(root)).toEqual(
+        expect.arrayContaining([
+          '发布产物含 golden-oracle / testkit：apps/desktop/out/app.asar.unpacked/node_modules/@coc-helper/testkit/index.js',
+        ]),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });

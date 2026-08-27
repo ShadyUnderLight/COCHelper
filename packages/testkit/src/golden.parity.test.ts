@@ -105,6 +105,21 @@ describe('fixture 脱敏', () => {
     expect(() =>
       assertGoldenPayloadSafe(JSON.stringify({ source: 'token=real-secret' }), 'raw.json'),
     ).toThrow('header/键值形态 token');
+    expect(() =>
+      assertGoldenPayloadSafe(JSON.stringify({ source: JSON.stringify('#8G9P0Q2L') }), 'raw.json'),
+    ).toThrow('真实 Tag #8G9P0Q2L');
+    expect(() =>
+      assertGoldenPayloadSafe(
+        JSON.stringify({ source: JSON.stringify('token=real-secret') }),
+        'raw.json',
+      ),
+    ).toThrow('header/键值形态 token');
+    expect(() =>
+      assertGoldenPayloadSafe(
+        JSON.stringify({ source: 'https://example.test/api?token=real-secret&scope=golden' }),
+        'raw.json',
+      ),
+    ).toThrow('header/键值形态 token');
   });
 });
 

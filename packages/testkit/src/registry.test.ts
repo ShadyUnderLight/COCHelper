@@ -84,4 +84,42 @@ describe('test registry tsOwner', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('拒绝仓库内指向仓库外的 tsOwner symlink', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'test-registry-ts-owner-'));
+    const external = mkdtempSync(path.join(os.tmpdir(), 'test-registry-ts-external-'));
+    try {
+      mkdirSync(path.join(root, 'Tests/Golden'), { recursive: true });
+      mkdirSync(path.join(root, 'packages/testkit/src'), { recursive: true });
+      writeFileSync(path.join(root, 'Tests/Owner.swift'), '// owner\n');
+      writeFileSync(path.join(external, 'outside.test.ts'), "it.todo('external');\n");
+      symlinkSync(
+        path.join(external, 'outside.test.ts'),
+        path.join(root, 'packages/testkit/src/ported.test.ts'),
+      );
+      writeFileSync(
+        path.join(root, 'packages/testkit/registry.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          description: 'test',
+          tests: [
+            {
+              id: 'ts-owner-symlink',
+              swift: 'Tests/Owner.swift',
+              category: 'parser',
+              ownerIssue: 1,
+              tsOwner: 'packages/testkit/src/ported.test.ts',
+              status: 'ported',
+              loadBearing: true,
+            },
+          ],
+        }),
+      );
+
+      expect(() => loadTestRegistry(root)).toThrow('tsOwner 解析后逃出仓库');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
 });

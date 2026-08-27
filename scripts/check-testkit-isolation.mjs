@@ -90,6 +90,7 @@ function collectModuleLoads(text, fileName) {
   const arrayShapes = new Map();
   const valueKinds = new Map();
   const mutatorAliases = new Set();
+  const stringValues = new Map();
 
   const opaqueArrayShape = () => ({ opaque: true, kinds: [] });
 
@@ -125,6 +126,88 @@ function collectModuleLoads(text, fileName) {
       const argument = unwrapExpr(unwrapped.argumentExpression);
       if (argument && ts.isStringLiteralLike(argument)) {
         return { object: unwrapped.expression, name: argument.text };
+      }
+    }
+    return null;
+  };
+
+  const inlineObjectProperty = (valueExpr, key) => {
+    const object = unwrapExpr(valueExpr);
+    if (!object || !ts.isObjectLiteralExpression(object)) {
+      return undefined;
+    }
+    let resolved;
+    for (const property of object.properties) {
+      if (ts.isSpreadAssignment(property)) {
+        const spread = inlineObjectProperty(property.expression, key);
+        if (spread) {
+          resolved = spread;
+        }
+        continue;
+      }
+      let propertyKey = null;
+      let propertyValue;
+      if (ts.isShorthandPropertyAssignment(property)) {
+        propertyKey = property.name.text;
+        propertyValue = property.name;
+      } else if (ts.isPropertyAssignment(property)) {
+        propertyKey = propertyNameText(property.name);
+        propertyValue = property.initializer;
+      }
+      if (propertyKey === key) {
+        resolved = { value: propertyValue };
+      }
+    }
+    return resolved;
+  };
+
+  const staticStringValue = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped) {
+      return null;
+    }
+    if (ts.isStringLiteralLike(unwrapped)) {
+      return unwrapped.text;
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      if (seen.has(unwrapped.text)) {
+        return null;
+      }
+      const nextSeen = new Set(seen);
+      nextSeen.add(unwrapped.text);
+      return stringValues.get(unwrapped.text) ?? null;
+    }
+    if (ts.isBinaryExpression(unwrapped) && unwrapped.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      const left = staticStringValue(unwrapped.left, seen);
+      const right = staticStringValue(unwrapped.right, seen);
+      return left !== null && right !== null ? left + right : null;
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const member = staticMember(unwrapped.expression);
+      if (member?.name === 'join') {
+        const array = unwrapExpr(member.object);
+        if (!array || !ts.isArrayLiteralExpression(array) || unwrapped.arguments.length > 1) {
+          return null;
+        }
+        const separator =
+          unwrapped.arguments.length === 0
+            ? ','
+            : staticStringValue(unwrapped.arguments[0], seen);
+        if (separator === null) {
+          return null;
+        }
+        const values = [];
+        for (const element of array.elements) {
+          if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) {
+            return null;
+          }
+          const value = staticStringValue(element, seen);
+          if (value === null) {
+            return null;
+          }
+          values.push(value);
+        }
+        return values.join(separator);
       }
     }
     return null;
@@ -171,8 +254,7 @@ function collectModuleLoads(text, fileName) {
     }
     const index = staticArrayIndex(unwrapped);
     if (index !== null) {
-      const arrayKey = referenceKey(unwrapped.expression);
-      const shape = arrayKey === null ? undefined : arrayShapes.get(arrayKey);
+      const shape = shapeForValue(unwrapped.expression);
       if (!shape?.opaque && shape?.kinds[index] !== null && shape?.kinds[index] !== undefined) {
         return shape.kinds[index];
       }
@@ -182,8 +264,7 @@ function collectModuleLoads(text, fileName) {
       if (access?.name === 'at' && unwrapped.arguments.length === 1) {
         const atIndex = staticIndexValue(unwrapped.arguments[0]);
         if (atIndex !== null) {
-          const arrayKey = referenceKey(access.object);
-          const shape = arrayKey === null ? undefined : arrayShapes.get(arrayKey);
+          const shape = shapeForValue(access.object);
           if (
             !shape?.opaque &&
             shape?.kinds[atIndex] !== null &&
@@ -191,6 +272,16 @@ function collectModuleLoads(text, fileName) {
           ) {
             return shape.kinds[atIndex];
           }
+        }
+      }
+    }
+    const member = staticMember(unwrapped);
+    if (member) {
+      const inline = inlineObjectProperty(member.object, member.name);
+      if (inline) {
+        const kind = classifyExpr(inline.value);
+        if (kind !== null) {
+          return kind;
         }
       }
     }
@@ -370,7 +461,7 @@ function collectModuleLoads(text, fileName) {
     return { opaque: true, kinds: [] };
   };
 
-  const knownArrayShape = (valueExpr) => {
+  const shapeForValue = (valueExpr) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
     if (!unwrapped) {
       return undefined;
@@ -381,6 +472,8 @@ function collectModuleLoads(text, fileName) {
     const key = referenceKey(unwrapped);
     return key === null ? undefined : arrayShapes.get(key);
   };
+
+  const knownArrayShape = (valueExpr) => shapeForValue(valueExpr);
 
   const resolveObjectProperty = (valueExpr, key) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
@@ -717,9 +810,41 @@ function collectModuleLoads(text, fileName) {
   const bindNode = (node) => {
     invalidateArrayMutation(node);
     if (ts.isVariableDeclaration(node) && node.initializer) {
+      if (ts.isIdentifier(node.name)) {
+        const value = staticStringValue(node.initializer);
+        if (value === null) {
+          stringValues.delete(node.name.text);
+        } else {
+          stringValues.set(node.name.text, value);
+        }
+      }
       bindPattern(node.name, classifyExpr(node.initializer), node.initializer);
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const left = unwrapExpr(node.left);
+      if (ts.isIdentifier(left)) {
+        const value = staticStringValue(node.right);
+        if (value === null) {
+          stringValues.delete(left.text);
+        } else {
+          stringValues.set(left.text, value);
+        }
+      }
+      const leftKey = referenceKey(left);
+      if (leftKey !== null && !ts.isIdentifier(left)) {
+        const kind = classifyExpr(node.right);
+        if (kind === 'factory' || kind === 'requirer') {
+          storeValueKind(leftKey, kind);
+        } else {
+          valueKinds.delete(leftKey);
+        }
+        const shape = knownArrayShape(node.right);
+        if (shape) {
+          storeArrayShape(leftKey, shape);
+        } else if (arrayShapes.has(leftKey)) {
+          markArrayOpaque(left);
+        }
+      }
       bindAssignmentTarget(node.left, classifyExpr(node.right), node.right);
     }
     ts.forEachChild(node, bindNode);
@@ -743,7 +868,7 @@ function collectModuleLoads(text, fileName) {
   const snapshot = () =>
     `${factories.size}|${requirers.size}|${JSON.stringify([...arrayShapes.entries()])}|${JSON.stringify(
       [...valueKinds.entries()],
-    )}|${JSON.stringify([...mutatorAliases])}`;
+    )}|${JSON.stringify([...mutatorAliases])}|${JSON.stringify([...stringValues.entries()])}`;
   while (previous !== snapshot()) {
     previous = snapshot();
     bindNode(sourceFile);
@@ -751,7 +876,7 @@ function collectModuleLoads(text, fileName) {
 
   const loads = [];
   const visit = (node) => {
-    loads.push(...loadsFromNode(node, classifyCallee));
+    loads.push(...loadsFromNode(node, classifyCallee, staticStringValue, classifyExpr));
     if (isOpaqueArrayBind(node)) {
       loads.push({ kind: 'unsafe', reason: '非静态数组解构' });
     }
@@ -761,7 +886,12 @@ function collectModuleLoads(text, fileName) {
   return loads;
 }
 
-function loadsFromNode(node, classifyCallee) {
+function loadsFromNode(
+  node,
+  classifyCallee,
+  resolveStaticString = stringLiteralText,
+  classifyExpr = () => null,
+) {
   const loads = [];
   if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
     const specifier = stringLiteralText(node.moduleSpecifier);
@@ -788,7 +918,7 @@ function loadsFromNode(node, classifyCallee) {
   }
   if (ts.isCallExpression(node)) {
     if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-      const specifier = stringLiteralText(node.arguments[0]);
+      const specifier = resolveStaticString(node.arguments[0]);
       if (specifier !== null) {
         loads.push({ kind: 'specifier', value: specifier });
       } else {
@@ -796,13 +926,22 @@ function loadsFromNode(node, classifyCallee) {
       }
       return loads;
     }
+    if (
+      node.arguments.some((argument) => {
+        const value = ts.isSpreadElement(argument) ? argument.expression : argument;
+        const kind = classifyExpr(value);
+        return kind === 'factory' || kind === 'requirer';
+      })
+    ) {
+      loads.push({ kind: 'unsafe', reason: '动态加载器作为参数' });
+    }
     const kind = classifyCallee(node.expression);
     if (kind === 'factory') {
       loads.push({ kind: 'unsafe', reason: 'createRequire()' });
       return loads;
     }
     if (kind === 'requirer') {
-      const specifier = stringLiteralText(node.arguments[0]);
+      const specifier = resolveStaticString(node.arguments[0]);
       if (specifier !== null) {
         loads.push({ kind: 'specifier', value: specifier });
       } else {

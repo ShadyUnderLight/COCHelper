@@ -409,6 +409,45 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(objectSpreadAndConcat, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
+    const expressionAliasesAndJoin = `
+      import { createRequire } from 'node:module';
+      const make = [createRequire][0];
+      const req = make(import.meta.url);
+      const scope = ['@coc-', 'helper'].join('');
+      const name = ['test', 'kit'].join('');
+      req(scope + '/' + name);
+    `;
+    expect(extractImportSpecifiers(expressionAliasesAndJoin)).toContain('@coc-helper/testkit');
+    expect(findForbiddenImportHits(expressionAliasesAndJoin, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const inlineObjectProperty = `
+      import { createRequire } from 'node:module';
+      const req = ({ f: createRequire }).f(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(inlineObjectProperty, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const assignedObjectProperty = `
+      import { createRequire } from 'node:module';
+      const box = {};
+      box.f = createRequire;
+      const req = box.f(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(assignedObjectProperty, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const genericLoaderArgument = `
+      function use(loader) {
+        return loader('@coc-helper/testkit');
+      }
+      use(require);
+    `;
+    expect(findForbiddenImportHits(genericLoaderArgument, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（动态加载器作为参数）`]),
+    );
     const unknownSpecifierDataFlow = `
       import { createRequire } from 'node:module';
       const box = { ...{ make: createRequire } };
@@ -439,6 +478,17 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(borrowedPush, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
     );
+    const borrowedPushApply = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      Array.prototype.push.apply(aliases, [createRequire]);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(borrowedPushApply, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
     const borrowedPushAlias = `
       import { createRequire } from 'node:module';
       const aliases = [];
@@ -457,6 +507,14 @@ describe('testkit isolation', () => {
       req('@coc-helper/testkit');
     `;
     expect(findForbiddenImportHits(borrowedFactoryCall, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+    const borrowedFactoryApply = `
+      import { createRequire } from 'node:module';
+      const req = createRequire.apply(null, [import.meta.url]);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(borrowedFactoryApply, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
     );
   });

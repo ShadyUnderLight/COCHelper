@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { TEST_CATEGORIES, type TestCategory } from './manifest';
@@ -140,7 +140,21 @@ function assertExecutedTsOwner(id: string, tsOwner: string, repoRoot: string): v
   if (file !== root && !file.startsWith(prefix)) {
     throw new Error(`${id} 的 tsOwner 逃出仓库：${tsOwner}`);
   }
-  if (!existsSync(file) || !statSync(file).isFile()) {
+  let canonicalRoot: string;
+  let canonicalFile: string;
+  try {
+    canonicalRoot = realpathSync(root);
+    canonicalFile = realpathSync(file);
+  } catch {
+    throw new Error(`${id} 的 tsOwner 不是文件：${tsOwner}`);
+  }
+  const canonicalPrefix = canonicalRoot.endsWith(path.sep)
+    ? canonicalRoot
+    : `${canonicalRoot}${path.sep}`;
+  if (canonicalFile !== canonicalRoot && !canonicalFile.startsWith(canonicalPrefix)) {
+    throw new Error(`${id} 的 tsOwner 解析后逃出仓库：${tsOwner}`);
+  }
+  if (!statSync(canonicalFile).isFile()) {
     throw new Error(`${id} 的 tsOwner 不是文件：${tsOwner}`);
   }
 }

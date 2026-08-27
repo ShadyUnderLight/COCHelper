@@ -988,10 +988,39 @@ describe('testkit isolation', () => {
        const make = aliases.map((item) => item)[0]; const req = make(import.meta.url); ${load}`,
       `import { createRequire } from 'node:module'; const aliases = [, createRequire];
        const make = aliases.slice(1)[0]; const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const at = aliases.at; const at2 = at; const make = at2(0); const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = Array.prototype.at.call(aliases, 0); const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = Array.prototype.at.apply(aliases, [0]); const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = aliases.at(0, extra); const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module';
+       const make = Array.from([createRequire])[0]; const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = aliases.filter((item) => item)[0]; const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module';
+       const make = [[createRequire]].flat()[0]; const req = make(import.meta.url); ${load}`,
+      `class Box { get() { return require; } }
+       const req = [new Box()][0].get(); ${load}`,
+      `const req = [{ get() { return require; } }][0].get(); ${load}`,
+      `const get = () => require; function use(loader) { return loader(); }
+       const req = use(get); ${load}`,
+      `const box = { get() { return require; } }; function use(loader) { return loader(); }
+       const req = use(box.get); ${load}`,
+      `const box = { get() { return require; } }; const assign = Object.assign;
+       const req = assign({}, box).get(); ${load}`,
+      `const box = { inner: { get() { return require; } } };
+       const req = Object.assign({}, box).inner.get(); ${load}`,
+      `const box = { get() { return require; } }; const apply = Reflect.apply;
+       const req = apply(box.get, box, []); ${load}`,
+      `const box = { get() { return require; } };
+       const req = Function.prototype.call.call(box.get, box); ${load}`,
     ];
 
     for (const source of cases) {
-      expect(findForbiddenImportHits(source, fromMain)).toEqual(
+      expect(findForbiddenImportHits(source, fromMain), source.replace(/\s+/g, ' ').slice(0, 120)).toEqual(
         expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
       );
     }

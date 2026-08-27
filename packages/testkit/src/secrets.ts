@@ -43,12 +43,7 @@ export function findSensitiveJsonKeys(value: unknown, label: string, path = '$')
 export function findFixtureSecretHits(text: string, label: string): string[] {
   const hits: string[] = [];
   hits.push(...findTextSecretHits(text, label));
-  for (const match of text.matchAll(COC_TAG)) {
-    const tag = match[0];
-    if (!ANONYMOUS_TAG.test(tag)) {
-      hits.push(`${label} → 真实 Tag ${tag}`);
-    }
-  }
+  hits.push(...findTagHits(text, label));
   const parsed = tryParseJson(text);
   if (parsed !== undefined) {
     hits.push(...findSensitiveJsonKeys(parsed, label));
@@ -61,6 +56,18 @@ function findTextSecretHits(text: string, label: string): string[] {
   for (const pattern of SECRET_PATTERNS) {
     if (pattern.re.test(text)) {
       hits.push(`${label} → ${pattern.message}`);
+    }
+  }
+  return hits;
+}
+
+function findTagHits(text: string, label: string): string[] {
+  const hits: string[] = [];
+  const re = new RegExp(COC_TAG.source, 'gi');
+  for (const match of text.matchAll(re)) {
+    const tag = match[0];
+    if (!ANONYMOUS_TAG.test(tag)) {
+      hits.push(`${label} → 真实 Tag ${tag}`);
     }
   }
   return hits;
@@ -80,6 +87,7 @@ function walkJson(value: unknown, label: string, path: string, hits: string[]): 
       walkJson(nested, label, path, hits);
     }
     hits.push(...findTextSecretHits(value, `${label} @ ${path}`));
+    hits.push(...findTagHits(value, `${label} @ ${path}`));
     return;
   }
   if (Array.isArray(value)) {

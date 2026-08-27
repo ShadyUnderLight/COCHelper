@@ -81,14 +81,23 @@ describe('testkit isolation', () => {
       `import { createRequire } from 'node:module'; createRequire(import.meta.url)(pkg);`,
       fromMain,
     );
-    expect(createRequireHits).toEqual([
+    expect(createRequireHits).toContain(
       `${fromMain} 不得使用无法静态解析的动态加载（createRequire()）`,
-    ]);
+    );
     expect(
       extractUnsafeDynamicLoads(
         `import { createRequire } from 'node:module'; createRequire(import.meta.url)(pkg);`,
       ),
-    ).toEqual(['createRequire()']);
+    ).toContain('createRequire()');
+    const aliased = `
+      import { createRequire } from 'node:module';
+      const make = createRequire;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(aliased, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {
@@ -106,6 +115,16 @@ describe('testkit isolation', () => {
       const dirtyArchive = path.join(root, 'app.asar');
       await asar.createPackage(src, dirtyArchive);
       expect(scanAsarArchive(dirtyArchive, 'app.asar').join('\n')).toContain('@coc-helper/testkit');
+
+      const nested = path.join(src, 'node_modules/@coc-helper/testkit');
+      mkdirSync(nested, { recursive: true });
+      writeFileSync(path.join(src, 'index.js'), 'export const x = 1;\n');
+      writeFileSync(path.join(nested, 'index.js'), 'export const oracle = 1;\n');
+      const nestedArchive = path.join(root, 'nested.asar');
+      await asar.createPackage(src, nestedArchive);
+      expect(scanAsarArchive(nestedArchive, 'nested.asar').join('\n')).toContain(
+        'node_modules/@coc-helper/testkit',
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

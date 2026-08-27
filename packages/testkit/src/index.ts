@@ -10,7 +10,9 @@ export {
 export { fixtureFingerprint, isFixtureFingerprint } from './fingerprint';
 export {
   assertFixtureFingerprints,
+  assertGoldenFixtureClosure,
   fingerprintGoldenFiles,
+  listGoldenFixtureFiles,
   loadGoldenManifest,
   TEST_CATEGORIES,
 } from './manifest';

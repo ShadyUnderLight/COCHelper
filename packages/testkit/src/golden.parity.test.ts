@@ -12,6 +12,7 @@ import {
   isSwiftOracleEnabled,
   loadGoldenJson,
   loadGoldenManifest,
+  listGoldenFixtureFiles,
   loadGoldenText,
   loadTestRegistry,
   isVitestExecutedOwner,
@@ -47,9 +48,12 @@ describe('fixture 脱敏', () => {
       'abcdefghij',
     ].join('.');
     expect(findFixtureSecretHits('{"tag":"#GOLDEN01"}', 'ok.json')).toEqual([]);
-    expect(findFixtureSecretHits('{"tag":"#8G9P0Q2L"}', 'bad.json')).toEqual([
-      'bad.json → 真实 Tag #8G9P0Q2L',
-    ]);
+    expect(findFixtureSecretHits('{"tag":"#8G9P0Q2L"}', 'bad.json')).toEqual(
+      expect.arrayContaining(['bad.json → 真实 Tag #8G9P0Q2L']),
+    );
+    expect(findFixtureSecretHits('{"tag":"\\u00238G9P0Q2L"}', 'esc.json')).toEqual(
+      expect.arrayContaining(['esc.json @ $.tag → 真实 Tag #8G9P0Q2L']),
+    );
     expect(() => assertGoldenPayloadSafe(bearer, 'hdr.txt')).toThrow('Authorization');
     expect(() => assertGoldenPayloadSafe(jwt, 'jwt.txt')).toThrow('JWT');
     expect(() => assertGoldenPayloadSafe('Cookie: session=abc', 'cookie.txt')).toThrow('Cookie');
@@ -106,6 +110,10 @@ describe('golden manifest', () => {
     for (const fixture of manifest.fixtures) {
       assertFixtureFingerprints(fixture);
     }
+    const registered = new Set(
+      manifest.fixtures.flatMap((entry) => [...entry.inputFiles, ...entry.outputFiles]),
+    );
+    expect(listGoldenFixtureFiles().every((file) => registered.has(file))).toBe(true);
     const parser = manifest.fixtures.find((entry) => entry.id === 'account-snapshot-parser');
     expect(parser?.status).toBe('unported');
     expect(parser?.ownerIssue).toBe(269);

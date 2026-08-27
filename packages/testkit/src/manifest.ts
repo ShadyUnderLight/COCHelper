@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 
 import { loadGoldenBytes } from './load-fixture';
 import { fixtureFingerprint, isFixtureFingerprint } from './fingerprint';
-import { goldenManifestPath } from './paths';
+import { goldenFixturesRoot, goldenManifestPath } from './paths';
 
 export const TEST_CATEGORIES = [
   'wire',
@@ -56,7 +57,42 @@ export function loadGoldenManifest(repoRoot?: string): GoldenManifest {
     }
     ids.add(fixture.id);
   }
+  assertGoldenFixtureClosure(raw, repoRoot);
   return raw;
+}
+
+/** Fixtures 目录里的每个文件都必须出现在 manifest 的 inputFiles 或 outputFiles。 */
+export function assertGoldenFixtureClosure(manifest: GoldenManifest, repoRoot?: string): void {
+  const registered = new Set<string>();
+  for (const fixture of manifest.fixtures) {
+    for (const file of [...fixture.inputFiles, ...fixture.outputFiles]) {
+      registered.add(file.split(path.sep).join('/'));
+    }
+  }
+  const missing = listGoldenFixtureFiles(repoRoot).filter((file) => !registered.has(file));
+  if (missing.length > 0) {
+    throw new Error(`golden manifest 未登记 Fixtures 文件：${missing.join(', ')}`);
+  }
+}
+
+export function listGoldenFixtureFiles(repoRoot?: string): string[] {
+  return walkFixtureFiles(goldenFixturesRoot(repoRoot), goldenFixturesRoot(repoRoot));
+}
+
+function walkFixtureFiles(dir: string, root: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) {
+      continue;
+    }
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...walkFixtureFiles(full, root));
+    } else {
+      out.push(path.relative(root, full).split(path.sep).join('/'));
+    }
+  }
+  return out.sort();
 }
 
 export function fingerprintGoldenFiles(files: readonly string[], repoRoot?: string): string {

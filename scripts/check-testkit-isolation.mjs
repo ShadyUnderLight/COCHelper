@@ -66,7 +66,6 @@ export function extractUnsafeDynamicLoads(text, fileName = 'module.ts') {
 }
 
 function collectModuleLoads(text, fileName) {
-  const loads = [];
   const sourceFile = ts.createSourceFile(
     fileName,
     text,
@@ -74,28 +73,111 @@ function collectModuleLoads(text, fileName) {
     true,
     scriptKindFor(fileName),
   );
+  const factories = new Set();
+  const requirers = new Set(['require']);
+
+  const seedImports = (node) => {
+    if (
+      ts.isImportDeclaration(node) &&
+      node.importClause?.namedBindings &&
+      ts.isNamedImports(node.importClause.namedBindings)
+    ) {
+      const spec = stringLiteralText(node.moduleSpecifier);
+      if (spec === 'node:module' || spec === 'module') {
+        for (const element of node.importClause.namedBindings.elements) {
+          const imported = (element.propertyName ?? element.name).text;
+          if (imported === 'createRequire') {
+            factories.add(element.name.text);
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, seedImports);
+  };
+
+  const classifyCallee = (expr) => {
+    if (ts.isIdentifier(expr)) {
+      if (factories.has(expr.text)) {
+        return 'factory';
+      }
+      if (requirers.has(expr.text)) {
+        return 'requirer';
+      }
+      return null;
+    }
+    if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.name)) {
+      if (expr.name.text === 'createRequire') {
+        return 'factory';
+      }
+      if (expr.name.text === 'require') {
+        return 'requirer';
+      }
+    }
+    if (ts.isCallExpression(expr) && classifyCallee(expr.expression) === 'factory') {
+      return 'requirer';
+    }
+    return null;
+  };
+
+  const classifyExpr = (expr) => {
+    if (ts.isIdentifier(expr)) {
+      if (factories.has(expr.text)) {
+        return 'factory';
+      }
+      if (requirers.has(expr.text)) {
+        return 'requirer';
+      }
+      return null;
+    }
+    if (ts.isCallExpression(expr) && classifyCallee(expr.expression) === 'factory') {
+      return 'requirer';
+    }
+    return classifyCallee(expr);
+  };
+
+  const bindNode = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const kind = classifyExpr(node.initializer);
+      if (kind === 'factory') {
+        factories.add(node.name.text);
+      }
+      if (kind === 'requirer') {
+        requirers.add(node.name.text);
+      }
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left)
+    ) {
+      const kind = classifyExpr(node.right);
+      if (kind === 'factory') {
+        factories.add(node.left.text);
+      }
+      if (kind === 'requirer') {
+        requirers.add(node.left.text);
+      }
+    }
+    ts.forEachChild(node, bindNode);
+  };
+
+  seedImports(sourceFile);
+  let previous = -1;
+  while (previous !== factories.size + requirers.size) {
+    previous = factories.size + requirers.size;
+    bindNode(sourceFile);
+  }
+
+  const loads = [];
   const visit = (node) => {
-    loads.push(...loadsFromNode(node));
+    loads.push(...loadsFromNode(node, classifyCallee));
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
   return loads;
 }
 
-function scriptKindFor(fileName) {
-  if (fileName.endsWith('.tsx')) {
-    return ts.ScriptKind.TSX;
-  }
-  if (fileName.endsWith('.jsx')) {
-    return ts.ScriptKind.JSX;
-  }
-  if (fileName.endsWith('.mts') || fileName.endsWith('.cts') || fileName.endsWith('.ts')) {
-    return ts.ScriptKind.TS;
-  }
-  return ts.ScriptKind.JS;
-}
-
-function loadsFromNode(node) {
+function loadsFromNode(node, classifyCallee) {
   const loads = [];
   if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
     const specifier = stringLiteralText(node.moduleSpecifier);
@@ -130,7 +212,12 @@ function loadsFromNode(node) {
       }
       return loads;
     }
-    if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
+    const kind = classifyCallee(node.expression);
+    if (kind === 'factory') {
+      loads.push({ kind: 'unsafe', reason: 'createRequire()' });
+      return loads;
+    }
+    if (kind === 'requirer') {
       const specifier = stringLiteralText(node.arguments[0]);
       if (specifier !== null) {
         loads.push({ kind: 'specifier', value: specifier });
@@ -139,12 +226,21 @@ function loadsFromNode(node) {
       }
       return loads;
     }
-    if (ts.isIdentifier(node.expression) && node.expression.text === 'createRequire') {
-      loads.push({ kind: 'unsafe', reason: 'createRequire()' });
-      return loads;
-    }
   }
   return loads;
+}
+
+function scriptKindFor(fileName) {
+  if (fileName.endsWith('.tsx')) {
+    return ts.ScriptKind.TSX;
+  }
+  if (fileName.endsWith('.jsx')) {
+    return ts.ScriptKind.JSX;
+  }
+  if (fileName.endsWith('.mts') || fileName.endsWith('.cts') || fileName.endsWith('.ts')) {
+    return ts.ScriptKind.TS;
+  }
+  return ts.ScriptKind.JS;
 }
 
 function stringLiteralText(node) {
@@ -163,6 +259,15 @@ export function isTestkitPackageSpecifier(specifier) {
 
 function posixRelative(root, absolute) {
   return path.relative(root, absolute).split(path.sep).join('/');
+}
+
+export function isTestkitArchivePath(posix) {
+  const normalized = posix.split(path.sep).join('/');
+  return (
+    normalized.includes('packages/testkit') ||
+    normalized.includes('node_modules/@coc-helper/testkit') ||
+    /(?:^|\/)@coc-helper\/testkit(?:\/|$)/.test(normalized)
+  );
 }
 
 export function isTestkitFilesystemPath(absolute, workspaceRoot = defaultRoot) {
@@ -331,7 +436,7 @@ function packagedHits(workspaceRoot) {
       if (file.endsWith('.swift')) {
         hits.push(`发布产物含 Swift 源：${relative}`);
       }
-      if (relative.includes('golden-oracle') || isTestkitFilesystemPath(file, workspaceRoot)) {
+      if (relative.includes('golden-oracle') || isTestkitArchivePath(relative)) {
         hits.push(`发布产物含 golden-oracle / testkit：${relative}`);
       }
       if (file.endsWith('.asar')) {
@@ -352,7 +457,7 @@ export function scanAsarArchive(archivePath, label, workspaceRoot = defaultRoot)
   const names = asar.listPackage(archivePath, { isPack: false });
   for (const name of names) {
     const posix = String(name).split(path.sep).join('/').replace(/^\//, '');
-    if (posix.includes('golden-oracle') || posix.includes('packages/testkit')) {
+    if (posix.includes('golden-oracle') || isTestkitArchivePath(posix)) {
       hits.push(`发布产物 ${label} 含 golden-oracle / testkit：${posix}`);
     }
     if (posix.endsWith('.swift')) {
@@ -361,15 +466,27 @@ export function scanAsarArchive(archivePath, label, workspaceRoot = defaultRoot)
     if (!/\.(js|mjs|cjs|json)$/.test(posix)) {
       continue;
     }
-    let text = '';
     try {
-      text = asar.extractFile(archivePath, posix).toString('utf8');
-    } catch {
-      continue;
+      const text = readAsarFile(asar, archivePath, posix, name);
+      hits.push(...markerHitsInText(text, `${label}:${posix}`));
+    } catch (error) {
+      hits.push(`发布产物 ${label} 无法读取 ${posix}：${error instanceof Error ? error.message : String(error)}`);
     }
-    hits.push(...markerHitsInText(text, `${label}:${posix}`));
   }
   return hits;
+}
+
+function readAsarFile(asar, archivePath, posix, originalName) {
+  const attempts = [...new Set([posix, String(originalName), `/${posix}`])];
+  let lastError = null;
+  for (const candidate of attempts) {
+    try {
+      return asar.extractFile(archivePath, candidate).toString('utf8');
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error(`无法读取 ${posix}`);
 }
 
 function markerHitsInText(text, label) {

@@ -1032,6 +1032,26 @@ describe('testkit isolation', () => {
        const make = Array.prototype.at.call(...[aliases, 0]); const req = make(import.meta.url); ${load}`,
       `const box = { get() { return require; } };
        const req = Reflect.apply(...[box.get, box, []]); ${load}`,
+      `function use(loader = require) { return loader; } const req = use(); ${load}`,
+      `function use(...args) { return args[0].loader; } const req = use({ loader: require }); ${load}`,
+      `const arr = [{ skip: true }];
+       const req = arr.map((item) => { if (item.skip) return { skip: true }; return { get() { return require; } }; })[0].get(); ${load}`,
+      `const req = Array.of({ get() { return require; } })[0].get(); ${load}`,
+      `const box = { get() { return require; } };
+       const req = Object.assign.call(null, {}, box).get(); ${load}`,
+      `const box = { get() { return require; } };
+       const req = Object.assign.apply(null, [{}, box]).get(); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const make = aliases.at(...unknown); const req = make(import.meta.url); ${load}`,
+      `const box = { get() { return require; } };
+       const req = Reflect.apply(...unknown); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       const box = { at: aliases.at.bind(aliases) }; const make = box.at(0);
+       const req = make(import.meta.url); ${load}`,
+      `import { createRequire } from 'node:module'; const aliases = [createRequire];
+       function getAt() { return aliases.at.bind(aliases); }
+       const make = getAt()(0); const req = make(import.meta.url); ${load}`,
+      `const req = ${Array.from({ length: 33 }, () => 0).reduce((acc) => `[${acc}]`, '{ get() { return require; } }')}.flat(unknown)[0].get(); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1056,6 +1076,30 @@ describe('testkit isolation', () => {
       redact(structured.value);
     `;
     expect(extractUnsafeDynamicLoads(source)).toEqual([]);
+  });
+
+  it('外层 loader 别名不得污染内部同名普通回调', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const shadowed = `
+      const callback = require;
+      function redact(value) {
+        return value.replace(/x/g, (callback) => callback);
+      }
+      redact('x');
+    `;
+    expect(extractUnsafeDynamicLoads(shadowed)).toEqual([]);
+    const stillHits = `
+      const callback = require;
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      function redact(value) {
+        return value.replace(/x/g, (callback) => callback);
+      }
+      redact('x');
+      callback(pkg);
+    `;
+    expect(findForbiddenImportHits(stillHits, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
   });
 
   it('生产源文件通过 symlink 指向 testkit 时按真实路径拒绝', () => {

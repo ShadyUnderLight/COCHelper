@@ -137,12 +137,25 @@ function collectModuleLoads(text, fileName) {
     return classifyCallee(expr);
   };
 
-  const bindPattern = (name, inheritedKind) => {
+  const kindFromValue = (valueExpr, inheritedKind) => {
+    if (!valueExpr || ts.isOmittedExpression(valueExpr) || ts.isSpreadElement(valueExpr)) {
+      return inheritedKind;
+    }
+    return classifyExpr(valueExpr) ?? inheritedKind;
+  };
+
+  const arrayLiteralElements = (valueExpr) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    return unwrapped && ts.isArrayLiteralExpression(unwrapped) ? unwrapped.elements : undefined;
+  };
+
+  const bindPattern = (name, inheritedKind, valueExpr) => {
     if (ts.isIdentifier(name)) {
-      if (inheritedKind === 'factory') {
+      const kind = kindFromValue(valueExpr, inheritedKind);
+      if (kind === 'factory') {
         factories.add(name.text);
       }
-      if (inheritedKind === 'requirer') {
+      if (kind === 'requirer') {
         requirers.add(name.text);
       }
       return;
@@ -160,19 +173,58 @@ function collectModuleLoads(text, fileName) {
         if (key === 'require') {
           kind = 'requirer';
         }
-        bindPattern(element.name, kind);
+        bindPattern(element.name, kind, element.initializer);
       }
+      return;
+    }
+    if (ts.isArrayBindingPattern(name)) {
+      const rhs = arrayLiteralElements(valueExpr);
+      name.elements.forEach((element, i) => {
+        if (ts.isOmittedExpression(element) || !ts.isBindingElement(element)) {
+          return;
+        }
+        if (element.dotDotDotToken) {
+          let kind = inheritedKind;
+          if (rhs) {
+            for (const item of rhs.slice(i)) {
+              kind = kindFromValue(item, kind);
+            }
+          }
+          bindPattern(element.name, kind, element.initializer);
+          return;
+        }
+        const childValue =
+          rhs && i < rhs.length && !ts.isOmittedExpression(rhs[i]) && !ts.isSpreadElement(rhs[i])
+            ? rhs[i]
+            : element.initializer;
+        bindPattern(element.name, kindFromValue(childValue, inheritedKind), childValue);
+      });
     }
   };
 
-  const bindAssignmentTarget = (target, inheritedKind) => {
+  const bindAssignmentTarget = (target, inheritedKind, valueExpr) => {
     target = unwrapExpr(target);
+    valueExpr = valueExpr ? unwrapExpr(valueExpr) : undefined;
     if (
       ts.isIdentifier(target) ||
       ts.isObjectBindingPattern(target) ||
       ts.isArrayBindingPattern(target)
     ) {
-      bindPattern(target, inheritedKind);
+      bindPattern(target, inheritedKind, valueExpr);
+      return;
+    }
+    if (ts.isArrayLiteralExpression(target)) {
+      const rhs = arrayLiteralElements(valueExpr);
+      target.elements.forEach((element, i) => {
+        if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) {
+          return;
+        }
+        const childValue =
+          rhs && i < rhs.length && !ts.isOmittedExpression(rhs[i]) && !ts.isSpreadElement(rhs[i])
+            ? rhs[i]
+            : undefined;
+        bindAssignmentTarget(element, kindFromValue(childValue, inheritedKind), childValue);
+      });
       return;
     }
     if (ts.isObjectLiteralExpression(target)) {
@@ -205,10 +257,10 @@ function collectModuleLoads(text, fileName) {
 
   const bindNode = (node) => {
     if (ts.isVariableDeclaration(node) && node.initializer) {
-      bindPattern(node.name, classifyExpr(node.initializer));
+      bindPattern(node.name, classifyExpr(node.initializer), node.initializer);
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-      bindAssignmentTarget(node.left, classifyExpr(node.right));
+      bindAssignmentTarget(node.left, classifyExpr(node.right), node.right);
     }
     ts.forEachChild(node, bindNode);
   };

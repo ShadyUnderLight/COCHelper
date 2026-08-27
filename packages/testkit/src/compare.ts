@@ -35,6 +35,9 @@ const TIME_KEYS = new Set([
   'stateUpdatedAt',
 ]);
 
+/** 对象上不存在的字段；与显式 undefined 区分。 */
+const MISSING = Symbol('missing');
+
 /** 只覆盖错误协议字段；kind/code/reason/message 是普通 discriminator，走 defaultKind。 */
 const ERROR_KEYS = new Set(['failureKind', 'lastErrorReason']);
 
@@ -68,6 +71,17 @@ function walk(
     return;
   }
 
+  if (expected instanceof Date || actual instanceof Date) {
+    if (
+      !(expected instanceof Date) ||
+      !(actual instanceof Date) ||
+      expected.getTime() !== actual.getTime()
+    ) {
+      diffs.push(diff(classifyPath(path, defaultKind), path, expected, actual));
+    }
+    return;
+  }
+
   if (isPlainObject(expected) && isPlainObject(actual)) {
     if (sameContent(expected, actual) && !sameOrder(expected, actual)) {
       diffs.push(diff('ordering', path, expected, actual));
@@ -75,7 +89,21 @@ function walk(
     }
     const keys = uniqueSorted([...Object.keys(expected), ...Object.keys(actual)]);
     for (const key of keys) {
-      walk(expected[key], actual[key], joinPath(path, key), defaultKind, diffs);
+      const expectedHas = hasOwn(expected, key);
+      const actualHas = hasOwn(actual, key);
+      const childPath = joinPath(path, key);
+      if (!expectedHas || !actualHas) {
+        diffs.push(
+          diff(
+            classifyPath(childPath, defaultKind),
+            childPath,
+            expectedHas ? expected[key] : MISSING,
+            actualHas ? actual[key] : MISSING,
+          ),
+        );
+        continue;
+      }
+      walk(expected[key], actual[key], childPath, defaultKind, diffs);
     }
     return;
   }
@@ -111,7 +139,15 @@ function classifyPath(path: string, defaultKind: ParityDiffKind): ParityDiffKind
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function sameContent(left: unknown, right: unknown): boolean {
@@ -152,6 +188,9 @@ function tag(
   }
   if (typeof value === 'bigint') {
     return ['bigint', value.toString()];
+  }
+  if (value instanceof Date) {
+    return ['date', String(value.getTime())];
   }
   if (Array.isArray(value)) {
     const items = value.map((item) => tag(item, options));
@@ -197,6 +236,9 @@ function dump(value: unknown): string {
 }
 
 function stringifyForDump(value: unknown): string {
+  if (value === MISSING) {
+    return '<missing>';
+  }
   if (typeof value === 'bigint') {
     return `${value}n`;
   }
@@ -205,6 +247,9 @@ function stringifyForDump(value: unknown): string {
   }
   if (value === undefined) {
     return 'undefined';
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
   }
   return JSON.stringify(jsonReady(value));
 }

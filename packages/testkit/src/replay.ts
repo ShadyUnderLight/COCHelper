@@ -1,4 +1,4 @@
-/** fault replay 独立门禁占位。实现由 E3-01（#275）接入文件存储后填充。 */
+/** fault replay 独立门禁占位。实现由 E3-01（#275）接入文件存储后填充；当前不宣称通过。 */
 export const FAULT_REPLAY_STATUS = 'deferred-e3-01' as const;
 
 export function runFaultReplay(): never {

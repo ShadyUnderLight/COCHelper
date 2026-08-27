@@ -53,7 +53,19 @@ function walk(dir) {
 }
 
 export function extractImportSpecifiers(text, fileName = 'module.ts') {
-  const specifiers = new Set();
+  return collectModuleLoads(text, fileName)
+    .filter((item) => item.kind === 'specifier')
+    .map((item) => item.value);
+}
+
+export function extractUnsafeDynamicLoads(text, fileName = 'module.ts') {
+  return collectModuleLoads(text, fileName)
+    .filter((item) => item.kind === 'unsafe')
+    .map((item) => item.reason);
+}
+
+function collectModuleLoads(text, fileName) {
+  const loads = [];
   const sourceFile = ts.createSourceFile(
     fileName,
     text,
@@ -61,16 +73,12 @@ export function extractImportSpecifiers(text, fileName = 'module.ts') {
     true,
     scriptKindFor(fileName),
   );
-
   const visit = (node) => {
-    const specifier = specifierFromNode(node);
-    if (specifier !== null) {
-      specifiers.add(specifier);
-    }
+    loads.push(...loadsFromNode(node));
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-  return [...specifiers];
+  return loads;
 }
 
 function scriptKindFor(fileName) {
@@ -86,28 +94,63 @@ function scriptKindFor(fileName) {
   return ts.ScriptKind.JS;
 }
 
-function specifierFromNode(node) {
+function loadsFromNode(node) {
+  const loads = [];
   if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-    return stringLiteralText(node.moduleSpecifier);
+    const specifier = stringLiteralText(node.moduleSpecifier);
+    if (specifier !== null) {
+      loads.push({ kind: 'specifier', value: specifier });
+    }
+    return loads;
   }
-  if (
-    ts.isImportEqualsDeclaration(node) &&
-    ts.isExternalModuleReference(node.moduleReference)
-  ) {
-    return stringLiteralText(node.moduleReference.expression);
+  if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+    const specifier = stringLiteralText(node.moduleReference.expression);
+    if (specifier !== null) {
+      loads.push({ kind: 'specifier', value: specifier });
+    } else {
+      loads.push({ kind: 'unsafe', reason: '非字面量 import =' });
+    }
+    return loads;
   }
   if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
-    return stringLiteralText(node.argument.literal);
+    const specifier = stringLiteralText(node.argument.literal);
+    if (specifier !== null) {
+      loads.push({ kind: 'specifier', value: specifier });
+    }
+    return loads;
   }
   if (ts.isCallExpression(node)) {
     if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-      return stringLiteralText(node.arguments[0]);
+      const specifier = stringLiteralText(node.arguments[0]);
+      if (specifier !== null) {
+        loads.push({ kind: 'specifier', value: specifier });
+      } else {
+        loads.push({ kind: 'unsafe', reason: '非字面量 import()' });
+      }
+      return loads;
     }
     if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
-      return stringLiteralText(node.arguments[0]);
+      const specifier = stringLiteralText(node.arguments[0]);
+      if (specifier !== null) {
+        loads.push({ kind: 'specifier', value: specifier });
+      } else {
+        loads.push({ kind: 'unsafe', reason: '非字面量 require()' });
+      }
+      return loads;
+    }
+    if (
+      ts.isCallExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'createRequire'
+    ) {
+      loads.push({ kind: 'unsafe', reason: 'createRequire(...)()' });
+      return loads;
     }
   }
-  return null;
+  if (ts.isIdentifier(node) && node.text === 'createRequire') {
+    loads.push({ kind: 'unsafe', reason: 'createRequire' });
+  }
+  return loads;
 }
 
 function stringLiteralText(node) {
@@ -184,6 +227,9 @@ export function findForbiddenImportHits(text, fromRelative, workspaceRoot = defa
       hits.push(`${fromRelative} 不得解析到 testkit（via ${specifier}）`);
     }
   }
+  for (const reason of extractUnsafeDynamicLoads(text, fromRelative)) {
+    hits.push(`${fromRelative} 不得使用无法静态解析的动态加载（${reason}）`);
+  }
   return hits;
 }
 
@@ -256,7 +302,11 @@ function productionGraphHits(workspaceRoot) {
     if (!isProductionSource(relative) && !PRODUCTION_ENTRIES.includes(relative)) {
       continue;
     }
-    const specifiers = extractImportSpecifiers(readFileSync(absolute, 'utf8'), relative);
+    const text = readFileSync(absolute, 'utf8');
+    for (const reason of extractUnsafeDynamicLoads(text, relative)) {
+      hits.push(`${relative} 不得使用无法静态解析的动态加载（${reason}）`);
+    }
+    const specifiers = extractImportSpecifiers(text, relative);
     for (const specifier of specifiers) {
       if (isTestkitPackageSpecifier(specifier)) {
         hits.push(`${relative} 不得 import ${specifier}`);

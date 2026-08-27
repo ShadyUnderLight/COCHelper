@@ -14,6 +14,7 @@ import {
   loadGoldenManifest,
   loadGoldenText,
   loadTestRegistry,
+  isVitestExecutedOwner,
   ParityMismatchError,
   resolveGoldenFixture,
   runSwiftOracle,
@@ -79,6 +80,15 @@ describe('fixture 脱敏', () => {
     expect(() => assertGoldenPayloadSafe(payload, 'api.json')).toThrow(
       'JSON 敏感键 $.list[0].set-cookie',
     );
+    expect(() =>
+      assertGoldenPayloadSafe(JSON.stringify({ apiKey: 'real-secret' }), 'api.json'),
+    ).toThrow('JSON 敏感键 $.apiKey');
+    expect(() =>
+      assertGoldenPayloadSafe(
+        JSON.stringify({ source: JSON.stringify({ token: 'real-secret' }) }),
+        'raw.json',
+      ),
+    ).toThrow('JSON 敏感键 $.source.token');
   });
 });
 
@@ -108,6 +118,7 @@ describe('test registry', () => {
       expect(entry.loadBearing).toBe(true);
       if (entry.status === 'ported') {
         expect(entry.tsOwner).not.toBeNull();
+        expect(isVitestExecutedOwner(entry.tsOwner ?? '')).toBe(true);
         expect(existsSync(path.join(repoRoot, entry.tsOwner ?? '')), entry.tsOwner ?? '').toBe(
           true,
         );
@@ -239,6 +250,25 @@ describe('parity 差异分类', () => {
 
   it('一致则通过', () => {
     compareParity({ expected: { a: 1 }, actual: { a: 1 } });
+    compareParity({ expected: new Date(1), actual: new Date(1) });
+  });
+
+  it('Date 与缺失字段不得静默通过', () => {
+    expect(() => compareParity({ expected: new Date(1), actual: new Date(2) })).toThrow(
+      ParityMismatchError,
+    );
+    expect(() =>
+      compareParity({
+        expected: { a: 1 },
+        actual: { a: 1, b: undefined },
+      }),
+    ).toThrow(/wire @ \$\.b/);
+    expect(() =>
+      compareParity({
+        expected: { a: undefined },
+        actual: {},
+      }),
+    ).toThrow(/wire @ \$\.a/);
   });
 });
 

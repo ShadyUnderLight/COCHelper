@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { FakeClock, SeededRandom, compareParity, runSeededProperty } from './index';
+import {
+  FakeClock,
+  FAULT_REPLAY_STATUS,
+  SeededRandom,
+  compareParity,
+  runSeededProperty,
+} from './index';
 
 describe('@coc-helper/testkit', () => {
   it('FakeClock 可推进、回拨并拒绝非有限或不安全毫秒', () => {
@@ -48,5 +54,9 @@ describe('@coc-helper/testkit', () => {
   it('导出 parity 比较入口', () => {
     compareParity({ expected: 1, actual: 1 });
     expect(typeof compareParity).toBe('function');
+  });
+
+  it('fault replay 标记为 deferred，不宣称已实现', () => {
+    expect(FAULT_REPLAY_STATUS).toBe('deferred-e3-01');
   });
 });

@@ -63,5 +63,14 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(`import { parseJson } from '@coc-helper/wire';`, fromMain)).toEqual(
       [],
     );
+    expect(
+      findForbiddenImportHits(`const pkg = '@coc-helper/testkit'; import(pkg);`, fromMain),
+    ).not.toEqual([]);
+    expect(
+      findForbiddenImportHits(
+        `import { createRequire } from 'node:module'; createRequire(import.meta.url)(pkg);`,
+        fromMain,
+      ),
+    ).not.toEqual([]);
   });
 });

@@ -59,8 +59,10 @@ jobs:
         run: pnpm test:unit
       - name: Domain parity
         run: pnpm test:parity
-      - name: Fault replay
-        run: pnpm test:replay
+      - name: Fault replay (deferred #275)
+        run: |
+          echo "fault replay 延期到 Issue #275 / E3-01。本步只确认状态为 deferred，不宣称 replay 通过。"
+          pnpm test:replay
       - name: Security scans
         run: |
           pnpm check:renderer-isolation

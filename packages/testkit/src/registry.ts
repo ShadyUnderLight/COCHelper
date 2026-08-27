@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 
 import { TEST_CATEGORIES, type TestCategory } from './manifest';
-import { testRegistryPath } from './paths';
+import { findRepoRoot, testRegistryPath } from './paths';
 
 export type TestPortStatus = 'ported' | 'unported';
 
@@ -23,8 +24,11 @@ export type TestRegistry = {
 
 const CATEGORY_SET = new Set<string>(TEST_CATEGORIES);
 
+const IGNORED_OWNER_SEGMENTS = ['node_modules', '.webpack', 'out'];
+
 export function loadTestRegistry(repoRoot?: string): TestRegistry {
-  const raw = JSON.parse(readFileSync(testRegistryPath(repoRoot), 'utf8')) as TestRegistry;
+  const root = repoRoot ?? findRepoRoot();
+  const raw = JSON.parse(readFileSync(testRegistryPath(root), 'utf8')) as TestRegistry;
   if (raw.schemaVersion !== 1) {
     throw new Error(`test registry schemaVersion 必须为 1，实际 ${raw.schemaVersion}。`);
   }
@@ -33,7 +37,7 @@ export function loadTestRegistry(repoRoot?: string): TestRegistry {
   }
   const ids = new Set<string>();
   for (const entry of raw.tests) {
-    validateRegistryEntry(entry);
+    validateRegistryEntry(entry, root);
     if (ids.has(entry.id)) {
       throw new Error(`test registry 重复 id：${entry.id}`);
     }
@@ -42,7 +46,28 @@ export function loadTestRegistry(repoRoot?: string): TestRegistry {
   return raw;
 }
 
-function validateRegistryEntry(entry: TestRegistryEntry): void {
+/** 对齐 vitest.config.ts 的 include/exclude：ported tsOwner 必须是会被执行的测试文件。 */
+export function isVitestExecutedOwner(relativePath: string): boolean {
+  const posix = relativePath.split(path.sep).join('/');
+  if (posix.startsWith('/') || posix.split('/').some((part) => part === '..' || part === '')) {
+    return false;
+  }
+  if (IGNORED_OWNER_SEGMENTS.some((segment) => posix.split('/').includes(segment))) {
+    return false;
+  }
+  if (posix.endsWith('.parity.test.ts')) {
+    return posix.startsWith('packages/');
+  }
+  if (posix.endsWith('.replay.test.ts')) {
+    return posix.startsWith('packages/');
+  }
+  if (posix.endsWith('.test.ts')) {
+    return /^(?:apps|packages|scripts)\//.test(posix);
+  }
+  return false;
+}
+
+function validateRegistryEntry(entry: TestRegistryEntry, repoRoot: string): void {
   if (typeof entry.id !== 'string' || entry.id.length === 0) {
     throw new Error('registry id 不能为空。');
   }
@@ -62,11 +87,27 @@ function validateRegistryEntry(entry: TestRegistryEntry): void {
     if (typeof entry.tsOwner !== 'string' || entry.tsOwner.length === 0) {
       throw new Error(`${entry.id} 已 ported 但缺少 tsOwner。`);
     }
+    assertExecutedTsOwner(entry.id, entry.tsOwner, repoRoot);
   } else if (entry.status === 'unported') {
     if (entry.tsOwner !== null) {
       throw new Error(`${entry.id} 未 port 时 tsOwner 必须为 null。`);
     }
   } else {
     throw new Error(`${entry.id} status 必须是 ported 或 unported。`);
+  }
+}
+
+function assertExecutedTsOwner(id: string, tsOwner: string, repoRoot: string): void {
+  if (!isVitestExecutedOwner(tsOwner)) {
+    throw new Error(`${id} 的 tsOwner 必须是 Vitest 会执行的测试文件，实际 ${tsOwner}`);
+  }
+  const root = path.resolve(repoRoot);
+  const file = path.resolve(root, tsOwner);
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  if (file !== root && !file.startsWith(prefix)) {
+    throw new Error(`${id} 的 tsOwner 逃出仓库：${tsOwner}`);
+  }
+  if (!existsSync(file) || !statSync(file).isFile()) {
+    throw new Error(`${id} 的 tsOwner 不是文件：${tsOwner}`);
   }
 }

@@ -1,10 +1,5 @@
-import { describe, expect, it } from 'vitest';
-
-import { FAULT_REPLAY_STATUS, runFaultReplay } from './index';
+import { describe, it } from 'vitest';
 
 describe('fault replay 独立门禁', () => {
-  it('框架入口存在，实现留给 E3-01', () => {
-    expect(FAULT_REPLAY_STATUS).toBe('deferred-e3-01');
-    expect(() => runFaultReplay()).toThrow('Issue #275');
-  });
+  it.todo('由 E3-01 / Issue #275 接入文件存储后实现，当前不宣称通过');
 });

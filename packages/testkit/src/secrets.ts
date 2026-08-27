@@ -14,6 +14,7 @@ const SENSITIVE_JSON_KEYS = new Set([
   'accesstoken',
   'refreshtoken',
   'apitoken',
+  'apikey',
   'token',
 ]);
 
@@ -63,6 +64,13 @@ export function assertGoldenPayloadSafe(text: string, label: string): void {
 }
 
 function walkJson(value: unknown, label: string, path: string, hits: string[]): void {
+  if (typeof value === 'string') {
+    const nested = tryParseJson(value);
+    if (nested !== undefined && nested !== null && typeof nested === 'object') {
+      walkJson(nested, label, path, hits);
+    }
+    return;
+  }
   if (Array.isArray(value)) {
     value.forEach((item, index) => {
       walkJson(item, label, `${path}[${index}]`, hits);

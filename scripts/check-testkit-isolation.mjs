@@ -89,6 +89,7 @@ function collectModuleLoads(text, fileName) {
   const requirers = new Set(['require']);
   const arrayShapes = new Map();
   const valueKinds = new Map();
+  const mutatorAliases = new Set();
 
   const opaqueArrayShape = () => ({ opaque: true, kinds: [] });
 
@@ -115,12 +116,31 @@ function collectModuleLoads(text, fileName) {
     return null;
   };
 
-  const staticArrayIndex = (expr) => {
+  const staticMember = (expr) => {
     const unwrapped = unwrapExpr(expr);
-    if (!unwrapped || !ts.isElementAccessExpression(unwrapped)) {
-      return null;
+    if (unwrapped && ts.isPropertyAccessExpression(unwrapped) && ts.isIdentifier(unwrapped.name)) {
+      return { object: unwrapped.expression, name: unwrapped.name.text };
     }
-    const argument = unwrapExpr(unwrapped.argumentExpression);
+    if (unwrapped && ts.isElementAccessExpression(unwrapped)) {
+      const argument = unwrapExpr(unwrapped.argumentExpression);
+      if (argument && ts.isStringLiteralLike(argument)) {
+        return { object: unwrapped.expression, name: argument.text };
+      }
+    }
+    return null;
+  };
+
+  const isMutatingMethodReference = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    if (unwrapped && ts.isIdentifier(unwrapped)) {
+      return mutatorAliases.has(unwrapped.text);
+    }
+    const member = staticMember(unwrapped);
+    return member !== null && MUTATING_ARRAY_METHODS.has(member.name);
+  };
+
+  const staticIndexValue = (expr) => {
+    const argument = unwrapExpr(expr);
     if (argument && ts.isNumericLiteral(argument) && Number.isInteger(Number(argument.text))) {
       return Number(argument.text);
     }
@@ -128,6 +148,14 @@ function collectModuleLoads(text, fileName) {
       return Number(argument.text);
     }
     return null;
+  };
+
+  const staticArrayIndex = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || !ts.isElementAccessExpression(unwrapped)) {
+      return null;
+    }
+    return staticIndexValue(unwrapped.argumentExpression);
   };
 
   const storeValueKind = (key, kind) => {
@@ -145,8 +173,25 @@ function collectModuleLoads(text, fileName) {
     if (index !== null) {
       const arrayKey = referenceKey(unwrapped.expression);
       const shape = arrayKey === null ? undefined : arrayShapes.get(arrayKey);
-      if (!shape?.opaque && shape?.kinds[index]) {
+      if (!shape?.opaque && shape?.kinds[index] !== null && shape?.kinds[index] !== undefined) {
         return shape.kinds[index];
+      }
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const access = staticMember(unwrapped.expression);
+      if (access?.name === 'at' && unwrapped.arguments.length === 1) {
+        const atIndex = staticIndexValue(unwrapped.arguments[0]);
+        if (atIndex !== null) {
+          const arrayKey = referenceKey(access.object);
+          const shape = arrayKey === null ? undefined : arrayShapes.get(arrayKey);
+          if (
+            !shape?.opaque &&
+            shape?.kinds[atIndex] !== null &&
+            shape?.kinds[atIndex] !== undefined
+          ) {
+            return shape.kinds[atIndex];
+          }
+        }
       }
     }
     const key = referenceKey(unwrapped);
@@ -157,20 +202,22 @@ function collectModuleLoads(text, fileName) {
     if (!ts.isCallExpression(expr)) {
       return null;
     }
-    const callee = unwrapExpr(expr.expression);
-    if (!callee) {
-      return null;
-    }
-    if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'bind') {
-      return classifyExpr(callee.expression);
-    }
-    if (ts.isElementAccessExpression(callee)) {
-      const argument = unwrapExpr(callee.argumentExpression);
-      if (argument && ts.isStringLiteralLike(argument) && argument.text === 'bind') {
-        return classifyExpr(callee.expression);
-      }
+    const access = staticMember(expr.expression);
+    if (access?.name === 'bind') {
+      return classifyExpr(access.object);
     }
     return null;
+  };
+
+  const classifyIndirectCall = (expr) => {
+    if (!ts.isCallExpression(expr)) {
+      return null;
+    }
+    const access = staticMember(expr.expression);
+    if (access?.name !== 'call' && access?.name !== 'apply') {
+      return null;
+    }
+    return classifyExpr(access.object) === 'factory' ? 'requirer' : null;
   };
 
   const storeArrayShape = (key, next) => {
@@ -212,12 +259,19 @@ function collectModuleLoads(text, fileName) {
       }
       return null;
     }
-    if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.name)) {
-      if (expr.name.text === 'createRequire') {
+    const member = staticMember(expr);
+    if (member) {
+      if (member.name === 'createRequire') {
         return 'factory';
       }
-      if (expr.name.text === 'require') {
+      if (member.name === 'require') {
         return 'requirer';
+      }
+      if (member.name === 'call' || member.name === 'apply') {
+        const targetKind = classifyExpr(member.object);
+        if (targetKind === 'factory' || targetKind === 'requirer') {
+          return targetKind;
+        }
       }
     }
     const trackedKind = trackedReferenceKind(expr);
@@ -230,6 +284,10 @@ function collectModuleLoads(text, fileName) {
     const boundKind = classifyBoundCall(expr);
     if (boundKind !== null) {
       return boundKind;
+    }
+    const indirectKind = classifyIndirectCall(expr);
+    if (indirectKind !== null) {
+      return indirectKind;
     }
     return null;
   };
@@ -252,6 +310,10 @@ function collectModuleLoads(text, fileName) {
     const boundKind = classifyBoundCall(expr);
     if (boundKind !== null) {
       return boundKind;
+    }
+    const indirectKind = classifyIndirectCall(expr);
+    if (indirectKind !== null) {
+      return indirectKind;
     }
     if (ts.isCallExpression(expr) && classifyCallee(expr.expression) === 'factory') {
       return 'requirer';
@@ -429,6 +491,9 @@ function collectModuleLoads(text, fileName) {
       if (kind === 'requirer') {
         requirers.add(name.text);
       }
+      if (isMutatingMethodReference(valueExpr)) {
+        mutatorAliases.add(name.text);
+      }
       const shape = shapeOverride ?? knownArrayShape(valueExpr);
       if (shape) {
         storeArrayShape(name.text, shape);
@@ -470,6 +535,9 @@ function collectModuleLoads(text, fileName) {
         }
         if (key === 'require') {
           kind = 'requirer';
+        }
+        if (ts.isIdentifier(element.name) && MUTATING_ARRAY_METHODS.has(key)) {
+          mutatorAliases.add(element.name.text);
         }
         const source = resolveObjectProperty(valueExpr, key);
         bindPattern(
@@ -596,8 +664,31 @@ function collectModuleLoads(text, fileName) {
     return null;
   };
 
+  const borrowedArrayMutationTarget = (node) => {
+    if (!ts.isCallExpression(node)) {
+      return null;
+    }
+    const call = calleeProperty(node.expression);
+    if (!call || (call.name !== 'call' && call.name !== 'apply')) {
+      return null;
+    }
+    const method = calleeProperty(call.object);
+    if (
+      (!method || !MUTATING_ARRAY_METHODS.has(method.name)) &&
+      !isMutatingMethodReference(call.object)
+    ) {
+      return null;
+    }
+    return node.arguments[0] ?? null;
+  };
+
   const invalidateArrayMutation = (node) => {
     if (ts.isCallExpression(node)) {
+      const borrowedTarget = borrowedArrayMutationTarget(node);
+      if (borrowedTarget) {
+        markArrayOpaque(borrowedTarget);
+        return;
+      }
       const access = calleeProperty(node.expression);
       if (access && (access.name === null || MUTATING_ARRAY_METHODS.has(access.name))) {
         markArrayOpaque(access.object);
@@ -652,7 +743,7 @@ function collectModuleLoads(text, fileName) {
   const snapshot = () =>
     `${factories.size}|${requirers.size}|${JSON.stringify([...arrayShapes.entries()])}|${JSON.stringify(
       [...valueKinds.entries()],
-    )}`;
+    )}|${JSON.stringify([...mutatorAliases])}`;
   while (previous !== snapshot()) {
     previous = snapshot();
     bindNode(sourceFile);

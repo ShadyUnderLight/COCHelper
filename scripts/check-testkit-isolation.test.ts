@@ -420,6 +420,45 @@ describe('testkit isolation', () => {
     expect(findForbiddenImportHits(unknownSpecifierDataFlow, fromMain)).toEqual(
       expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非字面量 require()）`]),
     );
+    const arrayAtAlias = `
+      import { createRequire } from 'node:module';
+      const aliases = [createRequire];
+      const make = aliases.at(0);
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(extractImportSpecifiers(arrayAtAlias)).toContain('@coc-helper/testkit');
+    const borrowedPush = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      Array.prototype.push.call(aliases, createRequire);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(borrowedPush, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const borrowedPushAlias = `
+      import { createRequire } from 'node:module';
+      const aliases = [];
+      const push = Array.prototype.push;
+      push.call(aliases, createRequire);
+      const [make] = aliases;
+      const req = make(import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(borrowedPushAlias, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得使用无法静态解析的动态加载（非静态数组解构）`]),
+    );
+    const borrowedFactoryCall = `
+      import { createRequire } from 'node:module';
+      const req = createRequire.call(null, import.meta.url);
+      req('@coc-helper/testkit');
+    `;
+    expect(findForbiddenImportHits(borrowedFactoryCall, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
   });
 
   it('会解包扫描 app.asar 内的 js', async () => {

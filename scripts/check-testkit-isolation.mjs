@@ -33,6 +33,18 @@ const PRODUCTION_ENTRIES = [
   'packages/contracts/src/index.ts',
 ];
 
+const MUTATING_ARRAY_METHODS = new Set([
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'splice',
+  'sort',
+  'reverse',
+  'fill',
+  'copyWithin',
+]);
+
 function walk(dir) {
   if (!existsSync(dir)) {
     return [];
@@ -207,7 +219,9 @@ function collectModuleLoads(text, fileName) {
         requirers.add(name.text);
       }
       if (looksLikeArray(valueExpr)) {
-        arrayShapes.set(name.text, shapeFromValue(valueExpr));
+        const next = shapeFromValue(valueExpr);
+        const prev = arrayShapes.get(name.text);
+        arrayShapes.set(name.text, prev?.opaque ? { opaque: true, kinds: next.kinds } : next);
       }
       return;
     }
@@ -302,7 +316,38 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
+  const markArrayOpaque = (expr) => {
+    expr = unwrapExpr(expr);
+    if (!ts.isIdentifier(expr)) {
+      return;
+    }
+    const shape = arrayShapes.get(expr.text);
+    if (!shape || shape.opaque) {
+      return;
+    }
+    arrayShapes.set(expr.text, { opaque: true, kinds: shape.kinds });
+  };
+
+  const invalidateArrayMutation = (node) => {
+    if (ts.isCallExpression(node)) {
+      const callee = unwrapExpr(node.expression);
+      if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) {
+        if (MUTATING_ARRAY_METHODS.has(callee.name.text)) {
+          markArrayOpaque(callee.expression);
+        }
+      }
+      return;
+    }
+    if (ts.isBinaryExpression(node) && ts.isAssignmentOperator(node.operatorToken.kind)) {
+      const left = unwrapExpr(node.left);
+      if (ts.isElementAccessExpression(left)) {
+        markArrayOpaque(left.expression);
+      }
+    }
+  };
+
   const bindNode = (node) => {
+    invalidateArrayMutation(node);
     if (ts.isVariableDeclaration(node) && node.initializer) {
       bindPattern(node.name, classifyExpr(node.initializer), node.initializer);
     }

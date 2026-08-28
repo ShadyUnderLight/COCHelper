@@ -1155,6 +1155,11 @@ describe('testkit isolation', () => {
       `const box = {}; Object.defineProperty(box, 'req', { get() { return 1; }, ...runtime.getDescriptor() });
        const req = box.req; ${load}`,
       `function use({ loader }) { return loader(pkg); } use({ ...runtime.getObject() }); ${load}`,
+      `function d(flag) { return flag ? { get() { return 1; } } : { get() { return require; } }; }
+       const box = {}; Object.defineProperty(box, 'req', d(flag)); const req = box.req; ${load}`,
+      `const box = {}; const ds = runtime.getDescriptors(); Object.defineProperties(box, ds); const req = box.req; ${load}`,
+      `const ds = runtime.getDescriptors(); const req = Object.create(null, ds).req; ${load}`,
+      `function use(loader = runtime.getLoader()) { return loader(pkg); } use(); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1162,6 +1167,19 @@ describe('testkit isolation', () => {
         expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
       );
     }
+  });
+
+  it('不会把安全多分支 descriptor 误判为动态加载器', () => {
+    const source = `
+      function getDescriptor(flag) {
+        return flag ? { get() { return 1; } } : { get() { return 2; } };
+      }
+      const box = {};
+      Object.defineProperty(box, 'req', getDescriptor(flag));
+      const req = box.req;
+      req(pkg);
+    `;
+    expect(extractUnsafeDynamicLoads(source)).toEqual([]);
   });
 
   it('不会把普通回调和同名参数误判为动态加载器', () => {

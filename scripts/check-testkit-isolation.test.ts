@@ -1068,6 +1068,14 @@ describe('testkit isolation', () => {
        const req = make(import.meta.url); ${load}`,
       `import { createRequire } from 'node:module'; const aliases = [createRequire];
        const make = aliases.concat(...unknown)[0]; const req = make(import.meta.url); ${load}`,
+      `const req = Object.assign({}, ...unknown).get(); ${load}`,
+      `function use(loader) { return loader(pkg); } const req = use(...unknown); ${load}`,
+      `function getBox() { return unknown; }
+       const req = [getBox()][0].get(); ${load}`,
+      `const req = new Array({ get() { return require; } })[0].get(); ${load}`,
+      `const box = {}; Object.defineProperty(box, 'req', { get() { return require; } });
+       const req = box.req; ${load}`,
+      `function use(...{ loader }) { return loader; } const req = use({ loader: require }); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1124,6 +1132,13 @@ describe('testkit isolation', () => {
       }
     `;
     expect(extractUnsafeDynamicLoads(blockShadowed)).toEqual([]);
+    const forOfShadowed = `
+      const callback = require;
+      for (const callback of items) {
+        value.replace(/x/g, callback);
+      }
+    `;
+    expect(extractUnsafeDynamicLoads(forOfShadowed)).toEqual([]);
   });
 
   it('生产源文件通过 symlink 指向 testkit 时按真实路径拒绝', () => {

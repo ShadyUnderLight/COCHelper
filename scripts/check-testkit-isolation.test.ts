@@ -1217,6 +1217,17 @@ describe('testkit isolation', () => {
       `(flag ? { make() { return (callback) => callback(pkg); } } : { make() { return (callback) => callback(pkg); } }).make()(runtime.getObject()); ${load}`,
       `[{ make() { return (callback) => callback(pkg); } }][0].make()(runtime.getObject()); ${load}`,
       `Object.assign({}, { make() { return (callback) => callback(pkg); } }).make()(runtime.getObject()); ${load}`,
+      `Object.defineProperty({}, 'use', { value: (callback) => callback(pkg) }).use(runtime.getObject()); ${load}`,
+      `Object.defineProperties({}, { use: { value: (callback) => callback(pkg) } }).use(runtime.getObject()); ${load}`,
+      `Object.create(null, { use: { value: (callback) => callback(pkg) } }).use(runtime.getObject()); ${load}`,
+      `function make({ fn }) { return fn; } make({ fn: (callback) => callback(pkg) })(runtime.getObject()); ${load}`,
+      `function make([fn]) { return fn; } make([(callback) => callback(pkg)])(runtime.getObject()); ${load}`,
+      `function make({ inner: { fn } }) { return fn; }
+       make({ inner: { fn: (callback) => callback(pkg) } })(runtime.getObject()); ${load}`,
+      `function make(...[fn]) { return fn; } make((callback) => callback(pkg))(runtime.getObject()); ${load}`,
+      `function make(...{ fn }) { return fn; } make({ fn: (callback) => callback(pkg) })(runtime.getObject()); ${load}`,
+      `function make({ fn }) { return fn; } const wrap = make;
+       wrap({ fn: (callback) => callback(pkg) })(runtime.getObject()); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1284,6 +1295,15 @@ describe('testkit isolation', () => {
       const fn = (callback) => callback(pkg);
       function make(fn) { return fn; }
       make(() => 1)(runtime.getObject());
+    `;
+    expect(extractUnsafeDynamicLoads(source)).toEqual([]);
+  });
+
+  it('member receiver 不得被外层同名危险对象污染', () => {
+    const source = `
+      const box = { use(callback) { return callback(pkg); } };
+      function make(box) { return box.use; }
+      make({ use() { return 1; } })(runtime.getObject());
     `;
     expect(extractUnsafeDynamicLoads(source)).toEqual([]);
   });

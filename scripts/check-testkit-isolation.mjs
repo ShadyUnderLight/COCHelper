@@ -2819,6 +2819,21 @@ function collectModuleLoads(text, fileName) {
         if (fallback) return fallback;
       }
     }
+    if (ts.isIdentifier(unwrapped)) {
+      const decl = enclosingBindingName(unwrapped);
+      if (decl) {
+        const stored = scopedValueExprs.get(decl);
+        if (stored && stored !== unwrapped) {
+          const resolved = resolveObjectProperty(stored, key, nextSeen);
+          if (resolved) {
+            return resolved;
+          }
+        }
+        if (parameterFromName(decl)) {
+          return objectPrototypeProperty(key);
+        }
+      }
+    }
     const sourceKey = referenceKey(unwrapped);
     const storedValue = sourceKey === null ? undefined : valueExprs.get(sourceKey);
     if (storedValue && storedValue !== unwrapped) {
@@ -2923,11 +2938,13 @@ function collectModuleLoads(text, fileName) {
     return functionReturns.get(inheritedFactKey(callableKey)) ?? null;
   };
 
-  const calleeFunctionNode = (callee) => {
+  const calleeFunctionNode = (callee, seen = new Set()) => {
     const unwrapped = unwrapExpr(callee);
-    if (!unwrapped) {
+    if (!unwrapped || seen.has(unwrapped)) {
       return null;
     }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
     if (isFunctionLikeNode(unwrapped)) {
       return unwrapped;
     }
@@ -2943,8 +2960,7 @@ function collectModuleLoads(text, fileName) {
       if (!stored) {
         return null;
       }
-      const storedFn = unwrapExpr(stored);
-      return storedFn && isFunctionLikeNode(storedFn) ? storedFn : null;
+      return calleeFunctionNode(stored, nextSeen);
     }
     const member = staticMember(unwrapped);
     if (!member) {
@@ -2952,12 +2968,90 @@ function collectModuleLoads(text, fileName) {
     }
     const resolved = resolveObjectProperty(member.object, member.name);
     const value = resolved?.value ? unwrapExpr(resolved.value) : undefined;
-    return value && isFunctionLikeNode(value) ? value : null;
+    return value ? calleeFunctionNode(value, nextSeen) : null;
+  };
+
+  const extractBoundValue = (pattern, decl, arg, arrayValues) => {
+    if (!pattern || decl === undefined) {
+      return undefined;
+    }
+    if (ts.isIdentifier(pattern)) {
+      return pattern === decl ? arg : undefined;
+    }
+    if (ts.isObjectBindingPattern(pattern)) {
+      for (const element of pattern.elements) {
+        if (!ts.isBindingElement(element)) {
+          continue;
+        }
+        if (element.dotDotDotToken) {
+          const extracted = extractBoundValue(element.name, decl, arg, arrayValues);
+          if (extracted !== undefined) {
+            return extracted;
+          }
+          continue;
+        }
+        const elementKey = bindingElementKey(element);
+        const source = elementKey !== null && arg !== undefined ? resolveObjectProperty(arg, elementKey) : undefined;
+        const nestedArg = source?.value;
+        if (nestedArg === undefined) {
+          continue;
+        }
+        const extracted = extractBoundValue(element.name, decl, nestedArg);
+        if (extracted !== undefined) {
+          return extracted;
+        }
+      }
+      return undefined;
+    }
+    if (ts.isArrayBindingPattern(pattern)) {
+      const values = arrayValues ?? (arg === undefined ? [] : shapeValues(shapeFromValue(arg)));
+      let index = 0;
+      for (const element of pattern.elements) {
+        if (ts.isOmittedExpression(element)) {
+          index += 1;
+          continue;
+        }
+        if (!ts.isBindingElement(element)) {
+          continue;
+        }
+        if (element.dotDotDotToken) {
+          const restValues = values.slice(index);
+          const extracted = extractBoundValue(element.name, decl, restValues[0], restValues);
+          if (extracted !== undefined) {
+            return extracted;
+          }
+          continue;
+        }
+        const itemValue = values[index];
+        if (itemValue !== undefined) {
+          const extracted = extractBoundValue(element.name, decl, itemValue);
+          if (extracted !== undefined) {
+            return extracted;
+          }
+        }
+        index += 1;
+      }
+    }
+    return undefined;
   };
 
   const argumentForReturnedParam = (returned, callee, args) => {
     const unwrapped = unwrapExpr(returned);
-    if (!unwrapped || !ts.isIdentifier(unwrapped) || !Array.isArray(args)) {
+    if (!unwrapped || !Array.isArray(args)) {
+      return returned;
+    }
+    const member = staticMember(unwrapped);
+    if (member) {
+      const mappedObject = argumentForReturnedParam(member.object, callee, args);
+      if (mappedObject !== member.object) {
+        const resolved = resolveObjectProperty(mappedObject, member.name);
+        if (resolved?.value) {
+          return resolved.value;
+        }
+      }
+      return returned;
+    }
+    if (!ts.isIdentifier(unwrapped)) {
       return returned;
     }
     const func = calleeFunctionNode(callee);
@@ -2969,10 +3063,34 @@ function collectModuleLoads(text, fileName) {
       return returned;
     }
     for (let i = 0; i < func.parameters.length; i += 1) {
-      const paramName = func.parameters[i].name;
-      const bound = ts.isIdentifier(paramName) ? paramName : bindingNameNode(paramName, unwrapped.text);
-      if (bound === decl) {
-        return args[i] ?? returned;
+      const param = func.parameters[i];
+      const paramName = param.name;
+      if (param.dotDotDotToken) {
+        const restArgs = args.slice(i);
+        if (ts.isArrayBindingPattern(paramName)) {
+          const extracted = extractBoundValue(paramName, decl, undefined, restArgs);
+          if (extracted !== undefined) {
+            return extracted;
+          }
+          continue;
+        }
+        if (ts.isObjectBindingPattern(paramName)) {
+          for (const restArg of restArgs) {
+            const extracted = extractBoundValue(paramName, decl, restArg);
+            if (extracted !== undefined) {
+              return extracted;
+            }
+          }
+          continue;
+        }
+        if (ts.isIdentifier(paramName) && paramName === decl) {
+          return restArgs[0] ?? returned;
+        }
+        continue;
+      }
+      const extracted = extractBoundValue(paramName, decl, args[i]);
+      if (extracted !== undefined) {
+        return extracted;
       }
     }
     return returned;
@@ -3710,34 +3828,75 @@ function collectModuleLoads(text, fileName) {
   };
 
   const interpretDescriptorFromLiteral = (literal) => {
-    const getter = objectLiteralPropertyValue(literal, 'get');
-    if (getter && !getter?.opaque) {
-      const fn = unwrapExpr(getter);
+    const descriptorPropertyFact = (expr, { followGetterReturns = false } = {}) => {
+      const fn = unwrapExpr(expr);
+      if (!fn) {
+        return undefined;
+      }
       const kind =
-        classifyExpr(getter) ??
-        (fn && isFunctionLikeNode(fn) ? functionReturnKind(fn) : null);
+        classifyExpr(expr) ??
+        (isFunctionLikeNode(fn) ? functionReturnKind(fn) : null);
       if (kind === 'factory' || kind === 'requirer') {
         return {
-          value: getter,
+          value: expr,
           kind: kind === 'factory' ? 'requirer' : kind,
-          shape: knownArrayShape(getter),
+          shape: knownArrayShape(expr),
           callableKey: null,
         };
+      }
+      if (followGetterReturns && isFunctionLikeNode(fn)) {
+        const returns = collectReturnExprs(fn);
+        if (returns.length === 1) {
+          return {
+            value: returns[0],
+            kind: null,
+            shape: knownArrayShape(returns[0]),
+            callableKey: null,
+          };
+        }
+        if (returns.length > 1) {
+          const callableReturn = returns.find((returned) => {
+            const unwrapped = unwrapExpr(returned);
+            return Boolean(unwrapped && isFunctionLikeNode(unwrapped));
+          });
+          const picked = callableReturn ?? returns[0];
+          return {
+            value: picked,
+            kind: null,
+            shape: knownArrayShape(picked),
+            callableKey: null,
+          };
+        }
+      }
+      const aliased = resolveAliasedValue(fn);
+      const key = callableReferenceKey(fn);
+      const factKey = key === null ? null : inheritedFactKey(key);
+      if (
+        isFunctionLikeNode(fn) ||
+        (aliased && isFunctionLikeNode(aliased)) ||
+        (factKey !== null && (functionParams.has(factKey) || hasReturnFacts(factKey)))
+      ) {
+        return {
+          value: expr,
+          kind: null,
+          shape: knownArrayShape(expr),
+          callableKey: factKey,
+        };
+      }
+      return undefined;
+    };
+    const getter = objectLiteralPropertyValue(literal, 'get');
+    if (getter && !getter?.opaque) {
+      const fromGetter = descriptorPropertyFact(getter, { followGetterReturns: true });
+      if (fromGetter) {
+        return fromGetter;
       }
     }
     const value = objectLiteralPropertyValue(literal, 'value');
     if (value && !value?.opaque) {
-      const fn = unwrapExpr(value);
-      const kind =
-        classifyExpr(value) ??
-        (fn && isFunctionLikeNode(fn) ? functionReturnKind(fn) : null);
-      if (kind === 'factory' || kind === 'requirer') {
-        return {
-          value,
-          kind: kind === 'factory' ? 'requirer' : kind,
-          shape: knownArrayShape(value),
-          callableKey: null,
-        };
+      const fromValue = descriptorPropertyFact(value);
+      if (fromValue) {
+        return fromValue;
       }
     }
     if (getter?.opaque || value?.opaque) {

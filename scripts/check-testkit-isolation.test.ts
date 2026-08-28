@@ -1171,8 +1171,52 @@ describe('testkit isolation', () => {
        Function.prototype.call.call(use, null, runtime.getObject()); ${load}`,
       `function use(callback) { return callback(pkg); }
        const call = use.call; call(null, runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const api = { call: use.call }; const call = api.call; call(null, runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const api = { call: use.call }; api.call(null, runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const call = use.call.bind(use); call(null, runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const api = { apply: use.apply }; const apply = api.apply; apply(null, [runtime.getObject()]); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const apply = use.apply.bind(use); apply(null, [runtime.getObject()]); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const { call } = { call: use.call }; call(null, runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const api = { call: use.call }; const { call } = api; call(null, runtime.getObject()); ${load}`,
+      `((callback) => callback(pkg))(runtime.getObject()); ${load}`,
+      `(function use(callback) { return callback(pkg); })(runtime.getObject()); ${load}`,
+      `({ use(callback) { return callback(pkg); } }).use(runtime.getObject()); ${load}`,
+      `({ use(callback) { return callback(pkg); } }).use.call(null, runtime.getObject()); ${load}`,
+      `({ use(callback) { return callback(pkg); } }).use.apply(null, [runtime.getObject()]); ${load}`,
+      `function make() { return (callback) => callback(pkg); } make()(runtime.getObject()); ${load}`,
+      `function make() { return (callback) => callback(pkg); } make().call(null, runtime.getObject()); ${load}`,
+      `function make() { return (callback) => callback(pkg); } make().apply(null, [runtime.getObject()]); ${load}`,
+      `function fn(callback) { return callback(pkg); } function make() { return fn; } make()(runtime.getObject()); ${load}`,
+      `function fn(callback) { return callback(pkg); } function make() { return fn; } make().call(null, runtime.getObject()); ${load}`,
+      `function make(flag) { return flag ? (callback) => callback(pkg) : (callback) => callback(pkg); }
+       make(flag)(runtime.getObject()); ${load}`,
+      `function make(flag) { return flag && ((callback) => callback(pkg)); } make(flag)(runtime.getObject()); ${load}`,
+      `function fn(callback) { return callback(pkg); }
+       ({ make() { return fn; } }).make()(runtime.getObject()); ${load}`,
+      `({ make() { return (callback) => callback(pkg); } }).make()(runtime.getObject()); ${load}`,
+      `({ get use() { return (callback) => callback(pkg); } }).use(runtime.getObject()); ${load}`,
+      `function fn(callback) { return callback(pkg); }
+       ({ get use() { return fn; } }).use(runtime.getObject()); ${load}`,
+      `({ get use() { return (callback) => callback(pkg); } }).use.call(null, runtime.getObject()); ${load}`,
       `function use(...{ loader }) { return loader(pkg); } use(runtime.getObject()); ${load}`,
       `function use(...[{ loader }]) { return loader(pkg); } use(runtime.getObject()); ${load}`,
+      `function make(fn) { return fn; } make((callback) => callback(pkg))(runtime.getObject()); ${load}`,
+      `function make(fn) { return fn; } make((callback) => callback(pkg)).call(null, runtime.getObject()); ${load}`,
+      `function make(fn) { return fn; } make((callback) => callback(pkg)).apply(null, [runtime.getObject()]); ${load}`,
+      `function use(callback) { return callback(pkg); } function make(fn) { return fn; }
+       make(use)(runtime.getObject()); ${load}`,
+      `function make(fn) { return fn; } const run = make((callback) => callback(pkg));
+       run(runtime.getObject()); ${load}`,
+      `(flag ? { make() { return (callback) => callback(pkg); } } : { make() { return (callback) => callback(pkg); } }).make()(runtime.getObject()); ${load}`,
+      `[{ make() { return (callback) => callback(pkg); } }][0].make()(runtime.getObject()); ${load}`,
+      `Object.assign({}, { make() { return (callback) => callback(pkg); } }).make()(runtime.getObject()); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1233,6 +1277,31 @@ describe('testkit isolation', () => {
       redact(structured.value);
     `;
     expect(extractUnsafeDynamicLoads(source)).toEqual([]);
+  });
+
+  it('返回参数的 identity 包装不得被外层同名危险 fn 污染', () => {
+    const source = `
+      const fn = (callback) => callback(pkg);
+      function make(fn) { return fn; }
+      make(() => 1)(runtime.getObject());
+    `;
+    expect(extractUnsafeDynamicLoads(source)).toEqual([]);
+  });
+
+  it('递归 callable 不得让分析器崩溃', () => {
+    const recursive = `
+      function make() { return make(); }
+      make();
+    `;
+    expect(() => extractUnsafeDynamicLoads(recursive)).not.toThrow();
+    expect(extractUnsafeDynamicLoads(recursive)).toEqual([]);
+    const mutual = `
+      function a() { return b(); }
+      function b() { return a(); }
+      a();
+    `;
+    expect(() => extractUnsafeDynamicLoads(mutual)).not.toThrow();
+    expect(extractUnsafeDynamicLoads(mutual)).toEqual([]);
   });
 
   it('外层 loader 别名不得污染内部同名普通回调', () => {

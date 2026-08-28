@@ -132,6 +132,7 @@ function collectModuleLoads(text, fileName) {
   const functionParams = new Map();
   const prototypeExprs = new Map();
   const scopedBindingKinds = new WeakMap();
+  const scopedValueExprs = new WeakMap();
   const scopedArrayShapes = new WeakMap();
   const paramsUsedAsCallees = new WeakSet();
   const paramsUsedAsCalleeKeys = new Set();
@@ -403,6 +404,9 @@ function collectModuleLoads(text, fileName) {
     if (isReflectApplyCallee(unwrapped)) {
       reflectApplyAliases.add(toName);
     }
+    if (isCallOrApplyValue(unwrapped)) {
+      callApplyAliases.add(toName);
+    }
   };
 
   const isNodeInside = (node, ancestor) => {
@@ -593,6 +597,10 @@ function collectModuleLoads(text, fileName) {
     if (ts.isIdentifier(unwrapped) && callApplyAliases.has(unwrapped.text)) {
       return true;
     }
+    const key = referenceKey(unwrapped);
+    if (key !== null && callApplyAliases.has(key)) {
+      return true;
+    }
     const member = staticMember(unwrapped);
     return member?.name === 'call' || member?.name === 'apply';
   };
@@ -615,7 +623,9 @@ function collectModuleLoads(text, fileName) {
     if (!unwrapped) {
       return null;
     }
-    const access = staticMember(unwrapped);
+    const bound = unwrapBindCall(unwrapped);
+    const target = bound.target && bound.target !== unwrapped ? bound.target : unwrapped;
+    const access = staticMember(target);
     if (access?.name === 'apply') {
       return 'apply';
     }
@@ -632,12 +642,29 @@ function collectModuleLoads(text, fileName) {
     }
     const nextSeen = new Set(seen);
     nextSeen.add(unwrapped);
+    const bound = unwrapBindCall(unwrapped);
+    if (bound.target && bound.target !== unwrapped) {
+      const fromBind = resolveBorrowedCallTarget(bound.target, nextSeen);
+      if (fromBind) {
+        return fromBind;
+      }
+    }
     const access = staticMember(unwrapped);
     if (!access || (access.name !== 'call' && access.name !== 'apply')) {
       return null;
     }
     if (isFunctionPrototypeCallApply(unwrapped)) {
       return null;
+    }
+    const key = referenceKey(unwrapped);
+    if (key !== null) {
+      const stored = valueExprs.get(key);
+      if (stored && stored !== unwrapped) {
+        const nested = resolveBorrowedCallTarget(stored, nextSeen);
+        if (nested) {
+          return nested;
+        }
+      }
     }
     return access.object;
   };
@@ -690,7 +717,7 @@ function collectModuleLoads(text, fileName) {
       }
       const borrowed = borrowedCallArgsFrom(rawArgs, access.name);
       return {
-        targetExpr: access.object,
+        targetExpr: resolveBorrowedCallTarget(calleeUnwrapped) ?? access.object,
         fnArgs: borrowed?.args ?? [],
         unresolvable: !borrowed || borrowed.unresolvable,
       };
@@ -1052,6 +1079,9 @@ function collectModuleLoads(text, fileName) {
         }
         if (isReflectApplyCallee(bindAccess.object)) {
           reflectApplyAliases.add(toName);
+        }
+        if (isCallOrApplyValue(bindAccess.object)) {
+          callApplyAliases.add(toName);
         }
       }
     }
@@ -1687,31 +1717,44 @@ function collectModuleLoads(text, fileName) {
       ? resolved.kind
       : callablePropertyReturnKind(resolved);
 
-  const classifyFunctionCall = (expr) => {
+  const classifyFunctionCall = (expr, seen = new Set()) => {
     if (!ts.isCallExpression(expr)) {
       return null;
     }
-    const callee = unwrapExpr(expr.expression);
+    const unwrappedCall = unwrapExpr(expr);
+    if (!unwrappedCall || seen.has(unwrappedCall)) {
+      return null;
+    }
+    const callee = unwrapExpr(unwrappedCall.expression);
     if (!callee) {
       return null;
     }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrappedCall);
+    const calleeKey = callableReferenceKey(callee);
+    if (calleeKey !== null) {
+      const mark = `fn:${calleeKey}`;
+      if (nextSeen.has(mark)) {
+        return null;
+      }
+      nextSeen.add(mark);
+    }
     const access = staticMember(callee);
-    const applied = applyTarget(expr);
+    const applied = applyTarget(unwrappedCall);
     if (applied === UNRESOLVABLE_TARGET) {
       return 'requirer';
     }
     if (applied) {
-      return callableReturnKind(applied);
+      return callableReturnKind(applied, nextSeen);
     }
-    const key = callableReferenceKey(callee);
-    if (key !== null) {
-      const factKey = inheritedFactKey(key);
+    if (calleeKey !== null) {
+      const factKey = inheritedFactKey(calleeKey);
       const stored = functionReturns.get(factKey);
       if (stored) {
         return stored;
       }
       for (const returned of functionReturnExprs.get(factKey) ?? []) {
-        const kind = callableReturnKind(returned);
+        const kind = callableReturnKind(returned, nextSeen);
         if (kind === 'factory' || kind === 'requirer') {
           return kind === 'factory' ? 'requirer' : kind;
         }
@@ -1722,9 +1765,9 @@ function collectModuleLoads(text, fileName) {
       return 'requirer';
     }
     if (access) {
-      return callablePropertyReturnKind(resolveObjectProperty(access.object, access.name));
+      return callablePropertyReturnKind(resolveObjectProperty(access.object, access.name, nextSeen));
     }
-    return callableReturnKind(callee);
+    return callableReturnKind(callee, nextSeen);
   };
 
   const storeArrayShape = (key, next) => {
@@ -2698,7 +2741,7 @@ function collectModuleLoads(text, fileName) {
         }
         return undefined;
       }
-      const returnExprs = returnExprsForCallable(unwrapped.expression);
+      const returnExprs = returnExprsForCallable(unwrapped.expression, nextSeen);
       let fallback;
       for (const returnExpr of returnExprs) {
         const resolved = resolveObjectProperty(returnExpr, key, nextSeen);
@@ -2805,15 +2848,23 @@ function collectModuleLoads(text, fileName) {
     return objectPrototypeProperty(key);
   };
 
-  const returnExprsForCallable = (valueExpr) => {
+  const returnExprsForCallable = (valueExpr, seen = new Set()) => {
     const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
-    if (!unwrapped) return [];
+    if (!unwrapped || seen.has(unwrapped)) return [];
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
     if (isFunctionLikeNode(unwrapped)) {
       return collectReturnExprs(unwrapped);
     }
     const access = staticMember(unwrapped);
     if (access?.name === 'call' || access?.name === 'apply') {
-      return returnExprsForCallable(access.object);
+      return returnExprsForCallable(access.object, nextSeen);
+    }
+    if (access) {
+      const resolved = resolveObjectProperty(access.object, access.name, nextSeen);
+      if (resolved?.value) {
+        return returnExprsForCallable(resolved.value, nextSeen);
+      }
     }
     const callableKey = callableReferenceKey(unwrapped);
     if (callableKey === null) return [];
@@ -2850,11 +2901,11 @@ function collectModuleLoads(text, fileName) {
       if (access?.name === 'bind') {
         return callableReturnKind(access.object, nextSeen);
       }
-      for (const returned of returnExprsForCallable(unwrapped.expression)) {
+      for (const returned of returnExprsForCallable(unwrapped.expression, nextSeen)) {
         const kind = callableReturnKind(returned, nextSeen);
         if (kind === 'factory' || kind === 'requirer') return kind;
       }
-      const invoked = classifyFunctionCall(unwrapped);
+      const invoked = classifyFunctionCall(unwrapped, nextSeen);
       if (invoked === 'factory' || invoked === 'requirer') {
         return invoked;
       }
@@ -2862,7 +2913,7 @@ function collectModuleLoads(text, fileName) {
     }
     const member = staticMember(unwrapped);
     if (member) {
-      const resolved = resolveObjectProperty(member.object, member.name);
+      const resolved = resolveObjectProperty(member.object, member.name, nextSeen);
       const kind = callablePropertyReturnKind(resolved);
       if (kind !== null) return kind;
       if (resolved?.value) return callableReturnKind(resolved.value, nextSeen);
@@ -2870,6 +2921,71 @@ function collectModuleLoads(text, fileName) {
     const callableKey = callableReferenceKey(unwrapped);
     if (callableKey === null) return null;
     return functionReturns.get(inheritedFactKey(callableKey)) ?? null;
+  };
+
+  const calleeFunctionNode = (callee) => {
+    const unwrapped = unwrapExpr(callee);
+    if (!unwrapped) {
+      return null;
+    }
+    if (isFunctionLikeNode(unwrapped)) {
+      return unwrapped;
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      const decl = enclosingBindingName(unwrapped);
+      if (!decl) {
+        return null;
+      }
+      if (decl.parent && isFunctionLikeNode(decl.parent) && decl.parent.name === decl) {
+        return decl.parent;
+      }
+      const stored = scopedValueExprs.get(decl);
+      if (!stored) {
+        return null;
+      }
+      const storedFn = unwrapExpr(stored);
+      return storedFn && isFunctionLikeNode(storedFn) ? storedFn : null;
+    }
+    const member = staticMember(unwrapped);
+    if (!member) {
+      return null;
+    }
+    const resolved = resolveObjectProperty(member.object, member.name);
+    const value = resolved?.value ? unwrapExpr(resolved.value) : undefined;
+    return value && isFunctionLikeNode(value) ? value : null;
+  };
+
+  const argumentForReturnedParam = (returned, callee, args) => {
+    const unwrapped = unwrapExpr(returned);
+    if (!unwrapped || !ts.isIdentifier(unwrapped) || !Array.isArray(args)) {
+      return returned;
+    }
+    const func = calleeFunctionNode(callee);
+    if (!func?.parameters) {
+      return returned;
+    }
+    const decl = enclosingBindingName(unwrapped);
+    if (!decl) {
+      return returned;
+    }
+    for (let i = 0; i < func.parameters.length; i += 1) {
+      const paramName = func.parameters[i].name;
+      const bound = ts.isIdentifier(paramName) ? paramName : bindingNameNode(paramName, unwrapped.text);
+      if (bound === decl) {
+        return args[i] ?? returned;
+      }
+    }
+    return returned;
+  };
+
+  const callSourceAndArgs = (callExpr) => {
+    const bound = unwrapBindCall(callExpr.expression);
+    const innerCallee = unwrapExpr(bound.target);
+    const rawArgs = [...bound.boundArgs, ...callExpr.arguments];
+    const applied = callApplyBindingFrom(innerCallee, rawArgs);
+    const source = applied?.targetExpr ? unwrapExpr(applied.targetExpr) : innerCallee;
+    const args = applied ? applied.fnArgs : flattenCallArguments(rawArgs).items;
+    return { source, args };
   };
 
   const registerCallableFacts = (targetKey, valueExpr, seen = new Set()) => {
@@ -2902,8 +3018,9 @@ function collectModuleLoads(text, fileName) {
         registerCallableFacts(targetKey, access.object, nextSeen);
         return;
       }
-      for (const returned of returnExprsForCallable(unwrapped.expression)) {
-        registerCallableFacts(targetKey, returned, nextSeen);
+      const { source, args } = callSourceAndArgs(unwrapped);
+      for (const returned of returnExprsForCallable(source, nextSeen)) {
+        registerCallableFacts(targetKey, argumentForReturnedParam(returned, source, args), nextSeen);
       }
       return;
     }
@@ -3058,6 +3175,7 @@ function collectModuleLoads(text, fileName) {
         (name.parent && ts.isVariableDeclaration(name.parent) && name.parent.name === name) ||
         (name.parent && ts.isParameter(name.parent) && name.parent.name === name) ||
         Boolean(name.parent && ts.isBindingElement(name.parent));
+      const unwrappedValue = valueExpr ? unwrapExpr(valueExpr) : undefined;
       if (!declaredHere) {
         const bound = enclosingBindingName(name);
         if (bound && bound !== name) {
@@ -3067,11 +3185,14 @@ function collectModuleLoads(text, fileName) {
           if (shape) {
             scopedArrayShapes.set(bound, shape);
           }
+          if (unwrappedValue) {
+            scopedValueExprs.set(bound, unwrappedValue);
+          }
         }
       }
-      const unwrappedValue = valueExpr ? unwrapExpr(valueExpr) : undefined;
       if (unwrappedValue) {
         valueExprs.set(name.text, unwrappedValue);
+        scopedValueExprs.set(name, unwrappedValue);
       }
       if (unwrappedValue && isFunctionLikeNode(unwrappedValue)) {
         registerReturnFacts(name.text, unwrappedValue);
@@ -3497,6 +3618,16 @@ function collectModuleLoads(text, fileName) {
       return unwrapped;
     }
     if (ts.isIdentifier(unwrapped)) {
+      const decl = enclosingBindingName(unwrapped);
+      if (decl) {
+        const stored = scopedValueExprs.get(decl);
+        if (stored && stored !== unwrapped) {
+          const nextSeen = new Set(seen);
+          nextSeen.add(unwrapped);
+          return resolveAliasedValue(stored, nextSeen);
+        }
+        return unwrapped;
+      }
       const stored = valueExprs.get(unwrapped.text);
       if (stored && stored !== unwrapped) {
         const nextSeen = new Set(seen);
@@ -4025,6 +4156,98 @@ function collectModuleLoads(text, fileName) {
 
   const isParamCalleeUsed = (paramPattern) => patternUsesCalleeParam(paramPattern);
 
+  const paramsForCallable = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || seen.has(unwrapped)) {
+      return undefined;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const pickParams = (candidates) => {
+      let fallback;
+      for (const candidate of candidates) {
+        const params = paramsForCallable(candidate, nextSeen);
+        if (!params) {
+          continue;
+        }
+        if (params.some((name) => isParamCalleeUsed(name))) {
+          return params;
+        }
+        fallback ??= params;
+      }
+      return fallback;
+    };
+    const aliased = resolveAliasedValue(unwrapped);
+    if (aliased && aliased !== unwrapped) {
+      const fromAlias = paramsForCallable(aliased, nextSeen);
+      if (fromAlias) {
+        return fromAlias;
+      }
+    }
+    if (ts.isConditionalExpression(unwrapped) || isLogicalBinary(unwrapped)) {
+      return pickParams(expandBranchExprs(unwrapped));
+    }
+    if (isFunctionLikeNode(unwrapped)) {
+      if (ts.isGetAccessorDeclaration(unwrapped)) {
+        return pickParams(collectReturnExprs(unwrapped));
+      }
+      return unwrapped.parameters.map((param) => param.name);
+    }
+    const bound = unwrapBindCall(unwrapped);
+    if (bound.target && bound.target !== unwrapped) {
+      const fromBind = paramsForCallable(bound.target, nextSeen);
+      if (fromBind) {
+        return fromBind;
+      }
+    }
+    const member = staticMember(unwrapped);
+    if (member) {
+      const resolved = resolveObjectProperty(member.object, member.name, nextSeen);
+      if (resolved?.value) {
+        const fromValue = paramsForCallable(resolved.value, nextSeen);
+        if (fromValue) {
+          return fromValue;
+        }
+      }
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const { source, args } = callSourceAndArgs(unwrapped);
+      const calleeKey = source ? callableReferenceKey(source) : null;
+      if (calleeKey !== null) {
+        const mark = `fn:${calleeKey}`;
+        if (nextSeen.has(mark)) {
+          return undefined;
+        }
+        nextSeen.add(mark);
+      }
+      const mapped = returnExprsForCallable(source, nextSeen).map((returned) =>
+        argumentForReturnedParam(returned, source, args),
+      );
+      const fromReturn = pickParams(mapped);
+      if (fromReturn) {
+        return fromReturn;
+      }
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      const decl = enclosingBindingName(unwrapped);
+      if (decl && parameterFromName(decl)) {
+        const stored = scopedValueExprs.get(decl);
+        if (stored && stored !== unwrapped) {
+          return paramsForCallable(stored, nextSeen);
+        }
+        return undefined;
+      }
+    }
+    const key = callableReferenceKey(unwrapped);
+    if (key !== null) {
+      const stored = functionParams.get(inheritedFactKey(key));
+      if (stored) {
+        return stored;
+      }
+    }
+    return undefined;
+  };
+
   const callBindingFor = (node) => {
     if (!ts.isCallExpression(node)) {
       return null;
@@ -4034,10 +4257,12 @@ function collectModuleLoads(text, fileName) {
     const rawArgs = [...bound.boundArgs, ...node.arguments];
     const applied = callApplyBindingFrom(callee, rawArgs);
     if (applied) {
+      const target = applied.targetExpr ? unwrapExpr(applied.targetExpr) : null;
       return {
-        key: applied.targetExpr ? callableReferenceKey(applied.targetExpr) : null,
+        key: target ? callableReferenceKey(target) : null,
         args: applied.fnArgs,
         unresolvable: applied.unresolvable,
+        params: paramsForCallable(target),
       };
     }
     const flat = flattenCallArguments(rawArgs);
@@ -4045,6 +4270,7 @@ function collectModuleLoads(text, fileName) {
       key: callableReferenceKey(callee),
       args: flat.items,
       unresolvable: flat.unresolvable,
+      params: paramsForCallable(callee),
     };
   };
 
@@ -4249,7 +4475,7 @@ function collectModuleLoads(text, fileName) {
       return;
     }
     const key = binding.key;
-    const params = key === null ? undefined : functionParams.get(inheritedFactKey(key));
+    const params = binding.params ?? (key === null ? undefined : functionParams.get(inheritedFactKey(key)));
     if (!params) {
       return;
     }

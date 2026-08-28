@@ -1307,6 +1307,12 @@ describe('testkit isolation', () => {
     expect(
       extractUnsafeDynamicLoads(`new Set([1]).forEach((loader) => String(loader));`),
     ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(`const value = new Map([['x', require]]).keys().next().value; String(value);`),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(`function* values() { yield 1; } const value = values().next().value; String(value);`),
+    ).toEqual([]);
   });
 
   it('会闭合函数返回的动态属性 callable', () => {
@@ -1478,6 +1484,15 @@ describe('testkit isolation', () => {
       `const req = new Set([require]).values().next().value; req(${pkg});`,
       `const req = new Map([['safe', require]]).values().next().value; req(${pkg});`,
       `const req = Array.from({ 0: require, length: 1 })[0]; req(${pkg});`,
+      `for (const loader of [require]) loader(${pkg});`,
+      `for (const loader of new Set([require])) loader(${pkg});`,
+      `for (const loader of new Map([['safe', require]]).values()) loader(${pkg});`,
+      `for (const [loader] of [[require]]) loader(${pkg});`,
+      `for (const { loader } of [{ loader: require }]) loader(${pkg});`,
+      `const req = [require].entries().next().value[1]; req(${pkg});`,
+      `const req = new Map([['safe', require]]).entries().next().value[1]; req(${pkg});`,
+      `const req = new Map([[require, 1]]).keys().next().value; req(${pkg});`,
+      `function* values() { yield require; } const req = values().next().value; req(${pkg});`,
     ];
     for (const source of cases) {
       expect(findForbiddenImportHits(source, fromMain), source).toEqual(
@@ -1495,6 +1510,10 @@ describe('testkit isolation', () => {
       `const req = Function('return require')(); req(${pkg});`,
       `const Ctor = Function; const req = Ctor('return require')(); req(${pkg});`,
       `const req = new Function('return require')(); req(${pkg});`,
+      `const Ctor = Function.bind(null); const req = Ctor('return require')(); req(${pkg});`,
+      `const req = Reflect.apply(eval, null, ['require']); req(${pkg});`,
+      `const req = globalThis.Function('return require')(); req(${pkg});`,
+      `const { eval: execute } = globalThis; const req = execute('require'); req(${pkg});`,
       `import('node:module').then(({ createRequire }) => createRequire(__filename)(${pkg}));`,
       `const req = new Proxy({}, { get() { return require; } }).req; req(${pkg});`,
     ];

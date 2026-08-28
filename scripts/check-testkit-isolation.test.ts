@@ -1160,6 +1160,11 @@ describe('testkit isolation', () => {
       `const box = {}; const ds = runtime.getDescriptors(); Object.defineProperties(box, ds); const req = box.req; ${load}`,
       `const ds = runtime.getDescriptors(); const req = Object.create(null, ds).req; ${load}`,
       `function use(loader = runtime.getLoader()) { return loader(pkg); } use(); ${load}`,
+      `function use(callback) { return callback(pkg); } use.call(null, runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); } use.apply(null, [runtime.getObject()]); ${load}`,
+      `function use(callback) { return callback(pkg); } Reflect.apply(use, null, [runtime.getObject()]); ${load}`,
+      `function use({ loader = runtime.getLoader() } = {}) { return loader(pkg); } use(); ${load}`,
+      `function use({ loader }) { return loader(pkg); } use({ get loader() { return runtime.getLoader(); } }); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1176,6 +1181,16 @@ describe('testkit isolation', () => {
       }
       const box = {};
       Object.defineProperty(box, 'req', getDescriptor(flag));
+      const req = box.req;
+      req(pkg);
+    `;
+    expect(extractUnsafeDynamicLoads(source)).toEqual([]);
+  });
+
+  it('不会把明确属性覆盖 opaque descriptor spread 误判为动态加载器', () => {
+    const source = `
+      const box = {};
+      Object.defineProperties(box, { ...runtime.getDescriptors(), req: { value: 1 } });
       const req = box.req;
       req(pkg);
     `;

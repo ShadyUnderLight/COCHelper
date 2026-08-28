@@ -3762,10 +3762,13 @@ function collectModuleLoads(text, fileName) {
   };
 
   const registerDescriptorMapPropertiesFromLiteral = (targetKey, props) => {
-    for (const property of props.properties) {
+    let lastOpaqueSpreadIndex = -1;
+    const explicitProperties = [];
+    for (let i = 0; i < props.properties.length; i++) {
+      const property = props.properties[i];
       if (ts.isSpreadAssignment(property)) {
-        if (isOpaqueObjectSource(property.expression)) {
-          markOpaqueDefinedProperties(targetKey);
+        if (resolvedOpaqueSource(property.expression)) {
+          lastOpaqueSpreadIndex = i;
         } else {
           registerDescriptorMapProperties(targetKey, property.expression);
         }
@@ -3784,7 +3787,18 @@ function collectModuleLoads(text, fileName) {
         propertyValue = property;
       }
       if (propertyKey) {
-        applyDefinedDescriptor(targetKey, propertyKey, propertyValue);
+        explicitProperties.push({ index: i, key: propertyKey, value: propertyValue });
+      }
+    }
+    for (const { key, value } of explicitProperties) {
+      applyDefinedDescriptor(targetKey, key, value);
+    }
+    if (lastOpaqueSpreadIndex >= 0) {
+      for (const prop of LOADERISH_PROPERTIES) {
+        const explicit = explicitProperties.find((entry) => entry.key === prop);
+        if (!explicit || lastOpaqueSpreadIndex > explicit.index) {
+          markOpaqueDefinedProperty(targetKey, prop);
+        }
       }
     }
   };
@@ -3870,6 +3884,153 @@ function collectModuleLoads(text, fileName) {
 
   const isParamCalleeUsed = (paramPattern) => patternUsesCalleeParam(paramPattern);
 
+  const callBindingFor = (node) => {
+    if (!ts.isCallExpression(node)) {
+      return null;
+    }
+    const bound = unwrapBindCall(node.expression);
+    const callee = unwrapExpr(bound.target);
+    const rawArgs = [...bound.boundArgs, ...node.arguments];
+    if (isReflectApplyCallee(callee)) {
+      const flat = flattenCallArguments(rawArgs);
+      const fnExpr = flat.items[0];
+      const argsArrayExpr = flat.items[2];
+      const expanded = argsArrayExpr
+        ? expandSpread(argsArrayExpr)
+        : { items: [], complete: !flat.unresolvable, dropped: false };
+      if (expanded === null) {
+        return {
+          key: fnExpr ? callableReferenceKey(fnExpr) : null,
+          args: [],
+          unresolvable: true,
+        };
+      }
+      return {
+        key: fnExpr ? callableReferenceKey(fnExpr) : null,
+        args: expanded.items,
+        unresolvable: flat.unresolvable || !expanded.complete,
+      };
+    }
+    const access = staticMember(callee);
+    if (access && (access.name === 'call' || access.name === 'apply')) {
+      const borrowed = borrowedCallArgsFrom(rawArgs, access.name);
+      return {
+        key: callableReferenceKey(access.object),
+        args: borrowed?.args ?? [],
+        unresolvable: !borrowed || borrowed.unresolvable,
+      };
+    }
+    const flat = flattenCallArguments(rawArgs);
+    return {
+      key: callableReferenceKey(callee),
+      args: flat.items,
+      unresolvable: flat.unresolvable,
+    };
+  };
+
+  const bindPatternDefault = (pattern, initializer) => {
+    const initKind = classifyExpr(initializer);
+    if (initKind === 'factory' || initKind === 'requirer') {
+      bindPattern(pattern, initKind, initializer);
+      return;
+    }
+    const unwrapped = unwrapExpr(initializer);
+    if (ts.isCallExpression(unwrapped) && resolvedOpaqueSource(unwrapped)) {
+      bindPattern(pattern, 'requirer', initializer);
+      return;
+    }
+    if (ts.isObjectBindingPattern(pattern) || ts.isArrayBindingPattern(pattern)) {
+      bindDestructuredArg(pattern, initializer, initKind);
+      return;
+    }
+    if (initKind !== null) {
+      bindPattern(pattern, initKind, initializer);
+    }
+  };
+
+  const bindMissingBindingElementDefaults = (pattern) => {
+    if (ts.isObjectBindingPattern(pattern)) {
+      for (const element of pattern.elements) {
+        if (!ts.isBindingElement(element)) {
+          continue;
+        }
+        if (element.dotDotDotToken) {
+          if (patternUsesCalleeParam(element.name)) {
+            bindPattern(element.name, 'requirer', undefined);
+          }
+          continue;
+        }
+        if (element.initializer) {
+          bindPatternDefault(element.name, element.initializer);
+        } else if (patternUsesCalleeParam(element.name)) {
+          bindPattern(element.name, 'requirer', undefined);
+        }
+      }
+      return;
+    }
+    if (ts.isArrayBindingPattern(pattern)) {
+      for (const element of pattern.elements) {
+        if (!ts.isBindingElement(element) || ts.isOmittedExpression(element)) {
+          continue;
+        }
+        if (element.dotDotDotToken) {
+          if (patternUsesCalleeParam(element.name)) {
+            bindPattern(element.name, 'requirer', undefined);
+          }
+          continue;
+        }
+        if (element.initializer) {
+          bindPatternDefault(element.name, element.initializer);
+        }
+      }
+    }
+  };
+
+  const resolvedBindingSource = (arg, elementKey) => {
+    const source = elementKey !== null ? resolveObjectProperty(arg, elementKey) : undefined;
+    if (!source?.value) {
+      return source;
+    }
+    const value = unwrapExpr(source.value);
+    if (!ts.isGetAccessorDeclaration(value) && !ts.isMethodDeclaration(value)) {
+      return source;
+    }
+    const returns = collectReturnExprs(value);
+    if (returns.length === 0) {
+      return source;
+    }
+    for (const returned of returns) {
+      const kind = classifyExpr(returned);
+      if (kind === 'factory' || kind === 'requirer') {
+        return {
+          value: returned,
+          kind,
+          shape: knownArrayShape(returned),
+          callableKey: null,
+        };
+      }
+      if (resolvedOpaqueSource(returned)) {
+        return {
+          value: returned,
+          kind: null,
+          shape: undefined,
+          callableKey: null,
+          returns: 'requirer',
+        };
+      }
+    }
+    if (returns.length === 1) {
+      const returned = returns[0];
+      return {
+        value: returned,
+        kind: classifyExpr(returned),
+        shape: knownArrayShape(returned),
+        callableKey: null,
+      };
+    }
+    return source;
+  };
+
   const bindDestructuredArg = (
     pattern,
     arg,
@@ -3911,8 +4072,22 @@ function collectModuleLoads(text, fileName) {
         if (!ts.isBindingElement(element)) {
           continue;
         }
+        if (element.dotDotDotToken) {
+          const restOpaque =
+            resolvedOpaqueSource(arg) ||
+            classifyExpr(arg) === null ||
+            dangerousPropertyKind({ kind: inheritedKind, returns: inheritedReturns }) !== null;
+          if (restOpaque && patternUsesCalleeParam(element.name)) {
+            bindPattern(element.name, 'requirer', undefined);
+          }
+          continue;
+        }
         const elementKey = bindingElementKey(element);
-        const source = elementKey !== null ? resolveObjectProperty(arg, elementKey) : undefined;
+        const source = elementKey !== null ? resolvedBindingSource(arg, elementKey) : undefined;
+        if ((!source || source.value === undefined) && element.initializer) {
+          bindPatternDefault(element.name, element.initializer);
+          continue;
+        }
         const nextKind = dangerousPropertyKind(source) ?? source?.kind ?? inheritedKind;
         bindDestructuredArg(
           element.name,
@@ -3949,13 +4124,17 @@ function collectModuleLoads(text, fileName) {
     if (!ts.isCallExpression(node)) {
       return;
     }
-    const key = callableReferenceKey(node.expression);
+    const binding = callBindingFor(node);
+    if (!binding) {
+      return;
+    }
+    const key = binding.key;
     const params = key === null ? undefined : functionParams.get(inheritedFactKey(key));
     if (!params) {
       return;
     }
-    const flat = flattenCallArguments(node.arguments);
-    const args = flat.items;
+    const args = binding.args;
+    const flat = { items: args, unresolvable: binding.unresolvable };
     params.forEach((paramName, i) => {
       const param = parameterFromName(paramName);
       if (
@@ -3994,17 +4173,9 @@ function collectModuleLoads(text, fileName) {
           return;
         }
         if (param?.initializer) {
-          const initKind = classifyExpr(param.initializer);
-          if (initKind === 'factory' || initKind === 'requirer') {
-            bindPattern(paramName, initKind, param.initializer);
-          } else {
-            const unwrapped = unwrapExpr(param.initializer);
-            if (ts.isCallExpression(unwrapped) && resolvedOpaqueSource(unwrapped)) {
-              bindPattern(paramName, 'requirer', param.initializer);
-            } else if (initKind !== null) {
-              bindPattern(paramName, initKind, param.initializer);
-            }
-          }
+          bindPatternDefault(paramName, param.initializer);
+        } else if (ts.isObjectBindingPattern(paramName) || ts.isArrayBindingPattern(paramName)) {
+          bindMissingBindingElementDefaults(paramName);
         }
         return;
       }

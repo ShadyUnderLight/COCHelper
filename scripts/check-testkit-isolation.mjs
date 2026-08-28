@@ -3267,10 +3267,26 @@ function collectModuleLoads(text, fileName) {
     }
     if (
       ts.isArrayLiteralExpression(unwrapped) ||
-      ts.isObjectLiteralExpression(unwrapped) ||
       ts.isNewExpression(unwrapped) ||
       isObjectAssignCall(unwrapped)
     ) {
+      return true;
+    }
+    if (ts.isObjectLiteralExpression(unwrapped)) {
+      let hasConcreteProperty = false;
+      let hasNonOpaqueSpread = false;
+      for (const property of unwrapped.properties) {
+        if (ts.isSpreadAssignment(property)) {
+          if (!isOpaqueObjectSource(property.expression)) {
+            hasNonOpaqueSpread = true;
+          }
+          continue;
+        }
+        hasConcreteProperty = true;
+      }
+      if (!hasConcreteProperty && !hasNonOpaqueSpread) {
+        return false;
+      }
       return true;
     }
     const key = referenceKey(unwrapped);
@@ -3364,15 +3380,17 @@ function collectModuleLoads(text, fileName) {
       return undefined;
     }
     let found;
-    let opaqueSpread = false;
-    for (const property of unwrapped.properties) {
+    let foundIndex = -1;
+    let lastOpaqueSpreadIndex = -1;
+    for (let i = 0; i < unwrapped.properties.length; i++) {
+      const property = unwrapped.properties[i];
       if (ts.isSpreadAssignment(property)) {
         const nested = objectLiteralPropertyValue(property.expression, key);
-        if (nested) {
+        if (nested && !nested?.opaque) {
           found = nested;
-          opaqueSpread = false;
+          foundIndex = i;
         } else if (isOpaqueObjectSource(property.expression)) {
-          opaqueSpread = true;
+          lastOpaqueSpreadIndex = i;
         }
         continue;
       }
@@ -3390,73 +3408,162 @@ function collectModuleLoads(text, fileName) {
       }
       if (propertyKey === key) {
         found = propertyValue;
-        opaqueSpread = false;
+        foundIndex = i;
       }
     }
-    if (!found && opaqueSpread && LOADERISH_PROPERTIES.has(key)) {
+    if (
+      LOADERISH_PROPERTIES.has(key) &&
+      lastOpaqueSpreadIndex >= 0 &&
+      (foundIndex < 0 || lastOpaqueSpreadIndex > foundIndex)
+    ) {
       return { opaque: true };
     }
     return found;
   };
 
-  const resolveDescriptorLiteral = (descriptorExpr, seen = new Set()) => {
+  const interpretDescriptorFromLiteral = (literal) => {
+    const getter = objectLiteralPropertyValue(literal, 'get');
+    if (getter && !getter?.opaque) {
+      const fn = unwrapExpr(getter);
+      const kind =
+        classifyExpr(getter) ??
+        (fn && isFunctionLikeNode(fn) ? functionReturnKind(fn) : null);
+      if (kind === 'factory' || kind === 'requirer') {
+        return {
+          value: getter,
+          kind: kind === 'factory' ? 'requirer' : kind,
+          shape: knownArrayShape(getter),
+          callableKey: null,
+        };
+      }
+    }
+    const value = objectLiteralPropertyValue(literal, 'value');
+    if (value && !value?.opaque) {
+      const fn = unwrapExpr(value);
+      const kind =
+        classifyExpr(value) ??
+        (fn && isFunctionLikeNode(fn) ? functionReturnKind(fn) : null);
+      if (kind === 'factory' || kind === 'requirer') {
+        return {
+          value,
+          kind: kind === 'factory' ? 'requirer' : kind,
+          shape: knownArrayShape(value),
+          callableKey: null,
+        };
+      }
+    }
+    if (getter?.opaque || value?.opaque) {
+      return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
+    }
+    return undefined;
+  };
+
+  const descriptorLiteralIsDangerous = (literal) => {
+    if (!literal || !ts.isObjectLiteralExpression(literal)) {
+      return false;
+    }
+    const self = interpretDescriptorFromLiteral(literal);
+    if (
+      self?.returns === 'requirer' ||
+      self?.kind === 'factory' ||
+      self?.kind === 'requirer'
+    ) {
+      return true;
+    }
+    for (const property of literal.properties) {
+      if (ts.isSpreadAssignment(property)) {
+        if (isOpaqueObjectSource(property.expression)) {
+          return true;
+        }
+        const spreadInterpreted = interpretDescriptor(property.expression);
+        if (
+          spreadInterpreted?.returns === 'requirer' ||
+          spreadInterpreted?.kind === 'factory' ||
+          spreadInterpreted?.kind === 'requirer'
+        ) {
+          return true;
+        }
+        continue;
+      }
+      let propertyValue;
+      if (ts.isShorthandPropertyAssignment(property)) {
+        propertyValue = property.name;
+      } else if (ts.isPropertyAssignment(property)) {
+        propertyValue = property.initializer;
+      } else if (ts.isMethodDeclaration(property) || ts.isGetAccessorDeclaration(property)) {
+        propertyValue = property;
+      } else {
+        continue;
+      }
+      const interpreted = interpretDescriptor(propertyValue);
+      if (
+        interpreted?.returns === 'requirer' ||
+        interpreted?.kind === 'factory' ||
+        interpreted?.kind === 'requirer'
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const pickDescriptorLiteral = (literals) => {
+    let fallback = null;
+    for (const literal of literals) {
+      if (descriptorLiteralIsDangerous(literal)) {
+        return literal;
+      }
+      if (!fallback) {
+        fallback = literal;
+      }
+    }
+    return fallback;
+  };
+
+  const collectDescriptorLiterals = (descriptorExpr, seen = new Set()) => {
     const unwrapped = resolveAliasedValue(descriptorExpr);
     if (!unwrapped) {
-      return null;
+      return [];
     }
     if (seen.has(unwrapped)) {
-      return null;
+      return [];
     }
     seen.add(unwrapped);
     if (ts.isObjectLiteralExpression(unwrapped)) {
-      return unwrapped;
+      return [unwrapped];
     }
+    const literals = [];
     const callableExpr = ts.isCallExpression(unwrapped) ? unwrapped.expression : unwrapped;
     for (const returned of returnExprsForCallable(callableExpr)) {
-      const resolved = resolveDescriptorLiteral(returned, seen);
-      if (resolved) {
-        return resolved;
-      }
+      literals.push(...collectDescriptorLiterals(returned, seen));
     }
     if (ts.isIdentifier(unwrapped)) {
       const stored = valueExprs.get(unwrapped.text);
       if (stored && stored !== unwrapped) {
-        const resolved = resolveDescriptorLiteral(stored, seen);
-        if (resolved) {
-          return resolved;
-        }
+        literals.push(...collectDescriptorLiterals(stored, seen));
       }
     }
-    return null;
+    return literals;
+  };
+
+  const resolveDescriptorLiteral = (descriptorExpr, seen = new Set()) => {
+    return pickDescriptorLiteral(collectDescriptorLiterals(descriptorExpr, seen));
   };
 
   const interpretDescriptor = (descriptorExpr) => {
     const literal = resolveDescriptorLiteral(descriptorExpr);
     if (!literal) {
-      if (isOpaqueObjectSource(descriptorExpr)) {
+      const aliased = resolveAliasedValue(descriptorExpr);
+      if (isOpaqueObjectSource(aliased ?? descriptorExpr)) {
         return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
       }
       return undefined;
     }
-    const getter = objectLiteralPropertyValue(literal, 'get');
-    if (getter && !getter?.opaque) {
-      return {
-        value: getter,
-        kind: classifyExpr(getter),
-        shape: knownArrayShape(getter),
-        callableKey: null,
-      };
+    const fromLiteral = interpretDescriptorFromLiteral(literal);
+    if (fromLiteral) {
+      return fromLiteral;
     }
-    const value = objectLiteralPropertyValue(literal, 'value');
-    if (value && !value?.opaque) {
-      return {
-        value,
-        kind: classifyExpr(value),
-        shape: knownArrayShape(value),
-        callableKey: null,
-      };
-    }
-    if (getter?.opaque || value?.opaque || isOpaqueObjectSource(descriptorExpr)) {
+    if (isOpaqueObjectSource(descriptorExpr)) {
       return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
     }
     return undefined;
@@ -3531,6 +3638,33 @@ function collectModuleLoads(text, fileName) {
       return;
     }
     const factKey = `${targetKey}.${propName}`;
+    const aliasedDescriptor = resolveAliasedValue(descriptorExpr);
+    if (aliasedDescriptor && ts.isCallExpression(aliasedDescriptor)) {
+      const calleeKey = callableReferenceKey(unwrapExpr(aliasedDescriptor.expression));
+      const returnExprs =
+        calleeKey === null ? [] : functionReturnExprs.get(inheritedFactKey(calleeKey)) ?? [];
+      if (returnExprs.length > 1) {
+        for (const returned of returnExprs) {
+          const literal = resolveDescriptorLiteral(returned);
+          if (!literal || !descriptorLiteralIsDangerous(literal)) {
+            continue;
+          }
+          storeValueKind(factKey, 'requirer');
+          const getter = objectLiteralPropertyValue(literal, 'get');
+          if (getter && !getter?.opaque) {
+            const fn = unwrapExpr(getter);
+            if (fn && isFunctionLikeNode(fn)) {
+              registerReturnFacts(factKey, fn);
+            }
+            registerCallableFacts(factKey, getter);
+            if (fn) {
+              valueExprs.set(factKey, fn);
+            }
+          }
+          return;
+        }
+      }
+    }
     const interpreted = interpretDescriptor(descriptorExpr);
     if (interpreted?.returns === 'requirer') {
       markOpaqueDefinedProperty(targetKey, propName);
@@ -3552,7 +3686,8 @@ function collectModuleLoads(text, fileName) {
     }
     const literal = resolveDescriptorLiteral(descriptorExpr);
     if (!literal) {
-      if (isOpaqueObjectSource(descriptorExpr)) {
+      const aliased = resolveAliasedValue(descriptorExpr);
+      if (isOpaqueObjectSource(aliased ?? descriptorExpr)) {
         markOpaqueDefinedProperty(targetKey, propName);
       }
       return;
@@ -3587,14 +3722,7 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
-  const registerDescriptorMapProperties = (targetKey, propsExpr) => {
-    const props = resolveAliasedValue(propsExpr);
-    if (!props || !ts.isObjectLiteralExpression(props)) {
-      if (isOpaqueObjectSource(propsExpr)) {
-        markOpaqueDefinedProperties(targetKey);
-      }
-      return;
-    }
+  const registerDescriptorMapPropertiesFromLiteral = (targetKey, props) => {
     for (const property of props.properties) {
       if (ts.isSpreadAssignment(property)) {
         if (isOpaqueObjectSource(property.expression)) {
@@ -3620,6 +3748,22 @@ function collectModuleLoads(text, fileName) {
         applyDefinedDescriptor(targetKey, propertyKey, propertyValue);
       }
     }
+  };
+
+  const registerDescriptorMapProperties = (targetKey, propsExpr) => {
+    const literal = resolveDescriptorLiteral(propsExpr);
+    if (literal) {
+      registerDescriptorMapPropertiesFromLiteral(targetKey, literal);
+      return;
+    }
+    const props = resolveAliasedValue(propsExpr);
+    if (!props || !ts.isObjectLiteralExpression(props)) {
+      if (isOpaqueObjectSource(propsExpr)) {
+        markOpaqueDefinedProperties(targetKey);
+      }
+      return;
+    }
+    registerDescriptorMapPropertiesFromLiteral(targetKey, props);
   };
 
   const registerDefinePropertyCall = (node) => {
@@ -3680,11 +3824,31 @@ function collectModuleLoads(text, fileName) {
 
   const isParamCalleeUsed = (paramPattern) => patternUsesCalleeParam(paramPattern);
 
-  const bindDestructuredArg = (pattern, arg, inheritedKind, inheritedShape, inheritedCallableKey) => {
+  const bindDestructuredArg = (
+    pattern,
+    arg,
+    inheritedKind,
+    inheritedShape,
+    inheritedCallableKey,
+    inheritedReturns,
+  ) => {
+    const inheritedResolved = {
+      kind: inheritedKind,
+      shape: inheritedShape,
+      callableKey: inheritedCallableKey,
+      value: arg,
+      returns: inheritedReturns,
+    };
+    const effectiveKind = dangerousPropertyKind(inheritedResolved) ?? inheritedKind;
     if (ts.isIdentifier(pattern)) {
       const calleeUsed = paramsUsedAsCallees.has(pattern);
       if (!argumentCarriesTrackedFacts(arg) && calleeUsed) {
-        if (argumentLooksLoaderish(arg)) {
+        if (
+          effectiveKind === 'factory' ||
+          effectiveKind === 'requirer' ||
+          inheritedReturns === 'requirer' ||
+          argumentLooksLoaderish(arg)
+        ) {
           bindPattern(pattern, 'requirer', undefined);
           return;
         }
@@ -3693,7 +3857,7 @@ function collectModuleLoads(text, fileName) {
           return;
         }
       }
-      bindPattern(pattern, inheritedKind, arg, inheritedShape, inheritedCallableKey);
+      bindPattern(pattern, effectiveKind, arg, inheritedShape, inheritedCallableKey);
       return;
     }
     if (ts.isObjectBindingPattern(pattern)) {
@@ -3703,12 +3867,14 @@ function collectModuleLoads(text, fileName) {
         }
         const elementKey = bindingElementKey(element);
         const source = elementKey !== null ? resolveObjectProperty(arg, elementKey) : undefined;
+        const nextKind = dangerousPropertyKind(source) ?? source?.kind ?? inheritedKind;
         bindDestructuredArg(
           element.name,
           source?.value ?? arg,
-          source?.kind ?? inheritedKind,
+          nextKind,
           source?.shape ?? inheritedShape,
           source?.callableKey ?? inheritedCallableKey,
+          source?.returns ?? inheritedReturns,
         );
       }
       return;
@@ -3721,7 +3887,14 @@ function collectModuleLoads(text, fileName) {
         }
         const itemKind = !shape.opaque && i < shape.kinds.length ? shape.kinds[i] : inheritedKind;
         const itemValue = shape.values?.[i];
-        bindDestructuredArg(element.name, itemValue ?? arg, itemKind ?? inheritedKind);
+        bindDestructuredArg(
+          element.name,
+          itemValue ?? arg,
+          itemKind ?? inheritedKind,
+          inheritedShape,
+          inheritedCallableKey,
+          inheritedReturns,
+        );
       });
     }
   };

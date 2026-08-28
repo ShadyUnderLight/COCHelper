@@ -1147,6 +1147,14 @@ describe('testkit isolation', () => {
        function middle(value) { return use(value); }
        function outer(loader) { return middle(loader); }
        outer(runtime.getObject()); ${load}`,
+      `function getDescriptors() { return { req: { get() { return require; } } }; }
+       const box = {}; Object.defineProperties(box, getDescriptors()); const req = box.req; ${load}`,
+      `function getDescriptor(flag) { if (flag) return { get() { return 1; } }; return { get() { return require; } }; }
+       const box = {}; Object.defineProperty(box, 'req', getDescriptor(flag)); const req = box.req; ${load}`,
+      `const box = {}; const d = runtime.getDescriptor(); Object.defineProperty(box, 'req', d); const req = box.req; ${load}`,
+      `const box = {}; Object.defineProperty(box, 'req', { get() { return 1; }, ...runtime.getDescriptor() });
+       const req = box.req; ${load}`,
+      `function use({ loader }) { return loader(pkg); } use({ ...runtime.getObject() }); ${load}`,
     ];
 
     for (const source of cases) {

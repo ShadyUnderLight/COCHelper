@@ -1165,6 +1165,14 @@ describe('testkit isolation', () => {
       `function use(callback) { return callback(pkg); } Reflect.apply(use, null, [runtime.getObject()]); ${load}`,
       `function use({ loader = runtime.getLoader() } = {}) { return loader(pkg); } use(); ${load}`,
       `function use({ loader }) { return loader(pkg); } use({ get loader() { return runtime.getLoader(); } }); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const call = Function.prototype.call; call(use, null, runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       Function.prototype.call.call(use, null, runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       const call = use.call; call(null, runtime.getObject()); ${load}`,
+      `function use(...{ loader }) { return loader(pkg); } use(runtime.getObject()); ${load}`,
+      `function use(...[{ loader }]) { return loader(pkg); } use(runtime.getObject()); ${load}`,
     ];
 
     for (const source of cases) {
@@ -1181,6 +1189,19 @@ describe('testkit isolation', () => {
       }
       const box = {};
       Object.defineProperty(box, 'req', getDescriptor(flag));
+      const req = box.req;
+      req(pkg);
+    `;
+    expect(extractUnsafeDynamicLoads(source)).toEqual([]);
+  });
+
+  it('不会把安全多分支 data descriptor 误判为动态加载器', () => {
+    const source = `
+      function d(flag) {
+        return flag ? { value: 1 } : { value: 2 };
+      }
+      const box = {};
+      Object.defineProperty(box, 'req', d(flag));
       const req = box.req;
       req(pkg);
     `;

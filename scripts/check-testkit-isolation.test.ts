@@ -1247,6 +1247,94 @@ describe('testkit isolation', () => {
     }
   });
 
+  it('会闭合未知嵌套属性、反射读取和枚举容器', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const load = `
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      req(pkg);
+    `;
+    const cases = [
+      `const unknown = runtime.getObject(); unknown.inner.get(pkg); ${load}`,
+      `const unknown = runtime.getObject(); unknown.inner.req(pkg); ${load}`,
+      `const unknown = runtime.getObject(); Object.assign({}, unknown).inner.req(pkg); ${load}`,
+      `const unknown = runtime.getObject(); Object.create(unknown).inner.req(pkg); ${load}`,
+      `const unknown = runtime.getObject(); Object.defineProperty({}, 'inner', { value: unknown }).inner.req(pkg); ${load}`,
+      `const unknown = runtime.getObject(); Object.setPrototypeOf({}, unknown).inner.req(pkg); ${load}`,
+      `const unknown = runtime.getObject(); const key = runtime.key; unknown[key](pkg); ${load}`,
+      `const box = { req: require }; const key = runtime.key; box[key](pkg); ${load}`,
+      `const box = { req: require }; const key = runtime.key; const fn = box[key]; fn(pkg); ${load}`,
+      `Reflect.get({ req: require }, 'req')(pkg); ${load}`,
+      `const get = Reflect.get.bind(Reflect); get({ req: require }, 'req')(pkg); ${load}`,
+      `const unknown = runtime.getObject(); Reflect.get(unknown, 'req')(pkg); ${load}`,
+      `Object.getOwnPropertyDescriptor({ req: require }, 'req').value(pkg); ${load}`,
+      `Object.values({ req: require })[0](pkg); ${load}`,
+      `Object.values({ get() { return require; } })[0](pkg); ${load}`,
+      `Object.entries({ req: require })[0][1](pkg); ${load}`,
+      `const xs = [[(callback) => callback(pkg)]]; xs[0][0](runtime.getObject()); ${load}`,
+      `function make() { return [[(callback) => callback(pkg)]]; } make()[0][0](runtime.getObject()); ${load}`,
+      `Object.defineProperty({}, 'make', { get() { return (callback) => callback(pkg); } }).make()(runtime.getObject()); ${load}`,
+      `function make(fn) { const alias = fn; return alias; } make((callback) => callback(pkg))(runtime.getObject()); ${load}`,
+      `function make(fn) { let alias; alias = fn; return alias; } make((callback) => callback(pkg))(runtime.getObject()); ${load}`,
+      `function make(fn) { const box = { fn }; return box.fn; } make((callback) => callback(pkg))(runtime.getObject()); ${load}`,
+      `function make(fn, flag) { return flag ? fn : () => 1; } make((callback) => callback(pkg), flag)(runtime.getObject()); ${load}`,
+      `function make(fn, flag) { return flag ? { use: fn } : {}; } make((callback) => callback(pkg), flag).use(runtime.getObject()); ${load}`,
+      `function outer(box) { function inner() { return box.req; } return inner(); } outer(runtime.getObject())(pkg); ${load}`,
+      `function outer(box) { return (() => box.req)(); } outer(runtime.getObject())(pkg); ${load}`,
+      `function outer(box) { function inner(x) { return x.req; } return inner(box); } outer(runtime.getObject())(pkg); ${load}`,
+      `function outer(box) { const alias = box; function inner() { return alias.req; } return inner(); } outer(runtime.getObject())(pkg); ${load}`,
+    ];
+
+    for (const source of cases) {
+      expect(findForbiddenImportHits(source, fromMain), source.replace(/\s+/g, ' ').slice(0, 140)).toEqual(
+        expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+      );
+    }
+  });
+
+  it('不会把已知安全的 opaque 数组元素误判为动态加载器', () => {
+    expect(extractUnsafeDynamicLoads(`const values = [() => 1]; values[0](runtime.getObject());`)).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `function make() { return [() => 1]; } make()[0](runtime.getObject());`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `function use(value) { return value; } const box = { req: require }; const key = runtime.key; use(box[key]);`,
+      ),
+    ).toEqual([]);
+  });
+
+  it('会闭合函数返回的动态属性 callable', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const source = `
+      const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+      const unknown = runtime.getObject();
+      const key = runtime.key;
+      function make(box) { return box[key]; }
+      make(unknown)(pkg);
+    `;
+    expect(findForbiddenImportHits(source, fromMain)).toEqual(
+      expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+    );
+  });
+
+  it('不会把 Map 等已知安全内置对象的 get 误判为 loader', () => {
+    expect(
+      extractUnsafeDynamicLoads(
+        `const values = new Map(); values.get(runtime.key);`,
+      ),
+    ).toEqual([]);
+  });
+
+  it('不会让透传到普通函数的动态属性参数误报', () => {
+    expect(
+      extractUnsafeDynamicLoads(
+        `function use(value) { return value; } const box = runtime.getObject(); const key = runtime.key; use(box[key]);`,
+      ),
+    ).toEqual([]);
+  });
+
   it('不会把安全多分支 descriptor 误判为动态加载器', () => {
     const source = `
       function getDescriptor(flag) {

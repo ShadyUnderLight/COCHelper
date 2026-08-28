@@ -1112,6 +1112,41 @@ describe('testkit isolation', () => {
       `const req = Reflect.construct(Array, [{ get() { return require; } }])[0].get(); ${load}`,
       `Object.defineProperty(Object.prototype, 'req', { get() { return require; } });
        const box = {}; const req = box.req; ${load}`,
+      `const from = Array.from.bind(null);
+       const req = from([{ get() { return require; } }])[0].get(); ${load}`,
+      `const assign = Object.assign.bind(Object);
+       const req = assign({}, { get() { return require; } }).get(); ${load}`,
+      `const create = Object.create;
+       const req = create({ get() { return require; } }).get(); ${load}`,
+      `const box = {};
+       const req = Object.defineProperty(box, 'req', { get() { return require; } }).req; ${load}`,
+      `const proto = { get() { return require; } };
+       const req = Object.setPrototypeOf({}, proto).get(); ${load}`,
+      `const box = {}; const proto = { get() { return require; } };
+       box.__proto__ = proto; const req = box.get(); ${load}`,
+      `function use(loader) { const alias = loader; return alias(pkg); }
+       const req = use(getLoader()); ${load}`,
+      `function use(loader) { return loader(pkg); }
+       function outer(loader) { return use(loader); }
+       const req = outer(getLoader()); ${load}`,
+      `class Box { inner = { loaders: [require] }; }
+       const req = new Box().inner.loaders[0]; ${load}`,
+      `const req = Object.create(null, { ...getDescriptors() }).get(); ${load}`,
+      `const box = {}; Object.defineProperty(box, 'req', getDescriptor()); const req = box.req; ${load}`,
+      `const box = {}; Object.defineProperties(box, getDescriptors()); const req = box.req; ${load}`,
+      `const define = Object.defineProperties; const box = {};
+       define(box, { req: { get() { return require; } } }); const req = box.req; ${load}`,
+      `function use({ loader }) { return loader(pkg); } use(runtime.getObject()); ${load}`,
+      `function use(loader) { const a = loader; const b = a; return b(pkg); }
+       const req = use(getLoader()); ${load}`,
+      `function getDescriptor() { return { get() { return require; } }; }
+       const box = {}; Object.defineProperty(box, 'req', getDescriptor()); const req = box.req; ${load}`,
+      `const box = {}; Object.defineProperties(box, { ...runtime.getDescriptors() }); const req = box.req; ${load}`,
+      `function use({ inner: { loader: fn } }) { return fn(pkg); } use(runtime.getObject()); ${load}`,
+      `function use(callback) { return callback(pkg); }
+       function middle(value) { return use(value); }
+       function outer(loader) { return middle(loader); }
+       outer(runtime.getObject()); ${load}`,
     ];
 
     for (const source of cases) {

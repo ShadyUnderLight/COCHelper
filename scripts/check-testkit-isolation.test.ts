@@ -1076,6 +1076,28 @@ describe('testkit isolation', () => {
       `const box = {}; Object.defineProperty(box, 'req', { get() { return require; } });
        const req = box.req; ${load}`,
       `function use(...{ loader }) { return loader; } const req = use({ loader: require }); ${load}`,
+      `const req = Object.assign({}, getSource()).get(); ${load}`,
+      `const req = ({ ...getSource() }).get(); ${load}`,
+      `const A = Array; const req = new A({ get() { return require; } })[0].get(); ${load}`,
+      `const req = new Array(...[, require])[1]; ${load}`,
+      `const box = { get() { return require; } };
+       const req = Array.of.call(null, box)[0].get(); ${load}`,
+      `import { createRequire } from 'node:module';
+       const make = Array.from.bind(Array, [createRequire])()[0]; const req = make(import.meta.url); ${load}`,
+      `const box = { get() { return require; } };
+       const req = Object.assign.bind(null, {}, box)().get(); ${load}`,
+      `const req = [require].flatMap((x) => [x])[0]; ${load}`,
+      `const req = [require].toReversed()[0]; ${load}`,
+      `const req = ['skip', require].toSpliced(0, 1)[0]; ${load}`,
+      `const req = ['skip'].with(0, require)[0]; ${load}`,
+      `const box = {}; const d = { get() { return require; } };
+       Object.defineProperty(box, 'req', d); const req = box.req; ${load}`,
+      `const box = {}; Object.defineProperties(box, { req: { get() { return require; } } });
+       const req = box.req; ${load}`,
+      `class Box { inner = [require] } const req = new Box().inner[0]; ${load}`,
+      `class Box { get inner() { return { get() { return require; } }; } }
+       const req = new Box().inner.get(); ${load}`,
+      `function use(loader) { return loader(pkg); } const req = use(runtime.loader); ${load}`,
     ];
 
     for (const source of cases) {

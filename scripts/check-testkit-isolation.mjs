@@ -1753,8 +1753,17 @@ function collectModuleLoads(text, fileName) {
       if (stored) {
         return stored;
       }
+      const { source, args } = callSourceAndArgs(unwrappedCall);
       for (const returned of functionReturnExprs.get(factKey) ?? []) {
-        const kind = callableReturnKind(returned, nextSeen);
+        const mapped = argumentForReturnedParam(returned, source, args);
+        let kind = callableReturnKind(mapped, nextSeen);
+        if (kind !== 'factory' && kind !== 'requirer') {
+          const member = staticMember(unwrapExpr(returned));
+          if (member) {
+            const object = argumentForReturnedParam(member.object, source, args);
+            kind = callablePropertyReturnKind(resolveObjectProperty(object, member.name, nextSeen));
+          }
+        }
         if (kind === 'factory' || kind === 'requirer') {
           return kind === 'factory' ? 'requirer' : kind;
         }
@@ -2517,6 +2526,11 @@ function collectModuleLoads(text, fileName) {
       : undefined;
   };
 
+  const opaqueLoaderishProperty = (key) =>
+    LOADERISH_PROPERTIES.has(key)
+      ? { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' }
+      : undefined;
+
   const indexedElement = (expr) => {
     const unwrapped = unwrapExpr(expr);
     if (!unwrapped) {
@@ -2749,7 +2763,14 @@ function collectModuleLoads(text, fileName) {
         if (dangerousPropertyKind(resolved) !== null) return resolved;
         if (!fallback) fallback = resolved;
       }
-      return fallback;
+      if (fallback) {
+        return fallback;
+      }
+      const calleeMember = staticMember(unwrapped.expression);
+      if (calleeMember && LOADERISH_PROPERTIES.has(calleeMember.name)) {
+        return undefined;
+      }
+      return opaqueLoaderishProperty(key);
     }
     if (unwrapped && ts.isObjectLiteralExpression(unwrapped)) {
       let resolved;
@@ -2877,6 +2898,12 @@ function collectModuleLoads(text, fileName) {
     }
     if (access) {
       const resolved = resolveObjectProperty(access.object, access.name, nextSeen);
+      if (resolved?.callableKey) {
+        const stored = functionReturnExprs.get(inheritedFactKey(resolved.callableKey));
+        if (stored && stored.length > 0) {
+          return stored;
+        }
+      }
       if (resolved?.value) {
         return returnExprsForCallable(resolved.value, nextSeen);
       }
@@ -3828,10 +3855,40 @@ function collectModuleLoads(text, fileName) {
   };
 
   const interpretDescriptorFromLiteral = (literal) => {
+    const descriptorFactIsPreferred = (fact, expr) => {
+      if (fact?.returns === 'requirer' || fact?.kind === 'factory' || fact?.kind === 'requirer') {
+        return true;
+      }
+      const params = paramsForCallable(fact?.value ?? expr);
+      return Boolean(params?.some((name) => isParamCalleeUsed(name)));
+    };
+    const pickDescriptorPropertyFacts = (candidates, options) => {
+      let fallback;
+      for (const candidate of candidates) {
+        const fact = descriptorPropertyFact(candidate, options);
+        if (!fact) {
+          continue;
+        }
+        if (descriptorFactIsPreferred(fact, candidate)) {
+          return fact;
+        }
+        fallback ??= fact;
+      }
+      return fallback;
+    };
     const descriptorPropertyFact = (expr, { followGetterReturns = false } = {}) => {
       const fn = unwrapExpr(expr);
       if (!fn) {
         return undefined;
+      }
+      if (followGetterReturns && isFunctionLikeNode(fn)) {
+        const returns = collectReturnExprs(fn).flatMap((returned) => expandBranchExprs(returned));
+        if (returns.length > 0) {
+          return pickDescriptorPropertyFacts(returns);
+        }
+      }
+      if (ts.isConditionalExpression(fn) || isLogicalBinary(fn)) {
+        return pickDescriptorPropertyFacts(expandBranchExprs(fn));
       }
       const kind =
         classifyExpr(expr) ??
@@ -3843,30 +3900,6 @@ function collectModuleLoads(text, fileName) {
           shape: knownArrayShape(expr),
           callableKey: null,
         };
-      }
-      if (followGetterReturns && isFunctionLikeNode(fn)) {
-        const returns = collectReturnExprs(fn);
-        if (returns.length === 1) {
-          return {
-            value: returns[0],
-            kind: null,
-            shape: knownArrayShape(returns[0]),
-            callableKey: null,
-          };
-        }
-        if (returns.length > 1) {
-          const callableReturn = returns.find((returned) => {
-            const unwrapped = unwrapExpr(returned);
-            return Boolean(unwrapped && isFunctionLikeNode(unwrapped));
-          });
-          const picked = callableReturn ?? returns[0];
-          return {
-            value: picked,
-            kind: null,
-            shape: knownArrayShape(picked),
-            callableKey: null,
-          };
-        }
       }
       const aliased = resolveAliasedValue(fn);
       const key = callableReferenceKey(fn);
@@ -3894,7 +3927,7 @@ function collectModuleLoads(text, fileName) {
     }
     const value = objectLiteralPropertyValue(literal, 'value');
     if (value && !value?.opaque) {
-      const fromValue = descriptorPropertyFact(value);
+      const fromValue = pickDescriptorPropertyFacts(expandBranchExprs(value));
       if (fromValue) {
         return fromValue;
       }
@@ -4362,6 +4395,12 @@ function collectModuleLoads(text, fileName) {
     const member = staticMember(unwrapped);
     if (member) {
       const resolved = resolveObjectProperty(member.object, member.name, nextSeen);
+      if (resolved?.callableKey) {
+        const stored = functionParams.get(inheritedFactKey(resolved.callableKey));
+        if (stored) {
+          return stored;
+        }
+      }
       if (resolved?.value) {
         const fromValue = paramsForCallable(resolved.value, nextSeen);
         if (fromValue) {

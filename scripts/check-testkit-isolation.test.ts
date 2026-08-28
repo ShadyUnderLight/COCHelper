@@ -1228,6 +1228,16 @@ describe('testkit isolation', () => {
       `function make(...{ fn }) { return fn; } make({ fn: (callback) => callback(pkg) })(runtime.getObject()); ${load}`,
       `function make({ fn }) { return fn; } const wrap = make;
        wrap({ fn: (callback) => callback(pkg) })(runtime.getObject()); ${load}`,
+      `function make(box) { return box.req; } make(runtime.getObject())(pkg); ${load}`,
+      `function make(box) { return box.loader; } make(runtime.getObject())(pkg); ${load}`,
+      `function make(box) { return box.get; } make(runtime.getObject())(pkg); ${load}`,
+      `Object.defineProperty({}, 'use', { get() { return () => 1; return (callback) => callback(pkg); } }).use(runtime.getObject()); ${load}`,
+      `Object.defineProperty({}, 'use', { get() { if (flag) return () => 1; return (callback) => callback(pkg); } }).use(runtime.getObject()); ${load}`,
+      `Object.defineProperty({}, 'use', { value: flag ? (callback) => callback(pkg) : () => 1 }).use(runtime.getObject()); ${load}`,
+      `Object.defineProperty({}, 'use', { value: flag ? () => 1 : (callback) => callback(pkg) }).use(runtime.getObject()); ${load}`,
+      `Object.defineProperty({}, 'use', { value: flag && ((callback) => callback(pkg)) }).use(runtime.getObject()); ${load}`,
+      `class Box { make() { return (callback) => callback(pkg); } } new Box().make()(runtime.getObject()); ${load}`,
+      `class Box { static make() { return (callback) => callback(pkg); } } Box.make()(runtime.getObject()); ${load}`,
     ];
 
     for (const source of cases) {

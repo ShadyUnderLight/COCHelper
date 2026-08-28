@@ -55,6 +55,7 @@ const ARRAY_QUERY_METHODS = new Set([
   'flatMap',
   'toReversed',
   'toSpliced',
+  'toSorted',
   'with',
 ]);
 const LOADERISH_PROPERTIES = new Set(['get', 'require', 'createRequire', 'loader', 'req']);
@@ -124,8 +125,10 @@ function collectModuleLoads(text, fileName) {
   const reflectApplyAliases = new Set();
   const callApplyAliases = new Set();
   const functionParams = new Map();
+  const prototypeExprs = new Map();
   const scopedBindingKinds = new WeakMap();
   const scopedArrayShapes = new WeakMap();
+  const paramsUsedAsCallees = new WeakSet();
 
   const opaqueArrayShape = () => ({ opaque: true, kinds: [], values: [] });
 
@@ -265,7 +268,11 @@ function collectModuleLoads(text, fileName) {
       return false;
     }
     const access = staticMember(unwrapped);
-    return Boolean(access?.name === 'defineProperty' && isObjectIdentifier(access.object, 'Object'));
+    return Boolean(
+      access &&
+        access.name === 'defineProperty' &&
+        (isObjectIdentifier(access.object, 'Object') || isObjectIdentifier(access.object, 'Reflect')),
+    );
   };
 
   const isObjectDefinePropertiesCallee = (expr) => {
@@ -275,6 +282,33 @@ function collectModuleLoads(text, fileName) {
     }
     const access = staticMember(unwrapped);
     return Boolean(access?.name === 'defineProperties' && isObjectIdentifier(access.object, 'Object'));
+  };
+
+  const isObjectCreateCallee = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped) {
+      return false;
+    }
+    const access = staticMember(unwrapped);
+    return Boolean(access?.name === 'create' && isObjectIdentifier(access.object, 'Object'));
+  };
+
+  const isObjectSetPrototypeOfCallee = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped) {
+      return false;
+    }
+    const access = staticMember(unwrapped);
+    return Boolean(access?.name === 'setPrototypeOf' && isObjectIdentifier(access.object, 'Object'));
+  };
+
+  const isReflectConstructCallee = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped) {
+      return false;
+    }
+    const access = staticMember(unwrapped);
+    return Boolean(access?.name === 'construct' && isObjectIdentifier(access.object, 'Reflect'));
   };
 
   const isNodeInside = (node, ancestor) => {
@@ -2009,6 +2043,9 @@ function collectModuleLoads(text, fileName) {
       if (parts?.method === 'toReversed') {
         return shapeFromToReversed(shapeForValue(parts.object));
       }
+      if (parts?.method === 'toSorted') {
+        return shapeFromFilter(shapeForValue(parts.object));
+      }
       if (parts?.method === 'toSpliced') {
         return shapeFromToSpliced(shapeForValue(parts.object), parts.args);
       }
@@ -2027,6 +2064,13 @@ function collectModuleLoads(text, fileName) {
           return opaqueArrayShape();
         }
         return shapeFromArrayItems(inv.args, inv.unresolvable);
+      }
+      if (inv && isReflectConstructCallee(inv.callee) && inv.args[0] && isArrayConstructorCallee(inv.args[0])) {
+        const constructed = inv.args[1] ? expandSpread(inv.args[1]) : { items: [], complete: true, dropped: false };
+        if (constructed === null) {
+          return opaqueArrayShape();
+        }
+        return shapeFromArrayItems(constructed.items, !constructed.complete || constructed.dropped);
       }
       const callee = unwrapExpr(unwrapped.expression);
       if (isFunctionLikeNode(callee)) {
@@ -2073,6 +2117,10 @@ function collectModuleLoads(text, fileName) {
       return objectAssignArguments(unwrapped) === null;
     }
     if (ts.isCallExpression(unwrapped)) {
+      const created = invocationOf(unwrapped);
+      if (created && isObjectCreateCallee(created.callee)) {
+        return false;
+      }
       if (returnExprsForCallable(unwrapped.expression).length > 0) {
         return false;
       }
@@ -2115,6 +2163,21 @@ function collectModuleLoads(text, fileName) {
       }
     }
     return true;
+  };
+
+  const isNullProtoExpr = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    return Boolean(unwrapped && unwrapped.kind === ts.SyntaxKind.NullKeyword);
+  };
+
+  const objectPrototypeProperty = (key) => {
+    const factKey = `Object.prototype.${key}`;
+    const shape = arrayShapes.get(factKey);
+    const kind = valueKinds.get(factKey);
+    const storedFactValue = valueExprs.get(factKey);
+    return shape || kind || hasReturnFacts(factKey) || storedFactValue
+      ? { value: storedFactValue, kind: kind ?? null, shape, callableKey: factKey }
+      : undefined;
   };
 
   const indexedElement = (expr) => {
@@ -2235,6 +2298,37 @@ function collectModuleLoads(text, fileName) {
         }
         return fallback;
       }
+      const created = invocationOf(unwrapped);
+      if (created && isObjectCreateCallee(created.callee)) {
+        if (created.unresolvable) {
+          if (LOADERISH_PROPERTIES.has(key)) {
+            return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
+          }
+          return undefined;
+        }
+        const protoExpr = created.args[0];
+        const descriptorsExpr = created.args[1];
+        if (descriptorsExpr) {
+          const fromDescriptors = resolveDescriptorMapProperty(descriptorsExpr, key);
+          if (fromDescriptors) {
+            return fromDescriptors;
+          }
+          if (isOpaqueObjectSource(descriptorsExpr) && LOADERISH_PROPERTIES.has(key)) {
+            return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
+          }
+        }
+        if (!protoExpr || isNullProtoExpr(protoExpr)) {
+          return undefined;
+        }
+        const fromProto = resolveObjectProperty(protoExpr, key, nextSeen);
+        if (fromProto) {
+          return fromProto;
+        }
+        if (isOpaqueObjectSource(protoExpr) && LOADERISH_PROPERTIES.has(key)) {
+          return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
+        }
+        return undefined;
+      }
       const returnExprs = returnExprsForCallable(unwrapped.expression);
       let fallback;
       for (const returnExpr of returnExprs) {
@@ -2281,13 +2375,13 @@ function collectModuleLoads(text, fileName) {
           opaqueSpread = false;
         }
       }
-      if (resolved) {
-        return resolved;
-      }
       if (opaqueSpread && LOADERISH_PROPERTIES.has(key)) {
         return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
       }
-      return resolved;
+      if (resolved) {
+        return resolved;
+      }
+      return objectPrototypeProperty(key);
     }
     const member = staticMember(unwrapped);
     if (member) {
@@ -2319,17 +2413,27 @@ function collectModuleLoads(text, fileName) {
       const resolved = resolveObjectProperty(storedValue, key, nextSeen);
       if (resolved) return resolved;
     }
-    const propertyKey = callableMemberKey(unwrapped, key);
-    if (propertyKey === null) {
-      return undefined;
+    if (sourceKey !== null && prototypeExprs.has(sourceKey)) {
+      const protoExpr = prototypeExprs.get(sourceKey);
+      const fromProto = resolveObjectProperty(protoExpr, key, nextSeen);
+      if (fromProto) {
+        return fromProto;
+      }
+      if (isOpaqueObjectSource(protoExpr) && LOADERISH_PROPERTIES.has(key)) {
+        return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
+      }
     }
-    const factKey = inheritedFactKey(propertyKey);
-    const shape = arrayShapes.get(factKey);
-    const kind = valueKinds.get(factKey);
-    const storedFactValue = valueExprs.get(factKey);
-    return shape || kind || hasReturnFacts(factKey) || storedFactValue
-      ? { value: storedFactValue, kind: kind ?? null, shape, callableKey: factKey }
-      : undefined;
+    const propertyKey = callableMemberKey(unwrapped, key);
+    if (propertyKey !== null) {
+      const factKey = inheritedFactKey(propertyKey);
+      const shape = arrayShapes.get(factKey);
+      const kind = valueKinds.get(factKey);
+      const storedFactValue = valueExprs.get(factKey);
+      if (shape || kind || hasReturnFacts(factKey) || storedFactValue) {
+        return { value: storedFactValue, kind: kind ?? null, shape, callableKey: factKey };
+      }
+    }
+    return objectPrototypeProperty(key);
   };
 
   const returnExprsForCallable = (valueExpr) => {
@@ -2919,6 +3023,40 @@ function collectModuleLoads(text, fileName) {
     return Boolean(member && LOADERISH_PROPERTIES.has(member.name));
   };
 
+  const isSafeNonLoaderArg = (arg) => {
+    const unwrapped = unwrapExpr(arg);
+    if (!unwrapped) {
+      return false;
+    }
+    if (
+      ts.isStringLiteralLike(unwrapped) ||
+      ts.isNumericLiteral(unwrapped) ||
+      ts.isRegularExpressionLiteral(unwrapped) ||
+      unwrapped.kind === ts.SyntaxKind.TrueKeyword ||
+      unwrapped.kind === ts.SyntaxKind.FalseKeyword ||
+      unwrapped.kind === ts.SyntaxKind.NullKeyword ||
+      unwrapped.kind === ts.SyntaxKind.UndefinedKeyword
+    ) {
+      return true;
+    }
+    if (ts.isIdentifier(unwrapped) && unwrapped.text === 'undefined') {
+      return true;
+    }
+    if (isFunctionLikeNode(unwrapped)) {
+      return classifyExpr(unwrapped) === null && callableReturnKind(unwrapped) === null;
+    }
+    return false;
+  };
+
+  const isPassThroughCallbackArg = (arg) => {
+    const unwrapped = unwrapExpr(arg);
+    if (!unwrapped || !ts.isIdentifier(unwrapped)) {
+      return false;
+    }
+    const bound = enclosingBindingName(unwrapped);
+    return Boolean(bound && parameterFromName(bound));
+  };
+
   const resolveAliasedValue = (expr, seen = new Set()) => {
     const unwrapped = unwrapExpr(expr);
     if (!unwrapped || seen.has(unwrapped)) {
@@ -2966,6 +3104,32 @@ function collectModuleLoads(text, fileName) {
       }
     }
     return found;
+  };
+
+  const resolveDescriptorMapProperty = (descriptorsExpr, key) => {
+    const descriptor = objectLiteralPropertyValue(descriptorsExpr, key);
+    if (!descriptor) {
+      return undefined;
+    }
+    const getter = objectLiteralPropertyValue(descriptor, 'get');
+    if (getter) {
+      return {
+        value: getter,
+        kind: classifyExpr(getter),
+        shape: knownArrayShape(getter),
+        callableKey: null,
+      };
+    }
+    const value = objectLiteralPropertyValue(descriptor, 'value');
+    if (!value) {
+      return undefined;
+    }
+    return {
+      value,
+      kind: classifyExpr(value),
+      shape: knownArrayShape(value),
+      callableKey: null,
+    };
   };
 
   const applyDefinedDescriptor = (targetKey, propName, descriptorExpr) => {
@@ -3047,6 +3211,21 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
+  const registerSetPrototypeOfCall = (node) => {
+    if (!ts.isCallExpression(node)) {
+      return;
+    }
+    const inv = invocationOf(node);
+    if (!inv || !isObjectSetPrototypeOfCallee(inv.callee) || inv.unresolvable || inv.args.length < 2) {
+      return;
+    }
+    const targetKey = referenceKey(inv.args[0]);
+    if (targetKey === null) {
+      return;
+    }
+    prototypeExprs.set(targetKey, inv.args[1]);
+  };
+
   const bindCallArguments = (node) => {
     if (!ts.isCallExpression(node)) {
       return;
@@ -3089,6 +3268,12 @@ function collectModuleLoads(text, fileName) {
       if (ts.isIdentifier(paramName) && !argumentCarriesTrackedFacts(args[i])) {
         if (argumentLooksLoaderish(args[i])) {
           bindPattern(paramName, 'requirer', undefined);
+        } else if (
+          paramsUsedAsCallees.has(paramName) &&
+          !isSafeNonLoaderArg(args[i]) &&
+          !isPassThroughCallbackArg(args[i])
+        ) {
+          bindPattern(paramName, 'requirer', undefined);
         }
         return;
       }
@@ -3100,6 +3285,7 @@ function collectModuleLoads(text, fileName) {
     invalidateArrayMutation(node);
     registerFunctionReturn(node);
     registerDefinePropertyCall(node);
+    registerSetPrototypeOfCall(node);
     bindCallArguments(node);
     if (isFunctionLikeNode(node) && node.parameters) {
       for (const param of node.parameters) {
@@ -3181,7 +3367,39 @@ function collectModuleLoads(text, fileName) {
         key,
         names.map((name) => (ts.isIdentifier(name) ? name.text : String(name.kind))),
       ]),
-    )}`;
+    )}|${JSON.stringify([...prototypeExprs.keys()])}`;
+  const collectParamsUsedAsCallees = (node) => {
+    if (isFunctionLikeNode(node) && node.body && node.parameters) {
+      const names = new Map();
+      for (const param of node.parameters) {
+        if (ts.isIdentifier(param.name)) {
+          names.set(param.name.text, param.name);
+        }
+      }
+      const visit = (child) => {
+        if (child !== node && isFunctionLikeNode(child)) {
+          return;
+        }
+        if (ts.isCallExpression(child)) {
+          let callee = unwrapExpr(child.expression);
+          const access = staticMember(callee);
+          if (access && (access.name === 'call' || access.name === 'apply' || access.name === 'bind')) {
+            callee = unwrapExpr(access.object);
+          }
+          if (callee && ts.isIdentifier(callee)) {
+            const paramName = names.get(callee.text);
+            if (paramName) {
+              paramsUsedAsCallees.add(paramName);
+            }
+          }
+        }
+        ts.forEachChild(child, visit);
+      };
+      visit(node.body);
+    }
+    ts.forEachChild(node, collectParamsUsedAsCallees);
+  };
+  collectParamsUsedAsCallees(sourceFile);
   while (previous !== snapshot()) {
     previous = snapshot();
     bindNode(sourceFile);

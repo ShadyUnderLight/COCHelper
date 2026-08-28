@@ -1098,6 +1098,20 @@ describe('testkit isolation', () => {
       `class Box { get inner() { return { get() { return require; } }; } }
        const req = new Box().inner.get(); ${load}`,
       `function use(loader) { return loader(pkg); } const req = use(runtime.loader); ${load}`,
+      `function use(unknown) { unknown(); return unknown; } const req = use(unknown); ${load}`,
+      `function use(loader) { loader(); return loader; } const req = use(getLoader()); ${load}`,
+      `const box = {}; Reflect.defineProperty(box, 'req', { get() { return require; } });
+       const req = box.req; ${load}`,
+      `const proto = { get() { return require; } };
+       const req = Object.create(proto).get(); ${load}`,
+      `const req = Object.create(null, { get: { value() { return require; } } }).get(); ${load}`,
+      `const box = {}; const proto = { get() { return require; } };
+       Object.setPrototypeOf(box, proto); const req = box.get(); ${load}`,
+      `const req = ({ get() { return 1 }, ...getSource() }).get(); ${load}`,
+      `const req = [require].toSorted()[0]; ${load}`,
+      `const req = Reflect.construct(Array, [{ get() { return require; } }])[0].get(); ${load}`,
+      `Object.defineProperty(Object.prototype, 'req', { get() { return require; } });
+       const box = {}; const req = box.req; ${load}`,
     ];
 
     for (const source of cases) {

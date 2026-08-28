@@ -164,6 +164,24 @@ describe('fixture 脱敏', () => {
     expect(() => assertGoldenPayloadSafe('X-Auth-Token: header-secret', 'auth.txt')).toThrow(
       'header/键值形态 token',
     );
+    expect(() => assertGoldenPayloadSafe('cookie=session=real-secret', 'auth.txt')).toThrow(
+      'Cookie',
+    );
+    expect(() => assertGoldenPayloadSafe('authorization=Bearer real-secret', 'auth.txt')).toThrow(
+      'Authorization',
+    );
+    expect(() =>
+      assertGoldenPayloadSafe(
+        JSON.stringify({ source: JSON.stringify('cookie=session=real-secret') }),
+        'raw.json',
+      ),
+    ).toThrow('Cookie');
+    expect(() =>
+      assertGoldenPayloadSafe(
+        JSON.stringify({ source: JSON.stringify('authorization=Bearer real-secret') }),
+        'raw.json',
+      ),
+    ).toThrow('Authorization');
   });
 });
 

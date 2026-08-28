@@ -1,8 +1,8 @@
 const SECRET_PATTERNS: ReadonlyArray<{ re: RegExp; message: string }> = [
   { re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, message: '私钥块' },
-  { re: /Authorization:\s*\S+/i, message: 'Authorization' },
-  { re: /\bCookie:\s*\S+/i, message: 'Cookie' },
-  { re: /\bSet-Cookie:\s*\S+/i, message: 'Set-Cookie' },
+  { re: /\bAuthorization\s*[:=]\s*\S+/i, message: 'Authorization' },
+  { re: /\bCookie\s*[:=]\s*\S+/i, message: 'Cookie' },
+  { re: /\bSet-Cookie\s*[:=]\s*\S+/i, message: 'Set-Cookie' },
   { re: /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/, message: 'JWT' },
   {
     re: /(?:^|[\s"'`?&#])(?:(?:x[-_])?api[-_]?key|(?:[a-z0-9]+(?:[-_][a-z0-9]+)*[-_]?)?token)\s*[:=]\s*\S+/i,

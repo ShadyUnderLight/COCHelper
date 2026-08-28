@@ -1303,6 +1303,10 @@ describe('testkit isolation', () => {
         `function use(value) { return value; } const box = { req: require }; const key = runtime.key; use(box[key]);`,
       ),
     ).toEqual([]);
+    expect(extractUnsafeDynamicLoads(`[1].map((loader) => loader(pkg));`)).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(`new Set([1]).forEach((loader) => String(loader));`),
+    ).toEqual([]);
   });
 
   it('会闭合函数返回的动态属性 callable', () => {
@@ -1461,6 +1465,48 @@ describe('testkit isolation', () => {
     expect(extractUnsafeDynamicLoads(forOfShadowed)).toEqual([]);
   });
 
+  it('闭合集合回调、iterator 和 array-like 的 loader 传播', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const pkg = "['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('')";
+    const cases = [
+      `[require].forEach((loader) => loader(${pkg}));`,
+      `[require].reduce((_, loader) => loader(${pkg}), null);`,
+      `[require].find((loader) => loader(${pkg}));`,
+      `[require].map((loader) => loader(${pkg}));`,
+      `[require].filter((loader) => loader(${pkg}));`,
+      `[require].flatMap((loader) => loader(${pkg}));`,
+      `const req = new Set([require]).values().next().value; req(${pkg});`,
+      `const req = new Map([['safe', require]]).values().next().value; req(${pkg});`,
+      `const req = Array.from({ 0: require, length: 1 })[0]; req(${pkg});`,
+    ];
+    for (const source of cases) {
+      expect(findForbiddenImportHits(source, fromMain), source).toEqual(
+        expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+      );
+    }
+  });
+
+  it('拒绝动态代码、动态 node:module import 和未知 new getter', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const pkg = "['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('')";
+    const cases = [
+      `const req = eval('require'); req(${pkg});`,
+      `const run = eval; const req = run('require'); req(${pkg});`,
+      `const req = Function('return require')(); req(${pkg});`,
+      `const Ctor = Function; const req = Ctor('return require')(); req(${pkg});`,
+      `const req = new Function('return require')(); req(${pkg});`,
+      `import('node:module').then(({ createRequire }) => createRequire(__filename)(${pkg}));`,
+      `const req = new Proxy({}, { get() { return require; } }).req; req(${pkg});`,
+    ];
+    for (const source of cases) {
+      expect(findForbiddenImportHits(source, fromMain), source).not.toEqual([]);
+    }
+    expect(extractUnsafeDynamicLoads(`eval('require');`)).toContain('动态代码执行');
+    expect(extractUnsafeDynamicLoads(`import('node:module');`)).toContain(
+      '动态 import node:module',
+    );
+  });
+
   it('生产源文件通过 symlink 指向 testkit 时按真实路径拒绝', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'testkit-symlink-'));
     try {
@@ -1484,6 +1530,42 @@ describe('testkit isolation', () => {
       expect(collectTestkitIsolationHits(root)).toEqual(
         expect.arrayContaining([
           '生产源码通过真实路径到达 testkit：apps/desktop/src/main/escape.ts',
+        ]),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('依赖检查覆盖 optional、peer 与 bundled dependencies', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'testkit-package-fields-'));
+    try {
+      const manifests = {
+        'apps/desktop/package.json': {
+          optionalDependencies: { '@coc-helper/testkit': 'workspace:*' },
+        },
+        'packages/wire/package.json': {
+          peerDependencies: { '@coc-helper/testkit': 'workspace:*' },
+        },
+        'packages/domain/package.json': {
+          bundledDependencies: ['@coc-helper/testkit'],
+        },
+        'packages/contracts/package.json': {
+          bundleDependencies: ['@coc-helper/testkit'],
+        },
+      };
+      for (const [relative, manifest] of Object.entries(manifests)) {
+        const file = path.join(root, relative);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, JSON.stringify(manifest));
+      }
+
+      expect(collectTestkitIsolationHits(root)).toEqual(
+        expect.arrayContaining([
+          'apps/desktop/package.json optionalDependencies 不得依赖 @coc-helper/testkit',
+          'packages/wire/package.json peerDependencies 不得依赖 @coc-helper/testkit',
+          'packages/domain/package.json bundledDependencies 不得捆绑 @coc-helper/testkit',
+          'packages/contracts/package.json bundleDependencies 不得捆绑 @coc-helper/testkit',
         ]),
       );
     } finally {

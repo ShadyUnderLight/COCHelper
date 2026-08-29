@@ -1501,6 +1501,95 @@ describe('testkit isolation', () => {
     }
   });
 
+  it('真实隔离消费者闭合 iterator alias、集合 spread、Map、array-like 与 class 原型', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'testkit-flow-consumer-'));
+    try {
+      for (const manifest of [
+        'apps/desktop/package.json',
+        'packages/wire/package.json',
+        'packages/domain/package.json',
+        'packages/contracts/package.json',
+      ]) {
+        const file = path.join(root, manifest);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, '{}');
+      }
+      const sources = {
+        'iterator-aliases.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iterator = [require].values();
+          const iteratorReq = iterator.next().value;
+          iteratorReq(pkg);
+          function getIterator() { return [require].values(); }
+          const returnedIterator = getIterator();
+          const returnedReq = returnedIterator.next().value;
+          returnedReq(pkg);
+          const next = iterator.next;
+          const nextAliasReq = next.call(iterator).value;
+          nextAliasReq(pkg);
+        `,
+        'collection-spread.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const setSpreadReq = [...new Set([require])][0];
+          setSpreadReq(pkg);
+          const mapSpreadReq = [...new Map([['x', require]]).values()][0];
+          mapSpreadReq(pkg);
+        `,
+        'map-get.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const mapReq = new Map([['x', require]]).get('x');
+          mapReq(pkg);
+        `,
+        'array-like.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const arrayLikeReq = Array.from({ 0: require, length: runtime.length })[0];
+          arrayLikeReq(pkg);
+          const getterArrayLikeReq = Array.from({
+            0: require,
+            get length() { return 1; },
+          })[0];
+          getterArrayLikeReq(pkg);
+        `,
+        'class-prototype.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          class Box {
+            safe = 1;
+          }
+          const key = runtime.key;
+          Object.defineProperty(Box.prototype, key, {
+            get() { return require; },
+          });
+          const classReq = new Box().get;
+          classReq(pkg);
+          class Child extends runtime.Base {
+            safe = 1;
+          }
+          const inheritedReq = new Child().loader;
+          inheritedReq(pkg);
+          const dynamicProto = {};
+          Object.setPrototypeOf(dynamicProto, runtime.prototype);
+          const dynamicProtoReq = dynamicProto.req;
+          dynamicProtoReq(pkg);
+        `,
+      };
+      for (const [name, source] of Object.entries(sources)) {
+        const sourceFile = path.join(root, 'apps/desktop/src/main', name);
+        mkdirSync(path.dirname(sourceFile), { recursive: true });
+        writeFileSync(sourceFile, source);
+      }
+
+      expect(collectTestkitIsolationHits(root)).toEqual(
+        expect.arrayContaining(
+          Object.keys(sources).map(
+            (name) => `apps/desktop/src/main/${name} 不得 import @coc-helper/testkit`,
+          ),
+        ),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('拒绝动态代码、动态 node:module import 和未知 new getter', () => {
     const fromMain = 'apps/desktop/src/main/index.ts';
     const pkg = "['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('')";

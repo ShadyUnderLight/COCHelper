@@ -199,14 +199,7 @@ function collectModuleLoads(text, fileName) {
     if (SAFE_OPAQUE_OBJECT_CONSTRUCTORS.has(constructor.text)) {
       return true;
     }
-    const classKey = referenceKey(constructor);
-    if (classKey === null) {
-      return false;
-    }
-    const prefixes = [`${classKey}.`, `${classKey}.prototype.`];
-    return [...valueExprs.keys(), ...functionReturns.keys(), ...arrayShapes.keys()].some((key) =>
-      prefixes.some((prefix) => key.startsWith(prefix)),
-    );
+    return false;
   };
 
   const isConcreteIndexedValue = (value) => {
@@ -1195,7 +1188,11 @@ function collectModuleLoads(text, fileName) {
     }
     const shape = shapeForValue(unwrapped);
     if (shape?.values) {
-      return { items: shape.values.filter(Boolean), complete: !shape.opaque, dropped: false };
+      return {
+        items: [...shape.values],
+        complete: !shape.opaque || shapeHasOnlyConcreteValues(shape),
+        dropped: false,
+      };
     }
     return null;
   };
@@ -1690,6 +1687,17 @@ function collectModuleLoads(text, fileName) {
     const unwrapped = unwrapExpr(expr);
     if (!unwrapped) {
       return null;
+    }
+    const mapResult = mapGetValue(unwrapped);
+    if (mapResult) {
+      if (mapResult.kind === 'factory' || mapResult.kind === 'requirer') {
+        return mapResult.kind;
+      }
+      const valueKind = dangerousConcreteValueKind(mapResult.value);
+      if (valueKind) {
+        return valueKind;
+      }
+      return mapResult.unknown ? 'requirer' : null;
     }
     const iteratorShape = iteratorValueShape(unwrapped);
     if (iteratorShape) {
@@ -2482,10 +2490,24 @@ function collectModuleLoads(text, fileName) {
           continue;
         }
         if (ts.isSpreadElement(el)) {
-          const inner = shapeFromValue(el.expression, seen);
-          opaque = opaque || inner.opaque;
-          kinds.push(...inner.kinds);
-          values.push(...(inner.values ?? inner.kinds.map(() => undefined)));
+          const expanded = expandSpread(el.expression);
+          if (expanded === null) {
+            opaque = true;
+            kinds.push(null);
+            values.push(undefined);
+            continue;
+          }
+          const spreadItems = [...expanded.items];
+          if (!expanded.complete || expanded.dropped) {
+            spreadItems.push(undefined);
+            opaque = true;
+          }
+          for (const item of spreadItems) {
+            const kind = item === undefined ? null : classifyExpr(item);
+            opaque = opaque || kind === null;
+            kinds.push(kind);
+            values.push(item);
+          }
           continue;
         }
         const kind = classifyExpr(el);
@@ -2829,25 +2851,50 @@ function collectModuleLoads(text, fileName) {
       return undefined;
     }
     const lengthExpr = objectLiteralPropertyValue(unwrapped, 'length');
-    const length = staticIndexValue(lengthExpr);
-    if (length === null || length < 0) {
-      return undefined;
-    }
+    const lengthIsAccessor = Boolean(
+      lengthExpr && ts.isGetAccessorDeclaration(unwrapExpr(lengthExpr)),
+    );
+    const staticLength = lengthIsAccessor ? null : staticIndexValue(lengthExpr);
+    const length = staticLength;
+    const numericPropertyIndexes = unwrapped.properties
+      .map((property) => {
+        const key = ts.isSpreadAssignment(property) ? null : propertyNameText(property.name);
+        return key !== null && /^\d+$/.test(key) ? Number(key) : null;
+      })
+      .filter((index) => index !== null);
+    const unknownLength = length === null;
+    const slotCount = unknownLength
+      ? Math.max(1, ...numericPropertyIndexes.map((index) => index + 1))
+      : Math.max(0, length);
     const kinds = [];
     const values = [];
-    let opaque = false;
-    for (let i = 0; i < length; i += 1) {
+    let opaque = unknownLength || unwrapped.properties.some((property) => ts.isSpreadAssignment(property));
+    const valueFromGetter = (value) => {
+      const fn = unwrapExpr(value);
+      if (!fn || !ts.isGetAccessorDeclaration(fn)) {
+        return value;
+      }
+      const returns = collectReturnExprs(fn).flatMap((returned) => expandBranchExprs(returned));
+      for (const returned of returns) {
+        const kind = classifyExpr(returned);
+        if (kind === 'factory' || kind === 'requirer') {
+          return returned;
+        }
+      }
+      return returns.length === 1 ? returns[0] : value;
+    };
+    for (let i = 0; i < slotCount; i += 1) {
       const value = objectLiteralPropertyValue(unwrapped, String(i));
-      if (value === undefined) {
-        opaque = true;
+      if (value === undefined || value?.opaque || value?.returns === 'opaque') {
         kinds.push(null);
         values.push(undefined);
         continue;
       }
-      const kind = classifyExpr(value);
+      const resolvedValue = valueFromGetter(value);
+      const kind = classifyExpr(resolvedValue);
       opaque = opaque || kind === null;
       kinds.push(kind);
-      values.push(value);
+      values.push(resolvedValue);
     }
     return shapeOf(opaque, kinds, values);
   };
@@ -3071,7 +3118,12 @@ function collectModuleLoads(text, fileName) {
     if (key !== null && ts.isIdentifier(unwrapped)) {
       const decl = enclosingBindingName(unwrapped);
       if (decl) {
-        return scopedArrayShapes.has(decl) ? scopedArrayShapes.get(decl) : undefined;
+        const scoped = scopedArrayShapes.get(decl);
+        const stored = arrayShapes.get(key);
+        if (stored?.opaque) {
+          return stored;
+        }
+        return scoped ?? stored;
       }
     }
     return key === null ? undefined : arrayShapes.get(key);
@@ -3092,6 +3144,110 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
+  const iteratorShapeForExpression = (valueExpr, seen = new Set()) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped || seen.has(unwrapped)) {
+      return undefined;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+
+    const aliased = resolveAliasedValue(unwrapped);
+    if (aliased && aliased !== unwrapped) {
+      const resolved = iteratorShapeForExpression(aliased, nextSeen);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    const parts = arrayCallParts(unwrapped);
+    if (parts && ARRAY_ITERATOR_METHODS.has(parts.method)) {
+      const sourceShape = shapeForValue(parts.object) ?? shapeFromValue(parts.object);
+      if (!sourceShape) {
+        return opaqueArrayShape();
+      }
+      if (parts.method === 'values') {
+        return sourceShape;
+      }
+      if (parts.method === 'entries') {
+        return shapeFromIteratorEntries(parts.object, sourceShape);
+      }
+      return shapeFromIteratorKeys(parts.object, sourceShape);
+    }
+
+    const generator = generatorShapeForCall(unwrapped);
+    if (generator) {
+      return generator;
+    }
+
+    if (ts.isCallExpression(unwrapped)) {
+      const returned = returnExprsForCallable(unwrapped.expression, nextSeen);
+      if (returned.length > 0) {
+        const shapes = [];
+        let unresolved = false;
+        for (const expression of returned.flatMap((item) => expandBranchExprs(item))) {
+          const shape = iteratorShapeForExpression(expression, nextSeen);
+          if (shape) {
+            shapes.push(shape);
+          } else {
+            unresolved = true;
+          }
+        }
+        if (shapes.length > 0) {
+          return mergeArrayShapes(...shapes, ...(unresolved ? [opaqueArrayShape()] : []));
+        }
+      }
+    }
+
+    return undefined;
+  };
+
+  const iteratorReceiverFromNextCall = (nextCall) => {
+    const callee = unwrapExpr(nextCall?.expression);
+    const resolveNextMember = (expr, seen = new Set()) => {
+      const unwrapped = unwrapExpr(expr);
+      if (!unwrapped || seen.has(unwrapped)) {
+        return undefined;
+      }
+      const nextSeen = new Set(seen);
+      nextSeen.add(unwrapped);
+      const resolved = resolveAliasedValue(unwrapped);
+      if (resolved && resolved !== unwrapped) {
+        const fromAlias = resolveNextMember(resolved, nextSeen);
+        if (fromAlias) {
+          return fromAlias;
+        }
+      }
+      const member = staticMember(unwrapped);
+      if (member?.name === 'next') {
+        return member.object;
+      }
+      const bound = unwrapBindCall(unwrapped);
+      if (bound.target && bound.target !== unwrapped) {
+        const fromBind = resolveNextMember(bound.target, nextSeen);
+        if (fromBind) {
+          return bound.thisArg ?? fromBind;
+        }
+      }
+      return undefined;
+    };
+
+    const directReceiver = resolveNextMember(callee);
+    if (directReceiver) {
+      return directReceiver;
+    }
+    const access = staticMember(callee);
+    if (!access || (access.name !== 'call' && access.name !== 'apply')) {
+      return undefined;
+    }
+    const borrowedTarget = resolveBorrowedCallTarget(callee) ?? access.object;
+    const targetReceiver = resolveNextMember(borrowedTarget);
+    if (targetReceiver) {
+      return targetReceiver;
+    }
+    return borrowedCallArgsFrom(nextCall.arguments, access.name)?.thisArg;
+  };
+
   const iteratorSourceInfo = (valueExpr) => {
     const valueMember = staticMember(valueExpr);
     if (valueMember?.name !== 'value') {
@@ -3101,23 +3257,34 @@ function collectModuleLoads(text, fileName) {
     if (!nextCall || !ts.isCallExpression(nextCall)) {
       return undefined;
     }
-    const nextMember = staticMember(nextCall.expression);
-    if (nextMember?.name !== 'next') {
+    const iterator = iteratorReceiverFromNextCall(nextCall);
+    if (!iterator) {
       return undefined;
     }
-    const iterator = nextMember.object;
-    const parts = arrayCallParts(iterator);
-    if (parts && ARRAY_ITERATOR_METHODS.has(parts.method)) {
-      return {
-        method: parts.method,
-        receiver: parts.object,
-        sourceShape: shapeForValue(parts.object) ?? shapeFromValue(parts.object),
-      };
+    const sourceShape = iteratorShapeForExpression(iterator) ?? opaqueArrayShape();
+    const parts = arrayCallParts(resolveAliasedValue(iterator));
+    const method = parts?.method ?? 'values';
+    return {
+      method,
+      receiver: parts?.object ?? iterator,
+      sourceShape,
+    };
+  };
+
+  const staticMapKeyValue = (expr) => {
+    const string = staticStringValue(expr);
+    if (string !== null) {
+      return `string:${string}`;
     }
-    const generator = generatorShapeForCall(iterator);
-    return generator
-      ? { method: 'values', receiver: iterator, sourceShape: generator }
-      : undefined;
+    const index = staticIndexValue(expr);
+    if (index !== null) {
+      return `number:${index}`;
+    }
+    const unwrapped = unwrapExpr(expr);
+    if (unwrapped && ts.isIdentifier(unwrapped) && (requirers.has(unwrapped.text) || factories.has(unwrapped.text))) {
+      return `reference:${unwrapped.text}`;
+    }
+    return null;
   };
 
   const mapEntryShapes = (receiver) => {
@@ -3136,7 +3303,23 @@ function collectModuleLoads(text, fileName) {
       shapeForValue(unwrapped.arguments[0]) ??
       shapeFromArrayLike(unwrapped.arguments[0]) ??
       shapeFromValue(unwrapped.arguments[0]);
+    const shapeIsResolved = (shape) =>
+      Boolean(
+        shape &&
+          shape.kinds.length > 0 &&
+          shape.kinds.every((kind, index) => {
+            if (kind !== null) {
+              return true;
+            }
+            const value = shapeValues(shape)[index];
+            return !shape.opaque || isConcreteIndexedValue(value);
+          }),
+      );
+    const sourceOpaque = source.opaque && !shapeIsResolved(source);
     const values = shapeValues(source);
+    if (values.length === 0 && source.opaque) {
+      return [{ key: undefined, value: undefined, keyKind: null, valueKind: null, opaque: true }];
+    }
     return values.map((entry, index) => {
       const entryShape = entry ? shapeForValue(entry) : undefined;
       if (!entryShape || entryShape.kinds.length < 2) {
@@ -3154,10 +3337,50 @@ function collectModuleLoads(text, fileName) {
         value: entryValues[1],
         keyKind: entryShape.kinds[0] ?? classifyExpr(entryValues[0]),
         valueKind: entryShape.kinds[1] ?? classifyExpr(entryValues[1]),
-        opaque: source.opaque || entryShape.opaque,
+        opaque: sourceOpaque || (entryShape.opaque && !shapeIsResolved(entryShape)),
         index,
       };
     });
+  };
+
+  const mapGetValue = (expr) => {
+    if (!ts.isCallExpression(expr)) {
+      return undefined;
+    }
+    const access = staticMember(expr.expression);
+    if (access?.name !== 'get') {
+      return undefined;
+    }
+    const receiver = resolveAliasedValue(access.object);
+    if (!receiver || !ts.isNewExpression(receiver)) {
+      return undefined;
+    }
+    const constructor = unwrapExpr(receiver.expression);
+    if (!constructor || !ts.isIdentifier(constructor) || constructor.text !== 'Map') {
+      return undefined;
+    }
+    const entries = mapEntryShapes(receiver);
+    const requested = expr.arguments[0];
+    const keyValue = requested ? staticMapKeyValue(requested) : null;
+    if (keyValue === null) {
+      return { unknown: true, kind: null, value: undefined };
+    }
+    let uncertain = false;
+    for (const entry of entries ?? []) {
+      const entryKey = staticMapKeyValue(entry.key);
+      if (entryKey === null || entry.opaque) {
+        uncertain = true;
+        continue;
+      }
+      if (entryKey === keyValue) {
+        return {
+          unknown: false,
+          kind: entry.valueKind ?? classifyExpr(entry.value),
+          value: entry.value,
+        };
+      }
+    }
+    return { unknown: uncertain, kind: null, value: undefined };
   };
 
   const shapeFromIteratorEntries = (receiver, sourceShape) => {
@@ -3218,16 +3441,7 @@ function collectModuleLoads(text, fileName) {
 
   const iteratorValueShape = (valueExpr) => {
     const info = iteratorSourceInfo(valueExpr);
-    if (!info) {
-      return undefined;
-    }
-    if (info.method === 'values') {
-      return info.sourceShape;
-    }
-    if (info.method === 'entries') {
-      return shapeFromIteratorEntries(info.receiver, info.sourceShape);
-    }
-    return shapeFromIteratorKeys(info.receiver, info.sourceShape);
+    return info?.sourceShape;
   };
 
   const knownArrayShape = (valueExpr) => shapeForValue(valueExpr);
@@ -3258,15 +3472,13 @@ function collectModuleLoads(text, fileName) {
       return true;
     }
     if (ts.isNewExpression(unwrapped)) {
-      const classKey = referenceKey(unwrapped.expression);
-      if (classKey === null) {
-        return true;
-      }
-      const prefixes = [`${classKey}.`, `${classKey}.prototype.`];
-      for (const factKey of [...valueExprs.keys(), ...functionReturns.keys(), ...arrayShapes.keys()]) {
-        if (prefixes.some((prefix) => factKey.startsWith(prefix))) {
-          return false;
-        }
+      const constructor = unwrapExpr(unwrapped.expression);
+      if (
+        constructor &&
+        ts.isIdentifier(constructor) &&
+        SAFE_OPAQUE_OBJECT_CONSTRUCTORS.has(constructor.text)
+      ) {
+        return false;
       }
       return true;
     }

@@ -383,6 +383,24 @@ function collectModuleLoads(text, fileName) {
   const isGlobalObjectIdentifier = (expr) =>
     ['globalThis', 'global', 'window'].some((name) => isObjectIdentifier(expr, name));
 
+  const isGlobalObjectValue = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || seen.has(unwrapped)) {
+      return false;
+    }
+    if (isGlobalObjectIdentifier(unwrapped)) {
+      return true;
+    }
+    if (!ts.isIdentifier(unwrapped)) {
+      return false;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const bound = enclosingBindingName(unwrapped);
+    const stored = bound ? scopedValueExprs.get(bound) : valueExprs.get(unwrapped.text);
+    return Boolean(stored && stored !== unwrapped && isGlobalObjectValue(stored, nextSeen));
+  };
+
   const isObjectAssignCallee = (expr) => {
     const unwrapped = unwrapExpr(expr);
     if (!unwrapped) {
@@ -668,7 +686,7 @@ function collectModuleLoads(text, fileName) {
       if (
         access &&
         (access.name === 'eval' || access.name === 'Function') &&
-        isGlobalObjectIdentifier(access.object)
+        isGlobalObjectValue(access.object)
       ) {
         return true;
       }
@@ -3344,10 +3362,26 @@ function collectModuleLoads(text, fileName) {
       return undefined;
     }
     const access = staticMember(expr.expression);
-    if (access?.name !== 'get') {
+    let receiver;
+    let requested;
+    let unresolvable = false;
+    if (access?.name === 'get') {
+      receiver = access.object;
+      requested = expr.arguments[0];
+    } else if (access?.name === 'call' || access?.name === 'apply') {
+      const target = resolveAliasedValue(resolveBorrowedCallTarget(expr.expression) ?? access.object);
+      const targetMember = staticMember(target);
+      if (targetMember?.name !== 'get') {
+        return undefined;
+      }
+      const borrowed = borrowedCallArgsFrom(expr.arguments, access.name);
+      receiver = targetMember.object;
+      requested = borrowed?.args[0];
+      unresolvable = !borrowed || borrowed.unresolvable || borrowed.args.length < 1;
+    } else {
       return undefined;
     }
-    const receiver = resolveAliasedValue(access.object);
+    receiver = resolveAliasedValue(receiver);
     if (!receiver || !ts.isNewExpression(receiver)) {
       return undefined;
     }
@@ -3355,8 +3389,10 @@ function collectModuleLoads(text, fileName) {
     if (!constructor || !ts.isIdentifier(constructor) || constructor.text !== 'Map') {
       return undefined;
     }
+    if (unresolvable) {
+      return { unknown: true, kind: null, value: undefined };
+    }
     const entries = mapEntryShapes(receiver);
-    const requested = expr.arguments[0];
     const keyValue = requested ? staticMapKeyValue(requested) : null;
     if (keyValue === null) {
       return { unknown: true, kind: null, value: undefined };
@@ -4727,7 +4763,7 @@ function collectModuleLoads(text, fileName) {
         if (
           ts.isIdentifier(element.name) &&
           (key === 'eval' || key === 'Function') &&
-          isGlobalObjectIdentifier(valueExpr)
+          isGlobalObjectValue(valueExpr)
         ) {
           dynamicCodeAliases.add(element.name.text);
           dynamicCodeBindings.add(element.name);

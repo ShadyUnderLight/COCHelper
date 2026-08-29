@@ -1545,6 +1545,13 @@ describe('testkit isolation', () => {
           const mapReq = new Map([['x', require]]).get('x');
           mapReq(pkg);
         `,
+        'map-get-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const map = new Map([['x', require]]);
+          const get = map.get;
+          const mapReq = get.call(map, 'x');
+          mapReq(pkg);
+        `,
         'array-like.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           const arrayLikeReq = Array.from({ 0: require, length: runtime.length })[0];
@@ -1576,6 +1583,19 @@ describe('testkit isolation', () => {
           const dynamicProtoReq = dynamicProto.req;
           dynamicProtoReq(pkg);
         `,
+        'dynamic-code-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const root = globalThis;
+          const req = root.Function('return require')();
+          req(pkg);
+        `,
+        'dynamic-code-destructure.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const root = globalThis;
+          const { Function: DynamicFunction } = root;
+          const req = DynamicFunction('return require')();
+          req(pkg);
+        `,
       };
       for (const [name, source] of Object.entries(sources)) {
         const sourceFile = path.join(root, 'apps/desktop/src/main', name);
@@ -1586,7 +1606,10 @@ describe('testkit isolation', () => {
       expect(collectTestkitIsolationHits(root)).toEqual(
         expect.arrayContaining(
           Object.keys(sources).map(
-            (name) => `apps/desktop/src/main/${name} 不得 import @coc-helper/testkit`,
+            (name) =>
+              name === 'dynamic-code-alias.ts' || name === 'dynamic-code-destructure.ts'
+                ? `apps/desktop/src/main/${name} 不得使用无法静态解析的动态加载（动态代码执行）`
+                : `apps/desktop/src/main/${name} 不得 import @coc-helper/testkit`,
           ),
         ),
       );

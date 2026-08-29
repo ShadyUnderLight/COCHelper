@@ -1190,7 +1190,7 @@ function collectModuleLoads(text, fileName) {
     if (shape?.values) {
       return {
         items: [...shape.values],
-        complete: !shape.opaque || shapeHasOnlyConcreteValues(shape),
+        complete: !shape.opaque,
         dropped: false,
       };
     }
@@ -3303,19 +3303,15 @@ function collectModuleLoads(text, fileName) {
       shapeForValue(unwrapped.arguments[0]) ??
       shapeFromArrayLike(unwrapped.arguments[0]) ??
       shapeFromValue(unwrapped.arguments[0]);
-    const shapeIsResolved = (shape) =>
+    const shapeHasKnownConcreteValues = (shape) =>
       Boolean(
         shape &&
-          shape.kinds.length > 0 &&
-          shape.kinds.every((kind, index) => {
-            if (kind !== null) {
-              return true;
-            }
-            const value = shapeValues(shape)[index];
-            return !shape.opaque || isConcreteIndexedValue(value);
-          }),
+          shape.values &&
+          shape.values.length === shape.kinds.length &&
+          shape.values.length > 0 &&
+          shape.values.every((value) => value !== undefined && isConcreteIndexedValue(value)),
       );
-    const sourceOpaque = source.opaque && !shapeIsResolved(source);
+    const sourceOpaque = source.opaque && !shapeHasKnownConcreteValues(source);
     const values = shapeValues(source);
     if (values.length === 0 && source.opaque) {
       return [{ key: undefined, value: undefined, keyKind: null, valueKind: null, opaque: true }];
@@ -3337,7 +3333,7 @@ function collectModuleLoads(text, fileName) {
         value: entryValues[1],
         keyKind: entryShape.kinds[0] ?? classifyExpr(entryValues[0]),
         valueKind: entryShape.kinds[1] ?? classifyExpr(entryValues[1]),
-        opaque: sourceOpaque || (entryShape.opaque && !shapeIsResolved(entryShape)),
+        opaque: sourceOpaque || (entryShape.opaque && !shapeHasKnownConcreteValues(entryShape)),
         index,
       };
     });

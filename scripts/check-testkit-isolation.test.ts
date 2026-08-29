@@ -1335,6 +1335,11 @@ describe('testkit isolation', () => {
         `const values = new Map(); values.get(runtime.key);`,
       ),
     ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const value = new Map([['x', 1]]).get('x'); String(value);`,
+      ),
+    ).toEqual([]);
   });
 
   it('不会让透传到普通函数的动态属性参数误报', () => {

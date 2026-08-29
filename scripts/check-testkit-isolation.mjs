@@ -164,6 +164,7 @@ function collectModuleLoads(text, fileName) {
   const objectGetOwnPropertyDescriptorAliases = new Set();
   const dynamicCodeAliases = new Set();
   const dynamicCodeBindings = new WeakSet();
+  const mapGetReceivers = new WeakMap();
   const functionParams = new Map();
   const prototypeExprs = new Map();
   const scopedBindingKinds = new WeakMap();
@@ -3357,42 +3358,87 @@ function collectModuleLoads(text, fileName) {
     });
   };
 
+  const mapGetTargetInfo = (target, seen = new Set()) => {
+    const unwrapped = target ? unwrapExpr(target) : undefined;
+    if (!unwrapped || seen.has(unwrapped)) {
+      return undefined;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+
+    const bound = unwrapBindCall(unwrapped);
+    if (bound.target && bound.target !== unwrapped) {
+      const nested = mapGetTargetInfo(bound.target, nextSeen);
+      if (nested) {
+        return {
+          receiver: nested.receiver,
+          boundArgs: [...nested.boundArgs, ...bound.boundArgs],
+        };
+      }
+    }
+
+    const member = staticMember(unwrapped);
+    if (member?.name === 'get') {
+      const receiver = resolveAliasedValue(member.object);
+      const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
+      if (
+        receiver &&
+        ts.isNewExpression(receiver) &&
+        constructor &&
+        ts.isIdentifier(constructor) &&
+        constructor.text === 'Map'
+      ) {
+        return { receiver, boundArgs: [] };
+      }
+    }
+
+    if (ts.isIdentifier(unwrapped)) {
+      const binding = enclosingBindingName(unwrapped);
+      const destructuredReceiver = binding ? mapGetReceivers.get(binding) : undefined;
+      if (destructuredReceiver) {
+        return { receiver: destructuredReceiver, boundArgs: [] };
+      }
+      const aliased = resolveAliasedValue(unwrapped);
+      if (aliased && aliased !== unwrapped) {
+        const nested = mapGetTargetInfo(aliased, nextSeen);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+    return undefined;
+  };
+
   const mapGetValue = (expr) => {
     if (!ts.isCallExpression(expr)) {
       return undefined;
     }
-    const access = staticMember(expr.expression);
-    let receiver;
-    let requested;
-    let unresolvable = false;
-    if (access?.name === 'get') {
-      receiver = access.object;
-      requested = expr.arguments[0];
-    } else if (access?.name === 'call' || access?.name === 'apply') {
-      const target = resolveAliasedValue(resolveBorrowedCallTarget(expr.expression) ?? access.object);
-      const targetMember = staticMember(target);
-      if (targetMember?.name !== 'get') {
-        return undefined;
-      }
-      const borrowed = borrowedCallArgsFrom(expr.arguments, access.name);
-      receiver = targetMember.object;
-      requested = borrowed?.args[0];
-      unresolvable = !borrowed || borrowed.unresolvable || borrowed.args.length < 1;
-    } else {
+    const callee = unwrapExpr(expr.expression);
+    const applied = callApplyBindingFrom(callee, expr.arguments);
+    const targetInfo = applied
+      ? mapGetTargetInfo(applied.targetExpr)
+      : mapGetTargetInfo(callee);
+    if (!targetInfo) {
       return undefined;
     }
-    receiver = resolveAliasedValue(receiver);
-    if (!receiver || !ts.isNewExpression(receiver)) {
-      return undefined;
-    }
-    const constructor = unwrapExpr(receiver.expression);
-    if (!constructor || !ts.isIdentifier(constructor) || constructor.text !== 'Map') {
+    const args = applied ? applied.fnArgs : [...targetInfo.boundArgs, ...expr.arguments];
+    const unresolvable = Boolean(applied?.unresolvable) || args.length < 1;
+    const receiver = resolveAliasedValue(targetInfo.receiver);
+    const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
+    if (
+      !receiver ||
+      !ts.isNewExpression(receiver) ||
+      !constructor ||
+      !ts.isIdentifier(constructor) ||
+      constructor.text !== 'Map'
+    ) {
       return undefined;
     }
     if (unresolvable) {
       return { unknown: true, kind: null, value: undefined };
     }
     const entries = mapEntryShapes(receiver);
+    const requested = args[0];
     const keyValue = requested ? staticMapKeyValue(requested) : null;
     if (keyValue === null) {
       return { unknown: true, kind: null, value: undefined };
@@ -4817,6 +4863,19 @@ function collectModuleLoads(text, fileName) {
         }
         if (ts.isIdentifier(element.name) && (key === 'call' || key === 'apply')) {
           callApplyAliases.add(element.name.text);
+        }
+        if (ts.isIdentifier(element.name) && key === 'get') {
+          const receiver = resolveAliasedValue(valueExpr);
+          const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
+          if (
+            receiver &&
+            ts.isNewExpression(receiver) &&
+            constructor &&
+            ts.isIdentifier(constructor) &&
+            constructor.text === 'Map'
+          ) {
+            mapGetReceivers.set(element.name, valueExpr);
+          }
         }
         const source = resolveObjectProperty(valueExpr, key);
         bindPattern(

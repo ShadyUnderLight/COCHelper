@@ -1340,6 +1340,11 @@ describe('testkit isolation', () => {
         `const value = new Map([['x', 1]]).get('x'); String(value);`,
       ),
     ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const map = new Map([['x', 1]]); const get = map.get.bind(map); String(get('x'));`,
+      ),
+    ).toEqual([]);
   });
 
   it('不会让透传到普通函数的动态属性参数误报', () => {
@@ -1550,6 +1555,26 @@ describe('testkit isolation', () => {
           const map = new Map([['x', require]]);
           const get = map.get;
           const mapReq = get.call(map, 'x');
+          mapReq(pkg);
+        `,
+        'map-get-bound.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const map = new Map([['x', require]]);
+          const get = map.get.bind(map);
+          const mapReq = get('x');
+          mapReq(pkg);
+        `,
+        'map-get-destructure.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const map = new Map([['x', require]]);
+          const { get } = map;
+          const mapReq = get.call(map, 'x');
+          mapReq(pkg);
+        `,
+        'map-get-reflect.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const map = new Map([['x', require]]);
+          const mapReq = Reflect.apply(map.get, map, ['x']);
           mapReq(pkg);
         `,
         'array-like.ts': `

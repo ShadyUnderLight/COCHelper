@@ -78,6 +78,7 @@ const ARRAY_METHODS = new Set([
   ...ARRAY_CALLBACK_METHODS,
   ...ARRAY_ITERATOR_METHODS,
 ]);
+const KEYED_COLLECTION_CONSTRUCTORS = new Set(['Map', 'WeakMap']);
 const LOADERISH_PROPERTIES = new Set(['get', 'require', 'createRequire', 'loader', 'req']);
 const SAFE_OPAQUE_OBJECT_CONSTRUCTORS = new Set([
   'Map',
@@ -3300,8 +3301,9 @@ function collectModuleLoads(text, fileName) {
       return `number:${index}`;
     }
     const unwrapped = unwrapExpr(expr);
-    if (unwrapped && ts.isIdentifier(unwrapped) && (requirers.has(unwrapped.text) || factories.has(unwrapped.text))) {
-      return `reference:${unwrapped.text}`;
+    const reference = unwrapped ? referenceKey(unwrapped) : null;
+    if (reference !== null) {
+      return `reference:${reference}`;
     }
     return null;
   };
@@ -3312,7 +3314,11 @@ function collectModuleLoads(text, fileName) {
       return undefined;
     }
     const constructor = unwrapExpr(unwrapped.expression);
-    if (!constructor || !ts.isIdentifier(constructor) || constructor.text !== 'Map') {
+    if (
+      !constructor ||
+      !ts.isIdentifier(constructor) ||
+      !KEYED_COLLECTION_CONSTRUCTORS.has(constructor.text)
+    ) {
       return undefined;
     }
     if (!unwrapped.arguments || unwrapped.arguments.length === 0) {
@@ -3347,12 +3353,21 @@ function collectModuleLoads(text, fileName) {
         };
       }
       const entryValues = shapeValues(entryShape);
+      const key = entryValues[0];
+      const value = entryValues[1];
+      const keyKind = entryShape.kinds[0] ?? classifyExpr(key);
+      const valueKind = entryShape.kinds[1] ?? classifyExpr(value);
+      const entryIsResolved =
+        staticMapKeyValue(key) !== null &&
+        (valueKind !== null || isConcreteIndexedValue(value));
       return {
-        key: entryValues[0],
-        value: entryValues[1],
-        keyKind: entryShape.kinds[0] ?? classifyExpr(entryValues[0]),
-        valueKind: entryShape.kinds[1] ?? classifyExpr(entryValues[1]),
-        opaque: sourceOpaque || (entryShape.opaque && !shapeHasKnownConcreteValues(entryShape)),
+        key,
+        value,
+        keyKind,
+        valueKind,
+        opaque:
+          (sourceOpaque || (entryShape.opaque && !shapeHasKnownConcreteValues(entryShape))) &&
+          !entryIsResolved,
         index,
       };
     });
@@ -3393,7 +3408,11 @@ function collectModuleLoads(text, fileName) {
     }
     if (ts.isNewExpression(unwrapped)) {
       const constructor = unwrapExpr(unwrapped.expression);
-      if (constructor && ts.isIdentifier(constructor) && constructor.text === 'Map') {
+      if (
+        constructor &&
+        ts.isIdentifier(constructor) &&
+        KEYED_COLLECTION_CONSTRUCTORS.has(constructor.text)
+      ) {
         return { receivers: [unwrapped], uncertain: false, recognized: true };
       }
       return { receivers: [], uncertain: false, recognized: false };
@@ -3418,6 +3437,21 @@ function collectModuleLoads(text, fileName) {
       return { receivers: [], uncertain: false, recognized: false };
     }
     if (ts.isCallExpression(unwrapped)) {
+      const mapResult = mapGetValue(unwrapped);
+      if (mapResult) {
+        if (mapResult.value !== undefined) {
+          const nested = mapReceiverCandidates(mapResult.value, nextSeen);
+          if (nested.recognized) {
+            return nested;
+          }
+          if (!isConcreteIndexedValue(mapResult.value)) {
+            return { receivers: [], uncertain: true, recognized: true };
+          }
+        }
+        if (mapResult.unknown) {
+          return { receivers: [], uncertain: true, recognized: true };
+        }
+      }
       const invocation = invocationOf(unwrapped);
       if (invocation && isReflectGetCallee(invocation.callee)) {
         const property = invocation.args.length >= 2 ? staticStringValue(invocation.args[1]) : null;
@@ -3530,7 +3564,11 @@ function collectModuleLoads(text, fileName) {
     }
     if (ts.isNewExpression(unwrapped)) {
       const constructor = unwrapExpr(unwrapped.expression);
-      if (constructor && ts.isIdentifier(constructor) && constructor.text === 'Map') {
+      if (
+        constructor &&
+        ts.isIdentifier(constructor) &&
+        KEYED_COLLECTION_CONSTRUCTORS.has(constructor.text)
+      ) {
         return { receivers: [unwrapped], receiver: unwrapped, uncertain: false, boundArgs: [] };
       }
     }
@@ -3610,7 +3648,7 @@ function collectModuleLoads(text, fileName) {
         ts.isNewExpression(receiver) &&
         constructor &&
         ts.isIdentifier(constructor) &&
-        constructor.text === 'Map'
+        KEYED_COLLECTION_CONSTRUCTORS.has(constructor.text)
       );
     });
     if (maps.length === 0 && !targetInfo.uncertain) {
@@ -3632,7 +3670,7 @@ function collectModuleLoads(text, fileName) {
       const entries = mapEntryShapes(receiver);
       for (const entry of entries ?? []) {
         const entryKey = staticMapKeyValue(entry.key);
-        if (entryKey === null || entry.opaque) {
+        if (entryKey === null) {
           uncertain = true;
           continue;
         }
@@ -3644,6 +3682,11 @@ function collectModuleLoads(text, fileName) {
           matched = true;
           matchedKind = kind;
           matchedValue = entry.value;
+          uncertain = uncertain || entry.opaque;
+          continue;
+        }
+        if (entry.opaque) {
+          uncertain = true;
         }
       }
     }

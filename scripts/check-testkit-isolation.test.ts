@@ -1372,6 +1372,21 @@ describe('testkit isolation', () => {
     ).toEqual([]);
     expect(
       extractUnsafeDynamicLoads(
+        `const value = new Map([['m', new Map([['x', 1]])]]).get('m').get('x'); String(value);`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const key = {}; const value = new WeakMap([[key, 1]]).get(key); String(value);`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const key = {}; const weak = new WeakMap([[key, 1]]); const get = weak.get.bind(weak); String(get(key));`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
         `const map = new Map([['x', 1]]); const get = Reflect.get(map, 'get'); String(get.call(map, 'x'));`,
       ),
     ).toEqual([]);
@@ -1660,6 +1675,32 @@ describe('testkit isolation', () => {
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           const box = { map: new Map([['x', require]]) };
           const mapReq = Reflect.get(box, 'map').get('x');
+          mapReq(pkg);
+        `,
+        'map-get-chained.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const mapReq = new Map([['m', new Map([['x', require]])]]).get('m').get('x');
+          mapReq(pkg);
+        `,
+        'weak-map-get.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const key = {};
+          const mapReq = new WeakMap([[key, require]]).get(key);
+          mapReq(pkg);
+        `,
+        'weak-map-get-bound.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const key = {};
+          const weak = new WeakMap([[key, require]]);
+          const get = weak.get.bind(weak);
+          const mapReq = get(key);
+          mapReq(pkg);
+        `,
+        'weak-map-get-reflect.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const key = {};
+          const weak = new WeakMap([[key, require]]);
+          const mapReq = Reflect.apply(weak.get, weak, [key]);
           mapReq(pkg);
         `,
         'map-get-values-getter.ts': `

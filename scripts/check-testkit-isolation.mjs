@@ -3530,6 +3530,25 @@ function collectModuleLoads(text, fileName) {
         }
       }
       const invocation = invocationOf(unwrapped);
+      if (invocation) {
+        const preservesTarget =
+          isObjectAssignCallee(invocation.callee) ||
+          isObjectDefinePropertyCallee(invocation.callee) ||
+          isObjectDefinePropertiesCallee(invocation.callee);
+        if (preservesTarget) {
+          const target = invocation.args[0];
+          if (target) {
+            const nested = mapReceiverCandidates(target, nextSeen);
+            if (nested.recognized) {
+              return {
+                ...nested,
+                uncertain: nested.uncertain || invocation.unresolvable,
+              };
+            }
+          }
+          return { receivers: [], uncertain: true, recognized: true };
+        }
+      }
       if (invocation && isReflectGetCallee(invocation.callee)) {
         const property = invocation.args.length >= 2 ? staticStringValue(invocation.args[1]) : null;
         if (property !== null && invocation.args[0]) {

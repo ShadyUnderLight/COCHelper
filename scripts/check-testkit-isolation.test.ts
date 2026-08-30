@@ -1387,6 +1387,21 @@ describe('testkit isolation', () => {
     ).toEqual([]);
     expect(
       extractUnsafeDynamicLoads(
+        `const value = Object.assign(new Map([['x', 1]])).get('x'); String(value);`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const key = {}; const value = Object.defineProperty(new WeakMap([[key, 1]]), 'safe', { value: 1 }).get(key); String(value);`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const key = {}; const value = Object.defineProperties(new WeakMap([[key, 1]]), {}).get(key); String(value);`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
         `const map = new Map([['x', 1]]); const get = Reflect.get(map, 'get'); String(get.call(map, 'x'));`,
       ),
     ).toEqual([]);
@@ -1689,6 +1704,30 @@ describe('testkit isolation', () => {
           const lookup = key;
           const map = new WeakMap([[key, require]]);
           const mapReq = map.get(lookup);
+          mapReq(pkg);
+        `,
+        'map-get-assign.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const mapReq = Object.assign(new Map([['x', require]])).get('x');
+          mapReq(pkg);
+        `,
+        'weak-map-get-define-property.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const key = {};
+          const mapReq = Object.defineProperty(
+            new WeakMap([[key, require]]),
+            'safe',
+            { value: 1 },
+          ).get(key);
+          mapReq(pkg);
+        `,
+        'weak-map-get-define-properties.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const key = {};
+          const mapReq = Object.defineProperties(
+            new WeakMap([[key, require]]),
+            {},
+          ).get(key);
           mapReq(pkg);
         `,
         'map-get-chained.ts': `

@@ -171,6 +171,7 @@ function collectModuleLoads(text, fileName) {
   const scopedBindingKinds = new WeakMap();
   const scopedValueExprs = new WeakMap();
   const scopedArrayShapes = new WeakMap();
+  const unknownAwaitedBindings = new WeakSet();
   const paramsUsedAsCallees = new WeakSet();
   const paramsUsedAsCalleeKeys = new Set();
   const paramBindingKinds = new Map();
@@ -2373,6 +2374,9 @@ function collectModuleLoads(text, fileName) {
         return scoped;
       }
       const bound = enclosingBindingName(expr);
+      if (unknownAwaitedBindings.has(expr) || (bound && unknownAwaitedBindings.has(bound))) {
+        return 'requirer';
+      }
       if (!bound) {
         if (factories.has(expr.text)) {
           return 'factory';
@@ -3262,7 +3266,21 @@ function collectModuleLoads(text, fileName) {
     return Boolean(access?.name === name && isObjectIdentifier(access.object, 'Symbol'));
   };
 
+  const staticPropertyKeyValue = (expr) => {
+    const string = staticStringValue(expr);
+    if (string !== null) {
+      return string;
+    }
+    const unwrapped = unwrapExpr(expr);
+    const access = staticMember(unwrapped);
+    return access && isObjectIdentifier(access.object, 'Symbol') &&
+      (access.name === 'iterator' || access.name === 'asyncIterator')
+      ? `Symbol.${access.name}`
+      : null;
+  };
+
   const customIteratorShapeForExpression = (valueExpr, seen = new Set()) => {
+    const original = unwrapExpr(valueExpr);
     const unwrapped = resolveAliasedValue(valueExpr);
     if (!unwrapped || seen.has(unwrapped)) {
       return undefined;
@@ -3279,35 +3297,95 @@ function collectModuleLoads(text, fileName) {
       return shapes.length > 0 ? mergeArrayShapes(...shapes) : undefined;
     }
     if (ts.isObjectLiteralExpression(unwrapped)) {
-      const methods = unwrapped.properties
-        .map((property) => {
-          if (ts.isMethodDeclaration(property)) {
-            return isSymbolIteratorMethod(property, 'iterator') ||
-              isSymbolIteratorMethod(property, 'asyncIterator')
-              ? property
-              : null;
+      const candidates = [];
+      let uncertain = false;
+      const addCallable = (value) => {
+        const resolved = resolveAliasedValue(value);
+        if (resolved && isFunctionLikeNode(resolved)) {
+          if (ts.isGetAccessorDeclaration(resolved)) {
+            const returns = collectReturnExprs(resolved)
+              .flatMap((returned) => expandBranchExprs(returned, nextSeen));
+            if (returns.length === 0) {
+              uncertain = true;
+              return;
+            }
+            for (const returned of returns) {
+              const callable = resolveAliasedValue(returned);
+              if (callable && isFunctionLikeNode(callable)) {
+                candidates.push(callable);
+              } else {
+                uncertain = true;
+              }
+            }
+            return;
           }
-          if (
-            ts.isPropertyAssignment(property) &&
-            (isSymbolIteratorMethod(property, 'iterator') ||
-              isSymbolIteratorMethod(property, 'asyncIterator'))
-          ) {
-            const value = unwrapExpr(property.initializer);
-            return value && isFunctionLikeNode(value) ? value : null;
+          candidates.push(resolved);
+          return;
+        }
+        uncertain = true;
+      };
+      for (const property of unwrapped.properties) {
+        if (
+          (ts.isMethodDeclaration(property) ||
+            ts.isGetAccessorDeclaration(property) ||
+            ts.isPropertyAssignment(property)) &&
+          (isSymbolIteratorMethod(property, 'iterator') ||
+            isSymbolIteratorMethod(property, 'asyncIterator'))
+        ) {
+          addCallable(
+            ts.isPropertyAssignment(property) ? property.initializer : property,
+          );
+        }
+      }
+      const base = original ? referenceKey(original) : null;
+      if (base !== null) {
+        for (const name of ['iterator', 'asyncIterator']) {
+          const stored = valueExprs.get(`${base}.Symbol.${name}`);
+          if (stored) {
+            addCallable(stored);
           }
-          return null;
-        })
-        .filter(Boolean);
-      if (methods.length === 0) {
+        }
+      }
+      if (candidates.length === 0 && !uncertain) {
         return undefined;
       }
-      const shapes = methods.map((method) => {
+      const shapes = candidates.map((method) => {
         const yields = collectYieldExprs(method);
         return yields.length > 0 ? shapeFromArrayItems(yields) : opaqueArrayShape();
       });
+      if (uncertain) {
+        shapes.push(opaqueArrayShape());
+      }
       return mergeArrayShapes(...shapes);
     }
     if (ts.isCallExpression(unwrapped)) {
+      const assignArgs = objectAssignArguments(unwrapped);
+      if (assignArgs !== undefined) {
+        if (assignArgs === null) {
+          return opaqueArrayShape();
+        }
+        const shapes = [];
+        let uncertain = false;
+        for (const arg of assignArgs) {
+          const sources = ts.isSpreadElement(arg)
+            ? expandSpread(arg.expression)?.items
+            : [arg];
+          if (!sources) {
+            uncertain = true;
+            continue;
+          }
+          for (const source of sources) {
+            const shape = customIteratorShapeForExpression(source, nextSeen);
+            if (shape) {
+              shapes.push(shape);
+            }
+          }
+        }
+        if (uncertain) {
+          shapes.push(opaqueArrayShape());
+        }
+        return shapes.length > 0 ? mergeArrayShapes(...shapes) : undefined;
+      }
       const callee = unwrapExpr(unwrapped.expression);
       const callableKey = callee ? callableReferenceKey(callee) : null;
       if (
@@ -4310,7 +4388,7 @@ function collectModuleLoads(text, fileName) {
           return undefined;
         }
         const targetExpr = created.args[0];
-        const propName = staticStringValue(created.args[1]);
+        const propName = staticPropertyKeyValue(created.args[1]);
         if (propName === key) {
           const fromDescriptor = interpretDescriptor(created.args[2]);
           if (fromDescriptor) {
@@ -4690,8 +4768,9 @@ function collectModuleLoads(text, fileName) {
       return { recognized: false };
     }
     const access = staticMember(unwrapped.expression);
-    if (access && isObjectIdentifier(access.object, 'Promise')) {
-      if (access.name === 'resolve') {
+    const promiseMethod = access && promiseMethodOf(unwrapped.expression);
+    if (access && promiseMethod) {
+      if (promiseMethod === 'resolve') {
         const args = flattenCallArguments(unwrapped.arguments);
         if (args.unresolvable || args.items.length === 0) {
           return { recognized: true, values: [], unknown: args.unresolvable };
@@ -4703,7 +4782,7 @@ function collectModuleLoads(text, fileName) {
           dangerousConcreteValueKind(value) !== null;
         return { recognized: true, values: [value], unknown: !known };
       }
-      if (access.name === 'all' || access.name === 'allSettled') {
+      if (promiseMethod === 'all' || promiseMethod === 'allSettled') {
         const source = unwrapped.arguments[0];
         const shape = source
           ? shapeForValue(source) ?? shapeFromArrayLike(source) ?? shapeFromValue(source)
@@ -4716,7 +4795,7 @@ function collectModuleLoads(text, fileName) {
           unknown: !shape || shape.opaque,
         };
       }
-      if (access.name === 'race' || access.name === 'any') {
+      if (promiseMethod === 'race' || promiseMethod === 'any') {
         const source = unwrapped.arguments[0];
         const shape = source
           ? shapeForValue(source) ?? shapeFromArrayLike(source) ?? shapeFromValue(source)
@@ -4788,6 +4867,87 @@ function collectModuleLoads(text, fileName) {
       shape: shapes.length > 0 ? mergeArrayShapes(...shapes) : undefined,
       unknown,
     };
+  };
+
+  const isPromiseNamespaceValue = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || seen.has(unwrapped)) {
+      return false;
+    }
+    if (ts.isIdentifier(unwrapped) && unwrapped.text === 'Promise') {
+      return true;
+    }
+    if (!ts.isIdentifier(unwrapped)) {
+      return false;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const aliased = resolveAliasedValue(unwrapped);
+    return aliased !== unwrapped && isPromiseNamespaceValue(aliased, nextSeen);
+  };
+
+  const promiseMethodOf = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || seen.has(unwrapped)) {
+      return null;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const access = staticMember(unwrapped);
+    if (access && isPromiseNamespaceValue(access.object)) {
+      return access.name;
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      const aliased = resolveAliasedValue(unwrapped);
+      if (aliased !== unwrapped) {
+        return promiseMethodOf(aliased, nextSeen);
+      }
+    }
+    return null;
+  };
+
+  const awaitedValueIsUnknown = (expr) => {
+    const raw = expr;
+    if (!raw || raw.kind !== ts.SyntaxKind.AwaitExpression) {
+      return false;
+    }
+    const awaited = raw.expression;
+    const promise = promiseResolvedValueInfo(awaited);
+    if (promise?.recognized) {
+      return Boolean(promise.unknown);
+    }
+    const resolved = resolveAliasedValue(awaited);
+    if (isConcreteIndexedValue(resolved) || dangerousConcreteValueKind(awaited) !== null) {
+      return false;
+    }
+    const unwrapped = unwrapExpr(awaited);
+    if (unwrapped && ts.isCallExpression(unwrapped)) {
+      const returns = returnExprsForCallable(unwrapped.expression)
+        .flatMap((returned) => expandBranchExprs(returned));
+      if (returns.length > 0) {
+        return returns.some((returned) => {
+          const value = resolveAliasedValue(returned);
+          return !isConcreteIndexedValue(value) &&
+            dangerousConcreteValueKind(returned) === null &&
+            !knownArrayShape(returned);
+        });
+      }
+    }
+    return true;
+  };
+
+  const markUnknownAwaitedPattern = (pattern) => {
+    if (ts.isIdentifier(pattern)) {
+      unknownAwaitedBindings.add(pattern);
+      return;
+    }
+    if (ts.isObjectBindingPattern(pattern) || ts.isArrayBindingPattern(pattern)) {
+      for (const element of pattern.elements) {
+        if (ts.isBindingElement(element)) {
+          markUnknownAwaitedPattern(element.name);
+        }
+      }
+    }
   };
 
   const calleeFunctionNode = (callee, seen = new Set()) => {
@@ -5237,6 +5397,9 @@ function collectModuleLoads(text, fileName) {
   };
 
   const bindPattern = (name, inheritedKind, valueExpr, shapeOverride, callableKeyOverride) => {
+    if (awaitedValueIsUnknown(valueExpr)) {
+      markUnknownAwaitedPattern(name);
+    }
     if (ts.isIdentifier(name)) {
       const kind = kindFromValue(valueExpr, inheritedKind);
       const scopedKind = kind === 'factory' || kind === 'requirer' ? kind : null;
@@ -6425,7 +6588,7 @@ function collectModuleLoads(text, fileName) {
         return;
       }
       const targetKey = referenceKey(inv.args[0]);
-      const propName = staticStringValue(inv.args[1]);
+      const propName = staticPropertyKeyValue(inv.args[1]);
       applyDefinedDescriptor(targetKey, propName, inv.args[2]);
       return;
     }
@@ -7521,8 +7684,26 @@ function propertyNameText(name) {
   if (ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)) {
     return name.text;
   }
-  if (ts.isComputedPropertyName(name) && ts.isStringLiteralLike(unwrapExpr(name.expression))) {
-    return unwrapExpr(name.expression).text;
+  if (ts.isComputedPropertyName(name)) {
+    const expression = unwrapExpr(name.expression);
+    if (ts.isStringLiteralLike(expression)) {
+      return expression.text;
+    }
+    if (
+      expression &&
+      (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) &&
+      ts.isIdentifier(expression.expression) &&
+      expression.expression.text === 'Symbol'
+    ) {
+      const property = ts.isPropertyAccessExpression(expression)
+        ? expression.name.text
+        : ts.isStringLiteralLike(expression.argumentExpression)
+          ? expression.argumentExpression.text
+          : null;
+      if (property === 'iterator' || property === 'asyncIterator') {
+        return `Symbol.${property}`;
+      }
+    }
   }
   return null;
 }

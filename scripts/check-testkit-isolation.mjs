@@ -3378,6 +3378,15 @@ function collectModuleLoads(text, fileName) {
     }
 
     const member = staticMember(unwrapped);
+    if (member) {
+      const resolved = resolveObjectProperty(member.object, member.name, nextSeen);
+      if (resolved?.value && resolved.value !== unwrapped) {
+        const nested = mapGetTargetInfo(resolved.value, nextSeen);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
     if (member?.name === 'get') {
       const receiver = resolveAliasedValue(member.object);
       const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
@@ -3389,6 +3398,31 @@ function collectModuleLoads(text, fileName) {
         constructor.text === 'Map'
       ) {
         return { receiver, boundArgs: [] };
+      }
+    }
+
+    if (ts.isCallExpression(unwrapped)) {
+      const invocation = invocationOf(unwrapped);
+      if (invocation && isReflectGetCallee(invocation.callee)) {
+        const property = invocation.args.length >= 2 ? staticStringValue(invocation.args[1]) : null;
+        const receiver = invocation.args[0] ? resolveAliasedValue(invocation.args[0]) : undefined;
+        const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
+        if (
+          property === 'get' &&
+          receiver &&
+          ts.isNewExpression(receiver) &&
+          constructor &&
+          ts.isIdentifier(constructor) &&
+          constructor.text === 'Map'
+        ) {
+          return { receiver, boundArgs: [] };
+        }
+      }
+      for (const returned of returnExprsForCallable(unwrapped.expression, nextSeen)) {
+        const nested = mapGetTargetInfo(returned, nextSeen);
+        if (nested) {
+          return nested;
+        }
       }
     }
 

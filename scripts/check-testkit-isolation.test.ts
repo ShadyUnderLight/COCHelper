@@ -1427,6 +1427,58 @@ describe('testkit isolation', () => {
     ).toEqual([]);
   });
 
+  it('闭合 Promise 链的 resolved value、callback 和容器结果', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const pkg = "['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('')";
+    const cases = [
+      `Promise.resolve({ req: require }).then(({ req }) => req(${pkg}));`,
+      `Promise.resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `async function use() { const { req } = await Promise.resolve({ req: require }); req(${pkg}); } use();`,
+      `Promise.resolve(require).finally(() => {}).then((req) => req(${pkg}));`,
+      `Promise.all([require]).then(([req]) => req(${pkg}));`,
+      `Promise.race([require]).then((req) => req(${pkg}));`,
+    ];
+    for (const source of cases) {
+      expect(findForbiddenImportHits(source, fromMain), source).toEqual(
+        expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+      );
+    }
+    expect(
+      extractUnsafeDynamicLoads(
+        `Promise.resolve({ safe: 1 }).then(({ safe }) => String(safe));`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `Promise.all([1]).then(([value]) => String(value)); Promise.resolve(1).finally(() => {}).then((value) => String(value));`,
+      ),
+    ).toEqual([]);
+  });
+
+  it('闭合自定义同步和异步 iterator 的 yield', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const pkg = "['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('')";
+    const cases = [
+      `const source = { *[Symbol.iterator]() { yield require; } }; for (const req of source) req(${pkg});`,
+      `const source = { async *[Symbol.asyncIterator]() { yield require; } }; for await (const req of source) req(${pkg});`,
+    ];
+    for (const source of cases) {
+      expect(findForbiddenImportHits(source, fromMain), source).toEqual(
+        expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+      );
+    }
+    expect(
+      extractUnsafeDynamicLoads(
+        `const source = { *[Symbol.iterator]() { yield 1; } }; for (const value of source) String(value);`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const source = { async *[Symbol.asyncIterator]() { yield 1; } }; for await (const value of source) String(value);`,
+      ),
+    ).toEqual([]);
+  });
+
   it('不会让透传到普通函数的动态属性参数误报', () => {
     expect(
       extractUnsafeDynamicLoads(
@@ -1776,6 +1828,44 @@ describe('testkit isolation', () => {
             arrayReq(pkg);
           }
           use();
+        `,
+        'promise-object.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          Promise.resolve({ req: require }).then(({ req }) => req(pkg));
+        `,
+        'promise-map.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          Promise.resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+        `,
+        'promise-await-object.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          async function use() {
+            const { req } = await Promise.resolve({ req: require });
+            req(pkg);
+          }
+          use();
+        `,
+        'promise-finally.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          Promise.resolve(require).finally(() => {}).then((req) => req(pkg));
+        `,
+        'promise-all.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          Promise.all([require]).then(([req]) => req(pkg));
+        `,
+        'promise-race.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          Promise.race([require]).then((req) => req(pkg));
+        `,
+        'custom-iterator.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const source = { *[Symbol.iterator]() { yield require; } };
+          for (const req of source) req(pkg);
+        `,
+        'custom-async-iterator.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const source = { async *[Symbol.asyncIterator]() { yield require; } };
+          for await (const req of source) req(pkg);
         `,
         'map-get-chained.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');

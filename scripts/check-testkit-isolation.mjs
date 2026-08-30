@@ -1719,6 +1719,20 @@ function collectModuleLoads(text, fileName) {
       }
       return mapResult.unknown ? 'requirer' : null;
     }
+    const promise = promiseResolvedValueInfo(unwrapped);
+    if (promise?.recognized) {
+      for (const value of promise.values) {
+        const kind = dangerousConcreteValueKind(value);
+        if (kind) {
+          return kind;
+        }
+      }
+      const shapeKind = dangerousShapeKind(promise.shape);
+      if (shapeKind) {
+        return shapeKind;
+      }
+      return null;
+    }
     const iteratorShape = iteratorValueShape(unwrapped);
     if (iteratorShape) {
       const firstKind = iteratorShape.kinds[0];
@@ -2347,6 +2361,10 @@ function collectModuleLoads(text, fileName) {
         const bound = enclosingBindingName(expr);
         const stored = bound ? scopedValueExprs.get(bound) : valueExprs.get(expr.text);
         if (stored && isDynamicPropertyDerived(stored)) {
+          return 'requirer';
+        }
+        const promise = stored ? promiseResolvedValueInfo(stored) : undefined;
+        if (promise?.recognized && promise.unknown) {
           return 'requirer';
         }
       }
@@ -3025,6 +3043,10 @@ function collectModuleLoads(text, fileName) {
     if (iterator) {
       return iterator;
     }
+    const customIterator = customIteratorShapeForExpression(unwrapped);
+    if (customIterator) {
+      return customIterator;
+    }
     if (ts.isConditionalExpression(unwrapped)) {
       return mergeArrayShapes(shapeForValue(unwrapped.whenTrue), shapeForValue(unwrapped.whenFalse));
     }
@@ -3032,6 +3054,16 @@ function collectModuleLoads(text, fileName) {
       return mergeArrayShapes(shapeForValue(unwrapped.left), shapeForValue(unwrapped.right));
     }
     if (ts.isCallExpression(unwrapped)) {
+      const promise = promiseResolvedValueInfo(unwrapped);
+      if (promise?.recognized) {
+        if (promise.shape) {
+          return promise.shape;
+        }
+        const shapes = promise.values
+          .map((value) => shapeForValue(value))
+          .filter(Boolean);
+        return shapes.length > 0 ? mergeArrayShapes(...shapes) : undefined;
+      }
       const generator = generatorShapeForCall(unwrapped);
       if (generator) {
         return generator;
@@ -3219,6 +3251,64 @@ function collectModuleLoads(text, fileName) {
       }
     }
 
+    return undefined;
+  };
+
+  const isSymbolIteratorMethod = (property, name) => {
+    if (!property || !ts.isComputedPropertyName(property.name)) {
+      return false;
+    }
+    const access = staticMember(property.name.expression);
+    return Boolean(access?.name === name && isObjectIdentifier(access.object, 'Symbol'));
+  };
+
+  const customIteratorShapeForExpression = (valueExpr, seen = new Set()) => {
+    const unwrapped = resolveAliasedValue(valueExpr);
+    if (!unwrapped || seen.has(unwrapped)) {
+      return undefined;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    if (ts.isConditionalExpression(unwrapped) || isLogicalBinary(unwrapped)) {
+      const branches = ts.isConditionalExpression(unwrapped)
+        ? [unwrapped.whenTrue, unwrapped.whenFalse]
+        : [unwrapped.left, unwrapped.right];
+      const shapes = branches
+        .map((branch) => customIteratorShapeForExpression(branch, nextSeen))
+        .filter(Boolean);
+      return shapes.length > 0 ? mergeArrayShapes(...shapes) : undefined;
+    }
+    if (ts.isObjectLiteralExpression(unwrapped)) {
+      const methods = unwrapped.properties.filter(
+        (property) =>
+          ts.isMethodDeclaration(property) &&
+          (isSymbolIteratorMethod(property, 'iterator') ||
+            isSymbolIteratorMethod(property, 'asyncIterator')),
+      );
+      if (methods.length === 0) {
+        return undefined;
+      }
+      const shapes = methods.map((method) => {
+        const yields = collectYieldExprs(method);
+        return yields.length > 0 ? shapeFromArrayItems(yields) : opaqueArrayShape();
+      });
+      return mergeArrayShapes(...shapes);
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const callee = unwrapExpr(unwrapped.expression);
+      const callableKey = callee ? callableReferenceKey(callee) : null;
+      if (
+        !isFunctionLikeNode(callee) &&
+        (callableKey === null || !functionReturnExprs.has(inheritedFactKey(callableKey)))
+      ) {
+        return undefined;
+      }
+      const shapes = returnExprsForCallable(unwrapped.expression, nextSeen)
+        .flatMap((returned) => expandBranchExprs(returned, nextSeen))
+        .map((returned) => customIteratorShapeForExpression(returned, nextSeen))
+        .filter(Boolean);
+      return shapes.length > 0 ? mergeArrayShapes(...shapes) : undefined;
+    }
     return undefined;
   };
 
@@ -4056,6 +4146,29 @@ function collectModuleLoads(text, fileName) {
       }
     }
     if (unwrapped && ts.isCallExpression(unwrapped)) {
+      const promise = promiseResolvedValueInfo(unwrapped);
+      if (promise?.recognized) {
+        let fallback;
+        for (const value of promise.values ?? []) {
+          const resolved = resolveObjectProperty(value, key, nextSeen);
+          if (!resolved) {
+            continue;
+          }
+          if (dangerousPropertyKind(resolved) !== null) {
+            return resolved;
+          }
+          fallback ??= resolved;
+        }
+        if (fallback) {
+          return fallback;
+        }
+        if (promise.unknown && LOADERISH_PROPERTIES.has(key)) {
+          return { value: undefined, kind: null, shape: undefined, callableKey: null, returns: 'requirer' };
+        }
+        if (promise.unknown) {
+          return opaqueObjectProperty();
+        }
+      }
       const created = invocationOf(unwrapped);
       if (created && isReflectGetCallee(created.callee)) {
         if (created.unresolvable || created.args.length < 2) {
@@ -4541,6 +4654,122 @@ function collectModuleLoads(text, fileName) {
     const callableKey = callableReferenceKey(unwrapped);
     if (callableKey === null) return null;
     return functionReturns.get(inheritedFactKey(callableKey)) ?? null;
+  };
+
+  const promiseResolvedValueInfo = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || seen.has(unwrapped)) {
+      return { recognized: false };
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    if (ts.isConditionalExpression(unwrapped) || isLogicalBinary(unwrapped)) {
+      const branches = ts.isConditionalExpression(unwrapped)
+        ? [unwrapped.whenTrue, unwrapped.whenFalse]
+        : [unwrapped.left, unwrapped.right];
+      const infos = branches.map((branch) => promiseResolvedValueInfo(branch, nextSeen));
+      if (infos.some((info) => info.recognized)) {
+        return mergePromiseResolvedValueInfos(infos);
+      }
+      return { recognized: false };
+    }
+    if (!ts.isCallExpression(unwrapped)) {
+      return { recognized: false };
+    }
+    const access = staticMember(unwrapped.expression);
+    if (access && isObjectIdentifier(access.object, 'Promise')) {
+      if (access.name === 'resolve') {
+        const args = flattenCallArguments(unwrapped.arguments);
+        if (args.unresolvable || args.items.length === 0) {
+          return { recognized: true, values: [], unknown: args.unresolvable };
+        }
+        return { recognized: true, values: [args.items[0]], unknown: false };
+      }
+      if (access.name === 'all' || access.name === 'allSettled') {
+        const source = unwrapped.arguments[0];
+        const shape = source
+          ? shapeForValue(source) ?? shapeFromArrayLike(source) ?? shapeFromValue(source)
+          : undefined;
+        return {
+          recognized: true,
+          value: source,
+          shape: shape ?? opaqueArrayShape(),
+          values: [],
+          unknown: !shape || shape.opaque,
+        };
+      }
+      if (access.name === 'race' || access.name === 'any') {
+        const source = unwrapped.arguments[0];
+        const shape = source
+          ? shapeForValue(source) ?? shapeFromArrayLike(source) ?? shapeFromValue(source)
+          : undefined;
+        const values = shape ? shapeValues(shape).filter((value) => value !== undefined) : [];
+        return {
+          recognized: true,
+          value: source,
+          values,
+          unknown: !shape || shape.opaque || values.length === 0,
+        };
+      }
+    }
+    if (access && (access.name === 'then' || access.name === 'catch' || access.name === 'finally')) {
+      const source = promiseResolvedValueInfo(access.object, nextSeen);
+      if (!source.recognized) {
+        return { recognized: true, values: [], unknown: true };
+      }
+      if (access.name === 'finally') {
+        return source;
+      }
+      const callback = unwrapped.arguments[0];
+      if (!callback) {
+        return source;
+      }
+      const returns = returnExprsForCallable(callback, nextSeen)
+        .flatMap((returned) => expandBranchExprs(returned, nextSeen));
+      if (returns.length === 0) {
+        return { recognized: true, values: [], unknown: true };
+      }
+      const callbackInfos = returns.map((returned) => {
+        const nested = promiseResolvedValueInfo(returned, nextSeen);
+        return nested.recognized
+          ? nested
+          : { recognized: true, values: [returned], unknown: false };
+      });
+      return mergePromiseResolvedValueInfos(callbackInfos);
+    }
+    return { recognized: false };
+  };
+
+  const mergePromiseResolvedValueInfos = (infos) => {
+    const values = [];
+    const shapes = [];
+    let unknown = false;
+    let value;
+    for (const info of infos) {
+      if (!info?.recognized) {
+        unknown = true;
+        continue;
+      }
+      if (info.value !== undefined && value === undefined) {
+        value = info.value;
+      }
+      for (const candidate of info.values ?? []) {
+        if (!values.includes(candidate)) {
+          values.push(candidate);
+        }
+      }
+      if (info.shape) {
+        shapes.push(info.shape);
+      }
+      unknown = unknown || Boolean(info.unknown);
+    }
+    return {
+      recognized: true,
+      value,
+      values,
+      shape: shapes.length > 0 ? mergeArrayShapes(...shapes) : undefined,
+      unknown,
+    };
   };
 
   const calleeFunctionNode = (callee, seen = new Set()) => {
@@ -6475,6 +6704,46 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
+  const bindPromiseCallbackArguments = (node) => {
+    if (!ts.isCallExpression(node)) {
+      return;
+    }
+    const callee = unwrapExpr(node.expression);
+    const access = staticMember(callee);
+    if (!access || (access.name !== 'then' && access.name !== 'catch')) {
+      return;
+    }
+    const callback = node.arguments[0];
+    if (!callback) {
+      return;
+    }
+    const params = paramsForCallable(callback);
+    if (!params?.[0]) {
+      return;
+    }
+    const info = promiseResolvedValueInfo(access.object);
+    if (!info?.recognized) {
+      if (isParamCalleeUsed(params[0])) {
+        bindPattern(params[0], 'requirer', undefined);
+      }
+      return;
+    }
+    const source = info.value ?? info.values?.[0] ?? access.object;
+    const shape = info.shape ?? shapeForValue(source);
+    if (shape && (ts.isObjectBindingPattern(params[0]) || ts.isArrayBindingPattern(params[0]))) {
+      bindDestructuredArg(params[0], source, classifyExpr(source), shape);
+    } else if (info.values && info.values.length > 0) {
+      for (const value of info.values) {
+        bindDestructuredArg(params[0], value, classifyExpr(value));
+      }
+    } else if (shape) {
+      bindPattern(params[0], null, source, shape);
+    }
+    if (info.unknown && isParamCalleeUsed(params[0])) {
+      bindPattern(params[0], 'requirer', undefined);
+    }
+  };
+
   const bindForOfVariable = (node) => {
     if (!ts.isForOfStatement(node)) {
       return;
@@ -6782,6 +7051,7 @@ function collectModuleLoads(text, fileName) {
     registerSetPrototypeOfCall(node);
     bindCallArguments(node);
     bindArrayCallbackArguments(node);
+    bindPromiseCallbackArguments(node);
     bindForOfVariable(node);
     if (isFunctionLikeNode(node) && node.parameters) {
       for (const param of node.parameters) {

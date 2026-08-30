@@ -1750,17 +1750,29 @@ describe('testkit isolation', () => {
           ).get(key);
           mapReq(pkg);
         `,
-        'async-await.ts': `
+        'async-await-loader.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           async function getLoader() { return require; }
-          async function getObject() { return { req: require }; }
-          async function getArray() { return [require]; }
           async function use() {
             const directReq = await getLoader();
             directReq(pkg);
+          }
+          use();
+        `,
+        'async-await-object.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          async function getObject() { return { req: require }; }
+          async function use() {
             const { req: objectReq } = await getObject();
             objectReq(pkg);
-            const [arrayReq] = await getArray();
+          }
+          use();
+        `,
+        'async-await-array.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          async function getArray() { return [require]; }
+          async function use() {
+            const arrayReq = (await getArray())[0];
             arrayReq(pkg);
           }
           use();

@@ -3408,15 +3408,45 @@ function collectModuleLoads(text, fileName) {
         ),
       );
     }
+    if (isFunctionLikeNode(unwrapped)) {
+      const returned = collectReturnExprs(unwrapped).flatMap((item) =>
+        expandBranchExprs(item, nextSeen),
+      );
+      if (returned.length > 0) {
+        return merge(returned.map((item) => mapReceiverCandidates(item, nextSeen)));
+      }
+      return { receivers: [], uncertain: false, recognized: false };
+    }
     if (ts.isCallExpression(unwrapped)) {
       const invocation = invocationOf(unwrapped);
       if (invocation && isReflectGetCallee(invocation.callee)) {
         const property = invocation.args.length >= 2 ? staticStringValue(invocation.args[1]) : null;
-        if (property === 'get' && invocation.args[0]) {
-          const nested = mapReceiverCandidates(invocation.args[0], nextSeen);
-          if (nested.receivers.length > 0 || nested.uncertain) {
-            return nested;
+        if (property !== null && invocation.args[0]) {
+          const reflected = resolveObjectProperty(invocation.args[0], property, nextSeen);
+          if (reflected?.value && reflected.value !== unwrapped) {
+            const nested = mapReceiverCandidates(reflected.value, nextSeen);
+            if (nested.recognized) {
+              return nested;
+            }
           }
+          if (property === 'get') {
+            const nested = mapReceiverCandidates(invocation.args[0], nextSeen);
+            if (nested.recognized) {
+              return nested;
+            }
+          }
+          if (reflected?.returns === 'opaque') {
+            return { receivers: [], uncertain: false, recognized: false };
+          }
+        }
+      }
+      const indexed = indexedElement(unwrapped);
+      if (indexed) {
+        const candidates = indexed.value ? [indexed.value] : indexed.candidates;
+        if (candidates.length > 0) {
+          return merge(candidates.map((candidate) =>
+            mapReceiverCandidates(candidate, nextSeen),
+          ));
         }
       }
       const returned = returnExprsForCallable(unwrapped.expression, nextSeen);
@@ -3428,6 +3458,15 @@ function collectModuleLoads(text, fileName) {
         );
       }
       return { receivers: [], uncertain: false, recognized: false };
+    }
+    const indexed = indexedElement(unwrapped);
+    if (indexed) {
+      const candidates = indexed.value ? [indexed.value] : indexed.candidates;
+      if (candidates.length > 0) {
+        return merge(candidates.map((candidate) =>
+          mapReceiverCandidates(candidate, nextSeen),
+        ));
+      }
     }
     if (ts.isIdentifier(unwrapped)) {
       const binding = enclosingBindingName(unwrapped);

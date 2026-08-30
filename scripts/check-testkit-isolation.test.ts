@@ -1357,6 +1357,21 @@ describe('testkit isolation', () => {
     ).toEqual([]);
     expect(
       extractUnsafeDynamicLoads(
+        `const maps = [new Map([['x', 1]])]; String(maps[0].get('x'));`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const box = { get map() { return new Map([['x', 1]]); } }; String(box.map.get('x'));`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const box = { map: new Map([['x', 1]]) }; String(Reflect.get(box, 'map').get('x'));`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
         `const map = new Map([['x', 1]]); const get = Reflect.get(map, 'get'); String(get.call(map, 'x'));`,
       ),
     ).toEqual([]);
@@ -1624,6 +1639,42 @@ describe('testkit isolation', () => {
         'map-get-nested-receiver.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           const box = { map: new Map([['x', require]]) };
+          const mapReq = box.map.get('x');
+          mapReq(pkg);
+        `,
+        'map-get-indexed-receiver.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const maps = [new Map([['x', require]])];
+          const mapReq = maps[0].get('x');
+          mapReq(pkg);
+        `,
+        'map-get-getter-receiver.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const box = {
+            get map() { return new Map([['x', require]]); },
+          };
+          const mapReq = box.map.get('x');
+          mapReq(pkg);
+        `,
+        'map-get-reflect-nested.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const box = { map: new Map([['x', require]]) };
+          const mapReq = Reflect.get(box, 'map').get('x');
+          mapReq(pkg);
+        `,
+        'map-get-values-getter.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const mapReq = Object.values({
+            get map() { return new Map([['x', require]]); },
+          })[0].get('x');
+          mapReq(pkg);
+        `,
+        'map-get-define-getter.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const box = {};
+          Object.defineProperty(box, 'map', {
+            get() { return new Map([['x', require]]); },
+          });
           const mapReq = box.map.get('x');
           mapReq(pkg);
         `,

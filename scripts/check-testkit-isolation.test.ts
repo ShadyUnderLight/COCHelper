@@ -1407,6 +1407,26 @@ describe('testkit isolation', () => {
     ).toEqual([]);
   });
 
+  it('闭合 await 后的 loader、对象和数组返回值', () => {
+    const fromMain = 'apps/desktop/src/main/index.ts';
+    const pkg = "['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('')";
+    const cases = [
+      `async function get() { return require; } async function use() { const req = await get(); req(${pkg}); } use();`,
+      `async function get() { return { req: require }; } async function use() { const { req } = await get(); req(${pkg}); } use();`,
+      `async function get() { return [require]; } async function use() { const req = (await get())[0]; req(${pkg}); } use();`,
+    ];
+    for (const source of cases) {
+      expect(findForbiddenImportHits(source, fromMain), source).toEqual(
+        expect.arrayContaining([`${fromMain} 不得 import @coc-helper/testkit`]),
+      );
+    }
+    expect(
+      extractUnsafeDynamicLoads(
+        `async function safe() { const value = await Promise.resolve(1); String(value); } safe();`,
+      ),
+    ).toEqual([]);
+  });
+
   it('不会让透传到普通函数的动态属性参数误报', () => {
     expect(
       extractUnsafeDynamicLoads(
@@ -1729,6 +1749,21 @@ describe('testkit isolation', () => {
             {},
           ).get(key);
           mapReq(pkg);
+        `,
+        'async-await.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          async function getLoader() { return require; }
+          async function getObject() { return { req: require }; }
+          async function getArray() { return [require]; }
+          async function use() {
+            const directReq = await getLoader();
+            directReq(pkg);
+            const { req: objectReq } = await getObject();
+            objectReq(pkg);
+            const [arrayReq] = await getArray();
+            arrayReq(pkg);
+          }
+          use();
         `,
         'map-get-chained.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');

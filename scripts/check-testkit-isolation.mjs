@@ -7191,6 +7191,10 @@ function unwrapExpr(expr) {
       expr = expr.right;
       continue;
     }
+    if (kind === ts.SyntaxKind.AwaitExpression) {
+      expr = expr.expression;
+      continue;
+    }
     break;
   }
   return expr;

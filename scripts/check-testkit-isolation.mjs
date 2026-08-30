@@ -154,6 +154,9 @@ function collectModuleLoads(text, fileName) {
   const arrayCtorAliases = new Set();
   const reflectApplyAliases = new Set();
   const callApplyAliases = new Set();
+  const promiseMethodAliases = new Map();
+  const symbolNamespaceAliases = new Set();
+  const symbolPropertyAliases = new Map();
   const objectCreateAliases = new Set();
   const objectSetPrototypeOfAliases = new Set();
   const objectDefinePropertyAliases = new Set();
@@ -168,6 +171,7 @@ function collectModuleLoads(text, fileName) {
   const mapGetReceivers = new WeakMap();
   const functionParams = new Map();
   const prototypeExprs = new Map();
+  const opaqueCustomIteratorTargets = new Set();
   const scopedBindingKinds = new WeakMap();
   const scopedValueExprs = new WeakMap();
   const scopedArrayShapes = new WeakMap();
@@ -1396,6 +1400,17 @@ function collectModuleLoads(text, fileName) {
       return;
     }
     registerBuiltinCalleeAliases(toName, fromExpr);
+    if (isSymbolNamespaceValue(unwrapped)) {
+      symbolNamespaceAliases.add(toName);
+    }
+    const symbolProperty = symbolPropertyNameOf(unwrapped);
+    if (symbolProperty !== null) {
+      symbolPropertyAliases.set(toName, symbolProperty);
+    }
+    const promiseMethod = promiseMethodOf(unwrapped);
+    if (promiseMethod !== null) {
+      promiseMethodAliases.set(toName, promiseMethod);
+    }
     if (ts.isIdentifier(unwrapped)) {
       if (arrayMethodAliases.has(unwrapped.text)) {
         arrayMethodAliases.set(toName, arrayMethodAliases.get(unwrapped.text));
@@ -2214,10 +2229,10 @@ function collectModuleLoads(text, fileName) {
       let name = null;
       let funcNode = null;
       if (ts.isMethodDeclaration(prop) || ts.isGetAccessorDeclaration(prop)) {
-        name = propertyNameText(prop.name);
+        name = propertyKeyForFacts(prop.name);
         funcNode = prop;
       } else if (ts.isPropertyAssignment(prop) && isFunctionLikeNode(unwrapExpr(prop.initializer))) {
-        name = propertyNameText(prop.name);
+        name = propertyKeyForFacts(prop.name);
         funcNode = unwrapExpr(prop.initializer);
       }
       if (name === null || !funcNode) continue;
@@ -3258,12 +3273,58 @@ function collectModuleLoads(text, fileName) {
     return undefined;
   };
 
+  const isSymbolNamespaceValue = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || seen.has(unwrapped)) {
+      return false;
+    }
+    if (ts.isIdentifier(unwrapped) && unwrapped.text === 'Symbol') {
+      return true;
+    }
+    const key = referenceKey(unwrapped);
+    if (key !== null && symbolNamespaceAliases.has(key)) {
+      return true;
+    }
+    if (!ts.isIdentifier(unwrapped)) {
+      return false;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const aliased = resolveAliasedValue(unwrapped);
+    return aliased !== unwrapped && isSymbolNamespaceValue(aliased, nextSeen);
+  };
+
+  const symbolPropertyNameOf = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || seen.has(unwrapped)) {
+      return null;
+    }
+    const key = referenceKey(unwrapped);
+    if (key !== null && symbolPropertyAliases.has(key)) {
+      return symbolPropertyAliases.get(key);
+    }
+    const access = staticMember(unwrapped);
+    if (
+      access &&
+      isSymbolNamespaceValue(access.object) &&
+      (access.name === 'iterator' || access.name === 'asyncIterator')
+    ) {
+      return access.name;
+    }
+    if (!ts.isIdentifier(unwrapped)) {
+      return null;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const aliased = resolveAliasedValue(unwrapped);
+    return aliased !== unwrapped ? symbolPropertyNameOf(aliased, nextSeen) : null;
+  };
+
   const isSymbolIteratorMethod = (property, name) => {
     if (!property || !ts.isComputedPropertyName(property.name)) {
       return false;
     }
-    const access = staticMember(property.name.expression);
-    return Boolean(access?.name === name && isObjectIdentifier(access.object, 'Symbol'));
+    return symbolPropertyNameOf(property.name.expression) === name;
   };
 
   const staticPropertyKeyValue = (expr) => {
@@ -3271,12 +3332,15 @@ function collectModuleLoads(text, fileName) {
     if (string !== null) {
       return string;
     }
-    const unwrapped = unwrapExpr(expr);
-    const access = staticMember(unwrapped);
-    return access && isObjectIdentifier(access.object, 'Symbol') &&
-      (access.name === 'iterator' || access.name === 'asyncIterator')
-      ? `Symbol.${access.name}`
-      : null;
+    const symbolProperty = symbolPropertyNameOf(expr);
+    return symbolProperty ? `Symbol.${symbolProperty}` : null;
+  };
+
+  const propertyKeyForFacts = (name) => {
+    if (ts.isComputedPropertyName(name)) {
+      return staticPropertyKeyValue(name.expression) ?? propertyNameText(name);
+    }
+    return propertyNameText(name);
   };
 
   const customIteratorShapeForExpression = (valueExpr, seen = new Set()) => {
@@ -3347,13 +3411,26 @@ function collectModuleLoads(text, fileName) {
         }
       }
       if (candidates.length === 0 && !uncertain) {
+        const prototype = base === null ? undefined : prototypeExprs.get(base);
+        if (prototype) {
+          const prototypeShape = customIteratorShapeForExpression(prototype, nextSeen);
+          if (prototypeShape) {
+            return prototypeShape;
+          }
+          if (isOpaqueObjectSource(prototype)) {
+            return opaqueArrayShape();
+          }
+        }
+        if (base !== null && opaqueCustomIteratorTargets.has(base)) {
+          return opaqueArrayShape();
+        }
         return undefined;
       }
       const shapes = candidates.map((method) => {
         const yields = collectYieldExprs(method);
         return yields.length > 0 ? shapeFromArrayItems(yields) : opaqueArrayShape();
       });
-      if (uncertain) {
+      if (uncertain || (base !== null && opaqueCustomIteratorTargets.has(base))) {
         shapes.push(opaqueArrayShape());
       }
       return mergeArrayShapes(...shapes);
@@ -4518,10 +4595,10 @@ function collectModuleLoads(text, fileName) {
           propertyKey = property.name.text;
           propertyValue = property.name;
         } else if (ts.isPropertyAssignment(property)) {
-          propertyKey = propertyNameText(property.name);
+          propertyKey = propertyKeyForFacts(property.name);
           propertyValue = property.initializer;
         } else if (ts.isMethodDeclaration(property) || ts.isGetAccessorDeclaration(property)) {
-          propertyKey = propertyNameText(property.name);
+          propertyKey = propertyKeyForFacts(property.name);
           propertyValue = property;
         }
         if (propertyKey === key) {
@@ -4768,10 +4845,20 @@ function collectModuleLoads(text, fileName) {
       return { recognized: false };
     }
     const access = staticMember(unwrapped.expression);
-    const promiseMethod = access && promiseMethodOf(unwrapped.expression);
-    if (access && promiseMethod) {
+    let promiseMethod = promiseMethodOf(unwrapped.expression);
+    let promiseArgs = unwrapped.arguments;
+    if (!promiseMethod) {
+      const applied = callApplyBindingFrom(unwrapped.expression, unwrapped.arguments);
+      if (applied?.targetExpr && !applied.unresolvable) {
+        promiseMethod = promiseMethodOf(applied.targetExpr);
+        if (promiseMethod) {
+          promiseArgs = applied.fnArgs;
+        }
+      }
+    }
+    if (promiseMethod) {
       if (promiseMethod === 'resolve') {
-        const args = flattenCallArguments(unwrapped.arguments);
+        const args = flattenCallArguments(promiseArgs);
         if (args.unresolvable || args.items.length === 0) {
           return { recognized: true, values: [], unknown: args.unresolvable };
         }
@@ -4783,7 +4870,7 @@ function collectModuleLoads(text, fileName) {
         return { recognized: true, values: [value], unknown: !known };
       }
       if (promiseMethod === 'all' || promiseMethod === 'allSettled') {
-        const source = unwrapped.arguments[0];
+        const source = promiseArgs[0];
         const shape = source
           ? shapeForValue(source) ?? shapeFromArrayLike(source) ?? shapeFromValue(source)
           : undefined;
@@ -4796,7 +4883,7 @@ function collectModuleLoads(text, fileName) {
         };
       }
       if (promiseMethod === 'race' || promiseMethod === 'any') {
-        const source = unwrapped.arguments[0];
+        const source = promiseArgs[0];
         const shape = source
           ? shapeForValue(source) ?? shapeFromArrayLike(source) ?? shapeFromValue(source)
           : undefined;
@@ -4828,9 +4915,15 @@ function collectModuleLoads(text, fileName) {
       }
       const callbackInfos = returns.map((returned) => {
         const nested = promiseResolvedValueInfo(returned, nextSeen);
-        return nested.recognized
-          ? nested
-          : { recognized: true, values: [returned], unknown: false };
+        if (nested.recognized) {
+          return nested;
+        }
+        const resolved = resolveAliasedValue(returned);
+        const known =
+          isConcreteIndexedValue(resolved) ||
+          dangerousConcreteValueKind(returned) !== null ||
+          knownArrayShape(returned) !== undefined;
+        return { recognized: true, values: [returned], unknown: !known };
       });
       return mergePromiseResolvedValueInfos(callbackInfos);
     }
@@ -4893,6 +4986,14 @@ function collectModuleLoads(text, fileName) {
     }
     const nextSeen = new Set(seen);
     nextSeen.add(unwrapped);
+    const bound = unwrapBindCall(unwrapped);
+    if (bound.target && bound.target !== unwrapped) {
+      return promiseMethodOf(bound.target, nextSeen);
+    }
+    const key = referenceKey(unwrapped);
+    if (key !== null && promiseMethodAliases.has(key)) {
+      return promiseMethodAliases.get(key);
+    }
     const access = staticMember(unwrapped);
     if (access && isPromiseNamespaceValue(access.object)) {
       return access.name;
@@ -4948,6 +5049,32 @@ function collectModuleLoads(text, fileName) {
         }
       }
     }
+  };
+
+  const isUnknownAwaitedValue = (expr, seen = new Set()) => {
+    if (expr?.kind === ts.SyntaxKind.AwaitExpression && awaitedValueIsUnknown(expr)) {
+      return true;
+    }
+    const unwrapped = expr ? unwrapExpr(expr) : undefined;
+    if (!unwrapped || seen.has(unwrapped)) {
+      return false;
+    }
+    if (unknownAwaitedBindings.has(unwrapped)) {
+      return true;
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      const bound = enclosingBindingName(unwrapped);
+      if (bound && unknownAwaitedBindings.has(bound)) {
+        return true;
+      }
+      const stored = bound ? scopedValueExprs.get(bound) : valueExprs.get(unwrapped.text);
+      if (stored && stored !== unwrapped) {
+        const nextSeen = new Set(seen);
+        nextSeen.add(unwrapped);
+        return isUnknownAwaitedValue(stored, nextSeen);
+      }
+    }
+    return false;
   };
 
   const calleeFunctionNode = (callee, seen = new Set()) => {
@@ -5360,8 +5487,11 @@ function collectModuleLoads(text, fileName) {
         key = property.name.text;
         propertyValue = property.name;
       } else if (ts.isPropertyAssignment(property)) {
-        key = propertyNameText(property.name);
+        key = propertyKeyForFacts(property.name);
         propertyValue = property.initializer;
+      } else if (ts.isMethodDeclaration(property) || ts.isGetAccessorDeclaration(property)) {
+        key = propertyKeyForFacts(property.name);
+        propertyValue = property;
       }
       if (key === null || propertyValue === undefined) {
         continue;
@@ -5396,8 +5526,72 @@ function collectModuleLoads(text, fileName) {
     }
   };
 
+  const registerObjectAssignMutation = (node) => {
+    if (!ts.isCallExpression(node)) {
+      return;
+    }
+    const inv = invocationOf(node);
+    if (!inv || !isObjectAssignCallee(inv.callee) || inv.args.length === 0) {
+      return;
+    }
+    const targetKey = referenceKey(inv.args[0]);
+    if (targetKey === null) {
+      return;
+    }
+    if (inv.unresolvable || inv.droppedSpread) {
+      opaqueCustomIteratorTargets.add(targetKey);
+      return;
+    }
+    const registerSource = (source, seen = new Set()) => {
+      const unwrapped = source ? unwrapExpr(source) : undefined;
+      if (!unwrapped || seen.has(unwrapped)) {
+        return;
+      }
+      const nextSeen = new Set(seen);
+      nextSeen.add(unwrapped);
+      const sourceKey = referenceKey(unwrapped);
+      if (sourceKey !== null) {
+        copyObjectArrayShapes(targetKey, sourceKey);
+      }
+      const resolved = resolveAliasedValue(unwrapped);
+      if (resolved && resolved !== unwrapped) {
+        registerSource(resolved, nextSeen);
+      }
+      if (resolved && ts.isObjectLiteralExpression(resolved)) {
+        registerObjectArrayShapes(targetKey, resolved);
+        registerObjectMethodReturns(targetKey, resolved);
+        return;
+      }
+      if (resolved && ts.isCallExpression(resolved)) {
+        const returns = returnExprsForCallable(resolved.expression)
+          .flatMap((returned) => expandBranchExprs(returned));
+        if (returns.length > 0) {
+          for (const returned of returns) {
+            registerSource(returned, nextSeen);
+          }
+          return;
+        }
+      }
+      if (isOpaqueObjectSource(source)) {
+        opaqueCustomIteratorTargets.add(targetKey);
+      }
+    };
+    for (const arg of inv.args.slice(1)) {
+      const sources = ts.isSpreadElement(arg)
+        ? expandSpread(arg.expression)?.items
+        : [arg];
+      if (!sources || (ts.isSpreadElement(arg) && sources.length === 0)) {
+        opaqueCustomIteratorTargets.add(targetKey);
+        continue;
+      }
+      for (const source of sources) {
+        registerSource(source);
+      }
+    }
+  };
+
   const bindPattern = (name, inheritedKind, valueExpr, shapeOverride, callableKeyOverride) => {
-    if (awaitedValueIsUnknown(valueExpr)) {
+    if (isUnknownAwaitedValue(valueExpr)) {
       markUnknownAwaitedPattern(name);
     }
     if (ts.isIdentifier(name)) {
@@ -5606,6 +5800,24 @@ function collectModuleLoads(text, fileName) {
         }
         if (ts.isIdentifier(element.name) && (key === 'call' || key === 'apply')) {
           callApplyAliases.add(element.name.text);
+        }
+        if (
+          ts.isIdentifier(element.name) &&
+          isSymbolNamespaceValue(valueExpr) &&
+          (key === 'iterator' || key === 'asyncIterator')
+        ) {
+          symbolPropertyAliases.set(element.name.text, key);
+        }
+        if (
+          ts.isIdentifier(element.name) &&
+          isPromiseNamespaceValue(valueExpr) &&
+          (key === 'resolve' ||
+            key === 'all' ||
+            key === 'allSettled' ||
+            key === 'race' ||
+            key === 'any')
+        ) {
+          promiseMethodAliases.set(element.name.text, key);
         }
         if (ts.isIdentifier(element.name) && key === 'get') {
           const candidates = mapReceiverCandidates(valueExpr);
@@ -6118,10 +6330,10 @@ function collectModuleLoads(text, fileName) {
         propertyKey = property.name.text;
         propertyValue = property.name;
       } else if (ts.isPropertyAssignment(property)) {
-        propertyKey = propertyNameText(property.name);
+        propertyKey = propertyKeyForFacts(property.name);
         propertyValue = property.initializer;
       } else if (ts.isMethodDeclaration(property) || ts.isGetAccessorDeclaration(property)) {
-        propertyKey = propertyNameText(property.name);
+        propertyKey = propertyKeyForFacts(property.name);
         propertyValue = property;
       }
       if (propertyKey === key) {
@@ -6395,10 +6607,10 @@ function collectModuleLoads(text, fileName) {
         propertyKey = property.name.text;
         propertyValue = property.name;
       } else if (ts.isPropertyAssignment(property)) {
-        propertyKey = propertyNameText(property.name);
+        propertyKey = propertyKeyForFacts(property.name);
         propertyValue = property.initializer;
       } else if (ts.isMethodDeclaration(property) || ts.isGetAccessorDeclaration(property)) {
-        propertyKey = propertyNameText(property.name);
+        propertyKey = propertyKeyForFacts(property.name);
         propertyValue = property;
       }
       if (propertyKey === key) {
@@ -6529,10 +6741,10 @@ function collectModuleLoads(text, fileName) {
         propertyKey = property.name.text;
         propertyValue = property.name;
       } else if (ts.isPropertyAssignment(property)) {
-        propertyKey = propertyNameText(property.name);
+        propertyKey = propertyKeyForFacts(property.name);
         propertyValue = property.initializer;
       } else if (ts.isMethodDeclaration(property) || ts.isGetAccessorDeclaration(property)) {
-        propertyKey = propertyNameText(property.name);
+        propertyKey = propertyKeyForFacts(property.name);
         propertyValue = property;
       }
       if (propertyKey) {
@@ -7236,6 +7448,7 @@ function collectModuleLoads(text, fileName) {
     invalidateArrayMutation(node);
     registerDefinePropertyCall(node);
     registerSetPrototypeOfCall(node);
+    registerObjectAssignMutation(node);
     bindCallArguments(node);
     bindArrayCallbackArguments(node);
     bindPromiseCallbackArguments(node);
@@ -7328,6 +7541,10 @@ function collectModuleLoads(text, fileName) {
       ...reflectApplyAliases,
     ])}|${JSON.stringify([
       ...callApplyAliases,
+    ])}|${JSON.stringify([...promiseMethodAliases.entries()])}|${JSON.stringify([
+      ...symbolNamespaceAliases,
+    ])}|${JSON.stringify([...symbolPropertyAliases.entries()])}|${JSON.stringify([
+      ...opaqueCustomIteratorTargets,
     ])}|${JSON.stringify([...objectCreateAliases])}|${JSON.stringify([
       ...objectSetPrototypeOfAliases,
     ])}|${JSON.stringify([...objectDefinePropertyAliases])}|${JSON.stringify([

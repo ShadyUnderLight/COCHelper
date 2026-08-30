@@ -1435,7 +1435,13 @@ describe('testkit isolation', () => {
       `Promise.resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
       `async function use() { const { req } = await Promise.resolve({ req: require }); req(${pkg}); } use();`,
       `async function use() { const req = await runtime.promise; req(${pkg}); } use();`,
+      `async function use() { const req = await runtime.promise; const alias = req; alias(${pkg}); } use();`,
+      `async function use() { const req = await Promise.resolve(1).then(() => runtime.getLoader()); req(${pkg}); } use();`,
       `const P = Promise; P.resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `const resolve = Promise.resolve; resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `const { resolve } = Promise; resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `const resolve = Promise.resolve.bind(Promise); resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `const resolve = Promise.resolve; Reflect.apply(resolve, null, [new Map([['x', require]])]).then((map) => map.get('x')(${pkg}));`,
       `async function use() { const { req } = await Promise.resolve(runtime.getObject()); req(${pkg}); } use();`,
       `const P = Promise; const resolve = P.resolve; resolve({ req: require }).then(({ req }) => req(${pkg}));`,
       `Promise.resolve(require).finally(() => {}).then((req) => req(${pkg}));`,
@@ -1473,12 +1479,26 @@ describe('testkit isolation', () => {
       `const source = { [Symbol.iterator]: function* () { yield require; } }; for (const req of source) req(${pkg});`,
       `const iter = function* () { yield require; }; const source = { [Symbol.iterator]: iter }; for (const req of source) req(${pkg});`,
       `const iter = function* () { yield require; }; const source = {}; Object.defineProperty(source, Symbol.iterator, { value: iter }); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; Object.defineProperty(source, Symbol.iterator, { get() { return iter; } }); for (const req of source) req(${pkg});`,
       `const iter = function* () { yield require; }; const source = { get [Symbol.iterator]() { return iter; } }; for (const req of source) req(${pkg});`,
       `const iter = function* () { yield require; }; const source = Object.assign({}, { [Symbol.iterator]: iter }); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; Object.assign(source, { [Symbol.iterator]: iter }); for (const req of source) req(${pkg});`,
+      `const S = Symbol; const iter = function* () { yield require; }; const source = { [S.iterator]: iter }; for (const req of source) req(${pkg});`,
+      `const iteratorKey = Symbol.iterator; const iter = function* () { yield require; }; const source = { [iteratorKey]: iter }; for (const req of source) req(${pkg});`,
+      `const S = Symbol; const iter = function* () { yield require; }; const source = {}; Object.defineProperty(source, S.iterator, { value: iter }); for (const req of source) req(${pkg});`,
+      `const iteratorKey = Symbol.iterator; const iter = function* () { yield require; }; const source = {}; Object.defineProperty(source, iteratorKey, { value: iter }); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; Object.setPrototypeOf(source, { [Symbol.iterator]: iter }); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; source.__proto__ = { [Symbol.iterator]: iter }; for (const req of source) req(${pkg});`,
       `const iter = async function* () { yield require; }; const source = { [Symbol.asyncIterator]: iter }; for await (const req of source) req(${pkg});`,
       `const iter = async function* () { yield require; }; const source = {}; Object.defineProperty(source, Symbol.asyncIterator, { value: iter }); for await (const req of source) req(${pkg});`,
+      `const iter = async function* () { yield require; }; const source = {}; Object.defineProperty(source, Symbol.asyncIterator, { get() { return iter; } }); for await (const req of source) req(${pkg});`,
       `const iter = async function* () { yield require; }; const source = { get [Symbol.asyncIterator]() { return iter; } }; for await (const req of source) req(${pkg});`,
       `const iter = async function* () { yield require; }; const source = Object.assign({}, { [Symbol.asyncIterator]: iter }); for await (const req of source) req(${pkg});`,
+      `const iter = async function* () { yield require; }; const source = {}; Object.assign(source, { [Symbol.asyncIterator]: iter }); for await (const req of source) req(${pkg});`,
+      `const S = Symbol; const iter = async function* () { yield require; }; const source = { [S.asyncIterator]: iter }; for await (const req of source) req(${pkg});`,
+      `const iteratorKey = Symbol.asyncIterator; const iter = async function* () { yield require; }; const source = { [iteratorKey]: iter }; for await (const req of source) req(${pkg});`,
+      `const iter = async function* () { yield require; }; const source = {}; Object.setPrototypeOf(source, { [Symbol.asyncIterator]: iter }); for await (const req of source) req(${pkg});`,
+      `const iter = async function* () { yield require; }; const source = {}; source.__proto__ = { [Symbol.asyncIterator]: iter }; for await (const req of source) req(${pkg});`,
     ];
     for (const source of cases) {
       expect(findForbiddenImportHits(source, fromMain), source).toEqual(
@@ -1498,6 +1518,11 @@ describe('testkit isolation', () => {
     for (const source of [
       `const iter = function* () { yield 1; }; const source = { [Symbol.iterator]: iter }; for (const value of source) String(value);`,
       `const iter = function* () { yield 1; }; const source = {}; Object.defineProperty(source, Symbol.iterator, { value: iter }); for (const value of source) String(value);`,
+      `const iter = function* () { yield 1; }; const source = {}; Object.assign(source, { [Symbol.iterator]: iter }); for (const value of source) String(value);`,
+      `const S = Symbol; const iter = function* () { yield 1; }; const source = { [S.iterator]: iter }; for (const value of source) String(value);`,
+      `const iteratorKey = Symbol.iterator; const iter = function* () { yield 1; }; const source = {}; Object.defineProperty(source, iteratorKey, { value: iter }); for (const value of source) String(value);`,
+      `const iter = function* () { yield 1; }; const source = {}; Object.setPrototypeOf(source, { [Symbol.iterator]: iter }); for (const value of source) String(value);`,
+      `const iter = function* () { yield 1; }; const source = {}; source.__proto__ = { [Symbol.iterator]: iter }; for (const value of source) String(value);`,
       `const iter = function* () { yield 1; }; const source = { get [Symbol.iterator]() { return iter; } }; for (const value of source) String(value);`,
       `const iter = function* () { yield 1; }; const source = Object.assign({}, { [Symbol.iterator]: iter }); for (const value of source) String(value);`,
       `const iter = async function* () { yield 1; }; const source = { [Symbol.asyncIterator]: iter }; for await (const value of source) String(value);`,
@@ -1883,10 +1908,47 @@ describe('testkit isolation', () => {
           }
           use();
         `,
+        'promise-await-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          async function use() {
+            const req = await runtime.promise;
+            const alias = req;
+            alias(pkg);
+          }
+          use();
+        `,
+        'promise-await-chain-unknown.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          async function use() {
+            const req = await Promise.resolve(1).then(() => runtime.getLoader());
+            req(pkg);
+          }
+          use();
+        `,
         'promise-alias.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           const P = Promise;
           P.resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+        `,
+        'promise-method-alias-from-namespace.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const resolve = Promise.resolve;
+          resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+        `,
+        'promise-method-destructure.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const { resolve } = Promise;
+          resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+        `,
+        'promise-method-bind.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const resolve = Promise.resolve.bind(Promise);
+          resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+        `,
+        'promise-method-reflect.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const resolve = Promise.resolve;
+          Reflect.apply(resolve, null, [new Map([['x', require]])]).then((map) => map.get('x')(pkg));
         `,
         'promise-unknown-object.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
@@ -1937,6 +1999,13 @@ describe('testkit isolation', () => {
           Object.defineProperty(source, Symbol.iterator, { value: iter });
           for (const req of source) req(pkg);
         `,
+        'custom-iterator-define-getter.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          const source = {};
+          Object.defineProperty(source, Symbol.iterator, { get() { return iter; } });
+          for (const req of source) req(pkg);
+        `,
         'custom-iterator-getter.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           const iter = function* () { yield require; };
@@ -1962,6 +2031,13 @@ describe('testkit isolation', () => {
           Object.defineProperty(source, Symbol.asyncIterator, { value: iter });
           for await (const req of source) req(pkg);
         `,
+        'custom-async-iterator-define-getter.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = async function* () { yield require; };
+          const source = {};
+          Object.defineProperty(source, Symbol.asyncIterator, { get() { return iter; } });
+          for await (const req of source) req(pkg);
+        `,
         'custom-async-iterator-getter.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           const iter = async function* () { yield require; };
@@ -1973,6 +2049,108 @@ describe('testkit isolation', () => {
           const iter = async function* () { yield require; };
           const source = Object.assign({}, { [Symbol.asyncIterator]: iter });
           for await (const req of source) req(pkg);
+        `,
+        'custom-iterator-assign-mutation.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          const source = {};
+          Object.assign(source, { [Symbol.iterator]: iter });
+          for (const req of source) req(pkg);
+        `,
+        'custom-async-iterator-assign-mutation.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = async function* () { yield require; };
+          const source = {};
+          Object.assign(source, { [Symbol.asyncIterator]: iter });
+          for await (const req of source) req(pkg);
+        `,
+        'custom-async-iterator-symbol-namespace-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const S = Symbol;
+          const iter = async function* () { yield require; };
+          const source = { [S.asyncIterator]: iter };
+          for await (const req of source) req(pkg);
+        `,
+        'custom-async-iterator-symbol-key-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iteratorKey = Symbol.asyncIterator;
+          const iter = async function* () { yield require; };
+          const source = { [iteratorKey]: iter };
+          for await (const req of source) req(pkg);
+        `,
+        'custom-async-iterator-define-symbol-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const S = Symbol;
+          const iter = async function* () { yield require; };
+          const source = {};
+          Object.defineProperty(source, S.asyncIterator, { value: iter });
+          for await (const req of source) req(pkg);
+        `,
+        'custom-async-iterator-define-key-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iteratorKey = Symbol.asyncIterator;
+          const iter = async function* () { yield require; };
+          const source = {};
+          Object.defineProperty(source, iteratorKey, { value: iter });
+          for await (const req of source) req(pkg);
+        `,
+        'custom-async-iterator-prototype.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = async function* () { yield require; };
+          const source = {};
+          Object.setPrototypeOf(source, { [Symbol.asyncIterator]: iter });
+          for await (const req of source) req(pkg);
+        `,
+        'custom-async-iterator-proto-assignment.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = async function* () { yield require; };
+          const source = {};
+          source.__proto__ = { [Symbol.asyncIterator]: iter };
+          for await (const req of source) req(pkg);
+        `,
+        'custom-iterator-symbol-namespace-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const S = Symbol;
+          const iter = function* () { yield require; };
+          const source = { [S.iterator]: iter };
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-symbol-key-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iteratorKey = Symbol.iterator;
+          const iter = function* () { yield require; };
+          const source = { [iteratorKey]: iter };
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-define-symbol-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const S = Symbol;
+          const iter = function* () { yield require; };
+          const source = {};
+          Object.defineProperty(source, S.iterator, { value: iter });
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-define-key-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iteratorKey = Symbol.iterator;
+          const iter = function* () { yield require; };
+          const source = {};
+          Object.defineProperty(source, iteratorKey, { value: iter });
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-prototype.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          const source = {};
+          Object.setPrototypeOf(source, { [Symbol.iterator]: iter });
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-proto-assignment.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          const source = {};
+          source.__proto__ = { [Symbol.iterator]: iter };
+          for (const req of source) req(pkg);
         `,
         'map-get-chained.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');

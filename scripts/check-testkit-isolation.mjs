@@ -3281,6 +3281,10 @@ function collectModuleLoads(text, fileName) {
     if (ts.isIdentifier(unwrapped) && unwrapped.text === 'Symbol') {
       return true;
     }
+    const globalMember = staticMember(unwrapped);
+    if (globalMember?.name === 'Symbol' && isGlobalObjectValue(globalMember.object)) {
+      return true;
+    }
     const key = referenceKey(unwrapped);
     if (key !== null && symbolNamespaceAliases.has(key)) {
       return true;
@@ -3389,6 +3393,21 @@ function collectModuleLoads(text, fileName) {
         uncertain = true;
       };
       for (const property of unwrapped.properties) {
+        if (ts.isSpreadAssignment(property)) {
+          if (!customIteratorShapeForExpression(property.expression, nextSeen)) {
+            uncertain = true;
+          }
+          continue;
+        }
+        if (
+          (ts.isMethodDeclaration(property) ||
+            ts.isGetAccessorDeclaration(property) ||
+            ts.isPropertyAssignment(property)) &&
+          ts.isComputedPropertyName(property.name) &&
+          staticPropertyKeyValue(property.name.expression) === null
+        ) {
+          uncertain = true;
+        }
         if (
           (ts.isMethodDeclaration(property) ||
             ts.isGetAccessorDeclaration(property) ||
@@ -4970,6 +4989,10 @@ function collectModuleLoads(text, fileName) {
     if (ts.isIdentifier(unwrapped) && unwrapped.text === 'Promise') {
       return true;
     }
+    const globalMember = staticMember(unwrapped);
+    if (globalMember?.name === 'Promise' && isGlobalObjectValue(globalMember.object)) {
+      return true;
+    }
     if (!ts.isIdentifier(unwrapped)) {
       return false;
     }
@@ -4998,10 +5021,27 @@ function collectModuleLoads(text, fileName) {
     if (access && isPromiseNamespaceValue(access.object)) {
       return access.name;
     }
+    if (key !== null) {
+      const stored = valueExprs.get(key);
+      if (stored && stored !== unwrapped) {
+        const fromStored = promiseMethodOf(stored, nextSeen);
+        if (fromStored) {
+          return fromStored;
+        }
+      }
+    }
     if (ts.isIdentifier(unwrapped)) {
       const aliased = resolveAliasedValue(unwrapped);
       if (aliased !== unwrapped) {
         return promiseMethodOf(aliased, nextSeen);
+      }
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      for (const returned of returnExprsForCallable(unwrapped.expression, nextSeen)) {
+        const fromReturned = promiseMethodOf(returned, nextSeen);
+        if (fromReturned) {
+          return fromReturned;
+        }
       }
     }
     return null;
@@ -5438,6 +5478,11 @@ function collectModuleLoads(text, fileName) {
         storeValueKind(`${targetBase}.${key.slice(prefix.length)}`, kind);
       }
     }
+    for (const [key, value] of [...valueExprs.entries()]) {
+      if (key.startsWith(prefix)) {
+        valueExprs.set(`${targetBase}.${key.slice(prefix.length)}`, value);
+      }
+    }
     for (const [key, kind] of [...functionReturns.entries()]) {
       if (key.startsWith(prefix)) {
         functionReturns.set(`${targetBase}.${key.slice(prefix.length)}`, kind);
@@ -5462,6 +5507,12 @@ function collectModuleLoads(text, fileName) {
       if (key.startsWith(prefix)) {
         classInstances.set(`${targetBase}.${key.slice(prefix.length)}`, className);
       }
+    }
+    if (prototypeExprs.has(sourceBase)) {
+      prototypeExprs.set(targetBase, prototypeExprs.get(sourceBase));
+    }
+    if (opaqueCustomIteratorTargets.has(sourceBase)) {
+      opaqueCustomIteratorTargets.add(targetBase);
     }
   };
 
@@ -5534,12 +5585,17 @@ function collectModuleLoads(text, fileName) {
     if (!inv || !isObjectAssignCallee(inv.callee) || inv.args.length === 0) {
       return;
     }
-    const targetKey = referenceKey(inv.args[0]);
-    if (targetKey === null) {
+    const targetKeys = [...objectIdentityKeys(inv.args[0])];
+    if (targetKeys.length === 0) {
       return;
     }
+    const markOpaque = () => {
+      for (const targetKey of targetKeys) {
+        opaqueCustomIteratorTargets.add(targetKey);
+      }
+    };
     if (inv.unresolvable || inv.droppedSpread) {
-      opaqueCustomIteratorTargets.add(targetKey);
+      markOpaque();
       return;
     }
     const registerSource = (source, seen = new Set()) => {
@@ -5551,15 +5607,19 @@ function collectModuleLoads(text, fileName) {
       nextSeen.add(unwrapped);
       const sourceKey = referenceKey(unwrapped);
       if (sourceKey !== null) {
-        copyObjectArrayShapes(targetKey, sourceKey);
+        for (const targetKey of targetKeys) {
+          copyObjectArrayShapes(targetKey, sourceKey);
+        }
       }
       const resolved = resolveAliasedValue(unwrapped);
       if (resolved && resolved !== unwrapped) {
         registerSource(resolved, nextSeen);
       }
       if (resolved && ts.isObjectLiteralExpression(resolved)) {
-        registerObjectArrayShapes(targetKey, resolved);
-        registerObjectMethodReturns(targetKey, resolved);
+        for (const targetKey of targetKeys) {
+          registerObjectArrayShapes(targetKey, resolved);
+          registerObjectMethodReturns(targetKey, resolved);
+        }
         return;
       }
       if (resolved && ts.isCallExpression(resolved)) {
@@ -5573,7 +5633,7 @@ function collectModuleLoads(text, fileName) {
         }
       }
       if (isOpaqueObjectSource(source)) {
-        opaqueCustomIteratorTargets.add(targetKey);
+        markOpaque();
       }
     };
     for (const arg of inv.args.slice(1)) {
@@ -5581,11 +5641,103 @@ function collectModuleLoads(text, fileName) {
         ? expandSpread(arg.expression)?.items
         : [arg];
       if (!sources || (ts.isSpreadElement(arg) && sources.length === 0)) {
-        opaqueCustomIteratorTargets.add(targetKey);
+        markOpaque();
         continue;
       }
       for (const source of sources) {
         registerSource(source);
+      }
+    }
+  };
+
+  const registerObjectPropertyAssignment = (left, right) => {
+    const unwrapped = left ? unwrapExpr(left) : undefined;
+    if (!unwrapped) {
+      return;
+    }
+    let object;
+    let property;
+    let computed = false;
+    if (ts.isPropertyAccessExpression(unwrapped) && ts.isIdentifier(unwrapped.name)) {
+      object = unwrapped.expression;
+      property = unwrapped.name.text;
+    } else if (ts.isElementAccessExpression(unwrapped)) {
+      object = unwrapped.expression;
+      property = staticPropertyKeyValue(unwrapped.argumentExpression);
+      computed = true;
+    }
+    if (!object) {
+      return;
+    }
+    const targetKeys = [...objectIdentityKeys(object)];
+    if (targetKeys.length === 0) {
+      return;
+    }
+    if (property === null) {
+      if (computed) {
+        for (const targetKey of targetKeys) {
+          opaqueCustomIteratorTargets.add(targetKey);
+        }
+      }
+      return;
+    }
+    if (property !== 'Symbol.iterator' && property !== 'Symbol.asyncIterator') {
+      return;
+    }
+    for (const targetKey of targetKeys) {
+      const factKey = `${targetKey}.${property}`;
+      const assigned = unwrapExpr(right);
+      if (assigned) {
+        valueExprs.set(factKey, assigned);
+      }
+      const kind = classifyExpr(right);
+      if (kind === 'factory' || kind === 'requirer') {
+        storeValueKind(factKey, kind);
+      }
+      registerCallableFacts(factKey, right);
+      registerObjectArrayShapes(factKey, right);
+      registerObjectMethodReturns(factKey, right);
+    }
+  };
+
+  const registerUnknownObjectMutation = (node) => {
+    if (!ts.isCallExpression(node)) {
+      return;
+    }
+    const inv = invocationOf(node);
+    if (!inv) {
+      return;
+    }
+    if (
+      isObjectAssignCallee(inv.callee) ||
+      isObjectDefinePropertyCallee(inv.callee) ||
+      isObjectDefinePropertiesCallee(inv.callee) ||
+      isObjectSetPrototypeOfCallee(inv.callee) ||
+      isObjectCreateCallee(inv.callee) ||
+      isReflectGetCallee(inv.callee) ||
+      isReflectApplyCallee(inv.callee) ||
+      promiseMethodOf(inv.callee) !== null ||
+      arrayCallParts(node) !== null ||
+      mapGetValue(node)
+    ) {
+      return;
+    }
+    if (calleeFunctionNode(inv.callee)) {
+      return;
+    }
+    const callee = unwrapExpr(inv.callee);
+    if (
+      ts.isIdentifier(callee) &&
+      new Set(['Boolean', 'Number', 'String', 'Symbol', 'BigInt']).has(callee.text)
+    ) {
+      return;
+    }
+    for (const arg of inv.args) {
+      if (isSafeNonLoaderArg(arg)) {
+        continue;
+      }
+      for (const targetKey of objectIdentityKeys(arg)) {
+        opaqueCustomIteratorTargets.add(targetKey);
       }
     }
   };
@@ -5716,6 +5868,9 @@ function collectModuleLoads(text, fileName) {
         const sourceBase = referenceKey(unwrappedValue);
         if (sourceBase !== null && shape === undefined) {
           copyObjectArrayShapes(name.text, sourceBase);
+        }
+        if (sourceBase !== null && isParamBinding) {
+          copyObjectArrayShapes(sourceBase, name.text);
         }
       }
       return;
@@ -6168,6 +6323,32 @@ function collectModuleLoads(text, fileName) {
       }
     }
     return unwrapped;
+  };
+
+  const objectIdentityKeys = (expr, seen = new Set()) => {
+    const unwrapped = expr ? unwrapExpr(expr) : undefined;
+    if (!unwrapped || seen.has(unwrapped)) {
+      return new Set();
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const keys = new Set();
+    const ownKey = referenceKey(unwrapped);
+    if (ownKey !== null) {
+      keys.add(ownKey);
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      const declaration = enclosingBindingName(unwrapped);
+      const stored = declaration
+        ? scopedValueExprs.get(declaration)
+        : valueExprs.get(unwrapped.text);
+      if (stored && stored !== unwrapped) {
+        for (const key of objectIdentityKeys(stored, nextSeen)) {
+          keys.add(key);
+        }
+      }
+    }
+    return keys;
   };
 
   const objectEnumerableEntries = (expr, seen = new Set()) => {
@@ -6796,22 +6977,50 @@ function collectModuleLoads(text, fileName) {
       return;
     }
     if (isObjectDefinePropertyCallee(inv.callee)) {
+      const targetKeys = inv.args[0] ? [...objectIdentityKeys(inv.args[0])] : [];
+      const markOpaque = () => {
+        for (const targetKey of targetKeys) {
+          opaqueCustomIteratorTargets.add(targetKey);
+        }
+      };
       if (inv.unresolvable || inv.args.length < 3) {
+        markOpaque();
         return;
       }
-      const targetKey = referenceKey(inv.args[0]);
       const propName = staticPropertyKeyValue(inv.args[1]);
-      applyDefinedDescriptor(targetKey, propName, inv.args[2]);
+      if (propName === null) {
+        markOpaque();
+        return;
+      }
+      for (const targetKey of targetKeys) {
+        applyDefinedDescriptor(targetKey, propName, inv.args[2]);
+      }
       return;
     }
-    if (!isObjectDefinePropertiesCallee(inv.callee) || inv.unresolvable || inv.args.length < 2) {
+    if (!isObjectDefinePropertiesCallee(inv.callee)) {
       return;
     }
-    const targetKey = referenceKey(inv.args[0]);
-    if (targetKey === null) {
+    const targetKeys = inv.args[0] ? [...objectIdentityKeys(inv.args[0])] : [];
+    const markOpaque = () => {
+      for (const targetKey of targetKeys) {
+        opaqueCustomIteratorTargets.add(targetKey);
+      }
+    };
+    if (inv.unresolvable || inv.args.length < 2 || targetKeys.length === 0) {
+      markOpaque();
       return;
     }
-    registerDescriptorMapProperties(targetKey, inv.args[1]);
+    const descriptorSource = inv.args[1];
+    const knownDescriptor = Boolean(
+      resolveDescriptorLiteral(descriptorSource) ||
+        collectDescriptorLiterals(descriptorSource).length > 0,
+    );
+    if (!knownDescriptor && resolvedOpaqueSource(descriptorSource)) {
+      markOpaque();
+    }
+    for (const targetKey of targetKeys) {
+      registerDescriptorMapProperties(targetKey, descriptorSource);
+    }
   };
 
   const registerSetPrototypeOfCall = (node) => {
@@ -6819,14 +7028,19 @@ function collectModuleLoads(text, fileName) {
       return;
     }
     const inv = invocationOf(node);
-    if (!inv || !isObjectSetPrototypeOfCallee(inv.callee) || inv.unresolvable || inv.args.length < 2) {
+    if (!inv || !isObjectSetPrototypeOfCallee(inv.callee)) {
       return;
     }
-    const targetKey = referenceKey(inv.args[0]);
-    if (targetKey === null) {
+    const targetKeys = inv.args[0] ? [...objectIdentityKeys(inv.args[0])] : [];
+    if (inv.unresolvable || inv.args.length < 2 || targetKeys.length === 0) {
+      for (const targetKey of targetKeys) {
+        opaqueCustomIteratorTargets.add(targetKey);
+      }
       return;
     }
-    prototypeExprs.set(targetKey, inv.args[1]);
+    for (const targetKey of targetKeys) {
+      prototypeExprs.set(targetKey, inv.args[1]);
+    }
   };
 
   const patternUsesCalleeParam = (pattern) => {
@@ -7449,6 +7663,7 @@ function collectModuleLoads(text, fileName) {
     registerDefinePropertyCall(node);
     registerSetPrototypeOfCall(node);
     registerObjectAssignMutation(node);
+    registerUnknownObjectMutation(node);
     bindCallArguments(node);
     bindArrayCallbackArguments(node);
     bindPromiseCallbackArguments(node);
@@ -7465,10 +7680,10 @@ function collectModuleLoads(text, fileName) {
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const left = unwrapExpr(node.left);
+      registerObjectPropertyAssignment(left, node.right);
       const protoMember = staticMember(left);
       if (protoMember?.name === '__proto__') {
-        const targetKey = referenceKey(protoMember.object);
-        if (targetKey !== null) {
+        for (const targetKey of objectIdentityKeys(protoMember.object)) {
           prototypeExprs.set(targetKey, unwrapExpr(node.right));
         }
       }

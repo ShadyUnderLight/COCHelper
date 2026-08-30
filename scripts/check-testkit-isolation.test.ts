@@ -1442,6 +1442,9 @@ describe('testkit isolation', () => {
       `const { resolve } = Promise; resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
       `const resolve = Promise.resolve.bind(Promise); resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
       `const resolve = Promise.resolve; Reflect.apply(resolve, null, [new Map([['x', require]])]).then((map) => map.get('x')(${pkg}));`,
+      `globalThis.Promise.resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `const api = {}; api.resolve = Promise.resolve; api.resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `function make() { return Promise.resolve; } const resolve = make(); resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
       `async function use() { const { req } = await Promise.resolve(runtime.getObject()); req(${pkg}); } use();`,
       `const P = Promise; const resolve = P.resolve; resolve({ req: require }).then(({ req }) => req(${pkg}));`,
       `Promise.resolve(require).finally(() => {}).then((req) => req(${pkg}));`,
@@ -1499,6 +1502,15 @@ describe('testkit isolation', () => {
       `const iteratorKey = Symbol.asyncIterator; const iter = async function* () { yield require; }; const source = { [iteratorKey]: iter }; for await (const req of source) req(${pkg});`,
       `const iter = async function* () { yield require; }; const source = {}; Object.setPrototypeOf(source, { [Symbol.asyncIterator]: iter }); for await (const req of source) req(${pkg});`,
       `const iter = async function* () { yield require; }; const source = {}; source.__proto__ = { [Symbol.asyncIterator]: iter }; for await (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; const target = source; Object.assign(target, { [Symbol.iterator]: iter }); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; const target = source; Object.defineProperty(target, Symbol.iterator, { value: iter }); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; const target = source; Object.setPrototypeOf(target, { [Symbol.iterator]: iter }); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; function install(target) { target[Symbol.iterator] = iter; } const source = {}; install(source); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; runtime.install(source); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; Object.defineProperties(source, runtime.getDescriptors()); for (const req of source) req(${pkg});`,
+      `const key = runtime.key; const iter = function* () { yield require; }; const source = { [key]: iter }; for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const source = {}; Object.defineProperty(source, runtime.key, { value: iter }); for (const req of source) req(${pkg});`,
+      `const iter = function* () { yield require; }; const key = globalThis.Symbol.iterator; const source = { [key]: iter }; for (const req of source) req(${pkg});`,
     ];
     for (const source of cases) {
       expect(findForbiddenImportHits(source, fromMain), source).toEqual(
@@ -1964,6 +1976,22 @@ describe('testkit isolation', () => {
           const resolve = P.resolve;
           resolve({ req: require }).then(({ req }) => req(pkg));
         `,
+        'promise-global-namespace.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          globalThis.Promise.resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+        `,
+        'promise-object-property-assignment.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const api = {};
+          api.resolve = Promise.resolve;
+          api.resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+        `,
+        'promise-function-return-alias.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          function make() { return Promise.resolve; }
+          const resolve = make();
+          resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+        `,
         'promise-finally.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           Promise.resolve(require).finally(() => {}).then((req) => req(pkg));
@@ -2150,6 +2178,71 @@ describe('testkit isolation', () => {
           const iter = function* () { yield require; };
           const source = {};
           source.__proto__ = { [Symbol.iterator]: iter };
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-target-alias-assign.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          const source = {};
+          const target = source;
+          Object.assign(target, { [Symbol.iterator]: iter });
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-target-alias-define.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          const source = {};
+          const target = source;
+          Object.defineProperty(target, Symbol.iterator, { value: iter });
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-target-alias-prototype.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          const source = {};
+          const target = source;
+          Object.setPrototypeOf(target, { [Symbol.iterator]: iter });
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-helper.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          function install(target) { target[Symbol.iterator] = iter; }
+          const source = {};
+          install(source);
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-unknown-call.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const source = {};
+          runtime.install(source);
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-unknown-descriptors.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const source = {};
+          Object.defineProperties(source, runtime.getDescriptors());
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-unknown-key.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const key = runtime.key;
+          const iter = function* () { yield require; };
+          const source = { [key]: iter };
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-unknown-define-key.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const source = {};
+          const iter = function* () { yield require; };
+          Object.defineProperty(source, runtime.key, { value: iter });
+          for (const req of source) req(pkg);
+        `,
+        'custom-iterator-global-symbol-key.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const iter = function* () { yield require; };
+          const key = globalThis.Symbol.iterator;
+          const source = { [key]: iter };
           for (const req of source) req(pkg);
         `,
         'map-get-chained.ts': `

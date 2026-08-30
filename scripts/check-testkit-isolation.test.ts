@@ -1347,6 +1347,16 @@ describe('testkit isolation', () => {
     ).toEqual([]);
     expect(
       extractUnsafeDynamicLoads(
+        `const map = flag ? new Map([['x', 1]]) : new Map([['x', 2]]); String(map.get('x'));`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `const box = { map: new Map([['x', 1]]) }; String(box.map.get('x'));`,
+      ),
+    ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
         `const map = new Map([['x', 1]]); const get = Reflect.get(map, 'get'); String(get.call(map, 'x'));`,
       ),
     ).toEqual([]);
@@ -1595,6 +1605,26 @@ describe('testkit isolation', () => {
           function make() { return map.get; }
           const get = make();
           const mapReq = get.call(map, 'x');
+          mapReq(pkg);
+        `,
+        'map-get-return-receiver.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          function make() { return new Map([['x', require]]); }
+          const mapReq = make().get('x');
+          mapReq(pkg);
+        `,
+        'map-get-conditional-receiver.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const map = flag
+            ? new Map([['x', require]])
+            : new Map([['x', 1]]);
+          const mapReq = map.get('x');
+          mapReq(pkg);
+        `,
+        'map-get-nested-receiver.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const box = { map: new Map([['x', require]]) };
+          const mapReq = box.map.get('x');
           mapReq(pkg);
         `,
         'map-get-reflect-get.ts': `

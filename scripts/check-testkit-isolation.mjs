@@ -3358,6 +3358,97 @@ function collectModuleLoads(text, fileName) {
     });
   };
 
+  const mapReceiverCandidates = (valueExpr, seen = new Set()) => {
+    const unwrapped = valueExpr ? unwrapExpr(valueExpr) : undefined;
+    if (!unwrapped || seen.has(unwrapped)) {
+      return { receivers: [], uncertain: false, recognized: false };
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const merge = (parts) => {
+      const receivers = [];
+      let uncertain = false;
+      let recognized = false;
+      for (const part of parts) {
+        if (!part) {
+          continue;
+        }
+        for (const receiver of part.receivers) {
+          if (!receivers.includes(receiver)) {
+            receivers.push(receiver);
+          }
+        }
+        uncertain = uncertain || part.uncertain;
+        recognized = recognized || part.recognized;
+        if (!part.recognized) {
+          uncertain = true;
+        }
+      }
+      return { receivers, uncertain, recognized };
+    };
+
+    const aliased = resolveAliasedValue(unwrapped);
+    if (aliased && aliased !== unwrapped) {
+      return mapReceiverCandidates(aliased, nextSeen);
+    }
+    if (ts.isNewExpression(unwrapped)) {
+      const constructor = unwrapExpr(unwrapped.expression);
+      if (constructor && ts.isIdentifier(constructor) && constructor.text === 'Map') {
+        return { receivers: [unwrapped], uncertain: false, recognized: true };
+      }
+      return { receivers: [], uncertain: false, recognized: false };
+    }
+    if (ts.isConditionalExpression(unwrapped) || isLogicalBinary(unwrapped)) {
+      return merge(
+        (ts.isConditionalExpression(unwrapped)
+          ? [unwrapped.whenTrue, unwrapped.whenFalse]
+          : [unwrapped.left, unwrapped.right]
+        ).map((branch) =>
+          mapReceiverCandidates(branch, nextSeen),
+        ),
+      );
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const invocation = invocationOf(unwrapped);
+      if (invocation && isReflectGetCallee(invocation.callee)) {
+        const property = invocation.args.length >= 2 ? staticStringValue(invocation.args[1]) : null;
+        if (property === 'get' && invocation.args[0]) {
+          const nested = mapReceiverCandidates(invocation.args[0], nextSeen);
+          if (nested.receivers.length > 0 || nested.uncertain) {
+            return nested;
+          }
+        }
+      }
+      const returned = returnExprsForCallable(unwrapped.expression, nextSeen);
+      if (returned.length > 0) {
+        return merge(
+          returned.flatMap((item) => expandBranchExprs(item, nextSeen)).map((item) =>
+            mapReceiverCandidates(item, nextSeen),
+          ),
+        );
+      }
+      return { receivers: [], uncertain: false, recognized: false };
+    }
+    if (ts.isIdentifier(unwrapped)) {
+      const binding = enclosingBindingName(unwrapped);
+      const stored = binding ? scopedValueExprs.get(binding) : valueExprs.get(unwrapped.text);
+      if (stored && stored !== unwrapped) {
+        return mapReceiverCandidates(stored, nextSeen);
+      }
+    }
+    const member = staticMember(unwrapped);
+    if (member) {
+      const resolved = resolveObjectProperty(member.object, member.name, nextSeen);
+      if (resolved?.value && resolved.value !== unwrapped) {
+        return mapReceiverCandidates(resolved.value, nextSeen);
+      }
+      if (resolved?.returns === 'opaque') {
+        return { receivers: [], uncertain: false, recognized: false };
+      }
+    }
+    return { receivers: [], uncertain: false, recognized: false };
+  };
+
   const mapGetTargetInfo = (target, seen = new Set()) => {
     const unwrapped = target ? unwrapExpr(target) : undefined;
     if (!unwrapped || seen.has(unwrapped)) {
@@ -3371,13 +3462,24 @@ function collectModuleLoads(text, fileName) {
       const nested = mapGetTargetInfo(bound.target, nextSeen);
       if (nested) {
         return {
-          receiver: nested.receiver,
+          ...nested,
           boundArgs: [...nested.boundArgs, ...bound.boundArgs],
         };
       }
     }
 
     const member = staticMember(unwrapped);
+    if (member?.name === 'get') {
+      const candidates = mapReceiverCandidates(member.object, nextSeen);
+      if (candidates.recognized) {
+        return {
+          receivers: candidates.receivers,
+          receiver: candidates.receivers[0],
+          uncertain: candidates.uncertain,
+          boundArgs: [],
+        };
+      }
+    }
     if (member) {
       const resolved = resolveObjectProperty(member.object, member.name, nextSeen);
       if (resolved?.value && resolved.value !== unwrapped) {
@@ -3387,17 +3489,10 @@ function collectModuleLoads(text, fileName) {
         }
       }
     }
-    if (member?.name === 'get') {
-      const receiver = resolveAliasedValue(member.object);
-      const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
-      if (
-        receiver &&
-        ts.isNewExpression(receiver) &&
-        constructor &&
-        ts.isIdentifier(constructor) &&
-        constructor.text === 'Map'
-      ) {
-        return { receiver, boundArgs: [] };
+    if (ts.isNewExpression(unwrapped)) {
+      const constructor = unwrapExpr(unwrapped.expression);
+      if (constructor && ts.isIdentifier(constructor) && constructor.text === 'Map') {
+        return { receivers: [unwrapped], receiver: unwrapped, uncertain: false, boundArgs: [] };
       }
     }
 
@@ -3406,16 +3501,16 @@ function collectModuleLoads(text, fileName) {
       if (invocation && isReflectGetCallee(invocation.callee)) {
         const property = invocation.args.length >= 2 ? staticStringValue(invocation.args[1]) : null;
         const receiver = invocation.args[0] ? resolveAliasedValue(invocation.args[0]) : undefined;
-        const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
-        if (
-          property === 'get' &&
-          receiver &&
-          ts.isNewExpression(receiver) &&
-          constructor &&
-          ts.isIdentifier(constructor) &&
-          constructor.text === 'Map'
-        ) {
-          return { receiver, boundArgs: [] };
+        if (property === 'get') {
+          const candidates = mapReceiverCandidates(receiver, nextSeen);
+          if (candidates.recognized) {
+            return {
+              receivers: candidates.receivers,
+              receiver: candidates.receivers[0],
+              uncertain: candidates.uncertain,
+              boundArgs: [],
+            };
+          }
         }
       }
       for (const returned of returnExprsForCallable(unwrapped.expression, nextSeen)) {
@@ -3430,7 +3525,14 @@ function collectModuleLoads(text, fileName) {
       const binding = enclosingBindingName(unwrapped);
       const destructuredReceiver = binding ? mapGetReceivers.get(binding) : undefined;
       if (destructuredReceiver) {
-        return { receiver: destructuredReceiver, boundArgs: [] };
+        const candidates = mapReceiverCandidates(destructuredReceiver, nextSeen);
+        return {
+          receivers: candidates.receivers,
+          receiver: candidates.receivers[0],
+          uncertain: candidates.uncertain,
+          recognized: candidates.recognized,
+          boundArgs: [],
+        };
       }
       const aliased = resolveAliasedValue(unwrapped);
       if (aliased && aliased !== unwrapped) {
@@ -3457,42 +3559,61 @@ function collectModuleLoads(text, fileName) {
     }
     const args = applied ? applied.fnArgs : [...targetInfo.boundArgs, ...expr.arguments];
     const unresolvable = Boolean(applied?.unresolvable) || args.length < 1;
-    const receiver = resolveAliasedValue(targetInfo.receiver);
-    const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
-    if (
-      !receiver ||
-      !ts.isNewExpression(receiver) ||
-      !constructor ||
-      !ts.isIdentifier(constructor) ||
-      constructor.text !== 'Map'
-    ) {
+    const receivers = targetInfo.receivers?.length
+      ? targetInfo.receivers.map((receiver) => resolveAliasedValue(receiver))
+      : targetInfo.receiver
+        ? [resolveAliasedValue(targetInfo.receiver)]
+        : [];
+    const maps = receivers.filter((receiver) => {
+      const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
+      return (
+        receiver &&
+        ts.isNewExpression(receiver) &&
+        constructor &&
+        ts.isIdentifier(constructor) &&
+        constructor.text === 'Map'
+      );
+    });
+    if (maps.length === 0 && !targetInfo.uncertain) {
       return undefined;
     }
     if (unresolvable) {
       return { unknown: true, kind: null, value: undefined };
     }
-    const entries = mapEntryShapes(receiver);
     const requested = args[0];
     const keyValue = requested ? staticMapKeyValue(requested) : null;
     if (keyValue === null) {
       return { unknown: true, kind: null, value: undefined };
     }
     let uncertain = false;
-    for (const entry of entries ?? []) {
-      const entryKey = staticMapKeyValue(entry.key);
-      if (entryKey === null || entry.opaque) {
-        uncertain = true;
-        continue;
-      }
-      if (entryKey === keyValue) {
-        return {
-          unknown: false,
-          kind: entry.valueKind ?? classifyExpr(entry.value),
-          value: entry.value,
-        };
+    let matched = false;
+    let matchedKind = null;
+    let matchedValue;
+    for (const receiver of maps) {
+      const entries = mapEntryShapes(receiver);
+      for (const entry of entries ?? []) {
+        const entryKey = staticMapKeyValue(entry.key);
+        if (entryKey === null || entry.opaque) {
+          uncertain = true;
+          continue;
+        }
+        if (entryKey === keyValue) {
+          const kind = entry.valueKind ?? classifyExpr(entry.value);
+          if (kind === 'factory' || kind === 'requirer') {
+            return { unknown: false, kind, value: entry.value };
+          }
+          matched = true;
+          matchedKind = kind;
+          matchedValue = entry.value;
+        }
       }
     }
-    return { unknown: uncertain, kind: null, value: undefined };
+    uncertain = uncertain || Boolean(targetInfo.uncertain);
+    return {
+      unknown: uncertain,
+      kind: matched ? matchedKind : null,
+      value: matched ? matchedValue : undefined,
+    };
   };
 
   const shapeFromIteratorEntries = (receiver, sourceShape) => {
@@ -4899,15 +5020,8 @@ function collectModuleLoads(text, fileName) {
           callApplyAliases.add(element.name.text);
         }
         if (ts.isIdentifier(element.name) && key === 'get') {
-          const receiver = resolveAliasedValue(valueExpr);
-          const constructor = receiver ? unwrapExpr(receiver.expression) : undefined;
-          if (
-            receiver &&
-            ts.isNewExpression(receiver) &&
-            constructor &&
-            ts.isIdentifier(constructor) &&
-            constructor.text === 'Map'
-          ) {
+          const candidates = mapReceiverCandidates(valueExpr);
+          if (candidates.receivers.length > 0) {
             mapGetReceivers.set(element.name, valueExpr);
           }
         }

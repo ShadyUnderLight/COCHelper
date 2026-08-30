@@ -1461,6 +1461,7 @@ describe('testkit isolation', () => {
     const cases = [
       `const source = { *[Symbol.iterator]() { yield require; } }; for (const req of source) req(${pkg});`,
       `const source = { async *[Symbol.asyncIterator]() { yield require; } }; for await (const req of source) req(${pkg});`,
+      `const source = { [Symbol.iterator]: function* () { yield require; } }; for (const req of source) req(${pkg});`,
     ];
     for (const source of cases) {
       expect(findForbiddenImportHits(source, fromMain), source).toEqual(

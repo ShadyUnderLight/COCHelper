@@ -3279,12 +3279,25 @@ function collectModuleLoads(text, fileName) {
       return shapes.length > 0 ? mergeArrayShapes(...shapes) : undefined;
     }
     if (ts.isObjectLiteralExpression(unwrapped)) {
-      const methods = unwrapped.properties.filter(
-        (property) =>
-          ts.isMethodDeclaration(property) &&
-          (isSymbolIteratorMethod(property, 'iterator') ||
-            isSymbolIteratorMethod(property, 'asyncIterator')),
-      );
+      const methods = unwrapped.properties
+        .map((property) => {
+          if (ts.isMethodDeclaration(property)) {
+            return isSymbolIteratorMethod(property, 'iterator') ||
+              isSymbolIteratorMethod(property, 'asyncIterator')
+              ? property
+              : null;
+          }
+          if (
+            ts.isPropertyAssignment(property) &&
+            (isSymbolIteratorMethod(property, 'iterator') ||
+              isSymbolIteratorMethod(property, 'asyncIterator'))
+          ) {
+            const value = unwrapExpr(property.initializer);
+            return value && isFunctionLikeNode(value) ? value : null;
+          }
+          return null;
+        })
+        .filter(Boolean);
       if (methods.length === 0) {
         return undefined;
       }
@@ -4683,7 +4696,12 @@ function collectModuleLoads(text, fileName) {
         if (args.unresolvable || args.items.length === 0) {
           return { recognized: true, values: [], unknown: args.unresolvable };
         }
-        return { recognized: true, values: [args.items[0]], unknown: false };
+        const value = args.items[0];
+        const resolvedValue = resolveAliasedValue(value);
+        const known =
+          isConcreteIndexedValue(resolvedValue) ||
+          dangerousConcreteValueKind(value) !== null;
+        return { recognized: true, values: [value], unknown: !known };
       }
       if (access.name === 'all' || access.name === 'allSettled') {
         const source = unwrapped.arguments[0];
@@ -6722,6 +6740,12 @@ function collectModuleLoads(text, fileName) {
       return;
     }
     const info = promiseResolvedValueInfo(access.object);
+    if (access.name === 'catch') {
+      if (isParamCalleeUsed(params[0])) {
+        bindPattern(params[0], 'requirer', undefined);
+      }
+      return;
+    }
     if (!info?.recognized) {
       if (isParamCalleeUsed(params[0])) {
         bindPattern(params[0], 'requirer', undefined);

@@ -1677,6 +1677,20 @@ describe('testkit isolation', () => {
           const mapReq = Reflect.get(box, 'map').get('x');
           mapReq(pkg);
         `,
+        'map-get-dynamic-key.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const map = new Map([['x', require]]);
+          const mapReq = map.get(runtime.key);
+          mapReq(pkg);
+        `,
+        'weak-map-get-alias-key.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const key = {};
+          const lookup = key;
+          const map = new WeakMap([[key, require]]);
+          const mapReq = map.get(lookup);
+          mapReq(pkg);
+        `,
         'map-get-chained.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
           const mapReq = new Map([['m', new Map([['x', require]])]]).get('m').get('x');

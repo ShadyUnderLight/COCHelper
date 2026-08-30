@@ -3291,7 +3291,70 @@ function collectModuleLoads(text, fileName) {
     };
   };
 
-  const staticMapKeyValue = (expr) => {
+  const variableDeclarationForBinding = (expr) => {
+    const binding = expr ? enclosingBindingName(expr) : null;
+    if (!binding) {
+      return null;
+    }
+    let current = binding;
+    while (current && !ts.isVariableDeclaration(current)) {
+      current = current.parent;
+    }
+    if (!current || !ts.isVariableDeclaration(current)) {
+      return null;
+    }
+    const declarationList = current.parent;
+    return declarationList && ts.isVariableDeclarationList(declarationList)
+      ? current
+      : null;
+  };
+
+  const isStableMapKeyObject = (expr) => {
+    const unwrapped = unwrapExpr(expr);
+    return Boolean(
+      unwrapped &&
+        (ts.isObjectLiteralExpression(unwrapped) ||
+          ts.isArrayLiteralExpression(unwrapped) ||
+          ts.isClassExpression(unwrapped) ||
+          ts.isRegularExpressionLiteral(unwrapped) ||
+          ts.isNewExpression(unwrapped) ||
+          isFunctionLikeNode(unwrapped)),
+    );
+  };
+
+  const stableMapKeyIdentity = (expr, seen = new Set()) => {
+    const unwrapped = unwrapExpr(expr);
+    if (!unwrapped || seen.has(unwrapped) || !ts.isIdentifier(unwrapped)) {
+      return null;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    const declaration = variableDeclarationForBinding(unwrapped);
+    if (!declaration || !declaration.initializer) {
+      return null;
+    }
+    const declarationList = declaration.parent;
+    if (
+      !declarationList ||
+      !ts.isVariableDeclarationList(declarationList) ||
+      !(declarationList.flags & ts.NodeFlags.Const)
+    ) {
+      return null;
+    }
+    const initializer = unwrapExpr(declaration.initializer);
+    if (!initializer) {
+      return null;
+    }
+    if (isStableMapKeyObject(initializer)) {
+      return declaration.name;
+    }
+    if (ts.isIdentifier(initializer)) {
+      return stableMapKeyIdentity(initializer, nextSeen);
+    }
+    return null;
+  };
+
+  const staticMapKeyValue = (expr, seen = new Set()) => {
     const string = staticStringValue(expr);
     if (string !== null) {
       return `string:${string}`;
@@ -3301,9 +3364,23 @@ function collectModuleLoads(text, fileName) {
       return `number:${index}`;
     }
     const unwrapped = unwrapExpr(expr);
-    const reference = unwrapped ? referenceKey(unwrapped) : null;
-    if (reference !== null) {
-      return `reference:${reference}`;
+    if (!unwrapped || seen.has(unwrapped)) {
+      return null;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(unwrapped);
+    if (ts.isIdentifier(unwrapped)) {
+      const declaration = variableDeclarationForBinding(unwrapped);
+      if (declaration?.initializer) {
+        const initialized = staticMapKeyValue(declaration.initializer, nextSeen);
+        if (initialized !== null) {
+          return initialized;
+        }
+      }
+      const identity = stableMapKeyIdentity(unwrapped, seen);
+      if (identity !== null) {
+        return identity;
+      }
     }
     return null;
   };

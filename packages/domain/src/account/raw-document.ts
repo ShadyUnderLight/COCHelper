@@ -1,8 +1,4 @@
-import {
-  parseLegacyInt64,
-  parseJson,
-  type CanonicalJsonValue,
-} from '@coc-helper/wire';
+import { parseLegacyInt64, parseJson, type CanonicalJsonValue } from '@coc-helper/wire';
 
 import {
   COVERAGE_CONTRACT_FIELD,
@@ -244,10 +240,7 @@ function decodeRawAccountItem(
       return { kind: 'invalidJSON', message: `${path}.modules 必须是数组。` };
     }
     for (let index = 0; index < modulesValue.items.length; index += 1) {
-      const decoded = decodeRawAccountItem(
-        modulesValue.items[index]!,
-        `${path}.modules.${index}`,
-      );
+      const decoded = decodeRawAccountItem(modulesValue.items[index]!, `${path}.modules.${index}`);
       if (isImportError(decoded)) {
         return decoded;
       }
@@ -262,7 +255,8 @@ function decodeRawAccountItem(
     timerSeconds: decodeOptionalInt64(value.fields.timer),
     helperTimerSeconds: decodeOptionalInt64(value.fields.helper_timer),
     helperCooldownSeconds: decodeOptionalInt64(value.fields.helper_cooldown),
-    helperRecurrent: value.fields.helper_recurrent?.kind === 'bool' ? value.fields.helper_recurrent.value : false,
+    helperRecurrent:
+      value.fields.helper_recurrent?.kind === 'bool' ? value.fields.helper_recurrent.value : false,
     gearUp: decodeOptionalInt(value.fields.gear_up),
     weapon: decodeOptionalInt(value.fields.weapon),
     types,

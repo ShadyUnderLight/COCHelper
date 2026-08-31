@@ -28,7 +28,7 @@ export function createVillageProfile(input: {
 }
 
 export type PendingSnapshotTarget =
-  | { readonly kind: 'existing'; readonly index: number }
+  | { readonly kind: 'existing'; readonly villageId: string }
   | { readonly kind: 'create' }
   | { readonly kind: 'ambiguous'; readonly tag: string; readonly villageNames: readonly string[] };
 
@@ -44,9 +44,16 @@ export type QuickImportPreview = {
 
 export type QuickImportError =
   | { readonly kind: 'emptyClipboard' }
-  | { readonly kind: 'parseFailed'; readonly error: import('../account').AccountSnapshotImportError }
+  | {
+      readonly kind: 'parseFailed';
+      readonly error: import('../account').AccountSnapshotImportError;
+    }
   | { readonly kind: 'targetVillageMissing' }
-  | { readonly kind: 'tagBelongsToAnotherVillage'; readonly tag: string; readonly villageName: string };
+  | {
+      readonly kind: 'tagBelongsToAnotherVillage';
+      readonly tag: string;
+      readonly villageName: string;
+    };
 
 export function quickImportErrorMessage(error: QuickImportError): string {
   switch (error.kind) {

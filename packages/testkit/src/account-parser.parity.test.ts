@@ -1,11 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import {
-  maskDiagnosticIdsInWireHex,
-  parseAccountSnapshot,
-  wireHex,
-} from '@coc-helper/domain';
+import { maskDiagnosticIdsInWireHex, parseAccountSnapshot, wireHex } from '@coc-helper/domain';
 import { refSecondsToUnixSeconds } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 

@@ -52,7 +52,7 @@ export function resolvePendingTarget(
       };
     }
     if (matchingIndices.length === 1) {
-      return { kind: 'existing', index: matchingIndices[0]! };
+      return { kind: 'existing', villageId: villages[matchingIndices[0]!]!.id };
     }
   }
 
@@ -65,7 +65,7 @@ export function resolvePendingTarget(
     (options.importIntoCurrentVillage ||
       (villages.length === 1 && !villages[currentIndex]!.hasImportedData))
   ) {
-    return { kind: 'existing', index: currentIndex };
+    return { kind: 'existing', villageId: villages[currentIndex]!.id };
   }
   return { kind: 'create' };
 }
@@ -119,21 +119,18 @@ export function prepareQuickImport(input: {
 
   const normalizedSnapshotTag = normalizedTag(parsed.value.tag);
   const replacesSameTag =
-    normalizedSnapshotTag !== undefined &&
-    normalizedSnapshotTag === normalizedTag(target.tag);
+    normalizedSnapshotTag !== undefined && normalizedSnapshotTag === normalizedTag(target.tag);
   const targetVillageHasSnapshot = target.hasImportedData;
 
   let destinationDescription: string;
   if (!targetVillageHasSnapshot) {
     destinationDescription = `将建立「${target.name}」的账号快照并导入`;
   } else if (normalizedSnapshotTag === undefined) {
-    destinationDescription =
-      `导入目标：按当前详情页应用到「${target.name}」。JSON 未提供账号 Tag，将按当前目标处理，原官方数据将因 Tag 缺失被重置`;
+    destinationDescription = `导入目标：按当前详情页应用到「${target.name}」。JSON 未提供账号 Tag，将按当前目标处理，原官方数据将因 Tag 缺失被重置`;
   } else if (replacesSameTag) {
     destinationDescription = `导入目标：按当前详情页更新「${target.name}」`;
   } else {
-    destinationDescription =
-      `导入目标：按当前详情页应用到「${target.name}」，原官方数据将因 Tag 变化被重置`;
+    destinationDescription = `导入目标：按当前详情页应用到「${target.name}」，原官方数据将因 Tag 变化被重置`;
   }
 
   return {
@@ -158,7 +155,11 @@ export function parsePendingImport(input: {
   readonly clock: Clock;
 }):
   | { readonly ok: true; readonly value: PendingImportPreview }
-  | { readonly ok: false; readonly error: AccountSnapshotImportError | { readonly kind: 'ambiguous'; readonly message: string } } {
+  | {
+      readonly ok: false;
+      readonly error:
+        AccountSnapshotImportError | { readonly kind: 'ambiguous'; readonly message: string };
+    } {
   const parsed = parseAccountSnapshot(input.text, { clock: input.clock });
   if (!parsed.ok) {
     return { ok: false, error: parsed.error };
@@ -207,10 +208,12 @@ export function pendingAccountSnapshotActionTitle(
     case 'ambiguous':
       return '无法确定导入目标';
     case 'existing': {
-      const targetName = villages[target.index]?.name ?? '未知村庄';
-      const action = isReimportingExistingVillage(snapshot, villages[target.index]!)
-        ? '更新'
-        : '应用到';
+      const village = villages.find((entry) => entry.id === target.villageId);
+      const targetName = village?.name ?? '未知村庄';
+      const action =
+        village !== undefined && isReimportingExistingVillage(snapshot, village)
+          ? '更新'
+          : '应用到';
       return `${action}「${targetName}」`;
     }
     case 'create': {

@@ -41,6 +41,9 @@ importers:
       '@coc-helper/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@coc-helper/wire':
+        specifier: workspace:*
+        version: link:../../packages/wire
       zod:
         specifier: ^4.0.17
         version: 4.4.3

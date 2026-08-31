@@ -94,14 +94,30 @@ describe('import routing', () => {
       }),
     ];
     const snapshot = emptySnapshot('{"tag":"#DUP","buildings":[]}');
-    expect(resolvePendingTarget(snapshot, villages, {
-      selectedVillageId: '1',
-      importIntoCurrentVillage: false,
-    })).toEqual({
+    expect(
+      resolvePendingTarget(snapshot, villages, {
+        selectedVillageId: '1',
+        importIntoCurrentVillage: false,
+      }),
+    ).toEqual({
       kind: 'ambiguous',
       tag: '#DUP',
       villageNames: ['A', 'B'],
     });
+  });
+
+  it('resolvePendingTarget 返回稳定 villageId 而非数组 index', () => {
+    const villages = [
+      createVillageProfile({ id: 'v-a', name: 'A' }),
+      createVillageProfile({ id: 'v-b', name: 'B' }),
+    ];
+    const snapshot = emptySnapshot('{"tag":"#NEW","buildings":[]}');
+    expect(
+      resolvePendingTarget(snapshot, villages, {
+        selectedVillageId: 'v-b',
+        importIntoCurrentVillage: true,
+      }),
+    ).toEqual({ kind: 'existing', villageId: 'v-b' });
   });
 
   it('applySnapshotToVillage 在 tag 变化时清空 officialAPIState', () => {
@@ -111,10 +127,7 @@ describe('import routing', () => {
       accountSnapshot: emptySnapshot('{"tag":"#OLD","buildings":[]}'),
       officialAPIState: { status: 'success' },
     });
-    const next = applySnapshotToVillage(
-      village,
-      emptySnapshot('{"tag":"#NEW","buildings":[]}'),
-    );
+    const next = applySnapshotToVillage(village, emptySnapshot('{"tag":"#NEW","buildings":[]}'));
     expect(next.officialAPIState).toBeNull();
     expect(next.tag).toBe('#NEW');
   });
@@ -127,10 +140,7 @@ describe('import routing', () => {
       accountSnapshot: emptySnapshot('{"tag":"#ABC","buildings":[]}'),
       officialAPIState,
     });
-    const next = applySnapshotToVillage(
-      village,
-      emptySnapshot('{"tag":"#ABC","buildings":[]}'),
-    );
+    const next = applySnapshotToVillage(village, emptySnapshot('{"tag":"#ABC","buildings":[]}'));
     expect(next.officialAPIState).toBe(officialAPIState);
   });
 });

@@ -87,7 +87,8 @@ export class ImportCoordinator {
     }
 
     const villages = [...this.store.listVillages()];
-    switch (pending.target.kind) {
+    const target = pending.target;
+    switch (target.kind) {
       case 'create': {
         const snapshot = pending.snapshot;
         const village = createVillageProfile({
@@ -101,13 +102,14 @@ export class ImportCoordinator {
         break;
       }
       case 'existing': {
-        const index = pending.target.index;
-        if (index < 0 || index >= villages.length) {
+        const index = villages.findIndex((village) => village.id === target.villageId);
+        if (index < 0) {
+          this.lastError = '目标村庄不存在，无法导入。';
           return false;
         }
         villages[index] = applySnapshotToVillage(villages[index]!, pending.snapshot);
         this.store.saveVillages(villages);
-        this.store.setSelectedVillageId(villages[index]!.id);
+        this.store.setSelectedVillageId(target.villageId);
         break;
       }
       case 'ambiguous':
@@ -120,7 +122,10 @@ export class ImportCoordinator {
     return true;
   }
 
-  prepareQuickImport(text: string, targetVillageId: string):
+  prepareQuickImport(
+    text: string,
+    targetVillageId: string,
+  ):
     | { readonly ok: true; readonly value: QuickImportPreview }
     | { readonly ok: false; readonly error: string } {
     const result = prepareQuickImport({
@@ -178,7 +183,9 @@ export class InMemoryVillageStore implements VillageStorePort {
   }
 }
 
-function formatImportError(error: AccountSnapshotImportError | { readonly kind: 'ambiguous'; readonly message: string }): string {
+function formatImportError(
+  error: AccountSnapshotImportError | { readonly kind: 'ambiguous'; readonly message: string },
+): string {
   if ('kind' in error && error.kind === 'ambiguous') {
     return error.message;
   }
@@ -192,9 +199,7 @@ function formatImportError(error: AccountSnapshotImportError | { readonly kind: 
   }
 }
 
-function formatQuickImportError(
-  error: import('@coc-helper/domain').QuickImportError,
-): string {
+function formatQuickImportError(error: import('@coc-helper/domain').QuickImportError): string {
   switch (error.kind) {
     case 'emptyClipboard':
       return '系统剪贴板中没有可用的文本。';

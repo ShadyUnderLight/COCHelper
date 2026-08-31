@@ -53,9 +53,7 @@ describe('AccountSnapshotImporter', () => {
     expect(snapshot.boosts.clocktower_cooldown).toBe(24674n);
     expect(snapshot.objectSections.helpers?.[0]?.remainingHelperCooldownSeconds).toBe(1712n);
     expect(snapshot.objectSections.buildings?.[0]?.remainingSeconds).toBe(3000n);
-    expect(snapshot.objectSections.buildings?.[1]?.types[0]?.modules[0]?.dataID).toBe(
-      102000033n,
-    );
+    expect(snapshot.objectSections.buildings?.[1]?.types[0]?.modules[0]?.dataID).toBe(102000033n);
   });
 
   it('重复记录保留 multiplicity，未知字段进入诊断', () => {
@@ -108,9 +106,9 @@ describe('AccountSnapshotImporter', () => {
       error: { kind: 'topLevelMustBeObject' },
     });
     expect(parseAccountSnapshot('{', { clock: new FakeClock(0) }).ok).toBe(false);
-    expect(parseAccountSnapshot('{"timestamp":1e30,"buildings":[]}', { clock: new FakeClock(0) }).ok).toBe(
-      false,
-    );
+    expect(
+      parseAccountSnapshot('{"timestamp":1e30,"buildings":[]}', { clock: new FakeClock(0) }).ok,
+    ).toBe(false);
   });
 
   it('golden fixture 指纹与 wire 形状 parity', () => {

@@ -2,11 +2,7 @@
 export function prepareAccountText(text: string): { text: string; removedCodeFence: boolean } {
   const trimmed = text.trim();
   const lines = trimmed.split('\n');
-  if (
-    lines.length >= 3 &&
-    lines[0]!.trim().startsWith('```') &&
-    lines.at(-1)!.trim() === '```'
-  ) {
+  if (lines.length >= 3 && lines[0]!.trim().startsWith('```') && lines.at(-1)!.trim() === '```') {
     return {
       text: lines.slice(1, -1).join('\n').trim(),
       removedCodeFence: true,

@@ -1,7 +1,16 @@
-import { sha256Fingerprint, unixSecondsToRefSeconds, type Sha256Fingerprint } from '@coc-helper/wire';
+import {
+  sha256Fingerprint,
+  unixSecondsToRefSeconds,
+  type Sha256Fingerprint,
+} from '@coc-helper/wire';
 
 import type { AccountSnapshot } from './types';
-import { encodeSwiftSortedJson, mapBoostsForWire, mapNumericSectionsForWire, mapObjectSectionsForWire } from './wire-encode';
+import {
+  encodeSwiftSortedJson,
+  mapBoostsForWire,
+  mapNumericSectionsForWire,
+  mapObjectSectionsForWire,
+} from './wire-encode';
 
 type FingerprintDiagnostic = {
   readonly severity: string;
@@ -22,13 +31,13 @@ type FingerprintMaterial = {
   readonly diagnostics: readonly FingerprintDiagnostic[];
 };
 
-export function computeContentFingerprint(snapshot: Omit<AccountSnapshot, 'contentFingerprint'>): Sha256Fingerprint {
+export function computeContentFingerprint(
+  snapshot: Omit<AccountSnapshot, 'contentFingerprint'>,
+): Sha256Fingerprint {
   const material: FingerprintMaterial = {
     tag: snapshot.tag,
     capturedAt:
-      snapshot.capturedAtMs === null
-        ? null
-        : unixSecondsToRefSeconds(snapshot.capturedAtMs / 1000),
+      snapshot.capturedAtMs === null ? null : unixSecondsToRefSeconds(snapshot.capturedAtMs / 1000),
     importedAt: unixSecondsToRefSeconds(snapshot.importedAtMs / 1000),
     ageSeconds: snapshot.ageSeconds,
     originalText: snapshot.originalText,

@@ -5,11 +5,7 @@ import { computeContentFingerprint } from './fingerprint';
 import { normalizeAccountItem, normalizedBoosts } from './normalize';
 import { prepareAccountText } from './prepare';
 import { decodeRawAccountDocument } from './raw-document';
-import type {
-  AccountDataDiagnostic,
-  AccountSnapshot,
-  AccountSnapshotImportError,
-} from './types';
+import type { AccountDataDiagnostic, AccountSnapshot, AccountSnapshotImportError } from './types';
 
 export type ParseAccountSnapshotOptions = {
   readonly clock: Clock;
@@ -127,9 +123,7 @@ export function parseAccountSnapshot(
   const withoutFingerprint: Omit<AccountSnapshot, 'contentFingerprint'> = {
     tag: raw.tag,
     capturedAtMs:
-      raw.timestamp === null || raw.timestamp <= 0n
-        ? null
-        : Number(raw.timestamp) * 1000,
+      raw.timestamp === null || raw.timestamp <= 0n ? null : Number(raw.timestamp) * 1000,
     importedAtMs,
     ageSeconds,
     originalText,

@@ -12,6 +12,13 @@ export {
   type DesktopBridge,
   type RequestId,
 } from './ipc';
+export type {
+  AccountDiagnosticWire,
+  AccountItemWire,
+  AccountSnapshotWire,
+  PendingImportPreviewWire,
+  QuickImportPreviewWire,
+} from './account-wire';
 export {
   DIAGNOSTIC_SEVERITIES,
   IPC_ERROR_KINDS,

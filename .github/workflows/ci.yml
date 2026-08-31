@@ -31,6 +31,28 @@ jobs:
           git fetch --no-tags origin main
           git diff --check origin/main...HEAD
 
+  parity:
+    name: Swift oracle parity and fault replay
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build Swift oracle
+        run: |
+          swift build --configuration debug --product golden-oracle
+          echo "COCHELPER_SWIFT_ORACLE=$(swift build --show-bin-path --configuration debug)/golden-oracle" >> "$GITHUB_ENV"
+      - name: Swift / TypeScript parity
+        run: pnpm test:parity
+      - name: Fault replay
+        run: pnpm test:fault-replay
+
   electron:
     name: Electron bootstrap
     runs-on: ubuntu-latest

@@ -1,0 +1,15 @@
+{
+  "protocolVersion": 1,
+  "fixtureVersion": "wire-contract-v1",
+  "cases": [
+    {
+      "id": "wire/json-raw-samples",
+      "category": "wire",
+      "operation": "canonical-json",
+      "fixture": "Tests/Golden/Fixtures/json-raw-samples.json",
+      "fixtureSha256": "sha256:cbfc4ec0c5b523eee0b3ec24cb2e4fa34a72194ef8016fc788fc089e17f8c8fa",
+      "swiftOwner": "Tests/Golden/JsonRawSourceGoldenTests.swift#testRawSourcesMatchCanonicalJSONValue",
+      "typescriptOwner": "packages/testkit/src/golden.parity.test.ts"
+    }
+  ]
+}

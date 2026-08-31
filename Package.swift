@@ -12,7 +12,9 @@ let package = Package(
         .executable(name: "COCHelper", targets: ["COCHelper"]),
         .executable(name: "smoke-api", targets: ["smoke-api"]),
         .executable(name: "acceptance-runner", targets: ["acceptance-runner"]),
-        .executable(name: "history-memory-seed", targets: ["history-memory-seed"])
+        .executable(name: "history-memory-seed", targets: ["history-memory-seed"]),
+        // Issue #268：迁移期 Swift oracle；不参与 Electron app bundle。
+        .executable(name: "golden-oracle", targets: ["golden-oracle"])
     ],
     targets: [
         .target(
@@ -60,6 +62,12 @@ let package = Package(
             dependencies: ["COCHelperCore", "COCHelperApp"],
             path: "Tools/perf/history-memory-seed"
         ),
+        .executableTarget(
+            // 只暴露纯 COCHelperCore 计算，避免 oracle 带入 AppModel、Keychain 或网络。
+            name: "golden-oracle",
+            dependencies: ["COCHelperCore"],
+            path: "Tools/golden-oracle"
+        ),
         .testTarget(
             name: "COCHelperCoreTests",
             dependencies: ["COCHelperCore", "COCHelperApp"],
@@ -80,7 +88,8 @@ let package = Package(
             dependencies: ["COCHelperCore"],
             path: "Tests/Golden",
             resources: [
-                .process("Fixtures")
+                .process("Fixtures"),
+                .copy("manifest.json")
             ]
         )
     ]

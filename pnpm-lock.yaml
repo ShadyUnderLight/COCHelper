@@ -107,7 +107,6 @@ importers:
       '@coc-helper/domain':
         specifier: workspace:*
         version: link:../domain
-    devDependencies:
       '@coc-helper/wire':
         specifier: workspace:*
         version: link:../wire

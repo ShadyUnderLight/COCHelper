@@ -22,7 +22,7 @@ import pytest
 from game_catalog.errors import CatalogError
 from game_catalog.instance_counts import build_instance_counts, CONFIG_COLUMNS
 
-APK = Path(os.environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
+APK = Path(os.environ.get("COC_APK_PATH", "/path/to/base.apk"))
 TOOLS = Path(__file__).resolve().parents[2] / "Tools"
 
 skip_no_apk = pytest.mark.skipif(

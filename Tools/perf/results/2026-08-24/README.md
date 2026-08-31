@@ -73,4 +73,4 @@ Scenario 03 baseline hot、Scenario 04 baseline cold/hot、Scenario 05 两个版
 
 因此本 PR 只能作为 final replay diagnostic evidence，必须使用 `Refs: #209`，不能使用 `Closes: #209`。
 
-完整 `.trace` 包仍保存在本机原始 `/var/folders/.../T/` 路径，review 期间不删除；已将全部 TOC/导出表复制到仓库外的 durable artifact 目录，并记录在 [trace_manifest.md](trace_manifest.md)。该 durable 目录为 `/Users/lmz/Documents/Vibe Coding/COCHelper-perf-artifacts/issue-209/2026-08-24`，不提交仓库，避免把 GB 级原始 trace 塞进 Git。
+完整 `.trace` 包仍保存在本机原始 `/var/folders/.../T/` 路径，review 期间不删除；已将全部 TOC/导出表复制到仓库外的 durable artifact 目录，并记录在 [trace_manifest.md](trace_manifest.md)。该 durable 目录为 `/path/to/COCHelper-perf-artifacts/issue-209/2026-08-24`，不提交仓库，避免把 GB 级原始 trace 塞进 Git。

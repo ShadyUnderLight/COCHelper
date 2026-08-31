@@ -38,7 +38,7 @@ from game_catalog.render import (
 )
 from game_catalog.sc2 import Matrix2x3, Vertex
 
-APK = Path(os.environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
+APK = Path(os.environ.get("COC_APK_PATH", "/path/to/base.apk"))
 
 
 def V(x: float, y: float, u: float = 0.0, v: float = 0.0) -> Vertex:

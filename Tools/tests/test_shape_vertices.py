@@ -42,7 +42,7 @@ from game_catalog.sc2 import (
 )
 from test_fbs import FbBuilder
 
-APK = Path(os.environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
+APK = Path(os.environ.get("COC_APK_PATH", "/path/to/base.apk"))
 
 
 # ---------------------------------------------------------------------------

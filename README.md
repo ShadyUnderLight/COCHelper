@@ -106,11 +106,11 @@ validator 与 App 运行时都会 fail-closed，精制台不可用）：
 
 ```bash
 python3 Tools/generate_game_catalog.py \
-  --apk /Users/lmz/Downloads/base.apk.1 \
+  --apk /path/to/base.apk \
   --game-version 18.400.13 \
   --output Sources/COCHelperCore/GameCatalog/18.400.13
 python3 Tools/generate_craft_table_catalog.py \
-  --apk /Users/lmz/Downloads/base.apk.1 \
+  --apk /path/to/base.apk \
   --game-version 18.400.13 \
   --output Sources/COCHelperCore/GameCatalog/18.400.13/craft_table_catalog.json
 ```
@@ -127,7 +127,7 @@ python3 -m pytest Tools/tests -q
 `ctypes` + libzstd（`/opt/homebrew/lib/libzstd.dylib`），与生成管线（纯 stdlib）分离：
 
 ```bash
-python3 Tools/render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-out
+python3 Tools/render_spike.py --apk /path/to/base.apk --output /tmp/coc-spike-out
 ```
 
 spike 结论：export 名与引用链可解析（`ui.sc` exports=3024），但渲染 PNG 存在双重阻塞
@@ -136,7 +136,7 @@ spike 结论：export 名与引用链可解析（`ui.sc` exports=3024），但�
 `catalog.json` 的 `renderedPath`：
 
 ```bash
-python3 Tools/render_generator.py --apk /Users/lmz/Downloads/base.apk.1 \
+python3 Tools/render_generator.py --apk /path/to/base.apk \
   --catalog Sources/COCHelperCore/GameCatalog/18.400.13   # 渲染 + 回写 catalog.json
 python3 Tools/render_generator.py --apk <apk> --catalog <dir> --samples-only  # 只渲染不回写
 python3 Tools/render_generator.py --apk <apk> --catalog <dir>   # 全量渲染 catalog 全部引用（Issue #25）
@@ -179,8 +179,7 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
   参考实现使用 Cocoa reference date（2001-01-01 00:00:00 UTC 起秒数）；
   官方仅给出日期而未给出时刻时，按 UTC 日边界编码，公告末日按包含语义转成次日 00:00 的
   `until`（模型区间恒为 `from <= now < until`）。每条阶段保留官方 `sourceURL` 供审计。
-- **集成测试**：真实 APK 集成测试默认用 `/Users/lmz/Downloads/base.apk.1`；其他机器可通过环境变量
-  `COC_APK_PATH` 指定，未设置且路径不存在时自动 skip。
+- **集成测试**：真实 APK 集成测试通过环境变量 `COC_APK_PATH` 指定；未设置时自动 skip。
 - **已知问题（Swift 参考实现的 SwiftPM 资源）**：SPM `.process("Resources")` 会把资源目录**拍平**到 bundle 根部
   （`GameCatalog/18.400.13/catalog.json` → bundle 根 `catalog.json`），且多个版本目录存在同名文件
   时构建报 `multiple resources named 'catalog.json'`。当前仅一个版本目录可正常打包；将来落第二个

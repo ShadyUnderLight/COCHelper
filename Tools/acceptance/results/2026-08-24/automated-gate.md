@@ -58,7 +58,7 @@ Build complete! (3.86s)
 Building for production...
 [0/4] Write swift-version--58304C5D6DBC2206.txt
 Build complete! (0.22s)
-Built /Users/lmz/Documents/Vibe Coding/COC助手/.worktrees/issue-226-acceptance/scripts/../.build/COCHelper.app
+Built /path/to/worktree/.build/COCHelper.app
 ```
 
 结果: **通过**

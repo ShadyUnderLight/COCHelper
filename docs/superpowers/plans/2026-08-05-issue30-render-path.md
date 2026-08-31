@@ -14,7 +14,7 @@
 
 ### 环境与基线（已实测）
 - worktree：`.worktrees/feat-issue30-render-path`，分支 `feat/issue30-render-path`，基于 `origin/main`（含 #29 spike：`sc2.py`/`render_spike.py`/契约文档 R1–R12）
-- APK：`/Users/lmz/Downloads/base.apk.1`（sha256 `30be1e6b9ee7456e35262c04249b2d5ef20021b5eb795e40d1a1dcfee7300c6f`）
+- APK：`/path/to/base.apk`（sha256 `30be1e6b9ee7456e35262c04249b2d5ef20021b5eb795e40d1a1dcfee7300c6f`）
 - pytest 基线 297 passed；swift test 366 passed
 - libzstd：`/opt/homebrew/lib/libzstd.dylib`
 - **路径 C 决策证据（2026-08-05 实测）**：`assets.clashk.ing/manifest.json` 共 2585 资产；catalog 381 个唯一引用 vs CDN 3 种映射策略（精确/去前缀/level 归一化）全部 0 命中 → **reject C，选 B**

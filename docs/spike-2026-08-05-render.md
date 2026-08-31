@@ -1,7 +1,7 @@
 # SC2/Scaleform → PNG 渲染 spike 报告（Issue #27）
 
 > 日期：2026-08-05 ｜ 分支：`issue27-render-spike`
-> 输入：`/Users/lmz/Downloads/base.apk.1`（sha256 `30be1e6b…`，与 manifest `sourceFingerprint` 一致）
+> 输入：`/path/to/base.apk`（sha256 `30be1e6b…`，与 manifest `sourceFingerprint` 一致）
 > 所有数据均来自本分支代码对真实 APK 的运行输出（`Tools/render_spike.py` + 直接解析验证），可复核。
 > 契约文档：`docs/rendered-path-contract.md`（R1–R12，本报告引用其条目，不重复正文）。
 
@@ -21,7 +21,7 @@
 
 | 项 | 值 |
 |---|---|
-| APK 路径 | `/Users/lmz/Downloads/base.apk.1` |
+| APK 路径 | `/path/to/base.apk` |
 | APK sha256 | `30be1e6b9ee7456e35262c04249b2d5ef20021b5eb795e40d1a1dcfee7300c6f` |
 | manifest `sourceFingerprint` | `sha256:30be1e6b…`（**一致**，`18.400.13/manifest.json`） |
 | gameVersion | `18.400.13` |
@@ -67,7 +67,7 @@
 
 ## 4. 4 类样本 verdict 表（真实运行输出）
 
-运行命令：`python3 Tools/render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-report-check`
+运行命令：`python3 Tools/render_spike.py --apk /path/to/base.apk --output /tmp/coc-spike-report-check`
 （本次运行完整输出见下；`spike-report.json` 证据字段可复核）
 
 | 样本（container / exportName） | 类别 | verdict | blocker | 证据（objectId → MovieClip 索引） |
@@ -177,7 +177,7 @@
 | 依赖例外 | spike 渲染模块（`sc2.py` zstd body 解码 + `render_spike.py`）需 **ctypes + libzstd**（brew 本机 `/opt/homebrew/lib/libzstd.dylib` 已确认可加载；候选顺序：`/opt/homebrew/lib` → `/usr/local/lib` → `find_library`；全失败 → `CatalogError` = `zstd_unavailable`）。与纯 stdlib 生成/校验管线**分离**（契约 R9），生成器 `generate_game_catalog.py` 不引入该依赖 |
 | 解压保护 | body 解压上限 512MB（`ZSTD_decompressBound` 超限拒绝，防 zip bomb，契约 R9.4） |
 | 边界 | spike 输出只进 `/tmp`（本次：`/tmp/coc-spike-report-check/`）；`git ls-files` 无 `.apk/.sc/.sctx/.ktx`，无 spike 产出的 PNG 被跟踪（`Resources/COCHelperAppIcon.png` 为既有 App 图标资产，非 spike 产物）。契约 R12.3 遵守 |
-| 可复核性 | 复跑命令：`cd Tools && python3 render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-report-check`；契约测试：`python3 -m pytest Tools/tests -q`（297 passed） |
+| 可复核性 | 复跑命令：`cd Tools && python3 render_spike.py --apk /path/to/base.apk --output /tmp/coc-spike-report-check`；契约测试：`python3 -m pytest Tools/tests -q`（297 passed） |
 
 ---
 

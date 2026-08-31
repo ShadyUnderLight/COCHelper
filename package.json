@@ -12,6 +12,8 @@
     "start": "pnpm --filter @coc-helper/desktop start",
     "package": "pnpm --filter @coc-helper/desktop package",
     "test": "vitest run",
+    "test:parity": "vitest run --config vitest.parity.config.ts",
+    "test:fault-replay": "vitest run packages/testkit/src/fault.replay.test.ts",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
     "format": "prettier --check .",

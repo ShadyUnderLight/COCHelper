@@ -8,9 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@coc-helper/domain": "workspace:*"
-  },
-  "devDependencies": {
+    "@coc-helper/domain": "workspace:*",
     "@coc-helper/wire": "workspace:*"
   }
 }

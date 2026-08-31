@@ -69,4 +69,5 @@ no-op；取消结果归类为 `cancelled`，不得降级成 `network`。
 
 共享测试使用固定 seed，属性失败必须记录 seed 和 iteration。算术属性测试使用独立
 BigInt oracle，parser corpus 覆盖深层 JSON、长整数、`__proto__`、非法逗号、前导零、
-孤立 surrogate 和非有限数字。跨语言 oracle/parity harness 仍由 #268 统一维护。
+孤立 surrogate 和非有限数字。跨语言 oracle/parity harness 由 #268 的
+`testkit-protocol-v1.md` 与 `@coc-helper/testkit` 统一维护；领域 case 由后续迁移 Issue 注册。

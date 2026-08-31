@@ -2,7 +2,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['packages/testkit/src/golden.parity.test.ts'],
+    include: [
+      'packages/testkit/src/golden.parity.test.ts',
+      'packages/testkit/src/account-parser.parity.test.ts',
+    ],
     environment: 'node',
     fileParallelism: false,
     testTimeout: 30_000,

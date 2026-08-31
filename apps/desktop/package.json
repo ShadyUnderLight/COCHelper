@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@coc-helper/contracts": "workspace:*",
+    "@coc-helper/domain": "workspace:*",
+    "@coc-helper/wire": "workspace:*",
     "zod": "^4.0.17"
   },
   "devDependencies": {

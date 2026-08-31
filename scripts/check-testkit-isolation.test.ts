@@ -1313,6 +1313,11 @@ describe('testkit isolation', () => {
     expect(
       extractUnsafeDynamicLoads(`function* values() { yield 1; } const value = values().next().value; String(value);`),
     ).toEqual([]);
+    expect(
+      extractUnsafeDynamicLoads(
+        `Promise.allSettled([1]).then(([{ value }]) => value(pkg));`,
+      ),
+    ).toEqual([]);
   });
 
   it('会闭合函数返回的动态属性 callable', () => {
@@ -1702,6 +1707,25 @@ describe('testkit isolation', () => {
       `const req = new Map([['safe', require]]).entries().next().value[1]; req(${pkg});`,
       `const req = new Map([[require, 1]]).keys().next().value; req(${pkg});`,
       `function* values() { yield require; } const req = values().next().value; req(${pkg});`,
+      `const req = runtime.getLoader(); req(${pkg});`,
+      `runtime.getLoader()(${pkg});`,
+      `const box = { req: runtime.getLoader() }; box.req(${pkg});`,
+      `class Box { req = runtime.getLoader(); } new Box().req(${pkg});`,
+      `const req = flag ? runtime.getLoader() : safe; req(${pkg});`,
+      `const a = [1]; a[0] = require; a[0](${pkg});`,
+      `const a = [1]; Object.defineProperty(a, 0, { value: require }); a[0](${pkg});`,
+      `const o = {}; const alias = o; alias.req = require; o.req(${pkg});`,
+      `const m = new Map([['x', 1]]); m.set('x', runtime.getLoader()); m.get('x')(${pkg});`,
+      `const key = {}; const m = new WeakMap([[key, 1]]); m.set(key, runtime.getLoader()); m.get(key)(${pkg});`,
+      `const s = new Set([1]); s.add(runtime.getLoader()); s.forEach((value) => value(${pkg}));`,
+      `const s = new Set([1]); const { add } = s; add.call(s, runtime.getLoader()); s.forEach((value) => value(${pkg}));`,
+      `const s = new Set([1]); Reflect.apply(s.add, s, [runtime.getLoader()]); s.forEach((value) => value(${pkg}));`,
+      `const a = [require]; Reflect.apply(a.forEach, a, [(value) => value(${pkg})]);`,
+      `const m = new Map([['x', require]]); Reflect.apply(m.forEach, m, [(value) => value(${pkg})]);`,
+      `const api = { get resolve() { return Promise.resolve; } }; api.resolve(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `Object.getOwnPropertyDescriptor(Promise, 'resolve').value(new Map([['x', require]])).then((map) => map.get('x')(${pkg}));`,
+      `Promise.all(runtime.items).then((results) => results[0](${pkg}));`,
+      `function make() { return { [Symbol.iterator]: function* () { yield require; } }; } const source = { ...make() }; for (const value of source) value(${pkg});`,
     ];
     for (const source of cases) {
       expect(findForbiddenImportHits(source, fromMain), source).toEqual(
@@ -2324,6 +2348,91 @@ describe('testkit isolation', () => {
           Object.setPrototypeOf(dynamicProto, runtime.prototype);
           const dynamicProtoReq = dynamicProto.req;
           dynamicProtoReq(pkg);
+        `,
+        'remaining-unknown-callable.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const req = runtime.getLoader();
+          req(pkg);
+          const alias = runtime.getLoader();
+          alias(pkg);
+          const box = { req: runtime.getLoader() };
+          box.req(pkg);
+          class Box { req = runtime.getLoader(); }
+          new Box().req(pkg);
+          const conditional = flag ? runtime.getLoader() : safe;
+          conditional(pkg);
+        `,
+        'remaining-write-facts.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const array = [1];
+          array[0] = require;
+          array[0](pkg);
+          Object.defineProperty(array, 1, { value: require });
+          array[1](pkg);
+          const object = {};
+          const alias = object;
+          alias.req = require;
+          object.req(pkg);
+          const target = flag ? object : {};
+          Object.assign(target, { loader: require });
+          target.loader(pkg);
+        `,
+        'remaining-collection-mutations.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const map = new Map([['x', 1]]);
+          map.set('x', runtime.getLoader());
+          map.get('x')(pkg);
+          const key = {};
+          const weak = new WeakMap([[key, 1]]);
+          weak.set(key, runtime.getLoader());
+          weak.get(key)(pkg);
+          const set = new Set([1]);
+          set.add(runtime.getLoader());
+          set.forEach((value) => value(pkg));
+          const reflectedSet = new Set([1]);
+          Reflect.apply(reflectedSet.add, reflectedSet, [runtime.getLoader()]);
+          reflectedSet.forEach((value) => value(pkg));
+          const aliasedSet = new Set([1]);
+          const { add } = aliasedSet;
+          add.call(aliasedSet, runtime.getLoader());
+          aliasedSet.forEach((value) => value(pkg));
+        `,
+        'remaining-reflect-dispatch.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const array = [require];
+          Reflect.apply(array.forEach, array, [(value) => value(pkg)]);
+          const map = new Map([['x', require]]);
+          Function.prototype.call.call(map.forEach, map, (value) => value(pkg));
+          const set = new Set([require]);
+          Reflect.get(set, 'forEach').call(set, (value) => value(pkg));
+        `,
+        'remaining-promise-aggregate.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          const api = { get resolve() { return Promise.resolve; } };
+          api.resolve(new Map([['x', require]])).then((map) => map.get('x')(pkg));
+          Object.getOwnPropertyDescriptor(Promise, 'resolve').value(
+            new Map([['x', require]]),
+          ).then((map) => map.get('x')(pkg));
+          Promise.all(runtime.items).then((results) => results[0](pkg));
+          Promise.allSettled(runtime.items).then((results) => results[0].value(pkg));
+        `,
+        'remaining-spread-return-iterator.ts': `
+          const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');
+          function make() {
+            return { [Symbol.iterator]: function* () { yield require; } };
+          }
+          const source = { ...make() };
+          for (const value of source) value(pkg);
+          function makeConditional(flag) {
+            return flag ? { [Symbol.iterator]: function* () { yield require; } } : {};
+          }
+          const conditionalSource = { ...makeConditional(flag) };
+          for (const value of conditionalSource) value(pkg);
+          function makeAssigned() {
+            return Object.assign({}, { [Symbol.iterator]: function* () { yield require; } });
+          }
+          const assignedSource = { ...makeAssigned() };
+          for (const value of assignedSource) value(pkg);
         `,
         'dynamic-code-alias.ts': `
           const pkg = ['@coc-', 'helper'].join('') + '/' + ['test', 'kit'].join('');

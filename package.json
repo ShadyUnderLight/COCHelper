@@ -2,7 +2,7 @@
   "name": "coc-helper",
   "private": true,
   "version": "0.0.0",
-  "description": "COC 助手 Electron 宿主（迁移期与 Swift 并存）",
+  "description": "Clash of Clans 本地数据与升级追踪桌面应用（纯 Electron + TypeScript）",
   "packageManager": "pnpm@11.16.0",
   "engines": {
     "node": "^24.18.0",

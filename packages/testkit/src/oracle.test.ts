@@ -81,4 +81,15 @@ describe('Swift oracle runner', () => {
     });
     await expect(runner(request('{'))).rejects.toThrow('退出码异常');
   });
+
+  it('子进程提前退出且输入很大时返回受控失败', async () => {
+    const runner = createSwiftOracleRunner({
+      command: {
+        executable: process.execPath,
+        args: ['-e', 'process.stdin.destroy(); process.exit(0)'],
+        cwd: process.cwd(),
+      },
+    });
+    await expect(runner(request('x'.repeat(8 * 1024 * 1024)))).rejects.toThrow();
+  });
 });

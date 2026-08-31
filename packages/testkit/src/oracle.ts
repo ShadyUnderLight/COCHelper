@@ -54,6 +54,7 @@ export type SwiftOracleRunnerOptions = {
   readonly root?: string;
   readonly timeoutMs?: number;
   readonly execute?: OracleProcessExecutor;
+  readonly command?: OracleCommand;
 };
 
 export type SwiftOracleRunner = (request: SwiftOracleRequest) => Promise<SwiftOracleResponse>;
@@ -64,7 +65,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 export function createSwiftOracleRunner(options: SwiftOracleRunnerOptions = {}): SwiftOracleRunner {
   const root = resolve(options.root ?? process.cwd());
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const command = resolveOracleCommand(root);
+  const command = options.command ?? resolveOracleCommand(root);
   const execute = options.execute ?? executeOracleCommand;
 
   return async (request) => {
@@ -228,6 +229,15 @@ function executeOracleCommand(
     });
     child.once('error', () => {
       fail(new Error('Swift oracle 进程无法启动。'));
+    });
+    child.stdin.once('error', (error: Error & { readonly code?: string }) => {
+      fail(
+        new Error(
+          error.code === 'EPIPE'
+            ? 'Swift oracle 输入写入失败（EPIPE）。'
+            : 'Swift oracle 输入写入失败。',
+        ),
+      );
     });
     child.once('close', (exitCode) => {
       if (settled) {

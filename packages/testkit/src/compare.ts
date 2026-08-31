@@ -5,7 +5,10 @@ import type { SwiftOracleResponse } from './oracle';
 
 export type CanonicalOutcome =
   | { readonly ok: true; readonly canonicalHex: string }
-  | { readonly ok: false; readonly errorKind: string };
+  | {
+      readonly ok: false;
+      readonly error: { readonly kind: string; readonly code: string };
+    };
 
 export type ParityDifference = {
   readonly category: ParityCategory;
@@ -79,11 +82,19 @@ export function compareCanonicalParity(input: {
       actual: String(input.swift.ok),
     });
   } else if (!input.typescript.ok && !input.swift.ok) {
-    if (input.typescript.errorKind !== input.swift.error.code) {
+    if (input.typescript.error.kind !== input.swift.error.kind) {
       differences.push({
-        category: 'parser',
+        category: 'error',
+        path: '$.error.kind',
+        expected: input.typescript.error.kind,
+        actual: input.swift.error.kind,
+      });
+    }
+    if (input.typescript.error.code !== input.swift.error.code) {
+      differences.push({
+        category: 'error',
         path: '$.error.code',
-        expected: input.typescript.errorKind,
+        expected: input.typescript.error.code,
         actual: input.swift.error.code,
       });
     }

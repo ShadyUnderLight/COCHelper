@@ -73,7 +73,7 @@ function evaluate(source: string): CanonicalOutcome {
       canonicalHex: bytesToHex(canonicalBytes(canonicalize(parseJson(source)))),
     };
   } catch {
-    return { ok: false, errorKind: 'invalidJson' };
+    return { ok: false, error: { kind: 'rejected', code: 'invalidJson' } };
   }
 }
 

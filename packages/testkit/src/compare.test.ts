@@ -54,12 +54,36 @@ describe('parity comparator', () => {
       caseId: 'test/reject',
       source: '{',
       expectedAccepted: false,
-      typescript: { ok: false, errorKind: 'invalidJson' },
+      typescript: { ok: false, error: { kind: 'rejected', code: 'invalidJson' } },
       swift: swiftSuccess('{', '31'),
     });
     expect(report.differences).toContainEqual(
       expect.objectContaining({ category: 'parser', path: '$.ok' }),
     );
+  });
+
+  it('错误 kind 变化不能被相同 code 掩盖', () => {
+    const source = '{';
+    const report = compareCanonicalParity({
+      caseId: 'test/reject-kind',
+      source,
+      expectedAccepted: false,
+      typescript: { ok: false, error: { kind: 'rejected', code: 'invalidJson' } },
+      swift: {
+        protocolVersion: 1,
+        caseId: 'test/reject-kind',
+        ok: false,
+        inputFingerprint: sha256Fingerprint(source),
+        error: { kind: 'not-rejected', code: 'invalidJson' },
+      },
+    });
+    expect(report.ok).toBe(false);
+    expect(report.differences).toContainEqual({
+      category: 'error',
+      path: '$.error.kind',
+      expected: 'rejected',
+      actual: 'not-rejected',
+    });
   });
 
   it('不会让两侧同时接受 fixture 标记为 reject 的输入', () => {

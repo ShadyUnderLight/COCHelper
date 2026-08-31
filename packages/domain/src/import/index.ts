@@ -7,10 +7,7 @@ export {
   prepareQuickImport,
   resolvePendingTarget,
 } from './routing';
-export {
-  createVillageProfile,
-  quickImportErrorMessage,
-} from './types';
+export { createVillageProfile, quickImportErrorMessage } from './types';
 export type {
   PendingImportPreview,
   PendingSnapshotTarget,

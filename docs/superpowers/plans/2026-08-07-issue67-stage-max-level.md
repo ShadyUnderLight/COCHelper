@@ -6,7 +6,7 @@
 
 **Architecture:** 三层改动：(1) Python 生成器提取 APK heroes.csv 的 `RequiredHeroTavernLevel` 列并重新生成目录（新增 `requiredHeroTavernLevel` 字段，全 optional 兼容）；(2) Swift Core 模型：`UpgradeRequirement` enum + `CatalogLevel.requirements`（按 item.base 解析 village 语义）+ `VillageItemState.currentStageMaxLevel`；(3) 投影：从快照 buildings/buildings2 按 dataID 推导 5 个解锁建筑等级 → 计算当前阶段上限 → `.maxed` 判定改用阶段上限（不可计算时回退全局，保守不误报）。UI 最小改动：LevelDetailSheet 类型化文案 + 阶段满级/全局剩余区分。
 
-**Tech Stack:** Python 3（生成器，pytest 130 测试）、Swift 6（SPM，XCTest 647 测试）、APK `/Users/lmz/Downloads/base.apk.1`（546MB，已在场）。
+**Tech Stack:** Python 3（生成器，pytest 130 测试）、Swift 6（SPM，XCTest 647 测试）、APK `/path/to/base.apk`（546MB，已在场）。
 
 **关键设计决策（已投票，D1=A/D2=A/D3=A，见评审记录）：**
 - D1=A：玩家解锁等级从 `AccountSnapshot` buildings/buildings2 按 dataID 推导（fixture 实测：TH 1000001=18/Lab 1000007=16/HeroHall 1000071=12/BH 1000034=10/StarLab 1000046=10）
@@ -129,7 +129,7 @@ Expected: 全部通过（130+1 个）
 - [ ] **Step 8: 重新生成目录并落库**
 
 ```bash
-python3 Tools/generate_game_catalog.py --apk /Users/lmz/Downloads/base.apk.1 \
+python3 Tools/generate_game_catalog.py --apk /path/to/base.apk \
   --game-version 18.400.13 --output /tmp/coc-catalog-67
 # 自检（生成器内建 validate），再核对新字段
 python3 -c "

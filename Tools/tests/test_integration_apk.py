@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-APK = Path(__import__("os").environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
+APK = Path(__import__("os").environ.get("COC_APK_PATH", "/path/to/base.apk"))
 TOOLS = Path(__file__).resolve().parents[2] / "Tools"
 
 pytestmark = pytest.mark.skipif(

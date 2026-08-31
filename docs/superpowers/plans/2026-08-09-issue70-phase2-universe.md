@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.14 纯 stdlib（现有管线惯例）/ Swift 6 / SwiftUI / XCTest（property 测试沿用 SeededGenerator LCG）。
 
-**前置基线（已验证）**：worktree `.worktrees/issue70-phase2`（分支 `codex/issue-70-phase2-universe`，基于 main `ddae692`），`swift test` 838 全绿；APK `/Users/lmz/Downloads/base.apk.1` 在场（546MB）。
+**前置基线（已验证）**：worktree `.worktrees/issue70-phase2`（分支 `codex/issue-70-phase2-universe`，基于 main `ddae692`），`swift test` 838 全绿；APK `/path/to/base.apk` 在场（546MB）。
 
 **数据源实证（已验证，SDD 事实基础）**：
 - `assets/logic/townhall_levels.csv`：19 行（类型行 + TH1-18），列 = 建筑名，值 = 该 TH 可建造数量。主村 42 个非空数量列（Wall=325@TH18、Wizard Tower=6、Air Bomb=8…）；配置列（ResourceStorageLootCap/HeroBoostHours/TreasuryGold/FriendlyCost/UnlockStage/LeagueTier/ResourceScalingPercentage 等）与 `_gearup` 强化列（Cannon_gearup 等）非数量列需跳过；`Mega Cannon` 全空跳过。
@@ -248,7 +248,7 @@ class TestBuildInstanceCounts:
 - [ ] **Step 1: 写失败测试**（universeCount 查询：命中/越界/缺失/旧目录 nil）
 - [ ] **Step 2: 确认失败**
 - [ ] **Step 3: 实现**（Payload 加 `instanceCounts: [String: [Int]]?`，存储 + `universeCount(section:dataID:townHallLevel:)`；`townHallLevel` 越界（<1 或 >18）→ nil）
-- [ ] **Step 4: 重新生成 catalog.json**（设计评审 B4：真实入口是 `python3 Tools/generate_game_catalog.py --apk /Users/lmz/Downloads/base.apk.1 --game-version 18.400.13 --output Sources/COCHelperCore/GameCatalog/18.400.13`——catalog.py 无 CLI；`generate()` 要求输出目录不存在或为空，**需先清空 18.400.13 目录**（仅保留 icons/.gitkeep 时先 rm 再重建，或移到临时目录对比后替换；**commit 前用 git diff 核对 catalog.json 只新增 instanceCounts 字段**，其余字节应一致——validate 会保证）
+- [ ] **Step 4: 重新生成 catalog.json**（设计评审 B4：真实入口是 `python3 Tools/generate_game_catalog.py --apk /path/to/base.apk --game-version 18.400.13 --output Sources/COCHelperCore/GameCatalog/18.400.13`——catalog.py 无 CLI；`generate()` 要求输出目录不存在或为空，**需先清空 18.400.13 目录**（仅保留 icons/.gitkeep 时先 rm 再重建，或移到临时目录对比后替换；**commit 前用 git diff 核对 catalog.json 只新增 instanceCounts 字段**，其余字节应一致——validate 会保证）
 - [ ] **Step 5: 提交**
 
 ## Task 3：投影层（.available 宇宙项 + metrics 完整分母）

@@ -8,7 +8,7 @@
 
 当前 `UpgradeRequirement` 只有 5 个 case（townHall/builderHall/laboratory/starLaboratory/heroHall），equipment 的 `requirements` 为空 → `currentStageMaxLevel` 返回 `maxLevel`（全局上限），低铁匠铺玩家装备被误判为全局满级/可升到未解锁等级。
 
-**决定性证据（已实测验证）**：`/Users/lmz/Downloads/base.apk.1`（buildTag `18_400_7`，与 bundled 目录同源）的 `assets/logic/character_items.csv` 有 `RequiredBlacksmithLevel` 列，**1032 个等级行全部有值**（分布 1–10，如普通装备 1–9 级 BS=1、10–12 BS=3、13–15 BS=5、16–18 BS=7），且随 level 单调不减。根因：`tables.py` 的 character_items TableSpec 未声明该列 → 生成时丢弃。
+**决定性证据（已实测验证）**：`/path/to/base.apk`（buildTag `18_400_7`，与 bundled 目录同源）的 `assets/logic/character_items.csv` 有 `RequiredBlacksmithLevel` 列，**1032 个等级行全部有值**（分布 1–10，如普通装备 1–9 级 BS=1、10–12 BS=3、13–15 BS=5、16–18 BS=7），且随 level 单调不减。根因：`tables.py` 的 character_items TableSpec 未声明该列 → 生成时丢弃。
 
 目标：把铁匠铺接入统一 Requirement 图（Issue #97 建议 1–5），不特判、不硬编码、保留来源版本与生成验证。
 

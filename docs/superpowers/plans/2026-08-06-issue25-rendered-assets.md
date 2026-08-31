@@ -182,7 +182,7 @@ print('container 分布:', dict(Counter(r['container'] for r in refs)))
 - [ ] **Step 6: 全量渲染**（可能 3-30 分钟，用较长 timeout）
 
 ```bash
-python3 Tools/render_generator.py --apk /Users/lmz/Downloads/base.apk.1 \
+python3 Tools/render_generator.py --apk /path/to/base.apk \
   --catalog Sources/COCHelperCore/GameCatalog/18.400.13 \
   --report /tmp/issue25-full-render.json
 ```
@@ -537,7 +537,7 @@ git commit -m "feat: 全量渲染图标资产入库与 UI 接入验证 (Issue #2
 - [ ] **Step 2: 固定样本复跑一致性**（确定性 R4）：全量渲染后再跑 `--samples-only`，4 个成功样本 PNG sha256 与入库文件一致（抽样 1-2 个比对即可）：
 
 ```bash
-python3 Tools/render_generator.py --apk /Users/lmz/Downloads/base.apk.1 --catalog Sources/COCHelperCore/GameCatalog/18.400.13 --samples-only --report /tmp/r25-recheck.json
+python3 Tools/render_generator.py --apk /path/to/base.apk --catalog Sources/COCHelperCore/GameCatalog/18.400.13 --samples-only --report /tmp/r25-recheck.json
 shasum -a 256 Sources/COCHelperCore/GameCatalog/18.400.13/icons/ui/icon_unit_barbarian.png
 ```
 比对与 report 中 sha256 一致。

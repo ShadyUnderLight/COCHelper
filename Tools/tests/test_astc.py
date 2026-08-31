@@ -25,7 +25,7 @@ from game_catalog.astc import (
     decode_region,
 )
 
-APK = Path(os.environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
+APK = Path(os.environ.get("COC_APK_PATH", "/path/to/base.apk"))
 REF = Path("/tmp/astc-ref")
 
 _real_apk = pytest.mark.skipif(

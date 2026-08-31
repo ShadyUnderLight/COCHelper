@@ -49,7 +49,7 @@ describe('redactDiagnosticText', () => {
       [
         '{"details":{"message":"https:\\/\\/example.test\\/private?token=opaque"}}',
         'ftp://user:secret@example.test/private',
-        'file:///Users/private/secret.txt',
+        'file:///tmp/secret.txt',
         'data:text/plain,private-secret',
       ].join('\n'),
     );

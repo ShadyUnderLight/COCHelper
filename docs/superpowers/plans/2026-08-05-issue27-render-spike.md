@@ -13,7 +13,7 @@
 ## 背景（已确认证据，implementer 必须阅读）
 
 ### 格式事实（已对拍本地 `base.apk.1`）
-- APK: `/Users/lmz/Downloads/base.apk.1`（sha256 `30be1e6b9ee7456e35262c04249b2d5ef20021b5eb795e40d1a1dcfee7300c6f`）
+- APK: `/path/to/base.apk`（sha256 `30be1e6b9ee7456e35262c04249b2d5ef20021b5eb795e40d1a1dcfee7300c6f`）
 - `assets/sc/ui.sc`（55.8MB）文件头：`SC 06 00 | 00 00 00 00 | b0 fa 02 00 | 38 00 00 00`
   - off0-1 `SC` magic；off2-3 version=6 (u16 LE)；off4-7 跳过 4 字节；off8-11 descriptor_size=0x2FAB0=195248 (u32 LE)；off12 起 descriptor flatbuffer（root uoffset=0x38）
   - descriptor 结束 @ 12+195248=0x2FABC，其后 body 首字节 `28 b5 2f fd` = **zstd magic** → body 是 zstd 压缩
@@ -160,7 +160,7 @@ def test_verdict_report_schema():
   - 若 data 内嵌原始像素（pixel_type 简单如 RGBA8）且尺寸合理 → 写 PNG（stdlib zlib）到 `--output` 目录并记录 hash/size
   - CLI：`python3 Tools/render_spike.py --apk <path> --output <dir> [--catalog <path>]`
 - [ ] **Step 4: 验证通过**（合成样本 + 单元测试；CLI 冒烟：无 APK 时报错清晰）
-- [ ] **Step 5: 真实 APK 集成运行**：`python3 Tools/render_spike.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-spike-out`；记录 4 类样本 verdict。**结果如实记录**：成功样本 → PNG hash/size；失败/阻塞 → blocker 原因（格式对不上？zstd 失败？pixel_type 不支持？）
+- [ ] **Step 5: 真实 APK 集成运行**：`python3 Tools/render_spike.py --apk /path/to/base.apk --output /tmp/coc-spike-out`；记录 4 类样本 verdict。**结果如实记录**：成功样本 → PNG hash/size；失败/阻塞 → blocker 原因（格式对不上？zstd 失败？pixel_type 不支持？）
 - [ ] **Step 6: 提交**（`feat: 渲染 spike CLI 与 4 类样本 verdict (Issue #27)`）
 
 ## Task 5: renderedPath 输出契约文档

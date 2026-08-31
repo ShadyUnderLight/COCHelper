@@ -12,7 +12,7 @@
 
 ## 背景硬事实（已实测，勿再质疑）
 
-- 输入 APK：`/Users/lmz/Downloads/base.apk.1`（546MB）。`assets/build.tag` = `18_400_7`。**APK 内无 `18.400.13` 字符串** → gameVersion 必须 CLI 传入。
+- 输入 APK：`/path/to/base.apk`（546MB）。`assets/build.tag` = `18_400_7`。**APK 内无 `18.400.13` 字符串** → gameVersion 必须 CLI 传入。
 - Supercell CSV 解包：`lzma.decompress(packed[:8] + b"\0"*4 + packed[8:]).decode("utf-8-sig")`，路径 `assets/logic/<name>.csv`。
 - 每张表第 1 行是类型标注行（`Name='String'` 等），必须跳过。
 - **空白继承**：每记录首行带 `Name`，后续行 Name 为空；其他列逐列继承上方最近非空值（**单元格级 forward-fill**）。实测 Barbarian 13 行时间全空：UpH 继承自 vl12 的 `'300'`，UpM 继承自 vl1 的 `'30'` → 300h30m = **1,081,800s**。'0' 是真实值 ≠ ''（空）。
@@ -2055,7 +2055,7 @@ from pathlib import Path
 
 import pytest
 
-APK = Path("/Users/lmz/Downloads/base.apk.1")
+APK = Path("/path/to/base.apk")
 TOOLS = Path(__file__).resolve().parents[2] / "Tools"
 
 pytestmark = pytest.mark.skipif(not APK.is_file(), reason="真实 APK 不存在")
@@ -2216,7 +2216,7 @@ git commit -m "test: real APK acceptance samples for issue #13"
 
 ```bash
 python3 Tools/generate_game_catalog.py \
-  --apk /Users/lmz/Downloads/base.apk.1 \
+  --apk /path/to/base.apk \
   --game-version 18.400.13 \
   --output Sources/COCHelperCore/Resources/GameCatalog/18.400.13
 ```
@@ -2247,7 +2247,7 @@ git commit -m "feat: bundle 18.400.13 static game catalog (issue #13)"
 ```bash
 cd .worktrees/feat-issue13-game-catalog
 python3 -m pytest Tools/tests -q
-python3 Tools/generate_game_catalog.py --apk /Users/lmz/Downloads/base.apk.1 --output /tmp/coc-game-catalog
+python3 Tools/generate_game_catalog.py --apk /path/to/base.apk --output /tmp/coc-game-catalog
 python3 Tools/validate_game_catalog.py --catalog /tmp/coc-game-catalog
 swift test
 ./scripts/build_app.sh

@@ -4,7 +4,7 @@
 
 本机 durable export root：
 
-`/Users/lmz/Documents/Vibe Coding/COCHelper-perf-artifacts/issue-209/2026-08-24`
+`/path/to/COCHelper-perf-artifacts/issue-209/2026-08-24`
 
 本目录包含 26 个 trace label 的 TOC/导出表副本，共 110 个文件、约 14MB。目录名与下面的 label 一一对应：
 

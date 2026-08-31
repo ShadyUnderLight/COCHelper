@@ -57,7 +57,7 @@ from test_validate import (
     _write_with_hash,
 )
 
-APK = Path(os.environ.get("COC_APK_PATH", "/Users/lmz/Downloads/base.apk.1"))
+APK = Path(os.environ.get("COC_APK_PATH", "/path/to/base.apk"))
 _real_apk = pytest.mark.skipif(
     not APK.is_file(), reason="真实 APK 不存在（设置 COC_APK_PATH 可启用）"
 )

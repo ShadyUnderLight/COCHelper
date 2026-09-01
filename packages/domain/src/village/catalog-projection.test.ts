@@ -70,7 +70,9 @@ describe('VillageCatalogProjection', () => {
 
   it('非升级时 nextLevel 为 null', () => {
     const village = makeTestVillage({
-      buildings: [makeAccountItem({ section: 'buildings', dataID: 1_000_007n, level: 1, path: 'lab' })],
+      buildings: [
+        makeAccountItem({ section: 'buildings', dataID: 1_000_007n, level: 1, path: 'lab' }),
+      ],
       units: [makeAccountItem({ section: 'units', dataID: 4_000_000n, level: 2 })],
     });
     const projection = projectVillageCatalog({

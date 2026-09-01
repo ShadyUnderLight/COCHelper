@@ -8,12 +8,8 @@ import {
   resolveCatalogCompatibility,
   type GameCatalog,
 } from '../catalog/game-catalog';
-import {
-  EMPTY_SEASONAL_PHASE_TABLE,
-  type CatalogAvailability,
-  type SeasonalPhaseTable,
-} from '../catalog/seasonal-phase';
-import type { CatalogCompatibility, CatalogItem, CatalogLevel } from '../catalog/types';
+import { EMPTY_SEASONAL_PHASE_TABLE, type SeasonalPhaseTable } from '../catalog/seasonal-phase';
+import type { CatalogItem, CatalogLevel } from '../catalog/types';
 import { UNIVERSE_TOWN_HALL_COUNT } from '../catalog/types';
 import type { ManualUpgradeCore } from '../manual/types';
 import { flattenAccountItems } from './account-items';
@@ -24,10 +20,7 @@ import {
   type EffectiveVillageItemState,
   type ManualTrackerCoverage,
 } from './effective-projection';
-import {
-  playerUnlockLevelsFromSnapshot,
-  type PlayerUnlockLevels,
-} from './player-unlock-levels';
+import { playerUnlockLevelsFromSnapshot, type PlayerUnlockLevels } from './player-unlock-levels';
 import { villageProgressMetrics } from './progress-metrics';
 import type { TrackerBase, TrackerCategory } from './tracker';
 import { trackerCategoryFromSection } from './tracker';
@@ -40,7 +33,6 @@ import type { VillageProfile } from '../import/types';
 import {
   instanceWeight,
   isUpgrading,
-  progressUniverseCoverageIsComplete,
   type ProgressUniverseCoverage,
   type VillageCatalogProjection,
   type VillageItemState,
@@ -138,7 +130,10 @@ export function projectVillageCatalog(input: ProjectVillageCatalogInput): Villag
       break;
   }
 
-  const unlocks = playerUnlockLevelsFromSnapshot(village.accountSnapshot, manualUpgradeCore ?? null);
+  const unlocks = playerUnlockLevelsFromSnapshot(
+    village.accountSnapshot,
+    manualUpgradeCore ?? null,
+  );
   const buildingUniverseAvailable =
     base === 'home' &&
     catalogIsUsable &&
@@ -253,11 +248,7 @@ export function liveRemainingSeconds(
   return remaining > 0n ? remaining : 0n;
 }
 
-export function refreshTimerDelta(
-  nowMs: number,
-  builtAtMs: number,
-  importedAtMs: number,
-): bigint {
+export function refreshTimerDelta(nowMs: number, builtAtMs: number, importedAtMs: number): bigint {
   const elapsedNow = safeFloorInt64(nowMs - importedAtMs);
   const elapsedAtBuilt = safeFloorInt64(builtAtMs - importedAtMs);
   if (elapsedNow === null || elapsedAtBuilt === null) {
@@ -342,10 +333,7 @@ export function aggregateVillageItems(records: readonly VillageItemState[]): Vil
       .filter((record) => record.timerSeconds !== null && record.remainingSeconds === 0n)
       .map((record) => record.timerSeconds)
       .filter((value): value is bigint => value !== null)
-      .reduce<bigint | null>(
-        (min, value) => (min === null || value < min ? value : min),
-        null,
-      );
+      .reduce<bigint | null>((min, value) => (min === null || value < min ? value : min), null);
 
     result.push({
       id: `agg:${first.id}`,
@@ -389,7 +377,12 @@ export function universeSupplement(input: {
   readonly base: TrackerBase;
 }): VillageItemState[] {
   const { snapshot, catalog, unlocks, base } = input;
-  if (base !== 'home' || unlocks.townHall === null || catalog === null || !catalog.hasUniverseData) {
+  if (
+    base !== 'home' ||
+    unlocks.townHall === null ||
+    catalog === null ||
+    !catalog.hasUniverseData
+  ) {
     return [];
   }
 
@@ -670,8 +663,7 @@ function mapItem(input: {
     });
   }
 
-  const baseMatches =
-    catalogItem !== undefined ? catalogBaseMatches(catalogItem, base) : false;
+  const baseMatches = catalogItem !== undefined ? catalogBaseMatches(catalogItem, base) : false;
 
   const nextLevel =
     upgrading && item.level !== null && item.level !== undefined ? item.level + 1 : null;
@@ -765,15 +757,19 @@ function resolveRealNextLevel(input: {
   readonly stageMax: number | null;
 }): CatalogLevel | undefined {
   const { baseMatches, catalogItem, currentLevel, stageMax } = input;
-  if (!baseMatches || catalogItem === undefined || currentLevel === null || currentLevel === undefined) {
+  if (
+    !baseMatches ||
+    catalogItem === undefined ||
+    currentLevel === null ||
+    currentLevel === undefined
+  ) {
     return undefined;
   }
   if (currentLevel >= catalogItem.maxLevel) {
     return undefined;
   }
 
-  const threshold =
-    stageMax !== null && currentLevel >= stageMax ? stageMax : currentLevel;
+  const threshold = stageMax !== null && currentLevel >= stageMax ? stageMax : currentLevel;
   return [...catalogItem.levels]
     .sort((left, right) => left.level - right.level)
     .find((level) => level.level > threshold);
@@ -802,7 +798,12 @@ function resolveNextLevelDuration(input: {
     realNext,
   } = input;
 
-  if (!baseMatches || catalogItem === undefined || !catalogIsUsable || (stageMax === null && !upgrading)) {
+  if (
+    !baseMatches ||
+    catalogItem === undefined ||
+    !catalogIsUsable ||
+    (stageMax === null && !upgrading)
+  ) {
     return { seconds: null, state: null };
   }
 
@@ -995,7 +996,12 @@ function resolveCurrentLevelAssets(input: {
   readonly currentLevel: number | null;
 }): { readonly visual: CatalogItem['levelVisual']; readonly icon: CatalogItem['icon'] } {
   const { baseMatches, catalogItem, currentLevel } = input;
-  if (!baseMatches || catalogItem === undefined || currentLevel === null || currentLevel === undefined) {
+  if (
+    !baseMatches ||
+    catalogItem === undefined ||
+    currentLevel === null ||
+    currentLevel === undefined
+  ) {
     return { visual: null, icon: null };
   }
   const matched = catalogItem.levels.find((level) => level.level === currentLevel);
@@ -1125,7 +1131,10 @@ function makeVillageItemState(state: VillageItemState): VillageItemState {
   return state;
 }
 
-function withRemainingSeconds(item: VillageItemState, remainingSeconds: bigint | null): VillageItemState {
+function withRemainingSeconds(
+  item: VillageItemState,
+  remainingSeconds: bigint | null,
+): VillageItemState {
   return {
     ...item,
     remainingSeconds,
@@ -1145,7 +1154,10 @@ function makeDiagnostic(
   };
 }
 
-function saturatingIntAdd(left: number, right: number): { readonly sum: number; readonly overflowed: boolean } {
+function saturatingIntAdd(
+  left: number,
+  right: number,
+): { readonly sum: number; readonly overflowed: boolean } {
   const next = left + right;
   if (!Number.isSafeInteger(next) || next < left) {
     return { sum: INT_MAX, overflowed: true };

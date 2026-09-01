@@ -4,8 +4,6 @@ import type { SeasonalPhaseTable } from '../catalog/seasonal-phase';
 import { EMPTY_SEASONAL_PHASE_TABLE } from '../catalog/seasonal-phase';
 import {
   manualActiveRecords,
-  manualEffectiveItemState,
-  manualItemState,
   trackerItemKeyRoot,
   trackerItemKeyStableId,
   type ManualUpgradeCore,
@@ -15,7 +13,7 @@ import { projectVillageCatalog } from './catalog-projection';
 import type { EffectiveVillageItemState } from './effective-projection';
 import type { VillageProgressMetrics } from './progress-metrics';
 import type { TrackerBase } from './tracker';
-import { isUpgrading, needsReimport, type VillageCatalogProjection, type VillageItemState } from './types';
+import { isUpgrading, needsReimport, type VillageItemState } from './types';
 import type { VillageProfile } from '../import/types';
 import type { VillageProjectionProvider } from './types';
 
@@ -171,7 +169,10 @@ export function upgradeOverviewRecords(input: {
   readonly seasonalPhases?: SeasonalPhaseTable;
   readonly manualUpgradeCores?: Readonly<Record<string, ManualUpgradeCore>>;
   readonly nowMs?: number;
-}): { readonly active: readonly UpgradeDisplayRecord[]; readonly pending: readonly UpgradeDisplayRecord[] } {
+}): {
+  readonly active: readonly UpgradeDisplayRecord[];
+  readonly pending: readonly UpgradeDisplayRecord[];
+} {
   const seasonalPhases = input.seasonalPhases ?? EMPTY_SEASONAL_PHASE_TABLE;
   const manualUpgradeCores = input.manualUpgradeCores ?? {};
   const nowMs = input.nowMs ?? Date.now();
@@ -193,9 +194,7 @@ export function upgradeOverviewRecords(input: {
     active: records
       .filter((record) => isEffectivelyUpgrading(record.item))
       .sort((left, right) => activeOrder(left, right, nowMs)),
-    pending: records
-      .filter((record) => effectivelyNeedsReimport(record.item))
-      .sort(pendingOrder),
+    pending: records.filter((record) => effectivelyNeedsReimport(record.item)).sort(pendingOrder),
   };
 }
 
@@ -354,7 +353,8 @@ function activeOrder(
   right: UpgradeDisplayRecord,
   nowMs: number,
 ): number {
-  const leftRemaining = effectiveRemainingSeconds(left.item, nowMs) ?? BigInt(Number.MAX_SAFE_INTEGER);
+  const leftRemaining =
+    effectiveRemainingSeconds(left.item, nowMs) ?? BigInt(Number.MAX_SAFE_INTEGER);
   const rightRemaining =
     effectiveRemainingSeconds(right.item, nowMs) ?? BigInt(Number.MAX_SAFE_INTEGER);
   if (leftRemaining !== rightRemaining) {

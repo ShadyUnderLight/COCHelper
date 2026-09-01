@@ -2,7 +2,7 @@ import type { AccountItem, AccountSnapshot } from '../account';
 import { catalogDurationState, type CatalogDurationState } from '../catalog/duration-state';
 import type { CatalogCompatibility } from '../catalog/types';
 import type { GameCatalog } from '../catalog/game-catalog';
-import type { CatalogItem, CatalogLevel } from '../catalog/types';
+import type { CatalogLevel } from '../catalog/types';
 import {
   manualActiveRecords,
   manualEffectiveItemState,
@@ -31,11 +31,7 @@ import {
 } from './progress-metrics';
 import type { TrackerBase } from './tracker';
 import { catalogLevelRequirements } from './upgrade-requirement';
-import type {
-  ProgressUniverseCoverage,
-  VillageItemState,
-  VillageNextUpgrade,
-} from './types';
+import type { ProgressUniverseCoverage, VillageItemState, VillageNextUpgrade } from './types';
 
 export type EffectiveVillageItemStatus =
   | 'observed'
@@ -48,11 +44,7 @@ export type EffectiveVillageItemStatus =
   | 'unavailable';
 
 export type EffectiveVillageItemProvenance =
-  | 'observed'
-  | 'manualCompleted'
-  | 'manualActive'
-  | 'importedActive'
-  | 'needsReimport';
+  'observed' | 'manualCompleted' | 'manualActive' | 'importedActive' | 'needsReimport';
 
 export type EffectiveVillageCountQuality = 'known' | 'malformed' | 'overflowed';
 
@@ -175,8 +167,12 @@ export function buildEffectiveVillageProjection(
   }
 
   const trackerKeys = [...groupedItems.keys()]
-    .map((stableID) => keyedItems.find((entry) => trackerItemKeyStableId(entry.key) === stableID)!.key)
-    .sort((left, right) => trackerItemKeyStableId(left).localeCompare(trackerItemKeyStableId(right)));
+    .map(
+      (stableID) => keyedItems.find((entry) => trackerItemKeyStableId(entry.key) === stableID)!.key,
+    )
+    .sort((left, right) =>
+      trackerItemKeyStableId(left).localeCompare(trackerItemKeyStableId(right)),
+    );
 
   const rawByImportID = new Map(rawItems.map((item) => [item.id, item]));
   const stateByKey = new Map<string, EffectiveVillageItemState>();
@@ -282,9 +278,9 @@ function makeEffectiveState(input: {
   readonly nowMs: number;
   readonly manualUpgradeCore: ManualUpgradeCore | null;
 }): EffectiveVillageItemState | undefined {
-  const orderedObservedItems = input.observedItems.slice().sort((left, right) =>
-    left.id.localeCompare(right.id),
-  );
+  const orderedObservedItems = input.observedItems
+    .slice()
+    .sort((left, right) => left.id.localeCompare(right.id));
   if (orderedObservedItems.length === 0) {
     return undefined;
   }
@@ -311,7 +307,9 @@ function makeEffectiveState(input: {
     : undefined;
   const activeRecords = input.manualUpgradeCore
     ? manualActiveRecords(input.manualUpgradeCore)
-        .filter((record) => trackerItemKeyStableId(record.itemKey) === trackerItemKeyStableId(input.key))
+        .filter(
+          (record) => trackerItemKeyStableId(record.itemKey) === trackerItemKeyStableId(input.key),
+        )
         .slice()
         .sort((left, right) => left.recordID.localeCompare(right.recordID))
     : [];
@@ -338,8 +336,7 @@ function makeEffectiveState(input: {
   });
   const observedNeedsReimport = orderedObservedItems.some((item) => {
     return (
-      item.timerSeconds !== null &&
-      liveRemainingSeconds(item, input.snapshot, input.nowMs) === 0n
+      item.timerSeconds !== null && liveRemainingSeconds(item, input.snapshot, input.nowMs) === 0n
     );
   });
   const exactActiveMatch = hasExactActiveMatch({
@@ -381,11 +378,7 @@ function makeEffectiveState(input: {
   } else if (manualItem?.status === 'unknown') {
     status = 'unknown';
     diagnostic = '本地手动状态未知，暂不把缺失解释为零级或已完成。';
-  } else if (
-    activeRecords.length > 0 &&
-    observedActiveItems.length > 0 &&
-    !exactActiveMatch
-  ) {
+  } else if (activeRecords.length > 0 && observedActiveItems.length > 0 && !exactActiveMatch) {
     status = 'conflict';
     provenance = ['manualActive', 'importedActive'];
     diagnostic = '导入计时与本地手动记录无法按 key、等级、数量和计时证据精确匹配。';
@@ -437,9 +430,9 @@ function makeEffectiveState(input: {
   const catalogLevel =
     effectiveCatalogProjection?.catalogLevel ??
     (targetLevel !== null
-      ? input.catalog?.item(input.key.rawSection, input.key.dataID)?.levels.find(
-          (level) => level.level === targetLevel,
-        ) ?? null
+      ? (input.catalog
+          ?.item(input.key.rawSection, input.key.dataID)
+          ?.levels.find((level) => level.level === targetLevel) ?? null)
       : null);
 
   let catalogDuration: CatalogDurationState | null;
@@ -456,7 +449,9 @@ function makeEffectiveState(input: {
     catalogDuration =
       (catalogLevel !== null && catalogLevel !== undefined
         ? catalogDurationState(catalogLevel.durationSeconds, catalogLevel.missingReason)
-        : null) ?? representative?.nextLevelDurationState ?? null;
+        : null) ??
+      representative?.nextLevelDurationState ??
+      null;
     catalogCosts = catalogLevel?.upgradeCosts ?? null;
   }
 
@@ -495,8 +490,7 @@ function makeEffectiveState(input: {
       effectiveCompleted !== null && effectiveCompleted.levels.length === 1
         ? effectiveCompleted.levels[0]!.level
         : null,
-    activeTargetLevel:
-      activeTarget.levels.length === 1 ? activeTarget.levels[0]!.level : null,
+    activeTargetLevel: activeTarget.levels.length === 1 ? activeTarget.levels[0]!.level : null,
   };
 }
 
@@ -750,9 +744,7 @@ function makeProgressMetric(input: {
   const state: ProgressMetricState =
     input.denominator === 0 ? 'unknown' : reasons.length === 0 ? 'ready' : 'partial';
   const ratio =
-    !input.saturated &&
-    input.denominator > 0 &&
-    (state === 'ready' || state === 'partial')
+    !input.saturated && input.denominator > 0 && (state === 'ready' || state === 'partial')
       ? input.numerator / input.denominator
       : null;
   return {
@@ -891,9 +883,7 @@ function activeCatalogDiagnosticFor(input: {
     const catalogItem = input.catalog.item(input.key.rawSection, input.key.dataID);
     const level = catalogItem?.levels.find((entry) => entry.level === record.targetLevel);
     const durationState =
-      level === undefined
-        ? null
-        : catalogDurationState(level.durationSeconds, level.missingReason);
+      level === undefined ? null : catalogDurationState(level.durationSeconds, level.missingReason);
     if (catalogItem === undefined || durationState === null) {
       return '当前目录缺少本地手动升级目标等级的可信时长。';
     }
@@ -935,7 +925,9 @@ function matchesActiveRecord(input: {
   if (remaining === null) {
     return false;
   }
-  const rawExpectedRemaining = safeFloorSeconds((input.record.expectedEndAtMs - input.nowMs) / 1000);
+  const rawExpectedRemaining = safeFloorSeconds(
+    (input.record.expectedEndAtMs - input.nowMs) / 1000,
+  );
   if (rawExpectedRemaining === null) {
     return false;
   }
@@ -978,7 +970,9 @@ function hasExactActiveMatch(input: {
 
   const order = candidates
     .map((indices, index) => ({ index, size: indices.length }))
-    .sort((left, right) => (left.size === right.size ? left.index - right.index : left.size - right.size))
+    .sort((left, right) =>
+      left.size === right.size ? left.index - right.index : left.size - right.size,
+    )
     .map((entry) => entry.index);
 
   const owner = new Array<number | null>(input.observedItems.length).fill(null);
@@ -1017,7 +1011,10 @@ function effectiveCatalogProjectionFor(input: {
   readonly stageMax: number | null;
   readonly catalog: GameCatalog | null;
   readonly catalogIsUsable: boolean;
-}): { readonly nextUpgrade: VillageNextUpgrade; readonly catalogLevel: CatalogLevel | null } | null {
+}): {
+  readonly nextUpgrade: VillageNextUpgrade;
+  readonly catalogLevel: CatalogLevel | null;
+} | null {
   const catalogItem = input.catalog?.item(input.key.rawSection, input.key.dataID);
   if (catalogItem === undefined) {
     return null;
@@ -1102,16 +1099,10 @@ function trackerItemKeyMap(
     }
     result.set(item.id, key);
     for (const child of item.types) {
-      visit(child, section, childRoot, [
-        ...path,
-        { kind: 'type', dataID: child.dataID },
-      ]);
+      visit(child, section, childRoot, [...path, { kind: 'type', dataID: child.dataID }]);
     }
     for (const child of item.modules) {
-      visit(child, section, childRoot, [
-        ...path,
-        { kind: 'module', dataID: child.dataID },
-      ]);
+      visit(child, section, childRoot, [...path, { kind: 'module', dataID: child.dataID }]);
     }
   }
 
@@ -1162,7 +1153,10 @@ function safeFloorSeconds(intervalSeconds: number): bigint | null {
   return BigInt(floored);
 }
 
-function addInt(target: number, value: number): { readonly value: number; readonly overflowed: boolean } {
+function addInt(
+  target: number,
+  value: number,
+): { readonly value: number; readonly overflowed: boolean } {
   const converted = value > Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : Math.max(0, value);
   const next = target + converted;
   if (!Number.isFinite(next) || next > Number.MAX_SAFE_INTEGER) {
@@ -1171,7 +1165,10 @@ function addInt(target: number, value: number): { readonly value: number; readon
   return { value: next, overflowed: false };
 }
 
-function multiplyInt64(lhs: bigint, rhs: bigint): { readonly value: number; readonly overflowed: boolean } {
+function multiplyInt64(
+  lhs: bigint,
+  rhs: bigint,
+): { readonly value: number; readonly overflowed: boolean } {
   const product = lhs * rhs;
   if (product > BigInt(Number.MAX_SAFE_INTEGER)) {
     return { value: Number.MAX_SAFE_INTEGER, overflowed: true };

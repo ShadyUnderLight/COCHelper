@@ -42,7 +42,6 @@ import {
   type ProgressUniverseCoverage,
   type VillageCatalogProjection,
   type VillageItemState,
-  type VillageItemStatus,
 } from './types';
 import type { VillageProfile } from '../import/types';
 
@@ -183,11 +182,7 @@ export type BuildingGroup = {
   readonly id: string;
 };
 
-export function buildingGroupId(
-  base: TrackerBase,
-  section: string,
-  dataID: bigint,
-): string {
+export function buildingGroupId(base: TrackerBase, section: string, dataID: bigint): string {
   return `${base}:${section}:${dataID}`;
 }
 
@@ -208,9 +203,7 @@ export type ProjectBuildingGroupsFromProjectionInput = {
   readonly manualUpgradeCore?: ManualUpgradeCore | null;
 };
 
-export function projectBuildingGroups(
-  input: ProjectBuildingGroupsInput,
-): BuildingGroup[];
+export function projectBuildingGroups(input: ProjectBuildingGroupsInput): BuildingGroup[];
 export function projectBuildingGroups(
   input: ProjectBuildingGroupsFromProjectionInput,
 ): BuildingGroup[];
@@ -389,13 +382,7 @@ function buildingGroupTrackerState(
     status: effective.status,
     provenance: effective.provenance,
     diagnostics: uniqueStrings(diagnostics),
-    actions: buildingGroupActions(
-      effective,
-      catalog,
-      catalogIsUsable,
-      manualUpgradeCore,
-      coverage,
-    ),
+    actions: buildingGroupActions(effective, catalog, catalogIsUsable, manualUpgradeCore, coverage),
   };
 }
 
@@ -413,17 +400,15 @@ function buildingGroupActions(
   if (distribution === null) {
     return [];
   }
-  const catalogItem = catalog?.item(
-    effective.itemKey.rawSection,
-    effective.itemKey.dataID,
-  );
+  const catalogItem = catalog?.item(effective.itemKey.rawSection, effective.itemKey.dataID);
   if (catalogItem === undefined || catalogItem.base !== effective.itemKey.base) {
     return [];
   }
 
-  const manualItem = manualUpgradeCore === null || manualUpgradeCore === undefined
-    ? undefined
-    : manualItemState(manualUpgradeCore, effective.itemKey);
+  const manualItem =
+    manualUpgradeCore === null || manualUpgradeCore === undefined
+      ? undefined
+      : manualItemState(manualUpgradeCore, effective.itemKey);
   const manualEffective =
     manualUpgradeCore === null || manualUpgradeCore === undefined
       ? undefined
@@ -528,10 +513,7 @@ function buildingGroupActions(
         reasons.push('本地 tracker 的可用数量不足。');
       }
       if (
-        !manualLevelDistributionsEqual(
-          coreDistribution,
-          effective.effectiveCompletedDistribution,
-        )
+        !manualLevelDistributionsEqual(coreDistribution, effective.effectiveCompletedDistribution)
       ) {
         reasons.push('快照 effective 分布与本地 tracker 分布不一致。');
       }
@@ -555,14 +537,8 @@ function buildingGroupActions(
       reasons.push('目标等级超过目录全局上限。');
     }
 
-    const targetDurationState = catalogDurationState(
-      target.durationSeconds,
-      target.missingReason,
-    );
-    if (
-      targetDurationState?.kind !== 'timed' &&
-      targetDurationState?.kind !== 'instant'
-    ) {
+    const targetDurationState = catalogDurationState(target.durationSeconds, target.missingReason);
+    if (targetDurationState?.kind !== 'timed' && targetDurationState?.kind !== 'instant') {
       reasons.push('目标升级时长不可用。');
     }
 
@@ -652,8 +628,7 @@ function buildingUpgradeStepsForItem(
   return [...catalogItem.levels]
     .filter(
       (level) =>
-        level.level > (currentLevel ?? Number.MAX_SAFE_INTEGER) &&
-        level.level <= effectiveMax,
+        level.level > (currentLevel ?? Number.MAX_SAFE_INTEGER) && level.level <= effectiveMax,
     )
     .sort((left, right) => left.level - right.level)
     .map((level) => ({
@@ -762,10 +737,7 @@ function buildingGroupSummary(
           INT64_BOUNDS,
         );
         saturated = saturated || weightedDuration.overflowed;
-        const durationTotal = saturatingAddBigInt(
-          totalDurationSeconds,
-          weightedDuration.value,
-        );
+        const durationTotal = saturatingAddBigInt(totalDurationSeconds, weightedDuration.value);
         totalDurationSeconds = durationTotal.value;
         saturated = saturated || durationTotal.overflowed;
       }
@@ -889,9 +861,6 @@ function saturatingAddInt(left: number, right: number): { value: number; overflo
   return { value: Number(result.value), overflowed: result.overflowed };
 }
 
-function saturatingAddBigInt(
-  left: bigint,
-  right: bigint,
-): { value: bigint; overflowed: boolean } {
+function saturatingAddBigInt(left: bigint, right: bigint): { value: bigint; overflowed: boolean } {
   return saturatingAdd(left, right, INT64_BOUNDS);
 }

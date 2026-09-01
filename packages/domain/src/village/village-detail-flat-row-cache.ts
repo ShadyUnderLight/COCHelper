@@ -1,5 +1,3 @@
-import type { UuidString } from '@coc-helper/wire';
-
 import type { GameCatalog } from '../catalog/game-catalog';
 import type { SeasonalPhaseTable, PhaseBucket } from '../catalog/seasonal-phase';
 import type { ManualUpgradeCore } from '../manual/types';
@@ -15,19 +13,10 @@ import type { VillageCategoryCompletion, VillageDetailGroup } from './village-de
 import type { VillageProjectionCacheRenderResult } from './village-projection-cache';
 
 export type UpgradeDisplayStateFilter =
-  | 'available'
-  | 'manualActive'
-  | 'importedActive'
-  | 'completed'
-  | 'needsReimport'
-  | 'unknown';
+  'available' | 'manualActive' | 'importedActive' | 'completed' | 'needsReimport' | 'unknown';
 
 export type UpgradeDisplaySort =
-  | 'remaining'
-  | 'categoryName'
-  | 'level'
-  | 'stageMax'
-  | 'recentlyChanged';
+  'remaining' | 'categoryName' | 'level' | 'stageMax' | 'recentlyChanged';
 
 export type VillageDetailFlatRowRenderIdentityKey = {
   readonly villageID: string;

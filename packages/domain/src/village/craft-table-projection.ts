@@ -113,7 +113,8 @@ export function refreshingCraftTableModules(
       if (module.remainingSeconds === null || module.remainingSeconds <= 0n) {
         return module;
       }
-      const newRemaining = module.remainingSeconds - delta >= 0n ? module.remainingSeconds - delta : 0n;
+      const newRemaining =
+        module.remainingSeconds - delta >= 0n ? module.remainingSeconds - delta : 0n;
       if (newRemaining === 0n) {
         expired = true;
       }

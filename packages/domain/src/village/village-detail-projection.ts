@@ -74,7 +74,9 @@ export function villageDetailMatchesCategoryFilter(
   return group.displayCategory === null && group.category === category;
 }
 
-export function villageDetailGroups(items: readonly VillageItemState[]): readonly VillageDetailGroup[] {
+export function villageDetailGroups(
+  items: readonly VillageItemState[],
+): readonly VillageDetailGroup[] {
   const buckets = new Map<string, { key: GroupKey; items: VillageItemState[] }>();
   const keyOrder: GroupKey[] = [];
 
@@ -174,9 +176,10 @@ export function villageDetailInstanceCount(items: readonly VillageItemState[]): 
   return villageDetailInstanceCountAndOverflow(items).count;
 }
 
-export function villageDetailInstanceCountAndOverflow(
-  items: readonly VillageItemState[],
-): { readonly count: number; readonly didOverflow: boolean } {
+export function villageDetailInstanceCountAndOverflow(items: readonly VillageItemState[]): {
+  readonly count: number;
+  readonly didOverflow: boolean;
+} {
   let didOverflow = false;
   const count = items.reduce((accumulator, item) => {
     if (item.countOverflowed) {
@@ -259,8 +262,7 @@ function completionForItems(
   const knownCount = knownInfo.count;
   const completedCount = completedInfo.count;
   const unknownCount = unknownInfo.count;
-  const saturated =
-    knownInfo.didOverflow || completedInfo.didOverflow || unknownInfo.didOverflow;
+  const saturated = knownInfo.didOverflow || completedInfo.didOverflow || unknownInfo.didOverflow;
   return {
     category,
     displayCategory,

@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import { EMPTY_SEASONAL_PHASE_TABLE } from '../catalog/seasonal-phase';
 import { VillageProjectionCache } from './village-projection-cache';
-import { createSyntheticCatalog, makeAccountItem, makeTestVillage, TEST_IMPORTED_AT_MS } from './test-fixtures';
+import {
+  createSyntheticCatalog,
+  makeAccountItem,
+  makeTestVillage,
+  TEST_IMPORTED_AT_MS,
+} from './test-fixtures';
 
 const catalog = createSyntheticCatalog();
 
 describe('VillageProjectionCache', () => {
   it('相同 key 命中缓存', () => {
-    const cache = new VillageProjectionCache({ maxEntries: 8 });
+    const cache = new VillageProjectionCache(8);
     const village = makeTestVillage({
       buildings: [makeAccountItem({ section: 'buildings', dataID: 1_000_001n, level: 1 })],
     });
@@ -29,7 +34,7 @@ describe('VillageProjectionCache', () => {
   });
 
   it('now tick 刷新 remaining 不重建静态投影', () => {
-    const cache = new VillageProjectionCache({ maxEntries: 8 });
+    const cache = new VillageProjectionCache(8);
     const village = makeTestVillage({
       buildings: [
         makeAccountItem({

@@ -38,7 +38,9 @@ export function trackerItemKeyStableID(key: TrackerItemKey): string {
   return trackerItemKeyStableId(key);
 }
 
-export function withTrackerItemKeyStableID(key: TrackerItemKey): TrackerItemKey & { readonly stableID: string } {
+export function withTrackerItemKeyStableID(
+  key: TrackerItemKey,
+): TrackerItemKey & { readonly stableID: string } {
   return Object.assign(key, { stableID: trackerItemKeyStableId(key) });
 }
 
@@ -334,7 +336,6 @@ export function manualEffectiveItemState(
       effectiveCompleted !== null && effectiveCompleted.levels.length === 1
         ? effectiveCompleted.levels[0]!.level
         : null,
-    activeTargetLevel:
-      activeTarget.levels.length === 1 ? activeTarget.levels[0]!.level : null,
+    activeTargetLevel: activeTarget.levels.length === 1 ? activeTarget.levels[0]!.level : null,
   };
 }

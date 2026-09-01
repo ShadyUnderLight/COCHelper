@@ -7,13 +7,7 @@ import type { UpgradeRequirement } from './upgrade-requirement';
 import type { TrackerBase, TrackerCategory, TrackerDisplayCategory } from './tracker';
 
 export type VillageItemStatus =
-  | 'upgrading'
-  | 'complete'
-  | 'maxed'
-  | 'unknown'
-  | 'unavailable'
-  | 'available'
-  | 'unverified';
+  'upgrading' | 'complete' | 'maxed' | 'unknown' | 'unavailable' | 'available' | 'unverified';
 
 export type VillageNextUpgrade =
   | { readonly kind: 'available'; readonly level: number; readonly durationSeconds: bigint | null }
@@ -24,7 +18,11 @@ export type VillageNextUpgrade =
       readonly referenceDurationSeconds: bigint | null;
     }
   | { readonly kind: 'globalMaxed' }
-  | { readonly kind: 'inProgressFact'; readonly level: number; readonly durationSeconds: bigint | null }
+  | {
+      readonly kind: 'inProgressFact';
+      readonly level: number;
+      readonly durationSeconds: bigint | null;
+    }
   | { readonly kind: 'unverified' }
   | { readonly kind: 'unknown' };
 

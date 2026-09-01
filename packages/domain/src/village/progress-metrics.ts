@@ -4,18 +4,10 @@ import type { GameCatalog } from '../catalog/game-catalog';
 import type { ManualUpgradeCore } from '../manual/types';
 import { projectVillageCatalog } from './catalog-projection';
 import { instanceWeight, progressUniverseCoverageIsComplete } from './types';
-import {
-  instanceCountAndOverflow,
-  isKnown,
-  needsReimport,
-} from './village-detail-projection';
+import { instanceCountAndOverflow, isKnown, needsReimport } from './village-detail-projection';
 import type { TrackerBase, TrackerCategory } from './tracker';
 import { trackerCategoryFromSection, trackerCategoryTitle } from './tracker';
-import type {
-  ProgressUniverseCoverage,
-  VillageCatalogProjection,
-  VillageItemState,
-} from './types';
+import type { ProgressUniverseCoverage, VillageItemState } from './types';
 import type { VillageProfile } from '../import/types';
 import type { VillageProjectionProvider } from './types';
 
@@ -72,16 +64,12 @@ export function villageProgressMetrics(input: VillageProgressMetricsInput): Vill
 
   const known = items.filter((item) => isKnown(item) && !needsReimport(item));
   const unknownWeightInfo = instanceCountAndOverflow(
-    items.filter(
-      (item) => item.status !== 'available' && (!isKnown(item) || needsReimport(item)),
-    ),
+    items.filter((item) => item.status !== 'available' && (!isKnown(item) || needsReimport(item))),
   );
 
   const completeDenominator = progressUniverseCoverageIsComplete(coverage);
   const coverageDiagnostic = coverageDiagnosticFor(coverage);
-  const available = completeDenominator
-    ? items.filter((item) => item.status === 'available')
-    : [];
+  const available = completeDenominator ? items.filter((item) => item.status === 'available') : [];
 
   const stageEligible = [
     ...known.filter((item) => (item.currentStageMaxLevel ?? 0) > 0),
@@ -94,10 +82,7 @@ export function villageProgressMetrics(input: VillageProgressMetricsInput): Vill
     Math.max(0, item.currentStageMaxLevel ?? 0),
   );
   const stageNum = weightedCappedSum(stageEligible, (item) =>
-    Math.min(
-      Math.max(0, item.currentLevel ?? 0),
-      Math.max(0, item.currentStageMaxLevel ?? 0),
-    ),
+    Math.min(Math.max(0, item.currentLevel ?? 0), Math.max(0, item.currentStageMaxLevel ?? 0)),
   );
 
   const globalEligible = [
@@ -503,9 +488,7 @@ function makeMetric(input: {
 
   const degradedReason = reasons.length === 0 ? null : reasons.join(' ');
   const ratio =
-    !input.saturated &&
-    input.denominator > 0 &&
-    (state === 'ready' || state === 'partial')
+    !input.saturated && input.denominator > 0 && (state === 'ready' || state === 'partial')
       ? input.numerator / input.denominator
       : null;
 

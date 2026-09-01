@@ -1,14 +1,19 @@
 import type { UuidString } from '@coc-helper/wire';
 import { generateUuid } from '@coc-helper/wire';
 
-import { baselineReferencesEqual } from './equality';
+import {
+  baselineReferencesEqual,
+  manualLevelDistributionsEqual,
+  trackerItemKeysEqual,
+} from './equality';
 import { isManualBaselineReferenceStructurallyValid } from './models';
 import { ManualUpgradeCoreState } from './core';
 import type { LocalQueueCapacityConfig } from './queue/capacity-config';
+import { localQueueKindsEqual } from './queue/local-queue-kind';
 import type { QueueAssignmentDecision } from './queue/queue-assignment';
-import type { ManualBaselineReference } from './types';
+import type { ManualBaselineReference, ManualLevelDistribution } from './types';
 import { trackerItemKeyStableId } from './types';
-import type { ManualReconciliationRecord } from './reconciliation/types';
+import type { ManualReconciliationRecord, ManualReconciliationItem } from './reconciliation/types';
 import {
   MANUAL_TRACKER_SCHEMA,
   type ManualTrackerDiagnostic,
@@ -236,8 +241,10 @@ export function manualTrackerVillageStateWithCore(
     villageID: state.villageID,
     core: input.core ?? state.core,
     stateUpdatedAtMs: input.stateUpdatedAtMs ?? state.stateUpdatedAtMs,
-    lastSettleAtMs: input.lastSettleAtMs ?? state.lastSettleAtMs,
-    lastImportAtMs: input.lastImportAtMs ?? state.lastImportAtMs,
+    lastSettleAtMs:
+      input.lastSettleAtMs !== undefined ? input.lastSettleAtMs : state.lastSettleAtMs,
+    lastImportAtMs:
+      input.lastImportAtMs !== undefined ? input.lastImportAtMs : state.lastImportAtMs,
     diagnostics: input.diagnostics ?? state.diagnostics,
     reconciliationHistory: input.reconciliationHistory ?? state.reconciliationHistory,
     queueCapacityConfigs: input.queueCapacityConfigs ?? state.queueCapacityConfigs,
@@ -260,11 +267,172 @@ export function manualTrackerVillageStatesEqual(
     left.stateUpdatedAtMs === right.stateUpdatedAtMs &&
     left.lastSettleAtMs === right.lastSettleAtMs &&
     left.lastImportAtMs === right.lastImportAtMs &&
-    left.diagnostics.length === right.diagnostics.length &&
-    left.reconciliationHistory.length === right.reconciliationHistory.length &&
-    left.queueCapacityConfigs.length === right.queueCapacityConfigs.length &&
-    left.queueAssignments.length === right.queueAssignments.length
+    manualTrackerDiagnosticsEqual(left.diagnostics, right.diagnostics) &&
+    manualReconciliationHistoryEqual(left.reconciliationHistory, right.reconciliationHistory) &&
+    localQueueCapacityConfigsEqual(left.queueCapacityConfigs, right.queueCapacityConfigs) &&
+    queueAssignmentsEqual(left.queueAssignments, right.queueAssignments)
   );
+}
+
+function manualTrackerDiagnosticsEqual(
+  left: readonly ManualTrackerDiagnostic[],
+  right: readonly ManualTrackerDiagnostic[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const leftEntry = left[index]!;
+    const rightEntry = right[index]!;
+    if (
+      leftEntry.kind !== rightEntry.kind ||
+      leftEntry.code !== rightEntry.code ||
+      leftEntry.message !== rightEntry.message ||
+      leftEntry.recordedAtMs !== rightEntry.recordedAtMs
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function manualReconciliationHistoryEqual(
+  left: readonly ManualReconciliationRecord[],
+  right: readonly ManualReconciliationRecord[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (!manualReconciliationRecordsEqual(left[index]!, right[index]!)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function manualReconciliationRecordsEqual(
+  left: ManualReconciliationRecord,
+  right: ManualReconciliationRecord,
+): boolean {
+  return (
+    left.reconciliationID === right.reconciliationID &&
+    left.decision === right.decision &&
+    left.timeConfidence === right.timeConfidence &&
+    left.sourceTimestampMs === right.sourceTimestampMs &&
+    left.duplicate === right.duplicate &&
+    left.appliedAtMs === right.appliedAtMs &&
+    baselineReferencesEqual(
+      left.previousReference ?? emptyBaseline(),
+      right.previousReference ?? emptyBaseline(),
+    ) &&
+    baselineReferencesEqual(left.newReference, right.newReference) &&
+    manualReconciliationItemsEqual(left.items, right.items)
+  );
+}
+
+function manualReconciliationItemsEqual(
+  left: readonly ManualReconciliationItem[],
+  right: readonly ManualReconciliationItem[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (!manualReconciliationItemEqual(left[index]!, right[index]!)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function manualReconciliationItemEqual(
+  left: ManualReconciliationItem,
+  right: ManualReconciliationItem,
+): boolean {
+  return (
+    trackerItemKeysEqual(left.itemKey, right.itemKey) &&
+    left.displayName === right.displayName &&
+    left.classification === right.classification &&
+    left.message === right.message &&
+    distributionsEqual(left.previousDistribution, right.previousDistribution) &&
+    distributionsEqual(left.observedDistribution, right.observedDistribution) &&
+    uuidArraysEqual(left.relatedRecordIDs, right.relatedRecordIDs) &&
+    uuidArraysEqual(left.confirmedRecordIDs, right.confirmedRecordIDs) &&
+    left.observedTimer === right.observedTimer &&
+    left.coverageComplete === right.coverageComplete
+  );
+}
+
+function distributionsEqual(
+  left: ManualLevelDistribution | null,
+  right: ManualLevelDistribution | null,
+): boolean {
+  if (left === null || right === null) {
+    return left === right;
+  }
+  return manualLevelDistributionsEqual(left, right);
+}
+
+function uuidArraysEqual(left: readonly UuidString[], right: readonly UuidString[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function localQueueCapacityConfigsEqual(
+  left: readonly LocalQueueCapacityConfig[],
+  right: readonly LocalQueueCapacityConfig[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const leftEntry = left[index]!;
+    const rightEntry = right[index]!;
+    if (
+      leftEntry.villageID !== rightEntry.villageID ||
+      !localQueueKindsEqual(leftEntry.queueKind, rightEntry.queueKind) ||
+      leftEntry.capacity !== rightEntry.capacity ||
+      leftEntry.updatedAtMs !== rightEntry.updatedAtMs ||
+      leftEntry.source !== rightEntry.source
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function queueAssignmentsEqual(
+  left: readonly QueueAssignmentDecision[],
+  right: readonly QueueAssignmentDecision[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const leftEntry = left[index]!;
+    const rightEntry = right[index]!;
+    if (
+      leftEntry.decisionID !== rightEntry.decisionID ||
+      leftEntry.villageID !== rightEntry.villageID ||
+      !trackerItemKeysEqual(leftEntry.itemKey, rightEntry.itemKey) ||
+      !baselineReferencesEqual(leftEntry.baselineReference, rightEntry.baselineReference) ||
+      !localQueueKindsEqual(leftEntry.queueKind, rightEntry.queueKind) ||
+      leftEntry.source !== rightEntry.source ||
+      leftEntry.decidedAtMs !== rightEntry.decidedAtMs ||
+      leftEntry.status !== rightEntry.status
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function emptyBaseline(): ManualBaselineReference {

@@ -716,9 +716,34 @@ describe('ManualTrackerReconciliation', () => {
       appliedAtMs: s(1_700_000_200),
     });
     expect(accepted.state.baselineReference).toEqual(accepted.preview.newReference);
+    expect(accepted.state.core.records).toEqual([]);
     expect(
       manualLevelDistributionsEqual(
         accepted.state.core.effectiveState(key)!.effectiveCompletedDistribution!,
+        dist([[11, 1n]]),
+      ),
+    ).toBe(true);
+  });
+
+  it('acceptObserved across lineage does not carry active records from old lineage', () => {
+    const ref = reference();
+    const state = activeState(ref);
+    expect(state.core.records.some((record) => record.status === 'active')).toBe(true);
+    const evidence = evidenceFrom({
+      newBaselineReference: reference('snapshot-p2', 'sha256:fp-p2', 'lineage-p2'),
+      lineageComparable: false,
+      entries: [completeObservation(key, dist([[11, 1n]]))],
+    });
+    const accepted = reconcileManualTracker(evidence, state, {
+      decision: 'acceptObserved',
+      appliedAtMs: s(1_700_000_200),
+    });
+    expect(accepted.state.core.records).toEqual([]);
+    expect(accepted.state.core.activeRecords).toEqual([]);
+    expect(accepted.state.baselineReference?.lineageID).toBe('lineage-p2');
+    expect(
+      manualLevelDistributionsEqual(
+        accepted.state.core.effectiveState(key)!.importedDistribution!,
         dist([[11, 1n]]),
       ),
     ).toBe(true);
@@ -1051,6 +1076,55 @@ describe('ManualTrackerReconciliation', () => {
     } catch (error) {
       expect(manualReconciliationErrorsEqual(error as never, { kind: 'stalePreview' })).toBe(true);
     }
+  });
+
+  it('same snapshot metadata with changed observation invalidates preview', () => {
+    const ref = reference();
+    const state = observedState(ref, [[10, 1n]]);
+    const sharedReference = reference('snapshot-same', 'sha256:fp-same', ref.lineageID);
+    const previewA = previewReconciliation(
+      evidenceFrom({
+        newBaselineReference: sharedReference,
+        duplicate: true,
+        entries: [completeObservation(key, dist([[11, 1n]]))],
+      }),
+      state,
+      s(1_700_000_200),
+    );
+    const evidenceB = evidenceFrom({
+      newBaselineReference: sharedReference,
+      duplicate: true,
+      entries: [completeObservation(key, dist([[12, 1n]]))],
+    });
+    try {
+      reconcileManualTracker(evidenceB, state, {
+        expectedPreview: previewA,
+        decision: 'applyNonConflicting',
+        appliedAtMs: s(1_700_000_200),
+      });
+      expect.unreachable('expected stale preview');
+    } catch (error) {
+      expect(manualReconciliationErrorsEqual(error as never, { kind: 'stalePreview' })).toBe(true);
+    }
+  });
+
+  it('createReconciliationObservation defaults distributionComplete from normalized distribution', () => {
+    const observation = createReconciliationObservation({
+      displayName: 'building',
+    });
+    expect(observation.distribution).toBeNull();
+    expect(observation.distributionComplete).toBe(false);
+    expect(observation.coverageComplete).toBe(false);
+
+    const timerOnly = createReconciliationObservation({
+      displayName: 'building',
+      hasTimer: true,
+      timerCoverageComplete: true,
+    });
+    expect(timerOnly.distribution).toBeNull();
+    expect(timerOnly.distributionComplete).toBe(false);
+    expect(timerOnly.hasTimer).toBe(true);
+    expect(timerOnly.timerCoverageComplete).toBe(true);
   });
 
   it('wrong village ID is rejected', () => {

@@ -10,6 +10,7 @@ import type {
   ManualItemState,
   ManualItemStatus,
   ManualUpgradeRecord,
+  TrackerItemKey,
 } from '../types';
 import { trackerItemKeyStableId } from '../types';
 import type { ReconciliationObservation } from './evidence';
@@ -247,4 +248,76 @@ export function rebuildReconciliationCore(input: {
   }
 
   return ManualUpgradeCoreState.create({ itemStates: states, records });
+}
+
+/** 跨 lineage 且 acceptObserved：只从注入观察重建 core，旧 records/manual state 不进入新 core。 */
+export function rebuildObservationOnlyReconciliationCore(input: {
+  readonly observations: ReadonlyMap<string, ReconciliationObservation>;
+  readonly classifications: ReadonlyMap<string, ManualReconciliationItem>;
+  readonly itemKeysByStableID: ReadonlyMap<string, TrackerItemKey>;
+  readonly newReference: ManualBaselineReference;
+  readonly sourceTimestampMs: number | null;
+  readonly decision: ManualReconciliationDecision;
+}): ManualUpgradeCoreState {
+  if (input.decision !== 'acceptObserved') {
+    const error: ManualReconciliationError = {
+      kind: 'invalidObservation',
+      message: '跨 lineage 重建只支持 acceptObserved。',
+    };
+    throw error;
+  }
+
+  const states: ManualItemState[] = [];
+  const sortedStableIds = [...input.observations.keys()].sort((left, right) =>
+    left.localeCompare(right),
+  );
+
+  for (const stableId of sortedStableIds) {
+    const observation = input.observations.get(stableId);
+    if (observation === undefined) {
+      continue;
+    }
+    const itemKey =
+      input.itemKeysByStableID.get(stableId) ?? input.classifications.get(stableId)?.itemKey;
+    if (itemKey === undefined) {
+      continue;
+    }
+    const item = input.classifications.get(stableId);
+    if (!shouldAdoptReconciliationItem(item, input.decision, false)) {
+      continue;
+    }
+
+    if (observation.distribution !== null) {
+      states.push(
+        createManualItemState({
+          itemKey,
+          baselineReference: input.newReference,
+          importedObservation: importedObservationFromReconciliation(
+            input.newReference,
+            observation,
+            input.sourceTimestampMs,
+          ),
+          status: 'observed',
+        }),
+      );
+      continue;
+    }
+
+    states.push(
+      createManualItemState({
+        itemKey,
+        baselineReference: input.newReference,
+        importedObservation: createManualImportedObservation({
+          reference: input.newReference,
+          levelDistribution: null,
+          sourceTimestampMs: input.sourceTimestampMs,
+          observedTimer: observation.hasTimer,
+          observedTimerCoverageComplete: observation.hasTimer && observation.timerCoverageComplete,
+        }),
+        status: 'observed',
+      }),
+    );
+  }
+
+  return ManualUpgradeCoreState.create({ itemStates: states, records: [] });
 }

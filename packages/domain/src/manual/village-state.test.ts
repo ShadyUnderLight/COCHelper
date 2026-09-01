@@ -11,7 +11,11 @@ import { LOCAL_QUEUE_KIND_BUILDER } from './queue/local-queue-kind';
 import { createLocalQueueCapacityConfig } from './queue/capacity-config';
 import { createQueueAssignmentDecision } from './queue/queue-assignment';
 import { trackerItemKeyRoot } from './types';
-import { createManualTrackerVillageState } from './village-state';
+import {
+  createManualTrackerVillageState,
+  manualTrackerVillageStateWithCore,
+  manualTrackerVillageStatesEqual,
+} from './village-state';
 
 const villageID = parseUuid('00000000-0000-0000-0000-000000000011')!;
 const key = trackerItemKeyRoot('home', 'buildings', 100n);
@@ -139,5 +143,48 @@ describe('ManualTrackerVillageState', () => {
       queueAssignments: [assignment],
     });
     expect(state.queueAssignments).toEqual([assignment]);
+  });
+
+  it('manualTrackerVillageStatesEqual compares collection contents not just lengths', () => {
+    const base = createManualTrackerVillageState({
+      villageID,
+      core: ManualUpgradeCoreState.create(),
+      diagnostics: [
+        {
+          kind: 'conflict',
+          code: 'a',
+          message: 'first',
+          recordedAtMs: 1_000,
+        },
+      ],
+    });
+    const differentDiagnostics = createManualTrackerVillageState({
+      villageID,
+      core: ManualUpgradeCoreState.create(),
+      diagnostics: [
+        {
+          kind: 'conflict',
+          code: 'b',
+          message: 'second',
+          recordedAtMs: 1_000,
+        },
+      ],
+    });
+    expect(manualTrackerVillageStatesEqual(base, differentDiagnostics)).toBe(false);
+  });
+
+  it('manualTrackerVillageStateWithCore can clear nullable timestamps', () => {
+    const state = createManualTrackerVillageState({
+      villageID,
+      core: ManualUpgradeCoreState.create(),
+      lastSettleAtMs: 2_000,
+      lastImportAtMs: 3_000,
+    });
+    const cleared = manualTrackerVillageStateWithCore(state, {
+      lastSettleAtMs: null,
+      lastImportAtMs: null,
+    });
+    expect(cleared.lastSettleAtMs).toBeNull();
+    expect(cleared.lastImportAtMs).toBeNull();
   });
 });

@@ -212,16 +212,7 @@ export function reconciliationCandidateMatches(
   expected: ManualReconciliationPreview,
   actual: ManualReconciliationPreview,
 ): boolean {
-  if (
-    expected.duplicate !== actual.duplicate ||
-    expected.newReference.fingerprint !== actual.newReference.fingerprint ||
-    expected.newNormalizedPlayerTag !== actual.newNormalizedPlayerTag ||
-    expected.sourceTimestampMs !== actual.sourceTimestampMs ||
-    expected.lineageComparable !== actual.lineageComparable
-  ) {
-    return false;
-  }
-  return !expected.duplicate || expected.newReference.revision === actual.newReference.revision;
+  return expected.candidateFingerprint === actual.candidateFingerprint;
 }
 
 export function recordsForItemKey(

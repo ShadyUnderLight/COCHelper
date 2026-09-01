@@ -97,6 +97,7 @@ export type ManualReconciliationPreview = {
   readonly timeConfidence: ManualReconciliationTimeConfidence;
   readonly duplicate: boolean;
   readonly lineageComparable: boolean;
+  readonly candidateFingerprint: string;
   readonly items: readonly ManualReconciliationItem[];
 };
 

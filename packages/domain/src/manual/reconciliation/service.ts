@@ -10,12 +10,16 @@ import {
   manualTrackerVillageStateWithCore,
   type ManualTrackerVillageState,
 } from '../village-state';
+import { computeReconciliationCandidateFingerprint } from './candidate-fingerprint';
 import {
   classifyReconciliationItem,
   computeConfirmedRecordIDs,
   computeHasProtectableLocalState,
 } from './classification';
-import { rebuildReconciliationCore } from './core-rebuild';
+import {
+  rebuildObservationOnlyReconciliationCore,
+  rebuildReconciliationCore,
+} from './core-rebuild';
 import type { ManualReconciliationEvidence } from './evidence';
 import {
   effectiveReconciliationDistribution,
@@ -144,6 +148,17 @@ export function previewReconciliation(
     });
   }
 
+  const sortedItems = sortReconciliationItems(items);
+  const candidateFingerprint = computeReconciliationCandidateFingerprint({
+    duplicate: evidence.duplicate,
+    lineageComparable: evidence.lineageComparable,
+    timeConfidence,
+    newReference: evidence.newBaselineReference,
+    newNormalizedPlayerTag: evidence.newNormalizedPlayerTag,
+    sourceTimestampMs: evidence.sourceTimestampMs,
+    items: sortedItems,
+  });
+
   return {
     previewID: generateUuid(),
     villageID: evidence.villageID,
@@ -159,7 +174,8 @@ export function previewReconciliation(
     timeConfidence,
     duplicate: evidence.duplicate,
     lineageComparable: evidence.lineageComparable,
-    items: sortReconciliationItems(items),
+    candidateFingerprint,
+    items: sortedItems,
   };
 }
 
@@ -207,16 +223,27 @@ export function reconcileManualTracker(
   }
 
   const canCrossLineage = preview.lineageComparable || input.decision === 'acceptObserved';
-  const rebuiltCore = canCrossLineage
-    ? rebuildReconciliationCore({
-        core: currentState.core,
+  const observationOnlyCrossLineage =
+    !preview.lineageComparable && input.decision === 'acceptObserved';
+  const rebuiltCore = observationOnlyCrossLineage
+    ? rebuildObservationOnlyReconciliationCore({
         observations: evidence.observations,
         classifications,
+        itemKeysByStableID: evidence.itemKeysByStableID,
         newReference: preview.newReference,
         sourceTimestampMs: preview.sourceTimestampMs,
         decision: input.decision,
       })
-    : currentState.core;
+    : canCrossLineage
+      ? rebuildReconciliationCore({
+          core: currentState.core,
+          observations: evidence.observations,
+          classifications,
+          newReference: preview.newReference,
+          sourceTimestampMs: preview.sourceTimestampMs,
+          decision: input.decision,
+        })
+      : currentState.core;
 
   const diagnostics = [...currentState.diagnostics];
   if (manualReconciliationPreviewRequiresExplicitDecision(preview)) {

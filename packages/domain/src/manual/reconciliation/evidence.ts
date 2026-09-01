@@ -56,9 +56,10 @@ export function createReconciliationObservation(input: {
   readonly sectionTrustGatesOpen?: boolean;
   readonly timerCoverageComplete?: boolean;
 }): ReconciliationObservation {
-  const distributionComplete = input.distributionComplete ?? input.distribution !== null;
+  const distribution = input.distribution ?? null;
+  const distributionComplete = input.distributionComplete ?? distribution !== null;
   return {
-    distribution: input.distribution ?? null,
+    distribution,
     displayName: input.displayName,
     hasTimer: input.hasTimer ?? false,
     coverageComplete: input.coverageComplete ?? distributionComplete,

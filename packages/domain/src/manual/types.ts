@@ -2,6 +2,15 @@ import type { UuidString } from '@coc-helper/wire';
 
 import type { CatalogUpgradeCost } from '../catalog/types';
 import type { TrackerBase } from '../village/tracker';
+import {
+  MANUAL_LEVEL_DISTRIBUTION_EMPTY,
+  manualLevelDistributionAdd,
+  manualLevelDistributionFromQuantities,
+  manualLevelDistributionIsEmpty,
+  manualLevelDistributionQuantityAt,
+  manualLevelDistributionSubtract,
+  manualLevelDistributionTotalQuantity,
+} from './level-distribution';
 
 export type TrackerNestedKind = 'root' | 'type' | 'module';
 
@@ -71,110 +80,15 @@ export type ManualLevelDistribution = {
   readonly isEmpty: boolean;
 };
 
-export const MANUAL_LEVEL_DISTRIBUTION_EMPTY: ManualLevelDistribution =
-  createManualLevelDistribution([]);
-
-function createManualLevelDistribution(
-  levels: readonly ManualLevelQuantity[],
-): ManualLevelDistribution {
-  const sorted = levels.slice().sort((left, right) => left.level - right.level);
-  return {
-    levels: sorted,
-    quantityAt(level: number) {
-      return sorted.find((entry) => entry.level === level)?.quantity ?? 0n;
-    },
-    get totalQuantity() {
-      return sorted.reduce((total, entry) => total + entry.quantity, 0n);
-    },
-    get isEmpty() {
-      return sorted.length === 0;
-    },
-  };
-}
-
-export function manualLevelDistributionTotalQuantity(
-  distribution: ManualLevelDistribution,
-): bigint {
-  return distribution.totalQuantity;
-}
-
-export function manualLevelDistributionIsEmpty(distribution: ManualLevelDistribution): boolean {
-  return distribution.isEmpty;
-}
-
-export function manualLevelDistributionQuantityAt(
-  distribution: ManualLevelDistribution,
-  level: number,
-): bigint {
-  return distribution.quantityAt(level);
-}
-
-export function manualLevelDistributionFromQuantities(
-  levelQuantities: ReadonlyMap<number, bigint>,
-): ManualLevelDistribution | undefined {
-  const levels: ManualLevelQuantity[] = [];
-  for (const level of [...levelQuantities.keys()].sort((left, right) => left - right)) {
-    const quantity = levelQuantities.get(level);
-    if (quantity === undefined || quantity <= 0n || level < 0) {
-      return undefined;
-    }
-    let total = 0n;
-    for (const entry of levels) {
-      total += entry.quantity;
-    }
-    if (total + quantity < total) {
-      return undefined;
-    }
-    levels.push({ level, quantity });
-  }
-  return createManualLevelDistribution(levels);
-}
-
-export function manualLevelDistributionAdd(
-  distribution: ManualLevelDistribution,
-  level: number,
-  quantity: bigint,
-): ManualLevelDistribution | undefined {
-  if (quantity <= 0n || level < 0) {
-    return undefined;
-  }
-  const quantities = new Map<number, bigint>();
-  for (const entry of distribution.levels) {
-    quantities.set(entry.level, entry.quantity);
-  }
-  const existing = quantities.get(level) ?? 0n;
-  const sum = existing + quantity;
-  if (sum < existing) {
-    return undefined;
-  }
-  quantities.set(level, sum);
-  return manualLevelDistributionFromQuantities(quantities);
-}
-
-export function manualLevelDistributionSubtract(
-  distribution: ManualLevelDistribution,
-  level: number,
-  quantity: bigint,
-): ManualLevelDistribution | undefined {
-  if (quantity <= 0n) {
-    return undefined;
-  }
-  const available = manualLevelDistributionQuantityAt(distribution, level);
-  if (available < quantity) {
-    return undefined;
-  }
-  const quantities = new Map<number, bigint>();
-  for (const entry of distribution.levels) {
-    quantities.set(entry.level, entry.quantity);
-  }
-  const remaining = available - quantity;
-  if (remaining === 0n) {
-    quantities.delete(level);
-  } else {
-    quantities.set(level, remaining);
-  }
-  return manualLevelDistributionFromQuantities(quantities);
-}
+export {
+  MANUAL_LEVEL_DISTRIBUTION_EMPTY,
+  manualLevelDistributionAdd,
+  manualLevelDistributionFromQuantities,
+  manualLevelDistributionIsEmpty,
+  manualLevelDistributionQuantityAt,
+  manualLevelDistributionSubtract,
+  manualLevelDistributionTotalQuantity,
+};
 
 export type ManualBaselineReference = {
   readonly revision: string;
@@ -296,6 +210,43 @@ function manualActiveTargetDistribution(
   return distribution;
 }
 
+function manualAvailableCompletedDistribution(
+  core: ManualUpgradeCore,
+  state: ManualItemState,
+): ManualLevelDistribution | undefined {
+  let base: ManualLevelDistribution;
+  switch (state.status) {
+    case 'observed': {
+      const imported = state.importedObservation?.levelDistribution;
+      if (imported === undefined || imported === null) {
+        return undefined;
+      }
+      base = imported;
+      break;
+    }
+    case 'manualCompleted':
+      base = state.manualCompletedDistribution;
+      break;
+    case 'unknown':
+    case 'conflict':
+      return undefined;
+  }
+  let available = base;
+  for (const record of core.records) {
+    if (
+      record.status === 'active' &&
+      trackerItemKeyStableId(record.itemKey) === trackerItemKeyStableId(state.itemKey)
+    ) {
+      const next = manualLevelDistributionSubtract(available, record.fromLevel, record.quantity);
+      if (next === undefined) {
+        return undefined;
+      }
+      available = next;
+    }
+  }
+  return available;
+}
+
 export function manualEffectiveItemState(
   core: ManualUpgradeCore,
   itemKey: TrackerItemKey,
@@ -316,7 +267,7 @@ export function manualEffectiveItemState(
       effectiveCompleted = imported;
       break;
     case 'manualCompleted':
-      effectiveCompleted = state.manualCompletedDistribution;
+      effectiveCompleted = manualAvailableCompletedDistribution(core, state) ?? null;
       break;
     case 'unknown':
     case 'conflict':

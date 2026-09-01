@@ -23,6 +23,11 @@ describe('Swift oracle runner', () => {
     const source = '{"n":1}';
     const runner = createSwiftOracleRunner({
       root: '/repo',
+      command: {
+        executable: 'swift',
+        args: ['run', '--package-path', '/repo', '--configuration', 'debug', 'golden-oracle'],
+        cwd: '/repo',
+      },
       execute: async (command, input, timeoutMs) => {
         expect(command.executable).toBe('swift');
         expect(command.args).toEqual([

@@ -1,5 +1,5 @@
 {
-  "description": "PR #249：本地计时容量 gate/occupancy contract（TS seed；Swift oracle 对接待 PR D）。section 推导 canonical queue；requestedQueueKind 仅校验。",
+  "description": "PR #249：本地计时容量 gate/occupancy contract；Swift oracle parity 由 PR D 挂接。",
   "startGateCases": [
     {
       "id": "building-builder-capacity-zero-requested-null",

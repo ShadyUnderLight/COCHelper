@@ -3,8 +3,6 @@ import Darwin
 import Foundation
 import COCHelperCore
 
-private let protocolVersion = 1
-
 private struct OracleRequest: Decodable {
     let protocolVersion: Int
     let caseId: String
@@ -39,6 +37,8 @@ private enum OracleUsageError: Error {
 
 @main
 struct GoldenOracle {
+    private static let protocolVersion = 1
+
     static func main() {
         do {
             let requestData = FileHandle.standardInput.readDataToEndOfFile()
@@ -55,20 +55,21 @@ struct GoldenOracle {
             writeFailure(error)
             exit(2)
         } catch {
-            // 不把请求内容、fixture 或底层错误文本写入 stdout/stderr。
             writeFailure(.malformedRequest)
             exit(2)
         }
     }
 
     private static func validate(_ request: OracleRequest) throws {
-        guard request.protocolVersion == protocolVersion else {
+        guard request.protocolVersion == Self.protocolVersion else {
             throw OracleUsageError.unsupportedProtocol
         }
         guard !request.caseId.isEmpty, request.caseId.count <= 200 else {
             throw OracleUsageError.malformedRequest
         }
-        guard request.operation == "canonical-json" else {
+        guard ["canonical-json", "manual-queue-capacity", "manual-reconciliation-preview"].contains(
+            request.operation
+        ) else {
             throw OracleUsageError.unsupportedOperation
         }
     }
@@ -77,13 +78,44 @@ struct GoldenOracle {
         let inputData = Data(request.source.utf8)
         let inputFingerprint = fingerprint(inputData)
 
+        switch request.operation {
+        case "canonical-json":
+            return evaluateCanonicalJson(
+                request: request,
+                inputData: inputData,
+                inputFingerprint: inputFingerprint
+            )
+        case "manual-queue-capacity":
+            return evaluateManualHex(request: request, inputFingerprint: inputFingerprint) {
+                try ManualDomainOracle.evaluate(source: request.source)
+            }
+        case "manual-reconciliation-preview":
+            return evaluateManualHex(request: request, inputFingerprint: inputFingerprint) {
+                try ManualReconciliationOracle.evaluate(source: request.source)
+            }
+        default:
+            return OracleResponse(
+                protocolVersion: Self.protocolVersion,
+                caseId: request.caseId,
+                ok: false,
+                inputFingerprint: inputFingerprint,
+                outputFingerprint: nil,
+                value: nil,
+                error: OracleError(kind: "rejected", code: "unsupportedOperation")
+            )
+        }
+    }
+
+    private static func evaluateCanonicalJson(
+        request: OracleRequest,
+        inputData: Data,
+        inputFingerprint: String
+    ) -> OracleResponse {
         do {
-            let canonical = try CanonicalJSONValue
-                .fromJSONData(inputData)
-                .canonicalized
+            let canonical = try CanonicalJSONValue.fromJSONData(inputData).canonicalized
             let canonicalData = canonical.canonicalData
             return OracleResponse(
-                protocolVersion: protocolVersion,
+                protocolVersion: Self.protocolVersion,
                 caseId: request.caseId,
                 ok: true,
                 inputFingerprint: inputFingerprint,
@@ -92,15 +124,44 @@ struct GoldenOracle {
                 error: nil
             )
         } catch {
-            // 解析拒绝是 parity 的业务结果；具体 Foundation 错误文本不属于协议。
             return OracleResponse(
-                protocolVersion: protocolVersion,
+                protocolVersion: Self.protocolVersion,
                 caseId: request.caseId,
                 ok: false,
                 inputFingerprint: inputFingerprint,
                 outputFingerprint: nil,
                 value: nil,
                 error: OracleError(kind: "rejected", code: "invalidJson")
+            )
+        }
+    }
+
+    private static func evaluateManualHex(
+        request: OracleRequest,
+        inputFingerprint: String,
+        evaluate: () throws -> String
+    ) -> OracleResponse {
+        do {
+            let canonicalHex = try evaluate()
+            let outputData = dataFromHex(canonicalHex)
+            return OracleResponse(
+                protocolVersion: Self.protocolVersion,
+                caseId: request.caseId,
+                ok: true,
+                inputFingerprint: inputFingerprint,
+                outputFingerprint: fingerprint(outputData),
+                value: OracleValue(canonicalHex: canonicalHex),
+                error: nil
+            )
+        } catch {
+            return OracleResponse(
+                protocolVersion: Self.protocolVersion,
+                caseId: request.caseId,
+                ok: false,
+                inputFingerprint: inputFingerprint,
+                outputFingerprint: nil,
+                value: nil,
+                error: OracleError(kind: "rejected", code: "invalidManualDomain")
             )
         }
     }
@@ -112,6 +173,19 @@ struct GoldenOracle {
 
     private static func hex(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func dataFromHex(_ value: String) -> Data {
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(value.count / 2)
+        var index = value.startIndex
+        while index < value.endIndex {
+            let next = value.index(index, offsetBy: 2)
+            let byte = UInt8(value[index..<next], radix: 16) ?? 0
+            bytes.append(byte)
+            index = next
+        }
+        return Data(bytes)
     }
 
     private static func writeFailure(_ error: OracleUsageError) {

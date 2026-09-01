@@ -138,8 +138,14 @@ export function manualUpgradeRecordsEqual(
   );
 }
 
-export function manualUpgradeCoresEqual(left: ManualUpgradeCore, right: ManualUpgradeCore): boolean {
-  if (left.itemStates.length !== right.itemStates.length || left.records.length !== right.records.length) {
+export function manualUpgradeCoresEqual(
+  left: ManualUpgradeCore,
+  right: ManualUpgradeCore,
+): boolean {
+  if (
+    left.itemStates.length !== right.itemStates.length ||
+    left.records.length !== right.records.length
+  ) {
     return false;
   }
   for (let index = 0; index < left.itemStates.length; index += 1) {

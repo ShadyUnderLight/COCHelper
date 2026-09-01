@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 import {
   createManualLevelDistribution,
   createManualLevelQuantity,
+  manualLevelDistributionAdd,
   manualLevelDistributionAddChecked,
+  manualLevelDistributionFromQuantities,
+  manualLevelDistributionSubtractChecked,
 } from './level-distribution';
 import {
   manualItemStatesEqual,
@@ -30,7 +33,10 @@ const provenance = {
 };
 const recordId = (value: string) => parseUuid(value)!;
 
-function expectManualError(error: unknown, expected: Parameters<typeof manualUpgradeErrorEquals>[1]) {
+function expectManualError(
+  error: unknown,
+  expected: Parameters<typeof manualUpgradeErrorEquals>[1],
+) {
   expect(manualUpgradeErrorEquals(error as never, expected)).toBe(true);
 }
 
@@ -138,18 +144,14 @@ describe('manual domain equality', () => {
 
 describe('manual Int64 invariants', () => {
   it('createManualLevelDistribution 拒绝非法 level/quantity', () => {
-    expect(() =>
-      createManualLevelDistribution([{ level: -1, quantity: -5n }]),
-    ).toThrow();
+    expect(() => createManualLevelDistribution([{ level: -1, quantity: -5n }])).toThrow();
     try {
       createManualLevelDistribution([{ level: -1, quantity: -5n }]);
     } catch (error) {
       expectManualError(error, { kind: 'invalidLevel' });
     }
 
-    expect(() =>
-      createManualLevelDistribution([{ level: 1.5, quantity: 10n } as never]),
-    ).toThrow();
+    expect(() => createManualLevelDistribution([{ level: 1.5, quantity: 10n } as never])).toThrow();
     try {
       createManualLevelDistribution([{ level: 1.5, quantity: 10n } as never]);
     } catch (error) {
@@ -161,6 +163,16 @@ describe('manual Int64 invariants', () => {
     const distribution = createManualLevelDistribution([createManualLevelQuantity(1, 1n)]);
     try {
       manualLevelDistributionAddChecked(distribution, -1, 1n);
+      expect.unreachable('expected invalidLevel');
+    } catch (error) {
+      expectManualError(error, { kind: 'invalidLevel' });
+    }
+  });
+
+  it('manualLevelDistributionSubtractChecked 对 invalid level 返回 invalidLevel', () => {
+    const distribution = createManualLevelDistribution([createManualLevelQuantity(1, 1n)]);
+    try {
+      manualLevelDistributionSubtractChecked(distribution, -1, 1n);
       expect.unreachable('expected invalidLevel');
     } catch (error) {
       expectManualError(error, { kind: 'invalidLevel' });

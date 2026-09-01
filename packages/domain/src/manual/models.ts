@@ -3,6 +3,7 @@ import type { UuidString } from '@coc-helper/wire';
 import type { CatalogUpgradeCost } from '../catalog/types';
 import type { ManualUpgradeError } from './errors';
 import {
+  assertValidManualLevel,
   assertValidManualNonNegativeInt64,
   assertValidManualQuantity,
   createManualLevelDistribution,
@@ -48,7 +49,10 @@ export function isTrackerItemKeyStructurallyValid(key: TrackerItemKey): boolean 
       if (!key.nestedPath.every(isTrackerNestedPathComponentStructurallyValid)) {
         return false;
       }
-      return key.nestedPath.at(-1)?.kind === key.nestedKind && key.nestedPath.at(-1)?.dataID === key.dataID;
+      return (
+        key.nestedPath.at(-1)?.kind === key.nestedKind &&
+        key.nestedPath.at(-1)?.dataID === key.dataID
+      );
   }
 }
 
@@ -172,7 +176,15 @@ export function createManualUpgradeRecord(input: {
   if (!isTrackerItemKeyStructurallyValid(input.itemKey)) {
     throw { kind: 'invalidItemKey' } satisfies ManualUpgradeError;
   }
-  if (input.fromLevel < 0 || input.targetLevel <= input.fromLevel) {
+  const fromLevelError = assertValidManualLevel(input.fromLevel);
+  if (fromLevelError !== null) {
+    throw fromLevelError;
+  }
+  const targetLevelError = assertValidManualLevel(input.targetLevel);
+  if (targetLevelError !== null) {
+    throw targetLevelError;
+  }
+  if (input.targetLevel <= input.fromLevel) {
     throw { kind: 'invalidLevel' } satisfies ManualUpgradeError;
   }
   const quantityError = assertValidManualQuantity(input.quantity);

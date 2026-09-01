@@ -79,10 +79,12 @@ export class ManualUpgradeCoreState implements ManualUpgradeCore {
     this.fingerprintRefreshCountForTesting = fingerprintRefreshCountForTesting;
   }
 
-  static create(input: {
-    readonly itemStates?: readonly ManualItemState[];
-    readonly records?: readonly ManualUpgradeRecord[];
-  } = {}): ManualUpgradeCoreState {
+  static create(
+    input: {
+      readonly itemStates?: readonly ManualItemState[];
+      readonly records?: readonly ManualUpgradeRecord[];
+    } = {},
+  ): ManualUpgradeCoreState {
     const sortedStates = sortItemStates(input.itemStates ?? []);
     const sortedRecords = sortRecords(input.records ?? []);
     validateCoreShape(sortedStates, sortedRecords);
@@ -174,7 +176,11 @@ export class ManualUpgradeCoreState implements ManualUpgradeCore {
     return commitMutable(mutable, true);
   }
 
-  adjustStartTime(recordID: UuidString, startedAtMs: number, nowMs: number): ManualUpgradeCoreState {
+  adjustStartTime(
+    recordID: UuidString,
+    startedAtMs: number,
+    nowMs: number,
+  ): ManualUpgradeCoreState {
     const mutable = cloneMutable(this);
     adjustStartTimeImpl(mutable, recordID, startedAtMs, nowMs);
     return commitMutable(mutable, true);
@@ -446,7 +452,10 @@ function recordOrder(left: ManualUpgradeRecord, right: ManualUpgradeRecord): num
   return left.recordID.localeCompare(right.recordID);
 }
 
-function validateConservation(state: ManualItemState, records: readonly ManualUpgradeRecord[]): void {
+function validateConservation(
+  state: ManualItemState,
+  records: readonly ManualUpgradeRecord[],
+): void {
   if (records.length === 0) {
     return;
   }
@@ -468,11 +477,7 @@ function validateConservation(state: ManualItemState, records: readonly ManualUp
         record.fromLevel,
         record.quantity,
       );
-      expected = manualLevelDistributionAddChecked(
-        expected,
-        record.targetLevel,
-        record.quantity,
-      );
+      expected = manualLevelDistributionAddChecked(expected, record.targetLevel, record.quantity);
     }
     if (!levelDistributionsStructurallyEqual(expected, state.manualCompletedDistribution)) {
       throw { kind: 'invalidRecord' } satisfies ManualUpgradeError;
@@ -595,10 +600,12 @@ function resolveTiming(
   }
 }
 
-export function createManualUpgradeCoreState(input: {
-  readonly itemStates?: readonly ManualItemState[];
-  readonly records?: readonly ManualUpgradeRecord[];
-} = {}): ManualUpgradeCoreState {
+export function createManualUpgradeCoreState(
+  input: {
+    readonly itemStates?: readonly ManualItemState[];
+    readonly records?: readonly ManualUpgradeRecord[];
+  } = {},
+): ManualUpgradeCoreState {
   return ManualUpgradeCoreState.create(input);
 }
 

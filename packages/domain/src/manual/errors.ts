@@ -41,10 +41,7 @@ export function manualUpgradeErrorEquals(
     case 'unavailableItemState':
     case 'conflictingItemState':
     case 'baselineMismatch':
-      return (
-        right.kind === left.kind &&
-        trackerItemKeysEqual(left.itemKey, right.itemKey)
-      );
+      return right.kind === left.kind && trackerItemKeysEqual(left.itemKey, right.itemKey);
     case 'insufficientQuantity':
       return (
         right.kind === 'insufficientQuantity' &&
@@ -71,9 +68,6 @@ function trackerItemKeysEqual(left: TrackerItemKey, right: TrackerItemKey): bool
   return trackerItemKeyStableId(left) === trackerItemKeyStableId(right);
 }
 
-function durationStatesEqual(
-  left: CatalogDurationState,
-  right: CatalogDurationState,
-): boolean {
+function durationStatesEqual(left: CatalogDurationState, right: CatalogDurationState): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }

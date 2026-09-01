@@ -69,7 +69,10 @@ function coreForStatus(input: {
   });
 }
 
-function expectManualError(error: unknown, expected: Parameters<typeof manualUpgradeErrorEquals>[1]) {
+function expectManualError(
+  error: unknown,
+  expected: Parameters<typeof manualUpgradeErrorEquals>[1],
+) {
   expect(manualUpgradeErrorEquals(error as never, expected)).toBe(true);
 }
 
@@ -425,7 +428,9 @@ describe('ManualUpgradeCoreState', () => {
     }
     const settled = core.settleDue(dateMs(1_010));
     expect(settled.settled.map((record) => record.recordID)).toEqual([firstID, secondID]);
-    expect(settled.core.effectiveState(key)?.effectiveCompletedDistribution?.quantityAt(11)).toBe(2n);
+    expect(settled.core.effectiveState(key)?.effectiveCompletedDistribution?.quantityAt(11)).toBe(
+      2n,
+    );
   });
 
   it('unknown/conflict/baseline mismatch fail-closed', () => {
@@ -524,6 +529,63 @@ describe('ManualUpgradeCoreState', () => {
     const core = ManualUpgradeCoreState.create();
     expect(core.itemStates).toEqual([]);
     expect(core.records).toEqual([]);
+  });
+
+  it('非整数或 NaN targetLevel 不会提交 mutation', () => {
+    const before = coreForStatus({
+      imported: distribution([[10, 1n]]),
+      status: 'observed',
+    });
+    const baseInput = {
+      itemKey: key,
+      fromLevel: 10,
+      quantity: 1n,
+      startedAtMs: dateMs(1_000),
+      durationState: { kind: 'instant' as const },
+      frozenCosts: null,
+      catalogProvenance: provenance,
+      baselineReference: baseline,
+      nowMs: dateMs(1_000),
+    };
+
+    for (const targetLevel of [10.5, Number.NaN]) {
+      expectThrowsManualError(
+        () =>
+          before.startUpgrade({
+            ...baseInput,
+            targetLevel,
+          }),
+        { kind: 'invalidLevel' },
+      );
+      expect(before.equals(before)).toBe(true);
+      expect(before.contentFingerprint).toBe(before.contentFingerprint);
+      expect(before.records).toHaveLength(0);
+    }
+  });
+
+  it('非整数 fromLevel 在 startUpgrade 返回 invalidLevel 且不修改 core', () => {
+    const before = coreForStatus({
+      imported: distribution([[10, 1n]]),
+      status: 'observed',
+    });
+    expectThrowsManualError(
+      () =>
+        before.startUpgrade({
+          itemKey: key,
+          fromLevel: -1,
+          targetLevel: 11,
+          quantity: 1n,
+          startedAtMs: dateMs(1_000),
+          durationState: { kind: 'instant' },
+          frozenCosts: null,
+          catalogProvenance: provenance,
+          baselineReference: baseline,
+          nowMs: dateMs(1_000),
+        }),
+      { kind: 'invalidLevel' },
+    );
+    expect(before.equals(before)).toBe(true);
+    expect(before.activeRecords).toHaveLength(0);
   });
 });
 

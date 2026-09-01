@@ -28,10 +28,7 @@ function throwManualUpgradeError(error: ManualUpgradeError): never {
   throw error;
 }
 
-export function createManualLevelQuantity(
-  level: number,
-  quantity: bigint,
-): ManualLevelQuantity {
+export function createManualLevelQuantity(level: number, quantity: bigint): ManualLevelQuantity {
   const levelError = assertValidManualLevel(level);
   if (levelError !== null) {
     throwManualUpgradeError(levelError);
@@ -46,9 +43,7 @@ export function createManualLevelQuantity(
 export function createManualLevelDistribution(
   levels: readonly ManualLevelQuantity[],
 ): ManualLevelDistribution {
-  const validated = levels.map((entry) =>
-    createManualLevelQuantity(entry.level, entry.quantity),
-  );
+  const validated = levels.map((entry) => createManualLevelQuantity(entry.level, entry.quantity));
   const sorted = validated.slice().sort((left, right) => left.level - right.level);
   for (let index = 1; index < sorted.length; index += 1) {
     if (sorted[index - 1]!.level === sorted[index]!.level) {
@@ -98,6 +93,10 @@ export function manualLevelDistributionSubtractChecked(
   level: number,
   quantity: bigint,
 ): ManualLevelDistribution {
+  const levelError = assertValidManualLevel(level);
+  if (levelError !== null) {
+    throwManualUpgradeError(levelError);
+  }
   const quantityError = assertValidManualQuantity(quantity);
   if (quantityError !== null) {
     throwManualUpgradeError(quantityError);

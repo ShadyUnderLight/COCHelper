@@ -41,8 +41,7 @@ function encodeManualItemStateWire(state: ManualItemState): unknown {
               state.importedObservation.levelDistribution,
             ),
             observedTimer: state.importedObservation.observedTimer,
-            observedTimerCoverageComplete:
-              state.importedObservation.observedTimerCoverageComplete,
+            observedTimerCoverageComplete: state.importedObservation.observedTimerCoverageComplete,
             reference: state.importedObservation.reference,
             sourceTimestampMs: state.importedObservation.sourceTimestampMs,
           },

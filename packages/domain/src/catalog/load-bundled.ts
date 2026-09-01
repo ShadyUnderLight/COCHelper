@@ -3,6 +3,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
+import { resolvePathWithinRoot } from './asset-ref';
+
 import { decodeCatalogManifest, decodeCatalogPayload, decodeJsonFile } from './json-decode';
 import { validateCatalogManifest } from './manifest-validate';
 import {
@@ -67,17 +69,32 @@ export function createGeneratedFileIntegrityProbe(
 ): GeneratedFileIntegrityProbe {
   return {
     fileExists(relativePath) {
-      return (
-        existsSync(join(versionRoot, relativePath)) &&
-        statSync(join(versionRoot, relativePath)).isFile()
-      );
+      const absolute = resolvePathWithinRoot(versionRoot, relativePath);
+      if (absolute === null) {
+        return false;
+      }
+      try {
+        return statSync(absolute).isFile();
+      } catch {
+        return false;
+      }
     },
     directoryExists(relativePath) {
-      const absolute = join(versionRoot, relativePath);
-      return existsSync(absolute) && statSync(absolute).isDirectory();
+      const absolute = resolvePathWithinRoot(versionRoot, relativePath);
+      if (absolute === null) {
+        return false;
+      }
+      try {
+        return statSync(absolute).isDirectory();
+      } catch {
+        return false;
+      }
     },
     fileSize(relativePath) {
-      const absolute = join(versionRoot, relativePath);
+      const absolute = resolvePathWithinRoot(versionRoot, relativePath);
+      if (absolute === null) {
+        return null;
+      }
       try {
         const stats = statSync(absolute);
         return stats.isFile() ? stats.size : null;
@@ -86,7 +103,10 @@ export function createGeneratedFileIntegrityProbe(
       }
     },
     fileSha256(relativePath) {
-      const absolute = join(versionRoot, relativePath);
+      const absolute = resolvePathWithinRoot(versionRoot, relativePath);
+      if (absolute === null) {
+        return null;
+      }
       try {
         const stats = statSync(absolute);
         if (!stats.isFile()) {
@@ -124,10 +144,13 @@ export function bundledFileExists(
   relativePath: string,
   declaredSize: number | null,
 ): boolean {
-  const absolute = join(versionRoot, relativePath);
+  const absolute = resolvePathWithinRoot(versionRoot, relativePath);
+  if (absolute === null) {
+    return false;
+  }
   try {
-    const stats = statSyncSafe(absolute);
-    if (stats === null) {
+    const stats = statSync(absolute);
+    if (!stats.isFile()) {
       return false;
     }
     if (declaredSize !== null && declaredSize !== stats.size) {
@@ -139,15 +162,6 @@ export function bundledFileExists(
   }
 }
 
-function statSyncSafe(absolute: string): { size: number } | null {
-  try {
-    const stats = statSync(absolute);
-    return { size: stats.size };
-  } catch {
-    return null;
-  }
-}
-
 export async function loadCatalogBundle(input: {
   readonly root: string;
   readonly version?: string;
@@ -155,7 +169,7 @@ export async function loadCatalogBundle(input: {
 }): Promise<CatalogBundle> {
   const version = input.version ?? DEFAULT_BUNDLED_CATALOG_VERSION;
   const versionRoot = join(input.root, version);
-  const gameCatalog = await loadGameCatalog(versionRoot, version);
+  const gameCatalog = await loadGameCatalog(versionRoot);
   const manifestText = await readOptional(join(versionRoot, 'manifest.json'));
   const craftText = await readOptional(join(versionRoot, 'craft_table_catalog.json'));
   const craftTableCatalog =
@@ -191,7 +205,7 @@ export async function loadCatalogBundle(input: {
   };
 }
 
-async function loadGameCatalog(versionRoot: string, version: string): Promise<GameCatalog | null> {
+async function loadGameCatalog(versionRoot: string): Promise<GameCatalog | null> {
   const catalogPath = join(versionRoot, 'catalog.json');
   const manifestPath = join(versionRoot, 'manifest.json');
   try {

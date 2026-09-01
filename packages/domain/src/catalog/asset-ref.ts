@@ -1,19 +1,53 @@
-import type { CatalogAssetRef, CatalogItem } from './types';
+import { resolve, sep } from 'node:path';
 
-/** 契约 R-B / 语义 invariant：renderedPath 与 missingReason 互斥且不可双空。 */
+import type { CatalogAssetRef, CatalogItem } from './types';
+import { renderedPathFormatOk } from './asset-path';
+
+/** R-A：无 renderedPath 引用，合法 no-reference 状态（不要求 missingReason）。 */
+export function isCatalogAssetRefNoReference(ref: CatalogAssetRef): boolean {
+  return ref.renderedPath === null;
+}
+
+/**
+ * 契约 R-A/R-B/R-D 语义校验（不含 R-C 登记与文件存在性）。
+ * 对齐 Tools/game_catalog/contract.py：renderedPath is None → 通过；
+ * missingReason 按 is not None 判定（空串同样违反 R-B）。
+ */
 export function isCatalogAssetRefSemanticallyValid(ref: CatalogAssetRef): boolean {
-  const hasPath = ref.renderedPath !== null && ref.renderedPath !== '';
-  const hasReason = ref.missingReason !== null && ref.missingReason !== '';
-  if (hasPath && hasReason) {
-    return false;
-  }
-  if (!hasPath && !hasReason) {
-    return false;
+  if (ref.renderedPath === null) {
+    return true;
   }
   if (ref.renderedPath === '') {
     return false;
   }
-  return true;
+  if (ref.missingReason !== null) {
+    return false;
+  }
+  return renderedPathFormatOk(ref.renderedPath);
+}
+
+/** 完整 renderedPath 契约：R-A/R-B/R-D + 文件存在 + manifest 登记（R-C）。 */
+export function validateCatalogAssetRefContract(
+  ref: CatalogAssetRef,
+  registeredPaths: ReadonlySet<string>,
+  fileExists: (relativePath: string) => boolean,
+): boolean {
+  if (ref.renderedPath === null) {
+    return true;
+  }
+  if (ref.renderedPath === '') {
+    return false;
+  }
+  if (ref.missingReason !== null) {
+    return false;
+  }
+  if (!renderedPathFormatOk(ref.renderedPath)) {
+    return false;
+  }
+  if (!fileExists(ref.renderedPath)) {
+    return false;
+  }
+  return registeredPaths.has(ref.renderedPath);
 }
 
 export function validateCatalogItemsAssetRefs(items: readonly CatalogItem[]): boolean {
@@ -27,14 +61,33 @@ export function validateCatalogItemsAssetRefs(items: readonly CatalogItem[]): bo
   return true;
 }
 
+export function validateCatalogItemsRenderableAssetRefs(
+  items: readonly CatalogItem[],
+  registeredPaths: ReadonlySet<string>,
+  fileExists: (relativePath: string) => boolean,
+): boolean {
+  for (const item of items) {
+    for (const ref of collectItemAssetRefs(item)) {
+      if (ref.renderedPath === null) {
+        continue;
+      }
+      if (!validateCatalogAssetRefContract(ref, registeredPaths, fileExists)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 export function isCatalogAssetRenderable(ref: CatalogAssetRef | null | undefined): boolean {
   if (ref === null || ref === undefined) {
     return false;
   }
-  if (!isCatalogAssetRefSemanticallyValid(ref)) {
-    return false;
-  }
-  return ref.renderedPath !== null && ref.missingReason === null;
+  return (
+    ref.renderedPath !== null &&
+    ref.missingReason === null &&
+    renderedPathFormatOk(ref.renderedPath)
+  );
 }
 
 export function collectCatalogIconRefs(
@@ -50,8 +103,8 @@ export function collectCatalogIconRefs(
   const paths = new Set<string>();
   for (const item of items) {
     for (const ref of collectItemAssetRefs(item)) {
-      if (ref.renderedPath !== null && ref.renderedPath !== '' && ref.missingReason === null) {
-        paths.add(ref.renderedPath);
+      if (isCatalogAssetRenderable(ref)) {
+        paths.add(ref.renderedPath!);
       }
     }
   }
@@ -80,4 +133,33 @@ function collectItemAssetRefs(item: {
     }
   }
   return refs;
+}
+
+export function registeredGeneratedFilePaths(manifest: {
+  readonly generatedFiles: readonly { readonly path: string; readonly kind?: string }[];
+}): ReadonlySet<string> {
+  return new Set(
+    manifest.generatedFiles
+      .filter((entry) => entry.kind !== 'directory')
+      .map((entry) => entry.path),
+  );
+}
+
+/** bundled root 内解析相对路径；拒绝 .. / 绝对路径 / 反斜杠 / 越界。 */
+export function resolvePathWithinRoot(root: string, relativePath: string): string | null {
+  if (
+    relativePath === '' ||
+    relativePath.includes('..') ||
+    relativePath.startsWith('/') ||
+    relativePath.includes('\\')
+  ) {
+    return null;
+  }
+  const resolvedRoot = resolve(root);
+  const resolved = resolve(resolvedRoot, relativePath);
+  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : resolvedRoot + sep;
+  if (resolved !== resolvedRoot && !resolved.startsWith(prefix)) {
+    return null;
+  }
+  return resolved;
 }

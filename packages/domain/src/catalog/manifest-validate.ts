@@ -1,7 +1,11 @@
 import { sha256Fingerprint, type Sha256Fingerprint } from '@coc-helper/wire';
 
 import { catalogDurationState } from './duration-state';
-import { collectCatalogIconRefs, validateCatalogItemsAssetRefs } from './asset-ref';
+import {
+  registeredGeneratedFilePaths,
+  validateCatalogItemsAssetRefs,
+  validateCatalogItemsRenderableAssetRefs,
+} from './asset-ref';
 import type {
   CatalogItem,
   CatalogLevel,
@@ -29,6 +33,14 @@ function validSha256Declaration(value: string | undefined): value is string {
   return value.startsWith(SHA256_PREFIX) && hex.length === 64 && [...hex].every(isHexDigit);
 }
 
+function validDeclaredSize(size: number | undefined): size is number {
+  return typeof size === 'number' && Number.isInteger(size) && size >= 0;
+}
+
+function validDeclaredEntries(entries: number | undefined): entries is number {
+  return typeof entries === 'number' && Number.isInteger(entries) && entries >= 0;
+}
+
 function allLevels(items: readonly CatalogItem[]): readonly CatalogLevel[] {
   return items.flatMap((item) => item.levels);
 }
@@ -51,43 +63,38 @@ function validateGeneratedFileEntry(
   probe: GeneratedFileIntegrityProbe,
 ): boolean {
   if (entry.kind === 'directory') {
+    if (!validDeclaredEntries(entry.entries)) {
+      return false;
+    }
     if (!probe.directoryExists(entry.path)) {
       return false;
     }
-    if (
-      entry.entries !== undefined &&
-      entry.entries !== countGeneratedEntriesUnder(manifest, entry.path)
-    ) {
-      return false;
-    }
-    return true;
+    return entry.entries === countGeneratedEntriesUnder(manifest, entry.path);
   }
 
+  if (!validSha256Declaration(entry.sha256)) {
+    return false;
+  }
+  if (!validDeclaredSize(entry.size)) {
+    return false;
+  }
   if (!probe.fileExists(entry.path)) {
     return false;
   }
 
   const actualSize = probe.fileSize(entry.path);
-  if (actualSize === null) {
-    return false;
-  }
-  if (entry.size !== undefined && entry.size !== actualSize) {
+  if (actualSize === null || actualSize !== entry.size) {
     return false;
   }
 
-  if (entry.sha256 !== undefined) {
-    if (!validSha256Declaration(entry.sha256)) {
-      return false;
-    }
-    let actualHash: string | null;
-    if (entry.path === 'catalog.json') {
-      actualHash = sha256Fingerprint(catalogData);
-    } else {
-      actualHash = probe.fileSha256(entry.path);
-    }
-    if (actualHash === null || actualHash !== entry.sha256) {
-      return false;
-    }
+  let actualHash: string | null;
+  if (entry.path === 'catalog.json') {
+    actualHash = sha256Fingerprint(catalogData);
+  } else {
+    actualHash = probe.fileSha256(entry.path);
+  }
+  if (actualHash === null || actualHash !== entry.sha256) {
+    return false;
   }
 
   return true;
@@ -177,10 +184,13 @@ export function validateCatalogManifest(
         return false;
       }
     }
-    for (const renderedPath of collectCatalogIconRefs(items)) {
-      if (!integrity.fileExists(renderedPath)) {
-        return false;
-      }
+    const registeredPaths = registeredGeneratedFilePaths(manifest);
+    if (
+      !validateCatalogItemsRenderableAssetRefs(items, registeredPaths, (path) =>
+        integrity.fileExists(path),
+      )
+    ) {
+      return false;
     }
   } else {
     const catalogEntry = manifest.generatedFiles.find((file) => file.path === 'catalog.json');

@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 
 import { installAppProtocolHandler, registerAppScheme } from './protocol';
+import { getCatalogService } from './catalog-service';
 import { createMainWindow, registerApplicationHandlers } from './windows';
 import { isAllowedRendererUrl } from './security-policy';
 
@@ -75,6 +76,7 @@ const createWindow = (): void => {
 
 app.whenReady().then(() => {
   installAppProtocolHandler();
+  getCatalogService().preload();
   registerApplicationHandlers();
   createWindow();
   app.on('activate', () => {

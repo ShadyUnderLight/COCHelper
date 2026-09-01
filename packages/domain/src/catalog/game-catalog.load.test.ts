@@ -14,7 +14,10 @@ const describeIfBundle = repoRoot === null ? describe.skip : describe;
 
 describeIfBundle('GameCatalog bundled load', () => {
   it('加载 18.400.13 并暴露 manifest', async () => {
-    const cache = createCatalogBundleCache({ root: repoRoot!, version: DEFAULT_BUNDLED_CATALOG_VERSION });
+    const cache = createCatalogBundleCache({
+      root: repoRoot!,
+      version: DEFAULT_BUNDLED_CATALOG_VERSION,
+    });
     const bundle = await cache.get();
     expect(cache.peek()).toBe(bundle);
     expect(bundle.gameCatalog).not.toBeNull();

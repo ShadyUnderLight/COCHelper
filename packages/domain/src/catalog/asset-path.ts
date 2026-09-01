@@ -70,11 +70,7 @@ export function catalogAssetUrl(
   return `${protocol}://${host}/${version}/${renderedPath}`;
 }
 
-export function isAllowedCatalogAssetUrl(
-  url: string,
-  protocol: string,
-  host: string,
-): boolean {
+export function isAllowedCatalogAssetUrl(url: string, protocol: string, host: string): boolean {
   let parsed: URL;
   try {
     parsed = new URL(url);

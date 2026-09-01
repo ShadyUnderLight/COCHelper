@@ -1,10 +1,7 @@
 import { resolveCatalogBundleRoot } from '@coc-helper/domain';
 import { describe, expect, it } from 'vitest';
 
-import {
-  createCatalogService,
-  resetCatalogServiceForTests,
-} from './catalog-service';
+import { createCatalogService, resetCatalogServiceForTests } from './catalog-service';
 
 const repoRoot = resolveCatalogBundleRoot(process.cwd());
 const describeIfBundle = repoRoot === null ? describe.skip : describe;
@@ -19,9 +16,9 @@ describeIfBundle('catalog-service', () => {
     const samplePath = 'icons/buildings/BB_xbow_lvl1.png';
     const url = service.assetUrl('18.400.13', samplePath);
     expect(url).toBe('cochelper://catalog/18.400.13/icons/buildings/BB_xbow_lvl1.png');
-    expect(service.resolveAssetPath('18.400.13', '/18.400.13/icons/buildings/BB_xbow_lvl1.png')).toContain(
-      'BB_xbow_lvl1.png',
-    );
+    expect(
+      service.resolveAssetPath('18.400.13', '/18.400.13/icons/buildings/BB_xbow_lvl1.png'),
+    ).toContain('BB_xbow_lvl1.png');
   }, 15_000);
 
   it('重复读取命中缓存', async () => {

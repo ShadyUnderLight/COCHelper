@@ -4,7 +4,9 @@ export type AccountNameCatalog = {
   readonly nameForNumericSection: (section: string, dataID: bigint) => string | undefined;
 };
 
-export function createAccountNameCatalog(names: Readonly<Record<string, string>>): AccountNameCatalog {
+export function createAccountNameCatalog(
+  names: Readonly<Record<string, string>>,
+): AccountNameCatalog {
   const entries = { ...names };
   return {
     count: Object.keys(entries).length,

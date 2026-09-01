@@ -1,15 +1,24 @@
-import { existsSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { decodeCatalogManifest, decodeCatalogPayload, decodeJsonFile } from './json-decode';
 import { validateCatalogManifest } from './manifest-validate';
-import { createGameCatalog, DEFAULT_BUNDLED_CATALOG_VERSION, type GameCatalog } from './game-catalog';
+import {
+  createGameCatalog,
+  DEFAULT_BUNDLED_CATALOG_VERSION,
+  type GameCatalog,
+} from './game-catalog';
 import { loadCraftTableCatalog, type CraftTableCatalog } from './craft-table';
 import { loadLeagueTierCatalog, type LeagueTierCatalog } from './league-tier';
 import { decodeAccountNameCatalog, type AccountNameCatalog } from './account-name';
-import { decodeSeasonalPhaseTable, EMPTY_SEASONAL_PHASE_TABLE, type SeasonalPhaseTable } from './seasonal-phase';
-import type { FileCheck } from './types';
+import {
+  decodeSeasonalPhaseTable,
+  EMPTY_SEASONAL_PHASE_TABLE,
+  type SeasonalPhaseTable,
+} from './seasonal-phase';
+import type { GeneratedFileIntegrityProbe } from './types';
 
 export type CatalogBundle = {
   readonly version: string;
@@ -53,8 +62,61 @@ export function resolveAccountNameCatalogPath(startDir = process.cwd()): string 
   return null;
 }
 
-export function createFileCheck(versionRoot: string): FileCheck {
-  return (relativePath, declaredSize) => bundledFileExists(versionRoot, relativePath, declaredSize ?? null);
+export function createGeneratedFileIntegrityProbe(
+  versionRoot: string,
+): GeneratedFileIntegrityProbe {
+  return {
+    fileExists(relativePath) {
+      return (
+        existsSync(join(versionRoot, relativePath)) &&
+        statSync(join(versionRoot, relativePath)).isFile()
+      );
+    },
+    directoryExists(relativePath) {
+      const absolute = join(versionRoot, relativePath);
+      return existsSync(absolute) && statSync(absolute).isDirectory();
+    },
+    fileSize(relativePath) {
+      const absolute = join(versionRoot, relativePath);
+      try {
+        const stats = statSync(absolute);
+        return stats.isFile() ? stats.size : null;
+      } catch {
+        return null;
+      }
+    },
+    fileSha256(relativePath) {
+      const absolute = join(versionRoot, relativePath);
+      try {
+        const stats = statSync(absolute);
+        if (!stats.isFile()) {
+          return null;
+        }
+        const hex = createHash('sha256').update(readFileSync(absolute)).digest('hex');
+        return `sha256:${hex}`;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+/** @deprecated 使用 createGeneratedFileIntegrityProbe */
+export function createFileCheck(versionRoot: string) {
+  const probe = createGeneratedFileIntegrityProbe(versionRoot);
+  return (relativePath: string, declaredSize: number | null | undefined) => {
+    if (!probe.fileExists(relativePath)) {
+      return false;
+    }
+    if (
+      declaredSize !== null &&
+      declaredSize !== undefined &&
+      probe.fileSize(relativePath) !== declaredSize
+    ) {
+      return false;
+    }
+    return true;
+  };
 }
 
 export function bundledFileExists(
@@ -105,7 +167,9 @@ export async function loadCatalogBundle(input: {
     leagueText !== null ? loadLeagueTierCatalog({ version, text: leagueText }) : null;
   const seasonalText = await readOptional(join(versionRoot, 'seasonal_phases.json'));
   const seasonalPhaseTable =
-    seasonalText !== null ? decodeSeasonalPhaseTable(JSON.parse(seasonalText)) : EMPTY_SEASONAL_PHASE_TABLE;
+    seasonalText !== null
+      ? decodeSeasonalPhaseTable(JSON.parse(seasonalText))
+      : EMPTY_SEASONAL_PHASE_TABLE;
   const accountPath =
     input.accountNameCatalogPath ??
     (existsSync(join(input.root, '../Resources/account_name_catalog.json'))
@@ -139,10 +203,14 @@ async function loadGameCatalog(versionRoot: string, version: string): Promise<Ga
     let manifest = null;
     try {
       const decodedManifest = decodeJsonFile(manifestText, decodeCatalogManifest);
-      const fileCheck = createFileCheck(versionRoot);
       if (
         decodedManifest.gameVersion === payload.gameVersion &&
-        validateCatalogManifest(decodedManifest, payload.items, catalogText, fileCheck)
+        validateCatalogManifest(
+          decodedManifest,
+          payload.items,
+          catalogText,
+          createGeneratedFileIntegrityProbe(versionRoot),
+        )
       ) {
         manifest = decodedManifest;
       }

@@ -117,7 +117,8 @@ export function createSeasonalPhaseTable(input: {
       const boundaries = validPhases()
         .flatMap((phase) => [phase.fromMs, phase.untilMs])
         .sort((left, right) => left - right);
-      const startMs = [...boundaries].reverse().find((value) => value <= atMs) ?? Number.NEGATIVE_INFINITY;
+      const startMs =
+        [...boundaries].reverse().find((value) => value <= atMs) ?? Number.NEGATIVE_INFINITY;
       const endMs = boundaries.find((value) => value > atMs) ?? Number.POSITIVE_INFINITY;
       return { tableIdentity, startMs, endMs };
     },

@@ -1,12 +1,13 @@
 import { sha256Fingerprint, type Sha256Fingerprint } from '@coc-helper/wire';
 
 import { catalogDurationState } from './duration-state';
-import { collectCatalogIconRefs } from './asset-ref';
+import { collectCatalogIconRefs, validateCatalogItemsAssetRefs } from './asset-ref';
 import type {
   CatalogItem,
   CatalogLevel,
   CatalogManifest,
-  FileCheck,
+  CatalogGeneratedFile,
+  GeneratedFileIntegrityProbe,
 } from './types';
 
 const SHA256_PREFIX = 'sha256:';
@@ -17,27 +18,94 @@ function isHexDigit(value: string): boolean {
 
 function validSourceFingerprint(value: string): boolean {
   const hex = value.slice(SHA256_PREFIX.length);
-  return (
-    value.startsWith(SHA256_PREFIX) &&
-    hex.length === 64 &&
-    [...hex].every(isHexDigit)
-  );
+  return value.startsWith(SHA256_PREFIX) && hex.length === 64 && [...hex].every(isHexDigit);
+}
+
+function validSha256Declaration(value: string | undefined): value is string {
+  if (value === undefined) {
+    return false;
+  }
+  const hex = value.slice(SHA256_PREFIX.length);
+  return value.startsWith(SHA256_PREFIX) && hex.length === 64 && [...hex].every(isHexDigit);
 }
 
 function allLevels(items: readonly CatalogItem[]): readonly CatalogLevel[] {
   return items.flatMap((item) => item.levels);
 }
 
+function normalizeDirectoryPath(path: string): string {
+  return path.endsWith('/') ? path : `${path}/`;
+}
+
+function countGeneratedEntriesUnder(manifest: CatalogManifest, dirPath: string): number {
+  const prefix = normalizeDirectoryPath(dirPath);
+  return manifest.generatedFiles.filter(
+    (entry) => entry.kind !== 'directory' && entry.path.startsWith(prefix),
+  ).length;
+}
+
+function validateGeneratedFileEntry(
+  entry: CatalogGeneratedFile,
+  manifest: CatalogManifest,
+  catalogData: Uint8Array | string,
+  probe: GeneratedFileIntegrityProbe,
+): boolean {
+  if (entry.kind === 'directory') {
+    if (!probe.directoryExists(entry.path)) {
+      return false;
+    }
+    if (
+      entry.entries !== undefined &&
+      entry.entries !== countGeneratedEntriesUnder(manifest, entry.path)
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  if (!probe.fileExists(entry.path)) {
+    return false;
+  }
+
+  const actualSize = probe.fileSize(entry.path);
+  if (actualSize === null) {
+    return false;
+  }
+  if (entry.size !== undefined && entry.size !== actualSize) {
+    return false;
+  }
+
+  if (entry.sha256 !== undefined) {
+    if (!validSha256Declaration(entry.sha256)) {
+      return false;
+    }
+    let actualHash: string | null;
+    if (entry.path === 'catalog.json') {
+      actualHash = sha256Fingerprint(catalogData);
+    } else {
+      actualHash = probe.fileSha256(entry.path);
+    }
+    if (actualHash === null || actualHash !== entry.sha256) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function validateCatalogManifest(
   manifest: CatalogManifest,
   items: readonly CatalogItem[],
   catalogData: Uint8Array | string,
-  fileCheck?: FileCheck,
+  integrity?: GeneratedFileIntegrityProbe,
 ): boolean {
   if (manifest.schemaVersion < 1 || manifest.schemaVersion > 2) {
     return false;
   }
   if (!validSourceFingerprint(manifest.sourceFingerprint)) {
+    return false;
+  }
+  if (!validateCatalogItemsAssetRefs(items)) {
     return false;
   }
 
@@ -68,10 +136,26 @@ export function validateCatalogManifest(
   }
 
   for (const [field, predicate] of [
-    ['notApplicable', (level: CatalogLevel) => catalogDurationState(level.durationSeconds, level.missingReason)?.kind === 'notApplicable'],
-    ['initialLevel', (level: CatalogLevel) => catalogDurationState(level.durationSeconds, level.missingReason)?.kind === 'initialLevel'],
-    ['sourceMissing', (level: CatalogLevel) => catalogDurationState(level.durationSeconds, level.missingReason)?.kind === 'sourceMissing'],
-    ['parseFailed', (level: CatalogLevel) => catalogDurationState(level.durationSeconds, level.missingReason)?.kind === 'parseFailed'],
+    [
+      'notApplicable',
+      (level: CatalogLevel) =>
+        catalogDurationState(level.durationSeconds, level.missingReason)?.kind === 'notApplicable',
+    ],
+    [
+      'initialLevel',
+      (level: CatalogLevel) =>
+        catalogDurationState(level.durationSeconds, level.missingReason)?.kind === 'initialLevel',
+    ],
+    [
+      'sourceMissing',
+      (level: CatalogLevel) =>
+        catalogDurationState(level.durationSeconds, level.missingReason)?.kind === 'sourceMissing',
+    ],
+    [
+      'parseFailed',
+      (level: CatalogLevel) =>
+        catalogDurationState(level.durationSeconds, level.missingReason)?.kind === 'parseFailed',
+    ],
   ] as const) {
     const expected = manifest.counts[field];
     if (expected !== undefined) {
@@ -82,29 +166,30 @@ export function validateCatalogManifest(
     }
   }
 
-  const catalogEntry = manifest.generatedFiles.find((file) => file.path === 'catalog.json');
-  if (catalogEntry?.sha256 !== undefined) {
-    if (!catalogEntry.sha256.startsWith(SHA256_PREFIX)) {
-      return false;
-    }
-    const actual = sha256Fingerprint(catalogData).slice(SHA256_PREFIX.length);
-    const declared = catalogEntry.sha256.slice(SHA256_PREFIX.length);
-    if (declared !== actual) {
-      return false;
-    }
-  }
-
-  if (fileCheck !== undefined) {
-    for (const file of manifest.generatedFiles) {
-      if (file.kind === 'directory') {
-        continue;
+  if (integrity !== undefined) {
+    const seenPaths = new Set<string>();
+    for (const entry of manifest.generatedFiles) {
+      if (seenPaths.has(entry.path)) {
+        return false;
       }
-      if (!fileCheck(file.path, file.size ?? null)) {
+      seenPaths.add(entry.path);
+      if (!validateGeneratedFileEntry(entry, manifest, catalogData, integrity)) {
         return false;
       }
     }
     for (const renderedPath of collectCatalogIconRefs(items)) {
-      if (!fileCheck(renderedPath, null)) {
+      if (!integrity.fileExists(renderedPath)) {
+        return false;
+      }
+    }
+  } else {
+    const catalogEntry = manifest.generatedFiles.find((file) => file.path === 'catalog.json');
+    if (catalogEntry?.sha256 !== undefined) {
+      if (!validSha256Declaration(catalogEntry.sha256)) {
+        return false;
+      }
+      const actual = sha256Fingerprint(catalogData);
+      if (actual !== catalogEntry.sha256) {
         return false;
       }
     }

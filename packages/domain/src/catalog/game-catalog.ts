@@ -124,7 +124,11 @@ export function resolveCatalogCompatibility(
   if (catalog === null || catalog === undefined) {
     return { kind: 'unavailable' };
   }
-  if (expectedGameVersion === null || expectedGameVersion === undefined || expectedGameVersion === '') {
+  if (
+    expectedGameVersion === null ||
+    expectedGameVersion === undefined ||
+    expectedGameVersion === ''
+  ) {
     return { kind: 'unverified', gameVersion: catalog.gameVersion };
   }
   if (expectedGameVersion === catalog.gameVersion) {

@@ -1,8 +1,4 @@
-import {
-  parseCanonicalizerInt64,
-  parseJson,
-  type CanonicalJsonValue,
-} from '@coc-helper/wire';
+import { parseCanonicalizerInt64, parseJson, type CanonicalJsonValue } from '@coc-helper/wire';
 
 import type {
   CatalogAssetRef,

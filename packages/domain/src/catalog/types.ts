@@ -85,4 +85,12 @@ export type CatalogCompatibility =
 
 export type FileCheck = (relativePath: string, declaredSize: number | null | undefined) => boolean;
 
+/** manifest generatedFiles 完整性探测（hash / size / directory / entries）。 */
+export type GeneratedFileIntegrityProbe = {
+  readonly fileExists: (relativePath: string) => boolean;
+  readonly directoryExists: (relativePath: string) => boolean;
+  readonly fileSize: (relativePath: string) => number | null;
+  readonly fileSha256: (relativePath: string) => string | null;
+};
+
 export const UNIVERSE_TOWN_HALL_COUNT = 18 as const;

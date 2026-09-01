@@ -46,12 +46,18 @@ export function craftTableIntegrityOk(
   if (!validSourceFingerprint(manifest.sourceFingerprint)) {
     return false;
   }
-  const craftEntries = manifest.generatedFiles.filter((file) => file.path === 'craft_table_catalog.json');
+  const craftEntries = manifest.generatedFiles.filter(
+    (file) => file.path === 'craft_table_catalog.json',
+  );
   if (craftEntries.length !== 1) {
     return false;
   }
   const entry = craftEntries[0]!;
-  if (entry.sha256 === undefined || !entry.sha256.startsWith('sha256:') || entry.size === undefined) {
+  if (
+    entry.sha256 === undefined ||
+    !entry.sha256.startsWith('sha256:') ||
+    entry.size === undefined
+  ) {
     return false;
   }
   const craftBytes = toBytes(craftData);

@@ -3,14 +3,43 @@ import { UNIVERSE_TOWN_HALL_COUNT } from './types';
 
 /** 与 Swift GameCatalog.nonCountableDataIDs / validate.py 同源。 */
 export const NON_COUNTABLE_DATA_IDS = new Set<bigint>([
-  1_000_001n, 1_000_103n, 1_000_104n,
-  1_000_022n, 1_000_025n, 1_000_030n, 1_000_066n,
-  1_000_016n, 1_000_017n, 1_000_018n, 1_000_061n, 1_000_069n,
-  1_000_062n, 1_000_074n, 1_000_076n,
-  1_000_060n, 1_000_087n, 1_000_088n, 1_000_094n, 1_000_095n, 1_000_096n,
-  1_000_073n, 1_000_075n, 1_000_083n, 1_000_090n, 1_000_091n, 1_000_092n,
-  1_000_098n, 1_000_099n, 1_000_100n, 1_000_101n,
-  12_000_003n, 12_000_004n, 12_000_007n, 12_000_017n, 12_000_018n, 12_000_019n,
+  1_000_001n,
+  1_000_103n,
+  1_000_104n,
+  1_000_022n,
+  1_000_025n,
+  1_000_030n,
+  1_000_066n,
+  1_000_016n,
+  1_000_017n,
+  1_000_018n,
+  1_000_061n,
+  1_000_069n,
+  1_000_062n,
+  1_000_074n,
+  1_000_076n,
+  1_000_060n,
+  1_000_087n,
+  1_000_088n,
+  1_000_094n,
+  1_000_095n,
+  1_000_096n,
+  1_000_073n,
+  1_000_075n,
+  1_000_083n,
+  1_000_090n,
+  1_000_091n,
+  1_000_092n,
+  1_000_098n,
+  1_000_099n,
+  1_000_100n,
+  1_000_101n,
+  12_000_003n,
+  12_000_004n,
+  12_000_007n,
+  12_000_017n,
+  12_000_018n,
+  12_000_019n,
 ]);
 
 export function catalogItemKey(section: string, dataID: bigint): string {
@@ -61,9 +90,7 @@ export function validatedInstanceCounts(
     validKeys.add(catalogItemKey(section, dataID));
   }
 
-  const sectionsWithUniverseKeys = new Set(
-    [...validKeys].map((key) => key.split(':', 1)[0]!),
-  );
+  const sectionsWithUniverseKeys = new Set([...validKeys].map((key) => key.split(':', 1)[0]!));
 
   for (const item of index.values()) {
     const isCoreSection = item.section === 'buildings' || item.section === 'traps';

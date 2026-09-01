@@ -1,9 +1,4 @@
-export type LeagueTierContext =
-  | 'home'
-  | 'builderBase'
-  | 'capital'
-  | 'leagueTier'
-  | 'war';
+export type LeagueTierContext = 'home' | 'builderBase' | 'capital' | 'leagueTier' | 'war';
 
 export const LEAGUE_TIER_CONTEXTS: readonly LeagueTierContext[] = [
   'home',
@@ -47,7 +42,9 @@ export function createLeagueTierCatalog(input: {
     source: input.source,
     contexts,
     nameFor(id, context) {
-      return contexts.find((entry) => entry.context === context)?.tiers.find((tier) => tier.id === id)?.name;
+      return contexts
+        .find((entry) => entry.context === context)
+        ?.tiers.find((tier) => tier.id === id)?.name;
     },
   };
 }

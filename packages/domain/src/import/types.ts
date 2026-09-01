@@ -1,4 +1,4 @@
-import type { AccountSnapshot, AccountSnapshotImportError } from '../account';
+import type { AccountSnapshot } from '../account';
 import { accountImportErrorMessage } from '../account';
 
 export type VillageProfile = {

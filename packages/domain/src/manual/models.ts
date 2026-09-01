@@ -3,9 +3,17 @@ import type { UuidString } from '@coc-helper/wire';
 import type { CatalogUpgradeCost } from '../catalog/types';
 import type { ManualUpgradeError } from './errors';
 import {
+  assertValidManualNonNegativeInt64,
+  assertValidManualQuantity,
   createManualLevelDistribution,
   MANUAL_LEVEL_DISTRIBUTION_EMPTY,
 } from './level-distribution';
+import {
+  baselineReferencesEqual,
+  manualItemStatesEqual,
+  manualUpgradeRecordsEqual,
+  trackerItemKeysEqual,
+} from './equality';
 import type {
   ManualBaselineReference,
   ManualCatalogProvenance,
@@ -17,7 +25,6 @@ import type {
   ManualUpgradeRecordStatus,
   TrackerItemKey,
 } from './types';
-import { trackerItemKeyStableId } from './types';
 
 export function isTrackerItemKeyStructurallyValid(key: TrackerItemKey): boolean {
   if (key.rawSection.length === 0 || key.dataID <= 0n) {
@@ -168,10 +175,12 @@ export function createManualUpgradeRecord(input: {
   if (input.fromLevel < 0 || input.targetLevel <= input.fromLevel) {
     throw { kind: 'invalidLevel' } satisfies ManualUpgradeError;
   }
-  if (input.quantity <= 0n) {
-    throw { kind: 'invalidQuantity' } satisfies ManualUpgradeError;
+  const quantityError = assertValidManualQuantity(input.quantity);
+  if (quantityError !== null) {
+    throw quantityError;
   }
-  if (input.durationSeconds < 0n) {
+  const durationError = assertValidManualNonNegativeInt64(input.durationSeconds);
+  if (durationError !== null) {
     throw { kind: 'invalidDuration' } satisfies ManualUpgradeError;
   }
   switch (input.durationKind) {
@@ -243,28 +252,9 @@ export function computeExpectedEndAtMs(
   }
 }
 
-export function baselineReferencesEqual(
-  left: ManualBaselineReference,
-  right: ManualBaselineReference,
-): boolean {
-  return (
-    left.revision === right.revision &&
-    (left.fingerprint ?? null) === (right.fingerprint ?? null) &&
-    (left.lineageID ?? null) === (right.lineageID ?? null)
-  );
-}
-
-export function trackerItemKeysEqual(left: TrackerItemKey, right: TrackerItemKey): boolean {
-  return trackerItemKeyStableId(left) === trackerItemKeyStableId(right);
-}
-
-export function manualItemStatesEqual(left: ManualItemState, right: ManualItemState): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-export function manualUpgradeRecordsEqual(
-  left: ManualUpgradeRecord,
-  right: ManualUpgradeRecord,
-): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
+export {
+  baselineReferencesEqual,
+  manualItemStatesEqual,
+  manualUpgradeRecordsEqual,
+  trackerItemKeysEqual,
+} from './equality';

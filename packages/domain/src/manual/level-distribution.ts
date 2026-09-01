@@ -17,17 +17,28 @@ export function assertValidManualLevel(level: number): ManualUpgradeError | null
   return null;
 }
 
+export function assertValidManualNonNegativeInt64(value: bigint): ManualUpgradeError | null {
+  if (value < 0n || value > INT64_MAX) {
+    return { kind: 'arithmeticOverflow' };
+  }
+  return null;
+}
+
+function throwManualUpgradeError(error: ManualUpgradeError): never {
+  throw error;
+}
+
 export function createManualLevelQuantity(
   level: number,
   quantity: bigint,
 ): ManualLevelQuantity {
   const levelError = assertValidManualLevel(level);
   if (levelError !== null) {
-    throw levelError;
+    throwManualUpgradeError(levelError);
   }
   const quantityError = assertValidManualQuantity(quantity);
   if (quantityError !== null) {
-    throw quantityError;
+    throwManualUpgradeError(quantityError);
   }
   return { level, quantity };
 }
@@ -35,21 +46,24 @@ export function createManualLevelQuantity(
 export function createManualLevelDistribution(
   levels: readonly ManualLevelQuantity[],
 ): ManualLevelDistribution {
-  const sorted = levels.slice().sort((left, right) => left.level - right.level);
+  const validated = levels.map((entry) =>
+    createManualLevelQuantity(entry.level, entry.quantity),
+  );
+  const sorted = validated.slice().sort((left, right) => left.level - right.level);
   for (let index = 1; index < sorted.length; index += 1) {
     if (sorted[index - 1]!.level === sorted[index]!.level) {
-      throw { kind: 'invalidRecord' } satisfies ManualUpgradeError;
+      throwManualUpgradeError({ kind: 'invalidRecord' });
     }
   }
   let total = 0n;
   for (const entry of sorted) {
     const next = saturatingAdd(total, entry.quantity);
     if (next.overflowed) {
-      throw { kind: 'arithmeticOverflow' } satisfies ManualUpgradeError;
+      throwManualUpgradeError({ kind: 'arithmeticOverflow' });
     }
     total = next.value;
   }
-  return buildManualLevelDistribution(sorted);
+  return materializeManualLevelDistribution(sorted);
 }
 
 export function manualLevelDistributionAddChecked(
@@ -57,15 +71,20 @@ export function manualLevelDistributionAddChecked(
   level: number,
   quantity: bigint,
 ): ManualLevelDistribution {
-  if (assertValidManualQuantity(quantity) !== null || assertValidManualLevel(level) !== null) {
-    throw { kind: 'invalidQuantity' } satisfies ManualUpgradeError;
+  const levelError = assertValidManualLevel(level);
+  if (levelError !== null) {
+    throwManualUpgradeError(levelError);
+  }
+  const quantityError = assertValidManualQuantity(quantity);
+  if (quantityError !== null) {
+    throwManualUpgradeError(quantityError);
   }
   const updated = [...distribution.levels];
   const index = updated.findIndex((entry) => entry.level === level);
   if (index >= 0) {
     const sum = saturatingAdd(updated[index]!.quantity, quantity);
     if (sum.overflowed) {
-      throw { kind: 'arithmeticOverflow' } satisfies ManualUpgradeError;
+      throwManualUpgradeError({ kind: 'arithmeticOverflow' });
     }
     updated[index] = createManualLevelQuantity(level, sum.value);
   } else {
@@ -79,27 +98,28 @@ export function manualLevelDistributionSubtractChecked(
   level: number,
   quantity: bigint,
 ): ManualLevelDistribution {
-  if (assertValidManualQuantity(quantity) !== null) {
-    throw { kind: 'invalidQuantity' } satisfies ManualUpgradeError;
+  const quantityError = assertValidManualQuantity(quantity);
+  if (quantityError !== null) {
+    throwManualUpgradeError(quantityError);
   }
   const available = distribution.quantityAt(level);
   if (available < quantity) {
-    throw {
+    throwManualUpgradeError({
       kind: 'insufficientQuantity',
       level,
       requested: quantity,
       available,
-    } satisfies ManualUpgradeError;
+    });
   }
   const updated = [...distribution.levels];
   const index = updated.findIndex((entry) => entry.level === level);
   if (index < 0) {
-    throw {
+    throwManualUpgradeError({
       kind: 'insufficientQuantity',
       level,
       requested: quantity,
       available: 0n,
-    } satisfies ManualUpgradeError;
+    });
   }
   const remaining = available - quantity;
   if (remaining === 0n) {
@@ -110,7 +130,7 @@ export function manualLevelDistributionSubtractChecked(
   return createManualLevelDistribution(updated);
 }
 
-export function buildManualLevelDistribution(
+function materializeManualLevelDistribution(
   sorted: readonly ManualLevelQuantity[],
 ): ManualLevelDistribution {
   const levels = sorted.slice();
@@ -128,7 +148,7 @@ export function buildManualLevelDistribution(
   };
 }
 
-export const MANUAL_LEVEL_DISTRIBUTION_EMPTY = buildManualLevelDistribution([]);
+export const MANUAL_LEVEL_DISTRIBUTION_EMPTY = materializeManualLevelDistribution([]);
 
 function checkedAddQuantities(left: bigint, right: bigint): bigint | undefined {
   const sum = saturatingAdd(left, right);
@@ -159,9 +179,9 @@ export function manualLevelDistributionFromQuantities(
     if (nextTotal === undefined) {
       return undefined;
     }
-    levels.push({ level, quantity });
+    levels.push(createManualLevelQuantity(level, quantity));
   }
-  return buildManualLevelDistribution(levels);
+  return materializeManualLevelDistribution(levels);
 }
 
 export function manualLevelDistributionAdd(
@@ -227,19 +247,4 @@ export function manualLevelDistributionQuantityAt(
   return distribution.quantityAt(level);
 }
 
-export function manualLevelDistributionsEqual(
-  left: ManualLevelDistribution,
-  right: ManualLevelDistribution,
-): boolean {
-  if (left.levels.length !== right.levels.length) {
-    return false;
-  }
-  for (let index = 0; index < left.levels.length; index += 1) {
-    const leftEntry = left.levels[index]!;
-    const rightEntry = right.levels[index]!;
-    if (leftEntry.level !== rightEntry.level || leftEntry.quantity !== rightEntry.quantity) {
-      return false;
-    }
-  }
-  return true;
-}
+export { manualLevelDistributionsEqual } from './equality';

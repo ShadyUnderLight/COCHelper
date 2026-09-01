@@ -9,12 +9,7 @@ import {
   createManualLevelDistribution,
   MANUAL_LEVEL_DISTRIBUTION_EMPTY,
 } from './level-distribution';
-import {
-  baselineReferencesEqual,
-  manualItemStatesEqual,
-  manualUpgradeRecordsEqual,
-  trackerItemKeysEqual,
-} from './equality';
+import { baselineReferencesEqual } from './equality';
 import type {
   ManualBaselineReference,
   ManualCatalogProvenance,

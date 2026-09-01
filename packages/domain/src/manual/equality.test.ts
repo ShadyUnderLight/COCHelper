@@ -4,9 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createManualLevelDistribution,
   createManualLevelQuantity,
-  manualLevelDistributionAdd,
   manualLevelDistributionAddChecked,
-  manualLevelDistributionFromQuantities,
   manualLevelDistributionSubtractChecked,
 } from './level-distribution';
 import {

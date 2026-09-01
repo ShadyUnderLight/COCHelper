@@ -2,7 +2,7 @@ import { sha256Fingerprint } from '@coc-helper/wire';
 
 import { encodeSwiftSortedJson } from '../account/wire-encode';
 import { manualUpgradeCoresEqual } from './equality';
-import type { ManualUpgradeCore, ManualUpgradeRecord, ManualItemState } from './types';
+import type { ManualUpgradeRecord, ManualItemState } from './types';
 import { trackerItemKeyStableId } from './types';
 
 type ManualCoreFingerprintMaterial = {

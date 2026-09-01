@@ -44,6 +44,25 @@ function encodeReconciliationCandidateJson(value: unknown): string {
   return JSON.stringify(encodeReconciliationCandidateMaterial(value));
 }
 
+function encodeReferenceForFingerprint(
+  duplicate: boolean,
+  reference: {
+    readonly revision: string;
+    readonly fingerprint: string | null;
+    readonly lineageID: string | null;
+  },
+): unknown {
+  if (duplicate) {
+    return {
+      fingerprint: reference.fingerprint,
+      revision: reference.revision,
+    };
+  }
+  return {
+    fingerprint: reference.fingerprint,
+  };
+}
+
 export function computeReconciliationCandidateFingerprint(
   preview: Pick<
     ManualReconciliationPreview,
@@ -60,7 +79,7 @@ export function computeReconciliationCandidateFingerprint(
     duplicate: preview.duplicate,
     lineageComparable: preview.lineageComparable,
     timeConfidence: preview.timeConfidence,
-    newReference: preview.newReference,
+    newReference: encodeReferenceForFingerprint(preview.duplicate, preview.newReference),
     newNormalizedPlayerTag: preview.newNormalizedPlayerTag,
     sourceTimestampMs: preview.sourceTimestampMs,
     items: preview.items

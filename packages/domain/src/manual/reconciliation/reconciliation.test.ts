@@ -26,6 +26,7 @@ import {
   manualReconciliationPreviewRequiresExplicitDecision,
 } from './types';
 import { computeReconciliationCandidateFingerprint } from './candidate-fingerprint';
+import { reconciliationCandidateMatches } from './helpers';
 import { previewReconciliation, reconcileManualTracker } from './service';
 
 const villageID = parseUuid('00000000-0000-0000-0000-000000000143')!;
@@ -1107,6 +1108,94 @@ describe('ManualTrackerReconciliation', () => {
     } catch (error) {
       expect(manualReconciliationErrorsEqual(error as never, { kind: 'stalePreview' })).toBe(true);
     }
+  });
+
+  it('candidate fingerprint ignores ephemeral snapshot revision and lineage IDs for non-duplicate candidates', () => {
+    const state = createManualTrackerVillageState({
+      villageID,
+      core: createManualUpgradeCoreState({ itemStates: [] }),
+      stateUpdatedAtMs: s(1_700_000_010),
+    });
+    const sharedObservation = completeObservation(key, dist([[10, 1n]]));
+    const previewA = previewReconciliation(
+      evidenceFrom({
+        newBaselineReference: reference(
+          '00000000-0000-0000-0000-000000000201',
+          'sha256:stable-fp',
+          '00000000-0000-0000-0000-000000000301',
+        ),
+        entries: [sharedObservation],
+      }),
+      state,
+      s(1_700_000_200),
+    );
+    const previewB = previewReconciliation(
+      evidenceFrom({
+        newBaselineReference: reference(
+          '00000000-0000-0000-0000-000000000202',
+          'sha256:stable-fp',
+          '00000000-0000-0000-0000-000000000302',
+        ),
+        entries: [sharedObservation],
+      }),
+      state,
+      s(1_700_000_200),
+    );
+    expect(previewA.newReference.revision).not.toBe(previewB.newReference.revision);
+    expect(previewA.newReference.lineageID).not.toBe(previewB.newReference.lineageID);
+    expect(previewA.candidateFingerprint).toBe(previewB.candidateFingerprint);
+    expect(reconciliationCandidateMatches(previewA, previewB)).toBe(true);
+    expect(() =>
+      reconcileManualTracker(
+        evidenceFrom({
+          newBaselineReference: previewB.newReference,
+          entries: [sharedObservation],
+        }),
+        state,
+        {
+          expectedPreview: previewA,
+          decision: 'applyNonConflicting',
+          appliedAtMs: s(1_700_000_200),
+        },
+      ),
+    ).not.toThrow();
+  });
+
+  it('candidate fingerprint includes revision for duplicate candidates', () => {
+    const state = createManualTrackerVillageState({
+      villageID,
+      core: createManualUpgradeCoreState({ itemStates: [] }),
+      stateUpdatedAtMs: s(1_700_000_010),
+    });
+    const sharedObservation = completeObservation(key, dist([[10, 1n]]));
+    const previewA = previewReconciliation(
+      evidenceFrom({
+        duplicate: true,
+        newBaselineReference: reference(
+          '00000000-0000-0000-0000-000000000401:observation:1',
+          'sha256:dup-fp',
+          'lineage-dup',
+        ),
+        entries: [sharedObservation],
+      }),
+      state,
+      s(1_700_000_200),
+    );
+    const previewB = previewReconciliation(
+      evidenceFrom({
+        duplicate: true,
+        newBaselineReference: reference(
+          '00000000-0000-0000-0000-000000000401:observation:2',
+          'sha256:dup-fp',
+          'lineage-dup',
+        ),
+        entries: [sharedObservation],
+      }),
+      state,
+      s(1_700_000_200),
+    );
+    expect(previewA.candidateFingerprint).not.toBe(previewB.candidateFingerprint);
+    expect(reconciliationCandidateMatches(previewA, previewB)).toBe(false);
   });
 
   it('candidate fingerprint supports INT64_MAX distributions', () => {

@@ -40,7 +40,7 @@ public enum ManualReconciliationCandidateFingerprint {
             "duplicate": .bool(duplicate),
             "lineageComparable": .bool(lineageComparable),
             "timeConfidence": .string(timeConfidence.rawValue),
-            "newReference": encodeReference(newReference),
+            "newReference": encodeReference(duplicate: duplicate, reference: newReference),
             "newNormalizedPlayerTag": encodeOptionalString(newNormalizedPlayerTag),
             "sourceTimestampMs": encodeOptionalInt64(sourceTimestampMs),
             "items": .array(
@@ -111,11 +111,18 @@ public enum ManualReconciliationCandidateFingerprint {
         ])
     }
 
-    private static func encodeReference(_ reference: ManualBaselineReference) -> FingerprintJSON {
-        .object([
-            "revision": .string(reference.revision),
+    private static func encodeReference(
+        duplicate: Bool,
+        reference: ManualBaselineReference
+    ) -> FingerprintJSON {
+        if duplicate {
+            return .object([
+                "fingerprint": encodeOptionalString(reference.fingerprint),
+                "revision": .string(reference.revision),
+            ])
+        }
+        return .object([
             "fingerprint": encodeOptionalString(reference.fingerprint),
-            "lineageID": encodeOptionalString(reference.lineageID),
         ])
     }
 

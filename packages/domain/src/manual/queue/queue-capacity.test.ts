@@ -10,16 +10,13 @@ import { validateProjectedQueueCapacity, validateStartAgainstQueueCapacity } fro
 import {
   createLocalQueueKind,
   effectiveLocalQueueKindForRecord,
+  inferredLocalQueueKindForItemKey,
+  inferredLocalQueueKindForItemKeyAndDuration,
   LOCAL_QUEUE_KIND_BUILDER,
-  LOCAL_QUEUE_KIND_EQUIPMENT,
-  LOCAL_QUEUE_KIND_HERO,
   LOCAL_QUEUE_KIND_LABORATORY,
   LOCAL_QUEUE_KNOWN_KINDS,
   localQueueKindDisplayName,
   localQueueKindIsKnown,
-  suggestedLocalQueueKindForItemKey,
-  suggestedLocalQueueKindForItemKeyAndDuration,
-  type LocalQueueKind,
 } from './local-queue-kind';
 import {
   createLocalQueueOccupancy,
@@ -74,17 +71,13 @@ function record(input: {
   });
 }
 
-function configForKind(queueKind: LocalQueueKind, capacity: number) {
+function config(capacity: number) {
   return createLocalQueueCapacityConfig({
     villageID,
-    queueKind,
+    queueKind: LOCAL_QUEUE_KIND_BUILDER,
     capacity,
     updatedAtMs: 1_000_000,
   });
-}
-
-function config(capacity: number) {
-  return configForKind(LOCAL_QUEUE_KIND_BUILDER, capacity);
 }
 
 function assignment(input: {
@@ -107,44 +100,38 @@ describe('LocalQueueKind', () => {
   it('已知类别与展示名', () => {
     expect(localQueueKindIsKnown(LOCAL_QUEUE_KIND_BUILDER)).toBe(true);
     expect(localQueueKindIsKnown(LOCAL_QUEUE_KIND_LABORATORY)).toBe(true);
-    expect(localQueueKindIsKnown(LOCAL_QUEUE_KIND_HERO)).toBe(true);
-    expect(localQueueKindIsKnown(LOCAL_QUEUE_KIND_EQUIPMENT)).toBe(true);
     expect(LOCAL_QUEUE_KNOWN_KINDS).toEqual([
       LOCAL_QUEUE_KIND_BUILDER,
       LOCAL_QUEUE_KIND_LABORATORY,
-      LOCAL_QUEUE_KIND_HERO,
-      LOCAL_QUEUE_KIND_EQUIPMENT,
     ]);
     expect(localQueueKindDisplayName(LOCAL_QUEUE_KIND_BUILDER)).toBe('建筑工人');
-    expect(localQueueKindDisplayName(LOCAL_QUEUE_KIND_HERO)).toBe('英雄');
-    expect(localQueueKindDisplayName(LOCAL_QUEUE_KIND_EQUIPMENT)).toBe('装备');
   });
 
-  it('section 映射到 UI 推荐类别（不是容量 gate evidence）', () => {
+  it('section 映射到容量类别', () => {
     const cases: Array<[string, string | null]> = [
       ['buildings', 'builder'],
       ['buildings2', 'builder'],
       ['traps', 'builder'],
-      ['heroes', 'hero'],
+      ['heroes', 'builder'],
       ['units', 'laboratory'],
       ['spells', 'laboratory'],
       ['siege_machines', 'laboratory'],
-      ['equipment', 'equipment'],
+      ['equipment', null],
       ['pets', null],
       ['future', null],
     ];
     for (const [section, expected] of cases) {
       const key = trackerItemKeyRoot('home', section, 1n);
-      const kind = suggestedLocalQueueKindForItemKey(key);
+      const kind = inferredLocalQueueKindForItemKey(key);
       expect(kind?.rawValue ?? null).toBe(expected);
     }
   });
 
   it('instant 不占容量', () => {
     const key = trackerItemKeyRoot('home', 'buildings', 1n);
-    expect(suggestedLocalQueueKindForItemKeyAndDuration(key, { kind: 'instant' })).toBeNull();
+    expect(inferredLocalQueueKindForItemKeyAndDuration(key, { kind: 'instant' })).toBeNull();
     expect(
-      suggestedLocalQueueKindForItemKeyAndDuration(key, { kind: 'timed', seconds: 60n }),
+      inferredLocalQueueKindForItemKeyAndDuration(key, { kind: 'timed', seconds: 60n }),
     ).toEqual(LOCAL_QUEUE_KIND_BUILDER);
   });
 
@@ -301,7 +288,7 @@ describe('LocalQueueOccupancyResolver', () => {
     expect(localQueueOccupancyAvailableSlots(occupancy)).toBeNull();
   });
 
-  it('只按持久化 queueKind 计数，null 视为 unassigned', () => {
+  it('已知 section 按推断类别计数，忽略 persisted queueKind', () => {
     const occupancy = resolveLocalQueueOccupancy({
       queueKind: LOCAL_QUEUE_KIND_BUILDER,
       activeRecords: [
@@ -313,21 +300,23 @@ describe('LocalQueueOccupancyResolver', () => {
       capacityConfig: config(2),
       nowMs: 1_000_000,
     });
-    expect(occupancy.activeManualCount).toBe(2);
+    expect(occupancy.activeManualCount).toBe(4);
     expect(localQueueOccupancyIsFull(occupancy)).toBe(true);
     expect(localQueueOccupancyAvailableSlots(occupancy)).toBe(0);
   });
 
-  it('queueKind null 的 active record 不计入任何队列占用', () => {
-    expect(effectiveLocalQueueKindForRecord(record({ queueKind: null }))).toBeNull();
+  it('buildings section 即使 queueKind null 仍计入 builder', () => {
+    expect(effectiveLocalQueueKindForRecord(record({ queueKind: null }))).toEqual(
+      LOCAL_QUEUE_KIND_BUILDER,
+    );
     const occupancy = resolveLocalQueueOccupancy({
       queueKind: LOCAL_QUEUE_KIND_BUILDER,
       activeRecords: [record({ queueKind: null })],
       capacityConfig: config(1),
       nowMs: 1_000_000,
     });
-    expect(occupancy.activeManualCount).toBe(0);
-    expect(localQueueOccupancyIsFull(occupancy)).toBe(false);
+    expect(occupancy.activeManualCount).toBe(1);
+    expect(localQueueOccupancyIsFull(occupancy)).toBe(true);
   });
 
   it('capacity 0 时已知 0 占用也视为满', () => {
@@ -380,7 +369,7 @@ describe('LocalQueueOccupancyResolver', () => {
     expect(localQueueOccupancyAvailableSlots(occupancy)).toBe(1);
   });
 
-  it('未知 section 仍按持久化 queueKind 计入占用', () => {
+  it('未知 section fail-closed，不回退 persisted queueKind', () => {
     const occupancy = resolveLocalQueueOccupancy({
       queueKind: LOCAL_QUEUE_KIND_BUILDER,
       activeRecords: [record({ queueKind: 'builder', rawSection: 'future' })],
@@ -390,9 +379,10 @@ describe('LocalQueueOccupancyResolver', () => {
       capacityConfig: config(1),
       nowMs: 1_000_000,
     });
-    expect(occupancy.activeManualCount).toBe(1);
-    expect(occupancy.confirmedImportedCount).toBe(1);
-    expect(localQueueOccupancyIsFull(occupancy)).toBe(true);
+    expect(occupancy.activeManualCount).toBe(0);
+    expect(occupancy.confirmedImportedCount).toBe(0);
+    expect(localQueueOccupancyIsFull(occupancy)).toBe(false);
+    expect(localQueueOccupancyAvailableSlots(occupancy)).toBe(1);
   });
 
   it('只统计 userAssigned overlay', () => {
@@ -456,31 +446,31 @@ describe('validateStartAgainstQueueCapacity', () => {
     ],
   });
 
-  it('storeAvailable=false 且显式 queueKind 时拒绝 start', () => {
+  it('storeAvailable=false 时拒绝 start', () => {
     expect(
       validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
         durationState: { kind: 'timed', seconds: 60n },
         core,
         queueCapacityConfigs: [config(1)],
         queueAssignments: [],
         currentBaseline,
         storeAvailable: false,
-        requestedQueueKind: LOCAL_QUEUE_KIND_BUILDER,
         nowMs: 1_000_000,
       }),
     ).toEqual({ kind: 'occupancyNotAvailable', status: 'unavailable' });
   });
 
-  it('baseline unreconciled 且显式 queueKind 时拒绝 start', () => {
+  it('baseline unreconciled 时拒绝 start', () => {
     expect(
       validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
         durationState: { kind: 'timed', seconds: 60n },
         core: staleCore,
         queueCapacityConfigs: [config(1)],
         queueAssignments: [],
         currentBaseline,
         storeAvailable: true,
-        requestedQueueKind: LOCAL_QUEUE_KIND_BUILDER,
         nowMs: 1_000_000,
       }),
     ).toEqual({ kind: 'occupancyNotAvailable', status: 'unreconciled' });
@@ -489,21 +479,22 @@ describe('validateStartAgainstQueueCapacity', () => {
   it('available 且未满时放行', () => {
     expect(
       validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
         durationState: { kind: 'timed', seconds: 60n },
         core,
         queueCapacityConfigs: [config(1)],
         queueAssignments: [],
         currentBaseline,
         storeAvailable: true,
-        requestedQueueKind: LOCAL_QUEUE_KIND_BUILDER,
         nowMs: 1_000_000,
       }),
     ).toBeNull();
   });
 
-  it('Issue #145：builder capacity=0 + requestedQueueKind=null 允许（不参与容量校验）', () => {
+  it('PR #249：building + builder capacity 0 + requested null → queueCapacityFull', () => {
     expect(
       validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
         durationState: { kind: 'timed', seconds: 60n },
         core,
         queueCapacityConfigs: [config(0)],
@@ -513,12 +504,19 @@ describe('validateStartAgainstQueueCapacity', () => {
         requestedQueueKind: null,
         nowMs: 1_000_000,
       }),
-    ).toBeNull();
+    ).toEqual({
+      kind: 'queueCapacityFull',
+      queueKind: LOCAL_QUEUE_KIND_BUILDER,
+      activeCount: 0,
+      confirmedImportedCount: 0,
+      capacity: 0,
+    });
   });
 
-  it('Issue #145：builder capacity=0 + requestedQueueKind=builder 拒绝', () => {
+  it('PR #249：building + builder capacity 0 + requested builder → queueCapacityFull', () => {
     expect(
       validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
         durationState: { kind: 'timed', seconds: 60n },
         core,
         queueCapacityConfigs: [config(0)],
@@ -537,61 +535,55 @@ describe('validateStartAgainstQueueCapacity', () => {
     });
   });
 
-  it('Issue #145：heroes + requestedQueueKind=hero 走 hero capacity', () => {
+  it('PR #249：building + requested laboratory → invalidQueueKind', () => {
     expect(
       validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
         durationState: { kind: 'timed', seconds: 60n },
         core,
-        queueCapacityConfigs: [configForKind(LOCAL_QUEUE_KIND_HERO, 1)],
-        queueAssignments: [],
-        currentBaseline,
-        storeAvailable: true,
-        requestedQueueKind: LOCAL_QUEUE_KIND_HERO,
-        nowMs: 1_000_000,
-      }),
-    ).toBeNull();
-  });
-
-  it('Issue #145：equipment + requestedQueueKind=equipment 走 equipment capacity', () => {
-    expect(
-      validateStartAgainstQueueCapacity({
-        durationState: { kind: 'timed', seconds: 60n },
-        core,
-        queueCapacityConfigs: [configForKind(LOCAL_QUEUE_KIND_EQUIPMENT, 1)],
-        queueAssignments: [],
-        currentBaseline,
-        storeAvailable: true,
-        requestedQueueKind: LOCAL_QUEUE_KIND_EQUIPMENT,
-        nowMs: 1_000_000,
-      }),
-    ).toBeNull();
-  });
-
-  it('instant 升级不参与容量 gate', () => {
-    expect(
-      validateStartAgainstQueueCapacity({
-        durationState: { kind: 'instant' },
-        core,
-        queueCapacityConfigs: [config(0)],
-        queueAssignments: [],
-        currentBaseline,
-        storeAvailable: true,
-        requestedQueueKind: LOCAL_QUEUE_KIND_BUILDER,
-        nowMs: 1_000_000,
-      }),
-    ).toBeNull();
-  });
-
-  it('未配置容量的 queueKind 不参与 gate', () => {
-    expect(
-      validateStartAgainstQueueCapacity({
-        durationState: { kind: 'timed', seconds: 60n },
-        core,
-        queueCapacityConfigs: [config(0)],
+        queueCapacityConfigs: [config(1)],
         queueAssignments: [],
         currentBaseline,
         storeAvailable: true,
         requestedQueueKind: LOCAL_QUEUE_KIND_LABORATORY,
+        nowMs: 1_000_000,
+      }),
+    ).toEqual({ kind: 'invalidQueueKind' });
+  });
+
+  it('PR #249：hero section 使用 builder capacity', () => {
+    expect(
+      validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'heroes', 1_000_002n),
+        durationState: { kind: 'timed', seconds: 60n },
+        core,
+        queueCapacityConfigs: [config(0)],
+        queueAssignments: [],
+        currentBaseline,
+        storeAvailable: true,
+        requestedQueueKind: null,
+        nowMs: 1_000_000,
+      }),
+    ).toEqual({
+      kind: 'queueCapacityFull',
+      queueKind: LOCAL_QUEUE_KIND_BUILDER,
+      activeCount: 0,
+      confirmedImportedCount: 0,
+      capacity: 0,
+    });
+  });
+
+  it('PR #249：equipment 无容量类别，跳过 gate', () => {
+    expect(
+      validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'equipment', 1_000_002n),
+        durationState: { kind: 'timed', seconds: 60n },
+        core,
+        queueCapacityConfigs: [config(0)],
+        queueAssignments: [],
+        currentBaseline,
+        storeAvailable: true,
+        requestedQueueKind: null,
         nowMs: 1_000_000,
       }),
     ).toBeNull();

@@ -82,11 +82,14 @@ export function effectiveLocalQueueKindForRecord(
   if (record.durationKind === 'instant') {
     return null;
   }
-  return inferredLocalQueueKindForItemKey(record.itemKey);
+  if (record.queueKind === null) {
+    return null;
+  }
+  return createLocalQueueKind(record.queueKind);
 }
 
 export function effectiveLocalQueueKindForAssignment(
   assignment: QueueAssignmentDecision,
 ): LocalQueueKind | null {
-  return inferredLocalQueueKindForItemKey(assignment.itemKey);
+  return assignment.queueKind;
 }

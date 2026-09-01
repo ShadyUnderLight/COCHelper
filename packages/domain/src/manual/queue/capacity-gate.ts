@@ -1,16 +1,20 @@
 import type { CatalogDurationState } from '../../catalog/duration-state';
-import type { ManualUpgradeCore, TrackerItemKey } from '../types';
-import { capacityConfirmingAssignments } from '../queue-assignment-eligibility';
+import type { ManualBaselineReference, ManualUpgradeCore, TrackerItemKey } from '../types';
 import type { LocalQueueCapacityConfig } from './capacity-config';
 import {
   inferredLocalQueueKindForItemKeyAndDuration,
   type LocalQueueKind,
 } from './local-queue-kind';
-import { localQueueOccupancyIsFull, resolveLocalQueueOccupancy } from './occupancy';
+import { localQueueOccupancyIsFull, type LocalQueueOccupancy } from './occupancy';
+import { projectQueueOccupancy } from './occupancy-projection';
 import type { QueueAssignmentDecision } from './queue-assignment';
 
 export type QueueCapacityGateError =
   | { readonly kind: 'invalidQueueKind' }
+  | {
+      readonly kind: 'occupancyNotAvailable';
+      readonly status: 'unavailable' | 'unreconciled';
+    }
   | {
       readonly kind: 'queueCapacityFull';
       readonly queueKind: LocalQueueKind;
@@ -25,6 +29,8 @@ export function validateStartAgainstQueueCapacity(input: {
   readonly core: ManualUpgradeCore;
   readonly queueCapacityConfigs: readonly LocalQueueCapacityConfig[];
   readonly queueAssignments: readonly QueueAssignmentDecision[];
+  readonly currentBaseline: ManualBaselineReference | null;
+  readonly storeAvailable: boolean;
   readonly requestedQueueKind?: LocalQueueKind | null;
   readonly nowMs: number;
 }): QueueCapacityGateError | null {
@@ -52,25 +58,40 @@ export function validateStartAgainstQueueCapacity(input: {
     return null;
   }
 
-  const confirmed = capacityConfirmingAssignments({
+  const occupancy = projectQueueOccupancy({
+    queueKind: inferredQueueKind,
     core: input.core,
+    currentBaseline: input.currentBaseline,
+    storeAvailable: input.storeAvailable,
+    queueCapacityConfigs: input.queueCapacityConfigs,
     queueAssignments: input.queueAssignments,
-    queueKind: inferredQueueKind,
-  });
-  const occupancy = resolveLocalQueueOccupancy({
-    queueKind: inferredQueueKind,
-    activeRecords: input.core.records,
-    confirmedAssignments: confirmed,
-    capacityConfig: config,
     nowMs: input.nowMs,
   });
-  if (localQueueOccupancyIsFull(occupancy)) {
+  return validateProjectedQueueCapacity({
+    occupancy,
+    queueKind: inferredQueueKind,
+    capacity: config.capacity,
+  });
+}
+
+export function validateProjectedQueueCapacity(input: {
+  readonly occupancy: LocalQueueOccupancy;
+  readonly queueKind: LocalQueueKind;
+  readonly capacity: number;
+}): QueueCapacityGateError | null {
+  if (input.occupancy.status === 'unavailable') {
+    return { kind: 'occupancyNotAvailable', status: 'unavailable' };
+  }
+  if (input.occupancy.status === 'unreconciled') {
+    return { kind: 'occupancyNotAvailable', status: 'unreconciled' };
+  }
+  if (localQueueOccupancyIsFull(input.occupancy)) {
     return {
       kind: 'queueCapacityFull',
-      queueKind: inferredQueueKind,
-      activeCount: occupancy.activeManualCount,
-      confirmedImportedCount: occupancy.confirmedImportedCount,
-      capacity: config.capacity,
+      queueKind: input.queueKind,
+      activeCount: input.occupancy.activeManualCount,
+      confirmedImportedCount: input.occupancy.confirmedImportedCount,
+      capacity: input.capacity,
     };
   }
   return null;

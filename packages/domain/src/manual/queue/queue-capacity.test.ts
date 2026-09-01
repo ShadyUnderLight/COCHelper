@@ -6,8 +6,10 @@ import {
   localQueueCapacityConfigErrorsEqual,
   LOCAL_QUEUE_CAPACITY_MAXIMUM,
 } from './capacity-config';
+import { validateProjectedQueueCapacity, validateStartAgainstQueueCapacity } from './capacity-gate';
 import {
   createLocalQueueKind,
+  effectiveLocalQueueKindForRecord,
   inferredLocalQueueKindForItemKey,
   inferredLocalQueueKindForItemKeyAndDuration,
   LOCAL_QUEUE_KIND_BUILDER,
@@ -22,10 +24,13 @@ import {
   localQueueOccupancyIsFull,
   resolveLocalQueueOccupancy,
 } from './occupancy';
+import { projectQueueOccupancy } from './occupancy-projection';
+import { createQueueAssignmentDecision, queueAssignmentErrorsEqual } from './queue-assignment';
 import {
-  createQueueAssignmentDecision,
-  queueAssignmentErrorsEqual,
-} from './queue-assignment';
+  createManualUpgradeCoreState,
+  createManualItemStateForStatus,
+  createManualLevelDistributionFromPairs,
+} from '../core';
 import { createManualUpgradeRecord } from '../models';
 import { trackerItemKeyRoot } from '../types';
 
@@ -61,7 +66,7 @@ function record(input: {
     frozenCosts: null,
     catalogProvenance: provenance,
     baselineReference: baseline,
-    queueKind: input.queueKind ?? 'builder',
+    queueKind: input.queueKind === undefined ? 'builder' : input.queueKind,
     status: input.status ?? 'active',
   });
 }
@@ -283,7 +288,7 @@ describe('LocalQueueOccupancyResolver', () => {
     expect(localQueueOccupancyAvailableSlots(occupancy)).toBeNull();
   });
 
-  it('按推断类别计数并判定满', () => {
+  it('只按持久化 queueKind 计数，null 视为 unassigned', () => {
     const occupancy = resolveLocalQueueOccupancy({
       queueKind: LOCAL_QUEUE_KIND_BUILDER,
       activeRecords: [
@@ -295,9 +300,21 @@ describe('LocalQueueOccupancyResolver', () => {
       capacityConfig: config(2),
       nowMs: 1_000_000,
     });
-    expect(occupancy.activeManualCount).toBe(4);
+    expect(occupancy.activeManualCount).toBe(2);
     expect(localQueueOccupancyIsFull(occupancy)).toBe(true);
     expect(localQueueOccupancyAvailableSlots(occupancy)).toBe(0);
+  });
+
+  it('queueKind null 的 active record 不计入任何队列占用', () => {
+    expect(effectiveLocalQueueKindForRecord(record({ queueKind: null }))).toBeNull();
+    const occupancy = resolveLocalQueueOccupancy({
+      queueKind: LOCAL_QUEUE_KIND_BUILDER,
+      activeRecords: [record({ queueKind: null })],
+      capacityConfig: config(1),
+      nowMs: 1_000_000,
+    });
+    expect(occupancy.activeManualCount).toBe(0);
+    expect(localQueueOccupancyIsFull(occupancy)).toBe(false);
   });
 
   it('capacity 0 时已知 0 占用也视为满', () => {
@@ -350,17 +367,19 @@ describe('LocalQueueOccupancyResolver', () => {
     expect(localQueueOccupancyAvailableSlots(occupancy)).toBe(1);
   });
 
-  it('未知 section 不回退持久化 queueKind', () => {
+  it('未知 section 仍按持久化 queueKind 计入占用', () => {
     const occupancy = resolveLocalQueueOccupancy({
       queueKind: LOCAL_QUEUE_KIND_BUILDER,
       activeRecords: [record({ queueKind: 'builder', rawSection: 'future' })],
-      confirmedAssignments: [assignment({ rawSection: 'future' })],
+      confirmedAssignments: [
+        assignment({ queueKind: LOCAL_QUEUE_KIND_BUILDER, rawSection: 'future' }),
+      ],
       capacityConfig: config(1),
       nowMs: 1_000_000,
     });
-    expect(occupancy.activeManualCount).toBe(0);
-    expect(occupancy.confirmedImportedCount).toBe(0);
-    expect(localQueueOccupancyAvailableSlots(occupancy)).toBe(1);
+    expect(occupancy.activeManualCount).toBe(1);
+    expect(occupancy.confirmedImportedCount).toBe(1);
+    expect(localQueueOccupancyIsFull(occupancy)).toBe(true);
   });
 
   it('只统计 userAssigned overlay', () => {
@@ -389,5 +408,114 @@ describe('LocalQueueOccupancyResolver', () => {
       nowMs: 1_000_000,
     });
     expect(localQueueOccupancyIsFull(occupancy)).toBe(true);
+  });
+});
+
+describe('validateStartAgainstQueueCapacity', () => {
+  const currentBaseline = {
+    revision: 'rev',
+    fingerprint: 'fp',
+    lineageID: 'lineage-1',
+  };
+  const core = createManualUpgradeCoreState({
+    itemStates: [
+      createManualItemStateForStatus({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
+        baselineReference: currentBaseline,
+        status: 'manualCompleted',
+        manual: createManualLevelDistributionFromPairs([]),
+      }),
+    ],
+  });
+  const staleBaseline = {
+    revision: 'rev-old',
+    fingerprint: 'fp-old',
+    lineageID: 'lineage-old',
+  };
+  const staleCore = createManualUpgradeCoreState({
+    itemStates: [
+      createManualItemStateForStatus({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
+        baselineReference: staleBaseline,
+        status: 'manualCompleted',
+        manual: createManualLevelDistributionFromPairs([]),
+      }),
+    ],
+  });
+
+  it('storeAvailable=false 时拒绝 start', () => {
+    expect(
+      validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
+        durationState: { kind: 'timed', seconds: 60n },
+        core,
+        queueCapacityConfigs: [config(1)],
+        queueAssignments: [],
+        currentBaseline,
+        storeAvailable: false,
+        nowMs: 1_000_000,
+      }),
+    ).toEqual({ kind: 'occupancyNotAvailable', status: 'unavailable' });
+  });
+
+  it('baseline unreconciled 时拒绝 start', () => {
+    expect(
+      validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
+        durationState: { kind: 'timed', seconds: 60n },
+        core: staleCore,
+        queueCapacityConfigs: [config(1)],
+        queueAssignments: [],
+        currentBaseline,
+        storeAvailable: true,
+        nowMs: 1_000_000,
+      }),
+    ).toEqual({ kind: 'occupancyNotAvailable', status: 'unreconciled' });
+  });
+
+  it('available 且未满时放行', () => {
+    expect(
+      validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', 'buildings', 1_000_002n),
+        durationState: { kind: 'timed', seconds: 60n },
+        core,
+        queueCapacityConfigs: [config(1)],
+        queueAssignments: [],
+        currentBaseline,
+        storeAvailable: true,
+        nowMs: 1_000_000,
+      }),
+    ).toBeNull();
+  });
+
+  it('validateProjectedQueueCapacity 在 unavailable 时不做算术', () => {
+    expect(
+      validateProjectedQueueCapacity({
+        occupancy: createLocalQueueOccupancy({
+          queueKind: LOCAL_QUEUE_KIND_BUILDER,
+          activeManualCount: 99,
+          confirmedImportedCount: 99,
+          capacity: 0,
+          status: 'unavailable',
+        }),
+        queueKind: LOCAL_QUEUE_KIND_BUILDER,
+        capacity: 0,
+      }),
+    ).toEqual({ kind: 'occupancyNotAvailable', status: 'unavailable' });
+  });
+});
+
+describe('projectQueueOccupancy', () => {
+  it('storeAvailable=false 返回 unavailable', () => {
+    const occupancy = projectQueueOccupancy({
+      queueKind: LOCAL_QUEUE_KIND_BUILDER,
+      core: createManualUpgradeCoreState(),
+      currentBaseline: baseline,
+      storeAvailable: false,
+      queueCapacityConfigs: [config(1)],
+      queueAssignments: [],
+      nowMs: 1_000_000,
+    });
+    expect(occupancy.status).toBe('unavailable');
   });
 });

@@ -1,0 +1,66 @@
+{
+  "description": "PR #249：本地计时容量 gate/occupancy contract（TS seed；Swift oracle 对接待 PR D）。section 推导 canonical queue；requestedQueueKind 仅校验。",
+  "startGateCases": [
+    {
+      "id": "building-builder-capacity-zero-requested-null",
+      "itemSection": "buildings",
+      "requestedQueueKind": null,
+      "builderCapacity": 0,
+      "expectedError": "queueCapacityFull"
+    },
+    {
+      "id": "building-builder-capacity-zero-requested-builder",
+      "itemSection": "buildings",
+      "requestedQueueKind": "builder",
+      "builderCapacity": 0,
+      "expectedError": "queueCapacityFull"
+    },
+    {
+      "id": "building-requested-laboratory-invalid",
+      "itemSection": "buildings",
+      "requestedQueueKind": "laboratory",
+      "builderCapacity": 1,
+      "expectedError": "invalidQueueKind"
+    },
+    {
+      "id": "hero-section-uses-builder-capacity",
+      "itemSection": "heroes",
+      "requestedQueueKind": null,
+      "builderCapacity": 0,
+      "expectedError": "queueCapacityFull"
+    },
+    {
+      "id": "equipment-no-capacity-category-skips-gate",
+      "itemSection": "equipment",
+      "requestedQueueKind": null,
+      "builderCapacity": 0,
+      "expectedError": null
+    }
+  ],
+  "occupancyCases": [
+    {
+      "id": "known-building-persisted-null-counts-builder",
+      "targetQueueKind": "builder",
+      "builderCapacity": 1,
+      "records": [{ "rawSection": "buildings", "queueKind": null }],
+      "expectedActiveManualCount": 1,
+      "expectedFull": true
+    },
+    {
+      "id": "known-building-persisted-laboratory-still-counts-builder",
+      "targetQueueKind": "builder",
+      "builderCapacity": 1,
+      "records": [{ "rawSection": "buildings", "queueKind": "laboratory" }],
+      "expectedActiveManualCount": 1,
+      "expectedFull": true
+    },
+    {
+      "id": "unknown-section-persisted-builder-not-counted",
+      "targetQueueKind": "builder",
+      "builderCapacity": 1,
+      "records": [{ "rawSection": "future", "queueKind": "builder" }],
+      "expectedActiveManualCount": 0,
+      "expectedFull": false
+    }
+  ]
+}

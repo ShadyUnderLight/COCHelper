@@ -2,6 +2,7 @@ import type { WebPreferences } from 'electron';
 
 export const APP_PROTOCOL = 'cochelper';
 export const APP_HOST = 'app';
+export const CATALOG_HOST = 'catalog';
 
 export const SECURE_WEB_PREFERENCES: WebPreferences = {
   nodeIntegration: false,
@@ -66,7 +67,10 @@ export function isAppProtocolUrl(url: string): boolean {
   } catch {
     return false;
   }
-  return parsed.protocol === `${APP_PROTOCOL}:` && parsed.hostname === APP_HOST;
+  return (
+    parsed.protocol === `${APP_PROTOCOL}:` &&
+    (parsed.hostname === APP_HOST || parsed.hostname === CATALOG_HOST)
+  );
 }
 
 export function isAllowedRendererUrl(url: string, webpackEntry: string): boolean {

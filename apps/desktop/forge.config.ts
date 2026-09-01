@@ -4,16 +4,23 @@ import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-nati
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import type { ForgeConfig } from '@electron-forge/shared-types';
+import path from 'node:path';
 
 import { DEV_CONTENT_SECURITY_POLICY } from './src/main/security-policy';
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
+
+const repoRoot = path.resolve(__dirname, '../..');
 
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     name: 'COCHelper',
     appBundleId: 'com.local.coc-helper.electron',
+    extraResource: [
+      path.join(repoRoot, 'Sources/COCHelperCore/GameCatalog'),
+      path.join(repoRoot, 'Sources/COCHelperCore/Resources/account_name_catalog.json'),
+    ],
   },
   rebuildConfig: {},
   makers: [new MakerZIP({}, ['darwin'])],

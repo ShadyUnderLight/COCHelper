@@ -1,3 +1,4 @@
+import { parseAccountSnapshot } from '@coc-helper/domain';
 import { describe, expect, it } from 'vitest';
 
 import { ImportCoordinator, InMemoryVillageStore } from './import-coordinator';
@@ -8,6 +9,14 @@ class FakeClock {
   nowMs(): number {
     return this.fixedMs;
   }
+}
+
+function parsedSnapshot(text: string) {
+  const parsed = parseAccountSnapshot(text, { clock: new FakeClock(0) });
+  if (!parsed.ok) {
+    throw new Error('unexpected parse failure');
+  }
+  return parsed.value;
 }
 
 describe('ImportCoordinator', () => {
@@ -87,23 +96,12 @@ describe('ImportCoordinator', () => {
 
   it('applyQuickImport 同 tag 保留 officialAPIState', () => {
     const store = new InMemoryVillageStore();
+    const snapshot = parsedSnapshot('{"tag":"#SAME","buildings":[]}');
     const village = {
       id: '00000000-0000-0000-0000-000000000001',
       name: 'A',
-      tag: '#SAME' as string | null,
-      accountSnapshot: {
-        tag: '#SAME',
-        capturedAtMs: null,
-        importedAtMs: 0,
-        ageSeconds: null,
-        originalText: '{"tag":"#SAME","buildings":[]}',
-        objectSections: {},
-        numericSections: {},
-        boosts: {},
-        unknownTopLevelKeys: [],
-        diagnostics: [],
-        contentFingerprint: '0'.repeat(64),
-      },
+      tag: snapshot.tag,
+      accountSnapshot: snapshot,
       officialAPIState: { status: 'success' },
       hasImportedData: true,
     };
@@ -119,23 +117,12 @@ describe('ImportCoordinator', () => {
 
   it('applyQuickImport tag 变化时清空 officialAPIState', () => {
     const store = new InMemoryVillageStore();
+    const snapshot = parsedSnapshot('{"tag":"#OLD","buildings":[]}');
     const village = {
       id: '00000000-0000-0000-0000-000000000001',
       name: 'A',
-      tag: '#OLD' as string | null,
-      accountSnapshot: {
-        tag: '#OLD',
-        capturedAtMs: null,
-        importedAtMs: 0,
-        ageSeconds: null,
-        originalText: '{"tag":"#OLD","buildings":[]}',
-        objectSections: {},
-        numericSections: {},
-        boosts: {},
-        unknownTopLevelKeys: [],
-        diagnostics: [],
-        contentFingerprint: '0'.repeat(64),
-      },
+      tag: snapshot.tag,
+      accountSnapshot: snapshot,
       officialAPIState: { status: 'success' },
       hasImportedData: true,
     };

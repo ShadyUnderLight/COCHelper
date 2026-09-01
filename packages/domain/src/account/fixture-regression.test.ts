@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { isValidTag } from '../tag/validator';
 import type { AccountItem, AccountSnapshot } from './types';
 import { isBuilderBaseSection } from './types';
 import { parseAccountSnapshot } from './parser';
@@ -40,8 +41,16 @@ function collectObjectItems(snapshot: AccountSnapshot): AccountItem[] {
   return items;
 }
 
-function formatRawIdLabel(dataID: bigint): string {
-  return `#${dataID}`;
+function wallSegmentCount(walls: readonly AccountItem[]): number {
+  return walls.reduce((total, item) => total + (item.count ?? 1), 0);
+}
+
+function wallHistogramByLevel(walls: readonly AccountItem[]): Map<number | null, number> {
+  const histogram = new Map<number | null, number>();
+  for (const item of walls) {
+    histogram.set(item.level, (histogram.get(item.level) ?? 0) + (item.count ?? 1));
+  }
+  return histogram;
 }
 
 function hasUnrecognizedFieldWarning(snapshot: AccountSnapshot, field: string): boolean {
@@ -78,7 +87,50 @@ function activeItems(snapshot: AccountSnapshot, builderBase: boolean): AccountIt
 }
 
 describe('AccountSnapshot fixture regression', () => {
-  it('perf_account_snapshot_large_walls 解析 >=1000 段城墙且不误报 coverage', () => {
+  it('perf_account_snapshot_large_walls_before/after 精确保留 1005 段城墙 histogram', () => {
+    const beforeText = readFixture('perf_account_snapshot_large_walls_before');
+    const afterText = readFixture('perf_account_snapshot_large_walls_after');
+    assertAnonymized(beforeText);
+    assertAnonymized(afterText);
+
+    const beforeParsed = parseAccountSnapshot(beforeText, { clock: new FakeClock(PERF_NOW_MS) });
+    const afterParsed = parseAccountSnapshot(afterText, {
+      clock: new FakeClock(PERF_NOW_MS + 1_000),
+    });
+    expect(beforeParsed.ok && afterParsed.ok).toBe(true);
+    if (!beforeParsed.ok || !afterParsed.ok) {
+      return;
+    }
+
+    expect(beforeParsed.value.tag).toBe('#LARGEWALL01');
+    expect(afterParsed.value.tag).toBe('#LARGEWALL01');
+    expect(isValidTag(beforeParsed.value.tag ?? '')).toBe(true);
+
+    const beforeWalls = (beforeParsed.value.objectSections.buildings ?? []).filter(
+      (item) => item.dataID === 1_000_008n,
+    );
+    const afterWalls = (afterParsed.value.objectSections.buildings ?? []).filter(
+      (item) => item.dataID === 1_000_008n,
+    );
+    expect(wallSegmentCount(beforeWalls)).toBe(1_005);
+    expect(wallSegmentCount(afterWalls)).toBe(1_005);
+
+    const beforeByLevel = wallHistogramByLevel(beforeWalls);
+    const afterByLevel = wallHistogramByLevel(afterWalls);
+    expect(beforeByLevel.get(1)).toBe(1_005);
+    expect(afterByLevel.get(12)).toBe(1_005);
+
+    const positiveDelta = [...new Set([...beforeByLevel.keys(), ...afterByLevel.keys()])].reduce(
+      (total: number, level) =>
+        total + Math.max(0, (afterByLevel.get(level) ?? 0) - (beforeByLevel.get(level) ?? 0)),
+      0,
+    );
+    expect(positiveDelta).toBeGreaterThanOrEqual(1_000);
+    expect(beforeText).not.toBe(afterText);
+    expect(beforeWalls).not.toEqual(afterWalls);
+  });
+
+  it('perf_account_snapshot_large_walls 解析大体积城墙 fixture 且不误报 coverage', () => {
     const text = readFixture('perf_account_snapshot_large_walls');
     assertAnonymized(text);
     const parsed = parseAccountSnapshot(text, { clock: new FakeClock(PERF_NOW_MS) });
@@ -211,7 +263,7 @@ describe('AccountSnapshot fixture regression', () => {
     expect(hasUnrecognizedFieldWarning(parsed.value, 'coverage')).toBe(false);
   });
 
-  it('未知 dataID 保留可审计原始 ID 标签', () => {
+  it('未知 dataID 保留原始 dataID 值', () => {
     const parsed = parseAccountSnapshot(
       `{
         "timestamp": 1700000000,
@@ -223,9 +275,8 @@ describe('AccountSnapshot fixture regression', () => {
     if (!parsed.ok) {
       return;
     }
-    const unknown = parsed.value.objectSections.buildings?.[0];
-    expect(unknown?.dataID).toBe(9_999_999n);
-    expect(formatRawIdLabel(unknown!.dataID)).toBe('#9999999');
+    expect(parsed.value.objectSections.buildings?.[0]?.dataID).toBe(9_999_999n);
+    expect(parsed.value.objectSections.buildings?.[0]?.level).toBe(1);
   });
 
   it('主村与建筑工人基地记录分区统计', () => {

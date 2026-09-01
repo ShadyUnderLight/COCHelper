@@ -80,6 +80,9 @@ export type ManualReconciliationItem = {
   readonly confirmedRecordIDs: readonly UuidString[];
   readonly observedTimer: boolean;
   readonly coverageComplete: boolean;
+  readonly observedDistributionComplete: boolean;
+  readonly observedSectionTrustGatesOpen: boolean;
+  readonly observedTimerCoverageComplete: boolean;
 };
 
 export type ManualReconciliationPreview = {

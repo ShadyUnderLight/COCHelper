@@ -145,6 +145,9 @@ export function previewReconciliation(
       confirmedRecordIDs: [...confirmed].sort((left, right) => left.localeCompare(right)),
       observedTimer: observation?.hasTimer ?? false,
       coverageComplete: observation?.coverageComplete ?? false,
+      observedDistributionComplete: observation?.distributionComplete ?? false,
+      observedSectionTrustGatesOpen: observation?.sectionTrustGatesOpen ?? false,
+      observedTimerCoverageComplete: observation?.timerCoverageComplete ?? false,
     });
   }
 

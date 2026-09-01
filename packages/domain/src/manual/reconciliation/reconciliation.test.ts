@@ -1,4 +1,4 @@
-import { parseUuid, type UuidString } from '@coc-helper/wire';
+import { INT64_MAX, parseUuid, type UuidString } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -25,6 +25,7 @@ import {
   manualReconciliationPreviewCount,
   manualReconciliationPreviewRequiresExplicitDecision,
 } from './types';
+import { computeReconciliationCandidateFingerprint } from './candidate-fingerprint';
 import { previewReconciliation, reconcileManualTracker } from './service';
 
 const villageID = parseUuid('00000000-0000-0000-0000-000000000143')!;
@@ -1102,6 +1103,108 @@ describe('ManualTrackerReconciliation', () => {
         decision: 'applyNonConflicting',
         appliedAtMs: s(1_700_000_200),
       });
+      expect.unreachable('expected stale preview');
+    } catch (error) {
+      expect(manualReconciliationErrorsEqual(error as never, { kind: 'stalePreview' })).toBe(true);
+    }
+  });
+
+  it('candidate fingerprint supports INT64_MAX distributions', () => {
+    const ref = reference();
+    const int64Distribution = dist([[10, INT64_MAX]]);
+    const state = createManualTrackerVillageState({
+      villageID,
+      core: createManualUpgradeCoreState({ itemStates: [] }),
+    });
+    const evidence = evidenceFrom({
+      newBaselineReference: reference('snapshot-int64', 'sha256:fp-int64', ref.lineageID),
+      entries: [completeObservation(key, int64Distribution)],
+    });
+    const preview = previewReconciliation(evidence, state, s(1_700_000_200));
+    expect(preview.candidateFingerprint.length).toBeGreaterThan(0);
+    expect(preview.items[0]?.observedDistribution).not.toBeNull();
+
+    const fingerprint = computeReconciliationCandidateFingerprint({
+      duplicate: false,
+      lineageComparable: true,
+      timeConfidence: 'reliableSourceTimestamp',
+      newReference: reference('snapshot-int64', 'sha256:fp-int64', ref.lineageID),
+      newNormalizedPlayerTag: '#P1',
+      sourceTimestampMs: s(1_700_000_200),
+      items: [
+        {
+          itemKey: key,
+          displayName: trackerItemKeyStableId(key),
+          classification: 'exactMatch',
+          message: '观察一致',
+          previousDistribution: int64Distribution,
+          observedDistribution: int64Distribution,
+          relatedRecordIDs: [],
+          confirmedRecordIDs: [],
+          observedTimer: false,
+          coverageComplete: true,
+          observedDistributionComplete: true,
+          observedSectionTrustGatesOpen: true,
+          observedTimerCoverageComplete: false,
+        },
+      ],
+    });
+    expect(fingerprint.length).toBeGreaterThan(0);
+  });
+
+  it('same preview metadata with changed timerCoverageComplete invalidates preview', () => {
+    const ref = reference();
+    const state = createManualTrackerVillageState({
+      villageID,
+      core: createManualUpgradeCoreState({ itemStates: [] }),
+    });
+    const sharedReference = reference('snapshot-same', 'sha256:fp-same', ref.lineageID);
+    const sharedObservation = {
+      hasTimer: true,
+      timerCoverageComplete: true,
+      distributionComplete: true,
+      coverageComplete: true,
+    } as const;
+    const previewA = previewReconciliation(
+      evidenceFrom({
+        newBaselineReference: sharedReference,
+        entries: [completeObservation(key, dist([[10, 1n]]), sharedObservation)],
+      }),
+      state,
+      s(1_700_000_200),
+    );
+    const previewB = previewReconciliation(
+      evidenceFrom({
+        newBaselineReference: sharedReference,
+        entries: [
+          completeObservation(key, dist([[10, 1n]]), {
+            ...sharedObservation,
+            timerCoverageComplete: false,
+          }),
+        ],
+      }),
+      state,
+      s(1_700_000_200),
+    );
+    expect(previewA.candidateFingerprint).not.toBe(previewB.candidateFingerprint);
+    try {
+      reconcileManualTracker(
+        evidenceFrom({
+          newBaselineReference: sharedReference,
+          entries: [
+            completeObservation(key, dist([[10, 1n]]), {
+              ...sharedObservation,
+              timerCoverageComplete: false,
+            }),
+          ],
+        }),
+        state,
+        {
+          expectedPreview: previewA,
+          decision: 'applyNonConflicting',
+          appliedAtMs: s(1_700_000_200),
+        },
+      );
       expect.unreachable('expected stale preview');
     } catch (error) {
       expect(manualReconciliationErrorsEqual(error as never, { kind: 'stalePreview' })).toBe(true);

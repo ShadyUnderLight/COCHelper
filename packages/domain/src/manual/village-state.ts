@@ -360,7 +360,10 @@ function manualReconciliationItemEqual(
     uuidArraysEqual(left.relatedRecordIDs, right.relatedRecordIDs) &&
     uuidArraysEqual(left.confirmedRecordIDs, right.confirmedRecordIDs) &&
     left.observedTimer === right.observedTimer &&
-    left.coverageComplete === right.coverageComplete
+    left.coverageComplete === right.coverageComplete &&
+    left.observedDistributionComplete === right.observedDistributionComplete &&
+    left.observedSectionTrustGatesOpen === right.observedSectionTrustGatesOpen &&
+    left.observedTimerCoverageComplete === right.observedTimerCoverageComplete
   );
 }
 

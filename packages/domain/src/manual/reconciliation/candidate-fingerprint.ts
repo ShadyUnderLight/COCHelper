@@ -1,18 +1,47 @@
 import { sha256Fingerprint } from '@coc-helper/wire';
 
-import { encodeSwiftSortedJson } from '../../account/wire-encode';
 import type { ManualLevelDistribution } from '../types';
 import { trackerItemKeyStableId } from '../types';
 import type { ManualReconciliationPreview } from './types';
 
-function encodeDistributionWire(distribution: ManualLevelDistribution | null): unknown {
+function encodeDistributionForFingerprint(distribution: ManualLevelDistribution | null): unknown {
   if (distribution === null) {
     return null;
   }
   return distribution.levels.map((entry) => ({
     level: entry.level,
-    quantity: entry.quantity,
+    quantity: entry.quantity.toString(),
   }));
+}
+
+function encodeReconciliationCandidateMaterial(value: unknown): unknown {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'bigint') {
+    throw new RangeError(
+      `reconciliation candidate fingerprint material must not contain bigint: ${value.toString()}`,
+    );
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => encodeReconciliationCandidateMaterial(entry));
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const encoded: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) {
+      encoded[key] = encodeReconciliationCandidateMaterial(record[key]);
+    }
+    return encoded;
+  }
+  return value;
+}
+
+function encodeReconciliationCandidateJson(value: unknown): string {
+  return JSON.stringify(encodeReconciliationCandidateMaterial(value));
 }
 
 export function computeReconciliationCandidateFingerprint(
@@ -46,10 +75,13 @@ export function computeReconciliationCandidateFingerprint(
         ),
         observedTimer: item.observedTimer,
         coverageComplete: item.coverageComplete,
-        previousDistribution: encodeDistributionWire(item.previousDistribution),
-        observedDistribution: encodeDistributionWire(item.observedDistribution),
+        observedDistributionComplete: item.observedDistributionComplete,
+        observedSectionTrustGatesOpen: item.observedSectionTrustGatesOpen,
+        observedTimerCoverageComplete: item.observedTimerCoverageComplete,
+        previousDistribution: encodeDistributionForFingerprint(item.previousDistribution),
+        observedDistribution: encodeDistributionForFingerprint(item.observedDistribution),
       }))
       .sort((left, right) => left.stableId.localeCompare(right.stableId)),
   };
-  return sha256Fingerprint(encodeSwiftSortedJson(material));
+  return sha256Fingerprint(encodeReconciliationCandidateJson(material));
 }

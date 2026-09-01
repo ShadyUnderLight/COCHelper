@@ -71,3 +71,46 @@ function trackerItemKeysEqual(left: TrackerItemKey, right: TrackerItemKey): bool
 function durationStatesEqual(left: CatalogDurationState, right: CatalogDurationState): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
+
+export type ManualReconciliationError =
+  | { readonly kind: 'villageMismatch' }
+  | { readonly kind: 'stalePreview' }
+  | { readonly kind: 'invalidObservation'; readonly message: string };
+
+export type ManualTrackerStoreError =
+  | { readonly kind: 'unavailable'; readonly message: string }
+  | { readonly kind: 'corrupt'; readonly message: string }
+  | { readonly kind: 'unsupportedSchema'; readonly version: number }
+  | { readonly kind: 'invalidEnvelope'; readonly message: string }
+  | { readonly kind: 'writeFailed'; readonly message: string };
+
+export function manualReconciliationErrorsEqual(
+  left: ManualReconciliationError,
+  right: ManualReconciliationError,
+): boolean {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+  if (left.kind === 'invalidObservation' && right.kind === 'invalidObservation') {
+    return left.message === right.message;
+  }
+  return true;
+}
+
+export function manualTrackerStoreErrorsEqual(
+  left: ManualTrackerStoreError,
+  right: ManualTrackerStoreError,
+): boolean {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+  switch (left.kind) {
+    case 'unavailable':
+    case 'corrupt':
+    case 'invalidEnvelope':
+    case 'writeFailed':
+      return right.kind === left.kind && left.message === (right as typeof left).message;
+    case 'unsupportedSchema':
+      return right.kind === 'unsupportedSchema' && left.version === right.version;
+  }
+}

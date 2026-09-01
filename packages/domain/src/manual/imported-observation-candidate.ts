@@ -1,7 +1,7 @@
 import type { GameCatalog } from '../catalog/game-catalog';
 import { isBaselineReconciled } from './baseline-gate';
 import { isManualItemStateQueueAssignmentConfirmable } from './queue-assignment-eligibility';
-import { inferredLocalQueueKindForItemKey, type LocalQueueKind } from './queue/local-queue-kind';
+import { suggestedLocalQueueKindForItemKey, type LocalQueueKind } from './queue/local-queue-kind';
 import type { QueueAssignmentDecision } from './queue/queue-assignment';
 import {
   trackerItemKeyStableId,
@@ -86,8 +86,8 @@ function projectImportedObservationCandidate(input: {
       entry.baselineReference.lineageID !== input.currentLineage,
   );
   const evidenceConfirmable = isManualItemStateQueueAssignmentConfirmable(itemState);
-  const inferredQueueKind = inferredLocalQueueKindForItemKey(itemKey);
-  const isConfirmable = input.isReconciled && evidenceConfirmable && inferredQueueKind !== null;
+  const inferredQueueKind = suggestedLocalQueueKindForItemKey(itemKey);
+  const isConfirmable = input.isReconciled && evidenceConfirmable;
   const observation = itemState.importedObservation;
   let unconfirmableReason: string | null = null;
   if (!input.isReconciled) {
@@ -96,8 +96,6 @@ function projectImportedObservationCandidate(input: {
     unconfirmableReason = '没有进行中计时证据';
   } else if (!evidenceConfirmable) {
     unconfirmableReason = '观察证据不完整，暂不能确认';
-  } else if (inferredQueueKind === null) {
-    unconfirmableReason = '该项目没有可用的本地计时容量类别';
   }
   return {
     itemKey,

@@ -1,16 +1,12 @@
 import type { CatalogDurationState } from '../../catalog/duration-state';
-import type { ManualBaselineReference, ManualUpgradeCore, TrackerItemKey } from '../types';
+import type { ManualBaselineReference, ManualUpgradeCore } from '../types';
 import type { LocalQueueCapacityConfig } from './capacity-config';
-import {
-  inferredLocalQueueKindForItemKeyAndDuration,
-  type LocalQueueKind,
-} from './local-queue-kind';
+import type { LocalQueueKind } from './local-queue-kind';
 import { localQueueOccupancyIsFull, type LocalQueueOccupancy } from './occupancy';
 import { projectQueueOccupancy } from './occupancy-projection';
 import type { QueueAssignmentDecision } from './queue-assignment';
 
 export type QueueCapacityGateError =
-  | { readonly kind: 'invalidQueueKind' }
   | {
       readonly kind: 'occupancyNotAvailable';
       readonly status: 'unavailable' | 'unreconciled';
@@ -24,7 +20,6 @@ export type QueueCapacityGateError =
     };
 
 export function validateStartAgainstQueueCapacity(input: {
-  readonly itemKey: TrackerItemKey;
   readonly durationState: CatalogDurationState | null | undefined;
   readonly core: ManualUpgradeCore;
   readonly queueCapacityConfigs: readonly LocalQueueCapacityConfig[];
@@ -34,32 +29,20 @@ export function validateStartAgainstQueueCapacity(input: {
   readonly requestedQueueKind?: LocalQueueKind | null;
   readonly nowMs: number;
 }): QueueCapacityGateError | null {
-  const inferredQueueKind = inferredLocalQueueKindForItemKeyAndDuration(
-    input.itemKey,
-    input.durationState,
-  );
-  if (input.requestedQueueKind !== undefined && input.requestedQueueKind !== null) {
-    if (
-      inferredQueueKind === null ||
-      inferredQueueKind.rawValue !== input.requestedQueueKind.rawValue
-    ) {
-      return { kind: 'invalidQueueKind' };
-    }
-  }
-  if (inferredQueueKind === null) {
+  const queueKind = input.requestedQueueKind ?? null;
+  if (queueKind === null || input.durationState?.kind === 'instant') {
     return null;
   }
 
   const config =
-    input.queueCapacityConfigs.find(
-      (entry) => entry.queueKind.rawValue === inferredQueueKind.rawValue,
-    ) ?? null;
+    input.queueCapacityConfigs.find((entry) => entry.queueKind.rawValue === queueKind.rawValue) ??
+    null;
   if (config === null) {
     return null;
   }
 
   const occupancy = projectQueueOccupancy({
-    queueKind: inferredQueueKind,
+    queueKind,
     core: input.core,
     currentBaseline: input.currentBaseline,
     storeAvailable: input.storeAvailable,
@@ -69,7 +52,7 @@ export function validateStartAgainstQueueCapacity(input: {
   });
   return validateProjectedQueueCapacity({
     occupancy,
-    queueKind: inferredQueueKind,
+    queueKind,
     capacity: config.capacity,
   });
 }

@@ -1,3 +1,4 @@
+import { parseAccountSnapshot } from '@coc-helper/domain';
 import { describe, expect, it } from 'vitest';
 
 import { ImportCoordinator, InMemoryVillageStore } from './import-coordinator';
@@ -8,6 +9,14 @@ class FakeClock {
   nowMs(): number {
     return this.fixedMs;
   }
+}
+
+function parsedSnapshot(text: string) {
+  const parsed = parseAccountSnapshot(text, { clock: new FakeClock(0) });
+  if (!parsed.ok) {
+    throw new Error('unexpected parse failure');
+  }
+  return parsed.value;
 }
 
 describe('ImportCoordinator', () => {
@@ -40,6 +49,19 @@ describe('ImportCoordinator', () => {
     expect(coordinator.getState().pending).toBeNull();
   });
 
+  it('confirmPending 创建新村庄时 officialAPIState 为 null', () => {
+    const store = new InMemoryVillageStore();
+    store.seed([], null);
+    const coordinator = new ImportCoordinator(store, new FakeClock(0));
+    coordinator.setImportText('{"tag":"#NEWVIL","buildings":[]}');
+    coordinator.parse();
+    expect(coordinator.confirmPending()).toBe(true);
+    const village = store.listVillages()[0];
+    expect(village?.tag).toBe('#NEWVIL');
+    expect(village?.officialAPIState).toBeNull();
+    expect(village?.accountSnapshot?.tag).toBe('#NEWVIL');
+  });
+
   it('selection 变化后 applyQuickImport 仍更新固定 target', () => {
     const store = new InMemoryVillageStore();
     const a = {
@@ -70,6 +92,48 @@ describe('ImportCoordinator', () => {
     }
     expect(store.listVillages()[0]?.accountSnapshot?.tag).toBe('#ABC');
     expect(store.getSelectedVillageId()).toBe(a.id);
+  });
+
+  it('applyQuickImport 同 tag 保留 officialAPIState', () => {
+    const store = new InMemoryVillageStore();
+    const snapshot = parsedSnapshot('{"tag":"#SAME","buildings":[]}');
+    const village = {
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'A',
+      tag: snapshot.tag,
+      accountSnapshot: snapshot,
+      officialAPIState: { status: 'success' },
+      hasImportedData: true,
+    };
+    store.seed([village], village.id);
+    const coordinator = new ImportCoordinator(store, new FakeClock(0));
+    const prepared = coordinator.prepareQuickImport('{"tag":"#SAME","buildings":[]}', village.id);
+    expect(prepared.ok).toBe(true);
+    if (prepared.ok) {
+      expect(coordinator.applyQuickImport(prepared.value)).toBe(true);
+    }
+    expect(store.listVillages()[0]?.officialAPIState).toEqual({ status: 'success' });
+  });
+
+  it('applyQuickImport tag 变化时清空 officialAPIState', () => {
+    const store = new InMemoryVillageStore();
+    const snapshot = parsedSnapshot('{"tag":"#OLD","buildings":[]}');
+    const village = {
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'A',
+      tag: snapshot.tag,
+      accountSnapshot: snapshot,
+      officialAPIState: { status: 'success' },
+      hasImportedData: true,
+    };
+    store.seed([village], village.id);
+    const coordinator = new ImportCoordinator(store, new FakeClock(0));
+    const prepared = coordinator.prepareQuickImport('{"tag":"#NEW","buildings":[]}', village.id);
+    expect(prepared.ok).toBe(true);
+    if (prepared.ok) {
+      expect(coordinator.applyQuickImport(prepared.value)).toBe(true);
+    }
+    expect(store.listVillages()[0]?.officialAPIState).toBeNull();
   });
 
   it('目标村庄删除后 applyQuickImport no-op', () => {

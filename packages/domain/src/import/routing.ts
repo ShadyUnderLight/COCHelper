@@ -1,5 +1,4 @@
 import {
-  accountImportErrorMessage,
   parseAccountSnapshot,
   type AccountSnapshot,
   type AccountSnapshotImportError,

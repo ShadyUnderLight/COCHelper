@@ -1148,7 +1148,11 @@ describe('ManualTrackerReconciliation', () => {
     expect(() =>
       reconcileManualTracker(
         evidenceFrom({
-          newBaselineReference: previewB.newReference,
+          newBaselineReference: reference(
+            previewB.newReference.revision,
+            previewB.newReference.fingerprint ?? 'sha256:stable-fp',
+            previewB.newReference.lineageID ?? 'lineage-unknown',
+          ),
           entries: [sharedObservation],
         }),
         state,

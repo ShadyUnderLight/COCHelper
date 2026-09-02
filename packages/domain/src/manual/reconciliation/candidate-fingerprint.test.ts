@@ -1,3 +1,4 @@
+import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import { trackerItemKeyRoot, trackerItemKeyStableId } from '../types';
@@ -5,14 +6,16 @@ import { computeReconciliationCandidateFingerprint } from './candidate-fingerpri
 import type { ManualReconciliationPreview } from './types';
 
 const key = trackerItemKeyRoot('home', 'buildings', 100n);
+const villageID = parseUuid('00000000-0000-0000-0000-000000000143')!;
+const previewID = parseUuid('00000000-0000-0000-0000-000000000001')!;
 
 function preview(
   input: Partial<ManualReconciliationPreview> &
     Pick<ManualReconciliationPreview, 'duplicate' | 'newReference'>,
 ): ManualReconciliationPreview {
   return {
-    previewID: '00000000-0000-0000-0000-000000000001',
-    villageID: '00000000-0000-0000-0000-000000000143',
+    previewID,
+    villageID,
     previousReference: null,
     previousSnapshotID: null,
     previousSnapshotFingerprint: null,

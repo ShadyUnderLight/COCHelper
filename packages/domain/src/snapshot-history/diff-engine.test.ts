@@ -529,4 +529,31 @@ describe('SnapshotDiffEngine', () => {
     };
     expect(compareSnapshotChanges(right, left)).toBeLessThan(0);
   });
+
+  it('adjacentDiffs 仅比较相邻同 lineage entry', () => {
+    const first = makeEntry({
+      id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+      date: 100,
+      items: [makeItem(makeIdentity('heroes', 1), 1)],
+      section: 'heroes',
+    });
+    const second = makeEntry({
+      id: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
+      date: 200,
+      items: [makeItem(makeIdentity('heroes', 1), 2)],
+      section: 'heroes',
+    });
+    const otherLineage = makeEntry({
+      id: 'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC',
+      date: 150,
+      items: [makeItem(makeIdentity('heroes', 1), 1)],
+      section: 'heroes',
+      lineageID: parseUuid('33333333-3333-3333-3333-333333333333')!,
+    });
+
+    expect(SnapshotDiffEngine.adjacentDiffs([first])).toHaveLength(0);
+    expect(SnapshotDiffEngine.adjacentDiffs([first, second])).toHaveLength(1);
+    expect(SnapshotDiffEngine.adjacentDiffs([first, otherLineage, second])).toHaveLength(0);
+    expect(SnapshotDiffEngine.adjacentDiffs([second, first])).toHaveLength(1);
+  });
 });

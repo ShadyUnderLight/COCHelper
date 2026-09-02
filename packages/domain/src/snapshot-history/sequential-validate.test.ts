@@ -8,8 +8,10 @@ import { parseAccountSnapshot } from '../account/parser';
 import {
   canonicalizeSnapshotHistory,
   createSnapshotHistoryEnvelope,
+  createSnapshotHistoryMigrationMarker,
   diagnoseEnvelopeComplexity,
   sequentialValidateSnapshotHistoryEntries,
+  sequentialValidateSnapshotHistoryEntriesAsync,
 } from './index';
 
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
@@ -58,5 +60,53 @@ describe('snapshot history sequential validate', () => {
     const complexity = diagnoseEnvelopeComplexity(envelope.entries);
     expect(complexity.entryCount).toBe(2);
     expect(complexity.totalItemCount).toBe(entry.observation.items.length * 2);
+  });
+
+  it('1005 城墙 fixture 连续校验不复制 entries', async () => {
+    const root = resolve(process.cwd());
+    const largeWallsText = readFileSync(
+      resolve(root, 'Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls.json'),
+      'utf8',
+    );
+    const parsed = parseAccountSnapshot(largeWallsText, { clock: new GoldenClock() });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const entry = canonicalizeSnapshotHistory(parsed.value, {
+      villageID: parseUuid('00000000-0000-0000-0000-000000000004')!,
+      lineageID: parseUuid('00000000-0000-0000-0000-000000000005')!,
+      appliedAtRefSeconds: 807_629_133,
+      snapshotID: parseUuid('00000000-0000-0000-0000-000000000006')!,
+    });
+
+    const envelope = createSnapshotHistoryEnvelope({
+      entries: [entry],
+      lineages: [
+        {
+          villageID: entry.villageID,
+          lineageID: entry.lineageID,
+          normalizedPlayerTag: entry.normalizedPlayerTag,
+          lastEntryID: entry.snapshotID,
+          lastFingerprint: entry.canonicalFingerprint,
+          lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
+          hasConflict: false,
+          isActive: true,
+        },
+      ],
+      migrationMarker: createSnapshotHistoryMigrationMarker(807_629_133),
+    });
+
+    const complexity = diagnoseEnvelopeComplexity(envelope.entries);
+    expect(complexity.totalItemCount).toBeGreaterThan(1000);
+
+    for (let iteration = 0; iteration < 3; iteration += 1) {
+      const result = await sequentialValidateSnapshotHistoryEntriesAsync(envelope, {
+        yieldEvery: 1,
+      });
+      expect(result.processedEntryCount).toBe(1);
+      expect(envelope.entries).toHaveLength(1);
+    }
   });
 });

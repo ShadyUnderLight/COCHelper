@@ -82,7 +82,12 @@ export {
   FileSnapshotHistoryStore,
   nowAppliedAtRefSeconds,
 } from './file-store';
-export { createSnapshotHistoryService } from './history-service';
+export {
+  createSnapshotHistoryService,
+  envelopeHasPersistedHistory,
+  migrateSnapshotHistoryFromVillages,
+  upgradeExistingSnapshotHistoryEnvelope,
+} from './history-service';
 export type {
   LoadOrMigrateSnapshotHistoryInput,
   PlanSnapshotHistoryImportForServiceInput,

@@ -52,6 +52,7 @@ import type {
   SnapshotTimerFieldSpec,
   SnapshotTimerSchema,
 } from './types';
+import { snapshotHistoryCanonicalizationErrorMessage } from './types';
 import {
   DEFAULT_ACCOUNT_TIMER_SCHEMA,
   SNAPSHOT_HISTORY_PARSER_VERSION,
@@ -1251,15 +1252,7 @@ export class SnapshotHistoryCanonicalizationException extends Error {
   readonly error: SnapshotHistoryCanonicalizationError;
 
   constructor(error: SnapshotHistoryCanonicalizationError) {
-    super(
-      error.kind === 'invalidJSON'
-        ? `快照原文不是有效 JSON：${error.message}`
-        : error.kind === 'emptySource'
-          ? '快照原文为空，无法建立历史观察。'
-          : error.kind === 'topLevelMustBeObject'
-            ? '快照原文顶层必须是对象。'
-            : 'source universe 需要 observation v6 或更高版本。',
-    );
+    super(snapshotHistoryCanonicalizationErrorMessage(error));
     this.name = 'SnapshotHistoryCanonicalizationException';
     this.error = error;
   }

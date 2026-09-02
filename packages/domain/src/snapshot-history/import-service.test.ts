@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
@@ -29,7 +26,7 @@ class FixedClock {
 function snapshotFromText(
   text: string,
   tag: string | null = FIRST_TAG,
-  capturedAtMs: number | null = null,
+  _capturedAtMs: number | null = null,
   importedAtMs = (GOLDEN_IMPORTED_AT_REF_SECONDS + 978_307_200) * 1000,
 ) {
   const fullText =

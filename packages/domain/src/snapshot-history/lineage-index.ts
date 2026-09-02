@@ -36,26 +36,16 @@ function upsertLineageMetadata(
   return [...next, updated];
 }
 
-function stableSortEntries(entries: readonly SnapshotHistoryEntry[]): SnapshotHistoryEntry[] {
-  return [...entries].sort((left, right) => {
-    if (left.appliedAtRefSeconds !== right.appliedAtRefSeconds) {
-      return left.appliedAtRefSeconds - right.appliedAtRefSeconds;
-    }
-    return left.snapshotID.localeCompare(right.snapshotID);
-  });
-}
-
 /**
- * 将 lineage index 视为由 entries 按 appliedAt 顺序 append 派生的 cache。
- * load 时用重算结果与 persisted metadata 比对，避免逐字段补丁遗漏。
+ * 将 lineage index 视为由 entries 按 persisted 数组顺序 append 派生的 cache。
+ * 与 import service 一致，不按 appliedAt / snapshotID 重排。
  */
 export function recomputeLineageIndexFromEntries(
   entries: readonly SnapshotHistoryEntry[],
 ): readonly SnapshotHistoryLineageMetadata[] {
-  const sorted = stableSortEntries(entries);
   let lineages: SnapshotHistoryLineageMetadata[] = [];
 
-  for (const entry of sorted) {
+  for (const entry of entries) {
     const active = lineages.find(
       (lineage) => lineage.villageID === entry.villageID && lineage.isActive,
     );
@@ -110,5 +100,8 @@ export function lineageIndexesEqual(
   const sortKey = (lineage: SnapshotHistoryLineageMetadata): string => lineage.lineageID;
   const sortedLeft = [...left].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const sortedRight = [...right].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-  return sortedLeft.every((lineage, index) => lineageMetadataEqual(lineage, sortedRight[index]!));
+  return sortedLeft.every((lineage, index) => {
+    const counterpart = sortedRight[index];
+    return counterpart !== undefined && lineageMetadataEqual(lineage, counterpart);
+  });
 }

@@ -103,8 +103,8 @@ function revalidateTestFixtureProof(
 
 function revalidatePerfFixtureProof(
   proof: Extract<SnapshotCoverageProof, { kind: 'verified' }>,
-  rawJSON: string,
-  section: string,
+  _rawJSON: string,
+  _section: string,
 ): SectionCoverageRuntimeTrust {
   if (proof.adapterID !== SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID) {
     return { kind: 'rejected', reason: 'adapterID 与 perf fixture 契约不一致。' };

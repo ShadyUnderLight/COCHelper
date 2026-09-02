@@ -170,11 +170,6 @@ describe('snapshot history Swift oracle parity', () => {
   });
 
   it('diff A→B→A comparable no change 与 Swift oracle 一致', async () => {
-    const a = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":5}]}',
-      appliedAtRefSeconds: 100,
-      snapshotID: '00000000-0000-0000-0000-000000000020',
-    });
     const b = buildEntry({
       text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":6}]}',
       appliedAtRefSeconds: 200,

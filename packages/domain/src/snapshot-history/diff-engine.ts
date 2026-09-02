@@ -1089,7 +1089,7 @@ function compareUnique(
   if (requiresLevel(identity)) {
     observedFields.push('lvl');
   }
-  if (observed?.count !== null) {
+  if (observed.count !== null) {
     observedFields.push('cnt');
   }
   const observedEntry = observedOnNew ? to : from;

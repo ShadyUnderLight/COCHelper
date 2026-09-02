@@ -30,7 +30,7 @@ import {
   SNAPSHOT_HISTORY_OBJECT_SECTIONS,
   SNAPSHOT_HISTORY_TIMER_FIELDS,
 } from './known-sections';
-import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
+import { SNAPSHOT_HISTORY_SCHEMA, SNAPSHOT_HISTORY_CANONICALIZATION_LIMITS } from './schema';
 import type {
   CanonicalSnapshotObservation,
   SnapshotCoverageField,
@@ -135,9 +135,7 @@ export function canonicalizeSnapshotHistory(
   };
   const canonicalFingerprint = fingerprintForObservation(normalizedObservation);
   const sourceTimestampRefSeconds =
-    snapshot.capturedAtMs === null
-      ? null
-      : unixSecondsToRefSeconds(snapshot.capturedAtMs / 1000);
+    snapshot.capturedAtMs === null ? null : unixSecondsToRefSeconds(snapshot.capturedAtMs / 1000);
 
   const entryBase = {
     schemaVersion: SNAPSHOT_HISTORY_SCHEMA.entry,
@@ -156,12 +154,9 @@ export function canonicalizeSnapshotHistory(
     observation: normalizedObservation,
     coverage,
     isBaseline: options.isBaseline ?? false,
-    baselineReason:
-      options.isBaseline === true ? (options.baselineReason ?? null) : null,
+    baselineReason: options.isBaseline === true ? (options.baselineReason ?? null) : null,
     timerSchema:
-      observationVersion >= SNAPSHOT_HISTORY_SCHEMA.observationWithTimerSchema
-        ? timerSchema
-        : null,
+      observationVersion >= SNAPSHOT_HISTORY_SCHEMA.observationWithTimerSchema ? timerSchema : null,
   };
 
   return {
@@ -172,7 +167,10 @@ export function canonicalizeSnapshotHistory(
 
 export function canonicalizeSnapshotHistoryWithLineage(
   snapshot: AccountSnapshot,
-  options: Omit<CanonicalizeSnapshotHistoryOptions, 'lineageID' | 'isBaseline' | 'baselineReason'> & {
+  options: Omit<
+    CanonicalizeSnapshotHistoryOptions,
+    'lineageID' | 'isBaseline' | 'baselineReason'
+  > & {
     readonly lineage: SnapshotLineageResolution;
   },
 ): SnapshotHistoryEntry {
@@ -184,7 +182,9 @@ export function canonicalizeSnapshotHistoryWithLineage(
   });
 }
 
-export function fingerprintForObservation(observation: CanonicalSnapshotObservation): Sha256Fingerprint {
+export function fingerprintForObservation(
+  observation: CanonicalSnapshotObservation,
+): Sha256Fingerprint {
   const items = sortedByCanonicalBytes(observation.items, fingerprintValueForItem);
   const material = jsonObject({
     items: jsonArray(items.map(fingerprintValueForItem)),
@@ -231,7 +231,9 @@ function canonicalSource(originalText: string, observationVersion: number): Cano
   const unknownFields: Record<string, CanonicalJsonValue> = {};
   for (const [key, value] of Object.entries(fields)) {
     if (
-      !SNAPSHOT_HISTORY_OBJECT_SECTIONS.includes(key as (typeof SNAPSHOT_HISTORY_OBJECT_SECTIONS)[number]) &&
+      !SNAPSHOT_HISTORY_OBJECT_SECTIONS.includes(
+        key as (typeof SNAPSHOT_HISTORY_OBJECT_SECTIONS)[number],
+      ) &&
       !SNAPSHOT_HISTORY_NUMERIC_SECTIONS.includes(
         key as (typeof SNAPSHOT_HISTORY_NUMERIC_SECTIONS)[number],
       ) &&
@@ -258,24 +260,19 @@ function makeObservation(
     if (value === undefined || value.kind !== 'array') {
       continue;
     }
-    for (const entry of value.items) {
-      if (entry.kind !== 'object') {
-        continue;
-      }
-      appendObjectItem(
-        entry.fields,
-        section,
-        'root',
-        null,
-        null,
-        [],
-        catalog,
-        craftTableCatalog,
-        observationVersion,
-        timerSchema,
-        items,
-      );
-    }
+    collectObjectSectionItems(
+      value.items,
+      section,
+      'root',
+      null,
+      null,
+      [],
+      catalog,
+      craftTableCatalog,
+      observationVersion,
+      timerSchema,
+      items,
+    );
   }
 
   for (const section of [...SNAPSHOT_HISTORY_NUMERIC_SECTIONS].sort()) {
@@ -319,8 +316,35 @@ function makeObservation(
   };
 }
 
-function appendObjectItem(
-  object: Record<string, CanonicalJsonValue>,
+type ObjectTraversalWork = {
+  readonly object: Record<string, CanonicalJsonValue>;
+  readonly section: string;
+  readonly nestedKind: SnapshotNestedKind;
+  readonly rootIdentity: string | null;
+  readonly rootDataID: bigint | null;
+  readonly parentPath: readonly SnapshotNestedPathComponent[];
+};
+
+function ensureCanonicalizationLimits(
+  itemCount: number,
+  parentPath: readonly SnapshotNestedPathComponent[],
+): void {
+  if (itemCount >= SNAPSHOT_HISTORY_CANONICALIZATION_LIMITS.maxItemsPerEntry) {
+    throwCanonicalizationError({
+      kind: 'canonicalizationLimitExceeded',
+      message: `单条 entry item 数量超过上限 ${SNAPSHOT_HISTORY_CANONICALIZATION_LIMITS.maxItemsPerEntry}。`,
+    });
+  }
+  if (parentPath.length > SNAPSHOT_HISTORY_CANONICALIZATION_LIMITS.maxNestedDepth) {
+    throwCanonicalizationError({
+      kind: 'canonicalizationLimitExceeded',
+      message: `嵌套深度超过上限 ${SNAPSHOT_HISTORY_CANONICALIZATION_LIMITS.maxNestedDepth}。`,
+    });
+  }
+}
+
+function collectObjectSectionItems(
+  entries: readonly CanonicalJsonValue[],
   section: string,
   nestedKind: SnapshotNestedKind,
   rootIdentity: string | null,
@@ -332,116 +356,128 @@ function appendObjectItem(
   timerSchema: SnapshotTimerSchema,
   items: SnapshotObservationItem[],
 ): void {
-  const dataID = integerValue(object.data);
-  if (dataID === undefined) {
-    return;
-  }
-
-  const identity: SnapshotItemIdentity = {
-    base: snapshotHistoryBaseFromSection(section),
-    rawSection: section,
-    dataID,
-    nestedKind,
-    nestedRootIdentity: rootIdentity,
-    nestedRootDataID: rootDataID,
-    nestedParentPath: parentPath,
-  };
-
-  const knownFields = new Set<string>(SNAPSHOT_HISTORY_ITEM_FIELDS);
-  const unknownFields: Record<string, CanonicalJsonValue> = {};
-  for (const [key, value] of Object.entries(object)) {
-    if (!knownFields.has(key)) {
-      unknownFields[key] = value;
-    }
-  }
-
-  const timerEvidence: Record<string, CanonicalJsonValue> = {};
-  for (const [key, value] of Object.entries(object)) {
-    if (isTimerEvidenceField(key, observationVersion, timerSchema)) {
-      timerEvidence[key] = value;
-    }
-  }
-
-  items.push({
-    identity,
-    level: integerValue(object.lvl) === undefined ? null : Number(integerValue(object.lvl)!),
-    count: integerValue(object.cnt) === undefined ? null : Number(integerValue(object.cnt)!),
-    rawTimerEvidence: timerEvidence,
-    helperRecurrent: booleanValue(object.helper_recurrent),
-    gearUp: integerValue(object.gear_up) === undefined ? null : Number(integerValue(object.gear_up)!),
-    weapon: integerValue(object.weapon) === undefined ? null : Number(integerValue(object.weapon)!),
-    unknownFields,
-    display: displayBinding(identity, catalog, craftTableCatalog),
-  });
-
-  const childRootIdentity = rootIdentity ?? snapshotItemIdentityKey(identity);
-  const childRootDataID = rootDataID ?? dataID;
-  const childParentPath = [
-    ...parentPath,
-    { kind: nestedKind, dataID } satisfies SnapshotNestedPathComponent,
-  ];
-
-  appendChildren(
-    object.types,
-    section,
-    'type',
-    childRootIdentity,
-    childRootDataID,
-    childParentPath,
-    catalog,
-    craftTableCatalog,
-    observationVersion,
-    timerSchema,
-    items,
-  );
-  appendChildren(
-    object.modules,
-    section,
-    'module',
-    childRootIdentity,
-    childRootDataID,
-    childParentPath,
-    catalog,
-    craftTableCatalog,
-    observationVersion,
-    timerSchema,
-    items,
-  );
-}
-
-function appendChildren(
-  value: CanonicalJsonValue | undefined,
-  section: string,
-  kind: SnapshotNestedKind,
-  rootIdentity: string,
-  rootDataID: bigint,
-  parentPath: readonly SnapshotNestedPathComponent[],
-  catalog: GameCatalog | undefined,
-  craftTableCatalog: CraftTableCatalog | undefined,
-  observationVersion: number,
-  timerSchema: SnapshotTimerSchema,
-  items: SnapshotObservationItem[],
-): void {
-  if (value === undefined || value.kind !== 'array') {
-    return;
-  }
-  for (const child of value.items) {
-    if (child.kind !== 'object') {
+  const stack: ObjectTraversalWork[] = [];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (entry.kind !== 'object') {
       continue;
     }
-    appendObjectItem(
-      child.fields,
+    stack.push({
+      object: entry.fields,
       section,
-      kind,
+      nestedKind,
       rootIdentity,
       rootDataID,
       parentPath,
-      catalog,
-      craftTableCatalog,
-      observationVersion,
-      timerSchema,
-      items,
+    });
+  }
+
+  while (stack.length > 0) {
+    const work = stack.pop()!;
+    ensureCanonicalizationLimits(items.length, work.parentPath);
+
+    const dataID = integerValue(work.object.data);
+    if (dataID === undefined) {
+      continue;
+    }
+
+    const identity: SnapshotItemIdentity = {
+      base: snapshotHistoryBaseFromSection(work.section),
+      rawSection: work.section,
+      dataID,
+      nestedKind: work.nestedKind,
+      nestedRootIdentity: work.rootIdentity,
+      nestedRootDataID: work.rootDataID,
+      nestedParentPath: work.parentPath,
+    };
+
+    const knownFields = new Set<string>(SNAPSHOT_HISTORY_ITEM_FIELDS);
+    const unknownFields: Record<string, CanonicalJsonValue> = {};
+    for (const [key, value] of Object.entries(work.object)) {
+      if (!knownFields.has(key)) {
+        unknownFields[key] = value;
+      }
+    }
+
+    const timerEvidence: Record<string, CanonicalJsonValue> = {};
+    for (const [key, value] of Object.entries(work.object)) {
+      if (isTimerEvidenceField(key, observationVersion, timerSchema)) {
+        timerEvidence[key] = value;
+      }
+    }
+
+    items.push({
+      identity,
+      level:
+        integerValue(work.object.lvl) === undefined ? null : Number(integerValue(work.object.lvl)!),
+      count:
+        integerValue(work.object.cnt) === undefined ? null : Number(integerValue(work.object.cnt)!),
+      rawTimerEvidence: timerEvidence,
+      helperRecurrent: booleanValue(work.object.helper_recurrent),
+      gearUp:
+        integerValue(work.object.gear_up) === undefined
+          ? null
+          : Number(integerValue(work.object.gear_up)!),
+      weapon:
+        integerValue(work.object.weapon) === undefined
+          ? null
+          : Number(integerValue(work.object.weapon)!),
+      unknownFields,
+      display: displayBinding(identity, catalog, craftTableCatalog),
+    });
+
+    const childRootIdentity = work.rootIdentity ?? snapshotItemIdentityKey(identity);
+    const childRootDataID = work.rootDataID ?? dataID;
+    const childParentPath: SnapshotNestedPathComponent[] = [
+      ...work.parentPath,
+      { kind: work.nestedKind, dataID },
+    ];
+    ensureCanonicalizationLimits(items.length, childParentPath);
+
+    enqueueNestedChildren(
+      stack,
+      work.object,
+      work.section,
+      childRootIdentity,
+      childRootDataID,
+      childParentPath,
     );
+  }
+}
+
+function enqueueNestedChildren(
+  stack: ObjectTraversalWork[],
+  object: Record<string, CanonicalJsonValue>,
+  section: string,
+  rootIdentity: string,
+  rootDataID: bigint,
+  parentPath: readonly SnapshotNestedPathComponent[],
+): void {
+  const nestedArrays: Array<{
+    readonly kind: SnapshotNestedKind;
+    readonly value: CanonicalJsonValue | undefined;
+  }> = [
+    { kind: 'module', value: object.modules },
+    { kind: 'type', value: object.types },
+  ];
+  for (const nested of nestedArrays) {
+    if (nested.value === undefined || nested.value.kind !== 'array') {
+      continue;
+    }
+    for (let index = nested.value.items.length - 1; index >= 0; index -= 1) {
+      const child = nested.value.items[index]!;
+      if (child.kind !== 'object') {
+        continue;
+      }
+      stack.push({
+        object: child.fields,
+        section,
+        nestedKind: nested.kind,
+        rootIdentity,
+        rootDataID,
+        parentPath,
+      });
+    }
   }
 }
 
@@ -454,9 +490,7 @@ function displayBinding(
     craftTableCatalog !== undefined &&
     (identity.nestedKind === 'type' || identity.nestedKind === 'module')
   ) {
-    return (
-      craftTableDisplayBinding(identity, catalog, craftTableCatalog) ?? {}
-    );
+    return craftTableDisplayBinding(identity, catalog, craftTableCatalog) ?? {};
   }
 
   const craftBinding = craftTableDisplayBinding(identity, catalog, craftTableCatalog);
@@ -618,7 +652,9 @@ function makeCoverage(
       } else if (field === 'data') {
         state = dataFieldState(records, section, catalog, null, craftTableCatalog, diagnostics);
       } else if (isTimerField(field)) {
-        const objects = records.flatMap((record) => (record.object === null ? [] : [record.object]));
+        const objects = records.flatMap((record) =>
+          record.object === null ? [] : [record.object],
+        );
         state = timerFieldState(
           objects,
           value.items.length - objects.length,
@@ -788,8 +824,7 @@ function analyzeSectionCoverage(
         }
         if (
           nestedValue.items.some(
-            (child) =>
-              child.kind !== 'object' || integerValue(child.fields.data) === undefined,
+            (child) => child.kind !== 'object' || integerValue(child.fields.data) === undefined,
           )
         ) {
           return true;
@@ -1033,11 +1068,7 @@ function fieldState(
   isValid: (value: CanonicalJsonValue | undefined) => boolean,
 ): SnapshotCoverageState {
   if (objects.length === 0) {
-    return invalidObjectCount === 0
-      ? field === 'data'
-        ? 'complete'
-        : 'unavailable'
-      : 'partial';
+    return invalidObjectCount === 0 ? (field === 'data' ? 'complete' : 'unavailable') : 'partial';
   }
   const present = objects.filter((object) => object[field] !== undefined);
   if (present.length === 0) {
@@ -1096,8 +1127,7 @@ function fingerprintValueForItem(item: SnapshotObservationItem): CanonicalJsonVa
   return jsonObject({
     count: item.count === null ? jsonNull() : jsonNumber(String(item.count)),
     gearUp: item.gearUp === null ? jsonNull() : jsonNumber(String(item.gearUp)),
-    helperRecurrent:
-      item.helperRecurrent === null ? jsonNull() : jsonBool(item.helperRecurrent),
+    helperRecurrent: item.helperRecurrent === null ? jsonNull() : jsonBool(item.helperRecurrent),
     identity: jsonObject({
       base: jsonString(item.identity.base),
       dataID: jsonNumber(item.identity.dataID.toString()),
@@ -1163,20 +1193,21 @@ function isTimerEvidenceField(
     return Object.prototype.hasOwnProperty.call(timerSchema.fields, key);
   }
   if (observationVersion >= SNAPSHOT_HISTORY_SCHEMA.observationWithTimerAllowlist) {
-    return SNAPSHOT_HISTORY_TIMER_FIELDS.includes(key as (typeof SNAPSHOT_HISTORY_TIMER_FIELDS)[number]);
+    return SNAPSHOT_HISTORY_TIMER_FIELDS.includes(
+      key as (typeof SNAPSHOT_HISTORY_TIMER_FIELDS)[number],
+    );
   }
   const normalized = key.toLowerCase();
   return normalized.includes('timer') || normalized.includes('cooldown');
 }
 
 function isTimerField(field: string): boolean {
-  return SNAPSHOT_HISTORY_TIMER_FIELDS.includes(field as (typeof SNAPSHOT_HISTORY_TIMER_FIELDS)[number]);
+  return SNAPSHOT_HISTORY_TIMER_FIELDS.includes(
+    field as (typeof SNAPSHOT_HISTORY_TIMER_FIELDS)[number],
+  );
 }
 
-function validateItemFieldValue(
-  value: CanonicalJsonValue | undefined,
-  field: string,
-): boolean {
+function validateItemFieldValue(value: CanonicalJsonValue | undefined, field: string): boolean {
   switch (field) {
     case 'data':
     case 'lvl':

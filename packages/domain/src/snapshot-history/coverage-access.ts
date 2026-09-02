@@ -1,4 +1,7 @@
-import type { HydratedSnapshotHistoryEntry, HydratedSnapshotSectionCoverage } from './trust-hydration';
+import type {
+  HydratedSnapshotHistoryEntry,
+  HydratedSnapshotSectionCoverage,
+} from './trust-hydration';
 import { sectionTrustOpensGates } from './store-types';
 import type { SnapshotCoverageState, SnapshotItemIdentity } from './types';
 
@@ -9,7 +12,10 @@ export function snapshotCoverageProofHasVerifiedWireMetadata(
 }
 
 export function hydratedSectionOpensTrustGates(section: HydratedSnapshotSectionCoverage): boolean {
-  return snapshotCoverageProofHasVerifiedWireMetadata(section.proof) && sectionTrustOpensGates(section.runtimeTrust);
+  return (
+    snapshotCoverageProofHasVerifiedWireMetadata(section.proof) &&
+    sectionTrustOpensGates(section.runtimeTrust)
+  );
 }
 
 export function hydratedSectionIsComplete(section: HydratedSnapshotSectionCoverage): boolean {

@@ -96,9 +96,10 @@ function makeEntry(input: {
 
     const appendSection = (spec: MetricTestSectionCoverage) => {
       const merged = { ...defaults, ...spec.states };
-      const observedCount = input.items.filter((item) => item.identity.rawSection === spec.section).length;
-      const presence =
-        observedCount === 0 ? (spec.presence ?? 'presentEmpty') : 'presentNonEmpty';
+      const observedCount = input.items.filter(
+        (item) => item.identity.rawSection === spec.section,
+      ).length;
+      const presence = observedCount === 0 ? (spec.presence ?? 'presentEmpty') : 'presentNonEmpty';
       const base = snapshotHistoryBaseFromSection(spec.section);
       sectionCoverages.push({
         base,
@@ -160,7 +161,8 @@ function makeEntry(input: {
     appliedAtRefSeconds: input.date,
     sourceTimestampRefSeconds: input.sourceTimestampRefSeconds ?? null,
     parserVersion: 'test',
-    canonicalFingerprint: 'sha256:0000000000000000000000000000000000000000000000000000000000000000' as Sha256Fingerprint,
+    canonicalFingerprint:
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000' as Sha256Fingerprint,
     rawJSON: '{}',
     observation: {
       schemaVersion: SNAPSHOT_HISTORY_SCHEMA.observation,
@@ -172,7 +174,8 @@ function makeEntry(input: {
     isBaseline: input.isBaseline ?? false,
     baselineReason: null,
     timerSchema: input.timerSchema ?? null,
-    integrityFingerprint: 'sha256:0000000000000000000000000000000000000000000000000000000000000001' as Sha256Fingerprint,
+    integrityFingerprint:
+      'sha256:0000000000000000000000000000000000000000000000000000000000000001' as Sha256Fingerprint,
   };
 
   return trustTestEntry(entry);
@@ -194,9 +197,7 @@ function trustTestEntry(
       sections: hydrated.coverage.sections.map((section) => ({
         ...section,
         runtimeTrust:
-          section.proof.kind === 'verified'
-            ? { kind: 'trusted' }
-            : section.runtimeTrust,
+          section.proof.kind === 'verified' ? { kind: 'trusted' } : section.runtimeTrust,
       })),
     },
   };
@@ -225,7 +226,8 @@ describe('SnapshotDiffEngine', () => {
 
     const missingDiff = SnapshotDiffEngine.compare(oldEntry, newEntry);
     const missingChange = missingDiff.changes.find(
-      (change) => snapshotItemIdentityKey(change.identity) === snapshotItemIdentityKey(secondIdentity),
+      (change) =>
+        snapshotItemIdentityKey(change.identity) === snapshotItemIdentityKey(secondIdentity),
     );
     expect(missingChange?.changeKind).toBe('newlyObserved');
     expect(missingChange?.evidence).toBe('confirmed');
@@ -238,13 +240,16 @@ describe('SnapshotDiffEngine', () => {
     });
     const insufficient = SnapshotDiffEngine.compare(missingSectionEntry, newEntry);
     const unknown = insufficient.changes.find(
-      (change) => snapshotItemIdentityKey(change.identity) === snapshotItemIdentityKey(firstIdentity),
+      (change) =>
+        snapshotItemIdentityKey(change.identity) === snapshotItemIdentityKey(firstIdentity),
     );
     expect(unknown?.changeKind).toBe('unknown');
     expect(unknown?.evidence).toBe('unknown');
     expect(unknown?.coverage.state).toBe('insufficient');
     expect(insufficient.comparisonState).toBe('insufficientCoverage');
-    expect(insufficient.changes.some((change) => change.changeKind === 'noLongerObserved')).toBe(false);
+    expect(insufficient.changes.some((change) => change.changeKind === 'noLongerObserved')).toBe(
+      false,
+    );
   });
 
   it('histogram residual fail-closed does not emit noLongerObserved', () => {
@@ -253,10 +258,7 @@ describe('SnapshotDiffEngine', () => {
       makeEntry({
         id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
         date: 100,
-        items: [
-          makeItem(identity, 10, 1, wallBinding()),
-          makeItem(identity, 12, 1, wallBinding()),
-        ],
+        items: [makeItem(identity, 10, 1, wallBinding()), makeItem(identity, 12, 1, wallBinding())],
         section: 'buildings',
         states: { cnt: 'complete' },
       }),
@@ -271,6 +273,31 @@ describe('SnapshotDiffEngine', () => {
 
     expect(diff.changes).toHaveLength(1);
     expect(single(diff.changes)?.changeKind).toBe('unknown');
+    expect(diff.changes.some((change) => change.changeKind === 'noLongerObserved')).toBe(false);
+  });
+
+  it('partial buildings coverage keeps missing unique identity as unknown', () => {
+    const first = makeIdentity('buildings', 1000013);
+    const second = makeIdentity('buildings', 1000016);
+    const diff = SnapshotDiffEngine.compare(
+      makeEntry({
+        id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+        date: 100,
+        items: [makeItem(first, 1), makeItem(second, 1)],
+        section: 'buildings',
+        states: { lvl: 'complete' },
+      }),
+      makeEntry({
+        id: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
+        date: 200,
+        items: [makeItem(first, 2)],
+        section: 'buildings',
+        states: { lvl: 'complete' },
+      }),
+    );
+
+    expect(diff.changes).toHaveLength(2);
+    expect(diff.changes.every((change) => change.changeKind === 'unknown')).toBe(true);
     expect(diff.changes.some((change) => change.changeKind === 'noLongerObserved')).toBe(false);
   });
 
@@ -312,9 +339,9 @@ describe('SnapshotDiffEngine', () => {
     expect(diff.changes).toHaveLength(0);
     expect(diff.comparisonState).toBe('provenanceOnly');
     expect(diff.contentState).toBe('provenanceOnly');
-    expect(diff.diagnostics.some((diagnostic) => diagnostic.kind === 'incomparableTimerSchema')).toBe(
-      false,
-    );
+    expect(
+      diff.diagnostics.some((diagnostic) => diagnostic.kind === 'incomparableTimerSchema'),
+    ).toBe(false);
   });
 
   it('provenance-only incompatible schema records incomparable timer diagnostic', () => {
@@ -357,9 +384,9 @@ describe('SnapshotDiffEngine', () => {
     expect(diff.changes).toHaveLength(0);
     expect(diff.comparisonState).toBe('provenanceOnly');
     expect(diff.contentState).toBe('provenanceOnly');
-    expect(diff.diagnostics.filter((diagnostic) => diagnostic.kind === 'incomparableTimerSchema')).toHaveLength(
-      1,
-    );
+    expect(
+      diff.diagnostics.filter((diagnostic) => diagnostic.kind === 'incomparableTimerSchema'),
+    ).toHaveLength(1);
   });
 
   it('missing section coverage does not confirm disappearance', () => {
@@ -385,7 +412,9 @@ describe('SnapshotDiffEngine', () => {
     expect(single(diff.changes)?.changeKind).toBe('unknown');
     expect(single(diff.changes)?.evidence).toBe('unknown');
     expect(single(diff.changes)?.coverage.state).toBe('insufficient');
-    expect(diff.diagnostics.some((diagnostic) => diagnostic.kind === 'insufficientCoverage')).toBe(true);
+    expect(diff.diagnostics.some((diagnostic) => diagnostic.kind === 'insufficientCoverage')).toBe(
+      true,
+    );
   });
 
   it('verified section proof allows confirmed disappearance', () => {

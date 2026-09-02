@@ -19,16 +19,23 @@ export { coverageProofsForSnapshot } from './coverage-adapter';
 export {
   encodeHistoryEntryWire,
   encodeIntegrityMaterialWire,
+  encodeSnapshotDiffWire,
   historyEntryWireHex,
+  snapshotDiffWireHex,
 } from './wire-encode';
 export {
-  batchCanonicalizeSnapshotHistoryEnvelope,
-  batchCanonicalizeSnapshotHistoryEnvelopeAsync,
-} from './batch-canonicalize';
+  lineageIndexesEqual,
+  lineageMetadataEqual,
+  recomputeLineageIndexFromEntries,
+} from './lineage-index';
+export {
+  sequentialValidateSnapshotHistoryEntries,
+  sequentialValidateSnapshotHistoryEntriesAsync,
+} from './sequential-validate';
 export type {
-  BatchCanonicalizeSnapshotHistoryOptions,
-  BatchCanonicalizeSnapshotHistoryResult,
-} from './batch-canonicalize';
+  SequentialValidateSnapshotHistoryOptions,
+  SequentialValidateSnapshotHistoryResult,
+} from './sequential-validate';
 export { diagnoseEnvelopeComplexity, diagnoseSnapshotHistoryComplexity } from './complexity';
 export type { SnapshotHistoryComplexityDiagnostic } from './complexity';
 export {
@@ -42,10 +49,7 @@ export type {
   SnapshotHistoryProofDuplicateKey,
   SnapshotHistorySectionDuplicateKey,
 } from './duplicate-key';
-export {
-  snapshotHistoryServiceErrorMessage,
-  snapshotHistoryStoreErrorMessage,
-} from './errors';
+export { snapshotHistoryServiceErrorMessage, snapshotHistoryStoreErrorMessage } from './errors';
 export type { SnapshotHistoryServiceError, SnapshotHistoryStoreError } from './errors';
 export {
   hydrateSnapshotHistoryEnvelope,
@@ -55,7 +59,10 @@ export {
 } from './envelope-validate';
 export type { ValidateSnapshotHistoryEnvelopeOptions } from './envelope-validate';
 export { planSnapshotHistoryImport } from './import-service';
-export type { PlanSnapshotHistoryImportInput, SnapshotHistoryImportDecision } from './import-service';
+export type {
+  PlanSnapshotHistoryImportInput,
+  SnapshotHistoryImportDecision,
+} from './import-service';
 export { resolveSnapshotLineage } from './lineage-resolver';
 export {
   createSnapshotHistoryEnvelope,

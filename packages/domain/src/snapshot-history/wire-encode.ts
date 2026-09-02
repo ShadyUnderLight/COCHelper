@@ -1,6 +1,12 @@
 import type { CanonicalJsonValue } from '@coc-helper/wire';
 
 import { encodeSwiftSortedJson } from '../account/wire-encode';
+import type { SnapshotChange, SnapshotDiff, SnapshotDiffDiagnostic } from './diff-types';
+import {
+  snapshotChangeId,
+  snapshotDiffDiagnosticId,
+  snapshotDiffSectionCoverageId,
+} from './diff-types';
 import type {
   CanonicalSnapshotObservation,
   SnapshotCoverageField,
@@ -25,6 +31,117 @@ export function encodeHistoryEntryWire(entry: SnapshotHistoryEntry): string {
 export function historyEntryWireHex(entry: SnapshotHistoryEntry): string {
   const bytes = new TextEncoder().encode(encodeHistoryEntryWire(entry));
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function encodeSnapshotDiffWire(
+  diff: SnapshotDiff,
+  fromAppliedAtRefSeconds: number,
+  toAppliedAtRefSeconds: number,
+): string {
+  return encodeSwiftSortedJson({
+    algorithmVersion: diff.algorithmVersion,
+    changes: [...diff.changes]
+      .sort((left, right) => snapshotChangeId(left).localeCompare(snapshotChangeId(right)))
+      .map(encodeSnapshotChangeWire),
+    comparisonState: diff.comparisonState,
+    contentState: diff.contentState,
+    diagnostics: [...diff.diagnostics]
+      .sort((left, right) =>
+        snapshotDiffDiagnosticId(left).localeCompare(snapshotDiffDiagnosticId(right)),
+      )
+      .map(encodeSnapshotDiffDiagnosticWire),
+    fromAppliedAt: fromAppliedAtRefSeconds,
+    fromSnapshotID: diff.fromSnapshotID,
+    lineageID: diff.lineageID,
+    sectionCoverage: [...diff.sectionCoverage]
+      .sort((left, right) =>
+        snapshotDiffSectionCoverageId(left).localeCompare(snapshotDiffSectionCoverageId(right)),
+      )
+      .map(encodeSnapshotDiffSectionCoverageWire),
+    toAppliedAt: toAppliedAtRefSeconds,
+    toSnapshotID: diff.toSnapshotID,
+    villageID: diff.villageID,
+  });
+}
+
+export function snapshotDiffWireHex(
+  diff: SnapshotDiff,
+  fromAppliedAtRefSeconds: number,
+  toAppliedAtRefSeconds: number,
+): string {
+  const bytes = new TextEncoder().encode(
+    encodeSnapshotDiffWire(diff, fromAppliedAtRefSeconds, toAppliedAtRefSeconds),
+  );
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function encodeSnapshotChangeWire(change: SnapshotChange): Record<string, unknown> {
+  return {
+    base: change.base,
+    category: change.category ?? undefined,
+    changeKind: change.changeKind,
+    coverage: encodeSnapshotDiffCoverageWire(change.coverage),
+    displayCategory: change.displayCategory ?? undefined,
+    displayName: change.displayName,
+    evidence: change.evidence,
+    identity: encodeIdentityWire(change.identity),
+    levelDelta: change.levelDelta ?? undefined,
+    movedQuantity: change.movedQuantity ?? undefined,
+    newLevel: change.newLevel ?? undefined,
+    newQuantity: change.newQuantity ?? undefined,
+    oldLevel: change.oldLevel ?? undefined,
+    oldQuantity: change.oldQuantity ?? undefined,
+    relatedChangeKinds: [...change.relatedChangeKinds].sort(),
+  };
+}
+
+function encodeSnapshotDiffDiagnosticWire(
+  diagnostic: SnapshotDiffDiagnostic,
+): Record<string, unknown> {
+  return {
+    field: diagnostic.field ?? undefined,
+    identity: diagnostic.identity ? encodeIdentityWire(diagnostic.identity) : undefined,
+    kind: diagnostic.kind,
+    message: diagnostic.message,
+    rawSection: diagnostic.rawSection ?? undefined,
+  };
+}
+
+function encodeSnapshotDiffSectionCoverageWire(
+  section: SnapshotDiff['sectionCoverage'][number],
+): Record<string, unknown> {
+  return {
+    base: section.base,
+    fromDataState: section.fromDataState,
+    fromFieldStates: section.fromFieldStates,
+    fromObservedItemCount: section.fromObservedItemCount,
+    fromProof: section.fromProof ? encodeCoverageProofWire(section.fromProof) : undefined,
+    fromSectionCompleteness: section.fromSectionCompleteness,
+    fromState: section.fromState,
+    rawSection: section.rawSection,
+    toDataState: section.toDataState,
+    toFieldStates: section.toFieldStates,
+    toObservedItemCount: section.toObservedItemCount,
+    toProof: section.toProof ? encodeCoverageProofWire(section.toProof) : undefined,
+    toSectionCompleteness: section.toSectionCompleteness,
+    toState: section.toState,
+  };
+}
+
+function encodeSnapshotDiffCoverageWire(
+  coverage: SnapshotChange['coverage'],
+): Record<string, unknown> {
+  return {
+    fields: coverage.fields.map((field) => ({
+      base: field.base,
+      field: field.field,
+      fromState: field.fromState,
+      rawSection: field.rawSection,
+      toState: field.toState,
+    })),
+    reasons: [...coverage.reasons],
+    state: coverage.state,
+  };
 }
 
 export function encodeIntegrityMaterialWire(

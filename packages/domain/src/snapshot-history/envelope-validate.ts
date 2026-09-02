@@ -6,16 +6,14 @@ import {
   fingerprintForObservation,
   integrityFingerprint,
 } from './canonicalizer';
+import { lineageIndexesEqual, recomputeLineageIndexFromEntries } from './lineage-index';
 import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 import type { SnapshotHistoryStoreError } from './errors';
 import {
   coverageHasLegacySectionEvidence,
   hydrateVerifiedCoverageOnEnvelope,
 } from './trust-hydration';
-import type {
-  SnapshotCoverageRevalidationPolicy,
-  SnapshotHistoryEnvelope,
-} from './store-types';
+import type { SnapshotCoverageRevalidationPolicy, SnapshotHistoryEnvelope } from './store-types';
 import type { SnapshotHistoryEntry } from './types';
 
 export type ValidateSnapshotHistoryEnvelopeOptions = {
@@ -65,13 +63,22 @@ export function validateSnapshotHistoryEnvelope(
       lastEntry === undefined ||
       lastEntry.villageID !== lineage.villageID ||
       lastEntry.lineageID !== lineage.lineageID ||
-      lastEntry.canonicalFingerprint !== lineage.lastFingerprint
+      lastEntry.canonicalFingerprint !== lineage.lastFingerprint ||
+      lastEntry.normalizedPlayerTag !== lineage.normalizedPlayerTag ||
+      lastEntry.appliedAtRefSeconds !== lineage.lastAppliedAtRefSeconds
     ) {
       throw storeError({
         kind: 'invalidEntry',
         message: 'lineage index 指向不存在或不匹配的 entry。',
       });
     }
+  }
+
+  if (!lineageIndexesEqual(envelope.lineages, recomputeLineageIndexFromEntries(envelope.entries))) {
+    throw storeError({
+      kind: 'invalidEntry',
+      message: 'lineage index 与 entries 派生结果不一致。',
+    });
   }
 
   for (const [rawID, metadata] of Object.entries(envelope.duplicateMetadata)) {

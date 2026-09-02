@@ -2,10 +2,7 @@ import { parseJson } from '@coc-helper/wire';
 
 import { prepareAccountText } from '../account/prepare';
 import type { AccountSnapshot } from '../account/types';
-import {
-  SNAPSHOT_HISTORY_ALL_SECTIONS,
-  SNAPSHOT_COVERAGE_CONTRACT_FIELD,
-} from './known-sections';
+import { SNAPSHOT_HISTORY_ALL_SECTIONS, SNAPSHOT_COVERAGE_CONTRACT_FIELD } from './known-sections';
 import type { SnapshotCoverageProof } from './types';
 import { isWellFormedCoverageDeclaration } from './types';
 
@@ -126,7 +123,9 @@ function tryTopLevelObject(text: string): Record<string, unknown> | undefined {
   }
 }
 
-function canonicalJsonValueToUnknown(value: import('@coc-helper/wire').CanonicalJsonValue): unknown {
+function canonicalJsonValueToUnknown(
+  value: import('@coc-helper/wire').CanonicalJsonValue,
+): unknown {
   switch (value.kind) {
     case 'null':
       return null;

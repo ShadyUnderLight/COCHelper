@@ -6,9 +6,7 @@ import { parseUuid } from '@coc-helper/wire';
 import { parseAccountSnapshot } from '../account/parser';
 import { describe, expect, it } from 'vitest';
 
-import {
-  canonicalizeSnapshotHistory,
-} from './canonicalizer';
+import { canonicalizeSnapshotHistory } from './canonicalizer';
 import { historyEntryWireHex } from './wire-encode';
 
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;

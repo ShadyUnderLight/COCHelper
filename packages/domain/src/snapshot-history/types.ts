@@ -69,9 +69,7 @@ export function snapshotItemIdentityKey(identity: SnapshotItemIdentity): string 
     identity.nestedRootIdentity ?? '',
     identity.nestedParentPath.map((part) => `${part.kind}:${part.dataID.toString()}`).join(','),
   ];
-  return components
-    .map((value) => `${new TextEncoder().encode(value).length}:${value}`)
-    .join('|');
+  return components.map((value) => `${new TextEncoder().encode(value).length}:${value}`).join('|');
 }
 
 export function createSnapshotItemIdentity(
@@ -262,7 +260,8 @@ export type SnapshotHistoryCanonicalizationError =
   | { readonly kind: 'emptySource' }
   | { readonly kind: 'topLevelMustBeObject' }
   | { readonly kind: 'invalidJSON'; readonly message: string }
-  | { readonly kind: 'sourceUniverseRequiresObservationV6' };
+  | { readonly kind: 'sourceUniverseRequiresObservationV6' }
+  | { readonly kind: 'canonicalizationLimitExceeded'; readonly message: string };
 
 export function snapshotHistoryCanonicalizationErrorMessage(
   error: SnapshotHistoryCanonicalizationError,
@@ -276,6 +275,8 @@ export function snapshotHistoryCanonicalizationErrorMessage(
       return `快照原文不是有效 JSON：${error.message}`;
     case 'sourceUniverseRequiresObservationV6':
       return 'source universe 需要 observation v6 或更高版本。';
+    case 'canonicalizationLimitExceeded':
+      return error.message;
   }
 }
 

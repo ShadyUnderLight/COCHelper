@@ -16,3 +16,9 @@ export const SNAPSHOT_HISTORY_SCHEMA = {
   fingerprint: 1,
   integrity: 1,
 } as const;
+
+/** canonicalization traversal 硬上限（Issue #273 深层嵌套防护）。 */
+export const SNAPSHOT_HISTORY_CANONICALIZATION_LIMITS = {
+  maxNestedDepth: 64,
+  maxItemsPerEntry: 131_072,
+} as const;

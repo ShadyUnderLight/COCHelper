@@ -63,10 +63,7 @@ export function revalidateCoverageProof(input: {
   ) {
     return revalidateTestFixtureProof(proof);
   }
-  if (
-    proof.verificationRuleVersion === null ||
-    proof.inputBinding === null
-  ) {
+  if (proof.verificationRuleVersion === null || proof.inputBinding === null) {
     return { kind: 'rejected', reason: '缺少 persisted revalidation 材料。' };
   }
   if (proof.verificationRuleVersion !== SNAPSHOT_COVERAGE_CURRENT_VERIFICATION_RULE_VERSION) {
@@ -132,7 +129,10 @@ export function revalidateSourceUniverse(input: {
   }
   if (input.universe.adapterID === SNAPSHOT_COVERAGE_TEST_FIXTURE_ADAPTER_ID) {
     if (input.policy !== 'testsAllowTestFixture') {
-      return { kind: 'rejected', reason: 'production load 不得恢复 test-fixture source universe。' };
+      return {
+        kind: 'rejected',
+        reason: 'production load 不得恢复 test-fixture source universe。',
+      };
     }
     return revalidateTestFixtureSourceUniverse(input.universe, input.coverage);
   }
@@ -153,7 +153,10 @@ function revalidateTestFixtureSourceUniverse(
   );
   const expected = issueTestFixtureSourceUniverse(authorizedRequired);
   if (JSON.stringify(expected) !== JSON.stringify(universe)) {
-    return { kind: 'rejected', reason: 'test-fixture source universe 与 verified section proofs 不一致。' };
+    return {
+      kind: 'rejected',
+      reason: 'test-fixture source universe 与 verified section proofs 不一致。',
+    };
   }
   return { kind: 'trusted' };
 }
@@ -179,10 +182,7 @@ export type HydratedSnapshotSectionCoverage = SnapshotSectionCoverage & {
   readonly runtimeTrust: SectionCoverageRuntimeTrust;
 };
 
-export type HydratedSnapshotObservationCoverage = Omit<
-  SnapshotObservationCoverage,
-  'sections'
-> & {
+export type HydratedSnapshotObservationCoverage = Omit<SnapshotObservationCoverage, 'sections'> & {
   readonly sections: readonly HydratedSnapshotSectionCoverage[];
   readonly sourceUniverseRuntimeTrust: SourceUniverseRuntimeTrust;
 };
@@ -276,7 +276,10 @@ function hydrateVerifiedCoverage(input: {
 
   let sectionsChanged = false;
   const sections = input.coverage.sections.map((section) => {
-    if (section.proof.kind !== 'verified' || initialSectionRuntimeTrust(section.proof).kind === 'trusted') {
+    if (
+      section.proof.kind !== 'verified' ||
+      initialSectionRuntimeTrust(section.proof).kind === 'trusted'
+    ) {
       return { ...section, runtimeTrust: initialSectionRuntimeTrust(section.proof) };
     }
     const trust = revalidateCoverageProof({
@@ -291,7 +294,10 @@ function hydrateVerifiedCoverage(input: {
     return { ...section, runtimeTrust: trust };
   });
 
-  if (!sectionsChanged && universeTrust.kind === initialSourceUniverseRuntimeTrust(input.coverage.sourceUniverse).kind) {
+  if (
+    !sectionsChanged &&
+    universeTrust.kind === initialSourceUniverseRuntimeTrust(input.coverage.sourceUniverse).kind
+  ) {
     return withDefaultRuntimeTrust(input.coverage);
   }
   return {

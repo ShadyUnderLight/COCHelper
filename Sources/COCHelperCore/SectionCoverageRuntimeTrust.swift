@@ -31,7 +31,7 @@ package enum SourceUniverseRuntimeTrust: Equatable, Sendable {
 }
 
 /// Policy for which adapter revalidators may run during history load hydration.
-enum SnapshotCoverageRevalidationPolicy: Sendable {
+public enum SnapshotCoverageRevalidationPolicy: Sendable {
     /// Production load: only adapters with replayable provenance (bundled perf fixtures).
     case production
     /// Test store: additionally allow controlled `test-fixture` revalidation.

@@ -75,8 +75,10 @@ enum SnapshotHistoryOracle {
 
     private static func evaluateDiff(_ request: DiffRequest) throws -> [String: String] {
         let decoder = JSONDecoder()
-        let from = try decoder.decode(SnapshotHistoryEntry.self, from: Data(request.fromEntryJSON.utf8))
-        let to = try decoder.decode(SnapshotHistoryEntry.self, from: Data(request.toEntryJSON.utf8))
+        let fromDecoded = try decoder.decode(SnapshotHistoryEntry.self, from: Data(request.fromEntryJSON.utf8))
+        let toDecoded = try decoder.decode(SnapshotHistoryEntry.self, from: Data(request.toEntryJSON.utf8))
+        let from = fromDecoded.hydratingVerifiedCoverage(policy: .testsAllowTestFixture)
+        let to = toDecoded.hydratingVerifiedCoverage(policy: .testsAllowTestFixture)
         let diff = SnapshotDiffEngine.compare(from: from, to: to)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

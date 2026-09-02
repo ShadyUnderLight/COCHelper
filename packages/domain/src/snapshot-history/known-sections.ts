@@ -29,11 +29,7 @@ export const SNAPSHOT_HISTORY_NUMERIC_SECTIONS = [
   'sceneries2',
 ] as const;
 
-export const SNAPSHOT_HISTORY_TIMER_FIELDS = [
-  'timer',
-  'helper_timer',
-  'helper_cooldown',
-] as const;
+export const SNAPSHOT_HISTORY_TIMER_FIELDS = ['timer', 'helper_timer', 'helper_cooldown'] as const;
 
 export const SNAPSHOT_HISTORY_ITEM_FIELDS = [
   'data',

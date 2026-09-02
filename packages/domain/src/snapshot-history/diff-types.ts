@@ -23,16 +23,10 @@ export type SnapshotChangeKind =
 export type SnapshotChangeEvidence = 'confirmed' | 'aggregateInferred' | 'unknown';
 
 export type SnapshotDiffComparisonState =
-  | 'comparable'
-  | 'provenanceOnly'
-  | 'insufficientCoverage'
-  | 'suppressed';
+  'comparable' | 'provenanceOnly' | 'insufficientCoverage' | 'suppressed';
 
 export type SnapshotDiffContentState =
-  | 'contentChanged'
-  | 'provenanceOnly'
-  | 'contentInsufficient'
-  | 'comparableNoChange';
+  'contentChanged' | 'provenanceOnly' | 'contentInsufficient' | 'comparableNoChange';
 
 export type SnapshotDiffSectionCoverage = {
   readonly base: SnapshotHistoryBase;
@@ -59,7 +53,9 @@ export function snapshotDiffSectionCoverageId(section: SnapshotDiffSectionCovera
     .join('|');
 }
 
-export function snapshotDiffSectionCoverageIsComplete(section: SnapshotDiffSectionCoverage): boolean {
+export function snapshotDiffSectionCoverageIsComplete(
+  section: SnapshotDiffSectionCoverage,
+): boolean {
   return (
     section.fromState === 'complete' &&
     section.toState === 'complete' &&
@@ -184,7 +180,9 @@ function worseCoverageState(
 function derivedSnapshotDiffCoverageState(
   fields: readonly SnapshotDiffFieldCoverage[],
 ): SnapshotDiffCoverageState {
-  if (fields.some((field) => field.fromState === 'unavailable' || field.toState === 'unavailable')) {
+  if (
+    fields.some((field) => field.fromState === 'unavailable' || field.toState === 'unavailable')
+  ) {
     return 'insufficient';
   }
   if (fields.some((field) => field.fromState === 'partial' || field.toState === 'partial')) {
@@ -217,11 +215,13 @@ function normalizeSnapshotDiffCoverageFields(
   );
 }
 
-export function createSnapshotDiffCoverage(input: {
-  state?: SnapshotDiffCoverageState;
-  fields?: readonly SnapshotDiffFieldCoverage[];
-  reasons?: readonly string[];
-} = {}): SnapshotDiffCoverage {
+export function createSnapshotDiffCoverage(
+  input: {
+    state?: SnapshotDiffCoverageState;
+    fields?: readonly SnapshotDiffFieldCoverage[];
+    reasons?: readonly string[];
+  } = {},
+): SnapshotDiffCoverage {
   const fields = normalizeSnapshotDiffCoverageFields(input.fields ?? []);
   const reasons = [...new Set(input.reasons ?? [])].sort();
   return {

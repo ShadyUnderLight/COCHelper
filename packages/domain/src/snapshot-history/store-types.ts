@@ -4,10 +4,7 @@ import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 import type { SnapshotHistoryEntry } from './types';
 
 export type SnapshotHistoryDiagnosticKind =
-  | 'corrupt'
-  | 'unsupportedSchema'
-  | 'unavailable'
-  | 'writeFailed';
+  'corrupt' | 'unsupportedSchema' | 'unavailable' | 'writeFailed';
 
 export type SnapshotHistoryDiagnostic = {
   readonly kind: SnapshotHistoryDiagnosticKind;

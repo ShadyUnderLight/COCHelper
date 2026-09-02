@@ -23,12 +23,12 @@ import {
   hydratedSectionOpensTrustGates,
   sectionCoverageIsComplete,
 } from './coverage-access';
-import { snapshotHistoryCoverageDuplicateKey, snapshotHistoryCoverageDuplicateKeysEqual } from './duplicate-key';
-import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 import {
-  SNAPSHOT_HISTORY_ALL_SECTIONS,
-  SNAPSHOT_HISTORY_ITEM_FIELDS,
-} from './known-sections';
+  snapshotHistoryCoverageDuplicateKey,
+  snapshotHistoryCoverageDuplicateKeysEqual,
+} from './duplicate-key';
+import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
+import { SNAPSHOT_HISTORY_ALL_SECTIONS, SNAPSHOT_HISTORY_ITEM_FIELDS } from './known-sections';
 import type { HydratedSnapshotHistoryEntry } from './trust-hydration';
 import {
   createSnapshotItemIdentity,
@@ -119,7 +119,9 @@ function isUsableIdentity(identity: SnapshotItemIdentity): boolean {
     (identity.nestedRootDataID === null ||
       identity.nestedRootDataID === undefined ||
       identity.nestedRootDataID > 0n) &&
-    identity.nestedParentPath.every((component) => component.dataID > 0n && component.kind !== 'unknown')
+    identity.nestedParentPath.every(
+      (component) => component.dataID > 0n && component.kind !== 'unknown',
+    )
   );
 }
 
@@ -135,7 +137,9 @@ function nestedEnumerationIsConfirmed(identity: SnapshotItemIdentity): boolean {
   return identity.nestedKind === 'root';
 }
 
-function histogramRepresentative(items: readonly SnapshotObservationItem[]): SnapshotObservationItem | undefined {
+function histogramRepresentative(
+  items: readonly SnapshotObservationItem[],
+): SnapshotObservationItem | undefined {
   return [...items].sort((left, right) => {
     const leftKey = [left.level ?? Number.MAX_SAFE_INTEGER, left.count ?? 0] as const;
     const rightKey = [right.level ?? Number.MAX_SAFE_INTEGER, right.count ?? 0] as const;
@@ -187,13 +191,13 @@ function coverageFor(
     fromState:
       from === undefined
         ? 'unavailable'
-        : observationCoverageState(from, identity.base, identity.rawSection, field) ??
-          'unavailable',
+        : (observationCoverageState(from, identity.base, identity.rawSection, field) ??
+          'unavailable'),
     toState:
       to === undefined
         ? 'unavailable'
-        : observationCoverageState(to, identity.base, identity.rawSection, field) ??
-          'unavailable',
+        : (observationCoverageState(to, identity.base, identity.rawSection, field) ??
+          'unavailable'),
   }));
   return createSnapshotDiffCoverage({ fields: result });
 }
@@ -241,57 +245,66 @@ function histogramIsComplete(
 ): boolean {
   return (
     items.length > 0 &&
-    items.every((item) => validLevel(item.level) !== undefined && validQuantity(item.count) !== undefined) &&
+    items.every(
+      (item) => validLevel(item.level) !== undefined && validQuantity(item.count) !== undefined,
+    ) &&
     ['presence', 'data', 'lvl', 'cnt'].every(
       (field) =>
-        observationCoverageState(entry, identity.base, identity.rawSection, field) ===
-        'complete',
+        observationCoverageState(entry, identity.base, identity.rawSection, field) === 'complete',
     )
   );
 }
 
-function makeSectionCoverage(from: HydratedSnapshotHistoryEntry, to: HydratedSnapshotHistoryEntry): SnapshotDiffSectionCoverage[] {
-  return [...SNAPSHOT_HISTORY_ALL_SECTIONS]
-    .sort()
-    .map((section) => {
-      const base = createSnapshotItemIdentity(section, 0).base;
-      const fromSection = observationCoverageSection(from, base, section);
-      const toSection = observationCoverageSection(to, base, section);
-      const fieldNames = [...SNAPSHOT_HISTORY_ITEM_FIELDS, 'presence'];
-      const fromFieldStates = Object.fromEntries(
-        fieldNames.map((field) => [
-          field,
-          observationCoverageState(from, base, section, field) ?? 'unavailable',
-        ]),
-      ) as Record<string, SnapshotCoverageState>;
-      const toFieldStates = Object.fromEntries(
-        fieldNames.map((field) => [
-          field,
-          observationCoverageState(to, base, section, field) ?? 'unavailable',
-        ]),
-      ) as Record<string, SnapshotCoverageState>;
-      return {
-        base,
-        rawSection: section,
-        fromState: fromFieldStates.presence ?? 'unavailable',
-        toState: toFieldStates.presence ?? 'unavailable',
-        fromDataState: fromFieldStates.data ?? 'unavailable',
-        toDataState: toFieldStates.data ?? 'unavailable',
-        fromSectionCompleteness: fromSection?.completeness ?? 'unavailable',
-        toSectionCompleteness: toSection?.completeness ?? 'unavailable',
-        fromProof: fromSection?.proof,
-        toProof: toSection?.proof,
-        fromTrustTrusted: fromSection ? hydratedSectionOpensTrustGates(fromSection) : false,
-        toTrustTrusted: toSection ? hydratedSectionOpensTrustGates(toSection) : false,
-        fromFieldStates,
-        toFieldStates,
-        fromObservedItemCount: from.observation.items.filter((item) => item.identity.rawSection === section).length,
-        toObservedItemCount: to.observation.items.filter((item) => item.identity.rawSection === section).length,
-      };
-    });
+function makeSectionCoverage(
+  from: HydratedSnapshotHistoryEntry,
+  to: HydratedSnapshotHistoryEntry,
+): SnapshotDiffSectionCoverage[] {
+  return [...SNAPSHOT_HISTORY_ALL_SECTIONS].sort().map((section) => {
+    const base = createSnapshotItemIdentity(section, 0).base;
+    const fromSection = observationCoverageSection(from, base, section);
+    const toSection = observationCoverageSection(to, base, section);
+    const fieldNames = [...SNAPSHOT_HISTORY_ITEM_FIELDS, 'presence'];
+    const fromFieldStates = Object.fromEntries(
+      fieldNames.map((field) => [
+        field,
+        observationCoverageState(from, base, section, field) ?? 'unavailable',
+      ]),
+    ) as Record<string, SnapshotCoverageState>;
+    const toFieldStates = Object.fromEntries(
+      fieldNames.map((field) => [
+        field,
+        observationCoverageState(to, base, section, field) ?? 'unavailable',
+      ]),
+    ) as Record<string, SnapshotCoverageState>;
+    return {
+      base,
+      rawSection: section,
+      fromState: fromFieldStates.presence ?? 'unavailable',
+      toState: toFieldStates.presence ?? 'unavailable',
+      fromDataState: fromFieldStates.data ?? 'unavailable',
+      toDataState: toFieldStates.data ?? 'unavailable',
+      fromSectionCompleteness: fromSection?.completeness ?? 'unavailable',
+      toSectionCompleteness: toSection?.completeness ?? 'unavailable',
+      fromProof: fromSection?.proof,
+      toProof: toSection?.proof,
+      fromTrustTrusted: fromSection ? hydratedSectionOpensTrustGates(fromSection) : false,
+      toTrustTrusted: toSection ? hydratedSectionOpensTrustGates(toSection) : false,
+      fromFieldStates,
+      toFieldStates,
+      fromObservedItemCount: from.observation.items.filter(
+        (item) => item.identity.rawSection === section,
+      ).length,
+      toObservedItemCount: to.observation.items.filter(
+        (item) => item.identity.rawSection === section,
+      ).length,
+    };
+  });
 }
 
-function timerNumber(value: CanonicalJsonValue, spec: SnapshotTimerFieldSpec | undefined): number | undefined {
+function timerNumber(
+  value: CanonicalJsonValue,
+  spec: SnapshotTimerFieldSpec | undefined,
+): number | undefined {
   if (value.kind !== 'number') {
     return undefined;
   }
@@ -331,7 +344,8 @@ function timerState(
         return 'unknown';
       }
       const unit = schema.fields[key]?.unit ?? 'seconds';
-      const observed = unit === 'milliseconds' ? sourceTimestampRefSeconds * 1000 : sourceTimestampRefSeconds;
+      const observed =
+        unit === 'milliseconds' ? sourceTimestampRefSeconds * 1000 : sourceTimestampRefSeconds;
       if (number > observed) {
         hasActive = true;
       }
@@ -342,14 +356,20 @@ function timerState(
   return hasActive ? 'active' : 'inactive';
 }
 
-function timerSpec(field: string, entry: HydratedSnapshotHistoryEntry): SnapshotTimerFieldSpec | undefined {
+function timerSpec(
+  field: string,
+  entry: HydratedSnapshotHistoryEntry,
+): SnapshotTimerFieldSpec | undefined {
   if (entry.observationVersion >= SNAPSHOT_HISTORY_SCHEMA.observationWithTimerSchema) {
     return entry.timerSchema?.fields[field];
   }
-    return { unit: 'seconds', semantics: 'remaining', minValue: 0 };
+  return { unit: 'seconds', semantics: 'remaining', minValue: 0 };
 }
 
-function timerSpecsAreCompatible(left: SnapshotTimerFieldSpec, right: SnapshotTimerFieldSpec): boolean {
+function timerSpecsAreCompatible(
+  left: SnapshotTimerFieldSpec,
+  right: SnapshotTimerFieldSpec,
+): boolean {
   if (left.unit !== right.unit || left.semantics !== right.semantics) {
     return false;
   }
@@ -454,7 +474,9 @@ function normalizedTimerComparison(
     }
     const isMilliseconds = oldSpec?.unit === 'milliseconds';
     const elapsedInUnit = isMilliseconds ? elapsed * 1000 : elapsed;
-    const tolerance = isMilliseconds ? TIMER_ELAPSED_TOLERANCE_SECONDS * 1000 : TIMER_ELAPSED_TOLERANCE_SECONDS;
+    const tolerance = isMilliseconds
+      ? TIMER_ELAPSED_TOLERANCE_SECONDS * 1000
+      : TIMER_ELAPSED_TOLERANCE_SECONDS;
     for (let index = 0; index < oldNumbers.length; index += 1) {
       const oldNumber = oldNumbers[index]!;
       const newNumber = newNumbers[index]!;
@@ -504,9 +526,15 @@ function timerTransition(
   from: HydratedSnapshotHistoryEntry,
   to: HydratedSnapshotHistoryEntry,
 ): TimerResult {
-  const oldState = timerState(old.rawTimerEvidence, from.timerSchema, from.sourceTimestampRefSeconds);
+  const oldState = timerState(
+    old.rawTimerEvidence,
+    from.timerSchema,
+    from.sourceTimestampRefSeconds,
+  );
   const newState = timerState(next.rawTimerEvidence, to.timerSchema, to.sourceTimestampRefSeconds);
-  const fields = [...new Set([...Object.keys(old.rawTimerEvidence), ...Object.keys(next.rawTimerEvidence)])].sort();
+  const fields = [
+    ...new Set([...Object.keys(old.rawTimerEvidence), ...Object.keys(next.rawTimerEvidence)]),
+  ].sort();
   if (fields.length === 0) {
     return { isUnknown: false, reason: '', requiredFields: [] };
   }
@@ -525,10 +553,7 @@ function timerTransition(
       requiredFields: fields,
     };
   }
-  if (
-    (oldState === 'absent' || oldState === 'inactive') &&
-    newState === 'active'
-  ) {
+  if ((oldState === 'absent' || oldState === 'inactive') && newState === 'active') {
     return { kind: 'upgradeStarted', isUnknown: false, reason: '', requiredFields: fields };
   }
   if (oldState === 'active' && newState === 'active') {
@@ -594,10 +619,7 @@ function aggregateTimerTransition(
       requiredFields: fields,
     };
   }
-  if (
-    (oldState === 'absent' || oldState === 'inactive') &&
-    newState === 'active'
-  ) {
+  if ((oldState === 'absent' || oldState === 'inactive') && newState === 'active') {
     return { kind: 'upgradeStarted', isUnknown: false, reason: '', requiredFields: fields };
   }
   if (oldState === 'active' && newState === 'active') {
@@ -810,7 +832,10 @@ function observationIdentityMatches(
   });
 }
 
-function isProvenanceOnlyPair(from: HydratedSnapshotHistoryEntry, to: HydratedSnapshotHistoryEntry): boolean {
+function isProvenanceOnlyPair(
+  from: HydratedSnapshotHistoryEntry,
+  to: HydratedSnapshotHistoryEntry,
+): boolean {
   if (JSON.stringify(from.timerSchema) === JSON.stringify(to.timerSchema)) {
     return false;
   }
@@ -825,7 +850,10 @@ function isProvenanceOnlyPair(from: HydratedSnapshotHistoryEntry, to: HydratedSn
   return observationIdentityMatches(from.observation, to.observation);
 }
 
-function provenanceTimerFields(from: HydratedSnapshotHistoryEntry, to: HydratedSnapshotHistoryEntry): string[] {
+function provenanceTimerFields(
+  from: HydratedSnapshotHistoryEntry,
+  to: HydratedSnapshotHistoryEntry,
+): string[] {
   const fields = new Set<string>();
   for (const key of Object.keys(from.timerSchema?.fields ?? {})) {
     fields.add(key);
@@ -846,7 +874,9 @@ function provenanceTimerFields(from: HydratedSnapshotHistoryEntry, to: HydratedS
   return [...fields].sort();
 }
 
-function blockingObservationDiagnostics(entry: HydratedSnapshotHistoryEntry): SnapshotDiffDiagnostic[] {
+function blockingObservationDiagnostics(
+  entry: HydratedSnapshotHistoryEntry,
+): SnapshotDiffDiagnostic[] {
   const diagnostics: SnapshotDiffDiagnostic[] = [];
   const groups = new Map<string, SnapshotObservationItem[]>();
   for (const item of entry.observation.items) {
@@ -982,9 +1012,7 @@ function compareExistingUnique(
     levelProblem || quantityProblem || timer.isUnknown || coverage.state !== 'complete';
   if (semanticUnknown) {
     const reason =
-      reasons.length === 0
-        ? '变化所需字段 coverage 不足。'
-        : `${[...reasons].sort().join('；')}。`;
+      reasons.length === 0 ? '变化所需字段 coverage 不足。' : `${[...reasons].sort().join('；')}。`;
     changes.push(
       unknownChange({
         identity: old.identity,
@@ -1016,8 +1044,7 @@ function compareExistingUnique(
   }
   const uniqueKinds = [...new Set(semanticKinds)].filter((kind) => kind !== primary);
   related.push(...uniqueKinds);
-  const delta =
-    oldLevel !== undefined && newLevel !== undefined ? newLevel - oldLevel : undefined;
+  const delta = oldLevel !== undefined && newLevel !== undefined ? newLevel - oldLevel : undefined;
   changes.push(
     makeChange({
       identity: old.identity,
@@ -1171,8 +1198,8 @@ function compareHistogram(
           coverage: changeCoverage,
         }),
       );
+      return;
     }
-    return;
   }
 
   const oldHistogram = histogram(oldItems);
@@ -1189,7 +1216,16 @@ function compareHistogram(
       sectionProofComplete,
     );
     if (timerResult.kind || timerResult.isUnknown) {
-      appendAggregateTimerChange(timerResult, identity, oldItems, newItems, from, to, changes, diagnostics);
+      appendAggregateTimerChange(
+        timerResult,
+        identity,
+        oldItems,
+        newItems,
+        from,
+        to,
+        changes,
+        diagnostics,
+      );
       if (timerResult.kind) {
         diagnostics.push({
           kind: 'insufficientCoverage',
@@ -1231,7 +1267,16 @@ function compareHistogram(
       sectionProofComplete,
     );
     if (timerResult.kind) {
-      appendAggregateTimerChange(timerResult, identity, oldItems, newItems, from, to, changes, diagnostics);
+      appendAggregateTimerChange(
+        timerResult,
+        identity,
+        oldItems,
+        newItems,
+        from,
+        to,
+        changes,
+        diagnostics,
+      );
     }
     const reason = '重复建筑/城墙 histogram 的 section、level 或 count coverage 不完整。';
     changes.push(
@@ -1267,8 +1312,14 @@ function compareHistogram(
     newRemaining.set(level, (newRemaining.get(level) ?? 0) - unchanged);
   }
 
-  const oldLevels = [...oldRemaining.entries()].filter(([, count]) => count > 0).map(([level]) => level).sort((a, b) => a - b);
-  const newLevels = [...newRemaining.entries()].filter(([, count]) => count > 0).map(([level]) => level).sort((a, b) => a - b);
+  const oldLevels = [...oldRemaining.entries()]
+    .filter(([, count]) => count > 0)
+    .map(([level]) => level)
+    .sort((a, b) => a - b);
+  const newLevels = [...newRemaining.entries()]
+    .filter(([, count]) => count > 0)
+    .map(([level]) => level)
+    .sort((a, b) => a - b);
   let oldIndex = 0;
   let newIndex = 0;
   const pendingChanges: SnapshotChange[] = [];
@@ -1320,7 +1371,16 @@ function compareHistogram(
       sectionProofComplete,
     );
     if (timerResult.kind || timerResult.isUnknown) {
-      appendAggregateTimerChange(timerResult, identity, oldItems, newItems, from, to, changes, diagnostics);
+      appendAggregateTimerChange(
+        timerResult,
+        identity,
+        oldItems,
+        newItems,
+        from,
+        to,
+        changes,
+        diagnostics,
+      );
     }
     const oldSummary = [...oldRemaining.entries()]
       .filter(([, count]) => count > 0)
@@ -1371,7 +1431,16 @@ function compareHistogram(
     sectionProofComplete,
   );
   if (timerResult.kind || timerResult.isUnknown) {
-    appendAggregateTimerChange(timerResult, identity, oldItems, newItems, from, to, changes, diagnostics);
+    appendAggregateTimerChange(
+      timerResult,
+      identity,
+      oldItems,
+      newItems,
+      from,
+      to,
+      changes,
+      diagnostics,
+    );
   }
 }
 
@@ -1396,25 +1465,21 @@ export const SnapshotDiffEngine = {
       ...from.coverage.diagnostics
         .slice()
         .sort()
-        .map(
-          (message): SnapshotDiffDiagnostic => ({
-            kind: 'malformedObservation',
-            message: `from snapshot: ${message}`,
-            rawSection: diagnosticSection(message),
-          }),
-        ),
+        .map((message): SnapshotDiffDiagnostic => ({
+          kind: 'malformedObservation',
+          message: `from snapshot: ${message}`,
+          rawSection: diagnosticSection(message),
+        })),
     );
     diagnostics.push(
       ...to.coverage.diagnostics
         .slice()
         .sort()
-        .map(
-          (message): SnapshotDiffDiagnostic => ({
-            kind: 'malformedObservation',
-            message: `to snapshot: ${message}`,
-            rawSection: diagnosticSection(message),
-          }),
-        ),
+        .map((message): SnapshotDiffDiagnostic => ({
+          kind: 'malformedObservation',
+          message: `to snapshot: ${message}`,
+          rawSection: diagnosticSection(message),
+        })),
     );
 
     if (from.villageID !== to.villageID) {
@@ -1438,7 +1503,11 @@ export const SnapshotDiffEngine = {
     }
 
     if (to.isBaseline) {
-      pushDiagnostic(diagnostics, 'baseline', 'baseline 没有 predecessor，禁止把它解释为历史变化。');
+      pushDiagnostic(
+        diagnostics,
+        'baseline',
+        'baseline 没有 predecessor，禁止把它解释为历史变化。',
+      );
       return finalizeDiff(from, to, {
         comparisonState: 'suppressed',
         contentState: 'contentInsufficient',
@@ -1475,7 +1544,9 @@ export const SnapshotDiffEngine = {
       });
     }
 
-    const hasComparableSection = sectionCoverage.some((section) => snapshotDiffSectionCoverageIsComplete(section));
+    const hasComparableSection = sectionCoverage.some((section) =>
+      snapshotDiffSectionCoverageIsComplete(section),
+    );
     if (
       !hasComparableSection &&
       from.observation.items.length === 0 &&
@@ -1634,10 +1705,7 @@ export function createSnapshotObservationItem(input: {
     identity: input.identity,
     level: input.level ?? null,
     count: input.count ?? null,
-    rawTimerEvidence:
-      input.timer === undefined
-        ? {}
-        : { timer: jsonNumber(String(input.timer)) },
+    rawTimerEvidence: input.timer === undefined ? {} : { timer: jsonNumber(String(input.timer)) },
     helperRecurrent: null,
     gearUp: null,
     weapon: null,

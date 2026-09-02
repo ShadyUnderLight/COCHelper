@@ -1,4 +1,8 @@
-import type { SnapshotCoverageProof, SnapshotHistoryEntry, SnapshotObservationCoverage } from './types';
+import type {
+  SnapshotCoverageProof,
+  SnapshotHistoryEntry,
+  SnapshotObservationCoverage,
+} from './types';
 import type { SnapshotTimerSchema } from './types';
 
 export type SnapshotHistoryProofDuplicateKey =
@@ -108,7 +112,9 @@ export type SnapshotHistoryDuplicateKey = {
   readonly timerSchema: SnapshotTimerSchema | null;
 };
 
-export function snapshotHistoryDuplicateKey(entry: SnapshotHistoryEntry): SnapshotHistoryDuplicateKey {
+export function snapshotHistoryDuplicateKey(
+  entry: SnapshotHistoryEntry,
+): SnapshotHistoryDuplicateKey {
   return {
     canonicalFingerprint: entry.canonicalFingerprint,
     coverage: snapshotHistoryCoverageDuplicateKey(entry.coverage),

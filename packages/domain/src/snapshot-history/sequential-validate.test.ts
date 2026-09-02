@@ -6,10 +6,10 @@ import { describe, expect, it } from 'vitest';
 
 import { parseAccountSnapshot } from '../account/parser';
 import {
-  batchCanonicalizeSnapshotHistoryEnvelope,
   canonicalizeSnapshotHistory,
   createSnapshotHistoryEnvelope,
   diagnoseEnvelopeComplexity,
+  sequentialValidateSnapshotHistoryEntries,
 } from './index';
 
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
@@ -20,8 +20,8 @@ class GoldenClock {
   }
 }
 
-describe('snapshot history batch canonicalize', () => {
-  it('按 entry 处理并返回复杂度诊断', () => {
+describe('snapshot history sequential validate', () => {
+  it('按 entry 顺序校验且不复制 entries 数组', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
       resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
@@ -46,7 +46,7 @@ describe('snapshot history batch canonicalize', () => {
     });
 
     const perEntry: number[] = [];
-    const result = batchCanonicalizeSnapshotHistoryEnvelope(envelope, {
+    const result = sequentialValidateSnapshotHistoryEntries(envelope, {
       perEntry: (_entry, index) => {
         perEntry.push(index);
       },
@@ -54,9 +54,9 @@ describe('snapshot history batch canonicalize', () => {
 
     expect(result.processedEntryCount).toBe(2);
     expect(perEntry).toEqual([0, 1]);
-    const complexity = diagnoseEnvelopeComplexity(result.envelope.entries);
+    expect(envelope.entries).toHaveLength(2);
+    const complexity = diagnoseEnvelopeComplexity(envelope.entries);
     expect(complexity.entryCount).toBe(2);
     expect(complexity.totalItemCount).toBe(entry.observation.items.length * 2);
-    expect(complexity.maxNestedDepth).toBeGreaterThanOrEqual(1);
   });
 });

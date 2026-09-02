@@ -5,9 +5,7 @@ import type { AccountSnapshot } from '../account/types';
 import type { CraftTableCatalog } from '../catalog/craft-table';
 import type { GameCatalog } from '../catalog/game-catalog';
 import { normalizedTag } from '../tag/validator';
-import {
-  canonicalizeSnapshotHistoryWithLineage,
-} from './canonicalizer';
+import { canonicalizeSnapshotHistoryWithLineage } from './canonicalizer';
 import { snapshotHistoryDuplicateKeysMatch } from './duplicate-key';
 import type { SnapshotHistoryServiceError } from './errors';
 import { resolveSnapshotLineage } from './lineage-resolver';
@@ -120,8 +118,7 @@ export function planSnapshotHistoryImport(
   });
 
   const appliedAtRefSeconds =
-    input.appliedAtRefSeconds ??
-    unixSecondsToRefSeconds(Date.now() / 1000);
+    input.appliedAtRefSeconds ?? unixSecondsToRefSeconds(Date.now() / 1000);
 
   const candidate = canonicalizeSnapshotHistoryWithLineage(input.snapshot, {
     villageID: input.villageID,

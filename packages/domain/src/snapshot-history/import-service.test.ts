@@ -33,11 +33,7 @@ function snapshotFromText(
   importedAtMs = (GOLDEN_IMPORTED_AT_REF_SECONDS + 978_307_200) * 1000,
 ) {
   const fullText =
-    tag === null
-      ? text
-      : text.includes('"tag"')
-        ? text
-        : `{"tag":"${tag}",${text.slice(1)}`;
+    tag === null ? text : text.includes('"tag"') ? text : `{"tag":"${tag}",${text.slice(1)}`;
   return parseAccountSnapshot(fullText, {
     clock: new FixedClock(importedAtMs),
   });
@@ -99,9 +95,7 @@ describe('snapshot history import service', () => {
     const entryID = decision.entry.snapshotID;
     expect(decision.envelope.duplicateMetadata[entryID]?.duplicateImportCount).toBe(1);
     expect(decision.envelope.duplicateMetadata[entryID]?.lastSourceTimestampRefSeconds).toBe(
-      duplicateSnapshot.value.capturedAtMs === null
-        ? null
-        : expect.any(Number),
+      duplicateSnapshot.value.capturedAtMs === null ? null : expect.any(Number),
     );
   });
 

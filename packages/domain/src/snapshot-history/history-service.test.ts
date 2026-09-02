@@ -10,6 +10,7 @@ import type { SnapshotHistoryStoreError } from './errors';
 import {
   createInMemorySnapshotHistoryStore,
   createSnapshotHistoryService,
+  envelopeActiveLineage,
   envelopeIsMigrated,
   migrateSnapshotHistoryFromVillages,
 } from './index';
@@ -191,7 +192,7 @@ describe('snapshot history service', () => {
     expect(store.saved()).toBeNull();
   });
 
-  it('两村交错导入时只追加目标村庄 entry', () => {
+  it('两村交错导入 A→B→A 不互相污染 active lineage', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
       resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
@@ -208,7 +209,7 @@ describe('snapshot history service', () => {
     const store = createInMemorySnapshotHistoryStore();
     const service = createSnapshotHistoryService(store);
 
-    const envelope = service.loadOrMigrate({
+    const baseline = service.loadOrMigrate({
       villages: [
         createVillageProfile({
           id: firstVillageID,
@@ -224,33 +225,106 @@ describe('snapshot history service', () => {
       nowRefSeconds: 807_629_133,
     });
 
-    expect(envelope.entries).toHaveLength(2);
-    expect(envelope.lineages).toHaveLength(2);
+    expect(baseline.entries).toHaveLength(2);
+    expect(baseline.lineages).toHaveLength(2);
 
-    const changedParsed = parseAccountSnapshot('{"tag":"#GOLDEN01","buildings":[],"unknown":1}', {
+    const baselineBEntryID = envelopeActiveLineage(baseline, secondVillageID)!.lastEntryID;
+    const baselineBFingerprint = envelopeActiveLineage(baseline, secondVillageID)!.lastFingerprint;
+
+    const a1Parsed = parseAccountSnapshot('{"tag":"#GOLDEN01","buildings":[],"unknown":1}', {
       clock: new GoldenClock(),
     });
-    expect(changedParsed.ok).toBe(true);
-    if (!changedParsed.ok) {
+    expect(a1Parsed.ok).toBe(true);
+    if (!a1Parsed.ok) {
       return;
     }
 
-    const changed = service.planImport({
-      snapshot: changedParsed.value,
+    const a1 = service.planImport({
+      snapshot: a1Parsed.value,
       villageID: firstVillageID,
-      currentTag: changedParsed.value.tag,
+      currentTag: a1Parsed.value.tag,
       hasCurrentSnapshot: true,
-      envelope,
+      envelope: baseline,
       appliedAtRefSeconds: 807_729_133,
     });
+    expect(a1.appended).toBe(true);
+    expect(a1.envelope.entries.filter((entry) => entry.villageID === firstVillageID)).toHaveLength(
+      2,
+    );
+    expect(a1.envelope.entries.filter((entry) => entry.villageID === secondVillageID)).toHaveLength(
+      1,
+    );
+    expect(envelopeActiveLineage(a1.envelope, firstVillageID)?.lastEntryID).toBe(
+      a1.entry.snapshotID,
+    );
+    expect(envelopeActiveLineage(a1.envelope, secondVillageID)?.lastEntryID).toBe(baselineBEntryID);
+    expect(envelopeActiveLineage(a1.envelope, secondVillageID)?.lastFingerprint).toBe(
+      baselineBFingerprint,
+    );
 
-    expect(changed.appended).toBe(true);
-    expect(changed.duplicate).toBe(false);
+    const b1Parsed = parseAccountSnapshot('{"tag":"#GOLDEN01","buildings":[],"unknown":2}', {
+      clock: new GoldenClock(),
+    });
+    expect(b1Parsed.ok).toBe(true);
+    if (!b1Parsed.ok) {
+      return;
+    }
+
+    const b1 = service.planImport({
+      snapshot: b1Parsed.value,
+      villageID: secondVillageID,
+      currentTag: b1Parsed.value.tag,
+      hasCurrentSnapshot: true,
+      envelope: a1.envelope,
+      appliedAtRefSeconds: 807_829_133,
+    });
+    expect(b1.appended).toBe(true);
+    expect(b1.envelope.entries.filter((entry) => entry.villageID === firstVillageID)).toHaveLength(
+      2,
+    );
+    expect(b1.envelope.entries.filter((entry) => entry.villageID === secondVillageID)).toHaveLength(
+      2,
+    );
+    expect(envelopeActiveLineage(b1.envelope, firstVillageID)?.lastEntryID).toBe(
+      a1.entry.snapshotID,
+    );
+    expect(envelopeActiveLineage(b1.envelope, secondVillageID)?.lastEntryID).toBe(
+      b1.entry.snapshotID,
+    );
+
+    const a2Parsed = parseAccountSnapshot('{"tag":"#GOLDEN01","buildings":[]}', {
+      clock: new GoldenClock(),
+    });
+    expect(a2Parsed.ok).toBe(true);
+    if (!a2Parsed.ok) {
+      return;
+    }
+
+    const a2 = service.planImport({
+      snapshot: a2Parsed.value,
+      villageID: firstVillageID,
+      currentTag: a2Parsed.value.tag,
+      hasCurrentSnapshot: true,
+      envelope: b1.envelope,
+      appliedAtRefSeconds: 807_929_133,
+    });
+    expect(a2.appended).toBe(true);
+    expect(a2.envelope.entries.filter((entry) => entry.villageID === firstVillageID)).toHaveLength(
+      3,
+    );
+    expect(a2.envelope.entries.filter((entry) => entry.villageID === secondVillageID)).toHaveLength(
+      2,
+    );
+    expect(envelopeActiveLineage(a2.envelope, firstVillageID)?.lastEntryID).toBe(
+      a2.entry.snapshotID,
+    );
+    expect(envelopeActiveLineage(a2.envelope, secondVillageID)?.lastEntryID).toBe(
+      b1.entry.snapshotID,
+    );
     expect(
-      changed.envelope.entries.filter((entry) => entry.villageID === firstVillageID),
-    ).toHaveLength(2);
-    expect(
-      changed.envelope.entries.filter((entry) => entry.villageID === secondVillageID),
-    ).toHaveLength(1);
+      a2.envelope.entries.find(
+        (entry) => entry.villageID === secondVillageID && entry.snapshotID === baselineBEntryID,
+      )?.canonicalFingerprint,
+    ).toBe(baselineBFingerprint);
   });
 });

@@ -5,6 +5,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
+    "test": "cd ../.. && vitest run --config vitest.parity.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

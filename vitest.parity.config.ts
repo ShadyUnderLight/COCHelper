@@ -7,6 +7,7 @@ export default defineConfig({
       'packages/testkit/src/account-parser.parity.test.ts',
       'packages/testkit/src/manual-queue-capacity.parity.test.ts',
       'packages/testkit/src/manual-reconciliation.parity.test.ts',
+      'packages/testkit/src/snapshot-history.parity.test.ts',
     ],
     environment: 'node',
     fileParallelism: false,

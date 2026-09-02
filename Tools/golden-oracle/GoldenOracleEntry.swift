@@ -67,7 +67,7 @@ struct GoldenOracle {
         guard !request.caseId.isEmpty, request.caseId.count <= 200 else {
             throw OracleUsageError.malformedRequest
         }
-        guard ["canonical-json", "manual-queue-capacity", "manual-reconciliation-preview"].contains(
+        guard ["canonical-json", "manual-queue-capacity", "manual-reconciliation-preview", "snapshot-history-canonicalize", "snapshot-history-diff"].contains(
             request.operation
         ) else {
             throw OracleUsageError.unsupportedOperation
@@ -92,6 +92,10 @@ struct GoldenOracle {
         case "manual-reconciliation-preview":
             return evaluateManualHex(request: request, inputFingerprint: inputFingerprint) {
                 try ManualReconciliationOracle.evaluate(source: request.source)
+            }
+        case "snapshot-history-canonicalize", "snapshot-history-diff":
+            return evaluateManualHex(request: request, inputFingerprint: inputFingerprint) {
+                try SnapshotHistoryOracle.evaluate(source: request.source)
             }
         default:
             return OracleResponse(

@@ -12,6 +12,7 @@ export {
   type DesktopBridge,
   type RequestId,
 } from './ipc';
+export * from './official-wire';
 export type {
   AccountDiagnosticWire,
   AccountItemWire,

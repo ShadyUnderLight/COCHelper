@@ -8,6 +8,18 @@ export * from './diff-ordering';
 export * from './coverage-access';
 export { SnapshotDiffEngine, createSnapshotObservationItem } from './diff-engine';
 export {
+  calculateSnapshotHistoryStatistics,
+  confirmedWallLevelGrowth,
+  snapshotStatisticValueAvailable,
+  snapshotStatisticValueInsufficientData,
+} from './diff-statistics';
+export type {
+  SnapshotHistoryStatistics,
+  SnapshotHistoryStatisticsWindow,
+  SnapshotStatisticValue,
+  SnapshotStatisticValueState,
+} from './diff-statistics';
+export {
   SnapshotHistoryCanonicalizationException,
   canonicalizeSnapshotHistory,
   canonicalizeSnapshotHistoryWithLineage,
@@ -58,11 +70,35 @@ export {
   validateSnapshotHistoryEntryIntegrity,
 } from './envelope-validate';
 export type { ValidateSnapshotHistoryEnvelopeOptions } from './envelope-validate';
+export { appendSnapshotHistoryEntry, upsertSnapshotHistoryLineage } from './envelope-mutation';
+export {
+  createSnapshotHistoryMigrationMarker,
+  decodeSnapshotHistoryEnvelopeWire,
+  encodeSnapshotHistoryEnvelopeWire,
+} from './envelope-wire';
+export {
+  createInMemorySnapshotHistoryStore,
+  defaultSnapshotHistoryFileURL,
+  FileSnapshotHistoryStore,
+  nowAppliedAtRefSeconds,
+} from './file-store';
+export {
+  createSnapshotHistoryService,
+  envelopeHasPersistedHistory,
+  migrateSnapshotHistoryFromVillages,
+  upgradeExistingSnapshotHistoryEnvelope,
+} from './history-service';
+export type {
+  LoadOrMigrateSnapshotHistoryInput,
+  PlanSnapshotHistoryImportForServiceInput,
+  SnapshotHistoryService,
+} from './history-service';
 export { planSnapshotHistoryImport } from './import-service';
 export type {
   PlanSnapshotHistoryImportInput,
   SnapshotHistoryImportDecision,
 } from './import-service';
+export type { SnapshotHistoryStore } from './store-port';
 export { resolveSnapshotLineage } from './lineage-resolver';
 export {
   createSnapshotHistoryEnvelope,

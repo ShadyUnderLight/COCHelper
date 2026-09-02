@@ -1,4 +1,9 @@
-import { jsonNumber, type CanonicalJsonValue } from '@coc-helper/wire';
+import {
+  jsonNumber,
+  refSecondsToUnixSeconds,
+  type CanonicalJsonValue,
+  type UuidString,
+} from '@coc-helper/wire';
 
 import {
   SNAPSHOT_DIFF_ALGORITHM_VERSION,
@@ -29,6 +34,11 @@ import {
 } from './duplicate-key';
 import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 import { SNAPSHOT_HISTORY_ALL_SECTIONS, SNAPSHOT_HISTORY_ITEM_FIELDS } from './known-sections';
+import type { SnapshotCoverageRevalidationPolicy, SnapshotHistoryEnvelope } from './store-types';
+import {
+  hydrateVerifiedCoverageOnEntry,
+  hydrateVerifiedCoverageOnEnvelope,
+} from './trust-hydration';
 import type { HydratedSnapshotHistoryEntry } from './trust-hydration';
 import {
   createSnapshotItemIdentity,
@@ -1668,6 +1678,51 @@ export const SnapshotDiffEngine = {
       diagnostics,
     });
   },
+
+  adjacentDiffs(
+    entries: readonly HydratedSnapshotHistoryEntry[],
+    villageID?: UuidString,
+    lineageID?: UuidString,
+  ): SnapshotDiff[] {
+    if (entries.length < 2) {
+      return [];
+    }
+    const diffs: SnapshotDiff[] = [];
+    for (let index = 1; index < entries.length; index += 1) {
+      const previous = entries[index - 1]!;
+      const current = entries[index]!;
+      if (previous.villageID !== current.villageID || previous.lineageID !== current.lineageID) {
+        continue;
+      }
+      if (
+        villageID !== undefined &&
+        (previous.villageID !== villageID || current.villageID !== villageID)
+      ) {
+        continue;
+      }
+      if (
+        lineageID !== undefined &&
+        (previous.lineageID !== lineageID || current.lineageID !== lineageID)
+      ) {
+        continue;
+      }
+      diffs.push(SnapshotDiffEngine.compare(previous, current));
+    }
+    return diffs;
+  },
+
+  adjacentDiffsInEnvelope(
+    envelope: SnapshotHistoryEnvelope,
+    villageID?: UuidString,
+    lineageID?: UuidString,
+    policy: SnapshotCoverageRevalidationPolicy = 'production',
+  ): SnapshotDiff[] {
+    const hydrated = hydrateVerifiedCoverageOnEnvelope({ envelope, policy });
+    const entries = hydrated.entries.map((entry) =>
+      hydrateVerifiedCoverageOnEntry({ entry, policy }),
+    );
+    return SnapshotDiffEngine.adjacentDiffs(entries, villageID, lineageID);
+  },
 };
 
 function finalizeDiff(
@@ -1686,8 +1741,8 @@ function finalizeDiff(
     toSnapshotID: to.snapshotID,
     villageID: from.villageID,
     lineageID: from.lineageID,
-    fromAppliedAt: new Date(from.appliedAtRefSeconds * 1000),
-    toAppliedAt: new Date(to.appliedAtRefSeconds * 1000),
+    fromAppliedAt: new Date(refSecondsToUnixSeconds(from.appliedAtRefSeconds) * 1000),
+    toAppliedAt: new Date(refSecondsToUnixSeconds(to.appliedAtRefSeconds) * 1000),
     algorithmVersion: SNAPSHOT_DIFF_ALGORITHM_VERSION,
     comparisonState: input.comparisonState,
     contentState: input.contentState,

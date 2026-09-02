@@ -8,13 +8,10 @@ import { normalizedTag } from '../tag/validator';
 import { canonicalizeSnapshotHistoryWithLineage } from './canonicalizer';
 import { snapshotHistoryDuplicateKeysMatch } from './duplicate-key';
 import type { SnapshotHistoryServiceError } from './errors';
+import { appendSnapshotHistoryEntry } from './envelope-mutation';
 import { resolveSnapshotLineage } from './lineage-resolver';
 import { envelopeIsMigrated, envelopeActiveLineage } from './store-types';
-import type {
-  SnapshotHistoryDuplicateMetadata,
-  SnapshotHistoryEnvelope,
-  SnapshotHistoryLineageMetadata,
-} from './store-types';
+import type { SnapshotHistoryDuplicateMetadata, SnapshotHistoryEnvelope } from './store-types';
 import type {
   SnapshotCoverageSourceUniverse,
   SnapshotHistoryEntry,
@@ -45,38 +42,6 @@ export type PlanSnapshotHistoryImportInput = {
 
 function serviceError(error: SnapshotHistoryServiceError): SnapshotHistoryServiceError {
   return error;
-}
-
-function lineageHasConflict(reason: SnapshotLineageResolution['reason']): boolean {
-  return reason === 'missingTag' || reason === 'invalidTag' || reason === 'previousConflict';
-}
-
-function upsertLineage(
-  envelope: SnapshotHistoryEnvelope,
-  villageID: UuidString,
-  entry: SnapshotHistoryEntry,
-  hasConflict: boolean,
-): SnapshotHistoryLineageMetadata[] {
-  const lineages = envelope.lineages.map((lineage) =>
-    lineage.villageID === villageID ? { ...lineage, isActive: false } : lineage,
-  );
-  const existingIndex = lineages.findIndex((lineage) => lineage.lineageID === entry.lineageID);
-  const updated: SnapshotHistoryLineageMetadata = {
-    villageID,
-    lineageID: entry.lineageID,
-    normalizedPlayerTag: entry.normalizedPlayerTag,
-    lastEntryID: entry.snapshotID,
-    lastFingerprint: entry.canonicalFingerprint,
-    lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
-    hasConflict,
-    isActive: true,
-  };
-  if (existingIndex >= 0) {
-    const next = lineages.slice();
-    next[existingIndex] = updated;
-    return next;
-  }
-  return [...lineages, updated];
 }
 
 export function planSnapshotHistoryImport(
@@ -171,17 +136,7 @@ export function planSnapshotHistoryImport(
     }
   }
 
-  updated = {
-    ...updated,
-    entries: [...updated.entries, candidate],
-    lineages: upsertLineage(
-      updated,
-      input.villageID,
-      candidate,
-      lineageHasConflict(lineage.reason),
-    ),
-    lastDiagnostic: null,
-  };
+  updated = appendSnapshotHistoryEntry(updated, candidate, lineage);
 
   return {
     envelope: updated,

@@ -196,4 +196,32 @@ describe('snapshot history Swift oracle parity', () => {
     });
     await assertDiffParity('snapshot-history-diff-partial-coverage', from, to);
   });
+
+  it('diff A→B level increased 与 Swift oracle 一致', async () => {
+    const from = buildEntry({
+      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":1}]}',
+      appliedAtRefSeconds: 100,
+      snapshotID: '00000000-0000-0000-0000-000000000040',
+    });
+    const to = buildEntry({
+      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":2}]}',
+      appliedAtRefSeconds: 200,
+      snapshotID: '00000000-0000-0000-0000-000000000041',
+    });
+    await assertDiffParity('snapshot-history-diff-a-to-b', from, to);
+  });
+
+  it('diff A→B→A 第二段 comparable 与 Swift oracle 一致', async () => {
+    const b = buildEntry({
+      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":2}]}',
+      appliedAtRefSeconds: 200,
+      snapshotID: '00000000-0000-0000-0000-000000000051',
+    });
+    const a2 = buildEntry({
+      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":1}]}',
+      appliedAtRefSeconds: 300,
+      snapshotID: '00000000-0000-0000-0000-000000000052',
+    });
+    await assertDiffParity('snapshot-history-diff-b-to-a-full', b, a2);
+  });
 });

@@ -10,6 +10,7 @@ import {
 } from './index';
 
 const FIRST_TAG = '#2QJQ8J88';
+const SECOND_TAG = '#2QJQ8J89';
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
 const VILLAGE_ID = parseUuid('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')!;
 const LINEAGE_ID = parseUuid('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')!;
@@ -34,6 +35,19 @@ function snapshotFromText(
   return parseAccountSnapshot(fullText, {
     clock: new FixedClock(importedAtMs),
   });
+}
+
+function expectSnapshot(
+  text: string,
+  tag: string | null = FIRST_TAG,
+  capturedAtMs: number | null = null,
+) {
+  const parsed = snapshotFromText(text, tag, capturedAtMs);
+  expect(parsed.ok).toBe(true);
+  if (!parsed.ok) {
+    throw new Error('snapshot parse failed');
+  }
+  return parsed.value;
 }
 
 describe('snapshot history import service', () => {
@@ -117,6 +131,180 @@ describe('snapshot history import service', () => {
       parserVersion: 'account-json-9.9',
     };
     expect(snapshotHistoryDuplicateKeysMatch(base, shifted)).toBe(true);
+  });
+
+  it('A→B→A 保留三条 immutable entry', () => {
+    const base = snapshotFromText('{"buildings":[]}', FIRST_TAG);
+    expect(base.ok).toBe(true);
+    if (!base.ok) {
+      return;
+    }
+    const baseline = canonicalizeSnapshotHistory(base.value, {
+      villageID: VILLAGE_ID,
+      lineageID: LINEAGE_ID,
+      appliedAtRefSeconds: 1,
+      isBaseline: true,
+      baselineReason: 'initial',
+    });
+    const envelope = createSnapshotHistoryEnvelope({
+      entries: [baseline],
+      lineages: [
+        {
+          villageID: VILLAGE_ID,
+          lineageID: baseline.lineageID,
+          normalizedPlayerTag: FIRST_TAG,
+          lastEntryID: baseline.snapshotID,
+          lastFingerprint: baseline.canonicalFingerprint,
+          lastAppliedAtRefSeconds: baseline.appliedAtRefSeconds,
+          hasConflict: false,
+          isActive: true,
+        },
+      ],
+      migrationMarker: { version: 1, completedAtRefSeconds: 1 },
+    });
+
+    const changed = planSnapshotHistoryImport({
+      snapshot: expectSnapshot('{"buildings":[],"unknown":1}', FIRST_TAG),
+      villageID: VILLAGE_ID,
+      currentTag: FIRST_TAG,
+      hasCurrentSnapshot: true,
+      envelope,
+      appliedAtRefSeconds: 2,
+    });
+    expect(changed.appended).toBe(true);
+    expect(changed.duplicate).toBe(false);
+    expect(changed.envelope.entries).toHaveLength(2);
+    expect(changed.lineage.outcome).toBe('continued');
+
+    const reverted = planSnapshotHistoryImport({
+      snapshot: expectSnapshot('{"buildings":[]}', FIRST_TAG),
+      villageID: VILLAGE_ID,
+      currentTag: FIRST_TAG,
+      hasCurrentSnapshot: true,
+      envelope: changed.envelope,
+      appliedAtRefSeconds: 2.5,
+    });
+    expect(reverted.appended).toBe(true);
+    expect(reverted.envelope.entries).toHaveLength(3);
+    expect(reverted.lineage.outcome).toBe('continued');
+  });
+
+  it('tag 变化创建新 active lineage 而非 duplicate', () => {
+    const base = snapshotFromText('{"buildings":[]}', FIRST_TAG);
+    expect(base.ok).toBe(true);
+    if (!base.ok) {
+      return;
+    }
+    const baseline = canonicalizeSnapshotHistory(base.value, {
+      villageID: VILLAGE_ID,
+      lineageID: LINEAGE_ID,
+      appliedAtRefSeconds: 10,
+      isBaseline: true,
+      baselineReason: 'initial',
+    });
+    const envelope = createSnapshotHistoryEnvelope({
+      entries: [baseline],
+      lineages: [
+        {
+          villageID: VILLAGE_ID,
+          lineageID: baseline.lineageID,
+          normalizedPlayerTag: FIRST_TAG,
+          lastEntryID: baseline.snapshotID,
+          lastFingerprint: baseline.canonicalFingerprint,
+          lastAppliedAtRefSeconds: baseline.appliedAtRefSeconds,
+          hasConflict: false,
+          isActive: true,
+        },
+      ],
+      migrationMarker: { version: 1, completedAtRefSeconds: 10 },
+    });
+    const lineage1ID = baseline.lineageID;
+
+    const tagChanged = planSnapshotHistoryImport({
+      snapshot: expectSnapshot(`{"tag":"${SECOND_TAG}","heroes":[{"data":1,"lvl":2}]}`, SECOND_TAG),
+      villageID: VILLAGE_ID,
+      currentTag: FIRST_TAG,
+      hasCurrentSnapshot: true,
+      envelope,
+      appliedAtRefSeconds: 31,
+    });
+    expect(tagChanged.appended).toBe(true);
+    expect(tagChanged.duplicate).toBe(false);
+    expect(tagChanged.lineage.outcome).toBe('newLineage');
+    expect(tagChanged.envelope.lineages).toHaveLength(2);
+    const activeLineage = tagChanged.envelope.lineages.find(
+      (lineage) => lineage.villageID === VILLAGE_ID && lineage.isActive,
+    );
+    expect(activeLineage?.lineageID).not.toBe(lineage1ID);
+    expect(activeLineage?.normalizedPlayerTag).toBe(SECOND_TAG);
+    expect(
+      tagChanged.envelope.entries.filter(
+        (entry) => entry.villageID === VILLAGE_ID && entry.lineageID === lineage1ID,
+      ),
+    ).toHaveLength(1);
+    expect(
+      tagChanged.envelope.entries.filter(
+        (entry) => entry.villageID === VILLAGE_ID && entry.lineageID === activeLineage?.lineageID,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('连续 duplicate import 递增 duplicateImportCount', () => {
+    const baseText = `{"tag":"${FIRST_TAG}","buildings":[]}`;
+    const base = snapshotFromText(baseText, FIRST_TAG, 10_000);
+    expect(base.ok).toBe(true);
+    if (!base.ok) {
+      return;
+    }
+    const baseline = canonicalizeSnapshotHistory(base.value, {
+      villageID: VILLAGE_ID,
+      lineageID: LINEAGE_ID,
+      appliedAtRefSeconds: 20,
+      isBaseline: true,
+      baselineReason: 'initial',
+    });
+    let envelope = createSnapshotHistoryEnvelope({
+      entries: [baseline],
+      lineages: [
+        {
+          villageID: VILLAGE_ID,
+          lineageID: baseline.lineageID,
+          normalizedPlayerTag: FIRST_TAG,
+          lastEntryID: baseline.snapshotID,
+          lastFingerprint: baseline.canonicalFingerprint,
+          lastAppliedAtRefSeconds: baseline.appliedAtRefSeconds,
+          hasConflict: false,
+          isActive: true,
+        },
+      ],
+      migrationMarker: { version: 1, completedAtRefSeconds: 20 },
+    });
+
+    const firstDuplicate = planSnapshotHistoryImport({
+      snapshot: expectSnapshot(`{"buildings":[],"tag":"${FIRST_TAG}"}`, FIRST_TAG, 30_000),
+      villageID: VILLAGE_ID,
+      currentTag: FIRST_TAG,
+      hasCurrentSnapshot: true,
+      envelope,
+      appliedAtRefSeconds: 31,
+    });
+    expect(firstDuplicate.duplicate).toBe(true);
+    expect(firstDuplicate.envelope.entries).toHaveLength(1);
+    const entryID = firstDuplicate.entry.snapshotID;
+    expect(firstDuplicate.envelope.duplicateMetadata[entryID]?.duplicateImportCount).toBe(1);
+
+    envelope = firstDuplicate.envelope;
+    const secondDuplicate = planSnapshotHistoryImport({
+      snapshot: expectSnapshot(baseText, FIRST_TAG, 40_000),
+      villageID: VILLAGE_ID,
+      currentTag: FIRST_TAG,
+      hasCurrentSnapshot: true,
+      envelope,
+      appliedAtRefSeconds: 41,
+    });
+    expect(secondDuplicate.duplicate).toBe(true);
+    expect(secondDuplicate.envelope.entries).toHaveLength(1);
+    expect(secondDuplicate.envelope.duplicateMetadata[entryID]?.duplicateImportCount).toBe(2);
   });
 
   it('current tag 不匹配时 fail-closed', () => {

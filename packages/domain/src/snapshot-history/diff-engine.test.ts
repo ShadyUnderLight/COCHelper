@@ -556,4 +556,52 @@ describe('SnapshotDiffEngine', () => {
     expect(SnapshotDiffEngine.adjacentDiffs([first, otherLineage, second])).toHaveLength(0);
     expect(SnapshotDiffEngine.adjacentDiffs([second, first])).toHaveLength(1);
   });
+
+  it('adjacentDiffs A→B→A 保留 +1/-1 levelDelta', () => {
+    const identity = makeIdentity('heroes', 1);
+    const first = makeEntry({
+      id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+      date: 100,
+      items: [makeItem(identity, 1)],
+      section: 'heroes',
+    });
+    const second = makeEntry({
+      id: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
+      date: 200,
+      items: [makeItem(identity, 2)],
+      section: 'heroes',
+    });
+    const third = makeEntry({
+      id: 'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC',
+      date: 300,
+      items: [makeItem(identity, 1)],
+      section: 'heroes',
+    });
+
+    const diffs = SnapshotDiffEngine.adjacentDiffs([first, second, third]);
+    expect(diffs).toHaveLength(2);
+    expect(diffs.map((diff) => diff.changes[0]?.levelDelta)).toEqual([1, -1]);
+  });
+
+  it('跨 lineage compare 被 suppressed', () => {
+    const identity = makeIdentity('heroes', 1);
+    const third = makeEntry({
+      id: 'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC',
+      date: 300,
+      items: [makeItem(identity, 1)],
+      section: 'heroes',
+    });
+    const otherLineage = makeEntry({
+      id: 'DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD',
+      date: 400,
+      items: [makeItem(identity, 3)],
+      section: 'heroes',
+      lineageID: parseUuid('33333333-3333-3333-3333-333333333333')!,
+    });
+
+    const suppressed = SnapshotDiffEngine.compare(third, otherLineage);
+    expect(suppressed.comparisonState).toBe('suppressed');
+    expect(suppressed.changes).toHaveLength(0);
+    expect(suppressed.diagnostics.some((item) => item.kind === 'lineageMismatch')).toBe(true);
+  });
 });

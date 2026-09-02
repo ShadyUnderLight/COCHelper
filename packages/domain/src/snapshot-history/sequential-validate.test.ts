@@ -109,4 +109,65 @@ describe('snapshot history sequential validate', () => {
       expect(envelope.entries).toHaveLength(1);
     }
   });
+
+  it('深层嵌套 fixture 连续校验并报告复杂度', async () => {
+    const deepNestedText = JSON.stringify({
+      tag: '#P1',
+      buildings: [
+        {
+          data: 1_000_001,
+          types: [
+            {
+              data: 777,
+              modules: [
+                {
+                  data: 888,
+                  modules: [{ data: 999 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const parsed = parseAccountSnapshot(deepNestedText, { clock: new GoldenClock() });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const entry = canonicalizeSnapshotHistory(parsed.value, {
+      villageID: parseUuid('00000000-0000-0000-0000-000000000007')!,
+      lineageID: parseUuid('00000000-0000-0000-0000-000000000008')!,
+      appliedAtRefSeconds: 807_629_133,
+      snapshotID: parseUuid('00000000-0000-0000-0000-000000000009')!,
+    });
+
+    const envelope = createSnapshotHistoryEnvelope({
+      entries: [entry],
+      lineages: [
+        {
+          villageID: entry.villageID,
+          lineageID: entry.lineageID,
+          normalizedPlayerTag: entry.normalizedPlayerTag,
+          lastEntryID: entry.snapshotID,
+          lastFingerprint: entry.canonicalFingerprint,
+          lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
+          hasConflict: false,
+          isActive: true,
+        },
+      ],
+      migrationMarker: createSnapshotHistoryMigrationMarker(807_629_133),
+    });
+
+    const complexity = diagnoseEnvelopeComplexity(envelope.entries);
+    expect(complexity.maxNestedDepth).toBeGreaterThanOrEqual(4);
+    expect(complexity.totalItemCount).toBe(entry.observation.items.length);
+
+    const result = await sequentialValidateSnapshotHistoryEntriesAsync(envelope, {
+      yieldEvery: 1,
+    });
+    expect(result.processedEntryCount).toBe(1);
+    expect(envelope.entries).toHaveLength(1);
+  });
 });

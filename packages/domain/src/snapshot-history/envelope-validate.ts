@@ -18,6 +18,12 @@ import type { SnapshotHistoryEntry } from './types';
 
 export type ValidateSnapshotHistoryEnvelopeOptions = {
   readonly validateIntegrity?: (entry: SnapshotHistoryEntry) => void;
+  /**
+   * migration-aware load 路径专用：允许「已有 persisted history 但 migrationMarker 缺失」
+   * 的 legacy envelope 通过结构校验，供 loadOrMigrate preserving upgrade 处理。
+   * save() 必须保持默认 strict 行为。
+   */
+  readonly allowUnmigratedPersistedHistory?: boolean;
 };
 
 const defaultValidateIntegrity = (entry: SnapshotHistoryEntry): void => {
@@ -110,7 +116,8 @@ export function validateSnapshotHistoryEnvelope(
     envelope.migrationMarker === null &&
     (envelope.entries.length > 0 ||
       envelope.lineages.length > 0 ||
-      Object.keys(envelope.duplicateMetadata).length > 0)
+      Object.keys(envelope.duplicateMetadata).length > 0) &&
+    !options.allowUnmigratedPersistedHistory
   ) {
     throw storeError({
       kind: 'invalidEntry',

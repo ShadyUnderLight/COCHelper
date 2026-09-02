@@ -136,4 +136,44 @@ describe('snapshot history envelope validate', () => {
 
     expect(() => validateSnapshotHistoryEnvelope(envelope)).toThrow();
   });
+
+  it('load 路径允许 legacy unmigrated persisted history，save 路径仍拒绝', () => {
+    const root = resolve(process.cwd());
+    const goldenText = readFileSync(
+      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      'utf8',
+    );
+    const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const entry = canonicalizeSnapshotHistory(parsed.value, {
+      villageID: parseUuid('00000000-0000-0000-0000-000000000001')!,
+      lineageID: parseUuid('00000000-0000-0000-0000-000000000002')!,
+      appliedAtRefSeconds: GOLDEN_APPLIED_AT_REF_SECONDS,
+      snapshotID: parseUuid('00000000-0000-0000-0000-000000000003')!,
+    });
+    const legacy = createSnapshotHistoryEnvelope({
+      entries: [entry],
+      lineages: [
+        {
+          villageID: entry.villageID,
+          lineageID: entry.lineageID,
+          normalizedPlayerTag: entry.normalizedPlayerTag,
+          lastEntryID: entry.snapshotID,
+          lastFingerprint: entry.canonicalFingerprint,
+          lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
+          hasConflict: false,
+          isActive: true,
+        },
+      ],
+      migrationMarker: null,
+    });
+
+    expect(() => validateSnapshotHistoryEnvelope(legacy)).toThrow();
+    expect(() =>
+      validateSnapshotHistoryEnvelope(legacy, { allowUnmigratedPersistedHistory: true }),
+    ).not.toThrow();
+  });
 });

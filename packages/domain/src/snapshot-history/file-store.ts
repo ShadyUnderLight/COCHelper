@@ -50,7 +50,9 @@ export class FileSnapshotHistoryStore implements SnapshotHistoryStore {
     }
     try {
       const envelope = decodeSnapshotHistoryEnvelopeWire(new TextDecoder().decode(data));
-      const validated = validateSnapshotHistoryEnvelope(envelope);
+      const validated = validateSnapshotHistoryEnvelope(envelope, {
+        allowUnmigratedPersistedHistory: true,
+      });
       return hydrateSnapshotHistoryEnvelope(validated, this.hydrationPolicy);
     } catch (error) {
       if (isSnapshotHistoryStoreError(error)) {
@@ -144,7 +146,9 @@ export function createInMemorySnapshotHistoryStore(): SnapshotHistoryStore & {
         return null;
       }
       const envelope = decodeSnapshotHistoryEnvelopeWire(new TextDecoder().decode(bytes));
-      const validated = validateSnapshotHistoryEnvelope(envelope);
+      const validated = validateSnapshotHistoryEnvelope(envelope, {
+        allowUnmigratedPersistedHistory: true,
+      });
       return hydrateSnapshotHistoryEnvelope(validated, 'testsAllowTestFixture');
     },
     save(envelope: SnapshotHistoryEnvelope): void {

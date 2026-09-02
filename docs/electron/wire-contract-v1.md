@@ -297,8 +297,10 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
 | json-raw-samples.json | §WA-1 原始 JSON 源文本：同一 object 内 NFC 等价重复键、`__proto__` 键保留、孤立 surrogate 拒绝；source 为 JSON 字符串以免 fixture 加载时提前 collapse | GoldenContractTests/JsonRawSourceGoldenTests |
 | nsnumber-stringvalue.json | §WA-1.2 `JSONSerialization` → `NSNumber.stringValue`：整数 / NSDecimalNumber / Darwin `%.16g` 三条路径 | GoldenContractTests/NSNumberStringValueGoldenTests |
 | primitive-fuzz-corpus.json | 共享 parser 边界 corpus：深层 JSON、长整数、`__proto__`、非法逗号/前导零、孤立 surrogate、非有限数字 | packages/wire/src/parser-fuzz.test.ts |
-| account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。冻结四类输出：F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码 + **AccountSnapshot 与 HistoryEntryV1 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序）**。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | GoldenContractTests/ParserGoldenTests |
+| account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。冻结四类输出：F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码 + **AccountSnapshot 与 HistoryEntryV1 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序）**。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | GoldenContractTests/ParserGoldenTests；manifest `parser/*` |
+| manual-queue-capacity-contract.json | §BE-5.3 队列容量 start gate / occupancy 投影契约；startGateCases + occupancyCases | packages/testkit/src/manual-queue-capacity.parity.test.ts；manifest `projection/manual-queue-capacity` |
+| snapshot-history-diff-contract.json | §BE-3 diff 引擎三类冻结场景：level increased / B→A comparable no change / partial coverage 不产删除 | packages/testkit/src/snapshot-history.parity.test.ts；manifest `diff/snapshot-history-contract` |
 | official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | 既有 ClanPaginationDecodeTests / GameCatalogTests |
 
-尚未覆盖（见 target-architecture.md §6 关闭门）：projection / diff / error 场景 fixture，
-由 E2-* 按域增量追加。
+尚未覆盖（见 target-architecture.md §6 关闭门）：**error 场景 fixture**，
+由 E2-06（#274）等域 issue 按 error-matrix.md 增量追加。全量 fixture 登记见 `Tests/Golden/manifest.json`。

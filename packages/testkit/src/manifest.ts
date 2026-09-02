@@ -3,6 +3,10 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { isSha256Fingerprint, sha256Fingerprint, type Sha256Fingerprint } from '@coc-helper/wire';
 
+import type { SwiftOracleOperation } from './oracle';
+
+export type GoldenFixtureOperation = SwiftOracleOperation | 'fixture-registry';
+
 export const PARITY_CATEGORIES = [
   'fixture',
   'wire',
@@ -15,10 +19,19 @@ export const PARITY_CATEGORIES = [
 
 export type ParityCategory = (typeof PARITY_CATEGORIES)[number];
 
+const GOLDEN_FIXTURE_OPERATIONS = [
+  'canonical-json',
+  'fixture-registry',
+  'manual-queue-capacity',
+  'manual-reconciliation-preview',
+  'snapshot-history-canonicalize',
+  'snapshot-history-diff',
+] as const satisfies readonly GoldenFixtureOperation[];
+
 export type GoldenCase = {
   readonly id: string;
   readonly category: ParityCategory;
-  readonly operation: 'canonical-json';
+  readonly operation: GoldenFixtureOperation;
   readonly fixture: string;
   readonly fixtureSha256: Sha256Fingerprint;
   readonly swiftOwner: string;
@@ -91,8 +104,9 @@ function parseGoldenCase(value: unknown, label: string): GoldenCase {
   if (!(PARITY_CATEGORIES as readonly string[]).includes(category)) {
     throw new Error(`${label}.category 不受支持。`);
   }
-  if (object.operation !== 'canonical-json') {
-    throw new Error(`${label}.operation 必须为 canonical-json。`);
+  const operation = requireString(object.operation, `${label}.operation`);
+  if (!(GOLDEN_FIXTURE_OPERATIONS as readonly string[]).includes(operation)) {
+    throw new Error(`${label}.operation 不受支持。`);
   }
   const fixtureSha256 = requireString(object.fixtureSha256, `${label}.fixtureSha256`);
   if (!isSha256Fingerprint(fixtureSha256)) {
@@ -101,7 +115,7 @@ function parseGoldenCase(value: unknown, label: string): GoldenCase {
   return {
     id: requireString(object.id, `${label}.id`),
     category: category as ParityCategory,
-    operation: 'canonical-json',
+    operation: operation as GoldenFixtureOperation,
     fixture: requireString(object.fixture, `${label}.fixture`),
     fixtureSha256,
     swiftOwner: requireString(object.swiftOwner, `${label}.swiftOwner`),

@@ -28,7 +28,7 @@ const manifest = loadGoldenManifest(root);
 const oracle = createSwiftOracleRunner({ root });
 
 describe('Swift oracle / TypeScript golden parity', () => {
-  for (const entry of manifest.cases) {
+  for (const entry of manifest.cases.filter((item) => item.operation === 'canonical-json')) {
     it(entry.id, async () => {
       const corpus = parseCorpus(readGoldenFixture(root, entry));
       for (const sample of corpus.valid) {

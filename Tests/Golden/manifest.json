@@ -10,6 +10,87 @@
       "fixtureSha256": "sha256:cbfc4ec0c5b523eee0b3ec24cb2e4fa34a72194ef8016fc788fc089e17f8c8fa",
       "swiftOwner": "Tests/Golden/JsonRawSourceGoldenTests.swift#testRawSourcesMatchCanonicalJSONValue",
       "typescriptOwner": "packages/testkit/src/golden.parity.test.ts"
+    },
+    {
+      "id": "wire/canonical-json-samples",
+      "category": "wire",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/canonical-json-samples.json",
+      "fixtureSha256": "sha256:2cfd0e3f3d822940787715beea9306d4a9ce39907f29078970c1bf30879bc8eb",
+      "swiftOwner": "Tests/Golden/CanonicalJSONGoldenTests.swift",
+      "typescriptOwner": "packages/wire/src/canonical-json.test.ts"
+    },
+    {
+      "id": "wire/canonical-json-expected",
+      "category": "wire",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/canonical-json-expected.json",
+      "fixtureSha256": "sha256:73ba5d3fd40bc4c9d6e9181510c898304c15619c0093797157d161abad840038",
+      "swiftOwner": "Tests/Golden/CanonicalJSONGoldenTests.swift",
+      "typescriptOwner": "packages/wire/src/canonical-json.test.ts"
+    },
+    {
+      "id": "wire/nsnumber-stringvalue",
+      "category": "wire",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/nsnumber-stringvalue.json",
+      "fixtureSha256": "sha256:f12e5a9ba2b6abfa6f57a328386c040b1cdc91bcec2a1873dcedeab75e6856f4",
+      "swiftOwner": "Tests/Golden/NSNumberStringValueGoldenTests.swift",
+      "typescriptOwner": "packages/wire/src/json-number.test.ts"
+    },
+    {
+      "id": "wire/swift-string-compare",
+      "category": "ordering",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/swift-string-compare.json",
+      "fixtureSha256": "sha256:801d153f7e26be19571cbe5693d3d8928b99c5c969f3a25021fec5fcd937a5d9",
+      "swiftOwner": "Tests/Golden/SwiftStringCompareGoldenTests.swift",
+      "typescriptOwner": "packages/wire/src/json-value.test.ts"
+    },
+    {
+      "id": "wire/primitive-fuzz-corpus",
+      "category": "wire",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/primitive-fuzz-corpus.json",
+      "fixtureSha256": "sha256:fd1e5e6ed3fa3a6c6f770d70df6dbae8a32432a315679515015b3b7d20f621a0",
+      "swiftOwner": "—",
+      "typescriptOwner": "packages/wire/src/parser-fuzz.test.ts"
+    },
+    {
+      "id": "parser/account-snapshot-golden",
+      "category": "parser",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/account_snapshot_golden.json",
+      "fixtureSha256": "sha256:ed8e3e8a4f94d92b2e8af1617f41e0dadfd053b38e9b0f40f7c8f743267fbd37",
+      "swiftOwner": "Tests/Golden/ParserGoldenTests.swift",
+      "typescriptOwner": "packages/testkit/src/account-parser.parity.test.ts"
+    },
+    {
+      "id": "parser/golden-expected",
+      "category": "parser",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/parser_golden_expected.json",
+      "fixtureSha256": "sha256:489d7fa307ec3302bb5d07cf7ffa01df5c293e894a2fcbb442a22f197a234d57",
+      "swiftOwner": "Tests/Golden/ParserGoldenTests.swift",
+      "typescriptOwner": "packages/domain/src/snapshot-history/canonicalizer.golden.test.ts"
+    },
+    {
+      "id": "projection/manual-queue-capacity",
+      "category": "projection",
+      "operation": "manual-queue-capacity",
+      "fixture": "Tests/Golden/Fixtures/manual-queue-capacity-contract.json",
+      "fixtureSha256": "sha256:2e590dfbf908dcf4cb7ab1661a9a46cbdcaab037d0c0e4d252df743f6300debd",
+      "swiftOwner": "Tools/golden-oracle/GoldenOracleEntry.swift#manual-queue-capacity",
+      "typescriptOwner": "packages/testkit/src/manual-queue-capacity.parity.test.ts"
+    },
+    {
+      "id": "diff/snapshot-history-contract",
+      "category": "ordering",
+      "operation": "snapshot-history-diff",
+      "fixture": "Tests/Golden/Fixtures/snapshot-history-diff-contract.json",
+      "fixtureSha256": "sha256:a977ba830c3a46d414f95b0c39d7cc49af28b38b0ef27cf145cd27431045d922",
+      "swiftOwner": "Tools/golden-oracle/GoldenOracleEntry.swift#snapshot-history-diff",
+      "typescriptOwner": "packages/testkit/src/snapshot-history.parity.test.ts"
     }
   ]
 }

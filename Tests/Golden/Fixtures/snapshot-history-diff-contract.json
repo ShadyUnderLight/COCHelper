@@ -1,0 +1,55 @@
+{
+  "description": "Issue #265 E0-02：snapshot history diff golden contract。冻结 diff 引擎在等级变化、B→A 可比无变化、partial coverage 不产删除三类行为。",
+  "importedAtRefSeconds": 807529133,
+  "appliedAtRefSeconds": 807629133,
+  "villageID": "00000000-0000-0000-0000-000000000001",
+  "lineageID": "00000000-0000-0000-0000-000000000002",
+  "canonicalizeCase": {
+    "id": "golden-canonicalize",
+    "snapshotFixture": "Tests/Golden/Fixtures/account_snapshot_golden.json",
+    "snapshotID": "00000000-0000-0000-0000-000000000003",
+    "appliedAtRefSeconds": 807629133,
+    "importedAtRefSeconds": 807529133
+  },
+  "diffCases": [
+    {
+      "id": "level-increased",
+      "from": {
+        "text": "{\"tag\":\"#GOLDEN01\",\"buildings\":[{\"data\":1000013,\"lvl\":1}]}",
+        "appliedAtRefSeconds": 100,
+        "snapshotID": "00000000-0000-0000-0000-000000000010"
+      },
+      "to": {
+        "text": "{\"tag\":\"#GOLDEN01\",\"buildings\":[{\"data\":1000013,\"lvl\":2}]}",
+        "appliedAtRefSeconds": 200,
+        "snapshotID": "00000000-0000-0000-0000-000000000011"
+      }
+    },
+    {
+      "id": "b-to-a",
+      "from": {
+        "text": "{\"tag\":\"#GOLDEN01\",\"buildings\":[{\"data\":1000013,\"lvl\":6}]}",
+        "appliedAtRefSeconds": 200,
+        "snapshotID": "00000000-0000-0000-0000-000000000021"
+      },
+      "to": {
+        "text": "{\"tag\":\"#GOLDEN01\",\"buildings\":[{\"data\":1000013,\"lvl\":5}]}",
+        "appliedAtRefSeconds": 300,
+        "snapshotID": "00000000-0000-0000-0000-000000000022"
+      }
+    },
+    {
+      "id": "partial-coverage",
+      "from": {
+        "text": "{\"tag\":\"#GOLDEN01\",\"buildings\":[{\"data\":1000013,\"lvl\":1},{\"data\":1000016,\"lvl\":1}]}",
+        "appliedAtRefSeconds": 100,
+        "snapshotID": "00000000-0000-0000-0000-000000000030"
+      },
+      "to": {
+        "text": "{\"tag\":\"#GOLDEN01\",\"buildings\":[{\"data\":1000013,\"lvl\":2}]}",
+        "appliedAtRefSeconds": 200,
+        "snapshotID": "00000000-0000-0000-0000-000000000031"
+      }
+    }
+  ]
+}

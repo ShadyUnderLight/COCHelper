@@ -9,6 +9,7 @@ describe('golden manifest', () => {
     const manifest = loadGoldenManifest(root);
     expect(manifest.protocolVersion).toBe(1);
     expect(manifest.fixtureVersion).toBe('wire-contract-v1');
+    expect(manifest.cases.length).toBeGreaterThanOrEqual(10);
     expect(new Set(manifest.cases.map((entry) => entry.id)).size).toBe(manifest.cases.length);
     for (const entry of manifest.cases) {
       expect(fixturePath(root, entry)).toContain(root);

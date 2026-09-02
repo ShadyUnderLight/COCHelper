@@ -15,19 +15,52 @@ import { describe, expect, it } from 'vitest';
 
 import { assertParity } from './compare';
 import { compareManualOutcomeParity } from './manual-parity-compare';
+import { loadGoldenManifest, readGoldenFixture } from './manifest';
 import { createSwiftOracleRunner, SWIFT_ORACLE_PROTOCOL_VERSION } from './oracle';
 
+type DiffContractEntry = {
+  readonly text: string;
+  readonly appliedAtRefSeconds: number;
+  readonly snapshotID: string;
+  readonly lineageID?: string;
+};
+
+type DiffContract = {
+  readonly importedAtRefSeconds: number;
+  readonly appliedAtRefSeconds: number;
+  readonly villageID: string;
+  readonly lineageID: string;
+  readonly canonicalizeCase: {
+    readonly id: string;
+    readonly snapshotFixture: string;
+    readonly snapshotID: string;
+    readonly appliedAtRefSeconds: number;
+    readonly importedAtRefSeconds: number;
+  };
+  readonly diffCases: readonly {
+    readonly id: string;
+    readonly from: DiffContractEntry;
+    readonly to: DiffContractEntry;
+  }[];
+};
+
 const root = process.cwd();
+const manifest = loadGoldenManifest(root);
+const diffContractEntry = manifest.cases.find((entry) => entry.id === 'diff/snapshot-history-contract');
+if (diffContractEntry === undefined) {
+  throw new Error('golden manifest 缺少 diff/snapshot-history-contract。');
+}
+const diffContract = readGoldenFixture(root, diffContractEntry) as DiffContract;
 const oracle = createSwiftOracleRunner({ root });
 
-const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
-const GOLDEN_APPLIED_AT_REF_SECONDS = 807_629_133;
-const VILLAGE_ID = parseUuid('00000000-0000-0000-0000-000000000001')!;
-const LINEAGE_ID = parseUuid('00000000-0000-0000-0000-000000000002')!;
+const VILLAGE_ID = parseUuid(diffContract.villageID)!;
+const LINEAGE_ID = parseUuid(diffContract.lineageID)!;
 
 class GoldenClock {
+  constructor(private readonly importedAtRefSeconds: number) {}
+
   nowMs(): number {
-    return (GOLDEN_IMPORTED_AT_REF_SECONDS + 978_307_200) * 1000;
+    return (this.importedAtRefSeconds + 978_307_200) * 1000;
   }
 }
 
@@ -43,13 +76,10 @@ function hydrateEntry(entry: ReturnType<typeof canonicalizeSnapshotHistory>) {
   });
 }
 
-function buildEntry(input: {
-  readonly text: string;
-  readonly appliedAtRefSeconds: number;
-  readonly snapshotID: string;
-  readonly lineageID?: string;
-}) {
-  const parsed = parseAccountSnapshot(input.text, { clock: new GoldenClock() });
+function buildEntry(input: DiffContractEntry) {
+  const parsed = parseAccountSnapshot(input.text, {
+    clock: new GoldenClock(diffContract.importedAtRefSeconds),
+  });
   expect(parsed.ok).toBe(true);
   if (!parsed.ok) {
     throw new Error('parse failed');
@@ -69,11 +99,10 @@ async function assertCanonicalizeParity(caseId: string, source: string): Promise
     operation: 'snapshot-history-canonicalize',
     source,
   });
-  const goldenText = readFileSync(
-    resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
-    'utf8',
-  );
-  const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
+  const goldenText = readFileSync(resolve(root, diffContract.canonicalizeCase.snapshotFixture), 'utf8');
+  const parsed = parseAccountSnapshot(goldenText, {
+    clock: new GoldenClock(diffContract.canonicalizeCase.importedAtRefSeconds),
+  });
   expect(parsed.ok).toBe(true);
   if (!parsed.ok) {
     return;
@@ -81,8 +110,8 @@ async function assertCanonicalizeParity(caseId: string, source: string): Promise
   const entry = canonicalizeSnapshotHistory(parsed.value, {
     villageID: VILLAGE_ID,
     lineageID: LINEAGE_ID,
-    appliedAtRefSeconds: GOLDEN_APPLIED_AT_REF_SECONDS,
-    snapshotID: parseUuid('00000000-0000-0000-0000-000000000003')!,
+    appliedAtRefSeconds: diffContract.canonicalizeCase.appliedAtRefSeconds,
+    snapshotID: parseUuid(diffContract.canonicalizeCase.snapshotID)!,
   });
   const typescriptHex = manualParityHex({
     canonicalFingerprint: entry.canonicalFingerprint,
@@ -138,90 +167,28 @@ async function assertDiffParity(
 describe('snapshot history Swift oracle parity', () => {
   it('golden canonicalize 与 Swift oracle 一致', async () => {
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, diffContract.canonicalizeCase.snapshotFixture),
       'utf8',
     );
     await assertCanonicalizeParity(
-      'snapshot-history-golden-canonicalize',
+      `snapshot-history-${diffContract.canonicalizeCase.id}`,
       JSON.stringify({
         kind: 'canonicalize',
         snapshotText: goldenText,
         villageID: VILLAGE_ID,
         lineageID: LINEAGE_ID,
-        snapshotID: '00000000-0000-0000-0000-000000000003',
-        appliedAtRefSeconds: GOLDEN_APPLIED_AT_REF_SECONDS,
-        importedAtRefSeconds: GOLDEN_IMPORTED_AT_REF_SECONDS,
+        snapshotID: diffContract.canonicalizeCase.snapshotID,
+        appliedAtRefSeconds: diffContract.canonicalizeCase.appliedAtRefSeconds,
+        importedAtRefSeconds: diffContract.canonicalizeCase.importedAtRefSeconds,
       }),
     );
   });
 
-  it('diff level increased 与 Swift oracle 一致', async () => {
-    const from = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":1}]}',
-      appliedAtRefSeconds: 100,
-      snapshotID: '00000000-0000-0000-0000-000000000010',
+  for (const contractCase of diffContract.diffCases) {
+    it(`diff ${contractCase.id} 与 Swift oracle 一致`, async () => {
+      const from = buildEntry(contractCase.from);
+      const to = buildEntry(contractCase.to);
+      await assertDiffParity(`snapshot-history-diff-${contractCase.id}`, from, to);
     });
-    const to = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":2}]}',
-      appliedAtRefSeconds: 200,
-      snapshotID: '00000000-0000-0000-0000-000000000011',
-    });
-    await assertDiffParity('snapshot-history-diff-level-increased', from, to);
-  });
-
-  it('diff A→B→A comparable no change 与 Swift oracle 一致', async () => {
-    const b = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":6}]}',
-      appliedAtRefSeconds: 200,
-      snapshotID: '00000000-0000-0000-0000-000000000021',
-    });
-    const a2 = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":5}]}',
-      appliedAtRefSeconds: 300,
-      snapshotID: '00000000-0000-0000-0000-000000000022',
-    });
-    await assertDiffParity('snapshot-history-diff-b-to-a', b, a2);
-  });
-
-  it('diff partial coverage 不产生删除 与 Swift oracle 一致', async () => {
-    const from = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":1},{"data":1000016,"lvl":1}]}',
-      appliedAtRefSeconds: 100,
-      snapshotID: '00000000-0000-0000-0000-000000000030',
-    });
-    const to = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":2}]}',
-      appliedAtRefSeconds: 200,
-      snapshotID: '00000000-0000-0000-0000-000000000031',
-    });
-    await assertDiffParity('snapshot-history-diff-partial-coverage', from, to);
-  });
-
-  it('diff A→B level increased 与 Swift oracle 一致', async () => {
-    const from = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":1}]}',
-      appliedAtRefSeconds: 100,
-      snapshotID: '00000000-0000-0000-0000-000000000040',
-    });
-    const to = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":2}]}',
-      appliedAtRefSeconds: 200,
-      snapshotID: '00000000-0000-0000-0000-000000000041',
-    });
-    await assertDiffParity('snapshot-history-diff-a-to-b', from, to);
-  });
-
-  it('diff A→B→A 第二段 comparable 与 Swift oracle 一致', async () => {
-    const b = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":2}]}',
-      appliedAtRefSeconds: 200,
-      snapshotID: '00000000-0000-0000-0000-000000000051',
-    });
-    const a2 = buildEntry({
-      text: '{"tag":"#GOLDEN01","buildings":[{"data":1000013,"lvl":1}]}',
-      appliedAtRefSeconds: 300,
-      snapshotID: '00000000-0000-0000-0000-000000000052',
-    });
-    await assertDiffParity('snapshot-history-diff-b-to-a-full', b, a2);
-  });
+  }
 });

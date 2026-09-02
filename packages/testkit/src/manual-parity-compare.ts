@@ -1,4 +1,4 @@
-import { sha256Fingerprint } from '@coc-helper/wire';
+import { sha256Fingerprint, type Sha256Fingerprint } from '@coc-helper/wire';
 
 import type { ParityReport } from './compare';
 import type { ParityCategory } from './manifest';
@@ -9,11 +9,14 @@ export function compareManualOutcomeParity(input: {
   readonly source: string;
   readonly typescriptHex: string;
   readonly swift: SwiftOracleResponse;
+  readonly expectedCanonicalHex?: string;
+  readonly expectedOutputFingerprint?: Sha256Fingerprint;
   readonly category?: ParityCategory;
 }): ParityReport {
   const category = input.category ?? 'projection';
   const inputFingerprint = sha256Fingerprint(input.source);
   const differences: ParityReport['differences'][number][] = [];
+  const expectedCanonicalHex = input.expectedCanonicalHex ?? input.typescriptHex;
 
   if (input.swift.inputFingerprint !== inputFingerprint) {
     differences.push({
@@ -30,18 +33,56 @@ export function compareManualOutcomeParity(input: {
       expected: 'true',
       actual: 'false',
     });
-  } else if (input.swift.value.canonicalHex !== input.typescriptHex) {
-    differences.push({
-      category,
-      path: '$.value.canonicalHex',
-      expected: input.typescriptHex,
-      actual: input.swift.value.canonicalHex,
-    });
+  } else {
+    if (input.typescriptHex !== expectedCanonicalHex) {
+      differences.push({
+        category: 'fixture',
+        path: '$.expected.canonicalHex',
+        expected: expectedCanonicalHex,
+        actual: input.typescriptHex,
+      });
+    }
+    if (input.swift.value.canonicalHex !== expectedCanonicalHex) {
+      differences.push({
+        category: 'fixture',
+        path: '$.expected.canonicalHex',
+        expected: expectedCanonicalHex,
+        actual: input.swift.value.canonicalHex,
+      });
+    }
+    if (input.typescriptHex !== input.swift.value.canonicalHex) {
+      differences.push({
+        category,
+        path: '$.value.canonicalHex',
+        expected: input.typescriptHex,
+        actual: input.swift.value.canonicalHex,
+      });
+    }
+    const outputFingerprint = sha256Fingerprint(hexToBytes(input.swift.value.canonicalHex));
+    if (input.expectedOutputFingerprint !== undefined) {
+      if (outputFingerprint !== input.expectedOutputFingerprint) {
+        differences.push({
+          category: 'fixture',
+          path: '$.expected.outputFingerprint',
+          expected: input.expectedOutputFingerprint,
+          actual: outputFingerprint,
+        });
+      }
+      if (input.swift.outputFingerprint !== input.expectedOutputFingerprint) {
+        differences.push({
+          category: 'fixture',
+          path: '$.expected.outputFingerprint',
+          expected: input.expectedOutputFingerprint,
+          actual: input.swift.outputFingerprint,
+        });
+      }
+    }
   }
 
-  const outputFingerprint = input.swift.ok
-    ? sha256Fingerprint(hexToBytes(input.swift.value.canonicalHex))
-    : undefined;
+  const outputFingerprint =
+    input.swift.ok && input.typescriptHex === expectedCanonicalHex
+      ? sha256Fingerprint(hexToBytes(expectedCanonicalHex))
+      : undefined;
 
   return {
     caseId: input.caseId,

@@ -43,8 +43,9 @@ JSON 响应；诊断只写 stderr。
 ## 比较规则
 
 - 对象键按照 wire 契约比较；数组位置变化是实际差异，不能全局排序后掩盖。
-- 只允许 manifest 明确列出的 normalization；AccountSnapshot wire 的 `diagnostics[].id`
-  随机槽位在 parser golden 中掩码为 `<RANDOM_DIAGNOSTIC_UUID>`。
+- 只允许 golden contract / owner test 明确定义的 normalization；例如 AccountSnapshot wire 的
+  `diagnostics[].id` 随机槽位在 `parser_golden_expected.json` 与
+  `maskDiagnosticIdsInWireHex()` 中掩码为 `<RANDOM_DIAGNOSTIC_UUID>`。
 - 差异必须包含 `caseId`、类别和路径；类别至少区分 `fixture`、`wire`、`parser`、
   `projection`、`error`、`ordering`、`time`。
 - 失败报告不得打印 source、token、Cookie、URL 或完整响应体。

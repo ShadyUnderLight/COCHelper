@@ -10,7 +10,14 @@ import {
   parseAccountSnapshot,
   snapshotDiffWireHex,
 } from '@coc-helper/domain';
-import { bytesToHex, canonicalBytes, canonicalize, parseJson, parseUuid } from '@coc-helper/wire';
+import {
+  bytesToHex,
+  canonicalBytes,
+  canonicalize,
+  parseJson,
+  parseUuid,
+  type Sha256Fingerprint,
+} from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import { assertParity } from './compare';
@@ -25,9 +32,16 @@ type DiffContractEntry = {
   readonly lineageID?: string;
 };
 
+type FrozenOutcome = {
+  readonly comparisonState?: string;
+  readonly changeCount?: string;
+  readonly encodedJSONHex?: string;
+  readonly outputFingerprint: string;
+  readonly canonicalHex: string;
+};
+
 type DiffContract = {
   readonly importedAtRefSeconds: number;
-  readonly appliedAtRefSeconds: number;
   readonly villageID: string;
   readonly lineageID: string;
   readonly canonicalizeCase: {
@@ -36,17 +50,25 @@ type DiffContract = {
     readonly snapshotID: string;
     readonly appliedAtRefSeconds: number;
     readonly importedAtRefSeconds: number;
+    readonly expected: FrozenOutcome;
   };
   readonly diffCases: readonly {
     readonly id: string;
     readonly from: DiffContractEntry;
     readonly to: DiffContractEntry;
+    readonly expected: FrozenOutcome & {
+      readonly comparisonState: string;
+      readonly changeCount: string;
+      readonly encodedJSONHex: string;
+    };
   }[];
 };
 
 const root = process.cwd();
 const manifest = loadGoldenManifest(root);
-const diffContractEntry = manifest.cases.find((entry) => entry.id === 'diff/snapshot-history-contract');
+const diffContractEntry = manifest.cases.find(
+  (entry) => entry.id === 'diff/snapshot-history-contract',
+);
 if (diffContractEntry === undefined) {
   throw new Error('golden manifest 缺少 diff/snapshot-history-contract。');
 }
@@ -92,103 +114,119 @@ function buildEntry(input: DiffContractEntry) {
   });
 }
 
-async function assertCanonicalizeParity(caseId: string, source: string): Promise<void> {
-  const response = await oracle({
-    protocolVersion: SWIFT_ORACLE_PROTOCOL_VERSION,
-    caseId,
-    operation: 'snapshot-history-canonicalize',
-    source,
-  });
-  const goldenText = readFileSync(resolve(root, diffContract.canonicalizeCase.snapshotFixture), 'utf8');
-  const parsed = parseAccountSnapshot(goldenText, {
-    clock: new GoldenClock(diffContract.canonicalizeCase.importedAtRefSeconds),
-  });
-  expect(parsed.ok).toBe(true);
-  if (!parsed.ok) {
-    return;
-  }
-  const entry = canonicalizeSnapshotHistory(parsed.value, {
-    villageID: VILLAGE_ID,
-    lineageID: LINEAGE_ID,
-    appliedAtRefSeconds: diffContract.canonicalizeCase.appliedAtRefSeconds,
-    snapshotID: parseUuid(diffContract.canonicalizeCase.snapshotID)!,
-  });
-  const typescriptHex = manualParityHex({
-    canonicalFingerprint: entry.canonicalFingerprint,
-    encodedJSONHex: historyEntryWireHex(entry),
-    integrityFingerprint: entry.integrityFingerprint,
-  });
-  assertParity(
-    compareManualOutcomeParity({
-      caseId,
-      source,
-      typescriptHex,
-      swift: response,
-      category: 'wire',
-    }),
-  );
-}
-
-async function assertDiffParity(
-  caseId: string,
+function buildDiffOutcome(
   from: ReturnType<typeof buildEntry>,
   to: ReturnType<typeof buildEntry>,
-): Promise<void> {
-  const fromHydrated = hydrateEntry(from);
-  const toHydrated = hydrateEntry(to);
-  const diff = SnapshotDiffEngine.compare(fromHydrated, toHydrated);
-  const source = JSON.stringify({
-    kind: 'diff',
-    fromEntryJSON: encodeHistoryEntryWire(from),
-    toEntryJSON: encodeHistoryEntryWire(to),
-  });
-  const response = await oracle({
-    protocolVersion: SWIFT_ORACLE_PROTOCOL_VERSION,
-    caseId,
-    operation: 'snapshot-history-diff',
-    source,
-  });
-  const typescriptHex = manualParityHex({
+): string {
+  const diff = SnapshotDiffEngine.compare(hydrateEntry(from), hydrateEntry(to));
+  return manualParityHex({
     comparisonState: diff.comparisonState,
     changeCount: String(diff.changes.length),
     encodedJSONHex: snapshotDiffWireHex(diff, from.appliedAtRefSeconds, to.appliedAtRefSeconds),
   });
+}
+
+function assertFrozenSemanticFields(
+  caseId: string,
+  actual: ReturnType<typeof SnapshotDiffEngine.compare>,
+  from: ReturnType<typeof buildEntry>,
+  to: ReturnType<typeof buildEntry>,
+  expected: FrozenOutcome,
+): void {
+  expect(actual.comparisonState, `${caseId}.comparisonState`).toBe(expected.comparisonState);
+  expect(String(actual.changes.length), `${caseId}.changeCount`).toBe(expected.changeCount);
+  expect(
+    snapshotDiffWireHex(actual, from.appliedAtRefSeconds, to.appliedAtRefSeconds),
+    `${caseId}.encodedJSONHex`,
+  ).toBe(expected.encodedJSONHex);
+}
+
+async function assertFrozenOutcomeParity(input: {
+  readonly caseId: string;
+  readonly source: string;
+  readonly operation: 'snapshot-history-canonicalize' | 'snapshot-history-diff';
+  readonly typescriptHex: string;
+  readonly expected: FrozenOutcome;
+}): Promise<void> {
+  const response = await oracle({
+    protocolVersion: SWIFT_ORACLE_PROTOCOL_VERSION,
+    caseId: input.caseId,
+    operation: input.operation,
+    source: input.source,
+  });
   assertParity(
     compareManualOutcomeParity({
-      caseId,
-      source,
-      typescriptHex,
+      caseId: input.caseId,
+      source: input.source,
+      typescriptHex: input.typescriptHex,
       swift: response,
-      category: 'wire',
+      expectedCanonicalHex: input.expected.canonicalHex,
+      expectedOutputFingerprint: input.expected.outputFingerprint as Sha256Fingerprint,
+      category: 'ordering',
     }),
   );
 }
 
 describe('snapshot history Swift oracle parity', () => {
-  it('golden canonicalize 与 Swift oracle 一致', async () => {
+  it('golden canonicalize 与 fixture expected 一致', async () => {
     const goldenText = readFileSync(
       resolve(root, diffContract.canonicalizeCase.snapshotFixture),
       'utf8',
     );
-    await assertCanonicalizeParity(
-      `snapshot-history-${diffContract.canonicalizeCase.id}`,
-      JSON.stringify({
-        kind: 'canonicalize',
-        snapshotText: goldenText,
-        villageID: VILLAGE_ID,
-        lineageID: LINEAGE_ID,
-        snapshotID: diffContract.canonicalizeCase.snapshotID,
-        appliedAtRefSeconds: diffContract.canonicalizeCase.appliedAtRefSeconds,
-        importedAtRefSeconds: diffContract.canonicalizeCase.importedAtRefSeconds,
-      }),
-    );
+    const source = JSON.stringify({
+      kind: 'canonicalize',
+      snapshotText: goldenText,
+      villageID: VILLAGE_ID,
+      lineageID: LINEAGE_ID,
+      snapshotID: diffContract.canonicalizeCase.snapshotID,
+      appliedAtRefSeconds: diffContract.canonicalizeCase.appliedAtRefSeconds,
+      importedAtRefSeconds: diffContract.canonicalizeCase.importedAtRefSeconds,
+    });
+    const parsed = parseAccountSnapshot(goldenText, {
+      clock: new GoldenClock(diffContract.canonicalizeCase.importedAtRefSeconds),
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const entry = canonicalizeSnapshotHistory(parsed.value, {
+      villageID: VILLAGE_ID,
+      lineageID: LINEAGE_ID,
+      appliedAtRefSeconds: diffContract.canonicalizeCase.appliedAtRefSeconds,
+      snapshotID: parseUuid(diffContract.canonicalizeCase.snapshotID)!,
+    });
+    const typescriptHex = manualParityHex({
+      canonicalFingerprint: entry.canonicalFingerprint,
+      encodedJSONHex: historyEntryWireHex(entry),
+      integrityFingerprint: entry.integrityFingerprint,
+    });
+    await assertFrozenOutcomeParity({
+      caseId: `snapshot-history-${diffContract.canonicalizeCase.id}`,
+      source,
+      operation: 'snapshot-history-canonicalize',
+      typescriptHex,
+      expected: diffContract.canonicalizeCase.expected,
+    });
   });
 
   for (const contractCase of diffContract.diffCases) {
-    it(`diff ${contractCase.id} 与 Swift oracle 一致`, async () => {
+    it(`diff ${contractCase.id} 与 fixture expected 一致`, async () => {
       const from = buildEntry(contractCase.from);
       const to = buildEntry(contractCase.to);
-      await assertDiffParity(`snapshot-history-diff-${contractCase.id}`, from, to);
+      const diff = SnapshotDiffEngine.compare(hydrateEntry(from), hydrateEntry(to));
+      assertFrozenSemanticFields(contractCase.id, diff, from, to, contractCase.expected);
+      const source = JSON.stringify({
+        kind: 'diff',
+        fromEntryJSON: encodeHistoryEntryWire(from),
+        toEntryJSON: encodeHistoryEntryWire(to),
+      });
+      await assertFrozenOutcomeParity({
+        caseId: `snapshot-history-diff-${contractCase.id}`,
+        source,
+        operation: 'snapshot-history-diff',
+        typescriptHex: buildDiffOutcome(from, to),
+        expected: contractCase.expected,
+      });
     });
   }
 });

@@ -70,9 +70,9 @@ Application Support 文件 / Keychain token，另开一次性 importer；importe
 | #265 验收标准 | 状态 | 说明 |
 |---|---|---|
 | 每个现有高风险状态有 confirmed output 或显式 unknown 处理 | ✅ 本 PR 完成 | behavior-matrix.md 各表含「盘上状态 × 行为」列；无法从代码确认的点标注 ⚠️ 待实证 |
-| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ⬜ **部分完成（2026-09-02 增量）** | 已冻结：parser 指纹（F1/F2/F3）+ canonical encoded bytes + HistoryEntryV1 / AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（§WA-9）。**新增登记**：`manual-queue-capacity-contract.json`（projection）、`snapshot-history-diff-contract.json`（diff，3 场景）+ `Tests/Golden/manifest.json` 全量 fixture 指纹。**未冻结：error 场景 fixture**——由 E2-06（#274）等域 issue 增量追加 |
+| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ⬜ **部分完成（2026-09-02 增量）** | 已冻结：parser 指纹（F1/F2/F3）+ canonical encoded bytes + HistoryEntryV1 / AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（§WA-9）。**新增登记**：`manual-queue-capacity-contract.json`（projection，startGate/occupancy expected）；`snapshot-history-diff-contract.json`（diff，3 场景含静态 `expected.canonicalHex` / `outputFingerprint` 与语义字段）+ `Tests/Golden/manifest.json` 与 `Fixtures/` 一一对应。**未冻结：error 场景 fixture**——由 E2-06（#274）等域 issue 增量追加 |
 | 数值/时间/fingerprint 正例、负例、边界例 | ✅ 本 PR 完成 | wire-contract-v1.md §WA 各节 + GoldenContractTests 用例分组 |
 | 明确哪些旧 UI 只是历史实现、哪些用户可见语义必须保留 | ✅ 本 PR 完成 | behavior-matrix.md §BE-7 |
 
 > **关闭门**：在 **error 场景 golden fixture** 补齐并冻结前，**不得关闭
-> Issue #265**。projection / diff 的首批 contract fixture 已由 manifest 登记；error 仍归属 E2-06 等域 issue。
+> Issue #265**。diff contract 已含静态 expected output；error 仍归属 E2-06 等域 issue。

@@ -25,7 +25,9 @@ class GoldenClock {
 }
 
 function snapshotFromTag(tag: string) {
-  const parsed = parseAccountSnapshot(`{"tag":"${tag}","buildings":[]}`, { clock: new GoldenClock() });
+  const parsed = parseAccountSnapshot(`{"tag":"${tag}","buildings":[]}`, {
+    clock: new GoldenClock(),
+  });
   expect(parsed.ok).toBe(true);
   if (!parsed.ok) {
     throw new Error('parse failed');

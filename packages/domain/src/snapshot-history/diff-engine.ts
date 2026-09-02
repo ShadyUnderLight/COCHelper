@@ -1084,6 +1084,9 @@ function compareUnique(
   const presenceSide = observedOnNew ? from : to;
   const observedSide = observedOnNew ? to : from;
   const observed = next ?? old;
+  if (observed === undefined) {
+    return;
+  }
   const presenceCoverage = coverageFor(identity, from, to, ['presence', 'data']);
   const observedFields = ['data'];
   if (requiresLevel(identity)) {

@@ -22,8 +22,8 @@ const oracle = createSwiftOracleRunner({ root });
 
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
 const GOLDEN_APPLIED_AT_REF_SECONDS = 807_629_133;
-const VILLAGE_ID = '00000000-0000-0000-0000-000000000001';
-const LINEAGE_ID = '00000000-0000-0000-0000-000000000002';
+const VILLAGE_ID = parseUuid('00000000-0000-0000-0000-000000000001')!;
+const LINEAGE_ID = parseUuid('00000000-0000-0000-0000-000000000002')!;
 
 class GoldenClock {
   nowMs(): number {
@@ -56,7 +56,7 @@ function buildEntry(input: {
   }
   return canonicalizeSnapshotHistory(parsed.value, {
     villageID: VILLAGE_ID,
-    lineageID: input.lineageID ?? LINEAGE_ID,
+    lineageID: input.lineageID === undefined ? LINEAGE_ID : parseUuid(input.lineageID)!,
     appliedAtRefSeconds: input.appliedAtRefSeconds,
     snapshotID: parseUuid(input.snapshotID)!,
   });
@@ -82,7 +82,7 @@ async function assertCanonicalizeParity(caseId: string, source: string): Promise
     villageID: VILLAGE_ID,
     lineageID: LINEAGE_ID,
     appliedAtRefSeconds: GOLDEN_APPLIED_AT_REF_SECONDS,
-    snapshotID: '00000000-0000-0000-0000-000000000003',
+    snapshotID: parseUuid('00000000-0000-0000-0000-000000000003')!,
   });
   const typescriptHex = manualParityHex({
     canonicalFingerprint: entry.canonicalFingerprint,

@@ -17,6 +17,11 @@ import {
 import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
+import { manualParityOutcomeHex } from './manual-parity';
+import { assertParity } from './compare';
+import { compareManualOutcomeParity } from './manual-parity-compare';
+import { createSwiftOracleRunner, SWIFT_ORACLE_PROTOCOL_VERSION } from './oracle';
+
 type StartGateCase = {
   readonly id: string;
   readonly itemSection: string;
@@ -57,6 +62,9 @@ const core = createManualUpgradeCoreState({
   ],
 });
 
+const root = process.cwd();
+const oracle = createSwiftOracleRunner({ root });
+
 function queueKindFromToken(token: string | null) {
   if (token === null) {
     return null;
@@ -90,10 +98,7 @@ function activeRecord(input: { readonly rawSection: string; readonly queueKind: 
 }
 
 describe('manual queue capacity contract parity seed', () => {
-  const fixturePath = resolve(
-    process.cwd(),
-    'Tests/Golden/Fixtures/manual-queue-capacity-contract.json',
-  );
+  const fixturePath = resolve(root, 'Tests/Golden/Fixtures/manual-queue-capacity-contract.json');
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
     startGateCases: readonly StartGateCase[];
     occupancyCases: readonly OccupancyCase[];
@@ -152,6 +157,107 @@ describe('manual queue capacity contract parity seed', () => {
       });
       expect(occupancy.activeManualCount).toBe(contractCase.expectedActiveManualCount);
       expect(localQueueOccupancyIsFull(occupancy)).toBe(contractCase.expectedFull);
+    });
+  }
+});
+
+describe('manual queue capacity Swift oracle parity', () => {
+  const fixturePath = resolve(root, 'Tests/Golden/Fixtures/manual-queue-capacity-contract.json');
+  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+    startGateCases: readonly StartGateCase[];
+    occupancyCases: readonly OccupancyCase[];
+  };
+
+  for (const contractCase of fixture.startGateCases) {
+    it(`start gate / ${contractCase.id}`, async () => {
+      const source = JSON.stringify({
+        kind: 'startGate',
+        itemSection: contractCase.itemSection,
+        requestedQueueKind: contractCase.requestedQueueKind,
+        builderCapacity: contractCase.builderCapacity ?? null,
+      });
+      const result = validateStartAgainstQueueCapacity({
+        itemKey: trackerItemKeyRoot('home', contractCase.itemSection, 1_000_002n),
+        durationState: { kind: 'timed', seconds: 60n },
+        core,
+        queueCapacityConfigs:
+          contractCase.builderCapacity === undefined
+            ? []
+            : [
+                createLocalQueueCapacityConfig({
+                  villageID,
+                  queueKind: LOCAL_QUEUE_KIND_BUILDER,
+                  capacity: contractCase.builderCapacity,
+                  updatedAtMs: 1_000_000,
+                }),
+              ],
+        queueAssignments: [],
+        currentBaseline,
+        storeAvailable: true,
+        requestedQueueKind: queueKindFromToken(contractCase.requestedQueueKind),
+        nowMs: 1_000_000,
+      });
+      const typescriptHex = manualParityOutcomeHex({
+        errorKind: result?.kind ?? null,
+      });
+      const swift = await oracle({
+        protocolVersion: SWIFT_ORACLE_PROTOCOL_VERSION,
+        caseId: `manual-queue-capacity/startGate/${contractCase.id}`,
+        operation: 'manual-queue-capacity',
+        source,
+      });
+      assertParity(
+        compareManualOutcomeParity({
+          caseId: contractCase.id,
+          source,
+          typescriptHex,
+          swift,
+        }),
+      );
+    });
+  }
+
+  for (const contractCase of fixture.occupancyCases) {
+    it(`occupancy / ${contractCase.id}`, async () => {
+      const source = JSON.stringify({
+        kind: 'occupancy',
+        targetQueueKind: contractCase.targetQueueKind,
+        builderCapacity: contractCase.builderCapacity,
+        records: contractCase.records,
+      });
+      const queueKind =
+        contractCase.targetQueueKind === 'builder'
+          ? LOCAL_QUEUE_KIND_BUILDER
+          : LOCAL_QUEUE_KIND_LABORATORY;
+      const occupancy = resolveLocalQueueOccupancy({
+        queueKind,
+        activeRecords: contractCase.records.map(activeRecord),
+        capacityConfig: createLocalQueueCapacityConfig({
+          villageID,
+          queueKind,
+          capacity: contractCase.builderCapacity,
+          updatedAtMs: 1_000_000,
+        }),
+        nowMs: 1_000_000,
+      });
+      const typescriptHex = manualParityOutcomeHex({
+        activeManualCount: occupancy.activeManualCount,
+        full: localQueueOccupancyIsFull(occupancy) ? 1 : 0,
+      });
+      const swift = await oracle({
+        protocolVersion: SWIFT_ORACLE_PROTOCOL_VERSION,
+        caseId: `manual-queue-capacity/occupancy/${contractCase.id}`,
+        operation: 'manual-queue-capacity',
+        source,
+      });
+      assertParity(
+        compareManualOutcomeParity({
+          caseId: contractCase.id,
+          source,
+          typescriptHex,
+          swift,
+        }),
+      );
     });
   }
 });

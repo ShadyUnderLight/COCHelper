@@ -77,6 +77,9 @@ public struct ManualReconciliationItem: Codable, Hashable, Sendable, Identifiabl
     public let confirmedRecordIDs: [UUID]
     public let observedTimer: Bool
     public let coverageComplete: Bool
+    public let observedDistributionComplete: Bool
+    public let observedSectionTrustGatesOpen: Bool
+    public let observedTimerCoverageComplete: Bool
 
     public init(
         itemKey: TrackerItemKey,
@@ -88,7 +91,10 @@ public struct ManualReconciliationItem: Codable, Hashable, Sendable, Identifiabl
         relatedRecordIDs: [UUID] = [],
         confirmedRecordIDs: [UUID] = [],
         observedTimer: Bool = false,
-        coverageComplete: Bool = false
+        coverageComplete: Bool = false,
+        observedDistributionComplete: Bool = false,
+        observedSectionTrustGatesOpen: Bool = false,
+        observedTimerCoverageComplete: Bool = false
     ) {
         self.itemKey = itemKey
         self.displayName = displayName
@@ -100,6 +106,9 @@ public struct ManualReconciliationItem: Codable, Hashable, Sendable, Identifiabl
         self.confirmedRecordIDs = confirmedRecordIDs.sorted { $0.uuidString < $1.uuidString }
         self.observedTimer = observedTimer
         self.coverageComplete = coverageComplete
+        self.observedDistributionComplete = observedDistributionComplete
+        self.observedSectionTrustGatesOpen = observedSectionTrustGatesOpen
+        self.observedTimerCoverageComplete = observedTimerCoverageComplete
     }
 
     public var id: String { itemKey.stableID }
@@ -321,6 +330,9 @@ public enum ManualTrackerReconciliationService {
                 )
                 : []
             let relatedChanges = diffByKey[key]?.map(\.1) ?? []
+            let hasIncompleteRelatedChanges = relatedChanges.contains {
+                $0.coverage.state != .complete
+            }
             let classification = classification(
                 duplicate: decision.duplicate,
                 lineageComparable: lineageComparable,
@@ -336,7 +348,7 @@ public enum ManualTrackerReconciliationService {
                 previousObservation: previousObservation,
                 records: records,
                 confirmedRecordIDs: confirmed,
-                changes: relatedChanges
+                hasIncompleteRelatedChanges: hasIncompleteRelatedChanges
             )
             items.append(ManualReconciliationItem(
                 itemKey: key,
@@ -350,7 +362,10 @@ public enum ManualTrackerReconciliationService {
                 relatedRecordIDs: records.map(\.recordID),
                 confirmedRecordIDs: confirmed,
                 observedTimer: observation?.hasTimer ?? false,
-                coverageComplete: observation?.coverageComplete ?? false
+                coverageComplete: observation?.coverageComplete ?? false,
+                observedDistributionComplete: observation?.distributionComplete ?? false,
+                observedSectionTrustGatesOpen: observation?.sectionTrustGatesOpen ?? false,
+                observedTimerCoverageComplete: observation?.timerCoverageComplete ?? false
             ))
         }
 
@@ -368,6 +383,113 @@ public enum ManualTrackerReconciliationService {
             timeConfidence: timeConfidence,
             duplicate: decision.duplicate,
             lineageComparable: lineageComparable,
+            items: items
+        )
+    }
+
+    public static func previewFromEvidence(
+        _ evidence: ManualReconciliationEvidence,
+        currentState: ManualTrackerVillageState,
+        appliedAt: Date
+    ) throws -> ManualReconciliationPreview {
+        guard evidence.villageID == currentState.villageID else {
+            throw ManualReconciliationError.villageMismatch
+        }
+
+        let previousReference = currentState.baselineReference
+        let timeConfidence = timeConfidence(
+            previousMs: evidence.previousSourceTimestampMs,
+            newMs: evidence.sourceTimestampMs
+        )
+        let sourceTimestamp = evidence.sourceTimestampMs.map {
+            Date(timeIntervalSince1970: Double($0) / 1_000)
+        }
+        let previousObservations = evidence.previousObservations ?? [:]
+        let existingKeys = Set(
+            currentState.core.itemStates.map { $0.itemKey.stableID }
+        )
+        let allKeys = existingKeys.union(evidence.observations.keys)
+        var items: [ManualReconciliationItem] = []
+        items.reserveCapacity(allKeys.count)
+
+        for stableID in allKeys.sorted() {
+            guard let itemKey = resolveItemKey(
+                stableID: stableID,
+                currentState: currentState,
+                evidence: evidence
+            ) else {
+                continue
+            }
+            let state = currentState.core.itemState(for: itemKey)
+            let records = currentState.core.records.filter { $0.itemKey == itemKey }
+            let observationEvidence = evidence.observations[stableID]
+            let previousObservationEvidence = previousObservations[stableID]
+            let observation = try observationEvidence.map(observation(from:))
+            let previousObservation = try previousObservationEvidence.map(observation(from:))
+            let previousDistribution = effectiveDistribution(state)
+            let confirmed = evidence.lineageComparable && timeConfidence == .reliableSourceTimestamp
+                ? confirmedRecords(
+                    records,
+                    previous: previousObservation?.distribution,
+                    observed: observation?.distribution,
+                    sourceTimestamp: sourceTimestamp,
+                    requireExpectedEnd: true
+                )
+                : []
+            let relatedChanges = evidence.relatedChangesByStableID?[stableID] ?? []
+            let hasIncompleteRelatedChanges = relatedChanges.contains {
+                $0.coverageState != .complete
+            }
+            let classification = classification(
+                duplicate: evidence.duplicate,
+                lineageComparable: evidence.lineageComparable,
+                timeConfidence: timeConfidence,
+                hasExistingState: state != nil,
+                hasProtectableLocalState: hasProtectableLocalState(
+                    state: state,
+                    records: records,
+                    previousDistribution: previousDistribution
+                ),
+                previousDistribution: previousDistribution,
+                observation: observation,
+                previousObservation: previousObservation,
+                records: records,
+                confirmedRecordIDs: confirmed,
+                hasIncompleteRelatedChanges: hasIncompleteRelatedChanges
+            )
+            items.append(ManualReconciliationItem(
+                itemKey: itemKey,
+                displayName: observation?.displayName
+                    ?? previousObservation?.displayName
+                    ?? stableID,
+                classification: classification,
+                message: message(for: classification),
+                previousDistribution: previousDistribution,
+                observedDistribution: observation?.distribution,
+                relatedRecordIDs: records.map(\.recordID),
+                confirmedRecordIDs: confirmed,
+                observedTimer: observation?.hasTimer ?? false,
+                coverageComplete: observation?.coverageComplete ?? false,
+                observedDistributionComplete: observation?.distributionComplete ?? false,
+                observedSectionTrustGatesOpen: observation?.sectionTrustGatesOpen ?? false,
+                observedTimerCoverageComplete: observation?.timerCoverageComplete ?? false
+            ))
+        }
+
+        return ManualReconciliationPreview(
+            villageID: evidence.villageID,
+            previousReference: previousReference,
+            previousSnapshotID: evidence.previousSnapshotID,
+            previousSnapshotFingerprint: evidence.previousSnapshotFingerprint,
+            previousLineageID: evidence.previousLineageID,
+            manualStateUpdatedAt: currentState.stateUpdatedAt,
+            newReference: evidence.newBaselineReference,
+            newNormalizedPlayerTag: evidence.newNormalizedPlayerTag,
+            sourceTimestamp: sourceTimestamp,
+            appliedAt: appliedAt,
+            timeConfidence: timeConfidence,
+            duplicate: evidence.duplicate,
+            lineageComparable: evidence.lineageComparable,
             items: items
         )
     }
@@ -707,7 +829,7 @@ public enum ManualTrackerReconciliationService {
         previousObservation: Observation?,
         records: [ManualUpgradeRecord],
         confirmedRecordIDs: [UUID],
-        changes: [SnapshotChange]
+        hasIncompleteRelatedChanges: Bool
     ) -> ManualReconciliationClassification {
         if duplicate { return .duplicate }
         if !lineageComparable && hasExistingState { return .lineageMismatch }
@@ -759,7 +881,7 @@ public enum ManualTrackerReconciliationService {
         if dominates(previousDistribution, observed) {
             return .manualAhead
         }
-        if changes.contains(where: { $0.coverage.state != .complete }) {
+        if hasIncompleteRelatedChanges {
             // 任一侧字段/section coverage 不完整 → 证据不足，不能断言冲突。
             // 守恒失败的 unknown change 保持 coverage.state == .complete，
             // 因此不会落到这里，而是按分布冲突处理（下方 .conflict）。
@@ -772,31 +894,82 @@ public enum ManualTrackerReconciliationService {
         _ expected: ManualReconciliationPreview,
         actual: ManualReconciliationPreview
     ) -> Bool {
-        guard expected.duplicate == actual.duplicate,
-              expected.newReference.fingerprint == actual.newReference.fingerprint,
-              expected.newNormalizedPlayerTag == actual.newNormalizedPlayerTag,
-              expected.sourceTimestamp == actual.sourceTimestamp,
-              expected.lineageComparable == actual.lineageComparable else {
-            return false
-        }
-        // Non-duplicate entries receive fresh snapshot/lineage UUIDs during
-        // each pure plan; fingerprint + normalized tag are the stable key.
-        // Duplicate revisions instead include the existing snapshot ID and
-        // duplicate count, so compare the full revision in that case.
-        return !expected.duplicate || expected.newReference.revision == actual.newReference.revision
+        expected.candidateFingerprint == actual.candidateFingerprint
     }
 
     private static func timeConfidence(
         previous: Date?,
         new: Date?
     ) -> ManualReconciliationTimeConfidence {
-        guard let new else { return .sourceTimestampAbsent }
-        guard new.timeIntervalSinceReferenceDate.isFinite else { return .sourceTimestampConflict }
-        guard let previous else { return .localAppliedAtOnly }
-        guard previous.timeIntervalSinceReferenceDate.isFinite, new >= previous else {
+        timeConfidence(
+            previousMs: previous.map { Int64($0.timeIntervalSince1970 * 1_000) },
+            newMs: new.map { Int64($0.timeIntervalSince1970 * 1_000) }
+        )
+    }
+
+    private static func timeConfidence(
+        previousMs: Int64?,
+        newMs: Int64?
+    ) -> ManualReconciliationTimeConfidence {
+        guard let newMs else { return .sourceTimestampAbsent }
+        guard Double(newMs).isFinite else { return .sourceTimestampConflict }
+        guard let previousMs else { return .localAppliedAtOnly }
+        guard Double(previousMs).isFinite, newMs >= previousMs else {
             return .sourceTimestampConflict
         }
         return .reliableSourceTimestamp
+    }
+
+    private static func resolveItemKey(
+        stableID: String,
+        currentState: ManualTrackerVillageState,
+        evidence: ManualReconciliationEvidence
+    ) -> TrackerItemKey? {
+        if let fromState = currentState.core.itemStates.first(where: {
+            $0.itemKey.stableID == stableID
+        })?.itemKey {
+            return fromState
+        }
+        for record in currentState.core.records where record.itemKey.stableID == stableID {
+            return record.itemKey
+        }
+        return evidence.itemKeys[stableID]
+    }
+
+    private static func observation(
+        from evidence: ManualReconciliationObservationEvidence
+    ) throws -> Observation {
+        let distribution: ManualLevelDistribution?
+        if evidence.distributionComplete,
+           let levels = evidence.distribution,
+           !levels.isEmpty {
+            var quantities: [Int: Int64] = [:]
+            quantities.reserveCapacity(levels.count)
+            for entry in levels {
+                guard let quantity = Int64(entry.quantity) else {
+                    throw ManualReconciliationError.invalidObservation(
+                        "项目数量无效：\(entry.quantity)。"
+                    )
+                }
+                let (sum, overflow) = (quantities[entry.level] ?? 0).addingReportingOverflow(quantity)
+                guard !overflow else {
+                    throw ManualReconciliationError.invalidObservation("项目数量溢出。")
+                }
+                quantities[entry.level] = sum
+            }
+            distribution = try ManualLevelDistribution(levelQuantities: quantities)
+        } else {
+            distribution = nil
+        }
+        return Observation(
+            distribution: distribution,
+            displayName: evidence.displayName,
+            hasTimer: evidence.hasTimer,
+            coverageComplete: evidence.coverageComplete,
+            distributionComplete: evidence.distributionComplete,
+            sectionTrustGatesOpen: evidence.sectionTrustGatesOpen,
+            timerCoverageComplete: evidence.timerCoverageComplete
+        )
     }
 
     private static func sourceTimestamp(

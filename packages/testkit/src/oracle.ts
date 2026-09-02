@@ -5,10 +5,13 @@ import { isSha256Fingerprint, sha256Fingerprint, type Sha256Fingerprint } from '
 
 export const SWIFT_ORACLE_PROTOCOL_VERSION = 1 as const;
 
+export type SwiftOracleOperation =
+  'canonical-json' | 'manual-queue-capacity' | 'manual-reconciliation-preview';
+
 export type SwiftOracleRequest = {
   readonly protocolVersion: typeof SWIFT_ORACLE_PROTOCOL_VERSION;
   readonly caseId: string;
-  readonly operation: 'canonical-json';
+  readonly operation: SwiftOracleOperation;
   readonly source: string;
 };
 
@@ -175,9 +178,15 @@ function resolveOracleCommand(root: string): OracleCommand {
 function validateRequest(request: SwiftOracleRequest): void {
   if (
     request.protocolVersion !== SWIFT_ORACLE_PROTOCOL_VERSION ||
-    request.operation !== 'canonical-json' ||
     request.caseId.length === 0 ||
     request.caseId.length > 200
+  ) {
+    throw new Error('Swift oracle request 不符合 protocol v1。');
+  }
+  if (
+    request.operation !== 'canonical-json' &&
+    request.operation !== 'manual-queue-capacity' &&
+    request.operation !== 'manual-reconciliation-preview'
   ) {
     throw new Error('Swift oracle request 不符合 protocol v1。');
   }

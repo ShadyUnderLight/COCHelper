@@ -190,4 +190,67 @@ describe('snapshot history service', () => {
     expect(thrown).toEqual({ kind: 'unsupportedSchema', version: 999 });
     expect(store.saved()).toBeNull();
   });
+
+  it('两村交错导入时只追加目标村庄 entry', () => {
+    const root = resolve(process.cwd());
+    const goldenText = readFileSync(
+      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      'utf8',
+    );
+    const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const firstVillageID = parseUuid('00000000-0000-0000-0000-000000000011')!;
+    const secondVillageID = parseUuid('00000000-0000-0000-0000-000000000012')!;
+    const store = createInMemorySnapshotHistoryStore();
+    const service = createSnapshotHistoryService(store);
+
+    const envelope = service.loadOrMigrate({
+      villages: [
+        createVillageProfile({
+          id: firstVillageID,
+          name: '村庄 A',
+          accountSnapshot: parsed.value,
+        }),
+        createVillageProfile({
+          id: secondVillageID,
+          name: '村庄 B',
+          accountSnapshot: parsed.value,
+        }),
+      ],
+      nowRefSeconds: 807_629_133,
+    });
+
+    expect(envelope.entries).toHaveLength(2);
+    expect(envelope.lineages).toHaveLength(2);
+
+    const changedParsed = parseAccountSnapshot('{"tag":"#GOLDEN01","buildings":[],"unknown":1}', {
+      clock: new GoldenClock(),
+    });
+    expect(changedParsed.ok).toBe(true);
+    if (!changedParsed.ok) {
+      return;
+    }
+
+    const changed = service.planImport({
+      snapshot: changedParsed.value,
+      villageID: firstVillageID,
+      currentTag: changedParsed.value.tag,
+      hasCurrentSnapshot: true,
+      envelope,
+      appliedAtRefSeconds: 807_729_133,
+    });
+
+    expect(changed.appended).toBe(true);
+    expect(changed.duplicate).toBe(false);
+    expect(
+      changed.envelope.entries.filter((entry) => entry.villageID === firstVillageID),
+    ).toHaveLength(2);
+    expect(
+      changed.envelope.entries.filter((entry) => entry.villageID === secondVillageID),
+    ).toHaveLength(1);
+  });
 });

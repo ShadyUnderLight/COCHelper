@@ -257,4 +257,55 @@ describe('file snapshot history store', () => {
 
     rmSync(directory, { recursive: true, force: true });
   });
+
+  it('save 拒绝 integrity 被篡改的 envelope', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'coc-history-tamper-save-'));
+    const fileURL = join(directory, 'snapshot-history-v1.json');
+    const store = new FileSnapshotHistoryStore(fileURL, {
+      hydrationPolicy: 'testsAllowTestFixture',
+    });
+
+    const root = resolve(process.cwd());
+    const goldenText = readFileSync(
+      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      'utf8',
+    );
+    const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const entry = canonicalizeSnapshotHistory(parsed.value, {
+      villageID: parseUuid('00000000-0000-0000-0000-000000000001')!,
+      lineageID: parseUuid('00000000-0000-0000-0000-000000000002')!,
+      appliedAtRefSeconds: 807_629_133,
+      snapshotID: parseUuid('00000000-0000-0000-0000-000000000003')!,
+    });
+    const envelope = createSnapshotHistoryEnvelope({
+      entries: [
+        {
+          ...entry,
+          integrityFingerprint: entry.canonicalFingerprint,
+        },
+      ],
+      lineages: [
+        {
+          villageID: entry.villageID,
+          lineageID: entry.lineageID,
+          normalizedPlayerTag: entry.normalizedPlayerTag,
+          lastEntryID: entry.snapshotID,
+          lastFingerprint: entry.canonicalFingerprint,
+          lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
+          hasConflict: false,
+          isActive: true,
+        },
+      ],
+      migrationMarker: createSnapshotHistoryMigrationMarker(807_629_133),
+    });
+
+    expect(() => store.save(envelope)).toThrow();
+
+    rmSync(directory, { recursive: true, force: true });
+  });
 });

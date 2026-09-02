@@ -53,13 +53,7 @@ export function matchCapitalRaidOldIndices(
       assignment.set(newGroup[0]!.index, oldGroup[0]!.index);
       continue;
     }
-    if (
-      !matchDuplicateTripleGroup(
-        oldGroup,
-        newGroup,
-        assignment,
-      )
-    ) {
+    if (!matchDuplicateTripleGroup(oldGroup, newGroup, assignment)) {
       return undefined;
     }
   }
@@ -94,14 +88,10 @@ export function matchTruncatedCapitalRaidRefreshOldIndices(
     if (newGroup.length === oldGroup.length) {
       if (oldGroup.length === 1) {
         assignment.set(newGroup[0]!.index, oldGroup[0]!.index);
-      } else if (
-        !matchDuplicateTripleGroup(oldGroup, newGroup, assignment)
-      ) {
+      } else if (!matchDuplicateTripleGroup(oldGroup, newGroup, assignment)) {
         return undefined;
       }
-    } else if (
-      !matchTruncatedDuplicateTripleGroup(oldGroup, newGroup, assignment)
-    ) {
+    } else if (!matchTruncatedDuplicateTripleGroup(oldGroup, newGroup, assignment)) {
       return undefined;
     }
   }
@@ -140,7 +130,9 @@ export function hasUniqueExactPayloadBoundaryAnchor(
 
 type IndexedSeason = { readonly index: number; readonly season: OfficialCapitalRaidSeason };
 
-function groupByTriple(seasons: readonly OfficialCapitalRaidSeason[]): Map<string, IndexedSeason[]> {
+function groupByTriple(
+  seasons: readonly OfficialCapitalRaidSeason[],
+): Map<string, IndexedSeason[]> {
   const groups = new Map<string, IndexedSeason[]>();
   seasons.forEach((season, index) => {
     const key = capitalRaidTripleKey(season);
@@ -203,13 +195,18 @@ function matchDuplicateTripleGroup(
     let foundAnchor = false;
     const stillUnmatchedNew: IndexedSeason[] = [];
     for (const newEntry of unmatchedNew) {
-      const newOccurrences = occurrenceCount(newEntry.season, unmatchedNew.map((entry) => entry.season));
+      const newOccurrences = occurrenceCount(
+        newEntry.season,
+        unmatchedNew.map((entry) => entry.season),
+      );
       if (newOccurrences !== 1) {
         stillUnmatchedNew.push(newEntry);
         continue;
       }
       const oldMatchIndices = unmatchedOld
-        .map((entry, index) => (capitalRaidSeasonsEqual(entry.season, newEntry.season) ? index : -1))
+        .map((entry, index) =>
+          capitalRaidSeasonsEqual(entry.season, newEntry.season) ? index : -1,
+        )
         .filter((index) => index >= 0);
       if (oldMatchIndices.length !== 1) {
         stillUnmatchedNew.push(newEntry);
@@ -251,13 +248,18 @@ function matchTruncatedDuplicateTripleGroup(
     let foundAnchor = false;
     const stillUnmatchedNew: IndexedSeason[] = [];
     for (const newEntry of unmatchedNew) {
-      const newOccurrences = occurrenceCount(newEntry.season, unmatchedNew.map((entry) => entry.season));
+      const newOccurrences = occurrenceCount(
+        newEntry.season,
+        unmatchedNew.map((entry) => entry.season),
+      );
       if (newOccurrences !== 1) {
         stillUnmatchedNew.push(newEntry);
         continue;
       }
       const oldMatchIndices = unmatchedOld
-        .map((entry, index) => (capitalRaidSeasonsEqual(entry.season, newEntry.season) ? index : -1))
+        .map((entry, index) =>
+          capitalRaidSeasonsEqual(entry.season, newEntry.season) ? index : -1,
+        )
         .filter((index) => index >= 0);
       if (oldMatchIndices.length !== 1) {
         stillUnmatchedNew.push(newEntry);

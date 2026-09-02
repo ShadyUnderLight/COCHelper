@@ -13,8 +13,7 @@ export const OFFICIAL_ENDPOINT_FAILURE_KINDS = [
   'cancelled',
 ] as const;
 
-export type OfficialEndpointFailureKindWire =
-  (typeof OFFICIAL_ENDPOINT_FAILURE_KINDS)[number];
+export type OfficialEndpointFailureKindWire = (typeof OFFICIAL_ENDPOINT_FAILURE_KINDS)[number];
 
 export const OFFICIAL_API_REQUEST_STATUSES = [
   'never',

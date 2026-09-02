@@ -3,12 +3,7 @@ import { parserVersions } from '@coc-helper/wire';
 export type OfficialAPIRequestStatus = 'never' | 'loading' | 'success' | 'failed' | 'skipped';
 
 export type OfficialAPIDisplayStatus =
-  | 'never'
-  | 'loading'
-  | 'success'
-  | 'stale'
-  | 'failed'
-  | 'skipped';
+  'never' | 'loading' | 'success' | 'stale' | 'failed' | 'skipped';
 
 export type OfficialEndpointFailureKind =
   | 'missingCredentials'

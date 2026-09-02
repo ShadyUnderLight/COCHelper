@@ -5,6 +5,7 @@ import {
   RefreshCoordinator,
   shouldSkipFailedOverwrite,
 } from './refresh-coordinator';
+import { CoAPIRequestCancelledError } from './co-api-error';
 import { describe, expect, it } from 'vitest';
 
 describe('RefreshCoordinator predicates', () => {
@@ -91,5 +92,42 @@ describe('RefreshCoordinator single-flight', () => {
     coordinator.endBatch();
     coordinator.beginBatch(['#B']);
     expect(coordinator.generation).toBe(2);
+  });
+
+  it('run() 同步 throw 不 poison 该 tag', async () => {
+    const coordinator = new RefreshCoordinator<string>();
+    await expect(
+      coordinator.runSingleFlight('#TAG', () => {
+        throw new Error('sync validation failed');
+      }),
+    ).rejects.toThrow('sync validation failed');
+
+    let count = 0;
+    const result = await coordinator.runSingleFlight('#TAG', async () => {
+      count += 1;
+      return 'recovered';
+    });
+    expect(result).toBe('recovered');
+    expect(count).toBe(1);
+  });
+
+  it('parent 取消时共享 flight 全部收到取消', async () => {
+    const coordinator = new RefreshCoordinator<string>();
+    const parent = new AbortController();
+    const run = () =>
+      coordinator.runSingleFlight(
+        '#TAG',
+        async (signal) => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          if (signal.aborted) {
+            throw new CoAPIRequestCancelledError();
+          }
+          return 'ok';
+        },
+        parent.signal,
+      );
+    const pending = Promise.all([run(), run()]);
+    parent.abort();
+    await expect(pending).rejects.toBeInstanceOf(CoAPIRequestCancelledError);
   });
 });

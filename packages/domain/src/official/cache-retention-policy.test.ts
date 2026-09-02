@@ -67,7 +67,16 @@ describe('CacheRetentionPolicy', () => {
     const fetched = [season(8), season(9), season(10), season(11)];
     const result = mergedCapitalRaidLoadMoreItems(existing, fetched);
     expect(result.items.map((item) => item.startTime)).toEqual([
-      's000', 's001', 's002', 's003', 's004', 's005', 's008', 's009', 's010', 's011',
+      's000',
+      's001',
+      's002',
+      's003',
+      's004',
+      's005',
+      's008',
+      's009',
+      's010',
+      's011',
     ]);
     expect(result.reconciliation).toBe('identityPreserving');
   });

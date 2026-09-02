@@ -136,7 +136,9 @@ function decodePlayerItemLevels(value: unknown): readonly PlayerItemLevel[] | un
   });
 }
 
-function decodeObjectArray(value: unknown): readonly Readonly<Record<string, unknown>>[] | undefined {
+function decodeObjectArray(
+  value: unknown,
+): readonly Readonly<Record<string, unknown>>[] | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -180,7 +182,9 @@ export function decodeOfficialPlayerSnapshot(value: unknown): OfficialPlayerSnap
     builderBaseTrophies: optionalInt(record.builderBaseTrophies),
     versusBattleWins: optionalInt(record.versusBattleWins),
     legendStatistics:
-      legendRaw === undefined || legendRaw === null ? undefined : asRecord(legendRaw, 'legendStatistics'),
+      legendRaw === undefined || legendRaw === null
+        ? undefined
+        : asRecord(legendRaw, 'legendStatistics'),
     clan: decodePlayerClan(record.clan),
     role: optionalString(record.role),
     warPreference: optionalString(record.warPreference),

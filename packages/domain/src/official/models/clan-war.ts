@@ -1,10 +1,5 @@
 import { OFFICIAL_PARSER_VERSIONS } from '../types';
-import {
-  asRecord,
-  collectUnrecognizedKeys,
-  optionalInt,
-  optionalString,
-} from '../json-decode';
+import { asRecord, collectUnrecognizedKeys, optionalInt, optionalString } from '../json-decode';
 import { decodeOptionalParticipant } from './war-shared';
 
 const KNOWN_KEYS = new Set([

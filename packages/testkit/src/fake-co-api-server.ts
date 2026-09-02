@@ -19,9 +19,7 @@ export type FakeCoAPIServer = {
   get requestCount(): number;
 };
 
-export async function createFakeCoAPIServer(
-  handler: FakeCoAPIHandler,
-): Promise<FakeCoAPIServer> {
+export async function createFakeCoAPIServer(handler: FakeCoAPIHandler): Promise<FakeCoAPIServer> {
   let lastAuthorization: string | undefined;
   let requestCount = 0;
 
@@ -85,7 +83,11 @@ export function fakeCoAPIConfig(baseUrl: string) {
   };
 }
 
-export function jsonResponse(status: number, value: unknown, headers?: Record<string, string>): FakeCoAPIResponse {
+export function jsonResponse(
+  status: number,
+  value: unknown,
+  headers?: Record<string, string>,
+): FakeCoAPIResponse {
   return {
     status,
     headers: { 'content-type': 'application/json', ...headers },

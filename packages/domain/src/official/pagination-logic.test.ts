@@ -1,4 +1,9 @@
-import { mergedCapitalRaidLoadMorePage, mergedPaginationItems, mergedPaginationPage, paginationHasMore } from './pagination-logic';
+import {
+  mergedCapitalRaidLoadMorePage,
+  mergedPaginationItems,
+  mergedPaginationPage,
+  paginationHasMore,
+} from './pagination-logic';
 import type { OfficialCapitalRaidSeason } from './models/capital-raid';
 import { describe, expect, it } from 'vitest';
 
@@ -40,7 +45,11 @@ describe('PaginationLogic', () => {
 
 describe('PaginationMerge', () => {
   it('去重追加', () => {
-    const merged = mergedPaginationItems([entry('01'), entry('02')], [entry('02'), entry('03')], (a, b) => a.endTime === b.endTime);
+    const merged = mergedPaginationItems(
+      [entry('01'), entry('02')],
+      [entry('02'), entry('03')],
+      (a, b) => a.endTime === b.endTime,
+    );
     expect(merged.map((item) => item.endTime)).toEqual(['202601', '202602', '202603']);
   });
 

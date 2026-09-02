@@ -42,9 +42,7 @@ export function mergedPaginationPage<Item>(
     return fetched;
   }
   const stalled =
-    fetched.after !== undefined &&
-    existing.after !== undefined &&
-    fetched.after === existing.after;
+    fetched.after !== undefined && existing.after !== undefined && fetched.after === existing.after;
   return {
     items: mergedPaginationItems(existing.items, fetched.items, equals),
     before: fetched.before ?? existing.before,
@@ -64,9 +62,7 @@ export function mergedCapitalRaidLoadMorePage(
   fetched: OfficialPaginatedPage<OfficialCapitalRaidSeason>,
 ): CapitalRaidLoadMoreResult {
   const stalled =
-    fetched.after !== undefined &&
-    existing.after !== undefined &&
-    fetched.after === existing.after;
+    fetched.after !== undefined && existing.after !== undefined && fetched.after === existing.after;
   const { items, reconciliation } = mergedCapitalRaidLoadMoreItems(existing.items, fetched.items);
   return {
     page: {
@@ -81,7 +77,10 @@ export function mergedCapitalRaidLoadMorePage(
 export function mergedCapitalRaidLoadMoreItems(
   existing: readonly OfficialCapitalRaidSeason[],
   newPage: readonly OfficialCapitalRaidSeason[],
-): { readonly items: OfficialCapitalRaidSeason[]; readonly reconciliation: CapitalRaidLoadMoreReconciliation } {
+): {
+  readonly items: OfficialCapitalRaidSeason[];
+  readonly reconciliation: CapitalRaidLoadMoreReconciliation;
+} {
   if (newPage.length === 0) {
     return { items: [...existing], reconciliation: 'identityPreserving' };
   }
@@ -149,12 +148,17 @@ function mergeWithOverlap(
   newPage: readonly OfficialCapitalRaidSeason[],
   overlap: number,
   reconciliation: CapitalRaidLoadMoreReconciliation,
-): { readonly items: OfficialCapitalRaidSeason[]; readonly reconciliation: CapitalRaidLoadMoreReconciliation } {
+): {
+  readonly items: OfficialCapitalRaidSeason[];
+  readonly reconciliation: CapitalRaidLoadMoreReconciliation;
+} {
   const merged = [...existing.slice(0, existing.length - overlap), ...newPage];
   const prior = existing.slice(0, existing.length - overlap);
   const tail = newPage.slice(overlap);
   const priorTripleKeys = new Set(prior.map((item) => capitalRaidTripleKey(item)));
-  const hasTailIdentityCollision = tail.some((item) => priorTripleKeys.has(capitalRaidTripleKey(item)));
+  const hasTailIdentityCollision = tail.some((item) =>
+    priorTripleKeys.has(capitalRaidTripleKey(item)),
+  );
   return {
     items: merged,
     reconciliation: hasTailIdentityCollision ? 'ambiguous' : reconciliation,
@@ -164,7 +168,10 @@ function mergeWithOverlap(
 function appendCapitalRaidItems(
   existing: readonly OfficialCapitalRaidSeason[],
   newPage: readonly OfficialCapitalRaidSeason[],
-): { readonly items: OfficialCapitalRaidSeason[]; readonly reconciliation: CapitalRaidLoadMoreReconciliation } {
+): {
+  readonly items: OfficialCapitalRaidSeason[];
+  readonly reconciliation: CapitalRaidLoadMoreReconciliation;
+} {
   const merged = [...existing];
   for (const item of newPage) {
     if (!merged.some((entry) => capitalRaidSeasonsEqual(entry, item))) {

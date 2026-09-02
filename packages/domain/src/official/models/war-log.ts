@@ -1,10 +1,7 @@
 import { OFFICIAL_PARSER_VERSIONS } from '../types';
 import { optionalInt, optionalString } from '../json-decode';
 import { decodeOptionalParticipant } from './war-shared';
-import {
-  decodeOfficialPaginatedPage,
-  type OfficialPaginatedPage,
-} from './paginated-page';
+import { decodeOfficialPaginatedPage, type OfficialPaginatedPage } from './paginated-page';
 
 export type OfficialWarLogEntry = {
   readonly result: string | undefined;

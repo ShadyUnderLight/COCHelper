@@ -156,9 +156,7 @@ function decodeClanCapital(value: unknown): ClanCapital | undefined {
 }
 
 function decodeRequiredTownHallLevel(record: JsonRecord): number | undefined {
-  return (
-    optionalInt(record.requiredTownhallLevel) ?? optionalInt(record.requiredTownHallLevel)
-  );
+  return optionalInt(record.requiredTownhallLevel) ?? optionalInt(record.requiredTownHallLevel);
 }
 
 export function decodeOfficialClanSnapshot(value: unknown): OfficialClanSnapshot {

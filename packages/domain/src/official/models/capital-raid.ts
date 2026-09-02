@@ -1,15 +1,6 @@
 import { OFFICIAL_PARSER_VERSIONS } from '../types';
-import {
-  asRecord,
-  optionalDouble,
-  optionalInt,
-  optionalString,
-  stableEqual,
-} from '../json-decode';
-import {
-  decodeOfficialPaginatedPage,
-  type OfficialPaginatedPage,
-} from './paginated-page';
+import { asRecord, optionalDouble, optionalInt, optionalString, stableEqual } from '../json-decode';
+import { decodeOfficialPaginatedPage, type OfficialPaginatedPage } from './paginated-page';
 
 export type CapitalRaidSeasonMember = {
   readonly tag: string | undefined;

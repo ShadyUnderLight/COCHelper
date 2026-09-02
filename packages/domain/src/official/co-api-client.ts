@@ -6,10 +6,7 @@ import {
   decodeOfficialCapitalRaidSeason,
   type OfficialCapitalRaidSeason,
 } from './models/capital-raid';
-import {
-  decodeOfficialPaginatedPage,
-  type OfficialPaginatedPage,
-} from './models/paginated-page';
+import { decodeOfficialPaginatedPage, type OfficialPaginatedPage } from './models/paginated-page';
 import { decodeOfficialPlayerSnapshot, type OfficialPlayerSnapshot } from './models/player';
 import { decodeOfficialWarLogEntry, type OfficialWarLogEntry } from './models/war-log';
 import { buildCoAPIEndpoint, type QueryItem } from './url-builder';
@@ -23,10 +20,7 @@ export type CoAPISmokeResult =
   | { readonly kind: 'serverError' }
   | { readonly kind: 'networkFailure'; readonly detail: string };
 
-export type CoAPIFetch = (
-  input: string | URL,
-  init?: RequestInit,
-) => Promise<Response>;
+export type CoAPIFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 export type CoAPITokenProvider = () => string | undefined;
 
@@ -57,7 +51,11 @@ export class CoAPIClient {
     this.tokenProvider = options.tokenProvider;
   }
 
-  async request(path: string, queryItems?: readonly QueryItem[], signal?: AbortSignal): Promise<ArrayBuffer> {
+  async request(
+    path: string,
+    queryItems?: readonly QueryItem[],
+    signal?: AbortSignal,
+  ): Promise<ArrayBuffer> {
     const url = buildCoAPIEndpoint(this.config, path, queryItems);
     const maxRetries = Math.max(0, this.config.maxRetryCount);
 
@@ -119,17 +117,22 @@ export class CoAPIClient {
           if (signal?.aborted) {
             throw new CoAPIRequestCancelledError();
           }
+          // 内部 request timeout：与 Swift URLError.timedOut 一样可重试。
+          if (attempt < maxRetries) {
+            await sleepForRetry(this.config, attempt, undefined, signal);
+            continue;
+          }
           throw makeCoAPIError('timeout');
         }
         if (isCoAPIError(error)) {
           throw error;
         }
-        if (isRetryableFetchError(error) && attempt < maxRetries) {
-          await sleepForRetry(this.config, attempt, undefined, signal);
-          continue;
-        }
-        if (isRetryableFetchError(error)) {
-          throw makeCoAPIError('timeout');
+        if (isRetryableNetworkError(error)) {
+          if (attempt < maxRetries) {
+            await sleepForRetry(this.config, attempt, undefined, signal);
+            continue;
+          }
+          throw makeCoAPIError('network', { underlying: retryableNetworkUnderlying(error) });
         }
         throw makeCoAPIError('network', {
           underlying: `unknown transport error: ${error instanceof Error ? error.constructor.name : typeof error}`,
@@ -153,11 +156,21 @@ export class CoAPIClient {
   }
 
   async fetchPlayer(tag: string, signal?: AbortSignal): Promise<OfficialPlayerSnapshot> {
-    return this.fetchDecoded(`/players/${tag}`, decodeOfficialPlayerSnapshot, 'player decode failed', signal);
+    return this.fetchDecoded(
+      `/players/${tag}`,
+      decodeOfficialPlayerSnapshot,
+      'player decode failed',
+      signal,
+    );
   }
 
   async fetchClan(tag: string, signal?: AbortSignal): Promise<OfficialClanSnapshot> {
-    return this.fetchDecoded(`/clans/${tag}`, decodeOfficialClanSnapshot, 'clan decode failed', signal);
+    return this.fetchDecoded(
+      `/clans/${tag}`,
+      decodeOfficialClanSnapshot,
+      'clan decode failed',
+      signal,
+    );
   }
 
   async fetchClanWar(tag: string, signal?: AbortSignal): Promise<OfficialClanWarSnapshot> {
@@ -178,7 +191,13 @@ export class CoAPIClient {
       readonly signal?: AbortSignal;
     },
   ): Promise<OfficialPaginatedPage<OfficialWarLogEntry>> {
-    return this.fetchPaginated(tag, '/warlog', decodeOfficialWarLogEntry, 'war log decode failed', options);
+    return this.fetchPaginated(
+      tag,
+      '/warlog',
+      decodeOfficialWarLogEntry,
+      'war log decode failed',
+      options,
+    );
   }
 
   async fetchCapitalRaidSeasons(
@@ -339,20 +358,62 @@ function isCoAPIError(error: unknown): error is CoAPIError {
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
+  return (
+    typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
+  );
 }
 
-function isRetryableFetchError(error: unknown): boolean {
-  if (!(error instanceof TypeError)) {
+function errorTypeName(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+  if ('name' in error && typeof error.name === 'string' && error.name.length > 0) {
+    return error.name;
+  }
+  if ('constructor' in error && typeof error.constructor === 'function') {
+    return error.constructor.name;
+  }
+  return undefined;
+}
+
+function errorMessage(error: unknown): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message;
+  }
+  return '';
+}
+
+/** 可重试 transport 错误（对齐 Swift URLError 四类，不含 timedOut——后者走 AbortError 路径）。 */
+function isRetryableNetworkError(error: unknown): boolean {
+  if (isAbortError(error)) {
     return false;
   }
-  const message = error.message.toLowerCase();
-  return (
-    message.includes('network') ||
+  const message = errorMessage(error).toLowerCase();
+  if (
     message.includes('failed to fetch') ||
+    message.includes('network') ||
     message.includes('connection') ||
-    message.includes('timeout')
-  );
+    message.includes('connect') ||
+    message.includes('econnrefused') ||
+    message.includes('enotfound')
+  ) {
+    return true;
+  }
+  // fetch/undici 连接类失败常以 TypeError 抛出（消息因 runtime 而异）。
+  return errorTypeName(error) === 'TypeError';
+}
+
+function retryableNetworkUnderlying(error: unknown): string {
+  const message = errorMessage(error);
+  if (message.length > 0) {
+    return `transport error (${message})`;
+  }
+  return 'transport error';
 }
 
 async function sleepForRetry(

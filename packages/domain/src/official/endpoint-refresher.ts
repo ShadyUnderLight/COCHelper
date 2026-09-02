@@ -70,8 +70,7 @@ async function refreshOfficialEndpointState<Snapshot>(input: {
     input.previous?.lastGood !== undefined ? input.previous.parserVersion : input.parserVersion;
   try {
     const snapshot = await input.fetch(input.tag, input.signal);
-    const unrecognized =
-      isUnrecognizedKeysProviding(snapshot) ? snapshot.unrecognizedKeys : [];
+    const unrecognized = isUnrecognizedKeysProviding(snapshot) ? snapshot.unrecognizedKeys : [];
     return createOfficialEndpointState({
       status: 'success',
       clanTag: input.tag,
@@ -86,12 +85,29 @@ async function refreshOfficialEndpointState<Snapshot>(input: {
     });
   } catch (error) {
     if (isCoAPIError(error)) {
-      return failedOfficialEndpointState(input.tag, input.previous, retainedParserVersion, nowMs, error);
+      return failedOfficialEndpointState(
+        input.tag,
+        input.previous,
+        retainedParserVersion,
+        nowMs,
+        error,
+      );
     }
     if (isCoAPIRequestCancelled(error)) {
-      return cancelledOfficialEndpointState(input.tag, input.previous, retainedParserVersion, nowMs);
+      return cancelledOfficialEndpointState(
+        input.tag,
+        input.previous,
+        retainedParserVersion,
+        nowMs,
+      );
     }
-    return unknownFailedOfficialEndpointState(input.tag, input.previous, retainedParserVersion, nowMs, error);
+    return unknownFailedOfficialEndpointState(
+      input.tag,
+      input.previous,
+      retainedParserVersion,
+      nowMs,
+      error,
+    );
   }
 }
 

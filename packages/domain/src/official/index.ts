@@ -18,6 +18,7 @@ export * from './player-state';
 export * from './pagination-logic';
 export * from './capital-raid-matcher';
 export * from './capital-raid-row-identity';
+export * from './capital-raid-row-cache';
 export * from './cache-retention-policy';
 export * from './source-labeling';
 export * from './official-state-store';

@@ -69,7 +69,9 @@ export function collectUnrecognizedKeys(
   knownKeys: ReadonlySet<string>,
 ): readonly string[] {
   if (Array.isArray(record.unrecognizedKeys)) {
-    const stored = record.unrecognizedKeys.filter((entry): entry is string => typeof entry === 'string');
+    const stored = record.unrecognizedKeys.filter(
+      (entry): entry is string => typeof entry === 'string',
+    );
     return [...stored].sort();
   }
   return Object.keys(record)

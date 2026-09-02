@@ -76,5 +76,9 @@ export function encodeOfficialStateStoreWire<State>(
 
 export type ClanStateStore = OfficialStateStore<import('./endpoint-state').ClanAPIState>;
 export type ClanWarStateStore = OfficialStateStore<import('./endpoint-state').ClanWarAPIState>;
-export type ClanWarLogStateStore = OfficialStateStore<import('./endpoint-state').ClanWarLogAPIState>;
-export type ClanCapitalStateStore = OfficialStateStore<import('./endpoint-state').ClanCapitalAPIState>;
+export type ClanWarLogStateStore = OfficialStateStore<
+  import('./endpoint-state').ClanWarLogAPIState
+>;
+export type ClanCapitalStateStore = OfficialStateStore<
+  import('./endpoint-state').ClanCapitalAPIState
+>;

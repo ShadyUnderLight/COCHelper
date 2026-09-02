@@ -1,9 +1,7 @@
-import {
-  CoAPIClient,
-} from './co-api-client';
+import { CoAPIClient } from './co-api-client';
 import type { CoAPIConfig } from './co-api-config';
 import type { CoAPIError } from './co-api-error';
-import { coAPIErrorsEqual } from './co-api-error';
+import { CoAPIRequestCancelledError, coAPIErrorsEqual } from './co-api-error';
 import { describe, expect, it } from 'vitest';
 
 describe('CoAPIClient', () => {
@@ -35,10 +33,7 @@ describe('CoAPIClient', () => {
     return { client, getCount: () => callCount };
   }
 
-  async function expectError(
-    run: () => Promise<unknown>,
-    expected: CoAPIError,
-  ): Promise<void> {
+  async function expectError(run: () => Promise<unknown>, expected: CoAPIError): Promise<void> {
     await expect(run()).rejects.toSatisfy((error: unknown) =>
       coAPIErrorsEqual(error as CoAPIError, expected),
     );
@@ -78,15 +73,20 @@ describe('CoAPIClient', () => {
         expected: { kind: 'accessDenied', reason: 'accessDenied.invalidIp' },
       },
       { status: 404, expected: { kind: 'notFound' } },
-      { status: 429, headers: { 'Retry-After': '60' }, expected: { kind: 'rateLimited', retryAfterSeconds: 60 } },
+      {
+        status: 429,
+        headers: { 'Retry-After': '60' },
+        expected: { kind: 'rateLimited', retryAfterSeconds: 60 },
+      },
       { status: 500, expected: { kind: 'serverError', statusCode: 500 } },
     ];
     for (const testCase of cases) {
-      const { client, getCount } = makeClient(() =>
-        new Response(testCase.body ?? '', {
-          status: testCase.status,
-          headers: testCase.headers,
-        }),
+      const { client, getCount } = makeClient(
+        () =>
+          new Response(testCase.body ?? '', {
+            status: testCase.status,
+            headers: testCase.headers,
+          }),
       );
       await expectError(() => client.request('/locations'), testCase.expected);
       expect(getCount()).toBe(1);
@@ -111,10 +111,9 @@ describe('CoAPIClient', () => {
   });
 
   it('5xx 不重试', async () => {
-    const { client, getCount } = makeClient(
-      () => new Response('', { status: 500 }),
-      { config: { maxRetryCount: 2 } },
-    );
+    const { client, getCount } = makeClient(() => new Response('', { status: 500 }), {
+      config: { maxRetryCount: 2 },
+    });
     await expectError(() => client.request('/locations'), { kind: 'serverError', statusCode: 500 });
     expect(getCount()).toBe(1);
   });
@@ -130,5 +129,78 @@ describe('CoAPIClient', () => {
       kind: 'malformedResponse',
       detail: 'locations decode failed',
     });
+  });
+
+  it('内部 timeout 重试后成功', async () => {
+    let count = 0;
+    const { client } = makeClient(
+      async () => {
+        count += 1;
+        if (count === 1) {
+          throw new DOMException('The operation was aborted', 'AbortError');
+        }
+        return Response.json({ items: [{ id: 1 }] });
+      },
+      { config: { maxRetryCount: 2, baseRetryDelayMs: 1 } },
+    );
+    const result = await client.fetchLocations();
+    expect(result.items).toHaveLength(1);
+    expect(count).toBe(2);
+  });
+
+  it('内部 timeout 耗尽后映射 timeout', async () => {
+    const { client, getCount } = makeClient(
+      async () => {
+        throw new DOMException('The operation was aborted', 'AbortError');
+      },
+      { config: { maxRetryCount: 1, baseRetryDelayMs: 1 } },
+    );
+    await expectError(() => client.request('/locations'), { kind: 'timeout' });
+    expect(getCount()).toBe(2);
+  });
+
+  it('可重试 network 重试后成功', async () => {
+    let count = 0;
+    const { client } = makeClient(
+      async () => {
+        count += 1;
+        if (count === 1) {
+          throw new TypeError('fetch failed');
+        }
+        return Response.json({ items: [{ id: 1 }] });
+      },
+      { config: { maxRetryCount: 2, baseRetryDelayMs: 1 } },
+    );
+    const result = await client.fetchLocations();
+    expect(result.items).toHaveLength(1);
+    expect(count).toBe(2);
+  });
+
+  it('可重试 network 耗尽后映射 network 而非 timeout', async () => {
+    const { client, getCount } = makeClient(
+      async () => {
+        throw new TypeError('fetch failed');
+      },
+      { config: { maxRetryCount: 1, baseRetryDelayMs: 1 } },
+    );
+    await expectError(() => client.request('/locations'), {
+      kind: 'network',
+      underlying: 'transport error (fetch failed)',
+    });
+    expect(getCount()).toBe(2);
+  });
+
+  it('parent AbortSignal 取消透传为 CoAPIRequestCancelledError', async () => {
+    const controller = new AbortController();
+    const { client } = makeClient(
+      () =>
+        new Promise<Response>(() => {
+          controller.abort();
+        }),
+    );
+    controller.abort();
+    await expect(client.request('/locations', undefined, controller.signal)).rejects.toBeInstanceOf(
+      CoAPIRequestCancelledError,
+    );
   });
 });

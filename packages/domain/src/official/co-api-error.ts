@@ -16,7 +16,10 @@ export class CoAPIRequestCancelledError extends Error {
 }
 
 export function isCoAPIRequestCancelled(error: unknown): boolean {
-  return error instanceof CoAPIRequestCancelledError || error instanceof DOMException && error.name === 'AbortError';
+  return (
+    error instanceof CoAPIRequestCancelledError ||
+    (error instanceof DOMException && error.name === 'AbortError')
+  );
 }
 
 export function coAPIErrorKind(error: CoAPIError): OfficialEndpointFailureKind {

@@ -1051,6 +1051,15 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
     public var id: UUID { snapshotID }
 }
 
+extension SnapshotHistoryEntry {
+    /// Issue #224 / #273: restore runtime trust for persisted verified coverage after decode.
+    public func hydratingVerifiedCoverage(
+        policy: SnapshotCoverageRevalidationPolicy = .production
+    ) -> SnapshotHistoryEntry {
+        SnapshotCoverageTrustHydration.hydrate(entry: self, policy: policy)
+    }
+}
+
 public enum SnapshotHistoryCanonicalizationError: Error, LocalizedError, Equatable, Sendable {
     case emptySource
     case topLevelMustBeObject

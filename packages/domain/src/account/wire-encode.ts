@@ -22,7 +22,8 @@ export function encodeAccountSnapshotWire(snapshot: AccountSnapshot): string {
 }
 
 export function encodeSwiftSortedJson(value: unknown): string {
-  return `${JSON.stringify(encodeValue(value))}`;
+  // Swift JSONEncoder escapes solidus inside strings; JSON.stringify does not.
+  return JSON.stringify(encodeValue(value)).replaceAll('/', '\\/');
 }
 
 export function mapObjectSectionsForWire(

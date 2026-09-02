@@ -9,26 +9,29 @@ import {
   type FakeCoAPIServer,
 } from './fake-co-api-server';
 
-/** #274 fake server matrix：真实 HTTP transport + CoAPIClient。 */
+/** 官方 api fake server matrix：真实 HTTP transport + CoAPIClient。 */
 describe('official api fake server matrix', () => {
-  let server: FakeCoAPIServer | undefined;
+  const servers: FakeCoAPIServer[] = [];
 
   afterEach(async () => {
-    await server?.close();
-    server = undefined;
+    await Promise.all(servers.splice(0).map((server) => server.close()));
   });
 
   async function makeClient(
     handler: Parameters<typeof createFakeCoAPIServer>[0],
     config?: Partial<ReturnType<typeof fakeCoAPIConfig>>,
   ) {
-    server = await createFakeCoAPIServer(handler);
+    const server = await createFakeCoAPIServer(handler);
+    servers.push(server);
     const baseConfig = fakeCoAPIConfig(server.baseUrl);
-    return new CoAPIClient({
-      config: { ...baseConfig, ...config },
-      tokenProvider: () => 'fake-token',
-      fetch: server.fetch,
-    });
+    return {
+      client: new CoAPIClient({
+        config: { ...baseConfig, ...config },
+        tokenProvider: () => 'fake-token',
+        fetch: server.fetch,
+      }),
+      server,
+    };
   }
 
   async function expectError(run: () => Promise<unknown>, expected: CoAPIError): Promise<void> {
@@ -60,7 +63,7 @@ describe('official api fake server matrix', () => {
     ];
 
     for (const testCase of cases) {
-      const client = await makeClient(
+      const { client } = await makeClient(
         () => ({
           status: testCase.status,
           headers: { 'content-type': 'application/json', ...testCase.headers },
@@ -71,7 +74,7 @@ describe('official api fake server matrix', () => {
       await expectError(() => client.request('/locations'), testCase.expected);
     }
 
-    const malformed = await makeClient(
+    const { client: malformed } = await makeClient(
       () => ({
         status: 200,
         body: 'not json',
@@ -86,7 +89,7 @@ describe('official api fake server matrix', () => {
 
   it('429 经真实 HTTP 重试后成功', async () => {
     let count = 0;
-    const client = await makeClient(
+    const { client, server } = await makeClient(
       () => {
         count += 1;
         if (count === 1) {
@@ -99,11 +102,11 @@ describe('official api fake server matrix', () => {
     const result = await client.fetchLocations();
     expect(result.items).toHaveLength(1);
     expect(count).toBe(2);
-    expect(server?.requestCount).toBe(2);
+    expect(server.requestCount).toBe(2);
   });
 
   it('requestTimeoutMs 触发真实 delay → retry → 最终 timeout', async () => {
-    const client = await makeClient(
+    const { client, server } = await makeClient(
       async () => {
         await new Promise((resolve) => setTimeout(resolve, 200));
         return jsonResponse(200, { items: [] });
@@ -111,12 +114,12 @@ describe('official api fake server matrix', () => {
       { maxRetryCount: 1, baseRetryDelayMs: 1, requestTimeoutMs: 50 },
     );
     await expectError(() => client.request('/locations'), { kind: 'timeout' });
-    expect(server?.requestCount).toBe(2);
+    expect(server.requestCount).toBe(2);
   });
 
   it('requestTimeoutMs 触发 delay 后第二次成功', async () => {
     let count = 0;
-    const client = await makeClient(
+    const { client } = await makeClient(
       async () => {
         count += 1;
         if (count === 1) {

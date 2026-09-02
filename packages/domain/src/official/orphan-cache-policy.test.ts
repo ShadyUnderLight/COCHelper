@@ -10,8 +10,8 @@ import {
 import { describe, expect, it } from 'vitest';
 
 describe('orphan cache policy', () => {
-  const nowMs = 1_000_000;
   const ttl = DEFAULT_ORPHAN_CACHE_TTL_MS;
+  const nowMs = ttl * 3;
 
   it('仍被村庄或跟踪部落引用的 clan tag → retain', () => {
     expect(
@@ -138,5 +138,55 @@ describe('orphan cache policy', () => {
         retainedTags: new Set(['#GONE']),
       }),
     ).toEqual({});
+  });
+
+  it('无效 TTL fail-closed → orphan，不立即 purge', () => {
+    const base = {
+      tag: '#OLD',
+      villageClanTags: [] as string[],
+      trackedClanTags: [] as string[],
+      endpointKind: 'clan' as const,
+      orphanSinceMs: nowMs - ttl * 2,
+      nowMs,
+    };
+    expect(classifyOrphanCacheTag({ ...base, orphanTtlMs: 0 })).toBe('orphan');
+    expect(classifyOrphanCacheTag({ ...base, orphanTtlMs: -1 })).toBe('orphan');
+    expect(classifyOrphanCacheTag({ ...base, orphanTtlMs: Number.NaN })).toBe('orphan');
+
+    const eligible = purgeEligibleCacheTags({
+      cacheTags: ['#OLD'],
+      villageClanTags: [],
+      trackedClanTags: [],
+      endpointKind: 'clan',
+      orphanSinceByTag: { '#OLD': nowMs - ttl * 2 },
+      nowMs,
+      orphanTtlMs: 0,
+    });
+    expect(eligible).toEqual([]);
+  });
+
+  it('无效 orphanSinceMs fail-closed → orphan', () => {
+    expect(
+      classifyOrphanCacheTag({
+        tag: '#OLD',
+        villageClanTags: [],
+        trackedClanTags: [],
+        endpointKind: 'clan',
+        orphanSinceMs: Number.NaN,
+        nowMs,
+        orphanTtlMs: ttl,
+      }),
+    ).toBe('orphan');
+    expect(
+      classifyOrphanCacheTag({
+        tag: '#OLD',
+        villageClanTags: [],
+        trackedClanTags: [],
+        endpointKind: 'clan',
+        orphanSinceMs: -1,
+        nowMs,
+        orphanTtlMs: ttl,
+      }),
+    ).toBe('orphan');
   });
 });

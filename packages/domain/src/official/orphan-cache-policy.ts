@@ -17,9 +17,7 @@ export function isOfficialCacheTagReferenced(input: {
   if (input.endpointKind === 'player') {
     return input.playerTags?.includes(input.tag) ?? false;
   }
-  return (
-    input.villageClanTags.includes(input.tag) || input.trackedClanTags.includes(input.tag)
-  );
+  return input.villageClanTags.includes(input.tag) || input.trackedClanTags.includes(input.tag);
 }
 
 /**
@@ -51,13 +49,18 @@ export function classifyOrphanCacheTag(input: {
   }
 
   const ttl = input.orphanTtlMs ?? DEFAULT_ORPHAN_CACHE_TTL_MS;
-  if (ttl <= 0) {
-    return 'purgeEligible';
+  // fail-closed：无效 TTL 不借配置错误获得 purge 资格（对齐 CacheRetentionPolicy no-op 语义）。
+  if (!Number.isFinite(ttl) || ttl <= 0) {
+    return 'orphan';
   }
   if (input.orphanSinceMs === undefined) {
     return 'orphan';
   }
-  return input.nowMs - input.orphanSinceMs >= ttl ? 'purgeEligible' : 'orphan';
+  const sinceMs = input.orphanSinceMs;
+  if (!Number.isFinite(sinceMs) || sinceMs < 0) {
+    return 'orphan';
+  }
+  return input.nowMs - sinceMs >= ttl ? 'purgeEligible' : 'orphan';
 }
 
 /** 从 store tag 集合中筛出可 purge 的条目（fail-closed：仍被引用的一律排除）。 */

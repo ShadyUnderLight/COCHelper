@@ -9,6 +9,7 @@ export default defineConfig({
       'packages/testkit/src/manual-reconciliation.parity.test.ts',
       'packages/testkit/src/snapshot-history.parity.test.ts',
       'packages/testkit/src/official-api.parity.test.ts',
+      'packages/testkit/src/official-api-fake-server.test.ts',
     ],
     environment: 'node',
     fileParallelism: false,

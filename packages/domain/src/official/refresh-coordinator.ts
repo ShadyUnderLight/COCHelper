@@ -245,9 +245,6 @@ export class RefreshCoordinator<TResult> {
       }
     }
 
-    // 延迟到 microtask 再执行 run，且先注册 entry，避免 run() 同步 throw 时 finally
-    // 在 map 写入前删空、随后永久 poison 该 tag。
-    let entry: SharedFlightEntry<TResult>;
     const promise = Promise.resolve()
       .then(() => run(controller.signal))
       .finally(() => {
@@ -257,7 +254,7 @@ export class RefreshCoordinator<TResult> {
         }
         this.state = unregisterResolvingTag(this.state, tag);
       });
-    entry = { promise, controller };
+    const entry: SharedFlightEntry<TResult> = { promise, controller };
     this.sharedFlights.set(tag, entry);
     this.state = registerResolvingTag(this.state, tag);
     return awaitSharedFlight(entry, parentSignal);

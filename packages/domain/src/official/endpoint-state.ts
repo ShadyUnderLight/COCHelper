@@ -1,6 +1,5 @@
 import {
   OFFICIAL_STALE_THRESHOLD_MS,
-  type EndpointParserVersioning,
   type OfficialAPIDisplayStatus,
   type OfficialAPIRequestStatus,
   type OfficialEndpointFailureKind,

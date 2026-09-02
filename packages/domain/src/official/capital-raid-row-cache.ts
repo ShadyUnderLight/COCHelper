@@ -127,7 +127,7 @@ export class CapitalRaidRowCache {
   }
 
   private resetAndBuild(seasons: readonly OfficialCapitalRaidSeason[]): void {
-    this._generation = (this._generation + 1) >>> 0;
+    this._generation += 1;
     if (this._generation === 0) {
       this._generation = 1;
     }

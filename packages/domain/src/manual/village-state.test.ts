@@ -27,6 +27,7 @@ const baseline = {
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: null,
+  sourceFingerprint: 'sha256:catalog',
   manifestSchemaVersion: null,
 };
 

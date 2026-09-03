@@ -287,11 +287,7 @@ function encodeRecord(record: ManualUpgradeRecord): unknown {
             rawAmount: cost.rawAmount,
             parseFailed: cost.parseFailed,
           })),
-    catalogProvenance: {
-      gameVersion: record.catalogProvenance.gameVersion,
-      buildTag: record.catalogProvenance.buildTag,
-      manifestSchemaVersion: record.catalogProvenance.manifestSchemaVersion,
-    },
+    catalogProvenance: record.catalogProvenance,
     baselineReference: record.baselineReference,
     queueKind: record.queueKind,
     status: record.status,
@@ -514,6 +510,10 @@ function decodeProvenance(value: unknown): ManualCatalogProvenance {
       record.buildTag === null || record.buildTag === undefined
         ? null
         : requireString(record.buildTag, 'buildTag'),
+    sourceFingerprint:
+      record.sourceFingerprint === null || record.sourceFingerprint === undefined
+        ? null
+        : requireString(record.sourceFingerprint, 'sourceFingerprint'),
     manifestSchemaVersion:
       record.manifestSchemaVersion === null || record.manifestSchemaVersion === undefined
         ? null

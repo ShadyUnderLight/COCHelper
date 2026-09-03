@@ -11,6 +11,7 @@ final class EffectiveVillageProjectionTests: XCTestCase {
     private let provenance = ManualCatalogProvenance(
         gameVersion: "18.400.13",
         buildTag: "test",
+        sourceFingerprint: "sha256:catalog",
         manifestSchemaVersion: 3
     )
 

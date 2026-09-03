@@ -36,8 +36,18 @@ describeIfBundle('CraftTableCatalog', () => {
   });
 
   it('版本不一致时返回 null', () => {
+    expect(loadCraftTableCatalog({ version: '9.999.0', manifestText, craftText })).toBeNull();
+  });
+
+  it('同 gameVersion 不同 buildTag 时拒绝（业务版本绑定）', () => {
+    const manifest = JSON.parse(manifestText) as { buildTag: string };
+    manifest.buildTag = '19_0_0';
     expect(
-      loadCraftTableCatalog({ version: '9.999.0', manifestText, craftText }),
+      loadCraftTableCatalog({
+        version: '18.400.13',
+        manifestText: JSON.stringify(manifest),
+        craftText,
+      }),
     ).toBeNull();
   });
 

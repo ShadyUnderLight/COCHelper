@@ -68,7 +68,10 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
               catalog.schemaVersion == 1,
               catalog.gameVersion == version,
               manifest.schemaVersion == 3,
-              manifest.gameVersion == catalog.gameVersion
+              manifest.gameVersion == catalog.gameVersion,
+              // E0-03/Issue #303：hash 绑定撤销后，buildTag 等值是防不同版本
+              // 数据静默套用的业务门（同 gameVersion 不同 buildTag 必须拒绝）。
+              manifest.buildTag == catalog.buildTag
         else {
             return nil
         }

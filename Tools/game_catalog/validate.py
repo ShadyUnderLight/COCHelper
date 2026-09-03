@@ -236,7 +236,8 @@ def _check_rendered_path(
 
 
 def _check_craft_catalog_structure(errors: list[str], raw: object,
-                                   manifest_game_version: object) -> None:
+                                   manifest_game_version: object,
+                                   manifest_build_tag: object) -> None:
     """craft_table_catalog.json 内容结构校验（Swift 解码契约镜像）。
 
     内容非法时（如缺 buildTag/locale/source 字段）Swift
@@ -263,6 +264,12 @@ def _check_craft_catalog_structure(errors: list[str], raw: object,
     if manifest_game_version is not None and raw.get("gameVersion") != manifest_game_version:
         errors.append(f"craft_table_catalog.json gameVersion 与 manifest 不一致: "
                       f"{raw.get('gameVersion')!r} vs {manifest_game_version!r}")
+    # E0-03/Issue #303：hash 绑定撤销后，buildTag 等值是防不同版本数据静默
+    # 套用的业务门（同 gameVersion 不同 buildTag 必须拒绝）。
+    if (manifest_build_tag is not None and isinstance(raw.get("buildTag"), str)
+            and raw.get("buildTag") != manifest_build_tag):
+        errors.append(f"craft_table_catalog.json buildTag 与 manifest 不一致: "
+                      f"{raw.get('buildTag')!r} vs {manifest_build_tag!r}")
     for list_key in ("defenses", "modules"):
         if list_key in raw and not isinstance(raw[list_key], list):
             errors.append(f"craft_table_catalog.json {list_key} 必须是数组")
@@ -575,7 +582,8 @@ def validate_catalog(dir_path: str | Path) -> list[str]:
         except (json.JSONDecodeError, OSError, ValueError) as exc:
             errors.append(f"craft_table_catalog.json 解析失败: {exc}")
         else:
-            _check_craft_catalog_structure(errors, raw_craft, manifest.get("gameVersion"))
+            _check_craft_catalog_structure(errors, raw_craft, manifest.get("gameVersion"),
+                                           manifest.get("buildTag"))
 
     return errors
 

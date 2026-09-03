@@ -42,6 +42,9 @@ export function manualCatalogProvenanceFromCatalog(catalog: GameCatalog): Manual
   return {
     gameVersion: catalog.gameVersion,
     buildTag: catalog.manifest?.buildTag ?? null,
+    // E0-03/#303：Catalog 侧停止生产 sourceFingerprint（恒 null）；
+    // wire-shape 删除 + schema v2 由 #304 执行。
+    sourceFingerprint: null,
     manifestSchemaVersion: catalog.manifest?.schemaVersion ?? null,
   };
 }

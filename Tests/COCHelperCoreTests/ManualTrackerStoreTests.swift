@@ -107,7 +107,8 @@ final class ManualTrackerStoreTests: XCTestCase {
         lineageID: "lineage-1"
     )
     private let provenance = ManualCatalogProvenance(
-        gameVersion: "18.400.13"
+        gameVersion: "18.400.13",
+        sourceFingerprint: "sha256:catalog"
     )
 
     private func manualCompletedCore(

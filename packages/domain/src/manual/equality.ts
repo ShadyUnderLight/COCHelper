@@ -111,6 +111,7 @@ export function manualCatalogProvenanceEqual(
   return (
     left.gameVersion === right.gameVersion &&
     (left.buildTag ?? null) === (right.buildTag ?? null) &&
+    (left.sourceFingerprint ?? null) === (right.sourceFingerprint ?? null) &&
     (left.manifestSchemaVersion ?? null) === (right.manifestSchemaVersion ?? null)
   );
 }

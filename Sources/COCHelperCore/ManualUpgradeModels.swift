@@ -574,15 +574,20 @@ public struct ManualItemState: Codable, Hashable, Sendable {
 public struct ManualCatalogProvenance: Codable, Hashable, Sendable {
     public let gameVersion: String
     public let buildTag: String?
+    // E0-03/#303 注记：sourceFingerprint 字段保留（#304 删除 + schema v2 硬切换）。
+    // Catalog 侧已停止生产（init(catalog:) 恒传 nil），旧 persisted 数据原样保留。
+    public let sourceFingerprint: String?
     public let manifestSchemaVersion: Int?
 
     public init(
         gameVersion: String,
         buildTag: String? = nil,
+        sourceFingerprint: String? = nil,
         manifestSchemaVersion: Int? = nil
     ) {
         self.gameVersion = gameVersion
         self.buildTag = buildTag
+        self.sourceFingerprint = sourceFingerprint
         self.manifestSchemaVersion = manifestSchemaVersion
     }
 
@@ -590,6 +595,7 @@ public struct ManualCatalogProvenance: Codable, Hashable, Sendable {
         self.init(
             gameVersion: catalog.gameVersion,
             buildTag: catalog.manifest?.buildTag,
+            sourceFingerprint: nil,
             manifestSchemaVersion: catalog.manifest?.schemaVersion
         )
     }

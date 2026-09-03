@@ -60,9 +60,7 @@ describe('validateCatalogManifest', () => {
   });
 
   it('schemaVersion 超范围时 fail-closed', () => {
-    expect(validateCatalogManifest(makeManifest({ schemaVersion: 99 }), [makeItem()])).toBe(
-      false,
-    );
+    expect(validateCatalogManifest(makeManifest({ schemaVersion: 99 }), [makeItem()])).toBe(false);
   });
 
   it('AssetRef both-present 时 fail-closed', () => {

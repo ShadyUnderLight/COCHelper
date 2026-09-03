@@ -511,6 +511,18 @@ def test_validate_missing_craft_file_ok(tmp_path):
     assert validate_catalog(d) == []
 
 
+def test_validate_rejects_craft_build_tag_mismatch(tmp_path):
+    """E0-03/Issue #303：同 gameVersion 不同 buildTag → 报错（hash 绑定撤销后，
+    buildTag 等值是防不同版本数据静默套用的业务门）。"""
+    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
+    raw = json.loads((d / "craft_table_catalog.json").read_text(encoding="utf-8"))
+    raw["buildTag"] = "19_0_0"
+    (d / "craft_table_catalog.json").write_text(
+        json.dumps(raw, ensure_ascii=False) + "\n", encoding="utf-8")
+    errors = validate_catalog(d)
+    assert any("buildTag" in e and "不一致" in e for e in errors)
+
+
 def test_validate_rejects_structurally_invalid_craft(tmp_path):
     """复审 P1 负例：craft 文件缺必填字段（Swift Codable 解码失败 → 运行时
     精制台不可用）→ validator 必须 fail loud。"""

@@ -43,6 +43,7 @@ const baseline = {
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: null,
+  sourceFingerprint: null,
   manifestSchemaVersion: null,
 };
 

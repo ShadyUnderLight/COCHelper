@@ -1,7 +1,9 @@
-# Behavior Matrix（E0-02 冻结）
+# Behavior Matrix（E0-02 冻结，E0-03 #302 修订）
 
-> Issue #265 交付物。冻结启动分支、持久化行为、事务、lineage、分页、对账与并发协调的
+> Issue #265 交付物，Issue #302 修订。冻结启动分支、持久化行为、事务、lineage、分页、对账与并发协调的
 > 用户可见语义。每条标注 Swift 出处（file:line，基于 main@f513a35）。
+> 标注 🗑️ E0-03 的条目为已撤销的 hash 防御契约：新实现不得要求它们，
+> 旧出处仅作删除审计保留（删除执行归属 #303/#304/#305）。
 > 引用格式：§BE-x.y。
 
 ## BE-1 持久化 store 启动分支矩阵
@@ -42,10 +44,14 @@ recovery 键）。`.readOnly/.corrupt/.unsupported/.writeFailed` 均 `isRecovery
 | corrupt | decode/校验失败即抛错；**坏文件绝不被空 envelope 覆盖**，原 bytes 原地保留 | SnapshotHistoryStore.swift:355-357, 380-389; AppModel.swift:726-728 |
 | future-schema | envelope/marker/entry 任一版本不符 → `unsupportedSchema` 抛出，无覆盖 | SnapshotHistoryStore.swift:126-129, 208-211 |
 
-逐条容错（envelope.validated() 每次加载全量执行）：entry 四类版本门精确匹配；
-observation v2+ 必带 section evidence、≤v5 禁止 sourceUniverse；每 entry 重算 F2 完整性指纹 +
-rawJSON 重 canonicalize 双比对（SnapshotHistoryStore.swift:252-316）；lineage/duplicate 元数据
-交叉校验（187-206）；autoreleasepool 排空防启动峰值内存（176-178）。
+逐条容错（envelope.validated() 每次加载全量执行）：entry 版本门精确匹配（新契约
+envelope=2/entry=2，旧 envelope=1/entry=1 按 §WA-7.1 标记不可用）；
+observation v2+ 必带 section evidence、≤v5 禁止 sourceUniverse；🗑️ E0-03 已删除
+「每 entry 重算 F2 完整性指纹」——替换为 rawJSON 重 canonicalize 后比较
+§WA-3.1 `ObservationIdentityMaterial`（重建时不带 catalog，display 差异永不误报）+
+lineage/duplicate 元数据交叉校验（SnapshotHistoryStore.swift:252-316 中非 digest
+部分保留，digest 行删除，执行 #304）；autoreleasepool 排空防启动峰值内存（176-178）。
+旧文件 bytes 原地保留、绝不被空 envelope 覆盖的语义不变。
 
 ### BE-1.3 ManualTrackerStore（文件 `manual-tracker-v1.json`）
 
@@ -149,12 +155,12 @@ committed journal 在用户选择的恢复之上重放，同时保留证据（Ap
 | 规则 | 出处 |
 |---|---|
 | lineage resolution 纯函数：同 village + 同合法 tag → `.continued`（复用 lineageID，可比较）；tag 变化 → `.newLineage`（新 UUID、baseline、禁止比较）；tag 缺失/无效/village 变化/前序 conflict → `.unknown`（baseline，禁止比较）——未确认身份永不 join 前序记录 | SnapshotHistoryModels.swift:871-943（注释 :915-917） |
-| entry append-only immutable；active lineage 是可变索引 metadata；每次推进先把该村其他 lineage 全部 isActive=false 再 upsert lastEntryID/lastFingerprint/lastAppliedAt/hasConflict | SnapshotHistoryModels.swift:55-56; SnapshotHistoryStore.swift:660-689 |
+| entry append-only immutable；active lineage 是可变索引 metadata；每次推进先把该村其他 lineage 全部 isActive=false 再 upsert lastEntryID/lastAppliedAt/hasConflict（🗑️ E0-03：删除 `lastFingerprint` 字段，lineage 校验改经 `lastEntryID` + village/lineage/tag/time 关系确认索引，执行 #304） | SnapshotHistoryModels.swift:55-56; SnapshotHistoryStore.swift:660-689 |
 | 导入门 fail-closed：当前村庄 tag 与 active lineage 的 normalizedPlayerTag 不一致 → 整个 import 抛 `lineageConflict` | SnapshotHistoryStore.swift:572-578 |
-| duplicate 定义 =「Diff 解释不变」，判定键 `(canonicalFingerprint, coverage duplicate key, timerSchema)`；appliedAt/source timestamp/parserVersion/runtimeTrust 均不进身份 | SnapshotHistoryStore.swift:463-484 |
-| 同 fingerprint 再导入：不 append 新 entry，只更新 duplicateMetadata（lastSeenAt=appliedAt、lastSourceTimestamp=capturedAt、duplicateImportCount+1），返回 appended:false/duplicate:true | SnapshotHistoryStore.swift:605-623 |
-| 反例：同 fingerprint 但 coverage 声明变化 → DuplicateKey 不同 → 正常 append 新 entry（锁定测试 `testV5IdenticalBuildingsDifferentCoverageDeclarationAppends`） | SnapshotHistoryStoreTests.swift:1480-1520 |
-| baseline entry：isBaseline/baselineReason 由 resolution 决定（initial/unknown/newLineage → true），参与 F2 指纹；对账侧 UI「账号或 lineage 已变化，禁止自动匹配旧手动记录」 | SnapshotHistoryModels.swift:983-984, 835-855; ContentView.swift:1850-1854 |
+| duplicate 定义 =「Diff 解释不变」，判定键 =（§WA-3.1 `ObservationIdentityMaterial` 比较结果，coverage duplicate key，timerSchema）；`display` 永不参与身份，appliedAt/source timestamp/parserVersion/runtimeTrust 均不进身份（🗑️ E0-03：判定键不再含 `canonicalFingerprint`，执行 #304） | SnapshotHistoryStore.swift:463-484 |
+| 同 observation 内容再导入：不 append 新 entry，只更新 duplicateMetadata（lastSeenAt=appliedAt、lastSourceTimestamp=capturedAt、duplicateImportCount+1），返回 appended:false/duplicate:true。注意「同内容」指 ObservationIdentityMaterial 相等：仅 catalog 展示信息（displayName/category）变化仍判 duplicate | SnapshotHistoryStore.swift:605-623 |
+| 反例：同 observation 内容但 coverage 声明变化 → DuplicateKey 不同 → 正常 append 新 entry（锁定测试 `testV5IdenticalBuildingsDifferentCoverageDeclarationAppends`） | SnapshotHistoryStoreTests.swift:1480-1520 |
+| baseline entry：isBaseline/baselineReason 由 resolution 决定（initial/unknown/newLineage → true；🗑️ E0-03：不再参与 F2 指纹）；对账侧 UI「账号或 lineage 已变化，禁止自动匹配旧手动记录」 | SnapshotHistoryModels.swift:983-984, 835-855; ContentView.swift:1850-1854 |
 
 ## BE-4 分页契约
 
@@ -220,30 +226,94 @@ committed journal 在用户选择的恢复之上重放，同时保留证据（Ap
 14. 否则 `.conflict`
 
 配套：preview 携带稳定身份 newNormalizedPlayerTag（不依赖随机 UUID）；apply 的 stale 保护 =
-expectedPreview 五字段全匹配否则 `.stalePreview`；decision adopt 矩阵（keepLocal 只采纳
+expectedPreview 比较项全匹配否则 `.stalePreview`，比较项清单（🗑️ E0-03 已去掉旧
+`previousSnapshotFingerprint == canonicalFingerprint` 一项，执行 #304）：
+villageID、previousReference == baselineReference、previousSnapshotID、
+previousLineageID、manualStateUpdatedAt（ManualTrackerReconciliation.swift:507-512 去第 510 行），
+**加** §BE-5.4 `ReconciliationCandidateMaterial` 直接比较（`candidateMatches(expectedPreview, actual:)`，
+同文件 :523-524；替代旧 candidate fingerprint 比较）；decision adopt 矩阵（keepLocal 只采纳
 duplicate/newObservation；applyNonConflicting 对 observedAhead+active 且无 confirmed 不采纳）。
 
-### BE-5.2 fingerprint 不变防重复结算（五层机制）
+### BE-5.2 内容不变防重复结算（五层机制，🗑️ E0-03：去 fingerprint 版）
 
-1. history 层 duplicate 分支 appended:false（§BE-3）。
-2. revision 可审计递进而非重置：duplicate 时 revision = `snapshotID + ":observation:" + count`。
+1. history 层 duplicate 分支 appended:false（§BE-3，新判定键：§WA-3.1
+   ObservationIdentityMaterial 比较结果 + coverage duplicate key + timerSchema）。
+2. revision 可审计递进而非重置：duplicate 时 revision = `snapshotID + ":observation:" + count`
+   （revision + lineageID 即 manual baseline 身份，不再编码内容摘要）。
 3. classification 第一条短路 `.duplicate`。
 4. 结算是一次性状态迁移：confirmed 只考虑 `status == .active`；settleDue 幂等
-  （completed 不再 eligible；ManualUpgradeCore.swift:219-231）。
+   （completed 不再 eligible；ManualUpgradeCore.swift:219-231）。
 5. 守恒兜底：显式 rebase 无法保留 active 源数量 → fail-closed 抛 invalidObservation；
-  持久化 replay ledger 必须精确复现 materialized state。
+   持久化 replay ledger 必须精确复现 materialized state。
+
+reconciliation preview 替代（执行 #304）：用已有 `manualStateUpdatedAt`、previous
+snapshot ID 和 §BE-5.4 `ReconciliationCandidateMaterial` 直接比较替代 candidate fingerprint；
+stale preview 继续依赖 villageID、previousSnapshotID、lineage、manualStateUpdatedAt。
 
 ### BE-5.3 队列分配与容量（Issue #183/#194）
 
 - QueueAssignmentStatus：userAssigned（占容量）/ observedOnly（保留不占）/ unknown；
   无记录 = unassigned 不持久化（QueueAssignmentModels.swift:11-15）。
-- overlay 对账只降级从不创建/删除；绑定可审计观察身份（itemKey + baseline revision/fingerprint/
-  lineage）（QueueAssignmentModels.swift:17-59; ManualTrackerReconciliation.swift:462-503）。
+- overlay 对账只降级从不创建/删除；绑定可审计观察身份（itemKey + baseline revision/
+  lineage）（QueueAssignmentModels.swift:17-59; ManualTrackerReconciliation.swift:462-503；🗑️ E0-03：绑定不再含 fingerprint，执行 #304）。
 - LocalQueueKind 映射：buildings/traps/heroes→builder，troops/spells/siege→laboratory，
   equipment/pets/guardians→nil（fail-closed）；即时动作不占容量（LocalQueueCapacity.swift:8-86）。
 - capacity ∈ [0,10000]，0 合法；占用投影 = active manual（expectedEndAt > now）+ userAssigned
   overlay；可信度三态 available/unreconciled/unavailable——**未知占用不得压成 0 或「空闲」**
   （isFull=false、availableSlots=nil）（LocalQueueCapacity.swift:99-136, 170-177, 234-284）。
+
+### BE-5.4 ReconciliationCandidateMaterial（非 hash 候选身份材料，新契约）
+
+旧 `candidateFingerprint` 的 preimage 从来不是整个 `ManualReconciliationPreview`：
+`expected == actual` 式的全量比较会把随机 candidate 身份（previewID、新规划导入时分配的
+snapshot/lineage UUID、ephemeral revision）带进比较，使合法 non-duplicate preview 被误判
+`.stalePreview`。新契约把旧 preimage 的字段清单冻结为可直接比较的材料（出处：
+`ManualReconciliationCandidateFingerprint.encodingMaterialJson` /
+`candidate-fingerprint.ts:computeReconciliationCandidateFingerprint`；字段行为由
+`candidate-fingerprint.test.ts` 的 `ignores ephemeral revision and lineageID for
+non-duplicate candidates` 与 `includes revision for duplicate candidates` 锁定，
+#304 改写断言时不得放宽这两条）：
+
+```text
+ReconciliationCandidateMaterial {
+  duplicate
+  lineageComparable
+  timeConfidence
+  newReference: duplicate ? { revision } : { }   // 见下
+  newNormalizedPlayerTag
+  sourceTimestampMs
+  items: [ {
+    stableId                    // itemKey.stableID
+    classification
+    confirmedRecordIDs          // 排序后
+    relatedRecordIDs            // 排序后
+    observedTimer
+    coverageComplete
+    observedDistributionComplete
+    observedSectionTrustGatesOpen
+    observedTimerCoverageComplete
+    previousDistribution        // levels 原序，不重排
+    observedDistribution        // levels 原序，不重排
+  } ]                           // 按 stableId 排序
+}
+```
+
+- **duplicate 区分（沿用旧 preimage，不增不减）**：duplicate 候选的 `newReference.revision`
+  **进入**身份（revision 变化 → 不同候选）；non-duplicate 候选**忽略** ephemeral 的
+  `newReference.revision` 与 `lineageID`（规划期随机值，不得参与比较）。
+- **newReference 取自删除 fingerprint 后的 `ManualBaselineReference`**（baseline fingerprint
+  删除见 §WA-3 R1 行，执行 #304）：即 duplicate → `{ revision }`，non-duplicate → 空材料。
+  不得借机把已删除的 baseline fingerprint 加回比较。
+- **排除项（沿用旧 preimage）**：`previewID`、villageID（内外）、`previousReference`、
+  `previousSnapshotID`、`previousLineageID`、`manualStateUpdatedAt`、`appliedAt`、
+  `sourceTimestamp`（Date 形态；只用 `sourceTimestampMs`）、item 的 `displayName`/`message`
+  等展示字段。外围 stale guard（villageID、previousSnapshotID、lineage、
+  manualStateUpdatedAt，见 §BE-5.1）不在本材料内，两层各司其职。
+- **比较方式（唯一）**：比较双方材料的 `canonicalData`（§WA-2）逐字节相等——与
+  §WA-3.1 同一理由（array 递归排序 vs 结构相等的顺序敏感性），不允许裸 structural `==`。
+  **禁止**对材料做任何 digest 后比较。
+- **使用点（唯一）**：`candidateMatches(expectedPreview, actual:)` 比较本材料，替代旧
+  candidate fingerprint 比较（ManualTrackerReconciliation.swift:523-524；TS 侧同名函数同步改）。
 
 ## BE-6 并发协调（single-flight，Issue #250）
 
@@ -267,4 +337,4 @@ duplicate/newObservation；applyNonConflicting 对 observedAhead+active 且无 c
 |---|---|---|
 | 历史实现（不必保留） | 快照历史浏览 UI 已移除（#259，main@a821332），内部 history/对账能力保留；SwiftUI 具体布局/动画/文案措辞 | TS 重写按 E4 功能切片重做 |
 | 必须保留（数据语义） | §BE-1…§BE-6 全部行为契约；§ER 全部错误展示语义 | 下游 issue 引用本文 |
-| 必须保留（用户可见文案锚点） | 「检测到未来村庄存储版本 N」「村庄数据无法解码，原始 bytes 已保留」「canonical fingerprint 未变化；不会重新开始或重复结算手动记录」「账号或 lineage 已变化，禁止自动匹配旧手动记录」「已取消」（legacy failureKind 识别锚）等——这些字符串是错误路径的行为标识 | 文案本身可改写，但**每个错误类别必须有可辨识的中文提示**这一语义保留 |
+| 必须保留（用户可见文案锚点） | 「检测到未来村庄存储版本 N」「村庄数据无法解码，原始 bytes 已保留」「快照内容未变化；不会重新开始或重复结算手动记录」（🗑️ E0-03：原文案「canonical fingerprint 未变化；…」随指纹撤销改写，错误类别不变）「账号或 lineage 已变化，禁止自动匹配旧手动记录」「已取消」（legacy failureKind 识别锚）等——这些字符串是错误路径的行为标识 | 文案本身可改写，但**每个错误类别必须有可辨识的中文提示**这一语义保留 |

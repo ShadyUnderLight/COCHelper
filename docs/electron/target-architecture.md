@@ -68,7 +68,7 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
 5. **E2-\*（#269–274）**：按 behavior-matrix.md / error-matrix.md 逐域迁移。
 6. **E0-03 契约清理（#302，本次修订）**：撤销非必要 SHA-256/指纹/manifest 完整性防御契约，
    只冻结删除/保留边界与数据策略，不直接改业务代码。执行顺序：
-   #302（本修订：冻结新契约）→ #303（Catalog manifest/source/generatedFiles 防御移除，
+   #302（本修订：冻结新契约）→ #303（Catalog manifest 收敛四字段 + 防御移除，
    可与 #304 并行）∥ #304（Snapshot History/manual/cache/coverage 指纹移除；
    baseline/history wire shape 先稳定）→ #305（最后：golden/testkit/oracle hash 协议移除 +
    parity fixtures 重生成；等领域 wire shape 收敛）。#275 只接收新 store schema；
@@ -79,7 +79,7 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
 | #265 验收标准 | 状态 | 说明 |
 |---|---|---|
 | 每个现有高风险状态有 confirmed output 或显式 unknown 处理 | ✅ 本 PR 完成 | behavior-matrix.md 各表含「盘上状态 × 行为」列；无法从代码确认的点标注 ⚠️ 待实证 |
-| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ⬜ **部分完成（2026-09-02 增量）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + HistoryEntryV1 / AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（新形状 §WA-9，schemaVersion=3）。**已登记**：`manual-queue-capacity-contract.json`（projection，startGate/occupancy expected）；`snapshot-history-diff-contract.json`（diff，3 场景含静态 `expected.canonicalHex` 与语义字段；`outputFingerprint` 已撤销，#305 重生成）+ `Tests/Golden/manifest.json` 与 `Fixtures/` 一一对应（protocolVersion=2，删除 `fixtureSha256`，#305 执行）。**未冻结：error 场景 fixture**——由 E2-06（#274）等域 issue 增量追加 |
+| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ⬜ **部分完成（2026-09-02 增量）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（四字段 `CatalogManifestV3`，新形状 §WA-9，schemaVersion=3；旧 1267 条 generatedFiles manifest 由 #303 重生成）。**已登记**：`manual-queue-capacity-contract.json`（projection，startGate/occupancy expected）；`snapshot-history-diff-contract.json`（diff，3 场景含静态 `expected.canonicalHex` 与语义字段；`outputFingerprint` 已撤销，#305 重生成）+ `Tests/Golden/manifest.json` 与 `Fixtures/` 一一对应（protocolVersion=2，删除 `fixtureSha256`，#305 执行）。**未冻结：error 场景 fixture**——由 E2-06（#274）等域 issue 增量追加 |
 | 数值/时间正例、负例、边界例（🗑️ E0-03：fingerprint 例撤销） | ✅ 本 PR 完成（数值/时间部分；指纹部分由 #302 撤销） | wire-contract-v1.md §WA 各节 + GoldenContractTests 用例分组 |
 | 明确哪些旧 UI 只是历史实现、哪些用户可见语义必须保留 | ✅ 本 PR 完成 | behavior-matrix.md §BE-7 |
 

@@ -47,7 +47,8 @@ recovery 键）。`.readOnly/.corrupt/.unsupported/.writeFailed` 均 `isRecovery
 逐条容错（envelope.validated() 每次加载全量执行）：entry 版本门精确匹配（新契约
 envelope=2/entry=2，旧 envelope=1/entry=1 按 §WA-7.1 标记不可用）；
 observation v2+ 必带 section evidence、≤v5 禁止 sourceUniverse；🗑️ E0-03 已删除
-「每 entry 重算 F2 完整性指纹」——替换为 rawJSON 重 canonicalize 比对 +
+「每 entry 重算 F2 完整性指纹」——替换为 rawJSON 重 canonicalize 后比较
+§WA-3.1 `ObservationIdentityMaterial`（重建时不带 catalog，display 差异永不误报）+
 lineage/duplicate 元数据交叉校验（SnapshotHistoryStore.swift:252-316 中非 digest
 部分保留，digest 行删除，执行 #304）；autoreleasepool 排空防启动峰值内存（176-178）。
 旧文件 bytes 原地保留、绝不被空 envelope 覆盖的语义不变。
@@ -156,8 +157,8 @@ committed journal 在用户选择的恢复之上重放，同时保留证据（Ap
 | lineage resolution 纯函数：同 village + 同合法 tag → `.continued`（复用 lineageID，可比较）；tag 变化 → `.newLineage`（新 UUID、baseline、禁止比较）；tag 缺失/无效/village 变化/前序 conflict → `.unknown`（baseline，禁止比较）——未确认身份永不 join 前序记录 | SnapshotHistoryModels.swift:871-943（注释 :915-917） |
 | entry append-only immutable；active lineage 是可变索引 metadata；每次推进先把该村其他 lineage 全部 isActive=false 再 upsert lastEntryID/lastAppliedAt/hasConflict（🗑️ E0-03：删除 `lastFingerprint` 字段，lineage 校验改经 `lastEntryID` + village/lineage/tag/time 关系确认索引，执行 #304） | SnapshotHistoryModels.swift:55-56; SnapshotHistoryStore.swift:660-689 |
 | 导入门 fail-closed：当前村庄 tag 与 active lineage 的 normalizedPlayerTag 不一致 → 整个 import 抛 `lineageConflict` | SnapshotHistoryStore.swift:572-578 |
-| duplicate 定义 =「Diff 解释不变」，判定键 =（canonical observation 直接结构/canonical-bytes 比较结果，coverage duplicate key，timerSchema）；appliedAt/source timestamp/parserVersion/runtimeTrust 均不进身份（🗑️ E0-03：判定键不再含 `canonicalFingerprint`，执行 #304） | SnapshotHistoryStore.swift:463-484 |
-| 同 observation 内容再导入：不 append 新 entry，只更新 duplicateMetadata（lastSeenAt=appliedAt、lastSourceTimestamp=capturedAt、duplicateImportCount+1），返回 appended:false/duplicate:true | SnapshotHistoryStore.swift:605-623 |
+| duplicate 定义 =「Diff 解释不变」，判定键 =（§WA-3.1 `ObservationIdentityMaterial` 比较结果，coverage duplicate key，timerSchema）；`display` 永不参与身份，appliedAt/source timestamp/parserVersion/runtimeTrust 均不进身份（🗑️ E0-03：判定键不再含 `canonicalFingerprint`，执行 #304） | SnapshotHistoryStore.swift:463-484 |
+| 同 observation 内容再导入：不 append 新 entry，只更新 duplicateMetadata（lastSeenAt=appliedAt、lastSourceTimestamp=capturedAt、duplicateImportCount+1），返回 appended:false/duplicate:true。注意「同内容」指 ObservationIdentityMaterial 相等：仅 catalog 展示信息（displayName/category）变化仍判 duplicate | SnapshotHistoryStore.swift:605-623 |
 | 反例：同 observation 内容但 coverage 声明变化 → DuplicateKey 不同 → 正常 append 新 entry（锁定测试 `testV5IdenticalBuildingsDifferentCoverageDeclarationAppends`） | SnapshotHistoryStoreTests.swift:1480-1520 |
 | baseline entry：isBaseline/baselineReason 由 resolution 决定（initial/unknown/newLineage → true；🗑️ E0-03：不再参与 F2 指纹）；对账侧 UI「账号或 lineage 已变化，禁止自动匹配旧手动记录」 | SnapshotHistoryModels.swift:983-984, 835-855; ContentView.swift:1850-1854 |
 
@@ -225,13 +226,19 @@ committed journal 在用户选择的恢复之上重放，同时保留证据（Ap
 14. 否则 `.conflict`
 
 配套：preview 携带稳定身份 newNormalizedPlayerTag（不依赖随机 UUID）；apply 的 stale 保护 =
-expectedPreview 五字段全匹配否则 `.stalePreview`；decision adopt 矩阵（keepLocal 只采纳
+expectedPreview 比较项全匹配否则 `.stalePreview`，比较项清单（🗑️ E0-03 已去掉旧
+`previousSnapshotFingerprint == canonicalFingerprint` 一项，执行 #304）：
+villageID、previousReference == baselineReference、previousSnapshotID、
+previousLineageID、manualStateUpdatedAt（ManualTrackerReconciliation.swift:507-512 去第 510 行），
+**加** preview 语义材料直接比较（`candidateMatches(expectedPreview, actual:)`，
+同文件 :523-524；替代旧 candidate fingerprint 比较，语义缺失的一层必须在这里补回，
+不得只删不补）；decision adopt 矩阵（keepLocal 只采纳
 duplicate/newObservation；applyNonConflicting 对 observedAhead+active 且无 confirmed 不采纳）。
 
 ### BE-5.2 内容不变防重复结算（五层机制，🗑️ E0-03：去 fingerprint 版）
 
-1. history 层 duplicate 分支 appended:false（§BE-3，新判定键：observation 结构比较 +
-   coverage duplicate key + timerSchema）。
+1. history 层 duplicate 分支 appended:false（§BE-3，新判定键：§WA-3.1
+   ObservationIdentityMaterial 比较结果 + coverage duplicate key + timerSchema）。
 2. revision 可审计递进而非重置：duplicate 时 revision = `snapshotID + ":observation:" + count`
    （revision + lineageID 即 manual baseline 身份，不再编码内容摘要）。
 3. classification 第一条短路 `.duplicate`。

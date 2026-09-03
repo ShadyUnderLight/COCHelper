@@ -13,4 +13,6 @@ export * from './action';
 export * from './tracker-schema';
 export * from './village-state';
 export * from './tracker-envelope';
+export * from './tracker-wire';
+export * from './file-store';
 export * from './reconciliation';

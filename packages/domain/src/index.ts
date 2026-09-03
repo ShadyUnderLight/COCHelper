@@ -14,3 +14,4 @@ export * from './village';
 export * from './tag/validator';
 export * from './snapshot-history';
 export * from './official';
+export * from './persistence';

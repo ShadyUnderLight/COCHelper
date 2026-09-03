@@ -1,8 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { unixSecondsToRefSeconds } from '@coc-helper/wire';
 
+import { atomicWriteFile } from '../persistence/atomic-write';
+import { PERSISTENCE_FILE_NAMES, resolveElectronDataRoot } from '../persistence/data-root';
+import type { WriteFaultInjector } from '../persistence/fault';
+import { assertFileSizeWithinLimit, isPersistenceTooLargeError } from '../persistence/limits';
 import type { SnapshotHistoryStoreError } from './errors';
 import {
   decodeSnapshotHistoryEnvelopeWire,
@@ -16,31 +20,30 @@ import type { SnapshotHistoryEnvelope } from './store-types';
 import type { SnapshotCoverageRevalidationPolicy } from './store-types';
 import type { SnapshotHistoryStore } from './store-port';
 
-const HISTORY_FILE_NAME = 'snapshot-history-v1.json';
-const TRANSACTION_FILE_NAME = 'snapshot-history-v1.transaction.json';
-
 export function defaultSnapshotHistoryFileURL(homeDirectory?: string): string | null {
-  const home = homeDirectory ?? process.env.HOME;
-  if (home === undefined || home.length === 0) {
-    return null;
-  }
-  return join(home, 'Library', 'Application Support', 'COCHelper', HISTORY_FILE_NAME);
+  const root = resolveElectronDataRoot(homeDirectory);
+  return root === null ? null : join(root, PERSISTENCE_FILE_NAMES.snapshotHistory);
 }
 
 export type FileSnapshotHistoryStoreOptions = {
   readonly hydrationPolicy?: SnapshotCoverageRevalidationPolicy;
+  readonly fault?: WriteFaultInjector;
 };
 
 export class FileSnapshotHistoryStore implements SnapshotHistoryStore {
   readonly fileURL: string | null;
   readonly transactionJournalURL: string | null;
   private readonly hydrationPolicy: SnapshotCoverageRevalidationPolicy;
+  private readonly fault: WriteFaultInjector | undefined;
 
   constructor(fileURL: string | null, options: FileSnapshotHistoryStoreOptions = {}) {
     this.fileURL = fileURL;
     this.transactionJournalURL =
-      fileURL === null ? null : join(dirname(fileURL), TRANSACTION_FILE_NAME);
+      fileURL === null
+        ? null
+        : join(dirname(fileURL), PERSISTENCE_FILE_NAMES.snapshotHistoryJournal);
     this.hydrationPolicy = options.hydrationPolicy ?? 'production';
+    this.fault = options.fault;
   }
 
   load(): SnapshotHistoryEnvelope | null {
@@ -89,8 +92,18 @@ export class FileSnapshotHistoryStore implements SnapshotHistoryStore {
       return null;
     }
     try {
+      assertFileSizeWithinLimit(this.fileURL);
       return readFileSync(this.fileURL);
     } catch (error) {
+      if (isSnapshotHistoryStoreError(error)) {
+        throw error;
+      }
+      if (isPersistenceTooLargeError(error)) {
+        throw storeError({
+          kind: 'unavailable',
+          message: error.message,
+        });
+      }
       throw storeError({
         kind: 'unavailable',
         message: error instanceof Error ? error.message : String(error),
@@ -104,7 +117,7 @@ export class FileSnapshotHistoryStore implements SnapshotHistoryStore {
     }
     try {
       mkdirSync(dirname(this.fileURL), { recursive: true });
-      writeFileSync(this.fileURL, data);
+      atomicWriteFile(this.fileURL, data, { fault: this.fault });
     } catch (error) {
       throw storeError({
         kind: 'writeFailed',
@@ -120,7 +133,7 @@ export class FileSnapshotHistoryStore implements SnapshotHistoryStore {
     try {
       if (data !== null) {
         mkdirSync(dirname(this.fileURL), { recursive: true });
-        writeFileSync(this.fileURL, data);
+        atomicWriteFile(this.fileURL, data, { fault: this.fault });
       } else if (existsSync(this.fileURL)) {
         rmSync(this.fileURL);
       }
@@ -140,7 +153,7 @@ export function createInMemorySnapshotHistoryStore(): SnapshotHistoryStore & {
   const fileURL = '/memory/snapshot-history-v1.json';
   return {
     fileURL,
-    transactionJournalURL: join(dirname(fileURL), TRANSACTION_FILE_NAME),
+    transactionJournalURL: join(dirname(fileURL), PERSISTENCE_FILE_NAMES.snapshotHistoryJournal),
     load(): SnapshotHistoryEnvelope | null {
       if (bytes === null) {
         return null;

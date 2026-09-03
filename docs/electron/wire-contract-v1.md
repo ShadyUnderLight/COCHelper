@@ -1,8 +1,10 @@
-# Wire/Data Contract v1（E0-02 冻结）
+# Wire/Data Contract v1（E0-02 冻结，E0-03 #302 修订）
 
-> Issue #265 交付物。本文是 TypeScript 实现数值/时间/序列化行为的**唯一验收基线**。
+> Issue #265 交付物，Issue #302 修订。本文是 TypeScript 实现数值/时间/序列化行为的**唯一验收基线**。
 > 每条规则标注 Swift 出处（file:line，基于 main@f513a35）与锁定测试（如有）。
 > 标注 ⚠️ 的点为已知未实证项，实现方必须先用 golden fixture 实证再编码。
+> 标注 🗑️ E0-03 的条目为 Issue #302 已撤销的 hash 防御契约：新实现不得要求它们，
+> 旧出处仅作删除审计保留（删除执行归属 #303/#304/#305）。
 >
 > 引用格式：§WA-x.y。golden fixtures 见 `Tests/Golden/Fixtures/`（附录 A）。
 
@@ -43,7 +45,7 @@ null-prototype，否则 `{"__proto__":1}` 会被普通 `{}` 赋值吞掉。孤�
 |---|---|---|
 | Codable 解码层 | **等同**：`decodeIfPresent` 把 JSON null 与缺失键同样处理，全仓无例外 | ClanModels.swift:114-168 等 |
 | canonical 字节层 | **区分保留**：`{"k":null} ≠ {}`（rawTopLevelFields 来自规范化后的源） | SnapshotHistoryModels.swift:1181-1191 |
-| item 指纹层 | **塌缩**：缺失 optional 显式写 `.null` 进入指纹材料 | SnapshotHistoryCanonicalizer.swift:1142-1156 |
+| 🗑️ E0-03 指纹材料层 | **已撤销**：旧 F1 曾把缺失 optional 显式写 `.null` 进入指纹材料（SnapshotHistoryCanonicalizer.swift:1142-1156）；新契约无指纹材料，canonical 字节层规则不变 | Issue #302，删除执行 #304 |
 
 coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unavailable`；空数组 →
 `.presentEmpty`；非空 section 内可选 timer 字段缺失 = `.complete`（观测到的 inactive 态）；
@@ -74,27 +76,42 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
 | 6 | 解析入口允许 fragments，但进入 canonicalization 的顶层必须是 object，否则抛 `topLevelMustBeObject` | SnapshotHistoryModels.swift:1143-1146; SnapshotHistoryCanonicalizer.swift:202-204 |
 | 7 | canonicalization 幂等且与输入键序无关；数组重排后 canonicalData 相等 | 锁定测试 `testFingerprintIgnoresFormattingKeyOrderArrayOrderTimestampsAndDiagnostics` |
 
-## WA-3 SHA-256 fingerprint 家族
+## WA-3 SHA-256 fingerprint 家族（🗑️ E0-03 已撤销）
 
-统一输出格式：`"sha256:" + 小写十六进制（%02x）`，总长 71 字符
-（SnapshotHistoryCanonicalizer.swift:123；存储校验 SnapshotHistoryStore.swift:247-250）。
-共有四套独立指纹，输入材料各不相同，TS 不得混同：
+> E0-03（Issue #302）决策：在本地单机 + 合作操作员威胁模型下，以下 SHA-256 /
+> fingerprint / manifest 完整性防御层**不再是新契约的一部分**，新实现不得要求、
+> 不得重算、不得用 digest 做信任门。§WA-2 canonical JSON 字节规范**全文保留**——
+> 它是业务观察归一化与跨语言 wire parity 的基础，不是防御层。`Hashable`/`Hasher`
+> 作为 Swift/集合实现机制保留，不得按关键词误删。
+>
+> 本节旧材料清单仅作删除审计保留（出处行号基于 main@f513a35 快照）。
+> 删除执行归属：Catalog 侧 #303；Snapshot/manual/cache/coverage 侧 #304；
+> golden/testkit/oracle 侧 #305。**不得用新的 digest（改名、换算法、截断 hash 等）
+> 伪装替代**；替代机制只能用下表右列的显式机制。
+>
+> 旧统一输出格式（历史记录，新契约不再定义）：`"sha256:" + 小写十六进制（%02x）`，
+> 总长 71 字符。
 
-| # | 指纹 | 序列化器 | 输入材料 | 排除项 | 出处 |
-|---|---|---|---|---|---|
-| F1 | canonicalFingerprint（observation 内容指纹） | 自研 canonical bytes（§WA-2） | `{observationSchemaVersion, rawTopLevelFields, unknownTopLevelFields, items}`，其中 **items 按 fingerprintValue 材料对象的 canonical bytes 字节序排序**（不是 SHA 指纹序；SnapshotHistoryCanonicalizer.swift:112-113, 271-273） | display 绑定整体剔除（fingerprintValue 构造后 removeValue）；tag/timestamp 在 observation 构建前剥离；v5+ 剥离 coverage 元数据字段，v4− 必须保留以复现旧字节；diagnostics 不在材料内（只存在于 coverage） | SnapshotHistoryCanonicalizer.swift:116-122, 206-214, 1135-1163, 1159-1163 |
-| F2 | integrityFingerprint（entry 完整性摘要） | **JSONEncoder + .sortedKeys**（与 F1 不同！） | `SnapshotHistoryIntegrityMaterial` 的 18 个字段 = entry 全量字段**减去 `integrityFingerprint` 本身**：四个版本号 + snapshotID/villageID/lineageID(UUID) + normalizedPlayerTag + appliedAt/sourceTimestamp(Date) + parserVersion + canonicalFingerprint + rawJSON + observation + coverage(含 diagnostics) + isBaseline/baselineReason + timerSchema（SnapshotHistoryCanonicalizer.swift:1213-1231） | **`integrityFingerprint` 自身不参与 digest**（材料结构无自引用字段）；Date 走 Swift 默认策略 = reference-date Double 进哈希字节 | SnapshotHistoryCanonicalizer.swift:146-168, 1213-1231；加载时重算比对 fail-closed：SnapshotHistoryStore.swift:252-316 |
-| F3 | AccountSnapshot.contentFingerprint | JSONEncoder + .sortedKeys | tag/capturedAt/importedAt/ageSeconds/originalText/objectSections/numericSections/boosts/unknownTopLevelKeys/diagnostics(severity/path/message 投影) | diagnostics 的随机 id 排除；编码时跳过不持久化，解码后按内容重算 | AccountSnapshot.swift:233-264, 141-152 |
-| F4 | ManualUpgradeCore 内容指纹 | JSONEncoder + .sortedKeys | `{itemStates, records}` | — | ManualUpgradeCore.swift:601-614 |
+| # | 已撤销项（旧定义） | 替代机制（新契约） | 删除执行 |
+|---|---|---|---|
+| F1 | canonicalFingerprint（observation 内容指纹）：`{observationSchemaVersion, rawTopLevelFields, unknownTopLevelFields, items}` 的 canonical bytes 摘要；display 整体剔除；tag/timestamp 构建前剥离；v5+ 剥离 coverage 元数据；diagnostics 不在材料内 | duplicate 改用 canonical observation **直接结构比较或 canonical bytes 比较**；身份键 =（observation 比较结果，coverage duplicate key，timerSchema）；appliedAt/source timestamp/parserVersion/runtimeTrust 仍不进身份 | #304 |
+| F2 | integrityFingerprint（entry 完整性摘要）：JSONEncoder + .sortedKeys 对 entry 全量字段（减自身）共 18 字段做 digest；加载时重算比对 fail-closed | 删除摘要重算。加载校验保留：JSON 解码、entry 版本门精确匹配、section evidence（v2+ 必带、≤v5 禁 sourceUniverse）、rawJSON 重 canonicalize 比对、lineage/duplicate 交叉校验；其余 fail-closed 语义（§BE-1.2）不变 | #304 |
+| F3 | AccountSnapshot.contentFingerprint（JSONEncoder + .sortedKeys；diagnostics 随机 id 排除在外） | 缓存改**显式失效**：AppModel/应用服务在快照导入、manual mutation/reconcile、村庄变更、Catalog epoch 变化处显式清空投影缓存；tick 内动态 timer refresh 仍可缓存，但状态变更后必须先失效再 render | #304 |
+| F4 | ManualUpgradeCore 内容指纹 `{itemStates, records}`（JSONEncoder + .sortedKeys） | manual baseline 只保留 `revision + lineageID`；revision 由 snapshot ID/duplicate revision 表达，不再编码内容摘要 | #304 |
+| C1 | Catalog `sourceFingerprint`（APK hash，运行时只验格式）+ `generatedFiles[*].sha256/size` + manifest 信任门（含文件存在性、manifest 登记防御） | 全部删除；manifest 只保留实际消费的版本/构建元数据（见 §WA-9 新形状）；asset 侧保留 renderedPath null/missingReason 业务语义与正常路径解析 | #303 |
+| C2 | coverage section `inputBinding` SHA-256 绑定、bundled perf fixture 内容 hash allowlist | 删除。保留 coverage 业务完整性状态（presence/completeness 四态）与 adapter 语义 | #304 |
+| T1 | golden manifest `fixtureSha256`、oracle `inputFingerprint`/`outputFingerprint`、testkit 报告输入/输出 hash 与字符串摘要 hash | 保留 `caseId`、operation、canonical bytes/hex 与差异分类（fixture/wire/parser/projection/error/ordering/time）；字符串差异摘要改用 bounded length/type/path；fixture 串线防护改由 manifest 登记一一对应 + owner 测试归属承担（见 testkit-protocol-v1.md） | #305 |
+| R1 | reconciliation `candidateFingerprint` / `previousSnapshotFingerprint`、lineage `lastFingerprint`、manual baseline fingerprint、display binding `catalogFingerprint` | stale preview 依赖 villageID + previousSnapshotID + lineage + manualStateUpdatedAt + preview 语义材料直接比较；lineage 校验经 `lastEntryID` + village/lineage/tag/time 关系；display binding 保留 catalogVersion/displayName/category | #304 |
 
-补充规则：
+补充规则（保留，E0-03 未动）：
 
-- runtimeWitness 是进程内瞬态 trust 状态，**不可序列化、不进入任何指纹或 duplicate 身份**
+- runtimeWitness 是进程内瞬态 trust 状态，**不可序列化、不进入 duplicate 身份**
   （SnapshotHistoryModels.swift:723-741; VerifiedCoverageEvidence.swift:3-8; SnapshotHistoryDiff.swift:2098）。
-- 目录侧完整性是「比较型」指纹：manifest 声明的 sha256 vs 文件字节重算 + size 匹配 +
-  sourceFingerprint 格式校验（CraftTableCatalog.swift:37-47; GameCatalog.swift:65-103）。
-- 篡改负向锁定：篡改 rawJSON/display/coverage 任一字段 → integrity 校验拒绝
-  （`testFullIntegrityDigestRejectsMetadataDisplayAndCoverageTampering`）。
+- 目录侧不再有「比较型」指纹：旧规则（manifest 声明 sha256 vs 文件字节重算 + size 匹配 +
+  sourceFingerprint 格式校验）已随 C1 撤销。
+- 篡改防护改由 journal/validator fail-closed 承担（§BE-1、§BE-2）；旧负向锁定测试
+  （如 `testFullIntegrityDigestRejectsMetadataDisplayAndCoverageTampering`）在 #303/#304
+  中按新校验重写，不保留“旧 hash 仍需相等”断言。
 
 ## WA-4 时间戳与日期语义
 
@@ -131,14 +148,15 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
   （VillageProfile.swift:24; AccountSnapshot.swift:18-32; ManualUpgradeCore.swift:167;
   ManualUpgradeModels.swift:636; ManualTrackerReconciliation.swift:128/185;
   QueueAssignmentModels.swift:33; SnapshotHistoryCanonicalizer.swift:19/86; SnapshotHistoryModels.swift:873-938）。
-- UUID 进入指纹的字段级归属：
-  - F2 integrityFingerprint：snapshotID / villageID / lineageID 三个 UUID **进入**材料
-    （SnapshotHistoryCanonicalizer.swift:1213-1231）。
-  - F3 contentFingerprint：**无任何 UUID 字段进入**；`AccountDataDiagnostic.id` 是每次解析
+- UUID 进入指纹的字段级归属（🗑️ E0-03：F1/F2/F3 指纹已撤销，以下仅作删除审计）：
+  - 旧 F2 integrityFingerprint：snapshotID / villageID / lineageID 三个 UUID **曾进入**材料
+    （SnapshotHistoryCanonicalizer.swift:1213-1231）。新契约 entry 仍持久化这三个 UUID
+    （lineage 校验与 revision 审计依赖它们），但不再做 digest。
+  - 旧 F3 contentFingerprint：**无任何 UUID 字段进入**；`AccountDataDiagnostic.id` 是每次解析
     随机生成的 UUID，被 F3 显式排除——diagnostics 只投影 severity/path/message
-    （AccountSnapshot.swift:247-253）。TS 若把 diagnostic id 计入，同一导出两次解析的
-    contentFingerprint 将互不相同——这是必须避免的 parity 破坏。
-  - F1 canonicalFingerprint：不进（observation 材料不含任何 UUID）。
+    （AccountSnapshot.swift:247-253）。本条作为历史 parity 教训保留：TS 不得把随机 id
+    计入任何内容身份比较，否则同一导出两次解析将互不相同。
+  - 旧 F1 canonicalFingerprint：不进（observation 材料不含任何 UUID）。
 - 唯一性硬校验：snapshotID/lineageID 重复即 invalidEntry（SnapshotHistoryStore.swift:133-135,
   184-186）；reconciliationID/decisionID 重复即 invalidEnvelope（ManualTrackerStore.swift:124-127,
   162-165）；村庄 ID 重复即 corrupt（VillageStore.swift:79-84）。
@@ -163,17 +181,36 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 
 ## WA-7 schemaVersion 注册表
 
-| Store / Envelope | 当前值 | 支持范围与未来版本处理 | 出处 |
+| Store / Envelope | 当前值（E0-03 新契约） | 支持范围与未来版本处理 | 出处 |
 |---|---|---|---|
 | VillageStoreSchema.current | 1 | 盘上为裸 JSON 数组无 envelope；仅当按数组解码失败且顶层声明更大 schemaVersion 时判 `.unsupportedSchema`，rawData 保留绝不覆盖 | VillageStore.swift:7-8, 87-91, 114-121 |
-| SnapshotHistorySchema | envelope=1 / entry=1 / observation=6 / fingerprintVersion=1 / integrityVersion=1 | validated() 全精确等值；observation ∈ 1...6 且内部一致；v2+ 必带 section evidence；≤v5 禁止 sourceUniverse；里程碑 v2 sectionEvidence / v3 timerAllowlist / v4 timerSchema / v5 去 coverage 元数据 / v6 sourceUniverse；marker.version 必须 == envelope；无 marker 不得有 entries | SnapshotHistoryModels.swift:8-31; SnapshotHistoryStore.swift:126-163, 208-215 |
-| ManualTrackerSchema | envelope=1 / store=1 / village=1 | village/envelope/marker 三处精确等值否则 unsupportedSchema | ManualTrackerStore.swift:5-9, 197-200, 360-409 |
-| GameCatalog manifest | 支持 1...2 | 出范围 validate() false（fail-closed 不进已验证态）；manifest 缺失时目录仍可加载（manifest=nil） | GameCatalog.swift:50, 65-66, 33-35 |
+| SnapshotHistorySchema | envelope=2 / entry=2 / observation=6；🗑️ `fingerprintVersion` / `integrityVersion` 字段删除（不是 bump） | entry 精确等值匹配 envelope=2/entry=2；observation ∈ 1...6 且内部一致（observation 内容本身未变，仍为 6）；v2+ 必带 section evidence；≤v5 禁止 sourceUniverse；marker.version 必须 == envelope；无 marker 不得有 entries。**旧 envelope=1/entry=1 文件按 §WA-7.1 标记不可用** | SnapshotHistoryModels.swift:8-31; SnapshotHistoryStore.swift:126-163, 208-215；新版本决策 Issue #302，执行 #304 |
+| ManualTrackerSchema | envelope=2 / store=2 / village=2 | village/envelope/marker 三处精确等值否则 unsupportedSchema。**旧全=1 文件按 §WA-7.1 标记不可用** | ManualTrackerStore.swift:5-9, 197-200, 360-409；新版本决策 Issue #302，执行 #304 |
+| GameCatalog manifest | 仅接受 3 | 出范围一律 fail-closed 不进已验证态；manifest 缺失时目录仍可加载（manifest=nil）。**旧 schemaVersion 1/2 按 §WA-7.1 标记不可用，需重新生成** | GameCatalog.swift:50, 65-66, 33-35；新形状见 §WA-9，执行 #303 |
 | LeagueTierCatalog.schemaVersion | ==1 | 非 1 → loadBundled 返回 nil（UI 正常降级态） | LeagueTierCatalog.swift:16, 41 |
 | CraftTableCatalog.schemaVersion | ==1 | 非 1 或 manifest integrity 不过 → nil | CraftTableCatalog.swift:59, 103-118 |
 | SeasonalPhaseTable.schemaVersion | ==1 | 非 1/缺文件 → 空表不报错（增强数据） | GameCatalog.swift:321-324, 412-415 |
 | OfficialStateStore ×4 | 无版本 | fail-open 组（§BE-1.4） | OfficialStateStore.swift:17-63 |
 | TrackedClanStore | 无版本 | fail-open 组；演进红线：新字段必须默认值/decodeIfPresent，否则容错机制把 schema 错误变成整库静默丢失（注释原文即红线） | TrackedClanStore.swift:36-53 |
+| Golden manifest（Tests/Golden/manifest.json） | protocolVersion=2；🗑️ `fixtureSha256` 字段删除 | 登记与 `Fixtures/` 一一对应 + case id/operation/owner 校验承担串线防护（见 testkit-protocol-v1.md）；旧 protocolVersion=1 manifest 不再被新 testkit 接受 | 决策 Issue #302，执行 #305 |
+| Golden oracle 请求/响应协议 | protocolVersion=2；🗑️ `inputFingerprint` / `outputFingerprint` 字段删除 | 旧 v1 响应直接视为不支持，不加 v1 fallback；关联靠 caseId，结果靠 canonicalHex/业务字段/差异 path 比较 | 决策 Issue #302，执行 #305 |
+
+### WA-7.1 E0-03 数据与兼容策略（硬切换）
+
+沿用 Issue #265 数据策略决策门（默认不做长期兼容层、双写或双读），E0-03 四组协议
+硬切换规则如下：
+
+- Snapshot History envelope/entry、Manual Tracker、Catalog manifest、Golden Oracle 协议
+  按上表提升版本或替换为新 shape；**不增加长期双读、双写、fallback 或迁移兼容层**。
+- 旧 Application Support/UserDefaults 等价数据文件**原文件保留、不静默重写为空**，
+  但按旧 schema 标记不可用（unsupportedSchema/不可用态 + 显式中文提示）；用户需要
+  重新导入/重建。若产品要保留旧数据并迁移，另开一次性 importer Issue（importer 不得
+  进入正常运行路径）。
+- Catalog 旧 manifest（schemaVersion 1/2）需经生成器管线重新生成（#303）；Snapshot
+  History / Manual 旧文件需用户重新导入/重建（#304）；parity fixtures 按新协议重新
+  生成（#305）。
+- 历史 perf 报告和已完成 Issue 的原始审计文字不在本 Issue 中重写；活动契约文档
+  （本目录）必须同步到新 shape——即本节与 §WA-3/§WA-9 的修订。
 
 ## WA-8 官方 API wire 形状要点
 
@@ -186,20 +223,24 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 - 官方快照 decode 全字段 optional + 任意字符串 CodingKey 遍历（§WA-1.4）。
 - HTTP → CoAPIError 映射与取消透传见 error-matrix.md §ER-1。
 
-## WA-9 catalog manifest 与资源管线契约
+## WA-9 catalog manifest 与资源管线契约（🗑️ E0-03 已撤销完整性防御）
 
-实现：GameCatalog.swift:31-130（`CatalogManifest` / `CatalogGeneratedFile` / `CatalogCounts` /
+实现（旧）：GameCatalog.swift:31-130（`CatalogManifest` / `CatalogGeneratedFile` / `CatalogCounts` /
 `validate`）。活体 fixture：仓库源路径
 `Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json`；运行时 bundle 路径为
 `GameCatalog/18.400.13/manifest.json`（Package 以 `.copy("GameCatalog")` 保留目录结构，
 `.process` 会扁平化子目录故不可用）。由 `Tools/game_catalog` Python 生成器产出，
 GameCatalogTests ManifestValidation 系列锁定。
 
-### WA-9.1 manifest 形状
+E0-03（Issue #302）撤销 `sourceFingerprint`、`generatedFiles[*].sha256/size` 及基于它们的
+manifest 信任门（含 hash、文件大小、generated-file 存在性、manifest 登记防御）；
+manifest 只保留实际消费的版本/构建元数据。删除执行 #303（含生成器管线改造）。
+
+### WA-9.1 manifest 形状（新契约，schemaVersion=3）
 
 ```text
 CatalogManifest {
-  schemaVersion: Int          // 支持范围 1...2，出范围 validate() false（fail-closed）
+  schemaVersion: Int          // 新契约仅接受 3；1/2 为旧 schema，按 §WA-7.1 标记不可用，需重新生成
   gameVersion: String         // ⚠️ 「与目录目录名一致」是调用方/打包约定，不是被强制的
                               //   不变量：generate(output_dir:) 接受任意目录名，
                               //   validate_catalog 也只比 manifest↔catalog 一致；
@@ -209,12 +250,12 @@ CatalogManifest {
                               //   TS 消费侧可实施更严的目录名比对（E2-02 裁量）
   buildTag: String
   locale: String
-  sourceFingerprint: String   // 格式门：sha256: + 64 hex；内容是 APK hash，
-                              // 运行时无 APK 可比 → 只校验格式不校验值
-  generatedFiles: [CatalogGeneratedFile]
+  generatedFiles: [{ path: String, kind: String?, entries: Int? }]
+                              // 🗑️ E0-03：删除 sourceFingerprint 字段；
+                              //   删除 generatedFiles[*].sha256/size；
+                              //   generatedFiles 仅作资源路径登记，不做信任门
   counts: CatalogCounts
 }
-CatalogGeneratedFile { path: String, sha256: String?, size: Int?, kind: String?, entries: Int? }
 ```
 
 `counts` 的 Swift 声明字段（GameCatalog.swift `CatalogCounts`）：items / levels 必填，
@@ -231,26 +272,34 @@ blockedIcons（快照语义格式检查）与 displayCategories（Issue #75 工�
 容忍并忽略这些键（不得因未知键失败，也不得臆造语义）；若未来要把它们纳入 Swift/TS 消费契约，
 须先双侧建模并 bump schemaVersion。
 
-### WA-9.2 校验规则分层（返回 false = 漂移/篡改，fail-closed 不进「已验证」态）
+### WA-9.2 校验规则分层（新契约）
 
-Swift 运行时 `CatalogManifest.validate` 五条（GameCatalog.swift:63-130）：
+新契约 `validate` 三条（返回 false = 漂移/结构非法，fail-closed 不进「已验证」态；
+🗑️ E0-03 旧规则②/④/⑤中的 hash、size、存在性、登记门全部删除）：
 
 | # | 规则 | 备注 |
 |---|---|---|
-| ① | counts 与目录内容重算一致：items/levels 必查；missingTime/timed/instant/notApplicable/initialLevel/sourceMissing/parseFailed 拆分字段**存在才查**（旧 manifest 缺键跳过）；**missingIcons 不校验**（decode-only，见 §WA-9.1） | 拆分映射走 CatalogDurationState.state 单一映射点 |
-| ② | generatedFiles 中 path=="catalog.json" 条目的 sha256 与真实文件字节重算一致 | 声明缺失跳过（向后兼容）；声明存在但格式异常（无 sha256: 前缀）→ fail-closed |
-| ③ | schemaVersion ∈ 1...2 | 出范围拒绝 |
-| ④ | sourceFingerprint 格式合法 | 见 §WA-9.1 |
-| ⑤ | fileCheck 注入时：generatedFiles 全部非 directory 条目文件存在且 size 匹配 + 目录引用全部图标 renderedPath 文件存在 | loadBundled 恒注入 Bundle 实现 |
+| ① | counts 与目录内容重算一致：items/levels 必查；missingTime/timed/instant/notApplicable/initialLevel/sourceMissing/parseFailed 拆分字段**存在才查**（旧 manifest 缺键跳过）；**missingIcons 不校验**（decode-only，见 §WA-9.1） | 拆分映射走 CatalogDurationState.state 单一映射点（保留） |
+| ② | schemaVersion == 3 | 旧 1/2 按 §WA-7.1 标记不可用；出范围拒绝 |
+| ③ | 资源引用结构/语义校验保留：`isRenderable` 判定、missingReason 原样暴露（见 §WA-9.3）；renderedPath **不必**出现在 generatedFiles 登记中（R-C 登记门已撤销，#303 同步删 `asset-ref.ts` 对应门） | UI 依据 missingReason 选择 PNG 或 SF Symbol 的语义不变 |
 
-明确**不校验**：icons 内容哈希（展示资源，size/存在性由⑤覆盖）、sourceFingerprint 内容、
-missingIcons。
+明确**不校验**（🗑️ E0-03 新增）：`sourceFingerprint`（字段已删除）、icons/文件内容哈希、
+声明 size、文件存在性、generatedFiles 登记覆盖、missingIcons。
 
-**生成器校验层**（`Tools/game_catalog/validate.py`，产出目录时的独立门禁，与 Swift 层互补）：
-额外校验 missingIcons 对账（:639）；renderedIcons / blockedIcons / displayCategories 三键
-**均为「存在才校验、缺失放行」的 optional 语义**（validate.py:664-691 显式 None 门 + 既有
-测试冻结该兼容性；displayCategories 存在时必须与 catalog 实际分布一致）。⚠️ E6-01 迁移
-不得把这些可选字段升级为必填。TS 消费侧**不复制**该层——它属于 E6-01 迁移的工具链。
+**生成器校验层**（`Tools/game_catalog/validate.py`，产出目录时的独立门禁，与消费层互补；
+E0-03 改造归 #303）：不再写入/重算 source SHA 与 generatedFiles hash/size，删除无消费者的
+fingerprint helper（`catalog.py` / `fingerprint.py` / `validate.py`）；`annotate_blacksmith_levels.py`
+删除 APK SHA 与 sourceFingerprint 绑定及 hash 前置条件，**保留 APK buildTag/版本和表结构校验**
+（防不同版本数据静默套入当前目录）；`generate_craft_table_catalog.py` 删除 craft hash/size
+写入，保留版本/结构校验；`render_generator.py` / `render_spike.py` 删除 PNG hash 写入，
+保留渲染结果、missingReason、路径回写和原子写入（报告字节大小如仅为测量信息可保留，
+但不得再作为加载门）。
+
+旧生成器校验层行为（历史记录）：额外校验 missingIcons 对账（:639）；renderedIcons /
+blockedIcons / displayCategories 三键**均为「存在才校验、缺失放行」的 optional 语义**
+（validate.py:664-691 显式 None 门 + 既有测试冻结该兼容性；displayCategories 存在时必须与
+catalog 实际分布一致）。⚠️ E6-01 迁移不得把这些可选字段升级为必填。TS 消费侧**不复制**该层——
+它属于 E6-01 迁移的工具链。
 
 ### WA-9.3 静态资源引用与两级 missingReason（两个不同值域，不得混同）
 
@@ -297,9 +346,9 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
 | json-raw-samples.json | §WA-1 原始 JSON 源文本：同一 object 内 NFC 等价重复键、`__proto__` 键保留、孤立 surrogate 拒绝；source 为 JSON 字符串以免 fixture 加载时提前 collapse | GoldenContractTests/JsonRawSourceGoldenTests |
 | nsnumber-stringvalue.json | §WA-1.2 `JSONSerialization` → `NSNumber.stringValue`：整数 / NSDecimalNumber / Darwin `%.16g` 三条路径 | GoldenContractTests/NSNumberStringValueGoldenTests |
 | primitive-fuzz-corpus.json | 共享 parser 边界 corpus：深层 JSON、长整数、`__proto__`、非法逗号/前导零、孤立 surrogate、非有限数字 | packages/wire/src/parser-fuzz.test.ts |
-| account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。冻结四类输出：F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码 + **AccountSnapshot 与 HistoryEntryV1 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序）**。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | GoldenContractTests/ParserGoldenTests；manifest `parser/*` |
+| account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。🗑️ E0-03：删除 F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码（#305 重新生成，只保留业务结果和 encoded wire bytes/hex）。保留：**AccountSnapshot 与 HistoryEntryV1 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序）**。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | GoldenContractTests/ParserGoldenTests；manifest `parser/*` |
 | manual-queue-capacity-contract.json | §BE-5.3 队列容量 start gate / occupancy 投影契约；startGateCases + occupancyCases | packages/testkit/src/manual-queue-capacity.parity.test.ts；manifest `projection/manual-queue-capacity` |
-| snapshot-history-diff-contract.json | §BE-3 diff 引擎三类冻结场景：level increased / B→A comparable no change / partial coverage 不产删除；每个 case 含静态 `expected`（`comparisonState` / `changeCount` / `encodedJSONHex` / `canonicalHex` / `outputFingerprint`） | packages/testkit/src/snapshot-history.parity.test.ts；manifest `diff/snapshot-history-contract` |
+| snapshot-history-diff-contract.json | §BE-3 diff 引擎三类冻结场景：level increased / B→A comparable no change / partial coverage 不产删除；每个 case 含静态 `expected`（`comparisonState` / `changeCount` / `encodedJSONHex` / `canonicalHex`；🗑️ E0-03：删除 `outputFingerprint`，#305 同步重生成） | packages/testkit/src/snapshot-history.parity.test.ts；manifest `diff/snapshot-history-contract` |
 | official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | 既有 ClanPaginationDecodeTests / GameCatalogTests |
 
 尚未覆盖（见 target-architecture.md §6 关闭门）：**error 场景 fixture**，

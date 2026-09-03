@@ -26,10 +26,10 @@ Electron Main（权威态）
 Preload
 └─ typed contextBridge API              ← renderer 无 Node.js、无裸 ipcRenderer
 packages/
-├─ wire        ← lossless JSON、BigInt、日期、canonical JSON、SHA-256、饱和算术（#267）
+├─ wire        ← lossless JSON、BigInt、日期、canonical JSON、饱和算术（#267；🗑️ SHA-256 由 E0-03 #302 撤销，见 wire-contract-v1.md §WA-3）
 ├─ domain      ← Clock/UUID seam + 投影、diff、对账、容量语义
 ├─ contracts   ← Result、错误/诊断、IPC 取消及本目录文档对应的类型定义
-└─ testkit     ← 可重放 Clock/随机 seam + Swift oracle parity 框架（#267/#268）
+└─ testkit     ← 可重放 Clock/随机 seam + Swift oracle parity 框架（#267/#268；🗑️ hash 协议由 #302 撤销，见 testkit-protocol-v1.md）
 ```
 
 ## 3. 现有 Swift 边界 → 终态归属映射
@@ -47,31 +47,40 @@ packages/
 | 存储 | 载体 | 键/路径 | schemaVersion |
 |---|---|---|---|
 | 村庄列表 | UserDefaults blob | `coc-helper.villages.v1`（恢复副本 `.recovery` 后缀键） | 裸数组无 envelope；未来版本靠顶层声明字段识别（§BE-1.1） |
-| 快照历史 | 文件 | `Application Support/COCHelper/snapshot-history-v1.json` | envelope=1, entry=1, observation=6, fingerprint/integrity=1 |
-| 手动升级 tracker | 文件 | `manual-tracker-v1.json` | envelope/store/village 全 =1 |
+| 快照历史 | 文件 | `Application Support/COCHelper/snapshot-history-v1.json` | envelope=2, entry=2, observation=6（E0-03 #302：fingerprint/integrity 字段撤销；旧 envelope=1/entry=1 按 §WA-7.1 标记不可用） |
+| 手动升级 tracker | 文件 | `manual-tracker-v1.json` | envelope/store/village 全=2（E0-03 #302：baseline fingerprint 撤销；旧全=1 按 §WA-7.1 标记不可用） |
 | 官方端点缓存 ×4 | UserDefaults blob | `coc-helper.clans.v1` / `clan-wars.v1` / `clan-war-logs.v1` / `clan-capitals.v1` | 无版本（fail-open 组，§BE-1.4） |
 | 跟踪部落 | UserDefaults blob | `coc-helper.tracked-clans.v1` | 无版本（fail-open 组，§BE-1.5） |
 | API token | Keychain | 不入 JSON / UserDefaults | — |
 
 数据策略决策门（Issue #265）：默认不做长期兼容层、双写或双读。若必须保留旧 UserDefaults /
 Application Support 文件 / Keychain token，另开一次性 importer；importer 不得进入正常运行路径。
+E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为见 wire-contract-v1.md §WA-7 /
+§WA-7.1；旧文件原地保留、不静默重写为空，用户重新导入/重建。
 
 ## 5. 阶段依赖（引用本 epic 各 issue）
 
 1. **E0-02（本 issue）**：冻结契约 + golden fixtures —— 下游一切验收的引用基线。
-2. **E0-03（#266）**：Electron 工程、安全进程边界、CI bootstrap。
+2. **E0-03（#266，已关闭）**：Electron 工程、安全进程边界、CI bootstrap。
 3. **E1-01（#267）**：实现 wire-contract-v1.md §WA-1…§WA-7，并冻结
    shared-primitives-v1.md 的跨层基础 seam。
 4. **E1-02（#268)**：Swift oracle + golden parity 框架，直接消费 `Tests/Golden/` fixtures。
 5. **E2-\*（#269–274）**：按 behavior-matrix.md / error-matrix.md 逐域迁移。
+6. **E0-03 契约清理（#302，本次修订）**：撤销非必要 SHA-256/指纹/manifest 完整性防御契约，
+   只冻结删除/保留边界与数据策略，不直接改业务代码。执行顺序：
+   #302（本修订：冻结新契约）→ #303（Catalog manifest/source/generatedFiles 防御移除，
+   可与 #304 并行）∥ #304（Snapshot History/manual/cache/coverage 指纹移除；
+   baseline/history wire shape 先稳定）→ #305（最后：golden/testkit/oracle hash 协议移除 +
+   parity fixtures 重生成；等领域 wire shape 收敛）。#275 只接收新 store schema；
+   #276/#278 真实接入与 packaged E2E 等上述 shape 稳定后再执行。
 
 ## 6. 验收锚点（对照 Issue #265 验收标准，本 PR 为阶段性状态）
 
 | #265 验收标准 | 状态 | 说明 |
 |---|---|---|
 | 每个现有高风险状态有 confirmed output 或显式 unknown 处理 | ✅ 本 PR 完成 | behavior-matrix.md 各表含「盘上状态 × 行为」列；无法从代码确认的点标注 ⚠️ 待实证 |
-| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ⬜ **部分完成（2026-09-02 增量）** | 已冻结：parser 指纹（F1/F2/F3）+ canonical encoded bytes + HistoryEntryV1 / AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（§WA-9）。**新增登记**：`manual-queue-capacity-contract.json`（projection，startGate/occupancy expected）；`snapshot-history-diff-contract.json`（diff，3 场景含静态 `expected.canonicalHex` / `outputFingerprint` 与语义字段）+ `Tests/Golden/manifest.json` 与 `Fixtures/` 一一对应。**未冻结：error 场景 fixture**——由 E2-06（#274）等域 issue 增量追加 |
-| 数值/时间/fingerprint 正例、负例、边界例 | ✅ 本 PR 完成 | wire-contract-v1.md §WA 各节 + GoldenContractTests 用例分组 |
+| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ⬜ **部分完成（2026-09-02 增量）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + HistoryEntryV1 / AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（新形状 §WA-9，schemaVersion=3）。**已登记**：`manual-queue-capacity-contract.json`（projection，startGate/occupancy expected）；`snapshot-history-diff-contract.json`（diff，3 场景含静态 `expected.canonicalHex` 与语义字段；`outputFingerprint` 已撤销，#305 重生成）+ `Tests/Golden/manifest.json` 与 `Fixtures/` 一一对应（protocolVersion=2，删除 `fixtureSha256`，#305 执行）。**未冻结：error 场景 fixture**——由 E2-06（#274）等域 issue 增量追加 |
+| 数值/时间正例、负例、边界例（🗑️ E0-03：fingerprint 例撤销） | ✅ 本 PR 完成（数值/时间部分；指纹部分由 #302 撤销） | wire-contract-v1.md §WA 各节 + GoldenContractTests 用例分组 |
 | 明确哪些旧 UI 只是历史实现、哪些用户可见语义必须保留 | ✅ 本 PR 完成 | behavior-matrix.md §BE-7 |
 
 > **关闭门**：在 **error 场景 golden fixture** 补齐并冻结前，**不得关闭

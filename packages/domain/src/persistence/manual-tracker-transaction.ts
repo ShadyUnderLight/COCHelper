@@ -108,9 +108,7 @@ export class ManualTrackerTransactionCoordinator {
     readonly currentData: Uint8Array;
     readonly envelope: ManualTrackerEnvelope;
   }): void {
-    const newManualData = new TextEncoder().encode(
-      encodeManualTrackerEnvelopeWire(input.envelope),
-    );
+    const newManualData = new TextEncoder().encode(encodeManualTrackerEnvelopeWire(input.envelope));
     const previousCurrentData = this.current.readData();
     const previousManualData = this.manual.readRawData();
     try {
@@ -144,8 +142,7 @@ export class ManualTrackerTransactionCoordinator {
       } catch (rollbackError) {
         throw {
           kind: 'rollbackFailed',
-          message:
-            rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          message: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
         } satisfies ManualTrackerTransactionError;
       }
       throw error;
@@ -163,8 +160,7 @@ export class ManualTrackerTransactionCoordinator {
       } catch (rollbackError) {
         throw {
           kind: 'rollbackFailed',
-          message:
-            rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          message: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
         } satisfies ManualTrackerTransactionError;
       }
       throw error;
@@ -207,11 +203,9 @@ export class ManualTrackerTransactionCoordinator {
     }
     try {
       mkdirSync(dirname(this.journalURL), { recursive: true });
-      atomicWriteFile(
-        this.journalURL,
-        new TextEncoder().encode(JSON.stringify(journal)),
-        { fault: this.fault },
-      );
+      atomicWriteFile(this.journalURL, new TextEncoder().encode(JSON.stringify(journal)), {
+        fault: this.fault,
+      });
     } catch (error) {
       throw {
         kind: 'journalWriteFailed',

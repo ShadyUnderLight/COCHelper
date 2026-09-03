@@ -5,6 +5,7 @@ import type { VillageProfile } from '../import/types';
 import { atomicWriteFile } from './atomic-write';
 import { PERSISTENCE_FILE_NAMES, resolveElectronDataRoot } from './data-root';
 import type { WriteFaultInjector } from './fault';
+import { assertFileSizeWithinLimit, isPersistenceTooLargeError } from './limits';
 import {
   encodeVillageStoreBytes,
   loadVillageStoreBytes,
@@ -36,9 +37,7 @@ export class VillageFileStore implements CurrentVillagePersistence {
   constructor(fileURL: string | null, options: VillageFileStoreOptions = {}) {
     this.fileURL = fileURL;
     this.recoveryFileURL =
-      fileURL === null
-        ? null
-        : join(dirname(fileURL), PERSISTENCE_FILE_NAMES.villagesRecovery);
+      fileURL === null ? null : join(dirname(fileURL), PERSISTENCE_FILE_NAMES.villagesRecovery);
     this.fault = options.fault;
   }
 
@@ -72,8 +71,18 @@ export class VillageFileStore implements CurrentVillagePersistence {
       return null;
     }
     try {
+      assertFileSizeWithinLimit(this.fileURL);
       return readFileSync(this.fileURL);
     } catch (error) {
+      if (isVillageStoreError(error)) {
+        throw error;
+      }
+      if (isPersistenceTooLargeError(error)) {
+        throw {
+          kind: 'unavailable',
+          message: error.message,
+        } satisfies VillageStoreError;
+      }
       throw {
         kind: 'unavailable',
         message: error instanceof Error ? error.message : String(error),

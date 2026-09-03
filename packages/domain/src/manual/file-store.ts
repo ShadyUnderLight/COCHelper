@@ -2,17 +2,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import type { ManualTrackerStoreError } from './errors';
-import {
-  type ManualTrackerEnvelope,
-  validateManualTrackerEnvelope,
-} from './tracker-envelope';
-import {
-  decodeManualTrackerEnvelopeWire,
-  encodeManualTrackerEnvelopeWire,
-} from './tracker-wire';
+import { type ManualTrackerEnvelope, validateManualTrackerEnvelope } from './tracker-envelope';
+import { decodeManualTrackerEnvelopeWire, encodeManualTrackerEnvelopeWire } from './tracker-wire';
 import { atomicWriteFile } from '../persistence/atomic-write';
 import { PERSISTENCE_FILE_NAMES, resolveElectronDataRoot } from '../persistence/data-root';
 import type { WriteFaultInjector } from '../persistence/fault';
+import { assertFileSizeWithinLimit, isPersistenceTooLargeError } from '../persistence/limits';
 
 export type ManualTrackerStore = {
   readonly fileURL: string | null;
@@ -41,9 +36,7 @@ export class FileManualTrackerStore implements ManualTrackerStore {
   constructor(fileURL: string | null, options: FileManualTrackerStoreOptions = {}) {
     this.fileURL = fileURL;
     this.transactionJournalURL =
-      fileURL === null
-        ? null
-        : join(dirname(fileURL), PERSISTENCE_FILE_NAMES.manualTrackerJournal);
+      fileURL === null ? null : join(dirname(fileURL), PERSISTENCE_FILE_NAMES.manualTrackerJournal);
     this.fault = options.fault;
   }
 
@@ -92,8 +85,18 @@ export class FileManualTrackerStore implements ManualTrackerStore {
       return null;
     }
     try {
+      assertFileSizeWithinLimit(this.fileURL);
       return readFileSync(this.fileURL);
     } catch (error) {
+      if (isManualTrackerStoreError(error)) {
+        throw error;
+      }
+      if (isPersistenceTooLargeError(error)) {
+        throw {
+          kind: 'unavailable',
+          message: error.message,
+        } satisfies ManualTrackerStoreError;
+      }
       throw {
         kind: 'unavailable',
         message: error instanceof Error ? error.message : String(error),

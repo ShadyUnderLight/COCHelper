@@ -109,15 +109,11 @@ describe('ManualTrackerTransactionCoordinator', () => {
       JSON.stringify({
         phase: 'committed',
         previousCurrentData:
-          previousCurrent === null
-            ? null
-            : Buffer.from(previousCurrent).toString('base64'),
+          previousCurrent === null ? null : Buffer.from(previousCurrent).toString('base64'),
         newCurrentData: Buffer.from(encodeVillageStoreBytes(next)).toString('base64'),
         previousManualData:
           previousManual === null ? null : Buffer.from(previousManual).toString('base64'),
-        newManualData: Buffer.from(encodeManualTrackerEnvelopeWire(newManual)).toString(
-          'base64',
-        ),
+        newManualData: Buffer.from(encodeManualTrackerEnvelopeWire(newManual)).toString('base64'),
       }),
     );
 

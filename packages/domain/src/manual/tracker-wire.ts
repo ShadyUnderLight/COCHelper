@@ -2,6 +2,7 @@ import { parseUuid, type UuidString } from '@coc-helper/wire';
 
 import type { CatalogUpgradeCost } from '../catalog/types';
 import { ManualUpgradeCoreState } from './core';
+import { baselineReferencesEqual } from './equality';
 import type { ManualTrackerStoreError } from './errors';
 import {
   createManualLevelDistribution,
@@ -31,6 +32,7 @@ import {
 import {
   createManualTrackerDiagnostic,
   createManualTrackerMigrationMarker,
+  MANUAL_TRACKER_SCHEMA,
   type ManualTrackerDiagnostic,
   type ManualTrackerMigrationMarker,
 } from './tracker-schema';
@@ -135,11 +137,33 @@ function encodeVillage(state: ManualTrackerVillageState): unknown {
 
 function decodeVillage(value: unknown): ManualTrackerVillageState {
   const record = requireObject(value, 'village');
+  // 必须在 normalize 前消费 raw schemaVersion，禁止静默升级 future schema。
+  const rawSchemaVersion = requireInt(record.schemaVersion, 'schemaVersion');
+  if (rawSchemaVersion !== MANUAL_TRACKER_SCHEMA.village) {
+    throw {
+      kind: 'unsupportedSchema',
+      version: rawSchemaVersion,
+    } satisfies ManualTrackerStoreError;
+  }
+
   const coreWire = requireObject(record.core, 'core');
   const core = ManualUpgradeCoreState.create({
     itemStates: requireArray(coreWire.itemStates, 'itemStates').map(decodeItemState),
     records: requireArray(coreWire.records, 'records').map(decodeRecord),
   });
+  const derivedBaseline =
+    core.itemStates[0]?.baselineReference ?? core.records[0]?.baselineReference ?? null;
+  const rawBaseline =
+    record.baselineReference === null || record.baselineReference === undefined
+      ? null
+      : decodeBaseline(record.baselineReference);
+  if (!optionalBaselinesEqual(rawBaseline, derivedBaseline)) {
+    throw {
+      kind: 'corrupt',
+      message: 'village baselineReference 与 core 派生值不一致。',
+    } satisfies ManualTrackerStoreError;
+  }
+
   return createManualTrackerVillageState({
     villageID: requireUuid(record.villageID, 'villageID'),
     core,
@@ -181,13 +205,21 @@ function decodeVillage(value: unknown): ManualTrackerVillageState {
           queueKind: createLocalQueueKind(requireString(assignment.queueKind, 'queueKind')),
           decidedAtMs: requireFiniteNumber(assignment.decidedAtMs, 'decidedAtMs'),
           status: requireString(assignment.status, 'status') as
-            | 'userAssigned'
-            | 'observedOnly'
-            | 'unknown',
+            'userAssigned' | 'observedOnly' | 'unknown',
         });
       },
     ),
   });
+}
+
+function optionalBaselinesEqual(
+  left: ManualBaselineReference | null,
+  right: ManualBaselineReference | null,
+): boolean {
+  if (left === null || right === null) {
+    return left === right;
+  }
+  return baselineReferencesEqual(left, right);
 }
 
 function encodeItemState(state: ManualItemState): unknown {

@@ -17,5 +17,6 @@ describe('electron data root', () => {
     expect(paths?.villages).toBe(join(root!, 'villages-v1.json'));
     expect(paths?.snapshotHistory).toBe(join(root!, 'snapshot-history-v1.json'));
     expect(paths?.manualTracker).toBe(join(root!, 'manual-tracker-v1.json'));
+    expect(paths?.apiTokenEncrypted).toBe(join(root!, 'api-token.enc'));
   });
 });

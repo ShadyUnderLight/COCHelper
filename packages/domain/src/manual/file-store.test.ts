@@ -5,10 +5,7 @@ import { join } from 'node:path';
 import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
-import {
-  createInMemoryManualTrackerStore,
-  FileManualTrackerStore,
-} from '../manual/file-store';
+import { createInMemoryManualTrackerStore, FileManualTrackerStore } from '../manual/file-store';
 import {
   emptyManualTrackerEnvelope,
   createManualTrackerEnvelope,
@@ -21,9 +18,7 @@ import {
 describe('manual tracker wire', () => {
   it('空 envelope 与带空 core 村庄可往返', () => {
     const empty = createManualTrackerEnvelope({});
-    const emptyDecoded = decodeManualTrackerEnvelopeWire(
-      encodeManualTrackerEnvelopeWire(empty),
-    );
+    const emptyDecoded = decodeManualTrackerEnvelopeWire(encodeManualTrackerEnvelopeWire(empty));
     expect(emptyDecoded.villages).toEqual([]);
 
     const villageID = parseUuid('00000000-0000-0000-0000-000000000031')!;
@@ -32,6 +27,72 @@ describe('manual tracker wire', () => {
     expect(decoded.villages).toHaveLength(1);
     expect(decoded.villages[0]?.villageID).toBe(villageID);
     expect(decoded.migrationMarker?.completedAtMs).toBe(1_000);
+  });
+
+  it('future village schemaVersion 必须 fail-closed，不能静默升级', () => {
+    const villageID = parseUuid('00000000-0000-0000-0000-000000000032')!;
+    const wire = JSON.stringify({
+      schemaVersion: 1,
+      storeVersion: 1,
+      villages: [
+        {
+          villageID,
+          schemaVersion: 999,
+          baselineReference: null,
+          core: { itemStates: [], records: [] },
+          stateUpdatedAtMs: 1_000,
+          lastSettleAtMs: null,
+          lastImportAtMs: null,
+          diagnostics: [],
+          reconciliationHistory: [],
+          queueCapacityConfigs: [],
+          queueAssignments: [],
+        },
+      ],
+      migrationMarker: { version: 1, completedAtMs: 1_000 },
+      lastDiagnostic: null,
+    });
+    expect(() => decodeManualTrackerEnvelopeWire(wire)).toThrow();
+    try {
+      decodeManualTrackerEnvelopeWire(wire);
+    } catch (error) {
+      expect(error).toMatchObject({ kind: 'unsupportedSchema', version: 999 });
+    }
+  });
+
+  it('baselineReference 与 core 不一致必须 corrupt，不能洗掉', () => {
+    const villageID = parseUuid('00000000-0000-0000-0000-000000000033')!;
+    const wire = JSON.stringify({
+      schemaVersion: 1,
+      storeVersion: 1,
+      villages: [
+        {
+          villageID,
+          schemaVersion: 1,
+          baselineReference: {
+            revision: 'orphan-baseline',
+            fingerprint: 'sha256:x',
+            lineageID: 'lineage-x',
+          },
+          core: { itemStates: [], records: [] },
+          stateUpdatedAtMs: 1_000,
+          lastSettleAtMs: null,
+          lastImportAtMs: null,
+          diagnostics: [],
+          reconciliationHistory: [],
+          queueCapacityConfigs: [],
+          queueAssignments: [],
+        },
+      ],
+      migrationMarker: { version: 1, completedAtMs: 1_000 },
+      lastDiagnostic: null,
+    });
+    try {
+      decodeManualTrackerEnvelopeWire(wire);
+      expect.unreachable('expected corrupt baseline');
+    } catch (error) {
+      expect(error).toMatchObject({ kind: 'corrupt' });
+    }
   });
 });
 

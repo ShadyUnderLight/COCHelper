@@ -4,11 +4,9 @@ import { dirname, join } from 'node:path';
 import { unixSecondsToRefSeconds } from '@coc-helper/wire';
 
 import { atomicWriteFile } from '../persistence/atomic-write';
-import {
-  PERSISTENCE_FILE_NAMES,
-  resolveElectronDataRoot,
-} from '../persistence/data-root';
+import { PERSISTENCE_FILE_NAMES, resolveElectronDataRoot } from '../persistence/data-root';
 import type { WriteFaultInjector } from '../persistence/fault';
+import { assertFileSizeWithinLimit, isPersistenceTooLargeError } from '../persistence/limits';
 import type { SnapshotHistoryStoreError } from './errors';
 import {
   decodeSnapshotHistoryEnvelopeWire,
@@ -94,8 +92,18 @@ export class FileSnapshotHistoryStore implements SnapshotHistoryStore {
       return null;
     }
     try {
+      assertFileSizeWithinLimit(this.fileURL);
       return readFileSync(this.fileURL);
     } catch (error) {
+      if (isSnapshotHistoryStoreError(error)) {
+        throw error;
+      }
+      if (isPersistenceTooLargeError(error)) {
+        throw storeError({
+          kind: 'unavailable',
+          message: error.message,
+        });
+      }
       throw storeError({
         kind: 'unavailable',
         message: error instanceof Error ? error.message : String(error),
@@ -145,10 +153,7 @@ export function createInMemorySnapshotHistoryStore(): SnapshotHistoryStore & {
   const fileURL = '/memory/snapshot-history-v1.json';
   return {
     fileURL,
-    transactionJournalURL: join(
-      dirname(fileURL),
-      PERSISTENCE_FILE_NAMES.snapshotHistoryJournal,
-    ),
+    transactionJournalURL: join(dirname(fileURL), PERSISTENCE_FILE_NAMES.snapshotHistoryJournal),
     load(): SnapshotHistoryEnvelope | null {
       if (bytes === null) {
         return null;

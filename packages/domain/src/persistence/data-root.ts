@@ -12,6 +12,7 @@ export const PERSISTENCE_FILE_NAMES = {
   manualTracker: 'manual-tracker-v1.json',
   manualTrackerJournal: 'manual-tracker-v1.transaction.json',
   snapshotImportJournal: 'snapshot-import-v1.transaction.json',
+  apiTokenEncrypted: 'api-token.enc',
 } as const;
 
 export function resolveElectronDataRoot(homeDirectory?: string): string | null {
@@ -46,6 +47,7 @@ export type ElectronPersistencePaths = {
   readonly manualTracker: string;
   readonly manualTrackerJournal: string;
   readonly snapshotImportJournal: string;
+  readonly apiTokenEncrypted: string;
 };
 
 export function resolveElectronPersistencePaths(
@@ -65,5 +67,6 @@ export function resolveElectronPersistencePaths(
     manualTracker: join(root, PERSISTENCE_FILE_NAMES.manualTracker),
     manualTrackerJournal: join(root, PERSISTENCE_FILE_NAMES.manualTrackerJournal),
     snapshotImportJournal: join(root, PERSISTENCE_FILE_NAMES.snapshotImportJournal),
+    apiTokenEncrypted: join(root, PERSISTENCE_FILE_NAMES.apiTokenEncrypted),
   };
 }

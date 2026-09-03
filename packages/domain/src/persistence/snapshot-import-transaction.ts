@@ -98,10 +98,7 @@ export class SnapshotImportTransactionCoordinator {
         base64ToBytes(journal.newCurrentData),
         '事务记录中的新当前村庄数据',
       );
-      validateHistoryBytes(
-        decodeOptionalBase64(journal.previousHistoryData),
-        '事务记录中的旧历史',
-      );
+      validateHistoryBytes(decodeOptionalBase64(journal.previousHistoryData), '事务记录中的旧历史');
       validateHistoryBytes(base64ToBytes(journal.newHistoryData), '事务记录中的新历史');
     } catch (error) {
       throw asJournalCorrupt(error);
@@ -183,8 +180,7 @@ export class SnapshotImportTransactionCoordinator {
         message: '提交手动状态时未配置手动存储。',
       } satisfies SnapshotImportTransactionError;
     }
-    const previousManualData =
-      input.manualEnvelope != null ? this.manual!.readRawData() : null;
+    const previousManualData = input.manualEnvelope != null ? this.manual!.readRawData() : null;
     const newManualData =
       input.manualEnvelope != null
         ? new TextEncoder().encode(encodeManualTrackerEnvelopeWire(input.manualEnvelope))
@@ -232,8 +228,7 @@ export class SnapshotImportTransactionCoordinator {
       } catch (rollbackError) {
         throw {
           kind: 'rollbackFailed',
-          message:
-            rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          message: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
         } satisfies SnapshotImportTransactionError;
       }
       throw error;
@@ -258,8 +253,7 @@ export class SnapshotImportTransactionCoordinator {
       } catch (rollbackError) {
         throw {
           kind: 'rollbackFailed',
-          message:
-            rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          message: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
         } satisfies SnapshotImportTransactionError;
       }
       throw error;
@@ -278,11 +272,9 @@ export class SnapshotImportTransactionCoordinator {
     }
     try {
       mkdirSync(dirname(this.journalURL), { recursive: true });
-      atomicWriteFile(
-        this.journalURL,
-        new TextEncoder().encode(JSON.stringify(journal)),
-        { fault: this.fault },
-      );
+      atomicWriteFile(this.journalURL, new TextEncoder().encode(JSON.stringify(journal)), {
+        fault: this.fault,
+      });
     } catch (error) {
       throw {
         kind: 'journalCorrupt',

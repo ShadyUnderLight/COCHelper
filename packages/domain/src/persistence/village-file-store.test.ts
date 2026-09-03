@@ -40,6 +40,36 @@ describe('village store codec', () => {
       expect(result.villages).toEqual([]);
     }
   });
+
+  it('不序列化 officialAPIState，解码后固定为 null', () => {
+    const villages = [
+      createVillageProfile({
+        id: 'v-a',
+        name: 'A',
+        officialAPIState: { status: 'success', leaked: true },
+      }),
+    ];
+    const text = new TextDecoder().decode(encodeVillageStoreBytes(villages));
+    expect(text).not.toContain('officialAPIState');
+    expect(text).not.toContain('leaked');
+
+    const withLegacyField = new TextEncoder().encode(
+      JSON.stringify([
+        {
+          id: 'v-b',
+          name: 'B',
+          accountOriginalText: null,
+          accountImportedAtMs: null,
+          officialAPIState: { status: 'success' },
+        },
+      ]),
+    );
+    const loaded = loadVillageStoreBytes(withLegacyField);
+    expect(loaded.kind).toBe('loaded');
+    if (loaded.kind === 'loaded') {
+      expect(loaded.villages[0]?.officialAPIState).toBeNull();
+    }
+  });
 });
 
 describe('VillageFileStore', () => {
@@ -70,9 +100,9 @@ describe('VillageFileStore', () => {
     store.save([createVillageProfile({ id: 'v-1', name: '主村' })]);
     store.reset([]);
     expect(store.load()).toEqual({ kind: 'loaded', villages: [] });
-    expect(readFileSync(join(directory, 'villages-v1.recovery.json'), 'utf8').length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      readFileSync(join(directory, 'villages-v1.recovery.json'), 'utf8').length,
+    ).toBeGreaterThan(0);
     rmSync(directory, { recursive: true, force: true });
   });
 });

@@ -7,13 +7,7 @@ export const VILLAGE_STORE_SCHEMA = {
 } as const;
 
 export type VillageStoreStatus =
-  | 'missing'
-  | 'available'
-  | 'empty'
-  | 'readOnly'
-  | 'corrupt'
-  | 'unsupported'
-  | 'writeFailed';
+  'missing' | 'available' | 'empty' | 'readOnly' | 'corrupt' | 'unsupported' | 'writeFailed';
 
 export function villageStoreStatusRequiresRecovery(status: VillageStoreStatus): boolean {
   switch (status) {
@@ -46,12 +40,15 @@ export type VillageStoreLoadResult =
       readonly schemaVersion: number;
     };
 
+/**
+ * Electron 新根落盘格式：不含 officialAPIState。
+ * Official API 状态由后续 E3-01-B 独立 OfficialStateStore 管理，避免双权威。
+ */
 type VillageFileRecordV1 = {
   readonly id: string;
   readonly name: string;
   readonly accountOriginalText: string | null;
   readonly accountImportedAtMs: number | null;
-  readonly officialAPIState: unknown | null;
 };
 
 /** Electron 新根落盘格式：村庄数组；未来版本靠顶层 schemaVersion 识别。 */
@@ -61,7 +58,6 @@ export function encodeVillageStoreBytes(villages: readonly VillageProfile[]): Ui
     name: village.name,
     accountOriginalText: village.accountSnapshot?.originalText ?? null,
     accountImportedAtMs: village.accountSnapshot?.importedAtMs ?? null,
-    officialAPIState: village.officialAPIState,
   }));
   return new TextEncoder().encode(JSON.stringify(records));
 }
@@ -168,11 +164,12 @@ function decodeVillageRecord(entry: unknown, index: number): VillageProfile {
     accountSnapshot = parsed.value;
   }
 
+  // 内存 VillageProfile 仍保留字段以兼容现有类型；Electron 新根永不持久化、永不从盘恢复。
   return createVillageProfile({
     id,
     name,
     accountSnapshot,
-    officialAPIState: record.officialAPIState ?? null,
+    officialAPIState: null,
   });
 }
 

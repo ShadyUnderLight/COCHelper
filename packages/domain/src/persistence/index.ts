@@ -1,3 +1,10 @@
+export {
+  assertFileSizeWithinLimit,
+  cleanupOrphanAtomicTempFiles,
+  isPersistenceTooLargeError,
+  PERSISTENCE_MAX_FILE_BYTES,
+} from './limits';
+export type { PersistenceReadError } from './limits';
 export { atomicWriteFile, atomicWriteFileSimple } from './atomic-write';
 export type { AtomicWriteOptions } from './atomic-write';
 export { base64ToBytes, bytesEqual, bytesToBase64 } from './bytes';
@@ -44,11 +51,5 @@ export type {
   VillageStoreLoadResult,
   VillageStoreStatus,
 } from './village-codec';
-export {
-  defaultVillagesFileURL,
-  VillageFileStore,
-} from './village-file-store';
-export type {
-  CurrentVillagePersistence,
-  VillageFileStoreOptions,
-} from './village-file-store';
+export { defaultVillagesFileURL, VillageFileStore } from './village-file-store';
+export type { CurrentVillagePersistence, VillageFileStoreOptions } from './village-file-store';

@@ -9,6 +9,7 @@ import { assertFileSizeWithinLimit, isPersistenceTooLargeError } from './limits'
 import {
   encodeVillageStoreBytes,
   loadVillageStoreBytes,
+  isVillageStoreError,
   type VillageStoreError,
   type VillageStoreLoadResult,
   validateVillageStoreBytes,
@@ -189,13 +190,4 @@ export class VillageFileStore implements CurrentVillagePersistence {
     }
     this.writeData(encodeVillageStoreBytes(emptyVillages));
   }
-}
-
-function isVillageStoreError(error: unknown): error is VillageStoreError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'kind' in error &&
-    typeof (error as VillageStoreError).kind === 'string'
-  );
 }

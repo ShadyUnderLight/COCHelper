@@ -1,9 +1,14 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, safeStorage } from 'electron';
 
-import { installAppProtocolHandler, registerAppScheme } from './protocol';
+import { bootstrapPersistence, type PersistenceBootstrapResult } from '@coc-helper/domain';
+
+import { ImportCoordinator } from './application/import-coordinator';
+import { createImportCoordinatorFromPersistence } from './application/persistence-boundary';
 import { getCatalogService } from './catalog-service';
-import { createMainWindow, registerApplicationHandlers } from './windows';
+import { FileEncryptedBlobStore, SafeStorageTokenStore } from './persistence/secret-store';
+import { installAppProtocolHandler, registerAppScheme } from './protocol';
 import { isAllowedRendererUrl } from './security-policy';
+import { createMainWindow, registerApplicationHandlers } from './windows';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 
@@ -16,6 +21,23 @@ if (process.platform === 'linux' && process.env.CI === 'true') {
 }
 
 const smokeMode = process.argv.includes('--smoke') || process.env.COCHELPER_SMOKE === '1';
+
+/** E3-01-C 交给 #276 的持久化边界；smoke 也可复用。 */
+let persistenceRuntime: PersistenceBootstrapResult | null = null;
+let importCoordinator: ImportCoordinator | null = null;
+let tokenStore: SafeStorageTokenStore | null = null;
+
+export function getPersistenceRuntime(): PersistenceBootstrapResult | null {
+  return persistenceRuntime;
+}
+
+export function getImportCoordinator(): ImportCoordinator | null {
+  return importCoordinator;
+}
+
+export function getTokenStore(): SafeStorageTokenStore | null {
+  return tokenStore;
+}
 
 function writeSmoke(message: string): void {
   process.stdout.write(`${message}\n`);
@@ -74,7 +96,24 @@ const createWindow = (): void => {
   }
 };
 
+function initializePersistenceBoundary(): void {
+  persistenceRuntime = bootstrapPersistence();
+  importCoordinator = createImportCoordinatorFromPersistence(persistenceRuntime);
+  tokenStore = new SafeStorageTokenStore(
+    safeStorage,
+    new FileEncryptedBlobStore(persistenceRuntime.paths.apiTokenEncrypted),
+  );
+}
+
 app.whenReady().then(() => {
+  try {
+    initializePersistenceBoundary();
+  } catch (error) {
+    // 持久化启动失败不阻止窗口（便于诊断 UI）；边界状态保持 null。
+    writeSmoke(
+      `COCHELPER_PERSISTENCE_BOOT_FAIL ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   installAppProtocolHandler();
   getCatalogService().preload();
   registerApplicationHandlers();

@@ -17,7 +17,10 @@ export function mergeOfficialStateStore<State>(
   return createOfficialStateStore({ ...store.states, ...refreshed });
 }
 
-const MAX_STORE_ENTRIES = 10_000;
+/** 解码与写入共用的条目上限；超限不得静默写出后再在 load 时截断。 */
+export const OFFICIAL_STATE_STORE_MAX_ENTRIES = 10_000;
+
+const MAX_STORE_ENTRIES = OFFICIAL_STATE_STORE_MAX_ENTRIES;
 
 function skipJsonValue(value: unknown): void {
   if (value === null || typeof value !== 'object') {

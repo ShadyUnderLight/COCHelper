@@ -18,5 +18,9 @@ describe('electron data root', () => {
     expect(paths?.snapshotHistory).toBe(join(root!, 'snapshot-history-v1.json'));
     expect(paths?.manualTracker).toBe(join(root!, 'manual-tracker-v1.json'));
     expect(paths?.apiTokenEncrypted).toBe(join(root!, 'api-token.enc'));
+    expect(paths?.clans).toBe(join(root!, 'clans-v1.json'));
+    expect(paths?.trackedClans).toBe(join(root!, 'tracked-clans-v1.json'));
+    expect(paths?.playerStates).toBe(join(root!, 'player-states-v1.json'));
+    expect(paths?.selection).toBe(join(root!, 'selection-v1.json'));
   });
 });

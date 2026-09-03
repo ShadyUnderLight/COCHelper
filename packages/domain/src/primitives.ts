@@ -5,6 +5,13 @@ export interface Clock {
   nowMs(): number;
 }
 
+/** 生产路径：系统墙钟。 */
+export class SystemClock implements Clock {
+  nowMs(): number {
+    return Date.now();
+  }
+}
+
 /** 可注入的 UUID 来源，用于需要可复现身份的领域操作。 */
 export interface UuidSource {
   next(): UuidString;

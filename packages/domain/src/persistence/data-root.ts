@@ -12,6 +12,12 @@ export const PERSISTENCE_FILE_NAMES = {
   manualTracker: 'manual-tracker-v1.json',
   manualTrackerJournal: 'manual-tracker-v1.transaction.json',
   snapshotImportJournal: 'snapshot-import-v1.transaction.json',
+  clans: 'clans-v1.json',
+  clanWars: 'clan-wars-v1.json',
+  clanWarLogs: 'clan-war-logs-v1.json',
+  clanCapitals: 'clan-capitals-v1.json',
+  playerStates: 'player-states-v1.json',
+  trackedClans: 'tracked-clans-v1.json',
   apiTokenEncrypted: 'api-token.enc',
 } as const;
 
@@ -47,6 +53,12 @@ export type ElectronPersistencePaths = {
   readonly manualTracker: string;
   readonly manualTrackerJournal: string;
   readonly snapshotImportJournal: string;
+  readonly clans: string;
+  readonly clanWars: string;
+  readonly clanWarLogs: string;
+  readonly clanCapitals: string;
+  readonly playerStates: string;
+  readonly trackedClans: string;
   readonly apiTokenEncrypted: string;
 };
 
@@ -67,6 +79,12 @@ export function resolveElectronPersistencePaths(
     manualTracker: join(root, PERSISTENCE_FILE_NAMES.manualTracker),
     manualTrackerJournal: join(root, PERSISTENCE_FILE_NAMES.manualTrackerJournal),
     snapshotImportJournal: join(root, PERSISTENCE_FILE_NAMES.snapshotImportJournal),
+    clans: join(root, PERSISTENCE_FILE_NAMES.clans),
+    clanWars: join(root, PERSISTENCE_FILE_NAMES.clanWars),
+    clanWarLogs: join(root, PERSISTENCE_FILE_NAMES.clanWarLogs),
+    clanCapitals: join(root, PERSISTENCE_FILE_NAMES.clanCapitals),
+    playerStates: join(root, PERSISTENCE_FILE_NAMES.playerStates),
+    trackedClans: join(root, PERSISTENCE_FILE_NAMES.trackedClans),
     apiTokenEncrypted: join(root, PERSISTENCE_FILE_NAMES.apiTokenEncrypted),
   };
 }

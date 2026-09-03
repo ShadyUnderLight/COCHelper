@@ -41,6 +41,7 @@ export type {
 } from './snapshot-import-transaction';
 export {
   encodeVillageStoreBytes,
+  isVillageStoreError,
   loadVillageStoreBytes,
   validateVillageStoreBytes,
   villageStoreStatusRequiresRecovery,
@@ -54,7 +55,8 @@ export type {
 export { defaultVillagesFileURL, VillageFileStore } from './village-file-store';
 export type { CurrentVillagePersistence, VillageFileStoreOptions } from './village-file-store';
 export { readFailOpenJsonFile, writeFailOpenJsonFile } from './fail-open-file';
-export type { FailOpenFileStoreOptions } from './fail-open-file';
+export type { FailOpenFileStoreOptions, FailOpenWriteError } from './fail-open-file';
+export { assertFailOpenEntryCount, isFailOpenWriteError } from './fail-open-file';
 export {
   OfficialStateFileStore,
   createClanStateFileStore,

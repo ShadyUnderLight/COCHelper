@@ -1,7 +1,11 @@
 /** TrackedClanStore 文件 repository（§BE-1.5 fail-open）。 */
 
 import type { WriteFaultInjector } from './fault';
-import { readFailOpenJsonFile, writeFailOpenJsonFile } from './fail-open-file';
+import {
+  assertFailOpenEntryCount,
+  readFailOpenJsonFile,
+  writeFailOpenJsonFile,
+} from './fail-open-file';
 import {
   createTrackedClanStore,
   decodeTrackedClanStoreWire,
@@ -36,6 +40,7 @@ export class TrackedClanFileStore {
   }
 
   save(store: TrackedClanStore): void {
+    assertFailOpenEntryCount(store.profiles.length);
     writeFailOpenJsonFile(this.fileURL, encodeTrackedClanStoreWire(store), {
       fault: this.fault,
     });

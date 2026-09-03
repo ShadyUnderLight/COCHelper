@@ -17,6 +17,7 @@ import { createClanStateFileStore, createPlayerStateFileStore } from './official
 import { TrackedClanFileStore } from './tracked-clan-file-store';
 import { SelectionFileStore, resolveSelectedVillageId } from './selection-file-store';
 import { decodeTrackedClanStoreWire, encodeTrackedClanStoreWire } from '../official/tracked-clan';
+import { writeFailOpenJsonFile, isFailOpenWriteError } from './fail-open-file';
 
 describe('OfficialStateFileStore', () => {
   it('往返保存、按 tag 排序，坏条保留好条，顶层坏归空', () => {
@@ -99,6 +100,44 @@ describe('OfficialStateFileStore', () => {
     writeFileSync(fileURL, '{');
     expect(store.load().states).toEqual({});
 
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('save 超过 maxEntries 时拒绝写入', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'coc-official-cap-'));
+    const fileURL = join(directory, 'clans-v1.json');
+    writeFileSync(fileURL, '[]');
+    const store = createClanStateFileStore(fileURL);
+    const states: Record<string, ClanAPIState> = {};
+    for (let index = 0; index <= 10_000; index += 1) {
+      states[`#T${String(index)}`] = createOfficialEndpointState({
+        status: 'never',
+        parserVersion: CLAN_SNAPSHOT_PARSER_VERSION,
+      });
+    }
+    let thrown: unknown;
+    try {
+      store.save(createOfficialStateStore(states));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isFailOpenWriteError(thrown) && thrown.kind === 'tooManyEntries').toBe(true);
+    expect(readFileSync(fileURL, 'utf8').trim()).toBe('[]');
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('save 超过字节上限时拒绝写入', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'coc-official-size-'));
+    const fileURL = join(directory, 'clans-v1.json');
+    writeFileSync(fileURL, '[]');
+    let thrown: unknown;
+    try {
+      writeFailOpenJsonFile(fileURL, { bulky: 'x'.repeat(32) }, { maxBytes: 16 });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isFailOpenWriteError(thrown) && thrown.kind === 'tooLarge').toBe(true);
+    expect(readFileSync(fileURL, 'utf8').trim()).toBe('[]');
     rmSync(directory, { recursive: true, force: true });
   });
 

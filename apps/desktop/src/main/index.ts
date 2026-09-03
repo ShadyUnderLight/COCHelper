@@ -1,13 +1,9 @@
 import { app, BrowserWindow, safeStorage } from 'electron';
 
-import {
-  bootstrapPersistence,
-  SystemClock,
-  type PersistenceBootstrapResult,
-} from '@coc-helper/domain';
+import { bootstrapPersistence, type PersistenceBootstrapResult } from '@coc-helper/domain';
 
 import { ImportCoordinator } from './application/import-coordinator';
-import { PersistentVillageStore } from './application/persistent-village-store';
+import { createImportCoordinatorFromPersistence } from './application/persistence-boundary';
 import { getCatalogService } from './catalog-service';
 import { FileEncryptedBlobStore, SafeStorageTokenStore } from './persistence/secret-store';
 import { installAppProtocolHandler, registerAppScheme } from './protocol';
@@ -102,13 +98,7 @@ const createWindow = (): void => {
 
 function initializePersistenceBoundary(): void {
   persistenceRuntime = bootstrapPersistence();
-  const villageStore = new PersistentVillageStore({
-    villages: persistenceRuntime.villages,
-    selection: persistenceRuntime.selection,
-    initialVillages: persistenceRuntime.villagesInMemory,
-    initialSelectedVillageId: persistenceRuntime.selectedVillageId,
-  });
-  importCoordinator = new ImportCoordinator(villageStore, new SystemClock());
+  importCoordinator = createImportCoordinatorFromPersistence(persistenceRuntime);
   tokenStore = new SafeStorageTokenStore(
     safeStorage,
     new FileEncryptedBlobStore(persistenceRuntime.paths.apiTokenEncrypted),

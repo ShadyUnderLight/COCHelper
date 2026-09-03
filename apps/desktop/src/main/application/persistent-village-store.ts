@@ -54,8 +54,11 @@ export class PersistentVillageStore implements VillageStorePort {
       this.villagesCache.map((village) => village.id),
       this.selectedVillageId,
     );
-    if (nextSelected !== this.selectedVillageId) {
-      this.setSelectedVillageId(nextSelected);
+    this.selectedVillageId = nextSelected;
+    try {
+      this.selectionStore.save(nextSelected);
+    } catch {
+      // selection 是 soft fail-open：村庄已提交成功；重启后按 resolveSelectedVillageId 回落。
     }
   }
 
@@ -68,7 +71,7 @@ export class PersistentVillageStore implements VillageStorePort {
       this.villagesCache.map((village) => village.id),
       id,
     );
-    this.selectedVillageId = resolved;
     this.selectionStore.save(resolved);
+    this.selectedVillageId = resolved;
   }
 }

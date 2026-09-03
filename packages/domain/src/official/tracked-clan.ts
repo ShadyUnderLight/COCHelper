@@ -1,6 +1,7 @@
 /** 手动跟踪部落档案（对齐 TrackedClanProfile.swift / §BE-1.5）。 */
 
 import { isValidTag, normalizedTag } from '../tag/validator';
+import { OFFICIAL_STATE_STORE_MAX_ENTRIES } from './official-state-store';
 
 export type TrackedClanProfile = {
   readonly clanTag: string;
@@ -80,7 +81,7 @@ export function removeTrackedClan(store: TrackedClanStore, tag: string): Tracked
   return createTrackedClanStore(store.profiles.filter((entry) => entry.clanTag !== normalized));
 }
 
-const MAX_STORE_ENTRIES = 10_000;
+const MAX_STORE_ENTRIES = OFFICIAL_STATE_STORE_MAX_ENTRIES;
 
 /**
  * 解码 TrackedClanStore wire（裸数组）。

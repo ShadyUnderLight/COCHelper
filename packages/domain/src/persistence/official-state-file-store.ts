@@ -3,7 +3,11 @@
  */
 
 import type { WriteFaultInjector } from './fault';
-import { readFailOpenJsonFile, writeFailOpenJsonFile } from './fail-open-file';
+import {
+  assertFailOpenEntryCount,
+  readFailOpenJsonFile,
+  writeFailOpenJsonFile,
+} from './fail-open-file';
 import {
   createOfficialStateStore,
   decodeOfficialStateStoreWire,
@@ -66,6 +70,7 @@ export class OfficialStateFileStore<State> {
   }
 
   save(store: OfficialStateStore<State>): void {
+    assertFailOpenEntryCount(Object.keys(store.states).length);
     const wire = encodeOfficialStateStoreWire(store, this.encodeState);
     writeFailOpenJsonFile(this.fileURL, wire, { fault: this.fault });
   }

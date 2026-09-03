@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -86,5 +86,44 @@ describe('bootstrapPersistence', () => {
     expect(result.villageStatus).toBe('available');
     expect(result.selectedVillageId).toBe('v-b');
     rmSync(root, { recursive: true, force: true });
+  });
+
+  it('文件存在但读取失败时保持 readOnly，不覆盖原文件、不恢复 journal', () => {
+    const root = mkdtempSync(join(tmpdir(), 'coc-boot-unreadable-'));
+    const paths = pathsFor(root);
+    const original = Buffer.from('KEEP-ORIGINAL-VILLAGES');
+    writeFileSync(paths.villages, original);
+    writeFileSync(
+      paths.snapshotImportJournal,
+      JSON.stringify({
+        phase: 'committed',
+        previousCurrentData: null,
+        newCurrentData: Buffer.from(
+          encodeVillageStoreBytes([createVillageProfile({ id: 'v-recovered', name: '已恢复' })]),
+        ).toString('base64'),
+        previousHistoryData: null,
+        newHistoryData: Buffer.from('{}').toString('base64'),
+        previousManualData: null,
+        manualIncluded: false,
+        newManualData: null,
+      }),
+    );
+    chmodSync(paths.villages, 0o000);
+    try {
+      const result = bootstrapPersistence({ paths });
+      expect(result.villageLoad.kind).toBe('unavailable');
+      expect(result.villageStatus).toBe('readOnly');
+      expect(result.canInitializeDerivedStores).toBe(false);
+      chmodSync(paths.villages, 0o600);
+      expect(readFileSync(paths.villages)).toEqual(original);
+      expect(existsSync(paths.snapshotImportJournal)).toBe(true);
+    } finally {
+      try {
+        chmodSync(paths.villages, 0o600);
+      } catch {
+        // best-effort
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

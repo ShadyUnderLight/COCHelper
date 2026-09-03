@@ -38,7 +38,17 @@ export type VillageStoreLoadResult =
       readonly kind: 'unsupportedSchema';
       readonly rawData: Uint8Array;
       readonly schemaVersion: number;
-    };
+    }
+  | { readonly kind: 'unavailable'; readonly message: string };
+
+export function isVillageStoreError(error: unknown): error is VillageStoreError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'kind' in error &&
+    typeof (error as VillageStoreError).kind === 'string'
+  );
+}
 
 /**
  * Electron 新根落盘格式：不含 officialAPIState。

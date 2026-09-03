@@ -36,7 +36,7 @@ import { SnapshotImportTransactionCoordinator } from './snapshot-import-transact
 import { TrackedClanFileStore } from './tracked-clan-file-store';
 import {
   encodeVillageStoreBytes,
-  loadVillageStoreBytes,
+  isVillageStoreError,
   type VillageStoreLoadResult,
   type VillageStoreStatus,
   villageStoreStatusRequiresRecovery,
@@ -114,9 +114,11 @@ export function bootstrapPersistence(
   const playerStates = createPlayerStateFileStore(paths.playerStates);
   const trackedClans = new TrackedClanFileStore(paths.trackedClans);
 
-  let villageLoad = loadVillageStoreBytes(safeReadVillageBytes(villages));
+  let villageLoad = loadVillageStore(villages);
   const skipTransactionRecovery =
-    villageLoad.kind === 'corrupt' || villageLoad.kind === 'unsupportedSchema';
+    villageLoad.kind === 'corrupt' ||
+    villageLoad.kind === 'unsupportedSchema' ||
+    villageLoad.kind === 'unavailable';
 
   let snapshotHistoryError: string | null = null;
   let manualTrackerError: string | null = null;
@@ -125,13 +127,16 @@ export function bootstrapPersistence(
     try {
       reviveQuarantinedJournalIfNeeded(paths.snapshotImportJournal);
       importTransaction.recoverIfNeeded();
-      villageLoad = loadVillageStoreBytes(safeReadVillageBytes(villages));
+      villageLoad = loadVillageStore(villages);
     } catch (error) {
       snapshotHistoryError = formatPersistenceError(error);
     }
 
     if (snapshotHistoryError === null) {
-      const skipManual = villageLoad.kind === 'corrupt' || villageLoad.kind === 'unsupportedSchema';
+      const skipManual =
+        villageLoad.kind === 'corrupt' ||
+        villageLoad.kind === 'unsupportedSchema' ||
+        villageLoad.kind === 'unavailable';
       if (!skipManual) {
         try {
           reviveQuarantinedJournalIfNeeded(paths.manualTrackerJournal);
@@ -140,7 +145,7 @@ export function bootstrapPersistence(
           manualTrackerError = formatPersistenceError(error);
         }
       }
-      villageLoad = loadVillageStoreBytes(safeReadVillageBytes(villages));
+      villageLoad = loadVillageStore(villages);
     }
   }
 
@@ -182,12 +187,18 @@ export function bootstrapPersistence(
       villageError = `检测到未来村庄存储版本 ${String(villageLoad.schemaVersion)}，当前版本不会覆盖它。`;
       villageRecoveryData = villageLoad.rawData;
       break;
+    case 'unavailable':
+      villagesInMemory = [createVillageProfile({ id: generateUuid(), name: '需要完成存储恢复' })];
+      villageStatus = 'readOnly';
+      villageError = villageLoad.message;
+      villageRecoveryData = null;
+      break;
   }
 
   if (snapshotHistoryError !== null) {
     villageStatus = 'readOnly';
     villageError = snapshotHistoryError;
-    villageRecoveryData = safeReadVillageBytes(villages);
+    villageRecoveryData = readVillageBytesBestEffort(villages);
     villagesInMemory = [createVillageProfile({ id: generateUuid(), name: '需要完成存储恢复' })];
     shouldPersistInitial = false;
     canInitializeDerivedStores = false;
@@ -265,7 +276,19 @@ export function bootstrapPersistence(
   };
 }
 
-function safeReadVillageBytes(store: VillageFileStore): Uint8Array | null {
+function loadVillageStore(store: VillageFileStore): VillageStoreLoadResult {
+  try {
+    return store.load();
+  } catch (error) {
+    if (isVillageStoreError(error) && error.kind === 'unavailable') {
+      return { kind: 'unavailable', message: error.message };
+    }
+    return { kind: 'unavailable', message: formatPersistenceError(error) };
+  }
+}
+
+/** journal 失败后尽力保留原 bytes；读失败不得伪装成 missing。 */
+function readVillageBytesBestEffort(store: VillageFileStore): Uint8Array | null {
   try {
     return store.readData();
   } catch {

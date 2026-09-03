@@ -24,3 +24,5 @@ export * from './cache-retention-policy';
 export * from './source-labeling';
 export * from './official-state-store';
 export * from './refresh-coordinator';
+export * from './tracked-clan';
+export * from './endpoint-state-wire';

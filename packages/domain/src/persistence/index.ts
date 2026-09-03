@@ -53,3 +53,20 @@ export type {
 } from './village-codec';
 export { defaultVillagesFileURL, VillageFileStore } from './village-file-store';
 export type { CurrentVillagePersistence, VillageFileStoreOptions } from './village-file-store';
+export { readFailOpenJsonFile, writeFailOpenJsonFile } from './fail-open-file';
+export type { FailOpenFileStoreOptions } from './fail-open-file';
+export {
+  OfficialStateFileStore,
+  createClanStateFileStore,
+  createClanWarStateFileStore,
+  createClanWarLogStateFileStore,
+  createClanCapitalStateFileStore,
+  createPlayerStateFileStore,
+} from './official-state-file-store';
+export type { OfficialStateFileStoreOptions } from './official-state-file-store';
+export { TrackedClanFileStore } from './tracked-clan-file-store';
+export type { TrackedClanFileStoreOptions } from './tracked-clan-file-store';
+export { SelectionFileStore, resolveSelectedVillageId } from './selection-file-store';
+export type { SelectionFileStoreOptions, SelectionFileV1 } from './selection-file-store';
+export { bootstrapPersistence } from './bootstrap';
+export type { PersistenceBootstrapOptions, PersistenceBootstrapResult } from './bootstrap';

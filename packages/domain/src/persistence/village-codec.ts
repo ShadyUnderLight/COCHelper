@@ -42,7 +42,7 @@ export type VillageStoreLoadResult =
 
 /**
  * Electron 新根落盘格式：不含 officialAPIState。
- * Official API 状态由后续 E3-01-B 独立 OfficialStateStore 管理，避免双权威。
+ * Official API 状态由独立 OfficialStateStore / player-states-v1 管理，避免双权威。
  */
 type VillageFileRecordV1 = {
   readonly id: string;

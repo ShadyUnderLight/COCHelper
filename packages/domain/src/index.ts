@@ -4,6 +4,7 @@ export {
   isStableId,
   makeStableId,
   parseLineageId,
+  SystemClock,
 } from './primitives';
 export type { Clock, LineageId, StableId, UuidSource } from './primitives';
 export * from './account';

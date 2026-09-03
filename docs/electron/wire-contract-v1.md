@@ -94,14 +94,14 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
 
 | # | 已撤销项（旧定义） | 替代机制（新契约） | 删除执行 |
 |---|---|---|---|
-| F1 | canonicalFingerprint（observation 内容指纹）：`{observationSchemaVersion, rawTopLevelFields, unknownTopLevelFields, items}` 的 canonical bytes 摘要；**display 整体剔除**；tag/timestamp 构建前剥离；v5+ 剥离 coverage 元数据；diagnostics 不在材料内 | **替换为 `ObservationIdentityMaterial` 直接比较（定义见 §WA-3.1）**：继续复用旧 F1 preimage 的全部排除与排序规则，只是把 `SHA256(material)` 换成 `materialA == materialB`（或 `canonicalData` 逐字节比较）。`display`（含 displayName/category/displayCategory/catalogVersion）继续持久化用于展示，但**永不参与 duplicate 身份**；catalog 展示信息变化不得使同一份游戏快照判为非 duplicate | #304 |
+| F1 | canonicalFingerprint（observation 内容指纹）：`{observationSchemaVersion, rawTopLevelFields, unknownTopLevelFields, items}` 的 canonical bytes 摘要；**display 整体剔除**；tag/timestamp 构建前剥离；v5+ 剥离 coverage 元数据；diagnostics 不在材料内 | **替换为 `ObservationIdentityMaterial` 直接比较（定义见 §WA-3.1）**：继续复用旧 F1 preimage 的全部排除与排序规则，只是把 `SHA256(material)` 换成双方材料 `canonicalData` 逐字节比较（唯一方式）。`display`（含 displayName/category/displayCategory/catalogVersion）继续持久化用于展示，但**永不参与 duplicate 身份**；catalog 展示信息变化不得使同一份游戏快照判为非 duplicate | #304 |
 | F2 | integrityFingerprint（entry 完整性摘要）：JSONEncoder + .sortedKeys 对 entry 全量字段（减自身）共 18 字段做 digest；加载时重算比对 fail-closed | 删除摘要重算。加载校验保留：JSON 解码、entry 版本门精确匹配、section evidence（v2+ 必带、≤v5 禁 sourceUniverse）、rawJSON 重 canonicalize 比对、lineage/duplicate 交叉校验；其余 fail-closed 语义（§BE-1.2）不变 | #304 |
 | F3 | AccountSnapshot.contentFingerprint（JSONEncoder + .sortedKeys；diagnostics 随机 id 排除在外） | 缓存改**显式失效**：AppModel/应用服务在快照导入、manual mutation/reconcile、村庄变更、Catalog epoch 变化处显式清空投影缓存；tick 内动态 timer refresh 仍可缓存，但状态变更后必须先失效再 render | #304 |
 | F4 | ManualUpgradeCore 内容指纹 `{itemStates, records}`（JSONEncoder + .sortedKeys） | manual baseline 只保留 `revision + lineageID`；revision 由 snapshot ID/duplicate revision 表达，不再编码内容摘要 | #304 |
 | C1 | Catalog `sourceFingerprint`（APK hash，运行时只验格式）+ `generatedFiles`（整体删除，不止其中的 sha256/size）+ `counts` + manifest 信任门（含文件存在性、manifest 登记防御） | 全部删除；manifest 只保留四字段版本/构建元数据（见 §WA-9.1 新形状，与 #303 第 31 行一致）；asset 侧保留 renderedPath null/missingReason 业务语义与正常路径解析 | #303 |
 | C2 | coverage section `inputBinding` SHA-256 绑定、bundled perf fixture 内容 hash allowlist | 删除。保留 coverage 业务完整性状态（presence/completeness 四态）与 adapter 语义 | #304 |
 | T1 | golden manifest `fixtureSha256`、oracle `inputFingerprint`/`outputFingerprint`、testkit 报告输入/输出 hash 与字符串摘要 hash | 保留 `caseId`、operation、canonical bytes/hex 与差异分类（fixture/wire/parser/projection/error/ordering/time）；字符串差异摘要改用 bounded length/type/path；fixture 串线防护改由 manifest 登记一一对应 + owner 测试归属承担（见 testkit-protocol-v1.md） | #305 |
-| R1 | reconciliation `candidateFingerprint` / `previousSnapshotFingerprint`、lineage `lastFingerprint`、manual baseline fingerprint、display binding `catalogFingerprint` | stale preview 依赖 villageID + previousSnapshotID + lineage + manualStateUpdatedAt + preview 语义材料直接比较；lineage 校验经 `lastEntryID` + village/lineage/tag/time 关系；display binding 保留 catalogVersion/displayName/category | #304 |
+| R1 | reconciliation `candidateFingerprint` / `previousSnapshotFingerprint`、lineage `lastFingerprint`、manual baseline fingerprint、display binding `catalogFingerprint` | stale preview 依赖 villageID + previousSnapshotID + lineage + manualStateUpdatedAt + §BE-5.4 `ReconciliationCandidateMaterial` 直接比较；lineage 校验经 `lastEntryID` + village/lineage/tag/time 关系；display binding 保留 catalogVersion/displayName/category | #304 |
 
 ### WA-3.1 ObservationIdentityMaterial（非 hash 内容身份材料，新契约）
 
@@ -124,8 +124,12 @@ ObservationIdentityMaterial {
   diagnostics 不在材料内（只存在于 coverage）。
 - **排序规则（沿用旧 F1）**：items 按 fingerprintValue 材料对象的 canonical bytes
   字节序排序，重复元素保留不去重（§WA-2 规则 2）。
-- **比较方式**：`materialA == materialB` 结构比较，或比较双方 `canonicalData`
-  逐字节相等。**禁止**对 material 再做任何 digest 后比较（见 §WA-3 不得伪装替代）。
+- **比较方式（唯一）**：比较双方 `ObservationIdentityMaterial` 各自的 `canonicalData`
+  （§WA-2）逐字节相等。注：`canonicalData` 对**所有 array 递归排序**（如 items 内
+  `nestedParentPath`），而宿主语言的结构 `==` 对 array 顺序敏感——二者不是严格等价，
+  若 Swift/TS 各选一种实现就会分叉，因此**只冻结 canonicalData bytes 比较这一种**，
+  不允许裸 structural `==`。**禁止**对 material 再做任何 digest 后比较
+  （见 §WA-3 不得伪装替代）。
 - **使用点（两处，只能是这两处）**：
   1. duplicate 身份：判定键 =（ObservationIdentityMaterial 比较结果，coverage
      duplicate key，timerSchema）（§BE-3）。

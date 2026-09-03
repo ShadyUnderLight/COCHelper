@@ -230,9 +230,8 @@ expectedPreview 比较项全匹配否则 `.stalePreview`，比较项清单（�
 `previousSnapshotFingerprint == canonicalFingerprint` 一项，执行 #304）：
 villageID、previousReference == baselineReference、previousSnapshotID、
 previousLineageID、manualStateUpdatedAt（ManualTrackerReconciliation.swift:507-512 去第 510 行），
-**加** preview 语义材料直接比较（`candidateMatches(expectedPreview, actual:)`，
-同文件 :523-524；替代旧 candidate fingerprint 比较，语义缺失的一层必须在这里补回，
-不得只删不补）；decision adopt 矩阵（keepLocal 只采纳
+**加** §BE-5.4 `ReconciliationCandidateMaterial` 直接比较（`candidateMatches(expectedPreview, actual:)`，
+同文件 :523-524；替代旧 candidate fingerprint 比较）；decision adopt 矩阵（keepLocal 只采纳
 duplicate/newObservation；applyNonConflicting 对 observedAhead+active 且无 confirmed 不采纳）。
 
 ### BE-5.2 内容不变防重复结算（五层机制，🗑️ E0-03：去 fingerprint 版）
@@ -248,8 +247,8 @@ duplicate/newObservation；applyNonConflicting 对 observedAhead+active 且无 c
    持久化 replay ledger 必须精确复现 materialized state。
 
 reconciliation preview 替代（执行 #304）：用已有 `manualStateUpdatedAt`、previous
-snapshot ID 和 preview 语义材料直接比较替代 candidate fingerprint；stale preview
-继续依赖 villageID、previousSnapshotID、lineage、manualStateUpdatedAt。
+snapshot ID 和 §BE-5.4 `ReconciliationCandidateMaterial` 直接比较替代 candidate fingerprint；
+stale preview 继续依赖 villageID、previousSnapshotID、lineage、manualStateUpdatedAt。
 
 ### BE-5.3 队列分配与容量（Issue #183/#194）
 
@@ -262,6 +261,59 @@ snapshot ID 和 preview 语义材料直接比较替代 candidate fingerprint；s
 - capacity ∈ [0,10000]，0 合法；占用投影 = active manual（expectedEndAt > now）+ userAssigned
   overlay；可信度三态 available/unreconciled/unavailable——**未知占用不得压成 0 或「空闲」**
   （isFull=false、availableSlots=nil）（LocalQueueCapacity.swift:99-136, 170-177, 234-284）。
+
+### BE-5.4 ReconciliationCandidateMaterial（非 hash 候选身份材料，新契约）
+
+旧 `candidateFingerprint` 的 preimage 从来不是整个 `ManualReconciliationPreview`：
+`expected == actual` 式的全量比较会把随机 candidate 身份（previewID、新规划导入时分配的
+snapshot/lineage UUID、ephemeral revision）带进比较，使合法 non-duplicate preview 被误判
+`.stalePreview`。新契约把旧 preimage 的字段清单冻结为可直接比较的材料（出处：
+`ManualReconciliationCandidateFingerprint.encodingMaterialJson` /
+`candidate-fingerprint.ts:computeReconciliationCandidateFingerprint`；字段行为由
+`candidate-fingerprint.test.ts` 的 `ignores ephemeral revision and lineageID for
+non-duplicate candidates` 与 `includes revision for duplicate candidates` 锁定，
+#304 改写断言时不得放宽这两条）：
+
+```text
+ReconciliationCandidateMaterial {
+  duplicate
+  lineageComparable
+  timeConfidence
+  newReference: duplicate ? { revision } : { }   // 见下
+  newNormalizedPlayerTag
+  sourceTimestampMs
+  items: [ {
+    stableId                    // itemKey.stableID
+    classification
+    confirmedRecordIDs          // 排序后
+    relatedRecordIDs            // 排序后
+    observedTimer
+    coverageComplete
+    observedDistributionComplete
+    observedSectionTrustGatesOpen
+    observedTimerCoverageComplete
+    previousDistribution        // levels 原序，不重排
+    observedDistribution        // levels 原序，不重排
+  } ]                           // 按 stableId 排序
+}
+```
+
+- **duplicate 区分（沿用旧 preimage，不增不减）**：duplicate 候选的 `newReference.revision`
+  **进入**身份（revision 变化 → 不同候选）；non-duplicate 候选**忽略** ephemeral 的
+  `newReference.revision` 与 `lineageID`（规划期随机值，不得参与比较）。
+- **newReference 取自删除 fingerprint 后的 `ManualBaselineReference`**（baseline fingerprint
+  删除见 §WA-3 R1 行，执行 #304）：即 duplicate → `{ revision }`，non-duplicate → 空材料。
+  不得借机把已删除的 baseline fingerprint 加回比较。
+- **排除项（沿用旧 preimage）**：`previewID`、villageID（内外）、`previousReference`、
+  `previousSnapshotID`、`previousLineageID`、`manualStateUpdatedAt`、`appliedAt`、
+  `sourceTimestamp`（Date 形态；只用 `sourceTimestampMs`）、item 的 `displayName`/`message`
+  等展示字段。外围 stale guard（villageID、previousSnapshotID、lineage、
+  manualStateUpdatedAt，见 §BE-5.1）不在本材料内，两层各司其职。
+- **比较方式（唯一）**：比较双方材料的 `canonicalData`（§WA-2）逐字节相等——与
+  §WA-3.1 同一理由（array 递归排序 vs 结构相等的顺序敏感性），不允许裸 structural `==`。
+  **禁止**对材料做任何 digest 后比较。
+- **使用点（唯一）**：`candidateMatches(expectedPreview, actual:)` 比较本材料，替代旧
+  candidate fingerprint 比较（ManualTrackerReconciliation.swift:523-524；TS 侧同名函数同步改）。
 
 ## BE-6 并发协调（single-flight，Issue #250）
 

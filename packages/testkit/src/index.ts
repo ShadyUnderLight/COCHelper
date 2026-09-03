@@ -1,5 +1,15 @@
 export { FakeClock } from './fake-clock';
 export {
+  createFakeCoAPIServer,
+  emptyResponse,
+  fakeCoAPIConfig,
+  jsonResponse,
+  pathOf,
+  queryOf,
+  writeResponse,
+} from './fake-co-api-server';
+export type { FakeCoAPIHandler, FakeCoAPIResponse, FakeCoAPIServer } from './fake-co-api-server';
+export {
   assertParity,
   compareCanonicalParity,
   firstDifference,

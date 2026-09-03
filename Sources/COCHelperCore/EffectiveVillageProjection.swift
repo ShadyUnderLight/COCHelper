@@ -609,9 +609,8 @@ enum EffectiveVillageProjectionBuilder {
                 return "本地手动升级记录的目录版本与当前目录不一致。"
             }
             guard provenance.buildTag == manifest.buildTag,
-                  provenance.sourceFingerprint == manifest.sourceFingerprint,
                   provenance.manifestSchemaVersion == manifest.schemaVersion else {
-                return "本地手动升级记录的目录 manifest 或 source fingerprint 与当前目录不一致。"
+                return "本地手动升级记录的目录 manifest 与当前目录不一致。"
             }
             guard let catalogItem = catalog.item(section: key.rawSection, dataID: key.dataID),
                   let level = catalogItem.levels.first(where: { $0.level == record.targetLevel }),

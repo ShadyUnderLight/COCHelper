@@ -574,18 +574,15 @@ public struct ManualItemState: Codable, Hashable, Sendable {
 public struct ManualCatalogProvenance: Codable, Hashable, Sendable {
     public let gameVersion: String
     public let buildTag: String?
-    public let sourceFingerprint: String?
     public let manifestSchemaVersion: Int?
 
     public init(
         gameVersion: String,
         buildTag: String? = nil,
-        sourceFingerprint: String? = nil,
         manifestSchemaVersion: Int? = nil
     ) {
         self.gameVersion = gameVersion
         self.buildTag = buildTag
-        self.sourceFingerprint = sourceFingerprint
         self.manifestSchemaVersion = manifestSchemaVersion
     }
 
@@ -593,7 +590,6 @@ public struct ManualCatalogProvenance: Codable, Hashable, Sendable {
         self.init(
             gameVersion: catalog.gameVersion,
             buildTag: catalog.manifest?.buildTag,
-            sourceFingerprint: catalog.manifest?.sourceFingerprint,
             manifestSchemaVersion: catalog.manifest?.schemaVersion
         )
     }

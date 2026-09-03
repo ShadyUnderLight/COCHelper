@@ -39,10 +39,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 写盘后自检：validate_catalog + catalog_invariants，失败不静默
     try:
-        # Issue #98 复审 P1：主生成器自检豁免 craft 条目强制（两步生成链——
-        # craft 表由 generate_craft_table_catalog.py 独立生成并幂等登记 manifest
-        # 条目；主生成器运行时条目尚未登记，独立 validate/CI 默认强制）。
-        errors = validate_catalog(args.output, require_craft_entry=False)
+        errors = validate_catalog(args.output)
     except CatalogError as exc:
         print(f"error: 自检失败: {exc}", file=sys.stderr)
         return 1

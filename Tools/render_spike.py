@@ -20,7 +20,6 @@ SupercellFlash SWFTexture.h PixelFormat 枚举；1=BGRA8 为社区 SC2 解析器
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import struct
 import sys
@@ -331,8 +330,7 @@ def resolve_sample(sample: dict, sc: ScFile, output_dir: Path,
         png_path.write_bytes(png_bytes)
         return {"asset_key": asset_key, "status": "success",
                 "evidence": evidence, "blocker": None,
-                "png": {"path": png_name, "size": len(png_bytes),
-                        "sha256": hashlib.sha256(png_bytes).hexdigest()}}
+                "png": {"path": png_name, "size": len(png_bytes)}}
     except CatalogError as e:
         # 惰性 data 访问（loader）畸形数据 → 单样本 blocked，不中止报告
         return {"asset_key": asset_key, "status": "blocked",
@@ -447,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
         if status == "success":
             p = v["png"]
             print(f"[success] {key['container']} / {key['exportName']} → "
-                  f"PNG {p['path']} ({p['size']}B, sha256 {p['sha256'][:12]}…)")
+                  f"PNG {p['path']} ({p['size']}B)")
         elif status == "missing":
             print(f"[missing] {key['container']} / {key['exportName']} — "
                   f"{v['blocker']['reason']}")

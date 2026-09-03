@@ -1,15 +1,12 @@
 """Issue #75 工作流 C：displayCategory 数据化。
 
 覆盖：apply_display_categories 分类映射、validate 四类校验、
-兜底登记表穷尽性（bundled catalog 实证 73 = 33 分类 + 40 兜底）、
-counts.displayCategories 重算。
+兜底登记表穷尽性（bundled catalog 实证 73 = 33 分类 + 40 兜底）。
 """
 
-import hashlib
 import json
 from pathlib import Path
 
-from game_catalog.catalog import counts_for
 from game_catalog.display_categories import (
     CRAFT_TABLE_DATA_ID,
     DEFENSE_DATA_IDS,
@@ -125,13 +122,13 @@ def test_fallback_registry_disjoint_from_classified():
         .isdisjoint(INTENTIONAL_FALLBACK_DATA_IDS)
 
 
-# ---- validate：闭枚举 / 域 / 未分类 fail-loud / 1000097 / counts 重算 ----
+# ---- validate：闭枚举 / 域 / 未分类 fail-loud / 1000097 ----
 
 
 def _write_dir(tmp_path, items):
     d = tmp_path / "cat"
     d.mkdir()
-    catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
+    catalog = Catalog(schemaVersion=3, gameVersion="18.400.13", locale="zh-CN",
                       items=items)
     catalog_bytes = json.dumps(catalog_to_dict(catalog),
                                ensure_ascii=False).encode("utf-8")
@@ -141,18 +138,8 @@ def _write_dir(tmp_path, items):
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
-        "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
-        "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
-        "generatedFiles": [
-            {"path": "catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
-             "size": len(catalog_bytes)},
-            {"path": "icons/", "kind": "directory"},
-            {"path": "craft_table_catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-             "size": len(craft_bytes)},
-        ],
-        "counts": counts_for(items),
+        "schemaVersion": 3, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "locale": "zh-CN",
     }))
     return d
 
@@ -211,36 +198,3 @@ def test_validate_mislabeled_craft_table_rejected(tmp_path):
     d = _write_dir(tmp_path, [_item(1000008, dc="craftTable")])
     errors = validate_catalog(d)
     assert any("displayCategory 与注册表不一致" in e and "1000008" in e for e in errors)
-
-
-def test_validate_counts_display_categories_recomputed(tmp_path):
-    d = _write_dir(tmp_path, [_item(1000008, dc="defense"), _item(1000002, dc=None)])
-    m = json.loads((d / "manifest.json").read_text())
-    m["counts"]["displayCategories"] = {
-        "defense": 2, "walls": 0, "military": 0, "craftTable": 0,
-        "uncategorizedBuildings": 0,
-    }
-    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False))
-    errors = validate_catalog(d)
-    assert any("displayCategories.defense" in e for e in errors)
-
-
-# ---- counts_for.displayCategories ----
-
-def test_counts_for_display_categories_home_only():
-    items = [
-        _item(1000008, dc="defense"),
-        _item(1000102, dc="defense"),
-        _item(1000010, dc="walls"),
-        _item(1000000, dc="military"),
-        _item(1000097, dc="craftTable"),
-        _item(1000002, dc=None),
-        # 非 home buildings 不计入（buildings2 同 dataID）
-        _item(1000008, section="buildings2", dc="defense"),
-        # 非 buildings section 不计入
-        _item(4_000_000, section="units", dc=None),
-    ]
-    assert counts_for(items)["displayCategories"] == {
-        "defense": 2, "walls": 1, "military": 1, "craftTable": 1,
-        "uncategorizedBuildings": 1,
-    }

@@ -42,7 +42,6 @@ export function manualCatalogProvenanceFromCatalog(catalog: GameCatalog): Manual
   return {
     gameVersion: catalog.gameVersion,
     buildTag: catalog.manifest?.buildTag ?? null,
-    sourceFingerprint: catalog.manifest?.sourceFingerprint ?? null,
     manifestSchemaVersion: catalog.manifest?.schemaVersion ?? null,
   };
 }

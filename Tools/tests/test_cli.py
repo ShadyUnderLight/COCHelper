@@ -1,9 +1,7 @@
 """Task 6/7: CLI 入口退出码契约（subprocess 端到端）。"""
 
-import lzma
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parents[2] / "Tools"
@@ -63,15 +61,9 @@ def test_validate_cli_success(full_minimal_apk, tmp_path):
     # Issue #98 复审 P1：合成 APK 无 seasonal_defense 表（craft 生成器不可跑），
     # 手工模拟 craft 生成器登记（写 craft 文件 + manifest 条目）——CLI validator
     # 默认强制 craft 条目存在，完整链产物必须配套。
-    import hashlib, json
+    import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     r = _run([str(TOOLS / "validate_game_catalog.py"), "--catalog", str(out)])
     assert r.returncode == 0, r.stderr
     assert "verdict: OK" in r.stdout
@@ -88,16 +80,9 @@ def test_validate_cli_emits_coverage_report(full_minimal_apk, tmp_path):
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     r = _run([str(TOOLS / "validate_game_catalog.py"), "--catalog", str(out)])
     assert r.returncode == 0, r.stderr
     assert "verdict: OK" in r.stdout
@@ -118,16 +103,9 @@ def test_validate_cli_coverage_unavailable_does_not_fail(full_minimal_apk, tmp_p
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     monkeypatch.setattr(vgc, "coverage_report",
                         lambda version=None: (_ for _ in ()).throw(CatalogError("声明文件缺失: /nope")))
     rc = vgc.main(["--catalog", str(out)])
@@ -144,16 +122,9 @@ def test_validate_cli_coverage_binds_catalog_game_version(full_minimal_apk, tmp_
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     seen: list[str | None] = []
 
@@ -186,16 +157,9 @@ def test_validate_cli_lifecycle_phase_conflict_fails(full_minimal_apk, tmp_path,
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     # 注入冲突数据：声明 Town Hall（buildings:1000001）permanent，官方阶段表命中该 key
     decl = tmp_path / "lifecycle_declarations.json"
@@ -237,16 +201,9 @@ def test_validate_cli_multiple_phase_conflicts_reported(
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     decl = tmp_path / "lifecycle_declarations.json"
     decl.write_text(json.dumps({"schemaVersion": 1, "items": {
@@ -289,33 +246,21 @@ def test_validate_cli_conflict_check_unavailable_does_not_fail(
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
     mp = out / "manifest.json"
     m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
     m["gameVersion"] = "99.99.99"  # 仓库未 bundled 的版本 → 阶段表缺失
-    # craft 文件与 manifest 版本必须同步（否则 validate_catalog 报版本不一致
-    # 的 error，干扰本测试目标——只测冲突检查 unavailable 路径）
+    # craft 文件与 catalog 的 gameVersion 必须同步（否则 validate_catalog 报
+    # 版本不一致的 error，干扰本测试目标——只测冲突检查 unavailable 路径）
     craft_bytes = craft_bytes.replace(b"18.400.13", b"99.99.99")
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    m["generatedFiles"][-1]["sha256"] = "sha256:" + hashlib.sha256(craft_bytes).hexdigest()
-    m["generatedFiles"][-1]["size"] = len(craft_bytes)
     # catalog.json 的 gameVersion 同样需要同步（manifest == catalog 校验）
     catalog_path = out / "catalog.json"
     catalog_raw = json.loads(catalog_path.read_text(encoding="utf-8"))
     catalog_raw["gameVersion"] = "99.99.99"
     catalog_path.write_text(json.dumps(catalog_raw, ensure_ascii=False), encoding="utf-8")
-    # 同步 manifest 中 catalog.json 的哈希/大小（改了内容必须重算，否则
-    # validate_catalog 报 generatedFiles 哈希不一致的 error）
-    for entry in m["generatedFiles"]:
-        if entry["path"] == "catalog.json":
-            entry["sha256"] = "sha256:" + hashlib.sha256(catalog_path.read_bytes()).hexdigest()
-            entry["size"] = catalog_path.stat().st_size
     mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     rc = vgc.main(["--catalog", str(out)])
@@ -336,29 +281,19 @@ def test_validate_cli_game_version_path_traversal_ignored(
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
     mp = out / "manifest.json"
     m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
     m["gameVersion"] = "../../etc"
     # 三处 gameVersion 必须同步（manifest == catalog == craft 一致性校验）
     craft_bytes = craft_bytes.replace(b"18.400.13", b"../../etc")
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    m["generatedFiles"][-1]["sha256"] = "sha256:" + hashlib.sha256(craft_bytes).hexdigest()
-    m["generatedFiles"][-1]["size"] = len(craft_bytes)
     catalog_path = out / "catalog.json"
     catalog_raw = json.loads(catalog_path.read_text(encoding="utf-8"))
     catalog_raw["gameVersion"] = "../../etc"
     catalog_path.write_text(json.dumps(catalog_raw, ensure_ascii=False), encoding="utf-8")
-    for entry in m["generatedFiles"]:
-        if entry["path"] == "catalog.json":
-            entry["sha256"] = "sha256:" + hashlib.sha256(catalog_path.read_bytes()).hexdigest()
-            entry["size"] = catalog_path.stat().st_size
     mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     rc = vgc.main(["--catalog", str(out)])
@@ -383,16 +318,9 @@ def test_validate_cli_corrupt_phase_with_real_conflict_fails(
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     decl = tmp_path / "lifecycle_declarations.json"
     decl.write_text(json.dumps({"schemaVersion": 1, "items": {
@@ -431,16 +359,14 @@ def test_validate_cli_validate_and_conflict_errors_coexist(
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    # 制造一条 validate error（业务规则违反：manifest 与 catalog 版本不一致，
+    # E0-03 起不再用 hash 篡改触发）
     mp = out / "manifest.json"
     m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    m["generatedFiles"][-1]["sha256"] = "sha256:" + "0" * 64  # 篡改 → validate error
+    m["gameVersion"] = "9.9.9"
     mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     decl = tmp_path / "lifecycle_declarations.json"
@@ -458,7 +384,7 @@ def test_validate_cli_validate_and_conflict_errors_coexist(
     rc = vgc.main(["--catalog", str(out)])
     assert rc == 1
     captured = capsys.readouterr()
-    assert "哈希不一致" in captured.err, "validate error 必须打印"
+    assert "gameVersion 不一致" in captured.err, "validate error 必须打印"
     assert "lifecycle 声明永久内容与官方阶段表冲突" in captured.err, \
         "conflict error 必须打印"
 
@@ -477,17 +403,14 @@ def test_validate_cli_conflict_collection_failure_preserves_validate_errors(
     out = tmp_path / "out"
     _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
           "--output", str(out), "--game-version", "18.400.13"])
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
+    # 制造一条 validate error（业务规则违反：manifest 与 catalog 版本不一致，
+    # E0-03 起不再用 hash 篡改触发；validate_catalog 返回 errors 不抛）
     mp = out / "manifest.json"
     m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    # 篡改 craft hash → validate_catalog 返回 errors（不抛）
-    m["generatedFiles"][-1]["sha256"] = "sha256:" + "0" * 64
+    m["gameVersion"] = "9.9.9"
     mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     # 声明文件缺失 → _collect_conflict_errors 抛 CatalogError
     missing = tmp_path / "no_such_lifecycle_declarations.json"
@@ -496,7 +419,7 @@ def test_validate_cli_conflict_collection_failure_preserves_validate_errors(
     rc = vgc.main(["--catalog", str(out)])
     assert rc == 1
     captured = capsys.readouterr()
-    assert "哈希不一致" in captured.err, \
+    assert "gameVersion 不一致" in captured.err, \
         "validate errors 不得被冲突收集异常吞掉"
     assert "lifecycle 声明文件缺失" in captured.err, \
         "冲突收集异常必须打印"
@@ -530,16 +453,9 @@ def test_validate_cli_emits_audit_report(full_minimal_apk, tmp_path):
     r = _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
               "--output", str(out), "--game-version", "18.400.13"])
     assert r.returncode == 0, r.stderr
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     r = _run([str(TOOLS / "validate_game_catalog.py"), "--catalog", str(out)])
     assert r.returncode == 0, r.stderr
     assert "audit:" in r.stdout, "validator 必须输出 audit 报告段"
@@ -564,16 +480,9 @@ def test_validate_cli_audit_unavailable_does_not_fail(full_minimal_apk, tmp_path
     r = _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
               "--output", str(out), "--game-version", "18.400.13"])
     assert r.returncode == 0, r.stderr
-    import hashlib
     import json
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     def _boom():
         raise CatalogError("声明文件缺失")
@@ -601,15 +510,8 @@ def test_validate_cli_rejects_invalid_audit_status(full_minimal_apk, tmp_path, m
     r = _run([str(TOOLS / "generate_game_catalog.py"), "--apk", str(apk),
               "--output", str(out), "--game-version", "18.400.13"])
     assert r.returncode == 0, r.stderr
-    import hashlib
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (out / "craft_table_catalog.json").write_bytes(craft_bytes)
-    mp = out / "manifest.json"
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-                                "size": len(craft_bytes)})
-    mp.write_text(json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     # 声明文件：Town Hall 声明合法 + 一条非法 auditStatus（未知值）
     bad_decl = tmp_path / "declarations.json"

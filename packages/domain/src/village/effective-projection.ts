@@ -875,10 +875,9 @@ function activeCatalogDiagnosticFor(input: {
     }
     if (
       provenance.buildTag !== manifest.buildTag ||
-      provenance.sourceFingerprint !== manifest.sourceFingerprint ||
       provenance.manifestSchemaVersion !== manifest.schemaVersion
     ) {
-      return '本地手动升级记录的目录 manifest 或 source fingerprint 与当前目录不一致。';
+      return '本地手动升级记录的目录 manifest 与当前目录不一致。';
     }
     const catalogItem = input.catalog.item(input.key.rawSection, input.key.dataID);
     const level = catalogItem?.levels.find((entry) => entry.level === record.targetLevel);

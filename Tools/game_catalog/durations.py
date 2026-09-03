@@ -25,37 +25,6 @@ def parse_optional_int(value: str) -> int | None:
     return None
 
 
-def classify_duration(seconds: int | None, reason: str | None) -> str:
-    """durationSeconds + missingReason → 时长语义桶（Issue #74b）。
-
-    桶名（manifest counts 拆分与 Swift CatalogDurationState 同语义）：
-    - timed：有值且 > 0
-    - instant：有值且 == 0（真实即时升级，不得归为缺失）
-    - initialLevel：初始等级无升级时长（min_level_initial_no_upgrade）
-    - notApplicable：源表无时间列（no_time_source）——仅表示数据源层面
-      无时长数据，不得推断为「游戏内无需升级时间」（评审定稿）
-    - sourceMissing：time_missing / upgrade_data_missing
-    - parseFailed：time_invalid
-    - unknown：缺 reason（nil）或未知 reason（防御，生成层不会产生；
-      validate 的 nil⟺reason 互斥保证当前目录 unknown == 0）
-    """
-    if seconds is not None:
-        if seconds > 0:
-            return "timed"
-        if seconds == 0:
-            return "instant"
-        return "unknown"  # 负数防御：生成层已拒绝，分类不崩溃
-    if reason == "min_level_initial_no_upgrade":
-        return "initialLevel"
-    if reason == "no_time_source":
-        return "notApplicable"
-    if reason == "time_invalid":
-        return "parseFailed"
-    if reason in ("time_missing", "upgrade_data_missing"):
-        return "sourceMissing"
-    return "unknown"
-
-
 def parse_duration(cells: dict[str, str], columns: tuple[str, ...]) -> tuple[int | None, str | None]:
     """解析时长列组 → (seconds, missing_reason)。
 

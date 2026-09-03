@@ -11,12 +11,10 @@ from . import SCHEMA_VERSION
 from .apk import rows, read_build_tag, localization
 from .builders import build_items, build_guardians
 from .display_categories import apply_display_categories
-from .durations import classify_duration
 from .errors import CatalogError
-from .fingerprint import sha256_bytes, sha256_file
 from .instance_counts import build_instance_counts
 from .lifecycle import apply_lifecycle
-from .model import Catalog, CatalogItem, catalog_to_dict
+from .model import Catalog, catalog_to_dict
 from .tables import TABLES
 
 
@@ -84,51 +82,6 @@ def _build_catalog_items(
     return items
 
 
-def counts_for(items: list[CatalogItem]) -> dict:
-    """目录计数（含时长语义拆分，Issue #74b）。catalog.py 生成与 validate.py
-    重算共用同一实现，防双实现漂移。
-
-    - missingTime 语义保持：全部 durationSeconds is None（含 unknown 桶）；
-    - 拆分桶：timed / instant / notApplicable / initialLevel / sourceMissing /
-      parseFailed（语义见 durations.classify_duration）；
-    - 不变量：timed + instant + missingTime == levels。
-    """
-    levels = [lv for item in items for lv in item.levels]
-    buckets: dict[str, int] = {}
-    for lv in levels:
-        bucket = classify_duration(lv.durationSeconds, lv.missingReason)
-        buckets[bucket] = buckets.get(bucket, 0) + 1
-    return {
-        "items": len(items),
-        "levels": len(levels),
-        "missingTime": buckets.get("unknown", 0) + buckets.get("initialLevel", 0)
-            + buckets.get("notApplicable", 0) + buckets.get("sourceMissing", 0)
-            + buckets.get("parseFailed", 0),
-        "missingIcons": sum(1 for lv in levels if lv.icon and lv.icon.renderedPath is None),
-        "timed": buckets.get("timed", 0),
-        "instant": buckets.get("instant", 0),
-        "notApplicable": buckets.get("notApplicable", 0),
-        "initialLevel": buckets.get("initialLevel", 0),
-        "sourceMissing": buckets.get("sourceMissing", 0),
-        "parseFailed": buckets.get("parseFailed", 0),
-        # Issue #75 工作流 C：展示分类分布（只统计 home buildings）
-        "displayCategories": {
-            "defense": sum(1 for i in items if i.section == "buildings"
-                           and i.base == "home" and i.displayCategory == "defense"),
-            "walls": sum(1 for i in items if i.section == "buildings"
-                         and i.base == "home" and i.displayCategory == "walls"),
-            "military": sum(1 for i in items if i.section == "buildings"
-                            and i.base == "home" and i.displayCategory == "military"),
-            "craftTable": sum(1 for i in items if i.section == "buildings"
-                              and i.base == "home" and i.displayCategory == "craftTable"),
-            "uncategorizedBuildings": sum(1 for i in items
-                                          if i.section == "buildings"
-                                          and i.base == "home"
-                                          and i.displayCategory is None),
-        },
-    }
-
-
 def generate(
     apk: Path,
     game_version: str | None,
@@ -170,25 +123,20 @@ def generate(
 
     catalog = Catalog(schemaVersion=SCHEMA_VERSION, gameVersion=effective_version,
                       locale=locale, items=items)
-    counts = counts_for(items)
 
     # instanceCounts 恒输出（空 dict 也写 {}，字段恒存在契约）
     payload = catalog_to_dict(catalog)
     payload["instanceCounts"] = instance_counts
     catalog_bytes = json.dumps(payload, ensure_ascii=False,
                                indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    # E0-03/Issue #303：manifest 只保留版本/构建元数据四字段
+    #（schemaVersion/gameVersion/buildTag/locale）；sourceFingerprint /
+    # generatedFiles / counts 整体删除，不再写入/重算任何 hash/size。
     manifest = {
         "schemaVersion": SCHEMA_VERSION,
         "gameVersion": effective_version,
         "buildTag": build_tag,
         "locale": locale,
-        "sourceFingerprint": sha256_file(apk),
-        "generatedFiles": [
-            {"path": "catalog.json", "sha256": sha256_bytes(catalog_bytes),
-             "size": len(catalog_bytes)},
-            {"path": "icons/", "kind": "directory", "entries": 0},
-        ],
-        "counts": counts,
     }
     manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2,
                                 sort_keys=True).encode("utf-8") + b"\n"

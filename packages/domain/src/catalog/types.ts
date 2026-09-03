@@ -1,34 +1,13 @@
 export const DEFAULT_BUNDLED_CATALOG_VERSION = '18.400.13' as const;
 
-export type CatalogCounts = {
-  readonly items: number;
-  readonly levels: number;
-  readonly missingIcons?: number;
-  readonly missingTime?: number;
-  readonly timed?: number;
-  readonly instant?: number;
-  readonly notApplicable?: number;
-  readonly initialLevel?: number;
-  readonly sourceMissing?: number;
-  readonly parseFailed?: number;
-};
-
-export type CatalogGeneratedFile = {
-  readonly path: string;
-  readonly sha256?: string;
-  readonly size?: number;
-  readonly kind?: string;
-  readonly entries?: number;
-};
-
+/** E0-03/Issue #303 新契约 CatalogManifestV3：只保留版本/构建元数据四字段。
+ * 旧 schemaVersion 1/2（sourceFingerprint / generatedFiles / counts）按
+ * wire-contract §WA-7.1 标记不可用，需重新生成。 */
 export type CatalogManifest = {
   readonly schemaVersion: number;
   readonly gameVersion: string;
   readonly buildTag: string;
   readonly locale: string;
-  readonly sourceFingerprint: string;
-  readonly generatedFiles: readonly CatalogGeneratedFile[];
-  readonly counts: CatalogCounts;
 };
 
 export type CatalogAssetRef = {
@@ -82,15 +61,5 @@ export type CatalogCompatibility =
   | { readonly kind: 'verified'; readonly gameVersion: string }
   | { readonly kind: 'mismatch'; readonly catalogVersion: string; readonly expectedVersion: string }
   | { readonly kind: 'unavailable' };
-
-export type FileCheck = (relativePath: string, declaredSize: number | null | undefined) => boolean;
-
-/** manifest generatedFiles 完整性探测（hash / size / directory / entries）。 */
-export type GeneratedFileIntegrityProbe = {
-  readonly fileExists: (relativePath: string) => boolean;
-  readonly directoryExists: (relativePath: string) => boolean;
-  readonly fileSize: (relativePath: string) => number | null;
-  readonly fileSha256: (relativePath: string) => string | null;
-};
 
 export const UNIVERSE_TOWN_HALL_COUNT = 18 as const;

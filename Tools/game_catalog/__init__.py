@@ -1,7 +1,9 @@
 """APK 静态游戏目录生成管线（issue #13）。"""
 
-# v2: CatalogLevel 多资源升级费用（upgradeCosts 数组替代 upgradeResource/upgradeCost 键，issue #73）
-SCHEMA_VERSION = 2
+# v3 (E0-03/Issue #303)：manifest 精简为四字段版本/构建元数据
+# （schemaVersion/gameVersion/buildTag/locale），sourceFingerprint /
+# generatedFiles / counts 整体删除；catalog.json 与 manifest 共用同一版本号。
+SCHEMA_VERSION = 3
 
 # Issue #97：铁匠铺（Blacksmith）等级合法域。equipment 的 requiredBlacksmithLevel
 # 校验（validate.py）与回填（annotate_blacksmith_levels.py）共用单一事实源；

@@ -1,10 +1,11 @@
-"""renderedPath 输出契约纯函数（Issue #27 R-A/R-B/R-C/R-D 规则）。
+"""renderedPath 输出契约纯函数（Issue #27 R-A/R-B/R-D 规则；E0-03/Issue #303
+已撤销 R-C manifest 登记门）。
 
 与 Swift CatalogAssetRef.isRenderable（Sources/COCHelperCore/GameCatalog.swift）同一
 语义；契约错误消息文本与 validate.py 现有负例校验消息一致（不含调用方追加的
 "(<context>)" 后缀，由 validate.py 负责）。
 
-纯 stdlib、无 IO：file_exists/registered 由调用方计算后传入（bool），保持纯函数可测。
+纯 stdlib、无 IO：file_exists 由调用方计算后传入（bool），保持纯函数可测。
 """
 
 import re
@@ -64,20 +65,18 @@ def check_rendered_path_contract(
     rendered_path: str | None,
     missing_reason: str | None,
     file_exists: bool,
-    registered: bool | None,
 ) -> list[str]:
     """返回违反的契约错误列表（空=通过）。
 
     规则顺序（与 validate.py 一致）：
     R-B 互斥（renderedPath 非空且 missingReason 非空）→ R-D 格式（严格两级
     `icons/<container_key>/<export_key>.png`，见 rendered_path_format_ok）→
-    R-A 文件存在 → R-C manifest 登记（registered None 时跳过 R-C）。
+    R-A 文件存在。
     rendered_path 为 None（无引用）→ 返回 []；**空串 "" 不是合法渲染路径，
     走 R-D 报格式非法**（交叉审核 P1-2：空路径不得绕过校验）。
     missing_reason 按 `is not None` 判定（空串 "" 也触发 R-B 互斥）。
 
-    R-B 是独立轴（最优先、不被 R-D 短路）；R-D 失败后短路剩余轴；R-A/R-C 互斥
-    （文件不存在时不报 R-C，与 validate.py 的 if/elif 一致）。
+    R-B 是独立轴（最优先、不被 R-D 短路）；R-D 失败后短路剩余轴。
 
     rendered_path 非 str 时行为未定义（AttributeError 上抛；validate.py 顶层
     wrapper 捕获后转 "catalog 内容非法"，勿在此处擅自拦截）。
@@ -97,6 +96,4 @@ def check_rendered_path_contract(
         return errors
     if not file_exists:
         errors.append(f"renderedPath 指向不存在的文件: {rendered_path}")
-    elif registered is not None and not registered:
-        errors.append(f"renderedPath 文件未在 manifest generatedFiles 登记: {rendered_path}")
     return errors

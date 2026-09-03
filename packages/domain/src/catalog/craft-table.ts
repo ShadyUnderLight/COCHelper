@@ -1,5 +1,3 @@
-import { sha256Fingerprint } from '@coc-helper/wire';
-
 import { decodeCatalogManifest, decodeJsonFile } from './json-decode';
 import type { CatalogManifest } from './types';
 
@@ -26,61 +24,11 @@ export type CraftTableCatalog = {
   readonly buildTag: string;
   readonly locale: string;
   readonly source: string;
-  readonly sourceFingerprint: string | null;
   readonly defenses: readonly CraftTableDefenseSpec[];
   readonly modules: readonly CraftTableModuleSpec[];
   readonly defense: (dataID: bigint) => CraftTableDefenseSpec | undefined;
   readonly module: (dataID: bigint) => CraftTableModuleSpec | undefined;
 };
-
-export function craftTableIntegrityOk(
-  manifestData: Uint8Array | string,
-  craftData: Uint8Array | string,
-): boolean {
-  let manifest: CatalogManifest;
-  try {
-    manifest = decodeJsonFile(toText(manifestData), decodeCatalogManifest);
-  } catch {
-    return false;
-  }
-  if (!validSourceFingerprint(manifest.sourceFingerprint)) {
-    return false;
-  }
-  const craftEntries = manifest.generatedFiles.filter(
-    (file) => file.path === 'craft_table_catalog.json',
-  );
-  if (craftEntries.length !== 1) {
-    return false;
-  }
-  const entry = craftEntries[0]!;
-  if (
-    entry.sha256 === undefined ||
-    !entry.sha256.startsWith('sha256:') ||
-    entry.size === undefined
-  ) {
-    return false;
-  }
-  const craftBytes = toBytes(craftData);
-  if (entry.size !== craftBytes.length) {
-    return false;
-  }
-  const actual = sha256Fingerprint(craftBytes).slice('sha256:'.length);
-  const declared = entry.sha256.slice('sha256:'.length);
-  return declared === actual;
-}
-
-function toText(data: Uint8Array | string): string {
-  return typeof data === 'string' ? data : new TextDecoder().decode(data);
-}
-
-function toBytes(data: Uint8Array | string): Uint8Array {
-  return typeof data === 'string' ? new TextEncoder().encode(data) : data;
-}
-
-function validSourceFingerprint(value: string): boolean {
-  const hex = value.slice('sha256:'.length);
-  return value.startsWith('sha256:') && hex.length === 64 && /^[0-9a-fA-F]+$/.test(hex);
-}
 
 export function createCraftTableCatalog(input: {
   readonly schemaVersion: number;
@@ -88,7 +36,6 @@ export function createCraftTableCatalog(input: {
   readonly buildTag: string;
   readonly locale: string;
   readonly source: string;
-  readonly sourceFingerprint?: string | null;
   readonly defenses: readonly CraftTableDefenseSpec[];
   readonly modules: readonly CraftTableModuleSpec[];
 }): CraftTableCatalog {
@@ -100,7 +47,6 @@ export function createCraftTableCatalog(input: {
     buildTag: input.buildTag,
     locale: input.locale,
     source: input.source,
-    sourceFingerprint: input.sourceFingerprint ?? null,
     defenses,
     modules,
     defense(dataID: bigint) {
@@ -166,10 +112,12 @@ export function loadCraftTableCatalog(input: {
   readonly manifestText: string;
   readonly craftText: string;
 }): CraftTableCatalog | null {
-  if (!craftTableIntegrityOk(input.manifestText, input.craftText)) {
+  let catalog: CraftTableCatalog;
+  try {
+    catalog = decodeCraftTableCatalog(input.craftText);
+  } catch {
     return null;
   }
-  const catalog = decodeCraftTableCatalog(input.craftText);
   let manifest: CatalogManifest;
   try {
     manifest = decodeJsonFile(input.manifestText, decodeCatalogManifest);
@@ -179,12 +127,10 @@ export function loadCraftTableCatalog(input: {
   if (
     catalog.schemaVersion !== 1 ||
     catalog.gameVersion !== input.version ||
+    manifest.schemaVersion !== 3 ||
     manifest.gameVersion !== catalog.gameVersion
   ) {
     return null;
   }
-  return createCraftTableCatalog({
-    ...catalog,
-    sourceFingerprint: manifest.sourceFingerprint,
-  });
+  return createCraftTableCatalog({ ...catalog });
 }

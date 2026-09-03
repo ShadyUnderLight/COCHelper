@@ -1,11 +1,11 @@
 """目录校验：结构/语义不变量。生成器写盘前自检 + 验证器 CLI 共用同一实现。
 
 只校验目录内容自洽（catalog.json/manifest.json），不依赖真实 APK。
+E0-03/Issue #303：不再校验 source SHA、generatedFiles hash/size、
+counts 对账与 manifest 登记（R-C）；只保留版本/结构/语义业务校验。
 """
 
-import hashlib
 import json
-import string
 from pathlib import Path
 
 from . import (
@@ -17,7 +17,6 @@ from . import (
     ITEM_MISSING_REASONS,
     LEVEL_MISSING_REASONS,
 )
-from .catalog import counts_for
 from .contract import check_rendered_path_contract, rendered_path_format_ok
 from .display_categories import (
     DISPLAY_CATEGORIES,
@@ -33,8 +32,6 @@ from .lifecycle import (
 )
 from .model import AssetRef, UpgradeCost, catalog_from_dict
 
-_HEX = frozenset(string.hexdigits)
-# PNG 文件魔数（前 8 字节）：\x89PNG\r\n\x1a\n（Issue #30 Task 8 内容校验用）
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 # 非数量型主村 buildings/traps 项（合法无宇宙项；18.400.13 数据源实证：
@@ -199,23 +196,20 @@ def _check_rendered_path(
     ref: AssetRef,
     context: str,
     catalog_dir: Path,
-    registered: set[str] | None,
 ) -> None:
     """renderedPath 负例校验（Issue #27 契约 R1/R2/R5），复用 contract 模块。
 
     契约规则/顺序/消息见 game_catalog/contract.py 的 check_rendered_path_contract；
-    file_exists 与 registered 布尔由本处计算（保持契约函数纯、无 IO）。契约返回的
+    file_exists 布尔由本处计算（保持契约函数纯、无 IO）。契约返回的
     消息不含 "(<context>)" 后缀，在此追加以保持既有输出文本逐字不变。
 
-    顺序：R-B 互斥（独立轴，先查，不被格式短路）→ R-D 格式 → R-A 文件存在 →
-    R-C manifest 登记。renderedPath 为 None（无引用）不触发——counts.missingIcons
-    的 "renderedPath is None" 语义不变；**空串 "" 不是合法渲染路径**，走 R-D
+    顺序：R-B 互斥（独立轴，先查，不被格式短路）→ R-D 格式 → R-A 文件存在。
+    renderedPath 为 None（无引用）不触发；**空串 "" 不是合法渲染路径**，走 R-D
     报格式非法（交叉审核 P1-2：空路径不得绕过校验，不得被 isRenderable 视为可渲染）。
      R-D 短路在**文件系统探测之前**：格式非法（版本段/`..` 段/绝对路径/单级/空串等）
      直接报格式非法，不执行 `(catalog_dir / rp).is_file()`——防 `icons/../../x.png`
      逃逸探测 catalog 目录之外的文件（交叉审核 NB-3）。
-     文件存在但已登记时 hash/size 一致性由现有 generatedFiles 重算逻辑兜底
-     （PNG 条目走同一路径）。文件存在时另做 PNG 内容校验（Issue #30 Task 8）：
+     文件存在时另做 PNG 内容校验（Issue #30 Task 8）：
      前 8 字节必须是 PNG 魔数，否则报"不是合法 PNG"；仅查魔数不解析完整 PNG，
      小文件（<8 字节）同样报错。读取失败（OSError）报"无法读取"。
     """
@@ -224,10 +218,7 @@ def _check_rendered_path(
         return
     # 纯函数先验格式；`and` 短路保证非法路径从不触碰文件系统
     file_exists = rendered_path_format_ok(rp) and (catalog_dir / rp).is_file()
-    violations = check_rendered_path_contract(
-        rp, ref.missingReason, file_exists,
-        None if registered is None else rp in registered,
-    )
+    violations = check_rendered_path_contract(rp, ref.missingReason, file_exists)
     errors.extend(f"{e} ({context})" for e in violations)
     # ---- PNG 内容校验（Issue #30 Task 8）：文件存在但内容非 PNG → error ----
     # 仅 file_exists 时读文件：格式非法/逃逸路径已被上面短路，不触碰文件系统
@@ -246,9 +237,9 @@ def _check_rendered_path(
 
 def _check_craft_catalog_structure(errors: list[str], raw: object,
                                    manifest_game_version: object) -> None:
-    """craft_table_catalog.json 内容结构校验（复审 P1：Swift 解码契约镜像）。
+    """craft_table_catalog.json 内容结构校验（Swift 解码契约镜像）。
 
-    hash/size 一致但内容非法时（如缺 buildTag/locale/source 字段）Swift
+    内容非法时（如缺 buildTag/locale/source 字段）Swift
     `CraftTableCatalog` Codable 解码失败 → loadBundled 返回 nil → 精制台
     运行时不可用——"validator 绿色但运行时不可用"仍会发生，必须在此拦截。
     镜像 CraftTableDefenseSpec/CraftTableModuleSpec/CraftTableLevelSpec 的
@@ -385,16 +376,11 @@ def _check_craft_catalog_structure(errors: list[str], raw: object,
                             "requiredTownHallLevel 必须是 Int 整数（-2^63...2^63-1）或 null")
 
 
-def validate_catalog(dir_path: str | Path,
-                     require_craft_entry: bool = True) -> list[str]:
+def validate_catalog(dir_path: str | Path) -> list[str]:
     """校验目录。返回 error 列表（空=通过）。
 
-    require_craft_entry：是否强制 manifest 含 craft_table_catalog.json 条目
-    （Issue #98 复审 P1）。默认 True（独立校验/CI 必须强制——缺条目时 App
-    运行时 fail-closed 精制台不可用，"validator 绿色但运行时不可用"的三方
-    不一致不允许放行）。**两步生成链例外**：generate_game_catalog.py 的自检
-    传 False——craft 表是独立生成器（generate_craft_table_catalog.py）的
-    产物，主生成器运行时条目尚未登记（登记由 craft 生成器幂等补写）。
+    E0-03/Issue #303：只做版本/结构/语义业务校验，不再要求 manifest 含
+    sourceFingerprint / generatedFiles / counts，也不再重算任何 hash/size。
     """
     errors: list[str] = []
     d = Path(dir_path)
@@ -421,7 +407,7 @@ def validate_catalog(dir_path: str | Path,
 
     # ---- 版本/语言一致性 ----
     # bool 排除：True == 1 会绕过 != 比较（与 craft schemaVersion 同类，R9 复审
-    # 防御性补强——当前 SCHEMA_VERSION=2 靠值巧合不被绕过，未来改回 1 会复发）
+    # 防御性补强）
     ms = manifest.get("schemaVersion")
     if isinstance(ms, bool) or not isinstance(ms, int) or ms != SCHEMA_VERSION:
         errors.append(f"manifest schemaVersion 必须是整数 {SCHEMA_VERSION}: {ms!r}")
@@ -433,67 +419,6 @@ def validate_catalog(dir_path: str | Path,
         errors.append(f"gameVersion 不一致: manifest={manifest.get('gameVersion')} catalog={catalog.gameVersion}")
     if manifest.get("locale") != catalog.locale:
         errors.append(f"locale 不一致: manifest={manifest.get('locale')} catalog={catalog.locale}")
-
-    # ---- sourceFingerprint 格式："sha256:" + 64 hex ----
-    fp = manifest.get("sourceFingerprint")
-    if not (isinstance(fp, str) and fp.startswith("sha256:")
-            and len(fp) == 7 + 64 and all(c in _HEX for c in fp[7:])):
-        errors.append(f"sourceFingerprint 格式非法: {fp!r}")
-
-    # ---- generatedFiles 完整性：hash/size 重算比对 + icons/ 目录存在 ----
-    gen = manifest.get("generatedFiles")
-    registered: set[str] | None = None  # 非 directory 条目路径集合（R-C 用）
-    png_count: int | None = 0 if isinstance(gen, list) else None  # R6.2：PNG 条目数
-    if not isinstance(gen, list):
-        errors.append("manifest 缺少 generatedFiles")
-    else:
-        # Issue #98 复审 P1：craft 目录条目必须存在——CraftTableCatalog.
-        # loadBundled 运行时对账该条目的 sha256/size（缺失 → fail-closed 返回
-        # nil → 精制台不可用）。validator 若放行"无 craft 条目"的 manifest，
-        # 会出现"生成成功 / validator 绿色 / 运行时不可用"的三方不一致。
-        # 强制恰好一个有效条目（fail loud 前置，旧产物缺失时推动重新生成）。
-        # require_craft_entry=False 仅用于主生成器自检（两步生成链中间态）。
-        if require_craft_entry:
-            craft_entries = [e for e in gen
-                             if isinstance(e, dict) and e.get("path") == "craft_table_catalog.json"]
-            if len(craft_entries) != 1:
-                errors.append(
-                    "manifest 必须恰好包含一个 craft_table_catalog.json 条目"
-                    "（缺失或重复：CraftTableCatalog.loadBundled 将 fail-closed）")
-        seen_files = set()
-        registered = set()
-        for entry in gen:
-            path = entry.get("path") if isinstance(entry, dict) else None
-            if not isinstance(path, str) or not path:
-                errors.append(f"generatedFiles 条目缺少 path: {entry!r}")
-                continue
-            if path in seen_files:
-                errors.append(f"generatedFiles 重复条目: {path}")
-            seen_files.add(path)
-            if entry.get("kind") == "directory":
-                if not (d := catalog_path.parent / path).is_dir():
-                    errors.append(f"generatedFiles 目录不存在: {path}")
-                continue
-            if path.endswith(".png"):
-                png_count += 1  # R6.2：renderedIcons 重算断言依据
-            registered.add(path)
-            target = catalog_path.parent / path
-            if not target.is_file():
-                errors.append(f"generatedFiles 文件不存在: {path}")
-                continue
-            try:
-                actual = "sha256:" + hashlib.sha256(target.read_bytes()).hexdigest()
-            except OSError as exc:
-                errors.append(f"generatedFiles 读取失败 {path}: {exc}")
-                continue
-            declared = entry.get("sha256", "")
-            if declared != actual:
-                errors.append(f"generatedFiles {path} 哈希不一致: manifest={declared} 实际={actual}")
-            size = entry.get("size")
-            if not isinstance(size, int) or isinstance(size, bool) or size < 0:
-                errors.append(f"generatedFiles {path} size 缺失或非法: {size!r}")
-            elif size != target.stat().st_size:
-                errors.append(f"generatedFiles {path} 大小不一致: manifest={size} 实际={target.stat().st_size}")
 
     # ---- 主键唯一性 + level 升序 + null/reason 配对 + reason 域校验 ----
     # 畸形但可解析的 catalog（如 "level": "1" 字符串）会在不变量比较中抛 TypeError，
@@ -583,7 +508,7 @@ def validate_catalog(dir_path: str | Path,
                     if ref:
                         _check_rendered_path(errors, ref,
                                              f"item={key}, level={lv.level}, {ref_name}",
-                                             catalog_path.parent, registered)
+                                             catalog_path.parent)
             if item.missingReason and item.missingReason not in ITEM_MISSING_REASONS:
                 errors.append(f"{key}: 未知 item.missingReason {item.missingReason!r}")
             if item.base is None and item.baseMissingReason is None:
@@ -620,7 +545,7 @@ def validate_catalog(dir_path: str | Path,
                 if ref:
                     _check_rendered_path(errors, ref,
                                          f"item={key}, {ref_name}",
-                                         catalog_path.parent, registered)
+                                         catalog_path.parent)
     except (TypeError, ValueError, AttributeError) as exc:
         return [f"catalog 内容非法: {exc}"]
 
@@ -629,67 +554,6 @@ def validate_catalog(dir_path: str | Path,
     _check_lifecycle_declarations(errors, catalog.items)
     # ---- auditStatus 声明内容（Issue #109：非法值端到端失败）----
     _check_audit_status_declarations(errors)
-
-    # ---- counts 与目录内容重算一致 ----
-    counts = counts_for(catalog.items)
-    manifest_counts = manifest.get("counts")
-    if not isinstance(manifest_counts, dict):
-        errors.append("manifest 缺少 counts")
-    else:
-        for field in ("items", "levels", "missingTime", "missingIcons"):
-            if manifest_counts.get(field) != counts[field]:
-                errors.append(f"counts.{field} 不一致: manifest={manifest_counts.get(field)} 重算={counts[field]}")
-        # Issue #74b：时长语义拆分桶（可选字段，旧 manifest 缺失不报错；存在必校验）
-        for field in ("timed", "instant", "notApplicable", "initialLevel",
-                      "sourceMissing", "parseFailed"):
-            if field in manifest_counts and manifest_counts[field] != counts[field]:
-                errors.append(f"counts.{field} 不一致: manifest={manifest_counts[field]} 重算={counts[field]}")
-        # Issue #74b：拆分桶 sum 不变量（六桶之和 == missingTime；
-        # timed + instant + missingTime == levels）。旧 manifest 缺新字段时跳过。
-        if all(f in manifest_counts for f in
-               ("timed", "instant", "notApplicable", "initialLevel",
-                "sourceMissing", "parseFailed")):
-            bucket_sum = sum(manifest_counts[f] for f in
-                             ("notApplicable", "initialLevel", "sourceMissing", "parseFailed"))
-            if bucket_sum != manifest_counts.get("missingTime"):
-                errors.append(
-                    f"counts 不变量被破坏: 缺失类四桶之和 {bucket_sum} != missingTime "
-                    f"{manifest_counts.get('missingTime')}")
-            if (manifest_counts.get("timed", 0) + manifest_counts.get("instant", 0)
-                    + manifest_counts.get("missingTime", 0)) != manifest_counts.get("levels"):
-                errors.append(
-                    f"counts 不变量被破坏: timed + instant + missingTime != levels "
-                    f"({manifest_counts.get('timed')} + {manifest_counts.get('instant')} "
-                    f"+ {manifest_counts.get('missingTime')} != {manifest_counts.get('levels')})")
-        # ---- R6.2 optional 字段（旧 manifest 缺失不报错）----
-        # renderedIcons：渲染成功且落盘的 PNG 数，必须 == generatedFiles PNG
-        # 条目数（可重算断言）；generatedFiles 缺失时只校验类型不比对
-        ri = manifest_counts.get("renderedIcons")
-        if ri is not None:
-            if not isinstance(ri, int) or isinstance(ri, bool) or ri < 0:
-                errors.append(f"counts.renderedIcons 非法: {ri!r}")
-            elif png_count is not None and ri != png_count:
-                errors.append(
-                    f"counts.renderedIcons 不一致: manifest={ri} "
-                    f"重算={png_count}（generatedFiles PNG 条目数）")
-        # blockedIcons：失败样本键数，快照语义——只有生成器知道，validate 只
-        # 校验存在性/类型/非负，不重算
-        bi = manifest_counts.get("blockedIcons")
-        if bi is not None and (not isinstance(bi, int)
-                               or isinstance(bi, bool) or bi < 0):
-            errors.append(f"counts.blockedIcons 非法: {bi!r}")
-        # ---- displayCategories（Issue #75 工作流 C，optional 字段）----
-        # 旧 manifest 缺失不报错；存在必与 catalog 实际分布一致（防标注/生成遗漏）
-        dc_counts = manifest_counts.get("displayCategories")
-        if dc_counts is not None:
-            if not isinstance(dc_counts, dict):
-                errors.append(f"counts.displayCategories 非法: {dc_counts!r}")
-            else:
-                for k, v in counts["displayCategories"].items():
-                    if dc_counts.get(k) != v:
-                        errors.append(
-                            f"counts.displayCategories.{k} 不一致: "
-                            f"manifest={dc_counts.get(k)} 重算={v}")
 
     # ---- instanceCounts 宇宙（Issue #70 阶段 2）----
     # 旧产物缺字段不报错（向后兼容）；存在时必须通过全部不变量（_check_instance_counts）
@@ -700,10 +564,10 @@ def validate_catalog(dir_path: str | Path,
         else:
             _check_instance_counts(errors, raw_ic, catalog)
 
-    # ---- craft 目录内容结构（复审 P1：hash/size 一致但 Swift 解码失败）----
-    # hash/size 对账只证明文件未被篡改；内容缺字段（buildTag/locale/source 等）
-    # 时 Swift CraftTableCatalog Codable 解码失败 → 运行时 fail-closed 精制台
-    # 不可用——validator 必须在此 fail loud。文件缺失时 generatedFiles 循环已报。
+    # ---- craft 目录内容结构（Swift 解码契约镜像）----
+    # 内容缺字段（buildTag/locale/source 等）时 Swift CraftTableCatalog
+    # Codable 解码失败 → 运行时 fail-closed 精制台不可用——validator 必须
+    # 在此 fail loud。craft 文件缺失不报错（独立生成器产物，见两步生成链）。
     craft_path = catalog_path.parent / "craft_table_catalog.json"
     if craft_path.is_file():
         try:

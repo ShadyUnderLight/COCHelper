@@ -2,10 +2,10 @@
 
 从真实 APK 的 character_items.csv 读 RequiredBlacksmithLevel 列，按生成器契约
 (dataID, level) 构建映射（dataID = 90_000_000 + 块序号，deprecated 块也占序号），
-回填既有 catalog 目录 equipment 各级 + manifest 重算（幂等，catalog + manifest 双写）。
+回填既有 catalog 目录 equipment 各级（幂等，只写 catalog.json；
+E0-03/Issue #303 起不再触碰 manifest.json）。
 """
 
-import hashlib
 import json
 import lzma
 import os
@@ -15,9 +15,7 @@ from pathlib import Path
 import pytest
 
 from annotate_blacksmith_levels import annotate_directory, build_bs_mapping
-from game_catalog.catalog import counts_for
 from game_catalog.errors import CatalogError
-from game_catalog.fingerprint import sha256_file
 from game_catalog.model import Catalog, CatalogItem, CatalogLevel, catalog_to_dict
 
 # 最小 character_items.csv：3 块（第 3 块 deprecated），header + doc 行 + 数据行。
@@ -93,7 +91,7 @@ def _make_dir_and_apk(tmp_path: Path) -> tuple[Path, Path]:
         _equipment_item(90_000_002, "UNUSED2", [1], deprecated=True),
         _units_item(),
     ]
-    catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
+    catalog = Catalog(schemaVersion=3, gameVersion="18.400.13", locale="zh-CN",
                       items=items)
     catalog_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False,
                                indent=2, sort_keys=True).encode("utf-8") + b"\n"
@@ -103,18 +101,8 @@ def _make_dir_and_apk(tmp_path: Path) -> tuple[Path, Path]:
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
-        "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
-        "locale": "zh-CN", "sourceFingerprint": sha256_file(apk),
-        "generatedFiles": [
-            {"path": "catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
-             "size": len(catalog_bytes)},
-            {"path": "icons/", "kind": "directory"},
-            {"path": "craft_table_catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-             "size": len(craft_bytes)},
-        ],
-        "counts": counts_for(items),
+        "schemaVersion": 3, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "locale": "zh-CN",
     }))
     return d, apk
 
@@ -165,14 +153,12 @@ def test_annotate_sets_blacksmith_levels(tmp_path):
     assert units["levels"][0]["requiredBlacksmithLevel"] is None
 
 
-def test_annotate_updates_manifest_sha_and_size(tmp_path):
+def test_annotate_does_not_touch_manifest(tmp_path):
+    """E0-03：回填只写 catalog.json，manifest.json 字节不变。"""
     d, apk = _make_dir_and_apk(tmp_path)
+    man_before = (d / "manifest.json").read_bytes()
     annotate_directory(apk, d)
-    m = json.loads((d / "manifest.json").read_text())
-    entry = next(e for e in m["generatedFiles"] if e["path"] == "catalog.json")
-    actual = "sha256:" + hashlib.sha256((d / "catalog.json").read_bytes()).hexdigest()
-    assert entry["sha256"] == actual
-    assert entry["size"] == (d / "catalog.json").stat().st_size
+    assert (d / "manifest.json").read_bytes() == man_before
 
 
 def test_annotate_idempotent(tmp_path):
@@ -183,19 +169,6 @@ def test_annotate_idempotent(tmp_path):
     annotate_directory(apk, d)
     assert (d / "catalog.json").read_bytes() == cat1
     assert (d / "manifest.json").read_bytes() == man1
-
-
-def test_annotate_preserves_other_generated_files_entries(tmp_path):
-    d, apk = _make_dir_and_apk(tmp_path)
-    m = json.loads((d / "manifest.json").read_text())
-    png = {"path": "icons/equipment/x.png", "sha256": "sha256:" + "b" * 64, "size": 10}
-    m["generatedFiles"].insert(1, png)
-    (d / "manifest.json").write_text(json.dumps(m))
-    (d / "icons" / "equipment").mkdir(parents=True)
-    (d / "icons" / "equipment" / "x.png").write_bytes(b"x" * 10)
-    annotate_directory(apk, d)
-    m2 = json.loads((d / "manifest.json").read_text())
-    assert m2["generatedFiles"][1] == png
 
 
 def test_annotate_preserves_instance_counts(tmp_path):
@@ -233,10 +206,6 @@ def test_annotate_apk_missing_table(tmp_path):
     apk = tmp_path / "empty.apk"
     with zipfile.ZipFile(apk, "w") as z:
         z.writestr("assets/build.tag", "18_400_7")
-    # 同步 manifest 的 fingerprint 到该 APK（否则先触发 fingerprint 不匹配，测不到缺表）
-    m = json.loads((d / "manifest.json").read_text())
-    m["sourceFingerprint"] = sha256_file(apk)
-    (d / "manifest.json").write_text(json.dumps(m))
     cat_before = (d / "catalog.json").read_bytes()
     with pytest.raises(CatalogError, match="character_items.csv"):
         annotate_directory(apk, d)
@@ -247,10 +216,6 @@ def test_annotate_apk_missing_column(tmp_path):
     d, _ = _make_dir_and_apk(tmp_path)
     apk = _make_apk(tmp_path, CSV_TEXT.replace("RequiredBlacksmithLevel",
                                                "RequiredTownHallLevel"))
-    # 同步 manifest 的 fingerprint 到该 APK（否则先触发 fingerprint 不匹配，测不到缺列）
-    m = json.loads((d / "manifest.json").read_text())
-    m["sourceFingerprint"] = sha256_file(apk)
-    (d / "manifest.json").write_text(json.dumps(m))
     cat_before = (d / "catalog.json").read_bytes()
     with pytest.raises(CatalogError, match="RequiredBlacksmithLevel"):
         annotate_directory(apk, d)
@@ -289,28 +254,9 @@ def test_annotate_apk_build_tag_mismatch_rejected(tmp_path):
     with zipfile.ZipFile(apk, "w") as z:
         z.writestr("assets/build.tag", "19_0_0")
         z.writestr("assets/logic/character_items.csv", _packed(CSV_TEXT))
-    # fingerprint 同步到该 APK，隔离 buildTag 不匹配路径
-    m = json.loads((d / "manifest.json").read_text())
-    m["sourceFingerprint"] = sha256_file(apk)
-    (d / "manifest.json").write_text(json.dumps(m))
     cat_before = (d / "catalog.json").read_bytes()
     man_before = (d / "manifest.json").read_bytes()
     with pytest.raises(CatalogError, match="build.tag"):
-        annotate_directory(apk, d)
-    assert (d / "catalog.json").read_bytes() == cat_before
-    assert (d / "manifest.json").read_bytes() == man_before
-
-
-def test_annotate_apk_fingerprint_mismatch_rejected(tmp_path):
-    """同 build 但不同字节的 APK：SHA-256 与 manifest.sourceFingerprint 不一致
-    → fail loud，不落盘（目录生成时的原 APK 溯源契约）。"""
-    d, apk = _make_dir_and_apk(tmp_path)
-    m = json.loads((d / "manifest.json").read_text())
-    m["sourceFingerprint"] = "sha256:" + "b" * 64
-    (d / "manifest.json").write_text(json.dumps(m))
-    cat_before = (d / "catalog.json").read_bytes()
-    man_before = (d / "manifest.json").read_bytes()
-    with pytest.raises(CatalogError, match="sourceFingerprint"):
         annotate_directory(apk, d)
     assert (d / "catalog.json").read_bytes() == cat_before
     assert (d / "manifest.json").read_bytes() == man_before
@@ -326,21 +272,6 @@ def test_annotate_manifest_malformed_rejected(tmp_path):
     assert (d / "catalog.json").read_bytes() == cat_before
 
 
-def test_annotate_manifest_missing_catalog_entry_rejected(tmp_path):
-    """manifest 缺 generatedFiles.catalog.json 条目：无法更新哈希 → fail loud，
-    不落盘（不得静默成功留下哈希过期目录）。"""
-    d, apk = _make_dir_and_apk(tmp_path)
-    m = json.loads((d / "manifest.json").read_text())
-    m["generatedFiles"] = [e for e in m["generatedFiles"] if e.get("path") != "catalog.json"]
-    (d / "manifest.json").write_text(json.dumps(m))
-    cat_before = (d / "catalog.json").read_bytes()
-    man_before = (d / "manifest.json").read_bytes()
-    with pytest.raises(CatalogError, match="generatedFiles"):
-        annotate_directory(apk, d)
-    assert (d / "catalog.json").read_bytes() == cat_before
-    assert (d / "manifest.json").read_bytes() == man_before
-
-
 def test_annotate_manifest_missing_build_tag_rejected(tmp_path):
     """manifest 缺 buildTag（provenance 不完整）：fail loud，不落盘。"""
     d, apk = _make_dir_and_apk(tmp_path)
@@ -349,18 +280,6 @@ def test_annotate_manifest_missing_build_tag_rejected(tmp_path):
     (d / "manifest.json").write_text(json.dumps(m))
     cat_before = (d / "catalog.json").read_bytes()
     with pytest.raises(CatalogError, match="buildTag"):
-        annotate_directory(apk, d)
-    assert (d / "catalog.json").read_bytes() == cat_before
-
-
-def test_annotate_manifest_missing_fingerprint_rejected(tmp_path):
-    """manifest 缺 sourceFingerprint（provenance 不完整）：fail loud，不落盘。"""
-    d, apk = _make_dir_and_apk(tmp_path)
-    m = json.loads((d / "manifest.json").read_text())
-    del m["sourceFingerprint"]
-    (d / "manifest.json").write_text(json.dumps(m))
-    cat_before = (d / "catalog.json").read_bytes()
-    with pytest.raises(CatalogError, match="sourceFingerprint"):
         annotate_directory(apk, d)
     assert (d / "catalog.json").read_bytes() == cat_before
 
@@ -388,91 +307,16 @@ def test_annotate_catalog_missing_key_rejected_cleanly(tmp_path):
     assert (d / "manifest.json").read_bytes() == man_before
 
 
-def test_annotate_manifest_counts_not_dict_rejected_cleanly(tmp_path):
-    """manifest counts 为非法类型（如 string）→ 干净 CatalogError，不落盘。"""
+def test_annotate_write_failure_leaves_no_tmp(tmp_path, monkeypatch):
+    """单文件原子写回：os.replace 失败 → 干净 CatalogError，不残留 .tmp。"""
     d, apk = _make_dir_and_apk(tmp_path)
-    m = json.loads((d / "manifest.json").read_text())
-    m["counts"] = "not-a-dict"
-    (d / "manifest.json").write_text(json.dumps(m))
+
+    def boom(src, dst):
+        raise OSError("注入: replace 失败")
+
+    monkeypatch.setattr(os, "replace", boom)
     cat_before = (d / "catalog.json").read_bytes()
-    with pytest.raises(CatalogError, match="counts"):
+    with pytest.raises(CatalogError, match="写入 catalog.json 失败"):
         annotate_directory(apk, d)
     assert (d / "catalog.json").read_bytes() == cat_before
-
-
-def test_annotate_rolls_back_on_second_replace_failure(tmp_path, monkeypatch):
-    """P2：双文件写回 all-or-nothing——第二次 os.replace（manifest）失败时
-    必须回滚已写入的 catalog.json，不留「catalog 新 / manifest 旧」半状态，
-    且不残留 .tmp/.rollback.tmp。"""
-    d, apk = _make_dir_and_apk(tmp_path)
-    calls = {"n": 0}
-    real_replace = os.replace
-
-    def flaky_replace(src, dst):
-        calls["n"] += 1
-        if calls["n"] == 2:  # 第二次 replace = manifest.json
-            raise OSError("注入: 第二次 replace 失败")
-        return real_replace(src, dst)
-
-    monkeypatch.setattr(os, "replace", flaky_replace)
-    cat_before = (d / "catalog.json").read_bytes()
-    man_before = (d / "manifest.json").read_bytes()
-    with pytest.raises(CatalogError, match="写入 catalog/manifest 失败"):
-        annotate_directory(apk, d)
-    # all-or-nothing：双文件都回到旧内容
-    assert (d / "catalog.json").read_bytes() == cat_before
-    assert (d / "manifest.json").read_bytes() == man_before
-    # 无 tmp / rollback tmp 残留
     assert not list(d.glob("*.tmp"))
-    assert not list(d.glob("*.rollback.tmp"))
-
-
-def test_annotate_rolls_back_on_first_replace_failure(tmp_path, monkeypatch):
-    """P2：第一次 os.replace（catalog.json）失败 → 无已写入文件可回滚，干净失败。"""
-    d, apk = _make_dir_and_apk(tmp_path)
-    calls = {"n": 0}
-    real_replace = os.replace
-
-    def flaky_replace(src, dst):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise OSError("注入: 第一次 replace 失败")
-        return real_replace(src, dst)
-
-    monkeypatch.setattr(os, "replace", flaky_replace)
-    cat_before = (d / "catalog.json").read_bytes()
-    man_before = (d / "manifest.json").read_bytes()
-    with pytest.raises(CatalogError, match="写入 catalog/manifest 失败"):
-        annotate_directory(apk, d)
-    assert (d / "catalog.json").read_bytes() == cat_before
-    assert (d / "manifest.json").read_bytes() == man_before
-    assert not list(d.glob("*.tmp"))
-
-
-def test_annotate_rollback_failure_cleans_rollback_tmp(tmp_path, monkeypatch):
-    """P2 极端分支：回滚自身的 os.replace 也失败（第 2、3 次 replace 均失败）
-    → 错误消息含「回滚失败」清单，且 .rollback.tmp 被清理（不残留）。"""
-    d, apk = _make_dir_and_apk(tmp_path)
-    calls = {"n": 0}
-    real_replace = os.replace
-
-    def flaky_replace(src, dst):
-        calls["n"] += 1
-        if calls["n"] in (2, 3):  # 第 2 次 = manifest replace 失败；第 3 次 = 回滚 replace 失败
-            raise OSError("注入: replace 失败")
-        return real_replace(src, dst)
-
-    monkeypatch.setattr(os, "replace", flaky_replace)
-    cat_before = (d / "catalog.json").read_bytes()
-    man_before = (d / "manifest.json").read_bytes()
-    with pytest.raises(CatalogError, match="回滚失败"):
-        annotate_directory(apk, d)
-    # 回滚 replace 也失败 → catalog 保持写入后的新内容（回滚未执行成功），
-    # manifest 保持旧内容；.rollback.tmp 被清理不残留（fail-closed 兜底：
-    # validator 哈希比对会检出 catalog 新/manifest 旧，重跑幂等修复）。
-    assert (d / "catalog.json").read_bytes() != cat_before
-    assert (d / "catalog.json").read_bytes() != man_before
-    assert (d / "manifest.json").read_bytes() == man_before
-    # 不残留任何临时文件（含 .rollback.tmp）
-    assert not list(d.glob("*.tmp"))
-    assert not list(d.glob("*.rollback.tmp"))

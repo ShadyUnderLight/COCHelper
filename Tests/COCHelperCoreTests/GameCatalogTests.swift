@@ -1,4 +1,3 @@
-import CryptoKit
 import XCTest
 @testable import COCHelperCore
 
@@ -592,279 +591,62 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertNil(oldItem.missingReason)
     }
 
-    func testCatalogCountsDecodesNewFields() throws {
-        let withNew = """
-        {"items":1,"levels":1,"missingIcons":0,"missingTime":0,"timed":1,"instant":0,"notApplicable":0,"initialLevel":0,"sourceMissing":0,"parseFailed":0}
-        """
-        let counts = try JSONDecoder().decode(CatalogCounts.self, from: Data(withNew.utf8))
-        XCTAssertEqual(counts.timed, 1)
-        XCTAssertEqual(counts.instant, 0)
-        // 旧 manifest：新字段缺键 → nil（向后兼容）
-        let old = """
-        {"items":1,"levels":1,"missingIcons":0,"missingTime":0}
-        """
-        let oldCounts = try JSONDecoder().decode(CatalogCounts.self, from: Data(old.utf8))
-        XCTAssertNil(oldCounts.timed)
-        XCTAssertNil(oldCounts.parseFailed)
-    }
-
-
     func testLoadBundledExposesManifest() throws {
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let manifest = try XCTUnwrap(catalog.manifest, "bundled 目录必须带 manifest")
         XCTAssertEqual(manifest.gameVersion, "18.400.13")
         XCTAssertEqual(manifest.buildTag, "18_400_7")
-        XCTAssertEqual(manifest.counts.timed, 2096, "manifest counts 拆分字段应已落盘")
-        XCTAssertEqual(manifest.counts.sourceMissing, 1847)
-        XCTAssertFalse(manifest.sourceFingerprint.isEmpty)
-        XCTAssertEqual(manifest.generatedFiles.first?.path, "catalog.json")
+        XCTAssertEqual(manifest.schemaVersion, 3, "bundled manifest 应为 V3")
     }
 
     func testManifestProvenanceLabel() {
-        // Issue #73 P1-2：费用可信度来源标注（「参考升级费用」+ buildTag +
-        // sourceFingerprint），UI 详情/诊断可追溯。
-        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0)
+        // Issue #73 P1-2：费用可信度来源标注（「参考升级费用」+ buildTag），
+        // UI 详情/诊断可追溯。
+        let manifest = makeManifest()
         XCTAssertEqual(
             manifest.provenanceLabel,
             "参考升级费用 · 来源：目录 v18.400.13 / buildTag 18_400_7")
-        XCTAssertEqual(
-            manifest.sourceFingerprintLabel,
-            "来源指纹 sha256:" + String(repeating: "a", count: 64))
     }
 
     func testBundledManifestProvenanceAgainstRealData() throws {
-        // 真实 bundle：fingerprint 非空且格式 sha256:64hex（validate 已保证），
-        // 标注文案可完整拼出（UI 直接消费）。
+        // 真实 bundle：标注文案可完整拼出（UI 直接消费）。
         let catalog = try XCTUnwrap(GameCatalog.loadBundled())
         let manifest = try XCTUnwrap(catalog.manifest)
         XCTAssertFalse(manifest.provenanceLabel.isEmpty)
-        XCTAssertTrue(manifest.sourceFingerprintLabel.hasPrefix("来源指纹 sha256:"))
-        XCTAssertEqual(manifest.sourceFingerprintLabel.count, 76, "前缀12+完整64 hex")
     }
 
-    // MARK: - Issue #74: manifest 运行时完整性校验
+    // MARK: - E0-03/Issue #303：manifest V3（版本门）
 
-    private func makeManifest(
-        items: Int = 1, levels: Int = 1, missingTime: Int = 0,
-        timed: Int? = 1, instant: Int? = 0,
-        sha256: String? = nil
-    ) -> CatalogManifest {
+    private func makeManifest() -> CatalogManifest {
         CatalogManifest(
-            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
-            locale: "zh-CN", sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
-            generatedFiles: [
-                CatalogGeneratedFile(path: "catalog.json", sha256: sha256, size: nil, kind: nil, entries: nil),
-            ],
-            counts: CatalogCounts(
-                items: items, levels: levels, missingIcons: nil, missingTime: missingTime,
-                timed: timed, instant: instant, notApplicable: nil, initialLevel: nil,
-                sourceMissing: nil, parseFailed: nil
-            )
+            schemaVersion: 3, gameVersion: "18.400.13", buildTag: "18_400_7",
+            locale: "zh-CN"
         )
     }
 
-    private func makeValidationItem() -> CatalogItem {
-        CatalogItem(
-            section: "units", category: "troops", dataID: 1, base: "home",
-            baseMissingReason: nil, name: "x", maxLevel: 1, icon: nil, levelVisual: nil,
-            levels: [CatalogLevel(
-                level: 1, durationSeconds: 3600, upgradeCosts: nil,
-                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
-                icon: nil, levelVisual: nil, missingReason: nil
-            )]
-        )
+    func testManifestV3DecodesFourFields() throws {
+        let json = """
+        {"schemaVersion":3,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN"}
+        """
+        let manifest = try JSONDecoder().decode(CatalogManifest.self, from: Data(json.utf8))
+        XCTAssertEqual(manifest.schemaVersion, 3)
+        XCTAssertEqual(manifest.gameVersion, "18.400.13")
+        XCTAssertEqual(manifest.buildTag, "18_400_7")
+        XCTAssertEqual(manifest.locale, "zh-CN")
     }
 
-    func testManifestValidationPassesOnConsistentData() throws {
-        // counts 与目录一致、sha256 与数据一致 → 通过。
-        //（bundled 真实数据通过由 testLoadBundledExposesManifest 间接覆盖：
-        //  loadBundled 内部 validate 失败会使 manifest 为 nil。）
-        let item = makeValidationItem()
-        let catalogData = Data("consistent-catalog".utf8)
-        let sha = CryptoKit.SHA256.hash(data: catalogData)
-            .map { String(format: "%02x", $0) }.joined()
-        let manifest = makeManifest(
-            items: 1, levels: 1, missingTime: 0, sha256: "sha256:" + sha)
-        XCTAssertTrue(manifest.validate(against: [item], catalogData: catalogData))
+    func testManifestV3IgnoresLegacyFields() throws {
+        // 旧形状多余键（sourceFingerprint/generatedFiles/counts）解码时忽略，
+        // 版本门由 schemaVersion 值承担（旧 1/2 在 loadBundled 被拒）。
+        let json = """
+        {"schemaVersion":2,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN",
+         "sourceFingerprint":"sha256:aaa",
+         "generatedFiles":[{"path":"catalog.json"}],
+         "counts":{"items":1,"levels":1}}
+        """
+        let manifest = try JSONDecoder().decode(CatalogManifest.self, from: Data(json.utf8))
+        XCTAssertEqual(manifest.schemaVersion, 2)
     }
-
-    func testManifestValidationRejectsCountsMismatch() {
-        // counts 与目录重算不一致 → 漂移，校验失败（fail-closed）。
-        let item = makeValidationItem()
-        let manifest = makeManifest(items: 999, levels: 999, missingTime: 0)
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
-    }
-
-    func testManifestValidationRejectsMissingTimeMismatch() {
-        let item = makeValidationItem()
-        let manifest = makeManifest(items: 1, levels: 1, missingTime: 5)
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
-    }
-
-    func testManifestValidationRejectsSha256Mismatch() throws {
-        let item = makeValidationItem()
-        let catalogData = Data("tampered".utf8)
-        let manifest = makeManifest(
-            items: 1, levels: 1, missingTime: 0,
-            sha256: "sha256:" + String(repeating: "0", count: 64))
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: catalogData))
-    }
-
-    func testManifestValidationRejectsTimedBucketMismatch() {
-        // 拆分桶声明与目录重算不一致 → 漂移，fail-closed。
-        let item = makeValidationItem()
-        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, timed: 0, instant: 0)
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
-    }
-
-    func testManifestValidationRejectsMalformedShaPrefix() {
-        // 非 nil 但无 sha256: 前缀 → 格式异常 fail-closed（生成器恒写前缀）。
-        let item = makeValidationItem()
-        let manifest = makeManifest(
-            items: 1, levels: 1, missingTime: 0,
-            sha256: String(repeating: "0", count: 64))
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
-    }
-
-    func testManifestValidationSkipsShaWhenDeclaredNil() {
-        // 旧 manifest 无 sha256 声明 → 跳过哈希校验（向后兼容）。
-        let item = makeValidationItem()
-        let manifest = makeManifest(items: 1, levels: 1, missingTime: 0, sha256: nil)
-        XCTAssertTrue(manifest.validate(against: [item], catalogData: Data()))
-    }
-
-    // MARK: - Issue #73 交叉审核 P1：运行时 manifest 完整性校验增强
-
-    func testManifestValidationRejectsUnsupportedSchemaVersion() {
-        // schemaVersion 超出支持范围（1...2）→ fail-closed（评审 P1）。
-        let item = makeValidationItem()
-        var manifest = makeManifest(items: 1, levels: 1, missingTime: 0, sha256: nil)
-        manifest = CatalogManifest(
-            schemaVersion: 99, gameVersion: manifest.gameVersion,
-            buildTag: manifest.buildTag, locale: manifest.locale,
-            sourceFingerprint: manifest.sourceFingerprint,
-            generatedFiles: manifest.generatedFiles, counts: manifest.counts)
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
-    }
-
-    func testManifestValidationRejectsMalformedSourceFingerprint() {
-        // sourceFingerprint 缺 sha256: 前缀 → fail-closed（评审 P1）。
-        let item = makeValidationItem()
-        let manifest = CatalogManifest(
-            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
-            locale: "zh-CN", sourceFingerprint: "md5:deadbeef",
-            generatedFiles: [CatalogGeneratedFile(
-                path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil)],
-            counts: CatalogCounts(
-                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
-                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
-                sourceMissing: nil, parseFailed: nil))
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data()))
-    }
-
-    func testManifestValidationRejectsMissingGeneratedFile() {
-        // generatedFiles 声明的 PNG 在 bundle 中不存在 → fail-closed（评审 P1）。
-        let item = makeValidationItem()
-        let manifest = CatalogManifest(
-            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
-            locale: "zh-CN",
-            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
-            generatedFiles: [
-                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
-                CatalogGeneratedFile(path: "icons/buildings/missing.png", sha256: nil, size: 100, kind: nil, entries: nil),
-            ],
-            counts: CatalogCounts(
-                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
-                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
-                sourceMissing: nil, parseFailed: nil))
-        let fileCheck: (String, Int?) -> Bool = { path, size in
-            if path == "icons/buildings/missing.png" { return false }
-            return true
-        }
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data(), fileCheck: fileCheck))
-    }
-
-    func testManifestValidationRejectsSizeMismatch() {
-        // generatedFiles 声明的 size 与磁盘不符 → fail-closed（评审 P1）。
-        let item = makeValidationItem()
-        let manifest = CatalogManifest(
-            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
-            locale: "zh-CN",
-            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
-            generatedFiles: [
-                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
-                CatalogGeneratedFile(path: "icons/buildings/tower.png", sha256: nil, size: 100, kind: nil, entries: nil),
-            ],
-            counts: CatalogCounts(
-                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
-                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
-                sourceMissing: nil, parseFailed: nil))
-        let fileCheck: (String, Int?) -> Bool = { _, size in
-            // 文件存在但 size 不符（磁盘 200 vs 声明 100）
-            size != 100
-        }
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data(), fileCheck: fileCheck))
-    }
-
-    func testManifestValidationRejectsMissingIconFile() {
-        // catalog 引用的 renderedPath 文件不存在 → fail-closed（评审 P1）。
-        let item = CatalogItem(
-            section: "units", category: "troops", dataID: 1, base: "home",
-            baseMissingReason: nil, name: "x", maxLevel: 1,
-            icon: CatalogAssetRef(
-                container: "sc/ui.sc", exportName: "icon_x",
-                renderedPath: "icons/ui/icon_x.png", missingReason: nil),
-            levelVisual: nil,
-            levels: [CatalogLevel(
-                level: 1, durationSeconds: 3600, upgradeCosts: nil,
-                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
-                icon: nil, levelVisual: nil, missingReason: nil)])
-        let manifest = CatalogManifest(
-            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
-            locale: "zh-CN",
-            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
-            generatedFiles: [
-                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
-            ],
-            counts: CatalogCounts(
-                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
-                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
-                sourceMissing: nil, parseFailed: nil))
-        let fileCheck: (String, Int?) -> Bool = { path, _ in
-            path != "icons/ui/icon_x.png"
-        }
-        XCTAssertFalse(manifest.validate(against: [item], catalogData: Data(), fileCheck: fileCheck))
-    }
-
-    func testManifestValidationPassesWithAllFilesPresent() {
-        // 所有 generatedFiles + 图标引用均存在、size 匹配 → 通过（评审 P1）。
-        let item = CatalogItem(
-            section: "units", category: "troops", dataID: 1, base: "home",
-            baseMissingReason: nil, name: "x", maxLevel: 1,
-            icon: CatalogAssetRef(
-                container: "sc/ui.sc", exportName: "icon_x",
-                renderedPath: "icons/ui/icon_x.png", missingReason: nil),
-            levelVisual: nil,
-            levels: [CatalogLevel(
-                level: 1, durationSeconds: 3600, upgradeCosts: nil,
-                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
-                icon: nil, levelVisual: nil, missingReason: nil)])
-        let manifest = CatalogManifest(
-            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "18_400_7",
-            locale: "zh-CN",
-            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
-            generatedFiles: [
-                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
-                CatalogGeneratedFile(path: "icons/ui/icon_x.png", sha256: nil, size: 50, kind: nil, entries: nil),
-            ],
-            counts: CatalogCounts(
-                items: 1, levels: 1, missingIcons: nil, missingTime: 0,
-                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
-                sourceMissing: nil, parseFailed: nil))
-        let fileCheck: (String, Int?) -> Bool = { _, _ in true }
-        XCTAssertTrue(manifest.validate(against: [item], catalogData: Data(), fileCheck: fileCheck))
-    }
-
 
     // MARK: - Issue #74 seasonal: 阶段表契约 + 可用性状态
 
@@ -1338,8 +1120,6 @@ final class GameCatalogTests: XCTestCase {
 
     /// 合成最小目录（圣水收集器 item + 可选 instanceCounts）：init 是测试注入入口
     ///（设计评审 N2：instanceCounts 带默认值 nil，不破坏既有构造）。
-    /// manifest 必须带 catalog.json 的 sha256 声明（外部评审 P1-1 残留修复：
-    /// hasUniverseData 的信任门要求）——宇宙 fixture 一律传合法声明。
     private func makeUniverseCatalog(instanceCounts: [String: [Int]]?) -> GameCatalog {
         let collector = CatalogItem(
             section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
@@ -1352,14 +1132,10 @@ final class GameCatalogTests: XCTestCase {
         )
         return GameCatalog(
             gameVersion: "18.400.13", items: [collector],
-            manifest: makeManifest(sha256: universeManifestSHA),
+            manifest: makeManifest(),
             instanceCounts: instanceCounts
         )
     }
-
-    /// 宇宙 fixture 的 catalog.json sha256 声明（合法格式 stub；init 不校验
-    /// manifest 内容——信任标记语义，hasUniverseData 只查声明存在）。
-    private let universeManifestSHA = "sha256:" + String(repeating: "b", count: 64)
 
     func testUniverseCountHit() throws {
         // 目录含宇宙：buildings:1000002（圣水收集器）TH18 = 7、TH1 = 1。
@@ -1439,10 +1215,9 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertTrue(allZero.universeKeys.isEmpty)
     }
 
-    /// instanceCounts 有效但 manifest nil（外部评审 P1-1 信任标记）→
-    /// hasUniverseData false——手工裁剪/篡改 catalog.json 后无 manifest 背书
-    /// 不得声称宇宙完整。
-    func testUniverseDataRequiresManifestTrust() {
+    /// E0-03/Issue #303：hasUniverseData 只由业务结构校验通过的
+    /// instanceCounts 决定，不再要求 manifest 信任标记。
+    func testUniverseDataDependsOnValidatedInstanceCounts() {
         let collector = CatalogItem(
             section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
             baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
@@ -1452,74 +1227,27 @@ final class GameCatalogTests: XCTestCase {
                 icon: nil, levelVisual: nil, missingReason: nil
             )]
         )
-        // 无 manifest → hasUniverseData false（即使 instanceCounts 完整有效）
-        let untrusted = GameCatalog(
+        // 无 instanceCounts → false
+        let empty = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: makeManifest(),
+            instanceCounts: nil
+        )
+        XCTAssertFalse(empty.hasUniverseData)
+        XCTAssertTrue(empty.universeKeys.isEmpty)
+        // 有效 instanceCounts → true（有无 manifest 均可）
+        let withManifest = GameCatalog(
+            gameVersion: "18.400.13", items: [collector],
+            manifest: makeManifest(),
+            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+        )
+        XCTAssertTrue(withManifest.hasUniverseData)
+        let withoutManifest = GameCatalog(
             gameVersion: "18.400.13", items: [collector],
             manifest: nil,
             instanceCounts: ["buildings:1000002": cannonUniverseCounts]
         )
-        XCTAssertFalse(untrusted.hasUniverseData, "无 manifest 信任标记 → 无宇宙")
-        XCTAssertTrue(untrusted.universeKeys.isEmpty)
-        // 有 manifest（含 catalog.json sha256 声明）→ true（信任标记生效）
-        let trusted = GameCatalog(
-            gameVersion: "18.400.13", items: [collector],
-            manifest: makeManifest(sha256: universeManifestSHA),
-            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
-        )
-        XCTAssertTrue(trusted.hasUniverseData)
-    }
-
-    /// manifest 的 generatedFiles 无 catalog.json 条目或条目 sha256 nil
-    ///（外部评审 P1-1 残留修复）：validate 对缺失声明的条目跳过比对，partial
-    /// key set 可带非空 manifest 通过——信任门必须要求显式 sha256 声明。
-    func testManifestWithoutCatalogSHARejectsUniverse() {
-        let collector = CatalogItem(
-            section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
-            baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
-            levels: [CatalogLevel(
-                level: 1, durationSeconds: nil, upgradeCosts: nil,
-                requiredTownHallLevel: nil, requiredLaboratoryLevel: nil,
-                icon: nil, levelVisual: nil, missingReason: nil
-            )]
-        )
-        func manifest(generatedFiles: [CatalogGeneratedFile]) -> CatalogManifest {
-            CatalogManifest(
-                schemaVersion: 1, gameVersion: "18.400.13", buildTag: "test",
-                locale: "zh-CN",
-                sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
-                generatedFiles: generatedFiles,
-                counts: CatalogCounts(
-                    items: 1, levels: 1, missingIcons: nil, missingTime: nil,
-                    timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
-                    sourceMissing: nil, parseFailed: nil
-                )
-            )
-        }
-        // 无 catalog.json 条目
-        let noEntry = GameCatalog(
-            gameVersion: "18.400.13", items: [collector],
-            manifest: manifest(generatedFiles: []),
-            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
-        )
-        XCTAssertFalse(noEntry.hasUniverseData, "manifest 无 catalog.json 条目 → 无宇宙")
-        // 有条目但 sha256 nil（validate 会跳过比对）
-        let nilSHA = GameCatalog(
-            gameVersion: "18.400.13", items: [collector],
-            manifest: manifest(generatedFiles: [
-                CatalogGeneratedFile(path: "catalog.json", sha256: nil, size: nil, kind: nil, entries: nil),
-            ]),
-            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
-        )
-        XCTAssertFalse(nilSHA.hasUniverseData, "manifest catalog.json sha256 nil → 无宇宙")
-        // 有条目 + 合法 sha256 声明 → 通过信任门
-        let valid = GameCatalog(
-            gameVersion: "18.400.13", items: [collector],
-            manifest: manifest(generatedFiles: [
-                CatalogGeneratedFile(path: "catalog.json", sha256: universeManifestSHA, size: nil, kind: nil, entries: nil),
-            ]),
-            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
-        )
-        XCTAssertTrue(valid.hasUniverseData)
+        XCTAssertTrue(withoutManifest.hasUniverseData)
     }
 
     /// 正向完整 key 契约（外部评审 P1-1 残留修复 2）：items 的 home 数量型
@@ -1543,14 +1271,14 @@ final class GameCatalogTests: XCTestCase {
         // instanceCounts 只覆盖 1000002 → 1000000 无宇宙键 → 拒绝
         let partial = GameCatalog(
             gameVersion: "18.400.13", items: items,
-            manifest: makeManifest(sha256: universeManifestSHA),
+            manifest: makeManifest(),
             instanceCounts: ["buildings:1000002": cannonUniverseCounts]
         )
         XCTAssertFalse(partial.hasUniverseData, "home 数量型 item 无宇宙键 → 部分宇宙 → 拒绝")
         // 补齐 1000000 键 → 通过
         let complete = GameCatalog(
             gameVersion: "18.400.13", items: items,
-            manifest: makeManifest(sha256: universeManifestSHA),
+            manifest: makeManifest(),
             instanceCounts: [
                 "buildings:1000000": cannonUniverseCounts,
                 "buildings:1000002": cannonUniverseCounts,
@@ -1583,7 +1311,7 @@ final class GameCatalogTests: XCTestCase {
         // units 只补 1 个键（4000000）→ 4000001 无键 → 部分建模 → 拒绝
         let partial = GameCatalog(
             gameVersion: "18.400.13", items: items,
-            manifest: makeManifest(sha256: universeManifestSHA),
+            manifest: makeManifest(),
             instanceCounts: [
                 "buildings:1000002": cannonUniverseCounts,
                 "units:4000000": cannonUniverseCounts,
@@ -1594,7 +1322,7 @@ final class GameCatalogTests: XCTestCase {
         // 全量覆盖 → 通过
         let complete = GameCatalog(
             gameVersion: "18.400.13", items: items,
-            manifest: makeManifest(sha256: universeManifestSHA),
+            manifest: makeManifest(),
             instanceCounts: [
                 "buildings:1000002": cannonUniverseCounts,
                 "units:4000000": cannonUniverseCounts,
@@ -1642,7 +1370,7 @@ final class GameCatalogTests: XCTestCase {
         ]
         let catalog = GameCatalog(
             gameVersion: "18.400.13", items: items,
-            manifest: makeManifest(sha256: universeManifestSHA),
+            manifest: makeManifest(),
             instanceCounts: [
                 "traps:12000000": Array(repeating: 1, count: 18),
                 "buildings:1000002": cannonUniverseCounts,
@@ -1710,7 +1438,7 @@ final class GameCatalogTests: XCTestCase {
         ]
         let catalog = GameCatalog(
             gameVersion: "18.400.13", items: items,
-            manifest: makeManifest(sha256: universeManifestSHA),
+            manifest: makeManifest(),
             instanceCounts: [
                 "buildings:1000000": cannonUniverseCounts,
                 "buildings:1000002": cannonUniverseCounts,
@@ -1720,13 +1448,13 @@ final class GameCatalogTests: XCTestCase {
         XCTAssertEqual(catalog.universeSections, ["buildings", "traps"])
     }
 
-    /// 无宇宙数据（旧目录无 instanceCounts / instanceCounts 有效但无 manifest
-    /// 信任标记）→ 空集合，与 `universeKeys` 同一信任门（fail-closed）。
+    /// 无宇宙数据（旧目录无 instanceCounts / 业务校验失败）→ 空集合，
+    /// 与 `universeKeys` 同一业务门（fail-closed）。
     func testUniverseSectionsEmptyWithoutUniverseData() {
         // 旧目录（无 instanceCounts、无 manifest）→ 空
         let legacy = GameCatalog(gameVersion: "18.400.13", items: [])
         XCTAssertTrue(legacy.universeSections.isEmpty)
-        // instanceCounts 有效但无 manifest 信任标记 → 空（同 testUniverseDataRequiresManifestTrust）
+        // 业务校验失败的 instanceCounts → 空
         let collector = CatalogItem(
             section: "buildings", category: "defense", dataID: 1_000_002, base: "home",
             baseMissingReason: nil, name: "圣水收集器", maxLevel: 17, icon: nil, levelVisual: nil,
@@ -1736,12 +1464,12 @@ final class GameCatalogTests: XCTestCase {
                 icon: nil, levelVisual: nil, missingReason: nil
             )]
         )
-        let untrusted = GameCatalog(
+        let invalid = GameCatalog(
             gameVersion: "18.400.13", items: [collector],
-            manifest: nil,
-            instanceCounts: ["buildings:1000002": cannonUniverseCounts]
+            manifest: makeManifest(),
+            instanceCounts: ["buildings:1000002": [1, 2]]
         )
-        XCTAssertTrue(untrusted.universeSections.isEmpty)
+        XCTAssertTrue(invalid.universeSections.isEmpty)
     }
 
 }

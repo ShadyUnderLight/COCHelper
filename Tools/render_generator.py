@@ -23,22 +23,19 @@
 7. 输出 PNG（R2.1 命名 `icons/<container_key>/<export_key>.png`）→ catalog 目录
    icons/；更新 catalog.json 匹配引用（成功 → renderedPath + missingReason
    null；失败 → renderedPath null + 稳定枚举）
-8. **事务性落盘（P2）**：PNG/catalog.json/manifest.json 全部先写
-   `.render-tmp-*`，再统一 os.replace（PNG 先、catalog.json 次、manifest.json
-   最后）；任一阶段失败回滚清理并抛 CatalogError（消息含清理数）。
-   manifest.json 刷新（refresh_manifest：counts 重算 + generatedFiles 的
-   catalog.json sha256/size、icons/ 目录条目 entries、PNG 条目追加/去重），
-   `--no-refresh-manifest` 可关闭。**png_relpaths 来源 = catalog 最终
-   renderedPath 集合**（去重、icons/ 内）——generatedFiles 与实际引用一致
+8. **事务性落盘（P2）**：PNG/catalog.json 全部先写
+   `.render-tmp-*`，再统一 os.replace（PNG 先、catalog.json 次）；
+   任一阶段失败回滚清理并抛 CatalogError（消息含清理数）。
+   E0-03/Issue #303：不再刷新 manifest.json（精简为版本元数据，
+   无内容派生字段）。**png_relpaths 来源 = catalog 最终
+   renderedPath 集合**（去重、icons/ 内）——孤儿清理依据。
 9. 失败样本不产生 PNG 文件、不写伪造路径（R5）
 10. **孤儿输出清理（R3 评审项）**：事务提交后删除 icons/ 下 catalog 不再
-    引用的 PNG（旧成功→本次失败），同步从 generatedFiles 消失（由 png_relpaths
-    驱动）；清理失败不阻断，记录在返回 dict 的 cleaned/cleanupFailed
-11. **R6.2 计数**：counts 新增 renderedIcons（== generatedFiles PNG 条目数，
-    validate 重算断言）与 blockedIcons（失败样本键数，快照语义，validate 只
-    校验类型/非负）；均为 optional 字段，旧 manifest 兼容
-12. 报告 JSON（样本/verdict/path/size/sha256/耗时）→ --report（默认
-    /tmp/render-generator-report.json）
+    引用的 PNG（旧成功→本次失败）；清理失败不阻断，记录在返回 dict 的
+    cleaned/cleanupFailed
+11. 报告 JSON（样本/verdict/path/size/耗时）→ --report（默认
+    /tmp/render-generator-report.json）；字节大小仅为测量信息，
+    不得作为加载门禁。
 
 **契约对齐**（docs/rendered-path-contract.md）：R2.1 命名、R2.2 sanitize
 （fail loud）、R2.3 键冲突 fail loud、R2.4 同 (container, exportName) 只渲染
@@ -58,14 +55,12 @@ brew/系统库，非 pip 包）；其余纯 stdlib。
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
 import tempfile
 import time
 import zipfile
-from collections.abc import Callable
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -538,8 +533,7 @@ def _render_sample(archive: zipfile.ZipFile, container: str, export: str,
     return {
         "assetKey": {"container": container, "exportName": export},
         "status": "success", "missingReason": None, "relPath": rel,
-        "png": {"size": len(png_bytes),
-                "sha256": hashlib.sha256(png_bytes).hexdigest()},
+        "png": {"size": len(png_bytes)},
         "pngBytes": png_bytes,  # 瞬态：报告序列化时剔除
         "durationMs": int((time.perf_counter() - t0) * 1000),
         "details": details,
@@ -683,145 +677,12 @@ def _stage(path: Path, data: bytes) -> tuple[Path, Path]:
     return (Path(tmp), path)
 
 
-def _sha256_of(path: Path) -> str:
-    """`sha256:` + 64 hex（manifest generatedFiles 条目格式，validate.py 同）。"""
-    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _refresh_manifest_content(manifest: dict, catalog: dict,
-                              png_relpaths: list[str],
-                              blocked_count: int | None,
-                              resolve: Callable[[str], Path]) -> dict:
-    """刷新后的 manifest 内容（不写盘）；counts 语义与 validate.py 完全一致。
-
-    - counts：items/levels/missingTime/missingIcons——对齐 validate.py 重算
-      （missingIcons 计 level 引用 renderedPath is None 的个数）；
-      **R6.2** renderedIcons = len(png_relpaths)（== generatedFiles PNG 条目
-      数，validate 重算断言）；blockedIcons = blocked_count（快照语义——
-      失败键数只有生成器知道，validate 只校验存在性/类型/非负；为 None 时
-      保留 manifest 既有值，缺失则不写，旧 manifest 兼容）
-    - generatedFiles：catalog.json 条目刷新 sha256/size；icons/ 目录条目
-      entries = PNG 数（缺失时补建）；PNG 条目按 sorted(png_relpaths)
-      原位刷新（去重）或追加；**icons/ 下不在 png_relpaths 的 PNG 条目
-      丢弃**（孤儿——catalog 不再引用，与实际引用集合一致）
-    - resolve(relpath) → 资源实际文件路径：独立调用时即最终路径；事务性
-      落盘时指向 .tmp 阶段文件（内容即最终字节，P2）
-
-    结构校验（fail loud，对齐 apply_rendered_paths）：畸形 catalog 不泄漏
-    裸 KeyError——item 缺 levels 数组 / level 缺 icon 键均属畸形数据
-    （真实 catalog 每 level 必有 icon 键，bundled 18.400.13 已核查）。
-    """
-    if (not isinstance(catalog, dict)
-            or not isinstance(catalog.get("items"), list)):
-        raise CatalogError(
-            "catalog.json 结构非法: 顶层对象 items 必须是对象数组")
-    for item in catalog["items"]:
-        levels = item.get("levels", []) if isinstance(item, dict) else None
-        if not isinstance(levels, list) or any(
-                not isinstance(lv, dict) or "icon" not in lv
-                for lv in levels):
-            raise CatalogError(
-                "catalog.json 结构非法: item 缺 levels 数组或 level 缺 icon 键"
-                f" (dataID={item.get('dataID') if isinstance(item, dict) else '?'})")
-    png_paths = sorted(png_relpaths)
-    png_set = set(png_paths)
-    counts = {
-        "items": len(catalog["items"]),
-        "levels": sum(len(i["levels"]) for i in catalog["items"]),
-        "missingTime": sum(
-            1 for i in catalog["items"] for lv in i["levels"]
-            if lv["durationSeconds"] is None),
-        "missingIcons": sum(
-            1 for i in catalog["items"] for lv in i["levels"]
-            if lv["icon"] and lv["icon"]["renderedPath"] is None),
-        "renderedIcons": len(png_set),
-    }
-    if blocked_count is not None:
-        counts["blockedIcons"] = blocked_count
-    else:
-        prev = (manifest.get("counts") or {}).get("blockedIcons")
-        if isinstance(prev, int) and not isinstance(prev, bool):
-            counts["blockedIcons"] = prev
-    new = dict(manifest)
-    new["counts"] = counts
-
-    registered: set[str] = set()
-    icons_seen = False
-    gen: list[dict] = []
-    for entry in manifest.get("generatedFiles", []):
-        path = entry.get("path")
-        if path == "catalog.json":
-            p = resolve(path)
-            gen.append({"path": path, "sha256": _sha256_of(p),
-                        "size": p.stat().st_size})
-        elif path == "icons/":
-            icons_seen = True
-            gen.append({**entry, "entries": len(png_paths)})
-        elif path in png_set:
-            # 既有 PNG 条目原位刷新（去重：不重复追加）
-            p = resolve(path)
-            gen.append({"path": path, "sha256": _sha256_of(p),
-                        "size": p.stat().st_size})
-            registered.add(path)
-        elif isinstance(path, str) and path.startswith("icons/") \
-                and path.endswith(".png"):
-            # 孤儿 PNG 条目：catalog 不再引用 → 从 generatedFiles 移除
-            # （与磁盘孤儿清理一致，R3 评审项）
-            continue
-        else:
-            gen.append(entry)
-    if not icons_seen:
-        gen.append({"path": "icons/", "kind": "directory",
-                    "entries": len(png_paths)})
-    for path in png_paths:
-        if path in registered:
-            continue
-        p = resolve(path)
-        gen.append({"path": path, "sha256": _sha256_of(p),
-                    "size": p.stat().st_size})
-    new["generatedFiles"] = gen
-    return new
-
-
-def refresh_manifest(catalog_dir: str | Path, png_relpaths: list[str],
-                     blocked_count: int | None = None) -> dict:
-    """独立刷新 manifest.json（/tmp/refresh_manifest.py 逻辑入库）。
-
-    读取 catalog_dir 下已落盘的 catalog.json/manifest.json 与 PNG（最终
-    路径），重算 counts + 刷新 generatedFiles，原子写回 manifest.json，
-    返回新 manifest。格式：indent=2 + sort_keys + ensure_ascii=False +
-    尾部换行（与 catalog.py 同参数）。
-
-    blocked_count：R6.2 counts.blockedIcons 快照值；None 时保留 manifest
-    既有值（缺失则不写——旧 manifest 兼容）。
-
-    生成器内事务性落盘不直接调用本函数——基于 .tmp 阶段文件内容走
-    _refresh_manifest_content（见 write_rendered_outputs，P2）。
-    """
-    d = Path(catalog_dir)
-    catalog_path = d / "catalog.json"
-    manifest_path = d / "manifest.json"
-    for p in (catalog_path, manifest_path):
-        if not p.is_file():
-            raise CatalogError(f"{p.name} 不存在: {p}")
-    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    new = _refresh_manifest_content(manifest, catalog, png_relpaths,
-                                    blocked_count,
-                                    resolve=lambda rel: d / rel)
-    text = (json.dumps(new, ensure_ascii=False, indent=2, sort_keys=True)
-            + "\n")
-    _atomic_write(manifest_path, text.encode("utf-8"))
-    return new
-
-
 def _collect_rendered_paths(catalog: dict) -> list[str]:
     """catalog 最终 renderedPath 集合（去重）。
 
     遍历语义与 validate.py 完全一致：所有 item 的 icon/levelVisual 引用 +
     嵌套 levels 的 icon/levelVisual；仅保留 icons/ 下 `.png`（R2.1 输出
-    形态，validate R-D 同约束）。作为 refresh 的 png_relpaths 来源——
-    generatedFiles PNG 条目 == catalog 实际引用，孤儿条目自然消失。
+    形态，validate R-D 同约束）。作为孤儿清理的引用集合来源。
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -851,8 +712,6 @@ def cleanup_orphan_outputs(catalog_dir: str | Path,
       有效性（validate 只校验被 catalog 引用的文件）
     - **必须在事务成功提交后调用**：catalog 内容是最终引用集合的唯一依据，
       事务回滚时 catalog 是旧内容引用旧 PNG，不能删
-    - 与 _refresh_manifest_content 的 png_relpaths 同源（catalog 最终引用
-      集合），generatedFiles 条目随 png_relpaths 同步消失
     """
     d = Path(catalog_dir)
     cleaned: list[str] = []
@@ -872,18 +731,15 @@ def cleanup_orphan_outputs(catalog_dir: str | Path,
 
 
 def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
-                           write_catalog: bool = True,
-                           refresh_manifest: bool = True) -> dict:
-    """成功样本 PNG 落盘（R2.1 路径）+ catalog.json 原子回写 + manifest 刷新。
+                           write_catalog: bool = True) -> dict:
+    """成功样本 PNG 落盘（R2.1 路径）+ catalog.json 原子回写。
 
     两阶段事务（P2）：
-    - 阶段 0 前置检查：catalog.json（及需刷新时的 manifest.json）缺失 → fail
-      loud，任何文件（含 PNG）都不落盘
-    - 阶段 1：全部目标内容写同目录 `.render-tmp-*`（PNG 逐个、catalog.json、
-      manifest.json）；manifest 的 sha256/size 基于 .tmp 内容计算（内容即最终）
-    - 阶段 2：逐个 os.replace（PNG 先、catalog.json 次、manifest.json 最后）；
-      替换前对已存在的最终文件拍字节快照——回滚按快照恢复而非删除
-      （manifest 替换失败窗口下 unlink 会删掉新 catalog.json，比事务前更糟）
+    - 阶段 0 前置检查：catalog.json 缺失 → fail loud，任何文件（含 PNG）
+      都不落盘
+    - 阶段 1：全部目标内容写同目录 `.render-tmp-*`（PNG 逐个、catalog.json）
+    - 阶段 2：逐个 os.replace（PNG 先、catalog.json 次）；
+      替换前对已存在的最终文件拍字节快照——回滚按快照恢复
     - 任一阶段失败：尽力回滚（清理全部 .tmp；已替换 final 有快照 → 按原
       字节恢复，无快照即事务前不存在 → unlink），抛 CatalogError（消息
       说明清理/恢复数）
@@ -893,33 +749,23 @@ def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
 
     **png_relpaths 来源（R3 评审决策）**：write_catalog 时 = catalog 最终
     renderedPath 集合（_collect_rendered_paths），而非「本次写入的 PNG」——
-    generatedFiles 与 catalog 实际引用一致，孤儿自然清理；未在本次事务内
-    落盘的引用 PNG（此前渲染）直接以最终路径计算 hash（必须已存在，否则
-    fail loud）。write_catalog=False（--samples-only）时无从得知引用集合，
-    退化为「本次写入的 PNG」。
+    孤儿清理据此判定。write_catalog=False（--samples-only）时无从得知
+    引用集合，退化为「本次写入的 PNG」（不做孤儿清理）。
 
     **孤儿清理（R3 评审项）**：事务成功提交后执行 cleanup_orphan_outputs
-    （仅 do_manifest 时——generatedFiles 同步依赖 manifest 刷新，逃生阀
-    --no-refresh-manifest 不清理，目录保持旧引用一致性）；清理失败不阻断，
-    结果记录在返回 dict 的 cleaned/cleanupFailed。
+    （仅 write_catalog 时；清理失败不阻断主流程），结果记录在返回 dict 的
+    cleaned/cleanupFailed。
 
     返回：{"pngWritten": 本次写入 PNG 列表, "updatedRefs": 引用更新数,
     "cleaned": 孤儿清理列表, "cleanupFailed": 清理失败列表}。
-
-    注：参数与模块函数 refresh_manifest 同名——事务内基于 .tmp 内容走
-    _refresh_manifest_content，独立函数在最终路径上使用。
     """
     catalog_dir = Path(catalog_dir)
     catalog_path = catalog_dir / "catalog.json"
-    manifest_path = catalog_dir / "manifest.json"
-    do_manifest = write_catalog and refresh_manifest
 
     # 阶段 0：前置检查（fail loud，先于任何写盘——catalog 缺失不落 PNG）
     if write_catalog:
         if not catalog_path.is_file():
             raise CatalogError(f"catalog.json 不存在: {catalog_path}")
-        if do_manifest and not manifest_path.is_file():
-            raise CatalogError(f"manifest.json 不存在: {manifest_path}")
 
     staged: list[tuple[Path, Path]] = []  # (tmp 路径, 最终路径)
     replaced: list[Path] = []
@@ -947,28 +793,8 @@ def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
         else:
             png_relpaths = list(written)
 
-        if do_manifest:
-            # manifest 内容依赖最终文件 sha256——从 .tmp 计算（内容已最终）
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            final_to_tmp = {
-                str(final.relative_to(catalog_dir)): tmp
-                for tmp, final in staged
-            }
-            # 未在本次事务落盘的引用 PNG → 以最终路径计算（此前渲染，须已存在）
-            new_manifest = _refresh_manifest_content(
-                manifest, catalog, sorted(png_relpaths),
-                _blocked_key_count(verdicts),
-                resolve=lambda rel: (Path(final_to_tmp[rel])
-                                     if rel in final_to_tmp
-                                     else catalog_dir / rel))
-            manifest_text = (json.dumps(new_manifest, ensure_ascii=False,
-                                        indent=2, sort_keys=True) + "\n")
-            staged.append(_stage(manifest_path,
-                                 manifest_text.encode("utf-8")))
-
-        # 阶段 2：统一替换（PNG 先、catalog.json 次、manifest.json 最后）
-        # 替换前对已存在的 final 拍字节快照——回滚时恢复而非删除，避免
-        # manifest 替换失败窗口下 unlink 删掉新 catalog.json（比事务前更糟）
+        # 阶段 2：统一替换（PNG 先、catalog.json 次）
+        # 替换前对已存在的 final 拍字节快照——回滚时恢复而非删除
         backups: dict[Path, bytes] = {}
         for tmp, final in staged:
             if final.is_file():
@@ -1005,22 +831,14 @@ def write_rendered_outputs(catalog_dir: str | Path, verdicts: list[dict],
             f"渲染落盘失败（已回滚，清理 {cleaned} 个文件，"
             f"恢复 {restored} 个文件）: {exc}") from exc
 
-    # 事务提交后：孤儿清理（仅 do_manifest——generatedFiles 同步依赖
-    # manifest 刷新；清理失败不阻断主流程）
+    # 事务提交后：孤儿清理（仅 write_catalog；清理失败不阻断主流程）
     result = {"pngWritten": written, "updatedRefs": updated,
               "cleaned": [], "cleanupFailed": []}
-    if do_manifest:
+    if write_catalog:
         cleanup = cleanup_orphan_outputs(catalog_dir, set(png_relpaths))
         result["cleaned"] = cleanup["cleaned"]
         result["cleanupFailed"] = cleanup["cleanupFailed"]
     return result
-
-
-def _blocked_key_count(verdicts: list[dict]) -> int:
-    """R6.2 blockedIcons：失败样本键数（快照语义，按 (container, exportName)
-    去重——render_samples 对重复样本复用同一 verdict，直接计数会翻倍）。"""
-    return len({(v["assetKey"]["container"], v["assetKey"]["exportName"])
-                for v in verdicts if v["status"] != "success"})
 
 
 def _report_dict(meta: dict, verdicts: list[dict], stats: dict) -> dict:
@@ -1045,10 +863,6 @@ def main(argv: list[str] | None = None) -> int:
                         help="catalog.json 所在目录（PNG 输出到其 icons/）")
     parser.add_argument("--samples-only", action="store_true",
                         help="只渲染样本（PNG + 报告），不回写 catalog.json")
-    parser.add_argument("--no-refresh-manifest", dest="refresh_manifest",
-                        action="store_false", default=True,
-                        help="不刷新 manifest.json（默认：重算 counts 与 "
-                             "generatedFiles 的 catalog/PNG 条目）")
     parser.add_argument("--report", type=Path,
                         default=Path("/tmp/render-generator-report.json"),
                         help="报告 JSON 输出路径（默认 /tmp/render-generator-report.json）")
@@ -1068,8 +882,7 @@ def main(argv: list[str] | None = None) -> int:
                    else collect_catalog_refs(args.catalog / "catalog.json"))
         meta, verdicts = render_samples(args.apk, samples)
         stats = write_rendered_outputs(args.catalog, verdicts,
-                                       write_catalog=not args.samples_only,
-                                       refresh_manifest=args.refresh_manifest)
+                                       write_catalog=not args.samples_only)
         report = _report_dict(meta, verdicts, stats)
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(
@@ -1084,8 +897,7 @@ def main(argv: list[str] | None = None) -> int:
         if v["status"] == "success":
             p = v["png"]
             print(f"[success] {k['container']} / {k['exportName']} → "
-                  f"{v['relPath']} ({p['size']}B, sha256 "
-                  f"{p['sha256'][:12]}…, {v['durationMs']}ms)")
+                  f"{v['relPath']} ({p['size']}B, {v['durationMs']}ms)")
         else:
             msg = v["details"].get("message", "")
             print(f"[failed] {k['container']} / {k['exportName']} — "

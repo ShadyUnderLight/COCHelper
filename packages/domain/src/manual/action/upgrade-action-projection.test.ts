@@ -68,16 +68,10 @@ function catalog() {
     gameVersion: '18.400.13',
     items: [catalogItem()],
     manifest: {
-      schemaVersion: 1,
+      schemaVersion: 3,
       gameVersion: '18.400.13',
       buildTag: 'test',
       locale: 'zh-CN',
-      sourceFingerprint: 'sha256:catalog',
-      generatedFiles: [],
-      counts: {
-        items: 1,
-        levels: 3,
-      },
     },
   });
 }

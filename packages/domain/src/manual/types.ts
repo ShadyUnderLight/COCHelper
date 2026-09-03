@@ -117,7 +117,6 @@ export type ManualItemState = {
 export type ManualCatalogProvenance = {
   readonly gameVersion: string;
   readonly buildTag: string | null;
-  readonly sourceFingerprint: string | null;
   readonly manifestSchemaVersion: number | null;
 };
 

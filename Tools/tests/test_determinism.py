@@ -1,11 +1,6 @@
-"""Task 6: generate() 编排——确定性（验收 #10）+ 指纹 + counts + 原子写。"""
+"""Task 6: generate() 编排——确定性（验收 #10）+ 最小 manifest + 原子写。"""
 
 import json
-import lzma
-import zipfile
-
-import pytest
-from pathlib import Path
 
 import pytest
 
@@ -23,16 +18,18 @@ def test_generate_is_deterministic_byte_identical(full_minimal_apk, tmp_path):
     assert (out1 / "manifest.json").read_bytes() == (out2 / "manifest.json").read_bytes()
 
 
-def test_generate_manifest_fingerprint_and_counts(full_minimal_apk, tmp_path):
+def test_generate_manifest_minimal_shape(full_minimal_apk, tmp_path):
     apk = full_minimal_apk
     out = tmp_path / "o"
     generate(apk, "18.400.13", out)
     manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["schemaVersion"] == 3
     assert manifest["gameVersion"] == "18.400.13"
     assert manifest["buildTag"] == "18_400_7"
-    assert manifest["sourceFingerprint"].startswith("sha256:")
-    assert manifest["counts"]["items"] == 1
-    assert manifest["counts"]["levels"] == 1
+    assert manifest["locale"] == "zh-CN"
+    assert "sourceFingerprint" not in manifest
+    assert "generatedFiles" not in manifest
+    assert "counts" not in manifest
     assert (out / "icons").is_dir()
 
 
@@ -49,7 +46,7 @@ def test_generate_catalog_content(full_minimal_apk, tmp_path):
     out = tmp_path / "o"
     generate(apk, "18.400.13", out)
     data = json.loads((out / "catalog.json").read_text())
-    assert data["schemaVersion"] == 2
+    assert data["schemaVersion"] == 3
     item = data["items"][0]
     assert item["section"] == "buildings"
     assert item["dataID"] == 1000001

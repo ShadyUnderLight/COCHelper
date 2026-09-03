@@ -116,30 +116,10 @@ final class BuildingGroupProjectionTests: XCTestCase {
             gameVersion: payload.gameVersion,
             items: payload.items,
             manifest: CatalogManifest(
-                schemaVersion: 1,
+                schemaVersion: 3,
                 gameVersion: payload.gameVersion,
                 buildTag: "test",
-                locale: "zh-CN",
-                sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
-                generatedFiles: [CatalogGeneratedFile(
-                    path: "catalog.json",
-                    sha256: "sha256:" + String(repeating: "b", count: 64),
-                    size: nil,
-                    kind: nil,
-                    entries: nil
-                )],
-                counts: CatalogCounts(
-                    items: payload.items.count,
-                    levels: payload.items.flatMap(\.levels).count,
-                    missingIcons: nil,
-                    missingTime: nil,
-                    timed: nil,
-                    instant: nil,
-                    notApplicable: nil,
-                    initialLevel: nil,
-                    sourceMissing: nil,
-                    parseFailed: nil
-                )
+                locale: "zh-CN"
             ),
             instanceCounts: instanceCounts
         )

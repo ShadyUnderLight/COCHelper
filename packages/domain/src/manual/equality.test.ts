@@ -26,7 +26,6 @@ const baseline = {
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: 'catalog-test',
-  sourceFingerprint: 'sha256:catalog',
   manifestSchemaVersion: 1,
 };
 const recordId = (value: string) => parseUuid(value)!;
@@ -78,7 +77,7 @@ describe('manual domain equality', () => {
       ...baseRecord,
       catalogProvenance: {
         ...provenance,
-        sourceFingerprint: 'sha256:changed',
+        buildTag: 'catalog-changed',
       },
     });
     expect(manualUpgradeRecordsEqual(baseRecord, changedProvenance)).toBe(false);

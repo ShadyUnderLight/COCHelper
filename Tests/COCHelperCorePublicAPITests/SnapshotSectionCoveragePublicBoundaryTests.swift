@@ -1,9 +1,9 @@
-import CryptoKit
 import COCHelperCore
 import Foundation
 import XCTest
 
 /// Issue #234: public API boundary — external modules cannot mint runtime trust.
+/// Issue #304：verified wire 不再携带 inputBinding 摘要。
 final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
     func testDecodedVerifiedWireNeverOpensTrustGatesViaPublicConstructor() throws {
         let proofJSON = """
@@ -14,8 +14,7 @@ final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
           "protocolVersion": "1",
           "expectedCount": 1,
           "verificationReason": "external forge attempt",
-          "verificationRuleVersion": "1",
-          "inputBinding": "sha256:deadbeef"
+          "verificationRuleVersion": "1"
         }
         """
         let decodedProof = try JSONDecoder().decode(
@@ -46,8 +45,7 @@ final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
           "protocolVersion": "1",
           "expectedCount": 1,
           "verificationReason": "external forge attempt",
-          "verificationRuleVersion": "1",
-          "inputBinding": "sha256:deadbeef"
+          "verificationRuleVersion": "1"
         }
         """
         let decodedProof = try JSONDecoder().decode(
@@ -82,7 +80,6 @@ final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
 
     func testForgedTestFixtureWireStaysFailClosedThroughProductionStoreLoad() throws {
         let text = "{\"tag\":\"#ABC123\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
-        let binding = try XCTUnwrap(sectionInputBinding(rawJSON: text, section: "heroes"))
         let proofJSON = """
         {
           "kind": "verified",
@@ -91,8 +88,7 @@ final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
           "protocolVersion": "1",
           "expectedCount": 1,
           "verificationReason": "external forge attempt",
-          "verificationRuleVersion": "1",
-          "inputBinding": "\(binding)"
+          "verificationRuleVersion": "1"
         }
         """
         let forgedProof = try JSONDecoder().decode(
@@ -142,8 +138,6 @@ final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
         let forgedEntry = SnapshotHistoryEntry(
             schemaVersion: entry.schemaVersion,
             observationVersion: entry.observationVersion,
-            fingerprintVersion: entry.fingerprintVersion,
-            integrityVersion: entry.integrityVersion,
             snapshotID: entry.snapshotID,
             villageID: entry.villageID,
             lineageID: entry.lineageID,
@@ -151,7 +145,6 @@ final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
             appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
             rawJSON: text,
             observation: entry.observation,
             coverage: forgedCoverage,
@@ -167,7 +160,6 @@ final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
                     lineageID: forgedEntry.lineageID,
                     normalizedPlayerTag: forgedEntry.normalizedPlayerTag,
                     lastEntryID: forgedEntry.snapshotID,
-                    lastFingerprint: forgedEntry.canonicalFingerprint,
                     lastAppliedAt: forgedEntry.appliedAt,
                     hasConflict: false
                 )
@@ -186,20 +178,5 @@ final class SnapshotSectionCoveragePublicBoundaryTests: XCTestCase {
         )
         XCTAssertFalse(heroes.opensTrustGates)
         XCTAssertFalse(heroes.isComplete)
-    }
-
-    private func sectionInputBinding(rawJSON: String, section: String) throws -> String? {
-        guard let data = rawJSON.data(using: .utf8),
-              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let value = object[section],
-              JSONSerialization.isValidJSONObject(value) else {
-            return nil
-        }
-        let sectionData = try JSONSerialization.data(
-            withJSONObject: value,
-            options: [.sortedKeys, .withoutEscapingSlashes]
-        )
-        let digest = SHA256.hash(data: sectionData)
-        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 }

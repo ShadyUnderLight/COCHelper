@@ -25,7 +25,6 @@ import {
   manualReconciliationPreviewCount,
   manualReconciliationPreviewRequiresExplicitDecision,
 } from './types';
-import { computeReconciliationCandidateFingerprint } from './candidate-fingerprint';
 import { reconciliationCandidateMatches } from './helpers';
 import { previewReconciliation, reconcileManualTracker } from './service';
 
@@ -40,7 +39,6 @@ const buildingKey = trackerItemKeyRoot('home', 'buildings', 1_000_000n);
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: null,
-  sourceFingerprint: null,
   manifestSchemaVersion: null,
 };
 
@@ -50,10 +48,9 @@ function s(seconds: number): number {
 
 function reference(
   revision = 'snapshot-1',
-  fingerprint = 'sha256:fp-1',
   lineageID = 'lineage-p1',
-): { revision: string; fingerprint: string; lineageID: string } {
-  return { revision, fingerprint, lineageID };
+): { revision: string; lineageID: string } {
+  return { revision, lineageID };
 }
 
 function dist(pairs: readonly (readonly [number, bigint])[]) {
@@ -129,7 +126,6 @@ function evidenceFrom(input: {
     readonly import('./evidence').RelatedChangeEvidence[]
   >;
   readonly previousSnapshotID?: UuidString | null;
-  readonly previousSnapshotFingerprint?: string | null;
   readonly previousLineageID?: string | null;
   readonly previousSourceTimestampMs?: number | null;
 }) {
@@ -147,7 +143,6 @@ function evidenceFrom(input: {
     previousObservations: input.previousObservations,
     relatedChangesByStableID: input.relatedChangesByStableID,
     previousSnapshotID: input.previousSnapshotID,
-    previousSnapshotFingerprint: input.previousSnapshotFingerprint,
     previousLineageID: input.previousLineageID,
     previousSourceTimestampMs:
       input.previousSourceTimestampMs !== undefined
@@ -177,7 +172,7 @@ describe('ManualTrackerReconciliation', () => {
       ],
     });
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-1:observation:1', ref.fingerprint, ref.lineageID),
+      newBaselineReference: reference('snapshot-1:observation:1', ref.lineageID),
       duplicate: true,
       entries: [completeObservation(key, dist([[10, 1n]]), { hasTimer: false })],
     });
@@ -192,7 +187,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = activeState(ref);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-1:observation:1', ref.fingerprint, ref.lineageID),
+      newBaselineReference: reference('snapshot-1:observation:1', ref.lineageID),
       duplicate: true,
       sourceTimestampMs: s(1_700_000_200),
       entries: [completeObservation(key, dist([[10, 1n]]))],
@@ -214,7 +209,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = activeState(ref);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       previousSourceTimestampMs: s(1_700_000_000),
       previousObservations: buildObservationMap([
         completeObservation(key, dist([[10, 1n]]), { hasTimer: true, timerCoverageComplete: true }),
@@ -242,7 +237,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = activeState(ref, [[10, 1n]], s(1_700_000_010), 600);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       previousSourceTimestampMs: s(1_700_000_000),
       sourceTimestampMs: s(1_700_000_020),
       entries: [completeObservation(key, dist([[11, 1n]]))],
@@ -257,11 +252,11 @@ describe('ManualTrackerReconciliation', () => {
     expect(plan.state.core.records[0]?.status).toBe('active');
   });
 
-  it('exact observation is safe when fingerprint changes only outside item state', () => {
+  it('exact observation is safe when revision changes but items are identical', () => {
     const ref = reference();
     const state = observedState(ref, [[10, 1n]]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-changed', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [completeObservation(key, dist([[10, 1n]]))],
     });
     const preview = previewReconciliation(evidence, state, s(1_700_000_200));
@@ -297,7 +292,7 @@ describe('ManualTrackerReconciliation', () => {
       stateUpdatedAtMs: s(1_700_000_011),
     });
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       previousSourceTimestampMs: s(1_700_000_000),
       previousObservations: buildObservationMap([completeObservation(key, dist([[10, 2n]]))])
         .observations,
@@ -327,7 +322,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = activeState(ref, [[10, 1n]], s(1_700_000_010), 600);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       previousSourceTimestampMs: s(1_700_000_000),
       sourceTimestampMs: s(1_700_000_020),
       entries: [
@@ -354,7 +349,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = activeState(ref, [[10, 1n]], s(1_700_000_010), 600);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       previousSourceTimestampMs: s(1_700_000_000),
       sourceTimestampMs: s(1_700_000_020),
       previousObservations: buildObservationMap([
@@ -379,7 +374,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[11, 1n]]);
     const olderEvidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-old', 'sha256:old', ref.lineageID),
+      newBaselineReference: reference('snapshot-old', ref.lineageID),
       previousSourceTimestampMs: s(1_700_000_100),
       sourceTimestampMs: s(1_700_000_000),
       entries: [completeObservation(key, dist([[10, 1n]]))],
@@ -389,7 +384,7 @@ describe('ManualTrackerReconciliation', () => {
     ).toBe('staleImport');
 
     const missingEvidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-missing-ts', 'sha256:missing', ref.lineageID),
+      newBaselineReference: reference('snapshot-missing-ts', ref.lineageID),
       sourceTimestampMs: null,
       previousSourceTimestampMs: s(1_700_000_000),
       entries: [completeObservation(key, dist([[12, 1n]]))],
@@ -403,7 +398,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[10, 1n]]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         {
           itemKey: key,
@@ -437,7 +432,7 @@ describe('ManualTrackerReconciliation', () => {
       stateUpdatedAtMs: s(1_700_000_010),
     });
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         completeObservation(key, dist([[10, 1n]])),
         {
@@ -466,7 +461,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[10, 1n]]);
     const missingCountEvidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         {
           itemKey: key,
@@ -486,7 +481,7 @@ describe('ManualTrackerReconciliation', () => {
 
     const timerState = observedState(ref, [[10, 3n]]);
     const timerEvidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-3', 'sha256:fp-3', ref.lineageID),
+      newBaselineReference: reference('snapshot-3', ref.lineageID),
       previousObservations: buildObservationMap([
         completeObservation(key, dist([[10, 3n]]), {
           hasTimer: true,
@@ -545,11 +540,7 @@ describe('ManualTrackerReconciliation', () => {
     ];
     for (const testCase of cases) {
       const evidence = evidenceFrom({
-        newBaselineReference: reference(
-          `snapshot-${testCase.name}`,
-          `sha256:${testCase.name}`,
-          ref.lineageID,
-        ),
+        newBaselineReference: reference(`snapshot-${testCase.name}`, ref.lineageID),
         entries: [
           completeObservation(key, dist([[11, 1n]]), {
             coverageComplete: false,
@@ -590,7 +581,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[11, 1n]]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       previousObservations: buildObservationMap([completeObservation(key, dist([[9, 1n]]))])
         .observations,
       entries: [completeObservation(key, dist([[10, 1n]]))],
@@ -615,7 +606,7 @@ describe('ManualTrackerReconciliation', () => {
       [12, 1n],
     ]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       previousObservations: buildObservationMap([
         completeObservation(
           key,
@@ -639,7 +630,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[9, 1n]]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         completeObservation(key, dist([[10, 1n]]), {
           sectionTrustGatesOpen: false,
@@ -659,7 +650,7 @@ describe('ManualTrackerReconciliation', () => {
       [12, 1n],
     ]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         completeObservation(key, dist([[11, 2n]]), {
           sectionTrustGatesOpen: false,
@@ -682,7 +673,7 @@ describe('ManualTrackerReconciliation', () => {
       [12, 1n],
     ]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         completeObservation(key, dist([[11, 2n]]), {
           sectionTrustGatesOpen: false,
@@ -702,7 +693,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[10, 1n]]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-p2', 'sha256:fp-p2', 'lineage-p2'),
+      newBaselineReference: reference('snapshot-p2', 'lineage-p2'),
       lineageComparable: false,
       entries: [completeObservation(key, dist([[11, 1n]]))],
     });
@@ -732,7 +723,7 @@ describe('ManualTrackerReconciliation', () => {
     const state = activeState(ref);
     expect(state.core.records.some((record) => record.status === 'active')).toBe(true);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-p2', 'sha256:fp-p2', 'lineage-p2'),
+      newBaselineReference: reference('snapshot-p2', 'lineage-p2'),
       lineageComparable: false,
       entries: [completeObservation(key, dist([[11, 1n]]))],
     });
@@ -755,7 +746,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[10, 1n]]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-p2-2', 'sha256:fp-p2-2', 'lineage-p2'),
+      newBaselineReference: reference('snapshot-p2-2', 'lineage-p2'),
       lineageComparable: false,
       previousLineageID: 'lineage-p2',
       entries: [completeObservation(key, dist([[12, 1n]]))],
@@ -772,7 +763,7 @@ describe('ManualTrackerReconciliation', () => {
       [11, 1n],
     ]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       previousObservations: buildObservationMap([
         completeObservation(
           key,
@@ -814,7 +805,7 @@ describe('ManualTrackerReconciliation', () => {
       stateUpdatedAtMs: s(1_700_000_010),
     });
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-dup', ref.fingerprint, ref.lineageID),
+      newBaselineReference: reference('snapshot-dup', ref.lineageID),
       duplicate: true,
       entries: [
         completeObservation(buildingKey, dist([[14, 4n]]), {
@@ -833,14 +824,14 @@ describe('ManualTrackerReconciliation', () => {
   });
 
   it('complete histogram item survives sibling timer-only rows', () => {
-    const ref = reference('snapshot-test', 'sha256:test', 'lineage-test');
+    const ref = reference('snapshot-test', 'lineage-test');
     const emptyState = createManualTrackerVillageState({
       villageID,
       core: ManualUpgradeCoreState.create(),
       stateUpdatedAtMs: s(1_700_000_010),
     });
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-test-2', 'sha256:test-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-test-2', ref.lineageID),
       lineageComparable: true,
       entries: [
         completeObservation(drillKey, dist([[1, 3n]]), {
@@ -901,7 +892,7 @@ describe('ManualTrackerReconciliation', () => {
       }),
     );
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-mixed', 'sha256:mixed', ref.lineageID),
+      newBaselineReference: reference('snapshot-mixed', ref.lineageID),
       entries,
     });
     const preview = previewReconciliation(evidence, emptyState, s(1_700_000_100));
@@ -917,7 +908,7 @@ describe('ManualTrackerReconciliation', () => {
   });
 
   it('placeholder observed state adopts complete item without coverage field', () => {
-    const ref = reference('snapshot-test', 'sha256:test', 'lineage-test');
+    const ref = reference('snapshot-test', 'lineage-test');
     const placeholder = createManualItemStateForStatus({
       itemKey: drillKey,
       baselineReference: ref,
@@ -932,7 +923,7 @@ describe('ManualTrackerReconciliation', () => {
       lastImportAtMs: s(1_700_000_010),
     });
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-test-2', 'sha256:test-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-test-2', ref.lineageID),
       entries: [
         completeObservation(drillKey, dist([[1, 3n]]), {
           sectionTrustGatesOpen: false,
@@ -964,7 +955,7 @@ describe('ManualTrackerReconciliation', () => {
       stateUpdatedAtMs: s(1_700_000_010),
     });
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         completeObservation(key, dist([[10, 1n]]), {
           hasTimer: true,
@@ -991,7 +982,7 @@ describe('ManualTrackerReconciliation', () => {
   it.each(['unknown', 'conflict'] as const)(
     'attention %s state stays unknown without verified section trust',
     (status) => {
-      const ref = reference('snapshot-test', 'sha256:test', 'lineage-test');
+      const ref = reference('snapshot-test', 'lineage-test');
       const attention = createManualItemStateForStatus({
         itemKey: drillKey,
         baselineReference: ref,
@@ -1006,7 +997,7 @@ describe('ManualTrackerReconciliation', () => {
         lastImportAtMs: s(1_700_000_010),
       });
       const evidence = evidenceFrom({
-        newBaselineReference: reference('snapshot-test-2', 'sha256:test-2', ref.lineageID),
+        newBaselineReference: reference('snapshot-test-2', ref.lineageID),
         entries: [
           completeObservation(drillKey, dist([[1, 3n]]), {
             sectionTrustGatesOpen: false,
@@ -1032,7 +1023,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[10, 1n]]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [completeObservation(key, dist([[11, 1n]]))],
     });
     const preview = previewReconciliation(evidence, state, s(1_700_000_200));
@@ -1058,14 +1049,14 @@ describe('ManualTrackerReconciliation', () => {
     const state = observedState(ref, [[10, 1n]]);
     const previewA = previewReconciliation(
       evidenceFrom({
-        newBaselineReference: reference('snapshot-a', 'sha256:fp-a', ref.lineageID),
+        newBaselineReference: reference('snapshot-a', ref.lineageID),
         entries: [completeObservation(key, dist([[11, 1n]]))],
       }),
       state,
       s(1_700_000_200),
     );
     const evidenceB = evidenceFrom({
-      newBaselineReference: reference('snapshot-b', 'sha256:fp-b', ref.lineageID),
+      newBaselineReference: reference('snapshot-b', ref.lineageID),
       entries: [completeObservation(key, dist([[12, 1n]]))],
     });
     try {
@@ -1083,7 +1074,7 @@ describe('ManualTrackerReconciliation', () => {
   it('same snapshot metadata with changed observation invalidates preview', () => {
     const ref = reference();
     const state = observedState(ref, [[10, 1n]]);
-    const sharedReference = reference('snapshot-same', 'sha256:fp-same', ref.lineageID);
+    const sharedReference = reference('snapshot-same', ref.lineageID);
     const previewA = previewReconciliation(
       evidenceFrom({
         newBaselineReference: sharedReference,
@@ -1110,7 +1101,7 @@ describe('ManualTrackerReconciliation', () => {
     }
   });
 
-  it('candidate fingerprint ignores ephemeral snapshot revision and lineage IDs for non-duplicate candidates', () => {
+  it('semantic match ignores ephemeral snapshot revision and lineage IDs for non-duplicate candidates', () => {
     const state = createManualTrackerVillageState({
       villageID,
       core: createManualUpgradeCoreState({ itemStates: [] }),
@@ -1121,7 +1112,6 @@ describe('ManualTrackerReconciliation', () => {
       evidenceFrom({
         newBaselineReference: reference(
           '00000000-0000-0000-0000-000000000201',
-          'sha256:stable-fp',
           '00000000-0000-0000-0000-000000000301',
         ),
         entries: [sharedObservation],
@@ -1133,7 +1123,6 @@ describe('ManualTrackerReconciliation', () => {
       evidenceFrom({
         newBaselineReference: reference(
           '00000000-0000-0000-0000-000000000202',
-          'sha256:stable-fp',
           '00000000-0000-0000-0000-000000000302',
         ),
         entries: [sharedObservation],
@@ -1143,14 +1132,12 @@ describe('ManualTrackerReconciliation', () => {
     );
     expect(previewA.newReference.revision).not.toBe(previewB.newReference.revision);
     expect(previewA.newReference.lineageID).not.toBe(previewB.newReference.lineageID);
-    expect(previewA.candidateFingerprint).toBe(previewB.candidateFingerprint);
     expect(reconciliationCandidateMatches(previewA, previewB)).toBe(true);
     expect(() =>
       reconcileManualTracker(
         evidenceFrom({
           newBaselineReference: reference(
             previewB.newReference.revision,
-            previewB.newReference.fingerprint ?? 'sha256:stable-fp',
             previewB.newReference.lineageID ?? 'lineage-unknown',
           ),
           entries: [sharedObservation],
@@ -1165,7 +1152,7 @@ describe('ManualTrackerReconciliation', () => {
     ).not.toThrow();
   });
 
-  it('candidate fingerprint includes revision for duplicate candidates', () => {
+  it('semantic match includes revision for duplicate candidates', () => {
     const state = createManualTrackerVillageState({
       villageID,
       core: createManualUpgradeCoreState({ itemStates: [] }),
@@ -1177,7 +1164,6 @@ describe('ManualTrackerReconciliation', () => {
         duplicate: true,
         newBaselineReference: reference(
           '00000000-0000-0000-0000-000000000401:observation:1',
-          'sha256:dup-fp',
           'lineage-dup',
         ),
         entries: [sharedObservation],
@@ -1190,7 +1176,6 @@ describe('ManualTrackerReconciliation', () => {
         duplicate: true,
         newBaselineReference: reference(
           '00000000-0000-0000-0000-000000000401:observation:2',
-          'sha256:dup-fp',
           'lineage-dup',
         ),
         entries: [sharedObservation],
@@ -1198,11 +1183,10 @@ describe('ManualTrackerReconciliation', () => {
       state,
       s(1_700_000_200),
     );
-    expect(previewA.candidateFingerprint).not.toBe(previewB.candidateFingerprint);
     expect(reconciliationCandidateMatches(previewA, previewB)).toBe(false);
   });
 
-  it('candidate fingerprint supports INT64_MAX distributions', () => {
+  it('semantic match supports INT64_MAX distributions', () => {
     const ref = reference();
     const int64Distribution = dist([[10, INT64_MAX]]);
     const state = createManualTrackerVillageState({
@@ -1210,39 +1194,15 @@ describe('ManualTrackerReconciliation', () => {
       core: createManualUpgradeCoreState({ itemStates: [] }),
     });
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-int64', 'sha256:fp-int64', ref.lineageID),
+      newBaselineReference: reference('snapshot-int64', ref.lineageID),
       entries: [completeObservation(key, int64Distribution)],
     });
     const preview = previewReconciliation(evidence, state, s(1_700_000_200));
-    expect(preview.candidateFingerprint.length).toBeGreaterThan(0);
     expect(preview.items[0]?.observedDistribution).not.toBeNull();
 
-    const fingerprint = computeReconciliationCandidateFingerprint({
-      duplicate: false,
-      lineageComparable: true,
-      timeConfidence: 'reliableSourceTimestamp',
-      newReference: reference('snapshot-int64', 'sha256:fp-int64', ref.lineageID),
-      newNormalizedPlayerTag: '#P1',
-      sourceTimestampMs: s(1_700_000_200),
-      items: [
-        {
-          itemKey: key,
-          displayName: trackerItemKeyStableId(key),
-          classification: 'exactMatch',
-          message: '观察一致',
-          previousDistribution: int64Distribution,
-          observedDistribution: int64Distribution,
-          relatedRecordIDs: [],
-          confirmedRecordIDs: [],
-          observedTimer: false,
-          coverageComplete: true,
-          observedDistributionComplete: true,
-          observedSectionTrustGatesOpen: true,
-          observedTimerCoverageComplete: false,
-        },
-      ],
-    });
-    expect(fingerprint.length).toBeGreaterThan(0);
+    // 相同证据重复 preview → 语义匹配（bigint 分布直接比较，不得抛异常）。
+    const again = previewReconciliation(evidence, state, s(1_700_000_201));
+    expect(reconciliationCandidateMatches(preview, again)).toBe(true);
   });
 
   it('same preview metadata with changed timerCoverageComplete invalidates preview', () => {
@@ -1251,7 +1211,7 @@ describe('ManualTrackerReconciliation', () => {
       villageID,
       core: createManualUpgradeCoreState({ itemStates: [] }),
     });
-    const sharedReference = reference('snapshot-same', 'sha256:fp-same', ref.lineageID);
+    const sharedReference = reference('snapshot-same', ref.lineageID);
     const sharedObservation = {
       hasTimer: true,
       timerCoverageComplete: true,
@@ -1279,7 +1239,7 @@ describe('ManualTrackerReconciliation', () => {
       state,
       s(1_700_000_200),
     );
-    expect(previewA.candidateFingerprint).not.toBe(previewB.candidateFingerprint);
+    expect(reconciliationCandidateMatches(previewA, previewB)).toBe(false);
     try {
       reconcileManualTracker(
         evidenceFrom({
@@ -1326,7 +1286,7 @@ describe('ManualTrackerReconciliation', () => {
   it('wrong village ID is rejected', () => {
     const ref = reference();
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [completeObservation(key, dist([[11, 1n]]))],
     });
     try {
@@ -1364,7 +1324,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = stateWithAssignment(ref);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-dup', ref.fingerprint, ref.lineageID),
+      newBaselineReference: reference('snapshot-dup', ref.lineageID),
       duplicate: true,
       entries: [
         completeObservation(key, dist([[10, 1n]]), {
@@ -1386,7 +1346,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = stateWithAssignment(ref);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-p2', 'sha256:fp-p2', 'lineage-p2'),
+      newBaselineReference: reference('snapshot-p2', 'lineage-p2'),
       lineageComparable: true,
       entries: [completeObservation(key, dist([[11, 1n]]))],
     });
@@ -1402,7 +1362,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = stateWithAssignment(ref);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         completeObservation(key, dist([[10, 1n]]), {
           hasTimer: false,
@@ -1422,7 +1382,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = observedState(ref, [[10, 1n]]);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-dup', ref.fingerprint, ref.lineageID),
+      newBaselineReference: reference('snapshot-dup', ref.lineageID),
       duplicate: true,
       entries: [
         completeObservation(key, dist([[10, 1n]]), {
@@ -1442,7 +1402,7 @@ describe('ManualTrackerReconciliation', () => {
     const ref = reference();
     const state = stateWithAssignment(ref);
     const evidence = evidenceFrom({
-      newBaselineReference: reference('snapshot-2', 'sha256:fp-2', ref.lineageID),
+      newBaselineReference: reference('snapshot-2', ref.lineageID),
       entries: [
         completeObservation(key, dist([[10, 1n]]), {
           hasTimer: true,

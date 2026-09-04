@@ -1,7 +1,8 @@
 export const MANUAL_TRACKER_SCHEMA = {
   envelope: 1,
   store: 1,
-  village: 1,
+  /** v2（Issue #304）：baseline 移除 fingerprint，provenance 移除 sourceFingerprint。旧文件标记不可用。 */
+  village: 2,
 } as const;
 
 export type ManualTrackerDiagnosticKind = 'invalidState' | 'migration' | 'conflict' | 'unavailable';

@@ -12,7 +12,6 @@ final class QueueAssignmentModelsTests: XCTestCase {
     private func validReference() -> ManualBaselineReference {
         ManualBaselineReference(
             revision: "rev-1",
-            fingerprint: "fp-1",
             lineageID: "lineage-1"
         )
     }

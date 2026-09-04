@@ -1,4 +1,3 @@
-export * from './candidate-fingerprint';
 export * from './evidence';
 export * from './types';
 export * from './helpers';

@@ -1,4 +1,4 @@
-import { generateUuid, sha256Fingerprint } from '@coc-helper/wire';
+import { generateUuid } from '@coc-helper/wire';
 
 import type { AccountItem, AccountSnapshot } from '../account';
 import { createGameCatalog, type GameCatalog } from '../catalog/game-catalog';
@@ -160,9 +160,6 @@ export function makeTestSnapshot(
     boosts: {},
     unknownTopLevelKeys: [],
     diagnostics: [],
-    contentFingerprint: sha256Fingerprint(
-      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
-    ),
   };
 }
 

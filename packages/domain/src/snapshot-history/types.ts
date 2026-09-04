@@ -1,4 +1,4 @@
-import type { CanonicalJsonValue, Sha256Fingerprint, UuidString } from '@coc-helper/wire';
+import type { CanonicalJsonValue, UuidString } from '@coc-helper/wire';
 
 import { ACCOUNT_PARSER_VERSION, ACCOUNT_TIMER_SCHEMA_VERSION } from '../account/types';
 import {
@@ -99,7 +99,6 @@ export type SnapshotDisplayBinding = {
   readonly category?: string;
   readonly displayCategory?: string;
   readonly catalogVersion?: string;
-  readonly catalogFingerprint?: string;
 };
 
 export type SnapshotObservationItem = {
@@ -140,7 +139,6 @@ export type SnapshotCoverageProof =
       readonly expectedCount: number | null;
       readonly verificationReason: string | null;
       readonly verificationRuleVersion: string | null;
-      readonly inputBinding: string | null;
     }
   | {
       readonly kind: 'legacyAuthoritative';
@@ -237,8 +235,6 @@ export type SnapshotLineageResolution = {
 export type SnapshotHistoryEntry = {
   readonly schemaVersion: number;
   readonly observationVersion: number;
-  readonly fingerprintVersion: number;
-  readonly integrityVersion: number;
   readonly snapshotID: UuidString;
   readonly villageID: UuidString;
   readonly lineageID: UuidString;
@@ -246,14 +242,12 @@ export type SnapshotHistoryEntry = {
   readonly appliedAtRefSeconds: number;
   readonly sourceTimestampRefSeconds: number | null;
   readonly parserVersion: string;
-  readonly canonicalFingerprint: Sha256Fingerprint;
   readonly rawJSON: string;
   readonly observation: CanonicalSnapshotObservation;
   readonly coverage: SnapshotObservationCoverage;
   readonly isBaseline: boolean;
   readonly baselineReason: SnapshotLineageReason | null;
   readonly timerSchema: SnapshotTimerSchema | null;
-  readonly integrityFingerprint: Sha256Fingerprint;
 };
 
 export type SnapshotHistoryCanonicalizationError =
@@ -354,6 +348,5 @@ export function issueTestCoverageProof(
     expectedCount,
     verificationReason,
     verificationRuleVersion: null,
-    inputBinding: null,
   };
 }

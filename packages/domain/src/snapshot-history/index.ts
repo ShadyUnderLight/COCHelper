@@ -23,14 +23,12 @@ export {
   SnapshotHistoryCanonicalizationException,
   canonicalizeSnapshotHistory,
   canonicalizeSnapshotHistoryWithLineage,
-  fingerprintForObservation,
-  integrityFingerprint,
+  observationIdentityKey,
 } from './canonicalizer';
 export type { CanonicalizeSnapshotHistoryOptions } from './canonicalizer';
 export { coverageProofsForSnapshot } from './coverage-adapter';
 export {
   encodeHistoryEntryWire,
-  encodeIntegrityMaterialWire,
   encodeSnapshotDiffWire,
   historyEntryWireHex,
   snapshotDiffWireHex,
@@ -130,8 +128,8 @@ export {
   coverageHasLegacySectionEvidence,
   hydrateVerifiedCoverageOnEntry,
   hydrateVerifiedCoverageOnEnvelope,
+  issuePerfFixtureSourceUniverse,
   issueTestFixtureSourceUniverse,
   revalidateCoverageProof,
   revalidateSourceUniverse,
-  sectionInputBinding,
 } from './trust-hydration';

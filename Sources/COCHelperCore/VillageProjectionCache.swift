@@ -1,5 +1,5 @@
 //  Issue #200：静态村庄投影缓存。
-//  Issue #210：key 轻量化（内容指纹 + 显示名称），改名自然 miss。
+//  Issue #304：key 改用显式 generation（调用方在状态变更后递增），删除内容指纹。
 import Foundation
 //
 //  Village Detail 每 60s tick 会完整重跑 目录投影 + 组卡投影 + 精制台投影。
@@ -17,11 +17,10 @@ import Foundation
 //    availability 恒定），命中后在 builtAt 基础上动态刷新。
 //  - buildingGroups 不入条目：每 tick 从刷新后的 projection 派生
 //    （O(records)），保证与 detail/overview 消费一致。
-//  - 内容身份变化 → 自动 miss → 重建，无需显式 invalidate：
-//    key 用 AccountSnapshot.contentFingerprint / ManualUpgradeCore
-//    .contentFingerprint（init 一次性生成）表示快照与 manual 身份，
-//    villageName 直接入 key（改名 → 重建），tick 查找不再 Hash 完整
-//    payload（issue #210 目标 3）。
+//  - 状态变化 → 调用方先递增 generation/显式失效 → miss 重建：
+//    key 用显式 snapshotGeneration / manualGeneration（AppModel didSet
+//    维护）表示快照与 manual 身份，villageName 直接入 key（改名 → 重建），
+//    tick 查找只比较小标量，不遍历完整 payload。
 public final class VillageProjectionCache {
     // MARK: - 类型
 
@@ -47,19 +46,20 @@ public final class VillageProjectionCache {
         }
     }
 
-    /// 内容身份 key（不含 now；Issue #210：轻量身份，不用完整值类型）。
+    /// 内容身份 key（不含 now；Issue #304：显式 generation，不用内容摘要）。
     ///
-    /// 快照/manual core 用「init 时一次性生成的 contentFingerprint」表示
-    /// 内容身份：每次 tick 的字典查找只 Hash 两个短字符串 + 小标量，
-    /// 不遍历快照（含 originalText 大字符串）与 manual core（records 增长）。
+    /// 快照/manual 状态变化由调用方递增对应 generation（导入/清除/
+    /// manual mutation/reconcile/村庄变更/Catalog epoch 变化处先失效或递增
+    /// 再 render）：每次 tick 的字典查找只比较小标量，不遍历快照
+    ///（含 originalText 大字符串）与 manual core（records 增长）。
     /// villageName 属于显示身份：改名 → 新 key → 自然 miss 重建。
-    /// （不得用 updatedAt/Date/数组地址冒充内容身份——issue #210 红线。）
+    /// （不得用 updatedAt/Date/数组地址冒充内容身份，也不得引入新 digest。）
     struct Key: Hashable {
         let villageID: UUID
         let villageName: String
-        let snapshotFingerprint: String
+        let snapshotGeneration: UInt64
         let base: TrackerBase
-        let manualFingerprint: String?
+        let manualGeneration: UInt64?
         let catalogEpoch: Int
         let catalogVersion: String?
         let phaseBucket: PhaseBucket
@@ -105,7 +105,9 @@ public final class VillageProjectionCache {
         base: TrackerBase,
         now: Date,
         manualUpgradeCore: ManualUpgradeCore?,
-        catalogEpoch: Int
+        catalogEpoch: Int,
+        snapshotGeneration: UInt64,
+        manualGeneration: UInt64?
     ) -> RenderResult {
         guard let snapshot = village.accountSnapshot else {
             // 无快照无法投影（project 对 nil snapshot 容忍）；直接构建、不缓存。
@@ -134,9 +136,9 @@ public final class VillageProjectionCache {
         let key = Key(
             villageID: village.id,
             villageName: village.name,
-            snapshotFingerprint: snapshot.contentFingerprint,
+            snapshotGeneration: snapshotGeneration,
             base: base,
-            manualFingerprint: manualUpgradeCore?.contentFingerprint,
+            manualGeneration: manualGeneration,
             catalogEpoch: catalogEpoch,
             catalogVersion: catalog?.gameVersion,
             phaseBucket: seasonalPhases.bucket(at: now)

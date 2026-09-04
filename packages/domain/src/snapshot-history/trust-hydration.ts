@@ -1,17 +1,10 @@
-import { createHash } from 'node:crypto';
-
-import {
-  canonicalBytes,
-  canonicalize,
-  parseJson,
-  sortedObjectKeys,
-  type CanonicalJsonValue,
-} from '@coc-helper/wire';
+import { parseJson, sortedObjectKeys, type CanonicalJsonValue } from '@coc-helper/wire';
 
 import { prepareAccountText } from '../account/prepare';
 import { parseAccountSnapshot } from '../account/parser';
 import type { AccountSnapshot } from '../account/types';
 import type { Clock } from '../primitives';
+import { coverageProofsForSnapshot } from './coverage-adapter';
 import { SNAPSHOT_HISTORY_ALL_SECTIONS } from './known-sections';
 import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 import type {
@@ -32,24 +25,6 @@ export const SNAPSHOT_COVERAGE_TEST_FIXTURE_ADAPTER_ID = 'test-fixture';
 export const SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID = 'perf-fixture';
 export const SNAPSHOT_COVERAGE_CURRENT_VERIFICATION_RULE_VERSION = '1';
 
-export function sectionInputBinding(rawJSON: string, section: string): string | null {
-  const topLevel = tryTopLevelObject(rawJSON);
-  if (topLevel === undefined) {
-    return null;
-  }
-  const value = topLevel[section];
-  if (value === undefined) {
-    return null;
-  }
-  try {
-    const canonical = canonicalize(parseJson(JSON.stringify(value)));
-    const digest = createHash('sha256').update(canonicalBytes(canonical)).digest('hex');
-    return `sha256:${digest}`;
-  } catch {
-    return null;
-  }
-}
-
 export function revalidateCoverageProof(input: {
   readonly proof: Extract<SnapshotCoverageProof, { kind: 'verified' }>;
   readonly rawJSON: string;
@@ -63,7 +38,9 @@ export function revalidateCoverageProof(input: {
   ) {
     return revalidateTestFixtureProof(proof);
   }
-  if (proof.verificationRuleVersion === null || proof.inputBinding === null) {
+  // Issue #304：不再比较内容 inputBinding 摘要；保留 rule 版本门、
+  // section 结构校验与 adapter 来源校验。
+  if (proof.verificationRuleVersion === null) {
     return { kind: 'rejected', reason: '缺少 persisted revalidation 材料。' };
   }
   if (proof.verificationRuleVersion !== SNAPSHOT_COVERAGE_CURRENT_VERIFICATION_RULE_VERSION) {
@@ -71,10 +48,6 @@ export function revalidateCoverageProof(input: {
       kind: 'rejected',
       reason: `verification rule 版本不受支持：${proof.verificationRuleVersion}。`,
     };
-  }
-  const computedBinding = sectionInputBinding(rawJSON, section);
-  if (computedBinding === null || computedBinding !== proof.inputBinding) {
-    return { kind: 'rejected', reason: '验证输入绑定不匹配。' };
   }
   if (!validatePersistedSectionStructure(rawJSON, section, proof.expectedCount)) {
     return { kind: 'rejected', reason: 'section 结构校验失败。' };
@@ -103,8 +76,8 @@ function revalidateTestFixtureProof(
 
 function revalidatePerfFixtureProof(
   proof: Extract<SnapshotCoverageProof, { kind: 'verified' }>,
-  _rawJSON: string,
-  _section: string,
+  rawJSON: string,
+  section: string,
 ): SectionCoverageRuntimeTrust {
   if (proof.adapterID !== SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID) {
     return { kind: 'rejected', reason: 'adapterID 与 perf fixture 契约不一致。' };
@@ -115,7 +88,33 @@ function revalidatePerfFixtureProof(
   if (proof.verificationReason !== 'bundled perf fixture') {
     return { kind: 'rejected', reason: 'perf fixture verificationReason 不匹配。' };
   }
-  return { kind: 'rejected', reason: 'rawJSON 不是受信任的 bundled perf fixture。' };
+  // Issue #304：不再用内容 hash allowlist 判定；rawJSON 仍须按 adapter 契约
+  // 声明该 section（业务来源表达）。
+  if (!perfFixtureDeclaresSection(rawJSON, section, proof.expectedCount)) {
+    return { kind: 'rejected', reason: 'perf fixture coverage 声明与 section 不一致。' };
+  }
+  return { kind: 'trusted' };
+}
+
+function perfFixtureDeclaresSection(
+  rawJSON: string,
+  section: string,
+  expectedCount: number | null,
+): boolean {
+  const snapshot = tryParseSnapshot(rawJSON);
+  if (snapshot === undefined) {
+    return false;
+  }
+  const proofs = coverageProofsForSnapshot(snapshot);
+  const proof = proofs[section];
+  if (proof === undefined || proof.kind !== 'declared') {
+    return false;
+  }
+  return (
+    proof.source === SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID &&
+    proof.version === '1' &&
+    proof.expectedCount === expectedCount
+  );
 }
 
 export function revalidateSourceUniverse(input: {
@@ -137,9 +136,38 @@ export function revalidateSourceUniverse(input: {
     return revalidateTestFixtureSourceUniverse(input.universe, input.coverage);
   }
   if (input.universe.adapterID === SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID) {
-    return { kind: 'rejected', reason: 'rawJSON 不是受信任的 bundled perf fixture。' };
+    return revalidatePerfFixtureSourceUniverse(input.universe, input.snapshot);
   }
   return { kind: 'rejected', reason: '未注册的 source universe adapter。' };
+}
+
+function revalidatePerfFixtureSourceUniverse(
+  universe: SnapshotCoverageSourceUniverse,
+  snapshot: AccountSnapshot,
+): SourceUniverseRuntimeTrust {
+  // Issue #304：按 adapter 契约从 snapshot 派生期望 universe 并比较，
+  // 不再用内容 hash allowlist 判定。
+  const proofs = coverageProofsForSnapshot(snapshot);
+  const requiredSections = new Set<string>();
+  for (const section of SNAPSHOT_HISTORY_ALL_SECTIONS) {
+    const proof = proofs[section];
+    if (
+      proof !== undefined &&
+      proof.kind === 'declared' &&
+      proof.source === SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID &&
+      proof.version === '1'
+    ) {
+      requiredSections.add(section);
+    }
+  }
+  if (requiredSections.size === 0) {
+    return { kind: 'rejected', reason: 'perf fixture source universe 与 adapter 契约不一致。' };
+  }
+  const expected = issuePerfFixtureSourceUniverse(requiredSections);
+  if (JSON.stringify(expected) !== JSON.stringify(universe)) {
+    return { kind: 'rejected', reason: 'perf fixture source universe 与 adapter 契约不一致。' };
+  }
+  return { kind: 'trusted' };
 }
 
 function revalidateTestFixtureSourceUniverse(
@@ -173,6 +201,23 @@ export function issueTestFixtureSourceUniverse(
   }));
   return {
     adapterID: SNAPSHOT_COVERAGE_TEST_FIXTURE_ADAPTER_ID,
+    protocolVersion: '1',
+    sections,
+  };
+}
+
+export function issuePerfFixtureSourceUniverse(
+  requiredSections: ReadonlySet<string>,
+): SnapshotCoverageSourceUniverse {
+  const sections = [...SNAPSHOT_HISTORY_ALL_SECTIONS].sort().map((rawSection) => ({
+    base: snapshotHistoryBaseFromSection(rawSection),
+    rawSection,
+    relevance: requiredSections.has(rawSection)
+      ? ('required' as const)
+      : ('notApplicable' as const),
+  }));
+  return {
+    adapterID: SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID,
     protocolVersion: '1',
     sections,
   };

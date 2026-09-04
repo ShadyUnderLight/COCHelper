@@ -4,12 +4,7 @@ import { resolve } from 'node:path';
 import { refSecondsToUnixSeconds } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
-import {
-  computeContentFingerprint,
-  maskDiagnosticIdsInWireHex,
-  parseAccountSnapshot,
-  wireHex,
-} from './index';
+import { maskDiagnosticIdsInWireHex, parseAccountSnapshot, wireHex } from './index';
 
 const GOLDEN_IMPORTED_AT_MS = refSecondsToUnixSeconds(807_529_133) * 1000;
 const SAMPLE_NOW_MS = 1_700_000_600_000;
@@ -121,7 +116,6 @@ describe('AccountSnapshotImporter', () => {
       readFileSync(resolve(root, 'Tests/Golden/Fixtures/parser_golden_expected.json'), 'utf8'),
     ) as {
       accountSnapshot: {
-        contentFingerprint: string;
         encodedJSONHex: string;
       };
     };
@@ -137,13 +131,12 @@ describe('AccountSnapshotImporter', () => {
     expect(parsed.value.tag).toBe('#GOLDEN01');
     expect(parsed.value.ageSeconds).toBe(100000n);
     expect(parsed.value.unknownTopLevelKeys).toEqual(['golden_unknown_field']);
-    expect(parsed.value.contentFingerprint).toBe(expected.accountSnapshot.contentFingerprint);
     expect(maskDiagnosticIdsInWireHex(wireHex(parsed.value))).toBe(
       expected.accountSnapshot.encodedJSONHex,
     );
   });
 
-  it('contentFingerprint 对同一输入稳定、对内容变化敏感', () => {
+  it('同一输入解析业务内容稳定、内容变化可区分（Issue #304 无 fingerprint）', () => {
     const clock = new FakeClock(SAMPLE_NOW_MS);
     const first = parseAccountSnapshot(sampleJson, { clock });
     const second = parseAccountSnapshot(sampleJson, { clock });
@@ -151,7 +144,11 @@ describe('AccountSnapshotImporter', () => {
     if (!first.ok || !second.ok) {
       return;
     }
-    expect(first.value.contentFingerprint).toBe(second.value.contentFingerprint);
+    // 诊断随机 id 不属于业务身份：业务字段一致即视为同一内容。
+    expect(first.value.tag).toBe(second.value.tag);
+    expect(first.value.objectSections).toEqual(second.value.objectSections);
+    expect(first.value.numericSections).toEqual(second.value.numericSections);
+    expect(first.value.boosts).toEqual(second.value.boosts);
     const mutated = {
       ...first.value,
       objectSections: {
@@ -165,6 +162,8 @@ describe('AccountSnapshotImporter', () => {
         ],
       },
     };
-    expect(computeContentFingerprint(mutated)).not.toBe(first.value.contentFingerprint);
+    expect(mutated.objectSections.buildings?.[0]?.level).not.toBe(
+      first.value.objectSections.buildings?.[0]?.level,
+    );
   });
 });

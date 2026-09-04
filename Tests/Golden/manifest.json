@@ -70,7 +70,7 @@
       "category": "parser",
       "operation": "fixture-registry",
       "fixture": "Tests/Golden/Fixtures/parser_golden_expected.json",
-      "fixtureSha256": "sha256:489d7fa307ec3302bb5d07cf7ffa01df5c293e894a2fcbb442a22f197a234d57",
+      "fixtureSha256": "sha256:2c840b9f82a207c4eb36e1b6f6ecd6ffbbb7f0e07b23240badc446ca9c3276e2",
       "swiftOwner": "Tests/Golden/ParserGoldenTests.swift",
       "typescriptOwner": "packages/domain/src/snapshot-history/canonicalizer.golden.test.ts"
     },
@@ -88,7 +88,7 @@
       "category": "ordering",
       "operation": "snapshot-history-diff",
       "fixture": "Tests/Golden/Fixtures/snapshot-history-diff-contract.json",
-      "fixtureSha256": "sha256:cb75eaf6e735be7672cbd87a826eee07c9c830c8c83f455b89772e12ef862be1",
+      "fixtureSha256": "sha256:c49d8ed4dca662dba3d3ec3fa9b9f7af785f9e1538429bee3e6c2699422a2636",
       "swiftOwner": "Tools/golden-oracle/GoldenOracleEntry.swift#snapshot-history-diff",
       "typescriptOwner": "packages/testkit/src/snapshot-history.parity.test.ts"
     }

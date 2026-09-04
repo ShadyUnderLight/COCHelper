@@ -5,7 +5,9 @@ import Foundation
 public enum ManualTrackerSchema {
     public static let envelope = 1
     public static let store = 1
-    public static let village = 1
+    /// v2（Issue #304）：baseline 移除 fingerprint，provenance 移除 sourceFingerprint。
+    /// 旧文件标记不可用，不迁移、不 fallback。
+    public static let village = 2
 }
 
 public enum ManualTrackerStoreStatus: String, Codable, Hashable, Sendable {
@@ -84,7 +86,6 @@ public struct ManualTrackerVillageState: Codable, Hashable, Sendable {
     /// The source snapshot reference currently used by the manual ledger.
     /// Reconciliation outcomes remain separately auditable in history.
     public var baselineRevision: String? { baselineReference?.revision }
-    public var baselineFingerprint: String? { baselineReference?.fingerprint }
 
     public init(
         villageID: UUID,

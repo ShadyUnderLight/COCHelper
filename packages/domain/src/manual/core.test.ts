@@ -22,13 +22,11 @@ const key = trackerItemKeyRoot('home', 'buildings', 100n);
 const id = (value: string): UuidString => parseUuid(value)!;
 const baseline = {
   revision: 'snapshot-1',
-  fingerprint: 'sha256:baseline',
   lineageID: 'village-1',
 };
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: 'catalog-test',
-  sourceFingerprint: 'sha256:catalog',
   manifestSchemaVersion: 1,
 };
 
@@ -89,7 +87,7 @@ function expectThrowsManualError(
 }
 
 describe('ManualUpgradeCoreState', () => {
-  it('content fingerprint 确定且在 mutation 后失效', () => {
+  it('相同输入结构相等，mutation 产生不等的新值（Issue #304 无 fingerprint）', () => {
     const coreA = coreForStatus({
       imported: distribution([[1, 2n]]),
       status: 'observed',
@@ -98,14 +96,14 @@ describe('ManualUpgradeCoreState', () => {
       imported: distribution([[1, 2n]]),
       status: 'observed',
     });
-    expect(coreA.contentFingerprint).toBe(coreB.contentFingerprint);
+    expect(coreA.equals(coreB)).toBe(true);
 
     const recordID = id('00000000-0000-0000-0000-000000000001');
     let core = coreForStatus({
       imported: distribution([[12, 100n]]),
       status: 'observed',
     });
-    const before = core.contentFingerprint;
+    const beforeStart = core;
     core = core.startUpgrade({
       itemKey: key,
       fromLevel: 12,
@@ -119,14 +117,13 @@ describe('ManualUpgradeCoreState', () => {
       recordID,
       nowMs: dateMs(1_000),
     });
-    expect(core.contentFingerprint).not.toBe(before);
+    expect(core.equals(beforeStart)).toBe(false);
+    expect(core.activeRecords).toHaveLength(1);
 
-    const stable = core.contentFingerprint;
-    expect(core.contentFingerprint).toBe(stable);
-
-    const beforeCancel = core.contentFingerprint;
+    const beforeCancel = core;
     core = core.cancelUpgrade(recordID);
-    expect(core.contentFingerprint).not.toBe(beforeCancel);
+    expect(core.equals(beforeCancel)).toBe(false);
+    expect(core.activeRecords).toHaveLength(0);
 
     const adjustRecordID = id('00000000-0000-0000-0000-000000000002');
     core = core.startUpgrade({
@@ -142,16 +139,16 @@ describe('ManualUpgradeCoreState', () => {
       recordID: adjustRecordID,
       nowMs: dateMs(1_020),
     });
-    const beforeAdjust = core.contentFingerprint;
+    const beforeAdjust = core;
     core = core.adjustStartTime(adjustRecordID, dateMs(1_025), dateMs(1_025));
-    expect(core.contentFingerprint).not.toBe(beforeAdjust);
+    expect(core.equals(beforeAdjust)).toBe(false);
 
-    const beforeSettle = core.contentFingerprint;
+    const beforeSettle = core;
     ({ core } = core.settleDue(dateMs(1_040)));
-    expect(core.contentFingerprint).not.toBe(beforeSettle);
+    expect(core.equals(beforeSettle)).toBe(false);
   });
 
-  it('settleDue 空操作不刷新 fingerprint', () => {
+  it('settleDue 空操作返回同一实例', () => {
     const recordID = id('00000000-0000-0000-0000-000000000001');
     const core = coreForStatus({
       imported: distribution([[12, 100n]]),
@@ -169,17 +166,12 @@ describe('ManualUpgradeCoreState', () => {
       recordID,
       nowMs: dateMs(1_000),
     });
-    const beforeFingerprint = core.contentFingerprint;
-    const refreshCountBefore = core.getFingerprintRefreshCountForTesting();
-
     const result = core.settleDue(dateMs(1_009));
     expect(result.settled).toEqual([]);
     expect(result.core).toBe(core);
-    expect(result.core.contentFingerprint).toBe(beforeFingerprint);
-    expect(result.core.getFingerprintRefreshCountForTesting()).toBe(refreshCountBefore);
   });
 
-  it('settleDue 真正结算时只刷新一次 fingerprint', () => {
+  it('settleDue 真正结算产生新值', () => {
     const recordID = id('00000000-0000-0000-0000-000000000001');
     const core = coreForStatus({
       imported: distribution([[12, 100n]]),
@@ -197,14 +189,12 @@ describe('ManualUpgradeCoreState', () => {
       recordID,
       nowMs: dateMs(1_000),
     });
-    const beforeFingerprint = core.contentFingerprint;
-    const refreshCountBefore = core.getFingerprintRefreshCountForTesting();
+    const beforeSettle = core;
 
     const result = core.settleDue(dateMs(1_010));
     expect(result.settled).toHaveLength(1);
     expect(result.settled[0]?.status).toBe('completed');
-    expect(result.core.contentFingerprint).not.toBe(beforeFingerprint);
-    expect(result.core.getFingerprintRefreshCountForTesting()).toBe(refreshCountBefore + 1);
+    expect(result.core.equals(beforeSettle)).toBe(false);
   });
 
   it('timed upgrade 预留源数量并在到期后幂等结算', () => {
@@ -484,7 +474,6 @@ describe('ManualUpgradeCoreState', () => {
           catalogProvenance: provenance,
           baselineReference: {
             revision: 'snapshot-2',
-            fingerprint: null,
             lineageID: null,
           },
           nowMs: dateMs(1_000),
@@ -558,7 +547,6 @@ describe('ManualUpgradeCoreState', () => {
         { kind: 'invalidLevel' },
       );
       expect(before.equals(before)).toBe(true);
-      expect(before.contentFingerprint).toBe(before.contentFingerprint);
       expect(before.records).toHaveLength(0);
     }
   });
@@ -621,7 +609,7 @@ describe('ManualLevelDistribution Int64 边界', () => {
 
     expect(() =>
       createManualImportedObservation({
-        reference: { revision: 'snapshot-2', fingerprint: null, lineageID: null },
+        reference: { revision: 'snapshot-2', lineageID: null },
         levelDistribution: distribution([[10, 1n]]),
       }),
     ).not.toThrow();

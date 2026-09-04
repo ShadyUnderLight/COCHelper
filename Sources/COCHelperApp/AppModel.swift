@@ -212,7 +212,17 @@ public struct ImportedObservationCandidate: Identifiable, Hashable, Sendable {
 
 @MainActor
 public final class AppModel: ObservableObject {
-    @Published public private(set) var villages: [VillageProfile]
+    @Published public private(set) var villages: [VillageProfile] {
+        didSet {
+            // Issue #304：仅快照/村庄身份变化才失效；官方状态等非投影输入
+            // 变化不惊动缓存（tick/刷新仍命中）。
+            if bumpSnapshotGenerations(oldVillages: oldValue, newVillages: villages) {
+                // 状态变更后先失效再 render，不得返回旧投影。
+                projectionCache.removeAll()
+                detailFlatRowCache.removeAll()
+            }
+        }
+    }
     @Published public private(set) var selectedVillageID: UUID
     @Published public var importText = ""
     @Published public var importIntoCurrentVillage = false
@@ -230,7 +240,15 @@ public final class AppModel: ObservableObject {
     /// Projection-safe per-village manual state. Imported snapshots remain
     /// observations; a core whose baseline is not the current active history
     /// tail is exposed here as unknown without rewriting its persisted bytes.
-    @Published public private(set) var manualUpgradeCores: [UUID: ManualUpgradeCore] = [:]
+    @Published public private(set) var manualUpgradeCores: [UUID: ManualUpgradeCore] = [:] {
+        didSet {
+            if bumpManualGenerations(oldCores: oldValue, newCores: manualUpgradeCores) {
+                // manual 变更后先失效再 render，不得返回旧投影。
+                projectionCache.removeAll()
+                detailFlatRowCache.removeAll()
+            }
+        }
+    }
     @Published public private(set) var manualTrackerStatus: ManualTrackerStoreStatus = .empty
     @Published public private(set) var manualTrackerError: String?
     /// 正在刷新官方玩家数据的村庄 ID 集合（防重入守卫 + 卡片按村庄隔离，Issue #35）。
@@ -281,7 +299,15 @@ public final class AppModel: ObservableObject {
     /// 保留递增点供未来热更新路径使用（缓存 key 变化 → 自动重建）。
     public private(set) var catalogEpoch = 0
 
-    /// 村庄静态投影缓存（key = 内容身份，命中后动态刷新）。
+    /// Issue #304：快照/manual 显式 generation（替代内容指纹的缓存身份）。
+    ///
+    /// tick 只读不递增（命中）；快照导入/清除、村庄增删改名、manual
+    /// mutation/reconcile 时由 `didSet` diff 递增对应村庄代次。刻意不用
+    /// 时间或摘要伪装内容身份；`didSet` diff 只在变更时遍历，不在 tick 热路径。
+    private var snapshotGenerations: [UUID: UInt64] = [:]
+    private var manualGenerations: [UUID: UInt64] = [:]
+
+    /// 村庄静态投影缓存（key = 显式 generation 身份，命中后动态刷新）。
     /// @MainActor 持有；同步访问，无后台计算。
     private let projectionCache = VillageProjectionCache()
 
@@ -304,6 +330,66 @@ public final class AppModel: ObservableObject {
         (detailFlatRowCache.buildCount, detailFlatRowCache.hitCount)
     }
 
+    // MARK: - Issue #304 显式 generation
+
+    /// 当前村庄快照代次（无快照村庄同样跟踪，确保导入前后 key 变化）。
+    func snapshotGeneration(for villageID: UUID) -> UInt64 {
+        snapshotGenerations[villageID] ?? 0
+    }
+
+    /// 当前村庄 manual 代次（无 core 时为 nil，与有 core 区分）。
+    func manualGeneration(for villageID: UUID) -> UInt64? {
+        manualUpgradeCores[villageID] == nil ? nil : (manualGenerations[villageID] ?? 0)
+    }
+
+    /// 快照/村庄身份 diff：变化村庄代次 +1，删除村庄清理代次。返回是否 bump。
+    @discardableResult
+    private func bumpSnapshotGenerations(
+        oldVillages: [VillageProfile], newVillages: [VillageProfile]
+    ) -> Bool {
+        var bumped = false
+        let oldByID = Dictionary(uniqueKeysWithValues: oldVillages.map { ($0.id, $0) })
+        let newIDs = Set(newVillages.map(\.id))
+        // 增删村庄同样失效（清理残留 key，避免复用 ID 命中旧条目）。
+        if Set(oldByID.keys) != newIDs {
+            bumped = true
+        }
+        for village in newVillages {
+            let old = oldByID[village.id]
+            // 改名已由 key 中 villageName 覆盖；此处只跟踪快照内容/有无变化。
+            // 新增村庄初始化为 0 即可自然 miss，无需 bump。
+            if let old, old.accountSnapshot != village.accountSnapshot {
+                snapshotGenerations[village.id, default: 0] &+= 1
+                bumped = true
+            } else if old == nil {
+                snapshotGenerations[village.id] = snapshotGenerations[village.id] ?? 0
+            }
+        }
+        for id in snapshotGenerations.keys where !newIDs.contains(id) {
+            snapshotGenerations.removeValue(forKey: id)
+        }
+        return bumped
+    }
+
+    /// manual core diff：变化村庄代次 +1，删除村庄清理代次。返回是否 bump。
+    @discardableResult
+    private func bumpManualGenerations(
+        oldCores: [UUID: ManualUpgradeCore], newCores: [UUID: ManualUpgradeCore]
+    ) -> Bool {
+        var bumped = false
+        if Set(oldCores.keys) != Set(newCores.keys) {
+            bumped = true
+        }
+        for (id, core) in newCores where oldCores[id] != core {
+            manualGenerations[id, default: 0] &+= 1
+            bumped = true
+        }
+        for id in manualGenerations.keys where newCores[id] == nil {
+            manualGenerations.removeValue(forKey: id)
+        }
+        return bumped
+    }
+
     /// Issue #200：村庄详情渲染入口（缓存命中 + 动态刷新）。
     /// 输出与直接 `VillageCatalogProjection.project` 一致。
     public func villageRender(
@@ -320,7 +406,9 @@ public final class AppModel: ObservableObject {
             base: base,
             now: now,
             manualUpgradeCore: manualUpgradeCores[villageID],
-            catalogEpoch: catalogEpoch
+            catalogEpoch: catalogEpoch,
+            snapshotGeneration: snapshotGeneration(for: villageID),
+            manualGeneration: manualGeneration(for: villageID)
         )
     }
 
@@ -346,6 +434,8 @@ public final class AppModel: ObservableObject {
             now: now,
             manualUpgradeCore: manualUpgradeCores[village.id],
             catalogEpoch: catalogEpoch,
+            snapshotGeneration: snapshotGeneration(for: village.id),
+            manualGeneration: manualGeneration(for: village.id),
             catalog: gameCatalog,
             seasonalPhases: seasonalPhases
         ) else {
@@ -382,6 +472,8 @@ public final class AppModel: ObservableObject {
         let seasonalPhases = seasonalPhases
         let cores = manualUpgradeCores
         let epoch = catalogEpoch
+        let snapshotGens = snapshotGenerations
+        let manualGens = manualGenerations
         let cache = projectionCache
         let provider: VillageProjectionProvider = { village, base, now in
             cache.render(
@@ -392,7 +484,9 @@ public final class AppModel: ObservableObject {
                 base: base,
                 now: now,
                 manualUpgradeCore: cores[village.id],
-                catalogEpoch: epoch
+                catalogEpoch: epoch,
+                snapshotGeneration: snapshotGens[village.id] ?? 0,
+                manualGeneration: cores[village.id] == nil ? nil : (manualGens[village.id] ?? 0)
             ).projection
         }
         return UpgradeOverviewProjection.overviewRender(
@@ -4227,7 +4321,6 @@ public final class AppModel: ObservableObject {
             : entry.snapshotID.uuidString + ":observation:" + String(duplicateImportCount)
         return ManualBaselineReference(
             revision: observationRevision,
-            fingerprint: entry.canonicalFingerprint,
             lineageID: entry.lineageID.uuidString
         )
     }

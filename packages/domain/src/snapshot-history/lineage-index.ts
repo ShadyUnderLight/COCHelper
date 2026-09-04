@@ -54,7 +54,6 @@ export function lineageMetadataEqual(
     left.lineageID === right.lineageID &&
     left.normalizedPlayerTag === right.normalizedPlayerTag &&
     left.lastEntryID === right.lastEntryID &&
-    left.lastFingerprint === right.lastFingerprint &&
     left.lastAppliedAtRefSeconds === right.lastAppliedAtRefSeconds &&
     left.hasConflict === right.hasConflict &&
     left.isActive === right.isActive

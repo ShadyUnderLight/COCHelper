@@ -3,7 +3,8 @@ import XCTest
 
 @testable import COCHelperCore
 
-/// Issue #265 E0-02：parser 输出与 fingerprint 的 golden 冻结（wire-contract-v1.md §WA-3/§WA-4/§WA-6）。
+/// Issue #265 E0-02：parser 输出的 golden 冻结（wire-contract-v1.md §WA-3/§WA-4/§WA-6）。
+/// Issue #304：内容指纹字段已删除；冻结 wire 形状（encodedJSONHex）与业务结构。
 ///
 /// 所有时间输入显式钉死（importedAt 走 reference-date 域、capturedAt 走 Unix epoch 域，
 /// 即 §WA-4 的双纪元区分）。期望值冻结在 `Fixtures/parser_golden_expected.json`；
@@ -18,13 +19,10 @@ final class ParserGoldenTests: XCTestCase {
 
     private struct ExpectedFingerprints: Decodable {
         struct AccountSnapshotExpectations: Decodable {
-            let contentFingerprint: String
             let encodedJSONHex: String
         }
 
         struct HistoryEntryExpectations: Decodable {
-            let canonicalFingerprint: String
-            let integrityFingerprint: String
             let encodedJSONHex: String
         }
 
@@ -91,21 +89,15 @@ final class ParserGoldenTests: XCTestCase {
         XCTAssertTrue(snapshot.numericSections.isEmpty)
     }
 
-    func testAccountSnapshotContentFingerprintMatchesGolden() throws {
+    func testAccountSnapshotRepeatedParseProducesEqualBusinessContent() throws {
         let snapshot = try loadGoldenSnapshot()
+        let again = try loadGoldenSnapshot()
+        XCTAssertEqual(snapshot.objectSections, again.objectSections)
+        XCTAssertEqual(snapshot.numericSections, again.numericSections)
+        XCTAssertEqual(snapshot.boosts, again.boosts)
+        XCTAssertEqual(snapshot.tag, again.tag)
         let expected = try loadExpected().accountSnapshot
-        if expected.contentFingerprint.isEmpty || expected.encodedJSONHex.isEmpty {
-            XCTFail("""
-            期望值未回填。实测：
-            contentFingerprint = \(snapshot.contentFingerprint)
-            masked encoded JSON hex = \(try maskedSnapshotWireHex(sortedKeysEncodedJSONHex(snapshot)))
-            """)
-            return
-        }
-        XCTAssertEqual(
-            snapshot.contentFingerprint, expected.contentFingerprint,
-            "contentFingerprint 与冻结期望值不一致。实测：\n\(snapshot.contentFingerprint)"
-        )
+        XCTAssertFalse(expected.encodedJSONHex.isEmpty, "期望值未回填")
     }
 
     /// wire shape 冻结：JSONEncoder(.sortedKeys) 的 encoded bytes（Date 编码策略、
@@ -122,7 +114,7 @@ final class ParserGoldenTests: XCTestCase {
         )
     }
 
-    func testHistoryEntryV6FingerprintsMatchGolden() throws {
+    func testHistoryEntryObservationIdentityIsDeterministic() throws {
         let snapshot = try loadGoldenSnapshot()
         let entry = try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot,
@@ -134,19 +126,21 @@ final class ParserGoldenTests: XCTestCase {
             baselineReason: nil,
             observationVersion: SnapshotHistorySchema.observation
         )
-        let expected = try loadExpected().historyEntry
+        let again = try SnapshotHistoryCanonicalizer.canonicalize(
+            snapshot: snapshot,
+            villageID: Self.villageID,
+            lineageID: Self.lineageID,
+            appliedAt: Self.appliedAt,
+            snapshotID: Self.snapshotID,
+            isBaseline: false,
+            baselineReason: nil,
+            observationVersion: SnapshotHistorySchema.observation
+        )
 
-        if expected.canonicalFingerprint.isEmpty || expected.integrityFingerprint.isEmpty {
-            XCTFail("""
-            期望值未回填。实测：
-            canonicalFingerprint = \(entry.canonicalFingerprint)
-            integrityFingerprint = \(entry.integrityFingerprint)
-            encoded JSON hex = \(try sortedKeysEncodedJSONHex(entry))
-            """)
-            return
-        }
-        XCTAssertEqual(entry.canonicalFingerprint, expected.canonicalFingerprint)
-        XCTAssertEqual(entry.integrityFingerprint, expected.integrityFingerprint)
+        XCTAssertEqual(
+            SnapshotHistoryCanonicalizer.observationIdentityKey(for: entry.observation),
+            SnapshotHistoryCanonicalizer.observationIdentityKey(for: again.observation)
+        )
     }
 
     /// wire shape 冻结：HistoryEntryV1（observation v6 + coverage + 全部版本号）
@@ -172,8 +166,8 @@ final class ParserGoldenTests: XCTestCase {
         )
     }
 
-    /// 负例：指纹格式门 + 完整性敏感性（任一字段变化必须改变 integrityFingerprint）。
-    func testFingerprintFormatGuardsAndIntegritySensitivity() throws {
+    /// 负例：篡改 observation 必须被加载校验拒绝；畸形 JSON 必须抛错而非静默成功。
+    func testTamperedObservationRejectedAndMalformedJSONThrows() throws {
         let snapshot = try loadGoldenSnapshot()
         let entry = try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot,
@@ -186,34 +180,37 @@ final class ParserGoldenTests: XCTestCase {
             observationVersion: SnapshotHistorySchema.observation
         )
 
-        for fingerprint in [
-            snapshot.contentFingerprint, entry.canonicalFingerprint, entry.integrityFingerprint,
-        ] {
-            XCTAssertEqual(fingerprint.count, 71, "fingerprint 必须是 sha256: + 64 hex")
-            XCTAssertTrue(fingerprint.hasPrefix("sha256:"), "fingerprint 必须带 sha256: 前缀")
-        }
-
-        let mutated = SnapshotHistoryEntry(
+        let tampered = SnapshotHistoryEntry(
             observationVersion: entry.observationVersion,
             snapshotID: entry.snapshotID,
             villageID: entry.villageID,
             lineageID: entry.lineageID,
             normalizedPlayerTag: entry.normalizedPlayerTag,
-            appliedAt: entry.appliedAt.addingTimeInterval(1),
+            appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
             rawJSON: entry.rawJSON,
-            observation: entry.observation,
+            observation: CanonicalSnapshotObservation(
+                schemaVersion: entry.observation.schemaVersion,
+                rawTopLevelFields: entry.observation.rawTopLevelFields,
+                unknownTopLevelFields: entry.observation.unknownTopLevelFields,
+                items: Array(entry.observation.items.dropFirst())
+            ),
             coverage: entry.coverage,
             isBaseline: entry.isBaseline,
             baselineReason: entry.baselineReason,
             timerSchema: entry.timerSchema
         )
-        XCTAssertNotEqual(
-            mutated.integrityFingerprint, entry.integrityFingerprint,
-            "appliedAt 变化必须改变 integrityFingerprint（§WA-3 F2 全量材料）"
+        let envelope = SnapshotHistoryEnvelope(
+            entries: [tampered],
+            migrationMarker: SnapshotHistoryMigrationMarker(completedAt: entry.appliedAt)
         )
+        XCTAssertThrowsError(try envelope.validated()) { error in
+            XCTAssertEqual(
+                error as? SnapshotHistoryStoreError,
+                .invalidEntry("历史 entry 的 rawJSON 与 observation 不一致。")
+            )
+        }
 
         // 负例：非对象顶层与畸形 JSON 必须抛错而非静默成功。
         XCTAssertThrowsError(try AccountSnapshotImporter.parse("[1,2]", now: Self.importedAt))

@@ -2,7 +2,7 @@ import XCTest
 @testable import COCHelperCore
 
 final class SnapshotHistoryCoreTests: XCTestCase {
-    func testFingerprintIgnoresFormattingKeyOrderArrayOrderTimestampsAndDiagnostics() throws {
+    func testObservationIdentityIgnoresFormattingKeyOrderArrayOrderTimestampsAndDiagnostics() throws {
         let first = try makeSnapshot(
             """
             {
@@ -41,7 +41,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         let firstEntry = try canonicalize(first)
         let secondEntry = try canonicalize(second)
 
-        XCTAssertEqual(firstEntry.canonicalFingerprint, secondEntry.canonicalFingerprint)
+        XCTAssertEqual(identityKey(firstEntry), identityKey(secondEntry))
         XCTAssertEqual(firstEntry.observation.rawTopLevelFields, secondEntry.observation.rawTopLevelFields)
         XCTAssertEqual(firstEntry.observation.items, secondEntry.observation.items)
         XCTAssertNotEqual(first.importedAt, second.importedAt)
@@ -97,7 +97,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         )
     }
 
-    func testLargeWallsCanonicalizeFingerprintIsStable() throws {
+    func testLargeWallsCanonicalizeIdentityIsStable() throws {
         let url = try XCTUnwrap(
             Bundle.module.url(forResource: "perf_account_snapshot_large_walls_before", withExtension: "json")
         )
@@ -105,14 +105,10 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         let snapshot = try makeSnapshot(text)
         let first = try canonicalize(snapshot)
         let second = try canonicalize(snapshot)
-        XCTAssertEqual(first.canonicalFingerprint, second.canonicalFingerprint)
-        XCTAssertEqual(
-            SnapshotHistoryCanonicalizer.fingerprint(for: first.observation),
-            first.canonicalFingerprint
-        )
+        XCTAssertEqual(identityKey(first), identityKey(second))
     }
 
-    func testRawTimerDifferenceChangesFingerprint() throws {
+    func testRawTimerDifferenceChangesObservationIdentity() throws {
         let first = try makeSnapshot(
             "{\"timestamp\":1700000000,\"buildings\":[{\"data\":1000001,\"timer\":90}]}",
             now: Date(timeIntervalSince1970: 1_700_000_100)
@@ -125,7 +121,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         let firstEntry = try canonicalize(first)
         let secondEntry = try canonicalize(second)
 
-        XCTAssertNotEqual(firstEntry.canonicalFingerprint, secondEntry.canonicalFingerprint)
+        XCTAssertNotEqual(identityKey(firstEntry), identityKey(secondEntry))
         XCTAssertEqual(firstEntry.observation.items.first?.rawTimerEvidence["timer"], .number("90"))
         XCTAssertEqual(secondEntry.observation.items.first?.rawTimerEvidence["timer"], .number("91"))
     }
@@ -248,7 +244,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
 
     func testObservationVersionThreeKeepsGlobalAllowlistCollection() throws {
         // Issue #175：v3 entry（全局 timerFields allowlist）重建必须沿用
-        // v3 规则，否则历史 fingerprint 漂移。契约字段集合 = 全局 allowlist
+        // v3 规则，否则历史身份漂移。契约字段集合 = 全局 allowlist
         // 时，v3 与 v4 的收集结果一致。
         let snapshot = try makeSnapshot(
             #"{"timestamp":1700000000,"buildings":[{"data":1000001,"timer":90,"helper_timer":30,"timer_state":"upgrading"}]}"#
@@ -275,13 +271,13 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             snapshotID: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
             observationVersion: 3
         )
-        XCTAssertEqual(rebuilt.canonicalFingerprint, v3.canonicalFingerprint)
+        XCTAssertEqual(identityKey(rebuilt), identityKey(v3))
     }
 
     func testObservationVersionTwoKeepsLegacyLooseTimerCollection() throws {
         // Issue #175 review P1：v2 历史 entry 保存时使用宽松匹配收集
         // rawTimerEvidence。canonicalizer 必须按 observationVersion 分叉，
-        // 旧版本重建时沿用旧规则，否则 load 校验的 fingerprint 会漂移。
+        // 旧版本重建时沿用旧规则，否则 load 校验的身份会漂移。
         let snapshot = try makeSnapshot(
             #"{"timestamp":1700000000,"buildings":[{"data":1000001,"timer":90,"timer_state":"upgrading"}]}"#
         )
@@ -302,11 +298,11 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(
             v2.observation.items.first?.rawTimerEvidence["timer_state"],
             .string("upgrading"),
-            "v2 语义必须保留宽松匹配，才能与旧历史 entry 的 fingerprint 一致"
+            "v2 语义必须保留宽松匹配，才能与旧历史 entry 的身份一致"
         )
 
         let rebuilt = try canonicalizeV2()
-        XCTAssertEqual(rebuilt.canonicalFingerprint, v2.canonicalFingerprint)
+        XCTAssertEqual(identityKey(rebuilt), identityKey(v2))
     }
 
     func testStableIdentitySeparatesBasesNestedKindsAndRootsWithoutArrayIndexes() throws {
@@ -345,7 +341,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertFalse(items.contains { $0.identity.key.contains(".types.") })
     }
 
-    func testDuplicateRecordsKeepMultiplicityAndOrderIndependentFingerprint() throws {
+    func testDuplicateRecordsKeepMultiplicityAndOrderIndependentIdentity() throws {
         let first = try makeSnapshot(
             """
             {"buildings":[{"data":1000001,"lvl":10},{"data":1000001,"lvl":11}]}
@@ -363,11 +359,11 @@ final class SnapshotHistoryCoreTests: XCTestCase {
 
         XCTAssertEqual(records.count, 2)
         XCTAssertEqual(Set(records.map(\.identity.key)).count, 1)
-        XCTAssertEqual(firstEntry.canonicalFingerprint, secondEntry.canonicalFingerprint)
+        XCTAssertEqual(identityKey(firstEntry), identityKey(secondEntry))
     }
 
-    /// Issue #208：coverage 是 snapshot metadata，不得进入 observation / fingerprint。
-    func testCoverageDeclarationDoesNotChangeCanonicalFingerprintOrUnknownFields() throws {
+    /// Issue #208：coverage 是 snapshot metadata，不得进入 observation / 身份。
+    func testCoverageDeclarationDoesNotChangeObservationIdentityOrUnknownFields() throws {
         let buildingsJSON = "{\"buildings\":[{\"data\":1,\"lvl\":1}]}"
         let declaredJSON = """
         {"buildings":[{"data":1,"lvl":1}],\
@@ -381,7 +377,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             sectionProofs: JSONSnapshotCoverageAdapter.proofs(for: withCoverage)
         )
 
-        XCTAssertEqual(withoutEntry.canonicalFingerprint, withEntry.canonicalFingerprint)
+        XCTAssertEqual(identityKey(withoutEntry), identityKey(withEntry))
         XCTAssertEqual(withEntry.observationVersion, SnapshotHistorySchema.observation)
         XCTAssertNil(withEntry.observation.unknownTopLevelFields["coverage"])
         XCTAssertNil(withEntry.observation.rawTopLevelFields["coverage"])
@@ -409,7 +405,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         let unknownEntry = try canonicalize(withUnknown)
         XCTAssertEqual(unknownEntry.observation.unknownTopLevelFields["future_field"], .bool(true))
         XCTAssertNil(unknownEntry.observation.unknownTopLevelFields["coverage"])
-        XCTAssertNotEqual(unknownEntry.canonicalFingerprint, withEntry.canonicalFingerprint)
+        XCTAssertNotEqual(identityKey(unknownEntry), identityKey(withEntry))
     }
 
     func testObservationVersionFourKeepsCoverageInUnknownTopLevelFields() throws {
@@ -438,7 +434,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
                 && $0.rawSection == "$topLevel"
                 && $0.field == "coverage"
         })
-        XCTAssertNotEqual(v4With.canonicalFingerprint, v4Without.canonicalFingerprint)
+        XCTAssertNotEqual(identityKey(v4With), identityKey(v4Without))
         XCTAssertEqual(
             v4With.coverage.section(base: .home, rawSection: "buildings")?.proof,
             .declared(source: "u.coc", version: "1", expectedCount: 1)
@@ -519,7 +515,6 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             return XCTFail("verified wire metadata 应保留")
         }
         XCTAssertEqual(evidence.adapterID, "test-fixture")
-        XCTAssertNotNil(evidence.inputBinding)
         XCTAssertEqual(evidence.verificationRuleVersion, "1")
         XCTAssertNil(evidence.runtimeWitness)
         XCTAssertEqual(evidence.persistedTrust, .pendingRevalidation)
@@ -728,7 +723,6 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             XCTAssertEqual(item.display.category, "buildings")
             XCTAssertEqual(item.display.displayCategory, "craftTable")
             XCTAssertEqual(item.display.catalogVersion, craftTableCatalog.gameVersion)
-            XCTAssertNil(item.display.catalogFingerprint)
         }
         XCTAssertEqual(type.display.displayName, "火热蜡烛")
         XCTAssertEqual(module.display.displayName, "火热蜡烛生命值模组")
@@ -769,7 +763,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         XCTAssertEqual(deepModule.identity.nestedParentPath.map(\.kind), [.root, .type, .module])
     }
 
-    func testDisplayBindingIsCopiedAtCreationAndDoesNotAffectFingerprint() throws {
+    func testDisplayBindingIsCopiedAtCreationAndDoesNotAffectIdentity() throws {
         let snapshot = try makeSnapshot(
             "{" +
                 "\"buildings\":[{\"data\":1000001,\"lvl\":10}]" +
@@ -781,7 +775,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         let firstEntry = try canonicalize(snapshot, catalog: firstCatalog)
         let secondEntry = try canonicalize(snapshot, catalog: secondCatalog)
 
-        XCTAssertEqual(firstEntry.canonicalFingerprint, secondEntry.canonicalFingerprint)
+        XCTAssertEqual(identityKey(firstEntry), identityKey(secondEntry))
         XCTAssertEqual(firstEntry.observation.items.first?.display.displayName, "旧目录名称")
         XCTAssertEqual(firstEntry.observation.items.first?.display.catalogVersion, "18.400.13")
         XCTAssertEqual(secondEntry.observation.items.first?.display.displayName, "新目录名称")
@@ -958,6 +952,11 @@ final class SnapshotHistoryCoreTests: XCTestCase {
         now: Date = Date(timeIntervalSince1970: 1_700_000_000)
     ) throws -> AccountSnapshot {
         try AccountSnapshotImporter.parse(text, now: now)
+    }
+
+    /// Issue #304：observation 直接可比较身份（替代 canonicalFingerprint）。
+    private func identityKey(_ entry: SnapshotHistoryEntry) -> String {
+        SnapshotHistoryCanonicalizer.observationIdentityKey(for: entry.observation)
     }
 
     private func makeRawSnapshot(_ text: String) -> AccountSnapshot {

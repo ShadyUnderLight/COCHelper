@@ -1,16 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { isSha256Fingerprint, parseUuid } from '@coc-helper/wire';
+import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import { parseAccountSnapshot } from '../account/parser';
 import {
   canonicalizeSnapshotHistory,
   createSnapshotHistoryEnvelope,
+  observationIdentityKey,
   validateSnapshotHistoryEnvelope,
   validateSnapshotHistoryEntryIntegrity,
 } from './index';
+import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
 const GOLDEN_APPLIED_AT_REF_SECONDS = 807_629_133;
@@ -49,24 +51,24 @@ describe('snapshot history envelope validate', () => {
           lineageID: entry.lineageID,
           normalizedPlayerTag: entry.normalizedPlayerTag,
           lastEntryID: entry.snapshotID,
-          lastFingerprint: entry.canonicalFingerprint,
           lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
         },
       ],
       migrationMarker: {
-        version: 1,
+        version: SNAPSHOT_HISTORY_SCHEMA.envelope,
         completedAtRefSeconds: GOLDEN_APPLIED_AT_REF_SECONDS,
       },
     });
 
     expect(() => validateSnapshotHistoryEnvelope(envelope)).not.toThrow();
     expect(() => validateSnapshotHistoryEntryIntegrity(entry)).not.toThrow();
-    expect(isSha256Fingerprint(entry.canonicalFingerprint)).toBe(true);
+    // Issue #304：observation 身份为直接可比较 key，不再是 sha256 摘要。
+    expect(observationIdentityKey(entry.observation).length).toBeGreaterThan(0);
   });
 
-  it('无效 fingerprint 格式被拒绝', () => {
+  it('篡改 observation 与 rawJSON 不一致时被拒绝', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
       resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
@@ -85,13 +87,16 @@ describe('snapshot history envelope validate', () => {
     });
     const tampered = {
       ...entry,
-      canonicalFingerprint: 'not-a-sha256' as typeof entry.canonicalFingerprint,
+      observation: {
+        ...entry.observation,
+        items: entry.observation.items.slice(1),
+      },
     };
     expect(() =>
       validateSnapshotHistoryEnvelope(
         createSnapshotHistoryEnvelope({
           entries: [tampered],
-          migrationMarker: { version: 1, completedAtRefSeconds: 1 },
+          migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 1 },
         }),
       ),
     ).toThrow();
@@ -122,14 +127,13 @@ describe('snapshot history envelope validate', () => {
           lineageID: entry.lineageID,
           normalizedPlayerTag: '#TAMPERED',
           lastEntryID: entry.snapshotID,
-          lastFingerprint: entry.canonicalFingerprint,
           lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
         },
       ],
       migrationMarker: {
-        version: 1,
+        version: SNAPSHOT_HISTORY_SCHEMA.envelope,
         completedAtRefSeconds: GOLDEN_APPLIED_AT_REF_SECONDS,
       },
     });
@@ -162,7 +166,6 @@ describe('snapshot history envelope validate', () => {
           lineageID: entry.lineageID,
           normalizedPlayerTag: entry.normalizedPlayerTag,
           lastEntryID: entry.snapshotID,
-          lastFingerprint: entry.canonicalFingerprint,
           lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
@@ -177,16 +180,19 @@ describe('snapshot history envelope validate', () => {
     ).not.toThrow();
   });
 
-  it('篡改 integrityFingerprint 被拒绝', () => {
+  it('篡改 observation items 被完整性校验拒绝', () => {
     const entry = buildGoldenEntry();
     const tampered = {
       ...entry,
-      integrityFingerprint: entry.canonicalFingerprint,
+      observation: {
+        ...entry.observation,
+        items: entry.observation.items.slice(1),
+      },
     };
     expect(() => validateSnapshotHistoryEntryIntegrity(tampered)).toThrow();
   });
 
-  it('篡改 rawJSON 与 fingerprint 不一致时被拒绝', () => {
+  it('篡改 rawJSON 与 observation 不一致时被拒绝', () => {
     const entry = buildGoldenEntry();
     const tampered = {
       ...entry,
@@ -201,7 +207,7 @@ describe('snapshot history envelope validate', () => {
       validateSnapshotHistoryEnvelope(
         createSnapshotHistoryEnvelope({
           entries: [entry, entry],
-          migrationMarker: { version: 1, completedAtRefSeconds: 1 },
+          migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 1 },
         }),
       ),
     ).toThrow();
@@ -220,7 +226,6 @@ describe('snapshot history envelope validate', () => {
               lineageID: entry.lineageID,
               normalizedPlayerTag: entry.normalizedPlayerTag,
               lastEntryID: entry.snapshotID,
-              lastFingerprint: entry.canonicalFingerprint,
               lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
               hasConflict: false,
               isActive: true,
@@ -230,13 +235,12 @@ describe('snapshot history envelope validate', () => {
               lineageID: otherLineageID,
               normalizedPlayerTag: entry.normalizedPlayerTag,
               lastEntryID: entry.snapshotID,
-              lastFingerprint: entry.canonicalFingerprint,
               lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
               hasConflict: false,
               isActive: true,
             },
           ],
-          migrationMarker: { version: 1, completedAtRefSeconds: 1 },
+          migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 1 },
         }),
       ),
     ).toThrow();
@@ -254,7 +258,6 @@ describe('snapshot history envelope validate', () => {
               lineageID: entry.lineageID,
               normalizedPlayerTag: entry.normalizedPlayerTag,
               lastEntryID: entry.snapshotID,
-              lastFingerprint: entry.canonicalFingerprint,
               lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
               hasConflict: false,
               isActive: true,
@@ -267,7 +270,7 @@ describe('snapshot history envelope validate', () => {
               lastSourceTimestampRefSeconds: null,
             },
           },
-          migrationMarker: { version: 1, completedAtRefSeconds: 1 },
+          migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 1 },
         }),
       ),
     ).toThrow();
@@ -285,7 +288,6 @@ describe('snapshot history envelope validate', () => {
               lineageID: entry.lineageID,
               normalizedPlayerTag: entry.normalizedPlayerTag,
               lastEntryID: entry.snapshotID,
-              lastFingerprint: entry.canonicalFingerprint,
               lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
               hasConflict: false,
               isActive: true,
@@ -298,7 +300,7 @@ describe('snapshot history envelope validate', () => {
               lastSourceTimestampRefSeconds: null,
             },
           },
-          migrationMarker: { version: 1, completedAtRefSeconds: 1 },
+          migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 1 },
         }),
       ),
     ).toThrow();

@@ -28,7 +28,6 @@ export type SnapshotHistoryLineageMetadata = {
   readonly lineageID: UuidString;
   readonly normalizedPlayerTag: string | null;
   readonly lastEntryID: UuidString;
-  readonly lastFingerprint: string;
   readonly lastAppliedAtRefSeconds: number;
   readonly hasConflict: boolean;
   readonly isActive: boolean;

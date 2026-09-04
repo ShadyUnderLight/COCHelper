@@ -14,6 +14,7 @@ import {
   decodeManualTrackerEnvelopeWire,
   encodeManualTrackerEnvelopeWire,
 } from '../manual/tracker-wire';
+import { MANUAL_TRACKER_SCHEMA } from '../manual/tracker-schema';
 
 describe('manual tracker wire', () => {
   it('空 envelope 与带空 core 村庄可往返', () => {
@@ -68,10 +69,9 @@ describe('manual tracker wire', () => {
       villages: [
         {
           villageID,
-          schemaVersion: 1,
+          schemaVersion: MANUAL_TRACKER_SCHEMA.village,
           baselineReference: {
             revision: 'orphan-baseline',
-            fingerprint: 'sha256:x',
             lineageID: 'lineage-x',
           },
           core: { itemStates: [], records: [] },

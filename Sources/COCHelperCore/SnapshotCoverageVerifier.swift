@@ -61,20 +61,13 @@ package enum SnapshotCoverageVerifier {
     }
 
     /// Attach persisted revalidation material to a live module-issued verified proof.
+    /// Issue #304：只附加 rule version，不再计算内容 inputBinding 摘要。
     static func attachPersistedBinding(
-        to proof: SnapshotCoverageProof,
-        rawJSON: String,
-        section: String
+        to proof: SnapshotCoverageProof
     ) -> SnapshotCoverageProof {
         guard case .verified(let evidence) = proof,
               evidence.runtimeWitness == .moduleIssued else {
             return proof
-        }
-        guard let binding = SnapshotCoverageTrustHydration.sectionInputBinding(
-            rawJSON: rawJSON,
-            section: section
-        ) else {
-            return .unavailable(reason: "无法绑定 verified coverage 验证输入：\(section)。")
         }
         return .verified(
             VerifiedCoverageEvidence(
@@ -84,7 +77,6 @@ package enum SnapshotCoverageVerifier {
                 expectedCount: evidence.expectedCount,
                 verificationReason: evidence.verificationReason,
                 verificationRuleVersion: currentVerificationRuleVersion,
-                inputBinding: binding,
                 runtimeWitness: .moduleIssued
             )
         )
@@ -176,7 +168,6 @@ package enum SnapshotCoverageVerifier {
                 expectedCount: expectedCount,
                 verificationReason: verificationReason,
                 verificationRuleVersion: nil,
-                inputBinding: nil,
                 runtimeWitness: .moduleIssued
             )
         )

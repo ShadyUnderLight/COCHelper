@@ -1,11 +1,7 @@
-import { isSha256Fingerprint, parseUuid, type UuidString } from '@coc-helper/wire';
+import { parseUuid, type UuidString } from '@coc-helper/wire';
 
 import { parseAccountSnapshot } from '../account/parser';
-import {
-  canonicalizeSnapshotHistory,
-  fingerprintForObservation,
-  integrityFingerprint,
-} from './canonicalizer';
+import { canonicalizeSnapshotHistory, observationIdentityKey } from './canonicalizer';
 import { lineageIndexesEqual, recomputeLineageIndexFromEntries } from './lineage-index';
 import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 import type { SnapshotHistoryStoreError } from './errors';
@@ -69,7 +65,6 @@ export function validateSnapshotHistoryEnvelope(
       lastEntry === undefined ||
       lastEntry.villageID !== lineage.villageID ||
       lastEntry.lineageID !== lineage.lineageID ||
-      lastEntry.canonicalFingerprint !== lineage.lastFingerprint ||
       lastEntry.normalizedPlayerTag !== lineage.normalizedPlayerTag ||
       lastEntry.appliedAtRefSeconds !== lineage.lastAppliedAtRefSeconds
     ) {
@@ -168,20 +163,8 @@ export function validateSnapshotHistoryEntry(
       message: 'observation v5 及更早的 entry 不得携带 source universe。',
     });
   }
-  if (entry.fingerprintVersion !== SNAPSHOT_HISTORY_SCHEMA.fingerprint) {
-    throw storeError({ kind: 'unsupportedSchema', version: entry.fingerprintVersion });
-  }
-  if (entry.integrityVersion !== SNAPSHOT_HISTORY_SCHEMA.integrity) {
-    throw storeError({ kind: 'unsupportedSchema', version: entry.integrityVersion });
-  }
   if (entry.rawJSON.trim().length === 0) {
     throw storeError({ kind: 'invalidEntry', message: '历史 entry 缺少 rawJSON。' });
-  }
-  if (!isSha256Fingerprint(entry.canonicalFingerprint)) {
-    throw storeError({ kind: 'invalidEntry', message: '历史 entry 的 fingerprint 格式无效。' });
-  }
-  if (!isSha256Fingerprint(entry.integrityFingerprint)) {
-    throw storeError({ kind: 'invalidEntry', message: '历史 entry 的完整性摘要格式无效。' });
   }
 
   if (options.validateIntegrity !== undefined) {
@@ -192,14 +175,6 @@ export function validateSnapshotHistoryEntry(
 }
 
 export function validateSnapshotHistoryEntryIntegrity(entry: SnapshotHistoryEntry): void {
-  const expectedIntegrity = integrityFingerprint(entry);
-  if (expectedIntegrity !== entry.integrityFingerprint) {
-    throw storeError({
-      kind: 'invalidEntry',
-      message: '历史 entry 的完整性摘要不一致。',
-    });
-  }
-
   const parsed = parseAccountSnapshot(entry.rawJSON, { clock: { nowMs: () => 1000 } });
   if (!parsed.ok) {
     throw storeError({
@@ -228,17 +203,14 @@ export function validateSnapshotHistoryEntryIntegrity(entry: SnapshotHistoryEntr
     });
   }
 
-  const storedObservationFingerprint = fingerprintForObservation(entry.observation);
-  if (storedObservationFingerprint !== entry.canonicalFingerprint) {
+  // Issue #304：不再比较完整性摘要；比较 rawJSON 重建的 observation 身份
+  // 与持久化 observation 是否一致（直接比较 canonical bytes 派生 key）。
+  // tag/时间等 entry 元数据由 lineage 索引关系校验覆盖，此处不重复比较
+  //（AccountSnapshot.tag 允许独立于 rawJSON 构造）。
+  if (observationIdentityKey(rebuilt.observation) !== observationIdentityKey(entry.observation)) {
     throw storeError({
       kind: 'invalidEntry',
-      message: '历史 entry 的 observation 与 canonicalFingerprint 不一致。',
-    });
-  }
-  if (rebuilt.canonicalFingerprint !== entry.canonicalFingerprint) {
-    throw storeError({
-      kind: 'invalidEntry',
-      message: '历史 entry 的 rawJSON 与 canonicalFingerprint 不一致。',
+      message: '历史 entry 的 rawJSON 与 observation 不一致。',
     });
   }
 }

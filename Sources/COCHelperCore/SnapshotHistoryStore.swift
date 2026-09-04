@@ -59,7 +59,6 @@ public struct SnapshotHistoryLineageMetadata: Codable, Hashable, Sendable {
     public let lineageID: UUID
     public let normalizedPlayerTag: String?
     public let lastEntryID: UUID
-    public let lastFingerprint: String
     public let lastAppliedAt: Date
     public let hasConflict: Bool
     public var isActive: Bool
@@ -69,7 +68,6 @@ public struct SnapshotHistoryLineageMetadata: Codable, Hashable, Sendable {
         lineageID: UUID,
         normalizedPlayerTag: String?,
         lastEntryID: UUID,
-        lastFingerprint: String,
         lastAppliedAt: Date,
         hasConflict: Bool,
         isActive: Bool = true
@@ -78,7 +76,6 @@ public struct SnapshotHistoryLineageMetadata: Codable, Hashable, Sendable {
         self.lineageID = lineageID
         self.normalizedPlayerTag = normalizedPlayerTag
         self.lastEntryID = lastEntryID
-        self.lastFingerprint = lastFingerprint
         self.lastAppliedAt = lastAppliedAt
         self.hasConflict = hasConflict
         self.isActive = isActive
@@ -155,20 +152,8 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
                     "observation v5 及更早的 entry 不得携带 source universe。"
                 )
             }
-            guard entry.fingerprintVersion == SnapshotHistorySchema.fingerprint else {
-                throw SnapshotHistoryStoreError.unsupportedSchema(entry.fingerprintVersion)
-            }
-            guard entry.integrityVersion == SnapshotHistorySchema.integrity else {
-                throw SnapshotHistoryStoreError.unsupportedSchema(entry.integrityVersion)
-            }
             guard !entry.rawJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw SnapshotHistoryStoreError.invalidEntry("历史 entry 缺少 rawJSON。")
-            }
-            guard Self.isSHA256Fingerprint(entry.canonicalFingerprint) else {
-                throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的 fingerprint 格式无效。")
-            }
-            guard Self.isSHA256Fingerprint(entry.integrityFingerprint) else {
-                throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的完整性摘要格式无效。")
             }
             // Issue #246：Foundation JSON writer / Data 临时对象会滞留在
             // 外层 autorelease pool。按 entry 排空，避免启动加载整份历史时
@@ -190,7 +175,8 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
             guard let lastEntry = entry(id: lineage.lastEntryID),
                   lastEntry.villageID == lineage.villageID,
                   lastEntry.lineageID == lineage.lineageID,
-                  lastEntry.canonicalFingerprint == lineage.lastFingerprint else {
+                  lastEntry.normalizedPlayerTag == lineage.normalizedPlayerTag,
+                  lastEntry.appliedAt == lineage.lastAppliedAt else {
                 throw SnapshotHistoryStoreError.invalidEntry("lineage index 指向不存在或不匹配的 entry。")
             }
         }
@@ -244,36 +230,7 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
         try JSONEncoder().encode(try validated())
     }
 
-    private static func isSHA256Fingerprint(_ value: String) -> Bool {
-        guard value.count == 71, value.hasPrefix("sha256:") else { return false }
-        return value.dropFirst(7).allSatisfy { $0.isHexDigit }
-    }
-
     private static func validateIntegrity(of entry: SnapshotHistoryEntry) throws {
-        let expectedIntegrityFingerprint = SnapshotHistoryCanonicalizer.integrityFingerprint(
-            integrityVersion: entry.integrityVersion,
-            schemaVersion: entry.schemaVersion,
-            observationVersion: entry.observationVersion,
-            fingerprintVersion: entry.fingerprintVersion,
-            snapshotID: entry.snapshotID,
-            villageID: entry.villageID,
-            lineageID: entry.lineageID,
-            normalizedPlayerTag: entry.normalizedPlayerTag,
-            appliedAt: entry.appliedAt,
-            sourceTimestamp: entry.sourceTimestamp,
-            parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
-            rawJSON: entry.rawJSON,
-            observation: entry.observation,
-            coverage: entry.coverage,
-            isBaseline: entry.isBaseline,
-            baselineReason: entry.baselineReason,
-            timerSchema: entry.timerSchema
-        )
-        guard expectedIntegrityFingerprint == entry.integrityFingerprint else {
-            throw SnapshotHistoryStoreError.invalidEntry("历史 entry 的完整性摘要不一致。")
-        }
-
         let rebuilt: SnapshotHistoryEntry
         do {
             let snapshot = try AccountSnapshotImporter.parse(entry.rawJSON)
@@ -301,17 +258,14 @@ public struct SnapshotHistoryEnvelope: Codable, Hashable, Sendable {
             )
         }
 
-        let storedObservationFingerprint = SnapshotHistoryCanonicalizer.fingerprint(
-            for: entry.observation
-        )
-        guard storedObservationFingerprint == entry.canonicalFingerprint else {
+        // Issue #304：不再比较完整性摘要；比较 rawJSON 重建的 observation 身份
+        // 与持久化 observation 是否一致（直接比较 canonical bytes 派生 key）。
+        // tag/时间等 entry 元数据由 lineage 索引关系校验覆盖，此处不重复比较
+        //（AccountSnapshot.tag 允许独立于 rawJSON 构造）。
+        guard SnapshotHistoryCanonicalizer.observationIdentityKey(for: rebuilt.observation)
+            == SnapshotHistoryCanonicalizer.observationIdentityKey(for: entry.observation) else {
             throw SnapshotHistoryStoreError.invalidEntry(
-                "历史 entry 的 observation 与 canonicalFingerprint 不一致。"
-            )
-        }
-        guard rebuilt.canonicalFingerprint == entry.canonicalFingerprint else {
-            throw SnapshotHistoryStoreError.invalidEntry(
-                "历史 entry 的 rawJSON 与 canonicalFingerprint 不一致。"
+                "历史 entry 的 rawJSON 与 observation 不一致。"
             )
         }
     }
@@ -460,20 +414,22 @@ public enum SnapshotHistoryServiceError: Error, LocalizedError, Equatable, Senda
     }
 }
 
-/// 导入 duplicate 身份（Issue #207）。
+/// 导入 duplicate 身份（Issue #207；Issue #304 改用 observation 直接身份）。
 ///
 /// Duplicate 表示「Diff 解释不变」，不是「原文逐字节相同」。
 /// coverage 只用 `SnapshotHistoryCoverageDuplicateKey`：可序列化 proof metadata，
 /// 不含 `runtimeWitness`。`parserVersion` 只是 source adapter 标签；canonicalizer
-/// 分叉已经通过 fingerprint 里的 `observation.schemaVersion` 表达。
+/// 分叉已经通过 `observation.schemaVersion` 表达。
 /// `appliedAt` / source timestamp 也不进 identity。
 public struct SnapshotHistoryDuplicateKey: Hashable, Sendable {
-    public let canonicalFingerprint: String
+    public let observationKey: String
     public let coverage: SnapshotHistoryCoverageDuplicateKey
     public let timerSchema: SnapshotTimerSchema?
 
     public init(entry: SnapshotHistoryEntry) {
-        self.canonicalFingerprint = entry.canonicalFingerprint
+        self.observationKey = SnapshotHistoryCanonicalizer.observationIdentityKey(
+            for: entry.observation
+        )
         self.coverage = SnapshotHistoryCoverageDuplicateKey(entry.coverage)
         self.timerSchema = entry.timerSchema
     }
@@ -671,7 +627,6 @@ private extension SnapshotHistoryEnvelope {
                 lineageID: entry.lineageID,
                 normalizedPlayerTag: entry.normalizedPlayerTag,
                 lastEntryID: entry.snapshotID,
-                lastFingerprint: entry.canonicalFingerprint,
                 lastAppliedAt: entry.appliedAt,
                 hasConflict: hasConflict
             )
@@ -681,7 +636,6 @@ private extension SnapshotHistoryEnvelope {
                 lineageID: entry.lineageID,
                 normalizedPlayerTag: entry.normalizedPlayerTag,
                 lastEntryID: entry.snapshotID,
-                lastFingerprint: entry.canonicalFingerprint,
                 lastAppliedAt: entry.appliedAt,
                 hasConflict: hasConflict
             ))

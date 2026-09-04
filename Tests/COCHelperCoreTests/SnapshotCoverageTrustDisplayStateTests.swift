@@ -201,8 +201,7 @@ final class SnapshotCoverageTrustDisplayStateTests: XCTestCase {
                 protocolVersion: "invalid",
                 expectedCount: nil,
                 verificationReason: nil,
-                verificationRuleVersion: nil,
-                inputBinding: nil
+                verificationRuleVersion: nil
             )
         )
         let coverage = SnapshotObservationCoverage(

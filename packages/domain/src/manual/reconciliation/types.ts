@@ -90,7 +90,6 @@ export type ManualReconciliationPreview = {
   readonly villageID: UuidString;
   readonly previousReference: ManualBaselineReference | null;
   readonly previousSnapshotID: UuidString | null;
-  readonly previousSnapshotFingerprint: string | null;
   readonly previousLineageID: string | null;
   readonly manualStateUpdatedAtMs: number;
   readonly newReference: ManualBaselineReference;
@@ -100,7 +99,6 @@ export type ManualReconciliationPreview = {
   readonly timeConfidence: ManualReconciliationTimeConfidence;
   readonly duplicate: boolean;
   readonly lineageComparable: boolean;
-  readonly candidateFingerprint: string;
   readonly items: readonly ManualReconciliationItem[];
 };
 

@@ -77,7 +77,6 @@ public struct ManualReconciliationEvidence: Codable, Hashable, Sendable {
     public let previousObservations: [String: ManualReconciliationObservationEvidence]?
     public let relatedChangesByStableID: [String: [ManualReconciliationRelatedChangeEvidence]]?
     public let previousSnapshotID: UUID?
-    public let previousSnapshotFingerprint: String?
     public let previousLineageID: UUID?
     public let previousSourceTimestampMs: Int64?
 
@@ -93,7 +92,6 @@ public struct ManualReconciliationEvidence: Codable, Hashable, Sendable {
         previousObservations: [String: ManualReconciliationObservationEvidence]? = nil,
         relatedChangesByStableID: [String: [ManualReconciliationRelatedChangeEvidence]]? = nil,
         previousSnapshotID: UUID? = nil,
-        previousSnapshotFingerprint: String? = nil,
         previousLineageID: UUID? = nil,
         previousSourceTimestampMs: Int64? = nil
     ) {
@@ -108,7 +106,6 @@ public struct ManualReconciliationEvidence: Codable, Hashable, Sendable {
         self.previousObservations = previousObservations
         self.relatedChangesByStableID = relatedChangesByStableID
         self.previousSnapshotID = previousSnapshotID
-        self.previousSnapshotFingerprint = previousSnapshotFingerprint
         self.previousLineageID = previousLineageID
         self.previousSourceTimestampMs = previousSourceTimestampMs
     }
@@ -125,7 +122,6 @@ public struct ManualReconciliationEvidence: Codable, Hashable, Sendable {
         case previousObservations
         case relatedChangesByStableID
         case previousSnapshotID
-        case previousSnapshotFingerprint
         case previousLineageID
         case previousSourceTimestampMs
     }
@@ -150,8 +146,6 @@ public struct ManualReconciliationEvidence: Codable, Hashable, Sendable {
             [String: [ManualReconciliationRelatedChangeEvidence]].self,
             forKey: .relatedChangesByStableID)
         previousSnapshotID = try container.decodeIfPresent(UUID.self, forKey: .previousSnapshotID)
-        previousSnapshotFingerprint = try container.decodeIfPresent(
-            String.self, forKey: .previousSnapshotFingerprint)
         previousLineageID = try container.decodeIfPresent(UUID.self, forKey: .previousLineageID)
         previousSourceTimestampMs = Self.decodeOptionalTimestampMs(
             from: container, forKey: .previousSourceTimestampMs)
@@ -170,7 +164,6 @@ public struct ManualReconciliationEvidence: Codable, Hashable, Sendable {
         try container.encodeIfPresent(previousObservations, forKey: .previousObservations)
         try container.encodeIfPresent(relatedChangesByStableID, forKey: .relatedChangesByStableID)
         try container.encodeIfPresent(previousSnapshotID, forKey: .previousSnapshotID)
-        try container.encodeIfPresent(previousSnapshotFingerprint, forKey: .previousSnapshotFingerprint)
         try container.encodeIfPresent(previousLineageID, forKey: .previousLineageID)
         try container.encodeIfPresent(previousSourceTimestampMs, forKey: .previousSourceTimestampMs)
     }

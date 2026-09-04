@@ -42,13 +42,11 @@ type OccupancyCase = {
 const villageID = parseUuid('00000000-0000-0000-0000-000000000001')!;
 const currentBaseline = {
   revision: 'rev',
-  fingerprint: 'fp',
   lineageID: 'lineage-1',
 };
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: null,
-  sourceFingerprint: null,
   manifestSchemaVersion: null,
 };
 const core = createManualUpgradeCoreState({

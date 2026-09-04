@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// Builds the Issue #135 Core contract from the existing imported snapshot.
@@ -43,7 +42,6 @@ public enum SnapshotHistoryCanonicalizer {
         )
         let coverage = makeCoverage(
             source: source,
-            originalText: snapshot.originalText,
             catalog: catalog,
             craftTableCatalog: craftTableCatalog,
             sectionProofs: sectionProofs,
@@ -57,7 +55,6 @@ public enum SnapshotHistoryCanonicalizer {
             unknownTopLevelFields: observation.unknownTopLevelFields,
             items: observation.items
         )
-        let fingerprint = fingerprint(for: normalizedObservation)
 
         return SnapshotHistoryEntry(
             observationVersion: observationVersion,
@@ -68,7 +65,6 @@ public enum SnapshotHistoryCanonicalizer {
             appliedAt: appliedAt,
             sourceTimestamp: snapshot.capturedAt,
             parserVersion: AccountSnapshotImporter.parserVersion,
-            canonicalFingerprint: fingerprint,
             rawJSON: snapshot.originalText,
             observation: normalizedObservation,
             coverage: coverage,
@@ -108,7 +104,9 @@ public enum SnapshotHistoryCanonicalizer {
         )
     }
 
-    public static func fingerprint(for observation: CanonicalSnapshotObservation) -> String {
+    /// Issue #304：observation 直接可比较身份（替代 canonicalFingerprint 摘要）。
+    /// 同一归一化观察恒得同一 key；比较即字节相等，不做密码学摘要。
+    public static func observationIdentityKey(for observation: CanonicalSnapshotObservation) -> String {
         let items = CanonicalJSONValue.sortedByCanonicalData(
             observation.items.map(fingerprintValue(for:))
         )
@@ -119,55 +117,7 @@ public enum SnapshotHistoryCanonicalizer {
             "unknownTopLevelFields": .object(observation.unknownTopLevelFields),
             "items": .array(items)
         ])
-        let digest = SHA256.hash(data: material.canonicalData)
-        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-    static func integrityFingerprint(
-        integrityVersion: Int,
-        schemaVersion: Int,
-        observationVersion: Int,
-        fingerprintVersion: Int,
-        snapshotID: UUID,
-        villageID: UUID,
-        lineageID: UUID,
-        normalizedPlayerTag: String?,
-        appliedAt: Date,
-        sourceTimestamp: Date?,
-        parserVersion: String,
-        canonicalFingerprint: String,
-        rawJSON: String,
-        observation: CanonicalSnapshotObservation,
-        coverage: SnapshotObservationCoverage,
-        isBaseline: Bool,
-        baselineReason: SnapshotLineageReason?,
-        timerSchema: SnapshotTimerSchema? = nil
-    ) -> String {
-        let material = SnapshotHistoryIntegrityMaterial(
-            integrityVersion: integrityVersion,
-            schemaVersion: schemaVersion,
-            observationVersion: observationVersion,
-            fingerprintVersion: fingerprintVersion,
-            snapshotID: snapshotID,
-            villageID: villageID,
-            lineageID: lineageID,
-            normalizedPlayerTag: normalizedPlayerTag,
-            appliedAt: appliedAt,
-            sourceTimestamp: sourceTimestamp,
-            parserVersion: parserVersion,
-            canonicalFingerprint: canonicalFingerprint,
-            rawJSON: rawJSON,
-            observation: observation,
-            coverage: coverage,
-            isBaseline: isBaseline,
-            baselineReason: baselineReason,
-            timerSchema: timerSchema
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try! encoder.encode(material)
-        let digest = SHA256.hash(data: data)
-        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
+        return material.canonicalData.map { String(format: "%02x", $0) }.joined()
     }
 
     private struct CanonicalSource {
@@ -207,8 +157,8 @@ public enum SnapshotHistoryCanonicalizer {
         fields.removeValue(forKey: "tag")
         fields.removeValue(forKey: "timestamp")
         // Issue #208：v5+ 把 coverage 视为 snapshot metadata，从 observation
-        // 中移除以免进入 canonicalFingerprint。v4 及更早必须保留，才能按
-        // 已持久化 bytes 原样复现 fingerprint。
+        // 中移除以免进入 observation 身份。v4 及更早必须保留，才能按
+        // 已持久化 bytes 原样复现身份。
         if observationVersion >= SnapshotHistorySchema.observationWithoutCoverageMetadata {
             fields.removeValue(forKey: JSONSnapshotCoverageAdapter.contractField)
         }
@@ -439,8 +389,6 @@ public enum SnapshotHistoryCanonicalizer {
         // records may have their own catalog entry; using rootDataID here
         // would make every child inherit the root building's label.
         let item = catalog.item(section: identity.rawSection, dataID: identity.dataID)
-        // E0-03/Issue #303：不再回填 catalog source fingerprint；display binding
-        // 的 catalogFingerprint 字段存储删除归 #304（R1）。
         return SnapshotDisplayBinding(
             displayName: item?.name,
             category: item?.category,
@@ -508,7 +456,6 @@ public enum SnapshotHistoryCanonicalizer {
 
     private static func makeCoverage(
         source: CanonicalSource,
-        originalText: String,
         catalog: GameCatalog?,
         craftTableCatalog: CraftTableCatalog?,
         sectionProofs: [String: SnapshotCoverageProof],
@@ -569,9 +516,7 @@ public enum SnapshotHistoryCanonicalizer {
                 proof: sectionProofs[section]
             )
             let boundProof = SnapshotCoverageVerifier.attachPersistedBinding(
-                to: sectionAnalysis.proof,
-                rawJSON: originalText,
-                section: section
+                to: sectionAnalysis.proof
             )
             sections.append(makeSectionCoverage(
                 base: base,
@@ -720,9 +665,7 @@ public enum SnapshotHistoryCanonicalizer {
                 proof: sectionProofs[section]
             )
             let boundProof = SnapshotCoverageVerifier.attachPersistedBinding(
-                to: sectionAnalysis.proof,
-                rawJSON: originalText,
-                section: section
+                to: sectionAnalysis.proof
             )
             sections.append(makeSectionCoverage(
                 base: base,
@@ -1207,66 +1150,5 @@ public enum SnapshotHistoryCanonicalizer {
         }
         return lines.dropFirst().dropLast().joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-private struct SnapshotHistoryIntegrityMaterial: Encodable {
-    let integrityVersion: Int
-    let schemaVersion: Int
-    let observationVersion: Int
-    let fingerprintVersion: Int
-    let snapshotID: UUID
-    let villageID: UUID
-    let lineageID: UUID
-    let normalizedPlayerTag: String?
-    let appliedAt: Date
-    let sourceTimestamp: Date?
-    let parserVersion: String
-    let canonicalFingerprint: String
-    let rawJSON: String
-    let observation: CanonicalSnapshotObservation
-    let coverage: SnapshotObservationCoverage
-    let isBaseline: Bool
-    let baselineReason: SnapshotLineageReason?
-    let timerSchema: SnapshotTimerSchema?
-
-    init(
-        integrityVersion: Int,
-        schemaVersion: Int,
-        observationVersion: Int,
-        fingerprintVersion: Int,
-        snapshotID: UUID,
-        villageID: UUID,
-        lineageID: UUID,
-        normalizedPlayerTag: String?,
-        appliedAt: Date,
-        sourceTimestamp: Date?,
-        parserVersion: String,
-        canonicalFingerprint: String,
-        rawJSON: String,
-        observation: CanonicalSnapshotObservation,
-        coverage: SnapshotObservationCoverage,
-        isBaseline: Bool,
-        baselineReason: SnapshotLineageReason?,
-        timerSchema: SnapshotTimerSchema?
-    ) {
-        self.integrityVersion = integrityVersion
-        self.schemaVersion = schemaVersion
-        self.observationVersion = observationVersion
-        self.fingerprintVersion = fingerprintVersion
-        self.snapshotID = snapshotID
-        self.villageID = villageID
-        self.lineageID = lineageID
-        self.normalizedPlayerTag = normalizedPlayerTag
-        self.appliedAt = appliedAt
-        self.sourceTimestamp = sourceTimestamp
-        self.parserVersion = parserVersion
-        self.canonicalFingerprint = canonicalFingerprint
-        self.rawJSON = rawJSON
-        self.observation = observation
-        self.coverage = coverage
-        self.isBaseline = isBaseline
-        self.baselineReason = baselineReason
-        self.timerSchema = timerSchema
     }
 }

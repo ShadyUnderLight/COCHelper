@@ -4,13 +4,12 @@ import XCTest
 /// Issue #144：UpgradeOverviewState（面板计数、7 天最近完成、冲突/未知行）。
 ///
 /// 注意：投影使用真实 bundled 目录（18.400.13）。buildings:1000002 是
-/// 圣水收集器（Elixir Collector）；手动记录 provenance 必须用真实 manifest
-///（buildTag/sourceFingerprint），否则 activeCatalogDiagnostic 把状态降级 unknown。
+/// 圣水收集器（Elixir Collector）；手动记录 provenance 必须用真实 manifest，
+/// 否则 activeCatalogDiagnostic 把状态降级 unknown。
 final class UpgradeOverviewStateTests: XCTestCase {
     private let importedAt = Date(timeIntervalSince1970: 1_000)
     private let baseline = ManualBaselineReference(
         revision: "snapshot-1",
-        fingerprint: "sha256:snapshot",
         lineageID: "village-1"
     )
 

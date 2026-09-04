@@ -55,7 +55,6 @@ export function projectImportedObservationCandidates(input: {
 
 type ManualBaselineReferenceLike = {
   readonly revision: string;
-  readonly fingerprint: string | null;
   readonly lineageID: string | null;
 };
 

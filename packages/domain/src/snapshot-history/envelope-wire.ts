@@ -1,5 +1,5 @@
 import { encodeSwiftSortedJson } from '../account/wire-encode';
-import type { CanonicalJsonValue, Sha256Fingerprint, UuidString } from '@coc-helper/wire';
+import type { CanonicalJsonValue, UuidString } from '@coc-helper/wire';
 import { parseUuid } from '@coc-helper/wire';
 
 import { encodeHistoryEntryWire } from './wire-encode';
@@ -71,7 +71,6 @@ function encodeEnvelopeShape(envelope: SnapshotHistoryEnvelope): unknown {
       isActive: lineage.isActive,
       lastAppliedAt: lineage.lastAppliedAtRefSeconds,
       lastEntryID: lineage.lastEntryID,
-      lastFingerprint: lineage.lastFingerprint,
       lineageID: lineage.lineageID,
       normalizedPlayerTag: lineage.normalizedPlayerTag ?? undefined,
       villageID: lineage.villageID,
@@ -133,8 +132,6 @@ function decodeHistoryEntryWire(wire: Record<string, unknown>): SnapshotHistoryE
   return {
     schemaVersion: requireNumber(wire.schemaVersion, 'schemaVersion'),
     observationVersion: requireNumber(wire.observationVersion, 'observationVersion'),
-    fingerprintVersion: requireNumber(wire.fingerprintVersion, 'fingerprintVersion'),
-    integrityVersion: requireNumber(wire.integrityVersion, 'integrityVersion'),
     snapshotID: requireUuid(wire.snapshotID, 'snapshotID'),
     villageID: requireUuid(wire.villageID, 'villageID'),
     lineageID: requireUuid(wire.lineageID, 'lineageID'),
@@ -146,7 +143,6 @@ function decodeHistoryEntryWire(wire: Record<string, unknown>): SnapshotHistoryE
         ? null
         : requireNumber(wire.sourceTimestamp, 'sourceTimestamp'),
     parserVersion: requireString(wire.parserVersion),
-    canonicalFingerprint: requireFingerprint(wire.canonicalFingerprint),
     rawJSON: requireString(wire.rawJSON),
     observation: decodeObservationWire(requireObject(wire.observation, 'observation')),
     coverage: decodeCoverageWire(requireObject(wire.coverage, 'coverage')),
@@ -157,7 +153,6 @@ function decodeHistoryEntryWire(wire: Record<string, unknown>): SnapshotHistoryE
       wire.timerSchema === undefined
         ? null
         : decodeTimerSchemaWire(requireObject(wire.timerSchema, 'timerSchema')),
-    integrityFingerprint: requireFingerprint(wire.integrityFingerprint),
   };
 }
 
@@ -168,7 +163,6 @@ function decodeLineageWire(wire: Record<string, unknown>): SnapshotHistoryLineag
     normalizedPlayerTag:
       wire.normalizedPlayerTag === undefined ? null : requireString(wire.normalizedPlayerTag),
     lastEntryID: requireUuid(wire.lastEntryID, 'lastEntryID'),
-    lastFingerprint: requireFingerprint(wire.lastFingerprint),
     lastAppliedAtRefSeconds: requireNumber(wire.lastAppliedAt, 'lastAppliedAt'),
     hasConflict: requireBoolean(wire.hasConflict, 'hasConflict'),
     isActive: requireBoolean(wire.isActive, 'isActive'),
@@ -281,9 +275,6 @@ function decodeNestedPathWire(wire: Record<string, unknown>): SnapshotNestedPath
 
 function decodeDisplayBindingWire(wire: Record<string, unknown>): SnapshotDisplayBinding {
   return {
-    ...(wire.catalogFingerprint !== undefined
-      ? { catalogFingerprint: requireString(wire.catalogFingerprint) }
-      : {}),
     ...(wire.catalogVersion !== undefined
       ? { catalogVersion: requireString(wire.catalogVersion) }
       : {}),
@@ -344,7 +335,6 @@ function decodeCoverageProofWire(wire: Record<string, unknown>): SnapshotCoverag
           wire.verificationRuleVersion === undefined
             ? null
             : requireString(wire.verificationRuleVersion),
-        inputBinding: wire.inputBinding === undefined ? null : requireString(wire.inputBinding),
       };
     case 'authoritative':
       return {
@@ -488,14 +478,6 @@ function requireUuid(value: unknown, label: string): UuidString {
     throw new Error(`${label} 不是有效 UUID。`);
   }
   return parsed;
-}
-
-function requireFingerprint(value: unknown): Sha256Fingerprint {
-  const fingerprint = requireString(value);
-  if (!fingerprint.startsWith('sha256:')) {
-    throw new Error('fingerprint 格式无效。');
-  }
-  return fingerprint as Sha256Fingerprint;
 }
 
 function wireNumberToBigint(value: unknown, label: string): bigint {

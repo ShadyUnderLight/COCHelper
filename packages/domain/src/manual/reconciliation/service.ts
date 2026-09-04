@@ -10,7 +10,6 @@ import {
   manualTrackerVillageStateWithCore,
   type ManualTrackerVillageState,
 } from '../village-state';
-import { computeReconciliationCandidateFingerprint } from './candidate-fingerprint';
 import {
   classifyReconciliationItem,
   computeConfirmedRecordIDs,
@@ -152,22 +151,12 @@ export function previewReconciliation(
   }
 
   const sortedItems = sortReconciliationItems(items);
-  const candidateFingerprint = computeReconciliationCandidateFingerprint({
-    duplicate: evidence.duplicate,
-    lineageComparable: evidence.lineageComparable,
-    timeConfidence,
-    newReference: evidence.newBaselineReference,
-    newNormalizedPlayerTag: evidence.newNormalizedPlayerTag,
-    sourceTimestampMs: evidence.sourceTimestampMs,
-    items: sortedItems,
-  });
 
   return {
     previewID: generateUuid(),
     villageID: evidence.villageID,
     previousReference,
     previousSnapshotID: evidence.previousSnapshotID ?? null,
-    previousSnapshotFingerprint: evidence.previousSnapshotFingerprint ?? null,
     previousLineageID: evidence.previousLineageID ?? null,
     manualStateUpdatedAtMs: currentState.stateUpdatedAtMs,
     newReference: evidence.newBaselineReference,
@@ -177,7 +166,6 @@ export function previewReconciliation(
     timeConfidence,
     duplicate: evidence.duplicate,
     lineageComparable: evidence.lineageComparable,
-    candidateFingerprint,
     items: sortedItems,
   };
 }
@@ -202,7 +190,6 @@ export function reconcileManualTracker(
       expected.villageID !== evidence.villageID ||
       !previousReferenceMatches ||
       expected.previousSnapshotID !== (evidence.previousSnapshotID ?? null) ||
-      expected.previousSnapshotFingerprint !== (evidence.previousSnapshotFingerprint ?? null) ||
       expected.previousLineageID !== (evidence.previousLineageID ?? null) ||
       expected.manualStateUpdatedAtMs !== currentState.stateUpdatedAtMs
     ) {

@@ -15,11 +15,7 @@ export function baselineReferencesEqual(
   left: ManualBaselineReference,
   right: ManualBaselineReference,
 ): boolean {
-  return (
-    left.revision === right.revision &&
-    (left.fingerprint ?? null) === (right.fingerprint ?? null) &&
-    (left.lineageID ?? null) === (right.lineageID ?? null)
-  );
+  return left.revision === right.revision && (left.lineageID ?? null) === (right.lineageID ?? null);
 }
 
 export function trackerItemKeysEqual(left: TrackerItemKey, right: TrackerItemKey): boolean {
@@ -111,7 +107,6 @@ export function manualCatalogProvenanceEqual(
   return (
     left.gameVersion === right.gameVersion &&
     (left.buildTag ?? null) === (right.buildTag ?? null) &&
-    (left.sourceFingerprint ?? null) === (right.sourceFingerprint ?? null) &&
     (left.manifestSchemaVersion ?? null) === (right.manifestSchemaVersion ?? null)
   );
 }

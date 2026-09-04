@@ -131,9 +131,8 @@ package enum SnapshotCoverageSourceUniverseIssuer {
     }
 
     package static func issuePerfFixture(snapshot: AccountSnapshot) -> SnapshotCoverageSourceUniverse? {
-        guard BundledPerfFixtureRegistry.recognizesAccountSnapshot(rawJSON: snapshot.originalText) else {
-            return nil
-        }
+        // Issue #304：不再用内容 hash allowlist 判定；rawJSON 按 adapter 契约
+        // 声明 perf-fixture section 即表达 benchmark 业务来源。
         let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
         let requiredSections = Set(
             proofs.compactMap { section, proof -> String? in

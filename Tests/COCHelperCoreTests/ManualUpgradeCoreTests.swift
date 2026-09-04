@@ -5,13 +5,11 @@ final class ManualUpgradeCoreTests: XCTestCase {
     private let key = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 100)
     private let baseline = ManualBaselineReference(
         revision: "snapshot-1",
-        fingerprint: "sha256:baseline",
         lineageID: "village-1"
     )
     private let provenance = ManualCatalogProvenance(
         gameVersion: "18.400.13",
         buildTag: "catalog-test",
-        sourceFingerprint: "sha256:catalog",
         manifestSchemaVersion: 3
     )
 
@@ -58,26 +56,25 @@ final class ManualUpgradeCoreTests: XCTestCase {
         ])
     }
 
-    // MARK: - Issue #210 内容指纹（投影缓存轻量 key）
+    // MARK: - Issue #304 结构相等（内容指纹已删除）
 
-    func testContentFingerprintIsDeterministic() throws {
+    func testEqualInputProducesEqualCore() throws {
         let coreA = try core(
             imported: try distribution([(1, 2)]), manual: .empty, status: .observed
         )
         let coreB = try core(
             imported: try distribution([(1, 2)]), manual: .empty, status: .observed
         )
-        XCTAssertEqual(coreA.contentFingerprint, coreB.contentFingerprint)
+        XCTAssertEqual(coreA, coreB)
     }
 
-    func testContentFingerprintInvalidatesAfterManualMutation() throws {
+    func testManualMutationProducesUnequalCore() throws {
         var core = try core(
             imported: try distribution([(12, 100)]), manual: .empty, status: .observed
         )
         let recordID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-        // 预热指纹缓存，再 mutating：startUpgrade 必须让指纹失效并重算
-        //（缓存 key 依赖它识别 manual 状态变化，issue #210 失效边界）。
-        let before = core.contentFingerprint
+        // mutating 操作产生结构不等的 core（缓存失效改由调用方 generation 承担）。
+        let before = core
         _ = try core.startUpgrade(
             itemKey: key,
             fromLevel: 12,
@@ -91,18 +88,14 @@ final class ManualUpgradeCoreTests: XCTestCase {
             recordID: recordID,
             now: date(1_000)
         )
-        XCTAssertNotEqual(before, core.contentFingerprint)
+        XCTAssertNotEqual(before, core)
 
-        // 内容稳定时指纹稳定（两次读取同值，tick 间查找不重算）。
-        let stable = core.contentFingerprint
-        XCTAssertEqual(stable, core.contentFingerprint)
-
-        // cancel（释放预留）同样使指纹失效并重算（review P3 补齐路径）。
-        let beforeCancel = core.contentFingerprint
+        // cancel（释放预留）同样改变结构。
+        let beforeCancel = core
         _ = try core.cancelUpgrade(recordID: recordID)
-        XCTAssertNotEqual(beforeCancel, core.contentFingerprint)
+        XCTAssertNotEqual(beforeCancel, core)
 
-        // adjust（改 start/end 时间）同样使指纹失效并重算（review P3 补齐路径）。
+        // adjust（改 start/end 时间）同样改变结构。
         // 注意：cancel 的 record 留在 records 历史中，需新 recordID。
         let adjustRecordID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         _ = try core.startUpgrade(
@@ -119,21 +112,21 @@ final class ManualUpgradeCoreTests: XCTestCase {
             now: date(1_020)
         )
         // adjust 时 now(1025) < 原 end(1030)，不会触发 settle，只改 end。
-        let beforeAdjust = core.contentFingerprint
+        let beforeAdjust = core
         _ = try core.adjustStartTime(
             recordID: adjustRecordID, startedAt: date(1_025), now: date(1_025)
         )
-        XCTAssertNotEqual(beforeAdjust, core.contentFingerprint)
+        XCTAssertNotEqual(beforeAdjust, core)
 
-        // settle 同样使指纹失效（end 已推至 1035，at 1040 到期）。
-        let beforeSettle = core.contentFingerprint
+        // settle 同样改变结构（end 已推至 1035，at 1040 到期）。
+        let beforeSettle = core
         _ = try core.settleDue(at: date(1_040))
-        XCTAssertNotEqual(beforeSettle, core.contentFingerprint)
+        XCTAssertNotEqual(beforeSettle, core)
     }
 
-    // MARK: - Issue #220 settleDue no-op fingerprint
+    // MARK: - Issue #220 settleDue no-op 语义
 
-    func testSettleDueNoOpDoesNotRecomputeFingerprint() throws {
+    func testSettleDueNoOpLeavesCoreUnchanged() throws {
         var core = try core(
             imported: distribution([(12, 100)]),
             status: .observed
@@ -153,16 +146,12 @@ final class ManualUpgradeCoreTests: XCTestCase {
             now: date(1_000)
         )
         let beforeCore = core
-        let beforeFingerprint = core.contentFingerprint
-        let refreshCountBefore = core.fingerprintRefreshCountForTesting
 
         XCTAssertTrue(try core.settleDue(at: date(1_009)).isEmpty)
         XCTAssertEqual(core, beforeCore)
-        XCTAssertEqual(core.contentFingerprint, beforeFingerprint)
-        XCTAssertEqual(core.fingerprintRefreshCountForTesting, refreshCountBefore)
     }
 
-    func testSettleDueRealSettleRecomputesFingerprintOnce() throws {
+    func testSettleDueRealSettleChangesCore() throws {
         var core = try core(
             imported: distribution([(12, 100)]),
             status: .observed
@@ -181,27 +170,22 @@ final class ManualUpgradeCoreTests: XCTestCase {
             recordID: recordID,
             now: date(1_000)
         )
-        let beforeFingerprint = core.contentFingerprint
-        let refreshCountBefore = core.fingerprintRefreshCountForTesting
+        let beforeCore = core
 
         let settled = try core.settleDue(at: date(1_010))
         XCTAssertEqual(settled.count, 1)
         XCTAssertEqual(settled.first?.status, .completed)
-        XCTAssertNotEqual(core.contentFingerprint, beforeFingerprint)
-        XCTAssertEqual(core.fingerprintRefreshCountForTesting, refreshCountBefore + 1)
+        XCTAssertNotEqual(core, beforeCore)
     }
 
-    func testContentFingerprintSurvivesCodableRoundTrip() throws {
+    func testCodableRoundTripPreservesCore() throws {
         let core = try core(
             imported: try distribution([(1, 2)]), manual: .empty, status: .observed
         )
         let data = try JSONEncoder().encode(core)
-        // 指纹不进入持久化格式（manual tracker JSON 字节语义不变）。
-        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
-        XCTAssertFalse(json.contains("contentFingerprint"))
 
         let decoded = try JSONDecoder().decode(ManualUpgradeCore.self, from: data)
-        XCTAssertEqual(decoded.contentFingerprint, core.contentFingerprint)
+        XCTAssertEqual(decoded, core)
         XCTAssertEqual(decoded.itemStates, core.itemStates)
         XCTAssertEqual(decoded.records, core.records)
     }

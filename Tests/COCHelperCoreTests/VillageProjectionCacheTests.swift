@@ -63,11 +63,16 @@ final class VillageProjectionCacheTests: XCTestCase {
         return try GameCatalog(gameVersion: payload.gameVersion, items: payload.items)
     }
 
-    private func render(at now: Date) -> VillageProjectionCache.RenderResult {
+    private func render(
+        at now: Date,
+        snapshotGeneration: UInt64 = 0,
+        manualGeneration: UInt64? = nil
+    ) -> VillageProjectionCache.RenderResult {
         cache.render(
             village: village, catalog: catalog, craftTableCatalog: craftTableCatalog,
             seasonalPhases: phases, base: .home, now: now,
-            manualUpgradeCore: nil, catalogEpoch: 0
+            manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: snapshotGeneration, manualGeneration: manualGeneration
         )
     }
 
@@ -174,22 +179,31 @@ final class VillageProjectionCacheTests: XCTestCase {
 
     // MARK: - 失效矩阵
 
-    func testSnapshotChangeRebuilds() {
+    func testSnapshotGenerationBumpRebuilds() {
         let _ = render(at: t0)
         XCTAssertEqual(cache.buildCount, 1)
-        village = try! makeVillage(importedAt: t0.addingTimeInterval(10))  // 新快照（importedAt 变化）
-        let _ = render(at: t0)
+        // Issue #304：快照内容变化由调用方递增 generation；同 generation 信任调用方命中，
+        // generation 递增才重建（不再自行比较摘要）。
+        let newSnapshotVillage = try! makeVillage(importedAt: t0.addingTimeInterval(10))  // 新快照
+        village = VillageProfile(
+            id: village.id, name: village.name, accountSnapshot: newSnapshotVillage.accountSnapshot
+        )
+        let hit = render(at: t0)  // 未递增 → 命中（调用方必须先递增，见 AppModel didSet）
+        XCTAssertEqual(cache.buildCount, 1)
+        XCTAssertEqual(hit.projection.items.count, 2)
+        let _ = render(at: t0, snapshotGeneration: 1)
         XCTAssertEqual(cache.buildCount, 2)
     }
 
-    func testManualCoreChangeRebuilds() {
+    func testManualGenerationBumpRebuilds() {
         let _ = render(at: t0)
         XCTAssertEqual(cache.buildCount, 1)
         let core = try! ManualUpgradeCore()
         let _ = cache.render(
             village: village, catalog: catalog, craftTableCatalog: craftTableCatalog,
             seasonalPhases: phases, base: .home, now: t0,
-            manualUpgradeCore: core, catalogEpoch: 0
+            manualUpgradeCore: core, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: 1
         )
         XCTAssertEqual(cache.buildCount, 2)
     }
@@ -200,7 +214,8 @@ final class VillageProjectionCacheTests: XCTestCase {
         let _ = cache.render(
             village: village, catalog: catalog, craftTableCatalog: craftTableCatalog,
             seasonalPhases: phases, base: .home, now: t0,
-            manualUpgradeCore: nil, catalogEpoch: 1
+            manualUpgradeCore: nil, catalogEpoch: 1,
+            snapshotGeneration: 0, manualGeneration: nil
         )
         XCTAssertEqual(cache.buildCount, 2)
     }
@@ -211,7 +226,8 @@ final class VillageProjectionCacheTests: XCTestCase {
         let _ = cache.render(
             village: village, catalog: catalog, craftTableCatalog: craftTableCatalog,
             seasonalPhases: phases, base: .builder, now: t0,
-            manualUpgradeCore: nil, catalogEpoch: 0
+            manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil
         )
         XCTAssertEqual(cache.buildCount, 2)
     }
@@ -265,7 +281,8 @@ final class VillageProjectionCacheTests: XCTestCase {
             small.render(
                 village: v, catalog: catalog, craftTableCatalog: craftTableCatalog,
                 seasonalPhases: phases, base: .home, now: now,
-                manualUpgradeCore: nil, catalogEpoch: 0
+                manualUpgradeCore: nil, catalogEpoch: 0,
+                snapshotGeneration: 0, manualGeneration: nil
             )
         }
 
@@ -297,7 +314,8 @@ final class VillageProjectionCacheTests: XCTestCase {
             _ = small.render(
                 village: v, catalog: catalog, craftTableCatalog: craftTableCatalog,
                 seasonalPhases: phases, base: .home, now: t0.addingTimeInterval(Double(index)),
-                manualUpgradeCore: nil, catalogEpoch: 0
+                manualUpgradeCore: nil, catalogEpoch: 0,
+                snapshotGeneration: 0, manualGeneration: nil
             )
         }
         XCTAssertEqual(small.buildCount, 6)
@@ -306,7 +324,8 @@ final class VillageProjectionCacheTests: XCTestCase {
             _ = small.render(
                 village: v, catalog: catalog, craftTableCatalog: craftTableCatalog,
                 seasonalPhases: phases, base: .home, now: t0.addingTimeInterval(Double(offset) + 10),
-                manualUpgradeCore: nil, catalogEpoch: 0
+                manualUpgradeCore: nil, catalogEpoch: 0,
+                snapshotGeneration: 0, manualGeneration: nil
             )
         }
         XCTAssertEqual(small.buildCount, 6)

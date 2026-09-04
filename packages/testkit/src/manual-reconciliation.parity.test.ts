@@ -21,7 +21,6 @@ const villageID = parseUuid('00000000-0000-0000-0000-000000000143')!;
 const key = trackerItemKeyRoot('home', 'buildings', 100n);
 const baselineA = {
   revision: 'snapshot-1',
-  fingerprint: 'sha256:fp-1',
   lineageID: 'lineage-p1',
 };
 
@@ -34,7 +33,6 @@ describe('manual reconciliation Swift oracle parity', () => {
         villageID,
         newBaselineReference: {
           revision: 'snapshot-2',
-          fingerprint: 'sha256:fp-2',
           lineageID: baselineA.lineageID,
         },
         newNormalizedPlayerTag: '#P1',
@@ -73,7 +71,6 @@ describe('manual reconciliation Swift oracle parity', () => {
         villageID,
         newBaselineReference: {
           revision: 'snapshot-2',
-          fingerprint: 'sha256:fp-2',
           lineageID: baselineA.lineageID,
         },
         newNormalizedPlayerTag: '#P1',

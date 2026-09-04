@@ -10,9 +10,9 @@ public final class VillageDetailFlatRowCache {
     public struct RenderIdentityKey: Hashable, Sendable {
         public let villageID: UUID
         public let villageName: String
-        public let snapshotFingerprint: String
+        public let snapshotGeneration: UInt64
         public let base: TrackerBase
-        public let manualFingerprint: String?
+        public let manualGeneration: UInt64?
         public let catalogEpoch: Int
         public let catalogVersion: String?
         public let phaseBucket: PhaseBucket
@@ -22,9 +22,9 @@ public final class VillageDetailFlatRowCache {
         public init(
             villageID: UUID,
             villageName: String,
-            snapshotFingerprint: String,
+            snapshotGeneration: UInt64,
             base: TrackerBase,
-            manualFingerprint: String?,
+            manualGeneration: UInt64?,
             catalogEpoch: Int,
             catalogVersion: String?,
             phaseBucket: PhaseBucket,
@@ -32,9 +32,9 @@ public final class VillageDetailFlatRowCache {
         ) {
             self.villageID = villageID
             self.villageName = villageName
-            self.snapshotFingerprint = snapshotFingerprint
+            self.snapshotGeneration = snapshotGeneration
             self.base = base
-            self.manualFingerprint = manualFingerprint
+            self.manualGeneration = manualGeneration
             self.catalogEpoch = catalogEpoch
             self.catalogVersion = catalogVersion
             self.phaseBucket = phaseBucket
@@ -49,15 +49,17 @@ public final class VillageDetailFlatRowCache {
             now: Date,
             manualUpgradeCore: ManualUpgradeCore?,
             catalogEpoch: Int,
+            snapshotGeneration: UInt64,
+            manualGeneration: UInt64?,
             catalog: GameCatalog?,
             seasonalPhases: SeasonalPhaseTable
         ) {
-            guard let snapshot = village.accountSnapshot else { return nil }
+            guard village.accountSnapshot != nil else { return nil }
             self.villageID = village.id
             self.villageName = village.name
-            self.snapshotFingerprint = snapshot.contentFingerprint
+            self.snapshotGeneration = snapshotGeneration
             self.base = base
-            self.manualFingerprint = manualUpgradeCore?.contentFingerprint
+            self.manualGeneration = manualGeneration
             self.catalogEpoch = catalogEpoch
             self.catalogVersion = catalog?.gameVersion
             self.phaseBucket = seasonalPhases.bucket(at: now)

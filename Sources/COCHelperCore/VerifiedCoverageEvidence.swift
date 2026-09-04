@@ -13,7 +13,7 @@ public enum VerifiedCoveragePersistedTrust: Equatable, Sendable {
     case runtimeTrusted
     /// Wire metadata has persisted revalidation material but no runtime witness yet.
     case pendingRevalidation
-    /// Persisted history lacks rule version or input binding; fail-closed.
+    /// Persisted history lacks rule version; fail-closed.
     case insufficientPersistedEvidence
 }
 
@@ -27,8 +27,6 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
     public let verificationReason: String?
     /// Frozen verification rule set used when the proof was issued.
     public let verificationRuleVersion: String?
-    /// SHA-256 digest of the source section JSON array/object at issuance time.
-    public let inputBinding: String?
 
     let runtimeWitness: VerifiedCoverageRuntimeWitness?
 
@@ -39,7 +37,6 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         expectedCount: Int?,
         verificationReason: String?,
         verificationRuleVersion: String?,
-        inputBinding: String?,
         runtimeWitness: VerifiedCoverageRuntimeWitness
     ) {
         self.source = source
@@ -48,7 +45,6 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         self.expectedCount = expectedCount
         self.verificationReason = verificationReason
         self.verificationRuleVersion = verificationRuleVersion
-        self.inputBinding = inputBinding
         self.runtimeWitness = runtimeWitness
     }
 
@@ -57,15 +53,13 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
          protocolVersion: String,
          expectedCount: Int?,
          verificationReason: String?,
-         verificationRuleVersion: String?,
-         inputBinding: String?) {
+         verificationRuleVersion: String?) {
         self.source = source
         self.adapterID = adapterID
         self.protocolVersion = protocolVersion
         self.expectedCount = expectedCount
         self.verificationReason = verificationReason
         self.verificationRuleVersion = verificationRuleVersion
-        self.inputBinding = inputBinding
         self.runtimeWitness = nil
     }
 
@@ -74,7 +68,7 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         if runtimeWitness == .moduleIssued {
             return .runtimeTrusted
         }
-        if verificationRuleVersion == nil || inputBinding == nil {
+        if verificationRuleVersion == nil {
             return .insufficientPersistedEvidence
         }
         return .pendingRevalidation
@@ -87,7 +81,6 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         case expectedCount
         case verificationReason
         case verificationRuleVersion
-        case inputBinding
     }
 }
 
@@ -100,8 +93,7 @@ extension VerifiedCoverageEvidence: Codable {
             protocolVersion: try container.decode(String.self, forKey: .protocolVersion),
             expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount),
             verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason),
-            verificationRuleVersion: try container.decodeIfPresent(String.self, forKey: .verificationRuleVersion),
-            inputBinding: try container.decodeIfPresent(String.self, forKey: .inputBinding)
+            verificationRuleVersion: try container.decodeIfPresent(String.self, forKey: .verificationRuleVersion)
         )
     }
 
@@ -113,6 +105,5 @@ extension VerifiedCoverageEvidence: Codable {
         try container.encodeIfPresent(expectedCount, forKey: .expectedCount)
         try container.encodeIfPresent(verificationReason, forKey: .verificationReason)
         try container.encodeIfPresent(verificationRuleVersion, forKey: .verificationRuleVersion)
-        try container.encodeIfPresent(inputBinding, forKey: .inputBinding)
     }
 }

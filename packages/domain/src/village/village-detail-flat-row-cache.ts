@@ -21,9 +21,9 @@ export type UpgradeDisplaySort =
 export type VillageDetailFlatRowRenderIdentityKey = {
   readonly villageID: string;
   readonly villageName: string;
-  readonly snapshotFingerprint: string;
+  readonly snapshotGeneration: number;
   readonly base: TrackerBase;
-  readonly manualFingerprint: string | null;
+  readonly manualGeneration: number | null;
   readonly catalogEpoch: number;
   readonly catalogVersion: string | null;
   readonly phaseBucket: PhaseBucket;
@@ -54,6 +54,8 @@ export function createVillageDetailFlatRowRenderIdentityKey(input: {
   readonly nowMs: number;
   readonly manualUpgradeCore: ManualUpgradeCore | null | undefined;
   readonly catalogEpoch: number;
+  readonly snapshotGeneration: number;
+  readonly manualGeneration: number | null;
   readonly catalog: GameCatalog | null | undefined;
   readonly seasonalPhases: SeasonalPhaseTable;
 }): VillageDetailFlatRowRenderIdentityKey | null {
@@ -64,9 +66,9 @@ export function createVillageDetailFlatRowRenderIdentityKey(input: {
   return {
     villageID: input.village.id,
     villageName: input.village.name,
-    snapshotFingerprint: snapshot.contentFingerprint,
+    snapshotGeneration: input.snapshotGeneration,
     base: input.base,
-    manualFingerprint: input.manualUpgradeCore?.contentFingerprint ?? null,
+    manualGeneration: input.manualGeneration,
     catalogEpoch: input.catalogEpoch,
     catalogVersion: input.catalog?.gameVersion ?? null,
     phaseBucket: input.seasonalPhases.bucket(input.nowMs),
@@ -155,9 +157,9 @@ function renderIdentityKeysEqual(
   return (
     left.villageID === right.villageID &&
     left.villageName === right.villageName &&
-    left.snapshotFingerprint === right.snapshotFingerprint &&
+    left.snapshotGeneration === right.snapshotGeneration &&
     left.base === right.base &&
-    left.manualFingerprint === right.manualFingerprint &&
+    left.manualGeneration === right.manualGeneration &&
     left.catalogEpoch === right.catalogEpoch &&
     left.catalogVersion === right.catalogVersion &&
     phaseBucketsEqual(left.phaseBucket, right.phaseBucket) &&

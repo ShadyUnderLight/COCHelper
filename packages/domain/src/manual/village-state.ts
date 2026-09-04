@@ -439,7 +439,7 @@ function queueAssignmentsEqual(
 }
 
 function emptyBaseline(): ManualBaselineReference {
-  return { revision: '', fingerprint: null, lineageID: null };
+  return { revision: '', lineageID: null };
 }
 
 export function createManualReconciliationRecord(input: {

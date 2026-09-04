@@ -9,6 +9,7 @@ import {
 } from './index';
 import { lineageIndexesEqual, recomputeLineageIndexFromEntries } from './lineage-index';
 import { resolveSnapshotLineage } from './lineage-resolver';
+import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
 const APPLIED_AT = 100;
@@ -82,7 +83,10 @@ describe('recomputeLineageIndexFromEntries', () => {
     const envelope = createSnapshotHistoryEnvelope({
       entries,
       lineages,
-      migrationMarker: { version: 1, completedAtRefSeconds: APPLIED_AT },
+      migrationMarker: {
+        version: SNAPSHOT_HISTORY_SCHEMA.envelope,
+        completedAtRefSeconds: APPLIED_AT,
+      },
     });
     expect(() => validateSnapshotHistoryEnvelope(envelope)).not.toThrow();
     expect(lineageIndexesEqual(lineages, envelope.lineages)).toBe(true);

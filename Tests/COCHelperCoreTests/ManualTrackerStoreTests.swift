@@ -103,12 +103,10 @@ final class ManualTrackerStoreTests: XCTestCase {
     )
     private let baseline = ManualBaselineReference(
         revision: "snapshot-1",
-        fingerprint: "sha256:baseline",
         lineageID: "lineage-1"
     )
     private let provenance = ManualCatalogProvenance(
-        gameVersion: "18.400.13",
-        sourceFingerprint: "sha256:catalog"
+        gameVersion: "18.400.13"
     )
 
     private func manualCompletedCore(
@@ -384,7 +382,6 @@ final class ManualTrackerStoreTests: XCTestCase {
         let entry = try XCTUnwrap(try history.load()?.entry(id: active.lastEntryID))
         let currentBaseline = ManualBaselineReference(
             revision: entry.snapshotID.uuidString,
-            fingerprint: entry.canonicalFingerprint,
             lineageID: entry.lineageID.uuidString
         )
         try model.updateManualUpgradeCore(for: villageID) { core in
@@ -458,7 +455,6 @@ final class ManualTrackerStoreTests: XCTestCase {
         let entry = try XCTUnwrap(try history.load()?.entry(id: active.lastEntryID))
         let currentBaseline = ManualBaselineReference(
             revision: entry.snapshotID.uuidString,
-            fingerprint: entry.canonicalFingerprint,
             lineageID: entry.lineageID.uuidString
         )
         try model.updateManualUpgradeCore(for: villageID) { core in
@@ -709,7 +705,6 @@ final class ManualTrackerStoreTests: XCTestCase {
         let entry = try XCTUnwrap(try history.load()?.entry(id: lineage.lastEntryID))
         let currentBaseline = ManualBaselineReference(
             revision: entry.snapshotID.uuidString,
-            fingerprint: entry.canonicalFingerprint,
             lineageID: lineage.lineageID.uuidString
         )
         try model.updateManualUpgradeCore(for: villageID, at: start) { core in
@@ -982,10 +977,11 @@ final class ManualTrackerStoreTests: XCTestCase {
 
     func testVillageStateDecodesLegacyDataWithoutCapacityConfigs() throws {
         // 旧版 JSON 没有 queueCapacityConfigs 字段：decode 必须回退为空数组，
-        // 不能报错（向后兼容，不 bump schemaVersion）。
+        // 不能报错。注意 schemaVersion 已按 #304 升至 v2（旧 v1 数据整体
+        // unsupported，此处只验证缺失可选字段的回退）。
         let villageID = UUID()
         let json = """
-        {"villageID":"\(villageID.uuidString)","schemaVersion":1,"baselineReference":null,\
+        {"villageID":"\(villageID.uuidString)","schemaVersion":2,"baselineReference":null,\
         "core":{"itemStates":[],"records":[]},"stateUpdatedAt":1000}
         """
         let state = try JSONDecoder().decode(
@@ -1009,7 +1005,7 @@ final class ManualTrackerStoreTests: XCTestCase {
             villageID: villageID,
             itemKey: key,
             baselineReference: ManualBaselineReference(
-                revision: "rev-1", fingerprint: "fp-1", lineageID: "lineage-1"),
+                revision: "rev-1", lineageID: "lineage-1"),
             queueKind: queueKind,
             decidedAt: decidedAt,
             status: status
@@ -1061,10 +1057,10 @@ final class ManualTrackerStoreTests: XCTestCase {
 
     func testVillageStateDecodesLegacyDataWithoutQueueAssignments() throws {
         // 旧版 JSON 没有 queueAssignments 字段：decode 必须回退为空数组，
-        // 不能报错（向后兼容，不 bump schemaVersion）。
+        // 不能报错（schemaVersion 同上已为 v2）。
         let villageID = UUID()
         let json = """
-        {"villageID":"\(villageID.uuidString)","schemaVersion":1,"baselineReference":null,\
+        {"villageID":"\(villageID.uuidString)","schemaVersion":2,"baselineReference":null,\
         "core":{"itemStates":[],"records":[]},"stateUpdatedAt":1000}
         """
         let state = try JSONDecoder().decode(

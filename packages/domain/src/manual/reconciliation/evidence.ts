@@ -31,7 +31,6 @@ export type ManualReconciliationEvidence = {
   readonly previousObservations?: ReadonlyMap<string, ReconciliationObservation>;
   readonly relatedChangesByStableID?: ReadonlyMap<string, readonly RelatedChangeEvidence[]>;
   readonly previousSnapshotID?: UuidString | null;
-  readonly previousSnapshotFingerprint?: string | null;
   readonly previousLineageID?: string | null;
   readonly previousSourceTimestampMs?: number | null;
 };

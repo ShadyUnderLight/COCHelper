@@ -17,6 +17,7 @@ import {
   envelopeIsMigrated,
   FileSnapshotHistoryStore,
   migrateSnapshotHistoryFromVillages,
+  observationIdentityKey,
   validateSnapshotHistoryEnvelope,
 } from './index';
 
@@ -57,7 +58,6 @@ describe('snapshot history envelope wire', () => {
             lineageID: entry.lineageID,
             normalizedPlayerTag: entry.normalizedPlayerTag,
             lastEntryID: entry.snapshotID,
-            lastFingerprint: entry.canonicalFingerprint,
             lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
             hasConflict: false,
             isActive: true,
@@ -71,7 +71,9 @@ describe('snapshot history envelope wire', () => {
     const decoded = decodeSnapshotHistoryEnvelopeWire(encoded);
     const revalidated = validateSnapshotHistoryEnvelope(decoded);
 
-    expect(revalidated.entries[0]?.canonicalFingerprint).toBe(entry.canonicalFingerprint);
+    expect(observationIdentityKey(revalidated.entries[0]!.observation)).toBe(
+      observationIdentityKey(entry.observation),
+    );
     expect(revalidated.lineages).toEqual(envelope.lineages);
     expect(envelopeIsMigrated(revalidated)).toBe(true);
   });
@@ -115,7 +117,6 @@ describe('file snapshot history store', () => {
             lineageID: entry.lineageID,
             normalizedPlayerTag: entry.normalizedPlayerTag,
             lastEntryID: entry.snapshotID,
-            lastFingerprint: entry.canonicalFingerprint,
             lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
             hasConflict: false,
             isActive: true,
@@ -174,7 +175,7 @@ describe('file snapshot history store', () => {
       807_629_133,
     );
     const preservedSnapshotID = seeded.entries[0]!.snapshotID;
-    const preservedFingerprint = seeded.entries[0]!.canonicalFingerprint;
+    const preservedObservationKey = observationIdentityKey(seeded.entries[0]!.observation);
 
     const legacyWire = encodeSnapshotHistoryEnvelopeWire({
       ...seeded,
@@ -202,7 +203,7 @@ describe('file snapshot history store', () => {
 
     expect(upgraded.entries).toHaveLength(1);
     expect(upgraded.entries[0]?.snapshotID).toBe(preservedSnapshotID);
-    expect(upgraded.entries[0]?.canonicalFingerprint).toBe(preservedFingerprint);
+    expect(observationIdentityKey(upgraded.entries[0]!.observation)).toBe(preservedObservationKey);
     expect(envelopeIsMigrated(upgraded)).toBe(true);
 
     const reloaded = store.load();
@@ -244,7 +245,6 @@ describe('file snapshot history store', () => {
           lineageID: entry.lineageID,
           normalizedPlayerTag: entry.normalizedPlayerTag,
           lastEntryID: entry.snapshotID,
-          lastFingerprint: entry.canonicalFingerprint,
           lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
@@ -258,7 +258,7 @@ describe('file snapshot history store', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it('save 拒绝 integrity 被篡改的 envelope', () => {
+  it('save 拒绝 observation 被篡改的 envelope', () => {
     const directory = mkdtempSync(join(tmpdir(), 'coc-history-tamper-save-'));
     const fileURL = join(directory, 'snapshot-history-v1.json');
     const store = new FileSnapshotHistoryStore(fileURL, {
@@ -286,7 +286,10 @@ describe('file snapshot history store', () => {
       entries: [
         {
           ...entry,
-          integrityFingerprint: entry.canonicalFingerprint,
+          observation: {
+            ...entry.observation,
+            items: entry.observation.items.slice(1),
+          },
         },
       ],
       lineages: [
@@ -295,7 +298,6 @@ describe('file snapshot history store', () => {
           lineageID: entry.lineageID,
           normalizedPlayerTag: entry.normalizedPlayerTag,
           lastEntryID: entry.snapshotID,
-          lastFingerprint: entry.canonicalFingerprint,
           lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,

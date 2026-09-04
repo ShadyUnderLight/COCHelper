@@ -362,7 +362,7 @@ final class LocalQueueCapacityTests: XCTestCase {
             villageID: villageID,
             itemKey: TrackerItemKey.root(base: .home, rawSection: rawSection, dataID: 1_000_003),
             baselineReference: ManualBaselineReference(
-                revision: "rev", fingerprint: "fp", lineageID: "lineage-1"),
+                revision: "rev", lineageID: "lineage-1"),
             queueKind: queueKind,
             decidedAt: decidedAt,
             status: status

@@ -26,6 +26,8 @@ describe('VillageProjectionCache', () => {
       nowMs: TEST_IMPORTED_AT_MS,
       manualUpgradeCore: null,
       catalogEpoch: 1,
+      snapshotGeneration: 1,
+      manualGeneration: null,
     };
     cache.render(input);
     cache.render(input);
@@ -55,6 +57,8 @@ describe('VillageProjectionCache', () => {
       nowMs: TEST_IMPORTED_AT_MS,
       manualUpgradeCore: null,
       catalogEpoch: 1,
+      snapshotGeneration: 1,
+      manualGeneration: null,
     };
     const first = cache.render(input);
     const second = cache.render({ ...input, nowMs: TEST_IMPORTED_AT_MS + 30_000 });

@@ -173,16 +173,19 @@ final class AccountSnapshotTests: XCTestCase {
         XCTAssertTrue(snapshot.diagnostics.contains { $0.path == "timestamp" && $0.severity == .warning })
     }
 
-    // MARK: - Issue #210 内容指纹（投影缓存轻量 key）
+    // MARK: - Issue #304 解析稳定性（内容指纹已删除）
 
-    func testContentFingerprintIsDeterministicAndContentSensitive() throws {
+    func testRepeatedParseProducesEqualBusinessContent() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_600)
         let snapshotA = try AccountSnapshotImporter.parse(sampleJSON, now: now)
-        // 同一输入重复解析 → 同一指纹（跨实例稳定，缓存 key 前提）。
+        // 同一输入重复解析 → 业务内容一致（诊断随机 id 除外）。
         let snapshotB = try AccountSnapshotImporter.parse(sampleJSON, now: now)
-        XCTAssertEqual(snapshotA.contentFingerprint, snapshotB.contentFingerprint)
+        XCTAssertEqual(snapshotA.objectSections, snapshotB.objectSections)
+        XCTAssertEqual(snapshotA.numericSections, snapshotB.numericSections)
+        XCTAssertEqual(snapshotA.boosts, snapshotB.boosts)
+        XCTAssertEqual(snapshotA.tag, snapshotB.tag)
 
-        // 内容变化（建造 level 1 → 2）→ 指纹变化。
+        // 内容变化（建造 level 1 → 2）→ 业务内容不等。
         var mutatedSections = snapshotA.objectSections
         var building = try XCTUnwrap(mutatedSections["buildings"]?.first)
         building = AccountItem(
@@ -203,31 +206,26 @@ final class AccountSnapshotTests: XCTestCase {
             unknownTopLevelKeys: snapshotA.unknownTopLevelKeys,
             diagnostics: snapshotA.diagnostics
         )
-        XCTAssertNotEqual(snapshotA.contentFingerprint, snapshotC.contentFingerprint)
+        XCTAssertNotEqual(snapshotA.objectSections, snapshotC.objectSections)
     }
 
-    func testContentFingerprintSurvivesCodableRoundTrip() throws {
+    func testCodableRoundTripPreservesBusinessContent() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_600)
         let snapshot = try AccountSnapshotImporter.parse(sampleJSON, now: now)
         let data = try JSONEncoder().encode(snapshot)
-        // 指纹不进入持久化格式（保持既有账号 JSON 字节语义）。
-        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
-        XCTAssertFalse(json.contains("contentFingerprint"))
 
-        // 解码后的快照指纹与源一致（旧数据解码后同样可得到指纹）。
         let decoded = try JSONDecoder().decode(AccountSnapshot.self, from: data)
-        XCTAssertEqual(decoded.contentFingerprint, snapshot.contentFingerprint)
         XCTAssertEqual(decoded.objectSections, snapshot.objectSections)
     }
 
-    func testContentFingerprintDistinguishesImportedAt() throws {
+    func testImportedAtDistinguishesImportMoment() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_600)
         let snapshotA = try AccountSnapshotImporter.parse(sampleJSON, now: now)
         let snapshotB = try AccountSnapshotImporter.parse(
             sampleJSON, now: now.addingTimeInterval(10)
         )
-        // importedAt 是计时锚点：不同导入时刻 = 不同内容身份（重建语义，issue #200）。
-        XCTAssertNotEqual(snapshotA.contentFingerprint, snapshotB.contentFingerprint)
+        // importedAt 仍是计时锚点：不同导入时刻 importedAt 不同。
+        XCTAssertNotEqual(snapshotA.importedAt, snapshotB.importedAt)
     }
 
     func testInvalidInputFailsClosed() {

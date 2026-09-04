@@ -1,7 +1,9 @@
 /** 独立 snapshot-history 契约版本号（对齐 SnapshotHistorySchema.swift）。 */
 export const SNAPSHOT_HISTORY_SCHEMA = {
-  envelope: 1,
-  entry: 1,
+  /** v2（Issue #304）：移除 fingerprint/integrity 摘要字段的新 wire 形状。旧文件按旧 schema 标记不可用。 */
+  envelope: 2,
+  /** v2（Issue #304）：移除 canonicalFingerprint/integrityFingerprint/version 字段。 */
+  entry: 2,
   /** v2：section coverage 证据（Issue #164/#173）。 */
   observationWithSectionEvidence: 2,
   /** v3：timer evidence allowlist（Issue #175）。 */
@@ -13,8 +15,6 @@ export const SNAPSHOT_HISTORY_SCHEMA = {
   /** v6：coverage 冻结 source universe（Issue #236）。 */
   observationWithSourceUniverse: 6,
   observation: 6,
-  fingerprint: 1,
-  integrity: 1,
 } as const;
 
 /** canonicalization traversal 硬上限（Issue #273 深层嵌套防护）。 */

@@ -11,18 +11,13 @@ enum SnapshotCoverageProofRevalidators {
         section: String,
         policy: SnapshotCoverageRevalidationPolicy
     ) -> SectionCoverageRuntimeTrust {
-        guard let ruleVersion = evidence.verificationRuleVersion,
-              let binding = evidence.inputBinding else {
+        // Issue #304：不再比较内容 inputBinding 摘要；保留 rule 版本门、
+        // section 结构校验与 adapter 来源校验。
+        guard let ruleVersion = evidence.verificationRuleVersion else {
             return .rejected("缺少 persisted revalidation 材料。")
         }
         guard ruleVersion == SnapshotCoverageVerifier.currentVerificationRuleVersion else {
             return .rejected("verification rule 版本不受支持：\(ruleVersion)。")
-        }
-        guard let computedBinding = SnapshotCoverageTrustHydration.sectionInputBinding(
-            rawJSON: rawJSON,
-            section: section
-        ), computedBinding == binding else {
-            return .rejected("验证输入绑定不匹配。")
         }
         guard SnapshotCoverageVerifier.validatePersistedSectionStructure(
             rawJSON: rawJSON,
@@ -91,9 +86,8 @@ enum SnapshotCoverageProofRevalidators {
         guard evidence.verificationReason == "bundled perf fixture" else {
             return .rejected("perf fixture verificationReason 不匹配。")
         }
-        guard BundledPerfFixtureRegistry.recognizesAccountSnapshot(rawJSON: rawJSON) else {
-            return .rejected("rawJSON 不是受信任的 bundled perf fixture。")
-        }
+        // Issue #304：不再用内容 hash allowlist 判定 perf fixture 是否可信；
+        // rawJSON 仍须按 adapter 契约声明该 section（业务来源表达）。
         guard perfFixtureDeclaresSection(
             section: section,
             in: rawJSON,

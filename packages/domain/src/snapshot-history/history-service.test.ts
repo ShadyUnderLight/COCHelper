@@ -13,6 +13,7 @@ import {
   envelopeActiveLineage,
   envelopeIsMigrated,
   migrateSnapshotHistoryFromVillages,
+  observationIdentityKey,
 } from './index';
 import type { SnapshotHistoryEnvelope } from './store-types';
 import type { SnapshotHistoryStore } from './store-port';
@@ -111,7 +112,7 @@ describe('snapshot history service', () => {
       807_629_133,
     );
     const preservedSnapshotID = seeded.entries[0]!.snapshotID;
-    const preservedFingerprint = seeded.entries[0]!.canonicalFingerprint;
+    const preservedObservationKey = observationIdentityKey(seeded.entries[0]!.observation);
 
     const existingWithoutMarker: SnapshotHistoryEnvelope = {
       ...seeded,
@@ -134,7 +135,7 @@ describe('snapshot history service', () => {
 
     expect(upgraded.entries).toHaveLength(1);
     expect(upgraded.entries[0]?.snapshotID).toBe(preservedSnapshotID);
-    expect(upgraded.entries[0]?.canonicalFingerprint).toBe(preservedFingerprint);
+    expect(observationIdentityKey(upgraded.entries[0]!.observation)).toBe(preservedObservationKey);
     expect(envelopeIsMigrated(upgraded)).toBe(true);
     expect(store.saved()?.entries[0]?.snapshotID).toBe(preservedSnapshotID);
   });
@@ -229,7 +230,6 @@ describe('snapshot history service', () => {
     expect(baseline.lineages).toHaveLength(2);
 
     const baselineBEntryID = envelopeActiveLineage(baseline, secondVillageID)!.lastEntryID;
-    const baselineBFingerprint = envelopeActiveLineage(baseline, secondVillageID)!.lastFingerprint;
 
     const a1Parsed = parseAccountSnapshot('{"tag":"#GOLDEN01","buildings":[],"unknown":1}', {
       clock: new GoldenClock(),
@@ -258,9 +258,6 @@ describe('snapshot history service', () => {
       a1.entry.snapshotID,
     );
     expect(envelopeActiveLineage(a1.envelope, secondVillageID)?.lastEntryID).toBe(baselineBEntryID);
-    expect(envelopeActiveLineage(a1.envelope, secondVillageID)?.lastFingerprint).toBe(
-      baselineBFingerprint,
-    );
 
     const b1Parsed = parseAccountSnapshot('{"tag":"#GOLDEN01","buildings":[],"unknown":2}', {
       clock: new GoldenClock(),
@@ -321,10 +318,16 @@ describe('snapshot history service', () => {
     expect(envelopeActiveLineage(a2.envelope, secondVillageID)?.lastEntryID).toBe(
       b1.entry.snapshotID,
     );
+    // B 村 baseline entry 在 A 村多次导入后保持原 observation（不被污染）。
+    const baselineBObservationKey = observationIdentityKey(
+      baseline.entries.find((entry) => entry.snapshotID === baselineBEntryID)!.observation,
+    );
     expect(
-      a2.envelope.entries.find(
-        (entry) => entry.villageID === secondVillageID && entry.snapshotID === baselineBEntryID,
-      )?.canonicalFingerprint,
-    ).toBe(baselineBFingerprint);
+      observationIdentityKey(
+        a2.envelope.entries.find(
+          (entry) => entry.villageID === secondVillageID && entry.snapshotID === baselineBEntryID,
+        )!.observation,
+      ),
+    ).toBe(baselineBObservationKey);
   });
 });

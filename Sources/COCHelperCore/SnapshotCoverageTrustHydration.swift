@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// Issue #224 / #236: persisted verified-coverage and source-universe revalidation.
@@ -18,8 +17,6 @@ enum SnapshotCoverageTrustHydration {
         return SnapshotHistoryEntry(
             schemaVersion: entry.schemaVersion,
             observationVersion: entry.observationVersion,
-            fingerprintVersion: entry.fingerprintVersion,
-            integrityVersion: entry.integrityVersion,
             snapshotID: entry.snapshotID,
             villageID: entry.villageID,
             lineageID: entry.lineageID,
@@ -27,14 +24,12 @@ enum SnapshotCoverageTrustHydration {
             appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
             rawJSON: entry.rawJSON,
             observation: entry.observation,
             coverage: hydratedCoverage,
             isBaseline: entry.isBaseline,
             baselineReason: entry.baselineReason,
-            timerSchema: entry.timerSchema,
-            integrityFingerprint: entry.integrityFingerprint
+            timerSchema: entry.timerSchema
         )
     }
 
@@ -98,22 +93,6 @@ enum SnapshotCoverageTrustHydration {
         )
     }
 
-    static func sectionInputBinding(rawJSON: String, section: String) -> String? {
-        guard let topLevel = try? topLevelObject(of: rawJSON),
-              let value = topLevel[section],
-              JSONSerialization.isValidJSONObject(value) else {
-            return nil
-        }
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: value,
-            options: [.sortedKeys, .withoutEscapingSlashes]
-        ) else {
-            return nil
-        }
-        let digest = SHA256.hash(data: data)
-        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
-    }
-
     private static func coverageTrustChanged(
         from: SnapshotObservationCoverage,
         to: SnapshotObservationCoverage
@@ -126,14 +105,5 @@ enum SnapshotCoverageTrustHydration {
             return true
         }
         return false
-    }
-
-    private static func topLevelObject(of text: String) throws -> [String: Any] {
-        let prepared = AccountSnapshotImporter.prepare(text).text
-        guard let data = prepared.data(using: .utf8),
-              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw SnapshotHistoryCanonicalizationError.invalidJSON("顶层必须是 JSON 对象。")
-        }
-        return object
     }
 }

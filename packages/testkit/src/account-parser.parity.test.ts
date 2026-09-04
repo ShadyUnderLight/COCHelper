@@ -20,7 +20,6 @@ describe('account parser golden parity harness', () => {
       readFileSync(resolve(root, 'Tests/Golden/Fixtures/parser_golden_expected.json'), 'utf8'),
     ) as {
       accountSnapshot: {
-        contentFingerprint: string;
         encodedJSONHex: string;
       };
     };
@@ -33,7 +32,6 @@ describe('account parser golden parity harness', () => {
       return;
     }
 
-    expect(parsed.value.contentFingerprint).toBe(expected.accountSnapshot.contentFingerprint);
     expect(maskDiagnosticIdsInWireHex(wireHex(parsed.value))).toBe(
       expected.accountSnapshot.encodedJSONHex,
     );

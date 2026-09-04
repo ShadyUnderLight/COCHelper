@@ -22,7 +22,6 @@ type WireEvidence = {
   readonly villageID: UuidString;
   readonly newBaselineReference: {
     readonly revision: string;
-    readonly fingerprint: string | null;
     readonly lineageID: string | null;
   };
   readonly newNormalizedPlayerTag: string | null;
@@ -42,15 +41,34 @@ export function buildManualReconciliationParityCase(input: {
 }) {
   const evidence = wireEvidenceToDomain(input.evidence);
   const preview = previewReconciliation(evidence, input.currentState, input.appliedAtMs);
+  // Issue #304：outcome 直接携带去除随机 ID 的语义字段（替代 candidateFingerprint）。
   const outcome = {
-    candidateFingerprint: preview.candidateFingerprint,
     duplicate: preview.duplicate,
     lineageComparable: preview.lineageComparable,
     timeConfidence: preview.timeConfidence,
+    newReference: {
+      revision: preview.newReference.revision,
+      lineageID: preview.newReference.lineageID,
+    },
+    newNormalizedPlayerTag: preview.newNormalizedPlayerTag,
+    sourceTimestampMs: preview.sourceTimestampMs,
     items: preview.items
       .map((item) => ({
         stableId: trackerItemKeyStableId(item.itemKey),
         classification: item.classification,
+        previousDistribution: outcomeDistribution(item.previousDistribution),
+        observedDistribution: outcomeDistribution(item.observedDistribution),
+        relatedRecordIDs: [...item.relatedRecordIDs].sort((left, right) =>
+          left.localeCompare(right),
+        ),
+        confirmedRecordIDs: [...item.confirmedRecordIDs].sort((left, right) =>
+          left.localeCompare(right),
+        ),
+        observedTimer: item.observedTimer,
+        coverageComplete: item.coverageComplete,
+        observedDistributionComplete: item.observedDistributionComplete,
+        observedSectionTrustGatesOpen: item.observedSectionTrustGatesOpen,
+        observedTimerCoverageComplete: item.observedTimerCoverageComplete,
       }))
       .sort((left, right) => left.stableId.localeCompare(right.stableId)),
   };
@@ -189,4 +207,19 @@ function wireDistribution(
     return null;
   }
   return distribution.levels.map((entry) => [String(entry.level), entry.quantity.toString()]);
+}
+
+function outcomeDistribution(
+  distribution:
+    | ManualTrackerVillageState['core']['itemStates'][number]['manualCompletedDistribution']
+    | null
+    | undefined,
+) {
+  if (distribution === null || distribution === undefined) {
+    return null;
+  }
+  return distribution.levels.map((entry) => ({
+    level: entry.level,
+    quantity: entry.quantity.toString(),
+  }));
 }

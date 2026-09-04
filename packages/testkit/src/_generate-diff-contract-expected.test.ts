@@ -120,9 +120,7 @@ describe.skipIf(!shouldGenerate)('_generate diff contract expected (run once)', 
       snapshotID: parseUuid(contract.canonicalizeCase.snapshotID)!,
     });
     const typescriptCanonicalHex = manualParityHex({
-      canonicalFingerprint: historyEntry.canonicalFingerprint,
       encodedJSONHex: historyEntryWireHex(historyEntry),
-      integrityFingerprint: historyEntry.integrityFingerprint,
     });
     if (typescriptCanonicalHex !== canonicalizeSwift.value.canonicalHex) {
       throw new Error('TS/Swift canonicalize mismatch before freeze');

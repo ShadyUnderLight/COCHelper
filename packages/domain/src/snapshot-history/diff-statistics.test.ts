@@ -1,4 +1,4 @@
-import { parseUuid, type Sha256Fingerprint, type UuidString } from '@coc-helper/wire';
+import { parseUuid, type UuidString } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import { calculateSnapshotHistoryStatistics, confirmedWallLevelGrowth } from './diff-statistics';
@@ -150,8 +150,6 @@ function makeEntry(input: {
   const entry = {
     schemaVersion: SNAPSHOT_HISTORY_SCHEMA.entry,
     observationVersion: SNAPSHOT_HISTORY_SCHEMA.observation,
-    fingerprintVersion: SNAPSHOT_HISTORY_SCHEMA.fingerprint,
-    integrityVersion: SNAPSHOT_HISTORY_SCHEMA.integrity,
     snapshotID,
     villageID: input.villageID ?? VILLAGE_A,
     lineageID: input.lineageID ?? LINEAGE_A,
@@ -159,8 +157,6 @@ function makeEntry(input: {
     appliedAtRefSeconds: input.date,
     sourceTimestampRefSeconds: null,
     parserVersion: 'test',
-    canonicalFingerprint:
-      'sha256:0000000000000000000000000000000000000000000000000000000000000000' as Sha256Fingerprint,
     rawJSON: '{}',
     observation: {
       schemaVersion: SNAPSHOT_HISTORY_SCHEMA.observation,
@@ -172,8 +168,6 @@ function makeEntry(input: {
     isBaseline: false,
     baselineReason: null,
     timerSchema: null,
-    integrityFingerprint:
-      'sha256:0000000000000000000000000000000000000000000000000000000000000001' as Sha256Fingerprint,
   };
 
   const hydrated = hydrateVerifiedCoverageOnEntry({

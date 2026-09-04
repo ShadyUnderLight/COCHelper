@@ -131,11 +131,29 @@ package enum SnapshotCoverageSourceUniverseIssuer {
     }
 
     package static func issuePerfFixture(snapshot: AccountSnapshot) -> SnapshotCoverageSourceUniverse? {
-        guard BundledPerfFixtureRegistry.recognizesAccountSnapshot(rawJSON: snapshot.originalText) else {
+        // Issue #304 follow-up (P1)：registry 决定 authorized section set，
+        // rawJSON coverage 只做一致性门。coverage 块不进 business observation
+        //（v5+ 剥离），membership 成立只证明"业务内容等价于注册 fixture"，
+        // 不能证明"当前声明等于 registry 授权集"——声明被单改后必须拒绝签发，
+        // 而不是按篡改后的声明签出 trusted universe。
+        guard let fixtureID = PerfFixtureIdentityRegistry.fixtureID(for: snapshot),
+              let requiredSections = PerfFixtureIdentityRegistry.requiredSections(
+                  for: fixtureID
+              ) else {
             return nil
         }
+        guard perfFixtureDeclaredSections(in: snapshot) == requiredSections else {
+            return nil
+        }
+        return issuePerfFixtureUniverse(requiredSections: requiredSections)
+    }
+
+    /// Snapshot 自报的 perf-fixture 声明 section 集（declaration，非授权）。
+    private static func perfFixtureDeclaredSections(
+        in snapshot: AccountSnapshot
+    ) -> Set<String> {
         let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
-        let requiredSections = Set(
+        return Set(
             proofs.compactMap { section, proof -> String? in
                 switch proof {
                 case .declared(let source, let version, _)
@@ -146,8 +164,15 @@ package enum SnapshotCoverageSourceUniverseIssuer {
                 }
             }
         )
-        guard !requiredSections.isEmpty else { return nil }
-        return issueModuleIssued(
+    }
+
+    /// Reload-time expectation builder: universe derived ONLY from sections
+    /// whose proofs revalidated trusted through the fixture registry.
+    /// Never derive expectations from rawJSON self-declarations here.
+    package static func issuePerfFixtureUniverse(
+        requiredSections: Set<String>
+    ) -> SnapshotCoverageSourceUniverse {
+        issueModuleIssued(
             adapterID: SnapshotCoverageVerifier.perfFixtureAdapterID,
             protocolVersion: "1",
             requiredSections: requiredSections
@@ -192,9 +217,11 @@ package enum SnapshotCoverageSourceUniverseIssuer {
 enum SnapshotCoverageSourceUniverseRevalidators {
     static func revalidate(
         universe: SnapshotCoverageSourceUniverse,
-        snapshot: AccountSnapshot,
+        snapshot: AccountSnapshot?,
         coverage: SnapshotObservationCoverage,
-        policy: SnapshotCoverageRevalidationPolicy
+        policy: SnapshotCoverageRevalidationPolicy,
+        perfFixtureIDs: Set<String> = [],
+        observationKey: String? = nil
     ) -> SourceUniverseRuntimeTrust {
         guard universe.isWellFormedWireContract else {
             return .rejected("source universe wire contract 无效。")
@@ -206,7 +233,11 @@ enum SnapshotCoverageSourceUniverseRevalidators {
             }
             return revalidateTestFixture(universe: universe, coverage: coverage)
         case SnapshotCoverageVerifier.perfFixtureAdapterID:
-            return revalidatePerfFixture(universe: universe, snapshot: snapshot)
+            return revalidatePerfFixture(
+                universe: universe,
+                fixtureIDs: perfFixtureIDs,
+                observationKey: observationKey
+            )
         default:
             return .rejected("未注册的 source universe adapter。")
         }
@@ -232,13 +263,33 @@ enum SnapshotCoverageSourceUniverseRevalidators {
 
     private static func revalidatePerfFixture(
         universe: SnapshotCoverageSourceUniverse,
-        snapshot: AccountSnapshot
+        fixtureIDs: Set<String>,
+        observationKey: String?
     ) -> SourceUniverseRuntimeTrust {
-        guard let expected = SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot) else {
-            return .rejected("rawJSON 不是受信任的 bundled perf fixture。")
+        // Issue #304 follow-up：universe 期望来自 registry 的 fixture 真实
+        // section 集，绝不从 reload-time rawJSON 自报声明派生（自证自销）。
+        // fixture 身份必须唯一且 entry observation 必须命中该 fixture 记录，
+        // 否则内容被换过而 universe 被原样复制时也会误信任。
+        guard fixtureIDs.count == 1, let fixtureID = fixtureIDs.first else {
+            return .rejected("perf fixture 身份缺失或不一致。")
         }
+        guard let observationKey,
+              PerfFixtureIdentityRegistry.recognizes(
+                  fixtureID: fixtureID,
+                  identityKey: observationKey
+              ) else {
+            return .rejected("perf fixture 身份与 registry 记录不一致。")
+        }
+        guard let requiredSections = PerfFixtureIdentityRegistry.requiredSections(
+            for: fixtureID
+        ) else {
+            return .rejected("未注册的 perf fixture 身份。")
+        }
+        let expected = SnapshotCoverageSourceUniverseIssuer.issuePerfFixtureUniverse(
+            requiredSections: requiredSections
+        )
         guard expected == universe else {
-            return .rejected("perf fixture source universe 与 adapter 契约不一致。")
+            return .rejected("perf fixture source universe 与 registry 背书不一致。")
         }
         return .trusted
     }

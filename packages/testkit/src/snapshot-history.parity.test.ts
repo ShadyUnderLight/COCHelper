@@ -196,9 +196,7 @@ describe('snapshot history Swift oracle parity', () => {
       snapshotID: parseUuid(diffContract.canonicalizeCase.snapshotID)!,
     });
     const typescriptHex = manualParityHex({
-      canonicalFingerprint: entry.canonicalFingerprint,
       encodedJSONHex: historyEntryWireHex(entry),
-      integrityFingerprint: entry.integrityFingerprint,
     });
     await assertFrozenOutcomeParity({
       caseId: `snapshot-history-${diffContract.canonicalizeCase.id}`,

@@ -37,13 +37,11 @@ import { trackerItemKeyRoot } from '../types';
 const villageID = parseUuid('00000000-0000-0000-0000-000000000001')!;
 const baseline = {
   revision: 'rev',
-  fingerprint: 'fp',
   lineageID: 'lineage-1',
 };
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: null,
-  sourceFingerprint: null,
   manifestSchemaVersion: null,
 };
 
@@ -250,7 +248,7 @@ describe('QueueAssignmentDecision', () => {
         decisionID: parseUuid('00000000-0000-0000-0000-000000000032')!,
         villageID,
         itemKey: trackerItemKeyRoot('home', 'buildings', 123n),
-        baselineReference: { revision: '  ', fingerprint: null, lineageID: null },
+        baselineReference: { revision: '  ', lineageID: null },
         queueKind: LOCAL_QUEUE_KIND_BUILDER,
         decidedAtMs: 1_000_000,
       });
@@ -417,7 +415,6 @@ describe('LocalQueueOccupancyResolver', () => {
 describe('validateStartAgainstQueueCapacity', () => {
   const currentBaseline = {
     revision: 'rev',
-    fingerprint: 'fp',
     lineageID: 'lineage-1',
   };
   const core = createManualUpgradeCoreState({
@@ -432,7 +429,6 @@ describe('validateStartAgainstQueueCapacity', () => {
   });
   const staleBaseline = {
     revision: 'rev-old',
-    fingerprint: 'fp-old',
     lineageID: 'lineage-old',
   };
   const staleCore = createManualUpgradeCoreState({

@@ -1,4 +1,4 @@
-import { parseUuid, type Sha256Fingerprint, type UuidString } from '@coc-helper/wire';
+import { parseUuid, type UuidString } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import { SNAPSHOT_DIFF_ALGORITHM_VERSION } from './diff-types';
@@ -38,7 +38,7 @@ function issueTestCoverageProof(
     expectedCount,
     verificationReason: 'test injection',
     verificationRuleVersion: '1',
-    inputBinding: null,
+    fixtureID: null,
   };
 }
 
@@ -152,8 +152,6 @@ function makeEntry(input: {
   const entry = {
     schemaVersion: SNAPSHOT_HISTORY_SCHEMA.entry,
     observationVersion: input.observationVersion ?? SNAPSHOT_HISTORY_SCHEMA.observation,
-    fingerprintVersion: SNAPSHOT_HISTORY_SCHEMA.fingerprint,
-    integrityVersion: SNAPSHOT_HISTORY_SCHEMA.integrity,
     snapshotID,
     villageID: input.villageID ?? VILLAGE_ID,
     lineageID: input.lineageID ?? LINEAGE_ID,
@@ -161,8 +159,6 @@ function makeEntry(input: {
     appliedAtRefSeconds: input.date,
     sourceTimestampRefSeconds: input.sourceTimestampRefSeconds ?? null,
     parserVersion: 'test',
-    canonicalFingerprint:
-      'sha256:0000000000000000000000000000000000000000000000000000000000000000' as Sha256Fingerprint,
     rawJSON: '{}',
     observation: {
       schemaVersion: SNAPSHOT_HISTORY_SCHEMA.observation,
@@ -174,8 +170,6 @@ function makeEntry(input: {
     isBaseline: input.isBaseline ?? false,
     baselineReason: null,
     timerSchema: input.timerSchema ?? null,
-    integrityFingerprint:
-      'sha256:0000000000000000000000000000000000000000000000000000000000000001' as Sha256Fingerprint,
   };
 
   return trustTestEntry(entry);

@@ -189,7 +189,6 @@ final class BuildingGroupProjectionTests: XCTestCase {
 
     private let issue141Baseline = ManualBaselineReference(
         revision: "snapshot-1",
-        fingerprint: "sha256:baseline",
         lineageID: "village-1"
     )
 
@@ -860,7 +859,6 @@ final class BuildingGroupProjectionTests: XCTestCase {
         let itemKey = TrackerItemKey.root(base: .home, rawSection: "buildings", dataID: 1_000_008)
         let baseline = ManualBaselineReference(
             revision: "snapshot-1",
-            fingerprint: "sha256:baseline",
             lineageID: "village-1"
         )
         let imported = try ManualLevelDistribution(levelQuantities: [10: 100, 11: 50])

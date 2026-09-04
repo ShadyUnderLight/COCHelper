@@ -1,7 +1,6 @@
 import { generateUuid, type UuidString } from '@coc-helper/wire';
 
 import type { Clock, UuidSource } from '../primitives';
-import { computeContentFingerprint } from './fingerprint';
 import { normalizeAccountItem, normalizedBoosts } from './normalize';
 import { prepareAccountText } from './prepare';
 import { decodeRawAccountDocument } from './raw-document';
@@ -120,25 +119,20 @@ export function parseAccountSnapshot(
     pushDiagnostic(diagnostic);
   }
 
-  const withoutFingerprint: Omit<AccountSnapshot, 'contentFingerprint'> = {
-    tag: raw.tag,
-    capturedAtMs:
-      raw.timestamp === null || raw.timestamp <= 0n ? null : Number(raw.timestamp) * 1000,
-    importedAtMs,
-    ageSeconds,
-    originalText,
-    objectSections,
-    numericSections: raw.numericSections,
-    boosts,
-    unknownTopLevelKeys: [...raw.unknownTopLevelKeys].sort(),
-    diagnostics,
-  };
-
   return {
     ok: true,
     value: {
-      ...withoutFingerprint,
-      contentFingerprint: computeContentFingerprint(withoutFingerprint),
+      tag: raw.tag,
+      capturedAtMs:
+        raw.timestamp === null || raw.timestamp <= 0n ? null : Number(raw.timestamp) * 1000,
+      importedAtMs,
+      ageSeconds,
+      originalText,
+      objectSections,
+      numericSections: raw.numericSections,
+      boosts,
+      unknownTopLevelKeys: [...raw.unknownTopLevelKeys].sort(),
+      diagnostics,
     },
   };
 }

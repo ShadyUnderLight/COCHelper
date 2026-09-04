@@ -13,7 +13,7 @@ public enum VerifiedCoveragePersistedTrust: Equatable, Sendable {
     case runtimeTrusted
     /// Wire metadata has persisted revalidation material but no runtime witness yet.
     case pendingRevalidation
-    /// Persisted history lacks rule version or input binding; fail-closed.
+    /// Persisted history lacks rule version; fail-closed.
     case insufficientPersistedEvidence
 }
 
@@ -27,8 +27,14 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
     public let verificationReason: String?
     /// Frozen verification rule set used when the proof was issued.
     public let verificationRuleVersion: String?
-    /// SHA-256 digest of the source section JSON array/object at issuance time.
-    public let inputBinding: String?
+    /// Module-issued bundled fixture identity (Issue #304 follow-up).
+    ///
+    /// Attached only at the controlled fixture load path (loader knows the
+    /// fixture file); persisted on the wire. Reload revalidation requires a
+    /// non-nil fixtureID AND a registry match — a rawJSON self-declaration of
+    /// `source = perf-fixture` alone never authorizes trust. Nil for all
+    /// non-fixture proofs.
+    public let fixtureID: String?
 
     let runtimeWitness: VerifiedCoverageRuntimeWitness?
 
@@ -39,7 +45,7 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         expectedCount: Int?,
         verificationReason: String?,
         verificationRuleVersion: String?,
-        inputBinding: String?,
+        fixtureID: String? = nil,
         runtimeWitness: VerifiedCoverageRuntimeWitness
     ) {
         self.source = source
@@ -48,7 +54,7 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         self.expectedCount = expectedCount
         self.verificationReason = verificationReason
         self.verificationRuleVersion = verificationRuleVersion
-        self.inputBinding = inputBinding
+        self.fixtureID = fixtureID
         self.runtimeWitness = runtimeWitness
     }
 
@@ -58,14 +64,14 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
          expectedCount: Int?,
          verificationReason: String?,
          verificationRuleVersion: String?,
-         inputBinding: String?) {
+         fixtureID: String? = nil) {
         self.source = source
         self.adapterID = adapterID
         self.protocolVersion = protocolVersion
         self.expectedCount = expectedCount
         self.verificationReason = verificationReason
         self.verificationRuleVersion = verificationRuleVersion
-        self.inputBinding = inputBinding
+        self.fixtureID = fixtureID
         self.runtimeWitness = nil
     }
 
@@ -74,7 +80,7 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         if runtimeWitness == .moduleIssued {
             return .runtimeTrusted
         }
-        if verificationRuleVersion == nil || inputBinding == nil {
+        if verificationRuleVersion == nil {
             return .insufficientPersistedEvidence
         }
         return .pendingRevalidation
@@ -87,7 +93,7 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         case expectedCount
         case verificationReason
         case verificationRuleVersion
-        case inputBinding
+        case fixtureID
     }
 }
 
@@ -101,7 +107,7 @@ extension VerifiedCoverageEvidence: Codable {
             expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount),
             verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason),
             verificationRuleVersion: try container.decodeIfPresent(String.self, forKey: .verificationRuleVersion),
-            inputBinding: try container.decodeIfPresent(String.self, forKey: .inputBinding)
+            fixtureID: try container.decodeIfPresent(String.self, forKey: .fixtureID)
         )
     }
 
@@ -113,6 +119,6 @@ extension VerifiedCoverageEvidence: Codable {
         try container.encodeIfPresent(expectedCount, forKey: .expectedCount)
         try container.encodeIfPresent(verificationReason, forKey: .verificationReason)
         try container.encodeIfPresent(verificationRuleVersion, forKey: .verificationRuleVersion)
-        try container.encodeIfPresent(inputBinding, forKey: .inputBinding)
+        try container.encodeIfPresent(fixtureID, forKey: .fixtureID)
     }
 }

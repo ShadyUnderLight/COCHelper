@@ -21,13 +21,11 @@ const villageID = parseUuid('00000000-0000-0000-0000-000000000011')!;
 const key = trackerItemKeyRoot('home', 'buildings', 100n);
 const baseline = {
   revision: 'snapshot-1',
-  fingerprint: 'sha256:baseline',
   lineageID: 'lineage-1',
 };
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: null,
-  sourceFingerprint: 'sha256:catalog',
   manifestSchemaVersion: null,
 };
 

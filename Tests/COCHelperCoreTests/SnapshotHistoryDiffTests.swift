@@ -2758,7 +2758,6 @@ final class SnapshotHistoryDiffTests: XCTestCase {
                     lineageID: lineageID,
                     normalizedPlayerTag: nil,
                     lastEntryID: emptyEntry.snapshotID,
-                    lastFingerprint: emptyEntry.canonicalFingerprint,
                     lastAppliedAt: emptyEntry.appliedAt,
                     hasConflict: false
                 )
@@ -4090,7 +4089,6 @@ final class SnapshotHistoryDiffTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: date),
             sourceTimestamp: sourceTimestamp,
             parserVersion: "test",
-            canonicalFingerprint: "test",
             rawJSON: "{}",
             observation: CanonicalSnapshotObservation(rawTopLevelFields: [:], items: items),
             coverage: coverage,

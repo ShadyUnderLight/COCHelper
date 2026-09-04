@@ -99,7 +99,7 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
 | F3 | AccountSnapshot.contentFingerprint（JSONEncoder + .sortedKeys；diagnostics 随机 id 排除在外） | 缓存改**显式失效**：AppModel/应用服务在快照导入、manual mutation/reconcile、村庄变更、Catalog epoch 变化处显式清空投影缓存；tick 内动态 timer refresh 仍可缓存，但状态变更后必须先失效再 render | #304 |
 | F4 | ManualUpgradeCore 内容指纹 `{itemStates, records}`（JSONEncoder + .sortedKeys） | manual baseline 只保留 `revision + lineageID`；revision 由 snapshot ID/duplicate revision 表达，不再编码内容摘要 | #304 |
 | C1 | Catalog `sourceFingerprint`（APK hash，运行时只验格式）+ `generatedFiles`（整体删除，不止其中的 sha256/size）+ `counts` + manifest 信任门（含文件存在性、manifest 登记防御） | 全部删除；manifest 只保留四字段版本/构建元数据（见 §WA-9.1 新形状，与 #303 第 31 行一致）；asset 侧保留 renderedPath null/missingReason 业务语义与正常路径解析 | #303 |
-| C2 | coverage section `inputBinding` SHA-256 绑定、bundled perf fixture 内容 hash allowlist | 删除。保留 coverage 业务完整性状态（presence/completeness 四态）与 adapter 语义 | #304 |
+| C2 | coverage section `inputBinding` SHA-256 绑定、bundled perf fixture 内容 hash allowlist | 删除。保留 coverage 业务完整性状态（presence/completeness 四态）与 adapter 语义；fixture provenance 改由 §WA-3.2 registry 承担（loader 签发 fixtureID + bundle-owned 期望记录，rawJSON 自报不再授权） | #304 |
 | T1 | golden manifest `fixtureSha256`、oracle `inputFingerprint`/`outputFingerprint`、testkit 报告输入/输出 hash 与字符串摘要 hash | 保留 `caseId`、operation、canonical bytes/hex 与差异分类（fixture/wire/parser/projection/error/ordering/time）；字符串差异摘要改用 bounded length/type/path；fixture 串线防护改由 manifest 登记一一对应 + owner 测试归属承担（见 testkit-protocol-v1.md） | #305 |
 | R1 | reconciliation `candidateFingerprint` / `previousSnapshotFingerprint`、lineage `lastFingerprint`、manual baseline fingerprint、display binding `catalogFingerprint` | stale preview 依赖 villageID + previousSnapshotID + lineage + manualStateUpdatedAt + §BE-5.4 `ReconciliationCandidateMaterial` 直接比较；lineage 校验经 `lastEntryID` + village/lineage/tag/time 关系；display binding 保留 catalogVersion/displayName/category | #304 |
 
@@ -146,6 +146,34 @@ ObservationIdentityMaterial {
 - 篡改防护改由 journal/validator fail-closed 承担（§BE-1、§BE-2）；旧负向锁定测试
   （如 `testFullIntegrityDigestRejectsMetadataDisplayAndCoverageTampering`）在 #303/#304
   中按新校验重写，不保留“旧 hash 仍需相等”断言。
+
+### WA-3.2 BundledFixtureIdentityRegistry（fixture 受控身份，非通用指纹）
+
+C2 删除的只是"内容 hash allowlist"（开放式机制：任意 persisted 字节可 hash 入表、
+按内容查表授权）。fixture provenance 仍需一个 persisted 数据之外的授权锚，契约如下：
+
+- loader 在受控 `PerfFixtures` bundle 路径加载 fixture 时签发不透明 fixtureID
+  （fixture 文件名），随 verified evidence 持久化（`fixtureID` 字段；缺失 fail-closed）。
+  签发默认只对 bundle 目录生效（`isBundledPerfFixtureDirectory`），测试用显式 flag 加入。
+- reload 时到 module-owned registry 验证两件事：该 ID 必须已登记；且 entry observation
+  的业务身份必须命中该 ID 的期望记录。`rawJSON.coverage` 的自报声明只是随后的一致性门，
+  不再是授权依据——声明与 proof 两边一起改也过不了 registry 比对。
+- Persisted `fixtureID` is an untrusted registry selector after reload; possession of
+  a known `fixtureID` alone does not authorize trust. Authority is established only by
+  matching the module-owned registry record, including the canonical observation
+  identity and authorized section set.（一旦写进 history，fixtureID 当然可被本地篡改；
+  真正可信的是 registry + 精确记录匹配，不是"loader 签发过所以可信"。）
+- 期望记录 = 该 fixture 业务 observation 身份的 SHA-256 + 签发期真实 section 集。
+  这不是通用 SHA 指纹：闭集（仅已知的 bundled fixture）、键是 loader 签发的 ID
+  （永不从内容派生）、摘要输入是 canonical 业务 observation（含 observationSchemaVersion，
+  版本漂移自动失效）。它无法挪用为开放式 inputBinding。
+- universe 期望同样来自 registry 的 fixture 真实 section 集，不从 reload-time 声明派生；
+  entry observation 未命中记录时 universe 与 section 一律拒绝。
+- 与 §WA-3.1 的关系：§WA-3.1 禁止的是用 digest **替代** F1 的直接比较（duplicate /
+  reload 身份两处仍保持直接比较，不变）。本节是随 #304 提交评审的第三处使用点：
+  不替代任何直接比较，只为 fixture 签发提供闭集授权锚。
+- 漂移政策：fixture 文件内容变化 → 正向 reload 测试 fail-closed → 同步重生成表；
+  Swift/TS 两表值必须一致（两 canonicalizer 输出字节一致已验证，双侧正向测试各自锁定）。
 
 ## WA-4 时间戳与日期语义
 

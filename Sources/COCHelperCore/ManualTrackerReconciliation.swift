@@ -119,7 +119,6 @@ public struct ManualReconciliationPreview: Codable, Hashable, Sendable, Identifi
     public let villageID: UUID
     public let previousReference: ManualBaselineReference?
     public let previousSnapshotID: UUID?
-    public let previousSnapshotFingerprint: String?
     public let previousLineageID: UUID?
     public let manualStateUpdatedAt: Date
     public let newReference: ManualBaselineReference
@@ -138,7 +137,6 @@ public struct ManualReconciliationPreview: Codable, Hashable, Sendable, Identifi
         villageID: UUID,
         previousReference: ManualBaselineReference?,
         previousSnapshotID: UUID? = nil,
-        previousSnapshotFingerprint: String? = nil,
         previousLineageID: UUID? = nil,
         manualStateUpdatedAt: Date,
         newReference: ManualBaselineReference,
@@ -154,7 +152,6 @@ public struct ManualReconciliationPreview: Codable, Hashable, Sendable, Identifi
         self.villageID = villageID
         self.previousReference = previousReference
         self.previousSnapshotID = previousSnapshotID
-        self.previousSnapshotFingerprint = previousSnapshotFingerprint
         self.previousLineageID = previousLineageID
         self.manualStateUpdatedAt = manualStateUpdatedAt
         self.newReference = newReference
@@ -267,7 +264,6 @@ public enum ManualTrackerReconciliationService {
             : entry.snapshotID.uuidString + ":observation:" + String(duplicateCount)
         return ManualBaselineReference(
             revision: revision,
-            fingerprint: entry.canonicalFingerprint,
             lineageID: entry.lineageID.uuidString
         )
     }
@@ -373,7 +369,6 @@ public enum ManualTrackerReconciliationService {
             villageID: villageID,
             previousReference: previousReference,
             previousSnapshotID: previousEntry?.snapshotID,
-            previousSnapshotFingerprint: previousEntry?.canonicalFingerprint,
             previousLineageID: previousEntry?.lineageID,
             manualStateUpdatedAt: currentState.stateUpdatedAt,
             newReference: newReference,
@@ -480,7 +475,6 @@ public enum ManualTrackerReconciliationService {
             villageID: evidence.villageID,
             previousReference: previousReference,
             previousSnapshotID: evidence.previousSnapshotID,
-            previousSnapshotFingerprint: evidence.previousSnapshotFingerprint,
             previousLineageID: evidence.previousLineageID,
             manualStateUpdatedAt: currentState.stateUpdatedAt,
             newReference: evidence.newBaselineReference,
@@ -507,7 +501,6 @@ public enum ManualTrackerReconciliationService {
             guard expectedPreview.villageID == villageID,
                   expectedPreview.previousReference == currentState.baselineReference,
                   expectedPreview.previousSnapshotID == previousEntry?.snapshotID,
-                  expectedPreview.previousSnapshotFingerprint == previousEntry?.canonicalFingerprint,
                   expectedPreview.previousLineageID == previousEntry?.lineageID,
                   expectedPreview.manualStateUpdatedAt == currentState.stateUpdatedAt else {
                 throw ManualReconciliationError.stalePreview
@@ -890,11 +883,25 @@ public enum ManualTrackerReconciliationService {
         return .conflict
     }
 
+    /// Issue #304：直接比较去除随机 ID（previewID/appliedAt）的语义字段。
+    /// newReference 的 revision/lineageID 是按导入分配的临时 ID：
+    /// 非 duplicate 时忽略；duplicate 时 revision 携带序列，必须精确匹配。
     private static func candidateMatches(
         _ expected: ManualReconciliationPreview,
         actual: ManualReconciliationPreview
     ) -> Bool {
-        expected.candidateFingerprint == actual.candidateFingerprint
+        guard expected.duplicate == actual.duplicate,
+              expected.lineageComparable == actual.lineageComparable,
+              expected.timeConfidence == actual.timeConfidence,
+              expected.newNormalizedPlayerTag == actual.newNormalizedPlayerTag,
+              expected.sourceTimestamp == actual.sourceTimestamp,
+              expected.items == actual.items else {
+            return false
+        }
+        if expected.duplicate || actual.duplicate {
+            return expected.newReference == actual.newReference
+        }
+        return true
     }
 
     private static func timeConfidence(

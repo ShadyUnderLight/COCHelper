@@ -67,6 +67,7 @@ final class VillageDetailFlatRowTests: XCTestCase {
         let renderKey = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
             village: village, render: bundle.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil,
             catalog: catalog, seasonalPhases: .empty
         ))
         let filterKey = VillageDetailFlatRowCache.FilterKey(
@@ -89,6 +90,7 @@ final class VillageDetailFlatRowTests: XCTestCase {
             village: village, render: bundleTick.render, base: .home,
             now: t0.addingTimeInterval(60),
             manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil,
             catalog: catalog, seasonalPhases: .empty
         ))
         XCTAssertEqual(renderKey, renderKeyTick)
@@ -113,6 +115,7 @@ final class VillageDetailFlatRowTests: XCTestCase {
         let renderKey = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
             village: village, render: bundle.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil,
             catalog: catalog, seasonalPhases: .empty
         ))
 
@@ -153,6 +156,7 @@ final class VillageDetailFlatRowTests: XCTestCase {
         let renderKey = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
             village: village, render: bundleA.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil,
             catalog: catalog, seasonalPhases: .empty
         ))
         let filterKey = VillageDetailFlatRowCache.FilterKey(
@@ -192,6 +196,7 @@ final class VillageDetailFlatRowTests: XCTestCase {
         let keyOld = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
             village: village, render: bundle.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil,
             catalog: catalog, seasonalPhases: .empty
         ))
         _ = cache.rows(
@@ -206,6 +211,7 @@ final class VillageDetailFlatRowTests: XCTestCase {
         let keyNew = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
             village: renamed, render: bundleRenamed.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil,
             catalog: catalog, seasonalPhases: .empty
         ))
         XCTAssertNotEqual(keyOld, keyNew)
@@ -246,6 +252,7 @@ final class VillageDetailFlatRowTests: XCTestCase {
         let renderKeyActive = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
             village: village, render: bundleActive.render, base: .home, now: t0,
             manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil,
             catalog: catalog, seasonalPhases: .empty
         ))
         let rowsActive = flatCache.rows(
@@ -275,6 +282,7 @@ final class VillageDetailFlatRowTests: XCTestCase {
         let renderKeyExpired = try XCTUnwrap(VillageDetailFlatRowCache.RenderIdentityKey(
             village: village, render: bundleExpired.render, base: .home, now: tExpired,
             manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil,
             catalog: catalog, seasonalPhases: .empty
         ))
         XCTAssertNotEqual(renderKeyActive, renderKeyExpired)
@@ -354,7 +362,8 @@ final class VillageDetailFlatRowTests: XCTestCase {
         return cache.render(
             village: village, catalog: catalog, craftTableCatalog: nil,
             seasonalPhases: .empty, base: .home, now: now,
-            manualUpgradeCore: nil, catalogEpoch: 0
+            manualUpgradeCore: nil, catalogEpoch: 0,
+            snapshotGeneration: 0, manualGeneration: nil
         )
     }
 

@@ -21,7 +21,6 @@ export function upsertSnapshotHistoryLineage(
     lineageID: entry.lineageID,
     normalizedPlayerTag: entry.normalizedPlayerTag,
     lastEntryID: entry.snapshotID,
-    lastFingerprint: entry.canonicalFingerprint,
     lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
     hasConflict,
     isActive: true,

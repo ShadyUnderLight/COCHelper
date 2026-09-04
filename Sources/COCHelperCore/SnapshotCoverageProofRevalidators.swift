@@ -9,20 +9,19 @@ enum SnapshotCoverageProofRevalidators {
         evidence: VerifiedCoverageEvidence,
         rawJSON: String,
         section: String,
-        policy: SnapshotCoverageRevalidationPolicy
+        policy: SnapshotCoverageRevalidationPolicy,
+        observationKey: String? = nil
     ) -> SectionCoverageRuntimeTrust {
-        guard let ruleVersion = evidence.verificationRuleVersion,
-              let binding = evidence.inputBinding else {
+        // Issue #304：不再比较内容 inputBinding 摘要；保留 rule 版本门、
+        // section 结构校验与 adapter 来源校验。
+        // Issue #304 follow-up：observationKey 必须来自已校验 envelope 的
+        // entry.observation（validateIntegrity 已证明其等于 rawJSON 重建值）；
+        // 直接 hydrate 未校验 envelope 会使 perf 路径 fail-closed。
+        guard let ruleVersion = evidence.verificationRuleVersion else {
             return .rejected("缺少 persisted revalidation 材料。")
         }
         guard ruleVersion == SnapshotCoverageVerifier.currentVerificationRuleVersion else {
             return .rejected("verification rule 版本不受支持：\(ruleVersion)。")
-        }
-        guard let computedBinding = SnapshotCoverageTrustHydration.sectionInputBinding(
-            rawJSON: rawJSON,
-            section: section
-        ), computedBinding == binding else {
-            return .rejected("验证输入绑定不匹配。")
         }
         guard SnapshotCoverageVerifier.validatePersistedSectionStructure(
             rawJSON: rawJSON,
@@ -40,7 +39,7 @@ enum SnapshotCoverageProofRevalidators {
         guard let revalidator = registry(policy: policy)[key] else {
             return .rejected("未注册的 coverage revalidator：\(evidence.adapterID)@\(evidence.protocolVersion)。")
         }
-        return revalidator.revalidate(evidence, rawJSON, section)
+        return revalidator.revalidate(evidence, rawJSON, section, observationKey)
     }
 
     private struct RevalidatorKey: Hashable {
@@ -53,7 +52,8 @@ enum SnapshotCoverageProofRevalidators {
         let revalidate: (
             VerifiedCoverageEvidence,
             String,
-            String
+            String,
+            String?
         ) -> SectionCoverageRuntimeTrust
     }
 
@@ -80,7 +80,8 @@ enum SnapshotCoverageProofRevalidators {
     private static func perfFixtureRevalidate(
         evidence: VerifiedCoverageEvidence,
         rawJSON: String,
-        section: String
+        section: String,
+        observationKey: String?
     ) -> SectionCoverageRuntimeTrust {
         guard evidence.adapterID == SnapshotCoverageVerifier.perfFixtureAdapterID else {
             return .rejected("adapterID 与 perf fixture 契约不一致。")
@@ -91,9 +92,22 @@ enum SnapshotCoverageProofRevalidators {
         guard evidence.verificationReason == "bundled perf fixture" else {
             return .rejected("perf fixture verificationReason 不匹配。")
         }
-        guard BundledPerfFixtureRegistry.recognizesAccountSnapshot(rawJSON: rawJSON) else {
-            return .rejected("rawJSON 不是受信任的 bundled perf fixture。")
+        // Issue #304 follow-up：fixture 身份必须由 loader 签发（persisted
+        // evidence 携带），且 entry observation 必须命中该 fixture 的 registry
+        // 记录。rawJSON.coverage 的自报声明只是随后的一致性门，不再是授权依据：
+        // rawJSON 与 proof 两边一起改也无法通过 registry 比对。
+        guard let fixtureID = evidence.fixtureID, !fixtureID.isEmpty else {
+            return .rejected("perf fixture 缺少受控 fixture 身份。")
         }
+        guard let observationKey,
+              PerfFixtureIdentityRegistry.recognizes(
+                  fixtureID: fixtureID,
+                  identityKey: observationKey
+              ) else {
+            return .rejected("perf fixture 身份与 registry 记录不一致。")
+        }
+        // Issue #304：不再用内容 hash allowlist 判定 perf fixture 是否可信；
+        // rawJSON 仍须按 adapter 契约声明该 section（业务来源表达）。
         guard perfFixtureDeclaresSection(
             section: section,
             in: rawJSON,
@@ -107,7 +121,8 @@ enum SnapshotCoverageProofRevalidators {
     private static func testFixtureRevalidate(
         evidence: VerifiedCoverageEvidence,
         rawJSON: String,
-        section: String
+        section: String,
+        observationKey: String?
     ) -> SectionCoverageRuntimeTrust {
         guard evidence.adapterID == SnapshotCoverageVerifier.testFixtureAdapterID else {
             return .rejected("adapterID 与 test fixture 契约不一致。")

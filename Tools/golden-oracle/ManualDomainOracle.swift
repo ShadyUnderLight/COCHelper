@@ -60,7 +60,6 @@ enum ManualDomainOracle {
         let villageID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let baseline = ManualBaselineReference(
             revision: "rev",
-            fingerprint: "fp",
             lineageID: "lineage-1"
         )
         let itemKey = TrackerItemKey.root(base: .home, rawSection: request.itemSection, dataID: 1_000_002)
@@ -100,7 +99,6 @@ enum ManualDomainOracle {
         let villageID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let baseline = ManualBaselineReference(
             revision: "rev",
-            fingerprint: "fp",
             lineageID: "lineage-1"
         )
         let queueKind: LocalQueueKind = request.targetQueueKind == "builder" ? .builder : .laboratory

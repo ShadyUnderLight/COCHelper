@@ -1,3 +1,4 @@
+import { observationIdentityKey } from './canonicalizer';
 import type {
   SnapshotCoverageProof,
   SnapshotHistoryEntry,
@@ -20,7 +21,6 @@ export type SnapshotHistoryProofDuplicateKey =
       readonly expectedCount: number | null;
       readonly verificationReason: string | null;
       readonly verificationRuleVersion: string | null;
-      readonly inputBinding: string | null;
     }
   | {
       readonly kind: 'legacyAuthoritative';
@@ -50,7 +50,6 @@ export function snapshotHistoryProofDuplicateKey(
         expectedCount: proof.expectedCount,
         verificationReason: proof.verificationReason,
         verificationRuleVersion: proof.verificationRuleVersion,
-        inputBinding: proof.inputBinding,
       };
     case 'legacyAuthoritative':
       return {
@@ -107,7 +106,8 @@ export function snapshotHistoryCoverageDuplicateKey(
 }
 
 export type SnapshotHistoryDuplicateKey = {
-  readonly canonicalFingerprint: string;
+  /** Issue #304：observation 直接可比较身份（替代 canonicalFingerprint 摘要）。 */
+  readonly observationKey: string;
   readonly coverage: SnapshotHistoryCoverageDuplicateKey;
   readonly timerSchema: SnapshotTimerSchema | null;
 };
@@ -116,7 +116,7 @@ export function snapshotHistoryDuplicateKey(
   entry: SnapshotHistoryEntry,
 ): SnapshotHistoryDuplicateKey {
   return {
-    canonicalFingerprint: entry.canonicalFingerprint,
+    observationKey: observationIdentityKey(entry.observation),
     coverage: snapshotHistoryCoverageDuplicateKey(entry.coverage),
     timerSchema: entry.timerSchema,
   };
@@ -129,7 +129,7 @@ export function snapshotHistoryDuplicateKeysMatch(
   const leftKey = snapshotHistoryDuplicateKey(left);
   const rightKey = snapshotHistoryDuplicateKey(right);
   return (
-    leftKey.canonicalFingerprint === rightKey.canonicalFingerprint &&
+    leftKey.observationKey === rightKey.observationKey &&
     coverageDuplicateKeysEqual(leftKey.coverage, rightKey.coverage) &&
     timerSchemasEqual(leftKey.timerSchema, rightKey.timerSchema)
   );

@@ -30,21 +30,33 @@ package enum SnapshotCoverageVerifier {
         source: String,
         protocolVersion: String,
         expectedCount: Int?,
-        verificationReason: String
+        verificationReason: String,
+        fixtureID: String?
     ) -> SnapshotCoverageProof {
-        issueVerified(
+        // Issue #304 follow-up：perf fixture 签发必须携带受控 fixture 身份
+        //（loader 签发的 fixture 文件名）；无身份不得签发 verified 证据。
+        guard let fixtureID, !fixtureID.isEmpty else {
+            return .unavailable(
+                reason: "perf fixture 缺少受控 fixture 身份，不得签发 verified 证据。"
+            )
+        }
+        return issueVerified(
             source: source,
             adapterID: perfFixtureAdapterID,
             protocolVersion: protocolVersion,
             expectedCount: expectedCount,
-            verificationReason: verificationReason
+            verificationReason: verificationReason,
+            fixtureID: fixtureID
         )
     }
 
     package static func promoteBundledPerfFixtureDeclaredProofs(
-        _ proofs: [String: SnapshotCoverageProof]
+        _ proofs: [String: SnapshotCoverageProof],
+        fixtureID: String
     ) -> [String: SnapshotCoverageProof] {
-        proofs.mapValues { proof in
+        // 无受控 fixture 身份不得提升：原样返回 declared proofs（fail-closed）。
+        guard !fixtureID.isEmpty else { return proofs }
+        return proofs.mapValues { proof in
             switch proof {
             case .declared(let source, let version, let expectedCount)
                 where source == perfFixtureAdapterID:
@@ -52,7 +64,8 @@ package enum SnapshotCoverageVerifier {
                     source: source,
                     protocolVersion: version,
                     expectedCount: expectedCount,
-                    verificationReason: "bundled perf fixture"
+                    verificationReason: "bundled perf fixture",
+                    fixtureID: fixtureID
                 )
             default:
                 return proof
@@ -61,20 +74,13 @@ package enum SnapshotCoverageVerifier {
     }
 
     /// Attach persisted revalidation material to a live module-issued verified proof.
+    /// Issue #304：只附加 rule version，不再计算内容 inputBinding 摘要。
     static func attachPersistedBinding(
-        to proof: SnapshotCoverageProof,
-        rawJSON: String,
-        section: String
+        to proof: SnapshotCoverageProof
     ) -> SnapshotCoverageProof {
         guard case .verified(let evidence) = proof,
               evidence.runtimeWitness == .moduleIssued else {
             return proof
-        }
-        guard let binding = SnapshotCoverageTrustHydration.sectionInputBinding(
-            rawJSON: rawJSON,
-            section: section
-        ) else {
-            return .unavailable(reason: "无法绑定 verified coverage 验证输入：\(section)。")
         }
         return .verified(
             VerifiedCoverageEvidence(
@@ -84,7 +90,7 @@ package enum SnapshotCoverageVerifier {
                 expectedCount: evidence.expectedCount,
                 verificationReason: evidence.verificationReason,
                 verificationRuleVersion: currentVerificationRuleVersion,
-                inputBinding: binding,
+                fixtureID: evidence.fixtureID,
                 runtimeWitness: .moduleIssued
             )
         )
@@ -155,7 +161,8 @@ package enum SnapshotCoverageVerifier {
         adapterID: String,
         protocolVersion: String,
         expectedCount: Int?,
-        verificationReason: String
+        verificationReason: String,
+        fixtureID: String? = nil
     ) -> SnapshotCoverageProof {
         guard isRegistered(adapterID: adapterID, protocolVersion: protocolVersion) else {
             return .unavailable(
@@ -176,7 +183,7 @@ package enum SnapshotCoverageVerifier {
                 expectedCount: expectedCount,
                 verificationReason: verificationReason,
                 verificationRuleVersion: nil,
-                inputBinding: nil,
+                fixtureID: fixtureID,
                 runtimeWitness: .moduleIssued
             )
         )

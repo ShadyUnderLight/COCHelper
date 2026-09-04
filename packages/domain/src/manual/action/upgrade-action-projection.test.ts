@@ -17,7 +17,6 @@ import {
 
 const baseline = {
   revision: 'snapshot-1',
-  fingerprint: 'sha256:baseline',
   lineageID: 'village-1',
 };
 const key = trackerItemKeyRoot('home', 'buildings', 1_000_002n);

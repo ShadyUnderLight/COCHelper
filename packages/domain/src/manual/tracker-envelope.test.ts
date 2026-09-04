@@ -17,14 +17,12 @@ import { createManualTrackerVillageState } from './village-state';
 
 const baseline = {
   revision: 'snapshot-1',
-  fingerprint: 'sha256:baseline',
   lineageID: 'lineage-1',
 };
 const key = trackerItemKeyRoot('home', 'buildings', 100n);
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: null,
-  sourceFingerprint: null,
   manifestSchemaVersion: null,
 };
 

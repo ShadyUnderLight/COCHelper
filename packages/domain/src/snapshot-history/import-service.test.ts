@@ -8,6 +8,7 @@ import {
   planSnapshotHistoryImport,
   snapshotHistoryDuplicateKeysMatch,
 } from './index';
+import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 
 const FIRST_TAG = '#2QJQ8J88';
 const SECOND_TAG = '#2QJQ8J89';
@@ -75,13 +76,12 @@ describe('snapshot history import service', () => {
           lineageID: baseline.lineageID,
           normalizedPlayerTag: FIRST_TAG,
           lastEntryID: baseline.snapshotID,
-          lastFingerprint: baseline.canonicalFingerprint,
           lastAppliedAtRefSeconds: baseline.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
         },
       ],
-      migrationMarker: { version: 1, completedAtRefSeconds: 20 },
+      migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 20 },
     });
 
     const duplicateText = `{"buildings":[],"tag":"${FIRST_TAG}"}`;
@@ -154,13 +154,12 @@ describe('snapshot history import service', () => {
           lineageID: baseline.lineageID,
           normalizedPlayerTag: FIRST_TAG,
           lastEntryID: baseline.snapshotID,
-          lastFingerprint: baseline.canonicalFingerprint,
           lastAppliedAtRefSeconds: baseline.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
         },
       ],
-      migrationMarker: { version: 1, completedAtRefSeconds: 1 },
+      migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 1 },
     });
 
     const changed = planSnapshotHistoryImport({
@@ -210,13 +209,12 @@ describe('snapshot history import service', () => {
           lineageID: baseline.lineageID,
           normalizedPlayerTag: FIRST_TAG,
           lastEntryID: baseline.snapshotID,
-          lastFingerprint: baseline.canonicalFingerprint,
           lastAppliedAtRefSeconds: baseline.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
         },
       ],
-      migrationMarker: { version: 1, completedAtRefSeconds: 10 },
+      migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 10 },
     });
     const lineage1ID = baseline.lineageID;
 
@@ -271,13 +269,12 @@ describe('snapshot history import service', () => {
           lineageID: baseline.lineageID,
           normalizedPlayerTag: FIRST_TAG,
           lastEntryID: baseline.snapshotID,
-          lastFingerprint: baseline.canonicalFingerprint,
           lastAppliedAtRefSeconds: baseline.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
         },
       ],
-      migrationMarker: { version: 1, completedAtRefSeconds: 20 },
+      migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 20 },
     });
 
     const firstDuplicate = planSnapshotHistoryImport({
@@ -328,13 +325,12 @@ describe('snapshot history import service', () => {
           lineageID: entry.lineageID,
           normalizedPlayerTag: FIRST_TAG,
           lastEntryID: entry.snapshotID,
-          lastFingerprint: entry.canonicalFingerprint,
           lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
         },
       ],
-      migrationMarker: { version: 1, completedAtRefSeconds: 1 },
+      migrationMarker: { version: SNAPSHOT_HISTORY_SCHEMA.envelope, completedAtRefSeconds: 1 },
     });
 
     const changed = snapshotFromText('{"unknown":1}', FIRST_TAG);

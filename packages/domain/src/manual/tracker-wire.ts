@@ -491,10 +491,6 @@ function decodeBaseline(value: unknown): ManualBaselineReference {
   const record = requireObject(value, 'baselineReference');
   return {
     revision: requireString(record.revision, 'revision'),
-    fingerprint:
-      record.fingerprint === null || record.fingerprint === undefined
-        ? null
-        : requireString(record.fingerprint, 'fingerprint'),
     lineageID:
       record.lineageID === null || record.lineageID === undefined
         ? null
@@ -510,10 +506,6 @@ function decodeProvenance(value: unknown): ManualCatalogProvenance {
       record.buildTag === null || record.buildTag === undefined
         ? null
         : requireString(record.buildTag, 'buildTag'),
-    sourceFingerprint:
-      record.sourceFingerprint === null || record.sourceFingerprint === undefined
-        ? null
-        : requireString(record.sourceFingerprint, 'sourceFingerprint'),
     manifestSchemaVersion:
       record.manifestSchemaVersion === null || record.manifestSchemaVersion === undefined
         ? null

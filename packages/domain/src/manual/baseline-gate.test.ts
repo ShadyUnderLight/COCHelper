@@ -8,12 +8,10 @@ import { trackerItemKeyRoot } from './types';
 
 const baselineA = {
   revision: 'snapshot-1',
-  fingerprint: 'sha256:a',
   lineageID: 'lineage-a',
 };
 const baselineB = {
   revision: 'snapshot-2',
-  fingerprint: 'sha256:b',
   lineageID: 'lineage-b',
 };
 const key = trackerItemKeyRoot('home', 'buildings', 100n);

@@ -168,7 +168,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         let entry = try XCTUnwrap(try history.load()?.entry(id: lineage.lastEntryID))
         let currentBaseline = ManualBaselineReference(
             revision: entry.snapshotID.uuidString,
-            fingerprint: entry.canonicalFingerprint,
             lineageID: entry.lineageID.uuidString
         )
         let states = try zip(dataIDs, levels).map { dataID, level in
@@ -524,7 +523,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         let entry = try XCTUnwrap(try history.load()?.entry(id: lineage.lastEntryID))
         let currentBaseline = ManualBaselineReference(
             revision: entry.snapshotID.uuidString,
-            fingerprint: entry.canonicalFingerprint,
             lineageID: entry.lineageID.uuidString
         )
         try model.updateManualUpgradeCore(for: villageID) { core in
@@ -649,8 +647,8 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
 
     // MARK: - Issue #170：未对账基线命令 fail-closed
 
-    /// 用真实 canonicalizer 生成合法 history entry（fingerprint/integrity 与
-    /// observation 一致，通过 `SnapshotHistoryEnvelope.validated()`）。
+    /// 用真实 canonicalizer 生成合法 history entry（observation 一致，
+    /// 通过 `SnapshotHistoryEnvelope.validated()`）。
     /// rawJSON 仅含 tag（无 item），entry 的身份字段是唯一用途。
     private func makeHistoryEntry(
         tag: String,
@@ -766,7 +764,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageA,
                     normalizedPlayerTag: "#OLD",
                     lastEntryID: entryA.snapshotID,
-                    lastFingerprint: entryA.canonicalFingerprint,
                     lastAppliedAt: entryA.appliedAt,
                     hasConflict: false,
                     isActive: false
@@ -776,7 +773,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageB,
                     normalizedPlayerTag: "#TEST",
                     lastEntryID: entryB.snapshotID,
-                    lastFingerprint: entryB.canonicalFingerprint,
                     lastAppliedAt: entryB.appliedAt,
                     hasConflict: false,
                     isActive: true
@@ -799,7 +795,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         )
         let baselineA = ManualBaselineReference(
             revision: entryA.snapshotID.uuidString,
-            fingerprint: entryA.canonicalFingerprint,
             lineageID: lineageA.uuidString
         )
         let recordID = UUID()
@@ -1124,7 +1119,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageA,
                     normalizedPlayerTag: "#OLD",
                     lastEntryID: entryA.snapshotID,
-                    lastFingerprint: entryA.canonicalFingerprint,
                     lastAppliedAt: entryA.appliedAt,
                     hasConflict: false,
                     isActive: false
@@ -1134,7 +1128,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageB,
                     normalizedPlayerTag: "#TEST",
                     lastEntryID: entryB.snapshotID,
-                    lastFingerprint: entryB.canonicalFingerprint,
                     lastAppliedAt: entryB.appliedAt,
                     hasConflict: false,
                     isActive: true
@@ -1144,7 +1137,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageC,
                     normalizedPlayerTag: "#TEST2",
                     lastEntryID: entryC.snapshotID,
-                    lastFingerprint: entryC.canonicalFingerprint,
                     lastAppliedAt: entryC.appliedAt,
                     hasConflict: false,
                     isActive: true
@@ -1178,12 +1170,10 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         ]
         let baselineA = ManualBaselineReference(
             revision: entryA.snapshotID.uuidString,
-            fingerprint: entryA.canonicalFingerprint,
             lineageID: lineageA.uuidString
         )
         let baselineC = ManualBaselineReference(
             revision: entryC.snapshotID.uuidString,
-            fingerprint: entryC.canonicalFingerprint,
             lineageID: lineageC.uuidString
         )
         let v1RecordID = UUID()
@@ -2592,7 +2582,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             villageID: villageID,
             itemKey: key,
             baselineReference: ManualBaselineReference(
-                revision: "old-rev", fingerprint: "old-fp", lineageID: "old-lineage"),
+                revision: "old-rev", lineageID: "old-lineage"),
             queueKind: .builder,
             decidedAt: Date(timeIntervalSince1970: 500),
             status: .unknown
@@ -2653,7 +2643,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             villageID: villageID,
             itemKey: key,
             baselineReference: ManualBaselineReference(
-                revision: "old-rev", fingerprint: "old-fp", lineageID: "old-lineage"),
+                revision: "old-rev", lineageID: "old-lineage"),
             queueKind: .laboratory,
             decidedAt: Date(timeIntervalSince1970: 500),
             status: .unknown
@@ -2952,7 +2942,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageA,
                     normalizedPlayerTag: "#OLD",
                     lastEntryID: entryA.snapshotID,
-                    lastFingerprint: entryA.canonicalFingerprint,
                     lastAppliedAt: entryA.appliedAt,
                     hasConflict: false,
                     isActive: false
@@ -2962,7 +2951,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageB,
                     normalizedPlayerTag: "#TEST",
                     lastEntryID: entryB.snapshotID,
-                    lastFingerprint: entryB.canonicalFingerprint,
                     lastAppliedAt: entryB.appliedAt,
                     hasConflict: false,
                     isActive: true
@@ -2985,7 +2973,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         )
         let baselineA = ManualBaselineReference(
             revision: entryA.snapshotID.uuidString,
-            fingerprint: entryA.canonicalFingerprint,
             lineageID: lineageA.uuidString
         )
         let key = TrackerItemKey.root(
@@ -3012,7 +2999,7 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
             villageID: villageID,
             itemKey: key,
             baselineReference: ManualBaselineReference(
-                revision: "old-rev", fingerprint: "old-fp", lineageID: "old-lineage"
+                revision: "old-rev", lineageID: "old-lineage"
             ),
             queueKind: .laboratory,
             decidedAt: Date(timeIntervalSince1970: 500),
@@ -3135,7 +3122,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageA,
                     normalizedPlayerTag: "#OLD",
                     lastEntryID: entryA.snapshotID,
-                    lastFingerprint: entryA.canonicalFingerprint,
                     lastAppliedAt: entryA.appliedAt,
                     hasConflict: false,
                     isActive: false
@@ -3145,7 +3131,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageB,
                     normalizedPlayerTag: "#TEST",
                     lastEntryID: entryB.snapshotID,
-                    lastFingerprint: entryB.canonicalFingerprint,
                     lastAppliedAt: entryB.appliedAt,
                     hasConflict: false,
                     isActive: true
@@ -3168,7 +3153,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         )
         let baselineA = ManualBaselineReference(
             revision: entryA.snapshotID.uuidString,
-            fingerprint: entryA.canonicalFingerprint,
             lineageID: lineageA.uuidString
         )
         let key = TrackerItemKey.root(
@@ -3337,7 +3321,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageA,
                     normalizedPlayerTag: "#OLD",
                     lastEntryID: entryA.snapshotID,
-                    lastFingerprint: entryA.canonicalFingerprint,
                     lastAppliedAt: entryA.appliedAt,
                     hasConflict: false,
                     isActive: false
@@ -3347,7 +3330,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                     lineageID: lineageB,
                     normalizedPlayerTag: "#TEST",
                     lastEntryID: entryB.snapshotID,
-                    lastFingerprint: entryB.canonicalFingerprint,
                     lastAppliedAt: entryB.appliedAt,
                     hasConflict: false,
                     isActive: true
@@ -3370,12 +3352,10 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         )
         let baselineA = ManualBaselineReference(
             revision: entryA.snapshotID.uuidString,
-            fingerprint: entryA.canonicalFingerprint,
             lineageID: lineageA.uuidString
         )
         let baselineB = ManualBaselineReference(
             revision: entryB.snapshotID.uuidString,
-            fingerprint: entryB.canonicalFingerprint,
             lineageID: lineageB.uuidString
         )
         let key = TrackerItemKey.root(
@@ -3613,8 +3593,12 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
     ) throws -> (model: AppModel, villageID: UUID) {
         let villageID = UUID()
         let lineageB = UUID()
+        // Issue #304：lineage 索引校验要求 entry/lineage 的 tag 一致；
+        // tagMismatch 场景按真实世界建模：历史（entry+lineage）为 #OLD，
+        // 而 live 村庄快照仍为 #TEST，两侧不一致 → baseline 不可确定。
+        let entryTag = kind == .tagMismatch ? "#OLD" : "#TEST"
         let entryB = try makeHistoryEntry(
-            tag: "#TEST",
+            tag: entryTag,
             villageID: villageID,
             lineageID: lineageB,
             appliedAt: Date(timeIntervalSince1970: 1_600)
@@ -3643,7 +3627,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
                         lineageID: lineageB,
                         normalizedPlayerTag: normalizedTag,
                         lastEntryID: entryB.snapshotID,
-                        lastFingerprint: entryB.canonicalFingerprint,
                         lastAppliedAt: entryB.appliedAt,
                         hasConflict: hasConflict,
                         isActive: isActive
@@ -3667,7 +3650,6 @@ final class AppModelManualUpgradeCommandTests: XCTestCase {
         )
         let baselineB = ManualBaselineReference(
             revision: entryB.snapshotID.uuidString,
-            fingerprint: entryB.canonicalFingerprint,
             lineageID: lineageB.uuidString
         )
         let key = TrackerItemKey.root(

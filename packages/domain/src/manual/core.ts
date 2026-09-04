@@ -4,7 +4,7 @@ import { generateUuid } from '@coc-helper/wire';
 import type { CatalogDurationState } from '../catalog/duration-state';
 import type { CatalogUpgradeCost } from '../catalog/types';
 import type { ManualUpgradeError } from './errors';
-import { computeManualCoreContentFingerprint, manualUpgradeCoresEqual } from './fingerprint';
+import { manualUpgradeCoresEqual } from './equality';
 import {
   createManualLevelDistribution,
   createManualLevelQuantity,
@@ -57,26 +57,18 @@ type ResolvedTiming = {
 type MutableCore = {
   itemStates: ManualItemState[];
   records: ManualUpgradeRecord[];
-  fingerprintRefreshCount: number;
 };
 
 export class ManualUpgradeCoreState implements ManualUpgradeCore {
   readonly itemStates: readonly ManualItemState[];
   readonly records: readonly ManualUpgradeRecord[];
-  readonly contentFingerprint: string;
-
-  private readonly fingerprintRefreshCountForTesting: number;
 
   private constructor(
     itemStates: readonly ManualItemState[],
     records: readonly ManualUpgradeRecord[],
-    contentFingerprint: string,
-    fingerprintRefreshCountForTesting: number,
   ) {
     this.itemStates = itemStates;
     this.records = records;
-    this.contentFingerprint = contentFingerprint;
-    this.fingerprintRefreshCountForTesting = fingerprintRefreshCountForTesting;
   }
 
   static create(
@@ -88,20 +80,14 @@ export class ManualUpgradeCoreState implements ManualUpgradeCore {
     const sortedStates = sortItemStates(input.itemStates ?? []);
     const sortedRecords = sortRecords(input.records ?? []);
     validateCoreShape(sortedStates, sortedRecords);
-    return ManualUpgradeCoreState.fromSorted(sortedStates, sortedRecords, 0);
+    return ManualUpgradeCoreState.fromSorted(sortedStates, sortedRecords);
   }
 
   static fromSorted(
     itemStates: readonly ManualItemState[],
     records: readonly ManualUpgradeRecord[],
-    fingerprintRefreshCountForTesting: number,
   ): ManualUpgradeCoreState {
-    return new ManualUpgradeCoreState(
-      itemStates,
-      records,
-      computeManualCoreContentFingerprint(itemStates, records),
-      fingerprintRefreshCountForTesting,
-    );
+    return new ManualUpgradeCoreState(itemStates, records);
   }
 
   get activeRecords(): readonly ManualUpgradeRecord[] {
@@ -135,10 +121,6 @@ export class ManualUpgradeCoreState implements ManualUpgradeCore {
     return this.itemStates[0]?.baselineReference ?? this.records[0]?.baselineReference ?? null;
   }
 
-  getFingerprintRefreshCountForTesting(): number {
-    return this.fingerprintRefreshCountForTesting;
-  }
-
   equals(other: ManualUpgradeCoreState): boolean {
     return manualUpgradeCoresEqual(this, other);
   }
@@ -167,13 +149,13 @@ export class ManualUpgradeCoreState implements ManualUpgradeCore {
   startUpgrade(input: StartUpgradeInput): ManualUpgradeCoreState {
     const mutable = cloneMutable(this);
     startUpgradeImpl(mutable, input);
-    return commitMutable(mutable, true);
+    return commitMutable(mutable);
   }
 
   cancelUpgrade(recordID: UuidString): ManualUpgradeCoreState {
     const mutable = cloneMutable(this);
     cancelUpgradeImpl(mutable, recordID);
-    return commitMutable(mutable, true);
+    return commitMutable(mutable);
   }
 
   adjustStartTime(
@@ -183,7 +165,7 @@ export class ManualUpgradeCoreState implements ManualUpgradeCore {
   ): ManualUpgradeCoreState {
     const mutable = cloneMutable(this);
     adjustStartTimeImpl(mutable, recordID, startedAtMs, nowMs);
-    return commitMutable(mutable, true);
+    return commitMutable(mutable);
   }
 
   settleDue(atMs: number): {
@@ -195,7 +177,7 @@ export class ManualUpgradeCoreState implements ManualUpgradeCore {
     if (settled.length === 0) {
       return { core: this, settled: [] };
     }
-    return { core: commitMutable(mutable, true), settled };
+    return { core: commitMutable(mutable), settled };
   }
 }
 
@@ -203,18 +185,14 @@ function cloneMutable(core: ManualUpgradeCoreState): MutableCore {
   return {
     itemStates: core.itemStates.map((state) => ({ ...state })),
     records: core.records.map((record) => ({ ...record })),
-    fingerprintRefreshCount: core.getFingerprintRefreshCountForTesting(),
   };
 }
 
-function commitMutable(mutable: MutableCore, refreshFingerprint: boolean): ManualUpgradeCoreState {
+function commitMutable(mutable: MutableCore): ManualUpgradeCoreState {
   const itemStates = sortItemStates(mutable.itemStates);
   const records = sortRecords(mutable.records);
   validateCoreShape(itemStates, records);
-  const fingerprintRefreshCount = refreshFingerprint
-    ? mutable.fingerprintRefreshCount + 1
-    : mutable.fingerprintRefreshCount;
-  return ManualUpgradeCoreState.fromSorted(itemStates, records, fingerprintRefreshCount);
+  return ManualUpgradeCoreState.fromSorted(itemStates, records);
 }
 
 function sortItemStates(itemStates: readonly ManualItemState[]): ManualItemState[] {

@@ -314,7 +314,7 @@ describe('AccountSnapshot fixture regression', () => {
     expect(allItems.some((item) => item.dataID === 102_000_033n)).toBe(true);
   });
 
-  it('contentFingerprint 区分 importedAt', () => {
+  it('同一文本不同导入时间 importedAt 不同（Issue #304 无 fingerprint）', () => {
     const text = `{
       "tag": "#TESTTAG",
       "timestamp": 1700000000,
@@ -326,6 +326,6 @@ describe('AccountSnapshot fixture regression', () => {
     if (!first.ok || !second.ok) {
       return;
     }
-    expect(first.value.contentFingerprint).not.toBe(second.value.contentFingerprint);
+    expect(first.value.importedAtMs).not.toBe(second.value.importedAtMs);
   });
 });

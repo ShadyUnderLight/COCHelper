@@ -9,7 +9,6 @@ final class UpgradeActionProjectionTests: XCTestCase {
     private let importedAt = Date(timeIntervalSince1970: 1_000)
     private let baseline = ManualBaselineReference(
         revision: "snapshot-1",
-        fingerprint: "sha256:snapshot",
         lineageID: "village-1"
     )
     private let provenance = ManualCatalogProvenance(

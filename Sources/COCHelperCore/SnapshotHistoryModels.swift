@@ -6,8 +6,11 @@ import Foundation
 /// format.  Storage and migrations can therefore reject a future history
 /// record without changing the legacy `AccountSnapshot` Codable contract.
 public enum SnapshotHistorySchema {
-    public static let envelope = 1
-    public static let entry = 1
+    /// v2（Issue #304）：移除 fingerprint/integrity 摘要字段的新 wire 形状。
+    /// 旧文件按旧 schema 标记不可用，不迁移、不 fallback。
+    public static let envelope = 2
+    /// v2（Issue #304）：移除 canonicalFingerprint/integrityFingerprint/version 字段。
+    public static let entry = 2
     /// v2 首次引入 section coverage 证据（Issue #164/#173）。
     /// 该版本及以上的 entry 必须携带 section 完整性证明。
     public static let observationWithSectionEvidence = 2
@@ -20,14 +23,12 @@ public enum SnapshotHistorySchema {
     public static let observationWithTimerSchema = 4
     /// v5：顶层 `coverage` 从 observation 中移除，作为 snapshot metadata
     /// （Issue #208）。v4 及更早的 entry 重建时必须保留 coverage，才能复现
-    /// 已持久化的 canonicalFingerprint。
+    /// 已持久化的 observation 身份。
     public static let observationWithoutCoverageMetadata = 5
     /// v6：coverage 冻结 module-issued source universe 契约（Issue #236）。
     /// v5 及更早 entry 无 source universe，UI trust 保持保守 fail-closed。
     public static let observationWithSourceUniverse = 6
     public static let observation = 6
-    public static let fingerprint = 1
-    public static let integrity = 1
 }
 
 /// Issue #175 source timer schema 契约：由 source adapter 版本化声明。
@@ -163,20 +164,17 @@ public struct SnapshotDisplayBinding: Codable, Hashable, Sendable {
     public let category: String?
     public let displayCategory: String?
     public let catalogVersion: String?
-    public let catalogFingerprint: String?
 
     public init(
         displayName: String? = nil,
         category: String? = nil,
         displayCategory: String? = nil,
-        catalogVersion: String? = nil,
-        catalogFingerprint: String? = nil
+        catalogVersion: String? = nil
     ) {
         self.displayName = displayName
         self.category = category
         self.displayCategory = displayCategory
         self.catalogVersion = catalogVersion
-        self.catalogFingerprint = catalogFingerprint
     }
 }
 
@@ -286,7 +284,7 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
         case protocolVersion
         case verificationReason
         case verificationRuleVersion
-        case inputBinding
+        case fixtureID
     }
 
     private enum Kind: String, Codable {
@@ -312,7 +310,7 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
             try container.encodeIfPresent(evidence.expectedCount, forKey: .expectedCount)
             try container.encodeIfPresent(evidence.verificationReason, forKey: .verificationReason)
             try container.encodeIfPresent(evidence.verificationRuleVersion, forKey: .verificationRuleVersion)
-            try container.encodeIfPresent(evidence.inputBinding, forKey: .inputBinding)
+            try container.encodeIfPresent(evidence.fixtureID, forKey: .fixtureID)
         case .legacyAuthoritative(let source, let version, let expectedCount):
             // Preserve pre-#205 wire bytes for immutable history integrity.
             try container.encode(Kind.authoritative, forKey: .kind)
@@ -352,7 +350,7 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
                         String.self,
                         forKey: .verificationRuleVersion
                     ),
-                    inputBinding: try container.decodeIfPresent(String.self, forKey: .inputBinding)
+                    fixtureID: try container.decodeIfPresent(String.self, forKey: .fixtureID)
                 )
             )
         case .unavailable:
@@ -766,8 +764,7 @@ public enum SnapshotHistoryProofDuplicateKey: Hashable, Sendable {
         protocolVersion: String,
         expectedCount: Int?,
         verificationReason: String?,
-        verificationRuleVersion: String?,
-        inputBinding: String?
+        verificationRuleVersion: String?
     )
     case legacyAuthoritative(source: String, version: String, expectedCount: Int?)
     case unavailable(reason: String)
@@ -783,8 +780,7 @@ public enum SnapshotHistoryProofDuplicateKey: Hashable, Sendable {
                 protocolVersion: evidence.protocolVersion,
                 expectedCount: evidence.expectedCount,
                 verificationReason: evidence.verificationReason,
-                verificationRuleVersion: evidence.verificationRuleVersion,
-                inputBinding: evidence.inputBinding
+                verificationRuleVersion: evidence.verificationRuleVersion
             )
         case .legacyAuthoritative(let source, let version, let expectedCount):
             self = .legacyAuthoritative(source: source, version: version, expectedCount: expectedCount)
@@ -965,8 +961,6 @@ public enum SnapshotLineageResolver {
 public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
     public let schemaVersion: Int
     public let observationVersion: Int
-    public let fingerprintVersion: Int
-    public let integrityVersion: Int
     public let snapshotID: UUID
     public let villageID: UUID
     public let lineageID: UUID
@@ -976,7 +970,6 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
     /// Timestamp copied from the source payload, if present.
     public let sourceTimestamp: Date?
     public let parserVersion: String
-    public let canonicalFingerprint: String
     public let rawJSON: String
     public let observation: CanonicalSnapshotObservation
     public let coverage: SnapshotObservationCoverage
@@ -985,13 +978,10 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
     /// Issue #175：v4+ entry 冻结的 source timer schema 契约（provenance）。
     /// 旧版本 entry 解码时缺省为 nil。
     public let timerSchema: SnapshotTimerSchema?
-    public let integrityFingerprint: String
 
     public init(
         schemaVersion: Int = SnapshotHistorySchema.entry,
         observationVersion: Int = SnapshotHistorySchema.observation,
-        fingerprintVersion: Int = SnapshotHistorySchema.fingerprint,
-        integrityVersion: Int = SnapshotHistorySchema.integrity,
         snapshotID: UUID,
         villageID: UUID,
         lineageID: UUID,
@@ -999,19 +989,15 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
         appliedAt: Date,
         sourceTimestamp: Date?,
         parserVersion: String,
-        canonicalFingerprint: String,
         rawJSON: String,
         observation: CanonicalSnapshotObservation,
         coverage: SnapshotObservationCoverage,
         isBaseline: Bool,
         baselineReason: SnapshotLineageReason?,
-        timerSchema: SnapshotTimerSchema? = nil,
-        integrityFingerprint: String? = nil
+        timerSchema: SnapshotTimerSchema? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.observationVersion = observationVersion
-        self.fingerprintVersion = fingerprintVersion
-        self.integrityVersion = integrityVersion
         self.snapshotID = snapshotID
         self.villageID = villageID
         self.lineageID = lineageID
@@ -1019,33 +1005,12 @@ public struct SnapshotHistoryEntry: Codable, Hashable, Sendable, Identifiable {
         self.appliedAt = appliedAt
         self.sourceTimestamp = sourceTimestamp
         self.parserVersion = parserVersion
-        self.canonicalFingerprint = canonicalFingerprint
         self.rawJSON = rawJSON
         self.observation = observation
         self.coverage = coverage
         self.isBaseline = isBaseline
         self.baselineReason = baselineReason
         self.timerSchema = timerSchema
-        self.integrityFingerprint = integrityFingerprint ?? SnapshotHistoryCanonicalizer.integrityFingerprint(
-            integrityVersion: integrityVersion,
-            schemaVersion: schemaVersion,
-            observationVersion: observationVersion,
-            fingerprintVersion: fingerprintVersion,
-            snapshotID: snapshotID,
-            villageID: villageID,
-            lineageID: lineageID,
-            normalizedPlayerTag: normalizedPlayerTag,
-            appliedAt: appliedAt,
-            sourceTimestamp: sourceTimestamp,
-            parserVersion: parserVersion,
-            canonicalFingerprint: canonicalFingerprint,
-            rawJSON: rawJSON,
-            observation: observation,
-            coverage: coverage,
-            isBaseline: isBaseline,
-            baselineReason: baselineReason,
-            timerSchema: timerSchema
-        )
     }
 
     public var id: UUID { snapshotID }

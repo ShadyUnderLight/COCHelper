@@ -20,13 +20,11 @@ import { trackerItemKeyRoot } from './types';
 const key = trackerItemKeyRoot('home', 'buildings', 100n);
 const baseline = {
   revision: 'snapshot-1',
-  fingerprint: 'sha256:baseline',
   lineageID: 'village-1',
 };
 const provenance = {
   gameVersion: '18.400.13',
   buildTag: 'catalog-test',
-  sourceFingerprint: 'sha256:catalog',
   manifestSchemaVersion: 1,
 };
 const recordId = (value: string) => parseUuid(value)!;
@@ -78,7 +76,7 @@ describe('manual domain equality', () => {
       ...baseRecord,
       catalogProvenance: {
         ...provenance,
-        sourceFingerprint: 'sha256:changed',
+        buildTag: 'changed-tag',
       },
     });
     expect(manualUpgradeRecordsEqual(baseRecord, changedProvenance)).toBe(false);
@@ -98,7 +96,7 @@ describe('manual domain equality', () => {
     expect(manualUpgradeRecordsEqual(baseRecord, changedFrozen)).toBe(false);
   });
 
-  it('ManualUpgradeCoreState.equals 与 contentFingerprint 字段集合一致', () => {
+  it('ManualUpgradeCoreState.equals 与结构字段集合一致', () => {
     const state = createManualItemStateForStatus({
       itemKey: key,
       baselineReference: baseline,
@@ -135,7 +133,6 @@ describe('manual domain equality', () => {
     });
     expect(coreA.equals(coreA)).toBe(true);
     expect(coreA.equals(coreB)).toBe(false);
-    expect(coreA.contentFingerprint).not.toBe(coreB.contentFingerprint);
     expect(manualUpgradeCoresEqual(coreA, coreB)).toBe(false);
   });
 });

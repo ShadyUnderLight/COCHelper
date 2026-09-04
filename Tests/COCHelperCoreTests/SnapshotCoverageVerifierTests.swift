@@ -15,9 +15,24 @@ final class SnapshotCoverageVerifierTests: XCTestCase {
             source: "perf-fixture",
             protocolVersion: "1",
             expectedCount: 1,
-            verificationReason: "bundled perf fixture"
+            verificationReason: "bundled perf fixture",
+            fixtureID: "perf_account_snapshot_home"
         )
         XCTAssertTrue(proof.isVerified)
+    }
+
+    func testPerfFixtureFactoryRefusesMissingFixtureIdentity() {
+        let proof = SnapshotCoverageVerifier.issuePerfFixture(
+            source: "perf-fixture",
+            protocolVersion: "1",
+            expectedCount: 1,
+            verificationReason: "bundled perf fixture",
+            fixtureID: nil
+        )
+        guard case .unavailable = proof else {
+            return XCTFail("无 fixture 身份不得签发 perf verified 证据")
+        }
+        XCTAssertFalse(proof.isVerified)
     }
 
     func testUnsupportedProtocolVersionFailsClosed() {

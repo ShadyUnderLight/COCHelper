@@ -1,4 +1,5 @@
 import {
+  bytesToHex,
   canonicalBytes,
   canonicalize as canonicalizeJson,
   jsonArray,
@@ -10,11 +11,9 @@ import {
   generateUuid,
   parseCanonicalizerInt64,
   parseJson,
-  sha256Fingerprint,
   sortedByCanonicalBytes,
   unixSecondsToRefSeconds,
   type CanonicalJsonValue,
-  type Sha256Fingerprint,
   type UuidString,
 } from '@coc-helper/wire';
 
@@ -62,7 +61,6 @@ import {
   snapshotItemIdentityKey,
   snapshotSectionCoverageId,
 } from './types';
-import { encodeIntegrityMaterialWire } from './wire-encode';
 
 export type CanonicalizeSnapshotHistoryOptions = {
   readonly villageID: UuidString;
@@ -134,15 +132,12 @@ export function canonicalizeSnapshotHistory(
     unknownTopLevelFields: observation.unknownTopLevelFields,
     items: observation.items,
   };
-  const canonicalFingerprint = fingerprintForObservation(normalizedObservation);
   const sourceTimestampRefSeconds =
     snapshot.capturedAtMs === null ? null : unixSecondsToRefSeconds(snapshot.capturedAtMs / 1000);
 
-  const entryBase = {
+  return {
     schemaVersion: SNAPSHOT_HISTORY_SCHEMA.entry,
     observationVersion,
-    fingerprintVersion: SNAPSHOT_HISTORY_SCHEMA.fingerprint,
-    integrityVersion: SNAPSHOT_HISTORY_SCHEMA.integrity,
     snapshotID: options.snapshotID ?? generateUuid(),
     villageID: options.villageID,
     lineageID: options.lineageID,
@@ -150,7 +145,6 @@ export function canonicalizeSnapshotHistory(
     appliedAtRefSeconds: options.appliedAtRefSeconds,
     sourceTimestampRefSeconds,
     parserVersion: SNAPSHOT_HISTORY_PARSER_VERSION,
-    canonicalFingerprint,
     rawJSON: snapshot.originalText,
     observation: normalizedObservation,
     coverage,
@@ -158,11 +152,6 @@ export function canonicalizeSnapshotHistory(
     baselineReason: options.isBaseline === true ? (options.baselineReason ?? null) : null,
     timerSchema:
       observationVersion >= SNAPSHOT_HISTORY_SCHEMA.observationWithTimerSchema ? timerSchema : null,
-  };
-
-  return {
-    ...entryBase,
-    integrityFingerprint: integrityFingerprint(entryBase),
   };
 }
 
@@ -183,9 +172,11 @@ export function canonicalizeSnapshotHistoryWithLineage(
   });
 }
 
-export function fingerprintForObservation(
-  observation: CanonicalSnapshotObservation,
-): Sha256Fingerprint {
+/**
+ * Issue #304：observation 直接可比较身份（替代 canonicalFingerprint 摘要）。
+ * 同一归一化观察恒得同一 key；比较即字符串相等，不做密码学摘要。
+ */
+export function observationIdentityKey(observation: CanonicalSnapshotObservation): string {
   const items = sortedByCanonicalBytes(observation.items, fingerprintValueForItem);
   const material = jsonObject({
     items: jsonArray(items.map(fingerprintValueForItem)),
@@ -193,13 +184,7 @@ export function fingerprintForObservation(
     rawTopLevelFields: jsonObject(observation.rawTopLevelFields),
     unknownTopLevelFields: jsonObject(observation.unknownTopLevelFields),
   });
-  return sha256Fingerprint(canonicalBytes(material));
-}
-
-export function integrityFingerprint(
-  entry: Omit<SnapshotHistoryEntry, 'integrityFingerprint'>,
-): Sha256Fingerprint {
-  return sha256Fingerprint(encodeIntegrityMaterialWire(entry));
+  return bytesToHex(canonicalBytes(material));
 }
 
 function canonicalSource(originalText: string, observationVersion: number): CanonicalSource {

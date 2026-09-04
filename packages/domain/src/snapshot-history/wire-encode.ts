@@ -144,40 +144,11 @@ function encodeSnapshotDiffCoverageWire(
   };
 }
 
-export function encodeIntegrityMaterialWire(
-  entry: Omit<SnapshotHistoryEntry, 'integrityFingerprint'>,
-): string {
-  return encodeSwiftSortedJson({
-    appliedAt: entry.appliedAtRefSeconds,
-    baselineReason: entry.baselineReason ?? undefined,
-    canonicalFingerprint: entry.canonicalFingerprint,
-    coverage: encodeCoverageWire(entry.coverage),
-    fingerprintVersion: entry.fingerprintVersion,
-    integrityVersion: entry.integrityVersion,
-    isBaseline: entry.isBaseline,
-    lineageID: entry.lineageID,
-    normalizedPlayerTag: entry.normalizedPlayerTag ?? undefined,
-    observation: encodeObservationWire(entry.observation),
-    observationVersion: entry.observationVersion,
-    parserVersion: entry.parserVersion,
-    rawJSON: entry.rawJSON,
-    schemaVersion: entry.schemaVersion,
-    snapshotID: entry.snapshotID,
-    sourceTimestamp: entry.sourceTimestampRefSeconds ?? undefined,
-    timerSchema: entry.timerSchema === null ? undefined : encodeTimerSchemaWire(entry.timerSchema),
-    villageID: entry.villageID,
-  });
-}
-
 function encodeHistoryEntryShape(entry: SnapshotHistoryEntry): unknown {
   return {
     appliedAt: entry.appliedAtRefSeconds,
     baselineReason: entry.baselineReason ?? undefined,
-    canonicalFingerprint: entry.canonicalFingerprint,
     coverage: encodeCoverageWire(entry.coverage),
-    fingerprintVersion: entry.fingerprintVersion,
-    integrityFingerprint: entry.integrityFingerprint,
-    integrityVersion: entry.integrityVersion,
     isBaseline: entry.isBaseline,
     lineageID: entry.lineageID,
     normalizedPlayerTag: entry.normalizedPlayerTag ?? undefined,
@@ -266,9 +237,6 @@ function encodeNestedPathWire(path: SnapshotNestedPathComponent): unknown {
 
 function encodeDisplayBindingWire(display: SnapshotDisplayBinding): unknown {
   const encoded: Record<string, unknown> = {};
-  if (display.catalogFingerprint !== undefined) {
-    encoded.catalogFingerprint = display.catalogFingerprint;
-  }
   if (display.catalogVersion !== undefined) {
     encoded.catalogVersion = display.catalogVersion;
   }
@@ -324,12 +292,12 @@ function encodeCoverageProofWire(proof: SnapshotCoverageProof): unknown {
       return {
         adapterID: proof.adapterID,
         expectedCount: proof.expectedCount ?? undefined,
-        inputBinding: proof.inputBinding ?? undefined,
         kind: 'verified',
         protocolVersion: proof.protocolVersion,
         source: proof.source,
         verificationReason: proof.verificationReason ?? undefined,
         verificationRuleVersion: proof.verificationRuleVersion ?? undefined,
+        fixtureID: proof.fixtureID ?? undefined,
       };
     case 'unavailable':
       return {

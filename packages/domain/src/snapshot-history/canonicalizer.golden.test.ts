@@ -6,7 +6,7 @@ import { parseUuid } from '@coc-helper/wire';
 import { parseAccountSnapshot } from '../account/parser';
 import { describe, expect, it } from 'vitest';
 
-import { canonicalizeSnapshotHistory } from './canonicalizer';
+import { canonicalizeSnapshotHistory, observationIdentityKey } from './canonicalizer';
 import { historyEntryWireHex } from './wire-encode';
 
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
@@ -22,7 +22,7 @@ class GoldenClock {
 }
 
 describe('SnapshotHistoryCanonicalizer golden', () => {
-  it('canonicalFingerprint、integrityFingerprint 与 encodedJSONHex 匹配冻结值', () => {
+  it('observation 身份稳定且 encodedJSONHex 匹配冻结值（Issue #304 无 fingerprint）', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
       resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
@@ -32,8 +32,6 @@ describe('SnapshotHistoryCanonicalizer golden', () => {
       readFileSync(resolve(root, 'Tests/Golden/Fixtures/parser_golden_expected.json'), 'utf8'),
     ) as {
       historyEntry: {
-        canonicalFingerprint: string;
-        integrityFingerprint: string;
         encodedJSONHex: string;
       };
     };
@@ -53,8 +51,23 @@ describe('SnapshotHistoryCanonicalizer golden', () => {
       baselineReason: null,
     });
 
-    expect(entry.canonicalFingerprint).toBe(expected.historyEntry.canonicalFingerprint);
-    expect(entry.integrityFingerprint).toBe(expected.historyEntry.integrityFingerprint);
+    // 相同输入重复归一化 → 同一 observation 身份（duplicate 判等基础）。
+    const reparsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
+    expect(reparsed.ok).toBe(true);
+    if (!reparsed.ok) {
+      return;
+    }
+    const again = canonicalizeSnapshotHistory(reparsed.value, {
+      villageID: GOLDEN_VILLAGE_ID,
+      lineageID: GOLDEN_LINEAGE_ID,
+      appliedAtRefSeconds: GOLDEN_APPLIED_AT_REF_SECONDS,
+      snapshotID: GOLDEN_SNAPSHOT_ID,
+      isBaseline: false,
+      baselineReason: null,
+    });
+    expect(observationIdentityKey(again.observation)).toBe(
+      observationIdentityKey(entry.observation),
+    );
     expect(historyEntryWireHex(entry)).toBe(expected.historyEntry.encodedJSONHex);
   });
 });

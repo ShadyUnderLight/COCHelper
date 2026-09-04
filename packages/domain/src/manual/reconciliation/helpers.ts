@@ -1,6 +1,6 @@
 import type { UuidString } from '@coc-helper/wire';
 
-import { manualLevelDistributionsEqual } from '../equality';
+import { baselineReferencesEqual, manualLevelDistributionsEqual } from '../equality';
 import type {
   ManualItemState,
   ManualLevelDistribution,
@@ -10,6 +10,7 @@ import type {
 import { trackerItemKeyStableId } from '../types';
 import type {
   ManualReconciliationClassification,
+  ManualReconciliationItem,
   ManualReconciliationPreview,
   ManualReconciliationTimeConfidence,
 } from './types';
@@ -184,7 +185,7 @@ export function reconciliationClassificationMessage(
 ): string {
   switch (classification) {
     case 'duplicate':
-      return 'canonical fingerprint 未变化；不会重新开始或重复结算手动记录。';
+      return '观察未变化；不会重新开始或重复结算手动记录。';
     case 'newObservation':
       return '当前没有需要保护的本地手动状态，可以安全建立新的观察基线。';
     case 'exactMatch':
@@ -208,11 +209,68 @@ export function reconciliationClassificationMessage(
   }
 }
 
+/**
+ * Issue #304：直接比较去除随机 ID（previewID/appliedAt）的语义字段，
+ * 替代 candidateFingerprint 摘要比较。
+ *
+ * newReference 的 revision/lineageID 是按导入分配的临时 ID：
+ * 非 duplicate 时忽略（同旧指纹只含内容 fingerprint 的语义）；
+ * duplicate 时 revision 携带 :observation:N 序列，必须精确匹配。
+ */
 export function reconciliationCandidateMatches(
   expected: ManualReconciliationPreview,
   actual: ManualReconciliationPreview,
 ): boolean {
-  return expected.candidateFingerprint === actual.candidateFingerprint;
+  return (
+    expected.duplicate === actual.duplicate &&
+    expected.lineageComparable === actual.lineageComparable &&
+    expected.timeConfidence === actual.timeConfidence &&
+    newReferencesMatch(expected, actual) &&
+    (expected.newNormalizedPlayerTag ?? null) === (actual.newNormalizedPlayerTag ?? null) &&
+    (expected.sourceTimestampMs ?? null) === (actual.sourceTimestampMs ?? null) &&
+    reconciliationItemsEqual(expected.items, actual.items)
+  );
+}
+
+function newReferencesMatch(
+  expected: ManualReconciliationPreview,
+  actual: ManualReconciliationPreview,
+): boolean {
+  if (expected.duplicate || actual.duplicate) {
+    return baselineReferencesEqual(expected.newReference, actual.newReference);
+  }
+  return true;
+}
+
+function reconciliationItemsEqual(
+  left: readonly ManualReconciliationItem[],
+  right: readonly ManualReconciliationItem[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((leftItem, index) => {
+    const rightItem = right[index]!;
+    return (
+      trackerItemKeyStableId(leftItem.itemKey) === trackerItemKeyStableId(rightItem.itemKey) &&
+      leftItem.displayName === rightItem.displayName &&
+      leftItem.classification === rightItem.classification &&
+      leftItem.message === rightItem.message &&
+      distributionsEqual(leftItem.previousDistribution, rightItem.previousDistribution) &&
+      distributionsEqual(leftItem.observedDistribution, rightItem.observedDistribution) &&
+      uuidArraysEqual(leftItem.relatedRecordIDs, rightItem.relatedRecordIDs) &&
+      uuidArraysEqual(leftItem.confirmedRecordIDs, rightItem.confirmedRecordIDs) &&
+      leftItem.observedTimer === rightItem.observedTimer &&
+      leftItem.coverageComplete === rightItem.coverageComplete &&
+      leftItem.observedDistributionComplete === rightItem.observedDistributionComplete &&
+      leftItem.observedSectionTrustGatesOpen === rightItem.observedSectionTrustGatesOpen &&
+      leftItem.observedTimerCoverageComplete === rightItem.observedTimerCoverageComplete
+    );
+  });
+}
+
+function uuidArraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 export function recordsForItemKey(

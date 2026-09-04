@@ -13,6 +13,7 @@ import {
   sequentialValidateSnapshotHistoryEntries,
   sequentialValidateSnapshotHistoryEntriesAsync,
 } from './index';
+import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 
 const GOLDEN_IMPORTED_AT_REF_SECONDS = 807_529_133;
 
@@ -44,7 +45,10 @@ describe('snapshot history sequential validate', () => {
 
     const envelope = createSnapshotHistoryEnvelope({
       entries: [entry, entry],
-      migrationMarker: { version: 1, completedAtRefSeconds: 807_629_133 },
+      migrationMarker: {
+        version: SNAPSHOT_HISTORY_SCHEMA.envelope,
+        completedAtRefSeconds: 807_629_133,
+      },
     });
 
     const perEntry: number[] = [];
@@ -89,7 +93,6 @@ describe('snapshot history sequential validate', () => {
           lineageID: entry.lineageID,
           normalizedPlayerTag: entry.normalizedPlayerTag,
           lastEntryID: entry.snapshotID,
-          lastFingerprint: entry.canonicalFingerprint,
           lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,
@@ -151,7 +154,6 @@ describe('snapshot history sequential validate', () => {
           lineageID: entry.lineageID,
           normalizedPlayerTag: entry.normalizedPlayerTag,
           lastEntryID: entry.snapshotID,
-          lastFingerprint: entry.canonicalFingerprint,
           lastAppliedAtRefSeconds: entry.appliedAtRefSeconds,
           hasConflict: false,
           isActive: true,

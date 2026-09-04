@@ -175,8 +175,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let shifted = SnapshotHistoryEntry(
             schemaVersion: base.schemaVersion,
             observationVersion: base.observationVersion,
-            fingerprintVersion: base.fingerprintVersion,
-            integrityVersion: base.integrityVersion,
             snapshotID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
             villageID: base.villageID,
             lineageID: base.lineageID,
@@ -184,7 +182,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: 99),
             sourceTimestamp: Date(timeIntervalSince1970: 50),
             parserVersion: "account-json-9.9",
-            canonicalFingerprint: base.canonicalFingerprint,
             rawJSON: base.rawJSON,
             observation: base.observation,
             coverage: base.coverage,
@@ -221,7 +218,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         if case .verified(let evidence) = liveHeroes.proof {
             XCTAssertEqual(evidence.runtimeWitness, .moduleIssued)
             XCTAssertEqual(evidence.verificationRuleVersion, "1")
-            XCTAssertNotNil(evidence.inputBinding)
         } else {
             XCTFail("live entry 必须带 module-issued verified proof")
         }
@@ -237,7 +233,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         if case .verified(let evidence) = reloadedHeroes.proof {
             XCTAssertNil(evidence.runtimeWitness, "witness 仍不序列化；runtime trust 在 section 层")
             if case .verified(let liveEvidence) = liveHeroes.proof {
-                XCTAssertEqual(evidence.inputBinding, liveEvidence.inputBinding)
+                XCTAssertEqual(evidence.verificationRuleVersion, liveEvidence.verificationRuleVersion)
             }
         } else {
             XCTFail("reloaded entry 必须保留 verified wire metadata")
@@ -423,7 +419,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let text = try String(contentsOf: fixtureURL, encoding: .utf8)
         let snapshot = try AccountSnapshotImporter.parse(text, now: Date(timeIntervalSince1970: 1))
         let proofs = SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
-            JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            JSONSnapshotCoverageAdapter.proofs(for: snapshot),
+            fixtureID: "perf_account_snapshot_home"
         )
         let entry = try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot,
@@ -503,7 +500,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
             rawJSON: entry.rawJSON,
             observation: entry.observation,
             coverage: tamperedCoverage,
@@ -523,7 +519,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         }
     }
 
-    func testVerifiedCoverageTamperedBindingFailsRevalidation() throws {
+    func testVerifiedCoverageTamperedRuleVersionFailsRevalidation() throws {
         let text = "{\"tag\":\"#ABC123\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
         let proof: [String: SnapshotCoverageProof] = [
             "heroes": SnapshotHistoryTestCoverage.verified(source: "test-export", expectedCount: 1)
@@ -555,8 +551,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             protocolVersion: evidence.protocolVersion,
             expectedCount: evidence.expectedCount,
             verificationReason: evidence.verificationReason,
-            verificationRuleVersion: evidence.verificationRuleVersion,
-            inputBinding: "sha256:deadbeef"
+            verificationRuleVersion: "999"
         )
         let tamperedTrust = SnapshotCoverageProofRevalidators.revalidate(
             evidence: tamperedEvidence,
@@ -567,7 +562,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         if case .rejected = tamperedTrust {
             XCTAssertTrue(true)
         } else {
-            XCTFail("篡改 binding 后 revalidation 必须 fail-closed")
+            XCTFail("篡改 rule version 后 revalidation 必须 fail-closed")
         }
     }
 
@@ -616,7 +611,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                     lineageID: entry.lineageID,
                     normalizedPlayerTag: entry.normalizedPlayerTag,
                     lastEntryID: entry.snapshotID,
-                    lastFingerprint: entry.canonicalFingerprint,
                     lastAppliedAt: entry.appliedAt,
                     hasConflict: false
                 )
@@ -638,9 +632,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
 
     func testProductionLoadRejectsForgedPerfFixtureWithoutBundledProvenance() throws {
         let text = "{\"tag\":\"#ABC123\",\"heroes\":[{\"data\":1,\"lvl\":1}]}"
-        let binding = try XCTUnwrap(
-            SnapshotCoverageTrustHydration.sectionInputBinding(rawJSON: text, section: "heroes")
-        )
         let proof: SnapshotCoverageProof = .verified(
             VerifiedCoverageEvidence(
                 decodedWire: SnapshotCoverageVerifier.perfFixtureAdapterID,
@@ -648,8 +639,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 protocolVersion: "1",
                 expectedCount: 1,
                 verificationReason: "bundled perf fixture",
-                verificationRuleVersion: "1",
-                inputBinding: binding
+                verificationRuleVersion: "1"
             )
         )
         let entry = try SnapshotHistoryCanonicalizer.canonicalize(
@@ -678,8 +668,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let forgedEntry = SnapshotHistoryEntry(
             schemaVersion: entry.schemaVersion,
             observationVersion: entry.observationVersion,
-            fingerprintVersion: entry.fingerprintVersion,
-            integrityVersion: entry.integrityVersion,
             snapshotID: entry.snapshotID,
             villageID: entry.villageID,
             lineageID: entry.lineageID,
@@ -687,7 +675,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
             rawJSON: text,
             observation: entry.observation,
             coverage: forgedCoverage,
@@ -700,15 +687,14 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let envelope = try SnapshotHistoryEnvelope(
             entries: [decodedEntry],
             lineages: [
-                SnapshotHistoryLineageMetadata(
-                    villageID: forgedEntry.villageID,
-                    lineageID: forgedEntry.lineageID,
-                    normalizedPlayerTag: forgedEntry.normalizedPlayerTag,
-                    lastEntryID: forgedEntry.snapshotID,
-                    lastFingerprint: forgedEntry.canonicalFingerprint,
-                    lastAppliedAt: forgedEntry.appliedAt,
-                    hasConflict: false
-                )
+            SnapshotHistoryLineageMetadata(
+                villageID: entry.villageID,
+                lineageID: entry.lineageID,
+                normalizedPlayerTag: entry.normalizedPlayerTag,
+                lastEntryID: entry.snapshotID,
+                lastAppliedAt: entry.appliedAt,
+                hasConflict: false
+            )
             ],
             migrationMarker: SnapshotHistoryMigrationMarker(completedAt: Date(timeIntervalSince1970: 1))
         ).validated()
@@ -759,8 +745,12 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         try store.save(productionHydrated)
         let reloaded = try XCTUnwrap(try store.load())
         XCTAssertEqual(
-            reloaded.entries.first?.integrityFingerprint,
-            productionHydrated.entries.first?.integrityFingerprint
+            reloaded.entries.first.map {
+                SnapshotHistoryCanonicalizer.observationIdentityKey(for: $0.observation)
+            },
+            productionHydrated.entries.first.map {
+                SnapshotHistoryCanonicalizer.observationIdentityKey(for: $0.observation)
+            }
         )
         let testReloadedHeroes = try XCTUnwrap(
             reloaded.entries.first?.coverage.section(base: .home, rawSection: "heroes")
@@ -1123,31 +1113,31 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         }
         XCTAssertEqual(try store.readRawData(), corrupt)
 
-        let unsupported = try JSONEncoder().encode(SnapshotHistoryEnvelope(schemaVersion: 2))
+        let unsupported = try JSONEncoder().encode(SnapshotHistoryEnvelope(schemaVersion: 999))
         try store.writeRawData(unsupported)
         XCTAssertThrowsError(try store.load()) { error in
-            XCTAssertEqual(error as? SnapshotHistoryStoreError, .unsupportedSchema(2))
+            XCTAssertEqual(error as? SnapshotHistoryStoreError, .unsupportedSchema(999))
         }
     }
 
-    func testMissingEntryAndInvalidFingerprintNeverBecomeAnEmptyHistory() throws {
+    func testMissingEntryAndInvalidObservationNeverBecomeAnEmptyHistory() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("COCHelper-SnapshotHistoryInvalidEntryTests-\(UUID().uuidString)", isDirectory: true)
         let url = directory.appendingPathComponent("history.json")
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = FileSnapshotHistoryStore(fileURL: url)
         let entry = try SnapshotHistoryCanonicalizer.canonicalize(
-            snapshot: snapshot(tag: firstTag),
+            snapshot: snapshot(tag: firstTag, text: "{\"tag\":\"\(firstTag)\",\"buildings\":[{\"data\":1,\"lvl\":1}]}"),
             villageID: UUID(),
             lineageID: UUID(),
             appliedAt: Date(timeIntervalSince1970: 1)
         )
         let marker = SnapshotHistoryMigrationMarker(completedAt: Date(timeIntervalSince1970: 1))
 
-        let invalidFingerprint = SnapshotHistoryEntry(
+        // Issue #304：observation 被篡改（与 rawJSON 重建不一致）必须拒绝。
+        let tamperedObservation = SnapshotHistoryEntry(
             schemaVersion: entry.schemaVersion,
             observationVersion: entry.observationVersion,
-            fingerprintVersion: entry.fingerprintVersion,
             snapshotID: entry.snapshotID,
             villageID: entry.villageID,
             lineageID: entry.lineageID,
@@ -1155,57 +1145,31 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: "not-a-sha256",
             rawJSON: entry.rawJSON,
-            observation: entry.observation,
+            observation: CanonicalSnapshotObservation(
+                schemaVersion: entry.observation.schemaVersion,
+                rawTopLevelFields: entry.observation.rawTopLevelFields,
+                unknownTopLevelFields: entry.observation.unknownTopLevelFields,
+                items: Array(entry.observation.items.dropFirst())
+            ),
             coverage: entry.coverage,
             isBaseline: entry.isBaseline,
             baselineReason: entry.baselineReason
         )
         try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
-            entries: [invalidFingerprint],
+            entries: [tamperedObservation],
             migrationMarker: marker
         )))
         XCTAssertThrowsError(try store.load()) { error in
             XCTAssertEqual(
                 error as? SnapshotHistoryStoreError,
-                .invalidEntry("历史 entry 的 fingerprint 格式无效。")
-            )
-        }
-
-        let legalButWrongFingerprint = SnapshotHistoryEntry(
-            schemaVersion: entry.schemaVersion,
-            observationVersion: entry.observationVersion,
-            fingerprintVersion: entry.fingerprintVersion,
-            snapshotID: entry.snapshotID,
-            villageID: entry.villageID,
-            lineageID: entry.lineageID,
-            normalizedPlayerTag: entry.normalizedPlayerTag,
-            appliedAt: entry.appliedAt,
-            sourceTimestamp: entry.sourceTimestamp,
-            parserVersion: entry.parserVersion,
-            canonicalFingerprint: "sha256:" + String(repeating: "0", count: 64),
-            rawJSON: entry.rawJSON,
-            observation: entry.observation,
-            coverage: entry.coverage,
-            isBaseline: entry.isBaseline,
-            baselineReason: entry.baselineReason
-        )
-        try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
-            entries: [legalButWrongFingerprint],
-            migrationMarker: marker
-        )))
-        XCTAssertThrowsError(try store.load()) { error in
-            XCTAssertEqual(
-                error as? SnapshotHistoryStoreError,
-                .invalidEntry("历史 entry 的 observation 与 canonicalFingerprint 不一致。")
+                .invalidEntry("历史 entry 的 rawJSON 与 observation 不一致。")
             )
         }
 
         let tamperedRawJSON = SnapshotHistoryEntry(
             schemaVersion: entry.schemaVersion,
             observationVersion: entry.observationVersion,
-            fingerprintVersion: entry.fingerprintVersion,
             snapshotID: entry.snapshotID,
             villageID: entry.villageID,
             lineageID: entry.lineageID,
@@ -1213,7 +1177,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
             rawJSON: "{\"buildings\":[],\"unknown\":1}",
             observation: entry.observation,
             coverage: entry.coverage,
@@ -1227,14 +1190,13 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.load()) { error in
             XCTAssertEqual(
                 error as? SnapshotHistoryStoreError,
-                .invalidEntry("历史 entry 的 rawJSON 与 canonicalFingerprint 不一致。")
+                .invalidEntry("历史 entry 的 rawJSON 与 observation 不一致。")
             )
         }
 
-        let unsupportedFingerprintVersion = SnapshotHistoryEntry(
-            schemaVersion: entry.schemaVersion,
+        let unsupportedEntryVersion = SnapshotHistoryEntry(
+            schemaVersion: 999,
             observationVersion: entry.observationVersion,
-            fingerprintVersion: 2,
             snapshotID: UUID(),
             villageID: entry.villageID,
             lineageID: entry.lineageID,
@@ -1242,7 +1204,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
             rawJSON: entry.rawJSON,
             observation: entry.observation,
             coverage: entry.coverage,
@@ -1250,20 +1211,20 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             baselineReason: entry.baselineReason
         )
         try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
-            entries: [unsupportedFingerprintVersion],
+            entries: [unsupportedEntryVersion],
             migrationMarker: marker
         )))
         XCTAssertThrowsError(try store.load()) { error in
-            XCTAssertEqual(error as? SnapshotHistoryStoreError, .unsupportedSchema(2))
+            XCTAssertEqual(error as? SnapshotHistoryStoreError, .unsupportedSchema(999))
         }
 
         let missingEntry = Data("""
         {
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "entries": [{}],
           "lineages": [],
           "duplicateMetadata": {},
-          "migrationMarker": {"version": 1, "completedAt": 1},
+          "migrationMarker": {"version": 2, "completedAt": 1},
           "lastDiagnostic": null
         }
         """.utf8)
@@ -1309,7 +1270,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: current.appliedAt,
             sourceTimestamp: current.sourceTimestamp,
             parserVersion: current.parserVersion,
-            canonicalFingerprint: SnapshotHistoryCanonicalizer.fingerprint(for: legacyObservation),
             rawJSON: current.rawJSON,
             observation: legacyObservation,
             coverage: legacyCoverage,
@@ -1323,7 +1283,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 lineageID: legacy.lineageID,
                 normalizedPlayerTag: legacy.normalizedPlayerTag,
                 lastEntryID: legacy.snapshotID,
-                lastFingerprint: legacy.canonicalFingerprint,
                 lastAppliedAt: legacy.appliedAt,
                 hasConflict: false
             )],
@@ -1348,7 +1307,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
     func testObservationVersionTwoEntryWithUnknownTimerFieldsSurvivesReload() throws {
         // Issue #175 review P1：v2 历史 entry 由宽松匹配保存，可能包含
         // 未知 timer-like 字段。升级后 load() 必须按 entry 的 observationVersion
-        // 用旧规则重建，否则 rawJSON 与 canonicalFingerprint 校验会拒绝加载。
+        // 用旧规则重建，否则 rawJSON 与 observation 校验会拒绝加载。
         let store = TestSnapshotHistoryStore()
         let raw = "{\"tag\":\"\(firstTag)\",\"timestamp\":100,\"buildings\":[{\"data\":1,\"lvl\":2,\"timer\":90,\"timer_state\":\"upgrading\"}]}"
         let entry = try SnapshotHistoryCanonicalizer.canonicalize(
@@ -1371,7 +1330,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 lineageID: entry.lineageID,
                 normalizedPlayerTag: entry.normalizedPlayerTag,
                 lastEntryID: entry.snapshotID,
-                lastFingerprint: entry.canonicalFingerprint,
                 lastAppliedAt: entry.appliedAt,
                 hasConflict: false
             )],
@@ -1381,12 +1339,17 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         try store.writeRawData(envelope.encodedData())
         let restored = try XCTUnwrap(try store.load())
         XCTAssertEqual(restored.entries.first?.observationVersion, 2)
-        XCTAssertEqual(restored.entries.first?.canonicalFingerprint, entry.canonicalFingerprint)
+        XCTAssertEqual(
+            restored.entries.first.map {
+                SnapshotHistoryCanonicalizer.observationIdentityKey(for: $0.observation)
+            },
+            SnapshotHistoryCanonicalizer.observationIdentityKey(for: entry.observation)
+        )
     }
 
     func testObservationVersionFourEntryWithSchemaSurvivesReload() throws {
         // Issue #175：v4 entry 冻结 timer schema 契约；load 校验重建时
-        // 必须用 entry 内冻结的契约（而非当前默认契约），fingerprint 稳定。
+        // 必须用 entry 内冻结的契约（而非当前默认契约），observation 身份稳定。
         let store = TestSnapshotHistoryStore()
         let raw = "{\"tag\":\"\(firstTag)\",\"timestamp\":100,\"buildings\":[{\"data\":1,\"lvl\":2,\"timer\":90,\"helper_timer\":30,\"timer_state\":\"upgrading\"}]}"
         let schema = SnapshotTimerSchema(
@@ -1415,7 +1378,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 lineageID: entry.lineageID,
                 normalizedPlayerTag: entry.normalizedPlayerTag,
                 lastEntryID: entry.snapshotID,
-                lastFingerprint: entry.canonicalFingerprint,
                 lastAppliedAt: entry.appliedAt,
                 hasConflict: false
             )],
@@ -1425,7 +1387,12 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         try store.writeRawData(envelope.encodedData())
         let restored = try XCTUnwrap(try store.load())
         XCTAssertEqual(restored.entries.first?.timerSchema, schema)
-        XCTAssertEqual(restored.entries.first?.canonicalFingerprint, entry.canonicalFingerprint)
+        XCTAssertEqual(
+            restored.entries.first.map {
+                SnapshotHistoryCanonicalizer.observationIdentityKey(for: $0.observation)
+            },
+            SnapshotHistoryCanonicalizer.observationIdentityKey(for: entry.observation)
+        )
     }
 
     func testObservationVersionFourCoverageEntrySurvivesReload() throws {
@@ -1439,11 +1406,18 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         try store.writeRawData(envelope.encodedData())
         let restored = try XCTUnwrap(try store.load())
         XCTAssertEqual(restored.entries.first?.observationVersion, 4)
-        XCTAssertEqual(restored.entries.first?.canonicalFingerprint, entry.canonicalFingerprint)
+        XCTAssertEqual(
+            restored.entries.first.map {
+                SnapshotHistoryCanonicalizer.observationIdentityKey(for: $0.observation)
+            },
+            SnapshotHistoryCanonicalizer.observationIdentityKey(for: entry.observation)
+        )
         XCTAssertNotNil(restored.entries.first?.observation.unknownTopLevelFields["coverage"])
     }
 
-    func testPreIssue218V4CoverageFixtureSurvivesUpgrade() throws {
+    func testLegacyV1EnvelopeIsRejectedAsUnsupported() throws {
+        // Issue #304 数据策略：旧 wire 形状不迁移、不 fallback；
+        // 保留原文件并报告 unsupported，由用户重新导入。
         let url = try XCTUnwrap(
             Bundle.module.url(forResource: "history_v4_coverage_entry", withExtension: "json")
         )
@@ -1451,23 +1425,10 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let store = TestSnapshotHistoryStore()
         try store.writeRawData(data)
 
-        let restored = try XCTUnwrap(try store.load())
-        let entry = try XCTUnwrap(restored.entries.first)
-        XCTAssertEqual(entry.observationVersion, 4)
-        XCTAssertEqual(
-            entry.canonicalFingerprint,
-            "sha256:795c19ff99cf854725e1b23205c8c5e247f2b8df721030c03f3c95061c10c777"
-        )
-        XCTAssertNotNil(entry.observation.unknownTopLevelFields["coverage"])
-        XCTAssertNotNil(entry.observation.rawTopLevelFields["coverage"])
-        XCTAssertTrue(entry.coverage.fields.contains {
-            $0.base == .unknown && $0.rawSection == "$topLevel" && $0.field == "coverage"
-        })
-        XCTAssertTrue(entry.rawJSON.contains("\"coverage\""))
-        XCTAssertEqual(
-            entry.coverage.section(base: .home, rawSection: "buildings")?.proof,
-            .declared(source: "u.coc", version: "1", expectedCount: 1)
-        )
+        XCTAssertThrowsError(try store.load()) { error in
+            XCTAssertEqual(error as? SnapshotHistoryStoreError, .unsupportedSchema(1))
+        }
+        XCTAssertEqual(try store.readRawData(), data, "旧文件必须原样保留，不得静默重写")
     }
 
     func testV5IdenticalBuildingsDifferentCoverageDeclarationAppends() throws {
@@ -1505,8 +1466,10 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertFalse(decision.duplicate)
         XCTAssertEqual(decision.envelope.entries.count, 2)
         XCTAssertEqual(
-            envelope.entries.first?.canonicalFingerprint,
-            decision.entry.canonicalFingerprint
+            envelope.entries.first.map {
+                SnapshotHistoryCanonicalizer.observationIdentityKey(for: $0.observation)
+            },
+            SnapshotHistoryCanonicalizer.observationIdentityKey(for: decision.entry.observation)
         )
         XCTAssertNotEqual(envelope.entries.first?.coverage, decision.entry.coverage)
         XCTAssertNotEqual(
@@ -1519,7 +1482,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
     }
 
-    func testLegacyAuthoritativeProofPreservesIntegrityFingerprintOnLoad() throws {
+    func testLegacyAuthoritativeProofSurvivesReload() throws {
         let store = TestSnapshotHistoryStore()
         let villageID = UUID()
         let lineageID = UUID()
@@ -1558,8 +1521,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let legacyEntry = SnapshotHistoryEntry(
             schemaVersion: verifiedEntry.schemaVersion,
             observationVersion: verifiedEntry.observationVersion,
-            fingerprintVersion: verifiedEntry.fingerprintVersion,
-            integrityVersion: verifiedEntry.integrityVersion,
             snapshotID: verifiedEntry.snapshotID,
             villageID: verifiedEntry.villageID,
             lineageID: verifiedEntry.lineageID,
@@ -1567,33 +1528,12 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: verifiedEntry.appliedAt,
             sourceTimestamp: verifiedEntry.sourceTimestamp,
             parserVersion: verifiedEntry.parserVersion,
-            canonicalFingerprint: verifiedEntry.canonicalFingerprint,
             rawJSON: verifiedEntry.rawJSON,
             observation: verifiedEntry.observation,
             coverage: legacyCoverage,
             isBaseline: verifiedEntry.isBaseline,
             baselineReason: verifiedEntry.baselineReason,
-            timerSchema: verifiedEntry.timerSchema,
-            integrityFingerprint: SnapshotHistoryCanonicalizer.integrityFingerprint(
-                integrityVersion: verifiedEntry.integrityVersion,
-                schemaVersion: verifiedEntry.schemaVersion,
-                observationVersion: verifiedEntry.observationVersion,
-                fingerprintVersion: verifiedEntry.fingerprintVersion,
-                snapshotID: verifiedEntry.snapshotID,
-                villageID: verifiedEntry.villageID,
-                lineageID: verifiedEntry.lineageID,
-                normalizedPlayerTag: verifiedEntry.normalizedPlayerTag,
-                appliedAt: verifiedEntry.appliedAt,
-                sourceTimestamp: verifiedEntry.sourceTimestamp,
-                parserVersion: verifiedEntry.parserVersion,
-                canonicalFingerprint: verifiedEntry.canonicalFingerprint,
-                rawJSON: verifiedEntry.rawJSON,
-                observation: verifiedEntry.observation,
-                coverage: legacyCoverage,
-                isBaseline: verifiedEntry.isBaseline,
-                baselineReason: verifiedEntry.baselineReason,
-                timerSchema: verifiedEntry.timerSchema
-            )
+            timerSchema: verifiedEntry.timerSchema
         )
         XCTAssertFalse(legacyEntry.coverage.section(base: .home, rawSection: "heroes")?.isComplete ?? true)
 
@@ -1604,7 +1544,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 lineageID: legacyEntry.lineageID,
                 normalizedPlayerTag: legacyEntry.normalizedPlayerTag,
                 lastEntryID: legacyEntry.snapshotID,
-                lastFingerprint: legacyEntry.canonicalFingerprint,
                 lastAppliedAt: legacyEntry.appliedAt,
                 hasConflict: false
             )],
@@ -1621,7 +1560,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         }
     }
 
-    func testFullIntegrityDigestRejectsMetadataDisplayAndCoverageTampering() throws {
+    func testObservationIdentityRejectsContentTampering() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("COCHelper-SnapshotHistoryIntegrityTests-\(UUID().uuidString)", isDirectory: true)
         let url = directory.appendingPathComponent("history.json")
@@ -1640,13 +1579,10 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         )
         let marker = SnapshotHistoryMigrationMarker(completedAt: Date(timeIntervalSince1970: 101))
 
-        let tamperedTag = copy(
+        // Issue #304：不再有完整性摘要；影响 observation 的内容篡改被拒绝。
+        let tamperedContent = copy(
             entry,
-            rawJSON: "{\"tag\":\"#2QJQ8J89\",\"timestamp\":100,\"buildings\":[{\"data\":1,\"lvl\":2}]}"
-        )
-        let tamperedTimestamp = copy(
-            entry,
-            rawJSON: "{\"tag\":\"\(firstTag)\",\"timestamp\":101,\"buildings\":[{\"data\":1,\"lvl\":2}]}"
+            rawJSON: "{\"tag\":\"\(firstTag)\",\"timestamp\":100,\"buildings\":[{\"data\":1,\"lvl\":99}]}"
         )
 
         var displayItems = entry.observation.items
@@ -1664,8 +1600,7 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 displayName: "篡改显示名",
                 category: originalItem.display.category,
                 displayCategory: originalItem.display.displayCategory,
-                catalogVersion: originalItem.display.catalogVersion,
-                catalogFingerprint: originalItem.display.catalogFingerprint
+                catalogVersion: originalItem.display.catalogVersion
             )
         )
         let tamperedDisplay = copy(
@@ -1677,28 +1612,24 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 items: displayItems
             )
         )
-        let tamperedCoverage = copy(
-            entry,
-            coverage: SnapshotObservationCoverage(
-                schemaVersion: entry.coverage.schemaVersion,
-                fields: entry.coverage.fields,
-                sections: entry.coverage.sections,
-                diagnostics: entry.coverage.diagnostics + ["篡改 coverage"]
-            )
-        )
 
-        for tampered in [tamperedTag, tamperedTimestamp, tamperedDisplay, tamperedCoverage] {
-            try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
-                entries: [tampered],
-                migrationMarker: marker
-            )))
-            XCTAssertThrowsError(try store.load()) { error in
-                XCTAssertEqual(
-                    error as? SnapshotHistoryStoreError,
-                    .invalidEntry("历史 entry 的完整性摘要不一致。")
-                )
+        try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
+            entries: [tamperedContent],
+            migrationMarker: marker
+        )))
+        XCTAssertThrowsError(try store.load()) { error in
+            guard case .invalidEntry = error as? SnapshotHistoryStoreError else {
+                return XCTFail("篡改内容必须被拒绝，实际为 \(error)")
             }
         }
+
+        // 展示信息（display binding）是历史渲染快照，不属于 observation 身份；
+        // 其漂移不阻止加载（与删除 catalogFingerprint 摘要一致）。
+        try store.writeRawData(try JSONEncoder().encode(SnapshotHistoryEnvelope(
+            entries: [tamperedDisplay],
+            migrationMarker: marker
+        )))
+        XCTAssertNoThrow(try store.load())
     }
 
     private func makePreIssue218V4CoverageEnvelope() throws -> SnapshotHistoryEnvelope {
@@ -1724,7 +1655,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                 lineageID: entry.lineageID,
                 normalizedPlayerTag: entry.normalizedPlayerTag,
                 lastEntryID: entry.snapshotID,
-                lastFingerprint: entry.canonicalFingerprint,
                 lastAppliedAt: entry.appliedAt,
                 hasConflict: false
             )],
@@ -1766,7 +1696,14 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         XCTAssertEqual(decision.envelope.entries[0].timerSchema, previousSchema)
         XCTAssertEqual(decision.envelope.entries[0].parserVersion, previous.parserVersion)
         XCTAssertEqual(decision.envelope.entries[1].timerSchema, expectedNewSchema)
-        XCTAssertEqual(decision.envelope.entries[0].canonicalFingerprint, decision.envelope.entries[1].canonicalFingerprint)
+        XCTAssertEqual(
+            SnapshotHistoryCanonicalizer.observationIdentityKey(
+                for: decision.envelope.entries[0].observation
+            ),
+            SnapshotHistoryCanonicalizer.observationIdentityKey(
+                for: decision.envelope.entries[1].observation
+            )
+        )
         XCTAssertEqual(decision.envelope.entries[0].coverage, decision.envelope.entries[1].coverage)
         XCTAssertNotEqual(
             SnapshotHistoryDuplicateKey(entry: decision.envelope.entries[0]),
@@ -1805,7 +1742,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
                     lineageID: entry.lineageID,
                     normalizedPlayerTag: entry.normalizedPlayerTag,
                     lastEntryID: entry.snapshotID,
-                    lastFingerprint: entry.canonicalFingerprint,
                     lastAppliedAt: entry.appliedAt,
                     hasConflict: false
                 )
@@ -1951,7 +1887,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: 10),
             sourceTimestamp: nil,
             parserVersion: "test",
-            canonicalFingerprint: "test",
             rawJSON: "{}",
             observation: CanonicalSnapshotObservation(rawTopLevelFields: [:], items: [itemOld1, itemOld2]),
             coverage: coverage,
@@ -1969,7 +1904,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: Date(timeIntervalSince1970: 20),
             sourceTimestamp: nil,
             parserVersion: "test",
-            canonicalFingerprint: "test",
             rawJSON: "{}",
             observation: CanonicalSnapshotObservation(rawTopLevelFields: [:], items: [itemNew1, itemNew2]),
             coverage: coverage,
@@ -2007,8 +1941,6 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         SnapshotHistoryEntry(
             schemaVersion: entry.schemaVersion,
             observationVersion: entry.observationVersion,
-            fingerprintVersion: entry.fingerprintVersion,
-            integrityVersion: entry.integrityVersion,
             snapshotID: entry.snapshotID,
             villageID: entry.villageID,
             lineageID: entry.lineageID,
@@ -2016,13 +1948,12 @@ final class SnapshotHistoryStoreTests: XCTestCase {
             appliedAt: entry.appliedAt,
             sourceTimestamp: entry.sourceTimestamp,
             parserVersion: entry.parserVersion,
-            canonicalFingerprint: entry.canonicalFingerprint,
             rawJSON: rawJSON ?? entry.rawJSON,
             observation: observation ?? entry.observation,
             coverage: coverage ?? entry.coverage,
             isBaseline: entry.isBaseline,
             baselineReason: entry.baselineReason,
-            integrityFingerprint: entry.integrityFingerprint
+            timerSchema: entry.timerSchema
         )
     }
 }

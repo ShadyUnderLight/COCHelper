@@ -26,9 +26,12 @@ export type VillageProjectionCacheRenderResult = {
 type CacheKey = {
   readonly villageID: string;
   readonly villageName: string;
-  readonly snapshotFingerprint: string;
+  // Issue #304：显式 generation 替代内容 fingerprint。
+  // 调用方在快照导入/清除、manual mutation/reconcile、村庄变更时递增，
+  // tick 内保持稳定以命中缓存。不得用时间/摘要伪装内容身份。
+  readonly snapshotGeneration: number;
   readonly base: TrackerBase;
-  readonly manualFingerprint: string | null;
+  readonly manualGeneration: number | null;
   readonly catalogEpoch: number;
   readonly catalogVersion: string | null;
   readonly phaseBucket: PhaseBucket;
@@ -72,6 +75,8 @@ export class VillageProjectionCache {
     readonly nowMs: number;
     readonly manualUpgradeCore: ManualUpgradeCore | null | undefined;
     readonly catalogEpoch: number;
+    readonly snapshotGeneration: number;
+    readonly manualGeneration: number | null;
   }): VillageProjectionCacheRenderResult {
     const snapshot = input.village.accountSnapshot ?? null;
     if (snapshot === null) {
@@ -100,9 +105,9 @@ export class VillageProjectionCache {
     const key: CacheKey = {
       villageID: input.village.id,
       villageName: input.village.name,
-      snapshotFingerprint: snapshot.contentFingerprint,
+      snapshotGeneration: input.snapshotGeneration,
       base: input.base,
-      manualFingerprint: input.manualUpgradeCore?.contentFingerprint ?? null,
+      manualGeneration: input.manualGeneration,
       catalogEpoch: input.catalogEpoch,
       catalogVersion: input.catalog?.gameVersion ?? null,
       phaseBucket: input.seasonalPhases.bucket(input.nowMs),
@@ -247,9 +252,9 @@ function serializeCacheKey(key: CacheKey): string {
   return JSON.stringify({
     villageID: key.villageID,
     villageName: key.villageName,
-    snapshotFingerprint: key.snapshotFingerprint,
+    snapshotGeneration: key.snapshotGeneration,
     base: key.base,
-    manualFingerprint: key.manualFingerprint,
+    manualGeneration: key.manualGeneration,
     catalogEpoch: key.catalogEpoch,
     catalogVersion: key.catalogVersion,
     phaseBucket: key.phaseBucket,

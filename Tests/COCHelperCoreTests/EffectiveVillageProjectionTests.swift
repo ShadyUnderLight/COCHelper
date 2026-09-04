@@ -5,13 +5,11 @@ final class EffectiveVillageProjectionTests: XCTestCase {
     private let importedAt = Date(timeIntervalSince1970: 1_000)
     private let baseline = ManualBaselineReference(
         revision: "snapshot-1",
-        fingerprint: "sha256:snapshot",
         lineageID: "village-1"
     )
     private let provenance = ManualCatalogProvenance(
         gameVersion: "18.400.13",
         buildTag: "test",
-        sourceFingerprint: "sha256:catalog",
         manifestSchemaVersion: 3
     )
 

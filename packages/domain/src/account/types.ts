@@ -1,4 +1,3 @@
-import type { Sha256Fingerprint } from '@coc-helper/wire';
 import type { UuidString } from '@coc-helper/wire';
 
 export const ACCOUNT_PARSER_VERSION = 'account-json-0.1' as const;
@@ -44,7 +43,6 @@ export type AccountSnapshot = {
   readonly boosts: Readonly<Record<string, bigint>>;
   readonly unknownTopLevelKeys: readonly string[];
   readonly diagnostics: readonly AccountDataDiagnostic[];
-  readonly contentFingerprint: Sha256Fingerprint;
 };
 
 export type AccountSnapshotImportError =

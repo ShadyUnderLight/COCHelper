@@ -67,8 +67,6 @@ enum SnapshotHistoryOracle {
         encoder.outputFormatting = [.sortedKeys]
         let wire = try encoder.encode(entry)
         return [
-            "canonicalFingerprint": entry.canonicalFingerprint,
-            "integrityFingerprint": entry.integrityFingerprint,
             "encodedJSONHex": hex(wire),
         ]
     }

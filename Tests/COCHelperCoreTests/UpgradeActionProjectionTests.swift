@@ -15,8 +15,7 @@ final class UpgradeActionProjectionTests: XCTestCase {
     private let provenance = ManualCatalogProvenance(
         gameVersion: "18.400.13",
         buildTag: "test",
-        sourceFingerprint: "sha256:catalog",
-        manifestSchemaVersion: 1
+        manifestSchemaVersion: 3
     )
 
     // MARK: - Fixtures（与 EffectiveVillageProjectionTests 同构）
@@ -93,7 +92,6 @@ final class UpgradeActionProjectionTests: XCTestCase {
         cannonMaxLevel: Int = 3,
         cannonLevels: [CatalogLevel]? = nil,
         includeCannon: Bool = true,
-        sourceFingerprint: String = "sha256:catalog",
         instanceCounts: [String: [Int]]? = nil
     ) -> GameCatalog {
         let cannonItem: [CatalogItem]
@@ -133,32 +131,10 @@ final class UpgradeActionProjectionTests: XCTestCase {
             gameVersion: "18.400.13",
             items: items,
                 manifest: CatalogManifest(
-                    schemaVersion: 1,
+                    schemaVersion: 3,
                     gameVersion: "18.400.13",
                     buildTag: "test",
-                    locale: "zh-CN",
-                    sourceFingerprint: sourceFingerprint,
-                    generatedFiles: [
-                        CatalogGeneratedFile(
-                            path: "catalog.json",
-                            sha256: "sha256:catalog",
-                            size: nil,
-                            kind: nil,
-                            entries: nil
-                        ),
-                    ],
-                    counts: CatalogCounts(
-                        items: items.count,
-                        levels: 20 + (cannonLevels?.count ?? (includeCannon ? cannonMaxLevel : 0)),
-                        missingIcons: nil,
-                        missingTime: nil,
-                        timed: nil,
-                        instant: nil,
-                        notApplicable: nil,
-                        initialLevel: nil,
-                        sourceMissing: nil,
-                        parseFailed: nil
-                    )
+                    locale: "zh-CN"
                 ),
             instanceCounts: instanceCounts
         )

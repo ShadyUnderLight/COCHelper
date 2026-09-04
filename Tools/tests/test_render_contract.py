@@ -1,8 +1,8 @@
 """renderedPath 契约纯函数（Issue #27）property-based + 确定性测试。
 
 契约语义对齐 Swift CatalogAssetRef.isRenderable（renderedPath 非空且 missingReason
-为空，**空串 "" 不可渲染**，见 Sources/COCHelperCore/GameCatalog.swift:47-53）与
-validate.py 现有负例校验。
+为空，**空串 "" 不可渲染**）与 validate.py 现有负例校验。
+E0-03/Issue #303：R-C manifest 登记门已撤销，契约只剩 R-B/R-D/R-A。
 
 交叉审核 P1-2 修正（2026-08-05）：空串 renderedPath 不再视为"无引用"——None 才是
 无引用（返回 []）；"" 是非法渲染路径（R-D 报格式非法）。missing_reason 按
@@ -12,7 +12,7 @@ missingReason）。
 property 实证修正（相对任务原稿）：
 - sampled_from(ASSET_MISSING_REASONS) 崩：hypothesis 6.155 要求有序集合，改用 sorted()；
 - 不变量 1 原稿 "is_renderable 为真 ⇒ 无错误" 不可成立：is_renderable 只表达 Swift
-  "路径存在且无失败原因"，格式/文件/登记轴（R-D/R-A/R-C）对可渲染项仍合法报错
+  "路径存在且无失败原因"，格式/文件轴（R-D/R-A）对可渲染项仍合法报错
   （实证反例 rp='0', mr=None → 报 R-D）。改为 sound 双断言：互斥轴一致 + 无伪通过；
 - 不变量 2 原稿 "mr is not None" 对 "" 失败（truthiness vs None-ness），P1-2 后
   契约统一为 is not None 语义，"" 亦触发互斥。
@@ -35,12 +35,12 @@ def test_is_renderable_matches_swift_semantics(rp, mr):
 
 
 @given(rp=st.one_of(st.none(), st.text()), mr=st.one_of(st.none(), st.text()),
-       fe=st.booleans(), reg=st.one_of(st.none(), st.booleans()))
-def test_contract_invariants(rp, mr, fe, reg):
-    errs = check_rendered_path_contract(rp, mr, fe, reg)
+       fe=st.booleans())
+def test_contract_invariants(rp, mr, fe):
+    errs = check_rendered_path_contract(rp, mr, fe)
     # 不变量 1: 契约与 Swift isRenderable 互斥轴一致——契约报互斥错误 ⇒ is_renderable 为假；
     # 且无"伪通过"：renderedPath 非空且无错误 ⇒ missingReason 为 None。
-    # （注意 is_renderable 为真≠无错误：R-D/R-A/R-C 轴对可渲染项仍合法报错。）
+    # （注意 is_renderable 为真≠无错误：R-D/R-A 轴对可渲染项仍合法报错。）
     if any("互斥" in e for e in errs):
         assert not is_renderable(rp, mr)
     if rp is not None and rp != "" and not errs:
@@ -48,8 +48,8 @@ def test_contract_invariants(rp, mr, fe, reg):
     # 不变量 2: renderedPath 非空（含 ""）且 missingReason 非空（含 ""）⇒ 必有互斥错误
     if rp is not None and mr is not None:
         assert any("互斥" in e for e in errs)
-    # 不变量 3: 错误数量 ≤ 4
-    assert len(errs) <= 4
+    # 不变量 3: 错误数量 ≤ 2（R-B + R-D，或 R-B + R-A；R-D 失败短路）
+    assert len(errs) <= 2
     # 不变量 4: renderedPath 非空且无错误 ⇒ file_exists 必须为 True（R-A）
     if rp is not None and rp != "" and not errs:
         assert fe
@@ -62,38 +62,27 @@ def test_contract_invariants(rp, mr, fe, reg):
 
 def test_det_rb_mutual_exclusion():
     """R-B: renderedPath 与 missingReason 非空 → 互斥错误（独立轴，最优先）。"""
-    errs = check_rendered_path_contract("icons/ui/a.png", "icons_not_rendered", True, True)
+    errs = check_rendered_path_contract("icons/ui/a.png", "icons_not_rendered", True)
     assert any("互斥" in e for e in errs)
 
 
 def test_det_rd_format_illegal():
     """R-D: 缺 icons/ 前缀或非 .png 结尾 → 格式非法错误。"""
-    errs = check_rendered_path_contract("x.png", None, True, True)
+    errs = check_rendered_path_contract("x.png", None, True)
     assert any("格式非法" in e for e in errs)
-    errs = check_rendered_path_contract("icons/ui/x.jpg", None, True, True)
+    errs = check_rendered_path_contract("icons/ui/x.jpg", None, True)
     assert any("格式非法" in e for e in errs)
 
 
 def test_det_ra_file_missing():
     """R-A: 文件不存在 → 错误含"不存在"。"""
-    errs = check_rendered_path_contract("icons/ui/a.png", None, False, True)
+    errs = check_rendered_path_contract("icons/ui/a.png", None, False)
     assert any("不存在" in e for e in errs)
 
 
-def test_det_rc_unregistered():
-    """R-C: 文件存在但未登记 → 错误含"登记"。"""
-    errs = check_rendered_path_contract("icons/ui/a.png", None, True, False)
-    assert any("登记" in e for e in errs)
-
-
-def test_det_rc_skipped_when_registered_none():
-    """R-C 跳过: registered=None（manifest 无 generatedFiles）→ 不报"登记"。"""
-    assert check_rendered_path_contract("icons/ui/a.png", None, True, None) == []
-
-
 def test_det_valid_path_no_errors():
-    """合法路径: icons/<container_key>/<export_key>.png 两级 + 文件存在 + 已登记 → 无错误。"""
-    assert check_rendered_path_contract("icons/ui/a.png", None, True, True) == []
+    """合法路径: icons/<container_key>/<export_key>.png 两级 + 文件存在 → 无错误。"""
+    assert check_rendered_path_contract("icons/ui/a.png", None, True) == []
 
 
 @pytest.mark.parametrize("bad", [
@@ -120,21 +109,21 @@ def test_det_valid_path_no_errors():
 ])
 def test_det_rd_strict_two_level_rejected(bad):
     """R-D 严格两级结构（交叉审核）：版本段/.. 段/绝对路径/单级/非 png/无前缀 → 格式非法。"""
-    errs = check_rendered_path_contract(bad, None, True, True)
+    errs = check_rendered_path_contract(bad, None, True)
     assert any("格式非法" in e for e in errs)
 
 
 def test_det_rd_two_level_valid():
     """R-D 正例：icons/<container_key>/<export_key>.png → 无格式错误。"""
     errs = check_rendered_path_contract(
-        "icons/ui/icon_unit_barbarian.png", None, True, True)
+        "icons/ui/icon_unit_barbarian.png", None, True)
     assert errs == []
 
 
 def test_det_rd_filename_length_limit():
     """R2.2 文件名长度上限 200 字节（P2-1）：超限 → 格式非法；边界值通过。"""
     def check(name: str) -> list:
-        return check_rendered_path_contract(f"icons/ui/{name}.png", None, True, True)
+        return check_rendered_path_contract(f"icons/ui/{name}.png", None, True)
     assert check("x" * 196) == []          # 196 + 4(.png) = 200 字节 → 通过
     assert any("格式非法" in e for e in check("x" * 197))   # 201 字节 → 拒绝
     # 多字节 UTF-8 按字节计：66 汉字 * 3 = 198 + 4 = 202 → 拒绝
@@ -144,14 +133,14 @@ def test_det_rd_filename_length_limit():
 
 def test_det_none_path_no_errors():
     """renderedPath 为 None（无引用）→ 不触发任何契约错误（P1-2 语义：None≠""）。"""
-    assert check_rendered_path_contract(None, "icons_not_rendered", False, False) == []
+    assert check_rendered_path_contract(None, "icons_not_rendered", False) == []
 
 
 def test_det_empty_path_rejected():
     """renderedPath 为空串 → 报格式非法（P1-2：空路径不得绕过校验，不得视为可渲染）。"""
-    errs = check_rendered_path_contract("", None, True, True)
+    errs = check_rendered_path_contract("", None, True)
     assert any("格式非法" in e for e in errs)
-    errs2 = check_rendered_path_contract("", "icons_not_rendered", False, False)
+    errs2 = check_rendered_path_contract("", "icons_not_rendered", False)
     assert any("格式非法" in e for e in errs2)
     assert any("互斥" in e for e in errs2)
 

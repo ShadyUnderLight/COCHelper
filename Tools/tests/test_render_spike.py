@@ -354,7 +354,6 @@ def test_verdict_success_writes_png(tmp_path: Path):
     png = tmp_path / v["png"]["path"]
     assert png.is_file()
     assert png.stat().st_size == v["png"]["size"]
-    assert v["png"]["sha256"]
     assert decode_png(png.read_bytes()) == (2, 2, 6, RGBA_2X2)
     assert v["evidence"]["shapeFound"] is True
     assert v["evidence"]["textureIndexes"] == [0]
@@ -479,7 +478,7 @@ def test_verdict_schema_field_completeness(tmp_path: Path):
         assert isinstance(v["evidence"], dict)
         assert v["status"] in {"success", "blocked", "missing"}
         assert v["blocker"] is None or set(v["blocker"]) == {"reason", "details"}
-        assert v["png"] is None or set(v["png"]) == {"path", "size", "sha256"}
+        assert v["png"] is None or set(v["png"]) == {"path", "size"}
 
 
 def test_texture_limit_caps_resolutions(tmp_path: Path):
@@ -636,7 +635,6 @@ def test_main_flow_writes_report(tmp_path: Path):
     png_file = out / succ["png"]["path"]
     assert png_file.is_file()
     assert png_file.stat().st_size == succ["png"]["size"]
-    assert succ["png"]["sha256"]
     assert succ["blocker"] is None
     # 2) 建筑等级外观 → 外部 sctx 阻塞
     fire = by_key[("sc/buildings.sc", "fireplace_lvl1")]

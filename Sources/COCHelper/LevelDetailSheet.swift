@@ -223,15 +223,11 @@ struct LevelDetailSheet: View {
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             // Issue #73 P1-2：费用为静态目录参考值，非玩家实测价格；
-                            // 来源（版本/buildTag/APK 指纹）随 manifest 可追溯。
+                            // 来源（版本/buildTag）随 manifest 可追溯。
                             if let manifest = catalog?.manifest {
                                 Text(manifest.provenanceLabel)
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
-                                Text(manifest.sourceFingerprintLabel)
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .textSelection(.enabled)
                             }
                         }
 

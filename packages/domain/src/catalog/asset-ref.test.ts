@@ -4,7 +4,6 @@ import {
   isCatalogAssetRefNoReference,
   isCatalogAssetRefSemanticallyValid,
   isCatalogAssetRenderable,
-  validateCatalogAssetRefContract,
   validateCatalogItemsAssetRefs,
 } from './asset-ref';
 import type { CatalogAssetRef, CatalogItem } from './types';
@@ -71,20 +70,10 @@ describe('CatalogAssetRef contract', () => {
     ).toBe(false);
   });
 
-  it('R-C：存在但未登记的路径拒绝', () => {
-    const registered = new Set(['icons/ui/x.png']);
+  it('R-C 已撤销：存在但未登记的路径不再拒绝', () => {
     expect(
-      validateCatalogAssetRefContract(
+      isCatalogAssetRefSemanticallyValid(
         ref({ renderedPath: 'icons/ui/y.png', missingReason: null }),
-        registered,
-        () => true,
-      ),
-    ).toBe(false);
-    expect(
-      validateCatalogAssetRefContract(
-        ref({ renderedPath: 'icons/ui/x.png', missingReason: null }),
-        registered,
-        () => true,
       ),
     ).toBe(true);
   });

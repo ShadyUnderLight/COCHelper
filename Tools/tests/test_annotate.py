@@ -1,15 +1,14 @@
 """annotate_display_categories 标注脚本（Issue #75 工作流 C 主路径）。
 
-仓库无 APK → 在既有 catalog.json 上标注（幂等，catalog + manifest 双写）。
+仓库无 APK → 在既有 catalog.json 上标注（幂等，只写 catalog.json；
+E0-03/Issue #303 起不再触碰 manifest.json）。
 """
 
-import hashlib
 import json
 
 import pytest
 
 from annotate_display_categories import annotate_directory
-from game_catalog.catalog import counts_for
 from game_catalog.errors import CatalogError
 from game_catalog.model import Catalog, CatalogItem, CatalogLevel, catalog_to_dict
 
@@ -33,7 +32,7 @@ def _make_dir(tmp_path):
     d.mkdir()
     items = [_item(1000008, "加农炮"), _item(1000010, "城墙"), _item(1000097, "精制台"),
              _item(1000002, "圣水收集器")]
-    catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
+    catalog = Catalog(schemaVersion=3, gameVersion="18.400.13", locale="zh-CN",
                       items=items)
     catalog_bytes = json.dumps(catalog_to_dict(catalog), ensure_ascii=False,
                                indent=2, sort_keys=True).encode("utf-8") + b"\n"
@@ -43,18 +42,8 @@ def _make_dir(tmp_path):
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
-        "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
-        "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
-        "generatedFiles": [
-            {"path": "catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
-             "size": len(catalog_bytes)},
-            {"path": "icons/", "kind": "directory"},
-            {"path": "craft_table_catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-             "size": len(craft_bytes)},
-        ],
-        "counts": counts_for(items),
+        "schemaVersion": 3, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "locale": "zh-CN",
     }))
     return d
 
@@ -70,38 +59,18 @@ def test_annotate_sets_display_category_fields(tmp_path):
     assert by_id[1000002]["displayCategory"] is None
 
 
-def test_annotate_updates_manifest_sha_and_size(tmp_path):
+def test_annotate_does_not_touch_manifest(tmp_path):
+    """E0-03：标注只写 catalog.json，manifest.json 字节不变。"""
     d = _make_dir(tmp_path)
+    man_before = (d / "manifest.json").read_bytes()
     annotate_directory(d)
-    m = json.loads((d / "manifest.json").read_text())
-    entry = next(e for e in m["generatedFiles"] if e["path"] == "catalog.json")
-    actual = "sha256:" + hashlib.sha256((d / "catalog.json").read_bytes()).hexdigest()
-    assert entry["sha256"] == actual
-    assert entry["size"] == (d / "catalog.json").stat().st_size
+    assert (d / "manifest.json").read_bytes() == man_before
 
 
-def test_annotate_manifest_counts_display_categories(tmp_path):
+def test_annotate_reports_distribution(tmp_path):
     d = _make_dir(tmp_path)
-    annotate_directory(d)
-    m = json.loads((d / "manifest.json").read_text())
-    assert m["counts"]["displayCategories"] == {
-        "defense": 1, "walls": 1, "military": 0, "craftTable": 1,
-        "uncategorizedBuildings": 1,
-    }
-    assert m["counts"]["items"] == 4
-
-
-def test_annotate_preserves_other_generated_files_entries(tmp_path):
-    d = _make_dir(tmp_path)
-    m = json.loads((d / "manifest.json").read_text())
-    png = {"path": "icons/buildings/x.png", "sha256": "sha256:" + "b" * 64, "size": 10}
-    m["generatedFiles"].insert(1, png)
-    (d / "manifest.json").write_text(json.dumps(m))
-    (d / "icons" / "buildings").mkdir(parents=True)
-    (d / "icons" / "buildings" / "x.png").write_bytes(b"x" * 10)
-    annotate_directory(d)
-    m2 = json.loads((d / "manifest.json").read_text())
-    assert m2["generatedFiles"][1] == png
+    result = annotate_directory(d)
+    assert result["distribution"] == {"defense": 1, "military": 0, "craftTable": 1}
 
 
 def test_annotate_preserves_instance_counts(tmp_path):

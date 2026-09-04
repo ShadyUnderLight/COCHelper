@@ -1,9 +1,6 @@
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-
-import { resolvePathWithinRoot } from './asset-ref';
 
 import { decodeCatalogManifest, decodeCatalogPayload, decodeJsonFile } from './json-decode';
 import { validateCatalogManifest } from './manifest-validate';
@@ -20,7 +17,6 @@ import {
   EMPTY_SEASONAL_PHASE_TABLE,
   type SeasonalPhaseTable,
 } from './seasonal-phase';
-import type { GeneratedFileIntegrityProbe } from './types';
 
 export type CatalogBundle = {
   readonly version: string;
@@ -62,104 +58,6 @@ export function resolveAccountNameCatalogPath(startDir = process.cwd()): string 
     current = parent;
   }
   return null;
-}
-
-export function createGeneratedFileIntegrityProbe(
-  versionRoot: string,
-): GeneratedFileIntegrityProbe {
-  return {
-    fileExists(relativePath) {
-      const absolute = resolvePathWithinRoot(versionRoot, relativePath);
-      if (absolute === null) {
-        return false;
-      }
-      try {
-        return statSync(absolute).isFile();
-      } catch {
-        return false;
-      }
-    },
-    directoryExists(relativePath) {
-      const absolute = resolvePathWithinRoot(versionRoot, relativePath);
-      if (absolute === null) {
-        return false;
-      }
-      try {
-        return statSync(absolute).isDirectory();
-      } catch {
-        return false;
-      }
-    },
-    fileSize(relativePath) {
-      const absolute = resolvePathWithinRoot(versionRoot, relativePath);
-      if (absolute === null) {
-        return null;
-      }
-      try {
-        const stats = statSync(absolute);
-        return stats.isFile() ? stats.size : null;
-      } catch {
-        return null;
-      }
-    },
-    fileSha256(relativePath) {
-      const absolute = resolvePathWithinRoot(versionRoot, relativePath);
-      if (absolute === null) {
-        return null;
-      }
-      try {
-        const stats = statSync(absolute);
-        if (!stats.isFile()) {
-          return null;
-        }
-        const hex = createHash('sha256').update(readFileSync(absolute)).digest('hex');
-        return `sha256:${hex}`;
-      } catch {
-        return null;
-      }
-    },
-  };
-}
-
-/** @deprecated 使用 createGeneratedFileIntegrityProbe */
-export function createFileCheck(versionRoot: string) {
-  const probe = createGeneratedFileIntegrityProbe(versionRoot);
-  return (relativePath: string, declaredSize: number | null | undefined) => {
-    if (!probe.fileExists(relativePath)) {
-      return false;
-    }
-    if (
-      declaredSize !== null &&
-      declaredSize !== undefined &&
-      probe.fileSize(relativePath) !== declaredSize
-    ) {
-      return false;
-    }
-    return true;
-  };
-}
-
-export function bundledFileExists(
-  versionRoot: string,
-  relativePath: string,
-  declaredSize: number | null,
-): boolean {
-  const absolute = resolvePathWithinRoot(versionRoot, relativePath);
-  if (absolute === null) {
-    return false;
-  }
-  try {
-    const stats = statSync(absolute);
-    if (!stats.isFile()) {
-      return false;
-    }
-    if (declaredSize !== null && declaredSize !== stats.size) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export async function loadCatalogBundle(input: {
@@ -219,12 +117,7 @@ async function loadGameCatalog(versionRoot: string): Promise<GameCatalog | null>
       const decodedManifest = decodeJsonFile(manifestText, decodeCatalogManifest);
       if (
         decodedManifest.gameVersion === payload.gameVersion &&
-        validateCatalogManifest(
-          decodedManifest,
-          payload.items,
-          catalogText,
-          createGeneratedFileIntegrityProbe(versionRoot),
-        )
+        validateCatalogManifest(decodedManifest, payload.items)
       ) {
         manifest = decodedManifest;
       }

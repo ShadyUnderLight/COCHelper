@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// Versioned APK data for the seasonal-defense craft table.
@@ -6,54 +5,17 @@ import Foundation
 /// This catalog is deliberately separate from `GameCatalog`: the account JSON
 /// stores `types` and `modules` as a nested tree, while the normal item catalog
 /// has no direct rows for those IDs.
+///
+/// E0-03/Issue #303：不再做 manifest hash 对账（fail-closed 完整性门已撤销）；
+/// 只保留 schemaVersion / gameVersion 一致性 + 内容解码。
 public struct CraftTableCatalog: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let gameVersion: String
     public let buildTag: String
     public let locale: String
     public let source: String
-    /// Source APK fingerprint from the versioned manifest.  Manually injected
-    /// catalogs may omit provenance and therefore keep this value nil.
-    public let sourceFingerprint: String?
     public let defenses: [CraftTableDefenseSpec]
     public let modules: [CraftTableModuleSpec]
-
-    /// Issue #98 审核 P1-2：craft 目录运行时完整性门禁（fail-closed）。
-    ///
-    /// 对账同版本 manifest.json 中 craft_table_catalog.json 声明的 sha256/size；
-    /// manifest 缺失/解码失败/无该条目/hash 或 size 不匹配 → 不通过。与
-    /// `CatalogManifest.validate` 同机制（CryptoKit SHA256），但 craft 表是
-    /// 独立加载的 bundle 文件、validate.py 不校验其内容，必须在此自证——
-    /// 篡改或过期数据不得静默把季节内容判为 permanent。
-    static func integrityOK(manifestData: Data, craftData: Data) -> Bool {
-        guard let manifest = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData) else {
-            return false
-        }
-        guard Self.validSourceFingerprint(manifest.sourceFingerprint) else {
-            return false
-        }
-        // 复审 P2：与 validator「恰好一个」契约一致——重复条目（Python 侧会
-        // fail）不得在运行时被 first(where:) 放行。
-        let craftEntries = manifest.generatedFiles.filter { $0.path == "craft_table_catalog.json" }
-        guard craftEntries.count == 1,
-              let entry = craftEntries.first,
-              let declared = entry.sha256, declared.hasPrefix("sha256:"),
-              let declaredSize = entry.size,
-              declaredSize == craftData.count else {
-            return false
-        }
-        let actual = SHA256.hash(data: craftData)
-            .map { String(format: "%02x", $0) }.joined()
-        return declared.dropFirst("sha256:".count) == actual
-    }
-
-    private static func validSourceFingerprint(_ value: String) -> Bool {
-        let prefix = "sha256:"
-        let hex = value.dropFirst(prefix.count)
-        return value.hasPrefix(prefix)
-            && hex.count == 64
-            && hex.allSatisfy(\.isHexDigit)
-    }
 
     public init(
         schemaVersion: Int = 1,
@@ -62,15 +24,13 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
         locale: String = "zh-CN",
         source: String = "",
         defenses: [CraftTableDefenseSpec],
-        modules: [CraftTableModuleSpec],
-        sourceFingerprint: String? = nil
+        modules: [CraftTableModuleSpec]
     ) {
         self.schemaVersion = schemaVersion
         self.gameVersion = gameVersion
         self.buildTag = buildTag
         self.locale = locale
         self.source = source
-        self.sourceFingerprint = sourceFingerprint
         self.defenses = defenses
         self.modules = modules
     }
@@ -99,10 +59,6 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
 
     /// Loads only the requested version. A missing file, malformed file, or
     /// version mismatch is a normal unavailable-data state for the UI.
-    ///
-    /// Issue #98 审核 P1-2：manifest 完整性对账（fail-closed）——manifest 缺失/
-    /// 损坏/无 craft 条目/hash 或 size 失配一律返回 nil（目录不可用），不允许
-    /// 未经验证的 craft 数据进入投影（防篡改数据把季节内容判为 permanent）。
     public static func loadBundled(
         version: String = GameCatalog.defaultBundledVersion
     ) -> CraftTableCatalog? {
@@ -111,8 +67,11 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
               let manifest = try? JSONDecoder().decode(CatalogManifest.self, from: resources.manifest),
               catalog.schemaVersion == 1,
               catalog.gameVersion == version,
+              manifest.schemaVersion == 3,
               manifest.gameVersion == catalog.gameVersion,
-              integrityOK(manifestData: resources.manifest, craftData: resources.craft)
+              // E0-03/Issue #303：hash 绑定撤销后，buildTag 等值是防不同版本
+              // 数据静默套用的业务门（同 gameVersion 不同 buildTag 必须拒绝）。
+              manifest.buildTag == catalog.buildTag
         else {
             return nil
         }
@@ -123,8 +82,7 @@ public struct CraftTableCatalog: Codable, Hashable, Sendable {
             locale: catalog.locale,
             source: catalog.source,
             defenses: catalog.defenses,
-            modules: catalog.modules,
-            sourceFingerprint: manifest.sourceFingerprint
+            modules: catalog.modules
         )
     }
 

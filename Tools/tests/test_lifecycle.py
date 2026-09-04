@@ -5,7 +5,6 @@
 - apply_lifecycle 写入 / fail loud；validate 闭枚举 + 声明一致性。
 """
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -444,28 +443,17 @@ def _town_hall(lifecycle=None):
 def _valid_dir(tmp_path, item) -> Path:
     d = tmp_path / "cat"
     d.mkdir()
-    catalog = Catalog(schemaVersion=2, gameVersion="18.400.13", locale="zh-CN",
+    catalog = Catalog(schemaVersion=3, gameVersion="18.400.13", locale="zh-CN",
                       items=[item])
     catalog_bytes = json.dumps(catalog_to_dict(catalog),
                                ensure_ascii=False).encode("utf-8")
     (d / "catalog.json").write_bytes(catalog_bytes)
     (d / "icons").mkdir()
-    # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     (d / "manifest.json").write_text(json.dumps({
-        "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
-        "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
-        "generatedFiles": [
-            {"path": "catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(catalog_bytes).hexdigest(),
-             "size": len(catalog_bytes)},
-            {"path": "icons/", "kind": "directory"},
-            {"path": "craft_table_catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(craft_bytes).hexdigest(),
-             "size": len(craft_bytes)},
-        ],
-        "counts": {"items": 1, "levels": 1, "missingTime": 0, "missingIcons": 0},
+        "schemaVersion": 3, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "locale": "zh-CN",
     }))
     return d
 
@@ -509,41 +497,38 @@ def test_validate_rejects_undeclared_item(tmp_path):
     assert any("lifecycle 声明缺失" in e and "units:9999999" in e for e in errors)
 
 
-def _craft_payload() -> tuple[bytes, dict]:
-    """最小 craft 目录负载（defenses/modules 空数组即可通过 validate 文件级校验）。"""
-    payload = {"schemaVersion": 1, "gameVersion": "18.400.13", "buildTag": "18_400_7",
-               "locale": "zh-CN", "source": "t", "defenses": [], "modules": []}
-    data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
-    return data, payload
-
-
-def _add_craft_manifest_entry(d: Path, craft_bytes: bytes, declared_sha256: str) -> None:
-    """把 craft 条目写入目录 manifest（declare 值可篡改以模拟 tampered）。"""
-    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    m["generatedFiles"].append({"path": "craft_table_catalog.json",
-                                "sha256": declared_sha256, "size": len(craft_bytes)})
-    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
-
-
 def test_validate_accepts_matching_craft_entry(tmp_path):
-    """manifest 含 craft_table_catalog.json 条目且 hash/size 一致 → validate 通过
-    （审核 P1-2 正向：craft 目录运行时完整性门禁的数据侧契约）。"""
+    """craft 文件存在且结构合法 → validate 通过（E0-03 起不再要求 manifest
+    登记 craft 条目、无 hash 对账）。"""
     d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
     assert validate_catalog(d) == []
 
 
+def test_validate_missing_craft_file_ok(tmp_path):
+    """craft 文件缺失 → 不报错（独立生成器产物，允许后补）。"""
+    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
+    (d / "craft_table_catalog.json").unlink()
+    assert validate_catalog(d) == []
+
+
+def test_validate_rejects_craft_build_tag_mismatch(tmp_path):
+    """E0-03/Issue #303：同 gameVersion 不同 buildTag → 报错（hash 绑定撤销后，
+    buildTag 等值是防不同版本数据静默套用的业务门）。"""
+    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
+    raw = json.loads((d / "craft_table_catalog.json").read_text(encoding="utf-8"))
+    raw["buildTag"] = "19_0_0"
+    (d / "craft_table_catalog.json").write_text(
+        json.dumps(raw, ensure_ascii=False) + "\n", encoding="utf-8")
+    errors = validate_catalog(d)
+    assert any("buildTag" in e and "不一致" in e for e in errors)
+
+
 def test_validate_rejects_structurally_invalid_craft(tmp_path):
-    """复审 P1 负例：craft 文件 hash/size 一致但缺必填字段（Swift Codable 解码
-    失败 → 运行时精制台不可用）→ validator 必须 fail loud。"""
+    """复审 P1 负例：craft 文件缺必填字段（Swift Codable 解码失败 → 运行时
+    精制台不可用）→ validator 必须 fail loud。"""
     d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
     invalid = b'{"schemaVersion":1,"gameVersion":"18.400.13","defenses":[],"modules":[]}\n'  # 缺 buildTag/locale/source
     (d / "craft_table_catalog.json").write_bytes(invalid)
-    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    for e in m["generatedFiles"]:
-        if e.get("path") == "craft_table_catalog.json":
-            e["sha256"] = "sha256:" + hashlib.sha256(invalid).hexdigest()
-            e["size"] = len(invalid)
-    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
     errors = validate_catalog(d)
     assert any("craft_table_catalog.json 缺少必填字段" in e and "buildTag" in e for e in errors)
 
@@ -590,83 +575,14 @@ def test_validate_rejects_craft_scalar_type_mismatch(tmp_path, mutate):
         raw["modules"][index][field] = value
     craft_bytes = json.dumps(raw, ensure_ascii=False).encode("utf-8") + b"\n"
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
-    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    for e in m["generatedFiles"]:
-        if e.get("path") == "craft_table_catalog.json":
-            e["sha256"] = "sha256:" + hashlib.sha256(craft_bytes).hexdigest()
-            e["size"] = len(craft_bytes)
-    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
     errors = validate_catalog(d)
     assert errors, f"craft {list_key}[{index}].{field}={value!r} 类型错未被拦截"
     assert any("craft_table_catalog.json" in e for e in errors)
 
 
-def test_validate_rejects_missing_craft_entry(tmp_path):
-    """manifest 缺 craft_table_catalog.json 条目 → 报错（复审 P1 负例：validator
-    不得放行"生成成功但运行时不可用"的三方不一致；缺条目时 App fail-closed
-    精制台不可用，必须 fail loud 前置）。"""
-    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
-    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    m["generatedFiles"] = [e for e in m["generatedFiles"]
-                           if e.get("path") != "craft_table_catalog.json"]
-    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
-    errors = validate_catalog(d)
-    assert any("必须恰好包含一个 craft_table_catalog.json 条目" in e for e in errors)
-
-
-def test_validate_rejects_tampered_craft_entry(tmp_path):
-    """craft_table_catalog.json 被篡改（hash 失配）→ validate 报哈希不一致
-    （审核 P1-2 负例：篡改数据不得静默进入投影）。"""
-    d = _valid_dir(tmp_path, _town_hall(lifecycle="permanent"))
-    craft_bytes, _ = _craft_payload()
-    (d / "craft_table_catalog.json").write_bytes(craft_bytes)
-    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    for e in m["generatedFiles"]:
-        if e.get("path") == "craft_table_catalog.json":
-            e["sha256"] = "sha256:" + "0" * 64
-    (d / "manifest.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
-    errors = validate_catalog(d)
-    assert any("craft_table_catalog.json" in e and "哈希不一致" in e for e in errors)
-
-
-def test_update_manifest_craft_entry_idempotent(tmp_path):
-    """生成器写盘后登记 craft 条目：幂等（两次调用只有一条）且 hash/size 正确；
-    manifest 缺失/损坏 → CatalogError（复审 P1：登记失败必须 fail loud，
-    主流程以非零退出且不留下成功状态产物）。"""
-    import hashlib as _hashlib
-
-    from game_catalog.errors import CatalogError
-    from generate_craft_table_catalog import _update_manifest_craft_entry
-
-    d = tmp_path / "cat"
-    d.mkdir()
-    craft_bytes, _ = _craft_payload()
-    # 无 manifest → CatalogError（不再静默跳过）
-    with pytest.raises(CatalogError, match="manifest.json 不存在"):
-        _update_manifest_craft_entry(d, craft_bytes)
-    # 有 manifest → 追加 + 幂等
-    (d / "manifest.json").write_text(json.dumps(
-        {"schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
-         "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
-         "generatedFiles": [], "counts": {"items": 0, "levels": 0}},
-        ensure_ascii=False), encoding="utf-8")
-    _update_manifest_craft_entry(d, craft_bytes)
-    _update_manifest_craft_entry(d, craft_bytes)  # 幂等
-    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    entries = [e for e in m["generatedFiles"] if e.get("path") == "craft_table_catalog.json"]
-    assert len(entries) == 1
-    assert entries[0]["sha256"] == "sha256:" + _hashlib.sha256(craft_bytes).hexdigest()
-    assert entries[0]["size"] == len(craft_bytes)
-    # 损坏 manifest → CatalogError
-    (d / "manifest.json").write_text("{broken", encoding="utf-8")
-    with pytest.raises(CatalogError, match="manifest.json 损坏"):
-        _update_manifest_craft_entry(d, craft_bytes)
-
-
-def test_generate_main_fails_loud_without_manifest(tmp_path):
-    """复审 P1 负例：craft 生成器在 manifest 缺失时非零退出且不写 craft 文件
-    （不留下"生成成功但运行时不可用"的产物）。合成 APK 含两张 seasonal 表 +
-    localization，确保 build_catalog 成功、失败精确落在 manifest 登记分支。"""
+def test_generate_main_succeeds_without_manifest(tmp_path):
+    """E0-03：craft 生成器不再依赖 manifest——无 manifest 目录仍可生成
+    craft 文件（rc=0）。合成 APK 含两张 seasonal 表 + localization。"""
     import lzma
     import zipfile
 
@@ -687,8 +603,8 @@ def test_generate_main_fails_loud_without_manifest(tmp_path):
     out = tmp_path / "cat" / "craft_table_catalog.json"
     rc = g.main(["--apk", str(apk), "--game-version", "18.400.13",
                  "--output", str(out)])
-    assert rc == 1
-    assert not out.exists(), "登记失败时不得留下 craft 产物"
+    assert rc == 0
+    assert out.is_file()
 
 
 # ---- Issue #113：permanent 声明 ∩ 官方阶段表 → blocking 冲突 ----

@@ -728,8 +728,7 @@ final class SnapshotHistoryCoreTests: XCTestCase {
             XCTAssertEqual(item.display.category, "buildings")
             XCTAssertEqual(item.display.displayCategory, "craftTable")
             XCTAssertEqual(item.display.catalogVersion, craftTableCatalog.gameVersion)
-            XCTAssertEqual(item.display.catalogFingerprint, craftTableCatalog.sourceFingerprint)
-            XCTAssertNotNil(item.display.catalogFingerprint)
+            XCTAssertNil(item.display.catalogFingerprint)
         }
         XCTAssertEqual(type.display.displayName, "火热蜡烛")
         XCTAssertEqual(module.display.displayName, "火热蜡烛生命值模组")

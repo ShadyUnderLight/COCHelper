@@ -439,12 +439,13 @@ public enum SnapshotHistoryCanonicalizer {
         // records may have their own catalog entry; using rootDataID here
         // would make every child inherit the root building's label.
         let item = catalog.item(section: identity.rawSection, dataID: identity.dataID)
+        // E0-03/Issue #303：不再回填 catalog source fingerprint；display binding
+        // 的 catalogFingerprint 字段存储删除归 #304（R1）。
         return SnapshotDisplayBinding(
             displayName: item?.name,
             category: item?.category,
             displayCategory: item?.displayCategory,
-            catalogVersion: catalog.gameVersion,
-            catalogFingerprint: catalog.manifest?.sourceFingerprint
+            catalogVersion: catalog.gameVersion
         )
     }
 
@@ -473,8 +474,7 @@ public enum SnapshotHistoryCanonicalizer {
             displayName: name,
             category: rootItem?.category ?? TrackerCategory.from(section: identity.rawSection)?.rawValue,
             displayCategory: TrackerDisplayCategory.craftTable.rawValue,
-            catalogVersion: craftTableCatalog.gameVersion,
-            catalogFingerprint: craftTableCatalog.sourceFingerprint
+            catalogVersion: craftTableCatalog.gameVersion
         )
     }
 

@@ -37,11 +37,7 @@ export function createGameCatalog(input: {
     if (instanceCounts === null || Object.keys(instanceCounts).length === 0) {
       return false;
     }
-    if (input.manifest === null || input.manifest === undefined) {
-      return false;
-    }
-    const catalogEntry = input.manifest.generatedFiles.find((file) => file.path === 'catalog.json');
-    return catalogEntry?.sha256?.startsWith('sha256:') === true;
+    return true;
   }
 
   return {

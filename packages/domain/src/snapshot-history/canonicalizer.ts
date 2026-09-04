@@ -512,7 +512,6 @@ function displayBinding(
     category: item.category ?? undefined,
     displayCategory: item.displayCategory ?? undefined,
     catalogVersion: catalog.gameVersion,
-    catalogFingerprint: catalog.manifest?.sourceFingerprint ?? undefined,
   };
 }
 
@@ -549,7 +548,6 @@ function craftTableDisplayBinding(
     category: rootItem?.category,
     displayCategory: 'craftTable',
     catalogVersion: craftTableCatalog.gameVersion,
-    catalogFingerprint: craftTableCatalog.sourceFingerprint ?? undefined,
   };
 }
 

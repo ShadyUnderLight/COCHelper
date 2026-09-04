@@ -117,6 +117,8 @@ export type ManualItemState = {
 export type ManualCatalogProvenance = {
   readonly gameVersion: string;
   readonly buildTag: string | null;
+  // E0-03/#303 注记：sourceFingerprint 字段保留（#304 删除 + schema v2 硬切换）。
+  // Catalog 侧已停止生产（恒为 null），旧 persisted 数据原样保留，不得静默改形。
   readonly sourceFingerprint: string | null;
   readonly manifestSchemaVersion: number | null;
 };

@@ -12,7 +12,7 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         gameVersion: "18.400.13",
         buildTag: "test",
         sourceFingerprint: "sha256:catalog",
-        manifestSchemaVersion: 1
+        manifestSchemaVersion: 3
     )
 
     private func distribution(_ values: [(Int, Int64)]) throws -> ManualLevelDistribution {
@@ -97,7 +97,7 @@ final class EffectiveVillageProjectionTests: XCTestCase {
         cannonLifecycle: CatalogLifecycle? = .permanent,
         cannonDuration: Int64? = 90,
         cannonMissingReason: String? = nil,
-        sourceFingerprint: String = "sha256:catalog",
+        buildTag: String = "test",
         instanceCounts: [String: [Int]]? = nil
     ) -> GameCatalog {
         GameCatalog(
@@ -153,32 +153,10 @@ final class EffectiveVillageProjectionTests: XCTestCase {
                 ),
             ],
             manifest: CatalogManifest(
-                schemaVersion: 1,
+                schemaVersion: 3,
                 gameVersion: "18.400.13",
-                buildTag: "test",
-                locale: "zh-CN",
-                sourceFingerprint: sourceFingerprint,
-                generatedFiles: [
-                    CatalogGeneratedFile(
-                        path: "catalog.json",
-                        sha256: "sha256:catalog",
-                        size: nil,
-                        kind: nil,
-                        entries: nil
-                    ),
-                ],
-                counts: CatalogCounts(
-                    items: 3,
-                    levels: 35,
-                    missingIcons: nil,
-                    missingTime: nil,
-                    timed: nil,
-                    instant: nil,
-                    notApplicable: nil,
-                    initialLevel: nil,
-                    sourceMissing: nil,
-                    parseFailed: nil
-                )
+                buildTag: buildTag,
+                locale: "zh-CN"
             ),
             instanceCounts: instanceCounts
         )
@@ -1041,8 +1019,8 @@ final class EffectiveVillageProjectionTests: XCTestCase {
 
         let cases: [(String, GameCatalog, String)] = [
             (
-                "fingerprint",
-                catalog(sourceFingerprint: "sha256:other"),
+                "buildTag",
+                catalog(buildTag: "other"),
                 "manifest"
             ),
             (

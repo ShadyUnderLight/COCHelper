@@ -1,5 +1,3 @@
-import { resolve, sep } from 'node:path';
-
 import type { CatalogAssetRef, CatalogItem } from './types';
 import { renderedPathFormatOk } from './asset-path';
 
@@ -26,52 +24,10 @@ export function isCatalogAssetRefSemanticallyValid(ref: CatalogAssetRef): boolea
   return renderedPathFormatOk(ref.renderedPath);
 }
 
-/** 完整 renderedPath 契约：R-A/R-B/R-D + 文件存在 + manifest 登记（R-C）。 */
-export function validateCatalogAssetRefContract(
-  ref: CatalogAssetRef,
-  registeredPaths: ReadonlySet<string>,
-  fileExists: (relativePath: string) => boolean,
-): boolean {
-  if (ref.renderedPath === null) {
-    return true;
-  }
-  if (ref.renderedPath === '') {
-    return false;
-  }
-  if (ref.missingReason !== null) {
-    return false;
-  }
-  if (!renderedPathFormatOk(ref.renderedPath)) {
-    return false;
-  }
-  if (!fileExists(ref.renderedPath)) {
-    return false;
-  }
-  return registeredPaths.has(ref.renderedPath);
-}
-
 export function validateCatalogItemsAssetRefs(items: readonly CatalogItem[]): boolean {
   for (const item of items) {
     for (const ref of collectItemAssetRefs(item)) {
       if (!isCatalogAssetRefSemanticallyValid(ref)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-export function validateCatalogItemsRenderableAssetRefs(
-  items: readonly CatalogItem[],
-  registeredPaths: ReadonlySet<string>,
-  fileExists: (relativePath: string) => boolean,
-): boolean {
-  for (const item of items) {
-    for (const ref of collectItemAssetRefs(item)) {
-      if (ref.renderedPath === null) {
-        continue;
-      }
-      if (!validateCatalogAssetRefContract(ref, registeredPaths, fileExists)) {
         return false;
       }
     }
@@ -133,33 +89,4 @@ function collectItemAssetRefs(item: {
     }
   }
   return refs;
-}
-
-export function registeredGeneratedFilePaths(manifest: {
-  readonly generatedFiles: readonly { readonly path: string; readonly kind?: string }[];
-}): ReadonlySet<string> {
-  return new Set(
-    manifest.generatedFiles
-      .filter((entry) => entry.kind !== 'directory')
-      .map((entry) => entry.path),
-  );
-}
-
-/** bundled root 内解析相对路径；拒绝 .. / 绝对路径 / 反斜杠 / 越界。 */
-export function resolvePathWithinRoot(root: string, relativePath: string): string | null {
-  if (
-    relativePath === '' ||
-    relativePath.includes('..') ||
-    relativePath.startsWith('/') ||
-    relativePath.includes('\\')
-  ) {
-    return null;
-  }
-  const resolvedRoot = resolve(root);
-  const resolved = resolve(resolvedRoot, relativePath);
-  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : resolvedRoot + sep;
-  if (resolved !== resolvedRoot && !resolved.startsWith(prefix)) {
-    return null;
-  }
-  return resolved;
 }

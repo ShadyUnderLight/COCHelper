@@ -2,26 +2,12 @@ import { parseCanonicalizerInt64, parseJson, type CanonicalJsonValue } from '@co
 
 import type {
   CatalogAssetRef,
-  CatalogCounts,
-  CatalogGeneratedFile,
   CatalogItem,
   CatalogLevel,
   CatalogLifecycle,
   CatalogManifest,
   CatalogUpgradeCost,
 } from './types';
-
-function requireField(
-  fields: Readonly<Record<string, CanonicalJsonValue>>,
-  key: string,
-  label: string,
-): CanonicalJsonValue {
-  const value = fields[key];
-  if (value === undefined) {
-    throw new TypeError(`${label}.${key} 缺失。`);
-  }
-  return value;
-}
 
 function requireObject(
   value: CanonicalJsonValue,
@@ -179,47 +165,13 @@ export function decodeCatalogItem(value: CanonicalJsonValue): CatalogItem {
   };
 }
 
-function decodeGeneratedFile(value: CanonicalJsonValue): CatalogGeneratedFile {
-  const object = requireObject(value, 'CatalogGeneratedFile');
-  return {
-    path: requireString(object.fields.path, 'path'),
-    sha256: optionalString(object.fields.sha256) ?? undefined,
-    size: optionalInt(object.fields.size) ?? undefined,
-    kind: optionalString(object.fields.kind) ?? undefined,
-    entries: optionalInt(object.fields.entries) ?? undefined,
-  };
-}
-
-function decodeCounts(value: CanonicalJsonValue): CatalogCounts {
-  const object = requireObject(value, 'CatalogCounts');
-  return {
-    items: requireInt(object.fields.items, 'items'),
-    levels: requireInt(object.fields.levels, 'levels'),
-    missingIcons: optionalInt(object.fields.missingIcons) ?? undefined,
-    missingTime: optionalInt(object.fields.missingTime) ?? undefined,
-    timed: optionalInt(object.fields.timed) ?? undefined,
-    instant: optionalInt(object.fields.instant) ?? undefined,
-    notApplicable: optionalInt(object.fields.notApplicable) ?? undefined,
-    initialLevel: optionalInt(object.fields.initialLevel) ?? undefined,
-    sourceMissing: optionalInt(object.fields.sourceMissing) ?? undefined,
-    parseFailed: optionalInt(object.fields.parseFailed) ?? undefined,
-  };
-}
-
 export function decodeCatalogManifest(value: CanonicalJsonValue): CatalogManifest {
   const object = requireObject(value, 'CatalogManifest');
-  const generatedFilesRaw = object.fields.generatedFiles;
-  if (generatedFilesRaw === undefined || generatedFilesRaw.kind !== 'array') {
-    throw new TypeError('generatedFiles 必须是 array。');
-  }
   return {
     schemaVersion: requireInt(object.fields.schemaVersion, 'schemaVersion'),
     gameVersion: requireString(object.fields.gameVersion, 'gameVersion'),
     buildTag: requireString(object.fields.buildTag, 'buildTag'),
     locale: requireString(object.fields.locale, 'locale'),
-    sourceFingerprint: requireString(object.fields.sourceFingerprint, 'sourceFingerprint'),
-    generatedFiles: generatedFilesRaw.items.map(decodeGeneratedFile),
-    counts: decodeCounts(requireField(object.fields, 'counts', 'CatalogManifest')),
   };
 }
 

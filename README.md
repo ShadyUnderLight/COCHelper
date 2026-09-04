@@ -145,8 +145,8 @@ python3 Tools/render_generator.py --apk <apk> --catalog <dir>   # 全量渲染 c
 **Issue #25 全量渲染完成**：`render_generator.py` 默认模式收集 catalog 全部
 icon/levelVisual 引用（item 级 + level 级，R2.4 去重，1269 个唯一键）并渲染回写
 `renderedPath`；18.400.13 目录当前含 **1246 张 PNG**（成功 1246 / 失败 23：
-export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PNG），
-`manifest.json` `generatedFiles` 登记全部 path/size/sha256。4 个固定样本
+export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PNG）。
+4 个固定样本
 （`icons/ui/icon_unit_barbarian.png`、`icons/ui/icon_spell_rage.png`、
 `icons/buildings/fireplace_lvl1.png`、`icons/buildings/blacksmith_lvl1.png`）作为
 回归基线仍在样本集中。渲染模块依赖例外同 spike：`sc2.py` 的 zstd body 解压需
@@ -173,8 +173,10 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
   `capital_spells` section 和 `capitalBuildings`/`capitalTraps`/`capitalTroops`/`capitalSpells`
   category，`base` 为 null + `capital_has_no_base`。**当前参考实现的 `TrackerCategory` 尚无这些
   rawValue**（`from(section:)` 对 `capital_*` 返回 nil）——这是 Electron 迁移时的消费端扩展点。
-- **校验器**：`validate_game_catalog.py` 除结构/语义不变量外，还重算 `generatedFiles` 中
-  catalog.json 的 sha256/size 并检查 `icons/` 目录存在（篡改检出）。
+- **校验器**：`validate_game_catalog.py` 只做版本/结构/语义业务校验
+  （E0-03/Issue #303 起不再重算 hash/size、不检查 manifest 登记）；
+  `manifest.json` 精简为版本/构建元数据四字段
+ （schemaVersion/gameVersion/buildTag/locale）。
 - **限时阶段表**：`seasonal_phases.json` 是独立的人工维护增强数据，不从 APK 名称推断日期。
   参考实现使用 Cocoa reference date（2001-01-01 00:00:00 UTC 起秒数）；
   官方仅给出日期而未给出时刻时，按 UTC 日边界编码，公告末日按包含语义转成次日 00:00 的

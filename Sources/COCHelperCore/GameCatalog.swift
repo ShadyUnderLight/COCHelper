@@ -1,142 +1,30 @@
-import CryptoKit
 import Foundation
 
 // MARK: - Manifest
 
-public struct CatalogCounts: Codable, Hashable, Sendable {
-    public let items: Int
-    public let levels: Int
-    public let missingIcons: Int?
-    public let missingTime: Int?
-    /// Issue #74b：时长语义拆分（可选字段，旧 manifest 缺键 → nil 向后兼容；
-    /// 语义与 Python classify_duration 同桶）。不变量：
-    /// timed + instant + missingTime == levels；缺失类四桶之和 == missingTime
-    ///（有效目录由 validate 的 nil⟺reason 互斥保证 unknown == 0 时成立）。
-    public let timed: Int?
-    public let instant: Int?
-    public let notApplicable: Int?
-    public let initialLevel: Int?
-    public let sourceMissing: Int?
-    public let parseFailed: Int?
-}
-
-public struct CatalogGeneratedFile: Codable, Hashable, Sendable {
-    public let path: String
-    public let sha256: String?
-    public let size: Int?
-    public let kind: String?
-    public let entries: Int?
-}
-
-/// 版本化静态目录 manifest 模型。
+/// 版本化静态目录 manifest 模型（E0-03/Issue #303 新契约 CatalogManifestV3）。
 ///
-/// `loadBundled()` 已读取同目录 manifest（Issue #74a），经 `GameCatalog.manifest`
-/// 暴露 buildTag/sourceFingerprint/counts；缺失或解码失败时目录仍加载、
-/// manifest 为 nil（增强信息，不阻塞）。
+/// 只保留实际消费的版本/构建元数据四字段；sourceFingerprint /
+/// generatedFiles / counts 整体删除。旧 schemaVersion 1/2 按 wire-contract
+/// §WA-7.1 标记不可用（loadBundled 拒绝，需重新生成）。
+///
+/// `loadBundled()` 已读取同目录 manifest，经 `GameCatalog.manifest`
+/// 暴露 buildTag；缺失或解码失败时目录仍加载、manifest 为 nil（增强信息，
+/// 不阻塞）。
 public struct CatalogManifest: Codable, Hashable, Sendable {
     public let schemaVersion: Int
     public let gameVersion: String
     public let buildTag: String
     public let locale: String
-    public let sourceFingerprint: String
-    public let generatedFiles: [CatalogGeneratedFile]
-    public let counts: CatalogCounts
-
-    /// Issue #74（可信度验收）+ Issue #73 交叉审核 P1：运行时完整性校验。
-    ///
-    /// 校验：① counts 与目录内容重算一致（items/levels 必查；missingTime/
-    /// timed/instant/缺失类四桶等拆分字段存在才查——旧 manifest 缺键跳过）；
-    /// ② `generatedFiles` 中 catalog.json 声明的 sha256 与真实文件一致
-    ///（声明缺失时跳过，向后兼容）；③ schemaVersion 在支持范围（1...2，
-    /// 未来版本扩展时在此收紧）；④ sourceFingerprint 格式合法（sha256: 前缀
-    /// + 64 hex）；⑤ `fileCheck` 注入时校验 generatedFiles 全部条目文件存在
-    /// 且 size 匹配、以及目录引用的全部图标（renderedPath）文件存在。
-    /// 返回 false = 漂移/篡改，调用方应 fail-closed（manifest 视为无效，
-    /// 不进入「已验证」状态）。
-    /// 不校验 icons 哈希（展示资源，不影响统计可信度，size/存在性已由 ⑤
-    /// 覆盖）与 sourceFingerprint 内容（APK hash，运行时无 APK 可比）。
-    /// fileCheck 保持注入式（纯函数可测）：调用方 `loadBundled` 提供基于
-    /// Bundle 的实现。
-    public func validate(
-        against items: [CatalogItem],
-        catalogData: Data,
-        fileCheck: ((String, Int?) -> Bool)? = nil
-    ) -> Bool {
-        // ③ schemaVersion 支持范围（fail-closed：未知 schema 不进入已验证态）
-        guard (1...2).contains(schemaVersion) else { return false }
-        // ④ sourceFingerprint 格式：sha256: + 64 hex（生成器恒写该格式）
-        let fp = sourceFingerprint
-        guard fp.hasPrefix("sha256:"),
-              fp.dropFirst("sha256:".count).count == 64,
-              fp.dropFirst("sha256:".count).allSatisfy({ $0.isHexDigit }) else {
-            return false
-        }
-        let levels = items.flatMap(\.levels)
-        guard counts.items == items.count,
-              counts.levels == levels.count else { return false }
-        if let missingTime = counts.missingTime,
-           missingTime != levels.filter({ $0.durationSeconds == nil }).count {
-            return false
-        }
-        // 拆分字段（存在才校验；映射走 CatalogDurationState.state 单一映射点，
-        // 与 Python classify_duration 同语义）
-        if let timed = counts.timed,
-           timed != levels.filter({ ($0.durationSeconds ?? 0) > 0 }).count { return false }
-        if let instant = counts.instant,
-           instant != levels.filter({ $0.durationSeconds == 0 }).count { return false }
-        if let notApplicable = counts.notApplicable,
-           notApplicable != levels.filter({ $0.durationState == .notApplicable }).count { return false }
-        if let initialLevel = counts.initialLevel,
-           initialLevel != levels.filter({ $0.durationState == .initialLevel }).count { return false }
-        if let sourceMissing = counts.sourceMissing,
-           sourceMissing != levels.filter({ $0.durationState == .sourceMissing }).count { return false }
-        if let parseFailed = counts.parseFailed,
-           parseFailed != levels.filter({ $0.durationState == .parseFailed }).count { return false }
-        // catalog.json sha256：声明缺失跳过（向后兼容）；声明存在但格式异常
-        //（无 sha256: 前缀）→ 数据异常 fail-closed（生成器恒写前缀）。
-        if let entry = generatedFiles.first(where: { $0.path == "catalog.json" }),
-           let declared = entry.sha256 {
-            guard declared.hasPrefix("sha256:") else { return false }
-            let actual = SHA256.hash(data: catalogData)
-                .map { String(format: "%02x", $0) }.joined()
-            guard declared.dropFirst("sha256:".count) == actual else { return false }
-        }
-        // ⑤ 文件级完整性：generatedFiles 全部条目（catalog.json 已单独校验
-        // sha256，此处仅查存在性/其它条目 size）+ 目录引用的图标文件存在性。
-        // fileCheck 为 nil（旧调用方/旧 manifest 路径）→ 跳过文件级校验，
-        // 保持向后兼容；loadBundled 恒注入。
-        if let fileCheck {
-            for file in generatedFiles where file.kind != "directory" {
-                guard fileCheck(file.path, file.size) else { return false }
-            }
-            // 目录引用的全部图标：item 级 + 每级（icon / levelVisual），
-            // renderedPath 非 nil 即校验存在性（size 声明缺失 → 只查存在）。
-            let iconRefs = items.flatMap { item -> [CatalogAssetRef?] in
-                [item.icon, item.levelVisual] + item.levels.flatMap { [$0.icon, $0.levelVisual] }
-            }
-            for ref in iconRefs {
-                if let renderedPath = ref?.renderedPath {
-                    guard fileCheck(renderedPath, nil) else { return false }
-                }
-            }
-        }
-        return true
-    }
 }
 
 // MARK: - 来源可信度标注（Issue #73 P1-2）
 
 extension CatalogManifest {
     /// 升级费用来源标注：静态 APK 目录数值为参考值，不是对全体玩家绝对有效。
-    /// UI 详情/诊断展示用（LevelDetailSheet 等），与 Python 生成期口径一致。
+    /// UI 详情/诊断展示用（LevelDetailSheet 等）。
     public var provenanceLabel: String {
         "参考升级费用 · 来源：目录 v\(gameVersion) / buildTag \(buildTag)"
-    }
-
-    /// 来源指纹标注（sourceFingerprint 为 APK sha256，完整展示以便
-    /// 与 manifest.json 对账、跨会话追溯；UI 侧 textSelection 可复制）。
-    public var sourceFingerprintLabel: String {
-        "来源指纹 " + sourceFingerprint
     }
 }
 
@@ -791,8 +679,8 @@ public struct GameCatalog: Sendable {
     public static let defaultBundledVersion = "18.400.13"
 
     public let gameVersion: String
-    /// Issue #74a：同版本 manifest（buildTag/sourceFingerprint/counts 等）；
-    /// 测试注入或 manifest 缺失/损坏时 nil（增强信息，不阻塞目录加载）。
+    /// 同版本 manifest（E0-03/Issue #303 新契约 CatalogManifestV3 四字段）；
+    /// 测试注入或 manifest 缺失/损坏/旧版本时 nil（增强信息，不阻塞目录加载）。
     public let manifest: CatalogManifest?
 
     private let itemsBySection: [String: [CatalogItem]]
@@ -938,11 +826,10 @@ public struct GameCatalog: Sendable {
         else {
             return nil
         }
-        // Issue #74a：manifest 是增强信息——缺失/解码失败不阻塞目录加载（nil）。
-        // 纵深防御：manifest.gameVersion 与目录不一致时视为损坏（validate 在
-        // 生成期已保证一致，此处仅防未来手工替换/版本错配）。
-        // Issue #73 P1：fileCheck 校验 generatedFiles 全量存在性/size 与
-        // 图标文件存在性（Bundle 内真实文件）。
+        // manifest 是增强信息——缺失/解码失败/旧版本不阻塞目录加载（nil）。
+        // 版本门：仅接受 CatalogManifestV3（schemaVersion == 3）；旧 1/2 按
+        // wire-contract §WA-7.1 标记不可用。manifest.gameVersion 与目录不一致
+        // 时视为损坏（生成期已保证一致，此处仅防未来手工替换/版本错配）。
         let manifest: CatalogManifest?
         if let manifestURL = Bundle.module.url(
             forResource: "manifest",
@@ -950,15 +837,8 @@ public struct GameCatalog: Sendable {
             subdirectory: "GameCatalog/" + version
         ), let manifestData = try? Data(contentsOf: manifestURL),
            let decoded = try? JSONDecoder().decode(CatalogManifest.self, from: manifestData),
-           decoded.gameVersion == payload.gameVersion,
-           decoded.validate(
-               against: payload.items,
-               catalogData: data,
-               fileCheck: { relativePath, declaredSize in
-                   Self.bundledFileExists(version: version, relativePath: relativePath,
-                                          declaredSize: declaredSize)
-               }
-           ) {
+           decoded.schemaVersion == 3,
+           decoded.gameVersion == payload.gameVersion {
             manifest = decoded
         } else {
             manifest = nil
@@ -969,30 +849,6 @@ public struct GameCatalog: Sendable {
             manifest: manifest,
             instanceCounts: payload.instanceCounts
         )
-    }
-
-    /// Bundle 内文件存在性 + size 校验（Issue #73 P1：运行时完整性）。
-    ///
-    /// relativePath 形如 "icons/buildings/x.png" 或 "catalog.json"（manifest
-    /// generatedFiles.path / renderedPath 同格式）。文件缺失或 size 与声明
-    /// 不符 → false（fail-closed）。size 声明为 nil（图标引用场景）→ 只查存在。
-    static func bundledFileExists(version: String, relativePath: String,
-                                  declaredSize: Int?) -> Bool {
-        let nsPath = relativePath as NSString
-        let subdirectory = "GameCatalog/" + version + "/" + nsPath.deletingLastPathComponent
-        let last = nsPath.lastPathComponent as NSString
-        guard let url = Bundle.module.url(
-            forResource: last.deletingPathExtension,
-            withExtension: last.pathExtension,
-            subdirectory: subdirectory
-        ) else { return false }
-        guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize else {
-            return false
-        }
-        if let declaredSize, declaredSize != size {
-            return false
-        }
-        return true
     }
 
     /// 主查询：`(section, dataID)` 精确匹配（catalog.section 与快照 section 同源）。
@@ -1022,24 +878,15 @@ public struct GameCatalog: Sendable {
 
     // MARK: - 实例数量宇宙（Issue #70 阶段 2）
 
-    /// 目录是否携带可用宇宙数据：instanceCounts 非 nil 且非空（init 完整性
-    /// 校验通过：长度/非负/键格式/canonical/键存在性/正向覆盖/非全 0）
-    /// **且 manifest 非 nil 且 manifest 显式声明 catalog.json 的 sha256**。
-    /// manifest 是宇宙完整性信任标记（Issue #70 阶段 2 外部评审 P1-1）：
-    /// `loadBundled` 的 manifest sha256/fileCheck 校验保证 catalog.json（含
-    /// instanceCounts）未被手工裁剪/篡改；注入路径显式传 manifest 表示数据
-    /// 已通过生成管线完整性保证。**catalog.json sha256 声明要求**（P1-1 残留
-    /// 修复）：`CatalogManifest.validate` 对 generatedFiles 无 catalog.json
-    /// 条目或 sha256 nil 时跳过比对——条目存在 + sha256 格式合法时
-    /// loadBundled 的 validate 必然执行了比对（manifest 非 nil = 比对通过），
-    /// 否则 partial key set 可带非空 manifest 通过信任门。false = 旧目录 /
-    /// 校验失败 / 无 manifest / 无 sha256 声明，调用方应走「已观测实例」
+    /// 目录是否携带可用宇宙数据：instanceCounts 非 nil 且非空（init 业务结构
+    /// 校验通过：长度/非负/键格式/canonical/键存在性/正向覆盖/非全 0）。
+    /// E0-03/Issue #303：不再要求 manifest 声明 catalog.json sha256——宇宙
+    /// 可用性只由已解码且通过业务结构校验的 instanceCounts 决定。
+    /// false = 旧目录 / 校验失败 / 无宇宙数据，调用方应走「已观测实例」
     /// 语义（无完整分母）。
     public var hasUniverseData: Bool {
         guard let instanceCounts, !instanceCounts.isEmpty else { return false }
-        guard let manifest else { return false }
-        let catalogEntry = manifest.generatedFiles.first { $0.path == "catalog.json" }
-        return catalogEntry?.sha256?.hasPrefix("sha256:") == true
+        return true
     }
 
     /// 宇宙查询：该 dataID 在指定大本营等级的可建造实例数。
@@ -1053,8 +900,7 @@ public struct GameCatalog: Sendable {
 
     /// 宇宙表全部键（section, dataID）——投影层合成差集项用（Issue #70 阶段 2）。
     /// 按 section 升序、同 section 按 dataID 升序（产出顺序确定，测试/UI 可预测）。
-    /// 与 `hasUniverseData` 同一信任门（外部评审 P1-1）：旧目录 / 校验失败 /
-    /// 无 manifest → 空数组（不可信宇宙的键不得暴露为可用数据）。
+    /// 与 `hasUniverseData` 同一业务门：无可用宇宙数据 → 空数组。
     public var universeKeys: [(section: String, dataID: Int64)] {
         guard hasUniverseData else { return [] }
         return (instanceCounts ?? [:]).keys.compactMap { key in
@@ -1066,7 +912,7 @@ public struct GameCatalog: Sendable {
     }
 
     /// 有宇宙数据的 section 集合（Issue #96）：从 instanceCounts 键推导，
-    /// 与 `universeKeys` 同一信任门（旧目录 / 校验失败 / 无 manifest → 空）。
+    /// 与 `universeKeys` 同一业务门（无可用宇宙数据 → 空）。
     /// 覆盖契约输入：投影层用它判定目录对哪些追踪类别建模了实例数量。
     public var universeSections: Set<String> {
         guard hasUniverseData else { return [] }

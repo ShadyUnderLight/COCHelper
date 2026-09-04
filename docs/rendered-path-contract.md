@@ -115,15 +115,19 @@
 `info_icon_time_boosted`。此外，父级 `types` 的 103000011/012/013 由
 `CraftTableTypeIconCatalog` 映射到 APK `sc/buildings.sc` 的
 `inferno_candle_tower_lvl1`、`headhunter_tower_lvl1`、`cake_thrower_lvl1`。
-共六张 PNG 位于 `icons/ui/` 或 `icons/buildings/`，并在 manifest 的
-`generatedFiles` 中登记；`VillageItemState.preferredAssetURLs` 将精制台图标置于
+共六张 PNG 位于 `icons/ui/` 或 `icons/buildings/`；`VillageItemState.preferredAssetURLs` 将精制台图标置于
 普通目录资产候选链之前。
+
+> E0-03/Issue #303：R6.1/R6.2 已撤销——manifest 精简为版本元数据四字段，
+> 不再为 PNG 登记 hash/size，不再维护 counts。孤儿 PNG 清理保留：
+> 事务提交后删除 icons/ 下 catalog 不再引用的 PNG（依据 catalog 实际引用集合，
+> 不依赖 hash 清单）。
 
 | # | 契约规则 | 校验方式 |
 |---|---|---|
-| R6.1 | `generatedFiles` 为每张 PNG 追加条目：`path`（相对版本目录）、`size`、`sha256`（`"sha256:" + 64 hex` 前缀格式，与现有 catalog.json 条目一致）；`icons/` 目录条目保留（`kind: "directory"`，`entries` 可填 PNG 数）。 | validate.py 重算 hash/size 比对 |
-| R6.2 | `counts` 扩展（**已落实，2026-08-05 Issue #30 外部评审 R3**）：`renderedIcons`（渲染成功且落盘的 PNG 数，**必须 == generatedFiles 中 PNG 条目数**，validate 重算断言）与 `blockedIcons`（本次生成器运行的失败样本键数，**快照语义**——validate 只校验存在性/类型/非负，不重算，因失败键数只有生成器知道）；新增字段为 optional（`Int?`，旧 manifest 兼容，不 bump schemaVersion）。**校验方式**：validate.py 重算 `renderedIcons == generatedFiles PNG 条目数`；`blockedIcons` 非 int/负值报错；两者缺失不报错。生成器侧由 `_refresh_manifest_content` 维护（`renderedIcons` 从 catalog 最终 renderedPath 集合推导，`blockedIcons` 由 write_rendered_outputs 从 verdicts 统计）。 | validate.py counts 校验扩展 + `test_validate.py`/`test_render_generator.py` 负例/集成断言 |
-| R6.3 | 既有 `missingIcons` 计数语义不变（`levels[i].icon.renderedPath is None` 计数，validate.py 现状）。 | validate.py 既有重算 |
+| R6.1 | ~~`generatedFiles` 为每张 PNG 追加条目~~（已撤销，E0-03）：PNG 只落盘到 `icons/`，不向 manifest 登记。 | 落盘断言 + `test_render_generator.py` 集成断言 |
+| R6.2 | ~~`counts` 扩展 `renderedIcons`/`blockedIcons`~~（已撤销，E0-03）：失败样本键数等统计不再写入 manifest。 | — |
+| R6.3 | ~~`missingIcons` 计数~~（已撤销，E0-03：counts 整体删除，无 catalog 级缺失图标计数；缺失仍以逐 ref 的 `missingReason` 表达）。 | — |
 
 ---
 
@@ -190,7 +194,7 @@
 | 阻塞 1：MovieClip 引用链 | `sc2.py` 帧解析（Task 1 实证：MovieClipFrameElement = 6 字节 3×u16，instance_index→children_ids[i]→shape 全局 id；单帧为主）；Shape 命令/顶点完整解析（Task 2：12 字节顶点 x/y float + u/v u16/0xFFFF，**实证 icon 为 6-8 顶点多边形非矩形**）；MatrixBank/Matrix2x3（Task 3：24B float32x6，half 未使用） |
 | 阻塞 2：ASTC/KTX/SCTX | `astc.py`（Task 4：**与官方 astcenc 5.7.0 全图逐像素对拍 diff=0**，4x4+6x6，LDR only，HDR→AstcError）；`ktx.py`（Task 5：KTX 1.x + SCTX 布局实证，ASTC 4x4/6x6/8x8 格式映射） |
 | 渲染/编码 | `render.py`（Task 6：bounds 1:1 + 多边形光栅化（edge function + 重心 UV + 双线性采样）+ 确定性 PNG（gAMA 45455、filter 0、zlib 9）） |
-| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Swift Bundle 读取断言（Task 9，380 测试全绿）。**manifest generatedFiles 由 `render_generator.py` 自动刷新**（`refresh_manifest`：重算 counts + generatedFiles 的 catalog.json sha256/size、icons/ 目录条目 entries、PNG 条目追加/去重，事务性落盘；`--no-refresh-manifest` 可关闭；R6.2 已落实——counts 含 `renderedIcons`/`blockedIcons`）。**外部评审 R3（2026-08-05）**：png_relpaths 来源统一为 catalog 最终 renderedPath 集合（去重、icons/ 内），generatedFiles 与实际引用一致；事务提交后清理孤儿 PNG（旧成功→本次失败：PNG 删除 + generatedFiles 条目消失 + catalog 引用置 null），清理失败不阻断（记录 cleaned/cleanupFailed） |
+| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Swift Bundle 读取断言（Task 9）。**E0-03/Issue #303 起**：不再刷新 manifest（精简为版本元数据四字段）；png_relpaths 来源仍为 catalog 最终 renderedPath 集合（去重、icons/ 内），事务提交后清理孤儿 PNG（旧成功→本次失败：PNG 删除 + catalog 引用置 null），清理失败不阻断（记录 cleaned/cleanupFailed） |
 
 **固定样本实测**（sha256 三次生成一致，R4 成立）：
 - `icons/ui/icon_unit_barbarian.png` 166x166（64,039B）、`icons/ui/icon_spell_rage.png` 166x166（79,083B）、`icons/buildings/fireplace_lvl1.png` 75x58（9,146B）、`icons/buildings/blacksmith_lvl1.png` 110x126（26,696B）

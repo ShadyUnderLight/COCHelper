@@ -9,7 +9,7 @@
   SC2——DataStorage(strings) + ExportNames chunk，复用 test_fbs.FbBuilder）
 - 多命令合成（render.composite_shapes）：两张图叠加 → 共享画布 + src-over
 - 真实 APK（COC_APK_PATH + skipif，标记 slow）：4 成功样本 PNG 存在且非空、
-  IHDR 尺寸可解析、sha256 两次一致（R4 确定性）、2 失败样本 missingReason
+  IHDR 尺寸可解析、PNG 字节两次一致（R4 确定性）、2 失败样本 missingReason
   正确、catalog 回写字段正确、失败样本不产生 PNG；火焰喷射器额外覆盖
   嵌套 MovieClip 递归展开
 
@@ -23,7 +23,6 @@
 - icon_unit_does_not_exist / sc/traps.sc town_hall_lvl1 → 失败
 """
 
-import hashlib
 import json
 import os
 import struct
@@ -42,7 +41,6 @@ from render_generator import (
     apply_rendered_paths,
     collect_catalog_refs,
     container_key,
-    refresh_manifest,
     render_samples,
     sample_png_relpath,
     sanitize_export_key,
@@ -50,11 +48,7 @@ from render_generator import (
 )
 from game_catalog.sc2 import Matrix2x3
 from test_validate import (
-    _load_catalog,
-    _load_manifest,
     _valid_dir,
-    _write,
-    _write_with_hash,
 )
 
 APK = Path(os.environ.get("COC_APK_PATH", "/path/to/base.apk"))
@@ -79,7 +73,7 @@ def _ok_verdict(container: str, export: str, relpath: str,
     return {
         "assetKey": {"container": container, "exportName": export},
         "status": "success", "missingReason": None, "relPath": relpath,
-        "png": {"size": len(data), "sha256": "x" * 64},
+        "png": {"size": len(data)},
         "pngBytes": data, "durationMs": 1, "details": {},
     }
 
@@ -96,7 +90,7 @@ def _fail_verdict(container: str, export: str, reason: str) -> dict:
 def _mini_catalog() -> dict:
     """迷你 catalog：命中/未命中引用混合（item 级 + level 级）。"""
     return {
-        "schemaVersion": 2, "gameVersion": "18.400.13", "locale": "zh-CN",
+        "schemaVersion": 3, "gameVersion": "18.400.13", "locale": "zh-CN",
         "items": [
             {
                 "section": "units", "dataID": 4000000, "name": "野蛮人",
@@ -186,25 +180,16 @@ def _sample_verdicts() -> list[dict]:
 
 
 def _mini_manifest() -> str:
-    """迷你 manifest.json（陈旧 hash/counts——refresh 会刷新，此处只保证可解析）。"""
+    """迷你 manifest.json（E0-03 V3 四字段；不再含 hash/counts/登记）。"""
     return json.dumps({
-        "schemaVersion": 2, "gameVersion": "18.400.13", "buildTag": "18_400_7",
-        "locale": "zh-CN", "sourceFingerprint": "sha256:" + "a" * 64,
-        "generatedFiles": [
-            {"path": "catalog.json", "sha256": "sha256:" + "b" * 64, "size": 1},
-            {"path": "icons/", "kind": "directory"},
-            {"path": "craft_table_catalog.json",
-             "sha256": "sha256:" + hashlib.sha256(
-                 b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n').hexdigest(),
-             "size": len(b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n')},
-        ],
-        "counts": {"items": 0, "levels": 0, "missingTime": 0, "missingIcons": 0},
+        "schemaVersion": 3, "gameVersion": "18.400.13", "buildTag": "18_400_7",
+        "locale": "zh-CN",
     }, ensure_ascii=False) + "\n"
 
 
 def _mini_dir(tmp_path: Path) -> Path:
     """迷你完整目录：catalog.json（_mini_catalog，引用全部 4 个成功样本）+
-    manifest.json + icons/。"""
+    manifest.json + icons/ + craft 文件。"""
     d = tmp_path / "cat"
     d.mkdir()
     (d / "catalog.json").write_text(
@@ -212,7 +197,6 @@ def _mini_dir(tmp_path: Path) -> Path:
                    sort_keys=True) + "\n", encoding="utf-8")
     (d / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
     (d / "icons").mkdir()
-    # Issue #98 复审 P1：validator 强制 craft 条目存在——fixture 目录必须配套
     craft_bytes = b'{"schemaVersion":1,"gameVersion":"18.400.13","buildTag":"18_400_7","locale":"zh-CN","source":"t","defenses":[],"modules":[]}\n'
     (d / "craft_table_catalog.json").write_bytes(craft_bytes)
     return d
@@ -481,9 +465,9 @@ def test_write_catalog_missing_no_png_left(tmp_path):
 
 def test_replace_failure_rolls_back_all_outputs(tmp_path, monkeypatch):
     """P2：第 N 次 os.replace 失败（第 3 次替换，即第 2 张 PNG）→ 已替换 PNG
-    + 全部 .tmp 清理，catalog.json/manifest.json 保持原内容。"""
+    + 全部 .tmp 清理，catalog.json 保持原内容。"""
     original = json.dumps(_mini_catalog(), ensure_ascii=False, indent=2,
-                          sort_keys=True) + "\n"
+                           sort_keys=True) + "\n"
     (tmp_path / "catalog.json").write_text(original, encoding="utf-8")
     (tmp_path / "manifest.json").write_text(_mini_manifest(), encoding="utf-8")
 
@@ -494,7 +478,7 @@ def test_replace_failure_rolls_back_all_outputs(tmp_path, monkeypatch):
 
     def boom(src, dst):
         counter["n"] += 1
-        if counter["n"] == 3:  # 替换顺序：4 PNG → catalog.json → manifest.json
+        if counter["n"] == 3:  # 替换顺序：4 PNG → catalog.json
             raise OSError("simulated replace failure")
         return real_replace(src, dst)
 
@@ -511,10 +495,9 @@ def test_replace_failure_rolls_back_all_outputs(tmp_path, monkeypatch):
         == _mini_manifest()
 
 
-def test_manifest_replace_failure_restores_catalog(tmp_path, monkeypatch):
-    """P2：第 6 次 os.replace 失败（manifest 替换——坏窗口）→ catalog.json
-    按事务前字节快照恢复（旧实现 unlink 会删掉新 catalog.json，导致文件
-    消失），manifest.json 原内容保留，PNG/.tmp 零残留。"""
+def test_catalog_replace_failure_restores_original(tmp_path, monkeypatch):
+    """P2：第 5 次 os.replace 失败（catalog.json 替换——坏窗口）→ catalog.json
+    按事务前字节快照恢复，PNG/.tmp 零残留。"""
     original_bytes = (json.dumps(_mini_catalog(), ensure_ascii=False,
                                  indent=2, sort_keys=True) + "\n") \
         .encode("utf-8")
@@ -529,13 +512,13 @@ def test_manifest_replace_failure_restores_catalog(tmp_path, monkeypatch):
 
     def boom(src, dst):
         counter["n"] += 1
-        # 替换顺序：4 PNG → catalog.json(第 5 次) → manifest.json(第 6 次)
-        if counter["n"] == 6:
-            raise OSError("simulated manifest replace failure")
+        # 替换顺序：4 PNG → catalog.json(第 5 次)
+        if counter["n"] == 5:
+            raise OSError("simulated catalog replace failure")
         return real_replace(src, dst)
 
     monkeypatch.setattr(rg.os, "replace", boom)
-    with pytest.raises(CatalogError, match="simulated manifest replace failure"):
+    with pytest.raises(CatalogError, match="simulated catalog replace failure"):
         write_rendered_outputs(tmp_path, _sample_verdicts(), write_catalog=True)
     # 坏窗口：catalog.json 已替换——必须字节级恢复为事务前内容
     assert (tmp_path / "catalog.json").read_bytes() == original_bytes
@@ -564,15 +547,15 @@ def test_replace_keyboard_interrupt_not_swallowed(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# manifest 刷新（refresh_manifest）：counts 重算 + generatedFiles 一致性
+# 写盘一致性：PNG/catalog.json 一致 + manifest 不被触碰 + validate 零错误
 # ---------------------------------------------------------------------------
 
 
 def test_outputs_manifest_consistent_after_write(tmp_path):
-    """正常路径：PNG/catalog.json/manifest.json 三者一致——manifest 中
-    catalog.json sha256 == 磁盘、PNG 条目与磁盘一致、counts == validate 重算
-    （含 R6.2 renderedIcons == PNG 条目数 / blockedIcons == 失败样本数）。"""
+    """正常路径：PNG 落盘 + catalog.json 回写 + manifest.json 原样不动；
+    validate_catalog() 零错误。"""
     d = _mini_dir(tmp_path)
+    man_before = (d / "manifest.json").read_bytes()
     stats = write_rendered_outputs(d, _sample_verdicts())
     assert sorted(stats["pngWritten"]) == [
         "icons/buildings/blacksmith_lvl1.png",
@@ -582,30 +565,16 @@ def test_outputs_manifest_consistent_after_write(tmp_path):
     ]
     assert stats["cleaned"] == []  # 全部 PNG 均被 catalog 引用，无孤儿
 
-    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    entries = {e["path"]: e for e in manifest["generatedFiles"]}
-    # catalog.json 条目 sha256/size == 磁盘
-    cat_bytes = (d / "catalog.json").read_bytes()
-    assert entries["catalog.json"]["sha256"] \
-        == "sha256:" + hashlib.sha256(cat_bytes).hexdigest()
-    assert entries["catalog.json"]["size"] == len(cat_bytes)
-    # icons/ 目录条目 entries = PNG 数
-    assert entries["icons/"]["entries"] == 4
-    # PNG 条目与磁盘一致（引用集合 == 本次写入集合，无孤儿）
+    # manifest.json 未被触碰（E0-03：无内容派生字段可刷新）
+    assert (d / "manifest.json").read_bytes() == man_before
+    # PNG 落盘与 catalog 引用一致
     for rel in stats["pngWritten"]:
-        data = (d / rel).read_bytes()
-        assert entries[rel]["sha256"] \
-            == "sha256:" + hashlib.sha256(data).hexdigest()
-        assert entries[rel]["size"] == len(data)
-    # counts：missingIcons=0（4 个成功样本全部回写）；renderedIcons == PNG 条目数
-    assert manifest["counts"] == {"items": 4, "levels": 3,
-                                  "missingTime": 0, "missingIcons": 0,
-                                  "renderedIcons": 4, "blockedIcons": 2}
+        assert (d / rel).is_file()
     assert validate_catalog(d) == []
 
 
 def test_write_then_validate_zero_errors(tmp_path):
-    """合成目录集成：完整 write_rendered_outputs + refresh_manifest →
+    """合成目录集成：完整 write_rendered_outputs →
     validate_catalog() 零错误（用 test_validate 合成目录工具）。"""
     d = _valid_dir(tmp_path)
     write_rendered_outputs(d, _sample_verdicts())
@@ -613,86 +582,23 @@ def test_write_then_validate_zero_errors(tmp_path):
 
 
 def test_rewrite_idempotent_validate_clean(tmp_path):
-    """重跑幂等：连续两次完整写入 → 第二次后 validate 仍零错误、条目不重复。"""
+    """重跑幂等：连续两次完整写入 → 第二次后 validate 仍零错误、磁盘无重复。"""
     d = _valid_dir(tmp_path)
     write_rendered_outputs(d, _sample_verdicts())
     write_rendered_outputs(d, _sample_verdicts())
     assert validate_catalog(d) == []
-    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    paths = [e["path"] for e in manifest["generatedFiles"]]
-    assert len(paths) == len(set(paths))
-
-
-def test_refresh_manifest_standalone_recomputes(tmp_path):
-    """refresh_manifest 独立可用（/tmp/refresh_manifest.py 逻辑入库）：陈旧
-    counts/hash 全部刷新、PNG 条目原位去重、幂等；blockedIcons 未传入时保留
-    manifest 既有值（快照语义），缺失则不写（optional 字段）。"""
-    d = _valid_dir(tmp_path)
-    png = _PNG_SIG + b"x" * 16
-    (d / "icons/ui").mkdir(parents=True)
-    (d / "icons/ui/icon_unit_barbarian.png").write_bytes(png)
-    m = _load_manifest(d)
-    m["counts"] = {"items": 99, "levels": 99, "missingTime": 99,
-                   "missingIcons": 99}
-    m["generatedFiles"].append({
-        "path": "icons/ui/icon_unit_barbarian.png",
-        "sha256": "sha256:" + "f" * 64, "size": 1})
-    _write(d, manifest=m)
-
-    new = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"])
-    assert new["counts"] == {"items": 1, "levels": 1,
-                             "missingTime": 0, "missingIcons": 0,
-                             "renderedIcons": 1}
-    entries = {e["path"]: e for e in new["generatedFiles"]}
-    assert entries["icons/ui/icon_unit_barbarian.png"] == {
-        "path": "icons/ui/icon_unit_barbarian.png",
-        "sha256": "sha256:" + hashlib.sha256(png).hexdigest(),
-        "size": len(png)}
-    assert entries["icons/"]["entries"] == 1
-    assert entries["catalog.json"]["sha256"].startswith("sha256:")
-    # 幂等：再次刷新不重复追加
-    new2 = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"])
-    paths = [e["path"] for e in new2["generatedFiles"]]
-    assert len(paths) == len(set(paths))
-    assert validate_catalog(d) == []
-
-
-def test_refresh_manifest_preserves_blocked_icons_snapshot(tmp_path):
-    """独立 refresh_manifest 传入 blocked_count → 写入；未传入 → 保留既有快照值。"""
-    d = _valid_dir(tmp_path)
-    (d / "icons/ui").mkdir(parents=True)
-    (d / "icons/ui/icon_unit_barbarian.png").write_bytes(_PNG_SIG + b"y" * 16)
-    m = _load_manifest(d)
-    m["counts"]["blockedIcons"] = 3
-    _write(d, manifest=m)
-
-    new = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"])
-    assert new["counts"]["blockedIcons"] == 3  # 未传 blocked_count → 保留快照
-    new2 = refresh_manifest(d, ["icons/ui/icon_unit_barbarian.png"],
-                            blocked_count=7)
-    assert new2["counts"]["blockedIcons"] == 7  # 显式传入 → 覆盖
-
-
-def test_refresh_manifest_missing_icon_key_fails_loud(tmp_path):
-    """refresh_manifest：手编 catalog 的 level 缺 icon 键（畸形数据）→
-    CatalogError 语义清晰，不泄漏裸 KeyError（fail loud，缺键属畸形而非
-    可容忍缺省）。"""
-    d = _valid_dir(tmp_path)
-    c = _load_catalog(d)
-    del c["items"][0]["levels"][0]["icon"]
-    _write(d, catalog=c)
-    with pytest.raises(CatalogError, match="icon"):
-        refresh_manifest(d, [])
+    on_disk = sorted(p.relative_to(d).as_posix()
+                     for p in (d / "icons").rglob("*.png"))
+    assert len(on_disk) == len(set(on_disk))
 
 
 # ---------------------------------------------------------------------------
-# R6.2 计数（renderedIcons / blockedIcons）+ 孤儿输出清理（R3 评审项）
+# 孤儿输出清理（R3 评审项，依据 catalog 实际引用集合）
 # ---------------------------------------------------------------------------
 
 
-def test_counts_rendered_and_blocked_icons(tmp_path):
-    """R6.2：counts.renderedIcons == generatedFiles PNG 条目数（validate 重算
-    断言生效）；blockedIcons == 失败样本数；validate 零错误。"""
+def test_write_outputs_pngs_and_validates(tmp_path):
+    """PNG 落盘 + catalog 回写 + validate 零错误（manifest 不动）。"""
     d = _mini_dir(tmp_path)
     stats = write_rendered_outputs(d, _sample_verdicts())
     assert sorted(stats["pngWritten"]) == [
@@ -702,22 +608,17 @@ def test_counts_rendered_and_blocked_icons(tmp_path):
         "icons/ui/icon_unit_barbarian.png",
     ]
     assert stats["cleaned"] == [] and stats["cleanupFailed"] == []
-
-    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    png_entries = [e for e in manifest["generatedFiles"]
-                   if e.get("kind") != "directory"
-                   and e["path"].endswith(".png")]
-    assert len(png_entries) == 4
-    assert manifest["counts"]["renderedIcons"] == 4
-    assert manifest["counts"]["renderedIcons"] == len(png_entries)
-    assert manifest["counts"]["blockedIcons"] == 2
+    # 磁盘 PNG 集合 == catalog 引用集合
+    on_disk = sorted(p.relative_to(d).as_posix()
+                     for p in (d / "icons").rglob("*.png"))
+    assert on_disk == sorted(stats["pngWritten"])
     assert validate_catalog(d) == []
 
 
 def test_old_success_new_failure_cleans_orphan(tmp_path):
-    """旧成功→本次失败：第一轮 barbarian 成功（PNG + manifest 条目 + catalog
-    引用）；第二轮 verdict 改为 failed → 孤儿 PNG 被删除、generatedFiles 无
-    A 条目、catalog A 引用 renderedPath null + missingReason、validate 零错误。"""
+    """旧成功→本次失败：第一轮 barbarian 成功（PNG + catalog
+    引用）；第二轮 verdict 改为 failed → 孤儿 PNG 被删除、
+    catalog A 引用 renderedPath null + missingReason、validate 零错误。"""
     d = _mini_dir(tmp_path)
     write_rendered_outputs(d, _sample_verdicts())
     assert (d / "icons/ui/icon_unit_barbarian.png").is_file()
@@ -729,12 +630,6 @@ def test_old_success_new_failure_cleans_orphan(tmp_path):
     assert stats["cleaned"] == ["icons/ui/icon_unit_barbarian.png"]
     assert not (d / "icons/ui/icon_unit_barbarian.png").exists()
 
-    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    paths = [e["path"] for e in manifest["generatedFiles"]]
-    assert "icons/ui/icon_unit_barbarian.png" not in paths
-    assert manifest["counts"]["renderedIcons"] == 3
-    assert manifest["counts"]["blockedIcons"] == 3  # barbarian + 2 固定失败
-
     catalog = json.loads((d / "catalog.json").read_text(encoding="utf-8"))
     item0 = catalog["items"][0]
     assert item0["icon"]["renderedPath"] is None
@@ -745,25 +640,18 @@ def test_old_success_new_failure_cleans_orphan(tmp_path):
 
 
 def test_rerun_idempotent_no_orphans(tmp_path):
-    """重跑幂等：连续两次相同运行 → 无孤儿、generatedFiles 无重复、counts
-    稳定、磁盘 PNG 集合 == 引用集合、validate 零错误。"""
+    """重跑幂等：连续两次相同运行 → 无孤儿、磁盘 PNG 集合 == 引用集合、
+    validate 零错误。"""
     d = _mini_dir(tmp_path)
     write_rendered_outputs(d, _sample_verdicts())
     stats = write_rendered_outputs(d, _sample_verdicts())
     assert stats["cleaned"] == []
     assert stats["cleanupFailed"] == []
 
-    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    paths = [e["path"] for e in manifest["generatedFiles"]]
-    assert len(paths) == len(set(paths))
-    assert manifest["counts"]["renderedIcons"] == 4
-    assert manifest["counts"]["blockedIcons"] == 2
     # 磁盘 PNG 集合与引用集合一致（无孤儿也无遗漏）
     on_disk = sorted(p.relative_to(d).as_posix()
                      for p in (d / "icons").rglob("*.png"))
-    assert on_disk == sorted(
-        e["path"] for e in manifest["generatedFiles"]
-        if e.get("kind") != "directory" and e["path"].endswith(".png"))
+    assert on_disk == sorted(stats["pngWritten"])
     assert validate_catalog(d) == []
 
 
@@ -785,7 +673,7 @@ def test_cleanup_failure_does_not_block(tmp_path, monkeypatch):
     stats = write_rendered_outputs(d, verdicts2)  # 不抛异常
     assert stats["cleaned"] == []
     assert stats["cleanupFailed"] == ["icons/ui/icon_unit_barbarian.png"]
-    # 孤儿 PNG 删除失败残留磁盘，但 manifest 已无条目、validate 零错误
+    # 孤儿 PNG 删除失败残留磁盘，但 catalog 引用已置 null，validate 零错误
     assert (d / "icons/ui/icon_unit_barbarian.png").is_file()
     assert validate_catalog(d) == []
 
@@ -1125,13 +1013,13 @@ class TestRealApk:
         w, h = png_size(b["pngBytes"])
         assert w >= 100 and h >= 100  # 5 命令 union bounds 画布
 
-    def test_determinism_sha256_stable(self):
+    def test_determinism_png_bytes_stable(self):
         """R4：同一 APK 两次生成 → PNG 字节一致。"""
         _, v1 = render_samples(APK)
         _, v2 = render_samples(APK)
-        ok1 = {v["relPath"]: v["png"]["sha256"] for v in v1
+        ok1 = {v["relPath"]: v["png"]["size"] for v in v1
                if v["status"] == "success"}
-        ok2 = {v["relPath"]: v["png"]["sha256"] for v in v2
+        ok2 = {v["relPath"]: v["png"]["size"] for v in v2
                if v["status"] == "success"}
         assert ok1 == ok2
         assert len(ok1) == 4
@@ -1190,12 +1078,12 @@ class TestRealApk:
         assert not (tmp_path / "icons/ui/icon_unit_does_not_exist.png").exists()
         assert not (tmp_path / "icons/traps").exists()
 
-        # 报告 JSON 可解析且含 verdict/sha256
+        # 报告 JSON 可解析且含 verdict/size
         report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
         assert report["meta"]["successCount"] == 4
         assert report["meta"]["failedCount"] == 1
         assert len(report["samples"]) == 5
-        assert report["samples"][0]["png"]["sha256"]
+        assert report["samples"][0]["png"]["size"] > 0
 
     def test_cli_samples_only_does_not_touch_catalog(self, tmp_path):
         """--samples-only：PNG + 报告，catalog.json 原样。"""

@@ -3866,26 +3866,12 @@ final class VillageCatalogProjectionTests: XCTestCase {
         )
     }
 
-    /// 宇宙目录的 manifest 信任标记 stub（外部评审 P1-1 残留修复：hasUniverseData
-    /// 要求 catalog.json 条目 + sha256 声明——validate 对缺失声明跳过比对，
-    /// 信任门必须显式要求；测试注入路径不调用 validate，值任意合法格式即可）。
+    /// 宇宙目录的 manifest stub（V3 四字段；hasUniverseData 只看业务校验
+    /// 通过的 instanceCounts）。
     private func makeUniverseManifestStub() -> CatalogManifest {
         CatalogManifest(
-            schemaVersion: 1, gameVersion: "18.400.13", buildTag: "test",
-            locale: "zh-CN",
-            sourceFingerprint: "sha256:" + String(repeating: "a", count: 64),
-            generatedFiles: [
-                CatalogGeneratedFile(
-                    path: "catalog.json",
-                    sha256: "sha256:" + String(repeating: "b", count: 64),
-                    size: nil, kind: nil, entries: nil
-                ),
-            ],
-            counts: CatalogCounts(
-                items: 3, levels: 23, missingIcons: nil, missingTime: nil,
-                timed: nil, instant: nil, notApplicable: nil, initialLevel: nil,
-                sourceMissing: nil, parseFailed: nil
-            )
+            schemaVersion: 3, gameVersion: "18.400.13", buildTag: "test",
+            locale: "zh-CN"
         )
     }
 

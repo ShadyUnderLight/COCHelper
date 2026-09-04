@@ -139,6 +139,12 @@ export type SnapshotCoverageProof =
       readonly expectedCount: number | null;
       readonly verificationReason: string | null;
       readonly verificationRuleVersion: string | null;
+      /**
+       * Issue #304 follow-up：受控 fixture 身份（loader 签发的 fixture 文件名）。
+       * 只在签发期由受控路径附加并持久化；reload 必须同时通过 registry 比对。
+       * 非 fixture proof 为 null。
+       */
+      readonly fixtureID: string | null;
     }
   | {
       readonly kind: 'legacyAuthoritative';
@@ -348,5 +354,6 @@ export function issueTestCoverageProof(
     expectedCount,
     verificationReason,
     verificationRuleVersion: null,
+    fixtureID: null,
   };
 }

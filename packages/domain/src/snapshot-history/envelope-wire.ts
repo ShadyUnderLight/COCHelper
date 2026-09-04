@@ -335,6 +335,7 @@ function decodeCoverageProofWire(wire: Record<string, unknown>): SnapshotCoverag
           wire.verificationRuleVersion === undefined
             ? null
             : requireString(wire.verificationRuleVersion),
+        fixtureID: wire.fixtureID === undefined ? null : requireString(wire.fixtureID),
       };
     case 'authoritative':
       return {

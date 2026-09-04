@@ -27,6 +27,14 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
     public let verificationReason: String?
     /// Frozen verification rule set used when the proof was issued.
     public let verificationRuleVersion: String?
+    /// Module-issued bundled fixture identity (Issue #304 follow-up).
+    ///
+    /// Attached only at the controlled fixture load path (loader knows the
+    /// fixture file); persisted on the wire. Reload revalidation requires a
+    /// non-nil fixtureID AND a registry match — a rawJSON self-declaration of
+    /// `source = perf-fixture` alone never authorizes trust. Nil for all
+    /// non-fixture proofs.
+    public let fixtureID: String?
 
     let runtimeWitness: VerifiedCoverageRuntimeWitness?
 
@@ -37,6 +45,7 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         expectedCount: Int?,
         verificationReason: String?,
         verificationRuleVersion: String?,
+        fixtureID: String? = nil,
         runtimeWitness: VerifiedCoverageRuntimeWitness
     ) {
         self.source = source
@@ -45,6 +54,7 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         self.expectedCount = expectedCount
         self.verificationReason = verificationReason
         self.verificationRuleVersion = verificationRuleVersion
+        self.fixtureID = fixtureID
         self.runtimeWitness = runtimeWitness
     }
 
@@ -53,13 +63,15 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
          protocolVersion: String,
          expectedCount: Int?,
          verificationReason: String?,
-         verificationRuleVersion: String?) {
+         verificationRuleVersion: String?,
+         fixtureID: String? = nil) {
         self.source = source
         self.adapterID = adapterID
         self.protocolVersion = protocolVersion
         self.expectedCount = expectedCount
         self.verificationReason = verificationReason
         self.verificationRuleVersion = verificationRuleVersion
+        self.fixtureID = fixtureID
         self.runtimeWitness = nil
     }
 
@@ -81,6 +93,7 @@ public struct VerifiedCoverageEvidence: Hashable, Sendable {
         case expectedCount
         case verificationReason
         case verificationRuleVersion
+        case fixtureID
     }
 }
 
@@ -93,7 +106,8 @@ extension VerifiedCoverageEvidence: Codable {
             protocolVersion: try container.decode(String.self, forKey: .protocolVersion),
             expectedCount: try container.decodeIfPresent(Int.self, forKey: .expectedCount),
             verificationReason: try container.decodeIfPresent(String.self, forKey: .verificationReason),
-            verificationRuleVersion: try container.decodeIfPresent(String.self, forKey: .verificationRuleVersion)
+            verificationRuleVersion: try container.decodeIfPresent(String.self, forKey: .verificationRuleVersion),
+            fixtureID: try container.decodeIfPresent(String.self, forKey: .fixtureID)
         )
     }
 
@@ -105,5 +119,6 @@ extension VerifiedCoverageEvidence: Codable {
         try container.encodeIfPresent(expectedCount, forKey: .expectedCount)
         try container.encodeIfPresent(verificationReason, forKey: .verificationReason)
         try container.encodeIfPresent(verificationRuleVersion, forKey: .verificationRuleVersion)
+        try container.encodeIfPresent(fixtureID, forKey: .fixtureID)
     }
 }

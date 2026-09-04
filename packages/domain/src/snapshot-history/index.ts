@@ -133,3 +133,9 @@ export {
   revalidateCoverageProof,
   revalidateSourceUniverse,
 } from './trust-hydration';
+export {
+  observationDigestForIdentityKey,
+  perfFixtureIdentityRecords,
+  recognizesPerfFixture,
+  requiredSectionsForFixture,
+} from './fixture-identities';

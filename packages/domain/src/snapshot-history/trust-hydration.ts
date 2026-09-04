@@ -4,7 +4,9 @@ import { prepareAccountText } from '../account/prepare';
 import { parseAccountSnapshot } from '../account/parser';
 import type { AccountSnapshot } from '../account/types';
 import type { Clock } from '../primitives';
+import { observationIdentityKey } from './canonicalizer';
 import { coverageProofsForSnapshot } from './coverage-adapter';
+import { recognizesPerfFixture, requiredSectionsForFixture } from './fixture-identities';
 import { SNAPSHOT_HISTORY_ALL_SECTIONS } from './known-sections';
 import { SNAPSHOT_HISTORY_SCHEMA } from './schema';
 import type {
@@ -30,8 +32,13 @@ export function revalidateCoverageProof(input: {
   readonly rawJSON: string;
   readonly section: string;
   readonly policy: SnapshotCoverageRevalidationPolicy;
+  /**
+   * Issue #304 follow-up：已校验 envelope 的 entry observation 身份
+   *（validate 已证明其等于 rawJSON 重建值）。缺失时 perf 路径 fail-closed。
+   */
+  readonly observationKey?: string;
 }): SectionCoverageRuntimeTrust {
-  const { proof, rawJSON, section, policy } = input;
+  const { proof, rawJSON, section, policy, observationKey } = input;
   if (
     proof.adapterID === SNAPSHOT_COVERAGE_TEST_FIXTURE_ADAPTER_ID &&
     policy === 'testsAllowTestFixture'
@@ -54,7 +61,7 @@ export function revalidateCoverageProof(input: {
   }
 
   if (proof.adapterID === SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID) {
-    return revalidatePerfFixtureProof(proof, rawJSON, section);
+    return revalidatePerfFixtureProof(proof, rawJSON, section, observationKey);
   }
   return {
     kind: 'rejected',
@@ -78,6 +85,7 @@ function revalidatePerfFixtureProof(
   proof: Extract<SnapshotCoverageProof, { kind: 'verified' }>,
   rawJSON: string,
   section: string,
+  observationKey: string | undefined,
 ): SectionCoverageRuntimeTrust {
   if (proof.adapterID !== SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID) {
     return { kind: 'rejected', reason: 'adapterID 与 perf fixture 契约不一致。' };
@@ -87,6 +95,15 @@ function revalidatePerfFixtureProof(
   }
   if (proof.verificationReason !== 'bundled perf fixture') {
     return { kind: 'rejected', reason: 'perf fixture verificationReason 不匹配。' };
+  }
+  // Issue #304 follow-up：fixture 身份必须由 loader 签发，且 entry observation
+  // 必须命中该 fixture 的 registry 记录。rawJSON.coverage 自报声明只是随后
+  // 的一致性门，不再是授权依据：两边一起改也过不了 registry 比对。
+  if (proof.fixtureID === null || proof.fixtureID.length === 0) {
+    return { kind: 'rejected', reason: 'perf fixture 缺少受控 fixture 身份。' };
+  }
+  if (observationKey === undefined || !recognizesPerfFixture(proof.fixtureID, observationKey)) {
+    return { kind: 'rejected', reason: 'perf fixture 身份与 registry 记录不一致。' };
   }
   // Issue #304：不再用内容 hash allowlist 判定；rawJSON 仍须按 adapter 契约
   // 声明该 section（业务来源表达）。
@@ -107,7 +124,13 @@ function perfFixtureDeclaresSection(
   }
   const proofs = coverageProofsForSnapshot(snapshot);
   const proof = proofs[section];
-  if (proof === undefined || proof.kind !== 'declared') {
+  if (proof === undefined) {
+    return false;
+  }
+  // TS adapter 把 authoritative/declared 声明分别归一化为
+  // legacyAuthoritative/declared（Swift 侧统一归一化为 declared）；
+  // 两者都是有效的 fixture 来源表达，判定语义与 Swift 一致。
+  if (proof.kind !== 'declared' && proof.kind !== 'legacyAuthoritative') {
     return false;
   }
   return (
@@ -119,9 +142,13 @@ function perfFixtureDeclaresSection(
 
 export function revalidateSourceUniverse(input: {
   readonly universe: SnapshotCoverageSourceUniverse;
-  readonly snapshot: AccountSnapshot;
+  /** 保留字段位：perf/test 路径均不再需要 snapshot（registry/verified-proof 路径）。 */
+  readonly snapshot?: AccountSnapshot;
   readonly coverage: SnapshotObservationCoverage;
   readonly policy: SnapshotCoverageRevalidationPolicy;
+  /** entry 携带的 verified perf proof fixture 身份集合（去重）。 */
+  readonly perfFixtureIDs?: ReadonlySet<string>;
+  readonly observationKey?: string;
 }): SourceUniverseRuntimeTrust {
   if (!isRegisteredSourceUniverse(input.universe)) {
     return { kind: 'rejected', reason: 'source universe wire contract 无效。' };
@@ -136,36 +163,37 @@ export function revalidateSourceUniverse(input: {
     return revalidateTestFixtureSourceUniverse(input.universe, input.coverage);
   }
   if (input.universe.adapterID === SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID) {
-    return revalidatePerfFixtureSourceUniverse(input.universe, input.snapshot);
+    return revalidatePerfFixtureSourceUniverse(
+      input.universe,
+      input.perfFixtureIDs ?? new Set(),
+      input.observationKey,
+    );
   }
   return { kind: 'rejected', reason: '未注册的 source universe adapter。' };
 }
 
 function revalidatePerfFixtureSourceUniverse(
   universe: SnapshotCoverageSourceUniverse,
-  snapshot: AccountSnapshot,
+  fixtureIDs: ReadonlySet<string>,
+  observationKey: string | undefined,
 ): SourceUniverseRuntimeTrust {
-  // Issue #304：按 adapter 契约从 snapshot 派生期望 universe 并比较，
-  // 不再用内容 hash allowlist 判定。
-  const proofs = coverageProofsForSnapshot(snapshot);
-  const requiredSections = new Set<string>();
-  for (const section of SNAPSHOT_HISTORY_ALL_SECTIONS) {
-    const proof = proofs[section];
-    if (
-      proof !== undefined &&
-      proof.kind === 'declared' &&
-      proof.source === SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID &&
-      proof.version === '1'
-    ) {
-      requiredSections.add(section);
-    }
+  // Issue #304 follow-up：universe 期望来自 registry 的 fixture 真实 section
+  // 集，绝不从 reload-time rawJSON 自报声明派生（自证自销）。身份必须唯一且
+  // entry observation 必须命中该 fixture 记录。
+  if (fixtureIDs.size !== 1) {
+    return { kind: 'rejected', reason: 'perf fixture 身份缺失或不一致。' };
   }
-  if (requiredSections.size === 0) {
-    return { kind: 'rejected', reason: 'perf fixture source universe 与 adapter 契约不一致。' };
+  const fixtureID = [...fixtureIDs][0]!;
+  if (observationKey === undefined || !recognizesPerfFixture(fixtureID, observationKey)) {
+    return { kind: 'rejected', reason: 'perf fixture 身份与 registry 记录不一致。' };
+  }
+  const requiredSections = requiredSectionsForFixture(fixtureID);
+  if (requiredSections === undefined) {
+    return { kind: 'rejected', reason: '未注册的 perf fixture 身份。' };
   }
   const expected = issuePerfFixtureSourceUniverse(requiredSections);
   if (JSON.stringify(expected) !== JSON.stringify(universe)) {
-    return { kind: 'rejected', reason: 'perf fixture source universe 与 adapter 契约不一致。' };
+    return { kind: 'rejected', reason: 'perf fixture source universe 与 registry 背书不一致。' };
   }
   return { kind: 'trusted' };
 }
@@ -246,6 +274,7 @@ export function hydrateVerifiedCoverageOnEntry(input: {
     rawJSON: input.entry.rawJSON,
     policy: input.policy ?? 'production',
     clock: input.clock,
+    observationKey: observationIdentityKey(input.entry.observation),
   });
   if (hydratedCoverage === input.entry.coverage) {
     return {
@@ -300,16 +329,59 @@ function hydrateVerifiedCoverage(input: {
   readonly rawJSON: string;
   readonly policy: SnapshotCoverageRevalidationPolicy;
   readonly clock?: Clock;
+  /** 已校验 envelope 的 entry observation 身份（必填，perf 路径授权之用）。 */
+  readonly observationKey: string;
 }): HydratedSnapshotObservationCoverage {
   const snapshot = tryParseSnapshot(input.rawJSON, input.clock);
+
+  // Section 先行：universe 需要 entry 携带的 fixture 身份集合。
+  // entry 必须来自已校验 envelope（validate 已证明 observation 等于 rawJSON
+  // 重建值），registry 比对才有效；直接 hydrate 未校验 envelope 会使 perf
+  // 路径 fail-closed。
+  const { observationKey } = input;
+  let sectionsChanged = false;
+  const perfFixtureIDs = new Set<string>();
+  const sections = input.coverage.sections.map((section) => {
+    if (section.proof.kind === 'verified') {
+      if (
+        section.proof.adapterID === SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID &&
+        section.proof.fixtureID !== null &&
+        section.proof.fixtureID.length > 0
+      ) {
+        perfFixtureIDs.add(section.proof.fixtureID);
+      }
+      if (initialSectionRuntimeTrust(section.proof).kind === 'trusted') {
+        return { ...section, runtimeTrust: initialSectionRuntimeTrust(section.proof) };
+      }
+      const trust = revalidateCoverageProof({
+        proof: section.proof,
+        rawJSON: input.rawJSON,
+        section: section.rawSection,
+        policy: input.policy,
+        observationKey,
+      });
+      if (trust.kind !== initialSectionRuntimeTrust(section.proof).kind) {
+        sectionsChanged = true;
+      }
+      return { ...section, runtimeTrust: trust };
+    }
+    return { ...section, runtimeTrust: initialSectionRuntimeTrust(section.proof) };
+  });
+
   let universeTrust = initialSourceUniverseRuntimeTrust(input.coverage.sourceUniverse);
   if (input.coverage.sourceUniverse !== null && universeTrust.kind !== 'trusted') {
-    if (snapshot !== undefined) {
+    if (
+      input.coverage.sourceUniverse.adapterID === SNAPSHOT_COVERAGE_PERF_FIXTURE_ADAPTER_ID ||
+      snapshot !== undefined
+    ) {
+      // perf universe 不依赖 snapshot 解析（registry 路径）。
       universeTrust = revalidateSourceUniverse({
         universe: input.coverage.sourceUniverse,
         snapshot,
         coverage: input.coverage,
         policy: input.policy,
+        perfFixtureIDs,
+        observationKey,
       });
     } else if (universeTrust.kind === 'pending') {
       universeTrust = {
@@ -318,26 +390,6 @@ function hydrateVerifiedCoverage(input: {
       };
     }
   }
-
-  let sectionsChanged = false;
-  const sections = input.coverage.sections.map((section) => {
-    if (
-      section.proof.kind !== 'verified' ||
-      initialSectionRuntimeTrust(section.proof).kind === 'trusted'
-    ) {
-      return { ...section, runtimeTrust: initialSectionRuntimeTrust(section.proof) };
-    }
-    const trust = revalidateCoverageProof({
-      proof: section.proof,
-      rawJSON: input.rawJSON,
-      section: section.rawSection,
-      policy: input.policy,
-    });
-    if (trust.kind !== initialSectionRuntimeTrust(section.proof).kind) {
-      sectionsChanged = true;
-    }
-    return { ...section, runtimeTrust: trust };
-  });
 
   if (
     !sectionsChanged &&

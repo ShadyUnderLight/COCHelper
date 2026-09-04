@@ -419,7 +419,8 @@ final class SnapshotHistoryStoreTests: XCTestCase {
         let text = try String(contentsOf: fixtureURL, encoding: .utf8)
         let snapshot = try AccountSnapshotImporter.parse(text, now: Date(timeIntervalSince1970: 1))
         let proofs = SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
-            JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+            JSONSnapshotCoverageAdapter.proofs(for: snapshot),
+            fixtureID: "perf_account_snapshot_home"
         )
         let entry = try SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot,

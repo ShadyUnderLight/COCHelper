@@ -578,7 +578,8 @@ final class AppModelSnapshotHistoryTests: XCTestCase {
         }
         let sectionProofs = promoteVerified
             ? SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
-                JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+                JSONSnapshotCoverageAdapter.proofs(for: snapshot),
+                fixtureID: name
             )
             : nil
         let sourceUniverse = promoteVerified

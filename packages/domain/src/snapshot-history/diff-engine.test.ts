@@ -38,6 +38,7 @@ function issueTestCoverageProof(
     expectedCount,
     verificationReason: 'test injection',
     verificationRuleVersion: '1',
+    fixtureID: null,
   };
 }
 

@@ -284,6 +284,7 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
         case protocolVersion
         case verificationReason
         case verificationRuleVersion
+        case fixtureID
     }
 
     private enum Kind: String, Codable {
@@ -309,6 +310,7 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
             try container.encodeIfPresent(evidence.expectedCount, forKey: .expectedCount)
             try container.encodeIfPresent(evidence.verificationReason, forKey: .verificationReason)
             try container.encodeIfPresent(evidence.verificationRuleVersion, forKey: .verificationRuleVersion)
+            try container.encodeIfPresent(evidence.fixtureID, forKey: .fixtureID)
         case .legacyAuthoritative(let source, let version, let expectedCount):
             // Preserve pre-#205 wire bytes for immutable history integrity.
             try container.encode(Kind.authoritative, forKey: .kind)
@@ -347,7 +349,8 @@ public enum SnapshotCoverageProof: Codable, Hashable, Sendable {
                     verificationRuleVersion: try container.decodeIfPresent(
                         String.self,
                         forKey: .verificationRuleVersion
-                    )
+                    ),
+                    fixtureID: try container.decodeIfPresent(String.self, forKey: .fixtureID)
                 )
             )
         case .unavailable:

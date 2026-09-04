@@ -297,6 +297,7 @@ function encodeCoverageProofWire(proof: SnapshotCoverageProof): unknown {
         source: proof.source,
         verificationReason: proof.verificationReason ?? undefined,
         verificationRuleVersion: proof.verificationRuleVersion ?? undefined,
+        fixtureID: proof.fixtureID ?? undefined,
       };
     case 'unavailable':
       return {

@@ -2856,7 +2856,8 @@ public final class AppModel: ObservableObject {
         guard let snapshot = pendingAccountSnapshot else { return false }
         let sectionProofs = perfImportPromotesVerifiedCoverage
             ? SnapshotCoverageVerifier.promoteBundledPerfFixtureDeclaredProofs(
-                JSONSnapshotCoverageAdapter.proofs(for: snapshot)
+                JSONSnapshotCoverageAdapter.proofs(for: snapshot),
+                fixtureID: name
             )
             : nil
         let sourceUniverse = perfImportPromotesVerifiedCoverage

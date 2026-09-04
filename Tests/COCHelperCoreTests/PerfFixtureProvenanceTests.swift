@@ -395,6 +395,34 @@ final class PerfFixtureProvenanceTests: XCTestCase {
         )
     }
 
+    /// P1（issue-time gap）：真实 registered business content + 只篡改 coverage
+    /// metadata。business membership 成立（registry 仍可识别），但 coverage
+    /// authorization 不成立——签发必须拒绝，而不是按篡改后的声明签出 universe。
+    func testIssuePerfFixtureUniverseRefusesCoverageOnlyMutation() throws {
+        var top = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(fixtureText(homeFixtureID).utf8))
+                as? [String: Any]
+        )
+        var coverage = try XCTUnwrap(top["coverage"] as? [String: Any])
+        // 只删 spells 的 perf-fixture declaration：business observation 不变。
+        coverage.removeValue(forKey: "spells")
+        top["coverage"] = coverage
+        let mutatedRawJSON = String(
+            data: try JSONSerialization.data(withJSONObject: top, options: [.sortedKeys]),
+            encoding: .utf8
+        )
+        let snapshot = try parse(try XCTUnwrap(mutatedRawJSON))
+        XCTAssertEqual(
+            PerfFixtureIdentityRegistry.fixtureID(for: snapshot),
+            homeFixtureID,
+            "coverage-only 篡改不得改变 business membership 识别"
+        )
+        XCTAssertNil(
+            SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot),
+            "声明集与 registry 授权集不一致时不得签发 universe"
+        )
+    }
+
     // MARK: - Registry invariant (P2): no authorization aliasing
 
     /// observation 身份在 registry 中必须全局唯一：若两个 fixtureID 共享同一

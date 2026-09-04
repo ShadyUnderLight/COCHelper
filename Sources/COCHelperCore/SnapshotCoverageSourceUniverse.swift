@@ -131,14 +131,29 @@ package enum SnapshotCoverageSourceUniverseIssuer {
     }
 
     package static func issuePerfFixture(snapshot: AccountSnapshot) -> SnapshotCoverageSourceUniverse? {
-        // Issue #304：不再用内容 hash allowlist 判定；rawJSON 按 adapter 契约
-        // 声明 perf-fixture section 即表达 benchmark 业务来源。
-        // Issue #304 follow-up：自报声明只决定"是否表达"，签发前必须经 registry
-        // 确认 snapshot 确为已知 fixture（恢复旧 allowlist 的签发面：
-        // migration 等无线 loader 上下文的路径不得给任意自报 JSON 签发）。
-        guard PerfFixtureIdentityRegistry.isRegisteredFixture(snapshot) else { return nil }
+        // Issue #304 follow-up (P1)：registry 决定 authorized section set，
+        // rawJSON coverage 只做一致性门。coverage 块不进 business observation
+        //（v5+ 剥离），membership 成立只证明"业务内容等价于注册 fixture"，
+        // 不能证明"当前声明等于 registry 授权集"——声明被单改后必须拒绝签发，
+        // 而不是按篡改后的声明签出 trusted universe。
+        guard let fixtureID = PerfFixtureIdentityRegistry.fixtureID(for: snapshot),
+              let requiredSections = PerfFixtureIdentityRegistry.requiredSections(
+                  for: fixtureID
+              ) else {
+            return nil
+        }
+        guard perfFixtureDeclaredSections(in: snapshot) == requiredSections else {
+            return nil
+        }
+        return issuePerfFixtureUniverse(requiredSections: requiredSections)
+    }
+
+    /// Snapshot 自报的 perf-fixture 声明 section 集（declaration，非授权）。
+    private static func perfFixtureDeclaredSections(
+        in snapshot: AccountSnapshot
+    ) -> Set<String> {
         let proofs = JSONSnapshotCoverageAdapter.proofs(for: snapshot)
-        let requiredSections = Set(
+        return Set(
             proofs.compactMap { section, proof -> String? in
                 switch proof {
                 case .declared(let source, let version, _)
@@ -148,12 +163,6 @@ package enum SnapshotCoverageSourceUniverseIssuer {
                     return nil
                 }
             }
-        )
-        guard !requiredSections.isEmpty else { return nil }
-        return issueModuleIssued(
-            adapterID: SnapshotCoverageVerifier.perfFixtureAdapterID,
-            protocolVersion: "1",
-            requiredSections: requiredSections
         )
     }
 

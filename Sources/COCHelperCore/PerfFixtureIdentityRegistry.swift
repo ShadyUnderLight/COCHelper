@@ -111,19 +111,19 @@ enum PerfFixtureIdentityRegistry {
         return expectedObservationDigests.first { $0.value == digest }?.key
     }
 
-    /// Whether the snapshot bytes are exactly a registered bundled fixture
-    /// (business observation identity, catalog-independent). Issue-time gate
-    /// for loader-context-free paths; canonicalize failure fails closed.
-    static func isRegisteredFixture(_ snapshot: AccountSnapshot) -> Bool {
+    /// Which registered fixture (if any) the snapshot bytes are. The resolved
+    /// ID authorizes the registry record (observation digest + required
+    /// sections); callers must not substitute rawJSON declarations for it.
+    static func fixtureID(for snapshot: AccountSnapshot) -> String? {
         guard let entry = try? SnapshotHistoryCanonicalizer.canonicalize(
             snapshot: snapshot,
             villageID: UUID(),
             lineageID: UUID(),
             appliedAt: Date(timeIntervalSince1970: 1)
         ) else {
-            return false
+            return nil
         }
         let key = SnapshotHistoryCanonicalizer.observationIdentityKey(for: entry.observation)
-        return fixtureID(forIdentityKey: key) != nil
+        return fixtureID(forIdentityKey: key)
     }
 }

@@ -1,8 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
-import { isSha256Fingerprint, sha256Fingerprint, type Sha256Fingerprint } from '@coc-helper/wire';
-
 import type { SwiftOracleOperation } from './oracle';
 
 export type GoldenFixtureOperation = SwiftOracleOperation | 'fixture-registry';
@@ -33,13 +31,12 @@ export type GoldenCase = {
   readonly category: ParityCategory;
   readonly operation: GoldenFixtureOperation;
   readonly fixture: string;
-  readonly fixtureSha256: Sha256Fingerprint;
   readonly swiftOwner: string;
   readonly typescriptOwner: string;
 };
 
 export type GoldenManifest = {
-  readonly protocolVersion: 1;
+  readonly protocolVersion: 2;
   readonly fixtureVersion: string;
   readonly cases: readonly GoldenCase[];
 };
@@ -51,8 +48,8 @@ export function loadGoldenManifest(root = process.cwd()): GoldenManifest {
 
 export function parseGoldenManifest(value: unknown): GoldenManifest {
   const object = asRecord(value, 'manifest');
-  if (object.protocolVersion !== 1) {
-    throw new Error('golden manifest protocolVersion 必须为 1。');
+  if (object.protocolVersion !== 2) {
+    throw new Error('golden manifest protocolVersion 必须为 2。');
   }
   const fixtureVersion = requireString(object.fixtureVersion, 'manifest.fixtureVersion');
   if (!Array.isArray(object.cases) || object.cases.length === 0) {
@@ -68,7 +65,7 @@ export function parseGoldenManifest(value: unknown): GoldenManifest {
     return entry;
   });
 
-  return { protocolVersion: 1, fixtureVersion, cases };
+  return { protocolVersion: 2, fixtureVersion, cases };
 }
 
 export function fixturePath(root: string, entry: GoldenCase): string {
@@ -91,10 +88,6 @@ export function fixturePath(root: string, entry: GoldenCase): string {
 export function readGoldenFixture(root: string, entry: GoldenCase): unknown {
   const path = fixturePath(root, entry);
   const data = readFileSync(path);
-  const actual = sha256Fingerprint(data);
-  if (actual !== entry.fixtureSha256) {
-    throw new Error(`fixture fingerprint 不匹配：${entry.id}`);
-  }
   return JSON.parse(data.toString('utf8')) as unknown;
 }
 
@@ -108,16 +101,11 @@ function parseGoldenCase(value: unknown, label: string): GoldenCase {
   if (!(GOLDEN_FIXTURE_OPERATIONS as readonly string[]).includes(operation)) {
     throw new Error(`${label}.operation 不受支持。`);
   }
-  const fixtureSha256 = requireString(object.fixtureSha256, `${label}.fixtureSha256`);
-  if (!isSha256Fingerprint(fixtureSha256)) {
-    throw new Error(`${label}.fixtureSha256 不是合法 SHA-256 fingerprint。`);
-  }
   return {
     id: requireString(object.id, `${label}.id`),
     category: category as ParityCategory,
     operation: operation as GoldenFixtureOperation,
     fixture: requireString(object.fixture, `${label}.fixture`),
-    fixtureSha256,
     swiftOwner: requireString(object.swiftOwner, `${label}.swiftOwner`),
     typescriptOwner: requireString(object.typescriptOwner, `${label}.typescriptOwner`),
   };

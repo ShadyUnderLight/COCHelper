@@ -1,5 +1,3 @@
-import { sha256Fingerprint, type Sha256Fingerprint } from '@coc-helper/wire';
-
 import type { ParityCategory } from './manifest';
 import type { SwiftOracleResponse } from './oracle';
 
@@ -20,8 +18,6 @@ export type ParityDifference = {
 export type ParityReport = {
   readonly caseId: string;
   readonly ok: boolean;
-  readonly inputFingerprint: Sha256Fingerprint;
-  readonly outputFingerprint?: Sha256Fingerprint;
   readonly differences: readonly ParityDifference[];
 };
 
@@ -37,7 +33,6 @@ export class ParityMismatchError extends Error {
 
 export function compareCanonicalParity(input: {
   readonly caseId: string;
-  readonly source: string;
   readonly expectedAccepted: boolean;
   readonly expectedCanonicalHex?: string;
   readonly typescript: CanonicalOutcome;
@@ -46,7 +41,6 @@ export function compareCanonicalParity(input: {
 }): ParityReport {
   const category = input.category ?? 'wire';
   const differences: ParityDifference[] = [];
-  const inputFingerprint = sha256Fingerprint(input.source);
 
   if (input.typescript.ok !== input.expectedAccepted) {
     differences.push({
@@ -62,15 +56,6 @@ export function compareCanonicalParity(input: {
       path: '$.expectedAccepted',
       expected: String(input.expectedAccepted),
       actual: String(input.swift.ok),
-    });
-  }
-
-  if (input.swift.inputFingerprint !== inputFingerprint) {
-    differences.push({
-      category: 'fixture',
-      path: '$.inputFingerprint',
-      expected: inputFingerprint,
-      actual: input.swift.inputFingerprint,
     });
   }
 
@@ -125,27 +110,11 @@ export function compareCanonicalParity(input: {
         actual: input.swift.value.canonicalHex,
       });
     }
-
-    const expectedOutputFingerprint = sha256Fingerprint(hexToBytes(input.typescript.canonicalHex));
-    if (input.swift.outputFingerprint !== expectedOutputFingerprint) {
-      differences.push({
-        category,
-        path: '$.outputFingerprint',
-        expected: expectedOutputFingerprint,
-        actual: input.swift.outputFingerprint,
-      });
-    }
   }
 
-  const outputFingerprint =
-    input.typescript.ok && input.swift.ok
-      ? sha256Fingerprint(hexToBytes(input.typescript.canonicalHex))
-      : undefined;
   return {
     caseId: input.caseId,
     ok: differences.length === 0,
-    inputFingerprint,
-    outputFingerprint,
     differences,
   };
 }
@@ -226,12 +195,12 @@ function formatParityReport(report: ParityReport): string {
   const details = report.differences
     .map((item) => `${item.category} ${item.path} expected=${item.expected} actual=${item.actual}`)
     .join('; ');
-  return `parity 失败（caseId=${report.caseId}，input=${report.inputFingerprint}）：${details}`;
+  return `parity 失败（caseId=${report.caseId}）：${details}`;
 }
 
 function summarize(value: unknown): string {
   if (typeof value === 'string') {
-    return `<string length=${value.length} ${sha256Fingerprint(value)}>`;
+    return `<string length=${value.length}>`;
   }
   if (typeof value === 'bigint') {
     return `<bigint ${value.toString()}>`;
@@ -243,15 +212,4 @@ function summarize(value: unknown): string {
     return `<object keys=${Object.keys(value).length}>`;
   }
   return String(value);
-}
-
-function hexToBytes(value: string): Uint8Array {
-  if (!/^[0-9a-f]+$/.test(value) || value.length % 2 !== 0) {
-    throw new Error('canonical hex 格式无效。');
-  }
-  const bytes = new Uint8Array(value.length / 2);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes;
 }

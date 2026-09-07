@@ -95,6 +95,36 @@ export function officialEndpointSourceLabel<Snapshot>(
   return officialAPISourceLabel(state.status, state.lastGood !== undefined);
 }
 
+/** 对齐 ClanWarDisplayProjection.refreshStatus：failed 按 last-good 二分。 */
+export type OfficialEndpointRefreshStatus =
+  | 'never'
+  | 'loading'
+  | 'success'
+  | 'stale'
+  | 'failedWithLastGood'
+  | 'failedWithoutLastGood'
+  | 'skipped';
+
+export function officialEndpointRefreshStatus<Snapshot>(
+  state: OfficialEndpointState<Snapshot>,
+  nowMs: number = Date.now(),
+): OfficialEndpointRefreshStatus {
+  switch (officialEndpointDisplayStatus(state, nowMs)) {
+    case 'never':
+      return 'never';
+    case 'loading':
+      return 'loading';
+    case 'success':
+      return 'success';
+    case 'stale':
+      return 'stale';
+    case 'skipped':
+      return 'skipped';
+    case 'failed':
+      return state.lastGood === undefined ? 'failedWithoutLastGood' : 'failedWithLastGood';
+  }
+}
+
 export function snapshotUnrecognizedKeys(snapshot: UnrecognizedKeysProviding): readonly string[] {
   return snapshot.unrecognizedKeys;
 }

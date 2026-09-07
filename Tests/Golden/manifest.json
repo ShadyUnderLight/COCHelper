@@ -81,6 +81,14 @@
       "fixture": "Tests/Golden/Fixtures/snapshot-history-diff-contract.json",
       "swiftOwner": "Tools/golden-oracle/GoldenOracleEntry.swift#snapshot-history-diff",
       "typescriptOwner": "packages/testkit/src/snapshot-history.parity.test.ts"
+    },
+    {
+      "id": "error/error-scenarios-contract",
+      "category": "error",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/error-scenarios-contract.json",
+      "swiftOwner": "Tests/COCHelperCoreTests/CoAPIFetchClanWarTests.swift;Tests/COCHelperCoreTests/OfficialAPISourceLabelingTests.swift;Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift#refreshStatus",
+      "typescriptOwner": "packages/testkit/src/error-scenarios.contract.test.ts"
     }
   ]
 }

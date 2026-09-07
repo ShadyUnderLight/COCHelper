@@ -71,5 +71,6 @@ hash 校验，#305 执行）。串线防护改由以下三项承担：manifest �
 | `snapshot-history-canonicalize` | 快照历史 canonicalize oracle parity | `snapshot-history.parity.test.ts` |
 | `manual-reconciliation-preview` | 对账 preview oracle parity | `manual-reconciliation.parity.test.ts` |
 
-当前 manifest 登记 wire / parser / projection / diff 共 10 条 fixture。**error 场景
-fixture 仍由 E2-06（#274）等域 issue 追加**，不在本协议中提前实现领域逻辑。
+当前 manifest 登记 wire / parser / projection / diff / **error** 共 11 条 fixture。
+error 场景由 `error-scenarios-contract.json` 冻结（operation=`fixture-registry`，
+owner=`packages/testkit/src/error-scenarios.contract.test.ts`）。

@@ -1,0 +1,406 @@
+{
+  "description": "E0-02 error-matrix §ER-1…§ER-4 静态 expected（#265 关闭门）。outcome.canonicalHex 冻结语义字段的 canonical JSON bytes；不经 Swift oracle 驱动。",
+  "contractVersion": 1,
+  "httpMappingCases": [
+    {
+      "id": "missing-credentials",
+      "token": null,
+      "status": 200,
+      "expected": {
+        "kind": "missingCredentials"
+      }
+    },
+    {
+      "id": "http-401-unauthorized",
+      "status": 401,
+      "expected": {
+        "kind": "unauthorized"
+      }
+    },
+    {
+      "id": "http-403-access-denied",
+      "status": 403,
+      "body": "{\"reason\":\"accessDenied.invalidIp\"}",
+      "expected": {
+        "kind": "accessDenied",
+        "reason": "accessDenied.invalidIp"
+      }
+    },
+    {
+      "id": "http-404-not-found",
+      "status": 404,
+      "expected": {
+        "kind": "notFound"
+      }
+    },
+    {
+      "id": "http-429-rate-limited",
+      "status": 429,
+      "headers": {
+        "Retry-After": "30"
+      },
+      "expected": {
+        "kind": "rateLimited",
+        "retryAfterSeconds": 30
+      }
+    },
+    {
+      "id": "http-500-server-error",
+      "status": 500,
+      "expected": {
+        "kind": "serverError",
+        "statusCode": 500
+      }
+    },
+    {
+      "id": "http-502-server-error",
+      "status": 502,
+      "expected": {
+        "kind": "serverError",
+        "statusCode": 502
+      }
+    },
+    {
+      "id": "http-418-unexpected-network",
+      "status": 418,
+      "expected": {
+        "kind": "network",
+        "underlying": "unexpected status 418"
+      }
+    },
+    {
+      "id": "malformed-locations-response",
+      "status": 200,
+      "body": "not-json",
+      "request": "locations",
+      "expected": {
+        "kind": "malformedResponse",
+        "detail": "locations decode failed"
+      }
+    }
+  ],
+  "failureKindCases": [
+    {
+      "id": "kind-missingCredentials",
+      "error": {
+        "kind": "missingCredentials"
+      },
+      "expectedFailureKind": "missingCredentials"
+    },
+    {
+      "id": "kind-unauthorized",
+      "error": {
+        "kind": "unauthorized"
+      },
+      "expectedFailureKind": "unauthorized"
+    },
+    {
+      "id": "kind-accessDenied",
+      "error": {
+        "kind": "accessDenied",
+        "reason": "x"
+      },
+      "expectedFailureKind": "accessDenied"
+    },
+    {
+      "id": "kind-notFound",
+      "error": {
+        "kind": "notFound"
+      },
+      "expectedFailureKind": "notFound"
+    },
+    {
+      "id": "kind-rateLimited",
+      "error": {
+        "kind": "rateLimited",
+        "retryAfterSeconds": null
+      },
+      "expectedFailureKind": "rateLimited"
+    },
+    {
+      "id": "kind-serverError",
+      "error": {
+        "kind": "serverError",
+        "statusCode": 503
+      },
+      "expectedFailureKind": "serverError"
+    },
+    {
+      "id": "kind-timeout",
+      "error": {
+        "kind": "timeout"
+      },
+      "expectedFailureKind": "timeout"
+    },
+    {
+      "id": "kind-network",
+      "error": {
+        "kind": "network",
+        "underlying": "e"
+      },
+      "expectedFailureKind": "network"
+    },
+    {
+      "id": "kind-malformedResponse",
+      "error": {
+        "kind": "malformedResponse",
+        "detail": "d"
+      },
+      "expectedFailureKind": "malformedResponse"
+    },
+    {
+      "id": "kind-cancelled-via-refresher",
+      "error": {
+        "type": "cancelled"
+      },
+      "expectedFailureKind": "cancelled"
+    }
+  ],
+  "sourceLabelCases": [
+    {
+      "id": "success-with-last-good",
+      "status": "success",
+      "hasLastGood": true,
+      "expected": "official-api"
+    },
+    {
+      "id": "success-without-last-good",
+      "status": "success",
+      "hasLastGood": false,
+      "expected": "official-api"
+    },
+    {
+      "id": "failed-with-last-good",
+      "status": "failed",
+      "hasLastGood": true,
+      "expected": "cached-official-api"
+    },
+    {
+      "id": "failed-without-last-good",
+      "status": "failed",
+      "hasLastGood": false,
+      "expected": null
+    },
+    {
+      "id": "never",
+      "status": "never",
+      "hasLastGood": true,
+      "expected": null
+    },
+    {
+      "id": "loading",
+      "status": "loading",
+      "hasLastGood": true,
+      "expected": null
+    },
+    {
+      "id": "skipped",
+      "status": "skipped",
+      "hasLastGood": true,
+      "expected": null
+    }
+  ],
+  "refreshStatusCases": [
+    {
+      "id": "never",
+      "status": "never",
+      "hasLastGood": false,
+      "fetchedAtMs": null,
+      "nowMs": 1700000000000,
+      "expected": "never"
+    },
+    {
+      "id": "loading",
+      "status": "loading",
+      "hasLastGood": false,
+      "fetchedAtMs": null,
+      "nowMs": 1700000000000,
+      "expected": "loading"
+    },
+    {
+      "id": "success-fresh",
+      "status": "success",
+      "hasLastGood": true,
+      "fetchedAtMs": 1700000000000,
+      "nowMs": 1700000000000,
+      "expected": "success"
+    },
+    {
+      "id": "success-stale",
+      "status": "success",
+      "hasLastGood": true,
+      "fetchedAtMs": 1700000000000,
+      "nowMs": 1700086400001,
+      "expected": "stale"
+    },
+    {
+      "id": "failed-with-last-good",
+      "status": "failed",
+      "hasLastGood": true,
+      "fetchedAtMs": 1700000000000,
+      "nowMs": 1700000000000,
+      "expected": "failedWithLastGood"
+    },
+    {
+      "id": "failed-without-last-good",
+      "status": "failed",
+      "hasLastGood": false,
+      "fetchedAtMs": null,
+      "nowMs": 1700000000000,
+      "expected": "failedWithoutLastGood"
+    },
+    {
+      "id": "skipped",
+      "status": "skipped",
+      "hasLastGood": false,
+      "fetchedAtMs": null,
+      "nowMs": 1700000000000,
+      "expected": "skipped"
+    }
+  ],
+  "refreshStateCases": [
+    {
+      "id": "coapi-unauthorized-preserves-last-good-and-parser",
+      "tag": "#CLAN",
+      "parserVersion": "clan-snapshot-0.9",
+      "nowMs": 2000,
+      "previous": {
+        "status": "success",
+        "fetchedAtMs": 1000,
+        "parserVersion": "clan-snapshot-0.4",
+        "hasLastGood": true,
+        "lastGoodName": "previous-good"
+      },
+      "error": {
+        "type": "coapi",
+        "kind": "unauthorized"
+      },
+      "expected": {
+        "status": "failed",
+        "fetchedAtMs": 1000,
+        "lastAttemptAtMs": 2000,
+        "failureKind": "unauthorized",
+        "lastHTTPStatus": 401,
+        "parserVersion": "clan-snapshot-0.4",
+        "hasLastGood": true,
+        "lastGoodName": "previous-good",
+        "sourceLabel": "cached-official-api",
+        "refreshStatus": "failedWithLastGood",
+        "lastErrorReason": "认证失败（401）",
+        "canonicalHex": "7b226661696c7572654b696e64223a22756e617574686f72697a6564222c226665746368656441744d73223a313030302c226861734c617374476f6f64223a747275652c226c617374417474656d707441744d73223a323030302c226c6173744572726f72526561736f6e223a22e8aea4e8af81e5a4b1e8b4a5efbc88343031efbc89222c226c617374476f6f644e616d65223a2270726576696f75732d676f6f64222c226c61737448545450537461747573223a3430312c2270617273657256657273696f6e223a22636c616e2d736e617073686f742d302e34222c2272656672657368537461747573223a226661696c6564576974684c617374476f6f64222c22736f757263654c6162656c223a226361636865642d6f6666696369616c2d617069222c22737461747573223a226661696c6564227d"
+      }
+    },
+    {
+      "id": "coapi-rateLimited-without-previous-uses-new-parser",
+      "tag": "#CLAN",
+      "parserVersion": "clan-snapshot-0.9",
+      "nowMs": 2000,
+      "previous": null,
+      "error": {
+        "type": "coapi",
+        "kind": "rateLimited",
+        "retryAfterSeconds": null
+      },
+      "expected": {
+        "status": "failed",
+        "fetchedAtMs": null,
+        "lastAttemptAtMs": 2000,
+        "failureKind": "rateLimited",
+        "lastHTTPStatus": 429,
+        "parserVersion": "clan-snapshot-0.9",
+        "hasLastGood": false,
+        "lastGoodName": null,
+        "sourceLabel": null,
+        "refreshStatus": "failedWithoutLastGood",
+        "lastErrorReason": "请求被限流（429），请稍后再试",
+        "canonicalHex": "7b226661696c7572654b696e64223a22726174654c696d69746564222c226665746368656441744d73223a6e756c6c2c226861734c617374476f6f64223a66616c73652c226c617374417474656d707441744d73223a323030302c226c6173744572726f72526561736f6e223a22e8afb7e6b182e8a2abe99990e6b581efbc88343239efbc89efbc8ce8afb7e7a88de5908ee5868de8af95222c226c617374476f6f644e616d65223a6e756c6c2c226c61737448545450537461747573223a3432392c2270617273657256657273696f6e223a22636c616e2d736e617073686f742d302e39222c2272656672657368537461747573223a226661696c6564576974686f75744c617374476f6f64222c22736f757263654c6162656c223a6e756c6c2c22737461747573223a226661696c6564227d"
+      }
+    },
+    {
+      "id": "cancelled-preserves-last-good-and-parser",
+      "tag": "#CLAN",
+      "parserVersion": "clan-snapshot-0.9",
+      "nowMs": 3000,
+      "previous": {
+        "status": "success",
+        "fetchedAtMs": 1000,
+        "parserVersion": "clan-snapshot-0.4",
+        "hasLastGood": true,
+        "lastGoodName": "previous-good"
+      },
+      "error": {
+        "type": "cancelled"
+      },
+      "expected": {
+        "status": "failed",
+        "fetchedAtMs": 1000,
+        "lastAttemptAtMs": 3000,
+        "failureKind": "cancelled",
+        "lastHTTPStatus": null,
+        "parserVersion": "clan-snapshot-0.4",
+        "hasLastGood": true,
+        "lastGoodName": "previous-good",
+        "sourceLabel": "cached-official-api",
+        "refreshStatus": "failedWithLastGood",
+        "lastErrorReason": "已取消",
+        "canonicalHex": "7b226661696c7572654b696e64223a2263616e63656c6c6564222c226665746368656441744d73223a313030302c226861734c617374476f6f64223a747275652c226c617374417474656d707441744d73223a333030302c226c6173744572726f72526561736f6e223a22e5b7b2e58f96e6b688222c226c617374476f6f644e616d65223a2270726576696f75732d676f6f64222c226c61737448545450537461747573223a6e756c6c2c2270617273657256657273696f6e223a22636c616e2d736e617073686f742d302e34222c2272656672657368537461747573223a226661696c6564576974684c617374476f6f64222c22736f757263654c6162656c223a226361636865642d6f6666696369616c2d617069222c22737461747573223a226661696c6564227d"
+      }
+    },
+    {
+      "id": "unknown-error-maps-to-network-without-last-good",
+      "tag": "#CLAN",
+      "parserVersion": "clan-snapshot-0.9",
+      "nowMs": 4000,
+      "previous": null,
+      "error": {
+        "type": "unknown",
+        "name": "TypeError"
+      },
+      "expected": {
+        "status": "failed",
+        "fetchedAtMs": null,
+        "lastAttemptAtMs": 4000,
+        "failureKind": "network",
+        "lastHTTPStatus": null,
+        "parserVersion": "clan-snapshot-0.9",
+        "hasLastGood": false,
+        "lastGoodName": null,
+        "sourceLabel": null,
+        "refreshStatus": "failedWithoutLastGood",
+        "lastErrorReason": "未知错误：TypeError",
+        "canonicalHex": "7b226661696c7572654b696e64223a226e6574776f726b222c226665746368656441744d73223a6e756c6c2c226861734c617374476f6f64223a66616c73652c226c617374417474656d707441744d73223a343030302c226c6173744572726f72526561736f6e223a22e69caae79fa5e99499e8afafefbc9a547970654572726f72222c226c617374476f6f644e616d65223a6e756c6c2c226c61737448545450537461747573223a6e756c6c2c2270617273657256657273696f6e223a22636c616e2d736e617073686f742d302e39222c2272656672657368537461747573223a226661696c6564576974686f75744c617374476f6f64222c22736f757263654c6162656c223a6e756c6c2c22737461747573223a226661696c6564227d"
+      }
+    },
+    {
+      "id": "success-writes-new-parser-and-clears-failure",
+      "tag": "#CLAN",
+      "parserVersion": "clan-snapshot-0.9",
+      "nowMs": 5000,
+      "previous": {
+        "status": "failed",
+        "fetchedAtMs": 1000,
+        "parserVersion": "clan-snapshot-0.4",
+        "hasLastGood": true,
+        "lastGoodName": "previous-good"
+      },
+      "error": {
+        "type": "success",
+        "name": "fresh-good"
+      },
+      "expected": {
+        "status": "success",
+        "fetchedAtMs": 5000,
+        "lastAttemptAtMs": 5000,
+        "failureKind": null,
+        "lastHTTPStatus": null,
+        "parserVersion": "clan-snapshot-0.9",
+        "hasLastGood": true,
+        "lastGoodName": "fresh-good",
+        "sourceLabel": "official-api",
+        "refreshStatus": "success",
+        "lastErrorReason": null,
+        "canonicalHex": "7b226661696c7572654b696e64223a6e756c6c2c226665746368656441744d73223a353030302c226861734c617374476f6f64223a747275652c226c617374417474656d707441744d73223a353030302c226c6173744572726f72526561736f6e223a6e756c6c2c226c617374476f6f644e616d65223a2266726573682d676f6f64222c226c61737448545450537461747573223a6e756c6c2c2270617273657256657273696f6e223a22636c616e2d736e617073686f742d302e39222c2272656672657368537461747573223a2273756363657373222c22736f757263654c6162656c223a226f6666696369616c2d617069222c22737461747573223a2273756363657373227d"
+      }
+    }
+  ]
+}

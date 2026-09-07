@@ -101,8 +101,8 @@ export function registerIpcHandlers(
   ipcMain.handle(IMPORT_COMMIT_CHANNEL, (event, payload: unknown) => {
     try {
       assertTrustedSender(event, webpackEntry);
-      parseImportCommitRequest(payload);
-      return resultOk(requireServices(services).imports.commit());
+      const request = parseImportCommitRequest(payload);
+      return resultOk(requireServices(services).imports.commit(request.expectedGeneration));
     } catch (error: unknown) {
       return resultErr(toIpcError(error));
     }
@@ -111,8 +111,8 @@ export function registerIpcHandlers(
   ipcMain.handle(IMPORT_DISCARD_CHANNEL, (event, payload: unknown) => {
     try {
       assertTrustedSender(event, webpackEntry);
-      parseImportDiscardRequest(payload);
-      return resultOk(requireServices(services).imports.discard());
+      const request = parseImportDiscardRequest(payload);
+      return resultOk(requireServices(services).imports.discard(request.expectedGeneration));
     } catch (error: unknown) {
       return resultErr(toIpcError(error));
     }

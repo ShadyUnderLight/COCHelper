@@ -71,7 +71,11 @@ export class PersistentVillageStore implements VillageStorePort {
       this.villagesCache.map((village) => village.id),
       id,
     );
-    this.selectionStore.save(resolved);
     this.selectedVillageId = resolved;
+    try {
+      this.selectionStore.save(resolved);
+    } catch {
+      // selection 是 soft fail-open：内存权威已更新；重启后按 resolveSelectedVillageId 回落。
+    }
   }
 }

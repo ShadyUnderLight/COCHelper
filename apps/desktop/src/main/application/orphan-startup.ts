@@ -46,28 +46,20 @@ export function applyOrphanCachePolicyOnStartup(
   /** 冷启动无持久化 orphanSince：空 map → 宽限期，不 purge。 */
   const orphanSinceByTag: Readonly<Record<string, number>> = {};
 
-  const clanNext = applyAndMaybeSave(
-    runtime.loadedClanStates,
-    runtime.clanStates,
-    {
-      villageClanTags,
-      trackedClanTags,
-      endpointKind: 'clan',
-      orphanSinceByTag,
-      nowMs,
-    },
-  );
-  const clanWarNext = applyAndMaybeSave(
-    runtime.loadedClanWarStates,
-    runtime.clanWarStates,
-    {
-      villageClanTags,
-      trackedClanTags,
-      endpointKind: 'clan',
-      orphanSinceByTag,
-      nowMs,
-    },
-  );
+  const clanNext = applyAndMaybeSave(runtime.loadedClanStates, runtime.clanStates, {
+    villageClanTags,
+    trackedClanTags,
+    endpointKind: 'clan',
+    orphanSinceByTag,
+    nowMs,
+  });
+  const clanWarNext = applyAndMaybeSave(runtime.loadedClanWarStates, runtime.clanWarStates, {
+    villageClanTags,
+    trackedClanTags,
+    endpointKind: 'clan',
+    orphanSinceByTag,
+    nowMs,
+  });
   const clanWarLogNext = applyAndMaybeSave(
     runtime.loadedClanWarLogStates,
     runtime.clanWarLogStates,
@@ -90,18 +82,14 @@ export function applyOrphanCachePolicyOnStartup(
       nowMs,
     },
   );
-  const playerNext = applyAndMaybeSave(
-    runtime.loadedPlayerStates,
-    runtime.playerStates,
-    {
-      villageClanTags,
-      trackedClanTags,
-      playerTags,
-      endpointKind: 'player',
-      orphanSinceByTag,
-      nowMs,
-    },
-  );
+  const playerNext = applyAndMaybeSave(runtime.loadedPlayerStates, runtime.playerStates, {
+    villageClanTags,
+    trackedClanTags,
+    playerTags,
+    endpointKind: 'player',
+    orphanSinceByTag,
+    nowMs,
+  });
 
   return {
     clanPurged: clanNext.purged,

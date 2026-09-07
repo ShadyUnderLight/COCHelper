@@ -7,11 +7,15 @@ import {
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
+  isAppSnapshotPayload,
   isCancelRequest,
+  isImportCommitPayload,
+  isImportDiscardPayload,
+  isImportPreparePayload,
   isIpcError,
   isResult,
+  isVillageSelectPayload,
   type AppHealthResponse,
-  type AppSnapshotPayload,
   type AppSnapshotResponse,
   type CancelRequest,
   type DesktopBridge,
@@ -32,68 +36,24 @@ export function isAppHealthResponse(value: unknown): value is AppHealthResponse 
   );
 }
 
-export function isAppSnapshotPayload(value: unknown): value is AppSnapshotPayload {
-  if (!isPlainObject(value)) {
-    return false;
-  }
-  return (
-    typeof value.generation === 'number' &&
-    Number.isSafeInteger(value.generation) &&
-    typeof value.availability === 'string' &&
-    typeof value.villageStatus === 'string' &&
-    (value.villageError === null || typeof value.villageError === 'string') &&
-    typeof value.canWrite === 'boolean' &&
-    (value.selectedVillageId === null || typeof value.selectedVillageId === 'string') &&
-    Array.isArray(value.villages) &&
-    (value.pendingImport === null || isPlainObject(value.pendingImport))
-  );
-}
-
 export function isAppSnapshotResponse(value: unknown): value is AppSnapshotResponse {
   return isResult(value, isAppSnapshotPayload, isIpcError);
 }
 
 export function isVillageSelectResponse(value: unknown): value is VillageSelectResponse {
-  return isResult(
-    value,
-    (payload): payload is { generation: number; selectedVillageId: string } =>
-      isPlainObject(payload) &&
-      typeof payload.generation === 'number' &&
-      typeof payload.selectedVillageId === 'string',
-    isIpcError,
-  );
+  return isResult(value, isVillageSelectPayload, isIpcError);
 }
 
 export function isImportPrepareResponse(value: unknown): value is ImportPrepareResponse {
-  return isResult(
-    value,
-    (payload): payload is ImportPrepareResponse extends { ok: true; value: infer V } ? V : never =>
-      isPlainObject(payload) &&
-      typeof payload.generation === 'number' &&
-      isPlainObject(payload.pending) &&
-      isPlainObject(payload.preview),
-    isIpcError,
-  );
+  return isResult(value, isImportPreparePayload, isIpcError);
 }
 
 export function isImportCommitResponse(value: unknown): value is ImportCommitResponse {
-  return isResult(
-    value,
-    (payload): payload is { generation: number; selectedVillageId: string | null } =>
-      isPlainObject(payload) &&
-      typeof payload.generation === 'number' &&
-      (payload.selectedVillageId === null || typeof payload.selectedVillageId === 'string'),
-    isIpcError,
-  );
+  return isResult(value, isImportCommitPayload, isIpcError);
 }
 
 export function isImportDiscardResponse(value: unknown): value is ImportDiscardResponse {
-  return isResult(
-    value,
-    (payload): payload is { generation: number } =>
-      isPlainObject(payload) && typeof payload.generation === 'number',
-    isIpcError,
-  );
+  return isResult(value, isImportDiscardPayload, isIpcError);
 }
 
 export function isStateChangedPayload(value: unknown): value is StateChangedPayload {
@@ -174,5 +134,5 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   );
 }
 
-// keep CancelRequest type import used for documentation of send signature
 export type { CancelRequest };
+export { isAppSnapshotPayload };

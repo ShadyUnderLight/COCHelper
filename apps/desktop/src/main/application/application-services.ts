@@ -39,10 +39,7 @@ export function createApplicationServices(
   };
 }
 
-export {
-  AppLifecycleService,
-  bootApplicationServices,
-} from './app-lifecycle-service';
+export { AppLifecycleService, bootApplicationServices } from './app-lifecycle-service';
 export { VillageService } from './village-service';
 export { SnapshotImportService } from './snapshot-import-service';
 export { AppAuthoritativeState, AppServiceError } from './app-authoritative-state';

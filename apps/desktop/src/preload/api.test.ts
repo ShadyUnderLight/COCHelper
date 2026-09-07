@@ -49,7 +49,7 @@ describe('preload API surface', () => {
     );
   });
 
-  it('校验 app.snapshot 与 state.changed 订阅', async () => {
+  it('校验 app.snapshot 与 state.changed 订阅，并拒绝伪造 payload', async () => {
     const snapshot = {
       generation: 0,
       availability: 'available',
@@ -79,12 +79,24 @@ describe('preload API surface', () => {
     const result = await bridge.snapshot();
     expect(result).toEqual({ ok: true, value: snapshot });
 
+    await expect(
+      createDesktopBridge(
+        async () => ({
+          ok: true,
+          value: { ...snapshot, availability: 'garbage', villages: [123] },
+        }),
+        () => {},
+        () => () => undefined,
+      ).snapshot(),
+    ).rejects.toThrow('app.snapshot 返回值不合法');
+
     const seen: unknown[] = [];
     const unsubscribe = bridge.onStateChanged((payload) => {
       seen.push(payload);
     });
     holder.listener?.(snapshot);
     holder.listener?.({ forged: true });
+    holder.listener?.({ ...snapshot, availability: 'garbage' });
     expect(seen).toEqual([snapshot]);
     unsubscribe();
   });

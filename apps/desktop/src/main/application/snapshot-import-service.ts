@@ -1,6 +1,7 @@
 /**
  * SnapshotImportService：显式目标的 prepare/commit（#276）。
  * prepare 绝不读取权威 selectedVillageId；仅使用请求中的 villageId。
+ * commit/discard 必须携带 expectedGeneration（CAS）。
  */
 
 import type {
@@ -15,6 +16,7 @@ import {
   parsePendingImport,
   type Clock,
   type PendingImportPreview,
+  type VillageProfile,
 } from '@coc-helper/domain';
 import { generateUuid } from '@coc-helper/wire';
 
@@ -56,18 +58,21 @@ export class SnapshotImportService {
     }
 
     const pending = result.value;
+    /** 必须先完成 DTO 转换；失败时不得 setPending / bump generation。 */
+    const summary = mapPendingDtos(pending, villages);
     this.state.setPending(pending);
     return {
       generation: this.state.getGeneration(),
-      pending: toPendingImportSummaryDto(pending, villages),
-      preview: toPendingImportPreviewWire(pending),
+      pending: summary.pending,
+      preview: summary.preview,
     };
   }
 
-  commit(): ImportCommitPayload {
+  commit(expectedGeneration: number): ImportCommitPayload {
     if (!this.state.canWrite()) {
       throw new AppServiceError('unavailable', '当前处于恢复或只读状态，无法导入。');
     }
+    assertExpectedGeneration(this.state.getGeneration(), expectedGeneration);
     const pending = this.state.getPending();
     if (pending === null) {
       throw new AppServiceError('validation', '没有待确认的导入。');
@@ -77,6 +82,7 @@ export class SnapshotImportService {
     const villages = [...store.listVillages()];
     applyPendingToVillages(pending, villages, store);
 
+    /** 村庄主数据已提交：无论 selection soft-fail，都必须清 pending 并 bump。 */
     this.state.setPending(null, { bump: false });
     this.state.notifyMutation();
     return {
@@ -85,17 +91,44 @@ export class SnapshotImportService {
     };
   }
 
-  discard(): ImportDiscardPayload {
+  discard(expectedGeneration: number): ImportDiscardPayload {
+    assertExpectedGeneration(this.state.getGeneration(), expectedGeneration);
+    if (this.state.getPending() === null) {
+      return { generation: this.state.getGeneration() };
+    }
     this.state.setPending(null);
     return { generation: this.state.getGeneration() };
   }
 }
 
+function assertExpectedGeneration(current: number, expected: number): void {
+  if (current !== expected) {
+    throw new AppServiceError('conflict', '导入状态已过期，请刷新后重试。');
+  }
+}
+
+function mapPendingDtos(
+  pending: PendingImportPreview,
+  villages: readonly VillageProfile[],
+): Pick<ImportPreparePayload, 'pending' | 'preview'> {
+  try {
+    return {
+      pending: toPendingImportSummaryDto(pending, villages),
+      preview: toPendingImportPreviewWire(pending),
+    };
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw new AppServiceError('validation', '导入预览包含无法经 IPC 传递的数值。');
+    }
+    throw error;
+  }
+}
+
 function applyPendingToVillages(
   pending: PendingImportPreview,
-  villages: VillageProfileMutable[],
+  villages: VillageProfile[],
   store: {
-    saveVillages(villages: readonly import('@coc-helper/domain').VillageProfile[]): void;
+    saveVillages(villages: readonly VillageProfile[]): void;
     setSelectedVillageId(id: string | null): void;
   },
 ): void {
@@ -128,11 +161,7 @@ function applyPendingToVillages(
   }
 }
 
-type VillageProfileMutable = import('@coc-helper/domain').VillageProfile;
-
-function formatImportError(
-  error: import('@coc-helper/domain').AccountSnapshotImportError,
-): string {
+function formatImportError(error: import('@coc-helper/domain').AccountSnapshotImportError): string {
   switch (error.kind) {
     case 'emptyInput':
       return '没有可解析的文本。请先从游戏复制并粘贴 JSON。';

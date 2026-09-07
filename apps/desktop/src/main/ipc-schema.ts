@@ -1,5 +1,3 @@
-import { z } from 'zod';
-
 import {
   APP_HEALTH_CHANNEL,
   APP_SNAPSHOT_CHANNEL,
@@ -10,8 +8,13 @@ import {
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
+  emptyObjectRequestSchema,
+  importCommitRequestSchema,
+  importDiscardRequestSchema,
+  importPrepareRequestSchema,
   isSafeIpcDiagnosticText,
   resultOk,
+  villageSelectRequestSchema,
   type AppHealthResponse,
   type AppSnapshotRequest,
   type CancelRequest,
@@ -22,16 +25,9 @@ import {
   type RequestId,
   type VillageSelectRequest,
 } from '@coc-helper/contracts';
+import { z } from 'zod';
 
 import { redactDiagnosticText } from './redaction';
-
-const emptyObjectSchema = z.object({}).strict();
-const optionalEmptyObjectSchema = emptyObjectSchema.optional();
-
-const appHealthRequestSchema = optionalEmptyObjectSchema;
-const appSnapshotRequestSchema = optionalEmptyObjectSchema;
-const importCommitRequestSchema = optionalEmptyObjectSchema;
-const importDiscardRequestSchema = optionalEmptyObjectSchema;
 
 const cancelRequestSchema = z
   .object({
@@ -43,18 +39,8 @@ const cancelRequestSchema = z
   })
   .strict();
 
-const villageSelectRequestSchema = z
-  .object({
-    villageId: z.string().min(1).max(128),
-  })
-  .strict();
-
-const importPrepareRequestSchema = z
-  .object({
-    text: z.string().max(5_000_000),
-    villageId: z.string().min(1).max(128).nullable().optional(),
-  })
-  .strict();
+const appHealthRequestSchema = emptyObjectRequestSchema.optional();
+const appSnapshotRequestSchema = emptyObjectRequestSchema.optional();
 
 const IPC_VALIDATION_ERROR_DEFINITIONS = {
   invalidRequest: {
@@ -112,7 +98,7 @@ export function parseVillageSelectRequest(payload: unknown): VillageSelectReques
   if (!result.success) {
     throw new IpcValidationError('village.select 参数不合法');
   }
-  return { villageId: result.data.villageId };
+  return result.data;
 }
 
 export function parseImportPrepareRequest(payload: unknown): ImportPrepareRequest {
@@ -121,7 +107,9 @@ export function parseImportPrepareRequest(payload: unknown): ImportPrepareReques
     throw new IpcValidationError('import.prepare 参数不合法');
   }
   const villageId = result.data.villageId;
-  return villageId === undefined ? { text: result.data.text } : { text: result.data.text, villageId };
+  return villageId === undefined
+    ? { text: result.data.text }
+    : { text: result.data.text, villageId };
 }
 
 export function parseImportCommitRequest(payload: unknown): ImportCommitRequest {
@@ -129,7 +117,7 @@ export function parseImportCommitRequest(payload: unknown): ImportCommitRequest 
   if (!result.success) {
     throw new IpcValidationError('import.commit 参数不合法');
   }
-  return {};
+  return result.data;
 }
 
 export function parseImportDiscardRequest(payload: unknown): ImportDiscardRequest {
@@ -137,7 +125,7 @@ export function parseImportDiscardRequest(payload: unknown): ImportDiscardReques
   if (!result.success) {
     throw new IpcValidationError('import.discard 参数不合法');
   }
-  return {};
+  return result.data;
 }
 
 export function parseCancelRequest(payload: unknown): CancelRequest {
@@ -165,13 +153,12 @@ export function toIpcError(error: unknown): IpcError {
     };
   }
   if (isAppServiceError(error)) {
+    const message = redactDiagnosticText(error.message);
     return {
       kind: mapAppServiceKind(error.code),
       code: error.code,
       messageKey: `app.${error.code}`,
-      message: isSafeIpcDiagnosticText(error.message)
-        ? error.message
-        : '应用服务错误。',
+      message: isSafeIpcDiagnosticText(message) ? message : '应用服务错误。',
     };
   }
   if (isAbortError(error)) {

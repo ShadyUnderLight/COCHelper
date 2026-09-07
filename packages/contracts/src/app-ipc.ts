@@ -1,6 +1,7 @@
 /**
  * E3-02（#276）首批业务 typed IPC：app.snapshot / village.select / import.* / state.changed。
  * 仅 JSON-serializable DTO；command 目标必须显式传入，不得依赖隐式 selected。
+ * commit/discard 必须携带 expectedGeneration（CAS），防止 stale UI 提交/丢弃新的 pending。
  */
 
 import type { PendingImportPreviewWire } from './account-wire';
@@ -25,13 +26,7 @@ export const APP_IPC_CHANNELS = [
 export type AppAvailability = 'loading' | 'available' | 'recovery' | 'unavailable';
 
 export type VillageStoreStatusDto =
-  | 'missing'
-  | 'available'
-  | 'empty'
-  | 'readOnly'
-  | 'corrupt'
-  | 'unsupported'
-  | 'writeFailed';
+  'missing' | 'available' | 'empty' | 'readOnly' | 'corrupt' | 'unsupported' | 'writeFailed';
 
 export type VillageSummaryDto = {
   readonly id: string;
@@ -87,14 +82,19 @@ export type ImportPreparePayload = {
 };
 export type ImportPrepareResponse = Result<ImportPreparePayload>;
 
-export type ImportCommitRequest = Record<string, never>;
+/** 必须等于 prepare 返回的 generation；不匹配则 conflict，不改 pending。 */
+export type ImportCommitRequest = {
+  readonly expectedGeneration: number;
+};
 export type ImportCommitPayload = {
   readonly generation: number;
   readonly selectedVillageId: string | null;
 };
 export type ImportCommitResponse = Result<ImportCommitPayload>;
 
-export type ImportDiscardRequest = Record<string, never>;
+export type ImportDiscardRequest = {
+  readonly expectedGeneration: number;
+};
 export type ImportDiscardPayload = {
   readonly generation: number;
 };
@@ -108,8 +108,8 @@ export type AppIpcBridge = {
   snapshot: (request?: AppSnapshotRequest) => Promise<AppSnapshotResponse>;
   selectVillage: (request: VillageSelectRequest) => Promise<VillageSelectResponse>;
   prepareImport: (request: ImportPrepareRequest) => Promise<ImportPrepareResponse>;
-  commitImport: (request?: ImportCommitRequest) => Promise<ImportCommitResponse>;
-  discardImport: (request?: ImportDiscardRequest) => Promise<ImportDiscardResponse>;
+  commitImport: (request: ImportCommitRequest) => Promise<ImportCommitResponse>;
+  discardImport: (request: ImportDiscardRequest) => Promise<ImportDiscardResponse>;
   onStateChanged: (listener: StateChangedListener) => () => void;
 };
 

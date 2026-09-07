@@ -36,11 +36,7 @@ describe('@coc-helper/contracts IPC', () => {
       IMPORT_DISCARD_CHANNEL,
       STATE_CHANGED_CHANNEL,
     ]);
-    expect(DESKTOP_BRIDGE_KEYS).toEqual([
-      'health',
-      'cancel',
-      ...APP_IPC_BRIDGE_KEYS,
-    ]);
+    expect(DESKTOP_BRIDGE_KEYS).toEqual(['health', 'cancel', ...APP_IPC_BRIDGE_KEYS]);
   });
 
   it('只接受可打印、有限长度的 requestId DTO', () => {

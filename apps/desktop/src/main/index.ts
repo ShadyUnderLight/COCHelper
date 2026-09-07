@@ -1,6 +1,9 @@
 import { app, BrowserWindow, safeStorage } from 'electron';
 
-import { createApplicationServices, type ApplicationServices } from './application/application-services';
+import {
+  createApplicationServices,
+  type ApplicationServices,
+} from './application/application-services';
 import { FileEncryptedBlobStore, SafeStorageTokenStore } from './persistence/secret-store';
 import { getCatalogService } from './catalog-service';
 import { installAppProtocolHandler, registerAppScheme } from './protocol';

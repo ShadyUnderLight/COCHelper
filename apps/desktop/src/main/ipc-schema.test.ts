@@ -19,6 +19,8 @@ import {
   appHealthResponse,
   parseAppSnapshotRequest,
   parseCancelRequest,
+  parseImportCommitRequest,
+  parseImportDiscardRequest,
   parseImportPrepareRequest,
   parseAppHealthRequest,
   parseVillageSelectRequest,
@@ -70,6 +72,18 @@ describe('E3-02 business schemas', () => {
     expect(() => parseImportPrepareRequest({ text: '{}', extra: true })).toThrow(
       IpcValidationError,
     );
+  });
+
+  it('import.commit/discard 必须携带 expectedGeneration', () => {
+    expect(parseImportCommitRequest({ expectedGeneration: 3 })).toEqual({
+      expectedGeneration: 3,
+    });
+    expect(() => parseImportCommitRequest({})).toThrow(IpcValidationError);
+    expect(() => parseImportCommitRequest(undefined)).toThrow(IpcValidationError);
+    expect(parseImportDiscardRequest({ expectedGeneration: 0 })).toEqual({
+      expectedGeneration: 0,
+    });
+    expect(() => parseImportDiscardRequest({ expectedGeneration: -1 })).toThrow(IpcValidationError);
   });
 });
 

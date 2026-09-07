@@ -107,7 +107,7 @@ describe('ApplicationServices（#276 首片）', () => {
     expect(prepared.pending.snapshotTag).toBe('#NEWTAG');
     expect(prepared.generation).toBe(1);
 
-    const committed = services.imports.commit();
+    const committed = services.imports.commit(prepared.generation);
     expect(committed.generation).toBe(2);
     expect(store.listVillages()).toHaveLength(2);
     expect(store.listVillages().some((village) => village.tag === '#NEWTAG')).toBe(true);
@@ -127,19 +127,35 @@ describe('ApplicationServices（#276 首片）', () => {
     store.saveVillages([a, b]);
     store.setSelectedVillageId(a.id);
 
-    services.imports.prepare({
+    const prepared = services.imports.prepare({
       text: '{"buildings":[]}',
       villageId: b.id,
     });
-    services.imports.commit();
+    services.imports.commit(prepared.generation);
 
-    expect(store.listVillages().find((village) => village.id === b.id)?.hasImportedData).toBe(
-      true,
-    );
+    expect(store.listVillages().find((village) => village.id === b.id)?.hasImportedData).toBe(true);
     expect(store.listVillages().find((village) => village.id === a.id)?.hasImportedData).toBe(
       false,
     );
     expect(store.getSelectedVillageId()).toBe(b.id);
+  });
+
+  it('stale commit/discard 不匹配 expectedGeneration 时 conflict，且不改新 pending', () => {
+    const services = bootServices();
+    const first = services.imports.prepare({ text: '{"tag":"#AAA","buildings":[]}' });
+    const second = services.imports.prepare({ text: '{"tag":"#BBB","buildings":[]}' });
+    expect(second.generation).toBeGreaterThan(first.generation);
+    expect(services.state.getPending()?.snapshot.tag).toBe('#BBB');
+
+    expect(() => services.imports.commit(first.generation)).toThrow(AppServiceError);
+    expect(services.state.getPending()?.snapshot.tag).toBe('#BBB');
+    expect(services.state.getGeneration()).toBe(second.generation);
+
+    expect(() => services.imports.discard(first.generation)).toThrow(AppServiceError);
+    expect(services.state.getPending()?.snapshot.tag).toBe('#BBB');
+
+    services.imports.commit(second.generation);
+    expect(services.state.getPending()).toBeNull();
   });
 
   it('state.changed 在 mutation 后通知订阅者', () => {

@@ -254,7 +254,7 @@ final class ManualTrackerStoreTests: XCTestCase {
 
         let future = try JSONSerialization.data(withJSONObject: [
             "schemaVersion": 99,
-            "storeVersion": 1,
+            "storeVersion": 2,
             "villages": []
         ])
         try future.write(to: url, options: .atomic)
@@ -262,6 +262,21 @@ final class ManualTrackerStoreTests: XCTestCase {
             XCTAssertEqual(error as? ManualTrackerStoreError, .unsupportedSchema(99))
         }
         XCTAssertEqual(try Data(contentsOf: url), future)
+    }
+
+    func testLegacyV1ManualEnvelopeIsRejectedWithoutMigration() throws {
+        let store = TestStore()
+        store.rawData = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1,
+            "storeVersion": 1,
+            "villages": [],
+            "migrationMarker": ["version": 1, "completedAt": 0],
+            "lastDiagnostic": NSNull()
+        ])
+
+        XCTAssertThrowsError(try store.load()) { error in
+            XCTAssertEqual(error as? ManualTrackerStoreError, .unsupportedSchema(1))
+        }
     }
 
     func testPreparedManualJournalWithCorruptCurrentBlobFailsClosed() throws {
@@ -845,7 +860,7 @@ final class ManualTrackerStoreTests: XCTestCase {
         let futureStore = TestStore()
         futureStore.rawData = try JSONSerialization.data(withJSONObject: [
             "schemaVersion": 99,
-            "storeVersion": 1,
+            "storeVersion": 2,
             "villages": []
         ])
         let futureModel = try makeModel(store: futureStore)

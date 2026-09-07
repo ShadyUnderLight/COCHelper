@@ -107,22 +107,22 @@ async function loadGameCatalog(versionRoot: string): Promise<GameCatalog | null>
   const catalogPath = join(versionRoot, 'catalog.json');
   const manifestPath = join(versionRoot, 'manifest.json');
   try {
-    const [catalogText, manifestText] = await Promise.all([
-      readFile(catalogPath, 'utf8'),
-      readFile(manifestPath, 'utf8'),
-    ]);
+    const catalogText = await readFile(catalogPath, 'utf8');
+    const manifestText = await readOptional(manifestPath);
     const payload = decodeCatalogPayload(catalogText);
     let manifest = null;
-    try {
-      const decodedManifest = decodeJsonFile(manifestText, decodeCatalogManifest);
-      if (
-        decodedManifest.gameVersion === payload.gameVersion &&
-        validateCatalogManifest(decodedManifest, payload.items)
-      ) {
-        manifest = decodedManifest;
+    if (manifestText !== null) {
+      try {
+        const decodedManifest = decodeJsonFile(manifestText, decodeCatalogManifest);
+        if (
+          decodedManifest.gameVersion === payload.gameVersion &&
+          validateCatalogManifest(decodedManifest, payload.items)
+        ) {
+          manifest = decodedManifest;
+        }
+      } catch {
+        manifest = null;
       }
-    } catch {
-      manifest = null;
     }
     return createGameCatalog({
       gameVersion: payload.gameVersion,

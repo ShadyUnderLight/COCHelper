@@ -30,11 +30,28 @@ describe('manual tracker wire', () => {
     expect(decoded.migrationMarker?.completedAtMs).toBe(1_000);
   });
 
+  it('旧 v1 envelope/store 整体拒绝，不执行迁移', () => {
+    const legacyWire = JSON.stringify({
+      schemaVersion: 1,
+      storeVersion: 1,
+      villages: [],
+      migrationMarker: { version: 1, completedAtMs: 1_000 },
+      lastDiagnostic: null,
+    });
+    expect(() => decodeManualTrackerEnvelopeWire(legacyWire)).toThrow();
+    try {
+      decodeManualTrackerEnvelopeWire(legacyWire);
+      expect.unreachable('expected legacy schema rejection');
+    } catch (error) {
+      expect(error).toMatchObject({ kind: 'unsupportedSchema', version: 1 });
+    }
+  });
+
   it('future village schemaVersion 必须 fail-closed，不能静默升级', () => {
     const villageID = parseUuid('00000000-0000-0000-0000-000000000032')!;
     const wire = JSON.stringify({
-      schemaVersion: 1,
-      storeVersion: 1,
+      schemaVersion: 2,
+      storeVersion: 2,
       villages: [
         {
           villageID,
@@ -50,7 +67,7 @@ describe('manual tracker wire', () => {
           queueAssignments: [],
         },
       ],
-      migrationMarker: { version: 1, completedAtMs: 1_000 },
+      migrationMarker: { version: 2, completedAtMs: 1_000 },
       lastDiagnostic: null,
     });
     expect(() => decodeManualTrackerEnvelopeWire(wire)).toThrow();
@@ -64,8 +81,8 @@ describe('manual tracker wire', () => {
   it('baselineReference 与 core 不一致必须 corrupt，不能洗掉', () => {
     const villageID = parseUuid('00000000-0000-0000-0000-000000000033')!;
     const wire = JSON.stringify({
-      schemaVersion: 1,
-      storeVersion: 1,
+      schemaVersion: 2,
+      storeVersion: 2,
       villages: [
         {
           villageID,
@@ -84,7 +101,7 @@ describe('manual tracker wire', () => {
           queueAssignments: [],
         },
       ],
-      migrationMarker: { version: 1, completedAtMs: 1_000 },
+      migrationMarker: { version: 2, completedAtMs: 1_000 },
       lastDiagnostic: null,
     });
     try {

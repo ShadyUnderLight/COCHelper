@@ -1093,7 +1093,7 @@ public enum ManualTrackerReconciliationService {
     ) -> String {
         switch classification {
         case .duplicate:
-            "canonical fingerprint 未变化；不会重新开始或重复结算手动记录。"
+            "规范化观察内容未变化；不会重新开始或重复结算手动记录。"
         case .newObservation:
             "当前没有需要保护的本地手动状态，可以安全建立新的观察基线。"
         case .exactMatch:

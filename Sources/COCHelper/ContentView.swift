@@ -1843,7 +1843,7 @@ private struct ReconciliationPreviewSection: View {
                 .foregroundStyle(.secondary)
 
             if preview.duplicate {
-                Text("canonical fingerprint 未变化；不会新增 canonical history entry，但会记录本次对账 revision，也不会重新开始手动记录。")
+                Text("规范化观察内容未变化；不会新增历史记录，但会记录本次对账 revision，也不会重新开始手动记录。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

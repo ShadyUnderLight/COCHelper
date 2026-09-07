@@ -1,6 +1,6 @@
 """真实 APK 集成测试（issue #13 验收 #1-10 锚点）。无 APK 时跳过。
 
-生成一次约 30-60 秒（546MB APK 哈希），module scope fixture 只跑一次。
+生成一次约 30-60 秒（546MB APK 解包），module scope fixture 只跑一次。
 """
 
 import json
@@ -41,8 +41,7 @@ def _run_generate(out: Path) -> None:
                         "--game-version", "18.400.13"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    # Issue #98 复审 P1：完整两步生成链——craft 表生成器登记 manifest 条目
-    #（validator 强制条目存在；主生成器自检豁免，独立校验强制）
+    # 完整两步生成链：先生成主目录，再生成精制台目录。
     r = subprocess.run([sys.executable, str(TOOLS / "generate_craft_table_catalog.py"),
                         "--apk", str(APK), "--game-version", "18.400.13",
                         "--output", str(out / "craft_table_catalog.json")],
@@ -61,9 +60,11 @@ def catalog():
 
 def test_acceptance_version_and_buildtag(catalog):
     data, manifest, _ = catalog
+    assert set(manifest) == {"schemaVersion", "gameVersion", "buildTag", "locale"}
+    assert manifest["schemaVersion"] == 3
     assert manifest["gameVersion"] == "18.400.13"
     assert manifest["buildTag"] == "18_400_7"
-    assert manifest["sourceFingerprint"].startswith("sha256:")
+    assert manifest["locale"] == "zh-CN"
     assert data["gameVersion"] == manifest["gameVersion"]
 
 

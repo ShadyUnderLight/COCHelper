@@ -1,4 +1,6 @@
-import { resolve } from 'node:path';
+import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -46,6 +48,28 @@ describeIfBundle('GameCatalog bundled load', () => {
     const item = bundle.gameCatalog!.item('units', 4_000_000n)!;
     if (item.icon !== null && item.icon.renderedPath !== null && item.icon.missingReason === null) {
       expect(isCatalogAssetRenderable(item.icon)).toBe(true);
+    }
+  }, 15_000);
+
+  it('manifest 缺失时仍加载 game catalog，manifest 作为可选增强信息', async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'coc-game-catalog-'));
+    const versionRoot = join(temporaryRoot, DEFAULT_BUNDLED_CATALOG_VERSION);
+    await mkdir(versionRoot, { recursive: true });
+    await cp(
+      join(repoRoot!, DEFAULT_BUNDLED_CATALOG_VERSION, 'catalog.json'),
+      join(versionRoot, 'catalog.json'),
+    );
+
+    try {
+      const bundle = await createCatalogBundleCache({
+        root: temporaryRoot,
+        version: DEFAULT_BUNDLED_CATALOG_VERSION,
+      }).get();
+      expect(bundle.gameCatalog).not.toBeNull();
+      expect(bundle.gameCatalog!.manifest).toBeNull();
+      expect(bundle.gameCatalog!.itemsInSection('buildings').length).toBeGreaterThan(0);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
     }
   }, 15_000);
 });

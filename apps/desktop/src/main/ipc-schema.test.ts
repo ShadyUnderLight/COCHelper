@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   APP_HEALTH_CHANNEL,
+  APP_SNAPSHOT_CHANNEL,
+  IMPORT_COMMIT_CHANNEL,
+  IMPORT_DISCARD_CHANNEL,
+  IMPORT_PREPARE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
+  STATE_CHANGED_CHANNEL,
+  VILLAGE_SELECT_CHANNEL,
   isSafeIpcDiagnosticText,
   type RequestId,
 } from '@coc-helper/contracts';
@@ -11,8 +17,11 @@ import {
   IpcValidationError,
   REGISTERED_IPC_CHANNELS,
   appHealthResponse,
+  parseAppSnapshotRequest,
   parseCancelRequest,
+  parseImportPrepareRequest,
   parseAppHealthRequest,
+  parseVillageSelectRequest,
   toIpcError,
 } from './ipc-schema';
 
@@ -29,9 +38,38 @@ describe('app.health schema', () => {
     expect(() => parseAppHealthRequest(1)).toThrow(IpcValidationError);
   });
 
-  it('登记 health 与 cancel 通道，并返回 Result envelope', () => {
-    expect(REGISTERED_IPC_CHANNELS).toEqual([APP_HEALTH_CHANNEL, REQUEST_CANCEL_CHANNEL]);
+  it('登记 health/cancel 与 E3-02 业务通道，并返回 Result envelope', () => {
+    expect(REGISTERED_IPC_CHANNELS).toEqual([
+      APP_HEALTH_CHANNEL,
+      REQUEST_CANCEL_CHANNEL,
+      APP_SNAPSHOT_CHANNEL,
+      VILLAGE_SELECT_CHANNEL,
+      IMPORT_PREPARE_CHANNEL,
+      IMPORT_COMMIT_CHANNEL,
+      IMPORT_DISCARD_CHANNEL,
+      STATE_CHANGED_CHANNEL,
+    ]);
     expect(appHealthResponse()).toEqual({ ok: true, value: { app: 'coc-helper' } });
+  });
+});
+
+describe('E3-02 business schemas', () => {
+  it('解析 app.snapshot / village.select / import.prepare', () => {
+    expect(parseAppSnapshotRequest(undefined)).toEqual({});
+    expect(parseVillageSelectRequest({ villageId: 'v-1' })).toEqual({ villageId: 'v-1' });
+    expect(() => parseVillageSelectRequest({})).toThrow(IpcValidationError);
+    expect(parseImportPrepareRequest({ text: '{}' })).toEqual({ text: '{}' });
+    expect(parseImportPrepareRequest({ text: '{}', villageId: null })).toEqual({
+      text: '{}',
+      villageId: null,
+    });
+    expect(parseImportPrepareRequest({ text: '{}', villageId: 'v-1' })).toEqual({
+      text: '{}',
+      villageId: 'v-1',
+    });
+    expect(() => parseImportPrepareRequest({ text: '{}', extra: true })).toThrow(
+      IpcValidationError,
+    );
   });
 });
 

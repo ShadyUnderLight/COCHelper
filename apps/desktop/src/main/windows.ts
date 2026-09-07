@@ -61,8 +61,10 @@ export function createMainWindow(): BrowserWindow {
   return window;
 }
 
-export function registerApplicationHandlers(): void {
-  registerIpcHandlers(MAIN_WINDOW_WEBPACK_ENTRY);
+export function registerApplicationHandlers(
+  services: import('./application/application-services').ApplicationServices | null = null,
+): void {
+  registerIpcHandlers(MAIN_WINDOW_WEBPACK_ENTRY, { services });
   applySessionGuards(MAIN_WINDOW_WEBPACK_ENTRY);
 }
 

@@ -16,6 +16,7 @@ describe('preload API surface', () => {
       (channel) => {
         sendCalls.push(channel);
       },
+      () => () => undefined,
     );
     expect(Object.keys(bridge)).toEqual([...DESKTOP_BRIDGE_KEYS]);
     expect(bridge).not.toHaveProperty('ipcRenderer');
@@ -28,6 +29,7 @@ describe('preload API surface', () => {
     const bridge = createDesktopBridge(
       async () => ({ ok: true }),
       () => {},
+      () => () => undefined,
     );
     await expect(bridge.health()).rejects.toThrow('app.health 返回值不合法');
     expect(isAppHealthResponse({ ok: true, value: { app: 'coc-helper' } })).toBe(true);
@@ -40,9 +42,50 @@ describe('preload API surface', () => {
       () => {
         throw new Error('不应发送');
       },
+      () => () => undefined,
     );
     expect(() => bridge.cancel({ requestId: '' as RequestId })).toThrow(
       'request.cancel 参数不合法',
     );
+  });
+
+  it('校验 app.snapshot 与 state.changed 订阅', async () => {
+    const snapshot = {
+      generation: 0,
+      availability: 'available',
+      villageStatus: 'missing',
+      villageError: null,
+      canWrite: true,
+      selectedVillageId: null,
+      villages: [],
+      pendingImport: null,
+    };
+    const holder: { listener: ((payload: unknown) => void) | null } = { listener: null };
+    const bridge = createDesktopBridge(
+      async (channel) => {
+        if (channel === 'app.snapshot') {
+          return { ok: true, value: snapshot };
+        }
+        throw new Error(`unexpected ${channel}`);
+      },
+      () => {},
+      (_channel, listener) => {
+        holder.listener = listener;
+        return () => {
+          holder.listener = null;
+        };
+      },
+    );
+    const result = await bridge.snapshot();
+    expect(result).toEqual({ ok: true, value: snapshot });
+
+    const seen: unknown[] = [];
+    const unsubscribe = bridge.onStateChanged((payload) => {
+      seen.push(payload);
+    });
+    holder.listener?.(snapshot);
+    holder.listener?.({ forged: true });
+    expect(seen).toEqual([snapshot]);
+    unsubscribe();
   });
 });

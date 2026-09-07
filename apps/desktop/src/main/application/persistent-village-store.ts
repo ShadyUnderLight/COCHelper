@@ -1,6 +1,6 @@
 /**
  * VillageStorePort 的文件实现：villages-v1 + selection-v1。
- * 完整 history/manual 事务导入留给未来 SnapshotImportService（#276）。
+ * 完整 history/manual 事务导入由 SnapshotImportService（#276）编排。
  */
 
 import {

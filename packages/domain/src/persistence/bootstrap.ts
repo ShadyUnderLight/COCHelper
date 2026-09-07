@@ -1,6 +1,7 @@
 /**
  * E3-01-C：Main 持久化启动边界（§BE-2.5）。
- * 提供可注入的 store 实例与恢复后的权威态；不做 typed IPC / AppModel 拆分（#276）。
+ * 提供可注入的 store 实例与恢复后的权威态。
+ * typed IPC / application services 组装见 Main（#276）。
  */
 
 import { mkdirSync } from 'node:fs';

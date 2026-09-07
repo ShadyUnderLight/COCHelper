@@ -2,19 +2,37 @@ import { z } from 'zod';
 
 import {
   APP_HEALTH_CHANNEL,
+  APP_SNAPSHOT_CHANNEL,
+  IMPORT_COMMIT_CHANNEL,
+  IMPORT_DISCARD_CHANNEL,
+  IMPORT_PREPARE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
+  STATE_CHANGED_CHANNEL,
+  VILLAGE_SELECT_CHANNEL,
   isSafeIpcDiagnosticText,
   resultOk,
   type AppHealthResponse,
+  type AppSnapshotRequest,
   type CancelRequest,
+  type ImportCommitRequest,
+  type ImportDiscardRequest,
+  type ImportPrepareRequest,
   type IpcError,
   type RequestId,
+  type VillageSelectRequest,
 } from '@coc-helper/contracts';
 
 import { redactDiagnosticText } from './redaction';
 
-const appHealthRequestSchema = z.object({}).strict().optional();
+const emptyObjectSchema = z.object({}).strict();
+const optionalEmptyObjectSchema = emptyObjectSchema.optional();
+
+const appHealthRequestSchema = optionalEmptyObjectSchema;
+const appSnapshotRequestSchema = optionalEmptyObjectSchema;
+const importCommitRequestSchema = optionalEmptyObjectSchema;
+const importDiscardRequestSchema = optionalEmptyObjectSchema;
+
 const cancelRequestSchema = z
   .object({
     requestId: z
@@ -22,6 +40,19 @@ const cancelRequestSchema = z
       .min(1)
       .max(REQUEST_ID_MAX_LENGTH)
       .regex(/^[\x21-\x7e]+$/),
+  })
+  .strict();
+
+const villageSelectRequestSchema = z
+  .object({
+    villageId: z.string().min(1).max(128),
+  })
+  .strict();
+
+const importPrepareRequestSchema = z
+  .object({
+    text: z.string().max(5_000_000),
+    villageId: z.string().min(1).max(128).nullable().optional(),
   })
   .strict();
 
@@ -68,6 +99,47 @@ export function parseAppHealthRequest(payload: unknown): void {
   }
 }
 
+export function parseAppSnapshotRequest(payload: unknown): AppSnapshotRequest {
+  const result = appSnapshotRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('app.snapshot 参数不合法');
+  }
+  return {};
+}
+
+export function parseVillageSelectRequest(payload: unknown): VillageSelectRequest {
+  const result = villageSelectRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('village.select 参数不合法');
+  }
+  return { villageId: result.data.villageId };
+}
+
+export function parseImportPrepareRequest(payload: unknown): ImportPrepareRequest {
+  const result = importPrepareRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('import.prepare 参数不合法');
+  }
+  const villageId = result.data.villageId;
+  return villageId === undefined ? { text: result.data.text } : { text: result.data.text, villageId };
+}
+
+export function parseImportCommitRequest(payload: unknown): ImportCommitRequest {
+  const result = importCommitRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('import.commit 参数不合法');
+  }
+  return {};
+}
+
+export function parseImportDiscardRequest(payload: unknown): ImportDiscardRequest {
+  const result = importDiscardRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('import.discard 参数不合法');
+  }
+  return {};
+}
+
 export function parseCancelRequest(payload: unknown): CancelRequest {
   const result = cancelRequestSchema.safeParse(payload);
   if (!result.success) {
@@ -92,6 +164,16 @@ export function toIpcError(error: unknown): IpcError {
       message: isSafeIpcDiagnosticText(message) ? message : '请求参数不合法',
     };
   }
+  if (isAppServiceError(error)) {
+    return {
+      kind: mapAppServiceKind(error.code),
+      code: error.code,
+      messageKey: `app.${error.code}`,
+      message: isSafeIpcDiagnosticText(error.message)
+        ? error.message
+        : '应用服务错误。',
+    };
+  }
   if (isAbortError(error)) {
     return {
       kind: 'cancelled',
@@ -108,7 +190,16 @@ export function toIpcError(error: unknown): IpcError {
   };
 }
 
-export const REGISTERED_IPC_CHANNELS = [APP_HEALTH_CHANNEL, REQUEST_CANCEL_CHANNEL] as const;
+export const REGISTERED_IPC_CHANNELS = [
+  APP_HEALTH_CHANNEL,
+  REQUEST_CANCEL_CHANNEL,
+  APP_SNAPSHOT_CHANNEL,
+  VILLAGE_SELECT_CHANNEL,
+  IMPORT_PREPARE_CHANNEL,
+  IMPORT_COMMIT_CHANNEL,
+  IMPORT_DISCARD_CHANNEL,
+  STATE_CHANGED_CHANNEL,
+] as const;
 
 function isAbortError(error: unknown): boolean {
   return (
@@ -118,6 +209,33 @@ function isAbortError(error: unknown): boolean {
       'name' in error &&
       (error as { name?: unknown }).name === 'AbortError')
   );
+}
+
+function isAppServiceError(
+  error: unknown,
+): error is Error & { code: 'notFound' | 'unavailable' | 'validation' | 'conflict' } {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === 'AppServiceError' &&
+    typeof (error as { code?: unknown }).code === 'string' &&
+    typeof (error as { message?: unknown }).message === 'string'
+  );
+}
+
+function mapAppServiceKind(
+  code: 'notFound' | 'unavailable' | 'validation' | 'conflict',
+): IpcError['kind'] {
+  switch (code) {
+    case 'notFound':
+      return 'notFound';
+    case 'unavailable':
+      return 'accessDenied';
+    case 'validation':
+      return 'validation';
+    case 'conflict':
+      return 'validation';
+  }
 }
 
 function validationErrorDefinition(code: string): IpcValidationDefinition {

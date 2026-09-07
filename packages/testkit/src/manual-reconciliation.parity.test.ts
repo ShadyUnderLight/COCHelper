@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import {
   createManualItemStateForStatus,
   createManualLevelDistributionFromPairs,
@@ -7,7 +10,7 @@ import {
   trackerItemKeyStableId,
 } from '@coc-helper/domain';
 import { parseUuid } from '@coc-helper/wire';
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { manualParityOutcomeHex } from './manual-parity';
 import { assertParity } from './compare';
@@ -24,7 +27,21 @@ const baselineA = {
   lineageID: 'lineage-p1',
 };
 
+const fixturePath = resolve(
+  root,
+  'Tests/Golden/Fixtures/manual-reconciliation-preview-contract.json',
+);
+const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+  cases: readonly { id: string }[];
+};
+/** 与 fixture.cases 同步维护；漏加 case 会在下方静态断言失败。 */
+const implementedCaseIds = ['new-observation-empty-state', 'exact-match-observed-state'] as const;
+
 describe('manual reconciliation Swift oracle parity', () => {
+  it('manifest fixture caseId 与 parity 实现一一对应', () => {
+    expect([...implementedCaseIds].sort()).toEqual(fixture.cases.map((item) => item.id).sort());
+  });
+
   it('new observation on empty state', async () => {
     await assertReconciliationParity({
       id: 'new-observation-empty-state',

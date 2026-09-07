@@ -1,0 +1,28 @@
+{
+  "description": "Catalog 领域 TS 测试归属登记（#270 / #268）。fixture-registry：不经 Swift oracle；语义覆盖由 expectedOwner 承担。",
+  "contractVersion": 1,
+  "issue": 270,
+  "cases": [
+    {
+      "id": "catalog/manifest-validate",
+      "expectedOwner": "packages/domain/src/catalog/manifest-validate.test.ts",
+      "summary": "CatalogManifestV3 四字段校验"
+    },
+    {
+      "id": "catalog/bundled-load",
+      "expectedOwner": "packages/domain/src/catalog/load-bundled.test.ts",
+      "summary": "bundled catalog 加载"
+    },
+    {
+      "id": "catalog/game-catalog-load",
+      "expectedOwner": "packages/domain/src/catalog/game-catalog.load.test.ts",
+      "summary": "GameCatalog 加载契约"
+    },
+    {
+      "id": "catalog/asset-path",
+      "expectedOwner": "packages/domain/src/catalog/asset-path.test.ts",
+      "summary": "asset 路径解析"
+    }
+  ],
+  "dispositions": []
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Village projection 领域 TS 测试归属登记（#271 / #268）。fixture-registry：当前不经 Swift oracle。",
+  "contractVersion": 1,
+  "issue": 271,
+  "cases": [
+    {
+      "id": "village/home-builder-isolation",
+      "expectedOwner": "packages/domain/src/village/catalog-projection.test.ts",
+      "summary": "home/builder 基地隔离与投影字段"
+    },
+    {
+      "id": "village/projection-generation",
+      "expectedOwner": "packages/domain/src/village/village-projection-generation.test.ts",
+      "summary": "投影 generation / epoch"
+    },
+    {
+      "id": "village/projection-cache",
+      "expectedOwner": "packages/domain/src/village/village-projection-cache.test.ts",
+      "summary": "投影缓存失效"
+    }
+  ],
+  "dispositions": [
+    {
+      "id": "village/swift-oracle-parity",
+      "category": "projection",
+      "status": "deferred",
+      "reason": "PR #291 明确推迟 E1-02 village projection golden；语义由 TS contract 测试持有，未执行不得记为通过。"
+    }
+  ]
+}

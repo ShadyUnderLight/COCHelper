@@ -13,3 +13,6 @@ out/
 dist/
 *.tsbuildinfo
 .DS_Store
+
+# E1-02 local baseline readout artifact
+docs/electron/e1-02-baseline-latest.json

@@ -89,6 +89,38 @@
       "fixture": "Tests/Golden/Fixtures/error-scenarios-contract.json",
       "swiftOwner": "Tests/COCHelperCoreTests/CoAPIFetchClanWarTests.swift;Tests/COCHelperCoreTests/OfficialAPISourceLabelingTests.swift;Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift#refreshStatus",
       "typescriptOwner": "packages/testkit/src/error-scenarios.contract.test.ts"
+    },
+    {
+      "id": "projection/manual-reconciliation-preview",
+      "category": "projection",
+      "operation": "manual-reconciliation-preview",
+      "fixture": "Tests/Golden/Fixtures/manual-reconciliation-preview-contract.json",
+      "swiftOwner": "Tools/golden-oracle/GoldenOracleEntry.swift#manual-reconciliation-preview",
+      "typescriptOwner": "packages/testkit/src/manual-reconciliation.parity.test.ts"
+    },
+    {
+      "id": "projection/catalog-contract",
+      "category": "projection",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/catalog-contract.json",
+      "swiftOwner": "—",
+      "typescriptOwner": "packages/testkit/src/catalog.contract.test.ts"
+    },
+    {
+      "id": "projection/village-projection-contract",
+      "category": "projection",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/village-projection-contract.json",
+      "swiftOwner": "—",
+      "typescriptOwner": "packages/testkit/src/village-projection.contract.test.ts"
+    },
+    {
+      "id": "error/storage-fault-contract",
+      "category": "error",
+      "operation": "fixture-registry",
+      "fixture": "Tests/Golden/Fixtures/storage-fault-contract.json",
+      "swiftOwner": "—",
+      "typescriptOwner": "packages/testkit/src/storage-fault.contract.test.ts"
     }
   ]
 }

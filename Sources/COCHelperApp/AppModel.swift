@@ -2624,6 +2624,15 @@ public final class AppModel: ObservableObject {
             id: candidateVillages[targetIndex].id,
             name: candidateVillages[targetIndex].name
         )
+        // parseAccountText 的 preview 固定用 declared proofs；若 apply 传入
+        // 自定义 sectionProofs/sourceUniverse（如 perf promoteVerified），expectedPreview
+        // 必然与 commit 现场 historyDecision 不一致。此时丢弃旧 preview，由 reconcile 重算。
+        let expectedPreview: ManualReconciliationPreview?
+        if sectionProofs != nil || sourceUniverse != nil {
+            expectedPreview = nil
+        } else {
+            expectedPreview = pendingReconciliationPreview
+        }
         do {
             try commitImportedSnapshot(
                 snapshot,
@@ -2631,7 +2640,7 @@ public final class AppModel: ObservableObject {
                 candidateVillages: candidateVillages,
                 appliedAt: appliedAt,
                 manualEnvelope: manualEnvelopeForCreate,
-                expectedPreview: pendingReconciliationPreview,
+                expectedPreview: expectedPreview,
                 reconciliationDecision: reconciliationDecision,
                 sectionProofs: sectionProofs,
                 sourceUniverse: sourceUniverse
@@ -2863,10 +2872,6 @@ public final class AppModel: ObservableObject {
         let sourceUniverse = perfImportPromotesVerifiedCoverage
             ? SnapshotCoverageSourceUniverseIssuer.issuePerfFixture(snapshot: snapshot)
             : nil
-        // Seed 不走 UI 确认。promoteVerifiedCoverage 会让 commit 的 historyDecision
-        // 与 parseAccountText 用 declared proofs 生成的 pendingReconciliationPreview
-        // 不一致，从而误报 stalePreview。清空 expectedPreview，由 reconcile 现场重算。
-        pendingReconciliationPreview = nil
         return applyPendingAccountSnapshot(
             sectionProofs: sectionProofs,
             sourceUniverse: sourceUniverse

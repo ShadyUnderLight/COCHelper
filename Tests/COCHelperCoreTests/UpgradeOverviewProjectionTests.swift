@@ -308,10 +308,9 @@ final class UpgradeOverviewProjectionTests: XCTestCase {
     }
 
     func testSortsChineseVillageNamesByLocalizedStandardCompare() throws {
-        // 回归（review fix）：村庄名排序必须与旧层 UpgradeTracker.activeRecords(from:)
-        // 一致——localizedStandardCompare（中文拼音序），而非码点序。
+        // 回归（review fix）：村庄名排序必须与旧层一致——固定 zh_CN 拼音序，
+        // 而非码点序 / 随 CI 系统 locale 漂移的 localizedStandardCompare。
         // 拼音 er < yi →「二村」在前；码点序「一」(U+4E00) <「二」(U+4E8C) →「一村」在前。
-        // 断言「二村」在前即证明实现走拼音序，与旧层一致。
         let villageYi = makeVillage(name: "一村", objectSections: [
             "buildings": [makeItem(section: "buildings", dataID: 1_000_001, level: 1,
                                    timerSeconds: 1000, remainingSeconds: 500, path: "0")],

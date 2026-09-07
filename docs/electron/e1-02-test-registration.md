@@ -33,6 +33,7 @@
 
 ```bash
 pnpm baseline:e1-02
+E1_02_BASELINE_SUITES=parity,fault-replay pnpm baseline:e1-02  # 未知名 / 空选择 fail-closed
 ```
 
 产出 `docs/electron/e1-02-baseline-latest.json`。状态只允许 `pass` / `fail` / `not_run`；

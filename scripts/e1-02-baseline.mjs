@@ -2,11 +2,14 @@
 /**
  * E1-02 干净基线回读：分别记录 pass / fail / not_run。
  * 未执行的 suite 绝不能记为 pass。
+ * E1_02_BASELINE_SUITES 显式提供时 fail-closed：未知名 / 空选择一律非 0 退出。
  */
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { BASELINE_SUITE_IDS, resolveBaselineSuiteSelection } from './e1-02-baseline-selection.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const suites = [
@@ -16,16 +19,25 @@ const suites = [
   { id: 'oracle-isolation', command: 'pnpm', args: ['check:oracle-isolation'] },
 ];
 
-const only = process.env.E1_02_BASELINE_SUITES?.split(',')
-  .map((item) => item.trim())
-  .filter(Boolean);
-const selected = only?.length ? suites.filter((suite) => only.includes(suite.id)) : suites;
+if (suites.map((suite) => suite.id).join(',') !== BASELINE_SUITE_IDS.join(',')) {
+  throw new Error('baseline suite 定义与 e1-02-baseline-selection.mjs 不一致');
+}
+
+let selectedIds;
+try {
+  selectedIds = resolveBaselineSuiteSelection(process.env.E1_02_BASELINE_SUITES);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
+
+const selected = new Set(selectedIds);
 
 /** @type {{ id: string, status: 'pass' | 'fail' | 'not_run', exitCode: number | null, detail: string }[]} */
 const results = [];
 
 for (const suite of suites) {
-  if (!selected.includes(suite)) {
+  if (!selected.has(suite.id)) {
     results.push({
       id: suite.id,
       status: 'not_run',
@@ -60,7 +72,7 @@ for (const suite of suites) {
 
 const report = {
   generatedAt: new Date().toISOString(),
-  rule: 'not_run 不得记为 pass',
+  rule: 'not_run 不得记为 pass；未知 suite / 空选择 fail-closed',
   results,
 };
 
@@ -73,4 +85,9 @@ for (const item of results) {
 }
 
 const failed = results.some((item) => item.status === 'fail');
+const executed = results.filter((item) => item.status !== 'not_run');
+if (executed.length === 0) {
+  console.error('E1-02 baseline 未执行任何 suite（不得记为通过）');
+  process.exit(1);
+}
 process.exit(failed ? 1 : 0);

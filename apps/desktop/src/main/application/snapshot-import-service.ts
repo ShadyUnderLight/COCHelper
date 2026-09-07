@@ -2,7 +2,10 @@
  * SnapshotImportService：显式目标的 prepare/commit（#276）。
  * prepare 绝不读取权威 selectedVillageId；仅使用请求中的 villageId。
  * commit/discard 必须携带 expectedGeneration（CAS）。
- * commit 经 SnapshotImportTransactionCoordinator 落盘 villages+history+manual。
+ * commit 经 SnapshotImportTransactionCoordinator 原子提交 villages+history。
+ *
+ * 本切片不改写 manual envelope（manualEnvelope=null）：完整 observation 对账留给后续切片，
+ * 避免 empty-observation placeholder 错误 rebase 既有 manual provenance。
  */
 
 import {
@@ -15,25 +18,12 @@ import {
 } from '@coc-helper/contracts';
 import {
   applySnapshotToVillage,
-  createManualReconciliationEvidence,
-  createManualTrackerVillageState,
   createSnapshotHistoryService,
   createVillageProfile,
-  emptyManualTrackerEnvelope,
   encodeVillageStoreBytes,
-  envelopeActiveLineage,
-  envelopeEntry,
-  ManualUpgradeCoreState,
-  manualTrackerEnvelopeIsMigrated,
-  manualTrackerEnvelopeState,
   parsePendingImport,
-  reconcileManualTracker,
-  upsertManualTrackerVillageState,
   type Clock,
-  type ManualTrackerEnvelope,
-  type ManualTrackerStore,
   type PendingImportPreview,
-  type SnapshotHistoryEnvelope,
   type SnapshotHistoryStore,
   type SnapshotImportTransactionCoordinator,
   type VillageProfile,
@@ -41,7 +31,6 @@ import {
 import {
   generateUuid,
   parseUuid,
-  refSecondsToUnixSeconds,
   unixSecondsToRefSeconds,
   type UuidString,
 } from '@coc-helper/wire';
@@ -55,7 +44,6 @@ export type SnapshotImportServiceOptions = {
   readonly clock: Clock;
   readonly importTransaction: SnapshotImportTransactionCoordinator | null;
   readonly history: SnapshotHistoryStore | null;
-  readonly manual: ManualTrackerStore | null;
 };
 
 export class SnapshotImportService {
@@ -63,14 +51,12 @@ export class SnapshotImportService {
   private readonly clock: Clock;
   private readonly importTransaction: SnapshotImportTransactionCoordinator | null;
   private readonly history: SnapshotHistoryStore | null;
-  private readonly manual: ManualTrackerStore | null;
 
   constructor(options: SnapshotImportServiceOptions) {
     this.state = options.state;
     this.clock = options.clock;
     this.importTransaction = options.importTransaction;
     this.history = options.history;
-    this.manual = options.manual;
   }
 
   prepare(request: ImportPrepareRequest): ImportPreparePayload {
@@ -121,11 +107,12 @@ export class SnapshotImportService {
     if (pending === null) {
       throw new AppServiceError('validation', '没有待确认的导入。');
     }
-    if (this.importTransaction === null || this.history === null || this.manual === null) {
+    if (this.importTransaction === null || this.history === null) {
       throw new AppServiceError('unavailable', '导入事务尚未就绪。');
     }
 
     const store = this.state.getVillageStore();
+    /** 导入前权威 villages：history migration 只能基于它，绝不能用已应用 pending 的 nextVillages。 */
     const villages = [...store.listVillages()];
     const { nextVillages, targetVillage, selectedVillageId } = buildCandidateVillages(
       pending,
@@ -135,15 +122,10 @@ export class SnapshotImportService {
     const appliedAtMs = this.clock.nowMs();
     const historyService = createSnapshotHistoryService(this.history);
     const historyEnvelope = historyService.loadOrMigrate({
-      villages: nextVillages,
+      villages,
       nowRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
     });
     const villageID = requireUuid(targetVillage.id, '目标村庄 ID');
-    const previousActive = envelopeActiveLineage(historyEnvelope, villageID);
-    const previousEntry =
-      previousActive === undefined
-        ? undefined
-        : envelopeEntry(historyEnvelope, previousActive.lastEntryID);
     const historyDecision = historyService.planImport({
       snapshot: pending.snapshot,
       villageID,
@@ -154,23 +136,12 @@ export class SnapshotImportService {
       appliedAtRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
     });
 
-    const manualEnvelope = prepareManualEnvelopeForImport({
-      store: this.manual,
-      villages: nextVillages,
-      targetVillageID: villageID,
-      historyDecisionEnvelope: historyDecision.envelope,
-      historyEntry: historyDecision.entry,
-      duplicate: historyDecision.duplicate,
-      lineageComparable: historyDecision.lineage.comparisonAllowed,
-      previousEntry,
-      appliedAtMs,
-    });
-
     try {
       this.importTransaction.commit({
         currentData: encodeVillageStoreBytes(nextVillages),
         envelope: historyDecision.envelope,
-        manualEnvelope,
+        /** 本切片不纳入 manual：完整 observation 对账前不得 empty-observation rebase。 */
+        manualEnvelope: null,
       });
     } catch (error) {
       throw new AppServiceError('unavailable', formatTransactionError(error));
@@ -286,93 +257,6 @@ function buildCandidateVillages(
     case 'ambiguous':
       throw new AppServiceError('conflict', '导入目标不明确。');
   }
-}
-
-function prepareManualEnvelopeForImport(input: {
-  readonly store: ManualTrackerStore;
-  readonly villages: readonly VillageProfile[];
-  readonly targetVillageID: UuidString;
-  readonly historyDecisionEnvelope: SnapshotHistoryEnvelope;
-  readonly historyEntry: SnapshotHistoryEnvelope['entries'][number];
-  readonly duplicate: boolean;
-  readonly lineageComparable: boolean;
-  readonly previousEntry: SnapshotHistoryEnvelope['entries'][number] | undefined;
-  readonly appliedAtMs: number;
-}): ManualTrackerEnvelope {
-  const loaded = input.store.load();
-  let envelope =
-    loaded !== null && manualTrackerEnvelopeIsMigrated(loaded)
-      ? loaded
-      : emptyManualTrackerEnvelope(
-          input.villages
-            .map((village) => parseUuid(village.id))
-            .filter((id): id is UuidString => id !== undefined),
-          input.appliedAtMs,
-        );
-
-  for (const village of input.villages) {
-    const id = parseUuid(village.id);
-    if (id === undefined) {
-      continue;
-    }
-    if (manualTrackerEnvelopeState(envelope, id) === undefined) {
-      envelope = upsertManualTrackerVillageState(
-        envelope,
-        createManualTrackerVillageState({
-          villageID: id,
-          core: ManualUpgradeCoreState.create(),
-          stateUpdatedAtMs: input.appliedAtMs,
-        }),
-      );
-    }
-  }
-
-  const currentState =
-    manualTrackerEnvelopeState(envelope, input.targetVillageID) ??
-    createManualTrackerVillageState({
-      villageID: input.targetVillageID,
-      core: ManualUpgradeCoreState.create(),
-      stateUpdatedAtMs: input.appliedAtMs,
-    });
-
-  const duplicateCount =
-    input.historyDecisionEnvelope.duplicateMetadata[input.historyEntry.snapshotID]
-      ?.duplicateImportCount ?? 0;
-  const revision =
-    duplicateCount === 0
-      ? input.historyEntry.snapshotID
-      : `${input.historyEntry.snapshotID}:observation:${duplicateCount}`;
-  const sourceTimestampMs =
-    input.historyEntry.sourceTimestampRefSeconds === null
-      ? null
-      : refSecondsToUnixSeconds(input.historyEntry.sourceTimestampRefSeconds) * 1000;
-  const previousEntry = input.previousEntry;
-
-  const evidence = createManualReconciliationEvidence({
-    villageID: input.targetVillageID,
-    newBaselineReference: {
-      revision,
-      lineageID: input.historyEntry.lineageID,
-    },
-    newNormalizedPlayerTag: input.historyEntry.normalizedPlayerTag,
-    sourceTimestampMs,
-    duplicate: input.duplicate,
-    lineageComparable: input.lineageComparable,
-    observations: new Map(),
-    previousSnapshotID: previousEntry?.snapshotID ?? null,
-    previousLineageID: previousEntry?.lineageID ?? null,
-    previousSourceTimestampMs:
-      previousEntry?.sourceTimestampRefSeconds === null ||
-      previousEntry?.sourceTimestampRefSeconds === undefined
-        ? null
-        : refSecondsToUnixSeconds(previousEntry.sourceTimestampRefSeconds) * 1000,
-  });
-
-  const plan = reconcileManualTracker(evidence, currentState, {
-    decision: 'applyNonConflicting',
-    appliedAtMs: input.appliedAtMs,
-  });
-  return upsertManualTrackerVillageState(envelope, plan.state);
 }
 
 function requireUuid(value: string, label: string): UuidString {

@@ -1,8 +1,8 @@
 /**
  * VillageStorePort 的文件实现：villages-v1 + selection-v1。
- * 快照导入的 villages/history/manual 原子提交由 SnapshotImportService
- * 经 SnapshotImportTransactionCoordinator 编排；本 store 在事务成功后
- * 只同步内存权威态与 selection（soft fail-open）。
+ * 快照导入的 villages/history 原子提交由 SnapshotImportService
+ * 经 SnapshotImportTransactionCoordinator 编排（本切片不写 manual）；
+ * 本 store 在事务成功后只同步内存权威态与 selection（soft fail-open）。
  */
 
 import {

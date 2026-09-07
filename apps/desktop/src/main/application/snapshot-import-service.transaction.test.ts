@@ -45,6 +45,25 @@ function pathsFor(root: string): ElectronPersistencePaths {
   };
 }
 
+function bootService(root: string) {
+  const paths = pathsFor(root);
+  const persistence = bootstrapPersistence({ paths });
+  const villageStore = new PersistentVillageStore({
+    villages: persistence.villages,
+    selection: persistence.selection,
+    initialVillages: persistence.villagesInMemory,
+    initialSelectedVillageId: persistence.selectedVillageId,
+  });
+  const state = new AppAuthoritativeState({ persistence, villageStore });
+  const service = new SnapshotImportService({
+    state,
+    clock: new FakeClock(),
+    importTransaction: persistence.importTransaction,
+    history: persistence.history,
+  });
+  return { paths, persistence, villageStore, state, service };
+}
+
 afterEach(() => {
   while (tempRoots.length > 0) {
     const root = tempRoots.pop();
@@ -55,23 +74,12 @@ afterEach(() => {
 });
 
 describe('SnapshotImportService transaction', () => {
-  it('villages afterCommit fault 时事务回滚，pending 保留且内存未 adopt', () => {
+  it('villages afterCommit fault 时 current/history 都不含失败 snapshot', () => {
     const root = mkdtempSync(join(tmpdir(), 'coc-e302-tx-'));
     tempRoots.push(root);
-    const paths = pathsFor(root);
-    const persistence = bootstrapPersistence({ paths });
-    const beforeBytes = persistence.villages.readData();
-
-    const villageStore = new PersistentVillageStore({
-      villages: persistence.villages,
-      selection: persistence.selection,
-      initialVillages: persistence.villagesInMemory,
-      initialSelectedVillageId: persistence.selectedVillageId,
-    });
-    const state = new AppAuthoritativeState({
-      persistence,
-      villageStore,
-    });
+    const { paths, persistence, villageStore, state } = bootService(root);
+    const beforeVillages = persistence.villages.readData();
+    expect(persistence.history.load()).toBeNull();
 
     const faultedCurrent = new VillageFileStore(paths.villages, {
       fault: createCountingFault('afterCommit', 1, (path) => path === paths.villages),
@@ -87,45 +95,56 @@ describe('SnapshotImportService transaction', () => {
       clock: new FakeClock(),
       importTransaction: faultedTx,
       history: persistence.history,
-      manual: persistence.manual,
     });
 
     const prepared = service.prepare({ text: '{"tag":"#TXFAIL","buildings":[]}' });
     expect(() => service.commit(prepared.generation)).toThrow(AppServiceError);
 
-    expect(persistence.villages.readData()).toEqual(beforeBytes);
+    expect(persistence.villages.readData()).toEqual(beforeVillages);
     expect(existsSync(paths.snapshotImportJournal)).toBe(false);
     expect(state.getPending()?.snapshot.tag).toBe('#TXFAIL');
     expect(villageStore.listVillages().some((village) => village.tag === '#TXFAIL')).toBe(false);
+
+    /**
+     * loadOrMigrate 可能在 transaction 前把空 baseline envelope 落盘；
+     * 关键的是失败 snapshot 不得进入 history（P1：不得用 nextVillages 迁移）。
+     */
+    const historyAfter = persistence.history.load();
+    if (historyAfter !== null) {
+      expect(historyAfter.entries).toHaveLength(0);
+      expect(historyAfter.entries.some((entry) => entry.rawJSON.includes('#TXFAIL'))).toBe(false);
+      expect(Object.keys(historyAfter.duplicateMetadata)).toHaveLength(0);
+    }
   });
 
-  it('成功 commit 后内存与磁盘一致且 pending 清除', () => {
+  it('首次成功 import：append 新 history entry，且 duplicate === false', () => {
     const root = mkdtempSync(join(tmpdir(), 'coc-e302-ok-'));
     tempRoots.push(root);
-    const persistence = bootstrapPersistence({ paths: pathsFor(root) });
-    const villageStore = new PersistentVillageStore({
-      villages: persistence.villages,
-      selection: persistence.selection,
-      initialVillages: persistence.villagesInMemory,
-      initialSelectedVillageId: persistence.selectedVillageId,
-    });
-    const state = new AppAuthoritativeState({ persistence, villageStore });
-    const service = new SnapshotImportService({
-      state,
-      clock: new FakeClock(),
-      importTransaction: persistence.importTransaction,
-      history: persistence.history,
-      manual: persistence.manual,
-    });
+    const { persistence, villageStore, state, service } = bootService(root);
+
+    expect(persistence.history.load()).toBeNull();
 
     const prepared = service.prepare({ text: '{"tag":"#TXOK","buildings":[]}' });
     service.commit(prepared.generation);
     expect(state.getPending()).toBeNull();
     expect(villageStore.listVillages().some((village) => village.tag === '#TXOK')).toBe(true);
+
+    const afterEnvelope = persistence.history.load();
+    expect(afterEnvelope).not.toBeNull();
+    /** fresh install：migration 基于空 villages，planImport 必须真正 append（非 duplicate）。 */
+    expect(afterEnvelope!.entries).toHaveLength(1);
+    const imported = afterEnvelope!.entries[0]!;
+    expect(imported.rawJSON).toContain('#TXOK');
+    expect(afterEnvelope!.duplicateMetadata[imported.snapshotID]).toBeUndefined();
+    expect(Object.keys(afterEnvelope!.duplicateMetadata)).toHaveLength(0);
+
     const loaded = persistence.villages.load();
     expect(loaded.kind).toBe('loaded');
     if (loaded.kind === 'loaded') {
       expect(loaded.villages.some((village) => village.tag === '#TXOK')).toBe(true);
     }
+
+    /** 本切片 manualEnvelope=null：不得因 import 写入/rebase manual。 */
+    expect(persistence.manual.load()).toBeNull();
   });
 });

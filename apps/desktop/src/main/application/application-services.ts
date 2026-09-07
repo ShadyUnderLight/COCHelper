@@ -38,7 +38,6 @@ export function createApplicationServices(
       clock,
       importTransaction: boot.persistence?.importTransaction ?? null,
       history: boot.persistence?.history ?? null,
-      manual: boot.persistence?.manual ?? null,
     }),
     state: boot.state,
     boot,

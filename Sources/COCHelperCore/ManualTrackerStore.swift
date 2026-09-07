@@ -3,10 +3,10 @@ import Foundation
 // MARK: - Schema and diagnostics
 
 public enum ManualTrackerSchema {
-    public static let envelope = 1
-    public static let store = 1
-    /// v2（Issue #304）：baseline 移除 fingerprint，provenance 移除 sourceFingerprint。
+    /// v2（Issue #304）：移除 fingerprint/sourceFingerprint 后的完整 wire 形状。
     /// 旧文件标记不可用，不迁移、不 fallback。
+    public static let envelope = 2
+    public static let store = 2
     public static let village = 2
 }
 

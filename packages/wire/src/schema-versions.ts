@@ -12,8 +12,8 @@ export const schemaVersions = {
     observation: 6,
   },
   manualTracker: {
-    envelope: 1,
-    store: 1,
+    envelope: 2,
+    store: 2,
     village: 2,
   },
   gameCatalogManifest: { min: 3, max: 3 },

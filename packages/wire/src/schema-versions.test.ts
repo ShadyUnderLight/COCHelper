@@ -10,7 +10,7 @@ describe('schemaVersion / parserVersion 注册表（WA-7）', () => {
       entry: 2,
       observation: 6,
     });
-    expect(schemaVersions.manualTracker).toEqual({ envelope: 1, store: 1, village: 2 });
+    expect(schemaVersions.manualTracker).toEqual({ envelope: 2, store: 2, village: 2 });
     expect(schemaVersions.gameCatalogManifest).toEqual({ min: 3, max: 3 });
   });
 

@@ -1,7 +1,7 @@
 export const MANUAL_TRACKER_SCHEMA = {
-  envelope: 1,
-  store: 1,
-  /** v2（Issue #304）：baseline 移除 fingerprint，provenance 移除 sourceFingerprint。旧文件标记不可用。 */
+  /** v2（Issue #304）：移除 fingerprint/sourceFingerprint 后的完整 wire 形状。 */
+  envelope: 2,
+  store: 2,
   village: 2,
 } as const;
 

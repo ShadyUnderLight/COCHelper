@@ -69,7 +69,7 @@ describe('ManualTrackerEnvelope', () => {
     try {
       createManualTrackerEnvelope({
         villages: [first, second],
-        migrationMarker: { version: 1, completedAtMs: 0 },
+        migrationMarker: { version: 2, completedAtMs: 0 },
       });
       expect.unreachable('expected invalid envelope');
     } catch (error) {

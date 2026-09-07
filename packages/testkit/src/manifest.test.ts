@@ -3,7 +3,12 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { fixturePath, loadGoldenManifest, parseGoldenManifest, readGoldenFixture } from './manifest';
+import {
+  fixturePath,
+  loadGoldenManifest,
+  parseGoldenManifest,
+  readGoldenFixture,
+} from './manifest';
 
 const root = process.cwd();
 const FIXTURES_DIR = 'Tests/Golden/Fixtures';

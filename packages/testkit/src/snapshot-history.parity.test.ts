@@ -10,13 +10,7 @@ import {
   parseAccountSnapshot,
   snapshotDiffWireHex,
 } from '@coc-helper/domain';
-import {
-  bytesToHex,
-  canonicalBytes,
-  canonicalize,
-  parseJson,
-  parseUuid,
-} from '@coc-helper/wire';
+import { bytesToHex, canonicalBytes, canonicalize, parseJson, parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import { assertParity } from './compare';

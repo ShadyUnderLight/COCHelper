@@ -2,32 +2,76 @@
  * SnapshotImportService：显式目标的 prepare/commit（#276）。
  * prepare 绝不读取权威 selectedVillageId；仅使用请求中的 villageId。
  * commit/discard 必须携带 expectedGeneration（CAS）。
+ * commit 经 SnapshotImportTransactionCoordinator 落盘 villages+history+manual。
  */
 
-import type {
-  ImportCommitPayload,
-  ImportDiscardPayload,
-  ImportPreparePayload,
-  ImportPrepareRequest,
+import {
+  pendingImportPreviewWireSchema,
+  pendingImportSummaryDtoSchema,
+  type ImportCommitPayload,
+  type ImportDiscardPayload,
+  type ImportPreparePayload,
+  type ImportPrepareRequest,
 } from '@coc-helper/contracts';
 import {
   applySnapshotToVillage,
+  createManualReconciliationEvidence,
+  createManualTrackerVillageState,
+  createSnapshotHistoryService,
   createVillageProfile,
+  emptyManualTrackerEnvelope,
+  encodeVillageStoreBytes,
+  envelopeActiveLineage,
+  envelopeEntry,
+  ManualUpgradeCoreState,
+  manualTrackerEnvelopeIsMigrated,
+  manualTrackerEnvelopeState,
   parsePendingImport,
+  reconcileManualTracker,
+  upsertManualTrackerVillageState,
   type Clock,
+  type ManualTrackerEnvelope,
+  type ManualTrackerStore,
   type PendingImportPreview,
+  type SnapshotHistoryEnvelope,
+  type SnapshotHistoryStore,
+  type SnapshotImportTransactionCoordinator,
   type VillageProfile,
 } from '@coc-helper/domain';
-import { generateUuid } from '@coc-helper/wire';
+import {
+  generateUuid,
+  parseUuid,
+  refSecondsToUnixSeconds,
+  unixSecondsToRefSeconds,
+  type UuidString,
+} from '@coc-helper/wire';
 
 import { AppServiceError, type AppAuthoritativeState } from './app-authoritative-state';
 import { toPendingImportPreviewWire, toPendingImportSummaryDto } from './dto-mappers';
+import type { VillageStorePort } from './import-coordinator';
+
+export type SnapshotImportServiceOptions = {
+  readonly state: AppAuthoritativeState;
+  readonly clock: Clock;
+  readonly importTransaction: SnapshotImportTransactionCoordinator | null;
+  readonly history: SnapshotHistoryStore | null;
+  readonly manual: ManualTrackerStore | null;
+};
 
 export class SnapshotImportService {
-  constructor(
-    private readonly state: AppAuthoritativeState,
-    private readonly clock: Clock,
-  ) {}
+  private readonly state: AppAuthoritativeState;
+  private readonly clock: Clock;
+  private readonly importTransaction: SnapshotImportTransactionCoordinator | null;
+  private readonly history: SnapshotHistoryStore | null;
+  private readonly manual: ManualTrackerStore | null;
+
+  constructor(options: SnapshotImportServiceOptions) {
+    this.state = options.state;
+    this.clock = options.clock;
+    this.importTransaction = options.importTransaction;
+    this.history = options.history;
+    this.manual = options.manual;
+  }
 
   prepare(request: ImportPrepareRequest): ImportPreparePayload {
     if (!this.state.canWrite()) {
@@ -58,13 +102,13 @@ export class SnapshotImportService {
     }
 
     const pending = result.value;
-    /** 必须先完成 DTO 转换；失败时不得 setPending / bump generation。 */
-    const summary = mapPendingDtos(pending, villages);
+    /** mapper + 共享 zod 全部成功后，才 setPending / bump generation。 */
+    const dto = mapAndValidatePendingDtos(pending, villages);
     this.state.setPending(pending);
     return {
       generation: this.state.getGeneration(),
-      pending: summary.pending,
-      preview: summary.preview,
+      pending: dto.pending,
+      preview: dto.preview,
     };
   }
 
@@ -77,12 +121,68 @@ export class SnapshotImportService {
     if (pending === null) {
       throw new AppServiceError('validation', '没有待确认的导入。');
     }
+    if (this.importTransaction === null || this.history === null || this.manual === null) {
+      throw new AppServiceError('unavailable', '导入事务尚未就绪。');
+    }
 
     const store = this.state.getVillageStore();
     const villages = [...store.listVillages()];
-    applyPendingToVillages(pending, villages, store);
+    const { nextVillages, targetVillage, selectedVillageId } = buildCandidateVillages(
+      pending,
+      villages,
+    );
 
-    /** 村庄主数据已提交：无论 selection soft-fail，都必须清 pending 并 bump。 */
+    const appliedAtMs = this.clock.nowMs();
+    const historyService = createSnapshotHistoryService(this.history);
+    const historyEnvelope = historyService.loadOrMigrate({
+      villages: nextVillages,
+      nowRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
+    });
+    const villageID = requireUuid(targetVillage.id, '目标村庄 ID');
+    const previousActive = envelopeActiveLineage(historyEnvelope, villageID);
+    const previousEntry =
+      previousActive === undefined
+        ? undefined
+        : envelopeEntry(historyEnvelope, previousActive.lastEntryID);
+    const historyDecision = historyService.planImport({
+      snapshot: pending.snapshot,
+      villageID,
+      currentTag: targetVillage.tag,
+      hasCurrentSnapshot:
+        targetVillage.accountSnapshot !== null && pending.target.kind !== 'create',
+      envelope: historyEnvelope,
+      appliedAtRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
+    });
+
+    const manualEnvelope = prepareManualEnvelopeForImport({
+      store: this.manual,
+      villages: nextVillages,
+      targetVillageID: villageID,
+      historyDecisionEnvelope: historyDecision.envelope,
+      historyEntry: historyDecision.entry,
+      duplicate: historyDecision.duplicate,
+      lineageComparable: historyDecision.lineage.comparisonAllowed,
+      previousEntry,
+      appliedAtMs,
+    });
+
+    try {
+      this.importTransaction.commit({
+        currentData: encodeVillageStoreBytes(nextVillages),
+        envelope: historyDecision.envelope,
+        manualEnvelope,
+      });
+    } catch (error) {
+      throw new AppServiceError('unavailable', formatTransactionError(error));
+    }
+
+    if (hasAdoptCommittedVillages(store)) {
+      store.adoptCommittedVillages(nextVillages, selectedVillageId);
+    } else {
+      store.saveVillages(nextVillages);
+      store.setSelectedVillageId(selectedVillageId);
+    }
+
     this.state.setPending(null, { bump: false });
     this.state.notifyMutation();
     return {
@@ -101,18 +201,30 @@ export class SnapshotImportService {
   }
 }
 
+type VillageStoreWithAdopt = VillageStorePort & {
+  adoptCommittedVillages(
+    villages: readonly VillageProfile[],
+    selectedVillageId: string | null,
+  ): void;
+};
+
+function hasAdoptCommittedVillages(store: VillageStorePort): store is VillageStoreWithAdopt {
+  return typeof (store as VillageStoreWithAdopt).adoptCommittedVillages === 'function';
+}
+
 function assertExpectedGeneration(current: number, expected: number): void {
   if (current !== expected) {
     throw new AppServiceError('conflict', '导入状态已过期，请刷新后重试。');
   }
 }
 
-function mapPendingDtos(
+function mapAndValidatePendingDtos(
   pending: PendingImportPreview,
   villages: readonly VillageProfile[],
 ): Pick<ImportPreparePayload, 'pending' | 'preview'> {
+  let mapped: Pick<ImportPreparePayload, 'pending' | 'preview'>;
   try {
-    return {
+    mapped = {
       pending: toPendingImportSummaryDto(pending, villages),
       preview: toPendingImportPreviewWire(pending),
     };
@@ -122,16 +234,25 @@ function mapPendingDtos(
     }
     throw error;
   }
+  const summary = pendingImportSummaryDtoSchema.safeParse(mapped.pending);
+  if (!summary.success) {
+    throw new AppServiceError('validation', '导入预览摘要无法经 IPC schema 校验。');
+  }
+  const preview = pendingImportPreviewWireSchema.safeParse(mapped.preview);
+  if (!preview.success) {
+    throw new AppServiceError('validation', '导入预览详情无法经 IPC schema 校验。');
+  }
+  return { pending: summary.data, preview: preview.data };
 }
 
-function applyPendingToVillages(
+function buildCandidateVillages(
   pending: PendingImportPreview,
   villages: VillageProfile[],
-  store: {
-    saveVillages(villages: readonly VillageProfile[]): void;
-    setSelectedVillageId(id: string | null): void;
-  },
-): void {
+): {
+  readonly nextVillages: VillageProfile[];
+  readonly targetVillage: VillageProfile;
+  readonly selectedVillageId: string;
+} {
   const target = pending.target;
   switch (target.kind) {
     case 'create': {
@@ -141,24 +262,125 @@ function applyPendingToVillages(
         name: snapshot.tag?.trim() || `村庄 ${villages.length + 1}`,
         accountSnapshot: snapshot,
       });
-      villages.push(village);
-      store.saveVillages(villages);
-      store.setSelectedVillageId(village.id);
-      return;
+      return {
+        nextVillages: [...villages, village],
+        targetVillage: village,
+        selectedVillageId: village.id,
+      };
     }
     case 'existing': {
       const index = villages.findIndex((village) => village.id === target.villageId);
       if (index < 0) {
         throw new AppServiceError('notFound', '目标村庄不存在，无法导入。');
       }
-      villages[index] = applySnapshotToVillage(villages[index]!, pending.snapshot);
-      store.saveVillages(villages);
-      store.setSelectedVillageId(target.villageId);
-      return;
+      const previous = villages[index]!;
+      const updated = applySnapshotToVillage(previous, pending.snapshot);
+      const nextVillages = [...villages];
+      nextVillages[index] = updated;
+      return {
+        nextVillages,
+        targetVillage: previous,
+        selectedVillageId: target.villageId,
+      };
     }
     case 'ambiguous':
       throw new AppServiceError('conflict', '导入目标不明确。');
   }
+}
+
+function prepareManualEnvelopeForImport(input: {
+  readonly store: ManualTrackerStore;
+  readonly villages: readonly VillageProfile[];
+  readonly targetVillageID: UuidString;
+  readonly historyDecisionEnvelope: SnapshotHistoryEnvelope;
+  readonly historyEntry: SnapshotHistoryEnvelope['entries'][number];
+  readonly duplicate: boolean;
+  readonly lineageComparable: boolean;
+  readonly previousEntry: SnapshotHistoryEnvelope['entries'][number] | undefined;
+  readonly appliedAtMs: number;
+}): ManualTrackerEnvelope {
+  const loaded = input.store.load();
+  let envelope =
+    loaded !== null && manualTrackerEnvelopeIsMigrated(loaded)
+      ? loaded
+      : emptyManualTrackerEnvelope(
+          input.villages
+            .map((village) => parseUuid(village.id))
+            .filter((id): id is UuidString => id !== undefined),
+          input.appliedAtMs,
+        );
+
+  for (const village of input.villages) {
+    const id = parseUuid(village.id);
+    if (id === undefined) {
+      continue;
+    }
+    if (manualTrackerEnvelopeState(envelope, id) === undefined) {
+      envelope = upsertManualTrackerVillageState(
+        envelope,
+        createManualTrackerVillageState({
+          villageID: id,
+          core: ManualUpgradeCoreState.create(),
+          stateUpdatedAtMs: input.appliedAtMs,
+        }),
+      );
+    }
+  }
+
+  const currentState =
+    manualTrackerEnvelopeState(envelope, input.targetVillageID) ??
+    createManualTrackerVillageState({
+      villageID: input.targetVillageID,
+      core: ManualUpgradeCoreState.create(),
+      stateUpdatedAtMs: input.appliedAtMs,
+    });
+
+  const duplicateCount =
+    input.historyDecisionEnvelope.duplicateMetadata[input.historyEntry.snapshotID]
+      ?.duplicateImportCount ?? 0;
+  const revision =
+    duplicateCount === 0
+      ? input.historyEntry.snapshotID
+      : `${input.historyEntry.snapshotID}:observation:${duplicateCount}`;
+  const sourceTimestampMs =
+    input.historyEntry.sourceTimestampRefSeconds === null
+      ? null
+      : refSecondsToUnixSeconds(input.historyEntry.sourceTimestampRefSeconds) * 1000;
+  const previousEntry = input.previousEntry;
+
+  const evidence = createManualReconciliationEvidence({
+    villageID: input.targetVillageID,
+    newBaselineReference: {
+      revision,
+      lineageID: input.historyEntry.lineageID,
+    },
+    newNormalizedPlayerTag: input.historyEntry.normalizedPlayerTag,
+    sourceTimestampMs,
+    duplicate: input.duplicate,
+    lineageComparable: input.lineageComparable,
+    observations: new Map(),
+    previousSnapshotID: previousEntry?.snapshotID ?? null,
+    previousLineageID: previousEntry?.lineageID ?? null,
+    previousSourceTimestampMs:
+      previousEntry?.sourceTimestampRefSeconds === null ||
+      previousEntry?.sourceTimestampRefSeconds === undefined
+        ? null
+        : refSecondsToUnixSeconds(previousEntry.sourceTimestampRefSeconds) * 1000,
+  });
+
+  const plan = reconcileManualTracker(evidence, currentState, {
+    decision: 'applyNonConflicting',
+    appliedAtMs: input.appliedAtMs,
+  });
+  return upsertManualTrackerVillageState(envelope, plan.state);
+}
+
+function requireUuid(value: string, label: string): UuidString {
+  const parsed = parseUuid(value);
+  if (parsed === undefined) {
+    throw new AppServiceError('validation', `${label} 不是合法 UUID。`);
+  }
+  return parsed;
 }
 
 function formatImportError(error: import('@coc-helper/domain').AccountSnapshotImportError): string {
@@ -170,4 +392,17 @@ function formatImportError(error: import('@coc-helper/domain').AccountSnapshotIm
     case 'invalidJSON':
       return `JSON 解析失败：${error.message}`;
   }
+}
+
+function formatTransactionError(error: unknown): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  ) {
+    const message = (error as { message: string }).message;
+    return message.length > 0 && message.length <= 200 ? message : '导入事务提交失败。';
+  }
+  return '导入事务提交失败。';
 }

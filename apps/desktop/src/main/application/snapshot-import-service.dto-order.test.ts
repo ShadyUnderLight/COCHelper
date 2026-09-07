@@ -34,7 +34,13 @@ describe('SnapshotImportService DTO-before-pending', () => {
       } as never,
       villageStore: store,
     });
-    const service = new SnapshotImportService(state, new FakeClock());
+    const service = new SnapshotImportService({
+      state,
+      clock: new FakeClock(),
+      importTransaction: null,
+      history: null,
+      manual: null,
+    });
     expect(state.getGeneration()).toBe(0);
     expect(() => service.prepare({ text: '{"tag":"#X","buildings":[]}' })).toThrow(AppServiceError);
     expect(state.getPending()).toBeNull();

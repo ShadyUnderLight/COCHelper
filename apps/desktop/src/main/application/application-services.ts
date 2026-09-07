@@ -33,7 +33,13 @@ export function createApplicationServices(
   return {
     lifecycle,
     villages: new VillageService(boot.state),
-    imports: new SnapshotImportService(boot.state, clock),
+    imports: new SnapshotImportService({
+      state: boot.state,
+      clock,
+      importTransaction: boot.persistence?.importTransaction ?? null,
+      history: boot.persistence?.history ?? null,
+      manual: boot.persistence?.manual ?? null,
+    }),
     state: boot.state,
     boot,
   };

@@ -1,6 +1,8 @@
 /**
  * VillageStorePort 的文件实现：villages-v1 + selection-v1。
- * 完整 history/manual 事务导入由 SnapshotImportService（#276）编排。
+ * 快照导入的 villages/history/manual 原子提交由 SnapshotImportService
+ * 经 SnapshotImportTransactionCoordinator 编排；本 store 在事务成功后
+ * 只同步内存权威态与 selection（soft fail-open）。
  */
 
 import {
@@ -77,5 +79,17 @@ export class PersistentVillageStore implements VillageStorePort {
     } catch {
       // selection 是 soft fail-open：内存权威已更新；重启后按 resolveSelectedVillageId 回落。
     }
+  }
+
+  /**
+   * 外部事务（SnapshotImportTransactionCoordinator）已写盘后调用：
+   * 只同步内存 villages/selection，不再二次写 villages 文件。
+   */
+  adoptCommittedVillages(
+    villages: readonly VillageProfile[],
+    selectedVillageId: string | null,
+  ): void {
+    this.villagesCache = [...villages];
+    this.setSelectedVillageId(selectedVillageId);
   }
 }

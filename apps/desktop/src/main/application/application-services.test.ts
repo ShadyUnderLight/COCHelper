@@ -158,6 +158,17 @@ describe('ApplicationServices（#276 首片）', () => {
     expect(services.state.getPending()).toBeNull();
   });
 
+  it('domain-valid 但 IPC schema 拒绝的长 tag：不留下 pending', () => {
+    const services = bootServices();
+    const longTag = `#${'A'.repeat(32)}`;
+    expect(longTag.length).toBe(33);
+    expect(() => services.imports.prepare({ text: `{"tag":"${longTag}","buildings":[]}` })).toThrow(
+      AppServiceError,
+    );
+    expect(services.state.getPending()).toBeNull();
+    expect(services.state.getGeneration()).toBe(0);
+  });
+
   it('state.changed 在 mutation 后通知订阅者', () => {
     const services = bootServices();
     const events: number[] = [];

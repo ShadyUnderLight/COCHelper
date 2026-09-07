@@ -127,7 +127,6 @@ async function assertReconciliationParity(
   assertParity(
     compareManualOutcomeParity({
       caseId: input.id,
-      source,
       typescriptHex,
       swift,
     }),

@@ -1,4 +1,3 @@
-import CryptoKit
 import Darwin
 import Foundation
 import COCHelperCore
@@ -23,8 +22,6 @@ private struct OracleResponse: Encodable {
     let protocolVersion: Int
     let caseId: String
     let ok: Bool
-    let inputFingerprint: String
-    let outputFingerprint: String?
     let value: OracleValue?
     let error: OracleError?
 }
@@ -37,7 +34,7 @@ private enum OracleUsageError: Error {
 
 @main
 struct GoldenOracle {
-    private static let protocolVersion = 1
+    private static let protocolVersion = 2
 
     static func main() {
         do {
@@ -75,26 +72,22 @@ struct GoldenOracle {
     }
 
     private static func evaluate(_ request: OracleRequest) -> OracleResponse {
-        let inputData = Data(request.source.utf8)
-        let inputFingerprint = fingerprint(inputData)
-
         switch request.operation {
         case "canonical-json":
             return evaluateCanonicalJson(
                 request: request,
-                inputData: inputData,
-                inputFingerprint: inputFingerprint
+                inputData: Data(request.source.utf8)
             )
         case "manual-queue-capacity":
-            return evaluateManualHex(request: request, inputFingerprint: inputFingerprint) {
+            return evaluateManualHex(request: request) {
                 try ManualDomainOracle.evaluate(source: request.source)
             }
         case "manual-reconciliation-preview":
-            return evaluateManualHex(request: request, inputFingerprint: inputFingerprint) {
+            return evaluateManualHex(request: request) {
                 try ManualReconciliationOracle.evaluate(source: request.source)
             }
         case "snapshot-history-canonicalize", "snapshot-history-diff":
-            return evaluateManualHex(request: request, inputFingerprint: inputFingerprint) {
+            return evaluateManualHex(request: request) {
                 try SnapshotHistoryOracle.evaluate(source: request.source)
             }
         default:
@@ -102,8 +95,6 @@ struct GoldenOracle {
                 protocolVersion: Self.protocolVersion,
                 caseId: request.caseId,
                 ok: false,
-                inputFingerprint: inputFingerprint,
-                outputFingerprint: nil,
                 value: nil,
                 error: OracleError(kind: "rejected", code: "unsupportedOperation")
             )
@@ -112,8 +103,7 @@ struct GoldenOracle {
 
     private static func evaluateCanonicalJson(
         request: OracleRequest,
-        inputData: Data,
-        inputFingerprint: String
+        inputData: Data
     ) -> OracleResponse {
         do {
             let canonical = try CanonicalJSONValue.fromJSONData(inputData).canonicalized
@@ -122,8 +112,6 @@ struct GoldenOracle {
                 protocolVersion: Self.protocolVersion,
                 caseId: request.caseId,
                 ok: true,
-                inputFingerprint: inputFingerprint,
-                outputFingerprint: fingerprint(canonicalData),
                 value: OracleValue(canonicalHex: hex(canonicalData)),
                 error: nil
             )
@@ -132,8 +120,6 @@ struct GoldenOracle {
                 protocolVersion: Self.protocolVersion,
                 caseId: request.caseId,
                 ok: false,
-                inputFingerprint: inputFingerprint,
-                outputFingerprint: nil,
                 value: nil,
                 error: OracleError(kind: "rejected", code: "invalidJson")
             )
@@ -142,18 +128,14 @@ struct GoldenOracle {
 
     private static func evaluateManualHex(
         request: OracleRequest,
-        inputFingerprint: String,
         evaluate: () throws -> String
     ) -> OracleResponse {
         do {
             let canonicalHex = try evaluate()
-            let outputData = dataFromHex(canonicalHex)
             return OracleResponse(
                 protocolVersion: Self.protocolVersion,
                 caseId: request.caseId,
                 ok: true,
-                inputFingerprint: inputFingerprint,
-                outputFingerprint: fingerprint(outputData),
                 value: OracleValue(canonicalHex: canonicalHex),
                 error: nil
             )
@@ -162,34 +144,14 @@ struct GoldenOracle {
                 protocolVersion: Self.protocolVersion,
                 caseId: request.caseId,
                 ok: false,
-                inputFingerprint: inputFingerprint,
-                outputFingerprint: nil,
                 value: nil,
                 error: OracleError(kind: "rejected", code: "invalidManualDomain")
             )
         }
     }
 
-    private static func fingerprint(_ data: Data) -> String {
-        let digest = SHA256.hash(data: data)
-        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
-    }
-
     private static func hex(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private static func dataFromHex(_ value: String) -> Data {
-        var bytes: [UInt8] = []
-        bytes.reserveCapacity(value.count / 2)
-        var index = value.startIndex
-        while index < value.endIndex {
-            let next = value.index(index, offsetBy: 2)
-            let byte = UInt8(value[index..<next], radix: 16) ?? 0
-            bytes.append(byte)
-            index = next
-        }
-        return Data(bytes)
     }
 
     private static func writeFailure(_ error: OracleUsageError) {

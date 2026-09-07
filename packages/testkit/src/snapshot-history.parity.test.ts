@@ -10,14 +10,7 @@ import {
   parseAccountSnapshot,
   snapshotDiffWireHex,
 } from '@coc-helper/domain';
-import {
-  bytesToHex,
-  canonicalBytes,
-  canonicalize,
-  parseJson,
-  parseUuid,
-  type Sha256Fingerprint,
-} from '@coc-helper/wire';
+import { bytesToHex, canonicalBytes, canonicalize, parseJson, parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import { assertParity } from './compare';
@@ -36,7 +29,6 @@ type FrozenOutcome = {
   readonly comparisonState?: string;
   readonly changeCount?: string;
   readonly encodedJSONHex?: string;
-  readonly outputFingerprint: string;
   readonly canonicalHex: string;
 };
 
@@ -157,11 +149,9 @@ async function assertFrozenOutcomeParity(input: {
   assertParity(
     compareManualOutcomeParity({
       caseId: input.caseId,
-      source: input.source,
       typescriptHex: input.typescriptHex,
       swift: response,
       expectedCanonicalHex: input.expected.canonicalHex,
-      expectedOutputFingerprint: input.expected.outputFingerprint as Sha256Fingerprint,
       category: 'ordering',
     }),
   );

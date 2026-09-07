@@ -56,7 +56,6 @@ async function assertSample(
   });
   const report = compareCanonicalParity({
     caseId: `${caseId}/${sample.id}`,
-    source: sample.source,
     expectedAccepted: accepted,
     expectedCanonicalHex: sample.canonicalHex,
     typescript,

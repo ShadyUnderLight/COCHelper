@@ -30,8 +30,6 @@ export {
 export type { CanonicalJsonValue } from './json-value';
 export { isFiniteNumber, requireFiniteNumber } from './finite-number';
 export { parserVersions, schemaVersions } from './schema-versions';
-export { isSha256Fingerprint, sha256Fingerprint } from './sha256';
-export type { Sha256Fingerprint } from './sha256';
 export {
   INT64_BOUNDS,
   UINT64_BOUNDS,

@@ -1,9 +1,7 @@
 import { spawn } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
 
-import { isSha256Fingerprint, sha256Fingerprint, type Sha256Fingerprint } from '@coc-helper/wire';
-
-export const SWIFT_ORACLE_PROTOCOL_VERSION = 1 as const;
+export const SWIFT_ORACLE_PROTOCOL_VERSION = 2 as const;
 
 export type SwiftOracleOperation =
   | 'canonical-json'
@@ -23,8 +21,6 @@ export type SwiftOracleSuccess = {
   readonly protocolVersion: typeof SWIFT_ORACLE_PROTOCOL_VERSION;
   readonly caseId: string;
   readonly ok: true;
-  readonly inputFingerprint: Sha256Fingerprint;
-  readonly outputFingerprint: Sha256Fingerprint;
   readonly value: { readonly canonicalHex: string };
 };
 
@@ -32,8 +28,6 @@ export type SwiftOracleFailure = {
   readonly protocolVersion: typeof SWIFT_ORACLE_PROTOCOL_VERSION;
   readonly caseId: string;
   readonly ok: false;
-  readonly inputFingerprint: Sha256Fingerprint;
-  readonly outputFingerprint?: undefined;
   readonly error: { readonly kind: string; readonly code: string };
 };
 
@@ -97,10 +91,6 @@ export function createSwiftOracleRunner(options: SwiftOracleRunnerOptions = {}):
     if (response.caseId !== request.caseId) {
       throw new Error('Swift oracle caseId 与请求不一致。');
     }
-    const expectedInputFingerprint = sha256Fingerprint(request.source);
-    if (response.inputFingerprint !== expectedInputFingerprint) {
-      throw new Error('Swift oracle inputFingerprint 与请求不一致。');
-    }
     return response;
   };
 }
@@ -118,16 +108,8 @@ export function parseSwiftOracleResponse(value: unknown): SwiftOracleResponse {
     throw new Error('Swift oracle protocolVersion 不受支持。');
   }
   const caseId = requireNonEmptyString(object.caseId, 'oracle response.caseId');
-  const inputFingerprint = requireFingerprint(
-    object.inputFingerprint,
-    'oracle response.inputFingerprint',
-  );
 
   if (object.ok === true) {
-    const outputFingerprint = requireFingerprint(
-      object.outputFingerprint,
-      'oracle response.outputFingerprint',
-    );
     const valueObject = asRecord(object.value, 'oracle response.value');
     const canonicalHex = requireNonEmptyString(
       valueObject.canonicalHex,
@@ -140,8 +122,6 @@ export function parseSwiftOracleResponse(value: unknown): SwiftOracleResponse {
       protocolVersion: SWIFT_ORACLE_PROTOCOL_VERSION,
       caseId,
       ok: true,
-      inputFingerprint,
-      outputFingerprint,
       value: { canonicalHex },
     };
   }
@@ -152,7 +132,6 @@ export function parseSwiftOracleResponse(value: unknown): SwiftOracleResponse {
       protocolVersion: SWIFT_ORACLE_PROTOCOL_VERSION,
       caseId,
       ok: false,
-      inputFingerprint,
       error: {
         kind: requireNonEmptyString(error.kind, 'oracle response.error.kind'),
         code: requireNonEmptyString(error.code, 'oracle response.error.code'),
@@ -185,7 +164,7 @@ function validateRequest(request: SwiftOracleRequest): void {
     request.caseId.length === 0 ||
     request.caseId.length > 200
   ) {
-    throw new Error('Swift oracle request 不符合 protocol v1。');
+    throw new Error('Swift oracle request 不符合 protocol v2。');
   }
   if (
     request.operation !== 'canonical-json' &&
@@ -194,7 +173,7 @@ function validateRequest(request: SwiftOracleRequest): void {
     request.operation !== 'snapshot-history-canonicalize' &&
     request.operation !== 'snapshot-history-diff'
   ) {
-    throw new Error('Swift oracle request 不符合 protocol v1。');
+    throw new Error('Swift oracle request 不符合 protocol v2。');
   }
 }
 
@@ -287,13 +266,6 @@ function asRecord(value: unknown, label: string): Record<string, unknown> {
 function requireNonEmptyString(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${label} 必须是非空字符串。`);
-  }
-  return value;
-}
-
-function requireFingerprint(value: unknown, label: string): Sha256Fingerprint {
-  if (typeof value !== 'string' || !isSha256Fingerprint(value)) {
-    throw new Error(`${label} 不是合法 SHA-256 fingerprint。`);
   }
   return value;
 }

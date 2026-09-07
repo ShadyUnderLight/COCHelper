@@ -171,7 +171,6 @@ describe.skipIf(!shouldGenerate)('_generate diff contract expected (run once)', 
             from.appliedAtRefSeconds,
             to.appliedAtRefSeconds,
           ),
-          outputFingerprint: swift.outputFingerprint,
           canonicalHex,
         },
       });
@@ -182,7 +181,6 @@ describe.skipIf(!shouldGenerate)('_generate diff contract expected (run once)', 
       canonicalizeCase: {
         ...contract.canonicalizeCase,
         expected: {
-          outputFingerprint: canonicalizeSwift.outputFingerprint,
           canonicalHex: canonicalizeSwift.value.canonicalHex,
         },
       },

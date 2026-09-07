@@ -207,7 +207,6 @@ describe('manual queue capacity Swift oracle parity', () => {
       assertParity(
         compareManualOutcomeParity({
           caseId: contractCase.id,
-          source,
           typescriptHex,
           swift,
         }),
@@ -251,7 +250,6 @@ describe('manual queue capacity Swift oracle parity', () => {
       assertParity(
         compareManualOutcomeParity({
           caseId: contractCase.id,
-          source,
           typescriptHex,
           swift,
         }),

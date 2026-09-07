@@ -420,6 +420,10 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
 | manual-queue-capacity-contract.json | §BE-5.3 队列容量 start gate / occupancy 投影契约；startGateCases + occupancyCases | packages/testkit/src/manual-queue-capacity.parity.test.ts；manifest `projection/manual-queue-capacity` |
 | snapshot-history-diff-contract.json | §BE-3 diff 引擎三类冻结场景：level increased / B→A comparable no change / partial coverage 不产删除；每个 case 含静态 `expected`（`comparisonState` / `changeCount` / `encodedJSONHex` / `canonicalHex`；🗑️ E0-03：删除 `outputFingerprint`，#305 同步重生成） | packages/testkit/src/snapshot-history.parity.test.ts；manifest `diff/snapshot-history-contract` |
 | error-scenarios-contract.json | §ER-1…§ER-4：HTTP→CoAPIError、failureKind 十值、sourceLabel、refreshStatus 七态、refreshState 三保留；每个 refreshState case 含静态 outcome `canonicalHex` | packages/testkit/src/error-scenarios.contract.test.ts；manifest `error/error-scenarios-contract` |
+| manual-reconciliation-preview-contract.json | §BE-5 reconciliation preview oracle 必覆盖 caseId | packages/testkit/src/manual-reconciliation.parity.test.ts；manifest `projection/manual-reconciliation-preview` |
+| catalog-contract.json | #270 Catalog TS 归属登记（fixture-registry） | packages/testkit/src/catalog.contract.test.ts；manifest `projection/catalog-contract` |
+| village-projection-contract.json | #271 Village projection TS 归属；village Swift oracle deferred | packages/testkit/src/village-projection.contract.test.ts；manifest `projection/village-projection-contract` |
+| storage-fault-contract.json | #275 storage write fault / replay 归属 | packages/testkit/src/storage-fault.contract.test.ts；manifest `error/storage-fault-contract` |
 | official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | 既有 ClanPaginationDecodeTests / GameCatalogTests |
 
 全量 fixture 登记见 `Tests/Golden/manifest.json`（含 error 场景）。

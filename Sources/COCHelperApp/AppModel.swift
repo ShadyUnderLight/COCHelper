@@ -2624,6 +2624,15 @@ public final class AppModel: ObservableObject {
             id: candidateVillages[targetIndex].id,
             name: candidateVillages[targetIndex].name
         )
+        // parseAccountText 的 preview 固定用 declared proofs；若 apply 传入
+        // 自定义 sectionProofs/sourceUniverse（如 perf promoteVerified），expectedPreview
+        // 必然与 commit 现场 historyDecision 不一致。此时丢弃旧 preview，由 reconcile 重算。
+        let expectedPreview: ManualReconciliationPreview?
+        if sectionProofs != nil || sourceUniverse != nil {
+            expectedPreview = nil
+        } else {
+            expectedPreview = pendingReconciliationPreview
+        }
         do {
             try commitImportedSnapshot(
                 snapshot,
@@ -2631,7 +2640,7 @@ public final class AppModel: ObservableObject {
                 candidateVillages: candidateVillages,
                 appliedAt: appliedAt,
                 manualEnvelope: manualEnvelopeForCreate,
-                expectedPreview: pendingReconciliationPreview,
+                expectedPreview: expectedPreview,
                 reconciliationDecision: reconciliationDecision,
                 sectionProofs: sectionProofs,
                 sourceUniverse: sourceUniverse

@@ -13,14 +13,16 @@
     "package": "pnpm --filter @coc-helper/desktop package",
     "test": "vitest run",
     "test:parity": "vitest run --config vitest.parity.config.ts",
-    "test:fault-replay": "vitest run packages/testkit/src/fault.replay.test.ts",
+    "test:fault-replay": "vitest run packages/testkit/src/fault.replay.test.ts packages/domain/src/persistence/atomic-write.test.ts packages/domain/src/persistence/transactions.test.ts",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "check:renderer-isolation": "node scripts/check-renderer-node-isolation.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
-    "smoke": "node scripts/electron-smoke.mjs"
+    "smoke": "node scripts/electron-smoke.mjs",
+    "check:oracle-isolation": "node scripts/check-oracle-isolation.mjs",
+    "baseline:e1-02": "node scripts/e1-02-baseline.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.34.0",

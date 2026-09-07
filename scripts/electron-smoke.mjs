@@ -51,11 +51,15 @@ if (process.platform === 'darwin' && !posix.includes('.app/Contents/MacOS/')) {
 
 process.stdout.write(`packaged smoke binary: ${binary}\n`);
 
-const child = spawn(binary, ['--smoke'], {
+// Linux CI 上 forge 产物的 chrome-sandbox 通常无 root/SUID；smoke 仅验证进程拉起，
+// 使用 --no-sandbox，避免 SUID helper 误配置直接 abort（与业务沙箱策略无关）。
+const smokeArgs = process.platform === 'linux' ? ['--smoke', '--no-sandbox'] : ['--smoke'];
+const child = spawn(binary, smokeArgs, {
   env: {
     ...process.env,
     COCHELPER_SMOKE: '1',
     ELECTRON_ENABLE_LOGGING: '1',
+    ...(process.platform === 'linux' ? { ELECTRON_DISABLE_SANDBOX: '1' } : {}),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

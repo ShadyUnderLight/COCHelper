@@ -50,8 +50,10 @@ jobs:
           echo "COCHELPER_SWIFT_ORACLE=$(swift build --show-bin-path --configuration debug)/golden-oracle" >> "$GITHUB_ENV"
       - name: Swift / TypeScript parity
         run: pnpm test:parity
-      - name: Fault replay
+      - name: Fault replay (token + storage write faults)
         run: pnpm test:fault-replay
+      - name: Oracle isolation
+        run: pnpm check:oracle-isolation
 
   electron:
     name: Electron bootstrap
@@ -81,6 +83,7 @@ jobs:
         run: |
           pnpm check:renderer-isolation
           pnpm check:secrets
+          pnpm check:oracle-isolation
       - name: Package
         run: pnpm package
       - name: Packaged smoke

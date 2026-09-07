@@ -211,7 +211,7 @@ public enum UpgradeOverviewProjection {
     ///
     /// 每条记录由 `VillageCatalogProjection.project` 产出并过滤有效升级状态；
     /// 按剩余时间升序（nil 视为最大排最后），再按 villageName、base、id 稳定排序。
-    /// villageName 用 `localizedStandardCompare`（与旧层 UpgradeTracker 排序语义一致）。
+    /// villageName 用固定 `zh_CN` 拼音比较（与旧层 UpgradeTracker / 验收测试一致，不随系统 locale 漂移）。
     ///
     /// `now` 用于计算实时剩余时间；`completionDate(from:)` 必须回传同一个 `now`，
     /// 否则完成时间会与实际不一致（详见该方法 doc comment）。
@@ -240,8 +240,7 @@ public enum UpgradeOverviewProjection {
     /// 普通完成项（timerSeconds == nil）两者都不进。该信号与目录收录无关——
     /// 即使目录未命中，计时结束也仍需重新导入确认。
     ///
-    /// 排序：villageName（localizedStandardCompare）→ base.rawValue → item.name
-    /// （localizedStandardCompare），id 兜底保证稳定。
+    /// 排序：villageName（zh_CN）→ base.rawValue → item.name（zh_CN），id 兜底保证稳定。
     public static func pendingReimportRecords(
         from villages: [VillageProfile],
         catalog: GameCatalog?,
@@ -267,7 +266,7 @@ public enum UpgradeOverviewProjection {
         let lhsRemaining = lhs.item.effectiveRemainingSeconds(at: now) ?? .max
         let rhsRemaining = rhs.item.effectiveRemainingSeconds(at: now) ?? .max
         if lhsRemaining != rhsRemaining { return lhsRemaining < rhsRemaining }
-        let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
+        let villageOrder = overviewLocalizedCompare(lhs.villageName, rhs.villageName)
         if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
         if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
         return lhs.id < rhs.id
@@ -275,12 +274,23 @@ public enum UpgradeOverviewProjection {
 
     /// pending 排序键：villageName → base → item.name → id。
     private static func pendingOrder(_ lhs: UpgradeDisplayRecord, _ rhs: UpgradeDisplayRecord) -> Bool {
-        let villageOrder = lhs.villageName.localizedStandardCompare(rhs.villageName)
+        let villageOrder = overviewLocalizedCompare(lhs.villageName, rhs.villageName)
         if villageOrder != .orderedSame { return villageOrder == .orderedAscending }
         if lhs.base.rawValue != rhs.base.rawValue { return lhs.base.rawValue < rhs.base.rawValue }
-        let nameOrder = lhs.item.name.localizedStandardCompare(rhs.item.name)
+        let nameOrder = overviewLocalizedCompare(lhs.item.name, rhs.item.name)
         if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
         return lhs.id < rhs.id
+    }
+
+    /// 总览名排序固定 `zh_CN` 拼音语义（与旧层/验收测试一致），不随 runner 系统 locale 漂移。
+    private static let overviewSortLocale = Locale(identifier: "zh_CN")
+
+    private static func overviewLocalizedCompare(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        lhs.compare(
+            rhs,
+            options: [.numeric, .caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: overviewSortLocale
+        )
     }
 
     /// 全部村庄 × 全部 base 的未过滤投影记录（overviewRecords 唯一投影入口，

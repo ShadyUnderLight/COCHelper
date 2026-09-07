@@ -64,7 +64,7 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
 2. **E0-03（#266，已关闭）**：Electron 工程、安全进程边界、CI bootstrap。
 3. **E1-01（#267）**：实现 wire-contract-v1.md §WA-1…§WA-7，并冻结
    shared-primitives-v1.md 的跨层基础 seam。
-4. **E1-02（#268)**：Swift oracle + golden parity 框架，直接消费 `Tests/Golden/` fixtures。
+4. **E1-02（#268)**：Swift oracle + golden parity 框架，直接消费 `Tests/Golden/` fixtures；领域回链与基线台账见 `docs/electron/e1-02-test-registration.md`。
 5. **E2-\*（#269–274）**：按 behavior-matrix.md / error-matrix.md 逐域迁移。
 6. **E0-03 契约清理（#302，本次修订）**：撤销非必要 SHA-256/指纹/manifest 完整性防御契约，
    只冻结删除/保留边界与数据策略，不直接改业务代码。执行顺序：

@@ -111,7 +111,7 @@ describe('RefreshCoordinator single-flight', () => {
     expect(count).toBe(1);
   });
 
-  it('parent 取消时共享 flight 全部收到取消', async () => {
+  it('同一 parent 取消时全部 waiter 收到取消', async () => {
     const coordinator = new RefreshCoordinator<string>();
     const parent = new AbortController();
     const run = () =>
@@ -128,6 +128,69 @@ describe('RefreshCoordinator single-flight', () => {
       );
     const pending = Promise.all([run(), run()]);
     parent.abort();
-    await expect(pending).rejects.toBeInstanceOf(CoAPIRequestCancelledError);
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('独立 parent 取消时不影响其他 waiter', async () => {
+    const coordinator = new RefreshCoordinator<string>();
+    const parentA = new AbortController();
+    const parentB = new AbortController();
+    let runs = 0;
+
+    const runA = coordinator.runSingleFlight(
+      '#TAG',
+      async (signal) => {
+        runs += 1;
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        if (signal.aborted) {
+          throw new CoAPIRequestCancelledError();
+        }
+        return 'ok';
+      },
+      parentA.signal,
+    );
+    const runB = coordinator.runSingleFlight(
+      '#TAG',
+      async () => {
+        throw new Error('follower callback 不应执行');
+      },
+      parentB.signal,
+    );
+
+    await Promise.resolve();
+    parentB.abort();
+    await expect(runB).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(runA).resolves.toBe('ok');
+    expect(runs).toBe(1);
+  });
+
+  it('唯一 waiter 取消时以 AbortError 结束且不 poison', async () => {
+    const coordinator = new RefreshCoordinator<string>();
+    const parent = new AbortController();
+    const flight = coordinator.runSingleFlight(
+      '#TAG',
+      async (signal) => {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => resolve(), 50);
+          signal.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              reject(new CoAPIRequestCancelledError());
+            },
+            { once: true },
+          );
+        });
+        return 'ok';
+      },
+      parent.signal,
+    );
+    await Promise.resolve();
+    parent.abort();
+    await expect(flight).rejects.toMatchObject({ name: 'AbortError' });
+
+    await expect(coordinator.runSingleFlight('#TAG', async () => 'recovered')).resolves.toBe(
+      'recovered',
+    );
   });
 });

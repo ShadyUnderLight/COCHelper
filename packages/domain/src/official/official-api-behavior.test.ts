@@ -165,16 +165,24 @@ describe('official api behavior matrix', () => {
     const flight = coordinator.runSingleFlight(
       '#X',
       async (signal) => {
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        if (signal.aborted) {
-          throw new CoAPIRequestCancelledError();
-        }
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => resolve(), 30);
+          signal.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              reject(new CoAPIRequestCancelledError());
+            },
+            { once: true },
+          );
+        });
         return 1;
       },
       parent.signal,
     );
+    await Promise.resolve();
     parent.abort();
-    await expect(flight).rejects.toBeInstanceOf(CoAPIRequestCancelledError);
+    await expect(flight).rejects.toMatchObject({ name: 'AbortError' });
 
     const recovered = await coordinator.runSingleFlight('#X', async () => 2);
     expect(recovered).toBe(2);

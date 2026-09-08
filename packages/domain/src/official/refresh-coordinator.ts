@@ -180,6 +180,7 @@ export function shouldSkipFailedOverwrite<
 type SharedFlightEntry<TResult> = {
   readonly promise: Promise<TResult>;
   readonly controller: AbortController;
+  activeWaiters: number;
 };
 
 export class RefreshCoordinator<TResult> {
@@ -220,6 +221,10 @@ export class RefreshCoordinator<TResult> {
     return result.tagsToRefresh;
   }
 
+  /**
+   * 同 key single-flight。
+   * 独立 parentSignal 取消时只结束该 waiter；仅当最后一个 waiter 取消时才 abort 底层请求。
+   */
   async runSingleFlight(
     tag: string,
     run: (signal: AbortSignal) => Promise<TResult>,
@@ -231,30 +236,18 @@ export class RefreshCoordinator<TResult> {
     }
 
     const controller = new AbortController();
-    if (parentSignal !== undefined) {
-      if (parentSignal.aborted) {
-        controller.abort(parentSignal.reason);
-      } else {
-        parentSignal.addEventListener(
-          'abort',
-          () => {
-            controller.abort(parentSignal.reason);
-          },
-          { once: true },
-        );
+    const runPromise = Promise.resolve().then(() => run(controller.signal));
+    const promise = runPromise.finally(() => {
+      const current = this.sharedFlights.get(tag);
+      if (current?.controller === controller) {
+        this.sharedFlights.delete(tag);
       }
-    }
-
-    const promise = Promise.resolve()
-      .then(() => run(controller.signal))
-      .finally(() => {
-        const current = this.sharedFlights.get(tag);
-        if (current?.controller === controller) {
-          this.sharedFlights.delete(tag);
-        }
-        this.state = unregisterResolvingTag(this.state, tag);
-      });
-    const entry: SharedFlightEntry<TResult> = { promise, controller };
+      this.state = unregisterResolvingTag(this.state, tag);
+    });
+    // 最后一个 waiter 放弃后，底层 run 的 rejection 仍需有人接住
+    runPromise.catch(() => undefined);
+    promise.catch(() => undefined);
+    const entry: SharedFlightEntry<TResult> = { promise, controller, activeWaiters: 0 };
     this.sharedFlights.set(tag, entry);
     this.state = registerResolvingTag(this.state, tag);
     return awaitSharedFlight(entry, parentSignal);
@@ -265,18 +258,60 @@ async function awaitSharedFlight<TResult>(
   entry: SharedFlightEntry<TResult>,
   parentSignal?: AbortSignal,
 ): Promise<TResult> {
-  if (parentSignal?.aborted) {
-    entry.controller.abort(parentSignal.reason);
-  } else if (parentSignal !== undefined) {
-    const onAbort = () => {
-      entry.controller.abort(parentSignal.reason);
-    };
-    parentSignal.addEventListener('abort', onAbort, { once: true });
-    try {
-      return await entry.promise;
-    } finally {
-      parentSignal.removeEventListener('abort', onAbort);
+  let released = false;
+  const release = (abortIfLast: boolean) => {
+    if (released) {
+      return;
     }
+    released = true;
+    entry.activeWaiters -= 1;
+    if (abortIfLast && entry.activeWaiters === 0 && !entry.controller.signal.aborted) {
+      entry.controller.abort(parentSignal?.reason);
+    }
+  };
+
+  entry.activeWaiters += 1;
+
+  try {
+    if (parentSignal === undefined) {
+      return await entry.promise;
+    }
+
+    return await new Promise<TResult>((resolve, reject) => {
+      const onAbort = () => {
+        cleanup();
+        release(true);
+        reject(toAbortError(parentSignal.reason));
+      };
+      const cleanup = () => {
+        parentSignal.removeEventListener('abort', onAbort);
+      };
+
+      parentSignal.addEventListener('abort', onAbort, { once: true });
+      // 订阅后立刻检查，避免 check→subscribe 窗口丢 abort
+      if (parentSignal.aborted) {
+        onAbort();
+        return;
+      }
+
+      entry.promise.then(
+        (value) => {
+          cleanup();
+          resolve(value);
+        },
+        (error) => {
+          cleanup();
+          reject(error);
+        },
+      );
+    });
+  } finally {
+    release(false);
   }
-  return entry.promise;
+}
+
+function toAbortError(_reason: unknown): Error {
+  const error = new Error('请求已取消。');
+  error.name = 'AbortError';
+  return error;
 }

@@ -3,6 +3,7 @@ import type { AppIpcBridge } from './app-ipc';
 import type { ProjectionIpcBridge } from './projection-ipc';
 import type { ManualIpcBridge } from './manual-ipc';
 import type { OfficialIpcBridge } from './official-ipc';
+import type { RecoveryIpcBridge } from './recovery-ipc';
 
 /** IPC 通道名。preload 只允许调用这里列出的通道。 */
 export const APP_HEALTH_CHANNEL = 'app.health' as const;
@@ -52,7 +53,8 @@ export type DesktopBridge = {
 } & AppIpcBridge &
   ProjectionIpcBridge &
   ManualIpcBridge &
-  OfficialIpcBridge;
+  OfficialIpcBridge &
+  RecoveryIpcBridge;
 
 export const DESKTOP_BRIDGE_KEYS = [
   'health',
@@ -78,6 +80,12 @@ export const DESKTOP_BRIDGE_KEYS = [
   'apiRefresh',
   'warLogLoadMore',
   'capitalRaidLoadMore',
+  'recoveryStatus',
+  'recoveryExport',
+  'recoveryRestore',
+  'recoveryRestoreSaved',
+  'recoveryReset',
+  'recoveryRecoverJournal',
   'onOperationProgress',
   'onStateChanged',
 ] as const satisfies ReadonlyArray<keyof DesktopBridge>;
@@ -208,3 +216,32 @@ export {
   type OperationProgressListener,
   type OfficialIpcBridge,
 } from './official-ipc';
+
+export {
+  RECOVERY_STATUS_CHANNEL,
+  RECOVERY_EXPORT_CHANNEL,
+  RECOVERY_RESTORE_CHANNEL,
+  RECOVERY_RESTORE_SAVED_CHANNEL,
+  RECOVERY_RESET_CHANNEL,
+  RECOVERY_RECOVER_JOURNAL_CHANNEL,
+  RECOVERY_IPC_CHANNELS,
+  RECOVERY_IPC_BRIDGE_KEYS,
+  type RecoveryStatusRequest,
+  type RecoveryStatusPayload,
+  type RecoveryStatusResponse,
+  type RecoveryExportRequest,
+  type RecoveryExportPayload,
+  type RecoveryExportResponse,
+  type RecoveryRestoreRequest,
+  type RecoveryRestorePayload,
+  type RecoveryRestoreResponse,
+  type RecoveryRestoreSavedRequest,
+  type RecoveryRestoreSavedResponse,
+  type RecoveryResetRequest,
+  type RecoveryResetPayload,
+  type RecoveryResetResponse,
+  type RecoveryRecoverJournalRequest,
+  type RecoveryRecoverJournalPayload,
+  type RecoveryRecoverJournalResponse,
+  type RecoveryIpcBridge,
+} from './recovery-ipc';

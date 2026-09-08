@@ -30,6 +30,14 @@ import {
   OPERATION_PROGRESS_CHANNEL,
   PROJECTION_IPC_BRIDGE_KEYS,
   PROJECTION_IPC_CHANNELS,
+  RECOVERY_EXPORT_CHANNEL,
+  RECOVERY_IPC_BRIDGE_KEYS,
+  RECOVERY_IPC_CHANNELS,
+  RECOVERY_RECOVER_JOURNAL_CHANNEL,
+  RECOVERY_RESET_CHANNEL,
+  RECOVERY_RESTORE_CHANNEL,
+  RECOVERY_RESTORE_SAVED_CHANNEL,
+  RECOVERY_STATUS_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
@@ -61,6 +69,12 @@ describe('@coc-helper/contracts IPC', () => {
     expect(WAR_LOG_LOAD_MORE_CHANNEL).toBe('warLog.loadMore');
     expect(CAPITAL_RAID_LOAD_MORE_CHANNEL).toBe('capitalRaid.loadMore');
     expect(OPERATION_PROGRESS_CHANNEL).toBe('operation.progress');
+    expect(RECOVERY_STATUS_CHANNEL).toBe('recovery.status');
+    expect(RECOVERY_EXPORT_CHANNEL).toBe('recovery.export');
+    expect(RECOVERY_RESTORE_CHANNEL).toBe('recovery.restore');
+    expect(RECOVERY_RESTORE_SAVED_CHANNEL).toBe('recovery.restoreSaved');
+    expect(RECOVERY_RESET_CHANNEL).toBe('recovery.reset');
+    expect(RECOVERY_RECOVER_JOURNAL_CHANNEL).toBe('recovery.recoverJournal');
     expect(REQUEST_ID_MAX_LENGTH).toBe(128);
     expect(APP_IPC_CHANNELS).toEqual([
       APP_SNAPSHOT_CHANNEL,
@@ -90,6 +104,14 @@ describe('@coc-helper/contracts IPC', () => {
       CAPITAL_RAID_LOAD_MORE_CHANNEL,
       OPERATION_PROGRESS_CHANNEL,
     ]);
+    expect(RECOVERY_IPC_CHANNELS).toEqual([
+      RECOVERY_STATUS_CHANNEL,
+      RECOVERY_EXPORT_CHANNEL,
+      RECOVERY_RESTORE_CHANNEL,
+      RECOVERY_RESTORE_SAVED_CHANNEL,
+      RECOVERY_RESET_CHANNEL,
+      RECOVERY_RECOVER_JOURNAL_CHANNEL,
+    ]);
     const appKeysWithoutEvent = APP_IPC_BRIDGE_KEYS.filter((key) => key !== 'onStateChanged');
     const officialKeysWithoutEvent = OFFICIAL_IPC_BRIDGE_KEYS.filter(
       (key) => key !== 'onOperationProgress',
@@ -101,6 +123,7 @@ describe('@coc-helper/contracts IPC', () => {
       ...PROJECTION_IPC_BRIDGE_KEYS,
       ...MANUAL_IPC_BRIDGE_KEYS,
       ...officialKeysWithoutEvent,
+      ...RECOVERY_IPC_BRIDGE_KEYS,
       'onOperationProgress',
       'onStateChanged',
     ]);

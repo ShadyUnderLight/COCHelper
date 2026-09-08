@@ -1,5 +1,6 @@
 /**
  * Main 权威应用态（#276）。generation 单调递增；query 只读快照，不写盘。
+ * sessionId 在 Main 进程生命周期内稳定，重启后变化，供 renderer 丢弃 stale 响应。
  */
 
 import type {
@@ -15,6 +16,7 @@ import {
   type PersistenceBootstrapResult,
   type VillageProfile,
 } from '@coc-helper/domain';
+import { generateUuid } from '@coc-helper/wire';
 
 import { toPendingImportSummaryDto, toVillageSummaryDto } from './dto-mappers';
 import type { VillageStorePort } from './import-coordinator';
@@ -23,6 +25,15 @@ export type AppAuthoritativeStateOptions = {
   readonly persistence: PersistenceBootstrapResult | null;
   readonly villageStore: VillageStorePort | null;
   readonly bootError?: string | null;
+  readonly sessionId?: string;
+  readonly hasPendingJournal?: () => boolean;
+};
+
+export type InstallAvailableStateOptions = {
+  readonly villageStore: VillageStorePort;
+  readonly villageStatus: VillageStoreStatusDto;
+  readonly villageError?: string | null;
+  readonly notice?: string | null;
 };
 
 export class AppAuthoritativeState {
@@ -30,13 +41,26 @@ export class AppAuthoritativeState {
   private pending: PendingImportPreview | null = null;
   private readonly listeners = new Set<StateChangedListener>();
   private readonly persistence: PersistenceBootstrapResult | null;
-  private readonly villageStore: VillageStorePort | null;
+  private villageStore: VillageStorePort | null;
   private readonly bootError: string | null;
+  private readonly sessionId: string;
+  private readonly hasPendingJournalFn: () => boolean;
+  /** 显式恢复成功后覆盖 bootstrap 只读字段。 */
+  private villageStatusOverride: VillageStoreStatusDto | null = null;
+  private villageErrorOverride: string | null | undefined = undefined;
+  private canWriteOverride: boolean | null = null;
+  private recoveryNotice: string | null = null;
 
   constructor(options: AppAuthoritativeStateOptions) {
     this.persistence = options.persistence;
     this.villageStore = options.villageStore;
     this.bootError = options.bootError ?? null;
+    this.sessionId = options.sessionId ?? generateUuid();
+    this.hasPendingJournalFn = options.hasPendingJournal ?? (() => false);
+  }
+
+  getSessionId(): string {
+    return this.sessionId;
   }
 
   getGeneration(): number {
@@ -45,6 +69,10 @@ export class AppAuthoritativeState {
 
   getPending(): PendingImportPreview | null {
     return this.pending;
+  }
+
+  getRecoveryNotice(): string | null {
+    return this.recoveryNotice;
   }
 
   setPending(
@@ -60,6 +88,29 @@ export class AppAuthoritativeState {
 
   /** 写盘 command 成功后调用：bump generation 并广播。 */
   notifyMutation(): void {
+    this.bump(true);
+  }
+
+  /**
+   * 用户显式恢复成功后安装可写权威态。
+   * sessionId 不变；generation +1；pending 清空。
+   */
+  installAvailableState(options: InstallAvailableStateOptions): void {
+    this.villageStore = options.villageStore;
+    this.villageStatusOverride = options.villageStatus;
+    this.villageErrorOverride = options.villageError ?? null;
+    this.canWriteOverride = true;
+    this.recoveryNotice = options.notice ?? null;
+    this.pending = null;
+    this.bump(true);
+  }
+
+  /** 恢复动作失败但仍留在 recovery：更新 notice，可选覆盖错误文案。 */
+  noteRecoveryFailure(notice: string, villageError?: string | null): void {
+    this.recoveryNotice = notice;
+    if (villageError !== undefined) {
+      this.villageErrorOverride = villageError;
+    }
     this.bump(true);
   }
 
@@ -97,7 +148,14 @@ export class AppAuthoritativeState {
   }
 
   canWrite(): boolean {
+    if (this.canWriteOverride !== null) {
+      return this.canWriteOverride;
+    }
     return this.villageStore !== null && (this.persistence?.canInitializeDerivedStores ?? false);
+  }
+
+  hasPendingJournal(): boolean {
+    return this.hasPendingJournalFn();
   }
 
   private bump(emit: boolean): void {
@@ -118,11 +176,14 @@ export class AppAuthoritativeState {
       this.pending === null ? null : toPendingImportSummaryDto(this.pending, villages);
 
     return {
+      sessionId: this.sessionId,
       generation: this.generation,
       availability,
       villageStatus,
-      villageError: this.bootError ?? this.persistence?.villageError ?? null,
+      villageError: this.resolveVillageError(),
       canWrite: this.canWrite(),
+      hasPendingJournal: this.hasPendingJournal(),
+      recoveryNotice: this.recoveryNotice,
       selectedVillageId: this.getSelectedVillageId(),
       villages: villages.map(toVillageSummaryDto),
       pendingImport,
@@ -130,10 +191,20 @@ export class AppAuthoritativeState {
   }
 
   private resolveVillageStatus(): VillageStoreStatusDto {
+    if (this.villageStatusOverride !== null) {
+      return this.villageStatusOverride;
+    }
     if (this.persistence === null) {
       return 'missing';
     }
     return this.persistence.villageStatus;
+  }
+
+  private resolveVillageError(): string | null {
+    if (this.villageErrorOverride !== undefined) {
+      return this.villageErrorOverride;
+    }
+    return this.bootError ?? this.persistence?.villageError ?? null;
   }
 
   private resolveAvailability(status: VillageStoreStatusDto): AppAvailability {

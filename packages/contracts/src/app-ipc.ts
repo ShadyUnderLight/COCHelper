@@ -43,11 +43,17 @@ export type PendingImportSummaryDto = {
 };
 
 export type AppSnapshotPayload = {
+  /** Main 进程会话身份；进程重启后变化，renderer 应用它丢弃旧 in-flight 响应。 */
+  readonly sessionId: string;
   readonly generation: number;
   readonly availability: AppAvailability;
   readonly villageStatus: VillageStoreStatusDto;
   readonly villageError: string | null;
   readonly canWrite: boolean;
+  /** 存在活跃或已隔离的事务 journal，可供显式 recoverJournal。 */
+  readonly hasPendingJournal: boolean;
+  /** 最近一次恢复动作的提示；无动作时为 null。 */
+  readonly recoveryNotice: string | null;
   readonly selectedVillageId: string | null;
   readonly villages: readonly VillageSummaryDto[];
   readonly pendingImport: PendingImportSummaryDto | null;

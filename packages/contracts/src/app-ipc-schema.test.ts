@@ -12,11 +12,14 @@ describe('app-ipc-schema', () => {
   it('拒绝非法 availability / villages 元素', () => {
     expect(
       isAppSnapshotPayload({
+        sessionId: 's1',
         generation: 0,
         availability: 'garbage',
         villageStatus: 'missing',
         villageError: null,
         canWrite: true,
+        hasPendingJournal: false,
+        recoveryNotice: null,
         selectedVillageId: null,
         villages: [],
         pendingImport: null,
@@ -25,11 +28,14 @@ describe('app-ipc-schema', () => {
 
     expect(
       appSnapshotPayloadSchema.safeParse({
+        sessionId: 's1',
         generation: 0,
         availability: 'available',
         villageStatus: 'missing',
         villageError: null,
         canWrite: true,
+        hasPendingJournal: false,
+        recoveryNotice: null,
         selectedVillageId: null,
         villages: [123],
         pendingImport: null,

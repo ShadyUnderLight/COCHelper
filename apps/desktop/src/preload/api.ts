@@ -17,6 +17,12 @@ import {
   MANUAL_STATE_CHANNEL,
   OPERATION_PROGRESS_CHANNEL,
   PLAYER_STATE_CHANNEL,
+  RECOVERY_EXPORT_CHANNEL,
+  RECOVERY_RECOVER_JOURNAL_CHANNEL,
+  RECOVERY_RESET_CHANNEL,
+  RECOVERY_RESTORE_CHANNEL,
+  RECOVERY_RESTORE_SAVED_CHANNEL,
+  RECOVERY_STATUS_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
@@ -43,6 +49,11 @@ import {
   isManualStatePayload,
   isOperationProgressPayload,
   isPlayerStatePayload,
+  isRecoveryExportPayload,
+  isRecoveryRecoverJournalPayload,
+  isRecoveryResetPayload,
+  isRecoveryRestorePayload,
+  isRecoveryStatusPayload,
   isResult,
   isUpgradeOverviewPayload,
   isVillageDetailPayload,
@@ -69,6 +80,12 @@ import {
   type ManualStateResponse,
   type OperationProgressListener,
   type PlayerStateResponse,
+  type RecoveryExportResponse,
+  type RecoveryRecoverJournalResponse,
+  type RecoveryResetResponse,
+  type RecoveryRestoreResponse,
+  type RecoveryRestoreSavedResponse,
+  type RecoveryStatusResponse,
   type StateChangedListener,
   type StateChangedPayload,
   type UpgradeOverviewResponse,
@@ -171,6 +188,34 @@ export function isCapitalRaidLoadMoreResponse(
   value: unknown,
 ): value is CapitalRaidLoadMoreResponse {
   return isResult(value, isCapitalRaidLoadMorePayload, isIpcError);
+}
+
+export function isRecoveryStatusResponse(value: unknown): value is RecoveryStatusResponse {
+  return isResult(value, isRecoveryStatusPayload, isIpcError);
+}
+
+export function isRecoveryExportResponse(value: unknown): value is RecoveryExportResponse {
+  return isResult(value, isRecoveryExportPayload, isIpcError);
+}
+
+export function isRecoveryRestoreResponse(value: unknown): value is RecoveryRestoreResponse {
+  return isResult(value, isRecoveryRestorePayload, isIpcError);
+}
+
+export function isRecoveryRestoreSavedResponse(
+  value: unknown,
+): value is RecoveryRestoreSavedResponse {
+  return isResult(value, isRecoveryRestorePayload, isIpcError);
+}
+
+export function isRecoveryResetResponse(value: unknown): value is RecoveryResetResponse {
+  return isResult(value, isRecoveryResetPayload, isIpcError);
+}
+
+export function isRecoveryRecoverJournalResponse(
+  value: unknown,
+): value is RecoveryRecoverJournalResponse {
+  return isResult(value, isRecoveryRecoverJournalPayload, isIpcError);
 }
 
 export function isStateChangedPayload(value: unknown): value is StateChangedPayload {
@@ -340,6 +385,48 @@ export function createDesktopBridge(invoke: Invoke, send: Send, on: On): Desktop
       const result = await invoke(CAPITAL_RAID_LOAD_MORE_CHANNEL, request);
       if (!isCapitalRaidLoadMoreResponse(result)) {
         throw new Error('capitalRaid.loadMore 返回值不合法');
+      }
+      return result;
+    },
+    recoveryStatus: async (request) => {
+      const result = await invoke(RECOVERY_STATUS_CHANNEL, request);
+      if (!isRecoveryStatusResponse(result)) {
+        throw new Error('recovery.status 返回值不合法');
+      }
+      return result;
+    },
+    recoveryExport: async (request) => {
+      const result = await invoke(RECOVERY_EXPORT_CHANNEL, request);
+      if (!isRecoveryExportResponse(result)) {
+        throw new Error('recovery.export 返回值不合法');
+      }
+      return result;
+    },
+    recoveryRestore: async (request) => {
+      const result = await invoke(RECOVERY_RESTORE_CHANNEL, request);
+      if (!isRecoveryRestoreResponse(result)) {
+        throw new Error('recovery.restore 返回值不合法');
+      }
+      return result;
+    },
+    recoveryRestoreSaved: async (request) => {
+      const result = await invoke(RECOVERY_RESTORE_SAVED_CHANNEL, request);
+      if (!isRecoveryRestoreSavedResponse(result)) {
+        throw new Error('recovery.restoreSaved 返回值不合法');
+      }
+      return result;
+    },
+    recoveryReset: async (request) => {
+      const result = await invoke(RECOVERY_RESET_CHANNEL, request);
+      if (!isRecoveryResetResponse(result)) {
+        throw new Error('recovery.reset 返回值不合法');
+      }
+      return result;
+    },
+    recoveryRecoverJournal: async (request) => {
+      const result = await invoke(RECOVERY_RECOVER_JOURNAL_CHANNEL, request);
+      if (!isRecoveryRecoverJournalResponse(result)) {
+        throw new Error('recovery.recoverJournal 返回值不合法');
       }
       return result;
     },

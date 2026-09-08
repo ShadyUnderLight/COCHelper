@@ -19,6 +19,12 @@ import {
   MANUAL_STATE_CHANNEL,
   OPERATION_PROGRESS_CHANNEL,
   PLAYER_STATE_CHANNEL,
+  RECOVERY_EXPORT_CHANNEL,
+  RECOVERY_RECOVER_JOURNAL_CHANNEL,
+  RECOVERY_RESET_CHANNEL,
+  RECOVERY_RESTORE_CHANNEL,
+  RECOVERY_RESTORE_SAVED_CHANNEL,
+  RECOVERY_STATUS_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
@@ -54,6 +60,12 @@ import {
   parseManualStartRequest,
   parseManualStateRequest,
   parsePlayerStateRequest,
+  parseRecoveryExportRequest,
+  parseRecoveryRecoverJournalRequest,
+  parseRecoveryResetRequest,
+  parseRecoveryRestoreRequest,
+  parseRecoveryRestoreSavedRequest,
+  parseRecoveryStatusRequest,
   parseUpgradeOverviewRequest,
   parseVillageDetailRequest,
   parseVillageSelectRequest,
@@ -372,6 +384,72 @@ export function registerIpcHandlers(
       } finally {
         cancellation.finish(senderId, request.requestId);
       }
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(RECOVERY_STATUS_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      parseRecoveryStatusRequest(payload);
+      return resultOk(requireServices(services).recovery.status());
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(RECOVERY_EXPORT_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      parseRecoveryExportRequest(payload);
+      return resultOk(requireServices(services).recovery.exportRaw());
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(RECOVERY_RESTORE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseRecoveryRestoreRequest(payload);
+      return resultOk(
+        requireServices(services).recovery.restore(request.expectedGeneration, request.dataBase64),
+      );
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(RECOVERY_RESTORE_SAVED_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseRecoveryRestoreSavedRequest(payload);
+      return resultOk(
+        requireServices(services).recovery.restoreFromSavedCopy(request.expectedGeneration),
+      );
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(RECOVERY_RESET_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseRecoveryResetRequest(payload);
+      return resultOk(requireServices(services).recovery.reset(request.expectedGeneration));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(RECOVERY_RECOVER_JOURNAL_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseRecoveryRecoverJournalRequest(payload);
+      return resultOk(
+        requireServices(services).recovery.recoverJournal(request.expectedGeneration),
+      );
     } catch (error: unknown) {
       return resultErr(toIpcError(error));
     }

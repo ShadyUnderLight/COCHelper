@@ -118,11 +118,14 @@ export const pendingImportPreviewWireSchema: z.ZodType<PendingImportPreviewWire>
 
 export const appSnapshotPayloadSchema: z.ZodType<AppSnapshotPayload> = z
   .object({
+    sessionId: z.string().min(1).max(128),
     generation: generationSchema,
     availability: appAvailabilitySchema,
     villageStatus: villageStoreStatusDtoSchema,
     villageError: z.string().max(500).nullable(),
     canWrite: z.boolean(),
+    hasPendingJournal: z.boolean(),
+    recoveryNotice: z.string().max(500).nullable(),
     selectedVillageId: villageIdSchema.nullable(),
     villages: z.array(villageSummaryDtoSchema),
     pendingImport: pendingImportSummaryDtoSchema.nullable(),

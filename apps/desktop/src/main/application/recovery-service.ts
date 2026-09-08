@@ -2,6 +2,9 @@
  * RecoveryService（#276-S5）：村庄恢复显式出口。
  * 对齐 §BE-1.1 / Swift AppModel：export / restore / reset / recoverJournal 均用户触发；
  * 启动从不自动隔离或重置。
+ *
+ * reset/restore 成功路径必须丢弃 quarantined journal，否则下次启动 revive 会覆盖用户选择。
+ * 当存在 villageRecoveryData 时，写入 recovery 副本是覆盖 villages 的前置条件（非 best-effort）。
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -24,6 +27,7 @@ import {
   encodeVillageStoreBytes,
   isVillageStoreError,
   loadVillageStoreBytes,
+  PERSISTENCE_MAX_FILE_BYTES,
   quarantinePendingJournals,
   removeQuarantinedJournal,
   reviveQuarantinedJournalIfNeeded,
@@ -95,6 +99,7 @@ export class RecoveryService {
     if (saved === null) {
       throw new AppServiceError('notFound', '没有找到保存的村庄恢复副本。');
     }
+    assertRecoveryCandidateSize(saved);
     return this.restoreFromBytes(saved, '已从保存的恢复副本恢复村庄数据。');
   }
 
@@ -102,7 +107,7 @@ export class RecoveryService {
     this.assertExpectedGeneration(expectedGeneration);
     this.assertRecoveryRequired();
     const persistence = this.requirePersistence();
-    this.preserveRecoveryBytesBestEffort();
+    this.persistRecoveryCopyOrThrow();
     quarantinePendingJournals([
       persistence.paths.snapshotImportJournal,
       persistence.paths.manualTrackerJournal,
@@ -115,6 +120,7 @@ export class RecoveryService {
       throw mapPersistenceError(error, '重置写入失败');
     }
 
+    this.discardQuarantinedJournals(persistence);
     this.installVillages(resetVillages, 'available', '村庄数据已重置；旧 bytes 已保存为恢复副本。');
     const snapshot = this.state.snapshot();
     return {
@@ -134,15 +140,14 @@ export class RecoveryService {
       throw new AppServiceError('notFound', '没有找到待处理的事务 journal。');
     }
 
-    this.preserveRecoveryBytesBestEffort();
+    this.persistRecoveryCopyOrThrow();
 
     try {
       reviveQuarantinedJournalIfNeeded(persistence.paths.snapshotImportJournal);
       persistence.importTransaction.recoverIfNeeded();
       reviveQuarantinedJournalIfNeeded(persistence.paths.manualTrackerJournal);
       persistence.manualTransaction.recoverIfNeeded();
-      removeQuarantinedJournal(persistence.paths.snapshotImportJournal);
-      removeQuarantinedJournal(persistence.paths.manualTrackerJournal);
+      this.discardQuarantinedJournals(persistence);
     } catch (error) {
       const message = formatError(error);
       this.state.noteRecoveryFailure(
@@ -209,13 +214,14 @@ export class RecoveryService {
   }
 
   private restoreFromBytes(candidate: Uint8Array, notice: string): RecoveryRestorePayload {
+    assertRecoveryCandidateSize(candidate);
     const persistence = this.requirePersistence();
     const loaded = loadVillageStoreBytes(candidate);
     if (loaded.kind !== 'loaded') {
       throw new AppServiceError('validation', '恢复文件不是合法的村庄存储，未写入当前数据。');
     }
 
-    this.preserveRecoveryBytesBestEffort();
+    this.persistRecoveryCopyOrThrow();
     quarantinePendingJournals([
       persistence.paths.snapshotImportJournal,
       persistence.paths.manualTrackerJournal,
@@ -238,6 +244,7 @@ export class RecoveryService {
       throw mapPersistenceError(error, '恢复写入失败');
     }
 
+    this.discardQuarantinedJournals(persistence);
     this.installVillages(villages, status, notice);
     const snapshot = this.state.snapshot();
     return {
@@ -319,7 +326,11 @@ export class RecoveryService {
     }
   }
 
-  private preserveRecoveryBytesBestEffort(): void {
+  /**
+   * 覆盖 villages 前必须先落下原始恢复副本。
+   * villageRecoveryData 非空时写入失败必须 abort，不得继续覆盖当前文件。
+   */
+  private persistRecoveryCopyOrThrow(): void {
     if (this.persistence === null || this.persistence.villageRecoveryData === null) {
       return;
     }
@@ -327,8 +338,21 @@ export class RecoveryService {
     try {
       mkdirSync(dirname(path), { recursive: true });
       atomicWriteFile(path, this.persistence.villageRecoveryData);
-    } catch {
-      // best-effort：恢复主路径不因副本备份失败而中断。
+    } catch (error) {
+      throw new AppServiceError(
+        'unavailable',
+        `保存村庄恢复副本失败，未覆盖当前数据：${formatError(error)}`,
+      );
+    }
+  }
+
+  /** reset/restore/recoverJournal 成功后丢弃隔离件，防止下次启动 revive。 */
+  private discardQuarantinedJournals(persistence: PersistenceBootstrapResult): void {
+    try {
+      removeQuarantinedJournal(persistence.paths.snapshotImportJournal);
+      removeQuarantinedJournal(persistence.paths.manualTrackerJournal);
+    } catch (error) {
+      throw new AppServiceError('unavailable', `清理隔离事务失败：${formatError(error)}`);
     }
   }
 }
@@ -349,12 +373,22 @@ function decodeBase64Bytes(dataBase64: string): Uint8Array {
     if (bytes.length === 0) {
       throw new AppServiceError('validation', '恢复数据为空。');
     }
+    assertRecoveryCandidateSize(bytes);
     return bytes;
   } catch (error) {
     if (error instanceof AppServiceError) {
       throw error;
     }
     throw new AppServiceError('validation', '恢复数据不是合法的 base64。');
+  }
+}
+
+export function assertRecoveryCandidateSize(bytes: Uint8Array): void {
+  if (bytes.byteLength > PERSISTENCE_MAX_FILE_BYTES) {
+    throw new AppServiceError(
+      'validation',
+      `恢复数据超过大小上限（${String(PERSISTENCE_MAX_FILE_BYTES)} bytes），未写入。`,
+    );
   }
 }
 

@@ -17,8 +17,8 @@ import type {
   RecoveryStatusPayload,
 } from './recovery-ipc';
 
-/** 对应 PERSISTENCE_MAX_FILE_BYTES=32MiB 的 base64 上界（约 4/3）。 */
-export const RECOVERY_DATA_BASE64_MAX_LENGTH = 45_000_000;
+/** 精确对应 PERSISTENCE_MAX_FILE_BYTES=32MiB 的标准 base64 字符上限：ceil(n/3)*4。 */
+export const RECOVERY_DATA_BASE64_MAX_LENGTH = 44_739_244;
 
 const generationSchema = z.number().int().nonnegative().safe();
 const sessionIdSchema = z.string().min(1).max(128);

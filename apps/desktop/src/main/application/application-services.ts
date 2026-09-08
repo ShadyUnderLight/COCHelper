@@ -56,7 +56,6 @@ export function createApplicationServices(
           manual: boot.persistence.manual,
           history: boot.persistence.history,
           catalog,
-          importTransaction: boot.persistence.importTransaction,
         })
       : null;
 

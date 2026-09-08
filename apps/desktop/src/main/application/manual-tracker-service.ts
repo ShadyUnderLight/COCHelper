@@ -2,8 +2,9 @@
  * ManualTrackerService（#276-S3）：Manual 状态读取与本地写命令。
  * - query 不 bump generation；
  * - command 显式 villageId + expectedGeneration CAS；
- * - 单 store 命令走 manual.save（BE-2.6）；
- * - 导入对账由 SnapshotImportService 调用 buildReconciledManualEnvelope，走三方事务。
+ * - 单 store 命令走 manual.save（BE-2.6）；CAS→save 路径在异步 catalog I/O 之后同步执行；
+ * - 导入对账由 SnapshotImportService 调用 buildReconciledManualEnvelope，走三方事务；
+ * - manual.reconcile 只针对已有 active history entry，不改 history。
  */
 
 import type {
@@ -22,17 +23,19 @@ import type {
 } from '@coc-helper/contracts';
 import {
   applyManualLineageComparable,
+  buildReconciliationEvidenceFromActiveEntry,
   buildReconciliationEvidenceFromHistory,
   createManualTrackerVillageState,
   emptyManualTrackerEnvelope,
-  encodeVillageStoreBytes,
   inferredLocalQueueKindForItemKeyAndDuration,
   isBaselineReconciled,
   manualBaselineReferenceForHistoryEntry,
   manualTrackerEnvelopeIsMigrated,
   manualTrackerEnvelopeState,
   ManualUpgradeCoreState,
+  projectBuildingGroupsFromProjection,
   projectUpgradeActionForItem,
+  projectUpgradeActionsForBuildingGroup,
   projectVillageCatalog,
   reconcileManualTracker,
   trackerItemKeyRoot,
@@ -51,8 +54,9 @@ import {
   type SnapshotHistoryEntry,
   type SnapshotHistoryImportDecision,
   type SnapshotHistoryStore,
-  type SnapshotImportTransactionCoordinator,
   type TrackerItemKey,
+  type TrackerNestedKind,
+  type UpgradeAction,
   type VillageProfile,
 } from '@coc-helper/domain';
 import { parseUuid, unixSecondsToRefSeconds, type UuidString } from '@coc-helper/wire';
@@ -70,7 +74,6 @@ export type ManualTrackerServiceOptions = {
   readonly manual: ManualTrackerStore | null;
   readonly history: SnapshotHistoryStore | null;
   readonly catalog: ManualCatalogPort;
-  readonly importTransaction?: SnapshotImportTransactionCoordinator | null;
 };
 
 export class ManualTrackerService {
@@ -79,7 +82,6 @@ export class ManualTrackerService {
   private readonly manual: ManualTrackerStore | null;
   private readonly history: SnapshotHistoryStore | null;
   private readonly catalog: ManualCatalogPort;
-  private readonly importTransaction: SnapshotImportTransactionCoordinator | null;
 
   constructor(options: ManualTrackerServiceOptions) {
     this.state = options.state;
@@ -87,7 +89,6 @@ export class ManualTrackerService {
     this.manual = options.manual;
     this.history = options.history;
     this.catalog = options.catalog;
-    this.importTransaction = options.importTransaction ?? null;
   }
 
   getState(request: ManualStateRequest): ManualStatePayload {
@@ -141,11 +142,17 @@ export class ManualTrackerService {
 
   async start(request: ManualStartRequest): Promise<ManualStartPayload> {
     this.assertWritable();
+    if (!Number.isFinite(request.startedAtMs)) {
+      throw new AppServiceError('validation', '时间无效。');
+    }
+    /** 先完成全部异步 I/O；CAS→reload→save 必须同步，中间不得 await。 */
+    const bundle = await this.loadBundle();
+
     assertExpectedGeneration(this.state.getGeneration(), request.expectedGeneration);
     const village = this.requireVillage(request.villageId);
     const villageID = requireUuid(request.villageId, '村庄 ID');
     const nowMs = this.clock.nowMs();
-    if (!Number.isFinite(nowMs) || !Number.isFinite(request.startedAtMs)) {
+    if (!Number.isFinite(nowMs)) {
       throw new AppServiceError('validation', '时间无效。');
     }
 
@@ -156,7 +163,6 @@ export class ManualTrackerService {
       throw new AppServiceError('conflict', '当前快照尚未对账，无法启动手动升级。');
     }
 
-    const bundle = await this.loadBundle();
     const itemKey = trackerItemKeyFromDto(request.itemKey);
     const action = this.revalidatedStartAction({
       village,
@@ -354,7 +360,7 @@ export class ManualTrackerService {
   }
 
   /**
-   * 对当前村庄快照与 history 再跑对账；history+manual 经三方事务提交（villages 字节不变）。
+   * 对已落盘 active history entry 再跑对账；只写 manual，不调用 planImport、不改 history。
    */
   reconcile(input: {
     readonly expectedGeneration: number;
@@ -368,8 +374,8 @@ export class ManualTrackerService {
   } {
     this.assertWritable();
     assertExpectedGeneration(this.state.getGeneration(), input.expectedGeneration);
-    if (this.manual === null || this.history === null || this.importTransaction === null) {
-      throw new AppServiceError('unavailable', 'History/Manual 事务尚未就绪。');
+    if (this.manual === null || this.history === null) {
+      throw new AppServiceError('unavailable', 'History/Manual 存储尚未就绪。');
     }
     const village = this.requireVillage(input.villageId);
     if (village.accountSnapshot === null) {
@@ -383,43 +389,56 @@ export class ManualTrackerService {
       villages,
       nowRefSeconds: unixSecondsToRefSeconds(nowMs / 1000),
     });
-    const previousEntry = historyService.activeEntry(historyEnvelope, villageID);
-    const decision = historyService.planImport({
-      snapshot: village.accountSnapshot,
-      villageID,
-      currentTag: village.tag,
-      hasCurrentSnapshot: true,
-      envelope: historyEnvelope,
-      appliedAtRefSeconds: unixSecondsToRefSeconds(nowMs / 1000),
-    });
+    const activeEntry = historyService.activeEntry(historyEnvelope, villageID);
+    if (activeEntry === null) {
+      throw new AppServiceError('validation', '目标村庄没有可对账的历史观察。');
+    }
 
-    const reconciled = this.buildReconciledManualEnvelope({
-      villageID,
-      previousEntry,
-      decision,
-      appliedAtMs: nowMs,
-      reconciliationDecision: input.decision,
-    });
-
+    const { envelope, villageState } = this.loadEnvelopeState(villageID, nowMs);
+    const evidence = applyManualLineageComparable(
+      buildReconciliationEvidenceFromActiveEntry({
+        villageID,
+        envelope: historyEnvelope,
+        activeEntry,
+      }),
+      villageState.baselineReference,
+    );
+    let plan;
     try {
-      this.importTransaction.commit({
-        currentData: encodeVillageStoreBytes(villages),
-        envelope: decision.envelope,
-        manualEnvelope: reconciled.envelope,
+      plan = reconcileManualTracker(evidence, villageState, {
+        decision: input.decision,
+        appliedAtMs: nowMs,
       });
+    } catch (error) {
+      throw mapReconcileError(error);
+    }
+
+    const nextEnvelope = upsertManualTrackerVillageState(envelope, plan.state);
+    try {
+      this.manual.save(nextEnvelope);
     } catch (error) {
       throw new AppServiceError(
         'unavailable',
-        error instanceof Error ? error.message : '对账事务提交失败。',
+        error instanceof Error ? error.message : '手动升级存储写入失败。',
       );
     }
     this.state.notifyMutation();
 
     return {
       generation: this.state.getGeneration(),
-      attentionCount: reconciled.attentionCount,
-      duplicate: reconciled.duplicate,
-      lineageComparable: reconciled.lineageComparable,
+      attentionCount: plan.preview.items.filter((item) =>
+        [
+          'manualAhead',
+          'staleImport',
+          'observedTimerEnded',
+          'possibleDuplicate',
+          'unknown',
+          'conflict',
+          'lineageMismatch',
+        ].includes(item.classification),
+      ).length,
+      duplicate: plan.preview.duplicate,
+      lineageComparable: plan.preview.lineageComparable,
     };
   }
 
@@ -494,7 +513,7 @@ export class ManualTrackerService {
     readonly bundle: CatalogBundle;
     readonly nowMs: number;
     readonly currentBaseline: ReturnType<ManualTrackerService['currentBaseline']>;
-  }) {
+  }): UpgradeAction {
     const projection = projectVillageCatalog({
       village: input.village,
       catalog: input.bundle.gameCatalog,
@@ -504,25 +523,27 @@ export class ManualTrackerService {
       nowMs: input.nowMs,
       manualUpgradeCore: input.core,
     });
-    const item = projection.items.find(
-      (entry) =>
-        trackerItemKeyStableId(trackerItemKeyRoot(entry.base, entry.section, entry.dataID)) ===
-        trackerItemKeyStableId(input.itemKey),
-    );
-    if (item === undefined) {
-      throw new AppServiceError('conflict', '升级动作已过期，请刷新后重试。');
-    }
-    const coverage = upgradeActionCoverageForItem(item, projection.progressCoverage);
-    const action = projectUpgradeActionForItem({
-      item,
-      catalog: input.bundle.gameCatalog,
-      catalogIsUsable: projection.catalogIsUsable,
-      manualUpgradeCore: input.core,
-      coverage,
-      nowMs: input.nowMs,
-    });
+
+    const action =
+      input.request.sourceKind === 'group'
+        ? this.revalidatedGroupStartAction({
+            projection,
+            itemKey: input.itemKey,
+            request: input.request,
+            bundle: input.bundle,
+            core: input.core,
+          })
+        : this.revalidatedRowStartAction({
+            projection,
+            itemKey: input.itemKey,
+            request: input.request,
+            bundle: input.bundle,
+            core: input.core,
+            nowMs: input.nowMs,
+          });
+
     if (
-      action === null ||
+      action.sourceKind !== input.request.sourceKind ||
       !action.isStartable ||
       action.fromLevel !== input.request.fromLevel ||
       action.targetLevel !== input.request.targetLevel ||
@@ -537,6 +558,75 @@ export class ManualTrackerService {
       (action.baselineReference.revision !== input.currentBaseline.revision ||
         action.baselineReference.lineageID !== input.currentBaseline.lineageID)
     ) {
+      throw new AppServiceError('conflict', '升级动作已过期，请刷新后重试。');
+    }
+    return action;
+  }
+
+  private revalidatedRowStartAction(input: {
+    readonly projection: ReturnType<typeof projectVillageCatalog>;
+    readonly itemKey: TrackerItemKey;
+    readonly request: ManualStartRequest;
+    readonly bundle: CatalogBundle;
+    readonly core: ManualUpgradeCoreState;
+    readonly nowMs: number;
+  }): UpgradeAction {
+    const item = input.projection.items.find(
+      (entry) =>
+        trackerItemKeyStableId(trackerItemKeyRoot(entry.base, entry.section, entry.dataID)) ===
+        trackerItemKeyStableId(input.itemKey),
+    );
+    if (item === undefined) {
+      throw new AppServiceError('conflict', '升级动作已过期，请刷新后重试。');
+    }
+    const coverage = upgradeActionCoverageForItem(item, input.projection.progressCoverage);
+    const action = projectUpgradeActionForItem({
+      item,
+      catalog: input.bundle.gameCatalog,
+      catalogIsUsable: input.projection.catalogIsUsable,
+      manualUpgradeCore: input.core,
+      coverage,
+      nowMs: input.nowMs,
+    });
+    if (action === null || action.sourceKind !== 'row') {
+      throw new AppServiceError('conflict', '升级动作已过期，请刷新后重试。');
+    }
+    return action;
+  }
+
+  private revalidatedGroupStartAction(input: {
+    readonly projection: ReturnType<typeof projectVillageCatalog>;
+    readonly itemKey: TrackerItemKey;
+    readonly request: ManualStartRequest;
+    readonly bundle: CatalogBundle;
+    readonly core: ManualUpgradeCoreState;
+  }): UpgradeAction {
+    const groups = projectBuildingGroupsFromProjection({
+      projection: input.projection,
+      catalog: input.bundle.gameCatalog,
+      base: input.request.base,
+      manualUpgradeCore: input.core,
+    });
+    const group = groups.find(
+      (entry) =>
+        trackerItemKeyStableId(entry.trackerState.itemKey) ===
+        trackerItemKeyStableId(input.itemKey),
+    );
+    if (group === undefined) {
+      throw new AppServiceError('conflict', '升级动作已过期，请刷新后重试。');
+    }
+    const action = projectUpgradeActionsForBuildingGroup({
+      group,
+      catalog: input.bundle.gameCatalog,
+    }).find(
+      (candidate) =>
+        candidate.sourceKind === 'group' &&
+        candidate.fromLevel === input.request.fromLevel &&
+        candidate.targetLevel === input.request.targetLevel &&
+        candidate.quantity === BigInt(input.request.quantity) &&
+        trackerItemKeyStableId(candidate.itemKey) === trackerItemKeyStableId(input.itemKey),
+    );
+    if (action === undefined) {
       throw new AppServiceError('conflict', '升级动作已过期，请刷新后重试。');
     }
     return action;
@@ -687,7 +777,7 @@ function trackerItemKeyFromDto(dto: TrackerItemKeyDto): TrackerItemKey {
     base: dto.base,
     rawSection: dto.rawSection,
     dataID: BigInt(dto.dataID),
-    nestedKind: dto.nestedKind as TrackerItemKey['nestedKind'],
+    nestedKind: requireTrackerNestedKind(dto.nestedKind),
     nestedRootIdentity:
       dto.nestedRootIdentity === null
         ? null
@@ -697,10 +787,17 @@ function trackerItemKeyFromDto(dto: TrackerItemKeyDto): TrackerItemKey {
             dataID: BigInt(dto.nestedRootIdentity.dataID),
           },
     nestedPath: dto.nestedPath.map((component) => ({
-      kind: component.kind as TrackerItemKey['nestedKind'],
+      kind: requireTrackerNestedKind(component.kind),
       dataID: BigInt(component.dataID),
     })),
   };
+}
+
+function requireTrackerNestedKind(value: string): TrackerNestedKind {
+  if (value === 'root' || value === 'type' || value === 'module') {
+    return value;
+  }
+  throw new AppServiceError('validation', `无效的 nestedKind：${value}`);
 }
 
 function toRecordDto(record: ManualUpgradeRecord): ManualUpgradeRecordDto {

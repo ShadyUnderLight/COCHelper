@@ -11,6 +11,7 @@ import { SNAPSHOT_HISTORY_SCHEMA } from '../../snapshot-history/schema';
 import { trackerItemKeyStableId } from '../types';
 import {
   applyManualLineageComparable,
+  buildReconciliationEvidenceFromActiveEntry,
   buildReconciliationEvidenceFromHistory,
   manualBaselineReferenceForHistoryEntry,
 } from './from-history';
@@ -163,5 +164,32 @@ describe('buildReconciliationEvidenceFromHistory', () => {
       lineageID: evidence.newBaselineReference.lineageID,
     });
     expect(same.lineageComparable).toBe(true);
+  });
+
+  it('buildReconciliationEvidenceFromActiveEntry 对已有 entry 标记 duplicate=false', () => {
+    const snapshot = parseSnapshot(
+      `{"tag":"${TAG}","buildings":[{"data":1000001,"lvl":3,"cnt":1}]}`,
+    );
+    const decision = planSnapshotHistoryImport({
+      snapshot,
+      villageID: VILLAGE_ID,
+      currentTag: null,
+      hasCurrentSnapshot: false,
+      envelope: createSnapshotHistoryEnvelope({
+        migrationMarker: {
+          version: SNAPSHOT_HISTORY_SCHEMA.envelope,
+          completedAtRefSeconds: 1,
+        },
+      }),
+      appliedAtRefSeconds: 2,
+    });
+    const evidence = buildReconciliationEvidenceFromActiveEntry({
+      villageID: VILLAGE_ID,
+      envelope: decision.envelope,
+      activeEntry: decision.entry,
+    });
+    expect(evidence.duplicate).toBe(false);
+    expect(evidence.newBaselineReference.revision).toBe(decision.entry.snapshotID);
+    expect(evidence.observations.size).toBe(1);
   });
 });

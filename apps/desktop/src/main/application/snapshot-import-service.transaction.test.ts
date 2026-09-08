@@ -67,7 +67,6 @@ function bootService(root: string) {
         throw new Error('catalog not needed for import transaction tests');
       },
     },
-    importTransaction: persistence.importTransaction,
   });
   const service = new SnapshotImportService({
     state,
@@ -122,7 +121,6 @@ describe('SnapshotImportService transaction', () => {
             throw new Error('unused');
           },
         },
-        importTransaction: faultedTx,
       }),
     });
 

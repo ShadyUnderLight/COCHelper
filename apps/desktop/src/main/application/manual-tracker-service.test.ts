@@ -2,15 +2,32 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { manualStartRequestSchema } from '@coc-helper/contracts';
 import {
   bootstrapPersistence,
+  createManualItemStateForStatus,
+  createManualLevelDistributionFromPairs,
+  createManualTrackerVillageState,
+  createManualUpgradeCoreState,
+  loadCatalogBundle,
+  manualLevelDistributionsEqual,
+  manualTrackerEnvelopeState,
   PERSISTENCE_FILE_NAMES,
+  resolveCatalogBundleRoot,
+  trackerItemKeyRoot,
+  trackerItemKeyStableId,
+  upsertManualTrackerVillageState,
+  type CatalogBundle,
   type ElectronPersistencePaths,
 } from '@coc-helper/domain';
+import { parseUuid } from '@coc-helper/wire';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createApplicationServicesFromPersistence } from './persistence-boundary';
 import { AppServiceError } from './app-authoritative-state';
+import { createApplicationServices } from './application-services';
+import { bootApplicationServices } from './app-lifecycle-service';
+import { type ManualCatalogPort } from './manual-tracker-service';
+import { createApplicationServicesFromPersistence } from './persistence-boundary';
 
 class FakeClock {
   constructor(private readonly fixedMs: number) {}
@@ -42,11 +59,55 @@ function pathsFor(root: string): ElectronPersistencePaths {
   };
 }
 
-function bootServices() {
+function bootServices(catalog?: ManualCatalogPort) {
   const root = mkdtempSync(join(tmpdir(), 'coc-e302-s3-'));
   tempRoots.push(root);
   const persistence = bootstrapPersistence({ paths: pathsFor(root) });
-  return createApplicationServicesFromPersistence(persistence, new FakeClock(1_700_000_000_000));
+  if (catalog === undefined) {
+    return createApplicationServicesFromPersistence(persistence, new FakeClock(1_700_000_000_000));
+  }
+  const clock = new FakeClock(1_700_000_000_000);
+  const boot = bootApplicationServices({ clock, persistence });
+  return createApplicationServices({ clock, boot, catalog });
+}
+
+async function loadRealBundle(): Promise<CatalogBundle> {
+  const root = resolveCatalogBundleRoot(process.cwd());
+  if (root === null) {
+    throw new Error('测试找不到 GameCatalog');
+  }
+  return loadCatalogBundle({ root });
+}
+
+function deferredCatalogPort(bundle: CatalogBundle): ManualCatalogPort & {
+  readonly resolve: () => void;
+} {
+  let settle: ((value: CatalogBundle) => void) | null = null;
+  const pending = new Promise<CatalogBundle>((resolve) => {
+    settle = resolve;
+  });
+  return {
+    getBundle: () => pending,
+    resolve: () => {
+      if (settle === null) {
+        throw new Error('catalog Promise 尚未挂起');
+      }
+      settle(bundle);
+    },
+  };
+}
+
+function itemKeyDto(dataID = 1_000_001) {
+  const key = trackerItemKeyRoot('home', 'buildings', BigInt(dataID));
+  return {
+    base: key.base,
+    rawSection: key.rawSection,
+    dataID,
+    nestedKind: key.nestedKind,
+    nestedRootIdentity: null,
+    nestedPath: [] as const,
+    stableId: trackerItemKeyStableId(key),
+  };
 }
 
 afterEach(() => {
@@ -84,9 +145,7 @@ describe('ManualTrackerService（#276-S3）', () => {
       text: '{"tag":"#S3OK","buildings":[{"data":1000001,"lvl":1,"cnt":1}]}',
     });
     services.imports.commit(prepared.generation);
-    const villageId = services.state
-      .listVillages()
-      .find((village) => village.tag === '#S3OK')!.id;
+    const villageId = services.state.listVillages().find((village) => village.tag === '#S3OK')!.id;
     const state = services.manual!.getState({ villageId });
     expect(state.status).toBe('available');
     expect(state.baselineRevision).not.toBeNull();
@@ -96,5 +155,132 @@ describe('ManualTrackerService（#276-S3）', () => {
   it('stale expectedGeneration 拒绝 settle', () => {
     const services = bootServices();
     expect(() => services.manual!.settle({ expectedGeneration: 999 })).toThrow(AppServiceError);
+  });
+
+  it('catalog await 期间发生并发写入时，start 在 CAS 后拒绝且不覆盖', async () => {
+    const bundle = await loadRealBundle();
+    const catalog = deferredCatalogPort(bundle);
+    const services = bootServices(catalog);
+    const prepared = services.imports.prepare({
+      text: '{"tag":"#RACE","buildings":[{"data":1000001,"lvl":1,"cnt":1}]}',
+    });
+    services.imports.commit(prepared.generation);
+    const villageId = services.state.listVillages().find((village) => village.tag === '#RACE')!.id;
+    const generationBefore = services.state.getGeneration();
+    const baselineBefore = services.manual!.getState({ villageId }).baselineRevision;
+
+    const pending = services.manual!.start({
+      expectedGeneration: generationBefore,
+      villageId,
+      itemKey: itemKeyDto(),
+      fromLevel: 1,
+      targetLevel: 2,
+      quantity: 1,
+      startedAtMs: 1_700_000_000_000,
+      sourceKind: 'row',
+      base: 'home',
+    });
+    await Promise.resolve();
+
+    const concurrent = services.imports.prepare({
+      text: '{"tag":"#RACE","buildings":[{"data":1000001,"lvl":2,"cnt":1}]}',
+      villageId,
+    });
+    services.imports.commit(concurrent.generation);
+    const generationAfter = services.state.getGeneration();
+    expect(generationAfter).toBeGreaterThan(generationBefore);
+    const baselineAfter = services.manual!.getState({ villageId }).baselineRevision;
+    expect(baselineAfter).not.toBe(baselineBefore);
+
+    catalog.resolve();
+    await expect(pending).rejects.toMatchObject({ code: 'conflict' });
+    expect(services.state.getGeneration()).toBe(generationAfter);
+    expect(services.manual!.getState({ villageId }).baselineRevision).toBe(baselineAfter);
+  });
+
+  it('reconcile 不走 planImport：不增加 history duplicate，且 keepLocal 保留本地领先进度', () => {
+    const services = bootServices();
+    const prepared = services.imports.prepare({
+      text: '{"tag":"#KEEP","buildings":[{"data":1000001,"lvl":1,"cnt":1}]}',
+    });
+    services.imports.commit(prepared.generation);
+    const villageId = services.state.listVillages().find((village) => village.tag === '#KEEP')!.id;
+    const villageID = parseUuid(villageId)!;
+
+    const historyBefore = services.boot.persistence!.history!.load()!;
+    const snapshotID = historyBefore.entries.find(
+      (entry) => entry.villageID === villageId,
+    )!.snapshotID;
+    const duplicateBefore = historyBefore.duplicateMetadata[snapshotID]?.duplicateImportCount ?? 0;
+    const entryCountBefore = historyBefore.entries.length;
+
+    const envelope = services.boot.persistence!.manual!.load()!;
+    const villageState = manualTrackerEnvelopeState(envelope, villageID)!;
+    const itemKey = trackerItemKeyRoot('home', 'buildings', 1_000_001n);
+    const existing = villageState.core.itemState(itemKey);
+    expect(existing).toBeDefined();
+    const aheadDist = createManualLevelDistributionFromPairs([[2, 1n]]);
+    const localAhead = createManualTrackerVillageState({
+      villageID,
+      core: createManualUpgradeCoreState({
+        itemStates: [
+          createManualItemStateForStatus({
+            itemKey,
+            baselineReference: existing!.baselineReference,
+            imported: aheadDist,
+            status: 'observed',
+            sourceTimestampMs: 1_700_000_000_000,
+          }),
+        ],
+      }),
+      stateUpdatedAtMs: 1_700_000_000_100,
+      lastImportAtMs: villageState.lastImportAtMs,
+      diagnostics: villageState.diagnostics,
+      reconciliationHistory: villageState.reconciliationHistory,
+      queueCapacityConfigs: villageState.queueCapacityConfigs,
+      queueAssignments: villageState.queueAssignments,
+    });
+    services.boot.persistence!.manual!.save(upsertManualTrackerVillageState(envelope, localAhead));
+
+    const generation = services.state.getGeneration();
+    const result = services.manual!.reconcile({
+      expectedGeneration: generation,
+      villageId,
+      decision: 'keepLocal',
+    });
+    expect(result.duplicate).toBe(false);
+
+    const historyAfter = services.boot.persistence!.history!.load()!;
+    expect(historyAfter.entries.length).toBe(entryCountBefore);
+    expect(historyAfter.duplicateMetadata[snapshotID]?.duplicateImportCount ?? 0).toBe(
+      duplicateBefore,
+    );
+
+    const afterState = manualTrackerEnvelopeState(
+      services.boot.persistence!.manual!.load()!,
+      villageID,
+    )!;
+    const effective = afterState.core.effectiveState(itemKey)!;
+    expect(
+      manualLevelDistributionsEqual(effective.effectiveCompletedDistribution!, aheadDist),
+    ).toBe(true);
+  });
+
+  it('IPC schema 拒绝非法 nestedKind', () => {
+    const parsed = manualStartRequestSchema.safeParse({
+      expectedGeneration: 0,
+      villageId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      itemKey: {
+        ...itemKeyDto(),
+        nestedKind: 'banana',
+      },
+      fromLevel: 1,
+      targetLevel: 2,
+      quantity: 1,
+      startedAtMs: 1,
+      sourceKind: 'row',
+      base: 'home',
+    });
+    expect(parsed.success).toBe(false);
   });
 });

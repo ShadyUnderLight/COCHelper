@@ -26,12 +26,14 @@ const villageIdSchema = z.string().min(1).max(128);
 const safeIntSchema = z.number().int().safe();
 const trackerBaseSchema = z.enum(['home', 'builder']);
 
+const trackerNestedKindSchema = z.enum(['root', 'type', 'module']);
+
 const trackerItemKeySchema: z.ZodType<TrackerItemKeyDto> = z
   .object({
     base: trackerBaseSchema,
     rawSection: z.string().min(1).max(64),
     dataID: safeIntSchema,
-    nestedKind: z.string().min(1).max(64),
+    nestedKind: trackerNestedKindSchema,
     nestedRootIdentity: z
       .object({
         base: trackerBaseSchema,
@@ -43,7 +45,7 @@ const trackerItemKeySchema: z.ZodType<TrackerItemKeyDto> = z
     nestedPath: z.array(
       z
         .object({
-          kind: z.string().min(1).max(64),
+          kind: trackerNestedKindSchema,
           dataID: safeIntSchema,
         })
         .strict(),

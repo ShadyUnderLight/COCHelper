@@ -71,40 +71,101 @@ export function buildReconciliationEvidenceFromHistory(input: {
   readonly previousEntry: SnapshotHistoryEntry | null;
   readonly decision: SnapshotHistoryImportDecision;
 }): ManualReconciliationEvidence {
-  const { villageID, previousEntry, decision } = input;
-  if (decision.entry.villageID !== villageID) {
+  return buildReconciliationEvidenceFromEntries({
+    villageID: input.villageID,
+    previousEntry: input.previousEntry,
+    entry: input.decision.entry,
+    envelope: input.decision.envelope,
+    duplicate: input.decision.duplicate,
+    historyLineageComparable:
+      input.previousEntry === null ||
+      (input.previousEntry.lineageID === input.decision.entry.lineageID &&
+        input.decision.lineage.comparisonAllowed),
+    sourceTimestampMs: sourceTimestampMsForImportDecision(input.decision),
+  });
+}
+
+/**
+ * 对已落盘的 active history entry 再对账：绝不走 planImport / duplicate metadata。
+ * previousEntry 取同 lineage 中 active 之前的一条（若有）。
+ */
+export function buildReconciliationEvidenceFromActiveEntry(input: {
+  readonly villageID: UuidString;
+  readonly envelope: SnapshotHistoryEnvelope;
+  readonly activeEntry: SnapshotHistoryEntry;
+}): ManualReconciliationEvidence {
+  if (input.activeEntry.villageID !== input.villageID) {
+    throw { kind: 'villageMismatch' } satisfies ManualReconciliationError;
+  }
+  const previousEntry = previousEntryBeforeActive(input.envelope, input.activeEntry);
+  return buildReconciliationEvidenceFromEntries({
+    villageID: input.villageID,
+    previousEntry,
+    entry: input.activeEntry,
+    envelope: input.envelope,
+    duplicate: false,
+    historyLineageComparable:
+      previousEntry === null || previousEntry.lineageID === input.activeEntry.lineageID,
+    sourceTimestampMs: refSecondsToMs(input.activeEntry.sourceTimestampRefSeconds),
+  });
+}
+
+export function previousEntryBeforeActive(
+  envelope: SnapshotHistoryEnvelope,
+  activeEntry: SnapshotHistoryEntry,
+): SnapshotHistoryEntry | null {
+  const sameLineage = envelope.entries
+    .filter(
+      (entry) =>
+        entry.villageID === activeEntry.villageID && entry.lineageID === activeEntry.lineageID,
+    )
+    .slice()
+    .sort((left, right) => {
+      if (left.appliedAtRefSeconds !== right.appliedAtRefSeconds) {
+        return left.appliedAtRefSeconds - right.appliedAtRefSeconds;
+      }
+      return left.snapshotID.localeCompare(right.snapshotID);
+    });
+  const index = sameLineage.findIndex((entry) => entry.snapshotID === activeEntry.snapshotID);
+  if (index <= 0) {
+    return null;
+  }
+  return sameLineage[index - 1]!;
+}
+
+function buildReconciliationEvidenceFromEntries(input: {
+  readonly villageID: UuidString;
+  readonly previousEntry: SnapshotHistoryEntry | null;
+  readonly entry: SnapshotHistoryEntry;
+  readonly envelope: SnapshotHistoryEnvelope;
+  readonly duplicate: boolean;
+  readonly historyLineageComparable: boolean;
+  readonly sourceTimestampMs: number | null;
+}): ManualReconciliationEvidence {
+  const { villageID, previousEntry, entry } = input;
+  if (entry.villageID !== villageID) {
     throw { kind: 'villageMismatch' } satisfies ManualReconciliationError;
   }
   if (previousEntry !== null && previousEntry.villageID !== villageID) {
     throw { kind: 'villageMismatch' } satisfies ManualReconciliationError;
   }
 
-  const newBaselineReference = manualBaselineReferenceForHistoryEntry(
-    decision.entry,
-    decision.envelope,
-  );
-  const sourceTimestampMs = sourceTimestampMsForImportDecision(decision);
+  const newBaselineReference = manualBaselineReferenceForHistoryEntry(entry, input.envelope);
   const previousSourceTimestampMs = refSecondsToMs(
     previousEntry?.sourceTimestampRefSeconds ?? null,
   );
-
-  const historyLineageComparable =
-    previousEntry === null ||
-    (previousEntry.lineageID === decision.entry.lineageID && decision.lineage.comparisonAllowed);
-
-  const observationsBuilt = observationsInEntry(decision.entry);
+  const observationsBuilt = observationsInEntry(entry);
   const previousBuilt = previousEntry === null ? null : observationsInEntry(previousEntry);
-
   const relatedChangesByStableID =
-    previousEntry === null ? undefined : relatedChangesFromDiff(previousEntry, decision.entry);
+    previousEntry === null ? undefined : relatedChangesFromDiff(previousEntry, entry);
 
   return createManualReconciliationEvidence({
     villageID,
     newBaselineReference,
-    newNormalizedPlayerTag: decision.entry.normalizedPlayerTag,
-    sourceTimestampMs,
-    duplicate: decision.duplicate,
-    lineageComparable: historyLineageComparable,
+    newNormalizedPlayerTag: entry.normalizedPlayerTag,
+    sourceTimestampMs: input.sourceTimestampMs,
+    duplicate: input.duplicate,
+    lineageComparable: input.historyLineageComparable,
     observations: observationsBuilt.observations,
     itemKeysByStableID: mergeItemKeys(
       observationsBuilt.itemKeysByStableID,

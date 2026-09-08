@@ -85,6 +85,8 @@ export type ImportPrepareResponse = Result<ImportPreparePayload>;
 /** 必须等于 prepare 返回的 generation；不匹配则 conflict，不改 pending。 */
 export type ImportCommitRequest = {
   readonly expectedGeneration: number;
+  /** 导入时 Manual observation 对账决策；省略则 applyNonConflicting。 */
+  readonly reconciliationDecision?: 'applyNonConflicting' | 'keepLocal' | 'acceptObserved';
 };
 export type ImportCommitPayload = {
   readonly generation: number;

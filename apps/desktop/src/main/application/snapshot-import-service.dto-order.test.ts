@@ -39,6 +39,8 @@ describe('SnapshotImportService DTO-before-pending', () => {
       clock: new FakeClock(),
       importTransaction: null,
       history: null,
+      manual: null,
+      manualTracker: null,
     });
     expect(state.getGeneration()).toBe(0);
     expect(() => service.prepare({ text: '{"tag":"#X","buildings":[]}' })).toThrow(AppServiceError);

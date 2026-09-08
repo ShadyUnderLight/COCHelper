@@ -6,6 +6,12 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  MANUAL_ADJUST_CHANNEL,
+  MANUAL_CANCEL_CHANNEL,
+  MANUAL_RECONCILE_CHANNEL,
+  MANUAL_SETTLE_CHANNEL,
+  MANUAL_START_CHANNEL,
+  MANUAL_STATE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
@@ -26,6 +32,12 @@ import {
   parseImportCommitRequest,
   parseImportDiscardRequest,
   parseImportPrepareRequest,
+  parseManualAdjustRequest,
+  parseManualCancelRequest,
+  parseManualReconcileRequest,
+  parseManualSettleRequest,
+  parseManualStartRequest,
+  parseManualStateRequest,
   parseUpgradeOverviewRequest,
   parseVillageDetailRequest,
   parseVillageSelectRequest,
@@ -106,7 +118,12 @@ export function registerIpcHandlers(
     try {
       assertTrustedSender(event, webpackEntry);
       const request = parseImportCommitRequest(payload);
-      return resultOk(requireServices(services).imports.commit(request.expectedGeneration));
+      return resultOk(
+        requireServices(services).imports.commit(
+          request.expectedGeneration,
+          request.reconciliationDecision ?? 'applyNonConflicting',
+        ),
+      );
     } catch (error: unknown) {
       return resultErr(toIpcError(error));
     }
@@ -137,6 +154,96 @@ export function registerIpcHandlers(
       assertTrustedSender(event, webpackEntry);
       const request = parseVillageDetailRequest(payload);
       return resultOk(await requireServices(services).projections.villageDetail(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(MANUAL_STATE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseManualStateRequest(payload);
+      const manual = requireServices(services).manual;
+      if (manual === null) {
+        throw new AppServiceError('unavailable', '手动升级服务尚未就绪。');
+      }
+      return resultOk(manual.getState(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(MANUAL_START_CHANNEL, async (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseManualStartRequest(payload);
+      const manual = requireServices(services).manual;
+      if (manual === null) {
+        throw new AppServiceError('unavailable', '手动升级服务尚未就绪。');
+      }
+      return resultOk(await manual.start(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(MANUAL_CANCEL_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseManualCancelRequest(payload);
+      const manual = requireServices(services).manual;
+      if (manual === null) {
+        throw new AppServiceError('unavailable', '手动升级服务尚未就绪。');
+      }
+      return resultOk(manual.cancel(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(MANUAL_ADJUST_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseManualAdjustRequest(payload);
+      const manual = requireServices(services).manual;
+      if (manual === null) {
+        throw new AppServiceError('unavailable', '手动升级服务尚未就绪。');
+      }
+      return resultOk(manual.adjust(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(MANUAL_SETTLE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseManualSettleRequest(payload);
+      const manual = requireServices(services).manual;
+      if (manual === null) {
+        throw new AppServiceError('unavailable', '手动升级服务尚未就绪。');
+      }
+      return resultOk(manual.settle(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(MANUAL_RECONCILE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseManualReconcileRequest(payload);
+      const manual = requireServices(services).manual;
+      if (manual === null) {
+        throw new AppServiceError('unavailable', '手动升级服务尚未就绪。');
+      }
+      return resultOk(
+        manual.reconcile({
+          expectedGeneration: request.expectedGeneration,
+          villageId: request.villageId,
+          decision: request.decision,
+        }),
+      );
     } catch (error: unknown) {
       return resultErr(toIpcError(error));
     }

@@ -632,13 +632,16 @@ public enum ManualTrackerReconciliationService {
 
         for oldRecord in core.records {
             let item = classifications[oldRecord.itemKey]
-            let hasActiveRecord = core.records.contains {
-                $0.itemKey == oldRecord.itemKey && $0.status == .active
-            }
+            let itemOriginalRecords = core.records.filter { $0.itemKey == oldRecord.itemKey }
+            let hasActiveRecord = itemOriginalRecords.contains { $0.status == .active }
             let shouldAdopt = shouldAdopt(
                 item,
                 decision: decision,
-                hasActiveRecord: hasActiveRecord
+                hasActiveRecord: hasActiveRecord,
+                protectsAgainstDuplicateAdoption: protectsAgainstDuplicateAdoption(
+                    state: existingStates[oldRecord.itemKey],
+                    records: itemOriginalRecords
+                )
             )
             let confirmed = shouldAdopt && (item?.confirmedRecordIDs.contains(oldRecord.recordID) ?? false)
             records.append(try ManualUpgradeRecord(
@@ -671,7 +674,11 @@ public enum ManualTrackerReconciliationService {
             let adopt = shouldAdopt(
                 item,
                 decision: decision,
-                hasActiveRecord: hasActiveRecord
+                hasActiveRecord: hasActiveRecord,
+                protectsAgainstDuplicateAdoption: protectsAgainstDuplicateAdoption(
+                    state: old,
+                    records: core.records.filter { $0.itemKey == key }
+                )
             )
 
             // Keep every newly observed item as imported provenance, including
@@ -791,16 +798,24 @@ public enum ManualTrackerReconciliationService {
     private static func shouldAdopt(
         _ item: ManualReconciliationItem?,
         decision: ManualReconciliationDecision,
-        hasActiveRecord: Bool
+        hasActiveRecord: Bool,
+        protectsAgainstDuplicateAdoption: Bool = false
     ) -> Bool {
         guard let item else { return false }
         switch decision {
         case .keepLocal:
-            return item.classification == .duplicate || item.classification == .newObservation
+            // duplicate 可 rebase 纯 observed；不得覆盖本地进度或解除 attention fail-closed。
+            if item.classification == .duplicate {
+                return !protectsAgainstDuplicateAdoption
+            }
+            return item.classification == .newObservation
         case .acceptObserved:
             return true
         case .applyNonConflicting:
-            guard [.duplicate, .newObservation, .exactMatch, .observedAhead]
+            if item.classification == .duplicate {
+                return !protectsAgainstDuplicateAdoption
+            }
+            guard [.newObservation, .exactMatch, .observedAhead]
                 .contains(item.classification) else { return false }
             if item.classification == .observedAhead,
                hasActiveRecord,
@@ -1055,6 +1070,21 @@ public enum ManualTrackerReconciliationService {
         records: [ManualUpgradeRecord]
     ) -> Bool {
         state?.status == .manualCompleted || !records.isEmpty
+    }
+
+    /// duplicate 允许纯 observed rebase，但不得解除 fail-closed attention，
+    /// 也不得覆盖 manualCompleted / 有 records 的本地进度。
+    private static func protectsAgainstDuplicateAdoption(
+        state: ManualItemState?,
+        records: [ManualUpgradeRecord]
+    ) -> Bool {
+        if !records.isEmpty { return true }
+        switch state?.status {
+        case .manualCompleted, .unknown, .conflict:
+            return true
+        case .observed, .none:
+            return false
+        }
     }
 
     /// Placeholder `.observed` rows with nil distribution may adopt item-level

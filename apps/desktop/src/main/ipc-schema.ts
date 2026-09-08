@@ -4,6 +4,12 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  MANUAL_ADJUST_CHANNEL,
+  MANUAL_CANCEL_CHANNEL,
+  MANUAL_RECONCILE_CHANNEL,
+  MANUAL_SETTLE_CHANNEL,
+  MANUAL_START_CHANNEL,
+  MANUAL_STATE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
@@ -16,6 +22,12 @@ import {
   importDiscardRequestSchema,
   importPrepareRequestSchema,
   isSafeIpcDiagnosticText,
+  manualAdjustRequestSchema,
+  manualCancelRequestSchema,
+  manualReconcileRequestSchema,
+  manualSettleRequestSchema,
+  manualStartRequestSchema,
+  manualStateRequestSchema,
   resultOk,
   villageDetailRequestSchema,
   villageSelectRequestSchema,
@@ -26,6 +38,12 @@ import {
   type ImportDiscardRequest,
   type ImportPrepareRequest,
   type IpcError,
+  type ManualAdjustRequest,
+  type ManualCancelRequest,
+  type ManualReconcileRequest,
+  type ManualSettleRequest,
+  type ManualStartRequest,
+  type ManualStateRequest,
   type RequestId,
   type UpgradeOverviewRequest,
   type VillageDetailRequest,
@@ -150,6 +168,54 @@ export function parseVillageDetailRequest(payload: unknown): VillageDetailReques
   return result.data;
 }
 
+export function parseManualStateRequest(payload: unknown): ManualStateRequest {
+  const result = manualStateRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('manual.state 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseManualStartRequest(payload: unknown): ManualStartRequest {
+  const result = manualStartRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('manual.start 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseManualCancelRequest(payload: unknown): ManualCancelRequest {
+  const result = manualCancelRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('manual.cancel 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseManualAdjustRequest(payload: unknown): ManualAdjustRequest {
+  const result = manualAdjustRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('manual.adjust 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseManualSettleRequest(payload: unknown): ManualSettleRequest {
+  const result = manualSettleRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('manual.settle 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseManualReconcileRequest(payload: unknown): ManualReconcileRequest {
+  const result = manualReconcileRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('manual.reconcile 参数不合法');
+  }
+  return result.data;
+}
+
 export function parseCancelRequest(payload: unknown): CancelRequest {
   const result = cancelRequestSchema.safeParse(payload);
   if (!result.success) {
@@ -209,6 +275,12 @@ export const REGISTERED_IPC_CHANNELS = [
   IMPORT_DISCARD_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
+  MANUAL_STATE_CHANNEL,
+  MANUAL_START_CHANNEL,
+  MANUAL_CANCEL_CHANNEL,
+  MANUAL_ADJUST_CHANNEL,
+  MANUAL_SETTLE_CHANNEL,
+  MANUAL_RECONCILE_CHANNEL,
   STATE_CHANGED_CHANNEL,
 ] as const;
 

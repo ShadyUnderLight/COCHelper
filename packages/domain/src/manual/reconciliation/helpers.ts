@@ -89,6 +89,28 @@ export function hasReconciliationLocalState(
   return state?.status === 'manualCompleted' || records.length > 0;
 }
 
+/**
+ * duplicate 允许纯 observed rebase，但不得解除 fail-closed attention，
+ * 也不得覆盖 manualCompleted / 有 records 的本地进度。
+ */
+export function protectsAgainstDuplicateAdoption(
+  state: ManualItemState | undefined,
+  records: readonly ManualUpgradeRecord[],
+): boolean {
+  if (records.length > 0) {
+    return true;
+  }
+  switch (state?.status) {
+    case 'manualCompleted':
+    case 'unknown':
+    case 'conflict':
+      return true;
+    case 'observed':
+    case undefined:
+      return false;
+  }
+}
+
 export function hasProtectableReconciliationLocalState(
   state: ManualItemState | undefined,
   records: readonly ManualUpgradeRecord[],

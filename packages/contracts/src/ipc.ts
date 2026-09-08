@@ -1,6 +1,7 @@
 import type { Result } from './result';
 import type { AppIpcBridge } from './app-ipc';
 import type { ProjectionIpcBridge } from './projection-ipc';
+import type { ManualIpcBridge } from './manual-ipc';
 
 /** IPC 通道名。preload 只允许调用这里列出的通道。 */
 export const APP_HEALTH_CHANNEL = 'app.health' as const;
@@ -48,7 +49,8 @@ export type DesktopBridge = {
   health: (request?: AppHealthRequest) => Promise<AppHealthResponse>;
   cancel: (request: CancelRequest) => void;
 } & AppIpcBridge &
-  ProjectionIpcBridge;
+  ProjectionIpcBridge &
+  ManualIpcBridge;
 
 export const DESKTOP_BRIDGE_KEYS = [
   'health',
@@ -60,6 +62,12 @@ export const DESKTOP_BRIDGE_KEYS = [
   'discardImport',
   'upgradeOverview',
   'villageDetail',
+  'manualState',
+  'manualStart',
+  'manualCancel',
+  'manualAdjust',
+  'manualSettle',
+  'manualReconcile',
   'onStateChanged',
 ] as const satisfies ReadonlyArray<keyof DesktopBridge>;
 
@@ -109,3 +117,36 @@ export {
   type VillageDetailResponse,
   type ProjectionIpcBridge,
 } from './projection-ipc';
+
+export {
+  MANUAL_STATE_CHANNEL,
+  MANUAL_START_CHANNEL,
+  MANUAL_CANCEL_CHANNEL,
+  MANUAL_ADJUST_CHANNEL,
+  MANUAL_SETTLE_CHANNEL,
+  MANUAL_RECONCILE_CHANNEL,
+  MANUAL_IPC_CHANNELS,
+  MANUAL_IPC_BRIDGE_KEYS,
+  type ManualTrackerStatusDto,
+  type ManualReconciliationDecisionDto,
+  type ManualStateRequest,
+  type ManualStatePayload,
+  type ManualStateResponse,
+  type ManualStartRequest,
+  type ManualStartPayload,
+  type ManualStartResponse,
+  type ManualCancelRequest,
+  type ManualCancelPayload,
+  type ManualCancelResponse,
+  type ManualAdjustRequest,
+  type ManualAdjustPayload,
+  type ManualAdjustResponse,
+  type ManualSettleRequest,
+  type ManualSettlePayload,
+  type ManualSettleResponse,
+  type ManualReconcileRequest,
+  type ManualReconcilePayload,
+  type ManualReconcileResponse,
+  type ManualUpgradeRecordDto,
+  type ManualIpcBridge,
+} from './manual-ipc';

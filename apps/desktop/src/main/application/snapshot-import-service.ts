@@ -2,10 +2,7 @@
  * SnapshotImportService：显式目标的 prepare/commit（#276）。
  * prepare 绝不读取权威 selectedVillageId；仅使用请求中的 villageId。
  * commit/discard 必须携带 expectedGeneration（CAS）。
- * commit 经 SnapshotImportTransactionCoordinator 原子提交 villages+history。
- *
- * 本切片不改写 manual envelope（manualEnvelope=null）：完整 observation 对账留给后续切片，
- * 避免 empty-observation placeholder 错误 rebase 既有 manual provenance。
+ * commit 经 SnapshotImportTransactionCoordinator 原子提交 villages+history+manual。
  */
 
 import {
@@ -18,11 +15,12 @@ import {
 } from '@coc-helper/contracts';
 import {
   applySnapshotToVillage,
-  createSnapshotHistoryService,
   createVillageProfile,
   encodeVillageStoreBytes,
   parsePendingImport,
   type Clock,
+  type ManualReconciliationDecision,
+  type ManualTrackerStore,
   type PendingImportPreview,
   type SnapshotHistoryStore,
   type SnapshotImportTransactionCoordinator,
@@ -37,13 +35,17 @@ import {
 
 import { AppServiceError, type AppAuthoritativeState } from './app-authoritative-state';
 import { toPendingImportPreviewWire, toPendingImportSummaryDto } from './dto-mappers';
+import { HistoryService } from './history-service';
 import type { VillageStorePort } from './import-coordinator';
+import type { ManualTrackerService } from './manual-tracker-service';
 
 export type SnapshotImportServiceOptions = {
   readonly state: AppAuthoritativeState;
   readonly clock: Clock;
   readonly importTransaction: SnapshotImportTransactionCoordinator | null;
   readonly history: SnapshotHistoryStore | null;
+  readonly manual: ManualTrackerStore | null;
+  readonly manualTracker: ManualTrackerService | null;
 };
 
 export class SnapshotImportService {
@@ -51,12 +53,16 @@ export class SnapshotImportService {
   private readonly clock: Clock;
   private readonly importTransaction: SnapshotImportTransactionCoordinator | null;
   private readonly history: SnapshotHistoryStore | null;
+  private readonly manual: ManualTrackerStore | null;
+  private readonly manualTracker: ManualTrackerService | null;
 
   constructor(options: SnapshotImportServiceOptions) {
     this.state = options.state;
     this.clock = options.clock;
     this.importTransaction = options.importTransaction;
     this.history = options.history;
+    this.manual = options.manual;
+    this.manualTracker = options.manualTracker;
   }
 
   prepare(request: ImportPrepareRequest): ImportPreparePayload {
@@ -98,7 +104,10 @@ export class SnapshotImportService {
     };
   }
 
-  commit(expectedGeneration: number): ImportCommitPayload {
+  commit(
+    expectedGeneration: number,
+    reconciliationDecision: ManualReconciliationDecision = 'applyNonConflicting',
+  ): ImportCommitPayload {
     if (!this.state.canWrite()) {
       throw new AppServiceError('unavailable', '当前处于恢复或只读状态，无法导入。');
     }
@@ -107,7 +116,12 @@ export class SnapshotImportService {
     if (pending === null) {
       throw new AppServiceError('validation', '没有待确认的导入。');
     }
-    if (this.importTransaction === null || this.history === null) {
+    if (
+      this.importTransaction === null ||
+      this.history === null ||
+      this.manual === null ||
+      this.manualTracker === null
+    ) {
       throw new AppServiceError('unavailable', '导入事务尚未就绪。');
     }
 
@@ -120,12 +134,13 @@ export class SnapshotImportService {
     );
 
     const appliedAtMs = this.clock.nowMs();
-    const historyService = createSnapshotHistoryService(this.history);
+    const historyService = new HistoryService(this.history);
     const historyEnvelope = historyService.loadOrMigrate({
       villages,
       nowRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
     });
     const villageID = requireUuid(targetVillage.id, '目标村庄 ID');
+    const previousEntry = historyService.activeEntry(historyEnvelope, villageID);
     const historyDecision = historyService.planImport({
       snapshot: pending.snapshot,
       villageID,
@@ -136,12 +151,19 @@ export class SnapshotImportService {
       appliedAtRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
     });
 
+    const reconciled = this.manualTracker.buildReconciledManualEnvelope({
+      villageID,
+      previousEntry,
+      decision: historyDecision,
+      appliedAtMs,
+      reconciliationDecision,
+    });
+
     try {
       this.importTransaction.commit({
         currentData: encodeVillageStoreBytes(nextVillages),
         envelope: historyDecision.envelope,
-        /** 本切片不纳入 manual：完整 observation 对账前不得 empty-observation rebase。 */
-        manualEnvelope: null,
+        manualEnvelope: reconciled.envelope,
       });
     } catch (error) {
       throw new AppServiceError('unavailable', formatTransactionError(error));

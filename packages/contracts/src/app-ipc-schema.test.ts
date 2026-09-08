@@ -6,6 +6,7 @@ import {
   importPreparePayloadSchema,
   isAppSnapshotPayload,
 } from './app-ipc-schema';
+import { isUpgradeOverviewPayload, villageDetailRequestSchema } from './projection-ipc-schema';
 
 describe('app-ipc-schema', () => {
   it('拒绝非法 availability / villages 元素', () => {
@@ -46,5 +47,19 @@ describe('app-ipc-schema', () => {
         preview: {},
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('projection-ipc-schema', () => {
+  it('village.detail 必须显式 villageId + base', () => {
+    expect(villageDetailRequestSchema.safeParse({}).success).toBe(false);
+    expect(villageDetailRequestSchema.safeParse({ villageId: 'v1' }).success).toBe(false);
+    expect(villageDetailRequestSchema.safeParse({ villageId: 'v1', base: 'home' }).success).toBe(
+      true,
+    );
+  });
+
+  it('upgrade.overview payload 拒绝缺字段', () => {
+    expect(isUpgradeOverviewPayload({ generation: 0 })).toBe(false);
   });
 });

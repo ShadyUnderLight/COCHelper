@@ -11,6 +11,10 @@ export {
   STATE_CHANGED_CHANNEL,
   APP_IPC_CHANNELS,
   APP_IPC_BRIDGE_KEYS,
+  UPGRADE_OVERVIEW_CHANNEL,
+  VILLAGE_DETAIL_CHANNEL,
+  PROJECTION_IPC_CHANNELS,
+  PROJECTION_IPC_BRIDGE_KEYS,
   isCancelRequest,
   isRequestId,
   type AppHealthRequest,
@@ -41,6 +45,13 @@ export {
   type StateChangedPayload,
   type StateChangedListener,
   type AppIpcBridge,
+  type UpgradeOverviewRequest,
+  type UpgradeOverviewPayload,
+  type UpgradeOverviewResponse,
+  type VillageDetailRequest,
+  type VillageDetailPayload,
+  type VillageDetailResponse,
+  type ProjectionIpcBridge,
 } from './ipc';
 export * from './official-wire';
 export type {
@@ -50,6 +61,26 @@ export type {
   PendingImportPreviewWire,
   QuickImportPreviewWire,
 } from './account-wire';
+export type {
+  VillageItemStateDto,
+  UpgradeDisplayRecordDto,
+  UpgradeOverviewStateDto,
+  VillageDetailFlatRowDto,
+  BuildingGroupDto,
+  TrackerBaseDto,
+  CatalogAssetRefDto,
+  CatalogAvailabilityDto,
+  CatalogCompatibilityDto,
+  CatalogDurationStateDto,
+  ProgressMetricDto,
+  TrackerItemKeyDto,
+  UpgradeRecentCompletionDto,
+  VillageCategoryCompletionDto,
+  VillageDetailGroupDto,
+  VillageNextUpgradeDto,
+  VillageProgressMetricsDto,
+  EffectiveVillageItemStatusDto,
+} from './projection-ipc';
 export {
   DIAGNOSTIC_SEVERITIES,
   IPC_ERROR_KINDS,
@@ -88,3 +119,11 @@ export {
   isImportCommitPayload,
   isImportDiscardPayload,
 } from './app-ipc-schema';
+export {
+  upgradeOverviewPayloadSchema,
+  villageDetailRequestSchema,
+  villageDetailPayloadSchema,
+  emptyProjectionRequestSchema,
+  isUpgradeOverviewPayload,
+  isVillageDetailPayload,
+} from './projection-ipc-schema';

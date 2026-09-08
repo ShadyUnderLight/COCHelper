@@ -8,6 +8,8 @@ import {
   IMPORT_PREPARE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
+  UPGRADE_OVERVIEW_CHANNEL,
+  VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
   isSafeIpcDiagnosticText,
   type RequestId,
@@ -49,6 +51,8 @@ describe('app.health schema', () => {
       IMPORT_PREPARE_CHANNEL,
       IMPORT_COMMIT_CHANNEL,
       IMPORT_DISCARD_CHANNEL,
+      UPGRADE_OVERVIEW_CHANNEL,
+      VILLAGE_DETAIL_CHANNEL,
       STATE_CHANGED_CHANNEL,
     ]);
     expect(appHealthResponse()).toEqual({ ok: true, value: { app: 'coc-helper' } });

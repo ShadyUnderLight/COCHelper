@@ -7,13 +7,17 @@ import {
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
+  UPGRADE_OVERVIEW_CHANNEL,
+  VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
   emptyObjectRequestSchema,
+  emptyProjectionRequestSchema,
   importCommitRequestSchema,
   importDiscardRequestSchema,
   importPrepareRequestSchema,
   isSafeIpcDiagnosticText,
   resultOk,
+  villageDetailRequestSchema,
   villageSelectRequestSchema,
   type AppHealthResponse,
   type AppSnapshotRequest,
@@ -23,6 +27,8 @@ import {
   type ImportPrepareRequest,
   type IpcError,
   type RequestId,
+  type UpgradeOverviewRequest,
+  type VillageDetailRequest,
   type VillageSelectRequest,
 } from '@coc-helper/contracts';
 import { z } from 'zod';
@@ -128,6 +134,22 @@ export function parseImportDiscardRequest(payload: unknown): ImportDiscardReques
   return result.data;
 }
 
+export function parseUpgradeOverviewRequest(payload: unknown): UpgradeOverviewRequest {
+  const result = emptyProjectionRequestSchema.optional().safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('upgrade.overview 参数不合法');
+  }
+  return {};
+}
+
+export function parseVillageDetailRequest(payload: unknown): VillageDetailRequest {
+  const result = villageDetailRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('village.detail 参数不合法');
+  }
+  return result.data;
+}
+
 export function parseCancelRequest(payload: unknown): CancelRequest {
   const result = cancelRequestSchema.safeParse(payload);
   if (!result.success) {
@@ -185,6 +207,8 @@ export const REGISTERED_IPC_CHANNELS = [
   IMPORT_PREPARE_CHANNEL,
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
+  UPGRADE_OVERVIEW_CHANNEL,
+  VILLAGE_DETAIL_CHANNEL,
   STATE_CHANGED_CHANNEL,
 ] as const;
 

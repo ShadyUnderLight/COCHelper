@@ -177,6 +177,14 @@ export class InMemoryVillageStore implements VillageStorePort {
     this.selectedVillageId = id;
   }
 
+  adoptCommittedVillages(
+    villages: readonly VillageProfile[],
+    selectedVillageId: string | null,
+  ): void {
+    this.villages = [...villages];
+    this.selectedVillageId = selectedVillageId;
+  }
+
   seed(villages: readonly VillageProfile[], selectedVillageId: string | null = null): void {
     this.villages = [...villages];
     this.selectedVillageId = selectedVillageId;

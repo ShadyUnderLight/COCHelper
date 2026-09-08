@@ -65,7 +65,7 @@ describe('PersistentVillageStore', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('setSelectedVillageId 写失败时不改内存', () => {
+  it('setSelectedVillageId 写失败时仍更新内存（soft fail-open）', () => {
     const root = mkdtempSync(join(tmpdir(), 'coc-selection-mem-'));
     const villagesPath = join(root, 'villages-v1.json');
     const selectionPath = join(root, 'selection-v1.json');
@@ -80,8 +80,8 @@ describe('PersistentVillageStore', () => {
       ],
       initialSelectedVillageId: 'v-1',
     });
-    expect(() => store.setSelectedVillageId('v-2')).toThrow();
-    expect(store.getSelectedVillageId()).toBe('v-1');
+    expect(() => store.setSelectedVillageId('v-2')).not.toThrow();
+    expect(store.getSelectedVillageId()).toBe('v-2');
     rmSync(root, { recursive: true, force: true });
   });
 

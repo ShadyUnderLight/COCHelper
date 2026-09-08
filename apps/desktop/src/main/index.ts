@@ -1,11 +1,11 @@
 import { app, BrowserWindow, safeStorage } from 'electron';
 
-import { bootstrapPersistence, type PersistenceBootstrapResult } from '@coc-helper/domain';
-
-import { ImportCoordinator } from './application/import-coordinator';
-import { createImportCoordinatorFromPersistence } from './application/persistence-boundary';
-import { getCatalogService } from './catalog-service';
+import {
+  createApplicationServices,
+  type ApplicationServices,
+} from './application/application-services';
 import { FileEncryptedBlobStore, SafeStorageTokenStore } from './persistence/secret-store';
+import { getCatalogService } from './catalog-service';
 import { installAppProtocolHandler, registerAppScheme } from './protocol';
 import { isAllowedRendererUrl } from './security-policy';
 import { createMainWindow, registerApplicationHandlers } from './windows';
@@ -22,17 +22,16 @@ if (process.platform === 'linux' && process.env.CI === 'true') {
 
 const smokeMode = process.argv.includes('--smoke') || process.env.COCHELPER_SMOKE === '1';
 
-/** E3-01-C 交给 #276 的持久化边界；smoke 也可复用。 */
-let persistenceRuntime: PersistenceBootstrapResult | null = null;
-let importCoordinator: ImportCoordinator | null = null;
+/** E3-02（#276）Main application services；权威态与 typed IPC 入口。 */
+let applicationServices: ApplicationServices | null = null;
 let tokenStore: SafeStorageTokenStore | null = null;
 
-export function getPersistenceRuntime(): PersistenceBootstrapResult | null {
-  return persistenceRuntime;
+export function getApplicationServices(): ApplicationServices | null {
+  return applicationServices;
 }
 
-export function getImportCoordinator(): ImportCoordinator | null {
-  return importCoordinator;
+export function getPersistenceRuntime() {
+  return applicationServices?.boot.persistence ?? null;
 }
 
 export function getTokenStore(): SafeStorageTokenStore | null {
@@ -96,27 +95,33 @@ const createWindow = (): void => {
   }
 };
 
-function initializePersistenceBoundary(): void {
-  persistenceRuntime = bootstrapPersistence();
-  importCoordinator = createImportCoordinatorFromPersistence(persistenceRuntime);
-  tokenStore = new SafeStorageTokenStore(
-    safeStorage,
-    new FileEncryptedBlobStore(persistenceRuntime.paths.apiTokenEncrypted),
-  );
+function initializeApplicationServices(): void {
+  applicationServices = createApplicationServices();
+  const persistence = applicationServices.boot.persistence;
+  if (persistence !== null) {
+    tokenStore = new SafeStorageTokenStore(
+      safeStorage,
+      new FileEncryptedBlobStore(persistence.paths.apiTokenEncrypted),
+    );
+  }
+  if (applicationServices.boot.bootError !== null) {
+    writeSmoke(`COCHELPER_PERSISTENCE_BOOT_FAIL ${applicationServices.boot.bootError}`);
+  }
 }
 
 app.whenReady().then(() => {
   try {
-    initializePersistenceBoundary();
+    initializeApplicationServices();
   } catch (error) {
     // 持久化启动失败不阻止窗口（便于诊断 UI）；边界状态保持 null。
     writeSmoke(
       `COCHELPER_PERSISTENCE_BOOT_FAIL ${error instanceof Error ? error.message : String(error)}`,
     );
+    applicationServices = null;
   }
   installAppProtocolHandler();
   getCatalogService().preload();
-  registerApplicationHandlers();
+  registerApplicationHandlers(applicationServices);
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

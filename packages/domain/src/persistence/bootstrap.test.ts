@@ -2,13 +2,17 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
 import { createVillageProfile } from '../import/types';
+import { emptyManualTrackerEnvelope } from '../manual/tracker-envelope';
+import { encodeManualTrackerEnvelopeWire } from '../manual/tracker-wire';
 import { bootstrapPersistence } from './bootstrap';
+import { bytesToBase64 } from './bytes';
+import { PERSISTENCE_FILE_NAMES, type ElectronPersistencePaths } from './data-root';
+import { quarantinedJournalPath } from './journal-quarantine';
 import { encodeVillageStoreBytes } from './village-codec';
-import type { ElectronPersistencePaths } from './data-root';
-import { PERSISTENCE_FILE_NAMES } from './data-root';
 
 function pathsFor(root: string): ElectronPersistencePaths {
   return {
@@ -125,5 +129,45 @@ describe('bootstrapPersistence', () => {
       }
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('健康 villages + quarantined committed journal 不自动 revive/replay（reset/restore crash window）', () => {
+    const root = mkdtempSync(join(tmpdir(), 'coc-boot-quarantine-crash-'));
+    const paths = pathsFor(root);
+    const villageID = parseUuid('00000000-0000-0000-0000-000000000061');
+    if (villageID === undefined) {
+      throw new Error('fixture village id');
+    }
+    const restored = encodeVillageStoreBytes([
+      createVillageProfile({ id: villageID, name: '已恢复村' }),
+    ]);
+    const journalVillages = encodeVillageStoreBytes([
+      createVillageProfile({ id: villageID, name: 'Journal村' }),
+    ]);
+    const manualBytes = new TextEncoder().encode(
+      encodeManualTrackerEnvelopeWire(emptyManualTrackerEnvelope([villageID], 1_000)),
+    );
+    writeFileSync(paths.villages, restored);
+    writeFileSync(
+      paths.manualTracker,
+      encodeManualTrackerEnvelopeWire(emptyManualTrackerEnvelope([villageID], 1_000)),
+    );
+    writeFileSync(
+      quarantinedJournalPath(paths.manualTrackerJournal),
+      JSON.stringify({
+        phase: 'committed',
+        previousCurrentData: bytesToBase64(restored),
+        newCurrentData: bytesToBase64(journalVillages),
+        previousManualData: bytesToBase64(manualBytes),
+        newManualData: bytesToBase64(manualBytes),
+      }),
+    );
+
+    const result = bootstrapPersistence({ paths });
+    expect(result.villageStatus).toBe('available');
+    expect(result.villagesInMemory[0]?.name).toBe('已恢复村');
+    expect(existsSync(paths.manualTrackerJournal)).toBe(false);
+    expect(existsSync(quarantinedJournalPath(paths.manualTrackerJournal))).toBe(false);
+    rmSync(root, { recursive: true, force: true });
   });
 });

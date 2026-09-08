@@ -284,4 +284,52 @@ describe('RecoveryService（#276-S5）', () => {
     expect(services.state.getGeneration()).toBe(generation);
     expect(loadVillageStoreBytes(readFileSync(paths.villages)).kind).toBe('corrupt');
   });
+
+  it('crash window：健康 villages + quarantined committed journal 启动不 replay', () => {
+    const root = mkdtempSync(join(tmpdir(), 'coc-recovery-crash-window-'));
+    tempRoots.push(root);
+    const paths = pathsFor(root);
+    const villageID = parseUuid('00000000-0000-0000-0000-000000000061');
+    if (villageID === undefined) {
+      throw new Error('fixture village id');
+    }
+    const restored = encodeVillageStoreBytes([
+      createVillageProfile({ id: villageID, name: '已恢复村' }),
+    ]);
+    const journalVillages = encodeVillageStoreBytes([
+      createVillageProfile({ id: villageID, name: 'Journal村' }),
+    ]);
+    const manualBytes = new TextEncoder().encode(
+      encodeManualTrackerEnvelopeWire(emptyManualTrackerEnvelope([villageID], 1_000)),
+    );
+    writeFileSync(paths.villages, restored);
+    writeFileSync(
+      paths.manualTracker,
+      encodeManualTrackerEnvelopeWire(emptyManualTrackerEnvelope([villageID], 1_000)),
+    );
+    writeFileSync(
+      `${paths.manualTrackerJournal}.quarantined`,
+      JSON.stringify({
+        phase: 'committed',
+        previousCurrentData: bytesToBase64(restored),
+        newCurrentData: bytesToBase64(journalVillages),
+        previousManualData: bytesToBase64(manualBytes),
+        newManualData: bytesToBase64(manualBytes),
+      }),
+    );
+
+    const persistence = bootstrapPersistence({ paths });
+    expect(persistence.villageStatus).toBe('available');
+    expect(persistence.villagesInMemory[0]?.name).toBe('已恢复村');
+    expect(existsSync(paths.manualTrackerJournal)).toBe(false);
+    expect(existsSync(`${paths.manualTrackerJournal}.quarantined`)).toBe(false);
+
+    const services = createApplicationServicesFromPersistence(
+      persistence,
+      new FakeClock(1_700_000_000_000),
+    );
+    expect(services.lifecycle.snapshot().availability).toBe('available');
+    expect(services.lifecycle.snapshot().villages[0]?.name).toBe('已恢复村');
+    expect(services.lifecycle.snapshot().hasPendingJournal).toBe(false);
+  });
 });

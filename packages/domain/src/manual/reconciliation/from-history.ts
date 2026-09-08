@@ -59,11 +59,22 @@ export function manualBaselineReferenceForHistoryEntry(
 export function sourceTimestampMsForImportDecision(
   decision: SnapshotHistoryImportDecision,
 ): number | null {
-  if (!decision.duplicate) {
-    return refSecondsToMs(decision.entry.sourceTimestampRefSeconds);
+  return persistedObservationSourceTimestampMs(decision.entry, decision.envelope);
+}
+
+/**
+ * 权威观察时间：若该 snapshot 有 duplicate metadata，只用最新 duplicate 的
+ * lastSourceTimestamp；metadata 为 null 表示未知，不得退回 entry 上更旧的 timestamp。
+ */
+export function persistedObservationSourceTimestampMs(
+  entry: SnapshotHistoryEntry,
+  envelope: SnapshotHistoryEnvelope,
+): number | null {
+  const duplicate = envelope.duplicateMetadata[entry.snapshotID];
+  if (duplicate === undefined) {
+    return refSecondsToMs(entry.sourceTimestampRefSeconds);
   }
-  const meta = decision.envelope.duplicateMetadata[decision.entry.snapshotID];
-  return refSecondsToMs(meta?.lastSourceTimestampRefSeconds ?? null);
+  return refSecondsToMs(duplicate.lastSourceTimestampRefSeconds);
 }
 
 export function buildReconciliationEvidenceFromHistory(input: {
@@ -81,13 +92,12 @@ export function buildReconciliationEvidenceFromHistory(input: {
       input.previousEntry === null ||
       (input.previousEntry.lineageID === input.decision.entry.lineageID &&
         input.decision.lineage.comparisonAllowed),
-    sourceTimestampMs: sourceTimestampMsForImportDecision(input.decision),
   });
 }
 
 /**
- * 对已落盘的 active history entry 再对账：绝不走 planImport / duplicate metadata。
- * previousEntry 取同 lineage 中 active 之前的一条（若有）。
+ * 对已落盘的 active history entry 再对账：不走 planImport，不写入/递增 duplicate metadata。
+ * previousEntry 按 persisted entries 数组顺序往前找同 village+lineage 的前一条。
  */
 export function buildReconciliationEvidenceFromActiveEntry(input: {
   readonly villageID: UuidString;
@@ -106,31 +116,29 @@ export function buildReconciliationEvidenceFromActiveEntry(input: {
     duplicate: false,
     historyLineageComparable:
       previousEntry === null || previousEntry.lineageID === input.activeEntry.lineageID,
-    sourceTimestampMs: refSecondsToMs(input.activeEntry.sourceTimestampRefSeconds),
   });
 }
 
+/**
+ * 按 History persisted append 顺序找 predecessor：不得按 appliedAt / snapshotID 重排。
+ */
 export function previousEntryBeforeActive(
   envelope: SnapshotHistoryEnvelope,
   activeEntry: SnapshotHistoryEntry,
 ): SnapshotHistoryEntry | null {
-  const sameLineage = envelope.entries
-    .filter(
-      (entry) =>
-        entry.villageID === activeEntry.villageID && entry.lineageID === activeEntry.lineageID,
-    )
-    .slice()
-    .sort((left, right) => {
-      if (left.appliedAtRefSeconds !== right.appliedAtRefSeconds) {
-        return left.appliedAtRefSeconds - right.appliedAtRefSeconds;
-      }
-      return left.snapshotID.localeCompare(right.snapshotID);
-    });
-  const index = sameLineage.findIndex((entry) => entry.snapshotID === activeEntry.snapshotID);
-  if (index <= 0) {
+  const activeIndex = envelope.entries.findIndex(
+    (entry) => entry.snapshotID === activeEntry.snapshotID,
+  );
+  if (activeIndex <= 0) {
     return null;
   }
-  return sameLineage[index - 1]!;
+  for (let index = activeIndex - 1; index >= 0; index -= 1) {
+    const entry = envelope.entries[index]!;
+    if (entry.villageID === activeEntry.villageID && entry.lineageID === activeEntry.lineageID) {
+      return entry;
+    }
+  }
+  return null;
 }
 
 function buildReconciliationEvidenceFromEntries(input: {
@@ -140,7 +148,6 @@ function buildReconciliationEvidenceFromEntries(input: {
   readonly envelope: SnapshotHistoryEnvelope;
   readonly duplicate: boolean;
   readonly historyLineageComparable: boolean;
-  readonly sourceTimestampMs: number | null;
 }): ManualReconciliationEvidence {
   const { villageID, previousEntry, entry } = input;
   if (entry.villageID !== villageID) {
@@ -151,9 +158,11 @@ function buildReconciliationEvidenceFromEntries(input: {
   }
 
   const newBaselineReference = manualBaselineReferenceForHistoryEntry(entry, input.envelope);
-  const previousSourceTimestampMs = refSecondsToMs(
-    previousEntry?.sourceTimestampRefSeconds ?? null,
-  );
+  const sourceTimestampMs = persistedObservationSourceTimestampMs(entry, input.envelope);
+  const previousSourceTimestampMs =
+    previousEntry === null
+      ? null
+      : persistedObservationSourceTimestampMs(previousEntry, input.envelope);
   const observationsBuilt = observationsInEntry(entry);
   const previousBuilt = previousEntry === null ? null : observationsInEntry(previousEntry);
   const relatedChangesByStableID =
@@ -163,7 +172,7 @@ function buildReconciliationEvidenceFromEntries(input: {
     villageID,
     newBaselineReference,
     newNormalizedPlayerTag: entry.normalizedPlayerTag,
-    sourceTimestampMs: input.sourceTimestampMs,
+    sourceTimestampMs,
     duplicate: input.duplicate,
     lineageComparable: input.historyLineageComparable,
     observations: observationsBuilt.observations,

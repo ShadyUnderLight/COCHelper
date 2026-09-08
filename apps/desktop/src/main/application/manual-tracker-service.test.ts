@@ -10,15 +10,20 @@ import {
   createManualTrackerVillageState,
   createManualUpgradeCoreState,
   loadCatalogBundle,
+  ManualUpgradeCoreState,
   manualLevelDistributionsEqual,
   manualTrackerEnvelopeState,
   PERSISTENCE_FILE_NAMES,
+  projectBuildingGroupsFromProjection,
+  projectUpgradeActionsForBuildingGroup,
+  projectVillageCatalog,
   resolveCatalogBundleRoot,
   trackerItemKeyRoot,
   trackerItemKeyStableId,
   upsertManualTrackerVillageState,
   type CatalogBundle,
   type ElectronPersistencePaths,
+  type UpgradeAction,
 } from '@coc-helper/domain';
 import { parseUuid } from '@coc-helper/wire';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -108,6 +113,69 @@ function itemKeyDto(dataID = 1_000_001) {
     nestedPath: [] as const,
     stableId: trackerItemKeyStableId(key),
   };
+}
+
+function trackerItemKeyDtoFromAction(action: UpgradeAction) {
+  const key = action.itemKey;
+  return {
+    base: key.base,
+    rawSection: key.rawSection,
+    dataID: Number(key.dataID),
+    nestedKind: key.nestedKind,
+    nestedRootIdentity:
+      key.nestedRootIdentity === null
+        ? null
+        : {
+            base: key.nestedRootIdentity.base,
+            rawSection: key.nestedRootIdentity.rawSection,
+            dataID: Number(key.nestedRootIdentity.dataID),
+          },
+    nestedPath: key.nestedPath.map((component) => ({
+      kind: component.kind,
+      dataID: Number(component.dataID),
+    })),
+    stableId: trackerItemKeyStableId(key),
+  };
+}
+
+function findStartableGroupAction(input: {
+  readonly village: ReturnType<ReturnType<typeof bootServices>['state']['listVillages']>[number];
+  readonly core: ManualUpgradeCoreState;
+  readonly bundle: CatalogBundle;
+}): UpgradeAction {
+  const projection = projectVillageCatalog({
+    village: input.village,
+    catalog: input.bundle.gameCatalog,
+    craftTableCatalog: input.bundle.craftTableCatalog,
+    seasonalPhases: input.bundle.seasonalPhaseTable,
+    base: 'home',
+    nowMs: 1_700_000_000_000,
+    manualUpgradeCore: input.core,
+  });
+  const groups = projectBuildingGroupsFromProjection({
+    projection,
+    catalog: input.bundle.gameCatalog,
+    base: 'home',
+    manualUpgradeCore: input.core,
+  });
+  for (const group of groups) {
+    for (const action of projectUpgradeActionsForBuildingGroup({
+      group,
+      catalog: input.bundle.gameCatalog,
+    })) {
+      if (
+        action.isStartable &&
+        action.sourceKind === 'group' &&
+        action.fromLevel !== null &&
+        action.targetLevel !== null &&
+        action.baselineReference !== null &&
+        action.catalogProvenance !== null
+      ) {
+        return action;
+      }
+    }
+  }
+  throw new Error('测试未找到可启动的 group upgrade action');
 }
 
 afterEach(() => {
@@ -282,5 +350,71 @@ describe('ManualTrackerService（#276-S3）', () => {
       base: 'home',
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it('合法 group action 可 start；改 stale sourceKind/from/target 会 conflict', async () => {
+    const bundle = await loadRealBundle();
+    const services = bootServices({
+      getBundle: async () => bundle,
+    });
+    const prepared = services.imports.prepare({
+      text: '{"tag":"#GRP","buildings":[{"data":1000001,"lvl":1,"cnt":1}]}',
+    });
+    services.imports.commit(prepared.generation);
+    const village = services.state.listVillages().find((entry) => entry.tag === '#GRP')!;
+    const villageID = parseUuid(village.id)!;
+    const villageState = manualTrackerEnvelopeState(
+      services.boot.persistence!.manual!.load()!,
+      villageID,
+    )!;
+    const action = findStartableGroupAction({
+      village,
+      core: villageState.core as ManualUpgradeCoreState,
+      bundle,
+    });
+
+    const generation = services.state.getGeneration();
+    const started = await services.manual!.start({
+      expectedGeneration: generation,
+      villageId: village.id,
+      itemKey: trackerItemKeyDtoFromAction(action),
+      fromLevel: action.fromLevel!,
+      targetLevel: action.targetLevel!,
+      quantity: Number(action.quantity),
+      startedAtMs: 1_700_000_000_000,
+      sourceKind: 'group',
+      base: 'home',
+    });
+    expect(started.record.status).toBe('active');
+    expect(started.generation).toBeGreaterThan(generation);
+
+    const staleGeneration = services.state.getGeneration();
+    await expect(
+      services.manual!.start({
+        expectedGeneration: staleGeneration,
+        villageId: village.id,
+        itemKey: trackerItemKeyDtoFromAction(action),
+        fromLevel: action.fromLevel!,
+        targetLevel: action.targetLevel!,
+        quantity: Number(action.quantity),
+        startedAtMs: 1_700_000_000_100,
+        sourceKind: 'row',
+        base: 'home',
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+
+    await expect(
+      services.manual!.start({
+        expectedGeneration: staleGeneration,
+        villageId: village.id,
+        itemKey: trackerItemKeyDtoFromAction(action),
+        fromLevel: action.fromLevel! + 1,
+        targetLevel: action.targetLevel! + 1,
+        quantity: Number(action.quantity),
+        startedAtMs: 1_700_000_000_100,
+        sourceKind: 'group',
+        base: 'home',
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' });
   });
 });

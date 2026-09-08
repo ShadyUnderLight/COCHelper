@@ -360,7 +360,8 @@ export class ManualTrackerService {
   }
 
   /**
-   * 对已落盘 active history entry 再跑对账；只写 manual，不调用 planImport、不改 history。
+   * 对已落盘 active history entry 再跑对账；只写 manual。
+   * 不产生新的 import / duplicate history observation（仍可能经 loadOrMigrate 初始化空 history envelope）。
    */
   reconcile(input: {
     readonly expectedGeneration: number;

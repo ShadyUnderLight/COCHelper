@@ -230,6 +230,62 @@ final class ManualTrackerReconciliationTests: XCTestCase {
         )
     }
 
+    func testDuplicateDoesNotRollBackManualCompletedProgress_applyNonConflicting() throws {
+        try assertDuplicatePreservesManualCompleted(reconciliationDecision: .applyNonConflicting)
+    }
+
+    func testDuplicateDoesNotRollBackManualCompletedProgress_keepLocal() throws {
+        try assertDuplicatePreservesManualCompleted(reconciliationDecision: .keepLocal)
+    }
+
+    private func assertDuplicatePreservesManualCompleted(
+        reconciliationDecision: ManualReconciliationDecision
+    ) throws {
+        let raw = ##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"cnt":1}]}"##
+        let context = try history(raw)
+        let completed = try ManualItemState(
+            itemKey: key,
+            baselineReference: context.reference,
+            importedObservation: nil,
+            manualCompletedDistribution: ManualLevelDistribution(levelQuantities: [11: 1]),
+            status: .manualCompleted
+        )
+        let state = try ManualTrackerVillageState(
+            villageID: villageID,
+            core: ManualUpgradeCore(itemStates: [completed]),
+            stateUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+        let next = try decision(raw, from: context)
+        XCTAssertTrue(next.duplicate)
+        XCTAssertEqual(
+            next.envelope.duplicateMetadata[context.entry.snapshotID.uuidString]?.duplicateImportCount,
+            1
+        )
+
+        let plan = try ManualTrackerReconciliationService.reconcile(
+            villageID: villageID,
+            previousEntry: context.entry,
+            historyDecision: next,
+            currentState: state,
+            decision: reconciliationDecision,
+            appliedAt: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+
+        XCTAssertEqual(plan.preview.count(.duplicate), 1)
+        XCTAssertEqual(plan.state.baselineReference, plan.preview.newReference)
+        XCTAssertTrue(
+            try XCTUnwrap(plan.state.baselineReference).revision.hasSuffix(":observation:1")
+        )
+        XCTAssertEqual(
+            plan.state.core.itemState(for: key)?.status,
+            .manualCompleted
+        )
+        XCTAssertEqual(
+            plan.state.core.effectiveState(for: key)?.effectiveCompletedDistribution,
+            try ManualLevelDistribution(levelQuantities: [11: 1])
+        )
+    }
+
     func testReliableObservedCompletionConfirmsActiveRecordOnce() throws {
         let context = try history(##"{"tag":"#P1","timestamp":1700000000,"buildings":[{"data":100,"lvl":10,"timer":60,"cnt":1}]}"##)
         let state = try activeState(reference: context.reference)

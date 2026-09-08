@@ -205,6 +205,49 @@ describe('ManualTrackerReconciliation', () => {
     expect(plan.preview.sourceTimestampMs).toBe(s(1_700_000_200));
   });
 
+  it.each(['applyNonConflicting', 'keepLocal'] as const)(
+    'duplicate 不回滚 manualCompleted 本地进度（%s）',
+    (decision) => {
+      const ref = reference();
+      const state = createManualTrackerVillageState({
+        villageID,
+        core: createManualUpgradeCoreState({
+          itemStates: [
+            createManualItemStateForStatus({
+              itemKey: key,
+              baselineReference: ref,
+              imported: dist([[10, 1n]]),
+              manual: dist([[11, 1n]]),
+              status: 'manualCompleted',
+              sourceTimestampMs: s(1_700_000_000),
+            }),
+          ],
+        }),
+        stateUpdatedAtMs: s(1_700_000_100),
+      });
+      const evidence = evidenceFrom({
+        newBaselineReference: reference('snapshot-1:observation:1', ref.lineageID),
+        duplicate: true,
+        sourceTimestampMs: s(1_700_000_200),
+        entries: [completeObservation(key, dist([[10, 1n]]))],
+      });
+      const plan = reconcileManualTracker(evidence, state, {
+        decision,
+        appliedAtMs: s(1_700_000_200),
+      });
+      expect(manualReconciliationPreviewCount(plan.preview, 'duplicate')).toBe(1);
+      expect(plan.state.baselineReference).toEqual(evidence.newBaselineReference);
+      expect(plan.state.baselineReference?.revision).toBe('snapshot-1:observation:1');
+      expect(
+        manualLevelDistributionsEqual(
+          plan.state.core.effectiveState(key)!.effectiveCompletedDistribution!,
+          dist([[11, 1n]]),
+        ),
+      ).toBe(true);
+      expect(plan.state.core.itemState(key)?.status).toBe('manualCompleted');
+    },
+  );
+
   it('reliable observed completion confirms active record once', () => {
     const ref = reference();
     const state = activeState(ref);

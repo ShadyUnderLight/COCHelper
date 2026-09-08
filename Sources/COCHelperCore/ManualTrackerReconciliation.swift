@@ -632,13 +632,17 @@ public enum ManualTrackerReconciliationService {
 
         for oldRecord in core.records {
             let item = classifications[oldRecord.itemKey]
-            let hasActiveRecord = core.records.contains {
-                $0.itemKey == oldRecord.itemKey && $0.status == .active
-            }
+            let itemOriginalRecords = core.records.filter { $0.itemKey == oldRecord.itemKey }
+            let hasActiveRecord = itemOriginalRecords.contains { $0.status == .active }
+            let hasLocal = hasLocalState(
+                state: existingStates[oldRecord.itemKey],
+                records: itemOriginalRecords
+            )
             let shouldAdopt = shouldAdopt(
                 item,
                 decision: decision,
-                hasActiveRecord: hasActiveRecord
+                hasActiveRecord: hasActiveRecord,
+                hasLocalState: hasLocal
             )
             let confirmed = shouldAdopt && (item?.confirmedRecordIDs.contains(oldRecord.recordID) ?? false)
             records.append(try ManualUpgradeRecord(
@@ -671,7 +675,8 @@ public enum ManualTrackerReconciliationService {
             let adopt = shouldAdopt(
                 item,
                 decision: decision,
-                hasActiveRecord: hasActiveRecord
+                hasActiveRecord: hasActiveRecord,
+                hasLocalState: hasLocal
             )
 
             // Keep every newly observed item as imported provenance, including
@@ -791,16 +796,24 @@ public enum ManualTrackerReconciliationService {
     private static func shouldAdopt(
         _ item: ManualReconciliationItem?,
         decision: ManualReconciliationDecision,
-        hasActiveRecord: Bool
+        hasActiveRecord: Bool,
+        hasLocalState: Bool = false
     ) -> Bool {
         guard let item else { return false }
         switch decision {
         case .keepLocal:
-            return item.classification == .duplicate || item.classification == .newObservation
+            // duplicate 可 rebase 纯 observed；有本地进度时不得用重复 observation 覆盖。
+            if item.classification == .duplicate {
+                return !hasLocalState
+            }
+            return item.classification == .newObservation
         case .acceptObserved:
             return true
         case .applyNonConflicting:
-            guard [.duplicate, .newObservation, .exactMatch, .observedAhead]
+            if item.classification == .duplicate {
+                return !hasLocalState
+            }
+            guard [.newObservation, .exactMatch, .observedAhead]
                 .contains(item.classification) else { return false }
             if item.classification == .observedAhead,
                hasActiveRecord,

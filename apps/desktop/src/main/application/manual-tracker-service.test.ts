@@ -220,6 +220,93 @@ describe('ManualTrackerService（#276-S3）', () => {
     expect(state.itemStateCount).toBeGreaterThanOrEqual(0);
   });
 
+  it('buildReconciledManualEnvelope 在真实 duplicate decision 下保留 manualCompleted', () => {
+    const text =
+      '{"tag":"#DUP","timestamp":1700000000,"buildings":[{"data":1000001,"lvl":10,"cnt":1}]}';
+    const services = bootServices();
+    services.imports.commit(services.imports.prepare({ text }).generation);
+    const villageId = services.state.listVillages().find((village) => village.tag === '#DUP')!.id;
+    const villageID = parseUuid(villageId)!;
+    const itemKey = trackerItemKeyRoot('home', 'buildings', 1_000_001n);
+
+    const envelope = services.boot.persistence!.manual!.load()!;
+    const villageState = manualTrackerEnvelopeState(envelope, villageID)!;
+    const existing = villageState.core.itemState(itemKey);
+    expect(existing).toBeDefined();
+    const aheadDist = createManualLevelDistributionFromPairs([[11, 1n]]);
+    const seeded = upsertManualTrackerVillageState(
+      envelope,
+      createManualTrackerVillageState({
+        villageID,
+        core: createManualUpgradeCoreState({
+          itemStates: [
+            createManualItemStateForStatus({
+              itemKey,
+              baselineReference: existing!.baselineReference,
+              imported: createManualLevelDistributionFromPairs([[10, 1n]]),
+              manual: aheadDist,
+              status: 'manualCompleted',
+              sourceTimestampMs: 1_700_000_000_000,
+            }),
+          ],
+        }),
+        stateUpdatedAtMs: 1_700_000_000_100,
+        lastImportAtMs: villageState.lastImportAtMs,
+        diagnostics: villageState.diagnostics,
+        reconciliationHistory: villageState.reconciliationHistory,
+        queueCapacityConfigs: villageState.queueCapacityConfigs,
+        queueAssignments: villageState.queueAssignments,
+      }),
+    );
+    services.boot.persistence!.manual!.save(seeded);
+
+    const history = services.boot.persistence!.history!.load()!;
+    const active = history.entries.find((entry) => entry.villageID === villageId)!;
+    const duplicateEnvelope = {
+      ...history,
+      duplicateMetadata: {
+        ...history.duplicateMetadata,
+        [active.snapshotID]: {
+          lastSeenAtRefSeconds: active.appliedAtRefSeconds,
+          lastSourceTimestampRefSeconds: active.sourceTimestampRefSeconds,
+          duplicateImportCount: 1,
+        },
+      },
+    };
+    const reconciled = services.manual!.buildReconciledManualEnvelope({
+      villageID,
+      previousEntry: active,
+      decision: {
+        envelope: duplicateEnvelope,
+        entry: active,
+        lineage: {
+          lineageID: active.lineageID,
+          outcome: 'continued',
+          reason: 'sameVillageAndTag',
+          isBaseline: false,
+          comparisonAllowed: true,
+        },
+        appended: false,
+        duplicate: true,
+      },
+      appliedAtMs: 1_700_000_000_200,
+      reconciliationDecision: 'applyNonConflicting',
+      seedEnvelope: seeded,
+    });
+
+    expect(reconciled.duplicate).toBe(true);
+    expect(reconciled.envelope).toBeDefined();
+    const after = manualTrackerEnvelopeState(reconciled.envelope, villageID)!;
+    expect(after.baselineReference?.revision.endsWith(':observation:1')).toBe(true);
+    expect(
+      manualLevelDistributionsEqual(
+        after.core.effectiveState(itemKey)!.effectiveCompletedDistribution!,
+        aheadDist,
+      ),
+    ).toBe(true);
+    expect(after.core.itemState(itemKey)?.status).toBe('manualCompleted');
+  });
+
   it('stale expectedGeneration 拒绝 settle', () => {
     const services = bootServices();
     expect(() => services.manual!.settle({ expectedGeneration: 999 })).toThrow(AppServiceError);

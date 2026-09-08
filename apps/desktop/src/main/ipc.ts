@@ -8,6 +8,8 @@ import {
   IMPORT_PREPARE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
+  UPGRADE_OVERVIEW_CHANNEL,
+  VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
   resultErr,
   resultOk,
@@ -24,6 +26,8 @@ import {
   parseImportCommitRequest,
   parseImportDiscardRequest,
   parseImportPrepareRequest,
+  parseUpgradeOverviewRequest,
+  parseVillageDetailRequest,
   parseVillageSelectRequest,
   toIpcError,
 } from './ipc-schema';
@@ -113,6 +117,26 @@ export function registerIpcHandlers(
       assertTrustedSender(event, webpackEntry);
       const request = parseImportDiscardRequest(payload);
       return resultOk(requireServices(services).imports.discard(request.expectedGeneration));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(UPGRADE_OVERVIEW_CHANNEL, async (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      parseUpgradeOverviewRequest(payload);
+      return resultOk(await requireServices(services).projections.upgradeOverview());
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(VILLAGE_DETAIL_CHANNEL, async (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseVillageDetailRequest(payload);
+      return resultOk(await requireServices(services).projections.villageDetail(request));
     } catch (error: unknown) {
       return resultErr(toIpcError(error));
     }

@@ -1,5 +1,6 @@
 import type { Result } from './result';
 import type { AppIpcBridge } from './app-ipc';
+import type { ProjectionIpcBridge } from './projection-ipc';
 
 /** IPC 通道名。preload 只允许调用这里列出的通道。 */
 export const APP_HEALTH_CHANNEL = 'app.health' as const;
@@ -46,7 +47,8 @@ export function isCancelRequest(value: unknown): value is CancelRequest {
 export type DesktopBridge = {
   health: (request?: AppHealthRequest) => Promise<AppHealthResponse>;
   cancel: (request: CancelRequest) => void;
-} & AppIpcBridge;
+} & AppIpcBridge &
+  ProjectionIpcBridge;
 
 export const DESKTOP_BRIDGE_KEYS = [
   'health',
@@ -56,6 +58,8 @@ export const DESKTOP_BRIDGE_KEYS = [
   'prepareImport',
   'commitImport',
   'discardImport',
+  'upgradeOverview',
+  'villageDetail',
   'onStateChanged',
 ] as const satisfies ReadonlyArray<keyof DesktopBridge>;
 
@@ -91,3 +95,17 @@ export {
   type StateChangedListener,
   type AppIpcBridge,
 } from './app-ipc';
+
+export {
+  UPGRADE_OVERVIEW_CHANNEL,
+  VILLAGE_DETAIL_CHANNEL,
+  PROJECTION_IPC_CHANNELS,
+  PROJECTION_IPC_BRIDGE_KEYS,
+  type UpgradeOverviewRequest,
+  type UpgradeOverviewPayload,
+  type UpgradeOverviewResponse,
+  type VillageDetailRequest,
+  type VillageDetailPayload,
+  type VillageDetailResponse,
+  type ProjectionIpcBridge,
+} from './projection-ipc';

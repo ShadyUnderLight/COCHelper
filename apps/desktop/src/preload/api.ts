@@ -6,6 +6,8 @@ import {
   IMPORT_PREPARE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
+  UPGRADE_OVERVIEW_CHANNEL,
+  VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
   isAppSnapshotPayload,
   isCancelRequest,
@@ -14,6 +16,8 @@ import {
   isImportPreparePayload,
   isIpcError,
   isResult,
+  isUpgradeOverviewPayload,
+  isVillageDetailPayload,
   isVillageSelectPayload,
   type AppHealthResponse,
   type AppSnapshotResponse,
@@ -24,6 +28,8 @@ import {
   type ImportPrepareResponse,
   type StateChangedListener,
   type StateChangedPayload,
+  type UpgradeOverviewResponse,
+  type VillageDetailResponse,
   type VillageSelectResponse,
 } from '@coc-helper/contracts';
 
@@ -54,6 +60,14 @@ export function isImportCommitResponse(value: unknown): value is ImportCommitRes
 
 export function isImportDiscardResponse(value: unknown): value is ImportDiscardResponse {
   return isResult(value, isImportDiscardPayload, isIpcError);
+}
+
+export function isUpgradeOverviewResponse(value: unknown): value is UpgradeOverviewResponse {
+  return isResult(value, isUpgradeOverviewPayload, isIpcError);
+}
+
+export function isVillageDetailResponse(value: unknown): value is VillageDetailResponse {
+  return isResult(value, isVillageDetailPayload, isIpcError);
 }
 
 export function isStateChangedPayload(value: unknown): value is StateChangedPayload {
@@ -111,6 +125,20 @@ export function createDesktopBridge(invoke: Invoke, send: Send, on: On): Desktop
       const result = await invoke(IMPORT_DISCARD_CHANNEL, request);
       if (!isImportDiscardResponse(result)) {
         throw new Error('import.discard 返回值不合法');
+      }
+      return result;
+    },
+    upgradeOverview: async (request) => {
+      const result = await invoke(UPGRADE_OVERVIEW_CHANNEL, request);
+      if (!isUpgradeOverviewResponse(result)) {
+        throw new Error('upgrade.overview 返回值不合法');
+      }
+      return result;
+    },
+    villageDetail: async (request) => {
+      const result = await invoke(VILLAGE_DETAIL_CHANNEL, request);
+      if (!isVillageDetailResponse(result)) {
+        throw new Error('village.detail 返回值不合法');
       }
       return result;
     },

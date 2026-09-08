@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AppAuthoritativeState, AppServiceError } from './app-authoritative-state';
 import { PersistentVillageStore } from './persistent-village-store';
 import { SnapshotImportService } from './snapshot-import-service';
+import { ManualTrackerService } from './manual-tracker-service';
 
 class FakeClock {
   nowMs(): number {
@@ -55,13 +56,28 @@ function bootService(root: string) {
     initialSelectedVillageId: persistence.selectedVillageId,
   });
   const state = new AppAuthoritativeState({ persistence, villageStore });
+  const clock = new FakeClock();
+  const manualTracker = new ManualTrackerService({
+    state,
+    clock,
+    manual: persistence.manual,
+    history: persistence.history,
+    catalog: {
+      getBundle: async () => {
+        throw new Error('catalog not needed for import transaction tests');
+      },
+    },
+    importTransaction: persistence.importTransaction,
+  });
   const service = new SnapshotImportService({
     state,
-    clock: new FakeClock(),
+    clock,
     importTransaction: persistence.importTransaction,
     history: persistence.history,
+    manual: persistence.manual,
+    manualTracker,
   });
-  return { paths, persistence, villageStore, state, service };
+  return { paths, persistence, villageStore, state, service, manualTracker };
 }
 
 afterEach(() => {
@@ -95,6 +111,19 @@ describe('SnapshotImportService transaction', () => {
       clock: new FakeClock(),
       importTransaction: faultedTx,
       history: persistence.history,
+      manual: persistence.manual,
+      manualTracker: new ManualTrackerService({
+        state,
+        clock: new FakeClock(),
+        manual: persistence.manual,
+        history: persistence.history,
+        catalog: {
+          getBundle: async () => {
+            throw new Error('unused');
+          },
+        },
+        importTransaction: faultedTx,
+      }),
     });
 
     const prepared = service.prepare({ text: '{"tag":"#TXFAIL","buildings":[]}' });
@@ -144,7 +173,10 @@ describe('SnapshotImportService transaction', () => {
       expect(loaded.villages.some((village) => village.tag === '#TXOK')).toBe(true);
     }
 
-    /** 本切片 manualEnvelope=null：不得因 import 写入/rebase manual。 */
-    expect(persistence.manual.load()).toBeNull();
+    /** S3：import 必须写入对账后的 manual envelope。 */
+    const manualAfter = persistence.manual.load();
+    expect(manualAfter).not.toBeNull();
+    expect(manualAfter!.migrationMarker).not.toBeNull();
+    expect(manualAfter!.villages.length).toBeGreaterThanOrEqual(1);
   });
 });

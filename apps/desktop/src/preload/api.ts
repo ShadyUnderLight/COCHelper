@@ -4,6 +4,12 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  MANUAL_ADJUST_CHANNEL,
+  MANUAL_CANCEL_CHANNEL,
+  MANUAL_RECONCILE_CHANNEL,
+  MANUAL_SETTLE_CHANNEL,
+  MANUAL_START_CHANNEL,
+  MANUAL_STATE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
@@ -15,6 +21,12 @@ import {
   isImportDiscardPayload,
   isImportPreparePayload,
   isIpcError,
+  isManualAdjustPayload,
+  isManualCancelPayload,
+  isManualReconcilePayload,
+  isManualSettlePayload,
+  isManualStartPayload,
+  isManualStatePayload,
   isResult,
   isUpgradeOverviewPayload,
   isVillageDetailPayload,
@@ -26,6 +38,12 @@ import {
   type ImportCommitResponse,
   type ImportDiscardResponse,
   type ImportPrepareResponse,
+  type ManualAdjustResponse,
+  type ManualCancelResponse,
+  type ManualReconcileResponse,
+  type ManualSettleResponse,
+  type ManualStartResponse,
+  type ManualStateResponse,
   type StateChangedListener,
   type StateChangedPayload,
   type UpgradeOverviewResponse,
@@ -68,6 +86,30 @@ export function isUpgradeOverviewResponse(value: unknown): value is UpgradeOverv
 
 export function isVillageDetailResponse(value: unknown): value is VillageDetailResponse {
   return isResult(value, isVillageDetailPayload, isIpcError);
+}
+
+export function isManualStateResponse(value: unknown): value is ManualStateResponse {
+  return isResult(value, isManualStatePayload, isIpcError);
+}
+
+export function isManualStartResponse(value: unknown): value is ManualStartResponse {
+  return isResult(value, isManualStartPayload, isIpcError);
+}
+
+export function isManualCancelResponse(value: unknown): value is ManualCancelResponse {
+  return isResult(value, isManualCancelPayload, isIpcError);
+}
+
+export function isManualAdjustResponse(value: unknown): value is ManualAdjustResponse {
+  return isResult(value, isManualAdjustPayload, isIpcError);
+}
+
+export function isManualSettleResponse(value: unknown): value is ManualSettleResponse {
+  return isResult(value, isManualSettlePayload, isIpcError);
+}
+
+export function isManualReconcileResponse(value: unknown): value is ManualReconcileResponse {
+  return isResult(value, isManualReconcilePayload, isIpcError);
 }
 
 export function isStateChangedPayload(value: unknown): value is StateChangedPayload {
@@ -139,6 +181,48 @@ export function createDesktopBridge(invoke: Invoke, send: Send, on: On): Desktop
       const result = await invoke(VILLAGE_DETAIL_CHANNEL, request);
       if (!isVillageDetailResponse(result)) {
         throw new Error('village.detail 返回值不合法');
+      }
+      return result;
+    },
+    manualState: async (request) => {
+      const result = await invoke(MANUAL_STATE_CHANNEL, request);
+      if (!isManualStateResponse(result)) {
+        throw new Error('manual.state 返回值不合法');
+      }
+      return result;
+    },
+    manualStart: async (request) => {
+      const result = await invoke(MANUAL_START_CHANNEL, request);
+      if (!isManualStartResponse(result)) {
+        throw new Error('manual.start 返回值不合法');
+      }
+      return result;
+    },
+    manualCancel: async (request) => {
+      const result = await invoke(MANUAL_CANCEL_CHANNEL, request);
+      if (!isManualCancelResponse(result)) {
+        throw new Error('manual.cancel 返回值不合法');
+      }
+      return result;
+    },
+    manualAdjust: async (request) => {
+      const result = await invoke(MANUAL_ADJUST_CHANNEL, request);
+      if (!isManualAdjustResponse(result)) {
+        throw new Error('manual.adjust 返回值不合法');
+      }
+      return result;
+    },
+    manualSettle: async (request) => {
+      const result = await invoke(MANUAL_SETTLE_CHANNEL, request);
+      if (!isManualSettleResponse(result)) {
+        throw new Error('manual.settle 返回值不合法');
+      }
+      return result;
+    },
+    manualReconcile: async (request) => {
+      const result = await invoke(MANUAL_RECONCILE_CHANNEL, request);
+      if (!isManualReconcileResponse(result)) {
+        throw new Error('manual.reconcile 返回值不合法');
       }
       return result;
     },

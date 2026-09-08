@@ -160,6 +160,9 @@ export const importPreparePayloadSchema: z.ZodType<ImportPreparePayload> = z
 export const importCommitRequestSchema: z.ZodType<ImportCommitRequest> = z
   .object({
     expectedGeneration: generationSchema,
+    reconciliationDecision: z
+      .enum(['applyNonConflicting', 'keepLocal', 'acceptObserved'])
+      .optional(),
   })
   .strict();
 

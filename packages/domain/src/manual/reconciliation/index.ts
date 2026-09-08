@@ -5,3 +5,4 @@ export * from './classification';
 export * from './core-rebuild';
 export * from './queue-rebase';
 export * from './service';
+export * from './from-history';

@@ -447,6 +447,265 @@ describe('OfficialApiService（#276-S4）', () => {
       results: [{ endpoint: 'clan', status: 'success' }],
     });
     expect(service.clanState({ clanTag: '#CLAN01' }).state?.status).toBe('success');
+    expect(bootResult.state.getGeneration()).toBe(1);
+  });
+
+  it('leader 取消但 follower 存活时仍 commit 且 generation +1', async () => {
+    const bootResult = boot();
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const service = makeService(bootResult, async (request, init) => {
+      if (request.url.includes('/clans/') && !request.url.includes('currentwar')) {
+        const signal = init?.signal;
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (signal?.aborted) {
+            onAbort();
+            return;
+          }
+          signal?.addEventListener('abort', onAbort, { once: true });
+          void gate.then(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+          });
+        });
+        return Response.json({ tag: '#CLAN01', name: 'Clan' });
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const leaderSignal = new AbortController();
+    const followerSignal = new AbortController();
+    const leader = service.refresh(
+      {
+        requestId: 'req-leader-cancel' as never,
+        clanTag: '#CLAN01',
+        endpoints: ['clan'],
+      },
+      leaderSignal.signal,
+    );
+    const follower = service.refresh(
+      {
+        requestId: 'req-follower-survive' as never,
+        clanTag: '#CLAN01',
+        endpoints: ['clan'],
+      },
+      followerSignal.signal,
+    );
+    await Promise.resolve();
+    leaderSignal.abort();
+    await expect(leader).rejects.toMatchObject({ name: 'AbortError' });
+    release?.();
+    await expect(follower).resolves.toMatchObject({
+      results: [{ endpoint: 'clan', status: 'success' }],
+    });
+    expect(service.clanState({ clanTag: '#CLAN01' }).state?.status).toBe('success');
+    expect(bootResult.state.getGeneration()).toBe(1);
+  });
+
+  it('warLog loadMore 与 refresh 串行，不让旧 merge 覆盖新 refresh', async () => {
+    const bootResult = boot();
+    const clanTag = '#CLAN01';
+    const events: string[] = [];
+    let releaseLoadMore!: () => void;
+    const loadMoreGate = new Promise<void>((resolve) => {
+      releaseLoadMore = resolve;
+    });
+    let allowRefreshFetch = false;
+
+    const service = makeService(bootResult, async (request) => {
+      const url = request.url;
+      if (!url.includes('/warlog')) {
+        return new Response('{}', { status: 404 });
+      }
+      if (url.includes('after=')) {
+        events.push('loadMore-fetch-start');
+        await loadMoreGate;
+        events.push('loadMore-fetch-end');
+        return Response.json({
+          items: [{ result: 'lose', endTime: '20260102T000000.000Z' }],
+          paging: { cursors: {} },
+        });
+      }
+      if (!allowRefreshFetch) {
+        return Response.json({
+          items: [{ result: 'win', endTime: '20260101T000000.000Z' }],
+          paging: { cursors: { after: 'cursor-1' } },
+        });
+      }
+      events.push('refresh-fetch');
+      return Response.json({
+        items: [
+          { result: 'win', endTime: '20260103T000000.000Z' },
+          { result: 'win', endTime: '20260104T000000.000Z' },
+        ],
+        paging: { cursors: { after: 'cursor-fresh' } },
+      });
+    });
+
+    await service.refresh({
+      requestId: 'req-seed-warlog' as never,
+      clanTag,
+      endpoints: ['warLog'],
+    });
+    expect(
+      (service.warLogState({ clanTag }).state?.lastGood as { page?: { after?: string } })?.page
+        ?.after,
+    ).toBe('cursor-1');
+
+    allowRefreshFetch = true;
+    const loadMorePromise = service.loadMoreWarLog({
+      requestId: 'req-stale-more' as never,
+      clanTag,
+    });
+    for (let i = 0; i < 30 && !events.includes('loadMore-fetch-start'); i += 1) {
+      await Promise.resolve();
+    }
+    expect(events).toEqual(['loadMore-fetch-start']);
+
+    const refreshPromise = service.refresh({
+      requestId: 'req-warlog-refresh' as never,
+      clanTag,
+      endpoints: ['warLog'],
+    });
+    for (let i = 0; i < 10; i += 1) {
+      await Promise.resolve();
+    }
+    expect(events).toEqual(['loadMore-fetch-start']);
+
+    releaseLoadMore();
+    await loadMorePromise;
+    await refreshPromise;
+
+    expect(events).toEqual(['loadMore-fetch-start', 'loadMore-fetch-end', 'refresh-fetch']);
+    const final = service.warLogState({ clanTag }).state;
+    const page = final?.lastGood as { page?: { items?: unknown[]; after?: string } } | undefined;
+    expect(page?.page?.items).toHaveLength(2);
+    expect(page?.page?.after).toBe('cursor-fresh');
+  });
+
+  it('player tag 改变后新 refresh 不 join 旧玩家 flight', async () => {
+    const bootResult = boot('#AAAAA111');
+    let releaseA!: () => void;
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const fetchedTags: string[] = [];
+    const service = makeService(bootResult, async (request) => {
+      if (request.url.includes('/players/%23AAAAA111')) {
+        fetchedTags.push('#AAAAA111');
+        await gateA;
+        return Response.json({ tag: '#AAAAA111', name: 'PlayerA', townHallLevel: 16 });
+      }
+      if (request.url.includes('/players/%23BBBBB222')) {
+        fetchedTags.push('#BBBBB222');
+        return Response.json({ tag: '#BBBBB222', name: 'PlayerB', townHallLevel: 15 });
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const refreshA = service.refresh({
+      requestId: 'req-player-a' as never,
+      villageId: bootResult.villageId,
+      endpoints: ['player'],
+    });
+    await Promise.resolve();
+    expect(fetchedTags).toEqual(['#AAAAA111']);
+
+    bootResult.state
+      .getVillageStore()
+      .saveVillages(
+        bootResult.state
+          .listVillages()
+          .map((village) =>
+            village.id === bootResult.villageId ? { ...village, tag: '#BBBBB222' } : village,
+          ),
+      );
+
+    const refreshB = await service.refresh({
+      requestId: 'req-player-b' as never,
+      villageId: bootResult.villageId,
+      endpoints: ['player'],
+    });
+    expect(refreshB.results[0]?.status).toBe('success');
+    expect(fetchedTags).toEqual(['#AAAAA111', '#BBBBB222']);
+    expect(
+      (
+        service.playerState({ villageId: bootResult.villageId }).state?.lastGood as {
+          name?: string;
+        }
+      )?.name,
+    ).toBe('PlayerB');
+
+    releaseA();
+    await expect(refreshA).resolves.toMatchObject({
+      results: [{ endpoint: 'player', status: 'skipped' }],
+    });
+  });
+
+  it('取消后立即重试 clan refresh 会真正重新请求', async () => {
+    const bootResult = boot();
+    let clanCalls = 0;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const service = makeService(bootResult, async (request, init) => {
+      if (request.url.includes('/clans/') && !request.url.includes('currentwar')) {
+        clanCalls += 1;
+        const signal = init?.signal;
+        if (clanCalls === 1) {
+          await new Promise<void>((resolve, reject) => {
+            const onAbort = () => {
+              const error = new Error('aborted');
+              error.name = 'AbortError';
+              reject(error);
+            };
+            if (signal?.aborted) {
+              onAbort();
+              return;
+            }
+            signal?.addEventListener('abort', onAbort, { once: true });
+            void firstGate.then(() => {
+              signal?.removeEventListener('abort', onAbort);
+              resolve();
+            });
+          });
+        }
+        return Response.json({ tag: '#CLAN01', name: 'Clan' });
+      }
+      return new Response('{}', { status: 404 });
+    });
+
+    const controller = new AbortController();
+    const first = service.refresh(
+      {
+        requestId: 'req-cancel-retry-1' as never,
+        clanTag: '#CLAN01',
+        endpoints: ['clan'],
+      },
+      controller.signal,
+    );
+    await Promise.resolve();
+    controller.abort();
+    await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+
+    const second = service.refresh({
+      requestId: 'req-cancel-retry-2' as never,
+      clanTag: '#CLAN01',
+      endpoints: ['clan'],
+    });
+    releaseFirst();
+    await expect(second).resolves.toMatchObject({
+      results: [{ endpoint: 'clan', status: 'success' }],
+    });
+    expect(clanCalls).toBe(2);
   });
 
   it('预置 villageId keyed player cache 可被 query 读到', () => {

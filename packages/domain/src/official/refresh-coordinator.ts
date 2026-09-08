@@ -224,6 +224,7 @@ export class RefreshCoordinator<TResult> {
   /**
    * 同 key single-flight。
    * 独立 parentSignal 取消时只结束该 waiter；仅当最后一个 waiter 取消时才 abort 底层请求。
+   * 已 abort 且无 waiter 的 entry 不会被新请求 join（立即重试开新 flight）。
    */
   async runSingleFlight(
     tag: string,
@@ -232,7 +233,12 @@ export class RefreshCoordinator<TResult> {
   ): Promise<TResult> {
     const existing = this.sharedFlights.get(tag);
     if (existing !== undefined) {
-      return awaitSharedFlight(existing, parentSignal);
+      if (existing.controller.signal.aborted && existing.activeWaiters === 0) {
+        this.sharedFlights.delete(tag);
+        this.state = unregisterResolvingTag(this.state, tag);
+      } else {
+        return awaitSharedFlight(existing, parentSignal);
+      }
     }
 
     const controller = new AbortController();
@@ -241,8 +247,8 @@ export class RefreshCoordinator<TResult> {
       const current = this.sharedFlights.get(tag);
       if (current?.controller === controller) {
         this.sharedFlights.delete(tag);
+        this.state = unregisterResolvingTag(this.state, tag);
       }
-      this.state = unregisterResolvingTag(this.state, tag);
     });
     // 最后一个 waiter 放弃后，底层 run 的 rejection 仍需有人接住
     runPromise.catch(() => undefined);

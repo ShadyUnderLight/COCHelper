@@ -193,4 +193,48 @@ describe('RefreshCoordinator single-flight', () => {
       'recovered',
     );
   });
+
+  it('取消后立即重试不 join 已 abort 的 flight', async () => {
+    const coordinator = new RefreshCoordinator<string>();
+    const parent = new AbortController();
+    let runs = 0;
+    let releaseHang!: () => void;
+    const hang = new Promise<void>((resolve) => {
+      releaseHang = resolve;
+    });
+
+    const first = coordinator.runSingleFlight(
+      '#TAG',
+      async (signal) => {
+        runs += 1;
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => {
+            reject(new CoAPIRequestCancelledError());
+          };
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+          void hang.then(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+          });
+        });
+        return 'first';
+      },
+      parent.signal,
+    );
+    await Promise.resolve();
+    parent.abort();
+    await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+
+    const second = coordinator.runSingleFlight('#TAG', async () => {
+      runs += 1;
+      return 'second';
+    });
+    releaseHang();
+    await expect(second).resolves.toBe('second');
+    expect(runs).toBe(2);
+  });
 });

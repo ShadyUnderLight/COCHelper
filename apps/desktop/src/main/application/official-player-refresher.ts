@@ -1,5 +1,6 @@
 /**
- * 官方玩家状态刷新（对齐 OfficialPlayerRefresher + EndpointRefresher last-good / cancel）。
+ * 官方玩家状态刷新（对齐 OfficialPlayerRefresher + EndpointRefresher last-good）。
+ * 取消一律抛 AbortError，由上层决定不落盘。
  */
 
 import {
@@ -22,6 +23,12 @@ function isCoAPIError(error: unknown): error is CoAPIError {
   );
 }
 
+function abortedError(): Error {
+  const error = new Error('请求已取消。');
+  error.name = 'AbortError';
+  return error;
+}
+
 export async function refreshOfficialPlayerState(input: {
   readonly tag: string;
   readonly previous: OfficialAPIState | undefined;
@@ -34,7 +41,13 @@ export async function refreshOfficialPlayerState(input: {
       ? input.previous.parserVersion
       : PLAYER_SNAPSHOT_PARSER_VERSION;
   try {
+    if (input.signal?.aborted) {
+      throw abortedError();
+    }
     const snapshot = await input.fetch(input.tag, input.signal);
+    if (input.signal?.aborted) {
+      throw abortedError();
+    }
     return createOfficialAPIState({
       status: 'success',
       playerTag: input.tag,
@@ -47,18 +60,8 @@ export async function refreshOfficialPlayerState(input: {
       unrecognizedKeys: snapshot.unrecognizedKeys,
     });
   } catch (error) {
-    if (isCoAPIRequestCancelled(error) || input.signal?.aborted) {
-      return createOfficialAPIState({
-        status: 'failed',
-        playerTag: input.tag,
-        fetchedAtMs: input.previous?.fetchedAtMs,
-        lastAttemptAtMs: input.nowMs,
-        lastErrorReason: '已取消',
-        lastHTTPStatus: undefined,
-        parserVersion: retainedParserVersion,
-        lastGood: input.previous?.lastGood,
-        unrecognizedKeys: input.previous?.unrecognizedKeys ?? [],
-      });
+    if (isCoAPIRequestCancelled(error) || input.signal?.aborted || isAbortError(error)) {
+      throw abortedError();
     }
     if (isCoAPIError(error)) {
       return createOfficialAPIState({
@@ -102,4 +105,10 @@ export function skippedOfficialPlayerState(
     lastGood: previous?.lastGood,
     unrecognizedKeys: previous?.unrecognizedKeys ?? [],
   });
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error && (error.name === 'AbortError' || error.message === '请求已取消。')
+  );
 }

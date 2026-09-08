@@ -147,10 +147,7 @@ function collectVillageClanTags(
 ): readonly string[] {
   const tags = new Set<string>();
   for (const village of villages) {
-    if (village.tag === null) {
-      continue;
-    }
-    const state = playerStates.states[village.tag];
+    const state = playerStates.states[village.id];
     const clanTag = state?.lastGood?.clan?.tag;
     if (typeof clanTag === 'string' && clanTag.length > 0) {
       tags.add(clanTag);

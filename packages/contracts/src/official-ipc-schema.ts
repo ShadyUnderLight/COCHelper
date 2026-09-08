@@ -4,10 +4,7 @@
 
 import { z } from 'zod';
 
-import {
-  OFFICIAL_API_REQUEST_STATUSES,
-  OFFICIAL_ENDPOINT_FAILURE_KINDS,
-} from './official-wire';
+import { OFFICIAL_API_REQUEST_STATUSES, OFFICIAL_ENDPOINT_FAILURE_KINDS } from './official-wire';
 import type {
   ApiRefreshPayload,
   CapitalRaidLoadMorePayload,

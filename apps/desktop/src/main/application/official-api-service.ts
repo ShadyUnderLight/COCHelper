@@ -4,6 +4,11 @@
  *
  * 对应父 issue 中的 OfficialPlayerService / ClanService / WarLogService /
  * CapitalRaidService / RefreshCoordinator 职责，本切片收敛为单一 Main 编排入口。
+ *
+ * 持久化约定：
+ * - player-states 按 villageId 索引（playerTag 仅为 state 字段）；
+ * - 写盘成功后才更新内存权威 store；
+ * - 取消不落盘、不 bump generation。
  */
 
 import type {
@@ -57,6 +62,7 @@ import {
   type CoAPITokenProvider,
   type OfficialAPIState,
   type OfficialCapitalRaidPage,
+  type OfficialEndpointState,
   type OfficialStateStore,
   type OfficialWarLogPage,
   type PersistenceBootstrapResult,
@@ -83,22 +89,32 @@ export type OfficialApiServiceOptions = {
   readonly client?: CoAPIClient;
 };
 
+type LoadMoreOutcome = {
+  readonly state: ClanWarLogAPIState | ClanCapitalAPIState;
+  readonly mutated: boolean;
+};
+
+type RefreshEndpointOutcome = {
+  readonly dto: ApiRefreshEndpointResultDto;
+  readonly persisted: boolean;
+};
+
 export class OfficialApiService {
   private readonly state: AppAuthoritativeState;
   private readonly clock: Clock;
   private readonly persistence: PersistenceBootstrapResult;
   private readonly client: CoAPIClient;
   private readonly progressListeners = new Set<OperationProgressListener>();
-  private readonly clanCoordinator = new RefreshCoordinator<void>();
+  /** clanTag → single-flight（含失败路径）。 */
+  private readonly clanCoordinator = new RefreshCoordinator<unknown>();
+  /** villageId → single-flight。 */
+  private readonly playerCoordinator = new RefreshCoordinator<RefreshEndpointOutcome>();
 
   private playerStore: OfficialStateStore<OfficialAPIState>;
   private clanStore: OfficialStateStore<ClanAPIState>;
   private clanWarStore: OfficialStateStore<ClanWarAPIState>;
   private clanWarLogStore: OfficialStateStore<ClanWarLogAPIState>;
   private clanCapitalStore: OfficialStateStore<ClanCapitalAPIState>;
-
-  private playerChain: Promise<void> = Promise.resolve();
-  private clanChain: Promise<void> = Promise.resolve();
 
   constructor(options: OfficialApiServiceOptions) {
     this.state = options.state;
@@ -127,8 +143,7 @@ export class OfficialApiService {
   playerState(request: PlayerStateRequest): PlayerStatePayload {
     const village = this.requireVillage(request.villageId);
     const playerTag = this.normalizeOptionalTag(village.tag);
-    const state =
-      playerTag === null ? null : (this.playerStore.states[playerTag] ?? null);
+    const state = this.playerStore.states[request.villageId] ?? null;
     return {
       generation: this.state.getGeneration(),
       villageId: request.villageId,
@@ -186,29 +201,27 @@ export class OfficialApiService {
     });
 
     const results: ApiRefreshEndpointResultDto[] = [];
+    let mutated = false;
     try {
       for (const endpoint of endpoints) {
-        if (signal?.aborted) {
-          this.emitProgress({
-            operationId: request.requestId,
-            phase: 'cancelled',
-            generation: this.state.getGeneration(),
-            message: '已取消',
-          });
-          throw abortedError();
+        throwIfAborted(signal);
+        const { dto, persisted } = await this.refreshEndpoint(endpoint, request, signal);
+        results.push(dto);
+        if (persisted) {
+          mutated = true;
         }
-        const result = await this.refreshEndpoint(endpoint, request, signal);
-        results.push(result);
         this.emitProgress({
           operationId: request.requestId,
           phase: 'endpointFinished',
           generation: this.state.getGeneration(),
           endpoint,
-          tag: result.tag,
-          status: result.status,
+          tag: dto.tag,
+          status: dto.status,
         });
       }
-      this.state.notifyMutation();
+      if (mutated) {
+        this.state.notifyMutation();
+      }
       this.emitProgress({
         operationId: request.requestId,
         phase: 'completed',
@@ -251,86 +264,28 @@ export class OfficialApiService {
       tag: clanTag,
     });
     try {
-      const state = await this.runClanExclusive(clanTag, async () => {
-        const previous = this.clanWarLogStore.states[clanTag];
-        const existingPage = previous?.lastGood?.page;
-        if (
-          existingPage === undefined ||
-          existingPage.after === undefined ||
-          isCapReached(existingPage.items.length, MAX_WAR_LOG_ITEMS_PER_TAG)
-        ) {
-          return (
-            previous ??
-            (await fetchSingleOfficialEndpoint({
-              tag: clanTag,
-              previous: undefined,
-              parserVersion: clanWarLogParserVersion,
-              nowMs: this.clock.nowMs(),
-              signal,
-              fetch: async (tag, fetchSignal) => {
-                const page = await this.client.fetchWarLog(tag, { signal: fetchSignal });
-                return { page, unrecognizedKeys: [] satisfies readonly string[] };
-              },
-            }))
-          );
-        }
-
-        const requestedCursor = existingPage.after;
-        const nowMs = this.clock.nowMs();
-        const fetched = await fetchSingleOfficialEndpoint({
-          tag: clanTag,
-          previous,
-          parserVersion: clanWarLogParserVersion,
-          nowMs,
-          signal,
-          fetch: async (tag, fetchSignal) => {
-            const page = await this.client.fetchWarLog(tag, {
-              after: requestedCursor,
-              signal: fetchSignal,
-            });
-            return { page, unrecognizedKeys: [] satisfies readonly string[] };
-          },
-        });
-
-        if (fetched.status !== 'success' || fetched.lastGood === undefined) {
-          this.persistWarLog(clanTag, fetched, nowMs);
-          return fetched;
-        }
-
-        const mergedPage = mergedPaginationPage(
-          existingPage,
-          fetched.lastGood.page,
-          warLogEntriesEqual,
-        );
-        const trimmed = trimmedPage(mergedPage, MAX_WAR_LOG_ITEMS_PER_TAG);
-        const merged: ClanWarLogAPIState = {
-          ...fetched,
-          lastGood: {
-            page: trimmed,
-            unrecognizedKeys: fetched.lastGood.unrecognizedKeys,
-          } satisfies OfficialWarLogPage,
-        };
-        this.persistWarLog(clanTag, merged, nowMs);
-        return merged;
+      const outcome = await this.runClanFlight(clanTag, signal, async (flightSignal) => {
+        return this.loadMoreWarLogBody(clanTag, flightSignal);
       });
-
-      this.state.notifyMutation();
+      if (outcome.mutated) {
+        this.state.notifyMutation();
+      }
       this.emitProgress({
         operationId: request.requestId,
         phase: 'completed',
         generation: this.state.getGeneration(),
         endpoint: 'warLog',
         tag: clanTag,
-        status: state.status,
+        status: outcome.state.status,
       });
       return {
         generation: this.state.getGeneration(),
         clanTag,
-        state: toWarLogEndpointDto(state),
+        state: toWarLogEndpointDto(outcome.state),
       };
     } catch (error) {
       this.emitLoadMoreFailure(request.requestId, 'warLog', clanTag, error, signal);
-      throw error;
+      throw isAbortLike(error) ? abortedError() : error;
     }
   }
 
@@ -347,92 +302,176 @@ export class OfficialApiService {
       tag: clanTag,
     });
     try {
-      const state = await this.runClanExclusive(clanTag, async () => {
-        const previous = this.clanCapitalStore.states[clanTag];
-        const existingPage = previous?.lastGood?.page;
-        if (
-          existingPage === undefined ||
-          existingPage.after === undefined ||
-          isCapReached(existingPage.items.length, MAX_CAPITAL_SEASONS_PER_TAG)
-        ) {
-          return (
-            previous ??
-            (await fetchSingleOfficialEndpoint({
-              tag: clanTag,
-              previous: undefined,
-              parserVersion: clanCapitalParserVersion,
-              nowMs: this.clock.nowMs(),
-              signal,
-              fetch: async (tag, fetchSignal) => {
-                const page = await this.client.fetchCapitalRaidSeasons(tag, {
-                  signal: fetchSignal,
-                });
-                return { page, unrecognizedKeys: [] satisfies readonly string[] };
-              },
-            }))
-          );
-        }
-
-        const requestedCursor = existingPage.after;
-        const nowMs = this.clock.nowMs();
-        const fetched = await fetchSingleOfficialEndpoint({
-          tag: clanTag,
-          previous,
-          parserVersion: clanCapitalParserVersion,
-          nowMs,
-          signal,
-          fetch: async (tag, fetchSignal) => {
-            const page = await this.client.fetchCapitalRaidSeasons(tag, {
-              after: requestedCursor,
-              signal: fetchSignal,
-            });
-            return { page, unrecognizedKeys: [] satisfies readonly string[] };
-          },
-        });
-
-        if (fetched.status !== 'success' || fetched.lastGood === undefined) {
-          this.persistCapital(clanTag, fetched, nowMs);
-          return fetched;
-        }
-
-        const mergeResult = mergedCapitalRaidLoadMorePage(existingPage, fetched.lastGood.page);
-        const trimmed = trimmedPage(mergeResult.page, MAX_CAPITAL_SEASONS_PER_TAG);
-        const merged: ClanCapitalAPIState = {
-          ...fetched,
-          lastGood: {
-            page: trimmed,
-            unrecognizedKeys: fetched.lastGood.unrecognizedKeys,
-          } satisfies OfficialCapitalRaidPage,
-        };
-        this.persistCapital(clanTag, merged, nowMs);
-        return merged;
+      const outcome = await this.runClanFlight(clanTag, signal, async (flightSignal) => {
+        return this.loadMoreCapitalRaidBody(clanTag, flightSignal);
       });
-
-      this.state.notifyMutation();
+      if (outcome.mutated) {
+        this.state.notifyMutation();
+      }
       this.emitProgress({
         operationId: request.requestId,
         phase: 'completed',
         generation: this.state.getGeneration(),
         endpoint: 'capitalRaid',
         tag: clanTag,
-        status: state.status,
+        status: outcome.state.status,
       });
       return {
         generation: this.state.getGeneration(),
         clanTag,
-        state: toCapitalRaidEndpointDto(state),
+        state: toCapitalRaidEndpointDto(outcome.state),
       };
     } catch (error) {
       this.emitLoadMoreFailure(request.requestId, 'capitalRaid', clanTag, error, signal);
-      throw error;
+      throw isAbortLike(error) ? abortedError() : error;
     }
+  }
+
+  private async loadMoreWarLogBody(
+    clanTag: string,
+    signal: AbortSignal | undefined,
+  ): Promise<LoadMoreOutcome & { readonly state: ClanWarLogAPIState }> {
+    const previous = this.clanWarLogStore.states[clanTag];
+    const existingPage = previous?.lastGood?.page;
+
+    if (existingPage === undefined) {
+      const fetched = await fetchSingleOfficialEndpoint({
+        tag: clanTag,
+        previous: undefined,
+        parserVersion: clanWarLogParserVersion,
+        nowMs: this.clock.nowMs(),
+        signal,
+        fetch: async (tag, fetchSignal) => {
+          const page = await this.client.fetchWarLog(tag, { signal: fetchSignal });
+          const trimmed = trimmedPage(page, MAX_WAR_LOG_ITEMS_PER_TAG);
+          return { page: trimmed, unrecognizedKeys: [] satisfies readonly string[] };
+        },
+      });
+      throwIfCancelledEndpoint(fetched, signal);
+      this.commitWarLog(clanTag, fetched);
+      return { state: fetched, mutated: true };
+    }
+
+    if (
+      existingPage.after === undefined ||
+      isCapReached(existingPage.items.length, MAX_WAR_LOG_ITEMS_PER_TAG)
+    ) {
+      return { state: previous!, mutated: false };
+    }
+
+    const requestedCursor = existingPage.after;
+    const nowMs = this.clock.nowMs();
+    const fetched = await fetchSingleOfficialEndpoint({
+      tag: clanTag,
+      previous,
+      parserVersion: clanWarLogParserVersion,
+      nowMs,
+      signal,
+      fetch: async (tag, fetchSignal) => {
+        const page = await this.client.fetchWarLog(tag, {
+          after: requestedCursor,
+          signal: fetchSignal,
+        });
+        return { page, unrecognizedKeys: [] satisfies readonly string[] };
+      },
+    });
+    throwIfCancelledEndpoint(fetched, signal);
+
+    if (fetched.status !== 'success' || fetched.lastGood === undefined) {
+      this.commitWarLog(clanTag, fetched);
+      return { state: fetched, mutated: true };
+    }
+
+    const mergedPage = mergedPaginationPage(
+      existingPage,
+      fetched.lastGood.page,
+      warLogEntriesEqual,
+    );
+    const trimmed = trimmedPage(mergedPage, MAX_WAR_LOG_ITEMS_PER_TAG);
+    const merged: ClanWarLogAPIState = {
+      ...fetched,
+      lastGood: {
+        page: trimmed,
+        unrecognizedKeys: fetched.lastGood.unrecognizedKeys,
+      } satisfies OfficialWarLogPage,
+    };
+    this.commitWarLog(clanTag, merged);
+    return { state: merged, mutated: true };
+  }
+
+  private async loadMoreCapitalRaidBody(
+    clanTag: string,
+    signal: AbortSignal | undefined,
+  ): Promise<LoadMoreOutcome & { readonly state: ClanCapitalAPIState }> {
+    const previous = this.clanCapitalStore.states[clanTag];
+    const existingPage = previous?.lastGood?.page;
+
+    if (existingPage === undefined) {
+      const fetched = await fetchSingleOfficialEndpoint({
+        tag: clanTag,
+        previous: undefined,
+        parserVersion: clanCapitalParserVersion,
+        nowMs: this.clock.nowMs(),
+        signal,
+        fetch: async (tag, fetchSignal) => {
+          const page = await this.client.fetchCapitalRaidSeasons(tag, { signal: fetchSignal });
+          const trimmed = trimmedPage(page, MAX_CAPITAL_SEASONS_PER_TAG);
+          return { page: trimmed, unrecognizedKeys: [] satisfies readonly string[] };
+        },
+      });
+      throwIfCancelledEndpoint(fetched, signal);
+      this.commitCapital(clanTag, fetched);
+      return { state: fetched, mutated: true };
+    }
+
+    if (
+      existingPage.after === undefined ||
+      isCapReached(existingPage.items.length, MAX_CAPITAL_SEASONS_PER_TAG)
+    ) {
+      return { state: previous!, mutated: false };
+    }
+
+    const requestedCursor = existingPage.after;
+    const nowMs = this.clock.nowMs();
+    const fetched = await fetchSingleOfficialEndpoint({
+      tag: clanTag,
+      previous,
+      parserVersion: clanCapitalParserVersion,
+      nowMs,
+      signal,
+      fetch: async (tag, fetchSignal) => {
+        const page = await this.client.fetchCapitalRaidSeasons(tag, {
+          after: requestedCursor,
+          signal: fetchSignal,
+        });
+        return { page, unrecognizedKeys: [] satisfies readonly string[] };
+      },
+    });
+    throwIfCancelledEndpoint(fetched, signal);
+
+    if (fetched.status !== 'success' || fetched.lastGood === undefined) {
+      this.commitCapital(clanTag, fetched);
+      return { state: fetched, mutated: true };
+    }
+
+    const mergeResult = mergedCapitalRaidLoadMorePage(existingPage, fetched.lastGood.page);
+    const trimmed = trimmedPage(mergeResult.page, MAX_CAPITAL_SEASONS_PER_TAG);
+    const merged: ClanCapitalAPIState = {
+      ...fetched,
+      lastGood: {
+        page: trimmed,
+        unrecognizedKeys: fetched.lastGood.unrecognizedKeys,
+      } satisfies OfficialCapitalRaidPage,
+    };
+    this.commitCapital(clanTag, merged);
+    return { state: merged, mutated: true };
   }
 
   private async refreshEndpoint(
     endpoint: OfficialEndpointKind,
     request: ApiRefreshRequest,
     signal: AbortSignal | undefined,
-  ): Promise<ApiRefreshEndpointResultDto> {
+  ): Promise<RefreshEndpointOutcome> {
     this.emitProgress({
       operationId: request.requestId,
       phase: 'endpointStarted',
@@ -457,111 +496,122 @@ export class OfficialApiService {
   private async refreshPlayer(
     request: ApiRefreshRequest,
     signal: AbortSignal | undefined,
-  ): Promise<ApiRefreshEndpointResultDto> {
+  ): Promise<RefreshEndpointOutcome> {
     const villageId = request.villageId;
     if (villageId === undefined || villageId === null || villageId.length === 0) {
       throw new AppServiceError('validation', 'api.refresh player 必须显式传入 villageId。');
     }
-    const village = this.requireVillage(villageId);
-    const playerTag = this.normalizeOptionalTag(village.tag);
-    const expectedTag = playerTag;
+    this.requireVillage(villageId);
 
-    return this.runPlayerExclusive(async () => {
-      const previous =
-        playerTag === null ? undefined : this.playerStore.states[playerTag];
-      if (playerTag === null) {
-        const skipped = skippedOfficialPlayerState(previous, '缺少有效的玩家 tag，已跳过');
-        if (village.tag !== null) {
-          // 无合法 tag 不落盘 keyed store
+    return this.playerCoordinator.runSingleFlight(
+      villageId,
+      async (flightSignal) => {
+        const village = this.requireVillage(villageId);
+        const playerTag = this.normalizeOptionalTag(village.tag);
+        const expectedTag = playerTag;
+        const previous = this.playerStore.states[villageId];
+
+        if (playerTag === null) {
+          const skipped = skippedOfficialPlayerState(previous, '缺少有效的玩家 tag，已跳过');
+          return {
+            dto: {
+              endpoint: 'player',
+              tag: null,
+              status: skipped.status,
+            },
+            persisted: false,
+          };
         }
-        return {
-          endpoint: 'player' as const,
-          tag: null,
-          status: skipped.status,
-        };
-      }
 
-      const nowMs = this.clock.nowMs();
-      const refreshed = await refreshOfficialPlayerState({
-        tag: playerTag,
-        previous,
-        nowMs,
-        signal,
-        fetch: (tag, fetchSignal) => this.client.fetchPlayer(tag, fetchSignal),
-      });
-
-      const currentVillage = this.requireVillage(villageId);
-      const currentTag = this.normalizeOptionalTag(currentVillage.tag);
-      if (currentTag !== expectedTag) {
-        return {
-          endpoint: 'player' as const,
+        const nowMs = this.clock.nowMs();
+        const refreshed = await refreshOfficialPlayerState({
           tag: playerTag,
-          status: 'skipped',
-        };
-      }
+          previous,
+          nowMs,
+          signal: flightSignal,
+          fetch: (tag, fetchSignal) => this.client.fetchPlayer(tag, fetchSignal),
+        });
 
-      this.playerStore = mergeOfficialStateStore(this.playerStore, { [playerTag]: refreshed });
-      this.persistence.playerStates.save(this.playerStore);
-      return {
-        endpoint: 'player' as const,
-        tag: playerTag,
-        status: refreshed.status,
-      };
-    });
+        const currentVillage = this.requireVillage(villageId);
+        const currentTag = this.normalizeOptionalTag(currentVillage.tag);
+        if (currentTag !== expectedTag) {
+          return {
+            dto: {
+              endpoint: 'player',
+              tag: playerTag,
+              status: 'skipped',
+            },
+            persisted: false,
+          };
+        }
+
+        this.commitPlayer(villageId, refreshed);
+        return {
+          dto: {
+            endpoint: 'player',
+            tag: playerTag,
+            status: refreshed.status,
+          },
+          persisted: true,
+        };
+      },
+      signal,
+    );
   }
 
   private async refreshClan(
     request: ApiRefreshRequest,
     signal: AbortSignal | undefined,
-  ): Promise<ApiRefreshEndpointResultDto> {
+  ): Promise<RefreshEndpointOutcome> {
     const clanTag = this.resolveClanTag(request);
-    return this.runClanExclusive(clanTag, async () => {
+    return this.runClanFlight(clanTag, signal, async (flightSignal) => {
       const batchStartMs = this.clock.nowMs();
-      this.clanCoordinator.beginBatch([clanTag]);
-      try {
-        const previous = this.clanStore.states[clanTag];
-        const refreshed = await fetchSingleOfficialEndpoint({
-          tag: clanTag,
-          previous,
-          parserVersion: clanSnapshotParserVersion,
-          nowMs: batchStartMs,
-          signal,
-          fetch: (tag, fetchSignal) => this.client.fetchClan(tag, fetchSignal),
-        });
-        if (
-          shouldSkipFailedOverwrite({
-            refreshedState: refreshed,
-            existing: this.clanStore.states[clanTag],
-            batchStartMs,
-          })
-        ) {
-          return {
-            endpoint: 'clan' as const,
+      const previous = this.clanStore.states[clanTag];
+      const refreshed = await fetchSingleOfficialEndpoint({
+        tag: clanTag,
+        previous,
+        parserVersion: clanSnapshotParserVersion,
+        nowMs: batchStartMs,
+        signal: flightSignal,
+        fetch: (tag, fetchSignal) => this.client.fetchClan(tag, fetchSignal),
+      });
+      throwIfCancelledEndpoint(refreshed, flightSignal);
+      if (
+        shouldSkipFailedOverwrite({
+          refreshedState: refreshed,
+          existing: this.clanStore.states[clanTag],
+          batchStartMs,
+        })
+      ) {
+        return {
+          dto: {
+            endpoint: 'clan',
             tag: clanTag,
             status: this.clanStore.states[clanTag]!.status,
             skippedOverwrite: true,
-          };
-        }
-        this.clanStore = mergeOfficialStateStore(this.clanStore, { [clanTag]: refreshed });
-        this.persistence.clanStates.save(this.clanStore);
-        return {
-          endpoint: 'clan' as const,
+          },
+          persisted: false,
+        };
+      }
+      this.commitClan(clanTag, refreshed);
+      return {
+        dto: {
+          endpoint: 'clan',
           tag: clanTag,
           status: refreshed.status,
           failureKind: refreshed.failureKind,
-        };
-      } finally {
-        this.clanCoordinator.endBatch();
-      }
+        },
+        persisted: true,
+      };
     });
   }
 
   private async refreshClanWar(
     request: ApiRefreshRequest,
     signal: AbortSignal | undefined,
-  ): Promise<ApiRefreshEndpointResultDto> {
+  ): Promise<RefreshEndpointOutcome> {
     const clanTag = this.resolveClanTag(request);
-    return this.runClanExclusive(clanTag, async () => {
+    return this.runClanFlight(clanTag, signal, async (flightSignal) => {
       const batchStartMs = this.clock.nowMs();
       const previous = this.clanWarStore.states[clanTag];
       const refreshed = await fetchSingleOfficialEndpoint({
@@ -569,9 +619,10 @@ export class OfficialApiService {
         previous,
         parserVersion: clanWarParserVersion,
         nowMs: batchStartMs,
-        signal,
+        signal: flightSignal,
         fetch: (tag, fetchSignal) => this.client.fetchClanWar(tag, fetchSignal),
       });
+      throwIfCancelledEndpoint(refreshed, flightSignal);
       if (
         shouldSkipFailedOverwrite({
           refreshedState: refreshed,
@@ -580,19 +631,24 @@ export class OfficialApiService {
         })
       ) {
         return {
-          endpoint: 'clanWar' as const,
-          tag: clanTag,
-          status: this.clanWarStore.states[clanTag]!.status,
-          skippedOverwrite: true,
+          dto: {
+            endpoint: 'clanWar',
+            tag: clanTag,
+            status: this.clanWarStore.states[clanTag]!.status,
+            skippedOverwrite: true,
+          },
+          persisted: false,
         };
       }
-      this.clanWarStore = mergeOfficialStateStore(this.clanWarStore, { [clanTag]: refreshed });
-      this.persistence.clanWarStates.save(this.clanWarStore);
+      this.commitClanWar(clanTag, refreshed);
       return {
-        endpoint: 'clanWar' as const,
-        tag: clanTag,
-        status: refreshed.status,
-        failureKind: refreshed.failureKind,
+        dto: {
+          endpoint: 'clanWar',
+          tag: clanTag,
+          status: refreshed.status,
+          failureKind: refreshed.failureKind,
+        },
+        persisted: true,
       };
     });
   }
@@ -600,9 +656,9 @@ export class OfficialApiService {
   private async refreshWarLog(
     request: ApiRefreshRequest,
     signal: AbortSignal | undefined,
-  ): Promise<ApiRefreshEndpointResultDto> {
+  ): Promise<RefreshEndpointOutcome> {
     const clanTag = this.resolveClanTag(request);
-    return this.runClanExclusive(clanTag, async () => {
+    return this.runClanFlight(clanTag, signal, async (flightSignal) => {
       const batchStartMs = this.clock.nowMs();
       const previous = this.clanWarLogStore.states[clanTag];
       const refreshed = await fetchSingleOfficialEndpoint({
@@ -610,7 +666,7 @@ export class OfficialApiService {
         previous,
         parserVersion: clanWarLogParserVersion,
         nowMs: batchStartMs,
-        signal,
+        signal: flightSignal,
         fetch: async (tag, fetchSignal) => {
           const page = await this.client.fetchWarLog(tag, { signal: fetchSignal });
           const trimmed = trimmedPage(page, MAX_WAR_LOG_ITEMS_PER_TAG);
@@ -620,6 +676,7 @@ export class OfficialApiService {
           };
         },
       });
+      throwIfCancelledEndpoint(refreshed, flightSignal);
       if (
         shouldSkipFailedOverwrite({
           refreshedState: refreshed,
@@ -628,18 +685,24 @@ export class OfficialApiService {
         })
       ) {
         return {
-          endpoint: 'warLog' as const,
-          tag: clanTag,
-          status: this.clanWarLogStore.states[clanTag]!.status,
-          skippedOverwrite: true,
+          dto: {
+            endpoint: 'warLog',
+            tag: clanTag,
+            status: this.clanWarLogStore.states[clanTag]!.status,
+            skippedOverwrite: true,
+          },
+          persisted: false,
         };
       }
-      this.persistWarLog(clanTag, refreshed, batchStartMs);
+      this.commitWarLog(clanTag, refreshed);
       return {
-        endpoint: 'warLog' as const,
-        tag: clanTag,
-        status: refreshed.status,
-        failureKind: refreshed.failureKind,
+        dto: {
+          endpoint: 'warLog',
+          tag: clanTag,
+          status: refreshed.status,
+          failureKind: refreshed.failureKind,
+        },
+        persisted: true,
       };
     });
   }
@@ -647,9 +710,9 @@ export class OfficialApiService {
   private async refreshCapitalRaid(
     request: ApiRefreshRequest,
     signal: AbortSignal | undefined,
-  ): Promise<ApiRefreshEndpointResultDto> {
+  ): Promise<RefreshEndpointOutcome> {
     const clanTag = this.resolveClanTag(request);
-    return this.runClanExclusive(clanTag, async () => {
+    return this.runClanFlight(clanTag, signal, async (flightSignal) => {
       const batchStartMs = this.clock.nowMs();
       const previous = this.clanCapitalStore.states[clanTag];
       const refreshed = await fetchSingleOfficialEndpoint({
@@ -657,7 +720,7 @@ export class OfficialApiService {
         previous,
         parserVersion: clanCapitalParserVersion,
         nowMs: batchStartMs,
-        signal,
+        signal: flightSignal,
         fetch: async (tag, fetchSignal) => {
           const page = await this.client.fetchCapitalRaidSeasons(tag, { signal: fetchSignal });
           const trimmed = trimmedPage(page, MAX_CAPITAL_SEASONS_PER_TAG);
@@ -667,6 +730,7 @@ export class OfficialApiService {
           };
         },
       });
+      throwIfCancelledEndpoint(refreshed, flightSignal);
       if (
         shouldSkipFailedOverwrite({
           refreshedState: refreshed,
@@ -675,18 +739,24 @@ export class OfficialApiService {
         })
       ) {
         return {
-          endpoint: 'capitalRaid' as const,
-          tag: clanTag,
-          status: this.clanCapitalStore.states[clanTag]!.status,
-          skippedOverwrite: true,
+          dto: {
+            endpoint: 'capitalRaid',
+            tag: clanTag,
+            status: this.clanCapitalStore.states[clanTag]!.status,
+            skippedOverwrite: true,
+          },
+          persisted: false,
         };
       }
-      this.persistCapital(clanTag, refreshed, batchStartMs);
+      this.commitCapital(clanTag, refreshed);
       return {
-        endpoint: 'capitalRaid' as const,
-        tag: clanTag,
-        status: refreshed.status,
-        failureKind: refreshed.failureKind,
+        dto: {
+          endpoint: 'capitalRaid',
+          tag: clanTag,
+          status: refreshed.status,
+          failureKind: refreshed.failureKind,
+        },
+        persisted: true,
       };
     });
   }
@@ -698,15 +768,12 @@ export class OfficialApiService {
     }
     const villageId = request.villageId;
     if (villageId !== undefined && villageId !== null && villageId.length > 0) {
-      const village = this.requireVillage(villageId);
-      const playerTag = this.normalizeOptionalTag(village.tag);
-      if (playerTag !== null) {
-        const playerState = this.playerStore.states[playerTag];
-        if (playerState !== undefined) {
-          const fromPlayer = officialAPICurrentClanTag(playerState);
-          if (fromPlayer !== undefined) {
-            return fromPlayer;
-          }
+      this.requireVillage(villageId);
+      const playerState = this.playerStore.states[villageId];
+      if (playerState !== undefined) {
+        const fromPlayer = officialAPICurrentClanTag(playerState);
+        if (fromPlayer !== undefined) {
+          return fromPlayer;
         }
       }
     }
@@ -716,35 +783,47 @@ export class OfficialApiService {
     );
   }
 
-  private persistWarLog(tag: string, state: ClanWarLogAPIState, _nowMs: number): void {
-    this.clanWarLogStore = mergeOfficialStateStore(this.clanWarLogStore, { [tag]: state });
-    this.persistence.clanWarLogStates.save(this.clanWarLogStore);
+  /** 写盘成功后才替换内存权威 store。 */
+  private commitPlayer(villageId: string, state: OfficialAPIState): void {
+    const next = mergeOfficialStateStore(this.playerStore, { [villageId]: state });
+    this.persistence.playerStates.save(next);
+    this.playerStore = next;
   }
 
-  private persistCapital(tag: string, state: ClanCapitalAPIState, _nowMs: number): void {
-    this.clanCapitalStore = mergeOfficialStateStore(this.clanCapitalStore, { [tag]: state });
-    this.persistence.clanCapitalStates.save(this.clanCapitalStore);
+  private commitClan(tag: string, state: ClanAPIState): void {
+    const next = mergeOfficialStateStore(this.clanStore, { [tag]: state });
+    this.persistence.clanStates.save(next);
+    this.clanStore = next;
   }
 
-  private runPlayerExclusive<T>(work: () => Promise<T>): Promise<T> {
-    const run = this.playerChain.then(work, work);
-    this.playerChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+  private commitClanWar(tag: string, state: ClanWarAPIState): void {
+    const next = mergeOfficialStateStore(this.clanWarStore, { [tag]: state });
+    this.persistence.clanWarStates.save(next);
+    this.clanWarStore = next;
   }
 
-  private runClanExclusive<T>(tag: string, work: () => Promise<T>): Promise<T> {
-    if (this.clanCoordinator.isPending(tag)) {
-      this.clanCoordinator.enqueueTag(tag);
-    }
-    const run = this.clanChain.then(work, work);
-    this.clanChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+  private commitWarLog(tag: string, state: ClanWarLogAPIState): void {
+    const next = mergeOfficialStateStore(this.clanWarLogStore, { [tag]: state });
+    this.persistence.clanWarLogStates.save(next);
+    this.clanWarLogStore = next;
+  }
+
+  private commitCapital(tag: string, state: ClanCapitalAPIState): void {
+    const next = mergeOfficialStateStore(this.clanCapitalStore, { [tag]: state });
+    this.persistence.clanCapitalStates.save(next);
+    this.clanCapitalStore = next;
+  }
+
+  private async runClanFlight<T>(
+    tag: string,
+    signal: AbortSignal | undefined,
+    work: (signal: AbortSignal | undefined) => Promise<T>,
+  ): Promise<T> {
+    return (await this.clanCoordinator.runSingleFlight(
+      tag,
+      async (flightSignal) => work(flightSignal),
+      signal,
+    )) as T;
   }
 
   private requireVillage(villageId: string) {
@@ -806,9 +885,7 @@ export class OfficialApiService {
   }
 }
 
-function uniqueEndpoints(
-  endpoints: readonly OfficialEndpointKind[],
-): OfficialEndpointKind[] {
+function uniqueEndpoints(endpoints: readonly OfficialEndpointKind[]): OfficialEndpointKind[] {
   const seen = new Set<OfficialEndpointKind>();
   const result: OfficialEndpointKind[] = [];
   for (const endpoint of endpoints) {
@@ -818,6 +895,21 @@ function uniqueEndpoints(
     }
   }
   return result;
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw abortedError();
+  }
+}
+
+function throwIfCancelledEndpoint<Snapshot>(
+  state: OfficialEndpointState<Snapshot>,
+  signal: AbortSignal | undefined,
+): void {
+  if (signal?.aborted || state.failureKind === 'cancelled') {
+    throw abortedError();
+  }
 }
 
 function isAbortLike(error: unknown): boolean {

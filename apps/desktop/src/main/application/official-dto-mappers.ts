@@ -19,9 +19,7 @@ import {
   type OfficialAPIState,
 } from '@coc-helper/domain';
 
-export function toPlayerEndpointDto(
-  state: OfficialAPIState,
-): OfficialEndpointStateDto {
+export function toPlayerEndpointDto(state: OfficialAPIState): OfficialEndpointStateDto {
   return encodePlayerAPIStateWire(state) as OfficialEndpointStateDto;
 }
 
@@ -39,8 +37,7 @@ export function toWarLogEndpointDto(state: ClanWarLogAPIState): OfficialEndpoint
   const after = state.lastGood?.page.after;
   return {
     ...wire,
-    hasMore:
-      after !== undefined && !isCapReached(items, MAX_WAR_LOG_ITEMS_PER_TAG) ? true : false,
+    hasMore: after !== undefined && !isCapReached(items, MAX_WAR_LOG_ITEMS_PER_TAG) ? true : false,
   };
 }
 

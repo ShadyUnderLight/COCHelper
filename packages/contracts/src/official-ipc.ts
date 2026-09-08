@@ -167,12 +167,7 @@ export type CapitalRaidLoadMorePayload = {
 export type CapitalRaidLoadMoreResponse = Result<CapitalRaidLoadMorePayload>;
 
 export type OperationProgressPhase =
-  | 'started'
-  | 'endpointStarted'
-  | 'endpointFinished'
-  | 'completed'
-  | 'cancelled'
-  | 'failed';
+  'started' | 'endpointStarted' | 'endpointFinished' | 'completed' | 'cancelled' | 'failed';
 
 export type OperationProgressPayload = {
   readonly operationId: string;
@@ -194,7 +189,9 @@ export type OfficialIpcBridge = {
   capitalRaidState: (request: CapitalRaidStateRequest) => Promise<CapitalRaidStateResponse>;
   apiRefresh: (request: ApiRefreshRequest) => Promise<ApiRefreshResponse>;
   warLogLoadMore: (request: WarLogLoadMoreRequest) => Promise<WarLogLoadMoreResponse>;
-  capitalRaidLoadMore: (request: CapitalRaidLoadMoreRequest) => Promise<CapitalRaidLoadMoreResponse>;
+  capitalRaidLoadMore: (
+    request: CapitalRaidLoadMoreRequest,
+  ) => Promise<CapitalRaidLoadMoreResponse>;
   onOperationProgress: (listener: OperationProgressListener) => () => void;
 };
 

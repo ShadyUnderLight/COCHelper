@@ -1,6 +1,11 @@
 import {
   APP_HEALTH_CHANNEL,
   APP_SNAPSHOT_CHANNEL,
+  API_REFRESH_CHANNEL,
+  CAPITAL_RAID_LOAD_MORE_CHANNEL,
+  CAPITAL_RAID_STATE_CHANNEL,
+  CLAN_STATE_CHANNEL,
+  CLAN_WAR_STATE_CHANNEL,
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
@@ -10,12 +15,21 @@ import {
   MANUAL_SETTLE_CHANNEL,
   MANUAL_START_CHANNEL,
   MANUAL_STATE_CHANNEL,
+  OPERATION_PROGRESS_CHANNEL,
+  PLAYER_STATE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
+  WAR_LOG_LOAD_MORE_CHANNEL,
+  WAR_LOG_STATE_CHANNEL,
+  apiRefreshRequestSchema,
+  capitalRaidLoadMoreRequestSchema,
+  capitalRaidStateRequestSchema,
+  clanStateRequestSchema,
+  clanWarStateRequestSchema,
   emptyObjectRequestSchema,
   emptyProjectionRequestSchema,
   importCommitRequestSchema,
@@ -28,12 +42,20 @@ import {
   manualSettleRequestSchema,
   manualStartRequestSchema,
   manualStateRequestSchema,
+  playerStateRequestSchema,
   resultOk,
   villageDetailRequestSchema,
   villageSelectRequestSchema,
+  warLogLoadMoreRequestSchema,
+  warLogStateRequestSchema,
+  type ApiRefreshRequest,
   type AppHealthResponse,
   type AppSnapshotRequest,
   type CancelRequest,
+  type CapitalRaidLoadMoreRequest,
+  type CapitalRaidStateRequest,
+  type ClanStateRequest,
+  type ClanWarStateRequest,
   type ImportCommitRequest,
   type ImportDiscardRequest,
   type ImportPrepareRequest,
@@ -44,10 +66,13 @@ import {
   type ManualSettleRequest,
   type ManualStartRequest,
   type ManualStateRequest,
+  type PlayerStateRequest,
   type RequestId,
   type UpgradeOverviewRequest,
   type VillageDetailRequest,
   type VillageSelectRequest,
+  type WarLogLoadMoreRequest,
+  type WarLogStateRequest,
 } from '@coc-helper/contracts';
 import { z } from 'zod';
 
@@ -216,6 +241,79 @@ export function parseManualReconcileRequest(payload: unknown): ManualReconcileRe
   return result.data;
 }
 
+export function parsePlayerStateRequest(payload: unknown): PlayerStateRequest {
+  const result = playerStateRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('player.state 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseClanStateRequest(payload: unknown): ClanStateRequest {
+  const result = clanStateRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('clan.state 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseClanWarStateRequest(payload: unknown): ClanWarStateRequest {
+  const result = clanWarStateRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('clanWar.state 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseWarLogStateRequest(payload: unknown): WarLogStateRequest {
+  const result = warLogStateRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('warLog.state 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseCapitalRaidStateRequest(payload: unknown): CapitalRaidStateRequest {
+  const result = capitalRaidStateRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('capitalRaid.state 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseApiRefreshRequest(payload: unknown): ApiRefreshRequest {
+  const result = apiRefreshRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('api.refresh 参数不合法');
+  }
+  return {
+    ...result.data,
+    requestId: result.data.requestId as RequestId,
+  };
+}
+
+export function parseWarLogLoadMoreRequest(payload: unknown): WarLogLoadMoreRequest {
+  const result = warLogLoadMoreRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('warLog.loadMore 参数不合法');
+  }
+  return {
+    ...result.data,
+    requestId: result.data.requestId as RequestId,
+  };
+}
+
+export function parseCapitalRaidLoadMoreRequest(payload: unknown): CapitalRaidLoadMoreRequest {
+  const result = capitalRaidLoadMoreRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('capitalRaid.loadMore 参数不合法');
+  }
+  return {
+    ...result.data,
+    requestId: result.data.requestId as RequestId,
+  };
+}
+
 export function parseCancelRequest(payload: unknown): CancelRequest {
   const result = cancelRequestSchema.safeParse(payload);
   if (!result.success) {
@@ -281,6 +379,15 @@ export const REGISTERED_IPC_CHANNELS = [
   MANUAL_ADJUST_CHANNEL,
   MANUAL_SETTLE_CHANNEL,
   MANUAL_RECONCILE_CHANNEL,
+  PLAYER_STATE_CHANNEL,
+  CLAN_STATE_CHANNEL,
+  CLAN_WAR_STATE_CHANNEL,
+  WAR_LOG_STATE_CHANNEL,
+  CAPITAL_RAID_STATE_CHANNEL,
+  API_REFRESH_CHANNEL,
+  WAR_LOG_LOAD_MORE_CHANNEL,
+  CAPITAL_RAID_LOAD_MORE_CHANNEL,
+  OPERATION_PROGRESS_CHANNEL,
   STATE_CHANGED_CHANNEL,
 ] as const;
 

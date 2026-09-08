@@ -9,6 +9,8 @@
 import {
   applyOrphanCachePolicy,
   createOfficialStateStore,
+  isValidTag,
+  normalizedTag,
   type OfficialStateStore,
   type PersistenceBootstrapResult,
   type TrackedClanStore,
@@ -147,11 +149,15 @@ function collectVillageClanTags(
 ): readonly string[] {
   const tags = new Set<string>();
   for (const village of villages) {
-    if (village.tag === null) {
+    const currentPlayerTag = normalizedTag(village.tag);
+    if (currentPlayerTag === undefined || !isValidTag(currentPlayerTag)) {
       continue;
     }
-    const state = playerStates.states[village.tag];
-    const clanTag = state?.lastGood?.clan?.tag;
+    const state = playerStates.states[village.id];
+    if (state === undefined || state.playerTag !== currentPlayerTag) {
+      continue;
+    }
+    const clanTag = state.lastGood?.clan?.tag;
     if (typeof clanTag === 'string' && clanTag.length > 0) {
       tags.add(clanTag);
     }

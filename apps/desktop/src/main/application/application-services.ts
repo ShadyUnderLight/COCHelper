@@ -2,7 +2,7 @@
  * Main application services 组装入口（#276）。
  */
 
-import { SystemClock, type Clock } from '@coc-helper/domain';
+import { SystemClock, type Clock, type CoAPITokenProvider } from '@coc-helper/domain';
 
 import {
   AppLifecycleService,
@@ -14,6 +14,7 @@ import { VillageService } from './village-service';
 import { ProjectionService, type ProjectionCatalogPort } from './projection-service';
 import { HistoryService } from './history-service';
 import { ManualTrackerService } from './manual-tracker-service';
+import { OfficialApiService } from './official-api-service';
 import type { AppAuthoritativeState } from './app-authoritative-state';
 import { getCatalogService } from '../catalog-service';
 
@@ -24,6 +25,7 @@ export type ApplicationServices = {
   readonly projections: ProjectionService;
   readonly history: HistoryService | null;
   readonly manual: ManualTrackerService | null;
+  readonly official: OfficialApiService | null;
   readonly state: AppAuthoritativeState;
   readonly boot: AppLifecycleBootResult;
 };
@@ -33,6 +35,7 @@ export function createApplicationServices(
     readonly clock?: Clock;
     readonly boot?: AppLifecycleBootResult;
     readonly catalog?: ProjectionCatalogPort;
+    readonly tokenProvider?: CoAPITokenProvider;
   } = {},
 ): ApplicationServices {
   const clock = options.clock ?? new SystemClock();
@@ -59,6 +62,17 @@ export function createApplicationServices(
         })
       : null;
 
+  const tokenProvider = options.tokenProvider ?? (() => undefined);
+  const official =
+    boot.persistence !== null
+      ? new OfficialApiService({
+          state: boot.state,
+          clock,
+          persistence: boot.persistence,
+          tokenProvider,
+        })
+      : null;
+
   return {
     lifecycle,
     villages: new VillageService(boot.state),
@@ -78,6 +92,7 @@ export function createApplicationServices(
     }),
     history,
     manual,
+    official,
     state: boot.state,
     boot,
   };
@@ -89,4 +104,5 @@ export { SnapshotImportService } from './snapshot-import-service';
 export { ProjectionService } from './projection-service';
 export { HistoryService } from './history-service';
 export { ManualTrackerService } from './manual-tracker-service';
+export { OfficialApiService } from './official-api-service';
 export { AppAuthoritativeState, AppServiceError } from './app-authoritative-state';

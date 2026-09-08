@@ -1,6 +1,11 @@
 import {
+  API_REFRESH_CHANNEL,
   APP_HEALTH_CHANNEL,
   APP_SNAPSHOT_CHANNEL,
+  CAPITAL_RAID_LOAD_MORE_CHANNEL,
+  CAPITAL_RAID_STATE_CHANNEL,
+  CLAN_STATE_CHANNEL,
+  CLAN_WAR_STATE_CHANNEL,
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
@@ -10,13 +15,22 @@ import {
   MANUAL_SETTLE_CHANNEL,
   MANUAL_START_CHANNEL,
   MANUAL_STATE_CHANNEL,
+  OPERATION_PROGRESS_CHANNEL,
+  PLAYER_STATE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
+  WAR_LOG_LOAD_MORE_CHANNEL,
+  WAR_LOG_STATE_CHANNEL,
+  isApiRefreshPayload,
   isAppSnapshotPayload,
   isCancelRequest,
+  isCapitalRaidLoadMorePayload,
+  isCapitalRaidStatePayload,
+  isClanStatePayload,
+  isClanWarStatePayload,
   isImportCommitPayload,
   isImportDiscardPayload,
   isImportPreparePayload,
@@ -27,13 +41,22 @@ import {
   isManualSettlePayload,
   isManualStartPayload,
   isManualStatePayload,
+  isOperationProgressPayload,
+  isPlayerStatePayload,
   isResult,
   isUpgradeOverviewPayload,
   isVillageDetailPayload,
   isVillageSelectPayload,
+  isWarLogLoadMorePayload,
+  isWarLogStatePayload,
+  type ApiRefreshResponse,
   type AppHealthResponse,
   type AppSnapshotResponse,
   type CancelRequest,
+  type CapitalRaidLoadMoreResponse,
+  type CapitalRaidStateResponse,
+  type ClanStateResponse,
+  type ClanWarStateResponse,
   type DesktopBridge,
   type ImportCommitResponse,
   type ImportDiscardResponse,
@@ -44,11 +67,15 @@ import {
   type ManualSettleResponse,
   type ManualStartResponse,
   type ManualStateResponse,
+  type OperationProgressListener,
+  type PlayerStateResponse,
   type StateChangedListener,
   type StateChangedPayload,
   type UpgradeOverviewResponse,
   type VillageDetailResponse,
   type VillageSelectResponse,
+  type WarLogLoadMoreResponse,
+  type WarLogStateResponse,
 } from '@coc-helper/contracts';
 
 export function isAppHealthResponse(value: unknown): value is AppHealthResponse {
@@ -110,6 +137,40 @@ export function isManualSettleResponse(value: unknown): value is ManualSettleRes
 
 export function isManualReconcileResponse(value: unknown): value is ManualReconcileResponse {
   return isResult(value, isManualReconcilePayload, isIpcError);
+}
+
+export function isPlayerStateResponse(value: unknown): value is PlayerStateResponse {
+  return isResult(value, isPlayerStatePayload, isIpcError);
+}
+
+export function isClanStateResponse(value: unknown): value is ClanStateResponse {
+  return isResult(value, isClanStatePayload, isIpcError);
+}
+
+export function isClanWarStateResponse(value: unknown): value is ClanWarStateResponse {
+  return isResult(value, isClanWarStatePayload, isIpcError);
+}
+
+export function isWarLogStateResponse(value: unknown): value is WarLogStateResponse {
+  return isResult(value, isWarLogStatePayload, isIpcError);
+}
+
+export function isCapitalRaidStateResponse(value: unknown): value is CapitalRaidStateResponse {
+  return isResult(value, isCapitalRaidStatePayload, isIpcError);
+}
+
+export function isApiRefreshResponse(value: unknown): value is ApiRefreshResponse {
+  return isResult(value, isApiRefreshPayload, isIpcError);
+}
+
+export function isWarLogLoadMoreResponse(value: unknown): value is WarLogLoadMoreResponse {
+  return isResult(value, isWarLogLoadMorePayload, isIpcError);
+}
+
+export function isCapitalRaidLoadMoreResponse(
+  value: unknown,
+): value is CapitalRaidLoadMoreResponse {
+  return isResult(value, isCapitalRaidLoadMorePayload, isIpcError);
 }
 
 export function isStateChangedPayload(value: unknown): value is StateChangedPayload {
@@ -225,6 +286,70 @@ export function createDesktopBridge(invoke: Invoke, send: Send, on: On): Desktop
         throw new Error('manual.reconcile 返回值不合法');
       }
       return result;
+    },
+    playerState: async (request) => {
+      const result = await invoke(PLAYER_STATE_CHANNEL, request);
+      if (!isPlayerStateResponse(result)) {
+        throw new Error('player.state 返回值不合法');
+      }
+      return result;
+    },
+    clanState: async (request) => {
+      const result = await invoke(CLAN_STATE_CHANNEL, request);
+      if (!isClanStateResponse(result)) {
+        throw new Error('clan.state 返回值不合法');
+      }
+      return result;
+    },
+    clanWarState: async (request) => {
+      const result = await invoke(CLAN_WAR_STATE_CHANNEL, request);
+      if (!isClanWarStateResponse(result)) {
+        throw new Error('clanWar.state 返回值不合法');
+      }
+      return result;
+    },
+    warLogState: async (request) => {
+      const result = await invoke(WAR_LOG_STATE_CHANNEL, request);
+      if (!isWarLogStateResponse(result)) {
+        throw new Error('warLog.state 返回值不合法');
+      }
+      return result;
+    },
+    capitalRaidState: async (request) => {
+      const result = await invoke(CAPITAL_RAID_STATE_CHANNEL, request);
+      if (!isCapitalRaidStateResponse(result)) {
+        throw new Error('capitalRaid.state 返回值不合法');
+      }
+      return result;
+    },
+    apiRefresh: async (request) => {
+      const result = await invoke(API_REFRESH_CHANNEL, request);
+      if (!isApiRefreshResponse(result)) {
+        throw new Error('api.refresh 返回值不合法');
+      }
+      return result;
+    },
+    warLogLoadMore: async (request) => {
+      const result = await invoke(WAR_LOG_LOAD_MORE_CHANNEL, request);
+      if (!isWarLogLoadMoreResponse(result)) {
+        throw new Error('warLog.loadMore 返回值不合法');
+      }
+      return result;
+    },
+    capitalRaidLoadMore: async (request) => {
+      const result = await invoke(CAPITAL_RAID_LOAD_MORE_CHANNEL, request);
+      if (!isCapitalRaidLoadMoreResponse(result)) {
+        throw new Error('capitalRaid.loadMore 返回值不合法');
+      }
+      return result;
+    },
+    onOperationProgress: (listener: OperationProgressListener) => {
+      return on(OPERATION_PROGRESS_CHANNEL, (payload) => {
+        if (!isOperationProgressPayload(payload)) {
+          return;
+        }
+        listener(payload);
+      });
     },
     onStateChanged: (listener: StateChangedListener) => {
       return on(STATE_CHANGED_CHANNEL, (payload) => {

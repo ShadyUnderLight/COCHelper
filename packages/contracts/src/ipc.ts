@@ -2,6 +2,7 @@ import type { Result } from './result';
 import type { AppIpcBridge } from './app-ipc';
 import type { ProjectionIpcBridge } from './projection-ipc';
 import type { ManualIpcBridge } from './manual-ipc';
+import type { OfficialIpcBridge } from './official-ipc';
 
 /** IPC 通道名。preload 只允许调用这里列出的通道。 */
 export const APP_HEALTH_CHANNEL = 'app.health' as const;
@@ -50,7 +51,8 @@ export type DesktopBridge = {
   cancel: (request: CancelRequest) => void;
 } & AppIpcBridge &
   ProjectionIpcBridge &
-  ManualIpcBridge;
+  ManualIpcBridge &
+  OfficialIpcBridge;
 
 export const DESKTOP_BRIDGE_KEYS = [
   'health',
@@ -68,6 +70,15 @@ export const DESKTOP_BRIDGE_KEYS = [
   'manualAdjust',
   'manualSettle',
   'manualReconcile',
+  'playerState',
+  'clanState',
+  'clanWarState',
+  'warLogState',
+  'capitalRaidState',
+  'apiRefresh',
+  'warLogLoadMore',
+  'capitalRaidLoadMore',
+  'onOperationProgress',
   'onStateChanged',
 ] as const satisfies ReadonlyArray<keyof DesktopBridge>;
 
@@ -150,3 +161,50 @@ export {
   type ManualUpgradeRecordDto,
   type ManualIpcBridge,
 } from './manual-ipc';
+
+export {
+  PLAYER_STATE_CHANNEL,
+  CLAN_STATE_CHANNEL,
+  CLAN_WAR_STATE_CHANNEL,
+  WAR_LOG_STATE_CHANNEL,
+  CAPITAL_RAID_STATE_CHANNEL,
+  API_REFRESH_CHANNEL,
+  WAR_LOG_LOAD_MORE_CHANNEL,
+  CAPITAL_RAID_LOAD_MORE_CHANNEL,
+  OPERATION_PROGRESS_CHANNEL,
+  OFFICIAL_IPC_CHANNELS,
+  OFFICIAL_IPC_BRIDGE_KEYS,
+  OFFICIAL_ENDPOINT_KINDS,
+  type OfficialEndpointKind,
+  type OfficialPlayerSnapshotWire,
+  type OfficialEndpointStateDto,
+  type PlayerStateRequest,
+  type PlayerStatePayload,
+  type PlayerStateResponse,
+  type ClanStateRequest,
+  type ClanStatePayload,
+  type ClanStateResponse,
+  type ClanWarStateRequest,
+  type ClanWarStatePayload,
+  type ClanWarStateResponse,
+  type WarLogStateRequest,
+  type WarLogStatePayload,
+  type WarLogStateResponse,
+  type CapitalRaidStateRequest,
+  type CapitalRaidStatePayload,
+  type CapitalRaidStateResponse,
+  type ApiRefreshRequest,
+  type ApiRefreshEndpointResultDto,
+  type ApiRefreshPayload,
+  type ApiRefreshResponse,
+  type WarLogLoadMoreRequest,
+  type WarLogLoadMorePayload,
+  type WarLogLoadMoreResponse,
+  type CapitalRaidLoadMoreRequest,
+  type CapitalRaidLoadMorePayload,
+  type CapitalRaidLoadMoreResponse,
+  type OperationProgressPhase,
+  type OperationProgressPayload,
+  type OperationProgressListener,
+  type OfficialIpcBridge,
+} from './official-ipc';

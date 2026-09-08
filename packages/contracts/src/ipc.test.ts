@@ -17,6 +17,17 @@ import {
   MANUAL_SETTLE_CHANNEL,
   MANUAL_START_CHANNEL,
   MANUAL_STATE_CHANNEL,
+  OFFICIAL_IPC_BRIDGE_KEYS,
+  OFFICIAL_IPC_CHANNELS,
+  PLAYER_STATE_CHANNEL,
+  CLAN_STATE_CHANNEL,
+  CLAN_WAR_STATE_CHANNEL,
+  WAR_LOG_STATE_CHANNEL,
+  CAPITAL_RAID_STATE_CHANNEL,
+  API_REFRESH_CHANNEL,
+  WAR_LOG_LOAD_MORE_CHANNEL,
+  CAPITAL_RAID_LOAD_MORE_CHANNEL,
+  OPERATION_PROGRESS_CHANNEL,
   PROJECTION_IPC_BRIDGE_KEYS,
   PROJECTION_IPC_CHANNELS,
   REQUEST_CANCEL_CHANNEL,
@@ -41,6 +52,15 @@ describe('@coc-helper/contracts IPC', () => {
     expect(STATE_CHANGED_CHANNEL).toBe('state.changed');
     expect(UPGRADE_OVERVIEW_CHANNEL).toBe('upgrade.overview');
     expect(VILLAGE_DETAIL_CHANNEL).toBe('village.detail');
+    expect(PLAYER_STATE_CHANNEL).toBe('player.state');
+    expect(CLAN_STATE_CHANNEL).toBe('clan.state');
+    expect(CLAN_WAR_STATE_CHANNEL).toBe('clanWar.state');
+    expect(WAR_LOG_STATE_CHANNEL).toBe('warLog.state');
+    expect(CAPITAL_RAID_STATE_CHANNEL).toBe('capitalRaid.state');
+    expect(API_REFRESH_CHANNEL).toBe('api.refresh');
+    expect(WAR_LOG_LOAD_MORE_CHANNEL).toBe('warLog.loadMore');
+    expect(CAPITAL_RAID_LOAD_MORE_CHANNEL).toBe('capitalRaid.loadMore');
+    expect(OPERATION_PROGRESS_CHANNEL).toBe('operation.progress');
     expect(REQUEST_ID_MAX_LENGTH).toBe(128);
     expect(APP_IPC_CHANNELS).toEqual([
       APP_SNAPSHOT_CHANNEL,
@@ -59,13 +79,29 @@ describe('@coc-helper/contracts IPC', () => {
       MANUAL_SETTLE_CHANNEL,
       MANUAL_RECONCILE_CHANNEL,
     ]);
+    expect(OFFICIAL_IPC_CHANNELS).toEqual([
+      PLAYER_STATE_CHANNEL,
+      CLAN_STATE_CHANNEL,
+      CLAN_WAR_STATE_CHANNEL,
+      WAR_LOG_STATE_CHANNEL,
+      CAPITAL_RAID_STATE_CHANNEL,
+      API_REFRESH_CHANNEL,
+      WAR_LOG_LOAD_MORE_CHANNEL,
+      CAPITAL_RAID_LOAD_MORE_CHANNEL,
+      OPERATION_PROGRESS_CHANNEL,
+    ]);
     const appKeysWithoutEvent = APP_IPC_BRIDGE_KEYS.filter((key) => key !== 'onStateChanged');
+    const officialKeysWithoutEvent = OFFICIAL_IPC_BRIDGE_KEYS.filter(
+      (key) => key !== 'onOperationProgress',
+    );
     expect(DESKTOP_BRIDGE_KEYS).toEqual([
       'health',
       'cancel',
       ...appKeysWithoutEvent,
       ...PROJECTION_IPC_BRIDGE_KEYS,
       ...MANUAL_IPC_BRIDGE_KEYS,
+      ...officialKeysWithoutEvent,
+      'onOperationProgress',
       'onStateChanged',
     ]);
   });

@@ -1,8 +1,13 @@
 import { BrowserWindow, app, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
 
 import {
+  API_REFRESH_CHANNEL,
   APP_HEALTH_CHANNEL,
   APP_SNAPSHOT_CHANNEL,
+  CAPITAL_RAID_LOAD_MORE_CHANNEL,
+  CAPITAL_RAID_STATE_CHANNEL,
+  CLAN_STATE_CHANNEL,
+  CLAN_WAR_STATE_CHANNEL,
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
@@ -12,13 +17,18 @@ import {
   MANUAL_SETTLE_CHANNEL,
   MANUAL_START_CHANNEL,
   MANUAL_STATE_CHANNEL,
+  OPERATION_PROGRESS_CHANNEL,
+  PLAYER_STATE_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
+  WAR_LOG_LOAD_MORE_CHANNEL,
+  WAR_LOG_STATE_CHANNEL,
   resultErr,
   resultOk,
+  type OperationProgressPayload,
   type StateChangedPayload,
 } from '@coc-helper/contracts';
 
@@ -26,9 +36,14 @@ import { AppServiceError } from './application/app-authoritative-state';
 import type { ApplicationServices } from './application/application-services';
 import {
   appHealthResponse,
+  parseApiRefreshRequest,
   parseAppHealthRequest,
   parseAppSnapshotRequest,
   parseCancelRequest,
+  parseCapitalRaidLoadMoreRequest,
+  parseCapitalRaidStateRequest,
+  parseClanStateRequest,
+  parseClanWarStateRequest,
   parseImportCommitRequest,
   parseImportDiscardRequest,
   parseImportPrepareRequest,
@@ -38,9 +53,12 @@ import {
   parseManualSettleRequest,
   parseManualStartRequest,
   parseManualStateRequest,
+  parsePlayerStateRequest,
   parseUpgradeOverviewRequest,
   parseVillageDetailRequest,
   parseVillageSelectRequest,
+  parseWarLogLoadMoreRequest,
+  parseWarLogStateRequest,
   toIpcError,
 } from './ipc-schema';
 import { assertTrustedSenderState } from './ipc-trust';
@@ -54,6 +72,14 @@ function requireServices(services: ApplicationServices | null): ApplicationServi
   }
   return services;
 }
+
+function requireOfficial(services: ApplicationServices) {
+  if (services.official === null) {
+    throw new AppServiceError('unavailable', '官方 API 服务尚未就绪。');
+  }
+  return services.official;
+}
+
 export function assertTrustedSender(event: IpcSenderEvent, webpackEntry: string): void {
   assertTrustedSenderState(
     {
@@ -249,6 +275,108 @@ export function registerIpcHandlers(
     }
   });
 
+  ipcMain.handle(PLAYER_STATE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parsePlayerStateRequest(payload);
+      return resultOk(requireOfficial(requireServices(services)).playerState(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(CLAN_STATE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseClanStateRequest(payload);
+      return resultOk(requireOfficial(requireServices(services)).clanState(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(CLAN_WAR_STATE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseClanWarStateRequest(payload);
+      return resultOk(requireOfficial(requireServices(services)).clanWarState(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(WAR_LOG_STATE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseWarLogStateRequest(payload);
+      return resultOk(requireOfficial(requireServices(services)).warLogState(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(CAPITAL_RAID_STATE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseCapitalRaidStateRequest(payload);
+      return resultOk(requireOfficial(requireServices(services)).capitalRaidState(request));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(API_REFRESH_CHANNEL, async (event, payload: unknown) => {
+    const senderId = event.sender.id;
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseApiRefreshRequest(payload);
+      const signal = cancellation.start(senderId, request.requestId);
+      try {
+        return resultOk(await requireOfficial(requireServices(services)).refresh(request, signal));
+      } finally {
+        cancellation.finish(senderId, request.requestId);
+      }
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(WAR_LOG_LOAD_MORE_CHANNEL, async (event, payload: unknown) => {
+    const senderId = event.sender.id;
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseWarLogLoadMoreRequest(payload);
+      const signal = cancellation.start(senderId, request.requestId);
+      try {
+        return resultOk(
+          await requireOfficial(requireServices(services)).loadMoreWarLog(request, signal),
+        );
+      } finally {
+        cancellation.finish(senderId, request.requestId);
+      }
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(CAPITAL_RAID_LOAD_MORE_CHANNEL, async (event, payload: unknown) => {
+    const senderId = event.sender.id;
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseCapitalRaidLoadMoreRequest(payload);
+      const signal = cancellation.start(senderId, request.requestId);
+      try {
+        return resultOk(
+          await requireOfficial(requireServices(services)).loadMoreCapitalRaid(request, signal),
+        );
+      } finally {
+        cancellation.finish(senderId, request.requestId);
+      }
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
   ipcMain.on(REQUEST_CANCEL_CHANNEL, (event, payload: unknown) => {
     try {
       assertTrustedSender(event, webpackEntry);
@@ -263,6 +391,11 @@ export function registerIpcHandlers(
     services.state.subscribe((payload: StateChangedPayload) => {
       broadcastStateChanged(payload);
     });
+    if (services.official !== null) {
+      services.official.subscribeProgress((payload: OperationProgressPayload) => {
+        broadcastOperationProgress(payload);
+      });
+    }
   }
 
   app.on('web-contents-created', (_event, contents) => {
@@ -278,6 +411,14 @@ function broadcastStateChanged(payload: StateChangedPayload): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
       window.webContents.send(STATE_CHANGED_CHANNEL, payload);
+    }
+  }
+}
+
+function broadcastOperationProgress(payload: OperationProgressPayload): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send(OPERATION_PROGRESS_CHANNEL, payload);
     }
   }
 }

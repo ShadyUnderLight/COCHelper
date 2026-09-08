@@ -96,7 +96,15 @@ const createWindow = (): void => {
 };
 
 function initializeApplicationServices(): void {
-  applicationServices = createApplicationServices();
+  applicationServices = createApplicationServices({
+    tokenProvider: () => {
+      try {
+        return tokenStore?.readToken() ?? undefined;
+      } catch {
+        return undefined;
+      }
+    },
+  });
   const persistence = applicationServices.boot.persistence;
   if (persistence !== null) {
     tokenStore = new SafeStorageTokenStore(

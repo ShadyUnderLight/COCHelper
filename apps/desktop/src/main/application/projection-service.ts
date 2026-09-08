@@ -3,6 +3,7 @@
  * - 不写盘、不 bump generation；
  * - village.detail 必须显式 villageId + base；
  * - 读 manual cores 仅供投影，不 reconcile / 不改写。
+ * - 先 await catalog，再同步抓取 generation/villages/manual，避免旧数据配新 generation。
  */
 
 import {
@@ -57,9 +58,13 @@ export class ProjectionService {
 
   async upgradeOverview(): Promise<UpgradeOverviewPayload> {
     const nowMs = this.clock.nowMs();
-    const villages = this.state.listVillages();
+    /** 异步 catalog 必须先完成；权威快照只能在其后同步抓取。 */
     const bundle = await this.loadBundle();
+
+    const generation = this.state.getGeneration();
+    const villages = this.state.listVillages();
     const manualUpgradeCores = this.loadManualCores();
+
     const render = upgradeOverviewRender({
       villages,
       catalog: bundle.gameCatalog,
@@ -71,7 +76,7 @@ export class ProjectionService {
     let payload: UpgradeOverviewPayload;
     try {
       payload = toUpgradeOverviewPayload({
-        generation: this.state.getGeneration(),
+        generation,
         nowMs,
         catalogVersion: bundle.version,
         catalogIsUsable: bundle.gameCatalog !== null,
@@ -91,11 +96,15 @@ export class ProjectionService {
   }
 
   async villageDetail(request: VillageDetailRequest): Promise<VillageDetailPayload> {
-    const village = this.requireVillage(request.villageId);
     const base = request.base;
     const nowMs = this.clock.nowMs();
+    /** 异步 catalog 必须先完成；village/generation 必须在其后重新读取。 */
     const bundle = await this.loadBundle();
+
+    const generation = this.state.getGeneration();
+    const village = this.requireVillage(request.villageId);
     const manualCore = this.loadManualCores()[village.id] ?? null;
+
     const projection = projectVillageCatalog({
       village,
       catalog: bundle.gameCatalog,
@@ -138,7 +147,7 @@ export class ProjectionService {
     let payload: VillageDetailPayload;
     try {
       payload = toVillageDetailPayload({
-        generation: this.state.getGeneration(),
+        generation,
         nowMs,
         village,
         base,

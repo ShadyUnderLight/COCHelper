@@ -8,6 +8,7 @@ import {
   loadCatalogBundle,
   PERSISTENCE_FILE_NAMES,
   resolveCatalogBundleRoot,
+  type CatalogBundle,
   type ElectronPersistencePaths,
 } from '@coc-helper/domain';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,7 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AppServiceError } from './app-authoritative-state';
 import { createApplicationServices } from './application-services';
 import { bootApplicationServices } from './app-lifecycle-service';
-import type { ProjectionCatalogPort } from './projection-service';
+import { ProjectionService, type ProjectionCatalogPort } from './projection-service';
 
 class FakeClock {
   constructor(private readonly fixedMs: number) {}
@@ -47,23 +48,45 @@ function pathsFor(root: string): ElectronPersistencePaths {
   };
 }
 
-function catalogPort(): ProjectionCatalogPort {
+async function loadRealBundle(): Promise<CatalogBundle> {
   const root = resolveCatalogBundleRoot(process.cwd());
   if (root === null) {
     throw new Error('测试找不到 GameCatalog');
   }
-  let cached: Awaited<ReturnType<typeof loadCatalogBundle>> | null = null;
+  return loadCatalogBundle({ root });
+}
+
+function catalogPort(): ProjectionCatalogPort {
+  let cached: CatalogBundle | null = null;
   return {
     async getBundle() {
       if (cached === null) {
-        cached = await loadCatalogBundle({ root });
+        cached = await loadRealBundle();
       }
       return cached;
     },
   };
 }
 
-function bootServices() {
+function deferredCatalogPort(bundle: CatalogBundle): ProjectionCatalogPort & {
+  readonly resolve: () => void;
+} {
+  let settle: ((value: CatalogBundle) => void) | null = null;
+  const pending = new Promise<CatalogBundle>((resolve) => {
+    settle = resolve;
+  });
+  return {
+    getBundle: () => pending,
+    resolve: () => {
+      if (settle === null) {
+        throw new Error('catalog Promise 尚未挂起');
+      }
+      settle(bundle);
+    },
+  };
+}
+
+function bootServices(catalog: ProjectionCatalogPort = catalogPort()) {
   const root = mkdtempSync(join(tmpdir(), 'coc-e302-s2-'));
   tempRoots.push(root);
   const persistence = bootstrapPersistence({ paths: pathsFor(root) });
@@ -71,7 +94,7 @@ function bootServices() {
   return createApplicationServices({
     clock,
     boot: bootApplicationServices({ clock, persistence }),
-    catalog: catalogPort(),
+    catalog,
   });
 }
 
@@ -151,5 +174,91 @@ describe('ProjectionService（#276-S2）', () => {
     expect(detail.generation).toBe(generation);
     expect(detail.villageTag).toBe('#PROJ');
     expect(services.state.getGeneration()).toBe(generation);
+  });
+
+  it('catalog await 期间发生 import 时，overview 在 catalog 之后同步抓取 villages/generation', async () => {
+    const bundle = await loadRealBundle();
+    const catalog = deferredCatalogPort(bundle);
+    const events: string[] = [];
+    const services = bootServices(catalogPort());
+    const clock = new FakeClock(1_700_000_000_000);
+    const instrumentedState = new Proxy(services.state, {
+      get(target, property, receiver) {
+        if (property === 'getGeneration' || property === 'listVillages') {
+          return (...args: unknown[]) => {
+            events.push(String(property));
+            const value = Reflect.get(target, property, receiver);
+            return Reflect.apply(value as (...inner: unknown[]) => unknown, target, args);
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const projections = new ProjectionService({
+      state: instrumentedState,
+      clock,
+      catalog: {
+        getBundle: async () => {
+          events.push('catalog-await');
+          const value = await catalog.getBundle();
+          events.push('catalog-resolved');
+          return value;
+        },
+      },
+      manual: services.boot.persistence?.manual ?? null,
+    });
+
+    const pending = projections.upgradeOverview();
+    await Promise.resolve();
+    expect(events).toEqual(['catalog-await']);
+
+    const prepared = services.imports.prepare({
+      text: '{"tag":"#RACE","buildings":[{"data":1000001,"lvl":1}]}',
+    });
+    services.imports.commit(prepared.generation);
+    const afterGeneration = services.state.getGeneration();
+    expect(afterGeneration).toBeGreaterThan(0);
+    expect(services.state.listVillages().some((village) => village.tag === '#RACE')).toBe(true);
+
+    catalog.resolve();
+    const overview = await pending;
+    expect(overview.generation).toBe(afterGeneration);
+    expect(events.indexOf('catalog-resolved')).toBeLessThan(events.indexOf('listVillages'));
+    expect(events.indexOf('catalog-resolved')).toBeLessThan(events.indexOf('getGeneration'));
+  });
+
+  it('catalog await 期间发生 import 时，detail 使用更新后的 village 与 generation', async () => {
+    const bundle = await loadRealBundle();
+    const catalog = deferredCatalogPort(bundle);
+    const services = bootServices(catalog);
+    const store = services.state.getVillageStore();
+    const village = createVillageProfile({
+      id: '00000000-0000-0000-0000-0000000000bb',
+      name: 'Race',
+    });
+    store.saveVillages([village]);
+    store.setSelectedVillageId(village.id);
+    expect(village.tag).toBeNull();
+    const generationBefore = services.state.getGeneration();
+
+    const pending = services.projections.villageDetail({
+      villageId: village.id,
+      base: 'home',
+    });
+    await Promise.resolve();
+
+    const prepared = services.imports.prepare({
+      text: '{"tag":"#AFTER","buildings":[{"data":1000001,"lvl":1}]}',
+      villageId: village.id,
+    });
+    services.imports.commit(prepared.generation);
+    const generationAfter = services.state.getGeneration();
+    expect(generationAfter).toBeGreaterThan(generationBefore);
+    expect(store.listVillages().find((entry) => entry.id === village.id)?.tag).toBe('#AFTER');
+
+    catalog.resolve();
+    const detail = await pending;
+    expect(detail.generation).toBe(generationAfter);
+    expect(detail.villageTag).toBe('#AFTER');
   });
 });

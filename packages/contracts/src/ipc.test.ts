@@ -9,9 +9,13 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  PROJECTION_IPC_BRIDGE_KEYS,
+  PROJECTION_IPC_CHANNELS,
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
+  UPGRADE_OVERVIEW_CHANNEL,
+  VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
   isCancelRequest,
   isRequestId,
@@ -27,6 +31,8 @@ describe('@coc-helper/contracts IPC', () => {
     expect(IMPORT_COMMIT_CHANNEL).toBe('import.commit');
     expect(IMPORT_DISCARD_CHANNEL).toBe('import.discard');
     expect(STATE_CHANGED_CHANNEL).toBe('state.changed');
+    expect(UPGRADE_OVERVIEW_CHANNEL).toBe('upgrade.overview');
+    expect(VILLAGE_DETAIL_CHANNEL).toBe('village.detail');
     expect(REQUEST_ID_MAX_LENGTH).toBe(128);
     expect(APP_IPC_CHANNELS).toEqual([
       APP_SNAPSHOT_CHANNEL,
@@ -36,7 +42,15 @@ describe('@coc-helper/contracts IPC', () => {
       IMPORT_DISCARD_CHANNEL,
       STATE_CHANGED_CHANNEL,
     ]);
-    expect(DESKTOP_BRIDGE_KEYS).toEqual(['health', 'cancel', ...APP_IPC_BRIDGE_KEYS]);
+    expect(PROJECTION_IPC_CHANNELS).toEqual([UPGRADE_OVERVIEW_CHANNEL, VILLAGE_DETAIL_CHANNEL]);
+    const appKeysWithoutEvent = APP_IPC_BRIDGE_KEYS.filter((key) => key !== 'onStateChanged');
+    expect(DESKTOP_BRIDGE_KEYS).toEqual([
+      'health',
+      'cancel',
+      ...appKeysWithoutEvent,
+      ...PROJECTION_IPC_BRIDGE_KEYS,
+      'onStateChanged',
+    ]);
   });
 
   it('只接受可打印、有限长度的 requestId DTO', () => {

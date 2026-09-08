@@ -634,15 +634,14 @@ public enum ManualTrackerReconciliationService {
             let item = classifications[oldRecord.itemKey]
             let itemOriginalRecords = core.records.filter { $0.itemKey == oldRecord.itemKey }
             let hasActiveRecord = itemOriginalRecords.contains { $0.status == .active }
-            let hasLocal = hasLocalState(
-                state: existingStates[oldRecord.itemKey],
-                records: itemOriginalRecords
-            )
             let shouldAdopt = shouldAdopt(
                 item,
                 decision: decision,
                 hasActiveRecord: hasActiveRecord,
-                hasLocalState: hasLocal
+                protectsAgainstDuplicateAdoption: protectsAgainstDuplicateAdoption(
+                    state: existingStates[oldRecord.itemKey],
+                    records: itemOriginalRecords
+                )
             )
             let confirmed = shouldAdopt && (item?.confirmedRecordIDs.contains(oldRecord.recordID) ?? false)
             records.append(try ManualUpgradeRecord(
@@ -676,7 +675,10 @@ public enum ManualTrackerReconciliationService {
                 item,
                 decision: decision,
                 hasActiveRecord: hasActiveRecord,
-                hasLocalState: hasLocal
+                protectsAgainstDuplicateAdoption: protectsAgainstDuplicateAdoption(
+                    state: old,
+                    records: core.records.filter { $0.itemKey == key }
+                )
             )
 
             // Keep every newly observed item as imported provenance, including
@@ -797,21 +799,21 @@ public enum ManualTrackerReconciliationService {
         _ item: ManualReconciliationItem?,
         decision: ManualReconciliationDecision,
         hasActiveRecord: Bool,
-        hasLocalState: Bool = false
+        protectsAgainstDuplicateAdoption: Bool = false
     ) -> Bool {
         guard let item else { return false }
         switch decision {
         case .keepLocal:
-            // duplicate 可 rebase 纯 observed；有本地进度时不得用重复 observation 覆盖。
+            // duplicate 可 rebase 纯 observed；不得覆盖本地进度或解除 attention fail-closed。
             if item.classification == .duplicate {
-                return !hasLocalState
+                return !protectsAgainstDuplicateAdoption
             }
             return item.classification == .newObservation
         case .acceptObserved:
             return true
         case .applyNonConflicting:
             if item.classification == .duplicate {
-                return !hasLocalState
+                return !protectsAgainstDuplicateAdoption
             }
             guard [.newObservation, .exactMatch, .observedAhead]
                 .contains(item.classification) else { return false }
@@ -1068,6 +1070,21 @@ public enum ManualTrackerReconciliationService {
         records: [ManualUpgradeRecord]
     ) -> Bool {
         state?.status == .manualCompleted || !records.isEmpty
+    }
+
+    /// duplicate 允许纯 observed rebase，但不得解除 fail-closed attention，
+    /// 也不得覆盖 manualCompleted / 有 records 的本地进度。
+    private static func protectsAgainstDuplicateAdoption(
+        state: ManualItemState?,
+        records: [ManualUpgradeRecord]
+    ) -> Bool {
+        if !records.isEmpty { return true }
+        switch state?.status {
+        case .manualCompleted, .unknown, .conflict:
+            return true
+        case .observed, .none:
+            return false
+        }
     }
 
     /// Placeholder `.observed` rows with nil distribution may adopt item-level

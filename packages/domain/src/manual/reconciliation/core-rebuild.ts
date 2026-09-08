@@ -14,7 +14,11 @@ import type {
 } from '../types';
 import { trackerItemKeyStableId } from '../types';
 import type { ReconciliationObservation } from './evidence';
-import { hasReconciliationLocalState, effectiveReconciliationDistribution } from './helpers';
+import {
+  hasReconciliationLocalState,
+  protectsAgainstDuplicateAdoption,
+  effectiveReconciliationDistribution,
+} from './helpers';
 import type { ManualReconciliationDecision, ManualReconciliationItem } from './types';
 import type { ManualReconciliationError } from '../errors';
 
@@ -36,23 +40,23 @@ export function shouldAdoptReconciliationItem(
   item: ManualReconciliationItem | undefined,
   decision: ManualReconciliationDecision,
   hasActiveRecord: boolean,
-  hasLocalState = false,
+  protectsDuplicateAdoption = false,
 ): boolean {
   if (item === undefined) {
     return false;
   }
   switch (decision) {
     case 'keepLocal':
-      // duplicate 可 rebase 纯 observed；有本地进度时不得用重复 observation 覆盖。
+      // duplicate 可 rebase 纯 observed；不得覆盖本地进度或解除 attention fail-closed。
       if (item.classification === 'duplicate') {
-        return !hasLocalState;
+        return !protectsDuplicateAdoption;
       }
       return item.classification === 'newObservation';
     case 'acceptObserved':
       return true;
     case 'applyNonConflicting': {
       if (item.classification === 'duplicate') {
-        return !hasLocalState;
+        return !protectsDuplicateAdoption;
       }
       if (
         item.classification !== 'newObservation' &&
@@ -95,7 +99,7 @@ export function rebuildReconciliationCore(input: {
         trackerItemKeyStableId(record.itemKey) === trackerItemKeyStableId(oldRecord.itemKey),
     );
     const hasActiveRecord = itemOriginalRecords.some((record) => record.status === 'active');
-    const hasLocal = hasReconciliationLocalState(
+    const protectsDuplicate = protectsAgainstDuplicateAdoption(
       existingStates.get(trackerItemKeyStableId(oldRecord.itemKey)),
       itemOriginalRecords,
     );
@@ -103,7 +107,7 @@ export function rebuildReconciliationCore(input: {
       item,
       input.decision,
       hasActiveRecord,
-      hasLocal,
+      protectsDuplicate,
     );
     const confirmed =
       shouldAdopt && (item?.confirmedRecordIDs.includes(oldRecord.recordID) ?? false);
@@ -142,7 +146,12 @@ export function rebuildReconciliationCore(input: {
     const hasLocal = hasReconciliationLocalState(old, originalRecords);
     const item = input.classifications.get(stableId);
     const hasActiveRecord = itemRecords.some((record) => record.status === 'active');
-    const adopt = shouldAdoptReconciliationItem(item, input.decision, hasActiveRecord, hasLocal);
+    const adopt = shouldAdoptReconciliationItem(
+      item,
+      input.decision,
+      hasActiveRecord,
+      protectsAgainstDuplicateAdoption(old, originalRecords),
+    );
     const key = old?.itemKey ?? item?.itemKey;
     if (key === undefined) {
       continue;

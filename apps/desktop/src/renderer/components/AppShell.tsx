@@ -1,14 +1,19 @@
+import { useState } from 'react';
 import type { AppSessionApi } from '../use-app-session';
+import type { OverviewApi } from '../use-upgrade-overview';
 import { isReadOnly } from '../app-session';
 import { ImportPanel } from './ImportPanel';
 import { RecoveryPanel } from './RecoveryPanel';
 import { StatusBanner, VillageSidebar } from './StatusBanner';
+import { UpgradeOverview } from './UpgradeOverview';
 
 type AppShellProps = {
   readonly session: AppSessionApi;
+  readonly overview: OverviewApi;
 };
 
-export function AppShell({ session }: AppShellProps) {
+export function AppShell({ session, overview }: AppShellProps) {
+  const [tab, setTab] = useState<'import' | 'overview'>('import');
   const { state, recoveryStatus } = session;
   const snapshot = state.snapshot;
 
@@ -96,7 +101,8 @@ export function AppShell({ session }: AppShellProps) {
             {readOnly && snapshot.availability === 'available' ? (
               <p className="notice-text">当前为只读模式，无法导入或修改村庄数据。</p>
             ) : null}
-            {showImport ? (
+            {showImport ? <TabNav tab={tab} onChange={setTab} /> : null}
+            {showImport && tab === 'import' ? (
               <ImportPanel
                 pasteText={state.pasteText}
                 preview={state.preview}
@@ -108,9 +114,41 @@ export function AppShell({ session }: AppShellProps) {
                 onDiscard={() => void session.discardImport()}
               />
             ) : null}
+            {showImport && tab === 'overview' ? (
+              <UpgradeOverview
+                state={overview.state}
+                selectedId={overview.selectedId}
+                onSelect={overview.select}
+                onRetry={() => void overview.refresh()}
+              />
+            ) : null}
           </main>
         </div>
       )}
     </div>
+  );
+}
+
+function TabNav(props: {
+  readonly tab: 'import' | 'overview';
+  readonly onChange: (tab: 'import' | 'overview') => void;
+}) {
+  return (
+    <nav className="tab-row" aria-label="功能切换">
+      <button
+        type="button"
+        aria-pressed={props.tab === 'import'}
+        onClick={() => props.onChange('import')}
+      >
+        导入
+      </button>
+      <button
+        type="button"
+        aria-pressed={props.tab === 'overview'}
+        onClick={() => props.onChange('overview')}
+      >
+        升级总览
+      </button>
+    </nav>
   );
 }

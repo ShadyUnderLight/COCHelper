@@ -17,6 +17,12 @@ import {
   MANUAL_STATE_CHANNEL,
   OPERATION_PROGRESS_CHANNEL,
   PLAYER_STATE_CHANNEL,
+  RECOVERY_EXPORT_CHANNEL,
+  RECOVERY_RECOVER_JOURNAL_CHANNEL,
+  RECOVERY_RESET_CHANNEL,
+  RECOVERY_RESTORE_CHANNEL,
+  RECOVERY_RESTORE_SAVED_CHANNEL,
+  RECOVERY_STATUS_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
@@ -48,6 +54,10 @@ import {
   villageSelectRequestSchema,
   warLogLoadMoreRequestSchema,
   warLogStateRequestSchema,
+  recoveryRestoreRequestSchema,
+  recoveryRestoreSavedRequestSchema,
+  recoveryResetRequestSchema,
+  recoveryRecoverJournalRequestSchema,
   type ApiRefreshRequest,
   type AppHealthResponse,
   type AppSnapshotRequest,
@@ -67,6 +77,12 @@ import {
   type ManualStartRequest,
   type ManualStateRequest,
   type PlayerStateRequest,
+  type RecoveryExportRequest,
+  type RecoveryRecoverJournalRequest,
+  type RecoveryResetRequest,
+  type RecoveryRestoreRequest,
+  type RecoveryRestoreSavedRequest,
+  type RecoveryStatusRequest,
   type RequestId,
   type UpgradeOverviewRequest,
   type VillageDetailRequest,
@@ -314,6 +330,56 @@ export function parseCapitalRaidLoadMoreRequest(payload: unknown): CapitalRaidLo
   };
 }
 
+export function parseRecoveryStatusRequest(payload: unknown): RecoveryStatusRequest {
+  const result = emptyObjectRequestSchema.optional().safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('recovery.status 参数不合法');
+  }
+  return {};
+}
+
+export function parseRecoveryExportRequest(payload: unknown): RecoveryExportRequest {
+  const result = emptyObjectRequestSchema.optional().safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('recovery.export 参数不合法');
+  }
+  return {};
+}
+
+export function parseRecoveryRestoreRequest(payload: unknown): RecoveryRestoreRequest {
+  const result = recoveryRestoreRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('recovery.restore 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseRecoveryRestoreSavedRequest(payload: unknown): RecoveryRestoreSavedRequest {
+  const result = recoveryRestoreSavedRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('recovery.restoreSaved 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseRecoveryResetRequest(payload: unknown): RecoveryResetRequest {
+  const result = recoveryResetRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('recovery.reset 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseRecoveryRecoverJournalRequest(
+  payload: unknown,
+): RecoveryRecoverJournalRequest {
+  const result = recoveryRecoverJournalRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('recovery.recoverJournal 参数不合法');
+  }
+  return result.data;
+}
+
 export function parseCancelRequest(payload: unknown): CancelRequest {
   const result = cancelRequestSchema.safeParse(payload);
   if (!result.success) {
@@ -388,6 +454,12 @@ export const REGISTERED_IPC_CHANNELS = [
   WAR_LOG_LOAD_MORE_CHANNEL,
   CAPITAL_RAID_LOAD_MORE_CHANNEL,
   OPERATION_PROGRESS_CHANNEL,
+  RECOVERY_STATUS_CHANNEL,
+  RECOVERY_EXPORT_CHANNEL,
+  RECOVERY_RESTORE_CHANNEL,
+  RECOVERY_RESTORE_SAVED_CHANNEL,
+  RECOVERY_RESET_CHANNEL,
+  RECOVERY_RECOVER_JOURNAL_CHANNEL,
   STATE_CHANGED_CHANNEL,
 ] as const;
 

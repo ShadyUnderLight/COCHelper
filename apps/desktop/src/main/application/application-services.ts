@@ -15,6 +15,7 @@ import { ProjectionService, type ProjectionCatalogPort } from './projection-serv
 import { HistoryService } from './history-service';
 import { ManualTrackerService } from './manual-tracker-service';
 import { OfficialApiService } from './official-api-service';
+import { RecoveryService } from './recovery-service';
 import type { AppAuthoritativeState } from './app-authoritative-state';
 import { getCatalogService } from '../catalog-service';
 
@@ -26,6 +27,7 @@ export type ApplicationServices = {
   readonly history: HistoryService | null;
   readonly manual: ManualTrackerService | null;
   readonly official: OfficialApiService | null;
+  readonly recovery: RecoveryService;
   readonly state: AppAuthoritativeState;
   readonly boot: AppLifecycleBootResult;
 };
@@ -93,6 +95,7 @@ export function createApplicationServices(
     history,
     manual,
     official,
+    recovery: new RecoveryService(boot.state, boot.persistence),
     state: boot.state,
     boot,
   };
@@ -105,4 +108,5 @@ export { ProjectionService } from './projection-service';
 export { HistoryService } from './history-service';
 export { ManualTrackerService } from './manual-tracker-service';
 export { OfficialApiService } from './official-api-service';
+export { RecoveryService, hasPendingVillageJournals } from './recovery-service';
 export { AppAuthoritativeState, AppServiceError } from './app-authoritative-state';

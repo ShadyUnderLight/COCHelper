@@ -66,8 +66,12 @@ describe('ApplicationServices（#276 首片）', () => {
     const second = services.lifecycle.snapshot();
     expect(first.generation).toBe(0);
     expect(second.generation).toBe(0);
+    expect(first.sessionId).toBe(second.sessionId);
+    expect(first.sessionId.length).toBeGreaterThan(0);
     expect(first.availability).toBe('available');
     expect(first.canWrite).toBe(true);
+    expect(first.hasPendingJournal).toBe(false);
+    expect(first.recoveryNotice).toBeNull();
     expect(first.villageStatus).toBe('missing');
     expect(first.villages).toHaveLength(1);
   });

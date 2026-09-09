@@ -22,7 +22,7 @@ import type { OfficialAPIState } from '../official/player-state';
 import type { TrackedClanStore } from '../official/tracked-clan';
 import { cleanupOrphanAtomicTempFiles } from './limits';
 import { resolveElectronPersistencePaths, type ElectronPersistencePaths } from './data-root';
-import { reviveQuarantinedJournalIfNeeded } from './journal-quarantine';
+import { removeQuarantinedJournalBestEffort } from './journal-quarantine';
 import { ManualTrackerTransactionCoordinator } from './manual-tracker-transaction';
 import {
   createClanCapitalStateFileStore,
@@ -126,7 +126,9 @@ export function bootstrapPersistence(
 
   if (!skipTransactionRecovery) {
     try {
-      reviveQuarantinedJournalIfNeeded(paths.snapshotImportJournal);
+      // 只恢复 active journal。`.quarantined` 表示 reset/restore 已 supersede，
+      // 禁止启动自动 revive/replay（crash window：新 villages 已写、尚未 discard）。
+      // 用户显式 recovery.recoverJournal 才会 revive。
       importTransaction.recoverIfNeeded();
       villageLoad = loadVillageStore(villages);
     } catch (error) {
@@ -140,13 +142,19 @@ export function bootstrapPersistence(
         villageLoad.kind === 'unavailable';
       if (!skipManual) {
         try {
-          reviveQuarantinedJournalIfNeeded(paths.manualTrackerJournal);
           manualTransaction.recoverIfNeeded();
         } catch (error) {
           manualTrackerError = formatPersistenceError(error);
         }
       }
       villageLoad = loadVillageStore(villages);
+    }
+
+    if (snapshotHistoryError === null && manualTrackerError === null) {
+      // 健康启动路径上的孤立 quarantine = reset/restore 写盘成功后的 crash 残留。
+      // 清理失败不得阻断启动或把健康态降级成 recovery。
+      removeQuarantinedJournalBestEffort(paths.snapshotImportJournal);
+      removeQuarantinedJournalBestEffort(paths.manualTrackerJournal);
     }
   }
 

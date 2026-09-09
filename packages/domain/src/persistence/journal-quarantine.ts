@@ -8,6 +8,7 @@ export function quarantinedJournalPath(journalURL: string): string {
 
 /**
  * 仅在用户显式 restore/reset 路径调用：把活跃 journal 原子复制到 .quarantined 后再删源。
+ * `.quarantined` 语义 = 禁止启动自动 replay；只有 recovery.recoverJournal 才可 revive。
  */
 export function quarantinePendingJournal(journalURL: string): void {
   if (!existsSync(journalURL)) {
@@ -26,7 +27,8 @@ export function quarantinePendingJournals(journalURLs: readonly string[]): void 
 }
 
 /**
- * 启动恢复前：若仅有 quarantine 而无活跃 journal，则复活隔离件再交给 recoverIfNeeded。
+ * 仅用户显式 recovery.recoverJournal 调用。
+ * bootstrap 不得调用：否则 reset/restore 写盘成功后的 crash 会把旧事务 replay 回新 villages。
  * 返回是否复活了 journal。
  */
 export function reviveQuarantinedJournalIfNeeded(journalURL: string): boolean {
@@ -46,6 +48,18 @@ export function removeQuarantinedJournal(journalURL: string): void {
   const quarantineURL = quarantinedJournalPath(journalURL);
   if (existsSync(quarantineURL)) {
     rmSync(quarantineURL);
+  }
+}
+
+/**
+ * 启动路径清理 superseded quarantine：删除失败不得阻断 bootstrap，
+ * 也不得把健康 villages 降级成 readOnly/recovery。
+ */
+export function removeQuarantinedJournalBestEffort(journalURL: string): void {
+  try {
+    removeQuarantinedJournal(journalURL);
+  } catch {
+    // stale quarantine 残留可接受；下次启动再试。
   }
 }
 

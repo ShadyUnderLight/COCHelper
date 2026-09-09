@@ -51,11 +51,14 @@ describe('preload API surface', () => {
 
   it('校验 app.snapshot 与 state.changed 订阅，并拒绝伪造 payload', async () => {
     const snapshot = {
+      sessionId: 'session-test',
       generation: 0,
       availability: 'available',
       villageStatus: 'missing',
       villageError: null,
       canWrite: true,
+      hasPendingJournal: false,
+      recoveryNotice: null,
       selectedVillageId: null,
       villages: [],
       pendingImport: null,

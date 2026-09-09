@@ -13,6 +13,7 @@ import {
 import { AppAuthoritativeState } from './app-authoritative-state';
 import { PersistentVillageStore } from './persistent-village-store';
 import { applyOrphanCachePolicyOnStartup } from './orphan-startup';
+import { hasPendingVillageJournals } from './recovery-service';
 import type { VillageStorePort } from './import-coordinator';
 
 export type AppLifecycleBootResult = {
@@ -79,6 +80,7 @@ export function bootApplicationServices(
     persistence,
     villageStore,
     bootError,
+    hasPendingJournal: () => hasPendingVillageJournals(persistence?.paths),
   });
 
   return {

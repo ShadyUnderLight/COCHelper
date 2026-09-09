@@ -219,3 +219,101 @@ button.danger {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+
+.detail-panel,
+.detail-header,
+.detail-section {
+  background: #2c2c2e;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.detail-header h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.base-switch {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.base-switch button[aria-pressed='false'] {
+  background: #3a3a3c;
+}
+
+.metrics-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metric-card {
+  background: #3a3a3c;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metric-title {
+  font-weight: 600;
+}
+
+.detail-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-section h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.detail-section h4 {
+  margin: 8px 0;
+  font-size: 15px;
+}
+
+.detail-row.indented {
+  padding-left: 16px;
+}
+
+.detail-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #3a3a3c;
+  color: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.detail-item-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.row-divider {
+  border: 0;
+  border-top: 1px solid #48484a;
+  margin: 4px 0 12px;
+}

@@ -14,10 +14,17 @@ type UpgradeOverviewProps = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
+  readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly onRetry: () => void;
 };
 
-export function UpgradeOverview({ state, selectedId, onSelect, onRetry }: UpgradeOverviewProps) {
+export function UpgradeOverview({
+  state,
+  selectedId,
+  onSelect,
+  onOpenDetail,
+  onRetry,
+}: UpgradeOverviewProps) {
   const { status, payload, lastError } = state;
 
   if (payload === null) {
@@ -66,24 +73,28 @@ export function UpgradeOverview({ state, selectedId, onSelect, onRetry }: Upgrad
         records={payload.active}
         selectedId={selectedId}
         onSelect={onSelect}
+        onOpenDetail={onOpenDetail}
       />
       <RecordList
         title="待开始"
         records={payload.pending}
         selectedId={selectedId}
         onSelect={onSelect}
+        onOpenDetail={onOpenDetail}
       />
       <RecordList
         title="需要关注"
         records={payload.state.attentionRecords}
         selectedId={selectedId}
         onSelect={onSelect}
+        onOpenDetail={onOpenDetail}
       />
       <RecordList
         title="待重新导入"
         records={payload.state.needsReimportRecords}
         selectedId={selectedId}
         onSelect={onSelect}
+        onOpenDetail={onOpenDetail}
       />
     </section>
   );
@@ -107,6 +118,7 @@ function RecordList(props: {
   readonly records: readonly UpgradeDisplayRecordDto[];
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
+  readonly onOpenDetail?: (recordId: string, villageId: string) => void;
 }) {
   if (props.records.length === 0) {
     return null;
@@ -123,8 +135,10 @@ function RecordList(props: {
                 record.id === props.selectedId ? 'overview-item selected' : 'overview-item'
               }
               aria-pressed={record.id === props.selectedId}
-              aria-label={`${record.villageName} ${record.item.name}，详情待接入`}
-              onClick={() => props.onSelect(record.id)}
+              onClick={() => {
+                props.onSelect(record.id);
+                props.onOpenDetail?.(record.id, record.villageID);
+              }}
             >
               <span className="overview-item-name">{record.item.name}</span>
               <span className="muted">

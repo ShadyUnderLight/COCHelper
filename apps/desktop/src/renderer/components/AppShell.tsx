@@ -1,19 +1,31 @@
 import { useState } from 'react';
+import type { TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
+import type { VillageDetailApi } from '../use-village-detail';
 import { isReadOnly } from '../app-session';
 import { ImportPanel } from './ImportPanel';
 import { RecoveryPanel } from './RecoveryPanel';
 import { StatusBanner, VillageSidebar } from './StatusBanner';
 import { UpgradeOverview } from './UpgradeOverview';
+import { VillageDetail } from './VillageDetail';
 
 type AppShellProps = {
   readonly session: AppSessionApi;
   readonly overview: OverviewApi;
+  readonly detail: VillageDetailApi;
+  readonly detailBase: TrackerBaseDto;
+  readonly onDetailBaseChange: (base: TrackerBaseDto) => void;
 };
 
-export function AppShell({ session, overview }: AppShellProps) {
-  const [tab, setTab] = useState<'import' | 'overview'>('import');
+export function AppShell({
+  session,
+  overview,
+  detail,
+  detailBase,
+  onDetailBaseChange,
+}: AppShellProps) {
+  const [tab, setTab] = useState<'import' | 'overview' | 'detail'>('import');
   const { state, recoveryStatus } = session;
   const snapshot = state.snapshot;
 
@@ -52,6 +64,14 @@ export function AppShell({ session, overview }: AppShellProps) {
   const readOnly = isReadOnly(snapshot);
   const showRecovery = snapshot.availability === 'recovery';
   const showImport = snapshot.availability === 'available' || snapshot.availability === 'loading';
+  const detailDisabled = snapshot.selectedVillageId === null;
+  const openDetail = async (recordId: string, villageId: string) => {
+    overview.select(recordId);
+    if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
+      return;
+    }
+    setTab('detail');
+  };
 
   return (
     <div
@@ -101,7 +121,9 @@ export function AppShell({ session, overview }: AppShellProps) {
             {readOnly && snapshot.availability === 'available' ? (
               <p className="notice-text">当前为只读模式，无法导入或修改村庄数据。</p>
             ) : null}
-            {showImport ? <TabNav tab={tab} onChange={setTab} /> : null}
+            {showImport ? (
+              <TabNav tab={tab} onChange={setTab} detailDisabled={detailDisabled} />
+            ) : null}
             {showImport && tab === 'import' ? (
               <ImportPanel
                 pasteText={state.pasteText}
@@ -119,8 +141,23 @@ export function AppShell({ session, overview }: AppShellProps) {
                 state={overview.state}
                 selectedId={overview.selectedId}
                 onSelect={overview.select}
+                onOpenDetail={openDetail}
                 onRetry={() => void overview.refresh()}
               />
+            ) : null}
+            {showImport && tab === 'detail' ? (
+              detailDisabled ? (
+                <p className="muted">先选择村庄查看详情</p>
+              ) : (
+                <VillageDetail
+                  state={detail.state}
+                  base={detailBase}
+                  onBaseChange={onDetailBaseChange}
+                  // C2: onOpenLevel 接等级底片（sheet），本 slice 仅占位
+                  onOpenLevel={() => undefined}
+                  onRetry={() => void detail.refresh()}
+                />
+              )
             ) : null}
           </main>
         </div>
@@ -130,8 +167,9 @@ export function AppShell({ session, overview }: AppShellProps) {
 }
 
 function TabNav(props: {
-  readonly tab: 'import' | 'overview';
-  readonly onChange: (tab: 'import' | 'overview') => void;
+  readonly tab: 'import' | 'overview' | 'detail';
+  readonly onChange: (tab: 'import' | 'overview' | 'detail') => void;
+  readonly detailDisabled: boolean;
 }) {
   return (
     <nav className="tab-row" aria-label="功能切换">
@@ -148,6 +186,15 @@ function TabNav(props: {
         onClick={() => props.onChange('overview')}
       >
         升级总览
+      </button>
+      <button
+        type="button"
+        aria-pressed={props.tab === 'detail'}
+        disabled={props.detailDisabled}
+        title={props.detailDisabled ? '先选择村庄' : undefined}
+        onClick={() => props.onChange('detail')}
+      >
+        村庄详情
       </button>
     </nav>
   );

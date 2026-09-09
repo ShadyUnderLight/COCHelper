@@ -54,7 +54,7 @@ export function shouldAcceptOverview(
 /** sessionId 必须取自权威 `AppSnapshotPayload.sessionId`（Overview payload 无 sessionId 字段）。 */
 export function cursorFromOverview(
   sessionId: string,
-  payload: UpgradeOverviewPayload,
+  payload: { readonly generation: number },
 ): OverviewCursor {
   return { sessionId, generation: payload.generation };
 }

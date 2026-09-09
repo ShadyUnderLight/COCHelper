@@ -1,7 +1,8 @@
 /**
- * Catalog 静态资源 URL（#277-C2）：与 main `catalog-service.assetUrl` 同构。
- * renderer 只产 `cochelper://catalog/...` URL 字符串，不拼文件系统路径；
- * 越界/缺失由 main `protocol.ts` 兜底，本函数做第一层防御。
+ * Catalog 静态资源 URL（#277-C2）：URL 形状与 main `catalog-service.assetUrl`
+ * 一致（`cochelper://catalog/<version>/<renderedPath>`），但路径严格校验
+ * （`icons/<group>/<file>.png` 格式门）仍由 main protocol + domain 承担；
+ * renderer 只做第一层防御（空值/穿越），不拼文件系统路径。
  */
 import type { CatalogAssetRefDto } from '@coc-helper/contracts';
 

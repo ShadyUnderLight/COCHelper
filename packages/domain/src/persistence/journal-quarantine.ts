@@ -51,6 +51,18 @@ export function removeQuarantinedJournal(journalURL: string): void {
   }
 }
 
+/**
+ * 启动路径清理 superseded quarantine：删除失败不得阻断 bootstrap，
+ * 也不得把健康 villages 降级成 readOnly/recovery。
+ */
+export function removeQuarantinedJournalBestEffort(journalURL: string): void {
+  try {
+    removeQuarantinedJournal(journalURL);
+  } catch {
+    // stale quarantine 残留可接受；下次启动再试。
+  }
+}
+
 /** 测试辅助：直接写入 quarantine 证据。 */
 export function writeQuarantineFixture(journalURL: string, data: Uint8Array): void {
   writeFileSync(quarantinedJournalPath(journalURL), data);

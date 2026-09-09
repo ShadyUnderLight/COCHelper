@@ -22,6 +22,7 @@ export {
   quarantinePendingJournals,
   quarantinedJournalPath,
   removeQuarantinedJournal,
+  removeQuarantinedJournalBestEffort,
   reviveQuarantinedJournalIfNeeded,
   writeQuarantineFixture,
 } from './journal-quarantine';

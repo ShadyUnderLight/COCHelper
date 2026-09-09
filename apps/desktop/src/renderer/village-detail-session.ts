@@ -14,6 +14,7 @@ import type {
   VillageDetailGroupDto,
   VillageDetailPayload,
   VillageItemStateDto,
+  VillageItemStatusDto,
 } from '@coc-helper/contracts';
 
 export type VillageDetailState = {
@@ -296,7 +297,121 @@ export function durationStateLabel(state: CatalogDurationStateDto | null): strin
   }
 }
 
-/** 等级底片图标优先级：当级 icon/visual 优先，通用 icon/visual 兜底。 */
-export function primaryLevelAsset(item: VillageItemStateDto): CatalogAssetRefDto | null {
-  return item.currentLevelIcon ?? item.currentLevelVisual ?? item.icon ?? item.levelVisual;
+/** 有效满级近似：DTO 无 sidecar 的 effectiveCurrentLevel/isKnown，只能用快照侧等级判定（见注释）。 */
+function isEffectivelyMaxedLevel(
+  currentLevel: number | null,
+  currentStageMaxLevel: number | null,
+  maxLevel: number | null,
+): boolean {
+  if (currentLevel === null) return false;
+  const cap = currentStageMaxLevel ?? maxLevel;
+  if (cap === null) return false;
+  return currentLevel >= cap;
+}
+
+function stageMaxedText(currentStageMaxLevel: number | null, maxLevel: number | null): string {
+  if (currentStageMaxLevel !== null && maxLevel !== null && currentStageMaxLevel < maxLevel) {
+    return `当前阶段已满级（全局尚有 ${maxLevel - currentStageMaxLevel} 级）`;
+  }
+  return '已满级';
+}
+
+/**
+ * 权威展示状态（复刻 LevelDetailSheet.swift statusLabel）。
+ * effective sidecar 存在即权威，绝不把 raw status 与 effective 并列展示。
+ * 近似边界：manualCompleted/observed 下的满级判定用快照侧等级（DTO 无
+ * effectiveCurrentLevel/isKnown），重导入前 manual 覆盖层级与快照层级
+ * 不一致时可能与 Swift 差一级展示。
+ */
+export function authoritativeLevelStatus(item: VillageItemStateDto): string {
+  const effective = item.effectiveStatus;
+  if (effective !== null) {
+    switch (effective) {
+      case 'manualActive':
+      case 'importedActive':
+        return '正在升级';
+      case 'needsReimport':
+        return '待重新导入确认';
+      case 'conflict':
+        return '本地状态冲突';
+      case 'unknown':
+        return '无法确认当前状态';
+      case 'unavailable':
+        return '不参与升级追踪';
+      case 'manualCompleted':
+      case 'observed':
+        if (isEffectivelyMaxedLevel(item.currentLevel, item.currentStageMaxLevel, item.maxLevel)) {
+          return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
+        }
+        return '已记录';
+      default: {
+        const exhaustive: never = effective;
+        throw new Error(`未知有效状态：${String(exhaustive)}`);
+      }
+    }
+  }
+  if (item.status === 'maxed') {
+    return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
+  }
+  // NOTE: 下方 case 'maxed' 不可达（上方已 return），仅为穷尽 switch 而保留；
+  // 判别式经 as 加宽，否则 narrowing 后 'maxed' 与判别类型不可比（TS2678）。
+  const rawWidened = item.status as VillageItemStatusDto;
+  switch (rawWidened) {
+    case 'upgrading':
+      return '正在升级';
+    case 'maxed':
+      return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
+    case 'complete':
+      return '已记录';
+    case 'unknown':
+      return '目录未收录';
+    case 'unverified':
+      return '无法验证当前阶段上限';
+    case 'unavailable':
+      return '不参与升级追踪';
+    case 'available':
+      return '目录中可用';
+    default: {
+      const exhaustive: never = rawWidened;
+      throw new Error(`未知状态：${String(exhaustive)}`);
+    }
+  }
+}
+
+/**
+ * 缺失说明（复刻 missingNote 的 DTO 可达部分；diagnostic/isCatalogDeprecated
+ * 无 DTO 字段，isEffectivelyUpgrading+missingReason 与 catalogItem==nil 回退
+ * 需 catalog join（renderer 无），故不覆盖）。
+ */
+export function levelMissingNote(item: VillageItemStateDto): string | null {
+  if (item.isNested) {
+    return '该项目属于内部子项目，暂不提供逐级升级数据。';
+  }
+  switch (item.effectiveStatus) {
+    case 'conflict':
+      return '本地手动状态冲突，暂无法确认当前等级。';
+    case 'needsReimport':
+      return '导入计时已结束，重新导入快照后才能确认当前等级。';
+    case 'unknown':
+      if (item.status !== 'unknown' && item.status !== 'unverified') {
+        return '本地有效状态未知，暂无法确认当前等级。';
+      }
+      break;
+    default:
+      break;
+  }
+  if (item.status === 'unverified') {
+    return item.missingReason ?? '快照缺少 prerequisite 解锁建筑记录，无法验证当前阶段上限。';
+  }
+  if (item.status === 'unknown') {
+    return item.missingReason ?? '该项目暂无逐级升级数据。';
+  }
+  return null;
+}
+
+/** 图标候选链（复刻 preferredAssetURLs 顺序：currentLevelVisual → currentLevelIcon → levelVisual → icon；craftTable 模组图标无 renderer 数据源，不在链内）。空位保留 null，由调用方按序探测。 */
+export function primaryLevelAssets(
+  item: VillageItemStateDto,
+): readonly (CatalogAssetRefDto | null)[] {
+  return [item.currentLevelVisual, item.currentLevelIcon, item.levelVisual, item.icon];
 }

@@ -202,4 +202,36 @@ describe('UpgradeOverview', () => {
     fireEvent.error(img!);
     expect(container.querySelector('img.overview-item-icon')).toBeNull();
   });
+
+  it('双候选首个失败回退到第二个（#277-C2 review 候选链）', () => {
+    const rec = recordFixture({
+      id: 'r-icon-fallback',
+      item: {
+        ...recordFixture().item,
+        currentLevelVisual: {
+          container: 'sc',
+          exportName: 'a',
+          renderedPath: 'icons/a.png',
+          missingReason: null,
+        },
+        currentLevelIcon: null,
+        levelVisual: null,
+        icon: {
+          container: 'sc',
+          exportName: 'b',
+          renderedPath: 'icons/b.png',
+          missingReason: null,
+        },
+      },
+    });
+    const { container } = render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />,
+    );
+    const first = container.querySelector('img.overview-item-icon') as HTMLImageElement | null;
+    expect(first?.getAttribute('src')).toBe('cochelper://catalog/18.400.13/icons/a.png');
+    fireEvent.error(first!);
+    expect(container.querySelector('img.overview-item-icon')?.getAttribute('src')).toBe(
+      'cochelper://catalog/18.400.13/icons/b.png',
+    );
+  });
 });

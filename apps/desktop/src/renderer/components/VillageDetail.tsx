@@ -32,7 +32,10 @@ export type VillageDetailProps = {
 export function VillageDetail({ state, base, onBaseChange, onRetry }: VillageDetailProps) {
   const { status, payload, lastError } = state;
   const lookups = useMemo(() => (payload === null ? null : buildLookups(payload)), [payload]);
-  const [openItem, setOpenItem] = useState<VillageItemStateDto | null>(null);
+  const [openItem, setOpenItem] = useState<{
+    readonly item: VillageItemStateDto;
+    readonly opener: HTMLElement;
+  } | null>(null);
   useEffect(() => {
     // payload 切换（切村/切 base/重拉）即关底片：旧 item 不得留在新上下文。
     setOpenItem(null);
@@ -67,14 +70,14 @@ export function VillageDetail({ state, base, onBaseChange, onRetry }: VillageDet
 
   const alert = compatibilityAlertText(payload.compatibility);
   const version = compatibilityVersionText(payload.compatibility);
-  const openById = (id: string) => {
+  const openById = (id: string, opener: HTMLElement) => {
     if (lookups === null) {
       return;
     }
     const bare = id.split('#')[0] ?? id;
     const found = lookups.itemsById.get(id) ?? lookups.itemsById.get(bare);
     if (found !== undefined) {
-      setOpenItem(found);
+      setOpenItem({ item: found, opener });
     }
   };
 
@@ -102,9 +105,10 @@ export function VillageDetail({ state, base, onBaseChange, onRetry }: VillageDet
       <FlatRows payload={payload} lookups={lookups} onOpenItem={openById} />
       {openItem !== null ? (
         <LevelDetailSheet
-          item={openItem}
+          item={openItem.item}
           catalogVersion={payload.catalogVersion}
           onClose={() => setOpenItem(null)}
+          returnFocusTo={openItem.opener}
         />
       ) : null}
     </section>
@@ -188,7 +192,7 @@ function MetricsCards(props: { readonly payload: Parameters<typeof isEmptyDetail
 function FlatRows(props: {
   readonly payload: Parameters<typeof isEmptyDetail>[0];
   readonly lookups: Lookups;
-  readonly onOpenItem: (id: string) => void;
+  readonly onOpenItem: (id: string, opener: HTMLElement) => void;
 }) {
   return (
     <div className="detail-rows">
@@ -228,7 +232,7 @@ function FlatRow(props: {
   readonly row: VillageDetailFlatRowDto;
   readonly payload: Parameters<typeof isEmptyDetail>[0];
   readonly lookups: Lookups;
-  readonly onOpenItem: (id: string) => void;
+  readonly onOpenItem: (id: string, opener: HTMLElement) => void;
 }) {
   const { row, lookups, onOpenItem } = props;
   switch (row.kind) {
@@ -269,7 +273,7 @@ function FlatRow(props: {
             type="button"
             className="detail-item"
             aria-label={`${group.name}，打开等级详情`}
-            onClick={() => onOpenItem(row.instanceID)}
+            onClick={(event) => onOpenItem(row.instanceID, event.currentTarget)}
           >
             <span className="detail-item-name">{group.name}</span>
             <span className="muted">
@@ -294,7 +298,7 @@ function FlatRow(props: {
             type="button"
             className="detail-item"
             aria-label={`${item.name}，打开等级详情`}
-            onClick={() => onOpenItem(item.id)}
+            onClick={(event) => onOpenItem(item.id, event.currentTarget)}
           >
             <span className="detail-item-name">{item.name}</span>
             <span className="muted">

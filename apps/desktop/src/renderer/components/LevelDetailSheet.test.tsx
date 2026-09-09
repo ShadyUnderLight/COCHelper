@@ -15,14 +15,29 @@ function itemWith(overrides: Partial<ReturnType<typeof recordFixture>['item']> =
 }
 
 describe('LevelDetailSheet（#277-C2）', () => {
-  it('渲染名称/等级跃迁/状态', () => {
+  it('渲染名称/等级跃迁/状态（权威单状态：importedActive → 正在升级）', () => {
     render(
       <LevelDetailSheet item={itemWith()} catalogVersion="18.400.13" onClose={() => undefined} />,
     );
     expect(screen.getByRole('dialog', { name: '加农炮等级详情' })).toBeTruthy();
     expect(screen.getByText('加农炮')).toBeTruthy();
     expect(screen.getByText(/5 → 6 级/)).toBeTruthy();
-    expect(screen.getAllByText(/进行中/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/正在升级/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/进行中/)).toBeNull();
+  });
+
+  it('upgrading + manualCompleted 显示已记录且无进行中（权威状态）', () => {
+    const item = itemWith({ status: 'upgrading', effectiveStatus: 'manualCompleted' });
+    render(<LevelDetailSheet item={item} catalogVersion="18.400.13" onClose={() => undefined} />);
+    expect(screen.getAllByText(/已记录/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/进行中/)).toBeNull();
+  });
+
+  it('conflict 显示本地状态冲突 + 说明', () => {
+    const item = itemWith({ effectiveStatus: 'conflict' });
+    render(<LevelDetailSheet item={item} catalogVersion="18.400.13" onClose={() => undefined} />);
+    expect(screen.getAllByText(/本地状态冲突/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/本地手动状态冲突/)).toBeTruthy();
   });
 
   it('requires 升级显示解锁条件（home 大本营 + 实验室）', () => {
@@ -125,5 +140,26 @@ describe('LevelDetailSheet（#277-C2）', () => {
     render(<LevelDetailSheet item={itemWith()} catalogVersion="18.400.13" onClose={onClose} />);
     fireEvent.click(screen.getByText('关闭'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Tab 陷阱：单可聚焦关闭按钮时 Tab 留在 dialog', () => {
+    render(
+      <LevelDetailSheet item={itemWith()} catalogVersion="18.400.13" onClose={() => undefined} />,
+    );
+    const closeButton = screen.getByText('关闭');
+    closeButton.focus();
+    expect(document.activeElement).toBe(closeButton);
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(closeButton);
+  });
+
+  it('Tab 陷阱：Shift+Tab 在首元素回绕到末元素（单按钮即自身）', () => {
+    render(
+      <LevelDetailSheet item={itemWith()} catalogVersion="18.400.13" onClose={() => undefined} />,
+    );
+    const closeButton = screen.getByText('关闭');
+    closeButton.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(closeButton);
   });
 });

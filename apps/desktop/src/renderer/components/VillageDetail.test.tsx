@@ -398,6 +398,76 @@ describe('VillageDetail', () => {
     expect(container.querySelector('.detail-item-name')).toBeTruthy();
   });
 
+  it('legacy 行关闭底片后焦点回到触发行（return focus）', () => {
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            items: [recordFixture().item],
+            flatRows: [
+              {
+                kind: 'legacy',
+                itemID: 'item-1',
+                groupID: 'g',
+                indented: false,
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    const rowButton = screen.getByRole('button', { name: /加农炮/ });
+    fireEvent.click(rowButton);
+    expect(screen.getByRole('dialog', { name: '加农炮等级详情' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(rowButton);
+  });
+
+  it('instance 行关闭底片后焦点回到触发行', () => {
+    const buildingGroup: BuildingGroupDto = {
+      id: 'bg1',
+      base: 'home',
+      section: 'buildings',
+      dataID: 1000010,
+      name: '城墙',
+      category: 'buildings',
+      displayCategory: 'walls',
+      instanceIds: ['inst-1'],
+      summary: {
+        instanceCount: 5,
+        remainingLevelCount: 2,
+        totalDurationSeconds: 7200,
+        costByResource: [],
+        saturated: false,
+        completeness: 'complete',
+      },
+      trackerStatus: 'observed',
+    };
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            items: [{ ...recordFixture().item, id: 'inst-1', name: '城墙实例' }],
+            buildingGroups: [buildingGroup],
+            flatRows: [
+              { kind: 'instance', groupID: 'bg1', instanceID: 'inst-1', leadingDivider: false },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    const rowButton = screen.getByRole('button', { name: /城墙/ });
+    fireEvent.click(rowButton);
+    expect(screen.getByRole('dialog', { name: '城墙实例等级详情' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(rowButton);
+  });
+
   it('payload 切换时自动关闭已开底片', () => {
     const { rerender } = render(
       <VillageDetail

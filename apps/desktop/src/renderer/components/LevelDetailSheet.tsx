@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 import type {
   TrackerBaseDto,
@@ -6,34 +6,79 @@ import type {
   VillageNextUpgradeDto,
 } from '@coc-helper/contracts';
 
-import { overviewAssetUrl } from '../asset-url';
-import { availabilityLabel, effectiveStatusLabel, statusLabel } from '../overview-session';
+import { availabilityLabel } from '../overview-session';
 import {
+  authoritativeLevelStatus,
   durationStateLabel,
   formatDurationSeconds,
+  levelMissingNote,
   levelTransitionText,
-  primaryLevelAsset,
+  primaryLevelAssets,
   requirementLabel,
 } from '../village-detail-session';
+import { AssetImage } from './AssetImage';
 
 export function LevelDetailSheet(props: {
   readonly item: VillageItemStateDto;
   readonly catalogVersion: string | null;
   readonly onClose: () => void;
+  readonly returnFocusTo?: HTMLElement | null;
 }) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') props.onClose();
+      if (event.key === 'Escape') {
+        props.onClose();
+        return;
+      }
+      if (event.key !== 'Tab') {
+        return;
+      }
+      const dialog = dialogRef.current;
+      if (dialog === null) {
+        return;
+      }
+      const focusables = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => (el as { readonly disabled?: boolean }).disabled !== true);
+      if (focusables.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusables[0] as HTMLElement;
+      const last = focusables[focusables.length - 1] as HTMLElement;
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey) {
+        if (active === first || (active !== null && !dialog.contains(active))) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || (active !== null && !dialog.contains(active))) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [props.onClose]);
+  useEffect(() => {
+    return () => {
+      props.returnFocusTo?.focus();
+    };
+  }, [props.returnFocusTo]);
   // NOTE: props.onClose identity — AppShell/VillageDetail pass inline closures; effect re-subscribes per render. Acceptable (add/remove symmetric, no leak). Do NOT lift into useCallback requirements.
   const upgrade = upgradeText(props.item.nextUpgrade, props.item.base);
   const availability = availabilityLabel(props.item.availability);
+  const status = authoritativeLevelStatus(props.item);
+  const note = levelMissingNote(props.item);
   return (
     <div className="sheet-overlay" onClick={props.onClose}>
       <div
+        ref={dialogRef}
         className="level-sheet"
         role="dialog"
         aria-modal="true"
@@ -41,16 +86,22 @@ export function LevelDetailSheet(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="sheet-header">
-          <SheetIcon item={props.item} catalogVersion={props.catalogVersion} />
+          <AssetImage
+            catalogVersion={props.catalogVersion}
+            candidates={primaryLevelAssets(props.item)}
+            size={40}
+            className="item-icon"
+            fallback="placeholder"
+          />
           <div>
             <h2>{props.item.name}</h2>
             <p className="muted">
-              {levelTransitionText(props.item.currentLevel, props.item.nextLevel)} ·{' '}
-              {statusText(props.item)}
+              {levelTransitionText(props.item.currentLevel, props.item.nextLevel)} · {status}
             </p>
           </div>
         </div>
-        <p>状态：{statusText(props.item)}</p>
+        <p>状态：{status}</p>
+        {note !== null ? <p>说明：{note}</p> : null}
         {upgrade !== null ? <p>升级：{upgrade}</p> : null}
         <p>时长：{durationStateLabel(props.item.nextLevelDurationState)}</p>
         {availability !== null ? <p>目录：{availability}</p> : null}
@@ -68,13 +119,6 @@ export function LevelDetailSheet(props: {
       </div>
     </div>
   );
-}
-
-function statusText(item: VillageItemStateDto): string {
-  const effective = effectiveStatusLabel(item.effectiveStatus);
-  return effective === null
-    ? statusLabel(item.status)
-    : `${statusLabel(item.status)} · ${effective}`;
 }
 
 function upgradeText(
@@ -117,25 +161,4 @@ function upgradeText(
       throw new Error(`未知升级状态：${String(exhaustive)}`);
     }
   }
-}
-
-function SheetIcon(props: {
-  readonly item: VillageItemStateDto;
-  readonly catalogVersion: string | null;
-}) {
-  const [failed, setFailed] = useState(false);
-  const url = failed ? null : overviewAssetUrl(props.catalogVersion, primaryLevelAsset(props.item));
-  if (url === null) {
-    return <span className="item-icon-missing">图标缺失</span>;
-  }
-  return (
-    <img
-      className="item-icon"
-      src={url}
-      alt=""
-      width={40}
-      height={40}
-      onError={() => setFailed(true)}
-    />
-  );
 }

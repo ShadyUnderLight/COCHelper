@@ -14,6 +14,7 @@ import {
   INITIAL_VILLAGE_DETAIL_STATE,
   applyVillageDetailError,
   applyVillageDetailSuccess,
+  authoritativeLevelStatus,
   categoryLabel,
   compatibilityAlertText,
   compatibilityVersionText,
@@ -24,9 +25,10 @@ import {
   groupTitleText,
   idleVillageDetailState,
   isEmptyDetail,
+  levelMissingNote,
   levelTransitionText,
   metricStateLabel,
-  primaryLevelAsset,
+  primaryLevelAssets,
   requirementLabel,
   villageDetailFixture,
 } from './village-detail-session';
@@ -266,77 +268,184 @@ describe('durationStateLabel（#277-C2）', () => {
   });
 });
 
-describe('primaryLevelAsset（#277-C2）', () => {
-  it('当级 icon/visual 优先，通用 icon/visual 兜底，全空 → null', () => {
+describe('primaryLevelAssets（#277-C2）', () => {
+  it('顺序 currentLevelVisual → currentLevelIcon → levelVisual → icon，空位保留 null', () => {
     const base = recordFixture().item;
-    const curIcon = {
+    const curVisual = {
       container: 'sc',
       exportName: 'a',
       renderedPath: 'icons/a.png',
       missingReason: null,
     } as const;
-    const curVisual = {
+    const curIcon = {
       container: 'sc',
       exportName: 'b',
       renderedPath: 'icons/b.png',
       missingReason: null,
     } as const;
-    const icon = {
+    const visual = {
       container: 'sc',
       exportName: 'c',
       renderedPath: 'icons/c.png',
       missingReason: null,
     } as const;
-    const visual = {
+    const icon = {
       container: 'sc',
       exportName: 'd',
       renderedPath: 'icons/d.png',
       missingReason: null,
     } as const;
     expect(
-      primaryLevelAsset({
+      primaryLevelAssets({
         ...base,
+        currentLevelVisual: curVisual,
         currentLevelIcon: curIcon,
-        currentLevelVisual: curVisual,
+        levelVisual: visual,
         icon,
-        levelVisual: visual,
       }),
-    ).toBe(curIcon);
+    ).toEqual([curVisual, curIcon, visual, icon]);
     expect(
-      primaryLevelAsset({
+      primaryLevelAssets({
         ...base,
-        currentLevelIcon: null,
-        currentLevelVisual: curVisual,
-        icon,
-        levelVisual: visual,
-      }),
-    ).toBe(curVisual);
-    expect(
-      primaryLevelAsset({
-        ...base,
-        currentLevelIcon: null,
         currentLevelVisual: null,
-        icon,
-        levelVisual: visual,
-      }),
-    ).toBe(icon);
-    expect(
-      primaryLevelAsset({
-        ...base,
-        currentLevelIcon: null,
-        currentLevelVisual: null,
-        icon: null,
-        levelVisual: visual,
-      }),
-    ).toBe(visual);
-    expect(
-      primaryLevelAsset({
-        ...base,
-        currentLevelIcon: null,
-        currentLevelVisual: null,
-        icon: null,
+        currentLevelIcon: curIcon,
         levelVisual: null,
+        icon,
       }),
-    ).toBeNull();
+    ).toEqual([null, curIcon, null, icon]);
+    expect(
+      primaryLevelAssets({
+        ...base,
+        currentLevelVisual: null,
+        currentLevelIcon: null,
+        levelVisual: null,
+        icon: null,
+      }),
+    ).toEqual([null, null, null, null]);
+  });
+});
+
+describe('authoritativeLevelStatus（#277-C2 review）', () => {
+  it('upgrading + manualCompleted → 已记录（绝非进行中）', () => {
+    const item = {
+      ...recordFixture().item,
+      status: 'upgrading' as const,
+      effectiveStatus: 'manualCompleted' as const,
+    };
+    expect(authoritativeLevelStatus(item)).toBe('已记录');
+  });
+  it('upgrading + observed → 已记录', () => {
+    const item = {
+      ...recordFixture().item,
+      status: 'upgrading' as const,
+      effectiveStatus: 'observed' as const,
+    };
+    expect(authoritativeLevelStatus(item)).toBe('已记录');
+  });
+  it('upgrading + manualActive → 正在升级', () => {
+    const item = {
+      ...recordFixture().item,
+      status: 'upgrading' as const,
+      effectiveStatus: 'manualActive' as const,
+    };
+    expect(authoritativeLevelStatus(item)).toBe('正在升级');
+  });
+  it('conflict → 本地状态冲突', () => {
+    const item = { ...recordFixture().item, effectiveStatus: 'conflict' as const };
+    expect(authoritativeLevelStatus(item)).toBe('本地状态冲突');
+  });
+  it('needsReimport → 待重新导入确认', () => {
+    const item = { ...recordFixture().item, effectiveStatus: 'needsReimport' as const };
+    expect(authoritativeLevelStatus(item)).toBe('待重新导入确认');
+  });
+  it('unavailable → 不参与升级追踪', () => {
+    const item = { ...recordFixture().item, effectiveStatus: 'unavailable' as const };
+    expect(authoritativeLevelStatus(item)).toBe('不参与升级追踪');
+  });
+  it('null + maxed → 已满级', () => {
+    const item = { ...recordFixture().item, status: 'maxed' as const, effectiveStatus: null };
+    expect(authoritativeLevelStatus(item)).toBe('已满级');
+  });
+  it('null + unknown → 目录未收录', () => {
+    const item = { ...recordFixture().item, status: 'unknown' as const, effectiveStatus: null };
+    expect(authoritativeLevelStatus(item)).toBe('目录未收录');
+  });
+  it('manualCompleted + 等级触顶 → 已满级/阶段文案', () => {
+    const maxed = {
+      ...recordFixture().item,
+      status: 'upgrading' as const,
+      effectiveStatus: 'manualCompleted' as const,
+      currentLevel: 10,
+      currentStageMaxLevel: 10,
+      maxLevel: 10,
+    };
+    expect(authoritativeLevelStatus(maxed)).toBe('已满级');
+    const stageMaxed = {
+      ...recordFixture().item,
+      status: 'upgrading' as const,
+      effectiveStatus: 'manualCompleted' as const,
+      currentLevel: 8,
+      currentStageMaxLevel: 8,
+      maxLevel: 10,
+    };
+    expect(authoritativeLevelStatus(stageMaxed)).toBe('当前阶段已满级（全局尚有 2 级）');
+  });
+});
+
+describe('levelMissingNote（#277-C2 review）', () => {
+  it('isNested → 内部子项目说明', () => {
+    const item = { ...recordFixture().item, isNested: true };
+    expect(levelMissingNote(item)).toBe('该项目属于内部子项目，暂不提供逐级升级数据。');
+  });
+  it('conflict → 冲突说明', () => {
+    const item = { ...recordFixture().item, isNested: false, effectiveStatus: 'conflict' as const };
+    expect(levelMissingNote(item)).toBe('本地手动状态冲突，暂无法确认当前等级。');
+  });
+  it('needsReimport → 重导说明', () => {
+    const item = {
+      ...recordFixture().item,
+      isNested: false,
+      effectiveStatus: 'needsReimport' as const,
+    };
+    expect(levelMissingNote(item)).toBe('导入计时已结束，重新导入快照后才能确认当前等级。');
+  });
+  it('unknown-effective（raw 非 unknown/unverified）→ 未知说明', () => {
+    const item = {
+      ...recordFixture().item,
+      isNested: false,
+      status: 'upgrading' as const,
+      effectiveStatus: 'unknown' as const,
+    };
+    expect(levelMissingNote(item)).toBe('本地有效状态未知，暂无法确认当前等级。');
+  });
+  it('raw unverified 透出 missingReason', () => {
+    const item = {
+      ...recordFixture().item,
+      isNested: false,
+      status: 'unverified' as const,
+      effectiveStatus: null,
+      missingReason: '缺解锁建筑',
+    };
+    expect(levelMissingNote(item)).toBe('缺解锁建筑');
+  });
+  it('raw unknown 默认文案', () => {
+    const item = {
+      ...recordFixture().item,
+      isNested: false,
+      status: 'unknown' as const,
+      effectiveStatus: null,
+      missingReason: null,
+    };
+    expect(levelMissingNote(item)).toBe('该项目暂无逐级升级数据。');
+  });
+  it('available 条目 → null', () => {
+    const item = {
+      ...recordFixture().item,
+      isNested: false,
+      status: 'available' as const,
+      effectiveStatus: null,
+      missingReason: null,
+    };
+    expect(levelMissingNote(item)).toBeNull();
   });
 });

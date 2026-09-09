@@ -65,21 +65,25 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
     throw new Error(`smoke: 非法 renderer URL ${url}`);
   }
   const statusDeadline = Date.now() + 10_000;
+  let smokeReady = '';
   let status = '';
   while (Date.now() < statusDeadline) {
-    status = (await window.webContents.executeJavaScript(
-      `document.getElementById('status')?.textContent ?? ''`,
-    )) as string;
-    if (status === 'Electron 宿主已就绪') {
+    const probe = (await window.webContents.executeJavaScript(`({
+      smoke: document.querySelector('[data-smoke]')?.getAttribute('data-smoke') ?? '',
+      status: document.getElementById('status')?.textContent ?? '',
+    })`)) as { smoke: string; status: string };
+    smokeReady = probe.smoke;
+    status = probe.status;
+    if (smokeReady === 'ready' || status === 'Electron 宿主已就绪') {
       break;
     }
-    if (status === '宿主健康检查失败' || status === '宿主未就绪') {
-      throw new Error(`smoke: ${status}`);
+    if (smokeReady === 'fatal' || status === '宿主健康检查失败' || status === '宿主未就绪') {
+      throw new Error(`smoke: ${status || smokeReady}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  if (status !== 'Electron 宿主已就绪') {
-    throw new Error(`smoke: 宿主未就绪（status=${status}）`);
+  if (smokeReady !== 'ready' && status !== 'Electron 宿主已就绪') {
+    throw new Error(`smoke: 宿主未就绪（smoke=${smokeReady} status=${status}）`);
   }
   writeSmoke(`COCHELPER_SMOKE_OK ${url}`);
   app.exit(0);

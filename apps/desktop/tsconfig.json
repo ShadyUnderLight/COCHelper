@@ -3,7 +3,8 @@
   "compilerOptions": {
     "noEmit": true,
     "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "forge.config.ts", "webpack.*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "forge.config.ts", "webpack.*.ts"]
 }

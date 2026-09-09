@@ -24,7 +24,7 @@ export type AppSessionApi = {
   readonly recoveryStatus: RecoveryStatusPayload | null;
   readonly setPasteText: (text: string) => void;
   readonly refresh: () => Promise<void>;
-  readonly selectVillage: (villageId: string) => Promise<void>;
+  readonly selectVillage: (villageId: string) => Promise<boolean>;
   readonly prepareImport: () => Promise<void>;
   readonly commitImport: () => Promise<void>;
   readonly discardImport: () => Promise<void>;
@@ -143,9 +143,8 @@ export function useAppSession(bridge: BridgeSnapshotClient): AppSessionApi {
   }, []);
 
   const selectVillage = useCallback(
-    async (villageId: string) => {
-      await runWrite(async () => bridge.selectVillage({ villageId }));
-    },
+    async (villageId: string): Promise<boolean> =>
+      await runWrite(async () => bridge.selectVillage({ villageId })),
     [bridge, runWrite],
   );
 

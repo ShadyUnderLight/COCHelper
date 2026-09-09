@@ -65,11 +65,11 @@ export function AppShell({
   const showRecovery = snapshot.availability === 'recovery';
   const showImport = snapshot.availability === 'available' || snapshot.availability === 'loading';
   const detailDisabled = snapshot.selectedVillageId === null;
-  const openDetail = (recordId: string, villageId: string) => {
-    if (villageId !== snapshot.selectedVillageId) {
-      void session.selectVillage(villageId);
-    }
+  const openDetail = async (recordId: string, villageId: string) => {
     overview.select(recordId);
+    if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
+      return;
+    }
     setTab('detail');
   };
 

@@ -35,10 +35,7 @@ export function ImportPanel({
   onDiscard,
 }: ImportPanelProps) {
   const canConfirm =
-    canWrite &&
-    !busy &&
-    preview !== null &&
-    preview.preview.targetKind !== 'ambiguous';
+    canWrite && !busy && preview !== null && preview.preview.targetKind !== 'ambiguous';
 
   return (
     <section className="import-panel" aria-label="账号导入">
@@ -57,7 +54,11 @@ export function ImportPanel({
         onChange={(event) => onPasteTextChange(event.target.value)}
       />
       <div className="action-row">
-        <button type="button" disabled={!canWrite || busy || pasteText.trim().length === 0} onClick={onPrepare}>
+        <button
+          type="button"
+          disabled={!canWrite || busy || pasteText.trim().length === 0}
+          onClick={onPrepare}
+        >
           解析预览
         </button>
       </div>

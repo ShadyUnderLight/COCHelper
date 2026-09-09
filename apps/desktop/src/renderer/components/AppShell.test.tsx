@@ -57,6 +57,22 @@ describe('AppShell', () => {
     expect(document.querySelector('[data-smoke="loading"]')).toBeTruthy();
   });
 
+  it('fatal 且 snapshot 为 null 时显示 fatal 而非 loading', () => {
+    render(
+      <AppShell
+        session={sessionApi({
+          ...INITIAL_APP_SESSION,
+          status: 'fatal',
+          snapshot: null,
+          lastError: '启动快照失败',
+        })}
+      />,
+    );
+    expect(document.querySelector('[data-smoke="fatal"]')).toBeTruthy();
+    expect(document.querySelector('[data-smoke="loading"]')).toBeNull();
+    expect(screen.getByText('启动快照失败')).toBeTruthy();
+  });
+
   it('available 渲染村庄列表与导入区，并标记 smoke ready', () => {
     render(
       <AppShell

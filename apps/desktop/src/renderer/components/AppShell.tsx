@@ -12,22 +12,6 @@ export function AppShell({ session }: AppShellProps) {
   const { state, recoveryStatus } = session;
   const snapshot = state.snapshot;
 
-  if (state.status === 'booting' || snapshot === null) {
-    return (
-      <div className="app-shell" data-smoke="loading">
-        <header className="app-header">
-          <h1>COC 助手</h1>
-        </header>
-        <p id="status">正在加载应用快照…</p>
-        {state.lastError !== null ? (
-          <p className="error-text" role="alert">
-            {state.lastError}
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-
   if (state.status === 'fatal') {
     return (
       <div className="app-shell" data-smoke="fatal">
@@ -40,6 +24,22 @@ export function AppShell({ session }: AppShellProps) {
         <button type="button" onClick={() => void session.refresh()}>
           重试
         </button>
+      </div>
+    );
+  }
+
+  if (state.status === 'booting' || snapshot === null) {
+    return (
+      <div className="app-shell" data-smoke="loading">
+        <header className="app-header">
+          <h1>COC 助手</h1>
+        </header>
+        <p id="status">正在加载应用快照…</p>
+        {state.lastError !== null ? (
+          <p className="error-text" role="alert">
+            {state.lastError}
+          </p>
+        ) : null}
       </div>
     );
   }

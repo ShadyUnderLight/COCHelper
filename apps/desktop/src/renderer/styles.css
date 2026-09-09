@@ -163,3 +163,59 @@ button.danger {
     grid-template-columns: 1fr;
   }
 }
+
+.tab-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tab-row button[aria-pressed='false'] {
+  background: #3a3a3c;
+}
+
+.overview-panel,
+.overview-group {
+  background: #2c2c2e;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.overview-panel h3 {
+  margin: 12px 0 8px;
+  font-size: 16px;
+}
+
+.overview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overview-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #3a3a3c;
+  color: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.overview-item.selected {
+  border-color: #0a84ff;
+  background: #1c3a5f;
+}
+
+.overview-item-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

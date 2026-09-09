@@ -163,6 +163,7 @@ export type {
 } from './account-wire';
 export type {
   VillageItemStateDto,
+  VillageItemStatusDto,
   UpgradeDisplayRecordDto,
   UpgradeOverviewStateDto,
   VillageDetailFlatRowDto,

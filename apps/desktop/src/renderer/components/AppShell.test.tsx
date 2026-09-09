@@ -1,13 +1,15 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AppSnapshotPayload } from '@coc-helper/contracts';
 
 import { AppShell } from './AppShell';
 import { INITIAL_APP_SESSION, type AppSessionState } from '../app-session';
+import { INITIAL_OVERVIEW_STATE } from '../overview-session';
 import type { AppSessionApi } from '../use-app-session';
+import type { OverviewApi } from '../use-upgrade-overview';
 
 function snapshot(overrides: Partial<AppSnapshotPayload> = {}): AppSnapshotPayload {
   return {
@@ -46,13 +48,22 @@ function sessionApi(state: AppSessionState): AppSessionApi {
   };
 }
 
+function overviewApi(): OverviewApi {
+  return {
+    state: INITIAL_OVERVIEW_STATE,
+    selectedId: null,
+    select: () => undefined,
+    refresh: async () => undefined,
+  };
+}
+
 afterEach(() => {
   cleanup();
 });
 
 describe('AppShell', () => {
   it('booting 显示加载文案', () => {
-    render(<AppShell session={sessionApi(INITIAL_APP_SESSION)} />);
+    render(<AppShell session={sessionApi(INITIAL_APP_SESSION)} overview={overviewApi()} />);
     expect(screen.getByText('正在加载应用快照…')).toBeTruthy();
     expect(document.querySelector('[data-smoke="loading"]')).toBeTruthy();
   });
@@ -66,6 +77,7 @@ describe('AppShell', () => {
           snapshot: null,
           lastError: '启动快照失败',
         })}
+        overview={overviewApi()}
       />,
     );
     expect(document.querySelector('[data-smoke="fatal"]')).toBeTruthy();
@@ -81,6 +93,7 @@ describe('AppShell', () => {
           status: 'ready',
           snapshot: snapshot(),
         })}
+        overview={overviewApi()}
       />,
     );
     expect(screen.getByText('主村')).toBeTruthy();
@@ -101,6 +114,7 @@ describe('AppShell', () => {
             selectedVillageId: null,
           }),
         })}
+        overview={overviewApi()}
       />,
     );
     expect(screen.getByText(/暂无村庄/)).toBeTruthy();
@@ -118,6 +132,7 @@ describe('AppShell', () => {
             canWrite: false,
           }),
         })}
+        overview={overviewApi()}
       />,
     );
     expect(screen.getByLabelText('数据恢复')).toBeTruthy();
@@ -132,8 +147,28 @@ describe('AppShell', () => {
           status: 'ready',
           snapshot: snapshot({ canWrite: false, villageStatus: 'readOnly' }),
         })}
+        overview={overviewApi()}
       />,
     );
     expect(screen.getByText(/只读模式/)).toBeTruthy();
+  });
+
+  it('总览 tab 切换显示升级总览', () => {
+    render(
+      <AppShell
+        session={sessionApi({
+          ...INITIAL_APP_SESSION,
+          status: 'ready',
+          snapshot: snapshot(),
+        })}
+        overview={overviewApi()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    expect(screen.getByLabelText('升级总览')).toBeTruthy();
+    expect(screen.queryByLabelText('账号 JSON')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '导入' }));
+    expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
+    expect(screen.queryByLabelText('升级总览')).toBeNull();
   });
 });

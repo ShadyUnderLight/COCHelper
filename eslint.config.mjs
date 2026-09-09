@@ -38,7 +38,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/desktop/src/renderer/**/*.ts'],
+    files: ['apps/desktop/src/renderer/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
         'error',

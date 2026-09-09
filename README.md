@@ -6,7 +6,7 @@
 
 ## 当前状态与能力基线
 
-Electron 工程位于 `apps/desktop/`，当前已经具备安全宿主、typed IPC 契约、wire/domain 基础原语、renderer 隔离检查和 packaged smoke。业务 UI 与领域能力正在按 [Electron 目标架构](docs/electron/target-architecture.md) 迁移；现阶段 `pnpm start` 展示的是宿主健康检查，不等同于完整业务界面已经迁移完成。
+Electron 工程位于 `apps/desktop/`，当前已经具备安全宿主、typed IPC 契约、wire/domain 基础原语、renderer 隔离检查和 packaged smoke。业务 UI 正按 [Electron 目标架构](docs/electron/target-architecture.md) 迁移；首个 React 垂直切片已接入 `app.snapshot` / 村庄切换 / 账号导入预览确认 / recovery 状态门面，后续切片（升级总览、村庄详情、官方数据、手动升级等）仍待继续。
 
 下面的功能是现有产品能力和迁移验收基线：
 

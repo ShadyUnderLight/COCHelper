@@ -26,7 +26,6 @@ function baseProps() {
   return {
     base: 'home' as const,
     onBaseChange: () => undefined,
-    onOpenLevel: () => undefined,
     onRetry: () => undefined,
   };
 }
@@ -103,7 +102,7 @@ describe('VillageDetail', () => {
     expect(screen.getByText(/50%/)).toBeTruthy();
   });
 
-  it('instance 行渲染分组摘要并点击打开等级详情', () => {
+  it('instance 行渲染分组摘要，点击可解析实例打开等级底片，Esc 关闭', () => {
     const buildingGroup: BuildingGroupDto = {
       id: 'bg1',
       base: 'home',
@@ -123,11 +122,11 @@ describe('VillageDetail', () => {
       },
       trackerStatus: 'observed',
     };
-    const onOpenLevel = vi.fn();
     render(
       <VillageDetail
         state={applyVillageDetailSuccess(
           villageDetailFixture({
+            items: [{ ...recordFixture().item, id: 'inst-1', name: '城墙实例' }],
             buildingGroups: [buildingGroup],
             flatRows: [
               { kind: 'instance', groupID: 'bg1', instanceID: 'inst-1', leadingDivider: true },
@@ -135,7 +134,6 @@ describe('VillageDetail', () => {
           }),
         )}
         {...baseProps()}
-        onOpenLevel={onOpenLevel}
       />,
     );
     expect(screen.getByText('城墙')).toBeTruthy();
@@ -144,11 +142,97 @@ describe('VillageDetail', () => {
     expect(screen.getByText(/部分缺失/)).toBeTruthy();
     expect(screen.getByText(/已同步/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /城墙/ }));
-    expect(onOpenLevel).toHaveBeenCalledWith('inst-1');
+    expect(screen.getByRole('dialog', { name: '城墙实例等级详情' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('legacy 行渲染条目与等级跃迁并点击打开', () => {
-    const onOpenLevel = vi.fn();
+  it('instance 行 id 无法解析时点击不打开底片', () => {
+    const buildingGroup: BuildingGroupDto = {
+      id: 'bg1',
+      base: 'home',
+      section: 'buildings',
+      dataID: 1000010,
+      name: '城墙',
+      category: 'buildings',
+      displayCategory: 'walls',
+      instanceIds: ['inst-unknown'],
+      summary: {
+        instanceCount: 5,
+        remainingLevelCount: 2,
+        totalDurationSeconds: 7200,
+        costByResource: [],
+        saturated: false,
+        completeness: 'complete',
+      },
+      trackerStatus: 'observed',
+    };
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            buildingGroups: [buildingGroup],
+            flatRows: [
+              {
+                kind: 'instance',
+                groupID: 'bg1',
+                instanceID: 'inst-unknown',
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /城墙/ }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('instance 行 id 带 # 后缀时剥离后解析打开底片', () => {
+    const buildingGroup: BuildingGroupDto = {
+      id: 'bg1',
+      base: 'home',
+      section: 'buildings',
+      dataID: 1000010,
+      name: '城墙',
+      category: 'buildings',
+      displayCategory: 'walls',
+      instanceIds: ['inst-9#7'],
+      summary: {
+        instanceCount: 5,
+        remainingLevelCount: 2,
+        totalDurationSeconds: 7200,
+        costByResource: [],
+        saturated: false,
+        completeness: 'complete',
+      },
+      trackerStatus: 'observed',
+    };
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            items: [{ ...recordFixture().item, id: 'inst-9', name: '城墙实例' }],
+            buildingGroups: [buildingGroup],
+            flatRows: [
+              {
+                kind: 'instance',
+                groupID: 'bg1',
+                instanceID: 'inst-9#7',
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /城墙/ }));
+    expect(screen.getByRole('dialog', { name: '城墙实例等级详情' })).toBeTruthy();
+  });
+
+  it('legacy 行渲染条目与等级跃迁，点击打开等级底片', () => {
     render(
       <VillageDetail
         state={applyVillageDetailSuccess(
@@ -166,13 +250,14 @@ describe('VillageDetail', () => {
           }),
         )}
         {...baseProps()}
-        onOpenLevel={onOpenLevel}
       />,
     );
     expect(screen.getByText('加农炮')).toBeTruthy();
     expect(screen.getByText(/5 → 6 级/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
-    expect(onOpenLevel).toHaveBeenCalledWith('item-1');
+    expect(screen.getByRole('dialog', { name: '加农炮等级详情' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('缺失 legacy 条目显示未知条目且无详情按钮（不崩溃）', () => {
@@ -311,5 +396,52 @@ describe('VillageDetail', () => {
     );
     expect(screen.getByText(longName)).toBeTruthy();
     expect(container.querySelector('.detail-item-name')).toBeTruthy();
+  });
+
+  it('payload 切换时自动关闭已开底片', () => {
+    const { rerender } = render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            villageId: 'vA',
+            items: [{ ...recordFixture().item, id: 'item-1' }],
+            flatRows: [
+              {
+                kind: 'legacy',
+                itemID: 'item-1',
+                groupID: 'g',
+                indented: false,
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
+    expect(screen.getByRole('dialog', { name: '加农炮等级详情' })).toBeTruthy();
+    rerender(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            villageId: 'vB',
+            generation: 2,
+            items: [{ ...recordFixture().item, id: 'item-1' }],
+            flatRows: [
+              {
+                kind: 'legacy',
+                itemID: 'item-1',
+                groupID: 'g',
+                indented: false,
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   CatalogCompatibilityDto,
+  CatalogDurationStateDto,
   ProgressMetricDto,
   TrackerCategoryDto,
   TrackerDisplayCategoryDto,
+  UpgradeRequirementDto,
 } from '@coc-helper/contracts';
 
+import { recordFixture } from './overview-session';
 import {
   INITIAL_VILLAGE_DETAIL_STATE,
   applyVillageDetailError,
@@ -15,12 +18,16 @@ import {
   compatibilityAlertText,
   compatibilityVersionText,
   displayCategoryLabel,
+  durationStateLabel,
   formatCompletionPercent,
+  formatDurationSeconds,
   groupTitleText,
   idleVillageDetailState,
   isEmptyDetail,
   levelTransitionText,
   metricStateLabel,
+  primaryLevelAsset,
+  requirementLabel,
   villageDetailFixture,
 } from './village-detail-session';
 
@@ -193,5 +200,143 @@ describe('groupTitleText', () => {
     expect(
       groupTitleText({ id: 'g-misc', category: null, displayCategory: null, itemIds: [] }),
     ).toBe('g-misc');
+  });
+});
+
+describe('requirementLabel（#277-C2）', () => {
+  it('townHall 按 base 区分名称', () => {
+    const home: UpgradeRequirementDto = { kind: 'townHall', level: 10 };
+    const builder: UpgradeRequirementDto = { kind: 'townHall', level: 10 };
+    expect(requirementLabel(home, 'home')).toBe('所需大本营等级 10级');
+    expect(requirementLabel(builder, 'builder')).toBe('所需建筑大师大本营等级 10级');
+  });
+  it('其余 5 种名称固定', () => {
+    const table: Array<[UpgradeRequirementDto, string]> = [
+      [{ kind: 'builderHall', level: 5 }, '所需建筑大师大本营等级 5级'],
+      [{ kind: 'laboratory', level: 8 }, '所需实验室等级 8级'],
+      [{ kind: 'starLaboratory', level: 8 }, '所需星空实验室等级 8级'],
+      [{ kind: 'heroHall', level: 3 }, '所需英雄殿堂等级 3级'],
+      [{ kind: 'blacksmith', level: 2 }, '所需铁匠铺等级 2级'],
+    ];
+    for (const [req, expected] of table) {
+      expect(requirementLabel(req, 'home')).toBe(expected);
+    }
+  });
+  it('laboratory 按 base 区分名称', () => {
+    expect(requirementLabel({ kind: 'laboratory', level: 8 }, 'builder')).toBe(
+      '所需星空实验室等级 8级',
+    );
+  });
+  it('join 示例：home 大本营 + 实验室', () => {
+    const reqs: readonly UpgradeRequirementDto[] = [
+      { kind: 'townHall', level: 10 },
+      { kind: 'laboratory', level: 8 },
+    ];
+    expect(reqs.map((req) => requirementLabel(req, 'home')).join(' · ')).toBe(
+      '所需大本营等级 10级 · 所需实验室等级 8级',
+    );
+  });
+});
+
+describe('formatDurationSeconds（#277-C2）', () => {
+  it('天/小时/分钟/不足1分钟', () => {
+    expect(formatDurationSeconds(90061)).toBe('1天 1小时');
+    expect(formatDurationSeconds(3661)).toBe('1小时 1分钟');
+    expect(formatDurationSeconds(61)).toBe('1分钟');
+    expect(formatDurationSeconds(30)).toBe('不足1分钟');
+    expect(formatDurationSeconds(0)).toBe('不足1分钟');
+  });
+});
+
+describe('durationStateLabel（#277-C2）', () => {
+  it('null + 7 kinds', () => {
+    const table: Array<[CatalogDurationStateDto | null, string]> = [
+      [null, '暂无目录数据'],
+      [{ kind: 'timed', seconds: 90061 }, '1天 1小时'],
+      [{ kind: 'instant' }, '即时'],
+      [{ kind: 'initialLevel' }, '初始等级，无升级时长'],
+      [{ kind: 'notApplicable' }, '该类别无时长数据'],
+      [{ kind: 'sourceMissing' }, '目录缺失'],
+      [{ kind: 'parseFailed' }, '目录解析失败'],
+      [{ kind: 'unknownReason', reason: 'x' }, '暂无目录数据'],
+    ];
+    for (const [state, expected] of table) {
+      expect(durationStateLabel(state)).toBe(expected);
+    }
+  });
+});
+
+describe('primaryLevelAsset（#277-C2）', () => {
+  it('当级 icon/visual 优先，通用 icon/visual 兜底，全空 → null', () => {
+    const base = recordFixture().item;
+    const curIcon = {
+      container: 'sc',
+      exportName: 'a',
+      renderedPath: 'icons/a.png',
+      missingReason: null,
+    } as const;
+    const curVisual = {
+      container: 'sc',
+      exportName: 'b',
+      renderedPath: 'icons/b.png',
+      missingReason: null,
+    } as const;
+    const icon = {
+      container: 'sc',
+      exportName: 'c',
+      renderedPath: 'icons/c.png',
+      missingReason: null,
+    } as const;
+    const visual = {
+      container: 'sc',
+      exportName: 'd',
+      renderedPath: 'icons/d.png',
+      missingReason: null,
+    } as const;
+    expect(
+      primaryLevelAsset({
+        ...base,
+        currentLevelIcon: curIcon,
+        currentLevelVisual: curVisual,
+        icon,
+        levelVisual: visual,
+      }),
+    ).toBe(curIcon);
+    expect(
+      primaryLevelAsset({
+        ...base,
+        currentLevelIcon: null,
+        currentLevelVisual: curVisual,
+        icon,
+        levelVisual: visual,
+      }),
+    ).toBe(curVisual);
+    expect(
+      primaryLevelAsset({
+        ...base,
+        currentLevelIcon: null,
+        currentLevelVisual: null,
+        icon,
+        levelVisual: visual,
+      }),
+    ).toBe(icon);
+    expect(
+      primaryLevelAsset({
+        ...base,
+        currentLevelIcon: null,
+        currentLevelVisual: null,
+        icon: null,
+        levelVisual: visual,
+      }),
+    ).toBe(visual);
+    expect(
+      primaryLevelAsset({
+        ...base,
+        currentLevelIcon: null,
+        currentLevelVisual: null,
+        icon: null,
+        levelVisual: null,
+      }),
+    ).toBeNull();
   });
 });

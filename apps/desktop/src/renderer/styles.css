@@ -317,3 +317,43 @@ button.danger {
   border-top: 1px solid #48484a;
   margin: 4px 0 12px;
 }
+
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.level-sheet {
+  background: #2c2c2e;
+  border-radius: 12px;
+  padding: 20px 22px;
+  max-width: 420px;
+  width: calc(100% - 48px);
+  max-height: calc(100% - 48px);
+  overflow: auto;
+}
+
+.sheet-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.item-icon {
+  border-radius: 8px;
+  flex: none;
+}
+
+.item-icon-missing {
+  color: #aeaeb2;
+}
+
+.overview-item-icon {
+  border-radius: 6px;
+  flex: none;
+}

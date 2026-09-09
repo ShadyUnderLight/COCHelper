@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type {
   BuildingGroupDto,
@@ -20,24 +20,23 @@ import {
   metricStateLabel,
   type VillageDetailState,
 } from '../village-detail-session';
+import { LevelDetailSheet } from './LevelDetailSheet';
 
 export type VillageDetailProps = {
   readonly state: VillageDetailState;
   readonly base: TrackerBaseDto;
   readonly onBaseChange: (base: TrackerBaseDto) => void;
-  readonly onOpenLevel: (id: string) => void;
   readonly onRetry: () => void;
 };
 
-export function VillageDetail({
-  state,
-  base,
-  onBaseChange,
-  onOpenLevel,
-  onRetry,
-}: VillageDetailProps) {
+export function VillageDetail({ state, base, onBaseChange, onRetry }: VillageDetailProps) {
   const { status, payload, lastError } = state;
   const lookups = useMemo(() => (payload === null ? null : buildLookups(payload)), [payload]);
+  const [openItem, setOpenItem] = useState<VillageItemStateDto | null>(null);
+  useEffect(() => {
+    // payload 切换（切村/切 base/重拉）即关底片：旧 item 不得留在新上下文。
+    setOpenItem(null);
+  }, [payload]);
 
   if (payload === null || lookups === null) {
     if (status === 'idle') {
@@ -68,6 +67,16 @@ export function VillageDetail({
 
   const alert = compatibilityAlertText(payload.compatibility);
   const version = compatibilityVersionText(payload.compatibility);
+  const openById = (id: string) => {
+    if (lookups === null) {
+      return;
+    }
+    const bare = id.split('#')[0] ?? id;
+    const found = lookups.itemsById.get(id) ?? lookups.itemsById.get(bare);
+    if (found !== undefined) {
+      setOpenItem(found);
+    }
+  };
 
   return (
     <section className="detail-panel" aria-label="村庄详情">
@@ -90,7 +99,14 @@ export function VillageDetail({
       ) : null}
       {isEmptyDetail(payload) ? <p className="muted">该村庄暂无详情数据</p> : null}
       <MetricsCards payload={payload} />
-      <FlatRows payload={payload} lookups={lookups} onOpenLevel={onOpenLevel} />
+      <FlatRows payload={payload} lookups={lookups} onOpenItem={openById} />
+      {openItem !== null ? (
+        <LevelDetailSheet
+          item={openItem}
+          catalogVersion={payload.catalogVersion}
+          onClose={() => setOpenItem(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -172,7 +188,7 @@ function MetricsCards(props: { readonly payload: Parameters<typeof isEmptyDetail
 function FlatRows(props: {
   readonly payload: Parameters<typeof isEmptyDetail>[0];
   readonly lookups: Lookups;
-  readonly onOpenLevel: (id: string) => void;
+  readonly onOpenItem: (id: string) => void;
 }) {
   return (
     <div className="detail-rows">
@@ -182,7 +198,7 @@ function FlatRows(props: {
           row={row}
           payload={props.payload}
           lookups={props.lookups}
-          onOpenLevel={props.onOpenLevel}
+          onOpenItem={props.onOpenItem}
         />
       ))}
     </div>
@@ -212,9 +228,9 @@ function FlatRow(props: {
   readonly row: VillageDetailFlatRowDto;
   readonly payload: Parameters<typeof isEmptyDetail>[0];
   readonly lookups: Lookups;
-  readonly onOpenLevel: (id: string) => void;
+  readonly onOpenItem: (id: string) => void;
 }) {
-  const { row, lookups, onOpenLevel } = props;
+  const { row, lookups, onOpenItem } = props;
   switch (row.kind) {
     case 'sectionHeader': {
       const group = lookups.groupsById.get(row.groupID);
@@ -253,7 +269,7 @@ function FlatRow(props: {
             type="button"
             className="detail-item"
             aria-label={`${group.name}，打开等级详情`}
-            onClick={() => onOpenLevel(row.instanceID)}
+            onClick={() => onOpenItem(row.instanceID)}
           >
             <span className="detail-item-name">{group.name}</span>
             <span className="muted">
@@ -278,7 +294,7 @@ function FlatRow(props: {
             type="button"
             className="detail-item"
             aria-label={`${item.name}，打开等级详情`}
-            onClick={() => onOpenLevel(item.id)}
+            onClick={() => onOpenItem(item.id)}
           >
             <span className="detail-item-name">{item.name}</span>
             <span className="muted">

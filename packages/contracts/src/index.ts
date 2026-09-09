@@ -181,6 +181,7 @@ export type {
   VillageCategoryCompletionDto,
   VillageDetailGroupDto,
   VillageNextUpgradeDto,
+  UpgradeRequirementDto,
   VillageProgressMetricsDto,
   EffectiveVillageItemStatusDto,
 } from './projection-ipc';

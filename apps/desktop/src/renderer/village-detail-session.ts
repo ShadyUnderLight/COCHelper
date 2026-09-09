@@ -3,12 +3,17 @@
  * 世代/session 守卫复用 overview-session（cursor 形状与语义一致）。
  */
 import type {
+  CatalogAssetRefDto,
   CatalogCompatibilityDto,
+  CatalogDurationStateDto,
   ProgressMetricDto,
+  TrackerBaseDto,
   TrackerCategoryDto,
   TrackerDisplayCategoryDto,
+  UpgradeRequirementDto,
   VillageDetailGroupDto,
   VillageDetailPayload,
+  VillageItemStateDto,
 } from '@coc-helper/contracts';
 
 export type VillageDetailState = {
@@ -215,4 +220,83 @@ export function groupTitleText(group: VillageDetailGroupDto): string {
     return categoryLabel(group.category);
   }
   return group.id;
+}
+
+export function requirementLabel(req: UpgradeRequirementDto, base: TrackerBaseDto): string {
+  let name: string;
+  switch (req.kind) {
+    case 'townHall':
+      name = base === 'builder' ? '建筑大师大本营' : '大本营';
+      break;
+    case 'builderHall':
+      name = '建筑大师大本营';
+      break;
+    case 'laboratory':
+      name = base === 'builder' ? '星空实验室' : '实验室';
+      break;
+    case 'starLaboratory':
+      name = '星空实验室';
+      break;
+    case 'heroHall':
+      name = '英雄殿堂';
+      break;
+    case 'blacksmith':
+      name = '铁匠铺';
+      break;
+    default: {
+      const exhaustive: never = req;
+      throw new Error(`未知升级前置：${String(exhaustive)}`);
+    }
+  }
+  return `所需${name}等级 ${req.level}级`;
+}
+
+export function formatDurationSeconds(seconds: number): string {
+  if (!(seconds > 0)) {
+    return '不足1分钟';
+  }
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) {
+    return `${days}天 ${hours}小时`;
+  }
+  if (hours > 0) {
+    return `${hours}小时 ${minutes}分钟`;
+  }
+  if (minutes > 0) {
+    return `${minutes}分钟`;
+  }
+  return '不足1分钟';
+}
+
+export function durationStateLabel(state: CatalogDurationStateDto | null): string {
+  if (state === null) {
+    return '暂无目录数据';
+  }
+  switch (state.kind) {
+    case 'timed':
+      return formatDurationSeconds(state.seconds);
+    case 'instant':
+      return '即时';
+    case 'initialLevel':
+      return '初始等级，无升级时长';
+    case 'notApplicable':
+      return '该类别无时长数据';
+    case 'sourceMissing':
+      return '目录缺失';
+    case 'parseFailed':
+      return '目录解析失败';
+    case 'unknownReason':
+      return '暂无目录数据';
+    default: {
+      const exhaustive: never = state;
+      throw new Error(`未知时长状态：${String(exhaustive)}`);
+    }
+  }
+}
+
+/** 等级底片图标优先级：当级 icon/visual 优先，通用 icon/visual 兜底。 */
+export function primaryLevelAsset(item: VillageItemStateDto): CatalogAssetRefDto | null {
+  return item.currentLevelIcon ?? item.currentLevelVisual ?? item.icon ?? item.levelVisual;
 }

@@ -150,4 +150,56 @@ describe('UpgradeOverview', () => {
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
     expect(onOpenDetail).toHaveBeenCalledWith('rec-open', 'vB');
   });
+
+  it('有图标时行内渲染 28px 图标且 src 正确（#277-C2）', () => {
+    const rec = recordFixture({
+      id: 'r-icon',
+      item: {
+        ...recordFixture().item,
+        icon: {
+          container: 'sc',
+          exportName: 'x',
+          renderedPath: 'icons/ui/icon_x.png',
+          missingReason: null,
+        },
+      },
+    });
+    const { container } = render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />,
+    );
+    const img = container.querySelector('img.overview-item-icon') as HTMLImageElement | null;
+    expect(img?.getAttribute('src')).toBe('cochelper://catalog/18.400.13/icons/ui/icon_x.png');
+    expect(img?.getAttribute('width')).toBe('28');
+    expect(img?.getAttribute('height')).toBe('28');
+  });
+
+  it('图标全空时行内无 img（#277-C2）', () => {
+    const rec = recordFixture({ id: 'r-noicon' });
+    const { container } = render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />,
+    );
+    expect(container.querySelector('img.overview-item-icon')).toBeNull();
+  });
+
+  it('图标加载失败后隐藏 img（#277-C2）', () => {
+    const rec = recordFixture({
+      id: 'r-icon-err',
+      item: {
+        ...recordFixture().item,
+        icon: {
+          container: 'sc',
+          exportName: 'x',
+          renderedPath: 'icons/ui/icon_x.png',
+          missingReason: null,
+        },
+      },
+    });
+    const { container } = render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />,
+    );
+    const img = container.querySelector('img.overview-item-icon') as HTMLImageElement | null;
+    expect(img).not.toBeNull();
+    fireEvent.error(img!);
+    expect(container.querySelector('img.overview-item-icon')).toBeNull();
+  });
 });

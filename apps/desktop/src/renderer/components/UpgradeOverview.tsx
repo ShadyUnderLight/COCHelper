@@ -1,5 +1,8 @@
-import type { UpgradeDisplayRecordDto } from '@coc-helper/contracts';
+import { useState } from 'react';
 
+import type { UpgradeDisplayRecordDto, VillageItemStateDto } from '@coc-helper/contracts';
+
+import { overviewAssetUrl } from '../asset-url';
 import {
   availabilityLabel,
   baseLabel,
@@ -9,6 +12,7 @@ import {
   statusLabel,
   type OverviewState,
 } from '../overview-session';
+import { primaryLevelAsset } from '../village-detail-session';
 
 type UpgradeOverviewProps = {
   readonly state: OverviewState;
@@ -140,6 +144,7 @@ function RecordList(props: {
                 props.onOpenDetail?.(record.id, record.villageID);
               }}
             >
+              <RecordIcon catalogVersion={record.catalogVersion} item={record.item} />
               <span className="overview-item-name">{record.item.name}</span>
               <span className="muted">
                 {record.villageName} · {baseLabel(record.base)} · {levelText(record)} ·{' '}
@@ -152,6 +157,27 @@ function RecordList(props: {
         ))}
       </ul>
     </div>
+  );
+}
+
+function RecordIcon(props: {
+  readonly catalogVersion: string | null;
+  readonly item: VillageItemStateDto;
+}) {
+  const [failed, setFailed] = useState(false);
+  const url = failed ? null : overviewAssetUrl(props.catalogVersion, primaryLevelAsset(props.item));
+  if (url === null) {
+    return null;
+  }
+  return (
+    <img
+      className="overview-item-icon"
+      src={url}
+      alt=""
+      width={28}
+      height={28}
+      onError={() => setFailed(true)}
+    />
   );
 }
 

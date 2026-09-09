@@ -35,6 +35,10 @@ export function useUpgradeOverview(
   const [refreshSeq, setRefreshSeq] = useState(0);
   const epochRef = useRef(0);
   const cursorRef = useRef<OverviewCursor | null>(null);
+  /** authoritative session：不绑定 cursor（cursor 只有成功后才建立）。 */
+  const sessionCursorRef = useRef<string | null>(null);
+  /** monotonic 请求序号：error 提交时确认仍是当前有效请求（error 无 payload generation 可比）。 */
+  const requestSeqRef = useRef(0);
   const maxRequestedRef = useRef(-1);
   const lastKeyRef = useRef<string | null>(null);
   const lastSeqRef = useRef(0);
@@ -47,11 +51,13 @@ export function useUpgradeOverview(
     }
     const requestEpoch = epochRef.current;
     const requestSession = snapshot.sessionId;
-    const prev = cursorRef.current;
-    if (prev !== null && prev.sessionId !== requestSession) {
+    if (sessionCursorRef.current !== requestSession) {
+      sessionCursorRef.current = requestSession;
       cursorRef.current = null;
       maxRequestedRef.current = -1;
+      lastKeyRef.current = null;
       setState(INITIAL_OVERVIEW_STATE);
+      setSelectedId(null);
     }
     const forced = refreshSeq !== lastSeqRef.current;
     const key = `${requestSession}:${snapshot.generation}:${refreshSeq}`;
@@ -71,6 +77,8 @@ export function useUpgradeOverview(
     lastKeyRef.current = key;
     lastSeqRef.current = refreshSeq;
     maxRequestedRef.current = Math.max(maxRequestedRef.current, snapshot.generation);
+    requestSeqRef.current += 1;
+    const requestSeq = requestSeqRef.current;
     void (async () => {
       let result: Awaited<ReturnType<BridgeOverviewClient['upgradeOverview']>>;
       try {
@@ -80,6 +88,10 @@ export function useUpgradeOverview(
           return;
         }
         if (sessionRef.current !== requestSession) {
+          return;
+        }
+        if (requestSeq !== requestSeqRef.current) {
+          // 同 session 内已有更新的请求：迟到失败不得污染新状态。
           return;
         }
         setState((prevState) =>
@@ -97,6 +109,9 @@ export function useUpgradeOverview(
         return;
       }
       if (!result.ok) {
+        if (requestSeq !== requestSeqRef.current) {
+          return;
+        }
         setState((prevState) => applyOverviewError(prevState, formatIpcError(result.error)));
         return;
       }

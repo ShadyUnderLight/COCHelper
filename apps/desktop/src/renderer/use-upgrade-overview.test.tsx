@@ -58,12 +58,12 @@ function ok<T>(value: T): Result<T> {
 
 function createBridge() {
   const listeners = new Set<StateChangedListener>();
-  let deferred: { resolve: (value: Result<UpgradeOverviewPayload>) => void } | undefined;
+  const resolvers: Array<(value: Result<UpgradeOverviewPayload>) => void> = [];
   const bridge: BridgeOverviewClient = {
     upgradeOverview: vi.fn(
       async () =>
         await new Promise<Result<UpgradeOverviewPayload>>((resolve) => {
-          deferred = { resolve };
+          resolvers.push(resolve);
         }),
     ),
     onStateChanged: (listener) => {
@@ -81,8 +81,14 @@ function createBridge() {
       }
     },
     resolve(value: Result<UpgradeOverviewPayload>) {
-      deferred?.resolve(value);
-      deferred = undefined;
+      resolvers.shift()?.(value);
+    },
+    /** 按请求下标 resolve 并从队列移除（overlap 回归用例）。 */
+    resolveAt(index: number, value: Result<UpgradeOverviewPayload>) {
+      resolvers.splice(index, 1)[0]?.(value);
+    },
+    pendingCount() {
+      return resolvers.length;
     },
   };
 }
@@ -300,5 +306,112 @@ describe('useUpgradeOverview', () => {
     await waitFor(() => {
       expect(result.current.state.lastError).toBe('升级总览查询失败');
     });
+  });
+
+  it('P1a：旧 session 请求 pending 时切换新 session（低 generation）必须发新请求', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook(
+      ({ snap }) => useUpgradeOverview(harness.bridge, snap),
+      { initialProps: { snap: snapshot({ sessionId: 'sA', generation: 50 }) } },
+    );
+    await waitFor(() => {
+      expect(harness.bridge.upgradeOverview).toHaveBeenCalledTimes(1);
+    });
+    expect(harness.pendingCount()).toBe(1);
+    act(() => {
+      result.current.select('rec-x');
+    });
+    rerender({ snap: snapshot({ sessionId: 'sB', generation: 1 }) });
+    // 切 session 即清空（含选择态），且 B 世代再低也必须发请求。
+    expect(result.current.state.status).toBe('loading');
+    expect(result.current.state.payload).toBeNull();
+    expect(result.current.selectedId).toBeNull();
+    await waitFor(() => {
+      expect(harness.bridge.upgradeOverview).toHaveBeenCalledTimes(2);
+    });
+    // A 的迟到成功不得影响 B。
+    act(() => {
+      harness.resolveAt(0, ok(overview({ generation: 50 })));
+    });
+    await act(async () => {});
+    expect(result.current.state.status).toBe('loading');
+    act(() => {
+      harness.resolveAt(0, ok(overview({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+    expect(result.current.state.payload?.generation).toBe(1);
+  });
+
+  it('P1b：旧 session 首次请求失败后切换 session，清旧错并发新请求', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook(
+      ({ snap }) => useUpgradeOverview(harness.bridge, snap),
+      { initialProps: { snap: snapshot({ sessionId: 'sA', generation: 50 }) } },
+    );
+    act(() => {
+      harness.resolve({
+        ok: false,
+        error: {
+          kind: 'serverError',
+          code: 'catalog-unavailable',
+          messageKey: 'catalog.unavailable',
+          message: 'A 失败',
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('error');
+    });
+    rerender({ snap: snapshot({ sessionId: 'sB', generation: 1 }) });
+    expect(result.current.state.status).toBe('loading');
+    expect(result.current.state.payload).toBeNull();
+    expect(result.current.state.lastError).toBeNull();
+    await waitFor(() => {
+      expect(harness.bridge.upgradeOverview).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      harness.resolve(ok(overview({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+  });
+
+  it('P2：旧请求的迟到失败不得污染新 overview', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook(
+      ({ snap }) => useUpgradeOverview(harness.bridge, snap),
+      { initialProps: { snap: snapshot({ generation: 5 }) } },
+    );
+    rerender({ snap: snapshot({ generation: 6 }) });
+    await waitFor(() => {
+      expect(harness.bridge.upgradeOverview).toHaveBeenCalledTimes(2);
+    });
+    expect(harness.pendingCount()).toBe(2);
+    // B（新请求）先成功。
+    act(() => {
+      harness.resolveAt(1, ok(overview({ generation: 6 })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.payload?.generation).toBe(6);
+    });
+    expect(result.current.state.lastError).toBeNull();
+    // A（旧请求）后失败：必须丢弃。
+    act(() => {
+      harness.resolveAt(0, {
+        ok: false,
+        error: {
+          kind: 'serverError',
+          code: 'stale-fail',
+          messageKey: 'stale.fail',
+          message: 'A 迟到失败',
+        },
+      });
+    });
+    await act(async () => {});
+    expect(result.current.state.payload?.generation).toBe(6);
+    expect(result.current.state.lastError).toBeNull();
   });
 });

@@ -169,6 +169,8 @@ export type {
   VillageDetailFlatRowDto,
   BuildingGroupDto,
   TrackerBaseDto,
+  TrackerCategoryDto,
+  TrackerDisplayCategoryDto,
   CatalogAssetRefDto,
   CatalogAvailabilityDto,
   CatalogCompatibilityDto,

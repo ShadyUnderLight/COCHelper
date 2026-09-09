@@ -137,4 +137,17 @@ describe('UpgradeOverview', () => {
     expect(screen.getByText(longName)).toBeTruthy();
     expect(container.querySelector('.overview-item-name')).toBeTruthy();
   });
+
+  it('点击条目同时触发 onOpenDetail 并携带记录 id', () => {
+    const onOpenDetail = vi.fn();
+    const rec = recordFixture({ id: 'rec-open' });
+    render(
+      <UpgradeOverview
+        {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))}
+        onOpenDetail={onOpenDetail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
+    expect(onOpenDetail).toHaveBeenCalledWith('rec-open');
+  });
 });

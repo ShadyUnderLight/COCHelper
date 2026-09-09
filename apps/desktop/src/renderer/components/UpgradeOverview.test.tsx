@@ -138,9 +138,9 @@ describe('UpgradeOverview', () => {
     expect(container.querySelector('.overview-item-name')).toBeTruthy();
   });
 
-  it('点击条目同时触发 onOpenDetail 并携带记录 id', () => {
+  it('点击条目同时触发 onOpenDetail 并携带记录 id 与村庄 id', () => {
     const onOpenDetail = vi.fn();
-    const rec = recordFixture({ id: 'rec-open' });
+    const rec = recordFixture({ id: 'rec-open', villageID: 'vB', villageName: '分村' });
     render(
       <UpgradeOverview
         {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))}
@@ -148,6 +148,6 @@ describe('UpgradeOverview', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
-    expect(onOpenDetail).toHaveBeenCalledWith('rec-open');
+    expect(onOpenDetail).toHaveBeenCalledWith('rec-open', 'vB');
   });
 });

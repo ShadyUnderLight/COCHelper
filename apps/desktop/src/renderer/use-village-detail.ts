@@ -35,11 +35,19 @@ export function useVillageDetail(
   const cursorRef = useRef<OverviewCursor | null>(null);
   const sessionCursorRef = useRef<string | null>(null);
   const requestSeqRef = useRef(0);
+  /** 当前 payload 所属 subject（session:village:base）；subject 切换即丢 last-good，防跨村泄漏。 */
+  const payloadKeyRef = useRef<string | null>(null);
   const maxRequestedRef = useRef(-1);
   const lastKeyRef = useRef<string | null>(null);
   const lastSeqRef = useRef(0);
   const sessionRef = useRef<string | null>(null);
   sessionRef.current = snapshot?.sessionId ?? null;
+  const subjectRef = useRef<string | null>(null);
+  const requestVillagePreview = snapshot?.selectedVillageId ?? null;
+  subjectRef.current =
+    snapshot === null || requestVillagePreview === null
+      ? null
+      : `${snapshot.sessionId}:${requestVillagePreview}:${base}`;
 
   useEffect(() => {
     if (snapshot === null) {
@@ -51,6 +59,7 @@ export function useVillageDetail(
     if (sessionCursorRef.current !== requestSession) {
       sessionCursorRef.current = requestSession;
       cursorRef.current = null;
+      payloadKeyRef.current = null;
       maxRequestedRef.current = -1;
       lastKeyRef.current = null;
       setState(requestVillage === null ? idleVillageDetailState() : INITIAL_VILLAGE_DETAIL_STATE);
@@ -78,6 +87,12 @@ export function useVillageDetail(
     maxRequestedRef.current = Math.max(maxRequestedRef.current, snapshot.generation);
     requestSeqRef.current += 1;
     const requestSeq = requestSeqRef.current;
+    const subjectKey = `${requestSession}:${requestVillage}:${base}`;
+    if (payloadKeyRef.current !== null && payloadKeyRef.current !== subjectKey) {
+      // subject 已切换（村庄/base）：旧 last-good 不得再展示，回到 loading 等新数据。
+      payloadKeyRef.current = null;
+      setState(INITIAL_VILLAGE_DETAIL_STATE);
+    }
     void (async () => {
       let result: Awaited<ReturnType<BridgeVillageClient['villageDetail']>>;
       try {
@@ -114,11 +129,16 @@ export function useVillageDetail(
         return;
       }
       const payload: VillageDetailPayload = result.value;
+      if (subjectKey !== subjectRef.current) {
+        // subject 已切换：迟到成功不得把旧村数据写进新上下文。
+        return;
+      }
       const known = cursorRef.current;
       if (!shouldAcceptOverview(known, requestSession, payload.generation)) {
         return;
       }
       cursorRef.current = cursorFromOverview(requestSession, payload);
+      payloadKeyRef.current = subjectKey;
       setState(applyVillageDetailSuccess(payload));
     })();
   }, [bridge, snapshot, base, refreshSeq]);

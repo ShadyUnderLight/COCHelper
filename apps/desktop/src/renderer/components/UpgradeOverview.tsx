@@ -14,7 +14,7 @@ type UpgradeOverviewProps = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
-  readonly onOpenDetail?: (id: string) => void;
+  readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly onRetry: () => void;
 };
 
@@ -118,7 +118,7 @@ function RecordList(props: {
   readonly records: readonly UpgradeDisplayRecordDto[];
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
-  readonly onOpenDetail?: (id: string) => void;
+  readonly onOpenDetail?: (recordId: string, villageId: string) => void;
 }) {
   if (props.records.length === 0) {
     return null;
@@ -137,7 +137,7 @@ function RecordList(props: {
               aria-pressed={record.id === props.selectedId}
               onClick={() => {
                 props.onSelect(record.id);
-                props.onOpenDetail?.(record.id);
+                props.onOpenDetail?.(record.id, record.villageID);
               }}
             >
               <span className="overview-item-name">{record.item.name}</span>

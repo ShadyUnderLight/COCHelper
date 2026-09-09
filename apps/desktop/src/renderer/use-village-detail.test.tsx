@@ -316,4 +316,149 @@ describe('useVillageDetail', () => {
       expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);
     });
   });
+
+  it('P2a：切村庄即丢旧 last-good，进 loading 不展示旧村数据', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook(
+      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      {
+        initialProps: {
+          snap: snapshot({ generation: 5, selectedVillageId: 'vA' }),
+          base: 'home' as TrackerBaseDto,
+        },
+      },
+    );
+    act(() => {
+      harness.resolve(ok(detail({ generation: 5, villageId: 'vA', villageName: 'A 村' })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+    expect(result.current.state.payload?.villageName).toBe('A 村');
+    rerender({
+      snap: snapshot({ generation: 6, selectedVillageId: 'vB' }),
+      base: 'home' as TrackerBaseDto,
+    });
+    // subject 切换：旧 payload 立即清除，不等新请求返回。
+    expect(result.current.state.status).toBe('loading');
+    expect(result.current.state.payload).toBeNull();
+    await waitFor(() => {
+      expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      harness.resolveAt(0, ok(detail({ generation: 6, villageId: 'vB', villageName: 'B 村' })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.payload?.villageName).toBe('B 村');
+    });
+  });
+
+  it('P2b：切村庄后新请求失败，只显示新 error 不泄漏旧村数据', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook(
+      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      {
+        initialProps: {
+          snap: snapshot({ generation: 5, selectedVillageId: 'vA' }),
+          base: 'home' as TrackerBaseDto,
+        },
+      },
+    );
+    act(() => {
+      harness.resolve(ok(detail({ generation: 5, villageId: 'vA', villageName: 'A 村' })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+    rerender({
+      snap: snapshot({ generation: 6, selectedVillageId: 'vB' }),
+      base: 'home' as TrackerBaseDto,
+    });
+    act(() => {
+      harness.resolve(err('B 加载失败'));
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('error');
+    });
+    expect(result.current.state.payload).toBeNull();
+    expect(result.current.state.lastError).toMatch(/B 加载失败/);
+  });
+
+  it('P2c：切 base 即丢旧 last-good；同 subject 刷新失败仍保留', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook(
+      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      {
+        initialProps: {
+          snap: snapshot({ generation: 5, selectedVillageId: 'v1' }),
+          base: 'home' as TrackerBaseDto,
+        },
+      },
+    );
+    act(() => {
+      harness.resolve(ok(detail({ generation: 5 })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+    rerender({
+      snap: snapshot({ generation: 5, selectedVillageId: 'v1' }),
+      base: 'builder' as TrackerBaseDto,
+    });
+    expect(result.current.state.status).toBe('loading');
+    expect(result.current.state.payload).toBeNull();
+    act(() => {
+      harness.resolve(ok(detail({ generation: 5, base: 'builder' })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.payload?.base).toBe('builder');
+    });
+    // 同 subject 刷新失败：保留 last-good。
+    rerender({
+      snap: snapshot({ generation: 6, selectedVillageId: 'v1' }),
+      base: 'builder' as TrackerBaseDto,
+    });
+    act(() => {
+      harness.resolve(err('刷新失败'));
+    });
+    await waitFor(() => {
+      expect(result.current.state.lastError).toMatch(/刷新失败/);
+    });
+    expect(result.current.state.status).toBe('ready');
+    expect(result.current.state.payload?.base).toBe('builder');
+  });
+
+  it('P2d：切村庄后旧请求的迟到成功不得写入新上下文', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook(
+      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      {
+        initialProps: {
+          snap: snapshot({ generation: 5, selectedVillageId: 'vA' }),
+          base: 'home' as TrackerBaseDto,
+        },
+      },
+    );
+    rerender({
+      snap: snapshot({ generation: 6, selectedVillageId: 'vB' }),
+      base: 'home' as TrackerBaseDto,
+    });
+    await waitFor(() => {
+      expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);
+    });
+    expect(harness.pendingCount()).toBe(2);
+    // A 的迟到成功：subject 已是 vB，丢弃。
+    act(() => {
+      harness.resolveAt(0, ok(detail({ generation: 5, villageId: 'vA', villageName: 'A 村' })));
+    });
+    await act(async () => {});
+    expect(result.current.state.status).toBe('loading');
+    expect(result.current.state.payload).toBeNull();
+    act(() => {
+      harness.resolveAt(0, ok(detail({ generation: 6, villageId: 'vB', villageName: 'B 村' })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.payload?.villageName).toBe('B 村');
+    });
+  });
 });

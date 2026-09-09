@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppSnapshotPayload } from '@coc-helper/contracts';
 
@@ -314,5 +314,91 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByRole('button', { name: '村庄详情' }));
     const homeTab = screen.getByRole('button', { name: '主村' });
     expect(homeTab.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('总览中点击他村记录时同步切换选中村庄再进详情', () => {
+    const selectVillage = vi.fn(async () => undefined);
+    const bRecord = recordFixture({ id: 'rec-b', villageID: 'v2', villageName: '分村' });
+    const overviewState = applyOverviewSuccess({
+      generation: 1,
+      nowMs: 1,
+      catalogVersion: '18.400.13',
+      catalogIsUsable: true,
+      active: [bRecord],
+      pending: [],
+      state: {
+        manualActiveCount: 0,
+        importedActiveCount: 0,
+        deduplicatedDisplayCount: 0,
+        manualCompletedCount: 0,
+        completedRecently: [],
+        activeRecords: [],
+        attentionRecords: [],
+        needsReimportRecords: [],
+      },
+    });
+    render(
+      <AppShell
+        session={{
+          ...sessionApi({
+            ...INITIAL_APP_SESSION,
+            status: 'ready',
+            snapshot: snapshot({ selectedVillageId: 'v1' }),
+          }),
+          selectVillage,
+        }}
+        overview={overviewApi(overviewState)}
+        detail={detailApi()}
+        detailBase="home"
+        onDetailBaseChange={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
+    expect(selectVillage).toHaveBeenCalledWith('v2');
+    expect(screen.getByLabelText('村庄详情')).toBeTruthy();
+  });
+
+  it('总览中点击本村记录时不重复切换村庄', () => {
+    const selectVillage = vi.fn(async () => undefined);
+    const aRecord = recordFixture({ id: 'rec-a', villageID: 'v1', villageName: '主村' });
+    const overviewState = applyOverviewSuccess({
+      generation: 1,
+      nowMs: 1,
+      catalogVersion: '18.400.13',
+      catalogIsUsable: true,
+      active: [aRecord],
+      pending: [],
+      state: {
+        manualActiveCount: 0,
+        importedActiveCount: 0,
+        deduplicatedDisplayCount: 0,
+        manualCompletedCount: 0,
+        completedRecently: [],
+        activeRecords: [],
+        attentionRecords: [],
+        needsReimportRecords: [],
+      },
+    });
+    render(
+      <AppShell
+        session={{
+          ...sessionApi({
+            ...INITIAL_APP_SESSION,
+            status: 'ready',
+            snapshot: snapshot({ selectedVillageId: 'v1' }),
+          }),
+          selectVillage,
+        }}
+        overview={overviewApi(overviewState)}
+        detail={detailApi()}
+        detailBase="home"
+        onDetailBaseChange={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
+    expect(selectVillage).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('村庄详情')).toBeTruthy();
   });
 });

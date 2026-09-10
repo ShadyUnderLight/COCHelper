@@ -7,6 +7,7 @@ import {
   PERSISTENCE_FILE_NAMES,
   type ElectronPersistencePaths,
 } from '@coc-helper/domain';
+import { MAX_IMPORT_TEXT_LENGTH } from '@coc-helper/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AppAuthoritativeState, AppServiceError } from './app-authoritative-state';
@@ -382,6 +383,62 @@ describe('SnapshotImportService quick import', () => {
     expect(target?.tag).toBe('#QFIRSTRUE');
     expect(target?.accountSnapshot?.tag).toBe('#QFIRSTRUE');
     expect(persistence.history.load()?.entries.length).toBe(1);
+  });
+
+  it('超限剪贴板文本直接拒绝：不解析、不 bump、不留 pending', () => {
+    const { state, service } = bootService();
+    const { villageId } = createVillage(service, '{"tag":"#QOVER","buildings":[]}');
+    // 合法 JSON（巨大未知字段值）：无长度门时会进入 parser，有门必须在之前拒绝
+    const overText = `{"tag":"#QOVER","pad":"${'x'.repeat(MAX_IMPORT_TEXT_LENGTH)}"}`;
+    expect(overText.length).toBeGreaterThan(MAX_IMPORT_TEXT_LENGTH);
+    const genBefore = state.getGeneration();
+    try {
+      service.quickPrepare({ targetVillageId: villageId, text: overText });
+    } catch (error) {
+      expect((error as AppServiceError).code).toBe('validation');
+      expect((error as AppServiceError).message).toMatch(/过长/);
+    }
+    expect(state.getGeneration()).toBe(genBefore);
+    // 无 pending 残留：空槽 discard 幂等返回且不 bump
+    expect(service.quickDiscard(genBefore)).toEqual({ generation: genBefore });
+  });
+
+  it('超限 B 不影响已 live 的 A：同 token 可 cancel，另起 A2 同 token 可 commit', () => {
+    const { villageStore, state, service } = bootService();
+    const { villageId } = createVillage(service, '{"tag":"#QOVERA","buildings":[]}');
+    const a = service.quickPrepare({
+      targetVillageId: villageId,
+      text: '{"tag":"#QOVERA","buildings":[]}',
+    });
+    const overText = `{"tag":"#QOVERA","pad":"${'y'.repeat(MAX_IMPORT_TEXT_LENGTH)}"}`;
+    try {
+      service.quickPrepare({ targetVillageId: villageId, text: overText });
+    } catch (error) {
+      expect((error as AppServiceError).code).toBe('validation');
+    }
+    expect(state.getGeneration()).toBe(a.generation);
+    // A 仍 live：同 token cancel 成功（带 bump 证明槽非空）
+    const discarded = service.quickDiscard(a.generation);
+    expect(discarded.generation).toBe(a.generation + 1);
+    // 另起 A2，同 token 照常 commit 写盘
+    const a2 = service.quickPrepare({
+      targetVillageId: villageId,
+      text: '{"tag":"#QOVERA","buildings":[]}',
+    });
+    const committed = service.quickCommit(a2.generation);
+    expect(committed.selectedVillageId).toBe(villageId);
+    expect(villageStore.listVillages().find((v) => v.id === villageId)?.tag).toBe('#QOVERA');
+  });
+
+  it('边界值：恰好上限长度的合法 JSON 可正常 prepare', () => {
+    const { service } = bootService();
+    const { villageId } = createVillage(service, '{"tag":"#QEDGE","buildings":[]}');
+    const head = '{"tag":"#QEDGE","pad":"';
+    const tail = '"}';
+    const edgeText = head + 'z'.repeat(MAX_IMPORT_TEXT_LENGTH - head.length - tail.length) + tail;
+    expect(edgeText.length).toBe(MAX_IMPORT_TEXT_LENGTH);
+    const prepared = service.quickPrepare({ targetVillageId: villageId, text: edgeText });
+    expect(prepared.preview.targetVillageId).toBe(villageId);
   });
 
   it('quickPrepare 响应不得泄漏剪贴板原文（sentinel）', () => {

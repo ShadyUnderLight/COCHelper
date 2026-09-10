@@ -38,6 +38,10 @@ export function QuickImportSheet({
 
   // 真 modal 语义与 LevelDetailSheet 同模式：overlay 点击关闭、Escape 关闭、
   // Tab 焦点陷阱、关闭后焦点回到打开者。ARIA 声称 modal，就必须有 modal 行为。
+  // 打开即把初始焦点移进 dialog（容器可聚焦），避免焦点滞留底层 opener。
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -92,6 +96,7 @@ export function QuickImportSheet({
         role="dialog"
         aria-modal="true"
         aria-label="快捷导入"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <h3>粘贴并更新</h3>

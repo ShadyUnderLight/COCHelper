@@ -213,6 +213,26 @@ describe('QuickImportSheet', () => {
     unmount();
   });
 
+  it('打开后初始焦点在 dialog 内', () => {
+    render(
+      <QuickImportSheet
+        state={state({
+          status: 'ready',
+          targetVillageId: 'v-a',
+          preview: preview(),
+          preparedGeneration: 8,
+        })}
+        canWrite
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        onRetry={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: '快捷导入' });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
   it('关闭后焦点回到打开者', () => {
     const opener = document.createElement('button');
     document.body.appendChild(opener);

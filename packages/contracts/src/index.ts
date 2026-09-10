@@ -217,6 +217,7 @@ export {
 } from './safe-text';
 export {
   appAvailabilitySchema,
+  MAX_IMPORT_TEXT_LENGTH,
   villageStoreStatusDtoSchema,
   villageSummaryDtoSchema,
   pendingImportSummaryDtoSchema,

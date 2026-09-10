@@ -2,6 +2,8 @@
  * 受控剪贴板适配（#277-D 快捷导入）。
  * - 文本只由 Main 读取，绝不经过 renderer / preload / 日志。
  * - 内容只用于当前导入流程，不落盘、不进诊断。
+ * - 本适配器是哑管道，不做长度截断：输入上限由 SnapshotImportService.quickPrepare
+ *   在进入 domain parser 前用共享 MAX_IMPORT_TEXT_LENGTH 强制执行。
  */
 
 export type ClipboardPort = {

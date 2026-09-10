@@ -6,6 +6,7 @@
  */
 
 import {
+  MAX_IMPORT_TEXT_LENGTH,
   pendingImportPreviewWireSchema,
   pendingImportSummaryDtoSchema,
   quickPreparePreviewWireSchema,
@@ -232,6 +233,11 @@ export class SnapshotImportService {
   quickPrepare(input: { targetVillageId: string; text: string }): QuickPreparePayload {
     if (!this.state.canWrite()) {
       throw new AppServiceError('unavailable', '当前处于恢复或只读状态，无法导入。');
+    }
+    // 资源边界（与 import.prepare 同值）：剪贴板不走 IPC schema，必须在进入
+    // domain parser 之前显式设限。拒绝时不 bump、不动现有 pending。
+    if (input.text.length > MAX_IMPORT_TEXT_LENGTH) {
+      throw new AppServiceError('validation', '剪贴板文本过长，无法导入。');
     }
     const result = prepareQuickImport({
       text: input.text,

@@ -36,6 +36,13 @@ const generationSchema = z.number().int().nonnegative().safe();
 const villageIdSchema = z.string().min(1).max(128);
 const safeIntSchema = z.number().int().safe();
 
+/**
+ * 导入输入文本长度上限（JS 字符串 length 计）：普通 import.prepare schema 与
+ * 快捷导入 Main 入口共用。quick 文本来自系统剪贴板，不走 IPC schema，
+ * 必须在进入 domain parser 之前用同一常量显式设限。
+ */
+export const MAX_IMPORT_TEXT_LENGTH = 5_000_000;
+
 export const appAvailabilitySchema = z.enum(['loading', 'available', 'recovery', 'unavailable']);
 
 export const villageStoreStatusDtoSchema = z.enum([
@@ -104,7 +111,7 @@ const accountSnapshotWireSchema: z.ZodType<AccountSnapshotWire> = z
     capturedAt: z.number().finite().optional(),
     importedAt: z.number().finite(),
     ageSeconds: safeIntSchema.optional(),
-    originalText: z.string().max(5_000_000),
+    originalText: z.string().max(MAX_IMPORT_TEXT_LENGTH),
     objectSections: z.record(z.string(), z.array(accountItemWireSchema)),
     numericSections: z.record(z.string(), z.array(safeIntSchema)),
     boosts: z.record(z.string(), safeIntSchema),
@@ -175,7 +182,7 @@ export const villageSelectPayloadSchema: z.ZodType<VillageSelectPayload> = z
 
 export const importPrepareRequestSchema: z.ZodType<ImportPrepareRequest> = z
   .object({
-    text: z.string().max(5_000_000),
+    text: z.string().max(MAX_IMPORT_TEXT_LENGTH),
     villageId: villageIdSchema.nullable().optional(),
   })
   .strict();

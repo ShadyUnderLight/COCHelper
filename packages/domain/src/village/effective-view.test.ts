@@ -296,6 +296,22 @@ describe('effectiveDetailMissingReason', () => {
     expect(effectiveDetailMissingReason(item({ effectiveState: sidecar('unknown') }))).toBe(
       '本地有效状态未知，暂无法确认当前等级。',
     );
+    expect(
+      effectiveDetailMissingReason(
+        item({ effectiveState: sidecar('unknown', { diagnostic: '匹配失败' }) }),
+      ),
+    ).toBe('匹配失败');
+  });
+  it('unknown-effective + raw unknown → 回落 raw 分支', () => {
+    expect(
+      effectiveDetailMissingReason(
+        item({
+          status: 'unknown',
+          missingReason: '旧目录原因',
+          effectiveState: sidecar('unknown'),
+        }),
+      ),
+    ).toBe('旧目录原因');
   });
   it('raw unverified 透出 missingReason，无则默认文案', () => {
     expect(
@@ -306,6 +322,9 @@ describe('effectiveDetailMissingReason', () => {
     );
   });
   it('raw unknown 透出 missingReason，无则默认文案', () => {
+    expect(
+      effectiveDetailMissingReason(item({ status: 'unknown', missingReason: '旧原因' })),
+    ).toBe('旧原因');
     expect(effectiveDetailMissingReason(item({ status: 'unknown' }))).toBe(
       '该项目暂无逐级升级数据。',
     );

@@ -336,6 +336,29 @@ describe('SnapshotImportService quick import', () => {
     expect(service.quickDiscard(bumped.generation)).toEqual({ generation: bumped.generation });
   });
 
+  it('真实首次导入：无快照村庄（fresh install 初始村）走建立分支并落盘', () => {
+    const { persistence, villageStore, service } = bootService();
+    // bootstrap 空目录会建出无 accountSnapshot 的初始村，生产可达（fresh install/recovery）
+    const initial = villageStore.listVillages();
+    expect(initial).toHaveLength(1);
+    expect(initial[0]?.accountSnapshot).toBeNull();
+    expect(initial[0]?.hasImportedData).toBe(false);
+    const targetId = initial[0]!.id;
+
+    const prepared = service.quickPrepare({
+      targetVillageId: targetId,
+      text: '{"tag":"#QFIRSTRUE","buildings":[]}',
+    });
+    expect(prepared.preview.targetVillageHasSnapshot).toBe(false);
+    expect(prepared.preview.destinationDescription).toContain('建立');
+    const committed = service.quickCommit(prepared.generation);
+    expect(committed.selectedVillageId).toBe(targetId);
+    const target = villageStore.listVillages().find((v) => v.id === targetId);
+    expect(target?.tag).toBe('#QFIRSTRUE');
+    expect(target?.accountSnapshot?.tag).toBe('#QFIRSTRUE');
+    expect(persistence.history.load()?.entries.length).toBe(1);
+  });
+
   it('quickPrepare 响应不得泄漏剪贴板原文（sentinel）', () => {
     const { service } = bootService();
     const { villageId } = createVillage(service, '{"tag":"#QSENT","buildings":[]}');

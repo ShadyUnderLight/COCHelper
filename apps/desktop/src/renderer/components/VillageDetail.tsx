@@ -24,17 +24,29 @@ import {
   primaryLevelAssets,
   type VillageDetailState,
 } from '../village-detail-session';
+import type { QuickImportApi } from '../use-quick-import';
 import { AssetImage } from './AssetImage';
 import { LevelDetailSheet } from './LevelDetailSheet';
+import { QuickImportSheet } from './QuickImportSheet';
 
 export type VillageDetailProps = {
   readonly state: VillageDetailState;
   readonly base: TrackerBaseDto;
   readonly onBaseChange: (base: TrackerBaseDto) => void;
   readonly onRetry: () => void;
+  /** 快捷导入（#277-D）：缺省时不渲染入口，保持旧测试与嵌入场景兼容。 */
+  readonly quick?: QuickImportApi;
+  readonly canQuick?: boolean;
 };
 
-export function VillageDetail({ state, base, onBaseChange, onRetry }: VillageDetailProps) {
+export function VillageDetail({
+  state,
+  base,
+  onBaseChange,
+  onRetry,
+  quick,
+  canQuick,
+}: VillageDetailProps) {
   const { status, payload, lastError } = state;
   const lookups = useMemo(() => (payload === null ? null : buildLookups(payload)), [payload]);
   const [openItem, setOpenItem] = useState<{
@@ -99,6 +111,13 @@ export function VillageDetail({ state, base, onBaseChange, onRetry }: VillageDet
           数据可能过期：{lastError}
         </p>
       ) : null}
+      {quick !== undefined ? (
+        <QuickImportEntry
+          villageId={payload.villageId}
+          quick={quick}
+          canQuick={canQuick ?? false}
+        />
+      ) : null}
       {alert !== null ? (
         <p className="notice-text" role="alert">
           {alert}
@@ -116,6 +135,44 @@ export function VillageDetail({ state, base, onBaseChange, onRetry }: VillageDet
         />
       ) : null}
     </section>
+  );
+}
+
+function QuickImportEntry(props: {
+  readonly villageId: string;
+  readonly quick: QuickImportApi;
+  readonly canQuick: boolean;
+}) {
+  const { villageId, quick, canQuick } = props;
+  const busy = quick.state.status === 'preparing' || quick.state.status === 'committing';
+  const sheetOpen = quick.state.status !== 'idle' || quick.state.lastError !== null;
+  const [opener, setOpener] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <div className="action-row">
+        <button
+          type="button"
+          disabled={!canQuick || busy}
+          onClick={(event) => {
+            setOpener(event.currentTarget);
+            void quick.open(villageId);
+          }}
+        >
+          粘贴并更新
+        </button>
+      </div>
+      {sheetOpen ? (
+        <QuickImportSheet
+          state={quick.state}
+          canWrite={canQuick}
+          onConfirm={() => void quick.confirm()}
+          onCancel={() => void quick.cancel()}
+          onRetry={() => void quick.retry()}
+          onClose={quick.close}
+          returnFocusTo={opener}
+        />
+      ) : null}
+    </>
   );
 }
 

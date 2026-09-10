@@ -3,16 +3,19 @@
  */
 
 import type {
+  AccountDiagnosticWire,
   AccountItemWire,
   AccountSnapshotWire,
   PendingImportPreviewWire,
   PendingImportSummaryDto,
+  QuickPreparePreviewWire,
   VillageSummaryDto,
 } from '@coc-helper/contracts';
 import type {
   AccountItem,
   AccountSnapshot,
   PendingImportPreview,
+  QuickImportPreview,
   VillageProfile,
 } from '@coc-helper/domain';
 import { unixSecondsToRefSeconds } from '@coc-helper/wire';
@@ -78,6 +81,33 @@ export function toPendingImportPreviewWire(
   }
 }
 
+export function toQuickPreparePreviewWire(preview: QuickImportPreview): QuickPreparePreviewWire {
+  return {
+    snapshot: {
+      ...(preview.snapshot.tag !== null ? { tag: preview.snapshot.tag } : {}),
+      diagnostics: preview.snapshot.diagnostics.map(toAccountDiagnosticWire),
+      unknownTopLevelKeys: [...preview.snapshot.unknownTopLevelKeys],
+    },
+    targetVillageId: preview.targetVillageId,
+    targetVillageName: preview.targetVillageName,
+    targetVillageTag: preview.targetVillageTag,
+    targetVillageHasSnapshot: preview.targetVillageHasSnapshot,
+    replacesSameTag: preview.replacesSameTag,
+    destinationDescription: preview.destinationDescription,
+  };
+}
+
+function toAccountDiagnosticWire(
+  diagnostic: AccountSnapshot['diagnostics'][number],
+): AccountDiagnosticWire {
+  return {
+    id: diagnostic.id,
+    severity: diagnostic.severity,
+    path: diagnostic.path,
+    message: diagnostic.message,
+  };
+}
+
 export function toAccountSnapshotWire(snapshot: AccountSnapshot): AccountSnapshotWire {
   const wire: AccountSnapshotWire = {
     importedAt: unixSecondsToRefSeconds(snapshot.importedAtMs / 1000),
@@ -86,12 +116,7 @@ export function toAccountSnapshotWire(snapshot: AccountSnapshot): AccountSnapsho
     numericSections: mapNumericSections(snapshot.numericSections),
     boosts: mapBoosts(snapshot.boosts),
     unknownTopLevelKeys: [...snapshot.unknownTopLevelKeys],
-    diagnostics: snapshot.diagnostics.map((diagnostic) => ({
-      id: diagnostic.id,
-      severity: diagnostic.severity,
-      path: diagnostic.path,
-      message: diagnostic.message,
-    })),
+    diagnostics: snapshot.diagnostics.map(toAccountDiagnosticWire),
   };
   return {
     ...wire,

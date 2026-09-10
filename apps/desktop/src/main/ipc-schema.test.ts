@@ -11,6 +11,9 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  IMPORT_QUICK_COMMIT_CHANNEL,
+  IMPORT_QUICK_DISCARD_CHANNEL,
+  IMPORT_QUICK_PREPARE_CHANNEL,
   MANUAL_ADJUST_CHANNEL,
   MANUAL_CANCEL_CHANNEL,
   MANUAL_RECONCILE_CHANNEL,
@@ -45,6 +48,9 @@ import {
   parseImportCommitRequest,
   parseImportDiscardRequest,
   parseImportPrepareRequest,
+  parseQuickCommitRequest,
+  parseQuickDiscardRequest,
+  parseQuickPrepareRequest,
   parseAppHealthRequest,
   parseVillageSelectRequest,
   toIpcError,
@@ -72,6 +78,9 @@ describe('app.health schema', () => {
       IMPORT_PREPARE_CHANNEL,
       IMPORT_COMMIT_CHANNEL,
       IMPORT_DISCARD_CHANNEL,
+      IMPORT_QUICK_PREPARE_CHANNEL,
+      IMPORT_QUICK_COMMIT_CHANNEL,
+      IMPORT_QUICK_DISCARD_CHANNEL,
       UPGRADE_OVERVIEW_CHANNEL,
       VILLAGE_DETAIL_CHANNEL,
       MANUAL_STATE_CHANNEL,
@@ -130,6 +139,28 @@ describe('E3-02 business schemas', () => {
       expectedGeneration: 0,
     });
     expect(() => parseImportDiscardRequest({ expectedGeneration: -1 })).toThrow(IpcValidationError);
+  });
+
+  it('import.quickPrepare 必须显式 targetVillageId，不得夹带文本', () => {
+    expect(parseQuickPrepareRequest({ targetVillageId: 'v-1' })).toEqual({
+      targetVillageId: 'v-1',
+    });
+    expect(() => parseQuickPrepareRequest({})).toThrow(IpcValidationError);
+    expect(() => parseQuickPrepareRequest({ targetVillageId: 'v-1', text: '{}' })).toThrow(
+      IpcValidationError,
+    );
+    expect(() => parseQuickPrepareRequest({ targetVillageId: '' })).toThrow(IpcValidationError);
+  });
+
+  it('import.quickCommit/quickDiscard 必须携带 expectedGeneration', () => {
+    expect(parseQuickCommitRequest({ expectedGeneration: 2 })).toEqual({
+      expectedGeneration: 2,
+    });
+    expect(() => parseQuickCommitRequest({})).toThrow(IpcValidationError);
+    expect(parseQuickDiscardRequest({ expectedGeneration: 0 })).toEqual({
+      expectedGeneration: 0,
+    });
+    expect(() => parseQuickDiscardRequest({ expectedGeneration: -1 })).toThrow(IpcValidationError);
   });
 });
 

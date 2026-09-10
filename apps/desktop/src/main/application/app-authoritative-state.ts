@@ -20,6 +20,7 @@ import { generateUuid } from '@coc-helper/wire';
 
 import { toPendingImportSummaryDto, toVillageSummaryDto } from './dto-mappers';
 import type { VillageStorePort } from './import-coordinator';
+import { GenerationBoundSlot, STALE_PENDING_MESSAGE } from './pending-slot';
 
 export type AppAuthoritativeStateOptions = {
   readonly persistence: PersistenceBootstrapResult | null;
@@ -38,7 +39,8 @@ export type InstallAvailableStateOptions = {
 
 export class AppAuthoritativeState {
   private generation = 0;
-  private pending: PendingImportPreview | null = null;
+  /** 普通导入待确认态：与创建代绑定，与 quick 侧走同一 takeLive 不变量。 */
+  private readonly pendingSlot = new GenerationBoundSlot<PendingImportPreview>();
   private readonly listeners = new Set<StateChangedListener>();
   private readonly persistence: PersistenceBootstrapResult | null;
   private villageStore: VillageStorePort | null;
@@ -68,7 +70,17 @@ export class AppAuthoritativeState {
   }
 
   getPending(): PendingImportPreview | null {
-    return this.pending;
+    return this.pendingSlot.peek();
+  }
+
+  /**
+   * 取出与当前 generation 绑定的普通 pending（与 quick 侧同一不变量）。
+   * 死 pending 在此清理并按 conflict 拒绝，失败路径不 bump。
+   */
+  takeLivePending(): PendingImportPreview | null {
+    return this.pendingSlot.takeLive(this.generation, () => {
+      throw new AppServiceError('conflict', STALE_PENDING_MESSAGE);
+    });
   }
 
   getRecoveryNotice(): string | null {
@@ -79,11 +91,25 @@ export class AppAuthoritativeState {
     pending: PendingImportPreview | null,
     options: { emit?: boolean; bump?: boolean } = {},
   ): void {
-    this.pending = pending;
     if (options.bump === false) {
+      if (pending === null) {
+        this.pendingSlot.clear();
+      } else {
+        this.pendingSlot.store(pending, this.generation);
+      }
       return;
     }
-    this.bump(options.emit !== false);
+    // 先推进代再绑定：创建代精确等于本次广播/prepare 返回的 generation，
+    // 不依赖“bump 步长为 1”的算术巧合。
+    this.bump(false);
+    if (pending === null) {
+      this.pendingSlot.clear();
+    } else {
+      this.pendingSlot.store(pending, this.generation);
+    }
+    if (options.emit !== false) {
+      this.emit();
+    }
   }
 
   /** 写盘 command 成功后调用：bump generation 并广播。 */
@@ -101,7 +127,7 @@ export class AppAuthoritativeState {
     this.villageErrorOverride = options.villageError ?? null;
     this.canWriteOverride = true;
     this.recoveryNotice = options.notice ?? null;
-    this.pending = null;
+    this.pendingSlot.clear();
     this.bump(true);
   }
 
@@ -161,10 +187,14 @@ export class AppAuthoritativeState {
   private bump(emit: boolean): void {
     this.generation += 1;
     if (emit) {
-      const payload = this.buildSnapshot();
-      for (const listener of this.listeners) {
-        listener(payload);
-      }
+      this.emit();
+    }
+  }
+
+  private emit(): void {
+    const payload = this.buildSnapshot();
+    for (const listener of this.listeners) {
+      listener(payload);
     }
   }
 
@@ -172,8 +202,9 @@ export class AppAuthoritativeState {
     const villages = this.listVillages();
     const villageStatus = this.resolveVillageStatus();
     const availability = this.resolveAvailability(villageStatus);
+    const pending = this.pendingSlot.peek();
     const pendingImport: PendingImportSummaryDto | null =
-      this.pending === null ? null : toPendingImportSummaryDto(this.pending, villages);
+      pending === null ? null : toPendingImportSummaryDto(pending, villages);
 
     return {
       sessionId: this.sessionId,

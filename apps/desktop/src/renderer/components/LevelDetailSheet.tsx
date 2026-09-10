@@ -93,7 +93,7 @@ export function LevelDetailSheet(props: {
             candidates={primaryLevelAssets(props.item)}
             size={40}
             className="item-icon"
-            fallback="placeholder"
+            fallbackNode={<span className="item-icon-missing">图标缺失</span>}
           />
           <div>
             <h2>{props.item.name}</h2>
@@ -135,29 +135,22 @@ function upgradeText(
     return null;
   }
   switch (nextUpgrade.kind) {
-    case 'available':
-      return `下一级 ${nextUpgrade.level} 级可升级${
-        nextUpgrade.durationSeconds === null
-          ? ''
-          : `（时长 ${formatDurationSeconds(nextUpgrade.durationSeconds)}）`
-      }`;
+    case 'available': {
+      const dur = formatUpgradeDuration(nextUpgrade.durationSeconds, '时长');
+      return `下一级 ${nextUpgrade.level} 级可升级${dur === null ? '' : `（${dur}）`}`;
+    }
     case 'requires': {
       const joined = nextUpgrade.requirements.map((req) => requirementLabel(req, base)).join(' · ');
       const cond = nextUpgrade.requirements.length > 0 ? ` 解锁条件：${joined}` : '';
-      const ref =
-        nextUpgrade.referenceDurationSeconds === null
-          ? ''
-          : `（参考时长 ${formatDurationSeconds(nextUpgrade.referenceDurationSeconds)}）`;
-      return `下一级 ${nextUpgrade.nextLevel} 级${cond}${ref}`;
+      const ref = formatUpgradeDuration(nextUpgrade.referenceDurationSeconds, '参考时长');
+      return `下一级 ${nextUpgrade.nextLevel} 级${cond}${ref === null ? '' : `（${ref}）`}`;
     }
     case 'globalMaxed':
       return '已满级';
-    case 'inProgressFact':
-      return `正在升至 ${nextUpgrade.level} 级${
-        nextUpgrade.durationSeconds === null
-          ? ''
-          : `（时长 ${formatDurationSeconds(nextUpgrade.durationSeconds)}）`
-      }`;
+    case 'inProgressFact': {
+      const dur = formatUpgradeDuration(nextUpgrade.durationSeconds, '时长');
+      return `正在升至 ${nextUpgrade.level} 级${dur === null ? '' : `（${dur}）`}`;
+    }
     case 'unverified':
       return '未验证';
     case 'unknown':
@@ -167,4 +160,15 @@ function upgradeText(
       throw new Error(`未知升级状态：${String(exhaustive)}`);
     }
   }
+}
+
+/** 升级数值时长：null 表无时长（调用方不渲染），0 表即时升级。 */
+function formatUpgradeDuration(seconds: number | null, label: string): string | null {
+  if (seconds === null) {
+    return null;
+  }
+  if (seconds === 0) {
+    return `${label} 即时`;
+  }
+  return `${label}${formatDurationSeconds(seconds)}`;
 }

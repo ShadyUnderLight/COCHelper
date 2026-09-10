@@ -154,6 +154,7 @@ export function villageDetailFixture(
       effectiveTrackerProgress: metric,
     },
     buildingGroups: [],
+    instanceItems: [],
     flatRows: [],
     ...overrides,
   };
@@ -201,6 +202,23 @@ export function displayCategoryLabel(display: TrackerDisplayCategoryDto): string
       throw new Error(`未知展示分类：${String(exhaustive)}`);
     }
   }
+}
+
+/**
+ * 类别 glyph（#39 最终 fallback 用：PNG 候选耗尽时显示分类首字而非消失。
+ * Electron 无 SF Symbols，用分类标题首字是稳定可本地化的最小方案）。
+ */
+export function categoryGlyph(
+  displayCategory: TrackerDisplayCategoryDto | null,
+  category: TrackerCategoryDto | null,
+): string {
+  if (displayCategory !== null) {
+    return displayCategoryLabel(displayCategory).slice(0, 1);
+  }
+  if (category !== null) {
+    return categoryLabel(category).slice(0, 1);
+  }
+  return '？';
 }
 
 export function levelTransitionText(currentLevel: number | null, nextLevel: number | null): string {
@@ -300,18 +318,6 @@ export function durationStateLabel(state: CatalogDurationStateDto | null): strin
   }
 }
 
-/** 有效满级判定（调用方传入 effectiveCurrentLevel；残余近似仅 sidecar stage 上限）。 */
-function isEffectivelyMaxedLevel(
-  currentLevel: number | null,
-  currentStageMaxLevel: number | null,
-  maxLevel: number | null,
-): boolean {
-  if (currentLevel === null) return false;
-  const cap = currentStageMaxLevel ?? maxLevel;
-  if (cap === null) return false;
-  return currentLevel >= cap;
-}
-
 function stageMaxedText(currentStageMaxLevel: number | null, maxLevel: number | null): string {
   if (currentStageMaxLevel !== null && maxLevel !== null && currentStageMaxLevel < maxLevel) {
     return `当前阶段已满级（全局尚有 ${maxLevel - currentStageMaxLevel} 级）`;
@@ -322,8 +328,8 @@ function stageMaxedText(currentStageMaxLevel: number | null, maxLevel: number | 
 /**
  * 权威展示状态（复刻 LevelDetailSheet.swift statusLabel）。
  * effective sidecar 存在即权威，绝不把 raw status 与 effective 并列展示。
- * 满级判定用 DTO 的 effectiveCurrentLevel（Main 侧已按 sidecar 算好）；
- * 残余近似仅 sidecar stage 上限（DTO 只有快照侧 currentStageMaxLevel）。
+ * 满级判定直接消费 DTO 的 effectiveIsMaxed（Main 侧 domain 已含 known 门）；
+ * 本模块不再做任何满级数值判断。
  */
 export function authoritativeLevelStatus(item: VillageItemStateDto): string {
   const effective = item.effectiveStatus;
@@ -342,8 +348,7 @@ export function authoritativeLevelStatus(item: VillageItemStateDto): string {
         return '不参与升级追踪';
       case 'manualCompleted':
       case 'observed': {
-        const level = item.effectiveCurrentLevel ?? item.currentLevel;
-        if (isEffectivelyMaxedLevel(level, item.currentStageMaxLevel, item.maxLevel)) {
+        if (item.effectiveIsMaxed) {
           return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
         }
         return '已记录';
@@ -383,13 +388,16 @@ export function authoritativeLevelStatus(item: VillageItemStateDto): string {
 }
 
 /**
- * 缺失说明（复刻 missingNote 的 DTO 可达部分；isCatalogDeprecated
- * 无 DTO 字段，isEffectivelyUpgrading+missingReason 与 catalogItem==nil 回退
- * 需 catalog join（renderer 无），故不覆盖）。
+ * 缺失说明（复刻 missingNote 的 DTO 可达部分；isCatalogDeprecated 经
+ * catalogItemMissingReason 判定；isEffectivelyUpgrading+missingReason 与
+ * catalogItem==nil 回退需 catalog join（renderer 无），故不覆盖）。
  */
 export function levelMissingNote(item: VillageItemStateDto): string | null {
   if (item.isNested) {
     return '该项目属于内部子项目，暂不提供逐级升级数据。';
+  }
+  if (item.catalogItemMissingReason === 'deprecated_in_source') {
+    return '该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。';
   }
   switch (item.effectiveStatus) {
     case 'conflict':

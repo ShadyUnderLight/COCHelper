@@ -173,15 +173,16 @@ describe('UpgradeOverview', () => {
     expect(img?.getAttribute('height')).toBe('28');
   });
 
-  it('图标全空时行内无 img（#277-C2）', () => {
+  it('图标全空时显示分类 glyph 而非消失（#277-C2 review）', () => {
     const rec = recordFixture({ id: 'r-noicon' });
     const { container } = render(
       <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />,
     );
     expect(container.querySelector('img.overview-item-icon')).toBeNull();
+    expect(container.querySelector('.overview-item-glyph')?.textContent).toBe('防');
   });
 
-  it('图标加载失败后隐藏 img（#277-C2）', () => {
+  it('图标加载失败且无候选时显示分类 glyph（#277-C2 review）', () => {
     const rec = recordFixture({
       id: 'r-icon-err',
       item: {
@@ -201,6 +202,7 @@ describe('UpgradeOverview', () => {
     expect(img).not.toBeNull();
     fireEvent.error(img!);
     expect(container.querySelector('img.overview-item-icon')).toBeNull();
+    expect(container.querySelector('.overview-item-glyph')?.textContent).toBe('防');
   });
 
   it('双候选首个失败回退到第二个（#277-C2 review 候选链）', () => {

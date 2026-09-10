@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { CatalogAssetRefDto } from '@coc-helper/contracts';
 
@@ -9,7 +9,8 @@ export function AssetImage(props: {
   readonly candidates: readonly (CatalogAssetRefDto | null)[];
   readonly size: number;
   readonly className: string;
-  readonly fallback: 'hide' | 'placeholder';
+  /** 候选耗尽时的最终 fallback（#39 要求不得静默消失，由调用方按分类提供）。 */
+  readonly fallbackNode: ReactNode;
 }) {
   const urls = useMemo(
     () =>
@@ -26,9 +27,7 @@ export function AssetImage(props: {
   }, [urlKey]);
   const url = urls[index] ?? null;
   if (url === null) {
-    return props.fallback === 'hide' ? null : (
-      <span className={`${props.className}-missing`}>图标缺失</span>
-    );
+    return <>{props.fallbackNode}</>;
   }
   return (
     <img

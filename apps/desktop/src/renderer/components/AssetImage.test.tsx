@@ -21,7 +21,7 @@ describe('AssetImage（#277-C2 review）', () => {
         candidates={[ref('icons/a.png'), ref('icons/b.png')]}
         size={28}
         className="overview-item-icon"
-        fallback="hide"
+        fallbackNode={null}
       />,
     );
     expect(container.querySelector('img')?.getAttribute('src')).toBe(
@@ -36,7 +36,7 @@ describe('AssetImage（#277-C2 review）', () => {
         candidates={[ref('icons/a.png'), ref('icons/b.png')]}
         size={28}
         className="overview-item-icon"
-        fallback="hide"
+        fallbackNode={null}
       />,
     );
     const first = container.querySelector('img');
@@ -54,7 +54,7 @@ describe('AssetImage（#277-C2 review）', () => {
         candidates={[ref('icons/a.png')]}
         size={28}
         className="overview-item-icon"
-        fallback="hide"
+        fallbackNode={null}
       />,
     );
     const img = container.querySelector('img');
@@ -71,7 +71,7 @@ describe('AssetImage（#277-C2 review）', () => {
         candidates={[ref('icons/a.png')]}
         size={40}
         className="item-icon"
-        fallback="placeholder"
+        fallbackNode={<span>图标缺失</span>}
       />,
     );
     const img = container.querySelector('img');
@@ -88,7 +88,7 @@ describe('AssetImage（#277-C2 review）', () => {
         candidates={[ref('icons/a.png'), ref('icons/b.png')]}
         size={28}
         className="overview-item-icon"
-        fallback="hide"
+        fallbackNode={null}
       />,
     );
     fireEvent.error(container.querySelector('img')!);
@@ -99,7 +99,7 @@ describe('AssetImage（#277-C2 review）', () => {
         candidates={[ref('icons/c.png'), ref('icons/d.png')]}
         size={28}
         className="overview-item-icon"
-        fallback="hide"
+        fallbackNode={null}
       />,
     );
     expect(container.querySelector('img')?.getAttribute('src')).toBe(
@@ -109,7 +109,7 @@ describe('AssetImage（#277-C2 review）', () => {
 
   it('空候选立即 fallback', () => {
     const { container } = render(
-      <AssetImage catalogVersion="v" candidates={[]} size={28} className="x" fallback="hide" />,
+      <AssetImage catalogVersion="v" candidates={[]} size={28} className="x" fallbackNode={null} />,
     );
     expect(container.querySelector('img')).toBeNull();
   });

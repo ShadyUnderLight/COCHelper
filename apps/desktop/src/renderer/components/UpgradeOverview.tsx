@@ -9,7 +9,7 @@ import {
   statusLabel,
   type OverviewState,
 } from '../overview-session';
-import { primaryLevelAssets } from '../village-detail-session';
+import { categoryGlyph, primaryLevelAssets } from '../village-detail-session';
 import { AssetImage } from './AssetImage';
 
 type UpgradeOverviewProps = {
@@ -147,7 +147,11 @@ function RecordList(props: {
                 candidates={primaryLevelAssets(record.item)}
                 size={28}
                 className="overview-item-icon"
-                fallback="hide"
+                fallbackNode={
+                  <span className="overview-item-glyph" aria-hidden="true">
+                    {categoryGlyph(record.item.displayCategory, record.item.category)}
+                  </span>
+                }
               />
               <span className="overview-item-name">{record.item.name}</span>
               <span className="muted">

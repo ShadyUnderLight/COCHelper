@@ -15,6 +15,7 @@ import {
   applyVillageDetailError,
   applyVillageDetailSuccess,
   authoritativeLevelStatus,
+  categoryGlyph,
   categoryLabel,
   compatibilityAlertText,
   compatibilityVersionText,
@@ -182,6 +183,22 @@ describe('levelTransitionText', () => {
   });
   it('等级未知', () => {
     expect(levelTransitionText(null, null)).toBe('等级未知');
+  });
+});
+
+describe('categoryGlyph', () => {
+  it('展示分类优先：防御建筑→防 / 城墙→城', () => {
+    expect(categoryGlyph('defense', 'buildings')).toBe('防');
+    expect(categoryGlyph('walls', 'buildings')).toBe('城');
+    expect(categoryGlyph('military', 'buildings')).toBe('军');
+    expect(categoryGlyph('craftTable', 'buildings')).toBe('精');
+  });
+  it('无展示分类时用原分类首字', () => {
+    expect(categoryGlyph(null, 'traps')).toBe('陷');
+    expect(categoryGlyph(null, 'heroes')).toBe('英');
+  });
+  it('双空 → ？', () => {
+    expect(categoryGlyph(null, null)).toBe('？');
   });
 });
 
@@ -373,13 +390,12 @@ describe('authoritativeLevelStatus（#277-C2 review）', () => {
     const item = { ...recordFixture().item, status: 'unknown' as const, effectiveStatus: null };
     expect(authoritativeLevelStatus(item)).toBe('目录未收录');
   });
-  it('manualCompleted + 等级触顶 → 已满级/阶段文案', () => {
+  it('manualCompleted + effectiveIsMaxed → 已满级/阶段文案', () => {
     const maxed = {
       ...recordFixture().item,
       status: 'upgrading' as const,
       effectiveStatus: 'manualCompleted' as const,
-      currentLevel: 10,
-      effectiveCurrentLevel: 10,
+      effectiveIsMaxed: true,
       currentStageMaxLevel: 10,
       maxLevel: 10,
     };
@@ -388,24 +404,24 @@ describe('authoritativeLevelStatus（#277-C2 review）', () => {
       ...recordFixture().item,
       status: 'upgrading' as const,
       effectiveStatus: 'manualCompleted' as const,
-      currentLevel: 8,
-      effectiveCurrentLevel: 8,
+      effectiveIsMaxed: true,
       currentStageMaxLevel: 8,
       maxLevel: 10,
     };
     expect(authoritativeLevelStatus(stageMaxed)).toBe('当前阶段已满级（全局尚有 2 级）');
   });
-  it('manualCompleted 满级判定用 effectiveCurrentLevel 而非 raw', () => {
+  it('manualCompleted + effectiveIsMaxed=false（未知分布）→ 已记录，不误报满级', () => {
     const item = {
       ...recordFixture().item,
       status: 'upgrading' as const,
-      effectiveStatus: 'manualCompleted' as const,
-      currentLevel: 5,
+      effectiveStatus: 'observed' as const,
+      currentLevel: 10,
       effectiveCurrentLevel: 10,
       currentStageMaxLevel: 10,
       maxLevel: 10,
+      effectiveIsMaxed: false,
     };
-    expect(authoritativeLevelStatus(item)).toBe('已满级');
+    expect(authoritativeLevelStatus(item)).toBe('已记录');
   });
 });
 
@@ -417,6 +433,17 @@ describe('levelMissingNote（#277-C2 review）', () => {
   it('conflict → 冲突说明', () => {
     const item = { ...recordFixture().item, isNested: false, effectiveStatus: 'conflict' as const };
     expect(levelMissingNote(item)).toBe('本地手动状态冲突，暂无法确认当前等级。');
+  });
+  it('deprecated 优先于 effective obs → 废弃说明', () => {
+    const item = {
+      ...recordFixture().item,
+      isNested: false,
+      catalogItemMissingReason: 'deprecated_in_source',
+      effectiveStatus: 'conflict' as const,
+    };
+    expect(levelMissingNote(item)).toBe(
+      '该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。',
+    );
   });
   it('conflict + effectiveDiagnostic → 透出诊断', () => {
     const diagnosed = {

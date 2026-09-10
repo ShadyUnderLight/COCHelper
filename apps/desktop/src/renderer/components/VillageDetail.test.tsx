@@ -514,4 +514,57 @@ describe('VillageDetail', () => {
     );
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+
+  it('生产形状：聚合 idle 行经 instanceItems 解析出 raw 条目并打开底片', () => {
+    const aggWall = {
+      ...recordFixture().item,
+      id: 'agg:buildings:1000010',
+      name: '城墙',
+      count: 2,
+      nextLevel: null,
+      nextUpgrade: null,
+    };
+    const rawWall = { ...recordFixture().item, id: 'buildings:1000010', name: '城墙' };
+    const buildingGroup: BuildingGroupDto = {
+      id: 'bg-walls',
+      base: 'home',
+      section: 'buildings',
+      dataID: 1000010,
+      name: '城墙',
+      category: 'buildings',
+      displayCategory: 'walls',
+      instanceIds: ['buildings:1000010'],
+      summary: {
+        instanceCount: 2,
+        remainingLevelCount: 0,
+        totalDurationSeconds: 0,
+        costByResource: [],
+        saturated: false,
+        completeness: 'complete',
+      },
+      trackerStatus: 'observed',
+    };
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            items: [aggWall],
+            instanceItems: [rawWall],
+            buildingGroups: [buildingGroup],
+            flatRows: [
+              {
+                kind: 'instance',
+                groupID: 'bg-walls',
+                instanceID: 'buildings:1000010',
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /城墙/ }));
+    expect(screen.getByRole('dialog', { name: '城墙等级详情' })).toBeTruthy();
+  });
 });

@@ -140,6 +140,7 @@ export type VillageItemStateDto = {
   readonly effectiveNextUpgrade: VillageNextUpgradeDto | null;
   readonly effectiveNextLevelDurationState: CatalogDurationStateDto | null;
   readonly effectiveDiagnostic: string | null;
+  readonly effectiveIsMaxed: boolean;
 };
 
 export type ProgressMetricStateDto = 'ready' | 'partial' | 'unavailable' | 'unknown';
@@ -306,6 +307,11 @@ export type VillageDetailPayload = {
   readonly catalogIsUsable: boolean;
   readonly compatibility: CatalogCompatibilityDto;
   readonly items: readonly VillageItemStateDto[];
+  /**
+   * 仅供实例 ID 解析的原始条目（含已聚合项的原始记录，如 idle 建筑的 raw
+   * 记录）。UI 不得直接列表渲染；`items` 仍是唯一的列表数据源。
+   */
+  readonly instanceItems: readonly VillageItemStateDto[];
   readonly groups: readonly VillageDetailGroupDto[];
   readonly completion: readonly VillageCategoryCompletionDto[];
   readonly totalCompletion: VillageCategoryCompletionDto;

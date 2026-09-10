@@ -84,6 +84,7 @@ describe('effectiveItemView', () => {
       nextUpgrade: { kind: 'available', level: 6, durationSeconds: 3600n },
       durationState: { kind: 'timed', seconds: 3600n },
       diagnostic: null,
+      isMaxed: false,
     });
   });
 
@@ -208,6 +209,39 @@ describe('effectiveItemView', () => {
   it('observed 无 catalog duration：回退 raw duration', () => {
     const view = effectiveItemView(item({ effectiveState: sidecar('observed') }));
     expect(view.durationState).toEqual({ kind: 'timed', seconds: 3600n });
+  });
+
+  it('observed + distribution 缺失 + raw 到 cap：isMaxed 仍 false（known 门）', () => {
+    const view = effectiveItemView(
+      item({
+        currentLevel: 10,
+        maxLevel: 10,
+        effectiveState: sidecar('observed'),
+      }),
+    );
+    expect(view.isMaxed).toBe(false);
+  });
+
+  it('observed + 单级 distribution 到 cap：isMaxed true', () => {
+    const view = effectiveItemView(
+      item({
+        currentLevel: 10,
+        maxLevel: 10,
+        effectiveState: sidecar('observed', {
+          effectiveCompletedDistribution: {
+            levels: [{ level: 10, quantity: 1n }],
+            quantityAt: () => 1n,
+            totalQuantity: 1n,
+            isEmpty: false,
+          },
+        }),
+      }),
+    );
+    expect(view.isMaxed).toBe(true);
+  });
+
+  it('无 sidecar maxed 状态：isMaxed true', () => {
+    expect(effectiveItemView(item({ status: 'maxed' })).isMaxed).toBe(true);
   });
 
   it('currentLevel 优先 effectiveCompleted，其次 imported，最后 raw', () => {

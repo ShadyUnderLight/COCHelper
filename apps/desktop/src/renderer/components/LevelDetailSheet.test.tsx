@@ -161,6 +161,39 @@ describe('LevelDetailSheet（#277-C2）', () => {
     expect(screen.getByText(/即时/)).toBeTruthy();
   });
 
+  it('数值时长 0 显示即时而非不足1分钟（available/inProgressFact/requires）', () => {
+    const available = itemWith({
+      effectiveNextUpgrade: { kind: 'available', level: 6, durationSeconds: 0 },
+    });
+    const { unmount } = render(
+      <LevelDetailSheet item={available} catalogVersion="18.400.13" onClose={() => undefined} />,
+    );
+    expect(screen.getByText(/时长 即时/)).toBeTruthy();
+    expect(screen.queryByText(/不足1分钟/)).toBeNull();
+    unmount();
+    const progress = itemWith({
+      effectiveNextUpgrade: { kind: 'inProgressFact', level: 6, durationSeconds: 0 },
+    });
+    const second = render(
+      <LevelDetailSheet item={progress} catalogVersion="18.400.13" onClose={() => undefined} />,
+    );
+    expect(second.getByText(/时长 即时/)).toBeTruthy();
+    second.unmount();
+    const requires = itemWith({
+      effectiveNextUpgrade: {
+        kind: 'requires',
+        nextLevel: 7,
+        requirements: [],
+        referenceDurationSeconds: 0,
+      },
+    });
+    render(
+      <LevelDetailSheet item={requires} catalogVersion="18.400.13" onClose={() => undefined} />,
+    );
+    expect(screen.getByText(/参考时长 即时/)).toBeTruthy();
+    expect(screen.queryByText(/不足1分钟/)).toBeNull();
+  });
+
   it('sourceMissing 时长显示目录缺失', () => {
     const item = itemWith({
       nextLevelDurationState: { kind: 'sourceMissing' },

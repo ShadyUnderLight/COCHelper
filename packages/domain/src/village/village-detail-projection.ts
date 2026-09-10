@@ -252,7 +252,7 @@ function completionForItems(
     : { count: 0, didOverflow: false };
   const completedInfo = catalogIsUsable
     ? villageDetailInstanceCountAndOverflow(
-        items.filter((item) => isEffectivelyMaxed(item) && villageDetailIsKnown(item)),
+        items.filter((item) => isEffectivelyMaxedItem(item) && villageDetailIsKnown(item)),
       )
     : { count: 0, didOverflow: false };
   const unknownInfo = villageDetailInstanceCountAndOverflow(
@@ -367,7 +367,7 @@ function isEffectivelyUpgrading(
   }
 }
 
-function isEffectivelyMaxed(item: VillageItemState): boolean {
+function isEffectivelyMaxedItem(item: VillageItemState): boolean {
   const effective = item.effectiveState as EffectiveVillageItemStateLike | null | undefined;
   if (effective) {
     if (effective.status === 'manualActive' || effective.status === 'importedActive') {
@@ -415,6 +415,7 @@ function rootParentPath(id: string): string | undefined {
 export const instanceCount = villageDetailInstanceCount;
 export const instanceCountAndOverflow = villageDetailInstanceCountAndOverflow;
 export const isKnown = villageDetailIsKnown;
+export const isEffectivelyMaxed = isEffectivelyMaxedItem;
 
 // needsReimport used by progress-metrics filter.
 export { needsReimport };

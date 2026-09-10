@@ -71,6 +71,7 @@ export function toVillageDetailPayload(input: {
   readonly catalogIsUsable: boolean;
   readonly compatibility: CatalogCompatibility;
   readonly items: readonly VillageItemState[];
+  readonly instanceItems: readonly VillageItemState[];
   readonly groups: readonly VillageDetailGroup[];
   readonly completion: readonly VillageCategoryCompletion[];
   readonly totalCompletion: VillageCategoryCompletion;
@@ -89,6 +90,7 @@ export function toVillageDetailPayload(input: {
     catalogIsUsable: input.catalogIsUsable,
     compatibility: toCatalogCompatibilityDto(input.compatibility),
     items: input.items.map(toVillageItemStateDto),
+    instanceItems: input.instanceItems.map(toVillageItemStateDto),
     groups: input.groups.map(toVillageDetailGroupDto),
     completion: input.completion.map(toVillageCategoryCompletionDto),
     totalCompletion: toVillageCategoryCompletionDto(input.totalCompletion),
@@ -174,6 +176,7 @@ export function toVillageItemStateDto(item: VillageItemState): VillageItemStateD
     effectiveNextUpgrade: optionalNextUpgrade(effective.nextUpgrade),
     effectiveNextLevelDurationState: optionalDurationState(effective.durationState),
     effectiveDiagnostic: effective.diagnostic,
+    effectiveIsMaxed: effective.isMaxed,
   };
 }
 

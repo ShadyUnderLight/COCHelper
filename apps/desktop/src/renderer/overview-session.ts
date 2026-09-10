@@ -239,5 +239,6 @@ function itemFixture(): VillageItemStateDto {
     effectiveNextUpgrade: { kind: 'available', level: 6, durationSeconds: 3600 },
     effectiveNextLevelDurationState: { kind: 'timed', seconds: 3600 },
     effectiveDiagnostic: null,
+    effectiveIsMaxed: false,
   };
 }

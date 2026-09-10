@@ -152,7 +152,13 @@ type Lookups = {
 };
 
 function buildLookups(payload: Parameters<typeof isEmptyDetail>[0]): Lookups {
+  // items 优先（聚合/升级中 canonical），instanceItems 补齐被聚合掉的 raw 记录。
   const itemsById = new Map(payload.items.map((item) => [item.id, item] as const));
+  for (const raw of payload.instanceItems) {
+    if (!itemsById.has(raw.id)) {
+      itemsById.set(raw.id, raw);
+    }
+  }
   const groupsById = new Map(payload.groups.map((group) => [group.id, group] as const));
   const groupOfInstance = new Map<string, BuildingGroupDto>();
   for (const group of payload.buildingGroups) {

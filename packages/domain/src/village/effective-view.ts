@@ -1,6 +1,7 @@
 import type { CatalogDurationState } from '../catalog/duration-state';
 import type { EffectiveVillageItemState } from './effective-projection';
 import type { VillageItemState, VillageNextUpgrade } from './types';
+import { isEffectivelyMaxed } from './village-detail-projection';
 
 /**
  * 单条目的 authoritative 有效视图（复刻 Swift `VillageItemState`
@@ -19,6 +20,8 @@ export type EffectiveItemView = {
   readonly nextUpgrade: VillageNextUpgrade | null;
   readonly durationState: CatalogDurationState | null;
   readonly diagnostic: string | null;
+  /** 复刻 `isEffectivelyMaxed`（含 effectiveCompletedDistribution known 门）。 */
+  readonly isMaxed: boolean;
 };
 
 export function effectiveItemView(item: VillageItemState): EffectiveItemView {
@@ -30,6 +33,7 @@ export function effectiveItemView(item: VillageItemState): EffectiveItemView {
       nextUpgrade: item.nextUpgrade,
       durationState: item.nextLevelDurationState,
       diagnostic: null,
+      isMaxed: isEffectivelyMaxed(item),
     };
   }
   const currentLevel =
@@ -44,6 +48,7 @@ export function effectiveItemView(item: VillageItemState): EffectiveItemView {
           nextUpgrade: { kind: 'unknown' },
           durationState: null,
           diagnostic: state.diagnostic,
+          isMaxed: isEffectivelyMaxed(item),
         };
       }
       return {
@@ -56,6 +61,7 @@ export function effectiveItemView(item: VillageItemState): EffectiveItemView {
         },
         durationState: state.catalogDurationState,
         diagnostic: state.diagnostic,
+        isMaxed: isEffectivelyMaxed(item),
       };
     }
     case 'observed':
@@ -66,6 +72,7 @@ export function effectiveItemView(item: VillageItemState): EffectiveItemView {
         nextUpgrade: item.nextUpgrade,
         durationState: state.catalogDurationState ?? item.nextLevelDurationState,
         diagnostic: state.diagnostic,
+        isMaxed: isEffectivelyMaxed(item),
       };
     case 'manualCompleted':
       return {
@@ -74,6 +81,7 @@ export function effectiveItemView(item: VillageItemState): EffectiveItemView {
         nextUpgrade: state.catalogNextUpgrade ?? { kind: 'unknown' },
         durationState: state.catalogDurationState,
         diagnostic: state.diagnostic,
+        isMaxed: isEffectivelyMaxed(item),
       };
     case 'unknown':
     case 'conflict':
@@ -84,6 +92,7 @@ export function effectiveItemView(item: VillageItemState): EffectiveItemView {
         nextUpgrade: { kind: 'unknown' },
         durationState: null,
         diagnostic: state.diagnostic,
+        isMaxed: isEffectivelyMaxed(item),
       };
     case 'unavailable':
       return {
@@ -92,6 +101,7 @@ export function effectiveItemView(item: VillageItemState): EffectiveItemView {
         nextUpgrade: null,
         durationState: null,
         diagnostic: state.diagnostic,
+        isMaxed: isEffectivelyMaxed(item),
       };
     default: {
       const exhaustive: never = state.status;

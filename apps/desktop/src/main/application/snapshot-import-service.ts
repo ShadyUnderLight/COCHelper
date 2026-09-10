@@ -68,9 +68,14 @@ export class SnapshotImportService {
   private readonly manualTracker: ManualTrackerService | null;
   /**
    * 快捷导入待确认态：只保存在 Main 内存，Renderer 不得回传 preview。
-   * 与普通 pending 共用 generation 计数器做 CAS，交错 prepare 时旧 generation 自动过期。
+   * 与创建它的 generation 绑定保存；commit/discard 必须同时满足
+   * 调用者 token == 当前 generation == pending 创建代，才是“针对这一版 prepare 的提交”。
+   * 与普通 pending 共用 generation 计数器做 CAS，交错 prepare 时旧 token 自动过期。
    */
-  private quickPending: QuickImportPreview | null = null;
+  private quickPending: {
+    readonly preview: QuickImportPreview;
+    readonly generation: number;
+  } | null = null;
 
   constructor(options: SnapshotImportServiceOptions) {
     this.state = options.state;
@@ -254,13 +259,14 @@ export class SnapshotImportService {
       throw new AppServiceError('validation', '导入预览详情无法经 IPC schema 校验。');
     }
     /** mapper + 共享 zod 全部成功后，才保存 quickPending / bump generation。 */
-    this.quickPending = preview;
     this.state.notifyMutation();
-    return { generation: this.state.getGeneration(), preview: parsed.data };
+    const generation = this.state.getGeneration();
+    this.quickPending = { preview, generation };
+    return { generation, preview: parsed.data };
   }
 
   /**
-   * 快捷导入 commit：只用 Main 保存的 preview 与 expectedGeneration（CAS），
+   * 快捷导入 commit：只用 Main 保存的 preview 与双重绑定的 generation（CAS），
    * 复用与普通导入一致的 villages+history+manual 原子提交边界。
    */
   quickCommit(
@@ -270,8 +276,8 @@ export class SnapshotImportService {
     if (!this.state.canWrite()) {
       throw new AppServiceError('unavailable', '当前处于恢复或只读状态，无法导入。');
     }
+    const pending = this.takeLiveQuickPending();
     assertExpectedGeneration(this.state.getGeneration(), expectedGeneration);
-    const pending = this.quickPending;
     if (pending === null) {
       throw new AppServiceError('validation', '没有待确认的快捷导入。');
     }
@@ -289,13 +295,30 @@ export class SnapshotImportService {
   }
 
   quickDiscard(expectedGeneration: number): QuickDiscardPayload {
+    const pending = this.takeLiveQuickPending();
     assertExpectedGeneration(this.state.getGeneration(), expectedGeneration);
-    if (this.quickPending === null) {
+    if (pending === null) {
       return { generation: this.state.getGeneration() };
     }
     this.quickPending = null;
     this.state.notifyMutation();
     return { generation: this.state.getGeneration() };
+  }
+
+  /**
+   * 取出与当前 generation 绑定的 quick pending。
+   * generation 只增不减：创建代落后于当前代的 pending 永不可能再被合法提交
+   *（任何有效提交都要求 token == 当前代 == 创建代），在此直接清理并按 CAS
+   * 失败处理，避免 Main 留下不可见的死 pending。注意失败路径绝不 bump，
+   * 以免误伤并发的普通 pending。
+   */
+  private takeLiveQuickPending(): QuickImportPreview | null {
+    const pending = this.quickPending;
+    if (pending !== null && pending.generation !== this.state.getGeneration()) {
+      this.quickPending = null;
+      throw new AppServiceError('conflict', '导入状态已过期，请刷新后重试。');
+    }
+    return pending?.preview ?? null;
   }
 
   /**

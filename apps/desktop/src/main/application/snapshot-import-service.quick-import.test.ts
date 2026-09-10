@@ -280,4 +280,59 @@ describe('SnapshotImportService quick import', () => {
     service.quickCommit(prepared.generation);
     expect(villageStore.listVillages().find((v) => v.id === villageId)?.tag).toBe('#QMAIN');
   });
+
+  it('新 generation 提交旧 pending → conflict 且不得写盘（pending 绑定创建代）', () => {
+    const { persistence, villageStore, state, service } = bootService();
+    const createdText = '{"tag":"#QTOK","buildings":[]}';
+    const { villageId } = createVillage(service, createdText);
+    // 同 Tag 但原文不同：若被错误提交，originalText 会变化，可被检测到
+    const quickText = '{"tag": "#QTOK", "buildings": []}';
+    const prepared = service.quickPrepare({ targetVillageId: villageId, text: quickText });
+    expect(prepared.preview.replacesSameTag).toBe(true);
+    // 另一个 authoritative mutation 推进 generation（普通 prepare，不写盘）
+    const bumped = service.prepare({ text: '{"tag":"#QTOKNEW","buildings":[]}' });
+    expect(bumped.generation).toBe(prepared.generation + 1);
+    const historyEntriesBefore = persistence.history.load()?.entries.length ?? 0;
+
+    try {
+      service.quickCommit(bumped.generation);
+    } catch (error) {
+      expect((error as AppServiceError).code).toBe('conflict');
+    }
+    // 不得写盘：村庄快照原文不变，history 条目数不变
+    const target = villageStore.listVillages().find((v) => v.id === villageId);
+    expect(target?.tag).toBe('#QTOK');
+    expect(target?.accountSnapshot?.originalText).toBe(createdText);
+    expect(persistence.history.load()?.entries.length ?? 0).toBe(historyEntriesBefore);
+    // 普通 pending 不受影响（无串扰）
+    expect(state.getPending()?.snapshot.tag).toBe('#QTOKNEW');
+    // 死 pending 已被清理：再次提交走 validation 而非重复 conflict 写盘风险
+    try {
+      service.quickCommit(bumped.generation);
+    } catch (error) {
+      expect((error as AppServiceError).code).toBe('validation');
+      return;
+    }
+    throw new Error('expected validation error after stale pending cleanup');
+  });
+
+  it('新 generation discard 旧 pending → conflict、清理且不 bump', () => {
+    const { service, state } = bootService();
+    const { villageId } = createVillage(service, '{"tag":"#QTDISC","buildings":[]}');
+    const prepared = service.quickPrepare({
+      targetVillageId: villageId,
+      text: '{"tag":"#QTDISC","buildings":[]}',
+    });
+    const bumped = service.prepare({ text: '{"tag":"#QTDISCNEW","buildings":[]}' });
+    expect(bumped.generation).toBe(prepared.generation + 1);
+    try {
+      service.quickDiscard(bumped.generation);
+    } catch (error) {
+      expect((error as AppServiceError).code).toBe('conflict');
+    }
+    // 失败不 bump：generation 仍是 mutation 后的值
+    expect(state.getGeneration()).toBe(bumped.generation);
+    // 死 pending 已被清理：再次 discard 幂等返回，不抛错
+    expect(service.quickDiscard(bumped.generation)).toEqual({ generation: bumped.generation });
+  });
 });

@@ -336,6 +336,24 @@ describe('SnapshotImportService quick import', () => {
     expect(service.quickDiscard(bumped.generation)).toEqual({ generation: bumped.generation });
   });
 
+  it('quickPrepare 响应不得泄漏剪贴板原文（sentinel）', () => {
+    const { service } = bootService();
+    const { villageId } = createVillage(service, '{"tag":"#QSENT","buildings":[]}');
+    // 只存在于 raw text 的秘密值：合法 JSON、可解析，但 UI 摘要不需要它
+    const sentinel = 's3cr3t-clipboard-only-7f3a9c';
+    const prepared = service.quickPrepare({
+      targetVillageId: villageId,
+      text: `{"tag":"#QSENT","buildings":[],"note":"${sentinel}"}`,
+    });
+    const serialized = JSON.stringify(prepared);
+    expect(serialized).not.toContain(sentinel);
+    expect(serialized).not.toContain('originalText');
+    expect('originalText' in prepared.preview.snapshot).toBe(false);
+    // UI 所需摘要字段仍在
+    expect(prepared.preview.snapshot.tag).toBe('#QSENT');
+    expect(prepared.preview.targetVillageId).toBe(villageId);
+  });
+
   it('镜像：普通 prepare 后被 quickPrepare 顶掉代 → 普通 commit 必须 conflict 且零写入', () => {
     const { persistence, villageStore, state, service } = bootService();
     const { villageId } = createVillage(service, '{"tag":"#NMIRX","buildings":[]}');

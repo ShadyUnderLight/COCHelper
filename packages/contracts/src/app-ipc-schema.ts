@@ -9,7 +9,8 @@ import type {
   AccountItemWire,
   AccountSnapshotWire,
   PendingImportPreviewWire,
-  QuickImportPreviewWire,
+  QuickImportSnapshotSummaryWire,
+  QuickPreparePreviewWire,
 } from './account-wire';
 import type {
   AppSnapshotPayload,
@@ -123,9 +124,17 @@ export const pendingImportPreviewWireSchema: z.ZodType<PendingImportPreviewWire>
   })
   .strict();
 
-export const quickImportPreviewWireSchema: z.ZodType<QuickImportPreviewWire> = z
+export const quickImportSnapshotSummaryWireSchema: z.ZodType<QuickImportSnapshotSummaryWire> = z
   .object({
-    snapshot: accountSnapshotWireSchema,
+    tag: z.string().max(32).optional(),
+    diagnostics: z.array(accountDiagnosticWireSchema),
+    unknownTopLevelKeys: z.array(z.string().max(128)),
+  })
+  .strict();
+
+export const quickPreparePreviewWireSchema: z.ZodType<QuickPreparePreviewWire> = z
+  .object({
+    snapshot: quickImportSnapshotSummaryWireSchema,
     targetVillageId: villageIdSchema,
     targetVillageName: z.string().min(1).max(256),
     targetVillageTag: z.string().max(32).nullable(),
@@ -216,7 +225,7 @@ export const quickPrepareRequestSchema: z.ZodType<QuickPrepareRequest> = z
 export const quickPreparePayloadSchema: z.ZodType<QuickPreparePayload> = z
   .object({
     generation: generationSchema,
-    preview: quickImportPreviewWireSchema,
+    preview: quickPreparePreviewWireSchema,
   })
   .strict();
 

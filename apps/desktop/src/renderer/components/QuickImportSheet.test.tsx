@@ -1,21 +1,17 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { QuickImportPreviewWire } from '@coc-helper/contracts';
+import type { QuickPreparePreviewWire } from '@coc-helper/contracts';
 
 import type { QuickImportState } from '../use-quick-import';
 import { QuickImportSheet } from './QuickImportSheet';
 
-function preview(): QuickImportPreviewWire {
+function preview(): QuickPreparePreviewWire {
   return {
     snapshot: {
-      importedAt: 1,
-      originalText: '{"tag":"#QA","buildings":[]}',
-      objectSections: {},
-      numericSections: {},
-      boosts: {},
+      tag: '#QA',
       unknownTopLevelKeys: ['extra'],
       diagnostics: [{ id: 'd1', severity: 'info', path: '$.tag', message: 'ok' }],
     },
@@ -34,6 +30,7 @@ function state(overrides: Partial<QuickImportState> = {}): QuickImportState {
     targetVillageId: null,
     preview: null,
     preparedGeneration: null,
+    stale: false,
     lastError: null,
     ...overrides,
   };
@@ -76,6 +73,7 @@ describe('QuickImportSheet', () => {
           targetVillageId: 'v-a',
           preview: preview(),
           preparedGeneration: 8,
+          stale: true,
           lastError: '导入状态已变化，请重新粘贴并更新。',
         }}
         canWrite
@@ -92,6 +90,31 @@ describe('QuickImportSheet', () => {
     expect(screen.getByRole('alert')).toBeTruthy();
   });
 
+  it('ready 且有非 stale 错误（ownership 恢复）时确认仍可用', () => {
+    const onConfirm = vi.fn();
+    render(
+      <QuickImportSheet
+        state={{
+          status: 'ready',
+          targetVillageId: 'v-a',
+          preview: preview(),
+          preparedGeneration: 8,
+          stale: false,
+          lastError: '导入事务尚未就绪。',
+        }}
+        canWrite
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+        onRetry={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: '确认导入' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
   it('只读时确认禁用', () => {
     render(
       <QuickImportSheet
@@ -100,6 +123,7 @@ describe('QuickImportSheet', () => {
           targetVillageId: 'v-a',
           preview: preview(),
           preparedGeneration: 8,
+          stale: false,
           lastError: null,
         }}
         canWrite={false}
@@ -122,6 +146,7 @@ describe('QuickImportSheet', () => {
           targetVillageId: 'v-a',
           preview: null,
           preparedGeneration: null,
+          stale: false,
           lastError: '系统剪贴板中没有可用的文本。',
         }}
         canWrite
@@ -144,6 +169,7 @@ describe('QuickImportSheet', () => {
           targetVillageId: 'v-a',
           preview: null,
           preparedGeneration: null,
+          stale: false,
           lastError: null,
         }}
         canWrite
@@ -155,5 +181,61 @@ describe('QuickImportSheet', () => {
     );
     expect(screen.getByText(/正在读取剪贴板/)).toBeTruthy();
     expect((screen.getByRole('button', { name: '关闭' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('真 modal：Escape 关闭、overlay 点击关闭、dialog 内点击不关闭', () => {
+    const onClose = vi.fn();
+    const props = {
+      state: state({
+        status: 'ready',
+        targetVillageId: 'v-a',
+        preview: preview(),
+        preparedGeneration: 8,
+      }),
+      canWrite: true,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+      onRetry: vi.fn(),
+      onClose,
+    };
+    const { unmount } = render(<QuickImportSheet {...props} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // overlay 点击关闭
+    const dialog = screen.getByRole('dialog', { name: '快捷导入' });
+    const overlay = dialog.parentElement;
+    expect(overlay?.className).toContain('sheet-overlay');
+    fireEvent.click(overlay!);
+    expect(onClose).toHaveBeenCalledTimes(2);
+    // dialog 内点击不冒泡到 overlay
+    fireEvent.click(dialog);
+    expect(onClose).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('关闭后焦点回到打开者', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    const { unmount } = render(
+      <QuickImportSheet
+        state={state({
+          status: 'ready',
+          targetVillageId: 'v-a',
+          preview: preview(),
+          preparedGeneration: 8,
+        })}
+        canWrite
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        onRetry={vi.fn()}
+        onClose={vi.fn()}
+        returnFocusTo={opener}
+      />,
+    );
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    unmount();
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 });

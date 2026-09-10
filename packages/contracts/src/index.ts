@@ -172,6 +172,8 @@ export type {
   AccountSnapshotWire,
   PendingImportPreviewWire,
   QuickImportPreviewWire,
+  QuickImportSnapshotSummaryWire,
+  QuickPreparePreviewWire,
 } from './account-wire';
 export type {
   VillageItemStateDto,
@@ -234,7 +236,8 @@ export {
   quickCommitPayloadSchema,
   quickDiscardRequestSchema,
   quickDiscardPayloadSchema,
-  quickImportPreviewWireSchema,
+  quickPreparePreviewWireSchema,
+  quickImportSnapshotSummaryWireSchema,
   emptyObjectRequestSchema,
   isAppSnapshotPayload,
   isImportPreparePayload,

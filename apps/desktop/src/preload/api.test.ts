@@ -52,13 +52,9 @@ describe('preload API surface', () => {
   it('quick 通道透传并校验 preview 形状，拒绝伪造', async () => {
     const preview = {
       snapshot: {
-        importedAt: 1,
-        originalText: '{}',
-        objectSections: {},
-        numericSections: {},
-        boosts: {},
-        unknownTopLevelKeys: [],
+        tag: '#A',
         diagnostics: [],
+        unknownTopLevelKeys: [],
       },
       targetVillageId: 'v-1',
       targetVillageName: 'A',

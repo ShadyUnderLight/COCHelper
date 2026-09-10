@@ -4,7 +4,7 @@
  * commit/discard 必须携带 expectedGeneration（CAS），防止 stale UI 提交/丢弃新的 pending。
  */
 
-import type { PendingImportPreviewWire, QuickImportPreviewWire } from './account-wire';
+import type { PendingImportPreviewWire, QuickPreparePreviewWire } from './account-wire';
 import type { Result } from './result';
 
 export const APP_SNAPSHOT_CHANNEL = 'app.snapshot' as const;
@@ -124,7 +124,7 @@ export type QuickPrepareRequest = {
 };
 export type QuickPreparePayload = {
   readonly generation: number;
-  readonly preview: QuickImportPreviewWire;
+  readonly preview: QuickPreparePreviewWire;
 };
 export type QuickPrepareResponse = Result<QuickPreparePayload>;
 

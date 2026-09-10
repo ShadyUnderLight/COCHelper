@@ -146,13 +146,17 @@ function QuickImportEntry(props: {
   const { villageId, quick, canQuick } = props;
   const busy = quick.state.status === 'preparing' || quick.state.status === 'committing';
   const sheetOpen = quick.state.status !== 'idle' || quick.state.lastError !== null;
+  const [opener, setOpener] = useState<HTMLElement | null>(null);
   return (
     <>
       <div className="action-row">
         <button
           type="button"
           disabled={!canQuick || busy}
-          onClick={() => void quick.open(villageId)}
+          onClick={(event) => {
+            setOpener(event.currentTarget);
+            void quick.open(villageId);
+          }}
         >
           粘贴并更新
         </button>
@@ -165,6 +169,7 @@ function QuickImportEntry(props: {
           onCancel={() => void quick.cancel()}
           onRetry={() => void quick.retry()}
           onClose={quick.close}
+          returnFocusTo={opener}
         />
       ) : null}
     </>

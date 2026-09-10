@@ -10,8 +10,8 @@ import {
   isQuickPreparePayload,
   quickCommitRequestSchema,
   quickDiscardRequestSchema,
-  quickImportPreviewWireSchema,
   quickPreparePayloadSchema,
+  quickPreparePreviewWireSchema,
   quickPrepareRequestSchema,
 } from './app-ipc-schema';
 import { isUpgradeOverviewPayload, villageDetailRequestSchema } from './projection-ipc-schema';
@@ -76,17 +76,13 @@ describe('app-ipc-schema', () => {
     expect(quickDiscardRequestSchema.safeParse({ expectedGeneration: 3 }).success).toBe(true);
   });
 
-  it('quick preview wire 拒绝缺字段', () => {
-    expect(quickImportPreviewWireSchema.safeParse({}).success).toBe(false);
+  it('quick preview wire 拒绝缺字段，且快照摘要不得携带原文', () => {
+    expect(quickPreparePreviewWireSchema.safeParse({}).success).toBe(false);
     const preview = {
       snapshot: {
-        importedAt: 1,
-        originalText: '{}',
-        objectSections: {},
-        numericSections: {},
-        boosts: {},
-        unknownTopLevelKeys: [],
+        tag: '#A',
         diagnostics: [],
+        unknownTopLevelKeys: [],
       },
       targetVillageId: 'v1',
       targetVillageName: 'A',
@@ -95,7 +91,23 @@ describe('app-ipc-schema', () => {
       replacesSameTag: false,
       destinationDescription: '将建立「A」的账号快照并导入',
     };
-    expect(quickImportPreviewWireSchema.safeParse(preview).success).toBe(true);
+    expect(quickPreparePreviewWireSchema.safeParse(preview).success).toBe(true);
+    // 剪贴板原文禁区：完整快照（含 originalText/各 section）不得通过摘要 schema
+    expect(
+      quickPreparePreviewWireSchema.safeParse({
+        ...preview,
+        snapshot: {
+          tag: '#A',
+          importedAt: 1,
+          originalText: '{"tag":"#A"}',
+          objectSections: {},
+          numericSections: {},
+          boosts: {},
+          unknownTopLevelKeys: [],
+          diagnostics: [],
+        },
+      }).success,
+    ).toBe(false);
     expect(quickPreparePayloadSchema.safeParse({ generation: 1, preview }).success).toBe(true);
     expect(isQuickPreparePayload({ generation: 1, preview })).toBe(true);
     expect(isQuickPreparePayload({ generation: 1 })).toBe(false);

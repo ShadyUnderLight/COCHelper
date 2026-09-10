@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { QuickImportPreviewWire } from '@coc-helper/contracts';
+import type { QuickPreparePreviewWire } from '@coc-helper/contracts';
 
 import type { QuickImportApi, QuickImportState } from '../use-quick-import';
 import { applyVillageDetailSuccess, villageDetailFixture } from '../village-detail-session';
@@ -19,6 +19,7 @@ function quickState(overrides: Partial<QuickImportState> = {}): QuickImportState
     targetVillageId: null,
     preview: null,
     preparedGeneration: null,
+    stale: false,
     lastError: null,
     ...overrides,
   };
@@ -35,14 +36,10 @@ function quickApi(state: QuickImportState, open = vi.fn()): QuickImportApi {
   };
 }
 
-function preview(): QuickImportPreviewWire {
+function preview(): QuickPreparePreviewWire {
   return {
     snapshot: {
-      importedAt: 1,
-      originalText: '{"tag":"#QA","buildings":[]}',
-      objectSections: {},
-      numericSections: {},
-      boosts: {},
+      tag: '#QA',
       unknownTopLevelKeys: [],
       diagnostics: [],
     },

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   AppSnapshotPayload,
-  QuickImportPreviewWire,
+  QuickPreparePreviewWire,
   Result,
   StateChangedListener,
 } from '@coc-helper/contracts';
@@ -29,14 +29,10 @@ function snapshot(overrides: Partial<AppSnapshotPayload> = {}): AppSnapshotPaylo
   };
 }
 
-function preview(overrides: Partial<QuickImportPreviewWire> = {}): QuickImportPreviewWire {
+function preview(overrides: Partial<QuickPreparePreviewWire> = {}): QuickPreparePreviewWire {
   return {
     snapshot: {
-      importedAt: 1,
-      originalText: '{"tag":"#QA","buildings":[]}',
-      objectSections: {},
-      numericSections: {},
-      boosts: {},
+      tag: '#QA',
       unknownTopLevelKeys: [],
       diagnostics: [],
     },
@@ -68,7 +64,7 @@ function createBridge() {
     commit: [],
     discard: [],
   };
-  let nextPrepare: Result<{ generation: number; preview: QuickImportPreviewWire }> = ok({
+  let nextPrepare: Result<{ generation: number; preview: QuickPreparePreviewWire }> = ok({
     generation: 8,
     preview: preview(),
   });
@@ -223,6 +219,8 @@ describe('useQuickImport', () => {
     expect(committed).toBe(false);
     expect(harness.calls.commit).toHaveLength(0);
     expect(result.current.state.lastError).toMatch(/过期|变化/);
+    expect(result.current.state.stale).toBe(true);
+    expect(result.current.state.preview).not.toBeNull();
   });
 
   it('Main 侧 conflict 也转为 stale 文案并保留重试目标', async () => {
@@ -310,6 +308,77 @@ describe('useQuickImport', () => {
     });
     expect(result.current.state.status).toBe('idle');
     expect(result.current.state.lastError).toBe('import.quickPrepare 返回值不合法');
+  });
+
+  it('ready 后第二次 prepare 失败 → 旧 preview/token 保留，仍可确认或取消', async () => {
+    const harness = createBridge();
+    const snap = snapshot();
+    const { result } = renderHook(() => useQuickImport(harness.bridge, snap, {}));
+    await act(async () => {
+      await result.current.open('v-a');
+    });
+    expect(result.current.state.status).toBe('ready');
+    // 第二次剪贴板是空的：Main 侧新 prepare 失败，旧 A 仍 live
+    harness.setNextPrepare(err('系统剪贴板中没有可用的文本。'));
+    await act(async () => {
+      await result.current.open('v-a');
+    });
+    expect(result.current.state.status).toBe('ready');
+    expect(result.current.state.preview?.targetVillageId).toBe('v-a');
+    expect(result.current.state.preparedGeneration).toBe(8);
+    expect(result.current.state.stale).toBe(false);
+    expect(result.current.state.lastError).toBe('系统剪贴板中没有可用的文本。');
+    // 旧 token 仍有效：确认走通
+    let committed = false;
+    await act(async () => {
+      committed = await result.current.confirm();
+    });
+    expect(committed).toBe(true);
+    expect(harness.calls.commit).toEqual([{ expectedGeneration: 8 }]);
+  });
+
+  it('commit 事务失败（unavailable）→ ownership 不丢，重试可成功', async () => {
+    const harness = createBridge();
+    harness.setNextCommit(err('导入事务尚未就绪。', 'unavailable'));
+    const snap = snapshot();
+    const { result } = renderHook(() => useQuickImport(harness.bridge, snap, {}));
+    await act(async () => {
+      await result.current.open('v-a');
+    });
+    let committed = true;
+    await act(async () => {
+      committed = await result.current.confirm();
+    });
+    expect(committed).toBe(false);
+    // Main 仍持有 pending：本地回到 ready 并保留原 token
+    expect(result.current.state.status).toBe('ready');
+    expect(result.current.state.preview?.targetVillageId).toBe('v-a');
+    expect(result.current.state.preparedGeneration).toBe(8);
+    // 事务恢复后同一 token 重试成功
+    harness.setNextCommit(ok({ generation: 9, selectedVillageId: 'v-a' }));
+    await act(async () => {
+      committed = await result.current.confirm();
+    });
+    expect(committed).toBe(true);
+    expect(result.current.state.status).toBe('idle');
+  });
+
+  it('cancel 时 discard 送达失败 → ownership 不丢', async () => {
+    const harness = createBridge();
+    harness.bridge.quickDiscard = vi.fn(async () => {
+      throw new Error('ipc 通道异常');
+    });
+    const snap = snapshot();
+    const { result } = renderHook(() => useQuickImport(harness.bridge, snap, {}));
+    await act(async () => {
+      await result.current.open('v-a');
+    });
+    await act(async () => {
+      await result.current.cancel();
+    });
+    expect(result.current.state.status).toBe('ready');
+    expect(result.current.state.preparedGeneration).toBe(8);
+    expect(result.current.state.lastError).toBe('取消失败，请重试。');
   });
 
   it('close 在 ready 时丢弃并回到 idle', async () => {

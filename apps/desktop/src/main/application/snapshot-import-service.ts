@@ -8,7 +8,7 @@
 import {
   pendingImportPreviewWireSchema,
   pendingImportSummaryDtoSchema,
-  quickImportPreviewWireSchema,
+  quickPreparePreviewWireSchema,
   type ImportCommitPayload,
   type ImportDiscardPayload,
   type ImportPreparePayload,
@@ -44,7 +44,7 @@ import { AppServiceError, type AppAuthoritativeState } from './app-authoritative
 import {
   toPendingImportPreviewWire,
   toPendingImportSummaryDto,
-  toQuickImportPreviewWire,
+  toQuickPreparePreviewWire,
 } from './dto-mappers';
 import { GenerationBoundSlot, STALE_PENDING_MESSAGE } from './pending-slot';
 import { HistoryService } from './history-service';
@@ -129,8 +129,8 @@ export class SnapshotImportService {
     if (!this.state.canWrite()) {
       throw new AppServiceError('unavailable', '当前处于恢复或只读状态，无法导入。');
     }
-    assertExpectedGeneration(this.state.getGeneration(), expectedGeneration);
     const pending = this.state.takeLivePending();
+    assertExpectedGeneration(this.state.getGeneration(), expectedGeneration);
     if (pending === null) {
       throw new AppServiceError('validation', '没有待确认的导入。');
     }
@@ -245,14 +245,14 @@ export class SnapshotImportService {
     const preview = result.value;
     let wire: QuickPreparePayload['preview'];
     try {
-      wire = toQuickImportPreviewWire(preview);
+      wire = toQuickPreparePreviewWire(preview);
     } catch (error) {
       if (error instanceof RangeError) {
         throw new AppServiceError('validation', '导入预览包含无法经 IPC 传递的数值。');
       }
       throw error;
     }
-    const parsed = quickImportPreviewWireSchema.safeParse(wire);
+    const parsed = quickPreparePreviewWireSchema.safeParse(wire);
     if (!parsed.success) {
       throw new AppServiceError('validation', '导入预览详情无法经 IPC schema 校验。');
     }

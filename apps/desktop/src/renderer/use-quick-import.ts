@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AppSnapshotPayload,
   DesktopBridge,
-  QuickImportPreviewWire,
+  IpcError,
+  QuickPreparePreviewWire,
 } from '@coc-helper/contracts';
 
 import { formatIpcError, isCurrentEpoch, type SessionCursor } from './app-session';
@@ -19,8 +20,10 @@ export type QuickImportState = {
   readonly status: QuickImportStatus;
   /** 打开 Sheet 时固定的目标村庄；不跟随全局 selected 漂移。 */
   readonly targetVillageId: string | null;
-  readonly preview: QuickImportPreviewWire | null;
+  readonly preview: QuickPreparePreviewWire | null;
   readonly preparedGeneration: number | null;
+  /** 世代错位（preview 已过期）：确认被禁用，只能重新预览或取消。 */
+  readonly stale: boolean;
   readonly lastError: string | null;
 };
 
@@ -29,10 +32,22 @@ const IDLE_QUICK_IMPORT: QuickImportState = {
   targetVillageId: null,
   preview: null,
   preparedGeneration: null,
+  stale: false,
   lastError: null,
 };
 
 const STALE_MESSAGE = '导入状态已变化，请重新粘贴并更新。';
+
+/**
+ * Ownership 不变量：只要 Main 仍持有 live pending，本地必须保留对应 token
+ *（preview + preparedGeneration），或者在放弃前显式使 Main pending 失效。
+ * - Main 明确说死（conflict/validation）→ token 无用，切 idle 保留 target 供重试。
+ * - 其他失败（unavailable/notFound/桥异常）→ Main 仍可能持有 pending，恢复 ready
+ *   并保留原 token，绝不静默丢弃。
+ */
+function isDeadPending(code: IpcError['code']): boolean {
+  return code === 'conflict' || code === 'validation';
+}
 
 export type QuickImportApi = {
   readonly state: QuickImportState;
@@ -84,9 +99,11 @@ export function useQuickImport(
       stateRef.current.status === 'ready' &&
       stateRef.current.preparedGeneration !== null &&
       known.generation !== stateRef.current.preparedGeneration &&
-      stateRef.current.lastError !== STALE_MESSAGE
+      !stateRef.current.stale
     ) {
-      setState((prev) => (prev.status === 'ready' ? { ...prev, lastError: STALE_MESSAGE } : prev));
+      setState((prev) =>
+        prev.status === 'ready' ? { ...prev, stale: true, lastError: STALE_MESSAGE } : prev,
+      );
     }
   }, [snapshot]);
 
@@ -99,14 +116,19 @@ export function useQuickImport(
       if (current.status === 'preparing' || current.status === 'committing') {
         return;
       }
+      // ready 时重开：先留住旧 ownership，失败则恢复（Main 旧 pending 仍 live）。
+      const previous =
+        current.status === 'ready' && current.preparedGeneration !== null ? current : null;
       inFlightRef.current = true;
       try {
         const requestEpoch = epochRef.current;
+        const sessionAtOpen = snapshotRef.current?.sessionId;
         setState({
           status: 'preparing',
           targetVillageId,
           preview: null,
           preparedGeneration: null,
+          stale: false,
           lastError: null,
         });
         let prepared: Awaited<ReturnType<BridgeQuickImportClient['quickPrepare']>>;
@@ -116,26 +138,30 @@ export function useQuickImport(
           if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
             return;
           }
-          setState({
-            status: 'idle',
+          if (snapshotRef.current?.sessionId !== sessionAtOpen) {
+            return;
+          }
+          restoreAfterOpenFailure(
+            setState,
+            previous,
             targetVillageId,
-            preview: null,
-            preparedGeneration: null,
-            lastError: error instanceof Error ? error.message : '快捷导入预览失败',
-          });
+            error instanceof Error ? error.message : '快捷导入预览失败',
+          );
           return;
         }
         if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
           return;
         }
         if (!prepared.ok) {
-          setState({
-            status: 'idle',
+          if (snapshotRef.current?.sessionId !== sessionAtOpen) {
+            return;
+          }
+          restoreAfterOpenFailure(
+            setState,
+            previous,
             targetVillageId,
-            preview: null,
-            preparedGeneration: null,
-            lastError: formatIpcError(prepared.error),
-          });
+            formatIpcError(prepared.error),
+          );
           return;
         }
         const generation = prepared.value.generation;
@@ -173,6 +199,7 @@ export function useQuickImport(
           targetVillageId,
           preview: prepared.value.preview,
           preparedGeneration: generation,
+          stale: false,
           lastError: null,
         });
       } finally {
@@ -193,13 +220,16 @@ export function useQuickImport(
     if (
       current.status !== 'ready' ||
       current.preview === null ||
-      current.preparedGeneration === null
+      current.preparedGeneration === null ||
+      current.stale
     ) {
       return false;
     }
     const cursor = cursorRef.current;
     if (cursor === null || cursor.generation !== current.preparedGeneration) {
-      setState((prev) => (prev.status === 'ready' ? { ...prev, lastError: STALE_MESSAGE } : prev));
+      setState((prev) =>
+        prev.status === 'ready' ? { ...prev, stale: true, lastError: STALE_MESSAGE } : prev,
+      );
       return false;
     }
     const expectedGeneration = current.preparedGeneration;
@@ -214,6 +244,7 @@ export function useQuickImport(
         if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
           return false;
         }
+        // 桥异常：Main pending 状态未知，保守保留 ownership。
         setState((prev) =>
           prev.status === 'committing'
             ? {
@@ -229,13 +260,27 @@ export function useQuickImport(
         return false;
       }
       if (!committed.ok) {
-        setState({
-          status: 'idle',
-          targetVillageId: current.targetVillageId,
-          preview: null,
-          preparedGeneration: null,
-          lastError: formatIpcError(committed.error),
-        });
+        if (isDeadPending(committed.error.code)) {
+          // Main 已无该 pending：token 作废，切 idle 保留 target 供重试。
+          setState({
+            status: 'idle',
+            targetVillageId: current.targetVillageId,
+            preview: null,
+            preparedGeneration: null,
+            stale: false,
+            lastError: formatIpcError(committed.error),
+          });
+        } else {
+          // Main 仍持有 pending（事务失败/目标缺失等）：恢复 ready 保住 token。
+          setState({
+            status: 'ready',
+            targetVillageId: current.targetVillageId,
+            preview: current.preview,
+            preparedGeneration: current.preparedGeneration,
+            stale: false,
+            lastError: formatIpcError(committed.error),
+          });
+        }
         return false;
       }
       cursorRef.current =
@@ -258,17 +303,41 @@ export function useQuickImport(
     if (current.status === 'committing' || current.status === 'preparing') {
       return;
     }
-    const requestEpoch = epochRef.current;
     if (current.status === 'ready' && current.preparedGeneration !== null) {
       const expectedGeneration = current.preparedGeneration;
-      setState(IDLE_QUICK_IMPORT);
+      const requestEpoch = epochRef.current;
+      inFlightRef.current = true;
       try {
-        await bridge.quickDiscard({ expectedGeneration });
-      } catch {
-        // 取消是本地清理语义：Main 侧过期由 CAS 兜底，不回写错误。
-      }
-      if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
-        return;
+        let discarded: Awaited<ReturnType<BridgeQuickImportClient['quickDiscard']>>;
+        try {
+          discarded = await bridge.quickDiscard({ expectedGeneration });
+        } catch {
+          if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
+            return;
+          }
+          // 丢弃请求没送达：Main 仍可能持有 live pending，保住 ownership。
+          setState((prev) =>
+            prev.status === 'ready' && prev.preparedGeneration === expectedGeneration
+              ? { ...prev, lastError: '取消失败，请重试。' }
+              : prev,
+          );
+          return;
+        }
+        if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
+          return;
+        }
+        if (!discarded.ok && !isDeadPending(discarded.error.code)) {
+          // Main 仍持有 pending：保住 token，让用户重试取消。
+          setState((prev) =>
+            prev.status === 'ready' && prev.preparedGeneration === expectedGeneration
+              ? { ...prev, lastError: formatIpcError(discarded.error) }
+              : prev,
+          );
+          return;
+        }
+        setState(IDLE_QUICK_IMPORT);
+      } finally {
+        inFlightRef.current = false;
       }
       return;
     }
@@ -289,29 +358,8 @@ export function useQuickImport(
   }, [open]);
 
   const close = useCallback((): void => {
-    if (inFlightRef.current) {
-      return;
-    }
-    const current = stateRef.current;
-    if (current.status === 'committing' || current.status === 'preparing') {
-      return;
-    }
-    if (current.status === 'ready' && current.preparedGeneration !== null) {
-      const expectedGeneration = current.preparedGeneration;
-      setState(IDLE_QUICK_IMPORT);
-      void (async () => {
-        try {
-          await bridge.quickDiscard({ expectedGeneration });
-        } catch {
-          // 同 cancel：本地清理优先，CAS 兜底。
-        }
-      })();
-      return;
-    }
-    if (current.status !== 'idle' || current.lastError !== null) {
-      setState(IDLE_QUICK_IMPORT);
-    }
-  }, [bridge]);
+    void cancel();
+  }, [cancel]);
 
   useEffect(() => {
     return () => {
@@ -320,4 +368,25 @@ export function useQuickImport(
   }, [bridge]);
 
   return { state, open, confirm, cancel, retry, close };
+}
+
+/** open 失败：有旧 live token 则恢复 ready（保住 ownership），否则 idle 报错。 */
+function restoreAfterOpenFailure(
+  setState: (updater: QuickImportState) => void,
+  previous: QuickImportState | null,
+  targetVillageId: string,
+  message: string,
+): void {
+  if (previous !== null) {
+    setState({ ...previous, lastError: message });
+    return;
+  }
+  setState({
+    status: 'idle',
+    targetVillageId,
+    preview: null,
+    preparedGeneration: null,
+    stale: false,
+    lastError: message,
+  });
 }

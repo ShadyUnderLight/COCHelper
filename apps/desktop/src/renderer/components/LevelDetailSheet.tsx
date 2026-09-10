@@ -12,7 +12,6 @@ import {
   categoryGlyph,
   durationStateLabel,
   formatDurationSeconds,
-  levelMissingNote,
   levelTransitionText,
   primaryLevelAssets,
   requirementLabel,
@@ -77,7 +76,7 @@ export function LevelDetailSheet(props: {
   const upgrade = upgradeText(props.item.effectiveNextUpgrade, props.item.base);
   const availability = availabilityLabel(props.item.availability);
   const status = authoritativeLevelStatus(props.item);
-  const note = levelMissingNote(props.item);
+  const note = props.item.effectiveDetailMissingReason;
   return (
     <div className="sheet-overlay" onClick={props.onClose}>
       <div

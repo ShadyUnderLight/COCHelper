@@ -39,6 +39,7 @@ describe('LevelDetailSheet（#277-C2）', () => {
       effectiveTargetLevel: null,
       effectiveNextUpgrade: { kind: 'unknown' },
       effectiveNextLevelDurationState: null,
+      effectiveDetailMissingReason: '本地手动状态冲突，暂无法确认当前等级。',
     });
     render(<LevelDetailSheet item={item} catalogVersion="18.400.13" onClose={() => undefined} />);
     expect(screen.getAllByText(/本地状态冲突/).length).toBeGreaterThan(0);
@@ -46,6 +47,32 @@ describe('LevelDetailSheet（#277-C2）', () => {
     expect(screen.getByText('升级：未知')).toBeTruthy();
     expect(screen.getByText('时长：暂无目录数据')).toBeTruthy();
     expect(screen.queryByText(/下一级 6 级/)).toBeNull();
+  });
+
+  it('升级中 + 未知 dataID 显示目录未收录说明', () => {
+    const item = itemWith({
+      status: 'upgrading',
+      currentLevel: null,
+      nextLevel: null,
+      effectiveStatus: null,
+      effectiveCurrentLevel: null,
+      effectiveTargetLevel: null,
+      effectiveNextUpgrade: null,
+      effectiveNextLevelDurationState: null,
+      effectiveDetailMissingReason: '目录未收录（buildings:9999999）。',
+    });
+    render(<LevelDetailSheet item={item} catalogVersion="18.400.13" onClose={() => undefined} />);
+    expect(screen.getByText(/目录未收录/)).toBeTruthy();
+  });
+
+  it('mismatch + upgrading + manual 显示 mismatch 说明', () => {
+    const item = itemWith({
+      status: 'upgrading',
+      effectiveStatus: 'manualActive',
+      effectiveDetailMissingReason: '版本不匹配：快照 v1，目录 v2。',
+    });
+    render(<LevelDetailSheet item={item} catalogVersion="18.400.13" onClose={() => undefined} />);
+    expect(screen.getByText(/版本不匹配/)).toBeTruthy();
   });
 
   it('manualCompleted：raw Lv5→6 + effective Lv6/next7，不再显示升级到 6', () => {

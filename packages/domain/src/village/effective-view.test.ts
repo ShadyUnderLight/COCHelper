@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { EffectiveVillageItemState } from './effective-projection';
-import { effectiveItemView } from './effective-view';
+import { effectiveDetailMissingReason, effectiveItemView } from './effective-view';
 import { trackerItemKeyRoot } from '../manual/types';
 import type { VillageItemState } from './types';
 
@@ -258,5 +258,85 @@ describe('effectiveItemView', () => {
         item({ currentLevel: 3, effectiveState: sidecar('observed', { importedCurrentLevel: 4 }) }),
       ).currentLevel,
     ).toBe(4);
+  });
+});
+
+describe('effectiveDetailMissingReason', () => {
+  it('isNested 优先', () => {
+    expect(effectiveDetailMissingReason(item({ isNested: true }))).toBe(
+      '该项目属于内部子项目，暂不提供逐级升级数据。',
+    );
+  });
+  it('deprecated 优先于 effective conflict', () => {
+    expect(
+      effectiveDetailMissingReason(
+        item({
+          catalogItemMissingReason: 'deprecated_in_source',
+          effectiveState: sidecar('conflict'),
+        }),
+      ),
+    ).toBe('该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。');
+  });
+  it('conflict 用 diagnostic，无则通用文案', () => {
+    expect(effectiveDetailMissingReason(item({ effectiveState: sidecar('conflict') }))).toBe(
+      '本地手动状态冲突，暂无法确认当前等级。',
+    );
+    expect(
+      effectiveDetailMissingReason(
+        item({ effectiveState: sidecar('conflict', { diagnostic: '版本不一致' }) }),
+      ),
+    ).toBe('版本不一致');
+  });
+  it('needsReimport', () => {
+    expect(effectiveDetailMissingReason(item({ effectiveState: sidecar('needsReimport') }))).toBe(
+      '导入计时已结束，重新导入快照后才能确认当前等级。',
+    );
+  });
+  it('unknown-effective（raw 非 unknown/unverified）用 diagnostic 或通用文案', () => {
+    expect(effectiveDetailMissingReason(item({ effectiveState: sidecar('unknown') }))).toBe(
+      '本地有效状态未知，暂无法确认当前等级。',
+    );
+  });
+  it('raw unverified 透出 missingReason，无则默认文案', () => {
+    expect(
+      effectiveDetailMissingReason(item({ status: 'unverified', missingReason: '缺解锁建筑' })),
+    ).toBe('缺解锁建筑');
+    expect(effectiveDetailMissingReason(item({ status: 'unverified' }))).toBe(
+      '快照缺少 prerequisite 解锁建筑记录，无法验证当前阶段上限。',
+    );
+  });
+  it('raw unknown 透出 missingReason，无则默认文案', () => {
+    expect(effectiveDetailMissingReason(item({ status: 'unknown' }))).toBe(
+      '该项目暂无逐级升级数据。',
+    );
+  });
+  it('升级中 + unknown dataID：显示目录未收录原因', () => {
+    expect(
+      effectiveDetailMissingReason(
+        item({
+          status: 'upgrading',
+          currentLevel: null,
+          nextLevel: null,
+          remainingSeconds: 5n,
+          missingReason: '目录未收录（buildings:9999999）。',
+        }),
+      ),
+    ).toBe('目录未收录（buildings:9999999）。');
+  });
+  it('升级中 + mismatch + manual sidecar：显示 mismatch 原因', () => {
+    expect(
+      effectiveDetailMissingReason(
+        item({
+          status: 'upgrading',
+          remainingSeconds: 5n,
+          missingReason: '版本不匹配：快照 v1，目录 v2。',
+          effectiveState: sidecar('manualActive', { activeTargetLevel: 9 }),
+        }),
+      ),
+    ).toBe('版本不匹配：快照 v1，目录 v2。');
+  });
+  it('升级中无 missingReason → null；available → null', () => {
+    expect(effectiveDetailMissingReason(item({ remainingSeconds: 5n }))).toBeNull();
+    expect(effectiveDetailMissingReason(item({ status: 'available' }))).toBeNull();
   });
 });

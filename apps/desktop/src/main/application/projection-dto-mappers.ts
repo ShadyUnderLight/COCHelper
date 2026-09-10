@@ -42,7 +42,11 @@ import type {
   VillageProgressMetrics,
   VillageProfile,
 } from '@coc-helper/domain';
-import { effectiveItemView, trackerItemKeyStableId } from '@coc-helper/domain';
+import {
+  effectiveDetailMissingReason,
+  effectiveItemView,
+  trackerItemKeyStableId,
+} from '@coc-helper/domain';
 
 export function toUpgradeOverviewPayload(input: {
   readonly generation: number;
@@ -177,6 +181,7 @@ export function toVillageItemStateDto(item: VillageItemState): VillageItemStateD
     effectiveNextLevelDurationState: optionalDurationState(effective.durationState),
     effectiveDiagnostic: effective.diagnostic,
     effectiveIsMaxed: effective.isMaxed,
+    effectiveDetailMissingReason: effectiveDetailMissingReason(item),
   };
 }
 

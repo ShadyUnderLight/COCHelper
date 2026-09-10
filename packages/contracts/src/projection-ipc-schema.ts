@@ -197,6 +197,7 @@ export const villageItemStateDtoSchema: z.ZodType<VillageItemStateDto> = z
     effectiveNextLevelDurationState: catalogDurationStateSchema.nullable(),
     effectiveDiagnostic: z.string().max(500).nullable(),
     effectiveIsMaxed: z.boolean(),
+    effectiveDetailMissingReason: z.string().max(500).nullable(),
   })
   .strict();
 

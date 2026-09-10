@@ -387,40 +387,6 @@ export function authoritativeLevelStatus(item: VillageItemStateDto): string {
   }
 }
 
-/**
- * 缺失说明（复刻 missingNote 的 DTO 可达部分；isCatalogDeprecated 经
- * catalogItemMissingReason 判定；isEffectivelyUpgrading+missingReason 与
- * catalogItem==nil 回退需 catalog join（renderer 无），故不覆盖）。
- */
-export function levelMissingNote(item: VillageItemStateDto): string | null {
-  if (item.isNested) {
-    return '该项目属于内部子项目，暂不提供逐级升级数据。';
-  }
-  if (item.catalogItemMissingReason === 'deprecated_in_source') {
-    return '该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。';
-  }
-  switch (item.effectiveStatus) {
-    case 'conflict':
-      return item.effectiveDiagnostic ?? '本地手动状态冲突，暂无法确认当前等级。';
-    case 'needsReimport':
-      return '导入计时已结束，重新导入快照后才能确认当前等级。';
-    case 'unknown':
-      if (item.status !== 'unknown' && item.status !== 'unverified') {
-        return item.effectiveDiagnostic ?? '本地有效状态未知，暂无法确认当前等级。';
-      }
-      break;
-    default:
-      break;
-  }
-  if (item.status === 'unverified') {
-    return item.missingReason ?? '快照缺少 prerequisite 解锁建筑记录，无法验证当前阶段上限。';
-  }
-  if (item.status === 'unknown') {
-    return item.missingReason ?? '该项目暂无逐级升级数据。';
-  }
-  return null;
-}
-
 /** 图标候选链（复刻 preferredAssetURLs 顺序：currentLevelVisual → currentLevelIcon → levelVisual → icon；craftTable 模组图标无 renderer 数据源，不在链内）。空位保留 null，由调用方按序探测。 */
 export function primaryLevelAssets(
   item: VillageItemStateDto,

@@ -240,5 +240,6 @@ function itemFixture(): VillageItemStateDto {
     effectiveNextLevelDurationState: { kind: 'timed', seconds: 3600 },
     effectiveDiagnostic: null,
     effectiveIsMaxed: false,
+    effectiveDetailMissingReason: null,
   };
 }

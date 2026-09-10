@@ -141,6 +141,8 @@ export type VillageItemStateDto = {
   readonly effectiveNextLevelDurationState: CatalogDurationStateDto | null;
   readonly effectiveDiagnostic: string | null;
   readonly effectiveIsMaxed: boolean;
+  /** 详情缺失说明（domain 缺失规则直出；null 表无说明）。 */
+  readonly effectiveDetailMissingReason: string | null;
 };
 
 export type ProgressMetricStateDto = 'ready' | 'partial' | 'unavailable' | 'unknown';

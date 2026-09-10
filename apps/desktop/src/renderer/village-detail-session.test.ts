@@ -26,7 +26,6 @@ import {
   groupTitleText,
   idleVillageDetailState,
   isEmptyDetail,
-  levelMissingNote,
   levelTransitionText,
   metricStateLabel,
   primaryLevelAssets,
@@ -422,83 +421,5 @@ describe('authoritativeLevelStatus（#277-C2 review）', () => {
       effectiveIsMaxed: false,
     };
     expect(authoritativeLevelStatus(item)).toBe('已记录');
-  });
-});
-
-describe('levelMissingNote（#277-C2 review）', () => {
-  it('isNested → 内部子项目说明', () => {
-    const item = { ...recordFixture().item, isNested: true };
-    expect(levelMissingNote(item)).toBe('该项目属于内部子项目，暂不提供逐级升级数据。');
-  });
-  it('conflict → 冲突说明', () => {
-    const item = { ...recordFixture().item, isNested: false, effectiveStatus: 'conflict' as const };
-    expect(levelMissingNote(item)).toBe('本地手动状态冲突，暂无法确认当前等级。');
-  });
-  it('deprecated 优先于 effective obs → 废弃说明', () => {
-    const item = {
-      ...recordFixture().item,
-      isNested: false,
-      catalogItemMissingReason: 'deprecated_in_source',
-      effectiveStatus: 'conflict' as const,
-    };
-    expect(levelMissingNote(item)).toBe(
-      '该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。',
-    );
-  });
-  it('conflict + effectiveDiagnostic → 透出诊断', () => {
-    const diagnosed = {
-      ...recordFixture().item,
-      isNested: false,
-      effectiveStatus: 'conflict' as const,
-      effectiveDiagnostic: '手动记录目录版本与当前目录不一致',
-    };
-    expect(levelMissingNote(diagnosed)).toBe('手动记录目录版本与当前目录不一致');
-  });
-  it('needsReimport → 重导说明', () => {
-    const item = {
-      ...recordFixture().item,
-      isNested: false,
-      effectiveStatus: 'needsReimport' as const,
-    };
-    expect(levelMissingNote(item)).toBe('导入计时已结束，重新导入快照后才能确认当前等级。');
-  });
-  it('unknown-effective（raw 非 unknown/unverified）→ 未知说明', () => {
-    const item = {
-      ...recordFixture().item,
-      isNested: false,
-      status: 'upgrading' as const,
-      effectiveStatus: 'unknown' as const,
-    };
-    expect(levelMissingNote(item)).toBe('本地有效状态未知，暂无法确认当前等级。');
-  });
-  it('raw unverified 透出 missingReason', () => {
-    const item = {
-      ...recordFixture().item,
-      isNested: false,
-      status: 'unverified' as const,
-      effectiveStatus: null,
-      missingReason: '缺解锁建筑',
-    };
-    expect(levelMissingNote(item)).toBe('缺解锁建筑');
-  });
-  it('raw unknown 默认文案', () => {
-    const item = {
-      ...recordFixture().item,
-      isNested: false,
-      status: 'unknown' as const,
-      effectiveStatus: null,
-      missingReason: null,
-    };
-    expect(levelMissingNote(item)).toBe('该项目暂无逐级升级数据。');
-  });
-  it('available 条目 → null', () => {
-    const item = {
-      ...recordFixture().item,
-      isNested: false,
-      status: 'available' as const,
-      effectiveStatus: null,
-      missingReason: null,
-    };
-    expect(levelMissingNote(item)).toBeNull();
   });
 });

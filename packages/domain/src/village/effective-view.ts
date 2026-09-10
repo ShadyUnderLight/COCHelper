@@ -1,6 +1,6 @@
 import type { CatalogDurationState } from '../catalog/duration-state';
 import type { EffectiveVillageItemState } from './effective-projection';
-import type { VillageItemState, VillageNextUpgrade } from './types';
+import { isUpgrading, type VillageItemState, type VillageNextUpgrade } from './types';
 import { isEffectivelyMaxed } from './village-detail-projection';
 
 /**
@@ -136,4 +136,56 @@ function targetLevelFromCatalogUpgrade(upgrade: VillageNextUpgrade | null): numb
     default:
       return null;
   }
+}
+
+/**
+ * 详情缺失说明（复刻 Swift `missingNote` 顺序：isNested → deprecated →
+ * effective conflict/needsReimport/unknown → unverified → unknown →
+ * upgrading + missingReason）。升级中 + missingReason 分支防止升级里的
+ * 目录异常被正常详情 UI 吞掉；调用方仍按 effective 视图展示等级/升级/
+ * 时长（fail-closed 状态下 domain 已置空目标与时长）。
+ */
+export function effectiveDetailMissingReason(item: VillageItemState): string | null {
+  if (item.isNested) {
+    return '该项目属于内部子项目，暂不提供逐级升级数据。';
+  }
+  if (item.catalogItemMissingReason === 'deprecated_in_source') {
+    return '该条目在源目录中标记为已废弃（仅作历史数据展示，不参与当前内容）。';
+  }
+  const state = item.effectiveState as EffectiveVillageItemState | undefined;
+  if (state !== undefined) {
+    switch (state.status) {
+      case 'conflict':
+        return state.diagnostic ?? '本地手动状态冲突，暂无法确认当前等级。';
+      case 'needsReimport':
+        return '导入计时已结束，重新导入快照后才能确认当前等级。';
+      case 'unknown':
+        if (item.status !== 'unknown' && item.status !== 'unverified') {
+          return state.diagnostic ?? '本地有效状态未知，暂无法确认当前等级。';
+        }
+        break;
+      default:
+        break;
+    }
+  }
+  if (item.status === 'unverified') {
+    return item.missingReason ?? '快照缺少 prerequisite 解锁建筑记录，无法验证当前阶段上限。';
+  }
+  if (item.status === 'unknown') {
+    return item.missingReason ?? '该项目暂无逐级升级数据。';
+  }
+  if (isEffectivelyUpgradingNow(item, state) && item.missingReason !== null) {
+    return item.missingReason;
+  }
+  return null;
+}
+
+function isEffectivelyUpgradingNow(
+  item: VillageItemState,
+  state: EffectiveVillageItemState | undefined,
+): boolean {
+  if (state !== undefined) {
+    return state.status === 'manualActive' || state.status === 'importedActive';
+  }
+  return isUpgrading(item);
 }

@@ -131,6 +131,15 @@ export type VillageItemStateDto = {
   readonly displayCategory: TrackerDisplayCategoryDto | null;
   readonly countOverflowed: boolean;
   readonly effectiveStatus: EffectiveVillageItemStatusDto | null;
+  /**
+   * Authoritative 有效视图（domain `effectiveItemView` 直出，无 sidecar 时
+   * 回退 raw）。renderer 等级/升级/时长只读这组字段，不再碰上面 raw 字段。
+   */
+  readonly effectiveCurrentLevel: number | null;
+  readonly effectiveTargetLevel: number | null;
+  readonly effectiveNextUpgrade: VillageNextUpgradeDto | null;
+  readonly effectiveNextLevelDurationState: CatalogDurationStateDto | null;
+  readonly effectiveDiagnostic: string | null;
 };
 
 export type ProgressMetricStateDto = 'ready' | 'partial' | 'unavailable' | 'unknown';

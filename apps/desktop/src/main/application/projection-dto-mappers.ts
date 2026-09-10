@@ -42,7 +42,7 @@ import type {
   VillageProgressMetrics,
   VillageProfile,
 } from '@coc-helper/domain';
-import { trackerItemKeyStableId } from '@coc-helper/domain';
+import { effectiveItemView, trackerItemKeyStableId } from '@coc-helper/domain';
 
 export function toUpgradeOverviewPayload(input: {
   readonly generation: number;
@@ -139,6 +139,7 @@ function toUpgradeRecentCompletionDto(
 }
 
 export function toVillageItemStateDto(item: VillageItemState): VillageItemStateDto {
+  const effective = effectiveItemView(item);
   return {
     id: item.id,
     section: item.section,
@@ -168,6 +169,11 @@ export function toVillageItemStateDto(item: VillageItemState): VillageItemStateD
     displayCategory: item.displayCategory,
     countOverflowed: item.countOverflowed === true,
     effectiveStatus: readEffectiveStatus(item.effectiveState),
+    effectiveCurrentLevel: effective.currentLevel,
+    effectiveTargetLevel: effective.targetLevel,
+    effectiveNextUpgrade: optionalNextUpgrade(effective.nextUpgrade),
+    effectiveNextLevelDurationState: optionalDurationState(effective.durationState),
+    effectiveDiagnostic: effective.diagnostic,
   };
 }
 

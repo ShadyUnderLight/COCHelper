@@ -191,6 +191,11 @@ export const villageItemStateDtoSchema: z.ZodType<VillageItemStateDto> = z
     displayCategory: trackerDisplayCategorySchema.nullable(),
     countOverflowed: z.boolean(),
     effectiveStatus: effectiveStatusSchema.nullable(),
+    effectiveCurrentLevel: z.number().int().safe().nullable(),
+    effectiveTargetLevel: z.number().int().safe().nullable(),
+    effectiveNextUpgrade: villageNextUpgradeSchema.nullable(),
+    effectiveNextLevelDurationState: catalogDurationStateSchema.nullable(),
+    effectiveDiagnostic: z.string().max(500).nullable(),
   })
   .strict();
 

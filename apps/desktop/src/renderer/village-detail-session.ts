@@ -297,7 +297,7 @@ export function durationStateLabel(state: CatalogDurationStateDto | null): strin
   }
 }
 
-/** 有效满级近似：DTO 无 sidecar 的 effectiveCurrentLevel/isKnown，只能用快照侧等级判定（见注释）。 */
+/** 有效满级判定（调用方传入 effectiveCurrentLevel；残余近似仅 sidecar stage 上限）。 */
 function isEffectivelyMaxedLevel(
   currentLevel: number | null,
   currentStageMaxLevel: number | null,
@@ -319,9 +319,8 @@ function stageMaxedText(currentStageMaxLevel: number | null, maxLevel: number | 
 /**
  * 权威展示状态（复刻 LevelDetailSheet.swift statusLabel）。
  * effective sidecar 存在即权威，绝不把 raw status 与 effective 并列展示。
- * 近似边界：manualCompleted/observed 下的满级判定用快照侧等级（DTO 无
- * effectiveCurrentLevel/isKnown），重导入前 manual 覆盖层级与快照层级
- * 不一致时可能与 Swift 差一级展示。
+ * 满级判定用 DTO 的 effectiveCurrentLevel（Main 侧已按 sidecar 算好）；
+ * 残余近似仅 sidecar stage 上限（DTO 只有快照侧 currentStageMaxLevel）。
  */
 export function authoritativeLevelStatus(item: VillageItemStateDto): string {
   const effective = item.effectiveStatus;
@@ -339,11 +338,13 @@ export function authoritativeLevelStatus(item: VillageItemStateDto): string {
       case 'unavailable':
         return '不参与升级追踪';
       case 'manualCompleted':
-      case 'observed':
-        if (isEffectivelyMaxedLevel(item.currentLevel, item.currentStageMaxLevel, item.maxLevel)) {
+      case 'observed': {
+        const level = item.effectiveCurrentLevel ?? item.currentLevel;
+        if (isEffectivelyMaxedLevel(level, item.currentStageMaxLevel, item.maxLevel)) {
           return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
         }
         return '已记录';
+      }
       default: {
         const exhaustive: never = effective;
         throw new Error(`未知有效状态：${String(exhaustive)}`);

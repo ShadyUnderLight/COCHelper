@@ -376,6 +376,7 @@ describe('authoritativeLevelStatus（#277-C2 review）', () => {
       status: 'upgrading' as const,
       effectiveStatus: 'manualCompleted' as const,
       currentLevel: 10,
+      effectiveCurrentLevel: 10,
       currentStageMaxLevel: 10,
       maxLevel: 10,
     };
@@ -385,10 +386,23 @@ describe('authoritativeLevelStatus（#277-C2 review）', () => {
       status: 'upgrading' as const,
       effectiveStatus: 'manualCompleted' as const,
       currentLevel: 8,
+      effectiveCurrentLevel: 8,
       currentStageMaxLevel: 8,
       maxLevel: 10,
     };
     expect(authoritativeLevelStatus(stageMaxed)).toBe('当前阶段已满级（全局尚有 2 级）');
+  });
+  it('manualCompleted 满级判定用 effectiveCurrentLevel 而非 raw', () => {
+    const item = {
+      ...recordFixture().item,
+      status: 'upgrading' as const,
+      effectiveStatus: 'manualCompleted' as const,
+      currentLevel: 5,
+      effectiveCurrentLevel: 10,
+      currentStageMaxLevel: 10,
+      maxLevel: 10,
+    };
+    expect(authoritativeLevelStatus(item)).toBe('已满级');
   });
 });
 

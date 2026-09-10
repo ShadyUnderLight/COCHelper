@@ -71,7 +71,9 @@ export function LevelDetailSheet(props: {
     };
   }, [props.returnFocusTo]);
   // NOTE: props.onClose identity — AppShell/VillageDetail pass inline closures; effect re-subscribes per render. Acceptable (add/remove symmetric, no leak). Do NOT lift into useCallback requirements.
-  const upgrade = upgradeText(props.item.nextUpgrade, props.item.base);
+  // 等级/升级/时长一律读 effective 有效视图（Main 侧已按 sidecar 算好，无 sidecar
+  // 时回退 raw），与状态同源，禁止混用 raw currentLevel/nextLevel/nextUpgrade。
+  const upgrade = upgradeText(props.item.effectiveNextUpgrade, props.item.base);
   const availability = availabilityLabel(props.item.availability);
   const status = authoritativeLevelStatus(props.item);
   const note = levelMissingNote(props.item);
@@ -96,14 +98,18 @@ export function LevelDetailSheet(props: {
           <div>
             <h2>{props.item.name}</h2>
             <p className="muted">
-              {levelTransitionText(props.item.currentLevel, props.item.nextLevel)} · {status}
+              {levelTransitionText(
+                props.item.effectiveCurrentLevel,
+                props.item.effectiveTargetLevel,
+              )}{' '}
+              · {status}
             </p>
           </div>
         </div>
         <p>状态：{status}</p>
         {note !== null ? <p>说明：{note}</p> : null}
         {upgrade !== null ? <p>升级：{upgrade}</p> : null}
-        <p>时长：{durationStateLabel(props.item.nextLevelDurationState)}</p>
+        <p>时长：{durationStateLabel(props.item.effectiveNextLevelDurationState)}</p>
         {availability !== null ? <p>目录：{availability}</p> : null}
         {props.item.maxLevel !== null ? (
           <p>

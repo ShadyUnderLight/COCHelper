@@ -11,6 +11,9 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  IMPORT_QUICK_COMMIT_CHANNEL,
+  IMPORT_QUICK_DISCARD_CHANNEL,
+  IMPORT_QUICK_PREPARE_CHANNEL,
   MANUAL_ADJUST_CHANNEL,
   MANUAL_CANCEL_CHANNEL,
   MANUAL_RECONCILE_CHANNEL,
@@ -60,6 +63,9 @@ import {
   parseManualStartRequest,
   parseManualStateRequest,
   parsePlayerStateRequest,
+  parseQuickCommitRequest,
+  parseQuickDiscardRequest,
+  parseQuickPrepareRequest,
   parseRecoveryExportRequest,
   parseRecoveryRecoverJournalRequest,
   parseRecoveryResetRequest,
@@ -75,6 +81,7 @@ import {
 } from './ipc-schema';
 import { assertTrustedSenderState } from './ipc-trust';
 import { RequestCancellationRegistry } from './request-cancellation';
+import { electronClipboardPort, type ClipboardPort } from './clipboard';
 
 type IpcSenderEvent = Pick<IpcMainInvokeEvent | IpcMainEvent, 'sender' | 'senderFrame'>;
 
@@ -107,10 +114,12 @@ export function registerIpcHandlers(
   options: {
     readonly cancellation?: RequestCancellationRegistry;
     readonly services?: ApplicationServices | null;
+    readonly clipboard?: ClipboardPort;
   } = {},
 ): RequestCancellationRegistry {
   const cancellation = options.cancellation ?? new RequestCancellationRegistry();
   const services = options.services ?? null;
+  const clipboard = options.clipboard ?? electronClipboardPort;
 
   ipcMain.handle(APP_HEALTH_CHANNEL, (event, payload: unknown) => {
     try {
@@ -172,6 +181,48 @@ export function registerIpcHandlers(
       assertTrustedSender(event, webpackEntry);
       const request = parseImportDiscardRequest(payload);
       return resultOk(requireServices(services).imports.discard(request.expectedGeneration));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(IMPORT_QUICK_PREPARE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseQuickPrepareRequest(payload);
+      // 剪贴板只在 Main 读取：失败视为空剪贴板，不进日志。
+      const text = clipboard.readText() ?? '';
+      return resultOk(
+        requireServices(services).imports.quickPrepare({
+          targetVillageId: request.targetVillageId,
+          text,
+        }),
+      );
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(IMPORT_QUICK_COMMIT_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseQuickCommitRequest(payload);
+      return resultOk(
+        requireServices(services).imports.quickCommit(
+          request.expectedGeneration,
+          request.reconciliationDecision ?? 'applyNonConflicting',
+        ),
+      );
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(IMPORT_QUICK_DISCARD_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseQuickDiscardRequest(payload);
+      return resultOk(requireServices(services).imports.quickDiscard(request.expectedGeneration));
     } catch (error: unknown) {
       return resultErr(toIpcError(error));
     }

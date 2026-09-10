@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DESKTOP_BRIDGE_KEYS, type RequestId } from '@coc-helper/contracts';
 
-import { createDesktopBridge, isAppHealthResponse } from './api';
+import { createDesktopBridge, isAppHealthResponse, isQuickPrepareResponse } from './api';
 
 describe('preload API surface', () => {
   it('只暴露受限 API，且不把 ipcRenderer 交给 renderer', () => {
@@ -47,6 +47,63 @@ describe('preload API surface', () => {
     expect(() => bridge.cancel({ requestId: '' as RequestId })).toThrow(
       'request.cancel 参数不合法',
     );
+  });
+
+  it('quick 通道透传并校验 preview 形状，拒绝伪造', async () => {
+    const preview = {
+      snapshot: {
+        importedAt: 1,
+        originalText: '{}',
+        objectSections: {},
+        numericSections: {},
+        boosts: {},
+        unknownTopLevelKeys: [],
+        diagnostics: [],
+      },
+      targetVillageId: 'v-1',
+      targetVillageName: 'A',
+      targetVillageTag: null,
+      targetVillageHasSnapshot: false,
+      replacesSameTag: false,
+      destinationDescription: '将建立「A」的账号快照并导入',
+    };
+    const seen: string[] = [];
+    const bridge = createDesktopBridge(
+      async (channel) => {
+        seen.push(channel);
+        if (channel === 'import.quickPrepare') {
+          return { ok: true, value: { generation: 4, preview } };
+        }
+        if (channel === 'import.quickCommit') {
+          return { ok: true, value: { generation: 5, selectedVillageId: 'v-1' } };
+        }
+        return { ok: true, value: { generation: 5 } };
+      },
+      () => {},
+      () => () => undefined,
+    );
+    await expect(bridge.quickPrepare({ targetVillageId: 'v-1' })).resolves.toEqual({
+      ok: true,
+      value: { generation: 4, preview },
+    });
+    await expect(bridge.quickCommit({ expectedGeneration: 4 })).resolves.toEqual({
+      ok: true,
+      value: { generation: 5, selectedVillageId: 'v-1' },
+    });
+    await expect(bridge.quickDiscard({ expectedGeneration: 4 })).resolves.toEqual({
+      ok: true,
+      value: { generation: 5 },
+    });
+    expect(seen).toEqual(['import.quickPrepare', 'import.quickCommit', 'import.quickDiscard']);
+    expect(isQuickPrepareResponse({ ok: true, value: { generation: 4, preview } })).toBe(true);
+    expect(isQuickPrepareResponse({ ok: true, value: { generation: 4 } })).toBe(false);
+    await expect(
+      createDesktopBridge(
+        async () => ({ ok: true, value: { generation: 4, preview: {} } }),
+        () => {},
+        () => () => undefined,
+      ).quickPrepare({ targetVillageId: 'v-1' }),
+    ).rejects.toThrow('import.quickPrepare 返回值不合法');
   });
 
   it('校验 app.snapshot 与 state.changed 订阅，并拒绝伪造 payload', async () => {

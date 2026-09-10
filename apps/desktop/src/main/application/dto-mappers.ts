@@ -7,12 +7,14 @@ import type {
   AccountSnapshotWire,
   PendingImportPreviewWire,
   PendingImportSummaryDto,
+  QuickImportPreviewWire,
   VillageSummaryDto,
 } from '@coc-helper/contracts';
 import type {
   AccountItem,
   AccountSnapshot,
   PendingImportPreview,
+  QuickImportPreview,
   VillageProfile,
 } from '@coc-helper/domain';
 import { unixSecondsToRefSeconds } from '@coc-helper/wire';
@@ -76,6 +78,18 @@ export function toPendingImportPreviewWire(
         ambiguousVillageNames: target.villageNames,
       };
   }
+}
+
+export function toQuickImportPreviewWire(preview: QuickImportPreview): QuickImportPreviewWire {
+  return {
+    snapshot: toAccountSnapshotWire(preview.snapshot),
+    targetVillageId: preview.targetVillageId,
+    targetVillageName: preview.targetVillageName,
+    targetVillageTag: preview.targetVillageTag,
+    targetVillageHasSnapshot: preview.targetVillageHasSnapshot,
+    replacesSameTag: preview.replacesSameTag,
+    destinationDescription: preview.destinationDescription,
+  };
 }
 
 export function toAccountSnapshotWire(snapshot: AccountSnapshot): AccountSnapshotWire {

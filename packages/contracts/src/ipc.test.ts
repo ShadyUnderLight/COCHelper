@@ -9,6 +9,9 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  IMPORT_QUICK_COMMIT_CHANNEL,
+  IMPORT_QUICK_DISCARD_CHANNEL,
+  IMPORT_QUICK_PREPARE_CHANNEL,
   MANUAL_ADJUST_CHANNEL,
   MANUAL_CANCEL_CHANNEL,
   MANUAL_IPC_BRIDGE_KEYS,
@@ -57,6 +60,9 @@ describe('@coc-helper/contracts IPC', () => {
     expect(IMPORT_PREPARE_CHANNEL).toBe('import.prepare');
     expect(IMPORT_COMMIT_CHANNEL).toBe('import.commit');
     expect(IMPORT_DISCARD_CHANNEL).toBe('import.discard');
+    expect(IMPORT_QUICK_PREPARE_CHANNEL).toBe('import.quickPrepare');
+    expect(IMPORT_QUICK_COMMIT_CHANNEL).toBe('import.quickCommit');
+    expect(IMPORT_QUICK_DISCARD_CHANNEL).toBe('import.quickDiscard');
     expect(STATE_CHANGED_CHANNEL).toBe('state.changed');
     expect(UPGRADE_OVERVIEW_CHANNEL).toBe('upgrade.overview');
     expect(VILLAGE_DETAIL_CHANNEL).toBe('village.detail');
@@ -82,6 +88,9 @@ describe('@coc-helper/contracts IPC', () => {
       IMPORT_PREPARE_CHANNEL,
       IMPORT_COMMIT_CHANNEL,
       IMPORT_DISCARD_CHANNEL,
+      IMPORT_QUICK_PREPARE_CHANNEL,
+      IMPORT_QUICK_COMMIT_CHANNEL,
+      IMPORT_QUICK_DISCARD_CHANNEL,
       STATE_CHANGED_CHANNEL,
     ]);
     expect(PROJECTION_IPC_CHANNELS).toEqual([UPGRADE_OVERVIEW_CHANNEL, VILLAGE_DETAIL_CHANNEL]);

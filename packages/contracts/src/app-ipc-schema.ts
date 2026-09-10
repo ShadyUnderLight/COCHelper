@@ -9,6 +9,7 @@ import type {
   AccountItemWire,
   AccountSnapshotWire,
   PendingImportPreviewWire,
+  QuickImportPreviewWire,
 } from './account-wire';
 import type {
   AppSnapshotPayload,
@@ -19,6 +20,12 @@ import type {
   ImportPreparePayload,
   ImportPrepareRequest,
   PendingImportSummaryDto,
+  QuickCommitPayload,
+  QuickCommitRequest,
+  QuickDiscardPayload,
+  QuickDiscardRequest,
+  QuickPreparePayload,
+  QuickPrepareRequest,
   VillageSelectPayload,
   VillageSelectRequest,
   VillageSummaryDto,
@@ -116,6 +123,18 @@ export const pendingImportPreviewWireSchema: z.ZodType<PendingImportPreviewWire>
   })
   .strict();
 
+export const quickImportPreviewWireSchema: z.ZodType<QuickImportPreviewWire> = z
+  .object({
+    snapshot: accountSnapshotWireSchema,
+    targetVillageId: villageIdSchema,
+    targetVillageName: z.string().min(1).max(256),
+    targetVillageTag: z.string().max(32).nullable(),
+    targetVillageHasSnapshot: z.boolean(),
+    replacesSameTag: z.boolean(),
+    destinationDescription: z.string().min(1).max(500),
+  })
+  .strict();
+
 export const appSnapshotPayloadSchema: z.ZodType<AppSnapshotPayload> = z
   .object({
     sessionId: z.string().min(1).max(128),
@@ -188,6 +207,47 @@ export const importDiscardPayloadSchema: z.ZodType<ImportDiscardPayload> = z
   })
   .strict();
 
+export const quickPrepareRequestSchema: z.ZodType<QuickPrepareRequest> = z
+  .object({
+    targetVillageId: villageIdSchema,
+  })
+  .strict();
+
+export const quickPreparePayloadSchema: z.ZodType<QuickPreparePayload> = z
+  .object({
+    generation: generationSchema,
+    preview: quickImportPreviewWireSchema,
+  })
+  .strict();
+
+export const quickCommitRequestSchema: z.ZodType<QuickCommitRequest> = z
+  .object({
+    expectedGeneration: generationSchema,
+    reconciliationDecision: z
+      .enum(['applyNonConflicting', 'keepLocal', 'acceptObserved'])
+      .optional(),
+  })
+  .strict();
+
+export const quickCommitPayloadSchema: z.ZodType<QuickCommitPayload> = z
+  .object({
+    generation: generationSchema,
+    selectedVillageId: villageIdSchema.nullable(),
+  })
+  .strict();
+
+export const quickDiscardRequestSchema: z.ZodType<QuickDiscardRequest> = z
+  .object({
+    expectedGeneration: generationSchema,
+  })
+  .strict();
+
+export const quickDiscardPayloadSchema: z.ZodType<QuickDiscardPayload> = z
+  .object({
+    generation: generationSchema,
+  })
+  .strict();
+
 export const emptyObjectRequestSchema = z.object({}).strict();
 
 export function isAppSnapshotPayload(value: unknown): value is AppSnapshotPayload {
@@ -208,4 +268,16 @@ export function isImportCommitPayload(value: unknown): value is ImportCommitPayl
 
 export function isImportDiscardPayload(value: unknown): value is ImportDiscardPayload {
   return importDiscardPayloadSchema.safeParse(value).success;
+}
+
+export function isQuickPreparePayload(value: unknown): value is QuickPreparePayload {
+  return quickPreparePayloadSchema.safeParse(value).success;
+}
+
+export function isQuickCommitPayload(value: unknown): value is QuickCommitPayload {
+  return quickCommitPayloadSchema.safeParse(value).success;
+}
+
+export function isQuickDiscardPayload(value: unknown): value is QuickDiscardPayload {
+  return quickDiscardPayloadSchema.safeParse(value).success;
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
+import type { QuickImportApi } from '../use-quick-import';
 import type { VillageDetailApi } from '../use-village-detail';
 import { isReadOnly } from '../app-session';
 import { ImportPanel } from './ImportPanel';
@@ -16,6 +17,8 @@ type AppShellProps = {
   readonly detail: VillageDetailApi;
   readonly detailBase: TrackerBaseDto;
   readonly onDetailBaseChange: (base: TrackerBaseDto) => void;
+  /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
+  readonly quick?: QuickImportApi;
 };
 
 export function AppShell({
@@ -24,6 +27,7 @@ export function AppShell({
   detail,
   detailBase,
   onDetailBaseChange,
+  quick,
 }: AppShellProps) {
   const [tab, setTab] = useState<'import' | 'overview' | 'detail'>('import');
   const { state, recoveryStatus } = session;
@@ -65,6 +69,7 @@ export function AppShell({
   const showRecovery = snapshot.availability === 'recovery';
   const showImport = snapshot.availability === 'available' || snapshot.availability === 'loading';
   const detailDisabled = snapshot.selectedVillageId === null;
+  const canQuick = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
   const openDetail = async (recordId: string, villageId: string) => {
     overview.select(recordId);
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
@@ -154,6 +159,8 @@ export function AppShell({
                   base={detailBase}
                   onBaseChange={onDetailBaseChange}
                   onRetry={() => void detail.refresh()}
+                  quick={quick}
+                  canQuick={canQuick}
                 />
               )
             ) : null}

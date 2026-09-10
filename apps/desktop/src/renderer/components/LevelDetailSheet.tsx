@@ -9,6 +9,7 @@ import type {
 import { availabilityLabel } from '../overview-session';
 import {
   authoritativeLevelStatus,
+  categoryGlyph,
   durationStateLabel,
   formatDurationSeconds,
   levelMissingNote,
@@ -93,7 +94,11 @@ export function LevelDetailSheet(props: {
             candidates={primaryLevelAssets(props.item)}
             size={40}
             className="item-icon"
-            fallbackNode={<span className="item-icon-missing">图标缺失</span>}
+            fallbackNode={
+              <span className="item-icon-glyph" aria-hidden="true">
+                {categoryGlyph(props.item.displayCategory, props.item.category)}
+              </span>
+            }
           />
           <div>
             <h2>{props.item.name}</h2>

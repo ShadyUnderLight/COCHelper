@@ -312,6 +312,32 @@ button.danger {
   overflow-wrap: anywhere;
 }
 
+.detail-item-icon {
+  border-radius: 6px;
+  flex: none;
+}
+
+.detail-item-glyph,
+.overview-item-glyph,
+.item-icon-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #3a3a3c;
+  color: #aeaeb2;
+  font-weight: 600;
+  flex: none;
+}
+
+.item-icon-glyph {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+
 .row-divider {
   border: 0;
   border-top: 1px solid #48484a;

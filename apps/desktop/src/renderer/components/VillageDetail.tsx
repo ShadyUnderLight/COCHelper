@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type {
   BuildingGroupDto,
   TrackerBaseDto,
+  TrackerCategoryDto,
+  TrackerDisplayCategoryDto,
   VillageCategoryCompletionDto,
   VillageDetailFlatRowDto,
   VillageDetailGroupDto,
@@ -11,6 +13,7 @@ import type {
 
 import { baseLabel, effectiveStatusLabel, statusLabel } from '../overview-session';
 import {
+  categoryGlyph,
   compatibilityAlertText,
   compatibilityVersionText,
   formatCompletionPercent,
@@ -18,8 +21,10 @@ import {
   isEmptyDetail,
   levelTransitionText,
   metricStateLabel,
+  primaryLevelAssets,
   type VillageDetailState,
 } from '../village-detail-session';
+import { AssetImage } from './AssetImage';
 import { LevelDetailSheet } from './LevelDetailSheet';
 
 export type VillageDetailProps = {
@@ -74,8 +79,7 @@ export function VillageDetail({ state, base, onBaseChange, onRetry }: VillageDet
     if (lookups === null) {
       return;
     }
-    const bare = id.split('#')[0] ?? id;
-    const found = lookups.itemsById.get(id) ?? lookups.itemsById.get(bare);
+    const found = resolveRowItem(lookups, id);
     if (found !== undefined) {
       setOpenItem({ item: found, opener });
     }
@@ -171,6 +175,40 @@ function buildLookups(payload: Parameters<typeof isEmptyDetail>[0]): Lookups {
   return { itemsById, groupsById, groupOfInstance };
 }
 
+/** 行 ID → 条目：items 优先 exact，instanceItems 补齐，'#' 后缀兜底。打开底片与行图标共用。 */
+function resolveRowItem(lookups: Lookups, id: string): VillageItemStateDto | undefined {
+  const bare = id.split('#')[0] ?? id;
+  return lookups.itemsById.get(id) ?? lookups.itemsById.get(bare);
+}
+
+function RowIcon(props: {
+  readonly catalogVersion: string | null;
+  readonly item: VillageItemStateDto | null;
+  readonly displayCategory: TrackerDisplayCategoryDto | null;
+  readonly category: TrackerCategoryDto | null;
+}) {
+  if (props.item === null) {
+    return (
+      <span className="detail-item-glyph" aria-hidden="true">
+        {categoryGlyph(props.displayCategory, props.category)}
+      </span>
+    );
+  }
+  return (
+    <AssetImage
+      catalogVersion={props.catalogVersion}
+      candidates={primaryLevelAssets(props.item)}
+      size={28}
+      className="detail-item-icon"
+      fallbackNode={
+        <span className="detail-item-glyph" aria-hidden="true">
+          {categoryGlyph(props.item.displayCategory, props.item.category)}
+        </span>
+      }
+    />
+  );
+}
+
 function MetricsCards(props: { readonly payload: Parameters<typeof isEmptyDetail>[0] }) {
   const entries = [
     { title: '当前阶段', metric: props.payload.metrics.currentStageProgress },
@@ -240,7 +278,7 @@ function FlatRow(props: {
   readonly lookups: Lookups;
   readonly onOpenItem: (id: string, opener: HTMLElement) => void;
 }) {
-  const { row, lookups, onOpenItem } = props;
+  const { row, payload, lookups, onOpenItem } = props;
   switch (row.kind) {
     case 'sectionHeader': {
       const group = lookups.groupsById.get(row.groupID);
@@ -272,6 +310,7 @@ function FlatRow(props: {
       if (group === undefined) {
         return <p className="muted">未知分组实例（{row.instanceID}）</p>;
       }
+      const item = resolveRowItem(lookups, row.instanceID);
       return (
         <div className="detail-row">
           {row.leadingDivider ? <hr className="row-divider" /> : null}
@@ -281,6 +320,12 @@ function FlatRow(props: {
             aria-label={`${group.name}，打开等级详情`}
             onClick={(event) => onOpenItem(row.instanceID, event.currentTarget)}
           >
+            <RowIcon
+              catalogVersion={payload.catalogVersion}
+              item={item ?? null}
+              displayCategory={group.displayCategory}
+              category={group.category}
+            />
             <span className="detail-item-name">{group.name}</span>
             <span className="muted">
               {group.summary.instanceCount} 实例 · 剩余 {group.summary.remainingLevelCount} 级 ·
@@ -306,6 +351,12 @@ function FlatRow(props: {
             aria-label={`${item.name}，打开等级详情`}
             onClick={(event) => onOpenItem(item.id, event.currentTarget)}
           >
+            <RowIcon
+              catalogVersion={payload.catalogVersion}
+              item={item}
+              displayCategory={item.displayCategory}
+              category={item.category}
+            />
             <span className="detail-item-name">{item.name}</span>
             <span className="muted">
               {levelTransitionText(item.currentLevel, item.nextLevel)} · {statusLabel(item.status)}

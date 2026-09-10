@@ -567,4 +567,80 @@ describe('VillageDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /城墙/ }));
     expect(screen.getByRole('dialog', { name: '城墙等级详情' })).toBeTruthy();
   });
+
+  it('instance 行渲染当前等级 PNG（levelVisual 优先链）', () => {
+    const visual = {
+      container: 'sc/buildings.sc',
+      exportName: 'cannon_lvl5',
+      renderedPath: 'icons/buildings/cannon_lvl5.png',
+      missingReason: null,
+    };
+    const buildingGroup: BuildingGroupDto = {
+      id: 'bg1',
+      base: 'home',
+      section: 'buildings',
+      dataID: 1000001,
+      name: '加农炮',
+      category: 'buildings',
+      displayCategory: 'defense',
+      instanceIds: ['inst-1'],
+      summary: {
+        instanceCount: 1,
+        remainingLevelCount: 0,
+        totalDurationSeconds: 0,
+        costByResource: [],
+        saturated: false,
+        completeness: 'complete',
+      },
+      trackerStatus: 'observed',
+    };
+    const { container } = render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            items: [{ ...recordFixture().item, id: 'inst-1', currentLevelVisual: visual }],
+            buildingGroups: [buildingGroup],
+            flatRows: [
+              { kind: 'instance', groupID: 'bg1', instanceID: 'inst-1', leadingDivider: false },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    expect(container.querySelector('img.detail-item-icon')?.getAttribute('src')).toBe(
+      'cochelper://catalog/18.400.13/icons/buildings/cannon_lvl5.png',
+    );
+  });
+
+  it('legacy 行渲染当前等级 PNG', () => {
+    const visual = {
+      container: 'sc/buildings.sc',
+      exportName: 'cannon_lvl5',
+      renderedPath: 'icons/buildings/cannon_lvl5.png',
+      missingReason: null,
+    };
+    const { container } = render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            items: [{ ...recordFixture().item, id: 'item-1', currentLevelVisual: visual }],
+            flatRows: [
+              {
+                kind: 'legacy',
+                itemID: 'item-1',
+                groupID: 'g',
+                indented: false,
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    expect(container.querySelector('img.detail-item-icon')?.getAttribute('src')).toBe(
+      'cochelper://catalog/18.400.13/icons/buildings/cannon_lvl5.png',
+    );
+  });
 });

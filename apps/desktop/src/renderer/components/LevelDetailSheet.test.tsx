@@ -203,7 +203,7 @@ describe('LevelDetailSheet（#277-C2）', () => {
     expect(screen.getByText(/目录缺失/)).toBeTruthy();
   });
 
-  it('图标 src 正确，加载失败后显示图标缺失', () => {
+  it('图标 src 正确，加载失败后显示分类 glyph', () => {
     const item = itemWith({
       icon: {
         container: 'sc',
@@ -216,14 +216,16 @@ describe('LevelDetailSheet（#277-C2）', () => {
     const img = document.querySelector('.level-sheet img.item-icon') as HTMLImageElement | null;
     expect(img?.getAttribute('src')).toBe('cochelper://catalog/18.400.13/icons/ui/icon_x.png');
     fireEvent.error(img!);
-    expect(screen.getByText('图标缺失')).toBeTruthy();
+    expect(document.querySelector('.level-sheet img.item-icon')).toBeNull();
+    expect(document.querySelector('.level-sheet .item-icon-glyph')?.textContent).toBe('防');
   });
 
-  it('图标全空显示图标缺失', () => {
+  it('图标全空显示分类 glyph', () => {
     render(
       <LevelDetailSheet item={itemWith()} catalogVersion="18.400.13" onClose={() => undefined} />,
     );
-    expect(screen.getByText('图标缺失')).toBeTruthy();
+    expect(document.querySelector('.level-sheet img.item-icon')).toBeNull();
+    expect(document.querySelector('.level-sheet .item-icon-glyph')?.textContent).toBe('防');
   });
 
   it('Esc 关闭', () => {

@@ -46,6 +46,7 @@ import {
   toPendingImportSummaryDto,
   toQuickImportPreviewWire,
 } from './dto-mappers';
+import { GenerationBoundSlot, STALE_PENDING_MESSAGE } from './pending-slot';
 import { HistoryService } from './history-service';
 import type { VillageStorePort } from './import-coordinator';
 import type { ManualTrackerService } from './manual-tracker-service';
@@ -68,14 +69,10 @@ export class SnapshotImportService {
   private readonly manualTracker: ManualTrackerService | null;
   /**
    * 快捷导入待确认态：只保存在 Main 内存，Renderer 不得回传 preview。
-   * 与创建它的 generation 绑定保存；commit/discard 必须同时满足
-   * 调用者 token == 当前 generation == pending 创建代，才是“针对这一版 prepare 的提交”。
-   * 与普通 pending 共用 generation 计数器做 CAS，交错 prepare 时旧 token 自动过期。
+   * 与普通 pending 走同一个 GenerationBoundSlot 不变量：
+   * 调用者 token == 当前 generation == 创建代。
    */
-  private quickPending: {
-    readonly preview: QuickImportPreview;
-    readonly generation: number;
-  } | null = null;
+  private readonly quickPending = new GenerationBoundSlot<QuickImportPreview>();
 
   constructor(options: SnapshotImportServiceOptions) {
     this.state = options.state;
@@ -133,7 +130,7 @@ export class SnapshotImportService {
       throw new AppServiceError('unavailable', '当前处于恢复或只读状态，无法导入。');
     }
     assertExpectedGeneration(this.state.getGeneration(), expectedGeneration);
-    const pending = this.state.getPending();
+    const pending = this.state.takeLivePending();
     if (pending === null) {
       throw new AppServiceError('validation', '没有待确认的导入。');
     }
@@ -219,8 +216,9 @@ export class SnapshotImportService {
   }
 
   discard(expectedGeneration: number): ImportDiscardPayload {
+    const pending = this.state.takeLivePending();
     assertExpectedGeneration(this.state.getGeneration(), expectedGeneration);
-    if (this.state.getPending() === null) {
+    if (pending === null) {
       return { generation: this.state.getGeneration() };
     }
     this.state.setPending(null);
@@ -261,7 +259,7 @@ export class SnapshotImportService {
     /** mapper + 共享 zod 全部成功后，才保存 quickPending / bump generation。 */
     this.state.notifyMutation();
     const generation = this.state.getGeneration();
-    this.quickPending = { preview, generation };
+    this.quickPending.store(preview, generation);
     return { generation, preview: parsed.data };
   }
 
@@ -286,7 +284,7 @@ export class SnapshotImportService {
       targetVillageId: pending.targetVillageId,
       reconciliationDecision,
     });
-    this.quickPending = null;
+    this.quickPending.clear();
     this.state.notifyMutation();
     return {
       generation: this.state.getGeneration(),
@@ -300,25 +298,16 @@ export class SnapshotImportService {
     if (pending === null) {
       return { generation: this.state.getGeneration() };
     }
-    this.quickPending = null;
+    this.quickPending.clear();
     this.state.notifyMutation();
     return { generation: this.state.getGeneration() };
   }
 
-  /**
-   * 取出与当前 generation 绑定的 quick pending。
-   * generation 只增不减：创建代落后于当前代的 pending 永不可能再被合法提交
-   *（任何有效提交都要求 token == 当前代 == 创建代），在此直接清理并按 CAS
-   * 失败处理，避免 Main 留下不可见的死 pending。注意失败路径绝不 bump，
-   * 以免误伤并发的普通 pending。
-   */
+  /** 与普通 takeLivePending 同一不变量，共享 GenerationBoundSlot。 */
   private takeLiveQuickPending(): QuickImportPreview | null {
-    const pending = this.quickPending;
-    if (pending !== null && pending.generation !== this.state.getGeneration()) {
-      this.quickPending = null;
-      throw new AppServiceError('conflict', '导入状态已过期，请刷新后重试。');
-    }
-    return pending?.preview ?? null;
+    return this.quickPending.takeLive(this.state.getGeneration(), () => {
+      throw new AppServiceError('conflict', STALE_PENDING_MESSAGE);
+    });
   }
 
   /**

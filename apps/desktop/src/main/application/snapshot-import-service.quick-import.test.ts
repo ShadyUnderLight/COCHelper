@@ -335,4 +335,61 @@ describe('SnapshotImportService quick import', () => {
     // 死 pending 已被清理：再次 discard 幂等返回，不抛错
     expect(service.quickDiscard(bumped.generation)).toEqual({ generation: bumped.generation });
   });
+
+  it('镜像：普通 prepare 后被 quickPrepare 顶掉代 → 普通 commit 必须 conflict 且零写入', () => {
+    const { persistence, villageStore, state, service } = bootService();
+    const { villageId } = createVillage(service, '{"tag":"#NMIRX","buildings":[]}');
+    // 普通 prepare A（新建村庄）→ gen N，普通 pending A 存活
+    const normal = service.prepare({ text: '{"tag":"#NMIRA","buildings":[]}' });
+    // quickPrepare B 推进到 N+1：普通 pending A 变死，但仍躺在权威态里
+    const quick = service.quickPrepare({
+      targetVillageId: villageId,
+      text: '{"tag":"#NMIRX","buildings":[]}',
+    });
+    expect(quick.generation).toBe(normal.generation + 1);
+    const villagesBefore = villageStore.listVillages().length;
+    const historyEntriesBefore = persistence.history.load()?.entries.length ?? 0;
+    const manualBefore = JSON.stringify(persistence.manual.load());
+
+    try {
+      service.commit(quick.generation);
+    } catch (error) {
+      expect((error as AppServiceError).code).toBe('conflict');
+    }
+    // 零写入：没有 #NMIRA 村庄被创建，history/manual 纹丝不动
+    expect(villageStore.listVillages()).toHaveLength(villagesBefore);
+    expect(villageStore.listVillages().some((v) => v.tag === '#NMIRA')).toBe(false);
+    expect(persistence.history.load()?.entries.length ?? 0).toBe(historyEntriesBefore);
+    expect(JSON.stringify(persistence.manual.load())).toBe(manualBefore);
+    // 死普通 pending 已被清理
+    expect(state.getPending()).toBeNull();
+    // 再提交走 validation（无待确认），而非重复 conflict 风险
+    try {
+      service.commit(quick.generation);
+    } catch (error) {
+      expect((error as AppServiceError).code).toBe('validation');
+    }
+    // quick pending B 仍可正常处理（无串扰）
+    const committed = service.quickCommit(quick.generation);
+    expect(committed.selectedVillageId).toBe(villageId);
+  });
+
+  it('镜像：普通 pending 过期后 discard → conflict、清理且不 bump', () => {
+    const { service, state } = bootService();
+    const { villageId } = createVillage(service, '{"tag":"#NMIRDX","buildings":[]}');
+    const normal = service.prepare({ text: '{"tag":"#NMIRDNEW","buildings":[]}' });
+    const quick = service.quickPrepare({
+      targetVillageId: villageId,
+      text: '{"tag":"#NMIRDX","buildings":[]}',
+    });
+    expect(quick.generation).toBe(normal.generation + 1);
+    try {
+      service.discard(quick.generation);
+    } catch (error) {
+      expect((error as AppServiceError).code).toBe('conflict');
+    }
+    expect(state.getGeneration()).toBe(quick.generation);
+    expect(state.getPending()).toBeNull();
+    expect(service.discard(quick.generation)).toEqual({ generation: quick.generation });
+  });
 });

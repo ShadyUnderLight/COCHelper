@@ -338,7 +338,7 @@ function FlatRow(props: {
       );
     }
     case 'legacy': {
-      const item = lookups.itemsById.get(row.itemID);
+      const item = resolveRowItem(lookups, row.itemID);
       if (item === undefined) {
         return <p className="muted">未知条目（{row.itemID}）</p>;
       }

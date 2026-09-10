@@ -410,7 +410,7 @@ describe('authoritativeLevelStatus（#277-C2 review）', () => {
     };
     expect(authoritativeLevelStatus(stageMaxed)).toBe('当前阶段已满级（全局尚有 2 级）');
   });
-  it('manualCompleted + effectiveIsMaxed=false（未知分布）→ 已记录，不误报满级', () => {
+  it('observed + effectiveIsMaxed=false（未知分布）→ 已记录，不误报满级', () => {
     const item = {
       ...recordFixture().item,
       status: 'upgrading' as const,

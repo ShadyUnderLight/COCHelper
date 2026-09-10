@@ -170,5 +170,5 @@ function formatUpgradeDuration(seconds: number | null, label: string): string | 
   if (seconds === 0) {
     return `${label} 即时`;
   }
-  return `${label}${formatDurationSeconds(seconds)}`;
+  return `${label} ${formatDurationSeconds(seconds)}`;
 }

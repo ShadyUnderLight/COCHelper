@@ -177,6 +177,9 @@ describe('levelTransitionText', () => {
   it('仅下一级', () => {
     expect(levelTransitionText(null, 6)).toBe('下一级 6 级');
   });
+  it('仅当前级', () => {
+    expect(levelTransitionText(5, null)).toBe('等级 5 级');
+  });
   it('等级未知', () => {
     expect(levelTransitionText(null, null)).toBe('等级未知');
   });
@@ -414,6 +417,15 @@ describe('levelMissingNote（#277-C2 review）', () => {
   it('conflict → 冲突说明', () => {
     const item = { ...recordFixture().item, isNested: false, effectiveStatus: 'conflict' as const };
     expect(levelMissingNote(item)).toBe('本地手动状态冲突，暂无法确认当前等级。');
+  });
+  it('conflict + effectiveDiagnostic → 透出诊断', () => {
+    const diagnosed = {
+      ...recordFixture().item,
+      isNested: false,
+      effectiveStatus: 'conflict' as const,
+      effectiveDiagnostic: '手动记录目录版本与当前目录不一致',
+    };
+    expect(levelMissingNote(diagnosed)).toBe('手动记录目录版本与当前目录不一致');
   });
   it('needsReimport → 重导说明', () => {
     const item = {

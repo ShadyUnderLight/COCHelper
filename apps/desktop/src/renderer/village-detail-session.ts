@@ -204,8 +204,11 @@ export function displayCategoryLabel(display: TrackerDisplayCategoryDto): string
 }
 
 export function levelTransitionText(currentLevel: number | null, nextLevel: number | null): string {
-  if (currentLevel !== null && nextLevel !== null) {
-    return `${currentLevel} → ${nextLevel} 级`;
+  if (currentLevel !== null) {
+    if (nextLevel !== null) {
+      return `${currentLevel} → ${nextLevel} 级`;
+    }
+    return `等级 ${currentLevel} 级`;
   }
   if (nextLevel !== null) {
     return `下一级 ${nextLevel} 级`;
@@ -380,7 +383,7 @@ export function authoritativeLevelStatus(item: VillageItemStateDto): string {
 }
 
 /**
- * 缺失说明（复刻 missingNote 的 DTO 可达部分；diagnostic/isCatalogDeprecated
+ * 缺失说明（复刻 missingNote 的 DTO 可达部分；isCatalogDeprecated
  * 无 DTO 字段，isEffectivelyUpgrading+missingReason 与 catalogItem==nil 回退
  * 需 catalog join（renderer 无），故不覆盖）。
  */
@@ -390,12 +393,12 @@ export function levelMissingNote(item: VillageItemStateDto): string | null {
   }
   switch (item.effectiveStatus) {
     case 'conflict':
-      return '本地手动状态冲突，暂无法确认当前等级。';
+      return item.effectiveDiagnostic ?? '本地手动状态冲突，暂无法确认当前等级。';
     case 'needsReimport':
       return '导入计时已结束，重新导入快照后才能确认当前等级。';
     case 'unknown':
       if (item.status !== 'unknown' && item.status !== 'unverified') {
-        return '本地有效状态未知，暂无法确认当前等级。';
+        return item.effectiveDiagnostic ?? '本地有效状态未知，暂无法确认当前等级。';
       }
       break;
     default:

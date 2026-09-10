@@ -153,8 +153,6 @@ export function AppShell({
                   state={detail.state}
                   base={detailBase}
                   onBaseChange={onDetailBaseChange}
-                  // C2: onOpenLevel 接等级底片（sheet），本 slice 仅占位
-                  onOpenLevel={() => undefined}
                   onRetry={() => void detail.refresh()}
                 />
               )

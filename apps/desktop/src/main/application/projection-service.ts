@@ -155,6 +155,7 @@ export class ProjectionService {
         catalogIsUsable: projection.catalogIsUsable,
         compatibility: projection.compatibility,
         items: projection.items,
+        instanceItems: projection.rawItems,
         groups,
         completion,
         totalCompletion,

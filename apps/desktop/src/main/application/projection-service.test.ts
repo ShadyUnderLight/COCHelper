@@ -176,6 +176,58 @@ describe('ProjectionService（#276-S2）', () => {
     expect(services.state.getGeneration()).toBe(generation);
   });
 
+  it('聚合 idle 行的 instanceID 经 instanceItems 可解析（真 ProjectionService）', async () => {
+    const services = bootServices();
+    const prepared = services.imports.prepare({
+      text: '{"tag":"#INST","buildings":[{"data":1000010,"lvl":1},{"data":1000010,"lvl":1},{"data":1000001,"lvl":5},{"data":1000002,"lvl":3,"timer":3600}]}',
+    });
+    services.imports.commit(prepared.generation);
+    const village = services.state.listVillages().find((entry) => entry.tag === '#INST');
+    expect(village).toBeDefined();
+
+    const detail = await services.projections.villageDetail({
+      villageId: village!.id,
+      base: 'home',
+    });
+    // 聚合确实发生：否则本测试无意义。
+    expect(detail.items.some((entry) => entry.id.startsWith('agg:'))).toBe(true);
+    expect(detail.instanceItems.length).toBeGreaterThan(0);
+
+    // renderer 解析规则镜像：items 优先 exact，instanceItems 补齐，'#' 后缀兜底。
+    const byId = new Map(detail.items.map((entry) => [entry.id, entry] as const));
+    for (const raw of detail.instanceItems) {
+      if (!byId.has(raw.id)) {
+        byId.set(raw.id, raw);
+      }
+    }
+    const resolve = (id: string) => byId.get(id) ?? byId.get(id.split('#')[0] ?? id) ?? null;
+    for (const row of detail.flatRows) {
+      if (row.kind === 'instance') {
+        expect(resolve(row.instanceID)).not.toBeNull();
+      } else if (row.kind === 'legacy') {
+        expect(resolve(row.itemID)).not.toBeNull();
+      }
+    }
+
+    // 城墙组：2 个同级 idle 实例聚合，第二个 raw 实例在 items 中无对应项。
+    const wallGroups = detail.buildingGroups.filter((group) => group.dataID === 1000010);
+    expect(wallGroups.length).toBeGreaterThan(0);
+    const wallInstances = wallGroups.flatMap((group) => group.instanceIds);
+    expect(wallInstances.length).toBe(2);
+    const itemIds = new Set(detail.items.map((entry) => entry.id));
+    expect(wallInstances.some((id) => !itemIds.has(id))).toBe(true);
+    for (const id of wallInstances) {
+      expect(resolve(id)).not.toBeNull();
+      expect(resolve(id)!.dataID).toBe(1000010);
+    }
+
+    // 升级中实例保留 raw ID，items 内可直接命中。
+    const upgrading = detail.flatRows.find(
+      (row) => row.kind === 'instance' && itemIds.has(row.instanceID),
+    );
+    expect(upgrading).toBeDefined();
+  });
+
   it('catalog await 期间发生 import 时，overview 在 catalog 之后同步抓取 villages/generation', async () => {
     const bundle = await loadRealBundle();
     const catalog = deferredCatalogPort(bundle);

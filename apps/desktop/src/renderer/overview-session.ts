@@ -234,5 +234,12 @@ function itemFixture(): VillageItemStateDto {
     displayCategory: 'defense',
     countOverflowed: false,
     effectiveStatus: 'importedActive',
+    effectiveCurrentLevel: 5,
+    effectiveTargetLevel: 6,
+    effectiveNextUpgrade: { kind: 'available', level: 6, durationSeconds: 3600 },
+    effectiveNextLevelDurationState: { kind: 'timed', seconds: 3600 },
+    effectiveDiagnostic: null,
+    effectiveIsMaxed: false,
+    effectiveDetailMissingReason: null,
   };
 }

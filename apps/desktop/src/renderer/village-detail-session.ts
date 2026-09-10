@@ -3,12 +3,18 @@
  * 世代/session 守卫复用 overview-session（cursor 形状与语义一致）。
  */
 import type {
+  CatalogAssetRefDto,
   CatalogCompatibilityDto,
+  CatalogDurationStateDto,
   ProgressMetricDto,
+  TrackerBaseDto,
   TrackerCategoryDto,
   TrackerDisplayCategoryDto,
+  UpgradeRequirementDto,
   VillageDetailGroupDto,
   VillageDetailPayload,
+  VillageItemStateDto,
+  VillageItemStatusDto,
 } from '@coc-helper/contracts';
 
 export type VillageDetailState = {
@@ -148,6 +154,7 @@ export function villageDetailFixture(
       effectiveTrackerProgress: metric,
     },
     buildingGroups: [],
+    instanceItems: [],
     flatRows: [],
     ...overrides,
   };
@@ -197,9 +204,29 @@ export function displayCategoryLabel(display: TrackerDisplayCategoryDto): string
   }
 }
 
+/**
+ * 类别 glyph（#39 最终 fallback 用：PNG 候选耗尽时显示分类首字而非消失。
+ * Electron 无 SF Symbols，用分类标题首字是稳定可本地化的最小方案）。
+ */
+export function categoryGlyph(
+  displayCategory: TrackerDisplayCategoryDto | null,
+  category: TrackerCategoryDto | null,
+): string {
+  if (displayCategory !== null) {
+    return displayCategoryLabel(displayCategory).slice(0, 1);
+  }
+  if (category !== null) {
+    return categoryLabel(category).slice(0, 1);
+  }
+  return '？';
+}
+
 export function levelTransitionText(currentLevel: number | null, nextLevel: number | null): string {
-  if (currentLevel !== null && nextLevel !== null) {
-    return `${currentLevel} → ${nextLevel} 级`;
+  if (currentLevel !== null) {
+    if (nextLevel !== null) {
+      return `${currentLevel} → ${nextLevel} 级`;
+    }
+    return `等级 ${currentLevel} 级`;
   }
   if (nextLevel !== null) {
     return `下一级 ${nextLevel} 级`;
@@ -215,4 +242,154 @@ export function groupTitleText(group: VillageDetailGroupDto): string {
     return categoryLabel(group.category);
   }
   return group.id;
+}
+
+export function requirementLabel(req: UpgradeRequirementDto, base: TrackerBaseDto): string {
+  let name: string;
+  switch (req.kind) {
+    case 'townHall':
+      name = base === 'builder' ? '建筑大师大本营' : '大本营';
+      break;
+    case 'builderHall':
+      name = '建筑大师大本营';
+      break;
+    case 'laboratory':
+      name = base === 'builder' ? '星空实验室' : '实验室';
+      break;
+    case 'starLaboratory':
+      name = '星空实验室';
+      break;
+    case 'heroHall':
+      name = '英雄殿堂';
+      break;
+    case 'blacksmith':
+      name = '铁匠铺';
+      break;
+    default: {
+      const exhaustive: never = req;
+      throw new Error(`未知升级前置：${String(exhaustive)}`);
+    }
+  }
+  return `所需${name}等级 ${req.level}级`;
+}
+
+export function formatDurationSeconds(seconds: number): string {
+  if (!(seconds > 0)) {
+    return '不足1分钟';
+  }
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) {
+    return `${days}天 ${hours}小时`;
+  }
+  if (hours > 0) {
+    return `${hours}小时 ${minutes}分钟`;
+  }
+  if (minutes > 0) {
+    return `${minutes}分钟`;
+  }
+  return '不足1分钟';
+}
+
+export function durationStateLabel(state: CatalogDurationStateDto | null): string {
+  if (state === null) {
+    return '暂无目录数据';
+  }
+  switch (state.kind) {
+    case 'timed':
+      return formatDurationSeconds(state.seconds);
+    case 'instant':
+      return '即时';
+    case 'initialLevel':
+      return '初始等级，无升级时长';
+    case 'notApplicable':
+      return '该类别无时长数据';
+    case 'sourceMissing':
+      return '目录缺失';
+    case 'parseFailed':
+      return '目录解析失败';
+    case 'unknownReason':
+      return '暂无目录数据';
+    default: {
+      const exhaustive: never = state;
+      throw new Error(`未知时长状态：${String(exhaustive)}`);
+    }
+  }
+}
+
+function stageMaxedText(currentStageMaxLevel: number | null, maxLevel: number | null): string {
+  if (currentStageMaxLevel !== null && maxLevel !== null && currentStageMaxLevel < maxLevel) {
+    return `当前阶段已满级（全局尚有 ${maxLevel - currentStageMaxLevel} 级）`;
+  }
+  return '已满级';
+}
+
+/**
+ * 权威展示状态（复刻 LevelDetailSheet.swift statusLabel）。
+ * effective sidecar 存在即权威，绝不把 raw status 与 effective 并列展示。
+ * 满级判定直接消费 DTO 的 effectiveIsMaxed（Main 侧 domain 已含 known 门）；
+ * 本模块不再做任何满级数值判断。
+ */
+export function authoritativeLevelStatus(item: VillageItemStateDto): string {
+  const effective = item.effectiveStatus;
+  if (effective !== null) {
+    switch (effective) {
+      case 'manualActive':
+      case 'importedActive':
+        return '正在升级';
+      case 'needsReimport':
+        return '待重新导入确认';
+      case 'conflict':
+        return '本地状态冲突';
+      case 'unknown':
+        return '无法确认当前状态';
+      case 'unavailable':
+        return '不参与升级追踪';
+      case 'manualCompleted':
+      case 'observed': {
+        if (item.effectiveIsMaxed) {
+          return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
+        }
+        return '已记录';
+      }
+      default: {
+        const exhaustive: never = effective;
+        throw new Error(`未知有效状态：${String(exhaustive)}`);
+      }
+    }
+  }
+  if (item.status === 'maxed') {
+    return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
+  }
+  // NOTE: 下方 case 'maxed' 不可达（上方已 return），仅为穷尽 switch 而保留；
+  // 判别式经 as 加宽，否则 narrowing 后 'maxed' 与判别类型不可比（TS2678）。
+  const rawWidened = item.status as VillageItemStatusDto;
+  switch (rawWidened) {
+    case 'upgrading':
+      return '正在升级';
+    case 'maxed':
+      return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
+    case 'complete':
+      return '已记录';
+    case 'unknown':
+      return '目录未收录';
+    case 'unverified':
+      return '无法验证当前阶段上限';
+    case 'unavailable':
+      return '不参与升级追踪';
+    case 'available':
+      return '目录中可用';
+    default: {
+      const exhaustive: never = rawWidened;
+      throw new Error(`未知状态：${String(exhaustive)}`);
+    }
+  }
+}
+
+/** 图标候选链（复刻 preferredAssetURLs 顺序：currentLevelVisual → currentLevelIcon → levelVisual → icon；craftTable 模组图标无 renderer 数据源，不在链内）。空位保留 null，由调用方按序探测。 */
+export function primaryLevelAssets(
+  item: VillageItemStateDto,
+): readonly (CatalogAssetRefDto | null)[] {
+  return [item.currentLevelVisual, item.currentLevelIcon, item.levelVisual, item.icon];
 }

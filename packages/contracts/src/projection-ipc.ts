@@ -131,6 +131,18 @@ export type VillageItemStateDto = {
   readonly displayCategory: TrackerDisplayCategoryDto | null;
   readonly countOverflowed: boolean;
   readonly effectiveStatus: EffectiveVillageItemStatusDto | null;
+  /**
+   * Authoritative 有效视图（domain `effectiveItemView` 直出，无 sidecar 时
+   * 回退 raw）。renderer 等级/升级/时长只读这组字段，不再碰上面 raw 字段。
+   */
+  readonly effectiveCurrentLevel: number | null;
+  readonly effectiveTargetLevel: number | null;
+  readonly effectiveNextUpgrade: VillageNextUpgradeDto | null;
+  readonly effectiveNextLevelDurationState: CatalogDurationStateDto | null;
+  readonly effectiveDiagnostic: string | null;
+  readonly effectiveIsMaxed: boolean;
+  /** 详情缺失说明（domain 缺失规则直出；null 表无说明）。 */
+  readonly effectiveDetailMissingReason: string | null;
 };
 
 export type ProgressMetricStateDto = 'ready' | 'partial' | 'unavailable' | 'unknown';
@@ -297,6 +309,11 @@ export type VillageDetailPayload = {
   readonly catalogIsUsable: boolean;
   readonly compatibility: CatalogCompatibilityDto;
   readonly items: readonly VillageItemStateDto[];
+  /**
+   * 仅供实例 ID 解析的原始条目（含已聚合项的原始记录，如 idle 建筑的 raw
+   * 记录）。UI 不得直接列表渲染；`items` 仍是唯一的列表数据源。
+   */
+  readonly instanceItems: readonly VillageItemStateDto[];
   readonly groups: readonly VillageDetailGroupDto[];
   readonly completion: readonly VillageCategoryCompletionDto[];
   readonly totalCompletion: VillageCategoryCompletionDto;

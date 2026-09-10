@@ -7,6 +7,7 @@ export * from './account-items';
 export { type VillageProfile } from '../import/types';
 export * from './catalog-projection';
 export * from './effective-projection';
+export * from './effective-view';
 export * from './progress-metrics';
 export * from './village-detail-projection';
 export * from './building-group-projection';

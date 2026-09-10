@@ -42,7 +42,11 @@ import type {
   VillageProgressMetrics,
   VillageProfile,
 } from '@coc-helper/domain';
-import { trackerItemKeyStableId } from '@coc-helper/domain';
+import {
+  effectiveDetailMissingReason,
+  effectiveItemView,
+  trackerItemKeyStableId,
+} from '@coc-helper/domain';
 
 export function toUpgradeOverviewPayload(input: {
   readonly generation: number;
@@ -71,6 +75,7 @@ export function toVillageDetailPayload(input: {
   readonly catalogIsUsable: boolean;
   readonly compatibility: CatalogCompatibility;
   readonly items: readonly VillageItemState[];
+  readonly instanceItems: readonly VillageItemState[];
   readonly groups: readonly VillageDetailGroup[];
   readonly completion: readonly VillageCategoryCompletion[];
   readonly totalCompletion: VillageCategoryCompletion;
@@ -89,6 +94,7 @@ export function toVillageDetailPayload(input: {
     catalogIsUsable: input.catalogIsUsable,
     compatibility: toCatalogCompatibilityDto(input.compatibility),
     items: input.items.map(toVillageItemStateDto),
+    instanceItems: input.instanceItems.map(toVillageItemStateDto),
     groups: input.groups.map(toVillageDetailGroupDto),
     completion: input.completion.map(toVillageCategoryCompletionDto),
     totalCompletion: toVillageCategoryCompletionDto(input.totalCompletion),
@@ -139,6 +145,7 @@ function toUpgradeRecentCompletionDto(
 }
 
 export function toVillageItemStateDto(item: VillageItemState): VillageItemStateDto {
+  const effective = effectiveItemView(item);
   return {
     id: item.id,
     section: item.section,
@@ -168,6 +175,13 @@ export function toVillageItemStateDto(item: VillageItemState): VillageItemStateD
     displayCategory: item.displayCategory,
     countOverflowed: item.countOverflowed === true,
     effectiveStatus: readEffectiveStatus(item.effectiveState),
+    effectiveCurrentLevel: effective.currentLevel,
+    effectiveTargetLevel: effective.targetLevel,
+    effectiveNextUpgrade: optionalNextUpgrade(effective.nextUpgrade),
+    effectiveNextLevelDurationState: optionalDurationState(effective.durationState),
+    effectiveDiagnostic: effective.diagnostic,
+    effectiveIsMaxed: effective.isMaxed,
+    effectiveDetailMissingReason: effectiveDetailMissingReason(item),
   };
 }
 

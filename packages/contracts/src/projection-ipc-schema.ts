@@ -191,6 +191,13 @@ export const villageItemStateDtoSchema: z.ZodType<VillageItemStateDto> = z
     displayCategory: trackerDisplayCategorySchema.nullable(),
     countOverflowed: z.boolean(),
     effectiveStatus: effectiveStatusSchema.nullable(),
+    effectiveCurrentLevel: z.number().int().safe().nullable(),
+    effectiveTargetLevel: z.number().int().safe().nullable(),
+    effectiveNextUpgrade: villageNextUpgradeSchema.nullable(),
+    effectiveNextLevelDurationState: catalogDurationStateSchema.nullable(),
+    effectiveDiagnostic: z.string().max(500).nullable(),
+    effectiveIsMaxed: z.boolean(),
+    effectiveDetailMissingReason: z.string().max(500).nullable(),
   })
   .strict();
 
@@ -409,6 +416,7 @@ export const villageDetailPayloadSchema: z.ZodType<VillageDetailPayload> = z
     catalogIsUsable: z.boolean(),
     compatibility: catalogCompatibilitySchema,
     items: z.array(villageItemStateDtoSchema),
+    instanceItems: z.array(villageItemStateDtoSchema),
     groups: z.array(villageDetailGroupSchema),
     completion: z.array(villageCategoryCompletionSchema),
     totalCompletion: villageCategoryCompletionSchema,

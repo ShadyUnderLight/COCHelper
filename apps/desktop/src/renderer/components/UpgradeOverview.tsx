@@ -9,6 +9,8 @@ import {
   statusLabel,
   type OverviewState,
 } from '../overview-session';
+import { categoryGlyph, primaryLevelAssets } from '../village-detail-session';
+import { AssetImage } from './AssetImage';
 
 type UpgradeOverviewProps = {
   readonly state: OverviewState;
@@ -140,6 +142,17 @@ function RecordList(props: {
                 props.onOpenDetail?.(record.id, record.villageID);
               }}
             >
+              <AssetImage
+                catalogVersion={record.catalogVersion}
+                candidates={primaryLevelAssets(record.item)}
+                size={28}
+                className="overview-item-icon"
+                fallbackNode={
+                  <span className="overview-item-glyph" aria-hidden="true">
+                    {categoryGlyph(record.item.displayCategory, record.item.category)}
+                  </span>
+                }
+              />
               <span className="overview-item-name">{record.item.name}</span>
               <span className="muted">
                 {record.villageName} · {baseLabel(record.base)} · {levelText(record)} ·{' '}

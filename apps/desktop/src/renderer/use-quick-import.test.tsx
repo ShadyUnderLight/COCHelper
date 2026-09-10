@@ -381,6 +381,33 @@ describe('useQuickImport', () => {
     expect(result.current.state.lastError).toBe('取消失败，请重试。');
   });
 
+  it('commit 返回 validation（pending 仍 live，如目标非 UUID）→ 保住 ownership，取消可清', async () => {
+    const harness = createBridge();
+    // Main 侧 requireUuid 失败即此类：validation，但 quickPending 未被 clear
+    harness.setNextCommit(err('目标村庄 ID 不是合法 UUID。'));
+    const snap = snapshot();
+    const { result } = renderHook(() => useQuickImport(harness.bridge, snap, {}));
+    await act(async () => {
+      await result.current.open('v-a');
+    });
+    let committed = true;
+    await act(async () => {
+      committed = await result.current.confirm();
+    });
+    expect(committed).toBe(false);
+    // ownership 不丢：仍 ready、preview 与 token 完整保留
+    expect(result.current.state.status).toBe('ready');
+    expect(result.current.state.preview?.targetVillageId).toBe('v-a');
+    expect(result.current.state.preparedGeneration).toBe(8);
+    // 取消照常用同一 token 找 Main 清理，成功后回 idle
+    await act(async () => {
+      await result.current.cancel();
+    });
+    expect(harness.calls.discard).toEqual([{ expectedGeneration: 8 }]);
+    expect(result.current.state.status).toBe('idle');
+    expect(result.current.state.preview).toBeNull();
+  });
+
   it('close 在 ready 时丢弃并回到 idle', async () => {
     const harness = createBridge();
     const snap = snapshot();

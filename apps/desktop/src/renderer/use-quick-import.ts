@@ -41,12 +41,14 @@ const STALE_MESSAGE = '导入状态已变化，请重新粘贴并更新。';
 /**
  * Ownership 不变量：只要 Main 仍持有 live pending，本地必须保留对应 token
  *（preview + preparedGeneration），或者在放弃前显式使 Main pending 失效。
- * - Main 明确说死（conflict/validation）→ token 无用，切 idle 保留 target 供重试。
- * - 其他失败（unavailable/notFound/桥异常）→ Main 仍可能持有 pending，恢复 ready
- *   并保留原 token，绝不静默丢弃。
+ * - Main 明确说死（conflict：创建代已落后，Main 侧已清理）→ token 无用，
+ *   切 idle 保留 target 供重试。
+ * - 其他一切失败（含 validation：例如目标 ID 非 UUID 时 pending 仍 live、
+ *   unavailable/notFound/桥异常）→ Main 仍可能持有 pending，恢复 ready
+ *   并保留原 token，绝不静默丢弃。validation 绝不能当作“pending 已死”。
  */
 function isDeadPending(code: IpcError['code']): boolean {
-  return code === 'conflict' || code === 'validation';
+  return code === 'conflict';
 }
 
 export type QuickImportApi = {

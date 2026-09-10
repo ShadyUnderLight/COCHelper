@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -46,7 +46,32 @@ function pathsFor(root: string): ElectronPersistencePaths {
 function bootService() {
   const root = mkdtempSync(join(tmpdir(), 'coc-quick-'));
   tempRoots.push(root);
+  return constructService(pathsFor(root));
+}
+
+/**
+ * legacy 磁盘数据：codec 只要求 id 非空字符串即可 loaded，
+ * 因此非 UUID 的旧 id 是生产可达的（persistence 判 available）。
+ */
+function bootServiceWithLegacyVillageId(legacyId: string) {
+  const root = mkdtempSync(join(tmpdir(), 'coc-quick-legacy-'));
+  tempRoots.push(root);
   const paths = pathsFor(root);
+  writeFileSync(
+    paths.villages,
+    JSON.stringify([
+      {
+        id: legacyId,
+        name: '老村',
+        accountOriginalText: null,
+        accountImportedAtMs: null,
+      },
+    ]),
+  );
+  return { ...constructService(paths), legacyId };
+}
+
+function constructService(paths: ElectronPersistencePaths) {
   const persistence = bootstrapPersistence({ paths });
   const villageStore = new PersistentVillageStore({
     villages: persistence.villages,
@@ -375,6 +400,32 @@ describe('SnapshotImportService quick import', () => {
     // UI 所需摘要字段仍在
     expect(prepared.preview.snapshot.tag).toBe('#QSENT');
     expect(prepared.preview.targetVillageId).toBe(villageId);
+  });
+
+  it('legacy 非 UUID 村庄 id：quickCommit validation 后 pending 仍 live，同代可 discard', () => {
+    const { persistence, villageStore, state, service, legacyId } =
+      bootServiceWithLegacyVillageId('legacy-village-id');
+    expect(villageStore.listVillages().map((v) => v.id)).toEqual([legacyId]);
+
+    const prepared = service.quickPrepare({
+      targetVillageId: legacyId,
+      text: '{"tag":"#QLEGACY","buildings":[]}',
+    });
+    const villagesBytesBefore = persistence.villages.readData();
+
+    try {
+      service.quickCommit(prepared.generation);
+    } catch (error) {
+      // requireUuid 失败是 validation，但 takeLive 之后才抛，pending 未被 clear
+      expect((error as AppServiceError).code).toBe('validation');
+    }
+    expect(state.getGeneration()).toBe(prepared.generation);
+    // villages 文件零写入
+    expect(persistence.villages.readData()).toEqual(villagesBytesBefore);
+    // pending 仍 live：同 generation discard 成功清理（带 bump 证明非空槽）
+    const discarded = service.quickDiscard(prepared.generation);
+    expect(discarded.generation).toBe(prepared.generation + 1);
+    expect(state.getGeneration()).toBe(prepared.generation + 1);
   });
 
   it('镜像：普通 prepare 后被 quickPrepare 顶掉代 → 普通 commit 必须 conflict 且零写入', () => {

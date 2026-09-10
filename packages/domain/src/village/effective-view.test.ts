@@ -322,9 +322,9 @@ describe('effectiveDetailMissingReason', () => {
     );
   });
   it('raw unknown 透出 missingReason，无则默认文案', () => {
-    expect(
-      effectiveDetailMissingReason(item({ status: 'unknown', missingReason: '旧原因' })),
-    ).toBe('旧原因');
+    expect(effectiveDetailMissingReason(item({ status: 'unknown', missingReason: '旧原因' }))).toBe(
+      '旧原因',
+    );
     expect(effectiveDetailMissingReason(item({ status: 'unknown' }))).toBe(
       '该项目暂无逐级升级数据。',
     );

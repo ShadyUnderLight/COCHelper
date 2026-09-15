@@ -128,6 +128,39 @@ describe('useVillageDetail', () => {
     expect(result.current.state.payload?.villageId).toBe('v2');
   });
 
+  it('A pending → null → 旧 A 响应丢弃 → 再进 A 会发新请求', async () => {
+    const harness = createBridge();
+    const subjectA = target('v1', 'home');
+    const snap = snapshot({ generation: 5 });
+    const { result, rerender } = renderHook<VillageDetailApi, HookProps>(
+      ({ snap, detailTarget }) => useVillageDetail(harness.bridge, snap, detailTarget),
+      {
+        initialProps: { snap, detailTarget: subjectA },
+      },
+    );
+    await waitFor(() => {
+      expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(1);
+    });
+    expect(harness.pendingCount()).toBe(1);
+    rerender({ snap, detailTarget: null });
+    act(() => {
+      harness.resolve(ok(detail({ generation: 5, villageId: 'v1', villageName: '主村' })));
+    });
+    await act(async () => {});
+    expect(result.current.state.status).toBe('idle');
+    rerender({ snap, detailTarget: subjectA });
+    await waitFor(() => {
+      expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      harness.resolve(ok(detail({ generation: 5, villageId: 'v1', villageName: '主村' })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+    expect(result.current.state.payload?.villageName).toBe('主村');
+  });
+
   it('出现 target 后拉取', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook<VillageDetailApi, HookProps>(

@@ -63,9 +63,20 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
   extractGenerationRef.current = extractGeneration;
   const onSessionResetRef = useRef(onSessionReset);
   onSessionResetRef.current = onSessionReset;
+  const prevSubjectKeyRef = useRef<string | null>(subjectKey);
 
   useEffect(() => {
+    const prevSubjectKey = prevSubjectKeyRef.current;
+    prevSubjectKeyRef.current = subjectKey;
+
     if (snapshot === null || subjectKey === null) {
+      // subject 离开有效态：作废在途请求，避免同 key 在重新进入时被 beginFetch skip。
+      if (prevSubjectKey !== null && subjectKey === null) {
+        requestSeqRef.current += 1;
+        lastKeyRef.current = null;
+        lastSeqRef.current = refreshSeq;
+        payloadSubjectRef.current = null;
+      }
       return;
     }
     const requestEpoch = epochRef.current;

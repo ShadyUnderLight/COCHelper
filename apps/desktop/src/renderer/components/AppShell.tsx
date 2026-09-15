@@ -130,6 +130,13 @@ export function AppShell({
     applyRoute({ kind: 'villageDetail', villageId: detailRoute.villageId, base });
   };
 
+  const onSidebarSelect = async (villageId: string): Promise<void> => {
+    const ok = await session.selectVillage(villageId);
+    if (ok && detailRoute !== null) {
+      applyRoute({ kind: 'villageDetail', villageId, base: detailRoute.base });
+    }
+  };
+
   return (
     <div
       className="app-shell"
@@ -167,7 +174,7 @@ export function AppShell({
             villages={snapshot.villages}
             selectedVillageId={snapshot.selectedVillageId}
             disabled={state.busy || snapshot.availability !== 'available'}
-            onSelect={(villageId) => void session.selectVillage(villageId)}
+            onSelect={(villageId) => void onSidebarSelect(villageId)}
           />
           <main className="main-pane">
             {snapshot.availability === 'unavailable' ? (

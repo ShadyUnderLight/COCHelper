@@ -268,6 +268,64 @@ describe('AppShell', () => {
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
   });
 
+  it('详情 route 下 sidebar 选村成功时同步更新 route', async () => {
+    const onRouteChange = vi.fn();
+    const selectVillage = vi.fn(async () => true);
+    render(
+      <AppShell
+        session={{
+          ...sessionApi({
+            ...INITIAL_APP_SESSION,
+            status: 'ready',
+            snapshot: snapshot({ selectedVillageId: 'v1' }),
+          }),
+          selectVillage,
+        }}
+        overview={overviewApi()}
+        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+        onRouteChange={onRouteChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /分村/ }));
+    await waitFor(() => {
+      expect(selectVillage).toHaveBeenCalledWith('v2');
+    });
+    await waitFor(() => {
+      expect(onRouteChange).toHaveBeenCalledWith({
+        kind: 'villageDetail',
+        villageId: 'v2',
+        base: 'home',
+      });
+    });
+  });
+
+  it('详情 route 下 sidebar 选村失败时 route 不变', async () => {
+    const onRouteChange = vi.fn();
+    const selectVillage = vi.fn(async () => false);
+    render(
+      <AppShell
+        session={{
+          ...sessionApi({
+            ...INITIAL_APP_SESSION,
+            status: 'ready',
+            snapshot: snapshot({ selectedVillageId: 'v1' }),
+          }),
+          selectVillage,
+        }}
+        overview={overviewApi()}
+        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+        onRouteChange={onRouteChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /分村/ }));
+    await waitFor(() => {
+      expect(selectVillage).toHaveBeenCalledWith('v2');
+    });
+    expect(onRouteChange).not.toHaveBeenCalled();
+  });
+
   it('详情 base 切换透传（初始主村按下）', () => {
     const detailState = applyVillageDetailSuccess(villageDetailFixture());
     render(

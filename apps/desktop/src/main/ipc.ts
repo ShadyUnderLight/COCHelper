@@ -186,12 +186,12 @@ export function registerIpcHandlers(
     }
   });
 
-  ipcMain.handle(IMPORT_QUICK_PREPARE_CHANNEL, (event, payload: unknown) => {
+  ipcMain.handle(IMPORT_QUICK_PREPARE_CHANNEL, async (event, payload: unknown) => {
     try {
       assertTrustedSender(event, webpackEntry);
       const request = parseQuickPrepareRequest(payload);
       // 剪贴板只在 Main 读取：失败视为空剪贴板，不进日志。
-      const text = clipboard.readText() ?? '';
+      const text = (await clipboard.readText()) ?? '';
       return resultOk(
         requireServices(services).imports.quickPrepare({
           targetVillageId: request.targetVillageId,

@@ -7,21 +7,19 @@
  */
 
 export type ClipboardPort = {
-  readText(): string | null;
+  readText(): string | null | Promise<string | null>;
 };
 
-function readElectronClipboardText(): string | null {
+async function readElectronClipboardText(): Promise<string | null> {
   try {
     // vitest（node）下 electron 导出的 clipboard 为 undefined：守卫后回 null。
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const electron = require('electron') as {
-      clipboard?: { readText?: () => string };
-    };
+    const electron = require('electron') as Pick<typeof import('electron'), 'clipboard'>;
     const readText = electron.clipboard?.readText;
     if (typeof readText !== 'function') {
       return null;
     }
-    return readText.call(electron.clipboard);
+    return await readText.call(electron.clipboard);
   } catch {
     return null;
   }

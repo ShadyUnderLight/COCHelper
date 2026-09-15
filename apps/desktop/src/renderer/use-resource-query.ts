@@ -75,7 +75,8 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
         requestSeqRef.current += 1;
         lastKeyRef.current = null;
         lastSeqRef.current = refreshSeq;
-        payloadSubjectRef.current = null;
+        // 保留 payloadSubjectRef：它标记 last-good 归属，供 A→null→B 时 subjectChanged 清数据；
+        // A→null→A 仍可依赖 last-good 与 beginFetch 重新拉取。
       }
       return;
     }

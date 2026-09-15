@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
@@ -40,6 +40,8 @@ export function AppShell({
 }: AppShellProps) {
   const [internalRoute, setInternalRoute] = useState<AppRoute>({ kind: 'import' });
   const activeRoute = route ?? internalRoute;
+  const activeRouteRef = useRef(activeRoute);
+  activeRouteRef.current = activeRoute;
   const { state, recoveryStatus } = session;
   const snapshot = state.snapshot;
   const tab = primaryTabOfRoute(activeRoute);
@@ -115,7 +117,8 @@ export function AppShell({
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
       return;
     }
-    const base = detailBaseForTab();
+    const currentRoute = activeRouteRef.current;
+    const base = currentRoute.kind === 'villageDetail' ? currentRoute.base : 'home';
     if (navigate !== undefined) {
       navigate({ type: 'openVillageDetail', villageId, base });
     } else {
@@ -132,8 +135,12 @@ export function AppShell({
 
   const onSidebarSelect = async (villageId: string): Promise<void> => {
     const ok = await session.selectVillage(villageId);
-    if (ok && detailRoute !== null) {
-      applyRoute({ kind: 'villageDetail', villageId, base: detailRoute.base });
+    if (!ok) {
+      return;
+    }
+    const currentRoute = activeRouteRef.current;
+    if (currentRoute.kind === 'villageDetail') {
+      applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
     }
   };
 

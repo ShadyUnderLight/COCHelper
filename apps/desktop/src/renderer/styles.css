@@ -364,6 +364,16 @@ button.danger {
   overflow: auto;
 }
 
+.quick-import-sheet {
+  background: #2c2c2e;
+  border-radius: 12px;
+  padding: 20px 22px;
+  max-width: 480px;
+  width: calc(100% - 48px);
+  max-height: calc(100% - 48px);
+  overflow: auto;
+}
+
 .sheet-header {
   display: flex;
   gap: 12px;

@@ -9,6 +9,9 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  IMPORT_QUICK_COMMIT_CHANNEL,
+  IMPORT_QUICK_DISCARD_CHANNEL,
+  IMPORT_QUICK_PREPARE_CHANNEL,
   MANUAL_ADJUST_CHANNEL,
   MANUAL_CANCEL_CHANNEL,
   MANUAL_RECONCILE_CHANNEL,
@@ -41,7 +44,11 @@ import {
   importCommitRequestSchema,
   importDiscardRequestSchema,
   importPrepareRequestSchema,
+  quickCommitRequestSchema,
+  quickDiscardRequestSchema,
+  quickPrepareRequestSchema,
   isSafeIpcDiagnosticText,
+  isSafeIpcIdentifier,
   manualAdjustRequestSchema,
   manualCancelRequestSchema,
   manualReconcileRequestSchema,
@@ -69,6 +76,9 @@ import {
   type ImportCommitRequest,
   type ImportDiscardRequest,
   type ImportPrepareRequest,
+  type QuickCommitRequest,
+  type QuickDiscardRequest,
+  type QuickPrepareRequest,
   type IpcError,
   type ManualAdjustRequest,
   type ManualCancelRequest,
@@ -189,6 +199,30 @@ export function parseImportDiscardRequest(payload: unknown): ImportDiscardReques
   const result = importDiscardRequestSchema.safeParse(payload);
   if (!result.success) {
     throw new IpcValidationError('import.discard 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseQuickPrepareRequest(payload: unknown): QuickPrepareRequest {
+  const result = quickPrepareRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('import.quickPrepare 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseQuickCommitRequest(payload: unknown): QuickCommitRequest {
+  const result = quickCommitRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('import.quickCommit 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseQuickDiscardRequest(payload: unknown): QuickDiscardRequest {
+  const result = quickDiscardRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('import.quickDiscard 参数不合法');
   }
   return result.data;
 }
@@ -406,10 +440,13 @@ export function toIpcError(error: unknown): IpcError {
   }
   if (isAppServiceError(error)) {
     const message = redactDiagnosticText(error.message);
+    const messageKey = isSafeIpcIdentifier(error.messageKey)
+      ? error.messageKey
+      : `app.${error.code}`;
     return {
       kind: mapAppServiceKind(error.code),
       code: error.code,
-      messageKey: `app.${error.code}`,
+      messageKey,
       message: isSafeIpcDiagnosticText(message) ? message : '应用服务错误。',
     };
   }
@@ -437,6 +474,9 @@ export const REGISTERED_IPC_CHANNELS = [
   IMPORT_PREPARE_CHANNEL,
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
+  IMPORT_QUICK_PREPARE_CHANNEL,
+  IMPORT_QUICK_COMMIT_CHANNEL,
+  IMPORT_QUICK_DISCARD_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   MANUAL_STATE_CHANNEL,
@@ -473,9 +513,10 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function isAppServiceError(
-  error: unknown,
-): error is Error & { code: 'notFound' | 'unavailable' | 'validation' | 'conflict' } {
+function isAppServiceError(error: unknown): error is Error & {
+  code: 'notFound' | 'unavailable' | 'validation' | 'conflict';
+  messageKey?: unknown;
+} {
   return (
     typeof error === 'object' &&
     error !== null &&

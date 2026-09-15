@@ -9,6 +9,9 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  IMPORT_QUICK_COMMIT_CHANNEL,
+  IMPORT_QUICK_DISCARD_CHANNEL,
+  IMPORT_QUICK_PREPARE_CHANNEL,
   MANUAL_ADJUST_CHANNEL,
   MANUAL_CANCEL_CHANNEL,
   MANUAL_RECONCILE_CHANNEL,
@@ -40,6 +43,9 @@ import {
   isImportCommitPayload,
   isImportDiscardPayload,
   isImportPreparePayload,
+  isQuickCommitPayload,
+  isQuickDiscardPayload,
+  isQuickPreparePayload,
   isIpcError,
   isManualAdjustPayload,
   isManualCancelPayload,
@@ -72,6 +78,9 @@ import {
   type ImportCommitResponse,
   type ImportDiscardResponse,
   type ImportPrepareResponse,
+  type QuickCommitResponse,
+  type QuickDiscardResponse,
+  type QuickPrepareResponse,
   type ManualAdjustResponse,
   type ManualCancelResponse,
   type ManualReconcileResponse,
@@ -122,6 +131,18 @@ export function isImportCommitResponse(value: unknown): value is ImportCommitRes
 
 export function isImportDiscardResponse(value: unknown): value is ImportDiscardResponse {
   return isResult(value, isImportDiscardPayload, isIpcError);
+}
+
+export function isQuickPrepareResponse(value: unknown): value is QuickPrepareResponse {
+  return isResult(value, isQuickPreparePayload, isIpcError);
+}
+
+export function isQuickCommitResponse(value: unknown): value is QuickCommitResponse {
+  return isResult(value, isQuickCommitPayload, isIpcError);
+}
+
+export function isQuickDiscardResponse(value: unknown): value is QuickDiscardResponse {
+  return isResult(value, isQuickDiscardPayload, isIpcError);
 }
 
 export function isUpgradeOverviewResponse(value: unknown): value is UpgradeOverviewResponse {
@@ -273,6 +294,27 @@ export function createDesktopBridge(invoke: Invoke, send: Send, on: On): Desktop
       const result = await invoke(IMPORT_DISCARD_CHANNEL, request);
       if (!isImportDiscardResponse(result)) {
         throw new Error('import.discard 返回值不合法');
+      }
+      return result;
+    },
+    quickPrepare: async (request) => {
+      const result = await invoke(IMPORT_QUICK_PREPARE_CHANNEL, request);
+      if (!isQuickPrepareResponse(result)) {
+        throw new Error('import.quickPrepare 返回值不合法');
+      }
+      return result;
+    },
+    quickCommit: async (request) => {
+      const result = await invoke(IMPORT_QUICK_COMMIT_CHANNEL, request);
+      if (!isQuickCommitResponse(result)) {
+        throw new Error('import.quickCommit 返回值不合法');
+      }
+      return result;
+    },
+    quickDiscard: async (request) => {
+      const result = await invoke(IMPORT_QUICK_DISCARD_CHANNEL, request);
+      if (!isQuickDiscardResponse(result)) {
+        throw new Error('import.quickDiscard 返回值不合法');
       }
       return result;
     },

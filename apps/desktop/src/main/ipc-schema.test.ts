@@ -11,6 +11,9 @@ import {
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
+  IMPORT_QUICK_COMMIT_CHANNEL,
+  IMPORT_QUICK_DISCARD_CHANNEL,
+  IMPORT_QUICK_PREPARE_CHANNEL,
   MANUAL_ADJUST_CHANNEL,
   MANUAL_CANCEL_CHANNEL,
   MANUAL_RECONCILE_CHANNEL,
@@ -45,10 +48,14 @@ import {
   parseImportCommitRequest,
   parseImportDiscardRequest,
   parseImportPrepareRequest,
+  parseQuickCommitRequest,
+  parseQuickDiscardRequest,
+  parseQuickPrepareRequest,
   parseAppHealthRequest,
   parseVillageSelectRequest,
   toIpcError,
 } from './ipc-schema';
+import { AppServiceError } from './application/app-authoritative-state';
 
 describe('app.health schema', () => {
   it('接受空对象或缺省参数', () => {
@@ -72,6 +79,9 @@ describe('app.health schema', () => {
       IMPORT_PREPARE_CHANNEL,
       IMPORT_COMMIT_CHANNEL,
       IMPORT_DISCARD_CHANNEL,
+      IMPORT_QUICK_PREPARE_CHANNEL,
+      IMPORT_QUICK_COMMIT_CHANNEL,
+      IMPORT_QUICK_DISCARD_CHANNEL,
       UPGRADE_OVERVIEW_CHANNEL,
       VILLAGE_DETAIL_CHANNEL,
       MANUAL_STATE_CHANNEL,
@@ -131,6 +141,28 @@ describe('E3-02 business schemas', () => {
     });
     expect(() => parseImportDiscardRequest({ expectedGeneration: -1 })).toThrow(IpcValidationError);
   });
+
+  it('import.quickPrepare 必须显式 targetVillageId，不得夹带文本', () => {
+    expect(parseQuickPrepareRequest({ targetVillageId: 'v-1' })).toEqual({
+      targetVillageId: 'v-1',
+    });
+    expect(() => parseQuickPrepareRequest({})).toThrow(IpcValidationError);
+    expect(() => parseQuickPrepareRequest({ targetVillageId: 'v-1', text: '{}' })).toThrow(
+      IpcValidationError,
+    );
+    expect(() => parseQuickPrepareRequest({ targetVillageId: '' })).toThrow(IpcValidationError);
+  });
+
+  it('import.quickCommit/quickDiscard 必须携带 expectedGeneration', () => {
+    expect(parseQuickCommitRequest({ expectedGeneration: 2 })).toEqual({
+      expectedGeneration: 2,
+    });
+    expect(() => parseQuickCommitRequest({})).toThrow(IpcValidationError);
+    expect(parseQuickDiscardRequest({ expectedGeneration: 0 })).toEqual({
+      expectedGeneration: 0,
+    });
+    expect(() => parseQuickDiscardRequest({ expectedGeneration: -1 })).toThrow(IpcValidationError);
+  });
 });
 
 describe('request.cancel schema', () => {
@@ -149,6 +181,22 @@ describe('request.cancel schema', () => {
 });
 
 describe('toIpcError', () => {
+  it('保留快捷导入 Tag 冲突的稳定导航 messageKey', () => {
+    expect(
+      toIpcError(
+        new AppServiceError(
+          'conflict',
+          '请前往账号数据页手动导入。',
+          'app.quickImport.manualImportRequired',
+        ),
+      ),
+    ).toMatchObject({
+      kind: 'validation',
+      code: 'conflict',
+      messageKey: 'app.quickImport.manualImportRequired',
+    });
+  });
+
   it('保留静态 validation 信息并将未知 Error 收敛为安全 internal', () => {
     const bearerMessage = ['Authorization', ': ', 'Bearer', ' ', 'secret-token'].join('');
     expect(toIpcError(new IpcValidationError('请求参数不合法'))).toEqual({

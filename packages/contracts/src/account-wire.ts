@@ -49,6 +49,28 @@ export type QuickImportPreviewWire = {
   readonly destinationDescription: string;
 };
 
+/**
+ * #277-D 快捷导入专用最小快照摘要：只含确认 UI 需要的字段。
+ * 绝不能含 originalText/objectSections/numericSections/boosts——剪贴板原文只活在 Main，
+ * 经 IPC 到 Renderer 的只有摘要。
+ */
+export type QuickImportSnapshotSummaryWire = {
+  readonly tag?: string;
+  readonly diagnostics: readonly AccountDiagnosticWire[];
+  readonly unknownTopLevelKeys: readonly string[];
+};
+
+/** #277-D 快捷导入 IPC 预览：快照部分为最小摘要，不含原文。 */
+export type QuickPreparePreviewWire = {
+  readonly snapshot: QuickImportSnapshotSummaryWire;
+  readonly targetVillageId: string;
+  readonly targetVillageName: string;
+  readonly targetVillageTag: string | null;
+  readonly targetVillageHasSnapshot: boolean;
+  readonly replacesSameTag: boolean;
+  readonly destinationDescription: string;
+};
+
 export type PendingImportPreviewWire = {
   readonly snapshot: AccountSnapshotWire;
   readonly targetKind: 'existing' | 'create' | 'ambiguous';

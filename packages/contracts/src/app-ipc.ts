@@ -4,7 +4,7 @@
  * commit/discard 必须携带 expectedGeneration（CAS），防止 stale UI 提交/丢弃新的 pending。
  */
 
-import type { PendingImportPreviewWire } from './account-wire';
+import type { PendingImportPreviewWire, QuickPreparePreviewWire } from './account-wire';
 import type { Result } from './result';
 
 export const APP_SNAPSHOT_CHANNEL = 'app.snapshot' as const;
@@ -12,6 +12,9 @@ export const VILLAGE_SELECT_CHANNEL = 'village.select' as const;
 export const IMPORT_PREPARE_CHANNEL = 'import.prepare' as const;
 export const IMPORT_COMMIT_CHANNEL = 'import.commit' as const;
 export const IMPORT_DISCARD_CHANNEL = 'import.discard' as const;
+export const IMPORT_QUICK_PREPARE_CHANNEL = 'import.quickPrepare' as const;
+export const IMPORT_QUICK_COMMIT_CHANNEL = 'import.quickCommit' as const;
+export const IMPORT_QUICK_DISCARD_CHANNEL = 'import.quickDiscard' as const;
 export const STATE_CHANGED_CHANNEL = 'state.changed' as const;
 
 export const APP_IPC_CHANNELS = [
@@ -20,6 +23,9 @@ export const APP_IPC_CHANNELS = [
   IMPORT_PREPARE_CHANNEL,
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
+  IMPORT_QUICK_PREPARE_CHANNEL,
+  IMPORT_QUICK_COMMIT_CHANNEL,
+  IMPORT_QUICK_DISCARD_CHANNEL,
   STATE_CHANGED_CHANNEL,
 ] as const;
 
@@ -108,6 +114,40 @@ export type ImportDiscardPayload = {
 };
 export type ImportDiscardResponse = Result<ImportDiscardPayload>;
 
+/**
+ * import.quickPrepare：目标固定为详情页当前村庄，文本由 Main 从剪贴板读取。
+ * Renderer 只传显式 targetVillageId，不得传文本/完整 preview，避免伪造与日志泄漏。
+ * Main 持有待确认 preview，quickCommit 只带 expectedGeneration（CAS）。
+ */
+export type QuickPrepareRequest = {
+  readonly targetVillageId: string;
+};
+export type QuickPreparePayload = {
+  readonly generation: number;
+  readonly preview: QuickPreparePreviewWire;
+};
+export type QuickPrepareResponse = Result<QuickPreparePayload>;
+
+/** 必须等于 quickPrepare 返回的 generation；不匹配则 conflict，不改 quick pending。 */
+export type QuickCommitRequest = {
+  readonly expectedGeneration: number;
+  /** 导入时 Manual observation 对账决策；省略则 applyNonConflicting。 */
+  readonly reconciliationDecision?: 'applyNonConflicting' | 'keepLocal' | 'acceptObserved';
+};
+export type QuickCommitPayload = {
+  readonly generation: number;
+  readonly selectedVillageId: string | null;
+};
+export type QuickCommitResponse = Result<QuickCommitPayload>;
+
+export type QuickDiscardRequest = {
+  readonly expectedGeneration: number;
+};
+export type QuickDiscardPayload = {
+  readonly generation: number;
+};
+export type QuickDiscardResponse = Result<QuickDiscardPayload>;
+
 export type StateChangedPayload = AppSnapshotPayload;
 
 export type StateChangedListener = (payload: StateChangedPayload) => void;
@@ -118,6 +158,9 @@ export type AppIpcBridge = {
   prepareImport: (request: ImportPrepareRequest) => Promise<ImportPrepareResponse>;
   commitImport: (request: ImportCommitRequest) => Promise<ImportCommitResponse>;
   discardImport: (request: ImportDiscardRequest) => Promise<ImportDiscardResponse>;
+  quickPrepare: (request: QuickPrepareRequest) => Promise<QuickPrepareResponse>;
+  quickCommit: (request: QuickCommitRequest) => Promise<QuickCommitResponse>;
+  quickDiscard: (request: QuickDiscardRequest) => Promise<QuickDiscardResponse>;
   onStateChanged: (listener: StateChangedListener) => () => void;
 };
 
@@ -127,5 +170,8 @@ export const APP_IPC_BRIDGE_KEYS = [
   'prepareImport',
   'commitImport',
   'discardImport',
+  'quickPrepare',
+  'quickCommit',
+  'quickDiscard',
   'onStateChanged',
 ] as const satisfies ReadonlyArray<keyof AppIpcBridge>;

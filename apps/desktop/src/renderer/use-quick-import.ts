@@ -11,7 +11,7 @@ import { formatIpcError, isCurrentEpoch, type SessionCursor } from './app-sessio
 
 export type BridgeQuickImportClient = Pick<
   DesktopBridge,
-  'quickPrepare' | 'quickCommit' | 'quickDiscard' | 'snapshot' | 'onStateChanged'
+  'quickPrepare' | 'quickCommit' | 'quickDiscard' | 'snapshot'
 >;
 
 export type QuickImportStatus = 'idle' | 'preparing' | 'ready' | 'committing';

@@ -3,12 +3,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type {
-  AppSnapshotPayload,
-  Result,
-  StateChangedListener,
-  UpgradeOverviewPayload,
-} from '@coc-helper/contracts';
+import type { AppSnapshotPayload, Result, UpgradeOverviewPayload } from '@coc-helper/contracts';
 
 import type { BridgeOverviewClient } from './use-upgrade-overview';
 import { useUpgradeOverview } from './use-upgrade-overview';
@@ -57,7 +52,6 @@ function ok<T>(value: T): Result<T> {
 }
 
 function createBridge() {
-  const listeners = new Set<StateChangedListener>();
   const resolvers: Array<(value: Result<UpgradeOverviewPayload>) => void> = [];
   const bridge: BridgeOverviewClient = {
     upgradeOverview: vi.fn(
@@ -66,20 +60,9 @@ function createBridge() {
           resolvers.push(resolve);
         }),
     ),
-    onStateChanged: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
   };
   return {
     bridge,
-    push(next: AppSnapshotPayload) {
-      for (const listener of listeners) {
-        listener(next);
-      }
-    },
     resolve(value: Result<UpgradeOverviewPayload>) {
       resolvers.shift()?.(value);
     },

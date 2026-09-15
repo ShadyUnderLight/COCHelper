@@ -3,12 +3,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type {
-  AppSnapshotPayload,
-  QuickPreparePreviewWire,
-  Result,
-  StateChangedListener,
-} from '@coc-helper/contracts';
+import type { AppSnapshotPayload, QuickPreparePreviewWire, Result } from '@coc-helper/contracts';
 
 import { useQuickImport, type BridgeQuickImportClient } from './use-quick-import';
 
@@ -58,7 +53,6 @@ function err(message: string, code = 'validation'): Result<never> {
 }
 
 function createBridge() {
-  const listeners = new Set<StateChangedListener>();
   const calls: { prepare: unknown[]; commit: unknown[]; discard: unknown[] } = {
     prepare: [],
     commit: [],
@@ -94,12 +88,6 @@ function createBridge() {
       return nextDiscard;
     }),
     snapshot: vi.fn(async () => nextSnapshot),
-    onStateChanged: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
   };
   return {
     bridge,

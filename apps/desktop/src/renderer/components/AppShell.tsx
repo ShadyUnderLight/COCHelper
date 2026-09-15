@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
 import type { VillageDetailApi } from '../use-village-detail';
 import { isReadOnly } from '../app-session';
+import {
+  primaryTabOfRoute,
+  type AppRoute,
+  type NavigateAction,
+  type PrimaryTab,
+} from '../navigation';
 import { ImportPanel } from './ImportPanel';
 import { RecoveryPanel } from './RecoveryPanel';
 import { StatusBanner, VillageSidebar } from './StatusBanner';
@@ -15,23 +21,59 @@ type AppShellProps = {
   readonly session: AppSessionApi;
   readonly overview: OverviewApi;
   readonly detail: VillageDetailApi;
-  readonly detailBase: TrackerBaseDto;
-  readonly onDetailBaseChange: (base: TrackerBaseDto) => void;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
   readonly quick?: QuickImportApi;
+  readonly route?: AppRoute;
+  readonly navigate?: (action: NavigateAction) => void;
+  /** 测试与旧调用方兼容：直接设置路由。 */
+  readonly onRouteChange?: (route: AppRoute) => void;
 };
 
 export function AppShell({
   session,
   overview,
   detail,
-  detailBase,
-  onDetailBaseChange,
   quick,
+  route,
+  navigate,
+  onRouteChange,
 }: AppShellProps) {
-  const [tab, setTab] = useState<'import' | 'overview' | 'detail'>('import');
+  const [internalRoute, setInternalRoute] = useState<AppRoute>({ kind: 'import' });
+  const activeRoute = route ?? internalRoute;
+  const activeRouteRef = useRef(activeRoute);
+  activeRouteRef.current = activeRoute;
   const { state, recoveryStatus } = session;
   const snapshot = state.snapshot;
+  const tab = primaryTabOfRoute(activeRoute);
+  const detailRoute = activeRoute.kind === 'villageDetail' ? activeRoute : null;
+
+  const applyRoute = (nextRoute: AppRoute): void => {
+    if (navigate !== undefined) {
+      navigate({ type: 'navigate', route: nextRoute });
+    } else if (onRouteChange !== undefined) {
+      onRouteChange(nextRoute);
+    } else if (route === undefined) {
+      setInternalRoute(nextRoute);
+    }
+  };
+
+  const detailBaseForTab = (): TrackerBaseDto => detailRoute?.base ?? 'home';
+
+  const goToTab = (nextTab: PrimaryTab): void => {
+    const nextRoute: AppRoute =
+      nextTab === 'import'
+        ? { kind: 'import' }
+        : nextTab === 'overview'
+          ? { kind: 'overview' }
+          : snapshot === null || snapshot.selectedVillageId === null
+            ? activeRoute
+            : {
+                kind: 'villageDetail',
+                villageId: snapshot.selectedVillageId,
+                base: detailBaseForTab(),
+              };
+    applyRoute(nextRoute);
+  };
 
   if (state.status === 'fatal') {
     return (
@@ -75,7 +117,36 @@ export function AppShell({
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
       return;
     }
-    setTab('detail');
+    const currentRoute = activeRouteRef.current;
+    if (currentRoute.kind === 'overview') {
+      if (navigate !== undefined) {
+        navigate({ type: 'openVillageDetail', villageId, base: 'home' });
+      } else {
+        applyRoute({ kind: 'villageDetail', villageId, base: 'home' });
+      }
+      return;
+    }
+    if (currentRoute.kind === 'villageDetail') {
+      applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
+    }
+  };
+
+  const onDetailBaseChange = (base: TrackerBaseDto): void => {
+    if (detailRoute === null) {
+      return;
+    }
+    applyRoute({ kind: 'villageDetail', villageId: detailRoute.villageId, base });
+  };
+
+  const onSidebarSelect = async (villageId: string): Promise<void> => {
+    const ok = await session.selectVillage(villageId);
+    if (!ok) {
+      return;
+    }
+    const currentRoute = activeRouteRef.current;
+    if (currentRoute.kind === 'villageDetail') {
+      applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
+    }
   };
 
   return (
@@ -115,7 +186,7 @@ export function AppShell({
             villages={snapshot.villages}
             selectedVillageId={snapshot.selectedVillageId}
             disabled={state.busy || snapshot.availability !== 'available'}
-            onSelect={(villageId) => void session.selectVillage(villageId)}
+            onSelect={(villageId) => void onSidebarSelect(villageId)}
           />
           <main className="main-pane">
             {snapshot.availability === 'unavailable' ? (
@@ -127,7 +198,7 @@ export function AppShell({
               <p className="notice-text">当前为只读模式，无法导入或修改村庄数据。</p>
             ) : null}
             {showImport ? (
-              <TabNav tab={tab} onChange={setTab} detailDisabled={detailDisabled} />
+              <TabNav tab={tab} onChange={goToTab} detailDisabled={detailDisabled} />
             ) : null}
             {showImport && tab === 'import' ? (
               <ImportPanel
@@ -151,17 +222,17 @@ export function AppShell({
               />
             ) : null}
             {showImport && tab === 'detail' ? (
-              detailDisabled ? (
+              detailRoute === null ? (
                 <p className="muted">先选择村庄查看详情</p>
               ) : (
                 <VillageDetail
                   state={detail.state}
-                  base={detailBase}
+                  base={detailRoute.base}
                   onBaseChange={onDetailBaseChange}
                   onRetry={() => void detail.refresh()}
                   quick={quick}
                   canQuick={canQuick}
-                  onNavigateToImport={() => setTab('import')}
+                  onNavigateToImport={() => goToTab('import')}
                 />
               )
             ) : null}
@@ -173,8 +244,8 @@ export function AppShell({
 }
 
 function TabNav(props: {
-  readonly tab: 'import' | 'overview' | 'detail';
-  readonly onChange: (tab: 'import' | 'overview' | 'detail') => void;
+  readonly tab: PrimaryTab;
+  readonly onChange: (tab: PrimaryTab) => void;
   readonly detailDisabled: boolean;
 }) {
   return (

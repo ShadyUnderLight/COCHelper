@@ -4,6 +4,7 @@ import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
 import type { VillageDetailApi } from '../use-village-detail';
+import type { OfficialVillageApi } from '../use-official-village';
 import { isReadOnly } from '../app-session';
 import {
   primaryTabOfRoute,
@@ -21,6 +22,7 @@ type AppShellProps = {
   readonly session: AppSessionApi;
   readonly overview: OverviewApi;
   readonly detail: VillageDetailApi;
+  readonly official?: OfficialVillageApi;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
   readonly quick?: QuickImportApi;
   readonly route?: AppRoute;
@@ -33,6 +35,7 @@ export function AppShell({
   session,
   overview,
   detail,
+  official,
   quick,
   route,
   navigate,
@@ -210,6 +213,7 @@ export function AppShell({
                 onPrepare={() => void session.prepareImport()}
                 onCommit={() => void session.commitImport()}
                 onDiscard={() => void session.discardImport()}
+                official={snapshot.selectedVillageId === null ? undefined : official}
               />
             ) : null}
             {showImport && tab === 'overview' ? (
@@ -230,6 +234,7 @@ export function AppShell({
                   base={detailRoute.base}
                   onBaseChange={onDetailBaseChange}
                   onRetry={() => void detail.refresh()}
+                  official={official}
                   quick={quick}
                   canQuick={canQuick}
                   onNavigateToImport={() => goToTab('import')}

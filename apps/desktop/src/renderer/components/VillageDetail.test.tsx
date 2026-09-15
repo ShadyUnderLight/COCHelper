@@ -12,6 +12,13 @@ import type {
 
 import { recordFixture } from '../overview-session';
 import {
+  clanFixture,
+  playerFixture,
+  toOfficialClanView,
+  toOfficialPlayerView,
+} from '../official-session';
+import { resourceSuccess } from '../resource-state';
+import {
   applyVillageDetailSuccess,
   idleVillageDetailState,
   villageDetailFixture,
@@ -66,6 +73,31 @@ describe('VillageDetail', () => {
     );
     expect(screen.getByText('该村庄暂无详情数据')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('传入 official 时详情页渲染官方玩家卡，不自动当成导入页部落卡', () => {
+    const official = {
+      player: toOfficialPlayerView(resourceSuccess(playerFixture()), 1_700_000_000_000),
+      clan: toOfficialClanView(
+        'tagged',
+        '#CLAN01',
+        resourceSuccess(clanFixture()),
+        1_700_000_000_000,
+      ),
+      refreshPlayer: async () => undefined,
+      refreshClan: async () => undefined,
+      playerRefreshing: false,
+      clanRefreshing: false,
+    };
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(villageDetailFixture())}
+        {...baseProps()}
+        official={official}
+      />,
+    );
+    expect(screen.getByLabelText('官方玩家数据')).toBeTruthy();
+    expect(screen.queryByLabelText('部落数据')).toBeNull();
   });
 
   it('sectionHeader 渲染分组标题与统计行', () => {

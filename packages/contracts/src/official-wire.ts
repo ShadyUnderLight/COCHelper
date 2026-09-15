@@ -25,6 +25,31 @@ export const OFFICIAL_API_REQUEST_STATUSES = [
 
 export type OfficialAPIRequestStatusWire = (typeof OFFICIAL_API_REQUEST_STATUSES)[number];
 
+/** 与 domain `OFFICIAL_STALE_THRESHOLD_MS` 同值；供 renderer 用 ClockStore 派生 stale。 */
+export const OFFICIAL_STALE_THRESHOLD_MS = 24 * 3600 * 1000;
+
+export type OfficialPlayerSummaryDto = {
+  readonly name: string | null;
+  readonly tag: string | null;
+  readonly townHallLevel: number | null;
+  readonly builderHallLevel: number | null;
+  readonly expLevel: number | null;
+  readonly trophies: number | null;
+  readonly bestTrophies: number | null;
+  readonly clanName: string | null;
+  readonly clanTag: string | null;
+};
+
+export type OfficialClanSummaryDto = {
+  readonly name: string | null;
+  readonly tag: string | null;
+  readonly clanLevel: number | null;
+  readonly members: number | null;
+  readonly type: string | null;
+  readonly isWarLogPublic: boolean | null;
+  readonly warWins: number | null;
+};
+
 export type EndpointStateWire<Snapshot> = {
   readonly status: OfficialAPIRequestStatusWire;
   readonly clanTag?: string;

@@ -54,6 +54,35 @@ const officialEndpointStateDtoSchema: z.ZodType<OfficialEndpointStateDto> = z
   })
   .strict();
 
+const nullableString = z.string().max(128).nullable();
+const nullableInt = z.number().int().safe().nullable();
+
+const officialPlayerSummarySchema = z
+  .object({
+    name: nullableString,
+    tag: z.string().max(32).nullable(),
+    townHallLevel: nullableInt,
+    builderHallLevel: nullableInt,
+    expLevel: nullableInt,
+    trophies: nullableInt,
+    bestTrophies: nullableInt,
+    clanName: nullableString,
+    clanTag: z.string().max(32).nullable(),
+  })
+  .strict();
+
+const officialClanSummarySchema = z
+  .object({
+    name: nullableString,
+    tag: z.string().max(32).nullable(),
+    clanLevel: nullableInt,
+    members: nullableInt,
+    type: z.string().max(64).nullable(),
+    isWarLogPublic: z.boolean().nullable(),
+    warWins: nullableInt,
+  })
+  .strict();
+
 export const playerStateRequestSchema: z.ZodType<PlayerStateRequest> = z
   .object({
     villageId: villageIdSchema,
@@ -65,6 +94,8 @@ export const playerStatePayloadSchema: z.ZodType<PlayerStatePayload> = z
     generation: generationSchema,
     villageId: villageIdSchema,
     playerTag: z.string().max(32).nullable(),
+    currentClanTag: z.string().max(32).nullable(),
+    summary: officialPlayerSummarySchema.nullable(),
     state: officialEndpointStateDtoSchema.nullable(),
   })
   .strict();
@@ -79,6 +110,7 @@ export const clanStatePayloadSchema: z.ZodType<ClanStatePayload> = z
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
+    summary: officialClanSummarySchema.nullable(),
     state: officialEndpointStateDtoSchema.nullable(),
   })
   .strict();

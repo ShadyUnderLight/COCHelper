@@ -393,3 +393,58 @@ button.danger {
   border-radius: 6px;
   flex: none;
 }
+
+.official-card {
+  background: #3a3a3c;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 12px 0;
+}
+
+.official-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.official-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.official-source {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0a84ff;
+}
+
+.official-ok {
+  color: #30d158;
+  margin: 0.25rem 0;
+}
+
+.official-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+}
+
+.official-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.official-metric dt {
+  font-size: 12px;
+  color: #aeaeb2;
+}
+
+.official-metric dd {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}

@@ -75,8 +75,11 @@ import { AppServiceError, type AppAuthoritativeState } from './app-authoritative
 import {
   toCapitalRaidEndpointDto,
   toClanEndpointDto,
+  toClanSummaryDto,
   toClanWarEndpointDto,
+  toCurrentClanTagDto,
   toPlayerEndpointDto,
+  toPlayerSummaryDto,
   toWarLogEndpointDto,
 } from './official-dto-mappers';
 import {
@@ -150,6 +153,8 @@ export class OfficialApiService {
       generation: this.state.getGeneration(),
       villageId: request.villageId,
       playerTag,
+      currentClanTag: toCurrentClanTagDto(state),
+      summary: state === null ? null : toPlayerSummaryDto(state),
       state: state === null ? null : toPlayerEndpointDto(state),
     };
   }
@@ -160,6 +165,7 @@ export class OfficialApiService {
     return {
       generation: this.state.getGeneration(),
       clanTag,
+      summary: state === null ? null : toClanSummaryDto(state),
       state: state === null ? null : toClanEndpointDto(state),
     };
   }

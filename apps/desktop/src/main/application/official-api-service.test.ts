@@ -116,7 +116,11 @@ describe('OfficialApiService（#276-S4）', () => {
       villageId: bootResult.villageId,
       endpoints: ['player'],
     });
-    expect(service.playerState({ villageId: bootResult.villageId }).state?.status).toBe('success');
+    const stored = service.playerState({ villageId: bootResult.villageId });
+    expect(stored.state?.status).toBe('success');
+    expect(stored.currentClanTag).toBeNull();
+    expect(stored.summary?.name).toBe('Hero');
+    expect(stored.summary?.townHallLevel).toBe(16);
 
     const reloaded = bootstrapPersistence({ paths: bootResult.paths });
     expect(reloaded.loadedPlayerStates.states[bootResult.villageId]?.playerTag).toBe('#ABCDE123');
@@ -149,6 +153,8 @@ describe('OfficialApiService（#276-S4）', () => {
     });
     const afterFail = service.playerState({ villageId: bootResult.villageId });
     expect(afterFail.state?.status).toBe('failed');
+    expect(afterFail.summary?.name).toBe('Hero');
+    expect(afterFail.currentClanTag).toBeNull();
     expect((afterFail.state?.lastGood as { name?: string } | undefined)?.name).toBe('Hero');
   });
 
@@ -357,7 +363,10 @@ describe('OfficialApiService（#276-S4）', () => {
       villageId: bootResult.villageId,
       endpoints: ['player'],
     });
-    expect(service.playerState({ villageId: bootResult.villageId }).state?.status).toBe('success');
+    const afterA = service.playerState({ villageId: bootResult.villageId });
+    expect(afterA.state?.status).toBe('success');
+    expect(afterA.currentClanTag).toBe('#CLANA1');
+    expect(afterA.summary?.clanName).toBe('ClanA');
 
     const villages = bootResult.state.listVillages().map((village) => {
       if (village.id !== bootResult.villageId) {
@@ -377,6 +386,8 @@ describe('OfficialApiService（#276-S4）', () => {
     const afterB = service.playerState({ villageId: bootResult.villageId });
     expect(afterB.state?.status).toBe('failed');
     expect(afterB.state?.lastGood).toBeUndefined();
+    expect(afterB.summary).toBeNull();
+    expect(afterB.currentClanTag).toBeNull();
     expect(afterB.playerTag).toBe('#BBBBB222');
 
     await expect(

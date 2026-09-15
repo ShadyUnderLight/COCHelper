@@ -5,6 +5,12 @@ import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
 import type { VillageDetailApi } from '../use-village-detail';
 import { isReadOnly } from '../app-session';
+import {
+  primaryTabOfRoute,
+  type AppRoute,
+  type NavigateAction,
+  type PrimaryTab,
+} from '../navigation';
 import { ImportPanel } from './ImportPanel';
 import { RecoveryPanel } from './RecoveryPanel';
 import { StatusBanner, VillageSidebar } from './StatusBanner';
@@ -19,6 +25,10 @@ type AppShellProps = {
   readonly onDetailBaseChange: (base: TrackerBaseDto) => void;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
   readonly quick?: QuickImportApi;
+  readonly route?: AppRoute;
+  readonly navigate?: (action: NavigateAction) => void;
+  /** 测试与旧调用方兼容：直接设置路由。 */
+  readonly onRouteChange?: (route: AppRoute) => void;
 };
 
 export function AppShell({
@@ -28,10 +38,41 @@ export function AppShell({
   detailBase,
   onDetailBaseChange,
   quick,
+  route,
+  navigate,
+  onRouteChange,
 }: AppShellProps) {
-  const [tab, setTab] = useState<'import' | 'overview' | 'detail'>('import');
+  const [internalRoute, setInternalRoute] = useState<AppRoute>({ kind: 'import' });
+  const activeRoute = route ?? internalRoute;
   const { state, recoveryStatus } = session;
   const snapshot = state.snapshot;
+  const tab = primaryTabOfRoute(activeRoute);
+
+  const applyRoute = (nextRoute: AppRoute): void => {
+    if (navigate !== undefined) {
+      navigate({ type: 'navigate', route: nextRoute });
+    } else if (onRouteChange !== undefined) {
+      onRouteChange(nextRoute);
+    } else if (route === undefined) {
+      setInternalRoute(nextRoute);
+    }
+  };
+
+  const goToTab = (nextTab: PrimaryTab): void => {
+    const nextRoute: AppRoute =
+      nextTab === 'import'
+        ? { kind: 'import' }
+        : nextTab === 'overview'
+          ? { kind: 'overview' }
+          : snapshot === null || snapshot.selectedVillageId === null
+            ? activeRoute
+            : {
+                kind: 'villageDetail',
+                villageId: snapshot.selectedVillageId,
+                base: detailBase,
+              };
+    applyRoute(nextRoute);
+  };
 
   if (state.status === 'fatal') {
     return (
@@ -75,7 +116,11 @@ export function AppShell({
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
       return;
     }
-    setTab('detail');
+    if (navigate !== undefined) {
+      navigate({ type: 'openVillageDetail', villageId, base: detailBase });
+    } else {
+      applyRoute({ kind: 'villageDetail', villageId, base: detailBase });
+    }
   };
 
   return (
@@ -127,7 +172,7 @@ export function AppShell({
               <p className="notice-text">当前为只读模式，无法导入或修改村庄数据。</p>
             ) : null}
             {showImport ? (
-              <TabNav tab={tab} onChange={setTab} detailDisabled={detailDisabled} />
+              <TabNav tab={tab} onChange={goToTab} detailDisabled={detailDisabled} />
             ) : null}
             {showImport && tab === 'import' ? (
               <ImportPanel
@@ -161,7 +206,7 @@ export function AppShell({
                   onRetry={() => void detail.refresh()}
                   quick={quick}
                   canQuick={canQuick}
-                  onNavigateToImport={() => setTab('import')}
+                  onNavigateToImport={() => goToTab('import')}
                 />
               )
             ) : null}
@@ -173,8 +218,8 @@ export function AppShell({
 }
 
 function TabNav(props: {
-  readonly tab: 'import' | 'overview' | 'detail';
-  readonly onChange: (tab: 'import' | 'overview' | 'detail') => void;
+  readonly tab: PrimaryTab;
+  readonly onChange: (tab: PrimaryTab) => void;
   readonly detailDisabled: boolean;
 }) {
   return (

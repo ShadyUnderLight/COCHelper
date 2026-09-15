@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   AppSnapshotPayload,
   Result,
-  StateChangedListener,
   TrackerBaseDto,
   VillageDetailPayload,
 } from '@coc-helper/contracts';
@@ -53,7 +52,6 @@ function err(message: string): Result<never> {
 }
 
 function createBridge() {
-  const listeners = new Set<StateChangedListener>();
   const resolvers: Array<(value: Result<VillageDetailPayload>) => void> = [];
   const bridge: BridgeVillageClient = {
     villageDetail: vi.fn(
@@ -62,20 +60,9 @@ function createBridge() {
           resolvers.push(resolve);
         }),
     ),
-    onStateChanged: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
   };
   return {
     bridge,
-    push(next: AppSnapshotPayload) {
-      for (const listener of listeners) {
-        listener(next);
-      }
-    },
     resolve(value: Result<VillageDetailPayload>) {
       resolvers.shift()?.(value);
     },

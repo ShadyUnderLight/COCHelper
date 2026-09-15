@@ -11,6 +11,7 @@ type QuickImportSheetProps = {
   readonly onCancel: () => void;
   readonly onRetry: () => void;
   readonly onClose: () => void;
+  readonly onNavigateToImport?: () => void;
   readonly returnFocusTo?: HTMLElement | null;
 };
 
@@ -29,6 +30,7 @@ export function QuickImportSheet({
   onCancel,
   onRetry,
   onClose,
+  onNavigateToImport,
   returnFocusTo,
 }: QuickImportSheetProps) {
   const { status, preview, stale, lastError } = state;
@@ -68,12 +70,12 @@ export function QuickImportSheet({
       const last = focusables[focusables.length - 1] as HTMLElement;
       const active = document.activeElement as HTMLElement | null;
       if (event.shiftKey) {
-        if (active === first || (active !== null && !dialog.contains(active))) {
+        if (active === dialog || active === first || active === null || !dialog.contains(active)) {
           event.preventDefault();
           last.focus();
         }
       } else {
-        if (active === last || (active !== null && !dialog.contains(active))) {
+        if (active === dialog || active === last || active === null || !dialog.contains(active)) {
           event.preventDefault();
           first.focus();
         }
@@ -123,6 +125,11 @@ export function QuickImportSheet({
           </p>
         ) : null}
         <div className="action-row">
+          {state.manualImportRequired && onNavigateToImport !== undefined ? (
+            <button type="button" disabled={busy} onClick={onNavigateToImport}>
+              前往账号数据页手动导入
+            </button>
+          ) : null}
           {status === 'ready' && preview !== null ? (
             <button type="button" disabled={!canConfirm} onClick={onConfirm}>
               确认导入

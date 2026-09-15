@@ -161,6 +161,7 @@ export function AppShell({
                   onRetry={() => void detail.refresh()}
                   quick={quick}
                   canQuick={canQuick}
+                  onNavigateToImport={() => setTab('import')}
                 />
               )
             ) : null}

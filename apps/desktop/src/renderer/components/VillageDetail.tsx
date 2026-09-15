@@ -37,6 +37,7 @@ export type VillageDetailProps = {
   /** 快捷导入（#277-D）：缺省时不渲染入口，保持旧测试与嵌入场景兼容。 */
   readonly quick?: QuickImportApi;
   readonly canQuick?: boolean;
+  readonly onNavigateToImport?: () => void;
 };
 
 export function VillageDetail({
@@ -46,6 +47,7 @@ export function VillageDetail({
   onRetry,
   quick,
   canQuick,
+  onNavigateToImport,
 }: VillageDetailProps) {
   const { status, payload, lastError } = state;
   const lookups = useMemo(() => (payload === null ? null : buildLookups(payload)), [payload]);
@@ -116,6 +118,7 @@ export function VillageDetail({
           villageId={payload.villageId}
           quick={quick}
           canQuick={canQuick ?? false}
+          onNavigateToImport={onNavigateToImport}
         />
       ) : null}
       {alert !== null ? (
@@ -142,11 +145,16 @@ function QuickImportEntry(props: {
   readonly villageId: string;
   readonly quick: QuickImportApi;
   readonly canQuick: boolean;
+  readonly onNavigateToImport?: () => void;
 }) {
-  const { villageId, quick, canQuick } = props;
+  const { villageId, quick, canQuick, onNavigateToImport } = props;
   const busy = quick.state.status === 'preparing' || quick.state.status === 'committing';
   const sheetOpen = quick.state.status !== 'idle' || quick.state.lastError !== null;
   const [opener, setOpener] = useState<HTMLElement | null>(null);
+  const navigateToImport = () => {
+    quick.close();
+    onNavigateToImport?.();
+  };
   return (
     <>
       <div className="action-row">
@@ -169,6 +177,7 @@ function QuickImportEntry(props: {
           onCancel={() => void quick.cancel()}
           onRetry={() => void quick.retry()}
           onClose={quick.close}
+          onNavigateToImport={navigateToImport}
           returnFocusTo={opener}
         />
       ) : null}

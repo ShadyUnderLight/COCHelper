@@ -459,30 +459,29 @@ describe('SnapshotImportService quick import', () => {
     expect(prepared.preview.targetVillageId).toBe(villageId);
   });
 
-  it('legacy 非 UUID 村庄 id：quickCommit validation 后 pending 仍 live，同代可 discard', () => {
+  it('legacy 非 UUID 村庄 id：quickPrepare 直接 validation，不产生 preview/pending', () => {
     const { persistence, villageStore, state, service, legacyId } =
       bootServiceWithLegacyVillageId('legacy-village-id');
     expect(villageStore.listVillages().map((v) => v.id)).toEqual([legacyId]);
-
-    const prepared = service.quickPrepare({
-      targetVillageId: legacyId,
-      text: '{"tag":"#QLEGACY","buildings":[]}',
-    });
     const villagesBytesBefore = persistence.villages.readData();
 
+    expect(() =>
+      service.quickPrepare({
+        targetVillageId: legacyId,
+        text: '{"tag":"#QLEGACY","buildings":[]}',
+      }),
+    ).toThrowError(AppServiceError);
     try {
-      service.quickCommit(prepared.generation);
+      service.quickPrepare({
+        targetVillageId: legacyId,
+        text: '{"tag":"#QLEGACY","buildings":[]}',
+      });
     } catch (error) {
-      // requireUuid 失败是 validation，但 takeLive 之后才抛，pending 未被 clear
       expect((error as AppServiceError).code).toBe('validation');
     }
-    expect(state.getGeneration()).toBe(prepared.generation);
-    // villages 文件零写入
+    expect(state.getGeneration()).toBe(0);
     expect(persistence.villages.readData()).toEqual(villagesBytesBefore);
-    // pending 仍 live：同 generation discard 成功清理（带 bump 证明非空槽）
-    const discarded = service.quickDiscard(prepared.generation);
-    expect(discarded.generation).toBe(prepared.generation + 1);
-    expect(state.getGeneration()).toBe(prepared.generation + 1);
+    expect(service.quickDiscard(0)).toEqual({ generation: 0 });
   });
 
   it('镜像：普通 prepare 后被 quickPrepare 顶掉代 → 普通 commit 必须 conflict 且零写入', () => {

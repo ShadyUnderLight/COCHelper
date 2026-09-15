@@ -55,6 +55,7 @@ import {
   parseVillageSelectRequest,
   toIpcError,
 } from './ipc-schema';
+import { AppServiceError } from './application/app-authoritative-state';
 
 describe('app.health schema', () => {
   it('接受空对象或缺省参数', () => {
@@ -180,6 +181,22 @@ describe('request.cancel schema', () => {
 });
 
 describe('toIpcError', () => {
+  it('保留快捷导入 Tag 冲突的稳定导航 messageKey', () => {
+    expect(
+      toIpcError(
+        new AppServiceError(
+          'conflict',
+          '请前往账号数据页手动导入。',
+          'app.quickImport.manualImportRequired',
+        ),
+      ),
+    ).toMatchObject({
+      kind: 'validation',
+      code: 'conflict',
+      messageKey: 'app.quickImport.manualImportRequired',
+    });
+  });
+
   it('保留静态 validation 信息并将未知 Error 收敛为安全 internal', () => {
     const bearerMessage = ['Authorization', ': ', 'Bearer', ' ', 'secret-token'].join('');
     expect(toIpcError(new IpcValidationError('请求参数不合法'))).toEqual({

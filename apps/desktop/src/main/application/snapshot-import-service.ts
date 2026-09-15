@@ -234,6 +234,9 @@ export class SnapshotImportService {
     if (!this.state.canWrite()) {
       throw new AppServiceError('unavailable', '当前处于恢复或只读状态，无法导入。');
     }
+    // 旧版持久化允许非 UUID id，但当前 history/manual 事务只接受 UUID。
+    // 在 preview 阶段 fail-closed，禁止展示一个确认必然失败的快捷导入。
+    requireUuid(input.targetVillageId, '目标村庄 ID');
     // 资源边界（与 import.prepare 同值）：剪贴板不走 IPC schema，必须在进入
     // domain parser 之前显式设限。拒绝时不 bump、不动现有 pending。
     if (input.text.length > MAX_IMPORT_TEXT_LENGTH) {
@@ -499,7 +502,8 @@ function mapQuickImportError(
     case 'tagBelongsToAnotherVillage':
       return new AppServiceError(
         'conflict',
-        `账号 Tag（${error.tag}）属于「${error.villageName}」，不能导入到当前村庄。`,
+        `账号 Tag（${error.tag}）属于「${error.villageName}」，快捷导入已阻止。请前往“账号数据”页手动导入。`,
+        'app.quickImport.manualImportRequired',
       );
   }
 }

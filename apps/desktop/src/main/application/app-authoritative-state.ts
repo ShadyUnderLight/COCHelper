@@ -251,10 +251,14 @@ export class AppAuthoritativeState {
 
 export class AppServiceError extends Error {
   override readonly name = 'AppServiceError';
+  readonly messageKey: string;
+
   constructor(
     readonly code: 'notFound' | 'unavailable' | 'validation' | 'conflict',
     message: string,
+    messageKey = `app.${code}`,
   ) {
     super(message);
+    this.messageKey = messageKey;
   }
 }

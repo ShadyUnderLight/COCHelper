@@ -25,6 +25,8 @@ export type QuickImportState = {
   /** 世代错位（preview 已过期）：确认被禁用，只能重新预览或取消。 */
   readonly stale: boolean;
   readonly lastError: string | null;
+  /** Tag 冲突时引导用户回完整“账号数据”导入页。 */
+  readonly manualImportRequired: boolean;
 };
 
 const IDLE_QUICK_IMPORT: QuickImportState = {
@@ -34,6 +36,7 @@ const IDLE_QUICK_IMPORT: QuickImportState = {
   preparedGeneration: null,
   stale: false,
   lastError: null,
+  manualImportRequired: false,
 };
 
 const STALE_MESSAGE = '导入状态已变化，请重新粘贴并更新。';
@@ -132,6 +135,7 @@ export function useQuickImport(
           preparedGeneration: null,
           stale: false,
           lastError: null,
+          manualImportRequired: false,
         });
         let prepared: Awaited<ReturnType<BridgeQuickImportClient['quickPrepare']>>;
         try {
@@ -148,6 +152,7 @@ export function useQuickImport(
             previous,
             targetVillageId,
             error instanceof Error ? error.message : '快捷导入预览失败',
+            false,
           );
           return;
         }
@@ -163,6 +168,7 @@ export function useQuickImport(
             previous,
             targetVillageId,
             formatIpcError(prepared.error),
+            prepared.error.messageKey === 'app.quickImport.manualImportRequired',
           );
           return;
         }
@@ -203,6 +209,7 @@ export function useQuickImport(
           preparedGeneration: generation,
           stale: false,
           lastError: null,
+          manualImportRequired: false,
         });
       } finally {
         inFlightRef.current = false;
@@ -271,6 +278,7 @@ export function useQuickImport(
             preparedGeneration: null,
             stale: false,
             lastError: formatIpcError(committed.error),
+            manualImportRequired: false,
           });
         } else {
           // Main 仍持有 pending（事务失败/目标缺失等）：恢复 ready 保住 token。
@@ -281,6 +289,7 @@ export function useQuickImport(
             preparedGeneration: current.preparedGeneration,
             stale: false,
             lastError: formatIpcError(committed.error),
+            manualImportRequired: false,
           });
         }
         return false;
@@ -378,9 +387,10 @@ function restoreAfterOpenFailure(
   previous: QuickImportState | null,
   targetVillageId: string,
   message: string,
+  manualImportRequired: boolean,
 ): void {
   if (previous !== null) {
-    setState({ ...previous, lastError: message });
+    setState({ ...previous, lastError: message, manualImportRequired });
     return;
   }
   setState({
@@ -390,5 +400,6 @@ function restoreAfterOpenFailure(
     preparedGeneration: null,
     stale: false,
     lastError: message,
+    manualImportRequired,
   });
 }

@@ -21,6 +21,7 @@ function quickState(overrides: Partial<QuickImportState> = {}): QuickImportState
     preparedGeneration: null,
     stale: false,
     lastError: null,
+    manualImportRequired: false,
     ...overrides,
   };
 }
@@ -121,6 +122,29 @@ describe('VillageDetail quick import entry', () => {
     );
     expect(screen.getByRole('dialog', { name: '快捷导入' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '确认导入' })).toBeTruthy();
+  });
+
+  it('Tag 冲突时可从详情页切回账号数据页', () => {
+    const onNavigateToImport = vi.fn();
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(villageDetailFixture({ villageId: 'v-detail' }))}
+        base="home"
+        onBaseChange={() => undefined}
+        onRetry={() => undefined}
+        quick={quickApi(
+          quickState({
+            targetVillageId: 'v-detail',
+            lastError: '账号 Tag 冲突，请手动导入。',
+            manualImportRequired: true,
+          }),
+        )}
+        canQuick
+        onNavigateToImport={onNavigateToImport}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '前往账号数据页手动导入' }));
+    expect(onNavigateToImport).toHaveBeenCalledTimes(1);
   });
 
   it('idle 无错误时不展示 Sheet', () => {

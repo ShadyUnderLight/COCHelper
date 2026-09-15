@@ -32,6 +32,7 @@ function state(overrides: Partial<QuickImportState> = {}): QuickImportState {
     preparedGeneration: null,
     stale: false,
     lastError: null,
+    manualImportRequired: false,
     ...overrides,
   };
 }
@@ -75,6 +76,7 @@ describe('QuickImportSheet', () => {
           preparedGeneration: 8,
           stale: true,
           lastError: '导入状态已变化，请重新粘贴并更新。',
+          manualImportRequired: false,
         }}
         canWrite
         onConfirm={vi.fn()}
@@ -101,6 +103,7 @@ describe('QuickImportSheet', () => {
           preparedGeneration: 8,
           stale: false,
           lastError: '导入事务尚未就绪。',
+          manualImportRequired: false,
         }}
         canWrite
         onConfirm={onConfirm}
@@ -125,6 +128,7 @@ describe('QuickImportSheet', () => {
           preparedGeneration: 8,
           stale: false,
           lastError: null,
+          manualImportRequired: false,
         }}
         canWrite={false}
         onConfirm={vi.fn()}
@@ -148,6 +152,7 @@ describe('QuickImportSheet', () => {
           preparedGeneration: null,
           stale: false,
           lastError: '系统剪贴板中没有可用的文本。',
+          manualImportRequired: false,
         }}
         canWrite
         onConfirm={vi.fn()}
@@ -171,6 +176,7 @@ describe('QuickImportSheet', () => {
           preparedGeneration: null,
           stale: false,
           lastError: null,
+          manualImportRequired: false,
         }}
         canWrite
         onConfirm={vi.fn()}
@@ -231,6 +237,50 @@ describe('QuickImportSheet', () => {
     );
     const dialog = screen.getByRole('dialog', { name: '快捷导入' });
     expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it('初始焦点在 dialog 容器时 Shift+Tab 也留在 modal 内', () => {
+    render(
+      <QuickImportSheet
+        state={state({
+          status: 'ready',
+          targetVillageId: 'v-a',
+          preview: preview(),
+          preparedGeneration: 8,
+        })}
+        canWrite
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        onRetry={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: '快捷导入' });
+    const close = screen.getByRole('button', { name: '取消' });
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(close);
+  });
+
+  it('Tag 冲突提供前往账号数据页的入口', () => {
+    const onNavigateToImport = vi.fn();
+    render(
+      <QuickImportSheet
+        state={state({
+          targetVillageId: 'v-a',
+          lastError: '账号 Tag 冲突，请手动导入。',
+          manualImportRequired: true,
+        })}
+        canWrite
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        onRetry={vi.fn()}
+        onClose={vi.fn()}
+        onNavigateToImport={onNavigateToImport}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '前往账号数据页手动导入' }));
+    expect(onNavigateToImport).toHaveBeenCalledTimes(1);
   });
 
   it('关闭后焦点回到打开者', () => {

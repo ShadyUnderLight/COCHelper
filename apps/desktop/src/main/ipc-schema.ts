@@ -48,6 +48,7 @@ import {
   quickDiscardRequestSchema,
   quickPrepareRequestSchema,
   isSafeIpcDiagnosticText,
+  isSafeIpcIdentifier,
   manualAdjustRequestSchema,
   manualCancelRequestSchema,
   manualReconcileRequestSchema,
@@ -439,10 +440,13 @@ export function toIpcError(error: unknown): IpcError {
   }
   if (isAppServiceError(error)) {
     const message = redactDiagnosticText(error.message);
+    const messageKey = isSafeIpcIdentifier(error.messageKey)
+      ? error.messageKey
+      : `app.${error.code}`;
     return {
       kind: mapAppServiceKind(error.code),
       code: error.code,
-      messageKey: `app.${error.code}`,
+      messageKey,
       message: isSafeIpcDiagnosticText(message) ? message : '应用服务错误。',
     };
   }
@@ -509,9 +513,10 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function isAppServiceError(
-  error: unknown,
-): error is Error & { code: 'notFound' | 'unavailable' | 'validation' | 'conflict' } {
+function isAppServiceError(error: unknown): error is Error & {
+  code: 'notFound' | 'unavailable' | 'validation' | 'conflict';
+  messageKey?: unknown;
+} {
   return (
     typeof error === 'object' &&
     error !== null &&

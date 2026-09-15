@@ -92,10 +92,7 @@ export function beginFetch(
   if (fetchKey === input.lastFetchKey) {
     return { kind: 'skip', fetchKey };
   }
-  if (
-    !input.forced &&
-    !shouldAccept(input.completedCursor, input.sessionId, input.generation)
-  ) {
+  if (!input.forced && !shouldAccept(input.completedCursor, input.sessionId, input.generation)) {
     return { kind: 'skip', fetchKey };
   }
   if (!input.forced && input.generation < input.maxRequestedGeneration) {
@@ -120,10 +117,7 @@ export function shouldApplyResponse(input: ApplyResponseInput): boolean {
   if (input.requestSeq !== input.currentRequestSeq) {
     return false;
   }
-  if (
-    input.currentSubjectKey !== null &&
-    input.requestSubjectKey !== input.currentSubjectKey
-  ) {
+  if (input.currentSubjectKey !== input.requestSubjectKey) {
     return false;
   }
   if (input.responseGeneration !== undefined) {
@@ -151,9 +145,6 @@ export function shouldMergePaginationPage(
   return paginationSubjectKey(expected) === paginationSubjectKey(incoming);
 }
 
-export function subjectChanged(
-  previousSubjectKey: string | null,
-  nextSubjectKey: string,
-): boolean {
+export function subjectChanged(previousSubjectKey: string | null, nextSubjectKey: string): boolean {
   return previousSubjectKey !== null && previousSubjectKey !== nextSubjectKey;
 }

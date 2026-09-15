@@ -16,9 +16,9 @@ describe('navigation', () => {
   it('primaryTabOfRoute 映射三 tab', () => {
     expect(primaryTabOfRoute({ kind: 'import' })).toBe('import');
     expect(primaryTabOfRoute({ kind: 'overview' })).toBe('overview');
-    expect(
-      primaryTabOfRoute({ kind: 'villageDetail', villageId: 'v1', base: 'home' }),
-    ).toBe('detail');
+    expect(primaryTabOfRoute({ kind: 'villageDetail', villageId: 'v1', base: 'home' })).toBe(
+      'detail',
+    );
     expect(primaryTabOfRoute({ kind: 'official', section: 'player' })).toBe('overview');
   });
 

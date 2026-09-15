@@ -35,10 +35,7 @@ describe('beginFetch', () => {
 
   it('重复 fetchKey 跳过', () => {
     const key = 's1:3:overview:0';
-    const result = beginFetch(
-      { ...base, lastFetchKey: key },
-      shouldAcceptGeneration,
-    );
+    const result = beginFetch({ ...base, lastFetchKey: key }, shouldAcceptGeneration);
     expect(result.kind).toBe('skip');
   });
 
@@ -74,32 +71,38 @@ describe('shouldApplyResponse', () => {
   };
 
   it('旧 session 丢弃', () => {
-    expect(
-      shouldApplyResponse({ ...base, currentSessionId: 's2' }),
-    ).toBe(false);
+    expect(shouldApplyResponse({ ...base, currentSessionId: 's2' })).toBe(false);
   });
 
   it('旧村庄 subject 丢弃', () => {
+    expect(shouldApplyResponse({ ...base, currentSubjectKey: 's1:v2:home' })).toBe(false);
+  });
+
+  it('subject 变为 null 后拒绝旧 subject 响应', () => {
     expect(
-      shouldApplyResponse({ ...base, currentSubjectKey: 's1:v2:home' }),
+      shouldApplyResponse({
+        ...base,
+        requestSubjectKey: 's1:v1:home',
+        currentSubjectKey: null,
+      }),
     ).toBe(false);
   });
 
   it('旧 requestSeq 丢弃', () => {
-    expect(
-      shouldApplyResponse({ ...base, currentRequestSeq: 3 }),
-    ).toBe(false);
+    expect(shouldApplyResponse({ ...base, currentRequestSeq: 3 })).toBe(false);
   });
 
   it('lifecycle epoch 变化丢弃', () => {
-    expect(
-      shouldApplyResponse({ ...base, currentEpoch: 2 }),
-    ).toBe(false);
+    expect(shouldApplyResponse({ ...base, currentEpoch: 2 })).toBe(false);
   });
 
   it('旧 generation 响应丢弃', () => {
     expect(
-      shouldApplyResponse({ ...base, responseGeneration: 1, completedCursor: { sessionId: 's1', generation: 5 } }),
+      shouldApplyResponse({
+        ...base,
+        responseGeneration: 1,
+        completedCursor: { sessionId: 's1', generation: 5 },
+      }),
     ).toBe(false);
   });
 });

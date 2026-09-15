@@ -17,6 +17,11 @@ import { useResourceQuery } from './use-resource-query';
 
 export type BridgeVillageClient = Pick<DesktopBridge, 'villageDetail'>;
 
+export type VillageDetailTarget = {
+  readonly villageId: string;
+  readonly base: TrackerBaseDto;
+};
+
 export type VillageDetailApi = {
   readonly state: VillageDetailState;
   readonly refresh: () => Promise<void>;
@@ -37,25 +42,28 @@ function toVillageDetailState(resource: ResourceState<VillageDetailPayload>): Vi
 export function useVillageDetail(
   bridge: BridgeVillageClient,
   snapshot: AppSnapshotPayload | null,
-  base: TrackerBaseDto,
+  target: VillageDetailTarget | null,
 ): VillageDetailApi {
-  const villageId = snapshot?.selectedVillageId ?? null;
   const subjectKey = useMemo(() => {
-    if (snapshot === null || villageId === null) {
+    if (snapshot === null || target === null) {
       return null;
     }
-    return `${snapshot.sessionId}:${villageId}:${base}`;
-  }, [snapshot, villageId, base]);
+    return `${snapshot.sessionId}:${target.villageId}:${target.base}`;
+  }, [snapshot, target]);
 
   const query = useResourceQuery({
-    snapshot: villageId === null ? null : snapshot,
+    snapshot,
     subjectKey,
-    fetch: () => bridge.villageDetail({ villageId: villageId as string, base }),
+    fetch: () =>
+      bridge.villageDetail({
+        villageId: target?.villageId as string,
+        base: target?.base as TrackerBaseDto,
+      }),
     extractGeneration: (payload) => payload.generation,
     fetchErrorMessage: '村庄详情查询失败',
   });
 
-  if (villageId === null) {
+  if (target === null) {
     return { state: idleVillageDetailState(), refresh: query.refresh };
   }
 

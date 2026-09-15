@@ -6,10 +6,7 @@ import type {
   UpgradeOverviewPayload,
 } from '@coc-helper/contracts';
 
-import {
-  INITIAL_OVERVIEW_STATE,
-  type OverviewState,
-} from './overview-session';
+import { INITIAL_OVERVIEW_STATE, type OverviewState } from './overview-session';
 import { resourceData, resourceLastError, type ResourceState } from './resource-state';
 import { useResourceQuery } from './use-resource-query';
 
@@ -39,8 +36,7 @@ export function useUpgradeOverview(
   snapshot: AppSnapshotPayload | null,
 ): OverviewApi {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const subjectKey =
-    snapshot === null ? null : `${snapshot.sessionId}:overview`;
+  const subjectKey = snapshot === null ? null : `${snapshot.sessionId}:overview`;
 
   const query = useResourceQuery({
     snapshot,

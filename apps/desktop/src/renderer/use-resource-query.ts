@@ -37,9 +37,7 @@ export type ResourceQueryApi<T> = {
  * 通用只读资源查询 hook：统一 session/generation/subject/requestSeq/epoch 围栏。
  * 写操作状态机（如 quick import）不应使用此 hook。
  */
-export function useResourceQuery<T>(
-  options: ResourceQueryOptions<T>,
-): ResourceQueryApi<T> {
+export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQueryApi<T> {
   const { snapshot, subjectKey, fetch, extractGeneration, fetchErrorMessage, onSessionReset } =
     options;
   const [state, setState] = useState<ResourceState<T>>(LOADING_RESOURCE);
@@ -154,9 +152,7 @@ export function useResourceQuery<T>(
           currentSubjectKey: subjectRef.current,
           requestSeq,
           currentRequestSeq: requestSeqRef.current,
-          responseGeneration: result.ok
-            ? extractGenerationRef.current(result.value)
-            : undefined,
+          responseGeneration: result.ok ? extractGenerationRef.current(result.value) : undefined,
           completedCursor: completedCursorRef.current,
           shouldAcceptGeneration,
         })

@@ -10,8 +10,17 @@ import type {
   VillageDetailPayload,
 } from '@coc-helper/contracts';
 
-import type { BridgeVillageClient } from './use-village-detail';
+import type {
+  BridgeVillageClient,
+  VillageDetailApi,
+  VillageDetailTarget,
+} from './use-village-detail';
 import { useVillageDetail } from './use-village-detail';
+
+type HookProps = {
+  readonly snap: AppSnapshotPayload;
+  readonly detailTarget: VillageDetailTarget | null;
+};
 import { villageDetailFixture } from './village-detail-session';
 
 function snapshot(overrides: Partial<AppSnapshotPayload> = {}): AppSnapshotPayload {
@@ -51,6 +60,10 @@ function err(message: string): Result<never> {
   };
 }
 
+function target(villageId: string, base: TrackerBaseDto = 'home') {
+  return { villageId, base };
+}
+
 function createBridge() {
   const resolvers: Array<(value: Result<VillageDetailPayload>) => void> = [];
   const bridge: BridgeVillageClient = {
@@ -81,21 +94,55 @@ afterEach(() => {
 });
 
 describe('useVillageDetail', () => {
-  it('村庄为 null 时 idle 不请求；出现村庄后拉取', async () => {
+  it('target 为 null 时 idle；route target 驱动查询，不依赖 snapshot.selectedVillageId', async () => {
     const harness = createBridge();
-    const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+    const { result, rerender } = renderHook<VillageDetailApi, HookProps>(
+      ({ snap, detailTarget }) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
           snap: snapshot({ selectedVillageId: null }),
-          base: 'home' as TrackerBaseDto,
+          detailTarget: null,
         },
       },
     );
     await act(async () => {});
     expect(result.current.state.status).toBe('idle');
     expect(harness.bridge.villageDetail).not.toHaveBeenCalled();
-    rerender({ snap: snapshot({ selectedVillageId: 'v1' }), base: 'home' });
+    rerender({
+      snap: snapshot({ selectedVillageId: 'v1' }),
+      detailTarget: target('v2', 'builder'),
+    });
+    await waitFor(() => {
+      expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(1);
+    });
+    expect(harness.bridge.villageDetail).toHaveBeenCalledWith({
+      villageId: 'v2',
+      base: 'builder',
+    });
+    act(() => {
+      harness.resolve(ok(detail({ generation: 1, villageId: 'v2', base: 'builder' })));
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+    expect(result.current.state.payload?.villageId).toBe('v2');
+  });
+
+  it('出现 target 后拉取', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook<VillageDetailApi, HookProps>(
+      ({ snap, detailTarget }) => useVillageDetail(harness.bridge, snap, detailTarget),
+      {
+        initialProps: {
+          snap: snapshot({ selectedVillageId: null }),
+          detailTarget: null,
+        },
+      },
+    );
+    await act(async () => {});
+    expect(result.current.state.status).toBe('idle');
+    expect(harness.bridge.villageDetail).not.toHaveBeenCalled();
+    rerender({ snap: snapshot(), detailTarget: target('v1') });
     await waitFor(() => {
       expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(1);
     });
@@ -111,11 +158,11 @@ describe('useVillageDetail', () => {
   it('base 切换重拉且参数 base 变化', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ selectedVillageId: 'v1' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot(),
+          detailTarget: target('v1', 'home'),
         },
       },
     );
@@ -125,7 +172,7 @@ describe('useVillageDetail', () => {
     await waitFor(() => {
       expect(result.current.state.status).toBe('ready');
     });
-    rerender({ snap: snapshot({ selectedVillageId: 'v1' }), base: 'builder' });
+    rerender({ snap: snapshot(), detailTarget: target('v1', 'builder') });
     await waitFor(() => {
       expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);
     });
@@ -138,11 +185,11 @@ describe('useVillageDetail', () => {
   it('村庄切换重拉（同 generation 也拉）', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ selectedVillageId: 'v1' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot(),
+          detailTarget: target('v1'),
         },
       },
     );
@@ -152,7 +199,7 @@ describe('useVillageDetail', () => {
     await waitFor(() => {
       expect(result.current.state.status).toBe('ready');
     });
-    rerender({ snap: snapshot({ selectedVillageId: 'v2' }), base: 'home' });
+    rerender({ snap: snapshot(), detailTarget: target('v2') });
     await waitFor(() => {
       expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);
     });
@@ -165,11 +212,11 @@ describe('useVillageDetail', () => {
   it('P1：旧 session pending 时切新 session 低 generation 必须发新请求，旧成功丢弃', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ sessionId: 'sA', generation: 50, selectedVillageId: 'v1' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ sessionId: 'sA', generation: 50 }),
+          detailTarget: target('v1'),
         },
       },
     );
@@ -178,8 +225,8 @@ describe('useVillageDetail', () => {
     });
     expect(harness.pendingCount()).toBe(1);
     rerender({
-      snap: snapshot({ sessionId: 'sB', generation: 1, selectedVillageId: 'v1' }),
-      base: 'home',
+      snap: snapshot({ sessionId: 'sB', generation: 1 }),
+      detailTarget: target('v1'),
     });
     await waitFor(() => {
       expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);
@@ -202,15 +249,15 @@ describe('useVillageDetail', () => {
   it('P2：gen5→gen6 overlap，新成功后旧失败被丢弃', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ generation: 5, selectedVillageId: 'v1' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ generation: 5 }),
+          detailTarget: target('v1'),
         },
       },
     );
-    rerender({ snap: snapshot({ generation: 6, selectedVillageId: 'v1' }), base: 'home' });
+    rerender({ snap: snapshot({ generation: 6 }), detailTarget: target('v1') });
     await waitFor(() => {
       expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);
     });
@@ -235,11 +282,11 @@ describe('useVillageDetail', () => {
   it('失败且有 last-good 时保持 ready 并挂错误', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ generation: 1, selectedVillageId: 'v1' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ generation: 1 }),
+          detailTarget: target('v1'),
         },
       },
     );
@@ -249,7 +296,7 @@ describe('useVillageDetail', () => {
     await waitFor(() => {
       expect(result.current.state.status).toBe('ready');
     });
-    rerender({ snap: snapshot({ generation: 2, selectedVillageId: 'v1' }), base: 'home' });
+    rerender({ snap: snapshot({ generation: 2 }), detailTarget: target('v1') });
     act(() => {
       harness.resolve(err('目录未就绪'));
     });
@@ -263,11 +310,11 @@ describe('useVillageDetail', () => {
   it('卸载后响应不再更新 UI', async () => {
     const harness = createBridge();
     const { result, unmount } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ generation: 1, selectedVillageId: 'v1' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ generation: 1 }),
+          detailTarget: target('v1'),
         },
       },
     );
@@ -282,11 +329,11 @@ describe('useVillageDetail', () => {
   it('refresh 主动重刷', async () => {
     const harness = createBridge();
     const { result } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ generation: 1, selectedVillageId: 'v1' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ generation: 1 }),
+          detailTarget: target('v1'),
         },
       },
     );
@@ -307,11 +354,11 @@ describe('useVillageDetail', () => {
   it('P2a：切村庄即丢旧 last-good，进 loading 不展示旧村数据', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ generation: 5, selectedVillageId: 'vA' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ generation: 5 }),
+          detailTarget: target('vA'),
         },
       },
     );
@@ -323,8 +370,8 @@ describe('useVillageDetail', () => {
     });
     expect(result.current.state.payload?.villageName).toBe('A 村');
     rerender({
-      snap: snapshot({ generation: 6, selectedVillageId: 'vB' }),
-      base: 'home' as TrackerBaseDto,
+      snap: snapshot({ generation: 6 }),
+      detailTarget: target('vB'),
     });
     // subject 切换：旧 payload 立即清除，不等新请求返回。
     expect(result.current.state.status).toBe('loading');
@@ -343,11 +390,11 @@ describe('useVillageDetail', () => {
   it('P2b：切村庄后新请求失败，只显示新 error 不泄漏旧村数据', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ generation: 5, selectedVillageId: 'vA' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ generation: 5 }),
+          detailTarget: target('vA'),
         },
       },
     );
@@ -358,8 +405,8 @@ describe('useVillageDetail', () => {
       expect(result.current.state.status).toBe('ready');
     });
     rerender({
-      snap: snapshot({ generation: 6, selectedVillageId: 'vB' }),
-      base: 'home' as TrackerBaseDto,
+      snap: snapshot({ generation: 6 }),
+      detailTarget: target('vB'),
     });
     act(() => {
       harness.resolve(err('B 加载失败'));
@@ -374,11 +421,11 @@ describe('useVillageDetail', () => {
   it('P2c：切 base 即丢旧 last-good；同 subject 刷新失败仍保留', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ generation: 5, selectedVillageId: 'v1' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ generation: 5 }),
+          detailTarget: target('v1', 'home'),
         },
       },
     );
@@ -389,8 +436,8 @@ describe('useVillageDetail', () => {
       expect(result.current.state.status).toBe('ready');
     });
     rerender({
-      snap: snapshot({ generation: 5, selectedVillageId: 'v1' }),
-      base: 'builder' as TrackerBaseDto,
+      snap: snapshot({ generation: 5 }),
+      detailTarget: target('v1', 'builder'),
     });
     expect(result.current.state.status).toBe('loading');
     expect(result.current.state.payload).toBeNull();
@@ -402,8 +449,8 @@ describe('useVillageDetail', () => {
     });
     // 同 subject 刷新失败：保留 last-good。
     rerender({
-      snap: snapshot({ generation: 6, selectedVillageId: 'v1' }),
-      base: 'builder' as TrackerBaseDto,
+      snap: snapshot({ generation: 6 }),
+      detailTarget: target('v1', 'builder'),
     });
     act(() => {
       harness.resolve(err('刷新失败'));
@@ -418,17 +465,17 @@ describe('useVillageDetail', () => {
   it('P2d：切村庄后旧请求的迟到成功不得写入新上下文', async () => {
     const harness = createBridge();
     const { result, rerender } = renderHook(
-      ({ snap, base }) => useVillageDetail(harness.bridge, snap, base),
+      ({ snap, detailTarget }: HookProps) => useVillageDetail(harness.bridge, snap, detailTarget),
       {
         initialProps: {
-          snap: snapshot({ generation: 5, selectedVillageId: 'vA' }),
-          base: 'home' as TrackerBaseDto,
+          snap: snapshot({ generation: 5 }),
+          detailTarget: target('vA'),
         },
       },
     );
     rerender({
-      snap: snapshot({ generation: 6, selectedVillageId: 'vB' }),
-      base: 'home' as TrackerBaseDto,
+      snap: snapshot({ generation: 6 }),
+      detailTarget: target('vB'),
     });
     await waitFor(() => {
       expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(2);

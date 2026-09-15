@@ -1,14 +1,7 @@
-import { useReducer, useState } from 'react';
-
-import type { TrackerBaseDto } from '@coc-helper/contracts';
+import { useMemo, useReducer } from 'react';
 
 import { getDesktopBridge } from './bridge';
-import {
-  INITIAL_ROUTE,
-  navigationReducer,
-  type AppRoute,
-  type NavigateAction,
-} from './navigation';
+import { INITIAL_ROUTE, navigationReducer, type AppRoute, type NavigateAction } from './navigation';
 import { useAppSession } from './use-app-session';
 import { useQuickImport } from './use-quick-import';
 import { useUpgradeOverview } from './use-upgrade-overview';
@@ -19,10 +12,15 @@ export function App() {
   const bridge = getDesktopBridge();
   const session = useAppSession(bridge);
   const overview = useUpgradeOverview(bridge, session.state.snapshot);
-  const [detailBase, setDetailBase] = useState<TrackerBaseDto>('home');
-  const detail = useVillageDetail(bridge, session.state.snapshot, detailBase);
-  const quick = useQuickImport(bridge, session.state.snapshot);
   const [route, dispatch] = useReducer(navigationReducer, INITIAL_ROUTE);
+
+  const detailTarget = useMemo(
+    () =>
+      route.kind === 'villageDetail' ? { villageId: route.villageId, base: route.base } : null,
+    [route],
+  );
+  const detail = useVillageDetail(bridge, session.state.snapshot, detailTarget);
+  const quick = useQuickImport(bridge, session.state.snapshot);
 
   const navigate = (action: NavigateAction): void => {
     dispatch(action);
@@ -37,8 +35,6 @@ export function App() {
       session={session}
       overview={overview}
       detail={detail}
-      detailBase={detailBase}
-      onDetailBaseChange={setDetailBase}
       quick={quick}
       route={route}
       navigate={navigate}

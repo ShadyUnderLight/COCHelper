@@ -23,7 +23,11 @@ export type PrimaryTab = 'import' | 'overview' | 'detail';
 
 export type NavigateAction =
   | { readonly type: 'navigate'; readonly route: AppRoute }
-  | { readonly type: 'openVillageDetail'; readonly villageId: string; readonly base?: TrackerBaseDto };
+  | {
+      readonly type: 'openVillageDetail';
+      readonly villageId: string;
+      readonly base?: TrackerBaseDto;
+    };
 
 /** 当前三 tab 页面对应的主 tab；official/manual/info 暂映射到 overview 占位。 */
 export function primaryTabOfRoute(route: AppRoute): PrimaryTab {

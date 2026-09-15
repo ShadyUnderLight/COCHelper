@@ -74,10 +74,6 @@ function detailApi(state: VillageDetailState = INITIAL_VILLAGE_DETAIL_STATE): Vi
   };
 }
 
-function detailProps(): { readonly detailBase: 'home'; readonly onDetailBaseChange: () => void } {
-  return { detailBase: 'home' as const, onDetailBaseChange: () => undefined };
-}
-
 afterEach(() => {
   cleanup();
 });
@@ -89,8 +85,6 @@ describe('AppShell', () => {
         session={sessionApi(INITIAL_APP_SESSION)}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     expect(screen.getByText('正在加载应用快照…')).toBeTruthy();
@@ -108,8 +102,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     expect(document.querySelector('[data-smoke="fatal"]')).toBeTruthy();
@@ -127,8 +119,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     expect(screen.getByText('主村')).toBeTruthy();
@@ -151,8 +141,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     expect(screen.getByText(/暂无村庄/)).toBeTruthy();
@@ -172,8 +160,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     expect(screen.getByLabelText('数据恢复')).toBeTruthy();
@@ -190,8 +176,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     expect(screen.getByText(/只读模式/)).toBeTruthy();
@@ -207,8 +191,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
@@ -220,7 +202,6 @@ describe('AppShell', () => {
   });
 
   it('无选中村庄时详情 tab 禁用', () => {
-    const dp = detailProps();
     render(
       <AppShell
         session={sessionApi({
@@ -230,8 +211,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase={dp.detailBase}
-        onDetailBaseChange={dp.onDetailBaseChange}
       />,
     );
     const tab = screen.getByRole('button', { name: '村庄详情' });
@@ -239,7 +218,6 @@ describe('AppShell', () => {
   });
 
   it('有选中村庄可切详情', () => {
-    const dp = detailProps();
     render(
       <AppShell
         session={sessionApi({
@@ -249,8 +227,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi()}
-        detailBase={dp.detailBase}
-        onDetailBaseChange={dp.onDetailBaseChange}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: '村庄详情' }));
@@ -258,7 +234,6 @@ describe('AppShell', () => {
   });
 
   it('总览行点击切到详情', () => {
-    const dp = detailProps();
     const overviewState = applyOverviewSuccess({
       generation: 1,
       nowMs: 1,
@@ -286,8 +261,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi(overviewState)}
         detail={detailApi()}
-        detailBase={dp.detailBase}
-        onDetailBaseChange={dp.onDetailBaseChange}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
@@ -296,7 +269,6 @@ describe('AppShell', () => {
   });
 
   it('详情 base 切换透传（初始主村按下）', () => {
-    const dp = detailProps();
     const detailState = applyVillageDetailSuccess(villageDetailFixture());
     render(
       <AppShell
@@ -307,8 +279,6 @@ describe('AppShell', () => {
         })}
         overview={overviewApi()}
         detail={detailApi(detailState)}
-        detailBase={dp.detailBase}
-        onDetailBaseChange={dp.onDetailBaseChange}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: '村庄详情' }));
@@ -349,8 +319,6 @@ describe('AppShell', () => {
         }}
         overview={overviewApi(overviewState)}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
@@ -394,8 +362,6 @@ describe('AppShell', () => {
         }}
         overview={overviewApi(overviewState)}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
@@ -443,8 +409,6 @@ describe('AppShell', () => {
         }}
         overview={overviewApi(overviewState)}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
@@ -501,8 +465,6 @@ describe('AppShell', () => {
         }}
         overview={overviewApi(overviewState)}
         detail={detailApi()}
-        detailBase="home"
-        onDetailBaseChange={() => undefined}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: '升级总览' }));

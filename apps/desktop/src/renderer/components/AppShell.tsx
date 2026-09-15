@@ -21,8 +21,6 @@ type AppShellProps = {
   readonly session: AppSessionApi;
   readonly overview: OverviewApi;
   readonly detail: VillageDetailApi;
-  readonly detailBase: TrackerBaseDto;
-  readonly onDetailBaseChange: (base: TrackerBaseDto) => void;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
   readonly quick?: QuickImportApi;
   readonly route?: AppRoute;
@@ -35,8 +33,6 @@ export function AppShell({
   session,
   overview,
   detail,
-  detailBase,
-  onDetailBaseChange,
   quick,
   route,
   navigate,
@@ -47,6 +43,7 @@ export function AppShell({
   const { state, recoveryStatus } = session;
   const snapshot = state.snapshot;
   const tab = primaryTabOfRoute(activeRoute);
+  const detailRoute = activeRoute.kind === 'villageDetail' ? activeRoute : null;
 
   const applyRoute = (nextRoute: AppRoute): void => {
     if (navigate !== undefined) {
@@ -57,6 +54,8 @@ export function AppShell({
       setInternalRoute(nextRoute);
     }
   };
+
+  const detailBaseForTab = (): TrackerBaseDto => detailRoute?.base ?? 'home';
 
   const goToTab = (nextTab: PrimaryTab): void => {
     const nextRoute: AppRoute =
@@ -69,7 +68,7 @@ export function AppShell({
             : {
                 kind: 'villageDetail',
                 villageId: snapshot.selectedVillageId,
-                base: detailBase,
+                base: detailBaseForTab(),
               };
     applyRoute(nextRoute);
   };
@@ -116,11 +115,19 @@ export function AppShell({
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
       return;
     }
+    const base = detailBaseForTab();
     if (navigate !== undefined) {
-      navigate({ type: 'openVillageDetail', villageId, base: detailBase });
+      navigate({ type: 'openVillageDetail', villageId, base });
     } else {
-      applyRoute({ kind: 'villageDetail', villageId, base: detailBase });
+      applyRoute({ kind: 'villageDetail', villageId, base });
     }
+  };
+
+  const onDetailBaseChange = (base: TrackerBaseDto): void => {
+    if (detailRoute === null) {
+      return;
+    }
+    applyRoute({ kind: 'villageDetail', villageId: detailRoute.villageId, base });
   };
 
   return (
@@ -196,12 +203,12 @@ export function AppShell({
               />
             ) : null}
             {showImport && tab === 'detail' ? (
-              detailDisabled ? (
+              detailRoute === null ? (
                 <p className="muted">先选择村庄查看详情</p>
               ) : (
                 <VillageDetail
                   state={detail.state}
-                  base={detailBase}
+                  base={detailRoute.base}
                   onBaseChange={onDetailBaseChange}
                   onRetry={() => void detail.refresh()}
                   quick={quick}

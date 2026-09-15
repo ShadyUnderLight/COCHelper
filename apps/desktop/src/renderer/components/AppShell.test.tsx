@@ -510,6 +510,60 @@ describe('AppShell', () => {
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
   });
 
+  it('总览点击他村记录 pending 期间切到导入后，成功时不应被拉回详情', async () => {
+    let resolveSelect!: (ok: boolean) => void;
+    const selectVillage = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSelect = resolve;
+        }),
+    );
+    const bRecord = recordFixture({ id: 'rec-b', villageID: 'v2', villageName: '分村' });
+    const overviewState = applyOverviewSuccess({
+      generation: 1,
+      nowMs: 1,
+      catalogVersion: '18.400.13',
+      catalogIsUsable: true,
+      active: [bRecord],
+      pending: [],
+      state: {
+        manualActiveCount: 0,
+        importedActiveCount: 0,
+        deduplicatedDisplayCount: 0,
+        manualCompletedCount: 0,
+        completedRecently: [],
+        activeRecords: [],
+        attentionRecords: [],
+        needsReimportRecords: [],
+      },
+    });
+    render(
+      <AppShell
+        session={{
+          ...sessionApi({
+            ...INITIAL_APP_SESSION,
+            status: 'ready',
+            snapshot: snapshot({ selectedVillageId: 'v1' }),
+          }),
+          selectVillage,
+        }}
+        overview={overviewApi(overviewState)}
+        detail={detailApi()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
+    expect(selectVillage).toHaveBeenCalledWith('v2');
+    fireEvent.click(screen.getByRole('button', { name: '导入' }));
+    expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
+    act(() => {
+      resolveSelect(true);
+    });
+    await act(async () => {});
+    expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
+    expect(screen.queryByLabelText('村庄详情')).toBeNull();
+  });
+
   it('切换村庄 pending 时仍停留在总览，成功后才进详情', async () => {
     let resolveSelect!: (ok: boolean) => void;
     const selectVillage = vi.fn(

@@ -118,11 +118,16 @@ export function AppShell({
       return;
     }
     const currentRoute = activeRouteRef.current;
-    const base = currentRoute.kind === 'villageDetail' ? currentRoute.base : 'home';
-    if (navigate !== undefined) {
-      navigate({ type: 'openVillageDetail', villageId, base });
-    } else {
-      applyRoute({ kind: 'villageDetail', villageId, base });
+    if (currentRoute.kind === 'overview') {
+      if (navigate !== undefined) {
+        navigate({ type: 'openVillageDetail', villageId, base: 'home' });
+      } else {
+        applyRoute({ kind: 'villageDetail', villageId, base: 'home' });
+      }
+      return;
+    }
+    if (currentRoute.kind === 'villageDetail') {
+      applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
     }
   };
 

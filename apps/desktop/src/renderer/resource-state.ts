@@ -66,3 +66,24 @@ export function resourceLastError<T>(state: ResourceState<T>): string | null {
       return null;
   }
 }
+
+/**
+ * Render 阶段的 subject 围栏：effect 清 last-good 之前，不得把旧 subject 的数据交给新 subject。
+ * 无 data 的 loading/failed 不围栏——那是当前 subject 自己的请求态。
+ */
+export function fencedResourceState<T>(
+  state: ResourceState<T>,
+  payloadSubjectKey: string | null,
+  subjectKey: string | null,
+): ResourceState<T> {
+  if (subjectKey === null) {
+    return IDLE_RESOURCE;
+  }
+  if (resourceData(state) === null) {
+    return state;
+  }
+  if (payloadSubjectKey !== subjectKey) {
+    return LOADING_RESOURCE;
+  }
+  return state;
+}

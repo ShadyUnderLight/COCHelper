@@ -11,12 +11,8 @@ import type {
 } from '@coc-helper/contracts';
 
 import { recordFixture } from '../overview-session';
-import {
-  clanFixture,
-  playerFixture,
-  toOfficialClanView,
-  toOfficialPlayerView,
-} from '../official-session';
+import { clanFixture, playerFixture } from '../official-session.fixtures';
+import { toOfficialClanView, toOfficialPlayerView } from '../official-session';
 import { resourceSuccess } from '../resource-state';
 import {
   applyVillageDetailSuccess,

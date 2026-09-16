@@ -4,7 +4,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LOADING_RESOURCE, resourceSuccess } from '../resource-state';
-import { clanFixture, toOfficialClanView } from '../official-session';
+import { clanFixture } from '../official-session.fixtures';
+import { toOfficialClanView } from '../official-session';
 import { ClanCard } from './ClanCard';
 
 afterEach(() => {

@@ -6,7 +6,6 @@ import type {
   ClanStatePayload,
   OfficialAPIRequestStatusWire,
   OfficialClanSummaryDto,
-  OfficialEndpointStateDto,
   OfficialPlayerSummaryDto,
   PlayerStatePayload,
 } from '@coc-helper/contracts';
@@ -37,6 +36,7 @@ export type OfficialPlayerView = {
   readonly unrecognizedKeys: readonly string[];
   readonly summary: OfficialPlayerSummaryDto | null;
   readonly canRefresh: boolean;
+  readonly commandError: string | null;
 };
 
 export type OfficialClanView = {
@@ -51,6 +51,7 @@ export type OfficialClanView = {
   readonly unrecognizedKeys: readonly string[];
   readonly summary: OfficialClanSummaryDto | null;
   readonly canRefresh: boolean;
+  readonly commandError: string | null;
 };
 
 export const IDLE_OFFICIAL_PLAYER_VIEW: OfficialPlayerView = {
@@ -65,6 +66,7 @@ export const IDLE_OFFICIAL_PLAYER_VIEW: OfficialPlayerView = {
   unrecognizedKeys: [],
   summary: null,
   canRefresh: false,
+  commandError: null,
 };
 
 export const IDLE_OFFICIAL_CLAN_VIEW: OfficialClanView = {
@@ -79,6 +81,7 @@ export const IDLE_OFFICIAL_CLAN_VIEW: OfficialClanView = {
   unrecognizedKeys: [],
   summary: null,
   canRefresh: false,
+  commandError: null,
 };
 
 export function officialRefreshStatus(
@@ -169,9 +172,20 @@ export function formatFetchedAt(fetchedAtMs: number | null): string | null {
 export function toOfficialPlayerView(
   resource: ResourceState<PlayerStatePayload>,
   nowMs: number,
+  expectedVillageId?: string | null,
 ): OfficialPlayerView {
+  if (expectedVillageId === null) {
+    return IDLE_OFFICIAL_PLAYER_VIEW;
+  }
   const lastQueryError = resourceLastError(resource);
   const payload = resourceData(resource);
+  if (
+    payload !== null &&
+    expectedVillageId !== undefined &&
+    payload.villageId !== expectedVillageId
+  ) {
+    return { ...IDLE_OFFICIAL_PLAYER_VIEW, queryStatus: 'loading' };
+  }
   if (payload === null) {
     if (lastQueryError !== null) {
       return { ...IDLE_OFFICIAL_PLAYER_VIEW, queryStatus: 'error', lastQueryError };
@@ -198,6 +212,7 @@ export function toOfficialPlayerView(
     unrecognizedKeys: state?.unrecognizedKeys ?? [],
     summary: payload.summary,
     canRefresh: payload.playerTag !== null,
+    commandError: null,
   };
 }
 
@@ -217,6 +232,15 @@ export function toOfficialClanView(
   }
   const lastQueryError = resourceLastError(resource);
   const payload = resourceData(resource);
+  if (payload !== null && payload.clanTag !== clanTag) {
+    return {
+      ...IDLE_OFFICIAL_CLAN_VIEW,
+      affiliation,
+      clanTag,
+      queryStatus: 'loading',
+      canRefresh: true,
+    };
+  }
   if (payload === null) {
     if (lastQueryError !== null) {
       return {
@@ -253,6 +277,7 @@ export function toOfficialClanView(
     unrecognizedKeys: state?.unrecognizedKeys ?? [],
     summary: payload.summary,
     canRefresh: true,
+    commandError: null,
   };
 }
 
@@ -319,53 +344,4 @@ function endpointStatusLine(
       throw new Error(`未知刷新展示态：${String(exhaustive)}`);
     }
   }
-}
-
-export function playerFixture(overrides: Partial<PlayerStatePayload> = {}): PlayerStatePayload {
-  return {
-    generation: 1,
-    villageId: 'v1',
-    playerTag: '#AAA',
-    currentClanTag: '#CLAN01',
-    summary: {
-      name: 'Hero',
-      tag: '#AAA',
-      townHallLevel: 16,
-      builderHallLevel: 10,
-      expLevel: 200,
-      trophies: 5000,
-      bestTrophies: 5200,
-      clanName: '测试部落',
-      clanTag: '#CLAN01',
-    },
-    state: successState(),
-    ...overrides,
-  };
-}
-
-export function clanFixture(overrides: Partial<ClanStatePayload> = {}): ClanStatePayload {
-  return {
-    generation: 1,
-    clanTag: '#CLAN01',
-    summary: {
-      name: '测试部落',
-      tag: '#CLAN01',
-      clanLevel: 12,
-      members: 40,
-      type: 'open',
-      isWarLogPublic: true,
-      warWins: 100,
-    },
-    state: successState(),
-    ...overrides,
-  };
-}
-
-function successState(): OfficialEndpointStateDto {
-  return {
-    status: 'success',
-    parserVersion: 'player-snapshot-0.2',
-    fetchedAt: 1_700_000_000_000,
-    unrecognizedKeys: [],
-  };
 }

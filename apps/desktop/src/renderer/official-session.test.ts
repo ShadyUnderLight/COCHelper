@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { OFFICIAL_STALE_THRESHOLD_MS } from '@coc-helper/contracts';
-import { OFFICIAL_STALE_THRESHOLD_MS as DOMAIN_STALE_THRESHOLD_MS } from '@coc-helper/domain';
 
+import { clanFixture, playerFixture } from './official-session.fixtures';
 import { LOADING_RESOURCE, resourceFailure, resourceSuccess } from './resource-state';
 import {
   clanAffiliationOf,
   clanTypeLabel,
   officialRefreshStatus,
   officialSourceLabel,
-  playerFixture,
   playerRefreshStatusLine,
   toOfficialClanView,
   toOfficialPlayerView,
@@ -17,10 +16,6 @@ import {
 } from './official-session';
 
 describe('official-session（#277-E1）', () => {
-  it('contracts 与 domain 的 stale 阈值一致', () => {
-    expect(OFFICIAL_STALE_THRESHOLD_MS).toBe(DOMAIN_STALE_THRESHOLD_MS);
-  });
-
   it('refreshStatus 七态', () => {
     const now = 1_700_000_000_000;
     expect(officialRefreshStatus('never', false, undefined, now)).toBe('never');
@@ -77,6 +72,13 @@ describe('official-session（#277-E1）', () => {
     expect(playerRefreshStatusLine(view)).toMatch(/正在加载/);
   });
 
+  it('切村时不得把旧 village 的 summary 投影给新 village', () => {
+    const view = toOfficialPlayerView(resourceSuccess(playerFixture({ villageId: 'v1' })), 0, 'v2');
+    expect(view.queryStatus).toBe('loading');
+    expect(view.summary).toBeNull();
+    expect(view.currentClanTag).toBeNull();
+  });
+
   it('clan unknown/none 不消费 clan 资源态', () => {
     const unknown = toOfficialClanView('unknown', null, LOADING_RESOURCE, 0);
     expect(unknown.canRefresh).toBe(false);
@@ -84,6 +86,13 @@ describe('official-session（#277-E1）', () => {
     const none = toOfficialClanView('none', null, LOADING_RESOURCE, 0);
     expect(none.affiliation).toBe('none');
     expect(none.canRefresh).toBe(false);
+  });
+
+  it('clan payload 与当前 clanTag 不一致时丢弃旧摘要', () => {
+    const view = toOfficialClanView('tagged', '#CLAN02', resourceSuccess(clanFixture()), 0);
+    expect(view.queryStatus).toBe('loading');
+    expect(view.summary).toBeNull();
+    expect(view.clanTag).toBe('#CLAN02');
   });
 
   it('部落类型与对战日志文案', () => {

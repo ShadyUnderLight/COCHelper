@@ -5,6 +5,7 @@ import type { AppSnapshotPayload, Result } from '@coc-helper/contracts';
 import { formatIpcError } from './app-session';
 import {
   LOADING_RESOURCE,
+  fencedResourceState,
   resourceFailure,
   resourceLoading,
   resourceSuccess,
@@ -194,5 +195,8 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
     setRefreshSeq((n) => n + 1);
   }, []);
 
-  return { state, refresh };
+  return {
+    state: fencedResourceState(state, payloadSubjectRef.current, subjectKey),
+    refresh,
+  };
 }

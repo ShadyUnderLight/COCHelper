@@ -26,6 +26,11 @@ export function OfficialPlayerCard({ view, refreshing, onRefresh }: OfficialPlay
           {view.lastQueryError}
         </p>
       ) : null}
+      {view.commandError !== null ? (
+        <p className="error-text" role="alert">
+          {view.commandError}
+        </p>
+      ) : null}
       {view.queryStatus !== 'loading' ? (
         <p className={statusClass(view.refreshStatus)}>{statusLine}</p>
       ) : null}
@@ -58,6 +63,8 @@ function PlayerSummaryGrid(props: { readonly summary: OfficialPlayerView['summar
     return null;
   }
   const items: ReadonlyArray<readonly [string, string | null]> = [
+    ['名称', summary.name],
+    ['标签', summary.tag],
     ['大本营等级', summary.townHallLevel === null ? null : `${summary.townHallLevel}级`],
     ['建筑大师大本营', summary.builderHallLevel === null ? null : `${summary.builderHallLevel}级`],
     ['经验等级', summary.expLevel === null ? null : String(summary.expLevel)],

@@ -25,7 +25,7 @@ export const OFFICIAL_API_REQUEST_STATUSES = [
 
 export type OfficialAPIRequestStatusWire = (typeof OFFICIAL_API_REQUEST_STATUSES)[number];
 
-/** 与 domain `OFFICIAL_STALE_THRESHOLD_MS` 同值；供 renderer 用 ClockStore 派生 stale。 */
+/** 与 domain `OFFICIAL_STALE_THRESHOLD_MS` 同值；权威一致性由 Main 边界测试锁定。 */
 export const OFFICIAL_STALE_THRESHOLD_MS = 24 * 3600 * 1000;
 
 export type OfficialPlayerSummaryDto = {

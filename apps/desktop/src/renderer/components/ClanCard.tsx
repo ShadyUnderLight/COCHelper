@@ -32,6 +32,11 @@ export function ClanCard({ view, refreshing, onRefresh }: ClanCardProps) {
           {view.lastQueryError}
         </p>
       ) : null}
+      {view.commandError !== null ? (
+        <p className="error-text" role="alert">
+          {view.commandError}
+        </p>
+      ) : null}
       {view.refreshStatus === 'failedWithLastGood' ? (
         <p className="muted">已保留上次成功数据</p>
       ) : null}

@@ -3,7 +3,6 @@ import { useMemo, useReducer } from 'react';
 import { getDesktopBridge } from './bridge';
 import { INITIAL_ROUTE, navigationReducer, type AppRoute, type NavigateAction } from './navigation';
 import { useAppSession } from './use-app-session';
-import { useOfficialVillage } from './use-official-village';
 import { useQuickImport } from './use-quick-import';
 import { useUpgradeOverview } from './use-upgrade-overview';
 import { useVillageDetail } from './use-village-detail';
@@ -21,16 +20,6 @@ export function App() {
     [route],
   );
   const detail = useVillageDetail(bridge, session.state.snapshot, detailTarget);
-  const officialVillageId = useMemo(() => {
-    if (route.kind === 'villageDetail') {
-      return route.villageId;
-    }
-    if (route.kind === 'import') {
-      return session.state.snapshot?.selectedVillageId ?? null;
-    }
-    return null;
-  }, [route, session.state.snapshot?.selectedVillageId]);
-  const official = useOfficialVillage(bridge, session.state.snapshot, officialVillageId);
   const quick = useQuickImport(bridge, session.state.snapshot);
 
   const navigate = (action: NavigateAction): void => {
@@ -46,7 +35,7 @@ export function App() {
       session={session}
       overview={overview}
       detail={detail}
-      official={official}
+      officialBridge={bridge}
       quick={quick}
       route={route}
       navigate={navigate}

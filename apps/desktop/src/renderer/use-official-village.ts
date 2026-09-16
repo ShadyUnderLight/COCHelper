@@ -37,6 +37,16 @@ export type OfficialVillageApi = {
   readonly clanRefreshing: boolean;
 };
 
+type OfficialOp = {
+  readonly requestId: RequestId;
+  readonly subjectKey: string;
+};
+
+type CommandError = {
+  readonly subjectKey: string;
+  readonly message: string;
+};
+
 function createOfficialRequestId(): RequestId {
   const id = `official-${crypto.randomUUID()}`;
   if (!isRequestId(id)) {
@@ -45,16 +55,29 @@ function createOfficialRequestId(): RequestId {
   return id;
 }
 
+function commandErrorFor(error: CommandError | null, subjectKey: string | null): string | null {
+  if (error === null || subjectKey === null || error.subjectKey !== subjectKey) {
+    return null;
+  }
+  return error.message;
+}
+
 export function useOfficialVillage(
   bridge: BridgeOfficialClient,
   snapshot: AppSnapshotPayload | null,
   villageId: string | null,
 ): OfficialVillageApi {
-  const nowMs = useClock();
+  const nowMs = useClock(villageId !== null);
   const [playerRefreshing, setPlayerRefreshing] = useState(false);
   const [clanRefreshing, setClanRefreshing] = useState(false);
-  const playerOpRef = useRef<string | null>(null);
-  const clanOpRef = useRef<string | null>(null);
+  const [playerCommandError, setPlayerCommandError] = useState<CommandError | null>(null);
+  const [clanCommandError, setClanCommandError] = useState<CommandError | null>(null);
+  const playerOpRef = useRef<OfficialOp | null>(null);
+  const clanOpRef = useRef<OfficialOp | null>(null);
+  const playerEpochRef = useRef(0);
+  const clanEpochRef = useRef(0);
+  const villageIdRef = useRef(villageId);
+  villageIdRef.current = villageId;
 
   const playerSubject =
     snapshot === null || villageId === null ? null : `${snapshot.sessionId}:${villageId}`;
@@ -67,8 +90,15 @@ export function useOfficialVillage(
     fetchErrorMessage: '官方玩家数据查询失败',
   });
 
-  const playerPayload = resourceData(playerQuery.state);
+  const refreshPlayerQuery = playerQuery.refresh;
+  const rawPlayerPayload = resourceData(playerQuery.state);
+  const playerPayload =
+    villageId !== null && rawPlayerPayload !== null && rawPlayerPayload.villageId === villageId
+      ? rawPlayerPayload
+      : null;
   const clanTag = playerPayload?.currentClanTag ?? null;
+  const clanTagRef = useRef(clanTag);
+  clanTagRef.current = clanTag;
   const clanSubject =
     snapshot === null || clanTag === null ? null : `${snapshot.sessionId}:${clanTag}`;
 
@@ -80,69 +110,173 @@ export function useOfficialVillage(
     fetchErrorMessage: '官方部落数据查询失败',
   });
 
+  const refreshClanQuery = clanQuery.refresh;
+
   useEffect(() => {
     return bridge.onOperationProgress((payload) => {
       const playerOp = playerOpRef.current;
       const clanOp = clanOpRef.current;
-      if (payload.operationId !== playerOp && payload.operationId !== clanOp) {
+      if (
+        payload.operationId !== playerOp?.requestId &&
+        payload.operationId !== clanOp?.requestId
+      ) {
         return;
       }
       if (
-        payload.phase === 'completed' ||
-        payload.phase === 'cancelled' ||
-        payload.phase === 'failed'
+        payload.phase !== 'completed' &&
+        payload.phase !== 'cancelled' &&
+        payload.phase !== 'failed'
       ) {
-        if (payload.operationId === playerOp) {
-          playerOpRef.current = null;
-          setPlayerRefreshing(false);
+        return;
+      }
+      const failedMessage =
+        payload.phase === 'failed' ? (payload.message ?? '官方数据刷新失败') : null;
+      if (playerOp !== null && payload.operationId === playerOp.requestId) {
+        playerOpRef.current = null;
+        setPlayerRefreshing(false);
+        if (failedMessage !== null && villageIdRef.current === playerOp.subjectKey) {
+          setPlayerCommandError({ subjectKey: playerOp.subjectKey, message: failedMessage });
         }
-        if (payload.operationId === clanOp) {
-          clanOpRef.current = null;
-          setClanRefreshing(false);
+      }
+      if (clanOp !== null && payload.operationId === clanOp.requestId) {
+        clanOpRef.current = null;
+        setClanRefreshing(false);
+        if (failedMessage !== null && clanTagRef.current === clanOp.subjectKey) {
+          setClanCommandError({ subjectKey: clanOp.subjectKey, message: failedMessage });
         }
       }
     });
   }, [bridge]);
 
+  useEffect(() => {
+    const playerOp = playerOpRef.current;
+    if (playerOp !== null && (villageId === null || playerOp.subjectKey !== villageId)) {
+      playerEpochRef.current += 1;
+      playerOpRef.current = null;
+      setPlayerRefreshing(false);
+      bridge.cancel({ requestId: playerOp.requestId });
+    }
+  }, [bridge, villageId]);
+
+  useEffect(() => {
+    const clanOp = clanOpRef.current;
+    if (clanOp !== null && (clanTag === null || clanOp.subjectKey !== clanTag)) {
+      clanEpochRef.current += 1;
+      clanOpRef.current = null;
+      setClanRefreshing(false);
+      bridge.cancel({ requestId: clanOp.requestId });
+    }
+  }, [bridge, clanTag]);
+
+  useEffect(() => {
+    return () => {
+      const playerOp = playerOpRef.current;
+      const clanOp = clanOpRef.current;
+      playerOpRef.current = null;
+      clanOpRef.current = null;
+      if (playerOp !== null) {
+        bridge.cancel({ requestId: playerOp.requestId });
+      }
+      if (clanOp !== null) {
+        bridge.cancel({ requestId: clanOp.requestId });
+      }
+    };
+  }, [bridge]);
+
   const refreshEndpoint = useCallback(
     async (endpoint: 'player' | 'clan') => {
-      if (snapshot === null || villageId === null) {
+      const currentVillageId = villageIdRef.current;
+      const currentClanTag = clanTagRef.current;
+      if (snapshot === null || currentVillageId === null) {
         return;
       }
-      const requestId = createOfficialRequestId();
-      if (endpoint === 'player') {
-        playerOpRef.current = requestId;
-        setPlayerRefreshing(true);
-      } else {
-        clanOpRef.current = requestId;
-        setClanRefreshing(true);
+      if (endpoint === 'clan' && currentClanTag === null) {
+        return;
       }
+      const subjectKey = endpoint === 'player' ? currentVillageId : currentClanTag;
+      if (subjectKey === null) {
+        return;
+      }
+      const epochRef = endpoint === 'player' ? playerEpochRef : clanEpochRef;
+      const opRef = endpoint === 'player' ? playerOpRef : clanOpRef;
+      const previous = opRef.current;
+      if (previous !== null) {
+        bridge.cancel({ requestId: previous.requestId });
+      }
+      epochRef.current += 1;
+      const epoch = epochRef.current;
+      const requestId = createOfficialRequestId();
+      const op: OfficialOp = { requestId, subjectKey };
+      opRef.current = op;
+      if (endpoint === 'player') {
+        setPlayerRefreshing(true);
+        setPlayerCommandError(null);
+      } else {
+        setClanRefreshing(true);
+        setClanCommandError(null);
+      }
+
+      const stillCurrent = (): boolean => {
+        if (epochRef.current !== epoch) {
+          return false;
+        }
+        if (endpoint === 'player') {
+          return villageIdRef.current === subjectKey;
+        }
+        return clanTagRef.current === subjectKey;
+      };
+
+      const fail = (message: string): void => {
+        if (!stillCurrent()) {
+          return;
+        }
+        if (endpoint === 'player') {
+          if (playerOpRef.current?.requestId === requestId) {
+            playerOpRef.current = null;
+          }
+          setPlayerRefreshing(false);
+          setPlayerCommandError({ subjectKey, message });
+        } else {
+          if (clanOpRef.current?.requestId === requestId) {
+            clanOpRef.current = null;
+          }
+          setClanRefreshing(false);
+          setClanCommandError({ subjectKey, message });
+        }
+      };
+
       try {
         const result = await bridge.apiRefresh({
           requestId,
           endpoints: [endpoint],
-          villageId,
-          clanTag: endpoint === 'clan' ? clanTag : null,
+          villageId: currentVillageId,
+          clanTag: endpoint === 'clan' ? currentClanTag : null,
         });
+        if (!stillCurrent()) {
+          return;
+        }
         if (!result.ok) {
-          throw new Error(formatIpcError(result.error));
+          fail(formatIpcError(result.error));
+          return;
         }
         if (endpoint === 'player') {
-          await playerQuery.refresh();
+          await refreshPlayerQuery();
         } else {
-          await clanQuery.refresh();
+          await refreshClanQuery();
         }
-      } catch {
+        if (!stillCurrent()) {
+          return;
+        }
         if (endpoint === 'player') {
-          setPlayerRefreshing(false);
-          playerOpRef.current = null;
+          setPlayerCommandError(null);
         } else {
-          setClanRefreshing(false);
-          clanOpRef.current = null;
+          setClanCommandError(null);
         }
+      } catch (error: unknown) {
+        fail(error instanceof Error ? error.message : '官方数据刷新失败');
       }
     },
-    [bridge, snapshot, villageId, clanTag, playerQuery, clanQuery],
+    [bridge, snapshot, refreshPlayerQuery, refreshClanQuery],
   );
 
   const refreshPlayer = useCallback(async () => {
@@ -153,27 +287,36 @@ export function useOfficialVillage(
     await refreshEndpoint('clan');
   }, [refreshEndpoint]);
 
-  const player = useMemo(
-    () =>
+  const player = useMemo((): OfficialPlayerView => {
+    const view =
       villageId === null
         ? IDLE_OFFICIAL_PLAYER_VIEW
-        : toOfficialPlayerView(playerQuery.state, nowMs),
-    [villageId, playerQuery.state, nowMs],
-  );
+        : toOfficialPlayerView(playerQuery.state, nowMs, villageId);
+    return { ...view, commandError: commandErrorFor(playerCommandError, villageId) };
+  }, [villageId, playerQuery.state, nowMs, playerCommandError]);
 
-  const clan = useMemo(() => {
+  const clan = useMemo((): OfficialClanView => {
     if (villageId === null) {
-      return IDLE_OFFICIAL_CLAN_VIEW;
+      return {
+        ...IDLE_OFFICIAL_CLAN_VIEW,
+        commandError: commandErrorFor(clanCommandError, clanTag),
+      };
     }
-    return toOfficialClanView(clanAffiliationOf(playerPayload), clanTag, clanQuery.state, nowMs);
-  }, [villageId, playerPayload, clanTag, clanQuery.state, nowMs]);
+    const view = toOfficialClanView(
+      clanAffiliationOf(playerPayload),
+      clanTag,
+      clanQuery.state,
+      nowMs,
+    );
+    return { ...view, commandError: commandErrorFor(clanCommandError, clanTag) };
+  }, [villageId, playerPayload, clanTag, clanQuery.state, nowMs, clanCommandError]);
 
   return {
     player,
     clan,
     refreshPlayer,
     refreshClan,
-    playerRefreshing,
-    clanRefreshing,
+    playerRefreshing: playerRefreshing && playerOpRef.current?.subjectKey === villageId,
+    clanRefreshing: clanRefreshing && clanOpRef.current?.subjectKey === clanTag,
   };
 }

@@ -9,7 +9,7 @@ export type OfficialPlayerCardProps = {
 };
 
 export function OfficialPlayerCard({ view, refreshing, onRefresh }: OfficialPlayerCardProps) {
-  const nowMs = useClock();
+  const nowMs = useClock(view.refreshStatus === 'success' || view.refreshStatus === 'stale');
   const refreshStatus = clockedRefreshStatus(view.refreshStatus, view.fetchedAtMs, nowMs);
   const displayView = { ...view, refreshStatus };
   const statusLine = playerRefreshStatusLine(displayView);

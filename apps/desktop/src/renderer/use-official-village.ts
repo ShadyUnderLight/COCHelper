@@ -282,8 +282,16 @@ export function useOfficialVillage(
           return;
         }
         if (endpoint === 'player') {
+          if (playerOpRef.current?.requestId === requestId) {
+            playerOpRef.current = null;
+          }
+          setPlayerRefreshing(false);
           setPlayerCommandError(null);
         } else {
+          if (clanOpRef.current?.requestId === requestId) {
+            clanOpRef.current = null;
+          }
+          setClanRefreshing(false);
           setClanCommandError(null);
         }
       } catch (error: unknown) {

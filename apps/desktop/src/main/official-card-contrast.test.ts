@@ -39,11 +39,19 @@ function contrastRatio(foreground: string, background: string): number {
 }
 
 describe('Official 卡片对比度（#277）', () => {
-  it('.official-source 与 .official-card 上的 error-text 至少 4.5:1', () => {
+  it('Official 卡上的状态色至少 4.5:1', () => {
     const background = declaration('.official-card', 'background');
-    const source = declaration('.official-source', 'color');
-    const error = declaration('.official-card .error-text', 'color');
-    expect(contrastRatio(source, background)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(error, background)).toBeGreaterThanOrEqual(4.5);
+    const pairs: ReadonlyArray<readonly [string, string]> = [
+      ['.official-source', 'color'],
+      ['.official-card .error-text', 'color'],
+      ['.muted', 'color'],
+      ['.notice-text', 'color'],
+      ['.official-ok', 'color'],
+    ];
+    for (const [selector, property] of pairs) {
+      expect(contrastRatio(declaration(selector, property), background)).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    }
   });
 });

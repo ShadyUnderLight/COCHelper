@@ -14,7 +14,7 @@ export type ClanCardProps = {
 };
 
 export function ClanCard({ view, refreshing, onRefresh }: ClanCardProps) {
-  const nowMs = useClock();
+  const nowMs = useClock(view.refreshStatus === 'success' || view.refreshStatus === 'stale');
   const refreshStatus = clockedRefreshStatus(view.refreshStatus, view.fetchedAtMs, nowMs);
   const displayView = { ...view, refreshStatus };
   const statusLine = clanRefreshStatusLine(displayView);

@@ -648,6 +648,7 @@ describe('useOfficialVillage（#277-E1）', () => {
       harness.resolveRefresh(ok({ generation: 2, results: [] }));
       await pending;
     });
+    expect(result.current.playerRefreshing).toBe(false);
     await waitFor(() => {
       expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
     });
@@ -664,9 +665,10 @@ describe('useOfficialVillage（#277-E1）', () => {
     await waitFor(() => {
       expect(result.current.player.summary?.name).toBe('NewHero');
     });
+    expect(result.current.playerRefreshing).toBe(false);
   });
 
-  it('refreshClan ok 后强制重查并展示新 summary', async () => {
+  it('refreshClan ok 且不发 progress 也会结束 refreshing', async () => {
     const harness = createBridge();
     const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));
     await waitFor(() => {
@@ -689,6 +691,7 @@ describe('useOfficialVillage（#277-E1）', () => {
       harness.resolveRefresh(ok({ generation: 2, results: [] }));
       await pending;
     });
+    expect(result.current.clanRefreshing).toBe(false);
     await waitFor(() => {
       expect(harness.bridge.clanState).toHaveBeenCalledTimes(2);
     });
@@ -705,5 +708,81 @@ describe('useOfficialVillage（#277-E1）', () => {
     await waitFor(() => {
       expect(result.current.clan.summary?.name).toBe('新部落');
     });
+    expect(result.current.clanRefreshing).toBe(false);
+  });
+
+  it('completed progress 先到、Promise 后到时 refreshing 仍正确结束', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(result.current.player.canRefresh).toBe(true);
+    });
+    act(() => {
+      void result.current.refreshPlayer();
+    });
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(1);
+    });
+    expect(result.current.playerRefreshing).toBe(true);
+    const requestId = vi.mocked(harness.bridge.apiRefresh).mock.calls[0]?.[0]?.requestId;
+    act(() => {
+      harness.emitProgress({
+        operationId: requestId as string,
+        phase: 'completed',
+        generation: 2,
+      });
+    });
+    expect(result.current.playerRefreshing).toBe(false);
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+    });
+    expect(result.current.playerRefreshing).toBe(false);
+  });
+
+  it('旧 refresh Promise 在新 refresh 开始后返回，不得 settle 新 op', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(result.current.player.canRefresh).toBe(true);
+    });
+    let firstRefresh: Promise<void> = Promise.resolve();
+    act(() => {
+      firstRefresh = result.current.refreshPlayer();
+    });
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(1);
+    });
+    const firstRequestId = vi.mocked(harness.bridge.apiRefresh).mock.calls[0]?.[0]?.requestId;
+    let secondRefresh: Promise<void> = Promise.resolve();
+    act(() => {
+      secondRefresh = result.current.refreshPlayer();
+    });
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(2);
+    });
+    expect(harness.bridge.cancel).toHaveBeenCalledWith({ requestId: firstRequestId });
+    expect(result.current.playerRefreshing).toBe(true);
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+      await firstRefresh;
+    });
+    expect(result.current.playerRefreshing).toBe(true);
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 3, results: [] }));
+      await secondRefresh;
+    });
+    expect(result.current.playerRefreshing).toBe(false);
   });
 });

@@ -1,6 +1,9 @@
 /**
  * Official Player / Clan 会话态（#277-E1）：纯函数，只消费 Official IPC DTO。
  * stale 用注入 nowMs + contracts 阈值，不在组件里各自 tick。
+ *
+ * `toOfficial*View(..., OFFICIAL_VIEW_WITHOUT_STALE_CLOCK)` 只投影 endpoint 基础态，
+ * 不把 success 判成 stale；卡片再用 `clockedRefreshStatus` + Clock 做实时过期。
  */
 import type {
   ClanStatePayload,
@@ -108,6 +111,17 @@ export function officialRefreshStatus(
   }
 }
 
+/** 基础投影传入此值，表示暂不按当前时刻判断 stale。 */
+export const OFFICIAL_VIEW_WITHOUT_STALE_CLOCK = 0;
+
+export function officialPlayerSubjectKey(
+  sessionId: string,
+  villageId: string,
+  villageTag: string | null,
+): string {
+  return JSON.stringify([sessionId, villageId, villageTag]);
+}
+
 export function isOfficialStale(fetchedAtMs: number | undefined, nowMs: number): boolean {
   if (fetchedAtMs === undefined) {
     return false;
@@ -173,6 +187,7 @@ export function toOfficialPlayerView(
   resource: ResourceState<PlayerStatePayload>,
   nowMs: number,
   expectedVillageId?: string | null,
+  expectedPlayerTag?: string | null,
 ): OfficialPlayerView {
   if (expectedVillageId === null) {
     return IDLE_OFFICIAL_PLAYER_VIEW;
@@ -183,6 +198,14 @@ export function toOfficialPlayerView(
     payload !== null &&
     expectedVillageId !== undefined &&
     payload.villageId !== expectedVillageId
+  ) {
+    return { ...IDLE_OFFICIAL_PLAYER_VIEW, queryStatus: 'loading' };
+  }
+  if (
+    payload !== null &&
+    expectedPlayerTag !== undefined &&
+    expectedPlayerTag !== null &&
+    payload.playerTag !== expectedPlayerTag
   ) {
     return { ...IDLE_OFFICIAL_PLAYER_VIEW, queryStatus: 'loading' };
   }

@@ -31,7 +31,7 @@ function snapshot(overrides: Partial<AppSnapshotPayload> = {}): AppSnapshotPaylo
     hasPendingJournal: false,
     recoveryNotice: null,
     selectedVillageId: 'v1',
-    villages: [],
+    villages: [{ id: 'v1', name: '主村', tag: '#AAA', hasImportedData: true }],
     pendingImport: null,
     ...overrides,
   };
@@ -385,6 +385,124 @@ describe('useOfficialVillage（#277-E1）', () => {
     expect(result.current.playerRefreshing).toBe(false);
   });
 
+  it('同 village 换 player tag 的第一帧就丢掉 A 的玩家/部落，并 cancel 旧操作', async () => {
+    const harness = createBridge();
+    const bFrames: Array<{
+      readonly playerName: string | null;
+      readonly playerTag: string | null;
+      readonly clanTag: string | null;
+      readonly clanName: string | null;
+      readonly playerRefreshing: boolean;
+      readonly clanRefreshing: boolean;
+      readonly commandError: string | null;
+    }> = [];
+    const latest: { current: OfficialVillageApi | null } = { current: null };
+    function Probe(props: { readonly snap: AppSnapshotPayload }) {
+      const api = useOfficialVillage(harness.bridge, props.snap, 'v1');
+      latest.current = api;
+      if (props.snap.villages[0]?.tag === '#BBB') {
+        bFrames.push({
+          playerName: api.player.summary?.name ?? null,
+          playerTag: api.player.playerTag,
+          clanTag: api.player.currentClanTag,
+          clanName: api.clan.summary?.name ?? null,
+          playerRefreshing: api.playerRefreshing,
+          clanRefreshing: api.clanRefreshing,
+          commandError: api.player.commandError,
+        });
+      }
+      return null;
+    }
+    const view = render(<Probe snap={snapshot({ generation: 1 })} />);
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ villageId: 'v1', generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.clanState).toHaveBeenCalledWith({ clanTag: '#CLAN01' });
+    });
+    act(() => {
+      harness.resolveClan(ok(clanFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(latest.current?.clan.summary?.name).toBe('测试部落');
+    });
+    await act(async () => {
+      const pending = latest.current?.refreshPlayer();
+      harness.resolveRefresh(err('A 的刷新失败'));
+      await pending;
+    });
+    expect(latest.current?.player.commandError).toMatch(/A 的刷新失败/);
+    act(() => {
+      void latest.current?.refreshClan();
+    });
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(1);
+    });
+    const clanRefreshRequest = vi.mocked(harness.bridge.apiRefresh).mock.calls.at(-1)?.[0];
+    expect(clanRefreshRequest?.clanTag).toBe('#CLAN01');
+    const refreshCallsBeforeSwitch = vi.mocked(harness.bridge.apiRefresh).mock.calls.length;
+    view.rerender(
+      <Probe
+        snap={snapshot({
+          generation: 2,
+          villages: [{ id: 'v1', name: '主村', tag: '#BBB', hasImportedData: true }],
+        })}
+      />,
+    );
+    expect(bFrames.length).toBeGreaterThan(0);
+    expect(
+      bFrames.every(
+        (frame) =>
+          frame.playerName === null &&
+          frame.playerTag === null &&
+          frame.clanTag === null &&
+          frame.clanName === null &&
+          frame.playerRefreshing === false &&
+          frame.clanRefreshing === false &&
+          frame.commandError === null,
+      ),
+    ).toBe(true);
+    expect(harness.bridge.cancel).toHaveBeenCalledWith({
+      requestId: clanRefreshRequest?.requestId,
+    });
+    await act(async () => {
+      await latest.current?.refreshClan();
+    });
+    expect(vi.mocked(harness.bridge.apiRefresh).mock.calls.length).toBe(refreshCallsBeforeSwitch);
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      harness.resolvePlayer(
+        ok(
+          playerFixture({
+            villageId: 'v1',
+            generation: 2,
+            playerTag: '#BBB',
+            currentClanTag: '#CLAN02',
+            summary: {
+              ...playerFixture().summary!,
+              name: 'Bravo',
+              tag: '#BBB',
+              clanName: 'B部落',
+              clanTag: '#CLAN02',
+            },
+          }),
+        ),
+      );
+    });
+    await waitFor(() => {
+      expect(latest.current?.player.summary?.name).toBe('Bravo');
+    });
+    expect(latest.current?.player.playerTag).toBe('#BBB');
+    expect(latest.current?.player.currentClanTag).toBe('#CLAN02');
+    expect(latest.current?.clan.summary).toBeNull();
+    expect(bFrames.every((frame) => frame.playerName !== 'Hero')).toBe(true);
+  });
+
   it('apiRefresh ok 后强制重查并展示新 summary', async () => {
     const harness = createBridge();
     const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));
@@ -417,6 +535,47 @@ describe('useOfficialVillage（#277-E1）', () => {
     });
     await waitFor(() => {
       expect(result.current.player.summary?.name).toBe('NewHero');
+    });
+  });
+
+  it('refreshClan ok 后强制重查并展示新 summary', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.clanState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolveClan(ok(clanFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(result.current.clan.summary?.name).toBe('测试部落');
+    });
+    await act(async () => {
+      const pending = result.current.refreshClan();
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+      await pending;
+    });
+    await waitFor(() => {
+      expect(harness.bridge.clanState).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      harness.resolveClan(
+        ok(
+          clanFixture({
+            generation: 2,
+            summary: { ...clanFixture().summary!, name: '新部落' },
+          }),
+        ),
+      );
+    });
+    await waitFor(() => {
+      expect(result.current.clan.summary?.name).toBe('新部落');
     });
   });
 });

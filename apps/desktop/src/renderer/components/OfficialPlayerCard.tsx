@@ -26,9 +26,10 @@ export function OfficialPlayerCard({ view, refreshing, onRefresh }: OfficialPlay
   return (
     <section className="official-card" aria-label="官方玩家数据">
       <header className="official-card-header">
-        <h3>
-          官方玩家数据{displayView.sourceLabel === null ? '' : ` · ${displayView.sourceLabel}`}
-        </h3>
+        <h3>官方玩家数据</h3>
+        {displayView.sourceLabel !== null ? (
+          <span className="official-source">{displayView.sourceLabel}</span>
+        ) : null}
       </header>
       {displayView.queryStatus === 'loading' ? (
         <p className="muted">正在加载官方玩家数据…</p>

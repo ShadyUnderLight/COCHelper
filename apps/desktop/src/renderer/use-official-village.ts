@@ -14,6 +14,8 @@ import {
   clanAffiliationOf,
   IDLE_OFFICIAL_CLAN_VIEW,
   IDLE_OFFICIAL_PLAYER_VIEW,
+  OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
+  officialPlayerSubjectKey,
   toOfficialClanView,
   toOfficialPlayerView,
   type OfficialClanView,
@@ -79,8 +81,14 @@ export function useOfficialVillage(
   const playerSubjectRef = useRef<string | null>(null);
   const clanSubjectRef = useRef<string | null>(null);
 
+  const villageTag =
+    snapshot === null || villageId === null
+      ? null
+      : (snapshot.villages.find((village) => village.id === villageId)?.tag ?? null);
   const playerSubject =
-    snapshot === null || villageId === null ? null : `${snapshot.sessionId}:${villageId}`;
+    snapshot === null || villageId === null
+      ? null
+      : officialPlayerSubjectKey(snapshot.sessionId, villageId, villageTag);
   playerSubjectRef.current = playerSubject;
 
   const playerQuery = useResourceQuery<PlayerStatePayload>({
@@ -94,7 +102,10 @@ export function useOfficialVillage(
   const refreshPlayerQuery = playerQuery.refresh;
   const rawPlayerPayload = resourceData(playerQuery.state);
   const playerPayload =
-    villageId !== null && rawPlayerPayload !== null && rawPlayerPayload.villageId === villageId
+    villageId !== null &&
+    rawPlayerPayload !== null &&
+    rawPlayerPayload.villageId === villageId &&
+    (villageTag === null || rawPlayerPayload.playerTag === villageTag)
       ? rawPlayerPayload
       : null;
   const clanTag = playerPayload?.currentClanTag ?? null;
@@ -297,9 +308,14 @@ export function useOfficialVillage(
     const view =
       villageId === null
         ? IDLE_OFFICIAL_PLAYER_VIEW
-        : toOfficialPlayerView(playerQuery.state, 0, villageId);
+        : toOfficialPlayerView(
+            playerQuery.state,
+            OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
+            villageId,
+            villageTag,
+          );
     return { ...view, commandError: commandErrorFor(playerCommandError, playerSubject) };
-  }, [villageId, playerQuery.state, playerCommandError, playerSubject]);
+  }, [villageId, villageTag, playerQuery.state, playerCommandError, playerSubject]);
 
   const clan = useMemo((): OfficialClanView => {
     if (villageId === null) {
@@ -308,7 +324,12 @@ export function useOfficialVillage(
         commandError: commandErrorFor(clanCommandError, clanSubject),
       };
     }
-    const view = toOfficialClanView(clanAffiliationOf(playerPayload), clanTag, clanQuery.state, 0);
+    const view = toOfficialClanView(
+      clanAffiliationOf(playerPayload),
+      clanTag,
+      clanQuery.state,
+      OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
+    );
     return { ...view, commandError: commandErrorFor(clanCommandError, clanSubject) };
   }, [villageId, playerPayload, clanTag, clanQuery.state, clanCommandError, clanSubject]);
 

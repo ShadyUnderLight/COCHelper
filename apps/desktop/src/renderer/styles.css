@@ -404,20 +404,27 @@ button.danger {
 .official-card h3 {
   margin: 0;
   font-size: 16px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .official-card-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   margin-bottom: 8px;
 }
 
 .official-source {
   font-size: 12px;
   font-weight: 600;
-  color: #0a84ff;
+  color: #64d2ff;
+}
+
+.official-card .error-text {
+  color: #ff8a80;
 }
 
 .official-ok {

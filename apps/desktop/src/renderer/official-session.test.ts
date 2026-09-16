@@ -6,7 +6,9 @@ import { clanFixture, playerFixture } from './official-session.fixtures';
 import { LOADING_RESOURCE, resourceFailure, resourceSuccess } from './resource-state';
 import {
   clanAffiliationOf,
+  clanRefreshStatusLine,
   clanTypeLabel,
+  clockedRefreshStatus,
   officialRefreshStatus,
   officialSourceLabel,
   playerRefreshStatusLine,
@@ -70,6 +72,51 @@ describe('official-session（#277-E1）', () => {
     expect(view.queryStatus).toBe('loading');
     expect(view.summary).toBeNull();
     expect(playerRefreshStatusLine(view)).toMatch(/正在加载/);
+  });
+
+  it('无 last-good 的 query 失败不得解释成缺少标签', () => {
+    const view = toOfficialPlayerView(resourceFailure(LOADING_RESOURCE, '查询失败'), 0);
+    expect(view.queryStatus).toBe('error');
+    expect(view.lastQueryError).toBe('查询失败');
+    expect(view.playerTag).toBeNull();
+    expect(playerRefreshStatusLine(view)).toBe('官方玩家状态读取失败');
+    expect(playerRefreshStatusLine(view)).not.toMatch(/缺少有效标签/);
+  });
+
+  it('tagged clan 本地 loading/error 不得伪装成尚未获取', () => {
+    const loading = toOfficialClanView('tagged', '#CLAN01', LOADING_RESOURCE, 0);
+    expect(loading.queryStatus).toBe('loading');
+    expect(loading.canRefresh).toBe(true);
+    expect(clanRefreshStatusLine(loading)).toBe('正在加载部落数据…');
+    expect(clanRefreshStatusLine(loading)).not.toMatch(/尚未获取/);
+    const failed = toOfficialClanView(
+      'tagged',
+      '#CLAN01',
+      resourceFailure(LOADING_RESOURCE, '部落查询失败'),
+      0,
+    );
+    expect(failed.queryStatus).toBe('error');
+    expect(failed.lastQueryError).toBe('部落查询失败');
+    expect(clanRefreshStatusLine(failed)).toBeNull();
+    const never = toOfficialClanView(
+      'tagged',
+      '#CLAN01',
+      resourceSuccess(clanFixture({ state: null, summary: null })),
+      0,
+    );
+    expect(never.queryStatus).toBe('ready');
+    expect(clanRefreshStatusLine(never)).toMatch(/尚未获取部落数据/);
+  });
+
+  it('clockedRefreshStatus 只把 success/stale 投影到当前时刻', () => {
+    const fetched = 1_700_000_000_000;
+    expect(clockedRefreshStatus('success', fetched, fetched)).toBe('success');
+    expect(
+      clockedRefreshStatus('success', fetched, fetched + OFFICIAL_STALE_THRESHOLD_MS + 1),
+    ).toBe('stale');
+    expect(clockedRefreshStatus('failedWithoutLastGood', fetched, fetched)).toBe(
+      'failedWithoutLastGood',
+    );
   });
 
   it('切村时不得把旧 village 的 summary 投影给新 village', () => {

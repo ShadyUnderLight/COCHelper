@@ -113,6 +113,7 @@ function createBridge() {
 afterEach(() => {
   cleanup();
   resetClockStoreForTests();
+  vi.useRealTimers();
 });
 
 describe('useOfficialVillage（#277-E1）', () => {
@@ -128,14 +129,19 @@ describe('useOfficialVillage（#277-E1）', () => {
     expect(harness.bridge.apiRefresh).not.toHaveBeenCalled();
   });
 
-  it('villageId 为 null 不订阅秒级 clock', () => {
+  it('有 villageId 时也不订阅秒级 clock', () => {
     vi.useFakeTimers();
     resetClockStoreForTests(1000);
     const harness = createBridge();
-    renderHook(() => useOfficialVillage(harness.bridge, snapshot(), null));
+    const renders = { n: 0 };
+    renderHook(() => {
+      renders.n += 1;
+      return useOfficialVillage(harness.bridge, snapshot(), 'v1');
+    });
+    const afterMount = renders.n;
     vi.advanceTimersByTime(3000);
     expect(clockStore.getSnapshot()).toBe(1000);
-    vi.useRealTimers();
+    expect(renders.n).toBe(afterMount);
   });
 
   it('有 villageId 时查询玩家，不自动 api.refresh；有 currentClanTag 再查部落', async () => {
@@ -377,5 +383,40 @@ describe('useOfficialVillage（#277-E1）', () => {
     });
     expect(result.current.player.commandError).toBe('写盘失败');
     expect(result.current.playerRefreshing).toBe(false);
+  });
+
+  it('apiRefresh ok 后强制重查并展示新 summary', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(result.current.player.summary?.name).toBe('Hero');
+    });
+    await act(async () => {
+      const pending = result.current.refreshPlayer();
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+      await pending;
+    });
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      harness.resolvePlayer(
+        ok(
+          playerFixture({
+            generation: 2,
+            summary: { ...playerFixture().summary!, name: 'NewHero' },
+          }),
+        ),
+      );
+    });
+    await waitFor(() => {
+      expect(result.current.player.summary?.name).toBe('NewHero');
+    });
   });
 });

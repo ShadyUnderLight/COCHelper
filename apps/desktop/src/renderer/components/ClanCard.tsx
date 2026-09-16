@@ -1,6 +1,8 @@
+import { useClock } from '../use-clock';
 import {
   clanRefreshStatusLine,
   clanTypeLabel,
+  clockedRefreshStatus,
   warLogPublicLabel,
   type OfficialClanView,
 } from '../official-session';
@@ -12,41 +14,48 @@ export type ClanCardProps = {
 };
 
 export function ClanCard({ view, refreshing, onRefresh }: ClanCardProps) {
-  const statusLine = clanRefreshStatusLine(view);
-  const showRefresh = view.affiliation === 'tagged';
+  const nowMs = useClock();
+  const refreshStatus = clockedRefreshStatus(view.refreshStatus, view.fetchedAtMs, nowMs);
+  const displayView = { ...view, refreshStatus };
+  const statusLine = clanRefreshStatusLine(displayView);
+  const showRefresh = displayView.affiliation === 'tagged';
 
   return (
     <section className="official-card" aria-label="部落数据">
       <header className="official-card-header">
         <h3>部落数据</h3>
-        {view.sourceLabel !== null ? (
-          <span className="official-source">{view.sourceLabel}</span>
+        {displayView.sourceLabel !== null ? (
+          <span className="official-source">{displayView.sourceLabel}</span>
         ) : null}
       </header>
-      {statusLine !== null ? <p className={statusClass(view)}>{statusLine}</p> : null}
-      {view.affiliation === 'unknown' ? (
+      {statusLine !== null ? <p className={statusClass(displayView)}>{statusLine}</p> : null}
+      {displayView.affiliation === 'unknown' ? (
         <p className="muted">先刷新官方玩家数据即可显示部落信息。</p>
       ) : null}
-      {view.lastQueryError !== null ? (
+      {displayView.lastQueryError !== null ? (
         <p className="error-text" role="alert">
-          {view.lastQueryError}
+          {displayView.lastQueryError}
         </p>
       ) : null}
-      {view.commandError !== null ? (
+      {displayView.commandError !== null ? (
         <p className="error-text" role="alert">
-          {view.commandError}
+          {displayView.commandError}
         </p>
       ) : null}
-      {view.refreshStatus === 'failedWithLastGood' ? (
+      {displayView.refreshStatus === 'failedWithLastGood' ? (
         <p className="muted">已保留上次成功数据</p>
       ) : null}
-      {view.summary !== null ? <ClanSummaryGrid view={view} /> : null}
-      {view.unrecognizedKeys.length > 0 ? (
-        <p className="muted">官方响应包含未识别字段：{view.unrecognizedKeys.join('、')}</p>
+      {displayView.summary !== null ? <ClanSummaryGrid view={displayView} /> : null}
+      {displayView.unrecognizedKeys.length > 0 ? (
+        <p className="muted">官方响应包含未识别字段：{displayView.unrecognizedKeys.join('、')}</p>
       ) : null}
       {showRefresh ? (
         <div className="action-row">
-          <button type="button" disabled={!view.canRefresh || refreshing} onClick={onRefresh}>
+          <button
+            type="button"
+            disabled={!displayView.canRefresh || refreshing}
+            onClick={onRefresh}
+          >
             {refreshing ? '正在刷新…' : '刷新部落数据'}
           </button>
         </div>

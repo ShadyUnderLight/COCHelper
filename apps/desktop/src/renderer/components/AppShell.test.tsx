@@ -1,13 +1,17 @@
 /** @vitest-environment jsdom */
 
+import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppSnapshotPayload } from '@coc-helper/contracts';
+import type { ApiRefreshPayload, AppSnapshotPayload, Result } from '@coc-helper/contracts';
 
 import { AppShell } from './AppShell';
 import { INITIAL_APP_SESSION, type AppSessionState } from '../app-session';
+import { clockStore, resetClockStoreForTests } from '../clock-store';
 import { INITIAL_OVERVIEW_STATE, applyOverviewSuccess, recordFixture } from '../overview-session';
+import { playerFixture } from '../official-session.fixtures';
+import type { AppRoute } from '../navigation';
 import {
   INITIAL_VILLAGE_DETAIL_STATE,
   applyVillageDetailSuccess,
@@ -17,6 +21,7 @@ import {
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
 import type { VillageDetailApi } from '../use-village-detail';
+import type { BridgeOfficialClient } from '../use-official-village';
 
 function snapshot(overrides: Partial<AppSnapshotPayload> = {}): AppSnapshotPayload {
   return {
@@ -76,6 +81,8 @@ function detailApi(state: VillageDetailState = INITIAL_VILLAGE_DETAIL_STATE): Vi
 
 afterEach(() => {
   cleanup();
+  resetClockStoreForTests();
+  vi.useRealTimers();
 });
 
 describe('AppShell', () => {
@@ -669,5 +676,139 @@ describe('AppShell', () => {
     await act(async () => {});
     expect(screen.queryByLabelText('村庄详情')).toBeNull();
     expect(screen.getByLabelText('升级总览')).toBeTruthy();
+  });
+});
+
+function ok<T>(value: T): Result<T> {
+  return { ok: true, value };
+}
+
+function readySession(overrides: Partial<AppSnapshotPayload> = {}) {
+  return sessionApi({
+    ...INITIAL_APP_SESSION,
+    status: 'ready',
+    snapshot: snapshot(overrides),
+  });
+}
+
+function createOfficialBridge() {
+  const playerResolvers: Array<(value: Result<ReturnType<typeof playerFixture>>) => void> = [];
+  const refreshResolvers: Array<(value: Result<ApiRefreshPayload>) => void> = [];
+  const bridge: BridgeOfficialClient = {
+    playerState: vi.fn(
+      async () =>
+        await new Promise<Result<ReturnType<typeof playerFixture>>>((resolve) => {
+          playerResolvers.push(resolve);
+        }),
+    ),
+    clanState: vi.fn(async () => ({
+      ok: true as const,
+      value: { generation: 1, clanTag: '#CLAN01', summary: null, state: null },
+    })),
+    apiRefresh: vi.fn(
+      async () =>
+        await new Promise<Result<ApiRefreshPayload>>((resolve) => {
+          refreshResolvers.push(resolve);
+        }),
+    ),
+    onOperationProgress: () => () => undefined,
+    cancel: vi.fn(),
+  };
+  return {
+    bridge,
+    resolvePlayer(value: Result<ReturnType<typeof playerFixture>>) {
+      playerResolvers.shift()?.(value);
+    },
+    refreshPending() {
+      return refreshResolvers.length;
+    },
+  };
+}
+
+describe('AppShell Official 接线（#277-E1）', () => {
+  it('导入页只按 selectedVillageId 查玩家，不自动 apiRefresh', async () => {
+    const harness = createOfficialBridge();
+    render(
+      <AppShell
+        session={readySession({ selectedVillageId: 'v1' })}
+        overview={overviewApi()}
+        detail={detailApi()}
+        officialBridge={harness.bridge}
+        route={{ kind: 'import' }}
+      />,
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledWith({ villageId: 'v1' });
+    });
+    expect(harness.bridge.apiRefresh).not.toHaveBeenCalled();
+  });
+
+  it('详情页用 route.villageId，而不是 snapshot.selectedVillageId', async () => {
+    const harness = createOfficialBridge();
+    render(
+      <AppShell
+        session={readySession({ selectedVillageId: 'v1' })}
+        overview={overviewApi()}
+        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture({ villageId: 'v2' })))}
+        officialBridge={harness.bridge}
+        route={{ kind: 'villageDetail', villageId: 'v2', base: 'home' }}
+      />,
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledWith({ villageId: 'v2' });
+    });
+    expect(harness.bridge.playerState).not.toHaveBeenCalledWith({ villageId: 'v1' });
+  });
+
+  it('overview 不挂 Official query，也不订阅秒级 clock', () => {
+    vi.useFakeTimers();
+    resetClockStoreForTests(1000);
+    const harness = createOfficialBridge();
+    render(
+      <AppShell
+        session={readySession()}
+        overview={overviewApi()}
+        detail={detailApi()}
+        officialBridge={harness.bridge}
+        route={{ kind: 'overview' }}
+      />,
+    );
+    expect(harness.bridge.playerState).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(3000);
+    expect(clockStore.getSnapshot()).toBe(1000);
+  });
+
+  it('pending refresh 时切走 Official 页会 cancel', async () => {
+    const harness = createOfficialBridge();
+    function Shell() {
+      const [route, setRoute] = useState<AppRoute>({ kind: 'import' });
+      return (
+        <AppShell
+          session={readySession()}
+          overview={overviewApi()}
+          detail={detailApi()}
+          officialBridge={harness.bridge}
+          route={route}
+          onRouteChange={setRoute}
+        />
+      );
+    }
+    render(<Shell />);
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(screen.getByText('刷新官方数据')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText('刷新官方数据'));
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(1);
+    });
+    const requestId = vi.mocked(harness.bridge.apiRefresh).mock.calls[0]?.[0]?.requestId;
+    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    expect(harness.bridge.cancel).toHaveBeenCalledWith({ requestId });
   });
 });

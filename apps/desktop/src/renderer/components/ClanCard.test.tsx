@@ -3,13 +3,16 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { LOADING_RESOURCE, resourceSuccess } from '../resource-state';
+import { resetClockStoreForTests } from '../clock-store';
+import { LOADING_RESOURCE, resourceFailure, resourceSuccess } from '../resource-state';
 import { clanFixture } from '../official-session.fixtures';
 import { toOfficialClanView } from '../official-session';
 import { ClanCard } from './ClanCard';
 
 afterEach(() => {
   cleanup();
+  resetClockStoreForTests();
+  vi.useRealTimers();
 });
 
 describe('ClanCard（#277-E1）', () => {
@@ -25,6 +28,26 @@ describe('ClanCard（#277-E1）', () => {
     render(<ClanCard view={view} refreshing={false} onRefresh={() => undefined} />);
     expect(screen.getByText('该玩家当前不在部落中')).toBeTruthy();
     expect(screen.queryByText('刷新部落数据')).toBeNull();
+  });
+
+  it('tagged 本地 loading 显示正在加载，不是尚未获取', () => {
+    const view = toOfficialClanView('tagged', '#CLAN01', LOADING_RESOURCE, 0);
+    render(<ClanCard view={view} refreshing={false} onRefresh={() => undefined} />);
+    expect(screen.getByText('正在加载部落数据…')).toBeTruthy();
+    expect(screen.queryByText(/尚未获取/)).toBeNull();
+    expect((screen.getByText('刷新部落数据') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('tagged 查询失败只显示 query error，不伪装成尚未获取', () => {
+    const view = toOfficialClanView(
+      'tagged',
+      '#CLAN01',
+      resourceFailure(LOADING_RESOURCE, '部落查询失败'),
+      0,
+    );
+    render(<ClanCard view={view} refreshing={false} onRefresh={() => undefined} />);
+    expect(screen.getByRole('alert').textContent).toMatch(/部落查询失败/);
+    expect(screen.queryByText(/尚未获取/)).toBeNull();
   });
 
   it('tagged 成功态显示摘要并可刷新', () => {

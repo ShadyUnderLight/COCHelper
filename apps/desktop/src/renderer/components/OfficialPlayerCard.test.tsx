@@ -3,17 +3,21 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { resourceSuccess } from '../resource-state';
+import { resetClockStoreForTests } from '../clock-store';
+import { LOADING_RESOURCE, resourceFailure, resourceSuccess } from '../resource-state';
 import { playerFixture } from '../official-session.fixtures';
 import { toOfficialPlayerView } from '../official-session';
 import { OfficialPlayerCard } from './OfficialPlayerCard';
 
 afterEach(() => {
   cleanup();
+  resetClockStoreForTests();
+  vi.useRealTimers();
 });
 
 describe('OfficialPlayerCard（#277-E1）', () => {
   it('成功态渲染摘要与刷新按钮', () => {
+    resetClockStoreForTests(1_700_000_000_000);
     const onRefresh = vi.fn();
     const view = toOfficialPlayerView(resourceSuccess(playerFixture()), 1_700_000_000_000);
     render(<OfficialPlayerCard view={view} refreshing={false} onRefresh={onRefresh} />);
@@ -67,5 +71,12 @@ describe('OfficialPlayerCard（#277-E1）', () => {
     };
     render(<OfficialPlayerCard view={view} refreshing={false} onRefresh={() => undefined} />);
     expect(screen.getByRole('alert').textContent).toMatch(/提交官方缓存失败/);
+  });
+
+  it('query 失败显示查询失败，不说缺少标签', () => {
+    const view = toOfficialPlayerView(resourceFailure(LOADING_RESOURCE, '查询失败'), 0);
+    render(<OfficialPlayerCard view={view} refreshing={false} onRefresh={() => undefined} />);
+    expect(screen.getByRole('alert').textContent).toMatch(/查询失败/);
+    expect(screen.queryByText(/缺少有效标签/)).toBeNull();
   });
 });

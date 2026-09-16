@@ -257,6 +257,7 @@ export function toOfficialClanView(
       affiliation,
       clanTag,
       queryStatus: resource.kind === 'idle' ? 'idle' : 'loading',
+      // tagged：本地 clan state 仍在读取时也允许立即发官方刷新。
       canRefresh: true,
     };
   }
@@ -288,6 +289,9 @@ export function playerRefreshStatusLine(view: OfficialPlayerView): string {
   if (view.queryStatus === 'idle') {
     return '先选择村庄查看官方数据';
   }
+  if (view.queryStatus === 'error' && view.summary === null) {
+    return '官方玩家状态读取失败';
+  }
   return endpointStatusLine(
     '官方数据',
     view.refreshStatus,
@@ -304,6 +308,12 @@ export function clanRefreshStatusLine(view: OfficialClanView): string | null {
   if (view.affiliation === 'none') {
     return '该玩家当前不在部落中';
   }
+  if (view.queryStatus === 'loading') {
+    return '正在加载部落数据…';
+  }
+  if (view.queryStatus === 'error' && view.summary === null) {
+    return null;
+  }
   return endpointStatusLine(
     '部落数据',
     view.refreshStatus,
@@ -311,6 +321,18 @@ export function clanRefreshStatusLine(view: OfficialClanView): string | null {
     view.lastErrorReason,
     view.clanTag,
   );
+}
+
+/** 卡片层用 ClockStore 把 success/stale 投影到当前显示时刻，不让整页订阅秒级 tick。 */
+export function clockedRefreshStatus(
+  status: OfficialRefreshStatus | null,
+  fetchedAtMs: number | null,
+  nowMs: number,
+): OfficialRefreshStatus | null {
+  if (status !== 'success' && status !== 'stale') {
+    return status;
+  }
+  return isOfficialStale(fetchedAtMs ?? undefined, nowMs) ? 'stale' : 'success';
 }
 
 function endpointStatusLine(

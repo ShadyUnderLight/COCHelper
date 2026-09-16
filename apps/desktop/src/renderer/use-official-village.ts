@@ -20,7 +20,6 @@ import {
   type OfficialPlayerView,
 } from './official-session';
 import { resourceData } from './resource-state';
-import { useClock } from './use-clock';
 import { useResourceQuery } from './use-resource-query';
 
 export type BridgeOfficialClient = Pick<
@@ -67,7 +66,6 @@ export function useOfficialVillage(
   snapshot: AppSnapshotPayload | null,
   villageId: string | null,
 ): OfficialVillageApi {
-  const nowMs = useClock(villageId !== null);
   const [playerRefreshing, setPlayerRefreshing] = useState(false);
   const [clanRefreshing, setClanRefreshing] = useState(false);
   const [playerCommandError, setPlayerCommandError] = useState<CommandError | null>(null);
@@ -299,9 +297,9 @@ export function useOfficialVillage(
     const view =
       villageId === null
         ? IDLE_OFFICIAL_PLAYER_VIEW
-        : toOfficialPlayerView(playerQuery.state, nowMs, villageId);
+        : toOfficialPlayerView(playerQuery.state, 0, villageId);
     return { ...view, commandError: commandErrorFor(playerCommandError, playerSubject) };
-  }, [villageId, playerQuery.state, nowMs, playerCommandError, playerSubject]);
+  }, [villageId, playerQuery.state, playerCommandError, playerSubject]);
 
   const clan = useMemo((): OfficialClanView => {
     if (villageId === null) {
@@ -310,14 +308,9 @@ export function useOfficialVillage(
         commandError: commandErrorFor(clanCommandError, clanSubject),
       };
     }
-    const view = toOfficialClanView(
-      clanAffiliationOf(playerPayload),
-      clanTag,
-      clanQuery.state,
-      nowMs,
-    );
+    const view = toOfficialClanView(clanAffiliationOf(playerPayload), clanTag, clanQuery.state, 0);
     return { ...view, commandError: commandErrorFor(clanCommandError, clanSubject) };
-  }, [villageId, playerPayload, clanTag, clanQuery.state, nowMs, clanCommandError, clanSubject]);
+  }, [villageId, playerPayload, clanTag, clanQuery.state, clanCommandError, clanSubject]);
 
   return {
     player,

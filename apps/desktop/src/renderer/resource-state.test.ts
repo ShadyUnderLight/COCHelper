@@ -38,12 +38,14 @@ describe('resource-state', () => {
     expect(next.kind).toBe('loading');
   });
 
-  it('subject 失配时 render 阶段即丢弃旧 last-good', () => {
+  it('subject 失配时 render 阶段丢弃旧 last-good 与无 last-good 的 failed', () => {
     const ready = resourceSuccess({ id: 'A' });
     expect(fencedResourceState(ready, 'session:A', 'session:B')).toEqual(LOADING_RESOURCE);
     expect(fencedResourceState(ready, 'session:A', null)).toEqual(IDLE_RESOURCE);
     expect(fencedResourceState(ready, 'session:A', 'session:A')).toBe(ready);
-    const failed = resourceFailure(LOADING_RESOURCE, 'B 失败');
-    expect(fencedResourceState(failed, null, 'session:B')).toBe(failed);
+    const failed = resourceFailure(LOADING_RESOURCE, 'A 查询失败');
+    expect(fencedResourceState(failed, null, 'session:B')).toEqual(LOADING_RESOURCE);
+    expect(fencedResourceState(failed, 'session:A', 'session:B')).toEqual(LOADING_RESOURCE);
+    expect(fencedResourceState(failed, 'session:B', 'session:B')).toBe(failed);
   });
 });

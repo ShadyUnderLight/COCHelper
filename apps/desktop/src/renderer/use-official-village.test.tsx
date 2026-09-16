@@ -206,6 +206,79 @@ describe('useOfficialVillage（#277-E1）', () => {
     expect(v2Frames.every((frame) => frame.clanName === null)).toBe(true);
   });
 
+  it('A 无 last-good 查询失败后切 B，任何一帧都不得出现 A 的查询错误', async () => {
+    const harness = createBridge();
+    const snap = snapshot();
+    const v2Frames: Array<{
+      readonly lastQueryError: string | null;
+      readonly queryStatus: string;
+    }> = [];
+    const latest: { current: OfficialVillageApi | null } = { current: null };
+    function Probe(props: { readonly villageId: string }) {
+      const api = useOfficialVillage(harness.bridge, snap, props.villageId);
+      latest.current = api;
+      if (props.villageId === 'v2') {
+        v2Frames.push({
+          lastQueryError: api.player.lastQueryError,
+          queryStatus: api.player.queryStatus,
+        });
+      }
+      return null;
+    }
+    const view = render(<Probe villageId="v1" />);
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(err('A 查询失败'));
+    });
+    await waitFor(() => {
+      expect(latest.current?.player.lastQueryError).toMatch(/A 查询失败/);
+    });
+    view.rerender(<Probe villageId="v2" />);
+    expect(v2Frames.length).toBeGreaterThan(0);
+    expect(
+      v2Frames.every(
+        (frame) => frame.lastQueryError === null || !frame.lastQueryError.includes('A 查询失败'),
+      ),
+    ).toBe(true);
+  });
+
+  it('切走 subject 后真正清空 commandError，切回 A 不得复活', async () => {
+    const harness = createBridge();
+    const { result, rerender } = renderHook<OfficialVillageApi, { villageId: string }>(
+      ({ villageId }) => useOfficialVillage(harness.bridge, snapshot(), villageId),
+      { initialProps: { villageId: 'v1' } },
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ villageId: 'v1', generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(result.current.player.canRefresh).toBe(true);
+    });
+    await act(async () => {
+      const pending = result.current.refreshPlayer();
+      harness.resolveRefresh(err('提交官方缓存失败'));
+      await pending;
+    });
+    expect(result.current.player.commandError).toMatch(/提交官方缓存失败/);
+    rerender({ villageId: 'v2' });
+    expect(result.current.player.commandError).toBeNull();
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      harness.resolvePlayer(
+        ok(playerFixture({ villageId: 'v2', generation: 1, playerTag: '#BBB' })),
+      );
+    });
+    rerender({ villageId: 'v1' });
+    expect(result.current.player.commandError).toBeNull();
+  });
+
   it('apiRefresh ok:false 把错误展示到玩家卡，不清成静默成功', async () => {
     const harness = createBridge();
     const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));

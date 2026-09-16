@@ -52,6 +52,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
   const sessionCursorRef = useRef<string | null>(null);
   const completedCursorRef = useRef<FenceCursor | null>(null);
   const payloadSubjectRef = useRef<string | null>(null);
+  const stateSubjectRef = useRef<string | null>(null);
 
   const sessionRef = useRef<string | null>(null);
   const subjectRef = useRef<string | null>(null);
@@ -78,6 +79,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
         lastSeqRef.current = refreshSeq;
         // 保留 payloadSubjectRef：它标记 last-good 归属，供 A→null→B 时 subjectChanged 清数据；
         // A→null→A 仍可依赖 last-good 与 beginFetch 重新拉取。
+        // stateSubjectRef 不在这里改：无 subject 时 fencedResourceState 直接返回 idle。
       }
       return;
     }
@@ -88,6 +90,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       sessionCursorRef.current = requestSession;
       completedCursorRef.current = null;
       payloadSubjectRef.current = null;
+      stateSubjectRef.current = null;
       maxRequestedRef.current = -1;
       lastKeyRef.current = null;
       setState(LOADING_RESOURCE);
@@ -117,6 +120,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
     if (subjectChanged(payloadSubjectRef.current, subjectKey)) {
       payloadSubjectRef.current = null;
+      stateSubjectRef.current = subjectKey;
       setState(LOADING_RESOURCE);
     }
 
@@ -126,6 +130,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
     requestSeqRef.current = planned.requestSeq;
     const requestSeq = planned.requestSeq;
 
+    stateSubjectRef.current = subjectKey;
     setState((prev) => resourceLoading(prev));
 
     void (async () => {
@@ -152,6 +157,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
           return;
         }
         setState((prev) => resourceFailure(prev, message));
+        stateSubjectRef.current = subjectKey;
         return;
       }
 
@@ -175,12 +181,14 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
       if (!result.ok) {
         setState((prev) => resourceFailure(prev, formatIpcError(result.error)));
+        stateSubjectRef.current = subjectKey;
         return;
       }
 
       const generation = extractGenerationRef.current(result.value);
       completedCursorRef.current = { sessionId: requestSession, generation };
       payloadSubjectRef.current = subjectKey;
+      stateSubjectRef.current = subjectKey;
       setState(resourceSuccess(result.value));
     })();
   }, [snapshot, subjectKey, refreshSeq]);
@@ -196,7 +204,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
   }, []);
 
   return {
-    state: fencedResourceState(state, payloadSubjectRef.current, subjectKey),
+    state: fencedResourceState(state, stateSubjectRef.current, subjectKey),
     refresh,
   };
 }

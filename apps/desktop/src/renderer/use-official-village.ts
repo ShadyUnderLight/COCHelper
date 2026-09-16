@@ -78,9 +78,12 @@ export function useOfficialVillage(
   const clanEpochRef = useRef(0);
   const villageIdRef = useRef(villageId);
   villageIdRef.current = villageId;
+  const playerSubjectRef = useRef<string | null>(null);
+  const clanSubjectRef = useRef<string | null>(null);
 
   const playerSubject =
     snapshot === null || villageId === null ? null : `${snapshot.sessionId}:${villageId}`;
+  playerSubjectRef.current = playerSubject;
 
   const playerQuery = useResourceQuery<PlayerStatePayload>({
     snapshot,
@@ -101,6 +104,7 @@ export function useOfficialVillage(
   clanTagRef.current = clanTag;
   const clanSubject =
     snapshot === null || clanTag === null ? null : `${snapshot.sessionId}:${clanTag}`;
+  clanSubjectRef.current = clanSubject;
 
   const clanQuery = useResourceQuery<ClanStatePayload>({
     snapshot,
@@ -134,14 +138,14 @@ export function useOfficialVillage(
       if (playerOp !== null && payload.operationId === playerOp.requestId) {
         playerOpRef.current = null;
         setPlayerRefreshing(false);
-        if (failedMessage !== null && villageIdRef.current === playerOp.subjectKey) {
+        if (failedMessage !== null && playerSubjectRef.current === playerOp.subjectKey) {
           setPlayerCommandError({ subjectKey: playerOp.subjectKey, message: failedMessage });
         }
       }
       if (clanOp !== null && payload.operationId === clanOp.requestId) {
         clanOpRef.current = null;
         setClanRefreshing(false);
-        if (failedMessage !== null && clanTagRef.current === clanOp.subjectKey) {
+        if (failedMessage !== null && clanSubjectRef.current === clanOp.subjectKey) {
           setClanCommandError({ subjectKey: clanOp.subjectKey, message: failedMessage });
         }
       }
@@ -150,23 +154,25 @@ export function useOfficialVillage(
 
   useEffect(() => {
     const playerOp = playerOpRef.current;
-    if (playerOp !== null && (villageId === null || playerOp.subjectKey !== villageId)) {
+    if (playerOp !== null && (playerSubject === null || playerOp.subjectKey !== playerSubject)) {
       playerEpochRef.current += 1;
       playerOpRef.current = null;
       setPlayerRefreshing(false);
       bridge.cancel({ requestId: playerOp.requestId });
     }
-  }, [bridge, villageId]);
+    setPlayerCommandError(null);
+  }, [bridge, playerSubject]);
 
   useEffect(() => {
     const clanOp = clanOpRef.current;
-    if (clanOp !== null && (clanTag === null || clanOp.subjectKey !== clanTag)) {
+    if (clanOp !== null && (clanSubject === null || clanOp.subjectKey !== clanSubject)) {
       clanEpochRef.current += 1;
       clanOpRef.current = null;
       setClanRefreshing(false);
       bridge.cancel({ requestId: clanOp.requestId });
     }
-  }, [bridge, clanTag]);
+    setClanCommandError(null);
+  }, [bridge, clanSubject]);
 
   useEffect(() => {
     return () => {
@@ -187,13 +193,15 @@ export function useOfficialVillage(
     async (endpoint: 'player' | 'clan') => {
       const currentVillageId = villageIdRef.current;
       const currentClanTag = clanTagRef.current;
-      if (snapshot === null || currentVillageId === null) {
+      const currentPlayerSubject = playerSubjectRef.current;
+      const currentClanSubject = clanSubjectRef.current;
+      if (snapshot === null || currentVillageId === null || currentPlayerSubject === null) {
         return;
       }
-      if (endpoint === 'clan' && currentClanTag === null) {
+      if (endpoint === 'clan' && (currentClanTag === null || currentClanSubject === null)) {
         return;
       }
-      const subjectKey = endpoint === 'player' ? currentVillageId : currentClanTag;
+      const subjectKey = endpoint === 'player' ? currentPlayerSubject : currentClanSubject;
       if (subjectKey === null) {
         return;
       }
@@ -221,9 +229,9 @@ export function useOfficialVillage(
           return false;
         }
         if (endpoint === 'player') {
-          return villageIdRef.current === subjectKey;
+          return playerSubjectRef.current === subjectKey;
         }
-        return clanTagRef.current === subjectKey;
+        return clanSubjectRef.current === subjectKey;
       };
 
       const fail = (message: string): void => {
@@ -292,14 +300,14 @@ export function useOfficialVillage(
       villageId === null
         ? IDLE_OFFICIAL_PLAYER_VIEW
         : toOfficialPlayerView(playerQuery.state, nowMs, villageId);
-    return { ...view, commandError: commandErrorFor(playerCommandError, villageId) };
-  }, [villageId, playerQuery.state, nowMs, playerCommandError]);
+    return { ...view, commandError: commandErrorFor(playerCommandError, playerSubject) };
+  }, [villageId, playerQuery.state, nowMs, playerCommandError, playerSubject]);
 
   const clan = useMemo((): OfficialClanView => {
     if (villageId === null) {
       return {
         ...IDLE_OFFICIAL_CLAN_VIEW,
-        commandError: commandErrorFor(clanCommandError, clanTag),
+        commandError: commandErrorFor(clanCommandError, clanSubject),
       };
     }
     const view = toOfficialClanView(
@@ -308,15 +316,15 @@ export function useOfficialVillage(
       clanQuery.state,
       nowMs,
     );
-    return { ...view, commandError: commandErrorFor(clanCommandError, clanTag) };
-  }, [villageId, playerPayload, clanTag, clanQuery.state, nowMs, clanCommandError]);
+    return { ...view, commandError: commandErrorFor(clanCommandError, clanSubject) };
+  }, [villageId, playerPayload, clanTag, clanQuery.state, nowMs, clanCommandError, clanSubject]);
 
   return {
     player,
     clan,
     refreshPlayer,
     refreshClan,
-    playerRefreshing: playerRefreshing && playerOpRef.current?.subjectKey === villageId,
-    clanRefreshing: clanRefreshing && clanOpRef.current?.subjectKey === clanTag,
+    playerRefreshing: playerRefreshing && playerOpRef.current?.subjectKey === playerSubject,
+    clanRefreshing: clanRefreshing && clanOpRef.current?.subjectKey === clanSubject,
   };
 }

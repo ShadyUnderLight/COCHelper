@@ -187,7 +187,6 @@ export function toOfficialPlayerView(
   resource: ResourceState<PlayerStatePayload>,
   nowMs: number,
   expectedVillageId?: string | null,
-  expectedPlayerTag?: string | null,
 ): OfficialPlayerView {
   if (expectedVillageId === null) {
     return IDLE_OFFICIAL_PLAYER_VIEW;
@@ -198,14 +197,6 @@ export function toOfficialPlayerView(
     payload !== null &&
     expectedVillageId !== undefined &&
     payload.villageId !== expectedVillageId
-  ) {
-    return { ...IDLE_OFFICIAL_PLAYER_VIEW, queryStatus: 'loading' };
-  }
-  if (
-    payload !== null &&
-    expectedPlayerTag !== undefined &&
-    expectedPlayerTag !== null &&
-    payload.playerTag !== expectedPlayerTag
   ) {
     return { ...IDLE_OFFICIAL_PLAYER_VIEW, queryStatus: 'loading' };
   }

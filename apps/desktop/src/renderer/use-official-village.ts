@@ -102,10 +102,7 @@ export function useOfficialVillage(
   const refreshPlayerQuery = playerQuery.refresh;
   const rawPlayerPayload = resourceData(playerQuery.state);
   const playerPayload =
-    villageId !== null &&
-    rawPlayerPayload !== null &&
-    rawPlayerPayload.villageId === villageId &&
-    (villageTag === null || rawPlayerPayload.playerTag === villageTag)
+    villageId !== null && rawPlayerPayload !== null && rawPlayerPayload.villageId === villageId
       ? rawPlayerPayload
       : null;
   const clanTag = playerPayload?.currentClanTag ?? null;
@@ -308,14 +305,9 @@ export function useOfficialVillage(
     const view =
       villageId === null
         ? IDLE_OFFICIAL_PLAYER_VIEW
-        : toOfficialPlayerView(
-            playerQuery.state,
-            OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
-            villageId,
-            villageTag,
-          );
+        : toOfficialPlayerView(playerQuery.state, OFFICIAL_VIEW_WITHOUT_STALE_CLOCK, villageId);
     return { ...view, commandError: commandErrorFor(playerCommandError, playerSubject) };
-  }, [villageId, villageTag, playerQuery.state, playerCommandError, playerSubject]);
+  }, [villageId, playerQuery.state, playerCommandError, playerSubject]);
 
   const clan = useMemo((): OfficialClanView => {
     if (villageId === null) {

@@ -503,6 +503,134 @@ describe('useOfficialVillage（#277-E1）', () => {
     expect(bFrames.every((frame) => frame.playerName !== 'Hero')).toBe(true);
   });
 
+  it('snapshot 原始 tag 带空白时仍显示 Main 的 canonical player payload', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialVillage(
+        harness.bridge,
+        snapshot({
+          villages: [{ id: 'v1', name: '主村', tag: ' #AAA ', hasImportedData: true }],
+        }),
+        'v1',
+      ),
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ villageId: 'v1', playerTag: '#AAA' })));
+    });
+    await waitFor(() => {
+      expect(result.current.player.queryStatus).toBe('ready');
+    });
+    expect(result.current.player.summary?.name).toBe('Hero');
+    expect(result.current.player.playerTag).toBe('#AAA');
+    expect(result.current.player.canRefresh).toBe(true);
+  });
+
+  it('Main 判定无效的非空 village tag 进入缺少标签，而不是永久 loading', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialVillage(
+        harness.bridge,
+        snapshot({
+          villages: [{ id: 'v1', name: '主村', tag: '#aaa', hasImportedData: true }],
+        }),
+        'v1',
+      ),
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(
+        ok(
+          playerFixture({
+            villageId: 'v1',
+            playerTag: null,
+            currentClanTag: null,
+            summary: null,
+            state: null,
+          }),
+        ),
+      );
+    });
+    await waitFor(() => {
+      expect(result.current.player.queryStatus).toBe('ready');
+    });
+    expect(result.current.player.playerTag).toBeNull();
+    expect(result.current.player.summary).toBeNull();
+    expect(result.current.player.canRefresh).toBe(false);
+    expect(result.current.player.refreshStatus).toBeNull();
+  });
+
+  it('同 village tag A→B 会 cancel 在途 player refresh，迟到结果不得作用于 B', async () => {
+    const harness = createBridge();
+    const bFrames: Array<{
+      readonly playerRefreshing: boolean;
+      readonly commandError: string | null;
+      readonly playerName: string | null;
+    }> = [];
+    const latest: { current: OfficialVillageApi | null } = { current: null };
+    function Probe(props: { readonly snap: AppSnapshotPayload }) {
+      const api = useOfficialVillage(harness.bridge, props.snap, 'v1');
+      latest.current = api;
+      if (props.snap.villages[0]?.tag === '#BBB') {
+        bFrames.push({
+          playerRefreshing: api.playerRefreshing,
+          commandError: api.player.commandError,
+          playerName: api.player.summary?.name ?? null,
+        });
+      }
+      return null;
+    }
+    const view = render(<Probe snap={snapshot({ generation: 1 })} />);
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ villageId: 'v1', generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(latest.current?.player.canRefresh).toBe(true);
+    });
+    act(() => {
+      void latest.current?.refreshPlayer();
+    });
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(1);
+    });
+    const playerRefreshRequest = vi.mocked(harness.bridge.apiRefresh).mock.calls[0]?.[0];
+    expect(playerRefreshRequest?.endpoints).toEqual(['player']);
+    view.rerender(
+      <Probe
+        snap={snapshot({
+          generation: 2,
+          villages: [{ id: 'v1', name: '主村', tag: '#BBB', hasImportedData: true }],
+        })}
+      />,
+    );
+    expect(bFrames.length).toBeGreaterThan(0);
+    expect(bFrames.every((frame) => frame.playerRefreshing === false)).toBe(true);
+    expect(bFrames.every((frame) => frame.commandError === null)).toBe(true);
+    expect(bFrames.every((frame) => frame.playerName === null)).toBe(true);
+    expect(harness.bridge.cancel).toHaveBeenCalledWith({
+      requestId: playerRefreshRequest?.requestId,
+    });
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 3, results: [] }));
+      harness.emitProgress({
+        operationId: playerRefreshRequest?.requestId as string,
+        phase: 'failed',
+        generation: 3,
+        message: '迟到的 A 失败',
+      });
+    });
+    expect(latest.current?.player.commandError).toBeNull();
+    expect(latest.current?.playerRefreshing).toBe(false);
+    expect(latest.current?.player.summary).toBeNull();
+  });
+
   it('apiRefresh ok 后强制重查并展示新 summary', async () => {
     const harness = createBridge();
     const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));

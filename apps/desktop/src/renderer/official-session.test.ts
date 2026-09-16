@@ -127,25 +127,15 @@ describe('official-session（#277-E1）', () => {
     expect(view.currentClanTag).toBeNull();
   });
 
-  it('同一 village 的 playerTag 与当前 tag 不一致时丢弃旧摘要', () => {
-    const view = toOfficialPlayerView(
-      resourceSuccess(playerFixture({ villageId: 'v1', playerTag: '#AAA' })),
-      0,
-      'v1',
-      '#BBB',
-    );
-    expect(view.queryStatus).toBe('loading');
-    expect(view.summary).toBeNull();
-    expect(view.playerTag).toBeNull();
-    expect(view.currentClanTag).toBeNull();
-  });
-
-  it('officialPlayerSubjectKey 把 village tag 算进 identity', () => {
+  it('officialPlayerSubjectKey 把 village tag 当作 opaque token', () => {
     const session = 'session-a';
     expect(officialPlayerSubjectKey(session, 'v1', '#AAA')).not.toBe(
       officialPlayerSubjectKey(session, 'v1', '#BBB'),
     );
     expect(officialPlayerSubjectKey(session, 'v1', '#AAA')).toBe(
+      officialPlayerSubjectKey(session, 'v1', '#AAA'),
+    );
+    expect(officialPlayerSubjectKey(session, 'v1', ' #AAA ')).not.toBe(
       officialPlayerSubjectKey(session, 'v1', '#AAA'),
     );
   });

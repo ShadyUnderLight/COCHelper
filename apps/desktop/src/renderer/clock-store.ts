@@ -8,6 +8,7 @@ const TICK_MS = 1000;
 let nowMs = Date.now();
 let subscriberCount = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
+let pinnedNowMs: number | null = null;
 const listeners = new Set<ClockListener>();
 
 function notify(): void {
@@ -47,6 +48,9 @@ export const clockStore: ClockStore = {
     listeners.add(listener);
     subscriberCount += 1;
     if (subscriberCount === 1) {
+      if (pinnedNowMs === null) {
+        nowMs = Date.now();
+      }
       startTicker();
     }
     return () => {
@@ -73,10 +77,19 @@ export function resetClockStoreForTests(atMs = 0): void {
   listeners.clear();
   subscriberCount = 0;
   nowMs = atMs;
+  pinnedNowMs = atMs;
 }
 
 /** 测试专用：手动推进显示时间。 */
 export function advanceClockStoreForTests(deltaMs: number): void {
   nowMs += deltaMs;
+  if (pinnedNowMs !== null) {
+    pinnedNowMs = nowMs;
+  }
   notify();
+}
+
+/** 测试专用：允许首个订阅者按系统时间校准 nowMs。 */
+export function useLiveClockNowForTests(): void {
+  pinnedNowMs = null;
 }

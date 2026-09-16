@@ -1,6 +1,9 @@
 import type { PendingImportPreviewWire } from '@coc-helper/contracts';
 
 import type { ImportPreviewState } from '../app-session';
+import type { OfficialVillageApi } from '../use-official-village';
+import { ClanCard } from './ClanCard';
+import { OfficialPlayerCard } from './OfficialPlayerCard';
 
 type ImportPanelProps = {
   readonly pasteText: string;
@@ -11,6 +14,7 @@ type ImportPanelProps = {
   readonly onPrepare: () => void;
   readonly onCommit: () => void;
   readonly onDiscard: () => void;
+  readonly official?: OfficialVillageApi;
 };
 
 function previewTargetLabel(preview: PendingImportPreviewWire): string {
@@ -33,6 +37,7 @@ export function ImportPanel({
   onPrepare,
   onCommit,
   onDiscard,
+  official,
 }: ImportPanelProps) {
   const canConfirm =
     canWrite && !busy && preview !== null && preview.preview.targetKind !== 'ambiguous';
@@ -89,6 +94,20 @@ export function ImportPanel({
             </button>
           </div>
         </div>
+      ) : null}
+      {official !== undefined ? (
+        <>
+          <OfficialPlayerCard
+            view={official.player}
+            refreshing={official.playerRefreshing}
+            onRefresh={() => void official.refreshPlayer()}
+          />
+          <ClanCard
+            view={official.clan}
+            refreshing={official.clanRefreshing}
+            onRefresh={() => void official.refreshClan()}
+          />
+        </>
       ) : null}
     </section>
   );

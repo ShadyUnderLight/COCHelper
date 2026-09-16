@@ -66,3 +66,21 @@ export function resourceLastError<T>(state: ResourceState<T>): string | null {
       return null;
   }
 }
+
+/**
+ * Render 阶段的 subject 围栏：state 必须属于当前 subject，才允许露出 ready / refreshing / failed。
+ * owner 与当前 subject 不一致时（含无 last-good 的 failed）一律视为 loading。
+ */
+export function fencedResourceState<T>(
+  state: ResourceState<T>,
+  stateSubjectKey: string | null,
+  subjectKey: string | null,
+): ResourceState<T> {
+  if (subjectKey === null) {
+    return IDLE_RESOURCE;
+  }
+  if (stateSubjectKey !== subjectKey) {
+    return LOADING_RESOURCE;
+  }
+  return state;
+}

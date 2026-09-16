@@ -6,8 +6,10 @@
 import type { Result } from './result';
 import type {
   EndpointStateWire,
+  OfficialClanSummaryDto,
   OfficialEndpointFailureKindWire,
   OfficialAPIRequestStatusWire,
+  OfficialPlayerSummaryDto,
 } from './official-wire';
 import type { RequestId } from './ipc';
 
@@ -60,6 +62,10 @@ export type PlayerStatePayload = {
   readonly generation: number;
   readonly villageId: string;
   readonly playerTag: string | null;
+  /** Main 用 `officialAPICurrentClanTag` 算出；renderer 不得从 lastGood 自行解析归属。 */
+  readonly currentClanTag: string | null;
+  /** last-good 摘要；无 last-good 时为 null。 */
+  readonly summary: OfficialPlayerSummaryDto | null;
   readonly state: OfficialEndpointStateDto | null;
 };
 
@@ -72,6 +78,7 @@ export type ClanStateRequest = {
 export type ClanStatePayload = {
   readonly generation: number;
   readonly clanTag: string;
+  readonly summary: OfficialClanSummaryDto | null;
   readonly state: OfficialEndpointStateDto | null;
 };
 

@@ -25,8 +25,10 @@ import {
   type VillageDetailState,
 } from '../village-detail-session';
 import type { QuickImportApi } from '../use-quick-import';
+import type { OfficialVillageApi } from '../use-official-village';
 import { AssetImage } from './AssetImage';
 import { LevelDetailSheet } from './LevelDetailSheet';
+import { OfficialPlayerCard } from './OfficialPlayerCard';
 import { QuickImportSheet } from './QuickImportSheet';
 
 export type VillageDetailProps = {
@@ -34,6 +36,7 @@ export type VillageDetailProps = {
   readonly base: TrackerBaseDto;
   readonly onBaseChange: (base: TrackerBaseDto) => void;
   readonly onRetry: () => void;
+  readonly official?: OfficialVillageApi;
   /** 快捷导入（#277-D）：缺省时不渲染入口，保持旧测试与嵌入场景兼容。 */
   readonly quick?: QuickImportApi;
   readonly canQuick?: boolean;
@@ -45,6 +48,7 @@ export function VillageDetail({
   base,
   onBaseChange,
   onRetry,
+  official,
   quick,
   canQuick,
   onNavigateToImport,
@@ -112,6 +116,13 @@ export function VillageDetail({
         <p className="notice-text" role="alert">
           数据可能过期：{lastError}
         </p>
+      ) : null}
+      {official !== undefined ? (
+        <OfficialPlayerCard
+          view={official.player}
+          refreshing={official.playerRefreshing}
+          onRefresh={() => void official.refreshPlayer()}
+        />
       ) : null}
       {quick !== undefined ? (
         <QuickImportEntry

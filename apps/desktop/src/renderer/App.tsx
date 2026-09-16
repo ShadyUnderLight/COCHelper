@@ -35,6 +35,7 @@ export function App() {
       session={session}
       overview={overview}
       detail={detail}
+      officialBridge={bridge}
       quick={quick}
       route={route}
       navigate={navigate}

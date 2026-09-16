@@ -5,6 +5,7 @@ import {
   clockStore,
   remainingMs,
   resetClockStoreForTests,
+  useLiveClockNowForTests,
 } from './clock-store';
 
 afterEach(() => {
@@ -48,5 +49,15 @@ describe('clockStore', () => {
     expect(remainingMs(2500, clockStore.getSnapshot())).toBe(1500);
     advanceClockStoreForTests(2000);
     expect(remainingMs(2500, clockStore.getSnapshot())).toBe(-500);
+  });
+
+  it('首个订阅者启动 ticker 时同步系统时间', () => {
+    vi.useFakeTimers();
+    resetClockStoreForTests(1000);
+    useLiveClockNowForTests();
+    vi.setSystemTime(9_000);
+    const unsubscribe = clockStore.subscribe(() => undefined);
+    expect(clockStore.getSnapshot()).toBe(9_000);
+    unsubscribe();
   });
 });

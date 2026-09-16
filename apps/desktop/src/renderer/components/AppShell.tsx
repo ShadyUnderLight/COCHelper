@@ -1,16 +1,22 @@
-import { useRef, useState } from 'react';
-import type { TrackerBaseDto } from '@coc-helper/contracts';
+import { useRef, useState, type ReactNode } from 'react';
+import type { AppSnapshotPayload, TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
 import type { VillageDetailApi } from '../use-village-detail';
-import { isReadOnly } from '../app-session';
+import {
+  useOfficialVillage,
+  type BridgeOfficialClient,
+  type OfficialVillageApi,
+} from '../use-official-village';
+import { isReadOnly, type ImportPreviewState } from '../app-session';
 import {
   primaryTabOfRoute,
   type AppRoute,
   type NavigateAction,
   type PrimaryTab,
 } from '../navigation';
+import type { VillageDetailState } from '../village-detail-session';
 import { ImportPanel } from './ImportPanel';
 import { RecoveryPanel } from './RecoveryPanel';
 import { StatusBanner, VillageSidebar } from './StatusBanner';
@@ -21,6 +27,8 @@ type AppShellProps = {
   readonly session: AppSessionApi;
   readonly overview: OverviewApi;
   readonly detail: VillageDetailApi;
+  readonly official?: OfficialVillageApi;
+  readonly officialBridge?: BridgeOfficialClient;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
   readonly quick?: QuickImportApi;
   readonly route?: AppRoute;
@@ -33,6 +41,8 @@ export function AppShell({
   session,
   overview,
   detail,
+  official,
+  officialBridge,
   quick,
   route,
   navigate,
@@ -201,7 +211,7 @@ export function AppShell({
               <TabNav tab={tab} onChange={goToTab} detailDisabled={detailDisabled} />
             ) : null}
             {showImport && tab === 'import' ? (
-              <ImportPanel
+              <OfficialImportPanel
                 pasteText={state.pasteText}
                 preview={state.preview}
                 canWrite={snapshot.canWrite && snapshot.availability === 'available'}
@@ -210,6 +220,9 @@ export function AppShell({
                 onPrepare={() => void session.prepareImport()}
                 onCommit={() => void session.commitImport()}
                 onDiscard={() => void session.discardImport()}
+                official={official}
+                officialBridge={officialBridge}
+                snapshot={snapshot}
               />
             ) : null}
             {showImport && tab === 'overview' ? (
@@ -225,11 +238,15 @@ export function AppShell({
               detailRoute === null ? (
                 <p className="muted">先选择村庄查看详情</p>
               ) : (
-                <VillageDetail
+                <OfficialVillageDetail
                   state={detail.state}
                   base={detailRoute.base}
                   onBaseChange={onDetailBaseChange}
                   onRetry={() => void detail.refresh()}
+                  official={official}
+                  officialBridge={officialBridge}
+                  snapshot={snapshot}
+                  villageId={detailRoute.villageId}
                   quick={quick}
                   canQuick={canQuick}
                   onNavigateToImport={() => goToTab('import')}
@@ -240,6 +257,96 @@ export function AppShell({
         </div>
       )}
     </div>
+  );
+}
+
+function OfficialVillageHost(props: {
+  readonly bridge: BridgeOfficialClient;
+  readonly snapshot: AppSnapshotPayload | null;
+  readonly villageId: string | null;
+  readonly children: (official: OfficialVillageApi) => ReactNode;
+}) {
+  const official = useOfficialVillage(props.bridge, props.snapshot, props.villageId);
+  return props.children(official);
+}
+
+function OfficialImportPanel(props: {
+  readonly pasteText: string;
+  readonly preview: ImportPreviewState | null;
+  readonly canWrite: boolean;
+  readonly busy: boolean;
+  readonly onPasteTextChange: (text: string) => void;
+  readonly onPrepare: () => void;
+  readonly onCommit: () => void;
+  readonly onDiscard: () => void;
+  readonly official?: OfficialVillageApi;
+  readonly officialBridge?: BridgeOfficialClient;
+  readonly snapshot: AppSnapshotPayload;
+}) {
+  const villageId = props.snapshot.selectedVillageId;
+  const panel = (official: OfficialVillageApi | undefined) => (
+    <ImportPanel
+      pasteText={props.pasteText}
+      preview={props.preview}
+      canWrite={props.canWrite}
+      busy={props.busy}
+      onPasteTextChange={props.onPasteTextChange}
+      onPrepare={props.onPrepare}
+      onCommit={props.onCommit}
+      onDiscard={props.onDiscard}
+      official={official}
+    />
+  );
+  if (props.officialBridge === undefined || villageId === null) {
+    return panel(villageId === null ? undefined : props.official);
+  }
+  return (
+    <OfficialVillageHost
+      bridge={props.officialBridge}
+      snapshot={props.snapshot}
+      villageId={villageId}
+    >
+      {panel}
+    </OfficialVillageHost>
+  );
+}
+
+function OfficialVillageDetail(props: {
+  readonly state: VillageDetailState;
+  readonly base: TrackerBaseDto;
+  readonly onBaseChange: (base: TrackerBaseDto) => void;
+  readonly onRetry: () => void;
+  readonly official?: OfficialVillageApi;
+  readonly officialBridge?: BridgeOfficialClient;
+  readonly snapshot: AppSnapshotPayload;
+  readonly villageId: string;
+  readonly quick?: QuickImportApi;
+  readonly canQuick: boolean;
+  readonly onNavigateToImport: () => void;
+}) {
+  const detail = (official: OfficialVillageApi | undefined) => (
+    <VillageDetail
+      state={props.state}
+      base={props.base}
+      onBaseChange={props.onBaseChange}
+      onRetry={props.onRetry}
+      official={official}
+      quick={props.quick}
+      canQuick={props.canQuick}
+      onNavigateToImport={props.onNavigateToImport}
+    />
+  );
+  if (props.officialBridge === undefined) {
+    return detail(props.official);
+  }
+  return (
+    <OfficialVillageHost
+      bridge={props.officialBridge}
+      snapshot={props.snapshot}
+      villageId={props.villageId}
+    >
+      {detail}
+    </OfficialVillageHost>
   );
 }
 

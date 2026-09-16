@@ -25,7 +25,7 @@ export const OFFICIAL_PARSER_VERSIONS = {
   clanCapital: parserVersions.clanCapital,
 } as const;
 
-export const OFFICIAL_STALE_THRESHOLD_MS = 24 * 3600 * 1000;
+export const OFFICIAL_STALE_THRESHOLD_MS = 24 * 3600 * 1000; // 与 contracts 同值，由 desktop Main 边界测试锁定。
 
 export type UnrecognizedKeysProviding = {
   readonly unrecognizedKeys: readonly string[];

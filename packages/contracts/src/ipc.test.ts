@@ -50,6 +50,7 @@ import {
   isCancelRequest,
   isRequestId,
 } from './ipc';
+import { isClanStatePayload, isPlayerStatePayload } from './official-ipc-schema';
 
 describe('@coc-helper/contracts IPC', () => {
   it('登记 health、cancel 与 E3-02 业务通道', () => {
@@ -146,5 +147,52 @@ describe('@coc-helper/contracts IPC', () => {
     expect(isCancelRequest({ requestId: 'request-1' })).toBe(true);
     expect(isCancelRequest({ requestId: 'request-1', extra: true })).toBe(false);
     expect(isCancelRequest(Object.create(null))).toBe(false);
+  });
+
+  it('player/clan state payload 含 Main 算出的摘要与 currentClanTag', () => {
+    expect(
+      isPlayerStatePayload({
+        generation: 1,
+        villageId: 'v1',
+        playerTag: '#AAA',
+        currentClanTag: '#CLAN01',
+        summary: {
+          name: 'Hero',
+          tag: '#AAA',
+          townHallLevel: 16,
+          builderHallLevel: null,
+          expLevel: null,
+          trophies: null,
+          bestTrophies: null,
+          clanName: 'Clan',
+          clanTag: '#CLAN01',
+        },
+        state: null,
+      }),
+    ).toBe(true);
+    expect(
+      isPlayerStatePayload({
+        generation: 1,
+        villageId: 'v1',
+        playerTag: '#AAA',
+        state: null,
+      }),
+    ).toBe(false);
+    expect(
+      isClanStatePayload({
+        generation: 1,
+        clanTag: '#CLAN01',
+        summary: {
+          name: 'Clan',
+          tag: '#CLAN01',
+          clanLevel: 10,
+          members: 40,
+          type: 'open',
+          isWarLogPublic: true,
+          warWins: 1,
+        },
+        state: null,
+      }),
+    ).toBe(true);
   });
 });

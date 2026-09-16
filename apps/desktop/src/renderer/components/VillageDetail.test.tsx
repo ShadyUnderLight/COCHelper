@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -11,15 +11,21 @@ import type {
 } from '@coc-helper/contracts';
 
 import { recordFixture } from '../overview-session';
+import { resetClockStoreForTests } from '../clock-store';
+import { clanFixture, playerFixture } from '../official-session.fixtures';
+import { toOfficialClanView, toOfficialPlayerView } from '../official-session';
+import { resourceSuccess } from '../resource-state';
 import {
   applyVillageDetailSuccess,
   idleVillageDetailState,
   villageDetailFixture,
 } from '../village-detail-session';
-import { VillageDetail } from './VillageDetail';
+import { VillageDetail, type VillageDetailProps } from './VillageDetail';
 
 afterEach(() => {
   cleanup();
+  resetClockStoreForTests();
+  vi.useRealTimers();
 });
 
 function baseProps() {
@@ -66,6 +72,66 @@ describe('VillageDetail', () => {
     );
     expect(screen.getByText('该村庄暂无详情数据')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('传入 official 时详情页渲染官方玩家卡，不自动当成导入页部落卡', () => {
+    const official = {
+      player: toOfficialPlayerView(resourceSuccess(playerFixture()), 1_700_000_000_000),
+      clan: toOfficialClanView(
+        'tagged',
+        '#CLAN01',
+        resourceSuccess(clanFixture()),
+        1_700_000_000_000,
+      ),
+      refreshPlayer: async () => undefined,
+      refreshClan: async () => undefined,
+      playerRefreshing: false,
+      clanRefreshing: false,
+    };
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(villageDetailFixture())}
+        {...baseProps()}
+        official={official}
+      />,
+    );
+    expect(screen.getByLabelText('官方玩家数据')).toBeTruthy();
+    expect(screen.queryByLabelText('部落数据')).toBeNull();
+  });
+
+  it('秒级 clock 只重渲染 Official 卡片，不重渲染 VillageDetail', () => {
+    vi.useFakeTimers();
+    resetClockStoreForTests(1_700_000_000_000);
+    let detailRenders = 0;
+    function Probe(props: VillageDetailProps) {
+      detailRenders += 1;
+      return <VillageDetail {...props} />;
+    }
+    const official = {
+      player: toOfficialPlayerView(resourceSuccess(playerFixture()), 1_700_000_000_000),
+      clan: toOfficialClanView(
+        'tagged',
+        '#CLAN01',
+        resourceSuccess(clanFixture()),
+        1_700_000_000_000,
+      ),
+      refreshPlayer: async () => undefined,
+      refreshClan: async () => undefined,
+      playerRefreshing: false,
+      clanRefreshing: false,
+    };
+    render(
+      <Probe
+        state={applyVillageDetailSuccess(villageDetailFixture())}
+        {...baseProps()}
+        official={official}
+      />,
+    );
+    const afterMount = detailRenders;
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(detailRenders).toBe(afterMount);
   });
 
   it('sectionHeader 渲染分组标题与统计行', () => {

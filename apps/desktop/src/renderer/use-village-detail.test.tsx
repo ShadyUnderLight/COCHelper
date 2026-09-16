@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { act, cleanup, render, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -513,6 +513,42 @@ describe('useVillageDetail', () => {
     });
     expect(result.current.state.payload).toBeNull();
     expect(result.current.state.lastError).toMatch(/B 加载失败/);
+  });
+
+  it('A 无 last-good 查询失败后切 B，任何一帧都不得出现 A 的错误', async () => {
+    const harness = createBridge();
+    const snap = snapshot({ generation: 5 });
+    const bFrames: Array<{
+      readonly lastError: string | null;
+      readonly status: string;
+    }> = [];
+    const latest: { current: VillageDetailApi | null } = { current: null };
+    function Probe(props: { readonly villageId: string }) {
+      const api = useVillageDetail(harness.bridge, snap, target(props.villageId));
+      latest.current = api;
+      if (props.villageId === 'vB') {
+        bFrames.push({
+          lastError: api.state.lastError,
+          status: api.state.status,
+        });
+      }
+      return null;
+    }
+    const view = render(<Probe villageId="vA" />);
+    await waitFor(() => {
+      expect(harness.bridge.villageDetail).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolve(err('A 查询失败'));
+    });
+    await waitFor(() => {
+      expect(latest.current?.state.lastError).toMatch(/A 查询失败/);
+    });
+    view.rerender(<Probe villageId="vB" />);
+    expect(bFrames.length).toBeGreaterThan(0);
+    expect(
+      bFrames.every((frame) => frame.lastError === null || !frame.lastError.includes('A 查询失败')),
+    ).toBe(true);
   });
 
   it('P2c：切 base 即丢旧 last-good；同 subject 刷新失败仍保留', async () => {

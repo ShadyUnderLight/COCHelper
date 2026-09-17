@@ -166,7 +166,7 @@ export function useOfficialCapitalRaid(
     if (subjectKey === null || remoteBusy) {
       return;
     }
-    cancelOfficialOp(bridge, loadMoreOpRef, setLoadMoreState);
+    cancelOfficialOp(bridge, loadMoreOpRef, loadMoreEpochRef, setLoadMoreState);
     await refreshCommand();
   }, [bridge, loadMoreOpRef, refreshCommand, remoteBusy, setLoadMoreState, subjectKey]);
 
@@ -174,7 +174,7 @@ export function useOfficialCapitalRaid(
     if (subjectKey === null || !view.hasMore || remoteBusy) {
       return;
     }
-    cancelOfficialOp(bridge, refreshOpRef, setRefreshState);
+    cancelOfficialOp(bridge, refreshOpRef, refreshEpochRef, setRefreshState);
     await loadMoreCommand();
   }, [
     bridge,

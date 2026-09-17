@@ -193,7 +193,7 @@ export function useOfficialWarLog(
     if (subjectKey === null || remoteBusy) {
       return;
     }
-    cancelOfficialOp(bridge, loadMoreOpRef, setLoadMoreState);
+    cancelOfficialOp(bridge, loadMoreOpRef, loadMoreEpochRef, setLoadMoreState);
     await refreshCommand();
   }, [bridge, loadMoreOpRef, refreshCommand, remoteBusy, setLoadMoreState, subjectKey]);
 
@@ -209,7 +209,7 @@ export function useOfficialWarLog(
       if (remoteBusy) {
         return;
       }
-      cancelOfficialOp(bridge, refreshOpRef, setRefreshState);
+      cancelOfficialOp(bridge, refreshOpRef, refreshEpochRef, setRefreshState);
       setVisibleCount((count) => count + WAR_LOG_VISIBLE_INCREMENT);
       await loadMoreCommand();
     }

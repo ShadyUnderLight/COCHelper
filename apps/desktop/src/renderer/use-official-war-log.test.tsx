@@ -34,6 +34,18 @@ function ok<T>(value: T): Result<T> {
   return { ok: true, value };
 }
 
+function err(message: string): Result<never> {
+  return {
+    ok: false,
+    error: {
+      kind: 'internal',
+      code: 'load-more-failed',
+      messageKey: 'loadMore.failed',
+      message,
+    },
+  };
+}
+
 function warLogPayload(overrides: Partial<WarLogStatePayload> = {}): WarLogStatePayload {
   return {
     generation: 1,
@@ -180,5 +192,123 @@ describe('useOfficialWarLog（#277-E2）', () => {
       await result.current.loadMore();
     });
     expect(harness.bridge.warLogLoadMore).not.toHaveBeenCalled();
+  });
+
+  it('refresh cross-cancel 后旧 loadMore 不得回写 commandError', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+    );
+    act(() => {
+      harness.resolve(ok(warLogPayload()));
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('localHidden');
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('serverMore');
+    });
+
+    act(() => {
+      void result.current.loadMore();
+      // 同一同步块内交叉调用：remoteBusy 尚未 re-render，refresh 会 cross-cancel loadMore。
+      void result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogLoadMore).toHaveBeenCalledTimes(1);
+      expect(harness.bridge.cancel).toHaveBeenCalled();
+    });
+
+    await act(async () => {
+      harness.resolveLoadMore(err('迟到的 loadMore 失败'));
+    });
+    expect(result.current.view.commandError).toBeNull();
+
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogState).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      harness.resolve(ok(warLogPayload({ generation: 2 })));
+    });
+    await waitFor(() => {
+      expect(result.current.remoteBusy).toBe(false);
+    });
+    expect(result.current.view.commandError).toBeNull();
+  });
+
+  it('loadMore 失败后可正常重试', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+    );
+    act(() => {
+      harness.resolve(ok(warLogPayload()));
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('localHidden');
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('serverMore');
+    });
+
+    act(() => {
+      void result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogLoadMore).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      harness.resolveLoadMore(err('加载更多失败'));
+    });
+    await waitFor(() => {
+      expect(result.current.loadingMore).toBe(false);
+      expect(result.current.view.commandError).toBe('加载更多失败');
+    });
+
+    act(() => {
+      void result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogLoadMore).toHaveBeenCalledTimes(2);
+    });
+
+    await act(async () => {
+      harness.resolveLoadMore(
+        ok({
+          generation: 2,
+          clanTag: '#CLAN01',
+          state: {
+            status: 'success',
+            parserVersion: 'war-log-0.1',
+            fetchedAt: 1_700_000_000_000,
+            unrecognizedKeys: [],
+            hasMore: true,
+            lastGood: warLogPayload().state?.lastGood,
+          },
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogState).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      harness.resolve(ok(warLogPayload({ generation: 2 })));
+    });
+    await waitFor(() => {
+      expect(result.current.remoteBusy).toBe(false);
+      expect(result.current.view.commandError).toBeNull();
+    });
   });
 });

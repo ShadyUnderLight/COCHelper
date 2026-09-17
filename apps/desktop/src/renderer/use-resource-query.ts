@@ -66,22 +66,22 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
   const onSessionResetRef = useRef(onSessionReset);
   onSessionResetRef.current = onSessionReset;
   const prevSubjectKeyRef = useRef<string | null>(subjectKey);
-  const refreshWaitersRef = useRef(
-    new Map<number, { readonly resolve: () => void; readonly reject: (error: Error) => void }>(),
-  );
+  const refreshWaitersRef = useRef(new Map<number, { readonly resolve: () => void }>());
 
-  const settleRefreshWaiter = useCallback((seq: number, error?: Error): void => {
+  const settleRefreshWaiter = useCallback((seq: number): void => {
     const waiter = refreshWaitersRef.current.get(seq);
     if (waiter === undefined) {
       return;
     }
     refreshWaitersRef.current.delete(seq);
-    if (error !== undefined) {
-      waiter.reject(error);
-    } else {
-      waiter.resolve();
-    }
+    waiter.resolve();
   }, []);
+
+  const settleAllRefreshWaiters = useCallback((): void => {
+    for (const seq of refreshWaitersRef.current.keys()) {
+      settleRefreshWaiter(seq);
+    }
+  }, [settleRefreshWaiter]);
 
   useEffect(() => {
     const prevSubjectKey = prevSubjectKeyRef.current;
@@ -97,6 +97,8 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
         // A→null→A 仍可依赖 last-good 与 beginFetch 重新拉取。
         // stateSubjectRef 不在这里改：无 subject 时 fencedResourceState 直接返回 idle。
       }
+      // 无法继续 fetch 时，把 pending refresh 当作正常取消 resolve，避免 Promise 泄漏。
+      settleAllRefreshWaiters();
       return;
     }
     const requestEpoch = epochRef.current;
@@ -215,22 +217,20 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       setState(resourceSuccess(result.value));
       settleRefreshWaiter(refreshSeq);
     })();
-  }, [snapshot, subjectKey, refreshSeq, settleRefreshWaiter]);
+  }, [snapshot, subjectKey, refreshSeq, settleAllRefreshWaiters, settleRefreshWaiter]);
 
   useEffect(() => {
     return () => {
       epochRef.current += 1;
-      for (const seq of refreshWaitersRef.current.keys()) {
-        settleRefreshWaiter(seq, new Error('资源查询已卸载'));
-      }
+      settleAllRefreshWaiters();
     };
-  }, [settleRefreshWaiter]);
+  }, [settleAllRefreshWaiters]);
 
   const refresh = useCallback((): Promise<void> => {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve) => {
       setRefreshSeq((current) => {
         const next = current + 1;
-        refreshWaitersRef.current.set(next, { resolve, reject });
+        refreshWaitersRef.current.set(next, { resolve });
         return next;
       });
     });

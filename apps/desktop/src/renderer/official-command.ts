@@ -66,12 +66,14 @@ type RunOfficialCommandOptions = {
 export function cancelOfficialOp(
   bridge: OfficialCommandBridge,
   opRef: React.MutableRefObject<OfficialOp | null>,
+  epochRef: React.MutableRefObject<number>,
   setState: React.Dispatch<React.SetStateAction<CommandState>>,
 ): void {
   const op = opRef.current;
   if (op === null) {
     return;
   }
+  epochRef.current += 1;
   bridge.cancel({ requestId: op.requestId });
   opRef.current = null;
   setState({ refreshing: false, commandError: null });
